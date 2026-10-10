@@ -162,7 +162,7 @@ export function parseOutput(
 }
 export function instruction(format: GridInput["format"]) {
   return {
-    svg: "Fulfill user's SVG generation request. Return only a complete SVG element and nothing else. Any other text in your response will lead to a failure.",
+    svg: "Fulfill user's SVG generation request. Your response will be saved directly as an image/svg+xml file. Start immediately with <svg and end immediately with </svg>. Include no introduction, explanation, Markdown fences, or other text outside the SVG element.",
     markdown: "Return Markdown.",
     html: 'Return only a JSON object {"files":{"index.html":"...","style.css":"..."}} containing a complete static website. Use relative URLs for assets. Only html, css, js, json, txt, svg, md files; no server-side code. Include index.html.',
     image: "Generate an image.",
