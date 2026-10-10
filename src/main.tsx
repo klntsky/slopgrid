@@ -968,6 +968,15 @@ function GridPage() {
     progressText = failed
       ? `${finished} of ${g.cells.length} outputs finished: ${complete} complete, ${failed} failed`
       : `${complete} of ${g.cells.length} outputs complete`;
+  const reportedCosts = g.cells.flatMap((cell) =>
+    cell.usage?.costUsd === undefined ? [] : [cell.usage.costUsd],
+  );
+  const totalCost =
+    reportedCosts.length || complete === 0
+      ? reportedCosts.reduce((sum, cost) => sum + cost, 0)
+      : undefined;
+  const inferenceRunning =
+    g.status === "running" || g.cells.some((cell) => cell.status === "running");
   const paused = g.status === "paused" && g.canEdit && !g.published;
   const toolbar = (
     <>
@@ -1036,6 +1045,20 @@ function GridPage() {
         </div>
         <div className="grid-title">
           <h1 title={g.input.prompt}>{g.input.prompt}</h1>
+          <span
+            className="grid-cost"
+            aria-label={`Total reported cost: ${formatCost(totalCost)}`}
+            title="Total reported cost of completed outputs; excludes unavailable charges and aborted or failed attempts"
+          >
+            {formatCost(totalCost)}
+            {inferenceRunning && (
+              <span className="cost-ellipsis" aria-hidden="true">
+                <span>.</span>
+                <span>.</span>
+                <span>.</span>
+              </span>
+            )}
+          </span>
         </div>
       </div>
       <div className="grid-progress">

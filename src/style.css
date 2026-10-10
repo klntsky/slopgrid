@@ -380,6 +380,9 @@ legend {
 }
 .grid-title {
   flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 .grid-heading .actions button {
   gap: 8px;
@@ -389,6 +392,7 @@ legend {
   height: 18px;
 }
 .grid-title h1 {
+  min-width: 0;
   font-size: 17px;
   font-weight: 500;
   letter-spacing: -0.3px;
@@ -1137,4 +1141,37 @@ header {
 }
 .grid-scroll[data-touch="true"] .cell iframe {
   pointer-events: none;
+}
+
+.grid-cost {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.cost-ellipsis {
+  display: inline-flex;
+  width: 1.2em;
+  margin-left: 3px;
+  justify-content: space-evenly;
+}
+.cost-ellipsis > span {
+  animation: cost-dot 1.2s ease-in-out infinite;
+}
+.cost-ellipsis > span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.cost-ellipsis > span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+@keyframes cost-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.2;
+  }
+  30% {
+    opacity: 1;
+  }
 }
