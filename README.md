@@ -4,7 +4,7 @@ Compare generated outputs in a grid. Choose models, thinking effort, prompt vari
 
 ## Create a grid
 
-1. Select **NEW GRID** in the navigation bar, then choose the output format. On mobile, open the hamburger menu to find **NEW GRID**, **YOUR GRIDS**, and **SETTINGS**.
+1. Select the slopgrid logo to open your grid list, then select **NEW GRID** and choose the output format. On mobile, open the hamburger menu to find **SETTINGS**.
 2. Choose what rows and columns represent, then select their values. Filter model lists by name or ID to find the models you want to compare. Selected models appear as badges below each model list; use a badge’s cross to remove that model, even when it is hidden by the filter. Thinking effort axes follow effort order rather than selection order. For prompt variables, enter one value per line. Image grids support models and prompt variables.
 3. Enter your prompt. Use `$VARIABLE_ROW` and `$VARIABLE_COLUMN` to insert each cell's row and column values when those dimensions are prompt variables. Each enabled variable must appear in the prompt before you can generate.
 4. Connect OpenRouter and select **Generate**.
@@ -33,7 +33,7 @@ Before publishing, select **EDIT** to return to parameter selection with the cur
 
 Select **PUBLISH** after every output has finished, whether it succeeded or failed, then **Copy link** to share the grid. Failed cells remain visible in published grids. Publishing makes the prompt, dimensions, and outputs accessible to anyone with the link. Published grids cannot be changed. Select **FORK** to copy a published grid’s setup into the parameter form, change its settings or prompt, and generate a new grid using your own OpenRouter connection.
 
-Open **YOUR GRIDS** in the navigation bar to find grids created in this browser. Selecting the slopgrid logo opens **YOUR GRIDS** when you have created at least one grid, or the creation form when you have none. Keep that browser's cookies: ownership is tied to a 30-day browser session, with no separate slopgrid login or cross-device account. Each completed output has an unguessable URL that can be opened directly; anyone who receives that output URL can view it, even before the grid is published.
+Select the slopgrid logo to find grids created in this browser; the grid list also has a **NEW GRID** button. Keep that browser's cookies: ownership is tied to a 30-day browser session, with no separate slopgrid login or cross-device account. Each completed output has an unguessable URL that can be opened directly; anyone who receives that output URL can view it, even before the grid is published.
 
 ## OpenRouter settings
 

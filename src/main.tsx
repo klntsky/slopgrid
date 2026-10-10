@@ -77,9 +77,7 @@ function CreateGridButton() {
 }
 const GridHeaderTarget = createContext<HTMLDivElement | null>(null);
 function Layout() {
-  const history = useGrids(),
-    navigate = useNavigate(),
-    pathname = useLocation().pathname,
+  const pathname = useLocation().pathname,
     isGrid = pathname.startsWith("/grid/");
   const [headerTarget, setHeaderTarget] = useState<HTMLDivElement | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -118,25 +116,7 @@ function Layout() {
     <GridHeaderTarget.Provider value={headerTarget}>
       <div className={`app-shell${isGrid ? " grid-layout" : ""}`}>
         <header>
-          <Link
-            to={history.data?.length ? "/grids" : "/"}
-            className="wordmark"
-            aria-label="slopgrid"
-            onClick={async (event) => {
-              if (
-                history.data ||
-                event.button !== 0 ||
-                event.metaKey ||
-                event.ctrlKey ||
-                event.shiftKey ||
-                event.altKey
-              )
-                return;
-              event.preventDefault();
-              const result = await history.refetch();
-              await navigate({ to: result.data?.length ? "/grids" : "/" });
-            }}
-          >
+          <Link to="/grids" className="wordmark" aria-label="slopgrid">
             slopgrid
             <img className="logo-grid" src="/slopgrid.svg" alt="" />
           </Link>
@@ -158,8 +138,6 @@ function Layout() {
             data-open={menuOpen}
             onClick={() => setMenuOpen(false)}
           >
-            <CreateGridButton />
-            <Link to="/grids">YOUR GRIDS</Link>
             <Link to="/settings">SETTINGS</Link>
           </nav>
         </header>
@@ -629,7 +607,10 @@ function YourGrids() {
   const history = useGrids();
   return (
     <main>
-      <h1>Your grids</h1>
+      <div className="history-heading">
+        <h1>Your grids</h1>
+        <CreateGridButton />
+      </div>
       {history.isPending ? (
         <p>Loading your grids…</p>
       ) : history.isError ? (
