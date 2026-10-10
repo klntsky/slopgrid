@@ -5,7 +5,7 @@ Compare generated outputs in a grid. Choose models, thinking effort, prompt vari
 ## Create a grid
 
 1. Select **NEW GRID** in the navigation bar, then choose the output format. On mobile, open the hamburger menu to find **NEW GRID**, **YOUR GRIDS**, and **SETTINGS**.
-2. Choose what rows and columns represent, then select their values. Filter model lists by name or ID to find the models you want to compare. For prompt variables, enter one value per line. Image grids support models and prompt variables.
+2. Choose what rows and columns represent, then select their values. Filter model lists by name or ID to find the models you want to compare. Thinking effort axes follow effort order rather than selection order. For prompt variables, enter one value per line. Image grids support models and prompt variables.
 3. Enter your prompt. Use `$VARIABLE_ROW` and `$VARIABLE_COLUMN` to insert each cell's row and column values when those dimensions are prompt variables. Each enabled variable must appear in the prompt before you can generate.
 4. Connect OpenRouter and select **Generate**.
 

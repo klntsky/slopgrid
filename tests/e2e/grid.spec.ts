@@ -1439,3 +1439,63 @@ for (const width of [1280, 390]) {
     expect(await grid.boundingBox()).toEqual(before);
   });
 }
+
+for (const axis of ["Rows", "Columns"] as const) {
+  test(`thinking effort ${axis.toLowerCase()} follow effort order regardless of selection sequence`, async ({
+    page,
+    request,
+  }) => {
+    await page.setExtraHTTPHeaders({
+      "X-Forwarded-For": axis === "Rows" ? "192.0.2.48" : "192.0.2.49",
+    });
+    await request.post("/fixture/reset", { data: { billing: false } });
+    await create(page, "SVG", "cat", "hat");
+    await expectProgress(page, 1, 1);
+    await page.goto("/");
+    await page.getByRole("button", { name: "SVG", exact: true }).click();
+    await page
+      .getByRole("combobox", { name: axis, exact: true })
+      .selectOption("effort");
+    const other = axis === "Rows" ? "Columns" : "Rows";
+    await page
+      .getByRole("combobox", { name: other, exact: true })
+      .selectOption("model");
+    const values = page.getByRole("group", {
+      name: axis === "Rows" ? "Row values" : "Column values",
+    });
+    await expect(values.locator("label.checkbox")).toHaveText([
+      "Model default",
+      "None",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+    ]);
+    for (const effort of ["max", "high", "low"])
+      await values.getByRole("checkbox", { name: effort, exact: true }).check();
+    await values.getByRole("checkbox", { name: "high", exact: true }).uncheck();
+    await values.getByRole("checkbox", { name: "high", exact: true }).check();
+    await page
+      .getByRole("group", {
+        name: other === "Rows" ? "Row values" : "Column values",
+      })
+      .getByRole("checkbox", { name: "Fixture text", exact: true })
+      .check();
+    await page.getByRole("button", { name: "Continue to prompt" }).click();
+    await page.getByLabel("Prompt", { exact: true }).fill("Draw a cat");
+    await page.getByRole("button", { name: "Continue to key setup" }).click();
+    await page.getByRole("button", { name: "Generate", exact: true }).click();
+    await expectProgress(page, 3, 3);
+    const labels =
+      axis === "Rows"
+        ? page.getByRole("rowheader")
+        : page
+            .getByRole("columnheader")
+            .filter({ hasNot: page.locator(".axis-legend") });
+    await expect(labels).toHaveText(["low", "high", "max"]);
+    await page.reload();
+    await expect(labels).toHaveText(["low", "high", "max"]);
+  });
+}

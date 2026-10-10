@@ -749,14 +749,20 @@ function AxisEditor({
                 <input
                   type="checkbox"
                   checked={axis.values.includes(c.id)}
-                  onChange={(e) =>
+                  onChange={(e) => {
+                    const selected = e.target.checked
+                      ? [...axis.values, c.id]
+                      : axis.values.filter((v) => v !== c.id);
                     onChange({
                       ...axis,
-                      values: e.target.checked
-                        ? [...axis.values, c.id]
-                        : axis.values.filter((v) => v !== c.id),
-                    })
-                  }
+                      values:
+                        axis.kind === "effort"
+                          ? efforts.filter((effort) =>
+                              selected.includes(effort),
+                            )
+                          : selected,
+                    });
+                  }}
                 />
                 {c.name}
               </label>
