@@ -242,8 +242,8 @@ test("row and column headers stay visible while scrolling a larger grid", async 
   );
   await expectProgress(page, 12, 12);
   const viewport = page.getByLabel("Generated output grid");
-  const column = page.getByRole("columnheader", { name: "hat", exact: true }),
-    row = page.getByRole("rowheader", { name: "cat", exact: true });
+  const column = page.getByRole("columnheader", { name: /^hat(?:\s|$)/ }),
+    row = page.getByRole("rowheader", { name: /^cat(?:\s|$)/ });
   const beforeColumn = await column.boundingBox(),
     beforeRow = await row.boundingBox();
   await viewport.evaluate((el) => {
@@ -346,9 +346,14 @@ test("a missing review charge is shown as unavailable rather than a partial cost
   });
   await create(page, "Markdown", "cat", "hat", "review");
   await expectProgress(page, 1, 1);
-  await expect(page.getByText("20 in · 40 out", { exact: true })).toBeVisible();
   await expect(
-    page.getByText("Cost unavailable", { exact: true }),
+    page.getByRole("img", {
+      name: "20 input tokens, 40 output tokens",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.locator(".cell-usage").getByText("Cost unavailable", { exact: true }),
   ).toBeVisible();
   await expect(page.getByText("$0.000123", { exact: true })).toHaveCount(0);
 });
@@ -567,30 +572,23 @@ test("unused prompt variables block setup, later edits block generation, and the
   await expectProgress(page, 4, 4);
 });
 
-test("the logo opens the form for a new browser and Your grids after creation", async ({
+test("the logo opens the grid list and its creation link starts a new grid", async ({
   page,
   request,
 }) => {
   await request.post("/fixture/reset", { data: { billing: false } });
   await page.goto("/settings");
   await page.getByRole("link", { name: "slopgrid", exact: true }).click();
-  await expect(page).toHaveURL("/");
-  const navbar = page.getByRole("navigation");
-  await navbar.getByRole("link", { name: "YOUR GRIDS" }).click();
   await expect(page).toHaveURL("/grids");
   await expect(page.getByRole("heading", { name: "Your grids" })).toBeVisible();
   await expect(
     page.getByText("You haven’t created any grids yet."),
   ).toBeVisible();
-  await navbar.getByRole("link", { name: "NEW GRID", exact: true }).click();
+  await page.getByRole("link", { name: "NEW GRID", exact: true }).click();
   await expect(page).toHaveURL("/");
   await create(page, "Image", "cat", "hat");
   await expectProgress(page, 1, 1);
   const gridURL = page.url();
-  await navbar.getByRole("link", { name: "NEW GRID", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Your grids" })).toHaveCount(
-    0,
-  );
   await page.getByRole("link", { name: "slopgrid", exact: true }).click();
   await expect(page).toHaveURL("/grids");
   await page.reload();
@@ -664,7 +662,9 @@ test("SVG images grow during generation without exposing markup or running SVG s
     await expectProgress(page, 1, 1);
     await expect(preview).toHaveCount(0);
     await expect(
-      page.getByText("Cost unavailable", { exact: true }),
+      page
+        .locator(".cell-usage")
+        .getByText("Cost unavailable", { exact: true }),
     ).toBeVisible();
     await expect(
       page.getByRole("img", { name: "Generated SVG", exact: true }),
@@ -709,7 +709,7 @@ for (const viewport of [
     if (viewport.width > 700) {
       expect(
         await header
-          .getByRole("link", { name: "YOUR GRIDS", exact: true })
+          .getByRole("link", { name: "SETTINGS", exact: true })
           .evaluate((element) =>
             parseFloat(getComputedStyle(element).fontSize),
           ),
@@ -722,9 +722,18 @@ for (const viewport of [
       for (const name of names) {
         const button = header.getByRole("button", { name, exact: true });
         const box = (await button.boundingBox())!;
-        expect(box.x).toBeGreaterThanOrEqual(title.x + title.width);
-        expect(box.y).toBeLessThan(title.y + title.height);
-        expect(box.y + box.height).toBeGreaterThan(title.y);
+        if (viewport.width > 700) {
+          expect(box.x + box.width).toBeLessThanOrEqual(title.x);
+          expect(box.y).toBeLessThan(title.y + title.height);
+          expect(box.y + box.height).toBeGreaterThan(title.y);
+        } else {
+          expect(box.y + box.height).toBeLessThanOrEqual(title.y);
+          const logo = (await header
+            .getByRole("link", { name: "slopgrid", exact: true })
+            .boundingBox())!;
+          expect(box.y).toBeLessThan(logo.y + logo.height);
+          expect(box.y + box.height).toBeGreaterThan(logo.y);
+        }
         await expect(button.locator("svg")).toBeVisible();
       }
     }
@@ -746,10 +755,10 @@ for (const viewport of [
     await expect(cornerCell).toHaveText("");
     await expect(cornerCell.locator("svg, img")).toHaveCount(0);
     await expect(
-      page.getByRole("columnheader", { name: "hat", exact: true }),
+      page.getByRole("columnheader", { name: /^hat(?:\s|$)/ }),
     ).toBeVisible();
     await expect(
-      page.getByRole("rowheader", { name: "cat", exact: true }),
+      page.getByRole("rowheader", { name: /^cat(?:\s|$)/ }),
     ).toBeVisible();
     await expect
       .poll(() =>
@@ -760,7 +769,7 @@ for (const viewport of [
       .toBeGreaterThan(0);
     const cell = (await page.locator(".cell").first().boundingBox())!,
       corner = (await cornerCell.boundingBox())!;
-    const rowLabel = page.getByRole("rowheader", { name: "cat", exact: true });
+    const rowLabel = page.getByRole("rowheader", { name: /^cat(?:\s|$)/ });
     const contentWidth = (await rowLabel.locator(".row-label").boundingBox())!
       .width;
     const padding = await rowLabel.evaluate((element) => {
@@ -785,14 +794,8 @@ for (const viewport of [
     await expect(
       header.getByRole("button", { name: "Copy link" }),
     ).toBeVisible();
-    if (viewport.width <= 700)
-      await header
-        .getByRole("button", { name: "Navigation menu", exact: true })
-        .click();
-    await header
-      .getByRole("navigation")
-      .getByRole("link", { name: "NEW GRID", exact: true })
-      .click();
+    await header.getByRole("link", { name: "slopgrid", exact: true }).click();
+    await page.getByRole("link", { name: "NEW GRID", exact: true }).click();
     await expect(
       page.getByRole("heading", {
         name: "Create a grid to compare models and their settings",
@@ -970,10 +973,8 @@ test("theme follows system changes unless a saved choice overrides them", async 
   await expect(page.locator("html")).toHaveCSS("color-scheme", "light");
   await theme.selectOption("dark");
   await expect(page.locator("html")).toHaveCSS("color-scheme", "dark");
-  await page
-    .getByRole("navigation")
-    .getByRole("link", { name: "NEW GRID", exact: true })
-    .click();
+  await page.getByRole("link", { name: "slopgrid", exact: true }).click();
+  await page.getByRole("link", { name: "NEW GRID", exact: true }).click();
   await expect(page.locator("html")).toHaveCSS("color-scheme", "dark");
   await page.reload();
   await expect(page.locator("html")).toHaveCSS("color-scheme", "dark");
@@ -1063,8 +1064,8 @@ test.describe("mobile grid interaction", () => {
     await page.getByRole("heading", { name: "Inference", exact: true }).click();
     await expect(nav).toBeHidden();
     await menu.click();
-    await nav.getByRole("link", { name: "NEW GRID", exact: true }).click();
-    await expect(page).toHaveURL("/");
+    await nav.getByRole("link", { name: "SETTINGS", exact: true }).click();
+    await expect(page).toHaveURL("/settings");
     await expect(nav).toBeHidden();
   });
 
@@ -1182,54 +1183,50 @@ test.describe("mobile grid interaction", () => {
     });
 });
 
-test("model IDs in outputs and model legends copy to the real clipboard", async ({
+test("model IDs in row and column labels copy to the real clipboard", async ({
   page,
   context,
   request,
 }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await request.post("/fixture/reset", { data: { billing: false } });
-  await create(
-    page,
-    "SVG",
-    "cat",
-    "hat",
-    "direct",
-    "Draw $VARIABLE_ROW wearing a $VARIABLE_COLUMN",
-    "fixture/other",
-  );
+  await create(page, "SVG", "cat", "hat");
   await expectProgress(page, 1, 1);
-  const copy = page
-    .locator(".cell")
-    .getByRole("button", { name: "Copy model ID fixture/other", exact: true });
-  await copy.click();
-  await expect
-    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
-    .toBe("fixture/other");
-  await expect(page.getByText("Model ID copied", { exact: true })).toHaveText(
-    "Model ID copied",
-  );
-  const response = await page.request.post("/api/grids", {
-    data: {
-      format: "svg",
-      prompt: "Draw a cat",
-      rows: { kind: "model", values: ["fixture/text"] },
-      columns: { kind: "effort", values: ["none"] },
-      model: "fixture/text",
-      effort: "none",
-      harness: "direct",
-    },
-  });
-  expect(response.status()).toBe(201);
-  await page.goto(`/grid/${(await response.json()).id}`);
-  await expectProgress(page, 1, 1);
-  await page
-    .getByRole("rowheader")
-    .getByRole("button", { name: "Copy model ID fixture/text", exact: true })
-    .click();
-  await expect
-    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
-    .toBe("fixture/text");
+  for (const [axis, model] of [
+    ["row", "fixture/text"],
+    ["column", "fixture/other"],
+  ] as const) {
+    const response = await page.request.post("/api/grids", {
+      data: {
+        format: "svg",
+        prompt: "Draw a cat",
+        rows:
+          axis === "row"
+            ? { kind: "model", values: [model] }
+            : { kind: "effort", values: ["none"] },
+        columns:
+          axis === "column"
+            ? { kind: "model", values: [model] }
+            : { kind: "effort", values: ["none"] },
+        model,
+        effort: "none",
+        harness: "direct",
+      },
+    });
+    expect(response.status()).toBe(201);
+    await page.goto(`/grid/${(await response.json()).id}`);
+    await expectProgress(page, 1, 1);
+    await page
+      .getByRole(axis === "row" ? "rowheader" : "columnheader")
+      .getByRole("button", { name: `Copy model ID ${model}`, exact: true })
+      .click();
+    await expect
+      .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+      .toBe(model);
+    await expect(page.getByText("Model ID copied", { exact: true })).toHaveText(
+      "Model ID copied",
+    );
+  }
 });
 
 test("model compatibility warnings allow generation and resuming unfinished cells", async ({
@@ -1510,7 +1507,7 @@ test("EDIT cancels inference and restores settings, while a public FORK creates 
         page.getByRole("button", { name: "FORK", exact: true }),
       ).toBeVisible();
       await expect(
-        page.getByRole("rowheader", { name: "owl", exact: true }),
+        page.getByRole("rowheader", { name: /^owl(?:\s|$)/ }),
       ).toBeVisible();
     } finally {
       await stranger.close();
