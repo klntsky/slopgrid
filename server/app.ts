@@ -5,6 +5,7 @@ import { gridSchema, expandGrid, type Grid } from "./domain.js";
 import { Store, type Session } from "./store.js";
 import { Provider, type Model } from "./provider.js";
 import { Jobs } from "./jobs.js";
+import { createOutputHosts } from "./hosts.js";
 export type Config = {
   origin: string;
   outputDomain: string;
@@ -24,12 +25,8 @@ export function createApp(config: Config) {
   const origin = new URL(config.origin),
     secure = origin.protocol === "https:",
     cookieName = secure ? "__Host-slopgrid" : "slopgrid";
-  if (
-    !/^[a-z0-9.-]+(?::\d+)?$/.test(config.outputDomain) ||
-    origin.host === config.outputDomain ||
-    origin.hostname.endsWith(`.${config.outputDomain.split(":")[0]}`)
-  )
-    throw new Error("Use a separate generated-content domain");
+  const template = `{id}${config.outputDomain.startsWith("-") ? config.outputDomain : "." + config.outputDomain}`;
+  const outputHosts = createOutputHosts(origin, template);
   app.disable("x-powered-by");
   app.set("trust proxy", "loopback");
   app.use((req, res, next) => {
@@ -39,15 +36,13 @@ export function createApp(config: Config) {
     if (host === origin.host) {
       res.set(
         "Content-Security-Policy",
-        `default-src 'self'; script-src 'self'${process.env.NODE_ENV !== "production" ? " 'unsafe-inline'" : ""}; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-src ${origin.protocol}//*.${config.outputDomain}; connect-src 'self'${process.env.NODE_ENV !== "production" ? " ws:" : ""}; base-uri 'none'; object-src 'none'; frame-ancestors 'none'`,
+        `default-src 'self'; script-src 'self'${process.env.NODE_ENV !== "production" ? " 'unsafe-inline'" : ""}; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-src ${outputHosts.frameSource}; connect-src 'self'${process.env.NODE_ENV !== "production" ? " ws:" : ""}; base-uri 'none'; object-src 'none'; frame-ancestors 'none'`,
       );
       if (secure) res.set("Strict-Transport-Security", "max-age=31536000");
       return next();
     }
-    const suffix = `.${config.outputDomain}`;
-    if (!host?.endsWith(suffix)) return res.status(421).send("Unknown host");
-    const id = host.slice(0, -suffix.length);
-    if (!/^[a-f0-9]{48}$/.test(id)) return res.sendStatus(404);
+    const id = host ? outputHosts.cellId(host) : undefined;
+    if (!id) return res.status(421).send("Unknown host");
     if (!rate(`output:${req.ip}`, 2000, 60000)) {
       res.set("Retry-After", "60");
       return res.status(429).send("Too many requests. Try again in a minute.");
@@ -154,10 +149,7 @@ export function createApp(config: Config) {
     cells: g.cells.map((c) => ({
       ...c,
       files: undefined,
-      outputURL:
-        c.status === "complete"
-          ? `${origin.protocol}//${c.id}.${config.outputDomain}/index.html`
-          : undefined,
+      outputURL: c.status === "complete" ? outputHosts.url(c.id) : undefined,
     })),
   });
   let catalog: { at: number; models: Model[] } | undefined;

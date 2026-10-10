@@ -124,6 +124,7 @@ test("drafts, mutation endpoints, and generated hosts enforce ownership and orig
   ).toBe(403);
   const output = await page.locator("iframe").first().getAttribute("src");
   const isolated = new URL(output!);
+  expect(isolated.hostname).toMatch(/^[a-f0-9]{48}-slopgrid\.localhost$/);
   const response = await request.get(
     `http://localhost:4317${isolated.pathname}`,
     { headers: { host: isolated.host } },
@@ -144,7 +145,7 @@ test("drafts, mutation endpoints, and generated hosts enforce ownership and orig
   expect(
     await outputTab.evaluate(() => {
       try {
-        document.cookie = "sibling-cookie=secret;domain=user.localhost";
+        document.cookie = "sibling-cookie=secret;domain=localhost";
         return false;
       } catch {
         return true;

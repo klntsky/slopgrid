@@ -141,7 +141,7 @@ const data = process.env.FIXTURE_DATA!;
 mkdirSync(data, { recursive: true });
 const { app } = createApp({
   origin: "http://localhost:4317",
-  outputDomain: "user.localhost:4317",
+  outputDomain: "-slopgrid.localhost:4317",
   database: `${data}/db.sqlite`,
   secret: Buffer.alloc(32, 1),
   provider: new Provider("http://localhost:4318/api/v1"),
