@@ -1246,3 +1246,113 @@ for (const theme of ["light", "dark"] as const)
     );
     await expect(page.getByRole("button", { name: "PUBLISH" })).toBeEnabled();
   });
+
+test("EDIT cancels inference and restores settings, while a public FORK creates a separate grid", async ({
+  page,
+  request,
+}) => {
+  await page.setExtraHTTPHeaders({ "X-Forwarded-For": "192.0.2.43" });
+  await request.post("/fixture/reset", { data: { holdGenerations: true } });
+  try {
+    await create(page, "Image", "cat\ndog", "hat");
+    await expect(page).toHaveURL(/\/grid\/[a-f0-9]+$/);
+    const original = page.url();
+    const id = new URL(original).pathname.split("/").pop()!;
+    await expect
+      .poll(
+        async () =>
+          (await (await request.get("/fixture/workers")).json()).held.length,
+      )
+      .toBe(2);
+    expect((await request.post(`/api/grids/${id}/edit`)).status()).toBe(404);
+    expect(
+      (
+        await page.request.post(`/api/grids/${id}/edit`, {
+          headers: { origin: "https://attacker.invalid" },
+        })
+      ).status(),
+    ).toBe(403);
+    await page.getByRole("button", { name: "EDIT", exact: true }).click();
+    await expect(
+      page.getByRole("heading", { name: "Select grid layout" }),
+    ).toBeVisible();
+    await expect(page.getByLabel("Row values")).toHaveValue("cat\ndog");
+    await expect(page.getByLabel("Column values")).toHaveValue("hat");
+    await expect(
+      page.getByRole("combobox", { name: "Model", exact: true }),
+    ).toHaveValue("fixture/image");
+    await expect
+      .poll(
+        async () =>
+          (await (await request.get("/fixture/workers")).json()).aborted.length,
+      )
+      .toBe(2);
+    const stopped = await (await page.request.get(`/api/grids/${id}`)).json();
+    expect(stopped.status).toBe("paused");
+    expect(
+      stopped.cells.every(
+        (cell: { status: string; draft?: string }) =>
+          cell.status === "pending" && !cell.draft,
+      ),
+    ).toBe(true);
+    await request.post("/fixture/release", { data: { all: true } });
+    await page.reload();
+    await expect(page.getByLabel("Column values")).toHaveValue("hat");
+    await page.getByLabel("Row values").fill("owl");
+    await page.getByRole("button", { name: "Continue to prompt" }).click();
+    await expect(page.getByLabel("Prompt", { exact: true })).toHaveValue(
+      "Draw $VARIABLE_ROW wearing a $VARIABLE_COLUMN",
+    );
+    await page.getByRole("button", { name: "Continue to key setup" }).click();
+    await page.getByRole("button", { name: "Generate", exact: true }).click();
+    await expectProgress(page, 1, 1);
+    expect(page.url()).not.toBe(original);
+    await page.setViewportSize({ width: 390, height: 844 });
+    const publish = page.getByRole("button", { name: "PUBLISH", exact: true });
+    expect((await publish.boundingBox())!.width).toBeLessThan(160);
+    await page.getByRole("button", { name: "EDIT", exact: true }).click();
+    await expect(page.getByLabel("Row values")).toHaveValue("owl");
+    await page.goBack();
+    await publish.click();
+    const published = page.url();
+    expect(
+      (
+        await page.request.post(`/api/grids/${published.split("/").pop()}/edit`)
+      ).status(),
+    ).toBe(409);
+    const stranger = await page.context().browser()!.newContext();
+    try {
+      const visitor = await stranger.newPage();
+      await visitor.setExtraHTTPHeaders({ "X-Forwarded-For": "192.0.2.44" });
+      await visitor.goto(published);
+      await expect(
+        visitor.getByRole("button", { name: "EDIT", exact: true }),
+      ).toHaveCount(0);
+      await visitor.getByRole("button", { name: "FORK", exact: true }).click();
+      await expect(visitor.getByLabel("Row values")).toHaveValue("owl");
+      await visitor.getByLabel("Row values").fill("fox");
+      await visitor.getByRole("button", { name: "Continue to prompt" }).click();
+      await expect(visitor.getByLabel("Prompt", { exact: true })).toHaveValue(
+        "Draw $VARIABLE_ROW wearing a $VARIABLE_COLUMN",
+      );
+      await visitor
+        .getByRole("button", { name: "Continue to key setup" })
+        .click();
+      await visitor.getByRole("link", { name: "Connect OpenRouter" }).click();
+      await visitor
+        .getByRole("button", { name: "Generate", exact: true })
+        .click();
+      await expectProgress(visitor, 1, 1);
+      expect(visitor.url()).not.toBe(published);
+      await page.reload();
+      await expect(page.getByText("Published", { exact: true })).toBeVisible();
+      await expect(
+        page.getByRole("rowheader", { name: "owl", exact: true }),
+      ).toBeVisible();
+    } finally {
+      await stranger.close();
+    }
+  } finally {
+    await request.post("/fixture/release", { data: { all: true } });
+  }
+});

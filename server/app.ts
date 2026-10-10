@@ -389,6 +389,17 @@ export function createApp(config: Config) {
         .json({ error: "This grid has finished generating." });
     res.json(snapshot(jobs.pause(g), s));
   });
+  app.post("/api/grids/:id/edit", (req, res) => {
+    const s = session(req, res),
+      g = store.get(String(req.params.id));
+    if (!g || g.owner !== s.id)
+      return res.status(404).json({ error: "Grid not found" });
+    if (g.published)
+      return res
+        .status(409)
+        .json({ error: "Published grids can only be forked." });
+    res.json(snapshot(jobs.pause(g), s));
+  });
   app.post("/api/grids/:id/publish", (req, res) => {
     const s = session(req, res),
       g = store.get(String(req.params.id));

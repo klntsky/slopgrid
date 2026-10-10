@@ -819,7 +819,8 @@ function Settings() {
 function GridPage() {
   const { id } = gridRoute.useParams(),
     cache = useQueryClient(),
-    headerTarget = useContext(GridHeaderTarget);
+    headerTarget = useContext(GridHeaderTarget),
+    navigate = useNavigate();
   const query = useQuery({
     queryKey: ["grid", id],
     queryFn: () => api<ViewGrid>(`/grids/${id}`),
@@ -844,6 +845,27 @@ function GridPage() {
     try {
       const g = await api<ViewGrid>(`/grids/${id}/${action}`, "POST");
       cache.setQueryData(["grid", id], g);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function configure() {
+    if (!query.data) return;
+    setBusy(true);
+    setError("");
+    try {
+      const grid = query.data.published
+        ? query.data
+        : await api<ViewGrid>(`/grids/${id}/edit`, "POST");
+      cache.setQueryData(["grid", id], grid);
+      sessionStorage.setItem(
+        "slopgrid-draft",
+        JSON.stringify({ step: 1, input: grid.input } satisfies Draft),
+      );
+      await cache.invalidateQueries({ queryKey: ["grids"] });
+      await navigate({ to: "/" });
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -894,6 +916,11 @@ function GridPage() {
           {g.published && <span className="badge">Published</span>}
         </div>
         <div className="actions">
+          {(g.canEdit || g.published) && (
+            <button className="secondary" disabled={busy} onClick={configure}>
+              {g.published ? "FORK" : "EDIT"}
+            </button>
+          )}
           {g.canEdit && !g.published && (
             <button
               disabled={busy || g.status !== "complete"}

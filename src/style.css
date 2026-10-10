@@ -897,10 +897,7 @@ nav .create-grid-button[aria-current="page"] {
     align-items: center;
   }
   .grid-heading .actions {
-    width: 100%;
-  }
-  .grid-heading .actions button {
-    flex: 1;
+    justify-self: start;
   }
 }
 
