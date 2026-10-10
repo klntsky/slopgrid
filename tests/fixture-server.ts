@@ -7,6 +7,8 @@ import { createApp } from "../server/app.js";
 import { Provider } from "../server/provider.js";
 let streamBilling = false;
 let unsafe = false;
+let svgStreaming = false;
+let advanceSvg: (() => void) | undefined;
 let svgProbes: string[] = [];
 let billing = false,
   calls: string[] = [];
@@ -139,6 +141,30 @@ upstream.post("/api/v1/chat/completions", async (req, res) => {
       usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 },
     });
   res.set("Content-Type", "text/event-stream");
+  if (svgStreaming && system.includes("complete SVG")) {
+    const chunks = [
+      '```svg\n<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><g><script>window.unsafeOutput=true;document.cookie="svg_escape=1;path=/";fetch("http://localhost:4317/svg-probe?script")</script><image href="http://localhost:4317/svg-probe?image" width="1" height="1"/><rect width="200" height="200" fill="red',
+      '"/><circle cx="100" cy="100" r="70" fill="blue',
+      '"/></g></svg>\n```',
+    ];
+    for (let i = 0; i < chunks.length; i++) {
+      if (i) {
+        await new Promise<void>((resolve) => {
+          advanceSvg = resolve;
+        });
+        advanceSvg = undefined;
+        // Each chunk crosses the app's 300 ms snapshot throttle.
+        await new Promise((resolve) => setTimeout(resolve, 350));
+      }
+      res.write(
+        `data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: { content: chunks[i] }, finish_reason: null }] })}\n\n`,
+      );
+    }
+    res.end(
+      `data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: {}, finish_reason: "stop" }] })}\n\ndata: [DONE]\n\n`,
+    );
+    return;
+  }
   for (let i = 0; i < text.length; i += 40) {
     res.write(
       `data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: { content: text.slice(i, i + 40) }, finish_reason: null }] })}\n\n`,
@@ -162,11 +188,18 @@ const { app } = createApp({
   authURL: "http://localhost:4318/auth",
 });
 app.post("/fixture/reset", (req, res) => {
+  svgStreaming = !!req.body.svgStreaming;
+  advanceSvg?.();
+  advanceSvg = undefined;
   billing = !!req.body.billing;
   unsafe = !!req.body.unsafe;
   streamBilling = !!req.body.streamBilling;
   calls = [];
   svgProbes = [];
+  res.json({ ok: true });
+});
+app.post("/fixture/svg-next", (_req, res) => {
+  advanceSvg?.();
   res.json({ ok: true });
 });
 app.post("/fixture/credits", (_req, res) => {

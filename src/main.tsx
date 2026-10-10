@@ -32,6 +32,7 @@ import type { GridInput } from "../server/domain";
 import { efforts, unusedVariableIssue } from "../server/domain";
 import type { Model } from "../server/provider";
 import { api, type ViewGrid } from "./api";
+import { SvgPreview } from "./svg-preview-image";
 import "./style.css";
 function newestGrid(previous: unknown, incoming: unknown) {
   const old = previous as ViewGrid | undefined,
@@ -881,6 +882,9 @@ function GridPage() {
                           </>
                         ) : cell.status === "error" ? (
                           <p className="cell-error">{cell.error}</p>
+                        ) : cell.status === "running" &&
+                          g.input.format === "svg" ? (
+                          <SvgPreview key={cell.id} draft={cell.draft ?? ""} />
                         ) : (
                           <div className="pending" role="status">
                             {cell.status === "running" ? (

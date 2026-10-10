@@ -632,3 +632,11 @@ nav .create-grid-button[aria-current="page"] {
     margin-left: auto;
   }
 }
+
+.preview-status {
+  justify-content: flex-start;
+}
+.preview-status .spinner {
+  width: 14px;
+  height: 14px;
+}

@@ -523,3 +523,58 @@ test("the prompt step removes redundant controls while keeping an accessible pro
   await page.getByRole("button", { name: "Continue to key setup" }).click();
   await expect(page.getByRole("heading", { name: "Key setup" })).toBeVisible();
 });
+
+test("SVG images grow during generation without exposing markup or running SVG scripts", async ({
+  page,
+  request,
+}) => {
+  await request.post("/fixture/reset", { data: { svgStreaming: true } });
+  try {
+    await create(page, "SVG", "cat", "hat");
+    const preview = page.getByRole("img", { name: "SVG preview", exact: true });
+    const centerColor = () =>
+      preview.evaluate((img) => {
+        const canvas = document.createElement("canvas");
+        canvas.width = canvas.height = 200;
+        const context = canvas.getContext("2d")!;
+        context.drawImage(img as HTMLImageElement, 0, 0, 200, 200);
+        return [...context.getImageData(100, 100, 1, 1).data];
+      });
+    await expect(preview).toBeVisible();
+    await expect.poll(centerColor).toEqual([255, 0, 0, 255]);
+    await expect(page.getByText("0 of 1 complete")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Publish grid" }),
+    ).toBeDisabled();
+    await expect(page.locator("iframe, .cell pre")).toHaveCount(0);
+    await request.post("/fixture/svg-next");
+    await expect.poll(centerColor).toEqual([0, 0, 255, 255]);
+    await expect(page.getByText("0 of 1 complete")).toBeVisible();
+    expect(
+      await page.evaluate(
+        () => (window as Window & { unsafeOutput?: boolean }).unsafeOutput,
+      ),
+    ).toBeUndefined();
+    expect(await page.evaluate(() => document.cookie)).not.toContain(
+      "svg_escape",
+    );
+    expect(await (await request.get("/fixture/svg-probes")).json()).toEqual([]);
+    await request.post("/fixture/svg-next");
+    await expect(page.getByText("1 of 1 complete")).toBeVisible();
+    await expect(preview).toHaveCount(0);
+    await expect(
+      page.getByRole("img", { name: "Generated SVG", exact: true }),
+    ).toBeVisible();
+    const output = await request.get(
+      (await page
+        .getByRole("link", { name: "Open output" })
+        .getAttribute("href"))!,
+    );
+    expect(await output.text()).toContain(
+      '<circle cx="100" cy="100" r="70" fill="blue"/></g></svg>',
+    );
+    expect(await (await request.get("/fixture/calls")).json()).toHaveLength(1);
+  } finally {
+    await request.post("/fixture/reset", { data: {} });
+  }
+});
