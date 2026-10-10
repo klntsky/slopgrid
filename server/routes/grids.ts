@@ -1,0 +1,167 @@
+import { Router } from "express";
+import type { Store } from "../store.js";
+import type { Provider } from "../provider.js";
+import type { Jobs } from "../jobs.js";
+import type { SessionReader } from "../session.js";
+import type { RateLimiter } from "../rate-limit.js";
+import type { GridPresenter } from "../grid-presentation.js";
+import { canViewGrid } from "../grid-presentation.js";
+import { gridSchema, expandGrid, type Grid } from "../domain.js";
+import {
+  ModelResolutionError,
+  resolveGridModels,
+} from "../model-resolution.js";
+import { createInferenceGuard } from "../inference-policy.js";
+import { token } from "../ids.js";
+
+export function createGridRoutes({
+  store,
+  provider,
+  jobs,
+  session,
+  rate,
+  snapshot,
+}: {
+  store: Store;
+  provider: Provider;
+  jobs: Jobs;
+  session: SessionReader;
+  rate: RateLimiter;
+  snapshot: GridPresenter;
+}) {
+  const app = Router(),
+    allowInference = createInferenceGuard(store, provider);
+  app.get("/api/grids", (req, res) => {
+    const s = session(req, res);
+    res.json(
+      store
+        .all()
+        .filter((g) => g.owner === s.id)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        .map((g) => ({
+          id: g.id,
+          prompt: g.input.prompt,
+          status: g.status,
+          published: g.published,
+        })),
+    );
+  });
+  app.post("/api/grids", async (req, res) => {
+    const s = session(req, res);
+    if (!s.key)
+      return res
+        .status(401)
+        .json({ error: "Connect OpenRouter before generating." });
+    const parsed = gridSchema.safeParse(req.body);
+    if (!parsed.success)
+      return res.status(400).json({ error: parsed.error.issues[0].message });
+    let input: Grid["input"];
+    try {
+      input = resolveGridModels(parsed.data, await provider.models());
+    } catch (error) {
+      return res
+        .status(error instanceof ModelResolutionError ? 400 : 502)
+        .json({
+          error:
+            error instanceof ModelResolutionError
+              ? error.message
+              : "Could not load OpenRouter models. Try again.",
+        });
+    }
+    if (!(await allowInference(req, res, s))) return;
+    const cells = expandGrid(input).map((c) => ({ ...c, id: token() }));
+    if (!rate(`create:${s.id}`, 10) || !rate(`create-ip:${req.ip}`, 30))
+      return res
+        .status(429)
+        .json({ error: "Grid limit reached. Try again in an hour." });
+    const g: Grid = {
+      revision: 0,
+      id: token(),
+      owner: s.id,
+      input,
+      status: "running",
+      published: false,
+      cells,
+      createdAt: new Date().toISOString(),
+    };
+    store.save(g);
+    jobs.start(g);
+    res.status(201).json(snapshot(g, s));
+  });
+  app.get("/api/grids/:id", (req, res) => {
+    const s = session(req, res),
+      g = store.get(String(req.params.id));
+    if (!g || !canViewGrid(g, s))
+      return res.status(404).json({ error: "Grid not found" });
+    res.json(snapshot(jobs.active.get(g.id) ?? g, s));
+  });
+  app.post("/api/grids/:id/retry", async (req, res) => {
+    const s = session(req, res),
+      g = store.get(String(req.params.id));
+    if (!g || g.owner !== s.id)
+      return res.status(404).json({ error: "Grid not found" });
+    if (g.published)
+      return res
+        .status(409)
+        .json({ error: "Published grids cannot be changed." });
+    if (!s.key)
+      return res
+        .status(401)
+        .json({ error: "Reconnect OpenRouter to continue." });
+    const current = jobs.active.get(g.id);
+    if (current?.status === "running") return res.json(snapshot(current, s));
+    if (
+      g.cells.some((c) => c.status !== "complete") &&
+      !(await allowInference(req, res, s))
+    )
+      return;
+    if (!rate(`retry:${s.id}`, 30))
+      return res
+        .status(429)
+        .json({ error: "Retry limit reached. Try again in an hour." });
+    const resumed = g.cells.some((c) => c.status !== "complete")
+      ? jobs.start(g)
+      : g;
+    res.json(snapshot(resumed, s));
+  });
+  app.post("/api/grids/:id/pause", (req, res) => {
+    const s = session(req, res),
+      g = store.get(String(req.params.id));
+    if (!g || g.owner !== s.id)
+      return res.status(404).json({ error: "Grid not found" });
+    if (g.published || g.status === "complete")
+      return res
+        .status(409)
+        .json({ error: "This grid has finished generating." });
+    res.json(snapshot(jobs.pause(g), s));
+  });
+  app.post("/api/grids/:id/edit", (req, res) => {
+    const s = session(req, res),
+      g = store.get(String(req.params.id));
+    if (!g || g.owner !== s.id)
+      return res.status(404).json({ error: "Grid not found" });
+    if (g.published)
+      return res
+        .status(409)
+        .json({ error: "Published grids can only be forked." });
+    res.json(snapshot(jobs.pause(g), s));
+  });
+  app.post("/api/grids/:id/publish", (req, res) => {
+    const s = session(req, res),
+      g = store.get(String(req.params.id));
+    if (!g || g.owner !== s.id)
+      return res.status(404).json({ error: "Grid not found" });
+    if (
+      g.cells.some(
+        (cell) => cell.status !== "complete" && cell.status !== "error",
+      )
+    )
+      return res
+        .status(409)
+        .json({ error: "Wait for every cell to finish before publishing." });
+    g.published = true;
+    jobs.emit(g);
+    res.json(snapshot(g, s));
+  });
+  return app;
+}
