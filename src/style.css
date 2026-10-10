@@ -955,12 +955,6 @@ header {
     grid-column: auto;
     grid-row: auto;
   }
-  .grid-scroll {
-    touch-action: pan-x pan-y;
-  }
-  .cell iframe {
-    pointer-events: none;
-  }
 }
 
 .warning {
@@ -1136,4 +1130,11 @@ header {
 }
 .cell-tokens .lucide-arrow-up {
   margin-right: 4px;
+}
+
+.grid-scroll[data-touch="true"] {
+  touch-action: pan-x pan-y;
+}
+.grid-scroll[data-touch="true"] .cell iframe {
+  pointer-events: none;
 }

@@ -30,14 +30,15 @@ export function ZoomableGrid({
   useLayoutEffect(() => {
     const viewport = ref.current!,
       table = viewport.querySelector("table")!;
-    const mobile = matchMedia("(max-width: 700px)");
+    const touchPointer = matchMedia("(any-pointer: coarse)");
+    const hasTouch = () => navigator.maxTouchPoints > 0 || touchPointer.matches;
     let scale = 1;
     let gesture:
       | { distance: number; scale: number; minimum: number; anchor: Point }
       | undefined;
     let pinching = false;
     function start(event: TouchEvent) {
-      if (!mobile.matches || event.touches.length !== 2) return;
+      if (event.touches.length !== 2) return;
       const { center, distance } = fingers(event.touches);
       if (!distance) return;
       event.preventDefault();
@@ -86,6 +87,7 @@ export function ZoomableGrid({
       if (!event.touches.length) pinching = false;
     }
     function reset() {
+      viewport.dataset.touch = String(hasTouch());
       scale = 1;
       gesture = undefined;
       pinching = false;
@@ -94,7 +96,7 @@ export function ZoomableGrid({
         table.style.width = "";
         table.style.height = "";
       }
-      if (mobile.matches && viewport.clientWidth) {
+      if (hasTouch() && viewport.clientWidth) {
         if (!table.dataset.resized) {
           table.style.width = `${viewport.clientWidth}px`;
           table.style.height = `${viewport.clientHeight}px`;
@@ -115,14 +117,14 @@ export function ZoomableGrid({
     viewport.addEventListener("touchmove", move, { passive: false });
     viewport.addEventListener("touchend", end, { passive: false });
     viewport.addEventListener("touchcancel", end, { passive: false });
-    mobile.addEventListener("change", reset);
+    touchPointer.addEventListener("change", reset);
     return () => {
       resize.disconnect();
       viewport.removeEventListener("touchstart", start);
       viewport.removeEventListener("touchmove", move);
       viewport.removeEventListener("touchend", end);
       viewport.removeEventListener("touchcancel", end);
-      mobile.removeEventListener("change", reset);
+      touchPointer.removeEventListener("change", reset);
     };
   }, []);
   return (
