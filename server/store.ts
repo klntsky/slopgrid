@@ -1,3 +1,4 @@
+import { Billing } from "./billing.js";
 import Database from "better-sqlite3";
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { expandGrid, type Grid } from "./domain.js";
@@ -17,6 +18,7 @@ export type Session = {
 export class Store {
   db: Database.Database;
   files: OutputFiles;
+  billing: Billing;
   constructor(
     path: string,
     private secret: Buffer,
@@ -31,6 +33,7 @@ export class Store {
       this.db.pragma("journal_mode = WAL");
       this.db.pragma("foreign_keys = ON");
       migrate(this.db);
+      this.billing = new Billing(this.db);
       this.files = new OutputFiles(
         resolve(outputsPath ?? join(dirname(path), "outputs")),
       );
@@ -56,6 +59,7 @@ export class Store {
       ...cell,
       ...JSON.parse(cells[index].data),
       id: cells[index].id,
+      ...this.billing.cell(cells[index].id),
     }));
     return grid;
   }
@@ -71,7 +75,11 @@ export class Store {
       const saveCell = this.db.prepare(
         "INSERT INTO cells (id, grid_id, position, data) VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data",
       );
+      const hasCalls = this.db.prepare(
+        "SELECT 1 FROM inference_calls WHERE cell_id=? LIMIT 1",
+      );
       cells.forEach((cell, position) => {
+        const recorded = !!hasCalls.get(cell.id);
         const { status, error, errorCode, usage, mediaType, completions } =
           cell;
         saveCell.run(
@@ -82,9 +90,9 @@ export class Store {
             status,
             error,
             errorCode,
-            usage,
+            usage: recorded ? undefined : usage,
             mediaType,
-            completions,
+            completions: recorded ? undefined : completions,
           }),
         );
       });

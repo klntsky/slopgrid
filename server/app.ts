@@ -1,3 +1,4 @@
+import { createBillingRoutes } from "./routes/billing.js";
 import express from "express";
 import { Store } from "./store.js";
 import { Provider } from "./provider.js";
@@ -51,6 +52,7 @@ export function createApp(config: Config) {
     }),
   );
   app.use(createModelRoutes(provider));
+  app.use(createBillingRoutes(store, session));
   app.use(createGridRoutes({ store, provider, jobs, session, rate, snapshot }));
   app.use(createEventRoutes({ store, jobs, session, snapshot }));
   app.use("/api", (_req, res) => res.status(404).json({ error: "Not found" }));

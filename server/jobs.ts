@@ -227,6 +227,7 @@ export class Jobs {
           cell.completions = [...(cell.completions ?? []), completion];
           cell.usage = usage;
         },
+        this.store.billing.observe(cell.id),
       );
       if (controller.signal.aborted) return;
       this.store.files.write(cell.id, result.files);
@@ -278,6 +279,8 @@ export class Jobs {
         );
       }
     } finally {
+      const billing = this.store.billing.cell(cell.id);
+      if (billing) Object.assign(cell, billing);
       delete cell.draft;
       this.running.delete(cell.id);
       const remaining = (this.workersByOwner.get(grid.owner) ?? 1) - 1;

@@ -16,6 +16,20 @@ const migrations: readonly Migration[] = [
       CREATE TABLE sessions (id TEXT PRIMARY KEY, data TEXT NOT NULL) STRICT;
     `,
   },
+  {
+    version: 2,
+    sql: `
+      CREATE TABLE inference_calls (
+        id TEXT PRIMARY KEY,
+        cell_id TEXT NOT NULL REFERENCES cells(id),
+        attempt_id TEXT NOT NULL,
+        started_at INTEGER NOT NULL,
+        data TEXT NOT NULL
+      ) STRICT;
+      CREATE INDEX inference_calls_cell ON inference_calls(cell_id, started_at);
+      CREATE INDEX inference_calls_started ON inference_calls(started_at DESC, id DESC);
+    `,
+  },
 ];
 
 export function migrate(

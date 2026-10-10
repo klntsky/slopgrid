@@ -2,6 +2,7 @@ import type { Store } from "./store.js";
 
 /** Recover interrupted work once at application startup, without starting inference. */
 export function recoverInterruptedGrids(store: Store) {
+  store.billing.recover();
   for (const grid of store.all()) {
     if (grid.status !== "running") continue;
     grid.status = "paused";
