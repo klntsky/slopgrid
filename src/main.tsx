@@ -882,7 +882,11 @@ function GridPage() {
             <tbody>
               {g.input.rows.values.map((r, row) => (
                 <tr key={r}>
-                  <th scope="row">{displayValue(r, g.input.rows.kind)}</th>
+                  <th scope="row">
+                    <span className="row-label">
+                      {displayValue(r, g.input.rows.kind)}
+                    </span>
+                  </th>
                   {g.input.columns.values.map((_, column) => {
                     const cell = g.cells.find(
                       (c) => c.row === row && c.column === column,

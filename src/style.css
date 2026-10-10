@@ -466,7 +466,7 @@ legend {
 .output-grid th {
   background: #e9e3d7;
   padding: 16px;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 500;
   text-align: left;
   overflow-wrap: anywhere;
@@ -487,7 +487,15 @@ legend {
   min-width: var(--row-header-width);
   max-width: var(--row-header-width);
   width: var(--row-header-width);
-  vertical-align: top;
+  vertical-align: middle;
+  text-align: center;
+}
+.row-label {
+  display: inline-block;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  max-height: 330px;
+  text-align: center;
 }
 .output-grid thead .corner {
   left: 0;
@@ -563,9 +571,12 @@ legend {
   align-items: center;
   justify-content: space-between;
   padding: 9px 12px;
-  font-size: 11px;
+  font-size: 13px;
   color: #837967;
   gap: 10px;
+}
+.cell-footer small {
+  font-size: 12px;
 }
 .cell-footer a {
   text-decoration: none;
@@ -577,13 +588,13 @@ legend {
   justify-content: center;
   flex-direction: column;
   gap: 15px;
-  font-size: 13px;
+  font-size: 15px;
   color: #978a75;
   padding: 20px;
 }
 .pending pre {
   font:
-    11px/1.5 ui-monospace,
+    13px/1.5 ui-monospace,
     monospace;
   white-space: pre-wrap;
   overflow: auto;
@@ -594,7 +605,7 @@ legend {
 .cell-error {
   padding: 22px;
   color: #8b462f;
-  font-size: 13px;
+  font-size: 15px;
   line-height: 1.6;
 }
 .spinner {
