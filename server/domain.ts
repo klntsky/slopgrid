@@ -1,0 +1,158 @@
+import { z } from "zod";
+export const efforts = [
+  "none",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+] as const;
+export const kinds = ["model", "effort", "variable", "harness"] as const;
+const axis = z.object({
+  kind: z.enum(kinds),
+  values: z
+    .array(z.string().trim().min(1).max(500))
+    .min(1)
+    .max(8)
+    .refine((v) => new Set(v).size === v.length, "Values must be distinct"),
+});
+export const gridSchema = z
+  .object({
+    format: z.enum(["svg", "markdown", "html", "image"]),
+    prompt: z.string().trim().min(1).max(20000),
+    rows: axis,
+    columns: axis,
+    model: z.string().min(1).max(200),
+    effort: z.enum(efforts),
+    harness: z.enum(["direct", "review"]),
+  })
+  .superRefine((g, c) => {
+    const issue = (message: string) => c.addIssue({ code: "custom", message });
+    if (g.rows.kind === g.columns.kind && g.rows.kind !== "variable")
+      issue("Choose different row and column dimensions");
+    if (g.rows.values.length * g.columns.values.length > 64)
+      issue("Use at most 64 cells");
+    if (
+      g.format === "image" &&
+      ([g.rows.kind, g.columns.kind].includes("effort") ||
+        [g.rows.kind, g.columns.kind].includes("harness") ||
+        g.harness !== "direct")
+    )
+      issue("Images support model and prompt variable dimensions");
+    for (const a of [g.rows, g.columns]) {
+      if (
+        a.kind === "effort" &&
+        a.values.some((v) => !efforts.includes(v as (typeof efforts)[number]))
+      )
+        issue("Unknown thinking amount");
+      if (
+        a.kind === "harness" &&
+        a.values.some((v) => !["direct", "review"].includes(v))
+      )
+        issue("Unknown harness");
+    }
+    if (g.prompt.includes("$VARIABLE_ROW") && g.rows.kind !== "variable")
+      issue("Choose prompt variables for rows to use $VARIABLE_ROW");
+    if (g.prompt.includes("$VARIABLE_COLUMN") && g.columns.kind !== "variable")
+      issue("Choose prompt variables for columns to use $VARIABLE_COLUMN");
+  });
+export type GridInput = z.infer<typeof gridSchema>;
+export type Cell = {
+  id: string;
+  row: number;
+  column: number;
+  model: string;
+  effort: string;
+  harness: string;
+  prompt: string;
+  status: "pending" | "running" | "complete" | "error";
+  error?: string;
+  files?: Record<string, string>;
+  draft?: string;
+  usage?: { inputTokens?: number; outputTokens?: number };
+};
+export type Grid = {
+  revision: number;
+  id: string;
+  owner: string;
+  input: GridInput;
+  status: "running" | "paused" | "complete";
+  published: boolean;
+  interruption?: "billing" | "auth" | "restart";
+  cells: Cell[];
+  createdAt: string;
+};
+export function expandGrid(input: GridInput): Omit<Cell, "id">[] {
+  return input.rows.values.flatMap((r, row) =>
+    input.columns.values.map((c, column) => {
+      const selections: Record<string, string> = {
+        model: input.model,
+        effort: input.effort,
+        harness: input.harness,
+      };
+      for (const [a, v] of [
+        [input.rows, r],
+        [input.columns, c],
+      ] as const)
+        if (a.kind !== "variable") selections[a.kind] = v;
+      return {
+        row,
+        column,
+        ...selections,
+        model: selections.model,
+        effort: selections.effort,
+        harness: selections.harness,
+        prompt: input.prompt
+          .replaceAll("$VARIABLE_ROW", () => r)
+          .replaceAll("$VARIABLE_COLUMN", () => c),
+        status: "pending" as const,
+      };
+    }),
+  );
+}
+const extensions = new Set(["html", "css", "js", "json", "txt", "svg", "md"]);
+export function parseOutput(
+  format: GridInput["format"],
+  raw: string,
+): Record<string, string> {
+  const clean = raw
+    .trim()
+    .replace(/^```(?:\w+)?\s*\n/, "")
+    .replace(/\n```$/, "");
+  if (Buffer.byteLength(clean) > 2_000_000)
+    throw new Error("Output exceeds 2 MB");
+  if (format === "markdown") return { "index.md": clean };
+  if (format === "svg") {
+    if (!/^<svg[\s>]/i.test(clean) || !/<\/svg>\s*$/i.test(clean))
+      throw new Error("The model did not return an SVG");
+    return { "index.svg": clean };
+  }
+  if (format === "html") {
+    const parsed = z
+      .object({
+        files: z
+          .record(z.string(), z.string())
+          .refine((f) => Object.keys(f).length <= 40),
+      })
+      .parse(JSON.parse(clean));
+    if (!Object.hasOwn(parsed.files, "index.html"))
+      throw new Error("The bundle needs index.html");
+    for (const path of Object.keys(parsed.files))
+      if (
+        !/^[a-zA-Z0-9_-][a-zA-Z0-9_./-]*$/.test(path) ||
+        path.split("/").some((p) => p === "" || p === "." || p === "..") ||
+        !extensions.has(path.split(".").pop()!)
+      )
+        throw new Error("Use safe relative static file paths");
+    return parsed.files;
+  }
+  throw new Error("Images are returned as image data");
+}
+export function instruction(format: GridInput["format"]) {
+  return {
+    svg: "Return only a complete SVG element, without markdown fences.",
+    markdown: "Return Markdown.",
+    html: 'Return only a JSON object {"files":{"index.html":"...","style.css":"..."}} containing a complete static website. Use relative URLs for assets. Only html, css, js, json, txt, svg, md files; no server-side code. Include index.html.',
+    image: "Generate an image.",
+  }[format];
+}
