@@ -680,14 +680,15 @@ for (const viewport of [
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth),
     ).toBe(viewport.width);
-    const legend = page.getByRole("columnheader", { name: "Grid dimensions" });
-    await expect(legend.getByText("Columns", { exact: true })).toBeVisible();
-    await expect(legend.getByText("Rows", { exact: true })).toBeVisible();
-    const columns = (await legend
-        .getByText("Columns", { exact: true })
-        .boundingBox())!,
-      rows = (await legend.getByText("Rows", { exact: true }).boundingBox())!;
-    expect(rows.y).toBeGreaterThan(columns.y + columns.height);
+    const cornerCell = page.locator(".output-grid thead tr > :first-child");
+    await expect(cornerCell).toHaveText("");
+    await expect(cornerCell.locator("svg, img")).toHaveCount(0);
+    await expect(
+      page.getByRole("columnheader", { name: "hat", exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("rowheader", { name: "cat", exact: true }),
+    ).toBeVisible();
     await expect
       .poll(() =>
         page
@@ -696,7 +697,7 @@ for (const viewport of [
       )
       .toBeGreaterThan(0);
     const cell = (await page.locator(".cell").first().boundingBox())!,
-      corner = (await legend.boundingBox())!;
+      corner = (await cornerCell.boundingBox())!;
     expect(cell.width).toBeGreaterThanOrEqual(gridBox.width - corner.width - 2);
     expect(
       Math.abs(cell.y + cell.height - viewport.height),
@@ -1491,9 +1492,7 @@ for (const axis of ["Rows", "Columns"] as const) {
     const labels =
       axis === "Rows"
         ? page.getByRole("rowheader")
-        : page
-            .getByRole("columnheader")
-            .filter({ hasNot: page.locator(".axis-legend") });
+        : page.getByRole("columnheader").filter({ hasText: /\S/ });
     await expect(labels).toHaveText(["low", "high", "max"]);
     await page.reload();
     await expect(labels).toHaveText(["low", "high", "max"]);

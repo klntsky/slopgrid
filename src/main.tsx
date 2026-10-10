@@ -13,8 +13,6 @@ import {
   Plus,
   Search,
   ArrowUpRight,
-  ArrowDown,
-  ArrowRight,
   LoaderCircle,
   Pause,
   Play,
@@ -1028,24 +1026,7 @@ function GridPage() {
           <table className="output-grid">
             <thead>
               <tr>
-                <th className="corner" aria-label="Grid dimensions">
-                  <div className="axis-legend">
-                    <div className="axis-legend-entry">
-                      <ArrowRight aria-hidden="true" />
-                      <div>
-                        <small>Columns</small>
-                        <strong>{dimensionNames[g.input.columns.kind]}</strong>
-                      </div>
-                    </div>
-                    <div className="axis-legend-entry">
-                      <ArrowDown aria-hidden="true" />
-                      <div>
-                        <small>Rows</small>
-                        <strong>{dimensionNames[g.input.rows.kind]}</strong>
-                      </div>
-                    </div>
-                  </div>
-                </th>
+                <th className="corner" />
                 {g.input.columns.values.map((c) => (
                   <th scope="col" key={c}>
                     {g.input.columns.kind === "model" ? (

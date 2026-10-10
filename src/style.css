@@ -573,37 +573,6 @@ legend {
   min-width: var(--row-header-width);
   max-width: var(--row-header-width);
   width: var(--row-header-width);
-  font-size: 11px;
-  color: var(--muted);
-}
-.axis-legend {
-  display: grid;
-  gap: 12px;
-}
-.axis-legend-entry {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-}
-.axis-legend-entry .lucide {
-  width: 14px;
-  height: 14px;
-  margin-top: 2px;
-}
-.axis-legend-entry small,
-.axis-legend-entry strong {
-  display: block;
-  line-height: 1.4;
-}
-.axis-legend-entry small {
-  font-size: 10px;
-  color: var(--muted);
-  margin-bottom: 3px;
-}
-.axis-legend-entry strong {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text);
 }
 .output-grid td {
   position: relative;
