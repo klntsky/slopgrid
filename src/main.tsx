@@ -1,4 +1,17 @@
 import React, { useEffect, useState, useRef } from "react";
+import {
+  Grid2x2,
+  FileCode,
+  FileText,
+  PanelsTopLeft,
+  Image,
+  Plus,
+  Search,
+  ArrowUpRight,
+  ArrowDown,
+  ArrowRight,
+  LoaderCircle,
+} from "lucide-react";
 import { createRoot } from "react-dom/client";
 import {
   QueryClient,
@@ -27,16 +40,55 @@ function newestGrid(previous: unknown, incoming: unknown) {
 }
 const queryClient = new QueryClient();
 queryClient.setQueryDefaults(["grid"], { structuralSharing: newestGrid });
+function useGrids() {
+  return useQuery({
+    queryKey: ["grids"],
+    queryFn: () =>
+      api<{ id: string; prompt: string; status: string; published: boolean }[]>(
+        "/grids",
+      ),
+  });
+}
+function CreateGridButton() {
+  return (
+    <Link to="/" className="button primary create-grid-button">
+      <Plus aria-hidden="true" />
+      Create a grid
+    </Link>
+  );
+}
 function Layout() {
+  const history = useGrids(),
+    navigate = useNavigate();
   return (
     <>
       <header>
-        <Link to="/" className="wordmark">
-          slopgrid<span className="logo-grid">▦</span>
+        <Link
+          to={history.data?.length ? "/grids" : "/"}
+          className="wordmark"
+          aria-label="slopgrid"
+          onClick={async (event) => {
+            if (
+              history.data ||
+              event.button !== 0 ||
+              event.metaKey ||
+              event.ctrlKey ||
+              event.shiftKey ||
+              event.altKey
+            )
+              return;
+            event.preventDefault();
+            const result = await history.refetch();
+            await navigate({ to: result.data?.length ? "/grids" : "/" });
+          }}
+        >
+          slopgrid
+          <Grid2x2 className="logo-grid" aria-hidden="true" />
         </Link>
         <nav>
-          <Link to="/">Create a grid</Link>
+          <Link to="/grids">Your grids</Link>
           <Link to="/settings">Settings</Link>
+          <CreateGridButton />
         </nav>
       </header>
       <Outlet />
@@ -49,6 +101,11 @@ const createRoutePage = createRoute({
   path: "/",
   component: Create,
 });
+const gridsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/grids",
+  component: YourGrids,
+});
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/settings",
@@ -60,7 +117,12 @@ const gridRoute = createRoute({
   component: GridPage,
 });
 const router = createRouter({
-  routeTree: rootRoute.addChildren([createRoutePage, settingsRoute, gridRoute]),
+  routeTree: rootRoute.addChildren([
+    createRoutePage,
+    gridsRoute,
+    settingsRoute,
+    gridRoute,
+  ]),
 });
 declare module "@tanstack/react-router" {
   interface Register {
@@ -150,13 +212,6 @@ function Create() {
     queryFn: () => api<Model[]>("/models"),
     retry: 1,
   });
-  const history = useQuery({
-    queryKey: ["grids"],
-    queryFn: () =>
-      api<{ id: string; prompt: string; status: string; published: boolean }[]>(
-        "/grids",
-      ),
-  });
   useEffect(() => {
     sessionStorage.setItem("slopgrid-draft", JSON.stringify(draft));
   }, [draft]);
@@ -164,9 +219,13 @@ function Create() {
     setDraft((d) => ({ ...d, input: { ...d.input, ...partial } }));
     setError("");
   }
-  const models = (catalog.data ?? []).filter((m) =>
-    input.format === "image" ? m.image : m.text,
-  );
+  const models = (catalog.data ?? [])
+    .filter((m) => (input.format === "image" ? m.image : m.text))
+    .sort(
+      (a, b) =>
+        a.name.localeCompare(b.name, "en", { sensitivity: "base" }) ||
+        a.id.localeCompare(b.id, "en"),
+    );
   useEffect(() => {
     if (step >= 1 && !input.model && models.length) {
       const first = models[0];
@@ -217,6 +276,7 @@ function Create() {
     setError("");
     try {
       const g = await api<ViewGrid>("/grids", "POST", input);
+      await queryClient.invalidateQueries({ queryKey: ["grids"] });
       sessionStorage.removeItem("slopgrid-draft");
       await navigate({ to: "/grid/$id", params: { id: g.id } });
     } catch (e) {
@@ -236,21 +296,27 @@ function Create() {
           <h2>What do you want to generate?</h2>
         </div>
         <div className="formats">
-          {Object.entries(formatNames).map(([f, name]) => (
-            <button
-              key={f}
-              aria-pressed={step > 0 && input.format === f}
-              className={
-                step > 0 && input.format === f ? "format selected" : "format"
-              }
-              onClick={() => selectFormat(f as GridInput["format"])}
-            >
-              <span className="format-symbol" aria-hidden="true">
-                {{ svg: "◇", markdown: "M↓", html: "〈/〉", image: "▧" }[f]}
-              </span>
-              <span>{name}</span>
-            </button>
-          ))}
+          {Object.entries(formatNames).map(([f, name]) => {
+            const FormatIcon = {
+              svg: FileCode,
+              markdown: FileText,
+              html: PanelsTopLeft,
+              image: Image,
+            }[f as GridInput["format"]];
+            return (
+              <button
+                key={f}
+                aria-pressed={step > 0 && input.format === f}
+                className={
+                  step > 0 && input.format === f ? "format selected" : "format"
+                }
+                onClick={() => selectFormat(f as GridInput["format"])}
+              >
+                <FormatIcon className="format-symbol" aria-hidden="true" />
+                <span>{name}</span>
+              </button>
+            );
+          })}
         </div>
       </section>
       {step >= 1 && (
@@ -362,21 +428,23 @@ function Create() {
                   ? " · Draft and review makes two requests per cell."
                   : ""}
               </p>
-              <button
-                className="secondary"
-                onClick={() => {
-                  if (
-                    !input.rows.values.length ||
-                    !input.columns.values.length
-                  ) {
-                    setError("Add at least one value to each dimension.");
-                    return;
-                  }
-                  setDraft((d) => ({ ...d, step: Math.max(2, d.step) }));
-                }}
-              >
-                Continue to prompt
-              </button>
+              {step < 2 && (
+                <button
+                  className="secondary"
+                  onClick={() => {
+                    if (
+                      !input.rows.values.length ||
+                      !input.columns.values.length
+                    ) {
+                      setError("Add at least one value to each dimension.");
+                      return;
+                    }
+                    setDraft((d) => ({ ...d, step: Math.max(2, d.step) }));
+                  }}
+                >
+                  Continue to prompt
+                </button>
+              )}
             </>
           )}
         </section>
@@ -387,9 +455,10 @@ function Create() {
             <span className="number">03</span>
             <h2>Enter your prompt</h2>
           </div>
-          <label htmlFor="grid-prompt">Prompt</label>
+
           <textarea
             id="grid-prompt"
+            aria-label="Prompt"
             rows={6}
             value={input.prompt}
             onChange={(e) => update({ prompt: e.target.value })}
@@ -441,20 +510,40 @@ function Create() {
             onClick={generate}
           >
             {busy ? "Starting generation…" : "Generate"}
-            <span aria-hidden="true">↗</span>
+            <ArrowUpRight aria-hidden="true" />
           </button>
         </section>
       )}
       <ErrorMessage error={error} />
-      {!!history.data?.length && (
+    </main>
+  );
+}
+function YourGrids() {
+  const history = useGrids();
+  return (
+    <main>
+      <h1>Your grids</h1>
+      {history.isPending ? (
+        <p>Loading your grids…</p>
+      ) : history.isError ? (
+        <>
+          <ErrorMessage error={history.error.message} />
+          <button className="secondary" onClick={() => history.refetch()}>
+            Reload grids
+          </button>
+        </>
+      ) : (
         <section className="history">
-          <h2>Your grids</h2>
-          {history.data.map((g) => (
-            <Link to="/grid/$id" params={{ id: g.id }} key={g.id}>
-              <span>{g.prompt}</span>
-              <small>{g.published ? "Published" : g.status}</small>
-            </Link>
-          ))}
+          {history.data.length ? (
+            history.data.map((g) => (
+              <Link to="/grid/$id" params={{ id: g.id }} key={g.id}>
+                <span>{g.prompt}</span>
+                <small>{g.published ? "Published" : g.status}</small>
+              </Link>
+            ))
+          ) : (
+            <p>You haven’t created any grids yet.</p>
+          )}
         </section>
       )}
     </main>
@@ -516,8 +605,8 @@ function AxisEditor({
       </label>
       {axis.kind === "variable" ? (
         <label>
-          {label === "Rows" ? "Row values" : "Column values"}
           <textarea
+            aria-label={label === "Rows" ? "Row values" : "Column values"}
             rows={4}
             value={axis.values.join("\n")}
             onChange={(e) =>
@@ -527,17 +616,20 @@ function AxisEditor({
           <span className="hint">One value per line.</span>
         </label>
       ) : (
-        <fieldset>
-          <legend>{label === "Rows" ? "Row values" : "Column values"}</legend>
+        <fieldset
+          aria-label={label === "Rows" ? "Row values" : "Column values"}
+        >
           {axis.kind === "model" && (
-            <label>
-              Filter {label === "Rows" ? "row" : "column"} models
+            <div className="model-search">
+              <Search aria-hidden="true" />
               <input
                 type="search"
+                aria-label={`Filter ${label === "Rows" ? "row" : "column"} models`}
+                placeholder={`Filter ${label === "Rows" ? "row" : "column"} models`}
                 value={filter}
                 onChange={(e) => setFilter(e.target.value)}
               />
-            </label>
+            </div>
           )}
           <div
             className={`value-list${axis.kind === "model" ? " model-list" : ""}`}
@@ -721,7 +813,10 @@ function GridPage() {
             <tr>
               <th className="corner">
                 {dimensionNames[g.input.rows.kind]}
-                <span>↓ / →</span>
+                <span className="axis-directions">
+                  <ArrowDown aria-hidden="true" />
+                  <ArrowRight aria-hidden="true" />
+                </span>
                 {dimensionNames[g.input.columns.kind]}
               </th>
               {g.input.columns.values.map((c) => (
@@ -769,7 +864,7 @@ function GridPage() {
                                 target="_blank"
                                 rel="noreferrer"
                               >
-                                Open output ↗
+                                Open output <ArrowUpRight aria-hidden="true" />
                               </a>
                               {cell.usage && (
                                 <small>
@@ -785,7 +880,10 @@ function GridPage() {
                           <div className="pending" role="status">
                             {cell.status === "running" ? (
                               <>
-                                <span className="spinner" />
+                                <LoaderCircle
+                                  className="spinner"
+                                  aria-hidden="true"
+                                />
                                 Generating…
                                 {cell.draft && <pre>{cell.draft}</pre>}
                               </>

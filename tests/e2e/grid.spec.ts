@@ -86,7 +86,7 @@ for (const format of ["SVG", "Markdown", "Static website", "Image"])
     await expect(page.getByText("2 of 2 complete")).toBeVisible();
     const output = new URL(
       (await page
-        .getByRole("link", { name: "Open output ↗" })
+        .getByRole("link", { name: "Open output" })
         .first()
         .getAttribute("href"))!,
     );
@@ -196,7 +196,12 @@ test("row and column headers stay visible while scrolling a larger grid", async 
   request,
 }) => {
   await request.post("/fixture/reset", { data: { billing: false } });
-  await create(page, "Static website", "cat\ndog\nowl", "hat\ncape\nscarf\ncrown");
+  await create(
+    page,
+    "Static website",
+    "cat\ndog\nowl",
+    "hat\ncape\nscarf\ncrown",
+  );
   await expect(page.getByText("12 of 12 complete")).toBeVisible();
   const viewport = page.getByLabel("Generated output grid");
   const column = page.getByRole("columnheader", { name: "hat", exact: true }),
@@ -301,7 +306,7 @@ for (const format of ["SVG", "Markdown"])
     await create(page, format);
     await expect(page.getByText("2 of 2 complete")).toBeVisible();
     const output = (await page
-      .getByRole("link", { name: "Open output ↗" })
+      .getByRole("link", { name: "Open output" })
       .first()
       .getAttribute("href"))!;
     expect(new URL(output).origin).toBe("http://localhost:4317");
@@ -340,6 +345,15 @@ test("model choices start empty and filtering preserves deliberate selections", 
   await page.getByRole("button", { name: "SVG", exact: true }).click();
   await expect(page.locator('input[type="checkbox"]:checked')).toHaveCount(0);
   const columns = page.getByRole("group", { name: "Column values" });
+  await expect(columns.locator("label.checkbox")).toHaveText([
+    "Fixture text",
+    "Second model",
+  ]);
+  await expect(page.getByPlaceholder("Filter column models")).toBeVisible();
+  await expect(page.getByText("Row values", { exact: true })).toHaveCount(0);
+  await expect(
+    page.getByText("Filter column models", { exact: true }),
+  ).toHaveCount(0);
   await columns
     .getByRole("checkbox", { name: "Fixture text", exact: true })
     .check();
@@ -420,4 +434,66 @@ test("unused prompt variables block setup, later edits block generation, and the
   await page.getByRole("button", { name: "Generate", exact: true }).click();
   await expect(page.getByText("4 of 4 complete")).toBeVisible();
   await expect(page.getByText("Image GRID", { exact: true })).toHaveCount(0);
+});
+
+test("the logo opens the form for a new browser and Your grids after creation", async ({
+  page,
+  request,
+}) => {
+  await request.post("/fixture/reset", { data: { billing: false } });
+  await page.goto("/settings");
+  await page.getByRole("link", { name: "slopgrid", exact: true }).click();
+  await expect(page).toHaveURL("/");
+  const navbar = page.getByRole("navigation");
+  await navbar.getByRole("link", { name: "Your grids" }).click();
+  await expect(page).toHaveURL("/grids");
+  await expect(page.getByRole("heading", { name: "Your grids" })).toBeVisible();
+  await expect(
+    page.getByText("You haven’t created any grids yet."),
+  ).toBeVisible();
+  await navbar
+    .getByRole("link", { name: "Create a grid", exact: true })
+    .click();
+  await expect(page).toHaveURL("/");
+  await create(page, "Image", "cat", "hat");
+  await expect(page.getByText("1 of 1 complete")).toBeVisible();
+  const gridURL = page.url();
+  await navbar
+    .getByRole("link", { name: "Create a grid", exact: true })
+    .click();
+  await expect(page.getByRole("heading", { name: "Your grids" })).toHaveCount(
+    0,
+  );
+  await page.getByRole("link", { name: "slopgrid", exact: true }).click();
+  await expect(page).toHaveURL("/grids");
+  await page.reload();
+  await page
+    .getByRole("link", {
+      name: "Draw $VARIABLE_ROW wearing a $VARIABLE_COLUMN complete",
+    })
+    .click();
+  await expect(page).toHaveURL(gridURL);
+});
+
+test("the prompt step removes redundant controls while keeping an accessible prompt", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Image", exact: true }).click();
+  await page
+    .getByRole("combobox", { name: "Columns", exact: true })
+    .selectOption("variable");
+  await page.getByRole("button", { name: "Continue to prompt" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Enter your prompt" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Continue to prompt" }),
+  ).toHaveCount(0);
+  await expect(page.getByText("Prompt", { exact: true })).toHaveCount(0);
+  await page
+    .getByLabel("Prompt", { exact: true })
+    .fill("$VARIABLE_ROW $VARIABLE_COLUMN");
+  await page.getByRole("button", { name: "Continue to key setup" }).click();
+  await expect(page.getByRole("heading", { name: "Key setup" })).toBeVisible();
 });

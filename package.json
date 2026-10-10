@@ -18,6 +18,7 @@
     "ai": "7.0.136",
     "better-sqlite3": "13.0.3",
     "express": "5.2.1",
+    "lucide-react": "1.55.0",
     "marked": "18.1.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",

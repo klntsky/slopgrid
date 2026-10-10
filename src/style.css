@@ -94,7 +94,8 @@ header {
 }
 .logo-grid {
   color: #82755e;
-  font-size: 30px;
+  width: 30px;
+  height: 30px;
 }
 nav {
   display: flex;
@@ -166,8 +167,8 @@ section {
   background: #f3efe7;
 }
 .format-symbol {
-  font-family: ui-monospace, monospace;
-  font-size: 27px;
+  width: 28px;
+  height: 28px;
   color: #93846a;
 }
 .format.selected {
@@ -448,9 +449,7 @@ legend {
 .spinner {
   width: 22px;
   height: 22px;
-  border: 2px solid #d9d0bf;
-  border-top-color: #847251;
-  border-radius: 50%;
+  color: #847251;
   animation: spin 1s linear infinite;
 }
 @keyframes spin {
@@ -559,4 +558,77 @@ legend {
   width: 24px;
   height: auto;
   flex-shrink: 0;
+}
+
+.lucide {
+  flex-shrink: 0;
+}
+nav {
+  align-items: center;
+}
+.create-grid-button {
+  min-height: 50px;
+  padding: 14px 20px;
+  gap: 9px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.create-grid-button .lucide {
+  width: 20px;
+  height: 20px;
+}
+nav .create-grid-button[aria-current="page"] {
+  text-decoration: none;
+}
+.model-search {
+  position: relative;
+  margin-bottom: 12px;
+}
+.model-search .lucide {
+  position: absolute;
+  top: 50%;
+  left: 12px;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  color: #837967;
+  pointer-events: none;
+}
+.model-search input[type="search"] {
+  padding-left: 37px;
+}
+.corner .axis-directions {
+  display: flex;
+  gap: 8px;
+}
+.axis-directions .lucide {
+  width: 14px;
+  height: 14px;
+}
+.cell-footer a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.cell-footer a .lucide {
+  width: 14px;
+  height: 14px;
+}
+@media (max-width: 700px) {
+  header {
+    height: auto;
+    min-height: 72px;
+    flex-wrap: wrap;
+    gap: 16px;
+    padding-top: 16px;
+    padding-bottom: 16px;
+  }
+  nav {
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+  nav .create-grid-button {
+    margin-left: auto;
+  }
 }

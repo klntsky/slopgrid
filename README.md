@@ -4,7 +4,7 @@ Compare generated outputs in a grid. Choose models, thinking effort, prompt vari
 
 ## Create a grid
 
-1. Choose the output format.
+1. Select **Create a grid** in the navigation bar, then choose the output format.
 2. Choose what rows and columns represent, then select their values. Filter model lists by name or ID to find the models you want to compare. For prompt variables, enter one value per line. Image grids support models and prompt variables.
 3. Enter your prompt. Use `$VARIABLE_ROW` and `$VARIABLE_COLUMN` to insert each cell's row and column values when those dimensions are prompt variables. Each enabled variable must appear in the prompt before you can generate.
 4. Connect OpenRouter and select **Generate**.
@@ -21,7 +21,7 @@ If OpenRouter reports a billing problem, check your credits and key spending lim
 
 Select **Publish grid** after all cells finish, then **Copy link** to share the grid. Publishing makes the prompt, dimensions, and outputs accessible to anyone with the link. Published grids cannot be changed.
 
-Unpublished grids appear under **Your grids** in the browser where you created them. Keep that browser's cookies: ownership is tied to a 30-day browser session, with no separate slopgrid login or cross-device account. Each completed output has an unguessable URL that can be opened directly; anyone who receives that output URL can view it, even before the grid is published.
+Open **Your grids** in the navigation bar to find grids created in this browser. Selecting the slopgrid logo opens **Your grids** when you have created at least one grid, or the creation form when you have none. Keep that browser's cookies: ownership is tied to a 30-day browser session, with no separate slopgrid login or cross-device account. Each completed output has an unguessable URL that can be opened directly; anyone who receives that output URL can view it, even before the grid is published.
 
 ## OpenRouter settings
 

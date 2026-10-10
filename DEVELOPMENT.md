@@ -43,3 +43,7 @@ Development creates a local encryption key automatically. Changing the encryptio
 Each browser session can create ten grids and retry thirty times per hour; each client IP can create thirty grids per hour. API traffic is limited to 600 requests per client IP per minute, and generated outputs to 2,000 requests per client IP per minute. There are four concurrent grids globally and one per session, with cells processed sequentially within each grid. SSE is limited to five connections per session and 100 globally. These counters are in memory and reset on restart. Each provider request times out after three minutes, and SDK automatic retries are disabled.
 
 Text output is limited to 2 MB per cell. Website bundles must contain `index.html`, at most 40 files, and safe relative paths with html/css/js/json/txt/svg/md extensions. Image outputs are limited to 10 MB per cell. Models are discovered from OpenRouter and cached for five minutes; unsupported reasoning settings can produce a cell error, which is retryable. No automatic data retention or database cleanup runs. Sessions expire 30 days after creation. Treat output URLs as bearer capabilities, including before publication.
+
+## Icons
+
+Interface icons use `lucide-react`, under the [Lucide ISC license](https://lucide.dev/license), with MIT notices for icons derived from Feather. The distributed notices are included in `public/lucide-LICENSE.txt` and copied into the build. The OpenRouter connector uses its official brand asset.

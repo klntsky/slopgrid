@@ -173,7 +173,7 @@ app.post("/fixture/credits", (_req, res) => {
 });
 app.get("/fixture/calls", (_req, res) => res.json(calls));
 app.use(express.static("dist"));
-app.get(["/", "/settings", /^\/grid\/[a-f0-9]{48}$/], (_req, res) =>
+app.get(["/", "/grids", "/settings", /^\/grid\/[a-f0-9]{48}$/], (_req, res) =>
   res.sendFile("index.html", { root: "dist" }),
 );
 app.listen(4317, () => console.log("Fixture ready"));
