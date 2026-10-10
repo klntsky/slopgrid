@@ -4,7 +4,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { marked, Renderer } from "marked";
 import { gridSchema, expandGrid, type Grid } from "./domain.js";
 import { Store, type Session } from "./store.js";
-import { Provider, type Model } from "./provider.js";
+import { Provider } from "./provider.js";
 import { Jobs } from "./jobs.js";
 import { createHtmlHosts } from "./hosts.js";
 export type Config = {
@@ -183,12 +183,6 @@ export function createApp(config: Config) {
           : undefined,
     })),
   });
-  let catalog: { at: number; models: Model[] } | undefined;
-  async function models() {
-    if (!catalog || Date.now() - catalog.at > 300000)
-      catalog = { at: Date.now(), models: await provider.models() };
-    return catalog.models;
-  }
   app.get("/api/session", (req, res) => {
     const s = session(req, res);
     res.json({ connected: !!s.key });
@@ -201,7 +195,7 @@ export function createApp(config: Config) {
   });
   app.get("/api/models", async (_req, res) => {
     try {
-      res.json(await models());
+      res.json(await provider.models());
     } catch {
       res
         .status(502)
@@ -419,7 +413,7 @@ export function createApp(config: Config) {
   app.use("/api", (_req, res) => res.status(404).json({ error: "Not found" }));
   app.use(
     (
-      error: unknown,
+      _error: unknown,
       _req: express.Request,
       res: express.Response,
       _next: express.NextFunction,

@@ -72,7 +72,3 @@ sensible ratelimits
 ## safety
 
 arbitrary HTML bundles should be served from separate hosts. Images, Markdown, and SVG should use the application host. output hostnames should use a configurable suffix that keeps each production hostname within one DNS label, so a wildcard certificate can cover them. ensure the cookie policy is set up so that separate htmls never see each others cookies
-
-development rules:
-
-never editorialize the user-facing text. when you create new UX surfaces, summarize the user facing texts in the chat for me - I care deeply about the things the user see

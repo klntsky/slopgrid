@@ -12,6 +12,10 @@ pnpm dev
 
 Open http://localhost:3000. Chromium resolves HTML output hosts ending in `.localhost` to loopback. Images, Markdown, and SVG use paths on the application origin. OpenRouter OAuth supports localhost callbacks. The development server creates a SQLite database and encryption key under `.data/`; preserve both to retain sessions. No manually entered API-key flow exists.
 
+## Interface text
+
+Never editorialize user-facing text. When creating new UX surfaces, summarize the user-facing text in the conversation so the user can review it.
+
 ## Validation
 
 ```sh

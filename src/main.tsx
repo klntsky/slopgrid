@@ -528,9 +528,6 @@ function Create() {
                   </p>
                 </div>
               )}
-              {catalog.isError && (
-                <ErrorMessage error="Could not load OpenRouter models. Try again." />
-              )}
               {step < 2 && (
                 <button
                   className="secondary"

@@ -171,13 +171,6 @@ main {
   padding: 56px 28px 100px;
   margin: auto;
 }
-.eyebrow {
-  font-size: 11px;
-  letter-spacing: 2px;
-  color: var(--muted);
-  font-weight: 650;
-  margin: 0 0 16px;
-}
 h1 {
   font-size: 48px;
   font-weight: 500;
@@ -330,9 +323,6 @@ legend {
   background: var(--error-background);
   font-size: 14px;
   line-height: 1.5;
-}
-.history h2 {
-  margin-bottom: 20px;
 }
 .history > a {
   padding: 15px 0;
@@ -696,11 +686,7 @@ legend {
 }
 @media (max-width: 700px) {
   header {
-    height: 72px;
     padding: 0 20px;
-  }
-  nav {
-    gap: 18px;
   }
   main {
     padding: 36px 20px 70px;
@@ -817,11 +803,6 @@ nav .create-grid-button[aria-current="page"] {
     padding-top: 16px;
     padding-bottom: 16px;
   }
-  nav {
-    width: 100%;
-    flex-wrap: wrap;
-    gap: 16px;
-  }
 }
 
 .preview-status {
@@ -849,13 +830,6 @@ nav .create-grid-button[aria-current="page"] {
   .grid-layout > header {
     padding: 12px 16px;
     gap: 14px;
-  }
-  .grid-layout > header > nav {
-    grid-column: 1 / -1;
-    grid-row: 2;
-  }
-  .grid-header-slot {
-    grid-row: 3;
   }
   .grid-heading {
     gap: 10px;
@@ -987,9 +961,6 @@ header {
   .grid-layout > header > nav {
     grid-column: auto;
     grid-row: auto;
-  }
-  .grid-layout > header > .grid-header-slot {
-    grid-row: 2;
   }
   .grid-scroll {
     touch-action: pan-x pan-y;

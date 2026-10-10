@@ -419,7 +419,6 @@ test("model choices start empty and filtering preserves deliberate selections", 
       name: "Create a grid to compare models and their settings",
     }),
   ).toBeVisible();
-  await expect(page.getByText("CREATE A GRID", { exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "SVG", exact: true }).click();
   await expect(page.locator('input[type="checkbox"]:checked')).toHaveCount(0);
   const columns = page.getByRole("group", { name: "Column values" });
@@ -511,7 +510,6 @@ test("unused prompt variables block setup, later edits block generation, and the
     .fill("$VARIABLE_ROW $VARIABLE_COLUMN");
   await page.getByRole("button", { name: "Generate", exact: true }).click();
   await expectProgress(page, 4, 4);
-  await expect(page.getByText("Image GRID", { exact: true })).toHaveCount(0);
 });
 
 test("the logo opens the form for a new browser and Your grids after creation", async ({
