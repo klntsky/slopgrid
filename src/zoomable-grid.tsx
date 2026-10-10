@@ -1,4 +1,9 @@
-import { useEffect, useRef, type CSSProperties, type ReactNode } from "react";
+import {
+  useLayoutEffect,
+  useRef,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 
 type Point = { x: number; y: number };
 function fingers(touches: TouchList): { center: Point; distance: number } {
@@ -17,7 +22,7 @@ export function ZoomableGrid({
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const viewport = ref.current!,
       table = viewport.querySelector("table")!;
     const mobile = matchMedia("(max-width: 700px)");
@@ -80,7 +85,19 @@ export function ZoomableGrid({
       table.style.zoom = "";
       table.style.width = "";
       table.style.height = "";
+      if (mobile.matches && viewport.clientWidth) {
+        table.style.width = `${viewport.clientWidth}px`;
+        table.style.height = `${viewport.clientHeight}px`;
+        scale = Math.min(
+          1,
+          viewport.clientWidth / table.getBoundingClientRect().width,
+        );
+        table.style.zoom = String(scale);
+      }
+      viewport.scrollLeft = 0;
+      viewport.scrollTop = 0;
     }
+    reset();
     const resize = new ResizeObserver(reset);
     resize.observe(viewport);
     viewport.addEventListener("touchstart", start, { passive: false });

@@ -1026,6 +1026,11 @@ test.describe("mobile grid interaction", () => {
         header = page.getByRole("banner");
       const before = (await cell.boundingBox())!,
         headerBefore = (await header.boundingBox())!;
+      expect((await grid.locator("table").boundingBox())!.width).toBeCloseTo(
+        (await grid.boundingBox())!.width,
+        0,
+      );
+      expect(await grid.evaluate((element) => element.scrollLeft)).toBe(0);
       const client = await page.context().newCDPSession(page);
       async function touch(
         type: "touchStart" | "touchMove" | "touchEnd",
@@ -1051,6 +1056,14 @@ test.describe("mobile grid interaction", () => {
         .toBeGreaterThan(before.width * 1.4);
       expect((await header.boundingBox())!.height).toBe(headerBefore.height);
       expect(await page.evaluate(() => visualViewport!.scale)).toBe(1);
+      const left = await grid.evaluate((el) => el.scrollLeft);
+      await touch("touchStart", [{ x: 290, y: 620, id: 1 }]);
+      for (const nextX of [250, 200, 150, 100])
+        await touch("touchMove", [{ x: nextX, y: 620, id: 1 }]);
+      await touch("touchEnd", []);
+      await expect
+        .poll(() => grid.evaluate((el) => el.scrollLeft))
+        .toBeGreaterThan(left);
       await touch("touchStart", [
         { x: 190, y, id: 1 },
         { x: 350, y, id: 2 },
@@ -1062,15 +1075,7 @@ test.describe("mobile grid interaction", () => {
       await touch("touchEnd", []);
       await expect
         .poll(async () => (await cell.boundingBox())!.width)
-        .toBeLessThan(before.width * 0.8);
-      const top = await grid.evaluate((el) => el.scrollTop);
-      await touch("touchStart", [{ x: 290, y: 620, id: 1 }]);
-      for (const nextY of [580, 530, 480, 430])
-        await touch("touchMove", [{ x: 290, y: nextY, id: 1 }]);
-      await touch("touchEnd", []);
-      await expect
-        .poll(() => grid.evaluate((el) => el.scrollTop))
-        .toBeGreaterThan(top);
+        .toBeLessThan(before.width * (layout === "wide grid" ? 1.01 : 0.8));
       await expect(
         header.getByRole("button", { name: "PUBLISH" }),
       ).toBeEnabled();
@@ -1093,6 +1098,23 @@ test.describe("mobile grid interaction", () => {
         expect(fit).toBeGreaterThanOrEqual(0.99);
         expect(fit).toBeLessThanOrEqual(1.01);
       }
+      await page.setViewportSize({ width: 430, height: 844 });
+      await expect
+        .poll(async () =>
+          Math.abs(
+            (await grid.locator("table").boundingBox())!.width -
+              (await grid.boundingBox())!.width,
+          ),
+        )
+        .toBeLessThan(1);
+      await page.setViewportSize({ width: 1280, height: 844 });
+      await expect
+        .poll(() =>
+          grid
+            .locator("table")
+            .evaluate((element) => getComputedStyle(element).zoom),
+        )
+        .toBe("1");
     });
 });
 
