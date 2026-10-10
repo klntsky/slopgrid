@@ -2,17 +2,21 @@ import { generateText, generateImage, streamText, APICallError } from "ai";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { z } from "zod";
 import {
+  efforts,
   instruction,
   parseOutput,
   type Cell,
   type GridInput,
 } from "./domain.js";
+import { compatibilityIssues } from "./compatibility.js";
 export type Model = {
   id: string;
   name: string;
   image: boolean;
   text: boolean;
   reasoning: boolean;
+  reasoningMandatory: boolean;
+  reasoningEfforts?: GridInput["effort"][];
 };
 const costUsage = z.object({
   cost: z.number().finite().nonnegative().optional(),
@@ -44,6 +48,7 @@ export class Provider {
         output_modalities?: string[];
       };
       supported_parameters?: string[] | Record<string, unknown>;
+      reasoning?: { mandatory?: boolean; supported_efforts?: string[] | null };
     };
     const [textCatalog, imageCatalog] = await Promise.all(
       responses.map(
@@ -55,6 +60,26 @@ export class Provider {
     for (const m of [...textCatalog.data, ...imageCatalog.data]) {
       if (!m.architecture?.input_modalities?.includes("text")) continue;
       const previous = byId.get(m.id);
+      const parameters = Array.isArray(m.supported_parameters)
+        ? m.supported_parameters
+        : Object.keys(m.supported_parameters ?? {});
+      const reasoning =
+        !!m.reasoning ||
+        parameters.some((p) => p === "reasoning" || p === "reasoning_effort");
+      const mandatory = m.reasoning?.mandatory === true;
+      let reasoningEfforts: GridInput["effort"][] | undefined;
+      if (!reasoning) reasoningEfforts = ["none"];
+      else if (m.reasoning) {
+        const supported =
+          m.reasoning.supported_efforts === null
+            ? efforts
+            : (m.reasoning.supported_efforts ?? []);
+        reasoningEfforts = efforts.filter(
+          (e) =>
+            e !== "default" &&
+            (e === "none" ? !mandatory : supported.includes(e)),
+        );
+      }
       byId.set(m.id, {
         id: m.id,
         name: m.name,
@@ -63,11 +88,11 @@ export class Provider {
           previous?.text ||
           m.architecture.output_modalities?.includes("text") ||
           false,
-        reasoning:
-          previous?.reasoning ||
-          (Array.isArray(m.supported_parameters) &&
-            m.supported_parameters.includes("reasoning")) ||
-          false,
+        reasoning: previous?.reasoning || reasoning,
+        reasoningMandatory: previous?.reasoningMandatory || mandatory,
+        reasoningEfforts: previous?.reasoning
+          ? previous.reasoningEfforts
+          : reasoningEfforts,
       });
     }
     const models = [...byId.values()].filter((m) => m.text || m.image);
@@ -85,6 +110,9 @@ export class Provider {
     mediaType?: string;
     usage?: Cell["usage"];
   }> {
+    const models = await this.models();
+    const issues = compatibilityIssues([cell], format, models);
+    if (issues.length) throw new Error(issues.join("\n"));
     let imageCost: number | undefined;
     const provider = createOpenRouter({
       apiKey: key,
@@ -131,16 +159,20 @@ export class Provider {
         },
       };
     }
-    const supportsReasoning = (await this.models()).find(
+    const supportsReasoning = models.find(
       (m) => m.id === cell.model,
     )?.reasoning;
     const model = provider.chat(cell.model, {
-      extraBody: supportsReasoning
-        ? {
-            reasoning: { effort: cell.effort },
-            provider: { require_parameters: true },
-          }
-        : {},
+      extraBody:
+        supportsReasoning && cell.effort !== "default"
+          ? {
+              reasoning:
+                cell.effort === "none"
+                  ? { enabled: false }
+                  : { effort: cell.effort },
+              provider: { require_parameters: true },
+            }
+          : {},
     });
     const cancellation = new AbortController();
     const streamSignal = AbortSignal.any([

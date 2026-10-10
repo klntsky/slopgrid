@@ -6,6 +6,7 @@ import { gridSchema, expandGrid, type Grid } from "./domain.js";
 import { Store, type Session } from "./store.js";
 import { Provider, type Model } from "./provider.js";
 import { Jobs } from "./jobs.js";
+import { compatibilityIssues } from "./compatibility.js";
 import { createHtmlHosts } from "./hosts.js";
 export type Config = {
   origin: string;
@@ -299,37 +300,24 @@ export function createApp(config: Config) {
     const parsed = gridSchema.safeParse(req.body);
     if (!parsed.success)
       return res.status(400).json({ error: parsed.error.issues[0].message });
-    if (!rate(`create:${s.id}`, 10) || !rate(`create-ip:${req.ip}`, 30))
-      return res
-        .status(429)
-        .json({ error: "Grid limit reached. Try again in an hour." });
     const cells = expandGrid(parsed.data).map((c) => ({ ...c, id: token() }));
     try {
-      const catalog = await models();
-      for (const c of cells) {
-        const m = catalog.find((m) => m.id === c.model);
-        if (
-          !m ||
-          (parsed.data.format === "image" && !m.image) ||
-          (parsed.data.format !== "image" && !m.text)
-        )
-          return res
-            .status(400)
-            .json({ error: "Select a model for this output format." });
-        if (
-          parsed.data.format !== "image" &&
-          !m.reasoning &&
-          c.effort !== "none"
-        )
-          return res.status(400).json({
-            error: "This model does not support thinking effort. Select None.",
-          });
-      }
+      const issues = compatibilityIssues(
+        cells,
+        parsed.data.format,
+        await models(),
+      );
+      if (issues.length)
+        return res.status(400).json({ error: issues.join("\n"), issues });
     } catch {
       return res
         .status(502)
         .json({ error: "Could not load OpenRouter models. Try again." });
     }
+    if (!rate(`create:${s.id}`, 10) || !rate(`create-ip:${req.ip}`, 30))
+      return res
+        .status(429)
+        .json({ error: "Grid limit reached. Try again in an hour." });
     const g: Grid = {
       revision: 0,
       id: token(),
@@ -351,7 +339,7 @@ export function createApp(config: Config) {
       return res.status(404).json({ error: "Grid not found" });
     res.json(snapshot(jobs.active.get(g.id) ?? g, s));
   });
-  app.post("/api/grids/:id/retry", (req, res) => {
+  app.post("/api/grids/:id/retry", async (req, res) => {
     const s = session(req, res),
       g = store.get(String(req.params.id));
     if (!g || g.owner !== s.id)
@@ -366,6 +354,21 @@ export function createApp(config: Config) {
         .json({ error: "Reconnect OpenRouter to continue." });
     const current = jobs.active.get(g.id);
     if (current?.status === "running") return res.json(snapshot(current, s));
+    try {
+      const issues = compatibilityIssues(
+        g.cells.filter(
+          (c) => c.status !== "complete" && c.status !== "running",
+        ),
+        g.input.format,
+        await models(),
+      );
+      if (issues.length)
+        return res.status(400).json({ error: issues.join("\n"), issues });
+    } catch {
+      return res
+        .status(502)
+        .json({ error: "Could not load OpenRouter models. Try again." });
+    }
     if (!rate(`retry:${s.id}`, 30))
       return res
         .status(429)

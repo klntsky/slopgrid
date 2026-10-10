@@ -1026,3 +1026,27 @@ header {
     pointer-events: none;
   }
 }
+
+.warning {
+  border: 1px solid var(--selected-border);
+  border-radius: 5px;
+  padding: 16px 18px;
+  margin: 16px 0;
+  background: var(--selected);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.warning p {
+  margin: 0 0 8px;
+  font-weight: 500;
+}
+.warning ul {
+  margin: 0;
+  padding-left: 20px;
+}
+.warning li + li {
+  margin-top: 8px;
+}
+.error {
+  white-space: pre-line;
+}

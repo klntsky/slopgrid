@@ -40,7 +40,8 @@ import {
   useLocation,
 } from "@tanstack/react-router";
 import type { GridInput } from "../server/domain";
-import { efforts, unusedVariableIssue } from "../server/domain";
+import { efforts, expandGrid, unusedVariableIssue } from "../server/domain";
+import { compatibilityIssues, effortLabel } from "../server/compatibility";
 import type { Model } from "../server/provider";
 import { api, type ViewGrid } from "./api";
 import { SvgPreview } from "./svg-preview-image";
@@ -268,7 +269,7 @@ const initial: Draft = {
     rows: { kind: "effort", values: [] },
     columns: { kind: "model", values: [] },
     model: "",
-    effort: "medium",
+    effort: "default",
     harness: "direct",
   },
 };
@@ -315,7 +316,7 @@ function Create() {
         input: {
           ...d.input,
           model: first.id,
-          effort: first.reasoning ? "medium" : "none",
+          effort: "default",
         },
       }));
     }
@@ -331,7 +332,7 @@ function Create() {
         ...d.input,
         format,
         model: first?.id ?? "",
-        effort: first?.reasoning ? "medium" : "none",
+        effort: "default",
         harness: "direct",
         rows:
           format === "image"
@@ -347,7 +348,11 @@ function Create() {
     }));
     setError("");
   }
+  const incompatibilities = catalog.data
+    ? compatibilityIssues(expandGrid(input), input.format, catalog.data)
+    : [];
   async function generate() {
+    if (incompatibilities.length || !catalog.data) return;
     const issue = unusedVariableIssue(input);
     if (issue) {
       setError(issue);
@@ -437,10 +442,8 @@ function Create() {
                   <select
                     value={input.model}
                     onChange={(e) => {
-                      const m = models.find((m) => m.id === e.target.value);
                       update({
                         model: e.target.value,
-                        effort: m?.reasoning ? input.effort : "none",
                       });
                     }}
                   >
@@ -472,7 +475,7 @@ function Create() {
                       >
                         {efforts.map((e) => (
                           <option key={e} value={e}>
-                            {e === "none" ? "None" : e}
+                            {effortLabel(e)}
                           </option>
                         ))}
                       </select>
@@ -509,9 +512,23 @@ function Create() {
                   ? " · Draft and review makes two requests per cell."
                   : ""}
               </p>
+              {incompatibilities.length > 0 && (
+                <div className="warning" role="alert">
+                  <p>These model settings are incompatible:</p>
+                  <ul>
+                    {incompatibilities.map((issue) => (
+                      <li key={issue}>{issue}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {catalog.isError && (
+                <ErrorMessage error="Could not load OpenRouter models. Try again." />
+              )}
               {step < 2 && (
                 <button
                   className="secondary"
+                  disabled={incompatibilities.length > 0 || !catalog.data}
                   onClick={() => {
                     if (
                       !input.rows.values.length ||
@@ -586,7 +603,9 @@ function Create() {
               busy ||
               !connection.data?.connected ||
               !input.prompt.trim() ||
-              !!unusedVariableIssue(input)
+              !!unusedVariableIssue(input) ||
+              !catalog.data ||
+              incompatibilities.length > 0
             }
             onClick={generate}
           >
@@ -652,7 +671,7 @@ function AxisEditor({
     axis.kind === "model"
       ? models.map((m) => ({ id: m.id, name: m.name }))
       : axis.kind === "effort"
-        ? efforts.map((e) => ({ id: e, name: e === "none" ? "None" : e }))
+        ? efforts.map((e) => ({ id: e, name: effortLabel(e) }))
         : [
             { id: "direct", name: "Single pass" },
             { id: "review", name: "Draft and review" },
@@ -1130,6 +1149,7 @@ function BillingDialog({
   );
 }
 function displayValue(value: string, kind: GridInput["rows"]["kind"]) {
+  if (kind === "effort") return effortLabel(value);
   if (kind === "harness")
     return value === "review" ? "Draft and review" : "Single pass";
   return value;

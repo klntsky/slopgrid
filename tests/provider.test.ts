@@ -1,0 +1,170 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { createServer } from "node:http";
+import { once } from "node:events";
+import { Provider } from "../server/provider.js";
+import type { Cell } from "../server/domain.js";
+
+async function upstream() {
+  const requests: Record<string, unknown>[] = [];
+  const catalog = [
+    {
+      id: "required",
+      reasoning: { mandatory: true, supported_efforts: ["low", "high"] },
+    },
+    { id: "all", reasoning: { mandatory: false, supported_efforts: null } },
+    { id: "fixed", reasoning: { mandatory: true } },
+    { id: "router" },
+  ].map((m) => ({
+    ...m,
+    name: m.id,
+    architecture: { input_modalities: ["text"], output_modalities: ["text"] },
+    supported_parameters: ["reasoning", "reasoning_effort"],
+  }));
+  const server = createServer(async (req, res) => {
+    if (req.url === "/models" || req.url === "/images/models") {
+      res.setHeader("Content-Type", "application/json");
+      return res.end(
+        JSON.stringify({
+          data:
+            req.url === "/models"
+              ? catalog
+              : [
+                  {
+                    id: "image",
+                    name: "Image model",
+                    architecture: {
+                      input_modalities: ["text"],
+                      output_modalities: ["image"],
+                    },
+                    supported_parameters: { n: { type: "integer" } },
+                  },
+                ],
+        }),
+      );
+    }
+    let body = "";
+    for await (const chunk of req) body += chunk;
+    requests.push(JSON.parse(body));
+    res.setHeader("Content-Type", "text/event-stream");
+    const base = {
+      id: "test",
+      object: "chat.completion.chunk",
+      created: 0,
+      model: "test",
+    };
+    res.end(
+      `data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: { content: "# Output" }, finish_reason: null }] })}\n\ndata: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } })}\n\ndata: [DONE]\n\n`,
+    );
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const provider = new Provider(
+    `http://127.0.0.1:${(server.address() as { port: number }).port}`,
+  );
+  return {
+    provider,
+    requests,
+    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+  };
+}
+function cell(model: string, effort: string): Cell {
+  return {
+    id: "cell",
+    row: 0,
+    column: 0,
+    model,
+    effort,
+    harness: "direct",
+    prompt: "Draw a cat",
+    status: "running",
+  };
+}
+test("catalog discovery distinguishes explicit, unrestricted, fixed, and unknown reasoning capabilities", async () => {
+  const h = await upstream();
+  try {
+    const models = await h.provider.models();
+    assert.equal(models.find((m) => m.id === "image")!.image, true);
+    assert.deepEqual(
+      models.find((m) => m.id === "required")!.reasoningEfforts,
+      ["low", "high"],
+    );
+    assert.equal(
+      models.find((m) => m.id === "required")!.reasoningMandatory,
+      true,
+    );
+    assert.ok(
+      models.find((m) => m.id === "all")!.reasoningEfforts!.includes("minimal"),
+    );
+    assert.ok(
+      models.find((m) => m.id === "all")!.reasoningEfforts!.includes("none"),
+    );
+    assert.deepEqual(
+      models.find((m) => m.id === "fixed")!.reasoningEfforts,
+      [],
+    );
+    assert.equal(
+      models.find((m) => m.id === "router")!.reasoningEfforts,
+      undefined,
+    );
+  } finally {
+    await h.close();
+  }
+});
+test("validated settings reach the request correctly and invalid efforts never call inference", async () => {
+  const h = await upstream();
+  try {
+    await h.provider.generate(
+      "fixture-key",
+      "markdown",
+      cell("required", "default"),
+      () => {},
+    );
+    await h.provider.generate(
+      "fixture-key",
+      "markdown",
+      cell("all", "none"),
+      () => {},
+    );
+    await h.provider.generate(
+      "fixture-key",
+      "markdown",
+      cell("required", "high"),
+      () => {},
+    );
+    assert.equal(h.requests[0].reasoning, undefined);
+    assert.deepEqual(h.requests[1].reasoning, { enabled: false });
+    assert.deepEqual(h.requests[2].reasoning, { effort: "high" });
+    assert.deepEqual(h.requests[2].provider, { require_parameters: true });
+    await assert.rejects(
+      h.provider.generate(
+        "fixture-key",
+        "markdown",
+        cell("required", "none"),
+        () => {},
+      ),
+      /requires thinking/,
+    );
+    await assert.rejects(
+      h.provider.generate(
+        "fixture-key",
+        "markdown",
+        cell("required", "max"),
+        () => {},
+      ),
+      /max/,
+    );
+    await assert.rejects(
+      h.provider.generate(
+        "fixture-key",
+        "markdown",
+        cell("fixed", "high"),
+        () => {},
+      ),
+      /high/,
+    );
+    assert.equal(h.requests.length, 3);
+  } finally {
+    await h.close();
+  }
+});

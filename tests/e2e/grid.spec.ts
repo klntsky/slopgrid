@@ -1116,3 +1116,66 @@ test("model IDs in outputs and model legends copy to the real clipboard", async 
     .poll(() => page.evaluate(() => navigator.clipboard.readText()))
     .toBe("fixture/text");
 });
+
+test("unsupported model efforts are explained before generation and API bypasses make no inference calls", async ({
+  page,
+  request,
+}) => {
+  await request.post("/fixture/reset", { data: { billing: false } });
+  await create(page, "SVG", "cat", "hat");
+  await expectProgress(page, 1, 1);
+  const callsBefore = await (await request.get("/fixture/calls")).json();
+  await page.goto("/");
+  await page.getByRole("button", { name: "SVG", exact: true }).click();
+  await page
+    .getByRole("combobox", { name: "Rows", exact: true })
+    .selectOption("effort");
+  const rows = page.getByRole("group", { name: "Row values" });
+  await rows.getByRole("checkbox", { name: "None", exact: true }).check();
+  await rows.getByRole("checkbox", { name: "max", exact: true }).check();
+  await page
+    .getByRole("group", { name: "Column values" })
+    .getByRole("checkbox", { name: "Second model", exact: true })
+    .check();
+  const warning = page.getByRole("alert");
+  await expect(warning).toContainText("Second model (fixture/other)");
+  await expect(warning).toContainText("requires thinking");
+  await expect(warning).toContainText('"max"');
+  await expect(warning).toContainText("low, medium, high");
+
+  await expect(
+    page.getByRole("button", { name: "Continue to prompt" }),
+  ).toBeDisabled();
+  const invalid = {
+    format: "svg",
+    prompt: "Draw a cat",
+    rows: { kind: "effort", values: ["none", "max"] },
+    columns: { kind: "model", values: ["fixture/other"] },
+    model: "fixture/text",
+    effort: "default",
+    harness: "direct",
+  };
+  const rejected = await page.request.post("/api/grids", { data: invalid });
+  expect(rejected.status()).toBe(400);
+  expect((await rejected.json()).issues).toHaveLength(2);
+  expect(await (await request.get("/fixture/calls")).json()).toEqual(
+    callsBefore,
+  );
+  await rows.getByRole("checkbox", { name: "None", exact: true }).uncheck();
+  await rows.getByRole("checkbox", { name: "max", exact: true }).uncheck();
+  await rows.getByRole("checkbox", { name: "high", exact: true }).check();
+  await expect(warning).toHaveCount(0);
+  await page.getByRole("button", { name: "Continue to prompt" }).click();
+  await page.getByLabel("Prompt", { exact: true }).fill("Draw a cat");
+  await page.getByRole("button", { name: "Continue to key setup" }).click();
+  await expect(
+    page.getByRole("button", { name: "Generate", exact: true }),
+  ).toBeEnabled();
+  await rows.getByRole("checkbox", { name: "max", exact: true }).check();
+  await expect(
+    page.getByRole("button", { name: "Generate", exact: true }),
+  ).toBeDisabled();
+  await rows.getByRole("checkbox", { name: "max", exact: true }).uncheck();
+  await page.getByRole("button", { name: "Generate", exact: true }).click();
+  await expectProgress(page, 1, 1);
+});

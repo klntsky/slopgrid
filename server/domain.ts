@@ -1,6 +1,8 @@
 import { z } from "zod";
 export const efforts = [
+  "default",
   "none",
+  "minimal",
   "low",
   "medium",
   "high",
