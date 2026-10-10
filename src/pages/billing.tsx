@@ -52,6 +52,7 @@ export function Billing() {
                 <thead>
                   <tr>
                     <th>Started</th>
+                    <th>Grid</th>
                     <th>Model</th>
                     <th>Call</th>
                     <th>Status</th>
@@ -68,9 +69,17 @@ export function Billing() {
                         </time>
                       </td>
                       <td>
-                        <Link to="/grid/$id" params={{ id: call.gridId }}>
-                          {call.model}
+                        <Link
+                          to="/grid/$id"
+                          params={{ id: call.gridId }}
+                          className="billing-grid-link"
+                          title={call.gridPrompt}
+                        >
+                          {call.gridPrompt}
                         </Link>
+                      </td>
+                      <td>
+                        {call.model}
                         <small>{call.effort}</small>
                       </td>
                       <td>{call.phase}</td>

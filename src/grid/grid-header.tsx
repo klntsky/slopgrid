@@ -20,10 +20,13 @@ export function GridHeader({
       ? `${finished} of ${g.cells.length} outputs finished: ${complete} complete, ${failed} failed`
       : `${complete} of ${g.cells.length} outputs complete`;
   const reportedCosts = g.cells.flatMap((cell) =>
-    cell.usage?.costUsd === undefined ? [] : [cell.usage.costUsd],
+    (cell.status === "complete" || cell.status === "error") &&
+    cell.usage?.costUsd !== undefined
+      ? [cell.usage.costUsd]
+      : [],
   );
   const totalCost =
-    reportedCosts.length || complete === 0
+    reportedCosts.length || finished === 0
       ? reportedCosts.reduce((sum, cost) => sum + cost, 0)
       : undefined;
   const totalCostText =
@@ -108,7 +111,7 @@ export function GridHeader({
           <span
             className="grid-cost"
             aria-label={`Total reported cost: ${totalCostText}`}
-            title="Total reported cost of completed inference calls; excludes unavailable charges and previous retry attempts"
+            title="Total reported cost of the displayed outputs and failures; excludes unfinished outputs, unavailable charges, and previous retry attempts"
           >
             {totalCostText}
             {inferenceRunning && (

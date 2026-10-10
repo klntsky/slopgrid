@@ -19,7 +19,7 @@ The grid fills the page below the header, which shows your prompt, a generation 
 
 On devices with a touchscreen, the grid starts scaled to fit the available width, regardless of screen size. Pinch with two fingers inside the grid to zoom the table, then swipe with one finger to scroll. The header stays at its normal size, and zooming out stops when the table fits within the available width and height. Zoom resets to fit the width when the grid viewport changes size. Website and Markdown previews let these gestures reach the grid; use the **Open output** arrow icon to interact with a generated website or scroll a Markdown document separately.
 
-The total reported cost appears beside the grid title, with animated dots while generation runs, and updates as outputs complete. It includes reported charges from failed completions, and excludes unavailable charges and previous retry attempts. Each completed cell shows input tokens with an upward arrow, output tokens with a downward arrow, and its OpenRouter-reported cost in dollars; draft and review includes both requests. If any request lacks a reported charge, the cost is shown as unavailable. Calls that end unsuccessfully appear as cell failures, and their reported costs remain included in the grid total. Unreported charges and previous retry attempts are not included.
+The total reported cost appears beside the grid title, with animated dots while generation runs, and updates as outputs complete. It includes only the latest attempt for displayed completed or failed outputs, excluding unfinished outputs, unavailable charges, and earlier retry attempts. Each completed cell shows input tokens with an upward arrow, output tokens with a downward arrow, and its OpenRouter-reported cost in dollars; draft and review includes both requests. If any request lacks a reported charge, the cost is shown as unavailable. Calls that end unsuccessfully appear as cell failures, and their reported costs remain included in the grid total. Unreported charges and previous retry attempts are not included.
 
 Use the pause button beside the prompt to stop unfinished requests and discard partial previews, then select resume to generate the unfinished cells again. Completed outputs are preserved.
 
@@ -37,7 +37,7 @@ Select the slopgrid logo to find grids created in this browser; the grid list al
 
 ## Billing history
 
-Open **BILLING** to see every recorded inference attempt, including automatic retries, failures, cancellations, and separate draft and review calls. Each entry links to its grid and shows its status, reported token usage, cost, and any error code and message. The total includes all reported charges in this history; missing charges are marked unavailable rather than counted as free. History is private to this browser session and begins when call recording is enabled; earlier requests are not reconstructed.
+Open **BILLING** to see every recorded inference attempt, including automatic retries, failures, cancellations, and separate draft and review calls. Each entry identifies its grid by the prompt and links to it and shows its status, reported token usage, cost, and any error code and message. The total includes all reported charges in this history; missing charges are marked unavailable rather than counted as free. History is private to this browser session and begins when call recording is enabled; earlier requests are not reconstructed.
 
 ## OpenRouter settings
 

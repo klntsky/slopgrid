@@ -25,6 +25,7 @@ export type BillingCall = Omit<CallDetails, "completion"> & {
   id: string;
   startedAt: number;
   gridId: string;
+  gridPrompt: string;
   model: string;
   effort: string;
 };
@@ -152,12 +153,14 @@ export class Billing {
         const { completion: _completion, ...details } = JSON.parse(
           row.data,
         ) as CallDetails;
-        const cell = expandGrid(JSON.parse(row.grid_data).input)[row.position];
+        const grid = JSON.parse(row.grid_data);
+        const cell = expandGrid(grid.input)[row.position];
         return {
           ...details,
           id: row.id,
           startedAt: row.started_at,
           gridId: row.grid_id,
+          gridPrompt: grid.input.prompt,
           model: cell.model,
           effort: cell.effort,
         };

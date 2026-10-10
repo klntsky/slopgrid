@@ -48,3 +48,11 @@
 .billing-pagination {
   margin-top: 1rem;
 }
+
+.billing-grid-link {
+  display: block;
+  max-width: 18rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
