@@ -505,7 +505,6 @@ legend {
   margin-left: 14px;
 }
 .grid-scroll {
-  --row-header-width: 155px;
   flex: 1;
   min-width: 0;
   min-height: 0;
@@ -518,9 +517,9 @@ legend {
 }
 .output-grid {
   border-spacing: 0;
-  table-layout: fixed;
+  table-layout: auto;
   width: 100%;
-  min-width: calc(var(--row-header-width) + var(--grid-columns) * 340px);
+  min-width: calc(var(--grid-columns) * 340px);
   height: 100%;
 }
 .output-grid th {
@@ -544,9 +543,8 @@ legend {
   position: sticky;
   left: 0;
   z-index: 2;
-  min-width: var(--row-header-width);
-  max-width: var(--row-header-width);
-  width: var(--row-header-width);
+  min-width: 0;
+  width: 1px;
   vertical-align: middle;
   text-align: center;
 }
@@ -560,9 +558,8 @@ legend {
 .output-grid thead .corner {
   left: 0;
   z-index: 4;
-  min-width: var(--row-header-width);
-  max-width: var(--row-header-width);
-  width: var(--row-header-width);
+  min-width: 0;
+  width: 1px;
 }
 .output-grid td {
   position: relative;
@@ -713,9 +710,6 @@ legend {
   }
   .actions {
     flex-wrap: wrap;
-  }
-  .grid-scroll {
-    --row-header-width: 140px;
   }
   .output-grid tbody th,
   .output-grid thead .corner {

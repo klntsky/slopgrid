@@ -696,6 +696,21 @@ for (const viewport of [
       .toBeGreaterThan(0);
     const cell = (await page.locator(".cell").first().boundingBox())!,
       corner = (await cornerCell.boundingBox())!;
+    const rowLabel = page.getByRole("rowheader", { name: "cat", exact: true });
+    const contentWidth = (await rowLabel.locator(".row-label").boundingBox())!
+      .width;
+    const padding = await rowLabel.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return (
+        parseFloat(style.paddingLeft) +
+        parseFloat(style.paddingRight) +
+        parseFloat(style.borderRightWidth)
+      );
+    });
+    expect(corner.width).toBeCloseTo(contentWidth + padding, 0);
+    expect(
+      (await page.locator(".output-grid").boundingBox())!.width,
+    ).toBeCloseTo(Math.max(viewport.width, 340 + corner.width), 0);
     expect(cell.width).toBeGreaterThanOrEqual(gridBox.width - corner.width - 2);
     expect(
       Math.abs(cell.y + cell.height - viewport.height),
