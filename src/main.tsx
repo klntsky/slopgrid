@@ -1132,9 +1132,6 @@ function GridPage() {
                     return (
                       <td key={column}>
                         <article className="cell">
-                          <div className="cell-model">
-                            <ModelName model={cell.model} />
-                          </div>
                           {cell.status === "complete" ? (
                             <>
                               {g.input.format === "image" ||
