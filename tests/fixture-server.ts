@@ -181,7 +181,7 @@ upstream.post("/api/v1/chat/completions", async (req, res) => {
     return res
       .status(402)
       .json({ error: { code: 402, message: "Insufficient credits" } });
-  const text = system.includes("complete SVG")
+  const text = system.includes("image/svg+xml")
     ? unsafe
       ? '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><script>window.unsafeOutput=true;parent.unsafeOutput=true;document.cookie="svg_escape=1;path=/";fetch("http://localhost:4317/svg-probe?script")</script><image href="http://localhost:4317/svg-probe?image" width="10" height="10"/><circle cx="100" cy="100" r="70"/></svg>'
       : '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><circle cx="100" cy="100" r="70" fill="tan"/></svg>'
@@ -222,7 +222,7 @@ upstream.post("/api/v1/chat/completions", async (req, res) => {
       },
     });
   res.set("Content-Type", "text/event-stream");
-  if (svgStreaming && system.includes("complete SVG")) {
+  if (svgStreaming && system.includes("image/svg+xml")) {
     const chunks = [
       '```svg\n<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><g><script>window.unsafeOutput=true;document.cookie="svg_escape=1;path=/";fetch("http://localhost:4317/svg-probe?script")</script><image href="http://localhost:4317/svg-probe?image" width="1" height="1"/><rect width="200" height="200" fill="red',
       '"/><circle cx="100" cy="100" r="70" fill="blue',

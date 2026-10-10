@@ -87,9 +87,9 @@ test("billing can be dismissed and retried repeatedly without regenerating compl
   const publicPage = await stranger.newPage();
   await publicPage.goto(url);
   await expectProgress(publicPage, 2, 2);
-  await expect(
-    publicPage.getByText("$0.000123 USD", { exact: true }),
-  ).toHaveCount(2);
+  await expect(publicPage.getByText("$0.000123", { exact: true })).toHaveCount(
+    2,
+  );
   await expect(publicPage.getByRole("button", { name: "PUBLISH" })).toHaveCount(
     0,
   );
@@ -105,19 +105,15 @@ for (const format of ["SVG", "Markdown", "Static website", "Image"])
     await create(page, format);
     await expectProgress(page, 2, 2);
     if (format === "Image") {
-      await expect(page.getByText("$0.00 USD", { exact: true })).toHaveCount(1);
-      await expect(
-        page.getByText("$0.012345 USD", { exact: true }),
-      ).toHaveCount(1);
+      await expect(page.getByText("$0.00", { exact: true })).toHaveCount(1);
+      await expect(page.getByText("$0.012345", { exact: true })).toHaveCount(1);
     } else {
-      await expect(
-        page.getByText("$0.000123 USD", { exact: true }),
-      ).toHaveCount(2);
+      await expect(page.getByText("$0.000123", { exact: true })).toHaveCount(2);
     }
     await page.reload();
     await expectProgress(page, 2, 2);
     await expect(
-      page.getByText(format === "Image" ? "$0.012345 USD" : "$0.000123 USD", {
+      page.getByText(format === "Image" ? "$0.012345" : "$0.000123", {
         exact: true,
       }),
     ).toHaveCount(format === "Image" ? 1 : 2);
@@ -333,7 +329,7 @@ test("draft and review makes a second request for each cell and renders the fina
       .first()
       .getByRole("heading", { name: "A generated cat" }),
   ).toBeVisible();
-  await expect(page.getByText("$0.000246 USD", { exact: true })).toHaveCount(2);
+  await expect(page.getByText("$0.000246", { exact: true })).toHaveCount(2);
   const calls = await (await request.get("/fixture/calls")).json();
   expect(calls).toHaveLength(4);
   expect(
@@ -354,7 +350,7 @@ test("a missing review charge is shown as unavailable rather than a partial cost
   await expect(
     page.getByText("Cost unavailable", { exact: true }),
   ).toBeVisible();
-  await expect(page.getByText("$0.000123 USD", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("$0.000123", { exact: true })).toHaveCount(0);
 });
 
 for (const format of ["SVG", "Markdown"])
@@ -1027,7 +1023,7 @@ test("dark theme applies to generation controls, cell labels, and billing dialog
     expect(Math.max(...channels.slice(0, 3))).toBeLessThan(80);
   }
   await dialog.getByRole("button", { name: "Close", exact: true }).click();
-  await expect(page.getByText("$0.000123 USD", { exact: true })).toBeVisible();
+  await expect(page.getByText("$0.000123", { exact: true })).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Resume generation" }),
   ).toBeEnabled();
