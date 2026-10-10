@@ -27,4 +27,4 @@ Unpublished grids appear under **Your grids** in the browser where you created t
 
 Open **Settings** to connect, reconnect, or disconnect OpenRouter. Generation uses your account's credits. Disconnecting prevents further requests; an already-running request may still finish.
 
-Generated websites run in an isolated sandbox. Static HTML, CSS, and JavaScript are supported; server-side code, network requests, forms, and browser cookies are blocked. Markdown and SVG outputs use the same isolation.
+Generated websites run in an isolated sandbox. Static HTML, CSS, and JavaScript are supported; server-side code, network requests, forms, and browser cookies are blocked. Images open directly, while Markdown and SVG previews disable scripts and cookie access. Raw HTML in Markdown is shown as text.

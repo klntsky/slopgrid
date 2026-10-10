@@ -71,7 +71,7 @@ sensible ratelimits
 
 ## safety
 
-every user-generated html should be served from a separate host. output hostnames should use a configurable suffix that keeps each production hostname within one DNS label, so a wildcard certificate can cover them. ensure the cookie policy is set up so that separate htmls never see each others cookies
+arbitrary HTML bundles should be served from separate hosts. Images, Markdown, and SVG should use the application host. output hostnames should use a configurable suffix that keeps each production hostname within one DNS label, so a wildcard certificate can cover them. ensure the cookie policy is set up so that separate htmls never see each others cookies
 
 development rules:
 

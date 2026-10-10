@@ -79,27 +79,61 @@ test("billing can be dismissed and retried repeatedly without regenerating compl
   expect(calls.filter((p: string) => p.includes("dog")).length).toBe(3);
 });
 
-for (const format of ["Markdown", "index.html", "Image"])
+for (const format of ["SVG", "Markdown", "index.html", "Image"])
   test(`${format} renders generated output`, async ({ page, request }) => {
     await request.post("/fixture/reset", { data: { billing: false } });
     await create(page, format);
     await expect(page.getByText("2 of 2 complete")).toBeVisible();
-    const frame = page.frameLocator("iframe").first();
-    if (format === "Markdown")
-      await expect(
-        frame.getByRole("heading", { name: "A generated cat" }),
-      ).toBeVisible();
-    if (format === "index.html") {
-      await expect(frame.getByText("Module loaded")).toBeVisible();
-      await expect(
-        frame.getByRole("heading", { name: "A generated site" }),
-      ).toBeVisible();
-      await expect(frame.locator("body")).toHaveCSS(
-        "background-color",
-        "rgb(255, 0, 0)",
-      );
+    const output = new URL(
+      (await page
+        .getByRole("link", { name: "Open output ↗" })
+        .first()
+        .getAttribute("href"))!,
+    );
+    if (format === "index.html")
+      expect(output.hostname).toMatch(/^[a-f0-9]{48}-slopgrid\.localhost$/);
+    else {
+      expect(output.origin).toBe("http://localhost:4317");
+      expect(output.pathname).toMatch(/^\/outputs\/[a-f0-9]{48}$/);
+      const cellId = output.pathname.split("/").pop();
+      expect(
+        (
+          await request.get("/index.html", {
+            headers: { host: `${cellId}-slopgrid.localhost:4317` },
+          })
+        ).status(),
+      ).toBe(404);
     }
-    if (format === "Image") await expect(frame.getByRole("img")).toBeVisible();
+    if (format === "Image") {
+      const image = page.getByRole("img", { name: "Generated image" }).first();
+      await expect(image).toBeVisible();
+      await expect
+        .poll(() =>
+          image.evaluate((img) => (img as HTMLImageElement).naturalWidth),
+        )
+        .toBeGreaterThan(0);
+      const response = await request.get(output.href);
+      expect(response.headers()["content-type"]).toContain("image/png");
+      expect(response.headers()["set-cookie"]).toBeUndefined();
+      await expect(page.locator("iframe")).toHaveCount(0);
+    } else {
+      const frame = page.frameLocator("iframe").first();
+      if (format === "SVG") await expect(frame.locator("svg")).toBeVisible();
+      if (format === "Markdown")
+        await expect(
+          frame.getByRole("heading", { name: "A generated cat" }),
+        ).toBeVisible();
+      if (format === "index.html") {
+        await expect(frame.getByText("Module loaded")).toBeVisible();
+        await expect(
+          frame.getByRole("heading", { name: "A generated site" }),
+        ).toBeVisible();
+        await expect(frame.locator("body")).toHaveCSS(
+          "background-color",
+          "rgb(255, 0, 0)",
+        );
+      }
+    }
   });
 
 test("drafts, mutation endpoints, and generated hosts enforce ownership and origin boundaries", async ({
@@ -138,7 +172,8 @@ test("drafts, mutation endpoints, and generated hosts enforce ownership and orig
       })
     ).status(),
   ).toBe(404);
-  expect((await request.get(`/outputs/${id}/index.html`)).status()).toBe(404);
+  const cellId = isolated.hostname.split("-")[0];
+  expect((await request.get(`/outputs/${cellId}`)).status()).toBe(404);
   // A direct output tab must be isolated too, without relying on the iframe sandbox.
   const outputTab = await page.context().newPage();
   await outputTab.goto(output!);
@@ -254,3 +289,40 @@ test("draft and review makes a second request for each cell and renders the fina
     calls.filter((p: string) => p.includes("Check the draft")),
   ).toHaveLength(2);
 });
+
+for (const format of ["SVG", "Markdown"])
+  test(`${format} on the app host cannot execute generated scripts or access cookies`, async ({
+    page,
+    request,
+  }) => {
+    await request.post("/fixture/reset", {
+      data: { billing: false, unsafe: true },
+    });
+    await create(page, format);
+    await expect(page.getByText("2 of 2 complete")).toBeVisible();
+    const output = (await page
+      .getByRole("link", { name: "Open output ↗" })
+      .first()
+      .getAttribute("href"))!;
+    expect(new URL(output).origin).toBe("http://localhost:4317");
+    const tab = await page.context().newPage();
+    await tab.goto(output);
+    expect(
+      await tab.evaluate(
+        () => (window as Window & { unsafeOutput?: boolean }).unsafeOutput,
+      ),
+    ).toBeUndefined();
+    expect(
+      await tab.evaluate(() => {
+        try {
+          void document.cookie;
+          return false;
+        } catch {
+          return true;
+        }
+      }),
+    ).toBe(true);
+    if (format === "Markdown")
+      await expect(tab.locator("script")).toHaveCount(0);
+    await tab.close();
+  });

@@ -5,7 +5,7 @@ import { createApp } from "./app.js";
 const port = Number(process.env.PORT ?? 3000),
   production = process.env.NODE_ENV === "production";
 const origin = process.env.APP_ORIGIN ?? `http://localhost:${port}`,
-  outputDomain = process.env.OUTPUT_DOMAIN ?? `user.localhost:${port}`;
+  outputDomain = process.env.OUTPUT_DOMAIN ?? `-slopgrid.localhost:${port}`;
 mkdirSync(".data", { recursive: true, mode: 0o700 });
 let secret: Buffer;
 if (process.env.KEY_ENCRYPTION_SECRET) {

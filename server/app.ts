@@ -1,11 +1,11 @@
 import express from "express";
 import { createHash, randomBytes } from "node:crypto";
-import { marked } from "marked";
+import { marked, Renderer } from "marked";
 import { gridSchema, expandGrid, type Grid } from "./domain.js";
 import { Store, type Session } from "./store.js";
 import { Provider, type Model } from "./provider.js";
 import { Jobs } from "./jobs.js";
-import { createOutputHosts } from "./hosts.js";
+import { createHtmlHosts } from "./hosts.js";
 export type Config = {
   origin: string;
   outputDomain: string;
@@ -25,8 +25,7 @@ export function createApp(config: Config) {
   const origin = new URL(config.origin),
     secure = origin.protocol === "https:",
     cookieName = secure ? "__Host-slopgrid" : "slopgrid";
-  const template = `{id}${config.outputDomain.startsWith("-") ? config.outputDomain : "." + config.outputDomain}`;
-  const outputHosts = createOutputHosts(origin, template);
+  const htmlHosts = createHtmlHosts(origin, config.outputDomain);
   app.disable("x-powered-by");
   app.set("trust proxy", "loopback");
   app.use((req, res, next) => {
@@ -36,19 +35,19 @@ export function createApp(config: Config) {
     if (host === origin.host) {
       res.set(
         "Content-Security-Policy",
-        `default-src 'self'; script-src 'self'${process.env.NODE_ENV !== "production" ? " 'unsafe-inline'" : ""}; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-src ${outputHosts.frameSource}; connect-src 'self'${process.env.NODE_ENV !== "production" ? " ws:" : ""}; base-uri 'none'; object-src 'none'; frame-ancestors 'none'`,
+        `default-src 'self'; script-src 'self'${process.env.NODE_ENV !== "production" ? " 'unsafe-inline'" : ""}; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-src 'self' ${htmlHosts.frameSource}; connect-src 'self'${process.env.NODE_ENV !== "production" ? " ws:" : ""}; base-uri 'none'; object-src 'none'; frame-ancestors 'none'`,
       );
       if (secure) res.set("Strict-Transport-Security", "max-age=31536000");
       return next();
     }
-    const id = host ? outputHosts.cellId(host) : undefined;
+    const id = host ? htmlHosts.cellId(host) : undefined;
     if (!id) return res.status(421).send("Unknown host");
     if (!rate(`output:${req.ip}`, 2000, 60000)) {
       res.set("Retry-After", "60");
       return res.status(429).send("Too many requests. Try again in a minute.");
     }
     const output = store.output(id);
-    if (!output) return res.sendStatus(404);
+    if (!output || output.format !== "html") return res.sendStatus(404);
     // Sandboxed module scripts have an opaque origin. These credential-free
     // static assets can be fetched with CORS without opening any API endpoint.
     res.set("Access-Control-Allow-Origin", "*");
@@ -66,19 +65,6 @@ export function createApp(config: Config) {
     } catch {
       return res.sendStatus(404);
     }
-    if (output.format === "image" && path === "index.html")
-      return res
-        .type("html")
-        .send(
-          `<html><body style="margin:0;display:grid;place-items:center"><img alt="Generated image" style="max-width:100%;max-height:100vh" src="${escape(output.files.image)}"></body></html>`,
-        );
-    if (output.format === "markdown" && path === "index.html")
-      return res
-        .type("html")
-        .send(
-          `<html><head><style>body{font:16px/1.6 system-ui;margin:24px;color:#302b27}pre{overflow:auto}img{max-width:100%}</style></head><body>${marked.parse(output.files["index.md"])}</body></html>`,
-        );
-    if (output.format === "svg" && path === "index.html") path = "index.svg";
     if (!Object.hasOwn(output.files, path)) return res.sendStatus(404);
     const mime: Record<string, string> = {
       html: "text/html",
@@ -92,6 +78,38 @@ export function createApp(config: Config) {
     return res
       .type(mime[path.split(".").pop()!] ?? "text/plain")
       .send(output.files[path]);
+  });
+  const markdownRenderer = new Renderer();
+  markdownRenderer.html = ({ text }) => escape(text);
+  app.get("/outputs/:id", (req, res) => {
+    const id = String(req.params.id);
+    if (!/^[a-f0-9]{48}$/.test(id)) return res.sendStatus(404);
+    if (!rate(`output:${req.ip}`, 2000, 60000)) {
+      res.set("Retry-After", "60");
+      return res.status(429).send("Too many requests. Try again in a minute.");
+    }
+    const output = store.output(id);
+    if (!output || output.format === "html") return res.sendStatus(404);
+    res.set("Cache-Control", "no-store");
+    res.set(
+      "Content-Security-Policy",
+      `sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors ${origin.origin}`,
+    );
+    if (output.format === "image") {
+      const image =
+        /^data:(image\/[a-z0-9.+-]+);base64,([a-zA-Z0-9+/]+={0,2})$/.exec(
+          output.files.image,
+        );
+      if (!image) return res.sendStatus(500);
+      return res.type(image[1]).send(Buffer.from(image[2], "base64"));
+    }
+    if (output.format === "svg")
+      return res.type("image/svg+xml").send(output.files["index.svg"]);
+    return res
+      .type("html")
+      .send(
+        `<html><head><style>body{font:16px/1.6 system-ui;margin:24px;color:#302b27}pre{overflow:auto}img{max-width:100%}</style></head><body>${marked.parse(output.files["index.md"], { renderer: markdownRenderer })}</body></html>`,
+      );
   });
   app.use(express.json({ limit: "100kb" }));
   const buckets = new Map<string, { count: number; expires: number }>();
@@ -149,7 +167,12 @@ export function createApp(config: Config) {
     cells: g.cells.map((c) => ({
       ...c,
       files: undefined,
-      outputURL: c.status === "complete" ? outputHosts.url(c.id) : undefined,
+      outputURL:
+        c.status === "complete"
+          ? g.input.format === "html"
+            ? htmlHosts.url(c.id)
+            : `${origin.origin}/outputs/${c.id}`
+          : undefined,
     })),
   });
   let catalog: { at: number; models: Model[] } | undefined;

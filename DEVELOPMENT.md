@@ -10,7 +10,7 @@ pnpm exec playwright install chromium
 pnpm dev
 ```
 
-Open http://localhost:3000. Chromium resolves `*.user.localhost` to loopback for generated outputs. OpenRouter OAuth supports localhost callbacks. The development server creates a SQLite database and encryption key under `.data/`; preserve both to retain sessions. No manually entered API-key flow exists.
+Open http://localhost:3000. Chromium resolves HTML output hosts ending in `.localhost` to loopback. Images, Markdown, and SVG use paths on the application origin. OpenRouter OAuth supports localhost callbacks. The development server creates a SQLite database and encryption key under `.data/`; preserve both to retain sessions. No manually entered API-key flow exists.
 
 ## Validation
 
@@ -27,14 +27,14 @@ Tests are written around user outcomes and consequential boundaries; do not add 
 
 `pnpm build` checks TypeScript and creates the frontend build. `pnpm start` serves that build in production mode. The production process requires `APP_ORIGIN`, `OUTPUT_DOMAIN`, and `KEY_ENCRYPTION_SECRET` to be provided in its environment.
 
-| Variable                | Behavior                                                                                                                                                      |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `APP_ORIGIN`            | Application origin, including scheme and optional port; HTTPS is required in production.                                                                      |
-| `OUTPUT_DOMAIN`         | Host suffix for per-cell output URLs, with an optional port; a leading hyphen joins the cell ID in one DNS label. Must be separate from the application host. |
-| `KEY_ENCRYPTION_SECRET` | Exactly 64 hexadecimal characters representing the persistent 32-byte encryption key. Required in production.                                                 |
-| `DATABASE_PATH`         | SQLite file path; defaults to `.data/slopgrid.sqlite`. Its parent directory must exist.                                                                       |
-| `PORT`                  | Listening port; defaults to 3000.                                                                                                                             |
-| `BIND_ADDRESS`          | Listening address; defaults to `127.0.0.1`.                                                                                                                   |
+| Variable                | Behavior                                                                                                                                                          |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `APP_ORIGIN`            | Application origin, including scheme and optional port; HTTPS is required in production.                                                                          |
+| `OUTPUT_DOMAIN`         | HTML output host suffix beginning with a hyphen, with an optional port; joins the cell ID in one DNS label. Images, Markdown, and SVG use the application origin. |
+| `KEY_ENCRYPTION_SECRET` | Exactly 64 hexadecimal characters representing the persistent 32-byte encryption key. Required in production.                                                     |
+| `DATABASE_PATH`         | SQLite file path; defaults to `.data/slopgrid.sqlite`. Its parent directory must exist.                                                                           |
+| `PORT`                  | Listening port; defaults to 3000.                                                                                                                                 |
+| `BIND_ADDRESS`          | Listening address; defaults to `127.0.0.1`.                                                                                                                       |
 
 Development creates a local encryption key automatically. Changing the encryption key makes existing stored credentials unreadable. Run one application process per database: workers and SSE subscribers are process-local.
 

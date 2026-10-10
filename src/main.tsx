@@ -722,12 +722,25 @@ function GridPage() {
                       <article className="cell">
                         {cell.status === "complete" ? (
                           <>
-                            <iframe
-                              title={`${r} / ${g.input.columns.values[column]}`}
-                              sandbox="allow-scripts"
-                              src={cell.outputURL}
-                              loading="lazy"
-                            />
+                            {g.input.format === "image" ? (
+                              <img
+                                className="generated-image"
+                                alt="Generated image"
+                                src={cell.outputURL}
+                                loading="lazy"
+                              />
+                            ) : (
+                              <iframe
+                                title={`${r} / ${g.input.columns.values[column]}`}
+                                sandbox={
+                                  g.input.format === "html"
+                                    ? "allow-scripts"
+                                    : ""
+                                }
+                                src={cell.outputURL}
+                                loading="lazy"
+                              />
+                            )}
                             <div className="cell-footer">
                               <a
                                 href={cell.outputURL}

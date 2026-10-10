@@ -1,12 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createOutputHosts } from "../server/hosts.js";
+import { createHtmlHosts } from "../server/hosts.js";
 const id = "a".repeat(48);
 
-test("hyphenated output hosts share one DNS level and use a valid CSP wildcard", () => {
-  const hosts = createOutputHosts(
+test("HTML hosts share one DNS level and use a valid CSP wildcard", () => {
+  const hosts = createHtmlHosts(
     new URL("https://app.example.com"),
-    "{id}-grid.example.com",
+    "-grid.example.com",
   );
   assert.equal(hosts.url(id), `https://${id}-grid.example.com/index.html`);
   assert.equal(hosts.cellId(`${id}-grid.example.com`), id);
@@ -20,34 +20,34 @@ test("hyphenated output hosts share one DNS level and use a valid CSP wildcard",
     assert.equal(hosts.cellId(invalid), undefined);
 });
 
-test("subdomain output hosts and development ports remain supported", () => {
-  const hosts = createOutputHosts(
+test("HTML hosts use the same single-label format with a development port", () => {
+  const hosts = createHtmlHosts(
     new URL("http://localhost:4317"),
-    "{id}.user.localhost:4317",
+    "-grid.localhost:4317",
   );
-  assert.equal(hosts.url(id), `http://${id}.user.localhost:4317/index.html`);
-  assert.equal(hosts.cellId(`${id}.user.localhost:4317`), id);
-  assert.equal(hosts.frameSource, "http://*.user.localhost:4317");
-  assert.equal(hosts.cellId(`${id}.user.localhost:4318`), undefined);
+  assert.equal(hosts.url(id), `http://${id}-grid.localhost:4317/index.html`);
+  assert.equal(hosts.cellId(`${id}-grid.localhost:4317`), id);
+  assert.equal(hosts.frameSource, "http://*.localhost:4317");
+  assert.equal(hosts.cellId(`${id}-grid.localhost:4318`), undefined);
 });
 
-test("output templates cannot overlap the app host or generate malformed DNS names", () => {
-  for (const template of [
+test("HTML suffixes reject invalid DNS names and overlapping application hosts", () => {
+  for (const suffix of [
     "grid.example.com",
-    "{id}-{id}.example.com",
-    "{id}-this-label-is-too-long.example.com",
-    "{id}.example.com/path",
-    "{id}.example.com@evil.test",
-    "{id}.bad..example.com",
-    "{id}-localhost",
+    "-{id}.example.com",
+    "-this-label-is-too-long.example.com",
+    "-grid.example.com/path",
+    "-grid.example.com@evil.test",
+    "-grid.bad..example.com",
+    "-localhost",
   ])
     assert.throws(() =>
-      createOutputHosts(new URL("https://app.example.com"), template),
+      createHtmlHosts(new URL("https://app.example.com"), suffix),
     );
   assert.throws(() =>
-    createOutputHosts(
+    createHtmlHosts(
       new URL(`https://${id}-grid.example.com`),
-      "{id}-grid.example.com",
+      "-grid.example.com",
     ),
   );
 });

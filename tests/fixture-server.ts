@@ -6,6 +6,7 @@ import { mkdirSync } from "node:fs";
 import { createApp } from "../server/app.js";
 import { Provider } from "../server/provider.js";
 let streamBilling = false;
+let unsafe = false;
 let billing = false,
   calls: string[] = [];
 const codes = new Map<string, string>();
@@ -93,7 +94,9 @@ upstream.post("/api/v1/chat/completions", async (req, res) => {
       .status(402)
       .json({ error: { code: 402, message: "Insufficient credits" } });
   const text = system.includes("complete SVG")
-    ? '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><circle cx="100" cy="100" r="70" fill="tan"/></svg>'
+    ? unsafe
+      ? '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><script>window.unsafeOutput=true</script><circle cx="100" cy="100" r="70"/></svg>'
+      : '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><circle cx="100" cy="100" r="70" fill="tan"/></svg>'
     : system.includes("JSON object")
       ? JSON.stringify({
           files: {
@@ -104,7 +107,8 @@ upstream.post("/api/v1/chat/completions", async (req, res) => {
               "document.getElementById('module').textContent='Module loaded';",
           },
         })
-      : "# A generated cat\n\nWearing a hat.";
+      : "# A generated cat\n\nWearing a hat." +
+        (unsafe ? "\n\n<script>window.unsafeOutput=true</script>" : "");
   const base = {
     id: "fixture",
     object: "chat.completion.chunk",
@@ -149,6 +153,7 @@ const { app } = createApp({
 });
 app.post("/fixture/reset", (req, res) => {
   billing = !!req.body.billing;
+  unsafe = !!req.body.unsafe;
   streamBilling = !!req.body.streamBilling;
   calls = [];
   res.json({ ok: true });
