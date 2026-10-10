@@ -1,4 +1,10 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, {
+  useEffect,
+  useState,
+  useRef,
+  createContext,
+  useContext,
+} from "react";
 import {
   Grid2x2,
   FileCode,
@@ -12,6 +18,7 @@ import {
   ArrowRight,
   LoaderCircle,
 } from "lucide-react";
+import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
 import {
   QueryClient,
@@ -27,6 +34,7 @@ import {
   Link,
   Outlet,
   useNavigate,
+  useLocation,
 } from "@tanstack/react-router";
 import type { GridInput } from "../server/domain";
 import { efforts, unusedVariableIssue } from "../server/domain";
@@ -58,42 +66,48 @@ function CreateGridButton() {
     </Link>
   );
 }
+const GridHeaderTarget = createContext<HTMLDivElement | null>(null);
 function Layout() {
   const history = useGrids(),
-    navigate = useNavigate();
+    navigate = useNavigate(),
+    isGrid = useLocation().pathname.startsWith("/grid/");
+  const [headerTarget, setHeaderTarget] = useState<HTMLDivElement | null>(null);
   return (
-    <>
-      <header>
-        <Link
-          to={history.data?.length ? "/grids" : "/"}
-          className="wordmark"
-          aria-label="slopgrid"
-          onClick={async (event) => {
-            if (
-              history.data ||
-              event.button !== 0 ||
-              event.metaKey ||
-              event.ctrlKey ||
-              event.shiftKey ||
-              event.altKey
-            )
-              return;
-            event.preventDefault();
-            const result = await history.refetch();
-            await navigate({ to: result.data?.length ? "/grids" : "/" });
-          }}
-        >
-          slopgrid
-          <Grid2x2 className="logo-grid" aria-hidden="true" />
-        </Link>
-        <nav>
-          <Link to="/grids">Your grids</Link>
-          <Link to="/settings">Settings</Link>
-          <CreateGridButton />
-        </nav>
-      </header>
-      <Outlet />
-    </>
+    <GridHeaderTarget.Provider value={headerTarget}>
+      <div className={`app-shell${isGrid ? " grid-layout" : ""}`}>
+        <header>
+          <Link
+            to={history.data?.length ? "/grids" : "/"}
+            className="wordmark"
+            aria-label="slopgrid"
+            onClick={async (event) => {
+              if (
+                history.data ||
+                event.button !== 0 ||
+                event.metaKey ||
+                event.ctrlKey ||
+                event.shiftKey ||
+                event.altKey
+              )
+                return;
+              event.preventDefault();
+              const result = await history.refetch();
+              await navigate({ to: result.data?.length ? "/grids" : "/" });
+            }}
+          >
+            slopgrid
+            <Grid2x2 className="logo-grid" aria-hidden="true" />
+          </Link>
+          {isGrid && <div className="grid-header-slot" ref={setHeaderTarget} />}
+          <nav>
+            <Link to="/grids">Your grids</Link>
+            <Link to="/settings">Settings</Link>
+            <CreateGridButton />
+          </nav>
+        </header>
+        <Outlet />
+      </div>
+    </GridHeaderTarget.Provider>
   );
 }
 const rootRoute = createRootRoute({ component: Layout });
@@ -698,7 +712,8 @@ function Settings() {
 }
 function GridPage() {
   const { id } = gridRoute.useParams(),
-    cache = useQueryClient();
+    cache = useQueryClient(),
+    headerTarget = useContext(GridHeaderTarget);
   const query = useQuery({
     queryKey: ["grid", id],
     queryFn: () => api<ViewGrid>(`/grids/${id}`),
@@ -745,182 +760,212 @@ function GridPage() {
   const g = query.data,
     complete = g.cells.filter((c) => c.status === "complete").length;
   const paused = g.status === "paused" && g.canEdit && !g.published;
-  return (
-    <main className="grid-page">
-      <div className="grid-heading">
-        <div>
-          <h1>{g.input.prompt}</h1>
-          <p className="hint">
-            {complete} of {g.cells.length} complete
-            {g.published && <span className="badge">Published</span>}
-          </p>
-        </div>
-        <div className="actions">
-          {paused && (
-            <button
-              disabled={busy}
-              className="secondary"
-              onClick={() => action("retry")}
-            >
-              Retry unfinished cells
-            </button>
-          )}
-          {g.canEdit && !g.published && (
-            <button
-              disabled={busy || g.status !== "complete"}
-              className="primary"
-              onClick={() => action("publish")}
-            >
-              Publish grid
-            </button>
-          )}
-          {g.published && (
-            <button
-              className="secondary"
-              onClick={async () => {
-                try {
-                  await navigator.clipboard.writeText(location.href);
-                  setError("");
-                } catch {
-                  setError(
-                    "Copy the address from your browser to share this grid.",
-                  );
-                }
-              }}
-            >
-              Copy link
-            </button>
-          )}
+  const toolbar = (
+    <div className="grid-heading">
+      <div className="grid-title">
+        <h1 title={g.input.prompt}>{g.input.prompt}</h1>
+        <div className="grid-progress">
+          <progress
+            aria-label="Grid generation"
+            value={complete}
+            max={g.cells.length}
+            aria-valuetext={`${complete} of ${g.cells.length} outputs complete`}
+            title={`${complete} of ${g.cells.length} outputs complete`}
+          />
+          {g.published && <span className="badge">Published</span>}
         </div>
       </div>
-      {g.interruption === "restart" && (
-        <p role="status">
-          Generation stopped when the server restarted. Retry unfinished cells
-          to continue.
-        </p>
-      )}
-      {g.interruption === "auth" && g.canEdit && (
-        <Connection returnTo={`/grid/${id}`} />
-      )}
-      {streamLost && <p role="status">Connection lost. Reconnecting…</p>}
-      <ErrorMessage error={error} />
-      <div
-        className="grid-scroll"
-        tabIndex={0}
-        aria-label="Generated output grid"
-      >
-        <table className="output-grid">
-          <thead>
-            <tr>
-              <th className="corner">
-                {dimensionNames[g.input.rows.kind]}
-                <span className="axis-directions">
-                  <ArrowDown aria-hidden="true" />
-                  <ArrowRight aria-hidden="true" />
-                </span>
-                {dimensionNames[g.input.columns.kind]}
-              </th>
-              {g.input.columns.values.map((c) => (
-                <th scope="col" key={c}>
-                  {displayValue(c, g.input.columns.kind)}
+      <div className="actions">
+        {paused && (
+          <button
+            disabled={busy}
+            className="secondary"
+            onClick={() => action("retry")}
+          >
+            Retry unfinished cells
+          </button>
+        )}
+        {g.canEdit && !g.published && (
+          <button
+            disabled={busy || g.status !== "complete"}
+            className="primary"
+            onClick={() => action("publish")}
+          >
+            Publish grid
+          </button>
+        )}
+        {g.published && (
+          <button
+            className="secondary"
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(location.href);
+                setError("");
+              } catch {
+                setError(
+                  "Copy the address from your browser to share this grid.",
+                );
+              }
+            }}
+          >
+            Copy link
+          </button>
+        )}
+      </div>
+    </div>
+  );
+  return (
+    <>
+      {headerTarget && createPortal(toolbar, headerTarget)}
+      <main className="grid-page">
+        {g.interruption === "restart" && (
+          <p role="status">
+            Generation stopped when the server restarted. Retry unfinished cells
+            to continue.
+          </p>
+        )}
+        {g.interruption === "auth" && g.canEdit && (
+          <Connection returnTo={`/grid/${id}`} />
+        )}
+        {streamLost && <p role="status">Connection lost. Reconnecting…</p>}
+        <ErrorMessage error={error} />
+        <div
+          className="grid-scroll"
+          tabIndex={0}
+          aria-label="Generated output grid"
+          style={
+            {
+              "--grid-columns": g.input.columns.values.length,
+            } as React.CSSProperties
+          }
+        >
+          <table className="output-grid">
+            <thead>
+              <tr>
+                <th className="corner" aria-label="Grid dimensions">
+                  <div className="axis-legend">
+                    <div className="axis-legend-entry">
+                      <ArrowRight aria-hidden="true" />
+                      <div>
+                        <small>Columns</small>
+                        <strong>{dimensionNames[g.input.columns.kind]}</strong>
+                      </div>
+                    </div>
+                    <div className="axis-legend-entry">
+                      <ArrowDown aria-hidden="true" />
+                      <div>
+                        <small>Rows</small>
+                        <strong>{dimensionNames[g.input.rows.kind]}</strong>
+                      </div>
+                    </div>
+                  </div>
                 </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {g.input.rows.values.map((r, row) => (
-              <tr key={r}>
-                <th scope="row">{displayValue(r, g.input.rows.kind)}</th>
-                {g.input.columns.values.map((_, column) => {
-                  const cell = g.cells.find(
-                    (c) => c.row === row && c.column === column,
-                  )!;
-                  return (
-                    <td key={column}>
-                      <article className="cell">
-                        {cell.status === "complete" ? (
-                          <>
-                            {g.input.format === "image" ||
+                {g.input.columns.values.map((c) => (
+                  <th scope="col" key={c}>
+                    {displayValue(c, g.input.columns.kind)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {g.input.rows.values.map((r, row) => (
+                <tr key={r}>
+                  <th scope="row">{displayValue(r, g.input.rows.kind)}</th>
+                  {g.input.columns.values.map((_, column) => {
+                    const cell = g.cells.find(
+                      (c) => c.row === row && c.column === column,
+                    )!;
+                    return (
+                      <td key={column}>
+                        <article className="cell">
+                          {cell.status === "complete" ? (
+                            <>
+                              {g.input.format === "image" ||
+                              g.input.format === "svg" ? (
+                                <img
+                                  className="generated-image"
+                                  alt={
+                                    g.input.format === "svg"
+                                      ? "Generated SVG"
+                                      : "Generated image"
+                                  }
+                                  src={cell.outputURL}
+                                  loading="lazy"
+                                />
+                              ) : (
+                                <iframe
+                                  title={`${r} / ${g.input.columns.values[column]}`}
+                                  sandbox={
+                                    g.input.format === "html"
+                                      ? "allow-scripts"
+                                      : ""
+                                  }
+                                  src={cell.outputURL}
+                                  loading="lazy"
+                                />
+                              )}
+                              <div className="cell-footer">
+                                <a
+                                  href={cell.outputURL}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                >
+                                  Open output{" "}
+                                  <ArrowUpRight aria-hidden="true" />
+                                </a>
+                                {cell.usage && (
+                                  <small>
+                                    {cell.usage.inputTokens ?? 0} in ·{" "}
+                                    {cell.usage.outputTokens ?? 0} out
+                                  </small>
+                                )}
+                              </div>
+                            </>
+                          ) : cell.status === "error" ? (
+                            <p className="cell-error">{cell.error}</p>
+                          ) : cell.status === "running" &&
                             g.input.format === "svg" ? (
-                              <img
-                                className="generated-image"
-                                alt={
-                                  g.input.format === "svg"
-                                    ? "Generated SVG"
-                                    : "Generated image"
-                                }
-                                src={cell.outputURL}
-                                loading="lazy"
-                              />
-                            ) : (
-                              <iframe
-                                title={`${r} / ${g.input.columns.values[column]}`}
-                                sandbox={
-                                  g.input.format === "html"
-                                    ? "allow-scripts"
-                                    : ""
-                                }
-                                src={cell.outputURL}
-                                loading="lazy"
-                              />
-                            )}
-                            <div className="cell-footer">
-                              <a
-                                href={cell.outputURL}
-                                target="_blank"
-                                rel="noreferrer"
-                              >
-                                Open output <ArrowUpRight aria-hidden="true" />
-                              </a>
-                              {cell.usage && (
-                                <small>
-                                  {cell.usage.inputTokens ?? 0} in ·{" "}
-                                  {cell.usage.outputTokens ?? 0} out
-                                </small>
+                            <SvgPreview
+                              key={cell.id}
+                              draft={cell.draft ?? ""}
+                            />
+                          ) : (
+                            <div className="pending" role="status">
+                              {cell.status === "running" ? (
+                                <>
+                                  <LoaderCircle
+                                    className="spinner"
+                                    aria-hidden="true"
+                                  />
+                                  Generating…
+                                  {cell.draft && <pre>{cell.draft}</pre>}
+                                </>
+                              ) : g.status === "paused" ? (
+                                "Waiting to retry"
+                              ) : (
+                                "Queued"
                               )}
                             </div>
-                          </>
-                        ) : cell.status === "error" ? (
-                          <p className="cell-error">{cell.error}</p>
-                        ) : cell.status === "running" &&
-                          g.input.format === "svg" ? (
-                          <SvgPreview key={cell.id} draft={cell.draft ?? ""} />
-                        ) : (
-                          <div className="pending" role="status">
-                            {cell.status === "running" ? (
-                              <>
-                                <LoaderCircle
-                                  className="spinner"
-                                  aria-hidden="true"
-                                />
-                                Generating…
-                                {cell.draft && <pre>{cell.draft}</pre>}
-                              </>
-                            ) : g.status === "paused" ? (
-                              "Waiting to retry"
-                            ) : (
-                              "Queued"
-                            )}
-                          </div>
-                        )}
-                      </article>
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {g.interruption === "billing" && paused && !dismissed && (
-        <BillingDialog
-          busy={busy}
-          error={error}
-          onRetry={() => action("retry")}
-          onClose={() => setDismissed(true)}
-        />
-      )}
-    </main>
+                          )}
+                        </article>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {g.interruption === "billing" && paused && !dismissed && (
+          <BillingDialog
+            busy={busy}
+            error={error}
+            onRetry={() => action("retry")}
+            onClose={() => setDismissed(true)}
+          />
+        )}
+      </main>
+    </>
   );
 }
 function BillingDialog({

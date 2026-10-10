@@ -1,11 +1,23 @@
 import { test, expect } from "@playwright/test";
 
+async function expectProgress(
+  page: import("@playwright/test").Page,
+  completed: number,
+  total: number,
+) {
+  const bar = page.getByRole("progressbar", { name: "Grid generation" });
+  await expect(bar).toBeVisible();
+  await expect(bar).toHaveAttribute("value", String(completed));
+  await expect(bar).toHaveAttribute("max", String(total));
+}
+
 async function create(
   page: import("@playwright/test").Page,
   format = "SVG",
   rows = "cat\ndog",
   columns = "hat",
   harness = "direct",
+  prompt = "Draw $VARIABLE_ROW wearing a $VARIABLE_COLUMN",
 ) {
   await page.goto("/");
   await page.getByRole("button", { name: format, exact: true }).click();
@@ -22,9 +34,7 @@ async function create(
       .getByRole("combobox", { name: "Harness", exact: true })
       .selectOption(harness);
   await page.getByRole("button", { name: "Continue to prompt" }).click();
-  await page
-    .getByLabel("Prompt", { exact: true })
-    .fill("Draw $VARIABLE_ROW wearing a $VARIABLE_COLUMN");
+  await page.getByLabel("Prompt", { exact: true }).fill(prompt);
   await page.getByRole("button", { name: "Continue to key setup" }).click();
   await page.getByRole("link", { name: "Connect OpenRouter" }).click();
   await expect(page.getByText("OpenRouter connected")).toBeVisible();
@@ -38,7 +48,7 @@ test("billing can be dismissed and retried repeatedly without regenerating compl
   await request.post("/fixture/reset", { data: { billing: true } });
   await create(page);
   await expect(page.getByRole("dialog")).toBeVisible();
-  await expect(page.getByText("1 of 2 complete")).toBeVisible();
+  await expectProgress(page, 1, 2);
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.reload();
@@ -62,14 +72,14 @@ test("billing can be dismissed and retried repeatedly without regenerating compl
     .getByRole("dialog")
     .getByRole("button", { name: "Retry unfinished cells" })
     .click();
-  await expect(page.getByText("2 of 2 complete")).toBeVisible();
+  await expectProgress(page, 2, 2);
   await page.getByRole("button", { name: "Publish grid" }).click();
   await expect(page.getByText("Published", { exact: true })).toBeVisible();
   const url = page.url();
   const stranger = await page.context().browser()!.newContext();
   const publicPage = await stranger.newPage();
   await publicPage.goto(url);
-  await expect(publicPage.getByText("2 of 2 complete")).toBeVisible();
+  await expectProgress(publicPage, 2, 2);
   await expect(
     publicPage.getByRole("button", { name: "Publish grid" }),
   ).toHaveCount(0);
@@ -83,7 +93,7 @@ for (const format of ["SVG", "Markdown", "Static website", "Image"])
   test(`${format} renders generated output`, async ({ page, request }) => {
     await request.post("/fixture/reset", { data: { billing: false } });
     await create(page, format);
-    await expect(page.getByText("2 of 2 complete")).toBeVisible();
+    await expectProgress(page, 2, 2);
     const output = new URL(
       (await page
         .getByRole("link", { name: "Open output" })
@@ -147,7 +157,7 @@ test("drafts, mutation endpoints, and generated hosts enforce ownership and orig
 }) => {
   await request.post("/fixture/reset", { data: { billing: false } });
   await create(page, "Static website");
-  await expect(page.getByText("2 of 2 complete")).toBeVisible();
+  await expectProgress(page, 2, 2);
   const id = page.url().split("/").pop();
   const anonymous = await (
     await import("@playwright/test")
@@ -207,7 +217,7 @@ test("row and column headers stay visible while scrolling a larger grid", async 
     "cat\ndog\nowl",
     "hat\ncape\nscarf\ncrown",
   );
-  await expect(page.getByText("12 of 12 complete")).toBeVisible();
+  await expectProgress(page, 12, 12);
   const viewport = page.getByLabel("Generated output grid");
   const column = page.getByRole("columnheader", { name: "hat", exact: true }),
     row = page.getByRole("rowheader", { name: "cat", exact: true });
@@ -269,13 +279,13 @@ for (const format of ["Image", "SVG"])
     });
     await create(page, format);
     await expect(page.getByRole("dialog")).toBeVisible();
-    await expect(page.getByText("1 of 2 complete")).toBeVisible();
+    await expectProgress(page, 1, 2);
     await request.post("/fixture/credits");
     await page
       .getByRole("dialog")
       .getByRole("button", { name: "Retry unfinished cells" })
       .click();
-    await expect(page.getByText("2 of 2 complete")).toBeVisible();
+    await expectProgress(page, 2, 2);
     const calls = await (await request.get("/fixture/calls")).json();
     expect(calls.filter((p: string) => p.includes("cat"))).toHaveLength(1);
   });
@@ -286,7 +296,7 @@ test("draft and review makes a second request for each cell and renders the fina
 }) => {
   await request.post("/fixture/reset", { data: { billing: false } });
   await create(page, "Markdown", "cat\ndog", "hat", "review");
-  await expect(page.getByText("2 of 2 complete")).toBeVisible();
+  await expectProgress(page, 2, 2);
   await expect(
     page
       .frameLocator("iframe")
@@ -309,7 +319,7 @@ for (const format of ["SVG", "Markdown"])
       data: { billing: false, unsafe: true },
     });
     await create(page, format);
-    await expect(page.getByText("2 of 2 complete")).toBeVisible();
+    await expectProgress(page, 2, 2);
     if (format === "SVG") {
       const image = page.getByRole("img", { name: "Generated SVG" }).first();
       await expect
@@ -458,7 +468,7 @@ test("unused prompt variables block setup, later edits block generation, and the
     .getByLabel("Prompt", { exact: true })
     .fill("$VARIABLE_ROW $VARIABLE_COLUMN");
   await page.getByRole("button", { name: "Generate", exact: true }).click();
-  await expect(page.getByText("4 of 4 complete")).toBeVisible();
+  await expectProgress(page, 4, 4);
   await expect(page.getByText("Image GRID", { exact: true })).toHaveCount(0);
 });
 
@@ -482,7 +492,7 @@ test("the logo opens the form for a new browser and Your grids after creation", 
     .click();
   await expect(page).toHaveURL("/");
   await create(page, "Image", "cat", "hat");
-  await expect(page.getByText("1 of 1 complete")).toBeVisible();
+  await expectProgress(page, 1, 1);
   const gridURL = page.url();
   await navbar
     .getByRole("link", { name: "Create a grid", exact: true })
@@ -542,14 +552,14 @@ test("SVG images grow during generation without exposing markup or running SVG s
       });
     await expect(preview).toBeVisible();
     await expect.poll(centerColor).toEqual([255, 0, 0, 255]);
-    await expect(page.getByText("0 of 1 complete")).toBeVisible();
+    await expectProgress(page, 0, 1);
     await expect(
       page.getByRole("button", { name: "Publish grid" }),
     ).toBeDisabled();
     await expect(page.locator("iframe, .cell pre")).toHaveCount(0);
     await request.post("/fixture/svg-next");
     await expect.poll(centerColor).toEqual([0, 0, 255, 255]);
-    await expect(page.getByText("0 of 1 complete")).toBeVisible();
+    await expectProgress(page, 0, 1);
     expect(
       await page.evaluate(
         () => (window as Window & { unsafeOutput?: boolean }).unsafeOutput,
@@ -560,7 +570,7 @@ test("SVG images grow during generation without exposing markup or running SVG s
     );
     expect(await (await request.get("/fixture/svg-probes")).json()).toEqual([]);
     await request.post("/fixture/svg-next");
-    await expect(page.getByText("1 of 1 complete")).toBeVisible();
+    await expectProgress(page, 1, 1);
     await expect(preview).toHaveCount(0);
     await expect(
       page.getByRole("img", { name: "Generated SVG", exact: true }),
@@ -578,3 +588,79 @@ test("SVG images grow during generation without exposing markup or running SVG s
     await request.post("/fixture/reset", { data: {} });
   }
 });
+
+for (const viewport of [
+  { width: 1280, height: 900 },
+  { width: 390, height: 844 },
+])
+  test(`grid header and full-page workspace stay usable at ${viewport.width}px`, async ({
+    page,
+    request,
+  }) => {
+    await page.setViewportSize(viewport);
+    await request.post("/fixture/reset", { data: { billing: false } });
+    const prompt =
+      "Draw $VARIABLE_ROW wearing a $VARIABLE_COLUMN " +
+      "with a carefully detailed background ".repeat(12);
+    await create(page, "Image", "cat", "hat", "direct", prompt);
+    await expectProgress(page, 1, 1);
+    const header = page.getByRole("banner");
+    await expect(header.getByRole("heading", { level: 1 })).toHaveText(
+      prompt.trim(),
+    );
+    await expect(
+      header.getByRole("progressbar", { name: "Grid generation" }),
+    ).toHaveAttribute("aria-valuetext", "1 of 1 outputs complete");
+    await expect(
+      header.getByRole("button", { name: "Publish grid" }),
+    ).toBeEnabled();
+    await expect(
+      page.getByText("1 of 1 complete", { exact: true }),
+    ).toHaveCount(0);
+    const grid = page.getByLabel("Generated output grid");
+    const headerBox = (await header.boundingBox())!,
+      gridBox = (await grid.boundingBox())!;
+    expect(gridBox.x).toBe(0);
+    expect(gridBox.width).toBe(viewport.width);
+    expect(gridBox.y).toBeCloseTo(headerBox.y + headerBox.height, 0);
+    expect(gridBox.y + gridBox.height).toBeCloseTo(viewport.height, 0);
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBe(viewport.width);
+    const legend = page.getByRole("columnheader", { name: "Grid dimensions" });
+    await expect(legend.getByText("Columns", { exact: true })).toBeVisible();
+    await expect(legend.getByText("Rows", { exact: true })).toBeVisible();
+    const columns = (await legend
+        .getByText("Columns", { exact: true })
+        .boundingBox())!,
+      rows = (await legend.getByText("Rows", { exact: true }).boundingBox())!;
+    expect(rows.y).toBeGreaterThan(columns.y + columns.height);
+    await expect
+      .poll(() =>
+        page
+          .getByRole("img", { name: "Generated image", exact: true })
+          .evaluate((img) => (img as HTMLImageElement).naturalWidth),
+      )
+      .toBeGreaterThan(0);
+    const cell = (await page.locator(".cell").first().boundingBox())!,
+      corner = (await legend.boundingBox())!;
+    expect(cell.width).toBeGreaterThanOrEqual(gridBox.width - corner.width - 2);
+    expect(
+      Math.abs(cell.y + cell.height - viewport.height),
+    ).toBeLessThanOrEqual(2);
+    await header.getByRole("button", { name: "Publish grid" }).click();
+    await expect(header.getByText("Published", { exact: true })).toBeVisible();
+    await expect(
+      header.getByRole("button", { name: "Copy link" }),
+    ).toBeVisible();
+    await header
+      .getByRole("navigation")
+      .getByRole("link", { name: "Create a grid", exact: true })
+      .click();
+    await expect(
+      page.getByRole("heading", {
+        name: "Create a grid to compare models and their settings",
+      }),
+    ).toBeVisible();
+    await expect(header.getByRole("progressbar")).toHaveCount(0);
+  });

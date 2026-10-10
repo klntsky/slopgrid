@@ -297,25 +297,93 @@ legend {
 .settings-page {
   max-width: 800px;
 }
+.app-shell.grid-layout {
+  height: 100dvh;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+.grid-layout > header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  height: auto;
+  min-height: 88px;
+  gap: 24px;
+  padding: 16px 24px;
+}
+.grid-header-slot,
+.grid-title {
+  min-width: 0;
+}
 .grid-page {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
   max-width: none;
-  padding: 40px 4vw 70px;
+  padding: 0;
+  margin: 0;
+}
+.grid-page > .error,
+.grid-page > .connection,
+.grid-page > p {
+  margin: 12px 20px;
+  flex-shrink: 0;
 }
 .grid-heading {
   display: flex;
-  justify-content: space-between;
-  gap: 30px;
+  gap: 20px;
   align-items: center;
-  margin-bottom: 16px;
 }
-.grid-heading h1 {
-  font-size: 26px;
-  letter-spacing: -0.6px;
-  line-height: 1.5;
-  margin-bottom: 12px;
-  white-space: pre-wrap;
+.grid-title {
+  flex: 1;
+}
+.grid-title h1 {
+  font-size: 17px;
+  font-weight: 500;
+  letter-spacing: -0.3px;
+  line-height: 1.4;
+  margin: 0 0 10px;
   overflow-wrap: anywhere;
-  max-width: 850px;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.grid-progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.grid-progress progress {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  height: 6px;
+  border: 0;
+  border-radius: 999px;
+  overflow: hidden;
+  appearance: none;
+  background: #dcd5c9;
+  color: var(--accent);
+}
+.grid-progress progress::-webkit-progress-bar {
+  background: #dcd5c9;
+  border-radius: 999px;
+}
+.grid-progress progress::-webkit-progress-value {
+  background: var(--accent);
+  border-radius: 999px;
+}
+.grid-progress progress::-moz-progress-bar {
+  background: var(--accent);
+  border-radius: 999px;
+}
+.grid-progress .badge {
+  margin: 0;
+  font-size: 11px;
+  flex-shrink: 0;
 }
 .actions {
   display: flex;
@@ -331,18 +399,23 @@ legend {
   margin-left: 14px;
 }
 .grid-scroll {
-  max-height: 75vh;
+  --row-header-width: 155px;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
   overflow: auto;
-  border: 1px solid var(--line);
-  border-radius: 6px;
+  border: 0;
+  border-radius: 0;
   background: var(--paper);
   isolation: isolate;
 }
 .output-grid {
   border-spacing: 0;
   table-layout: fixed;
-  width: max-content;
-  min-width: 100%;
+  width: 100%;
+  min-width: calc(var(--row-header-width) + var(--grid-columns) * 340px);
+  height: 100%;
 }
 .output-grid th {
   background: #e9e3d7;
@@ -359,44 +432,72 @@ legend {
   top: 0;
   z-index: 3;
   min-width: 340px;
-  max-width: 340px;
 }
+
 .output-grid tbody th {
   position: sticky;
   left: 0;
   z-index: 2;
-  min-width: 155px;
-  max-width: 155px;
-  width: 155px;
+  min-width: var(--row-header-width);
+  max-width: var(--row-header-width);
+  width: var(--row-header-width);
   vertical-align: top;
 }
 .output-grid thead .corner {
   left: 0;
   z-index: 4;
-  min-width: 155px;
-  max-width: 155px;
-  width: 155px;
+  min-width: var(--row-header-width);
+  max-width: var(--row-header-width);
+  width: var(--row-header-width);
   font-size: 11px;
   color: #837967;
 }
-.corner span {
+.axis-legend {
+  display: grid;
+  gap: 12px;
+}
+.axis-legend-entry {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.axis-legend-entry .lucide {
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+}
+.axis-legend-entry small,
+.axis-legend-entry strong {
   display: block;
-  margin: 5px 0;
+  line-height: 1.4;
+}
+.axis-legend-entry small {
+  font-size: 10px;
+  color: #837967;
+  margin-bottom: 3px;
+}
+.axis-legend-entry strong {
+  font-size: 12px;
+  font-weight: 500;
+  color: #39352e;
 }
 .output-grid td {
+  position: relative;
   padding: 0;
   border-right: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
   vertical-align: top;
-  width: 340px;
   min-width: 340px;
+  height: 390px;
 }
 .cell {
   display: grid;
   grid-template-rows: minmax(0, 1fr) 40px;
-  width: 340px;
-  height: 390px;
-  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  position: absolute;
+  inset: 0;
   background: #faf8f2;
 }
 .cell iframe,
@@ -525,20 +626,14 @@ legend {
     align-items: flex-start;
     flex-direction: column;
   }
-  .grid-page {
-    padding: 25px 16px 50px;
-  }
   .actions {
     flex-wrap: wrap;
   }
   .grid-scroll {
-    max-height: 70vh;
+    --row-header-width: 140px;
   }
   .output-grid tbody th,
   .output-grid thead .corner {
-    min-width: 110px;
-    max-width: 110px;
-    width: 110px;
     padding: 12px;
   }
   .modal {
@@ -604,14 +699,6 @@ nav .create-grid-button[aria-current="page"] {
 .model-search input[type="search"] {
   padding-left: 37px;
 }
-.corner .axis-directions {
-  display: flex;
-  gap: 8px;
-}
-.axis-directions .lucide {
-  width: 14px;
-  height: 14px;
-}
 .cell-footer a {
   display: inline-flex;
   align-items: center;
@@ -646,4 +733,41 @@ nav .create-grid-button[aria-current="page"] {
 .preview-status .spinner {
   width: 14px;
   height: 14px;
+}
+
+@media (max-width: 1100px) {
+  .grid-layout > header {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 16px 24px;
+  }
+  .grid-layout > header > nav {
+    justify-self: end;
+  }
+  .grid-header-slot {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
+@media (max-width: 700px) {
+  .grid-layout > header {
+    padding: 12px 16px;
+    gap: 14px;
+  }
+  .grid-layout > header > nav {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .grid-header-slot {
+    grid-row: 3;
+  }
+  .grid-heading {
+    gap: 14px;
+    align-items: stretch;
+  }
+  .grid-heading .actions {
+    width: 100%;
+  }
+  .grid-heading .actions button {
+    flex: 1;
+  }
 }
