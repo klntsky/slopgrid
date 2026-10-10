@@ -633,6 +633,8 @@ legend {
   height: 22px;
   color: var(--icon);
   animation: spin 1s linear infinite;
+  transform-box: fill-box;
+  transform-origin: center;
 }
 @keyframes spin {
   to {
@@ -704,11 +706,6 @@ legend {
   }
   .modal {
     padding: 24px;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .spinner {
-    animation: none;
   }
 }
 
