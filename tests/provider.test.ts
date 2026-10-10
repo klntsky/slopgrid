@@ -13,6 +13,7 @@ async function upstream(streamError?: Record<string, unknown>) {
       id: "required",
       reasoning: { mandatory: true, supported_efforts: ["low", "high"] },
     },
+    { id: "~fixture/latest", alias_target: { slug: "required" } },
     { id: "all", reasoning: { mandatory: false, supported_efforts: null } },
     { id: "fixed", reasoning: { mandatory: true } },
     { id: "router" },
@@ -92,6 +93,10 @@ test("catalog discovery distinguishes explicit, unrestricted, fixed, and unknown
   const h = await upstream();
   try {
     const models = await h.provider.models();
+    assert.equal(
+      models.find((m) => m.id === "~fixture/latest")!.aliasTarget,
+      "required",
+    );
     assert.equal(models.find((m) => m.id === "image")!.image, true);
     assert.deepEqual(
       models.find((m) => m.id === "required")!.reasoningEfforts,

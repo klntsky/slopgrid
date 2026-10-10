@@ -10,6 +10,7 @@ import {
 } from "./domain.js";
 export type Model = {
   id: string;
+  aliasTarget?: string;
   name: string;
   image: boolean;
   text: boolean;
@@ -41,6 +42,7 @@ export class Provider {
       throw new Error("Could not load OpenRouter models");
     type RemoteModel = {
       id: string;
+      alias_target?: { slug?: string };
       name: string;
       architecture?: {
         input_modalities?: string[];
@@ -81,6 +83,7 @@ export class Provider {
       }
       byId.set(m.id, {
         id: m.id,
+        aliasTarget: previous?.aliasTarget ?? m.alias_target?.slug,
         name: m.name,
         image: imageIds.has(m.id),
         text:

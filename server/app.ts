@@ -6,6 +6,7 @@ import { gridSchema, expandGrid, type Grid } from "./domain.js";
 import { Store, type Session } from "./store.js";
 import { Provider } from "./provider.js";
 import { Jobs } from "./jobs.js";
+import { ModelResolutionError, resolveGridModels } from "./model-resolution.js";
 import { createHtmlHosts } from "./hosts.js";
 export type Config = {
   origin: string;
@@ -293,7 +294,20 @@ export function createApp(config: Config) {
     const parsed = gridSchema.safeParse(req.body);
     if (!parsed.success)
       return res.status(400).json({ error: parsed.error.issues[0].message });
-    const cells = expandGrid(parsed.data).map((c) => ({ ...c, id: token() }));
+    let input: Grid["input"];
+    try {
+      input = resolveGridModels(parsed.data, await provider.models());
+    } catch (error) {
+      return res
+        .status(error instanceof ModelResolutionError ? 400 : 502)
+        .json({
+          error:
+            error instanceof ModelResolutionError
+              ? error.message
+              : "Could not load OpenRouter models. Try again.",
+        });
+    }
+    const cells = expandGrid(input).map((c) => ({ ...c, id: token() }));
     if (!rate(`create:${s.id}`, 10) || !rate(`create-ip:${req.ip}`, 30))
       return res
         .status(429)
@@ -302,7 +316,7 @@ export function createApp(config: Config) {
       revision: 0,
       id: token(),
       owner: s.id,
-      input: parsed.data,
+      input,
       status: "running",
       published: false,
       cells,
