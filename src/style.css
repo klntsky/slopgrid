@@ -397,6 +397,13 @@ legend {
 .grid-title {
   flex: 1;
 }
+.grid-heading .actions button {
+  gap: 8px;
+}
+.grid-heading .actions .lucide {
+  width: 18px;
+  height: 18px;
+}
 .grid-title h1 {
   font-size: 17px;
   font-weight: 500;
@@ -749,17 +756,6 @@ legend {
     align-items: flex-start;
     flex-direction: column;
   }
-  .grid-heading {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    align-items: center;
-  }
-  .grid-heading .grid-title {
-    grid-column: 2;
-  }
-  .grid-heading .actions {
-    grid-column: 1 / -1;
-  }
   .actions {
     flex-wrap: wrap;
   }
@@ -893,17 +889,19 @@ nav .create-grid-button[aria-current="page"] {
     grid-row: 3;
   }
   .grid-heading {
-    gap: 14px;
-    align-items: center;
+    gap: 10px;
   }
   .grid-heading .actions {
-    justify-self: start;
+    flex-wrap: nowrap;
+    gap: 6px;
   }
-}
-
-@media (max-width: 700px) {
-  .grid-heading:not(:has(.inference-toggle)) .grid-title {
-    grid-column: 1 / -1;
+  .grid-heading .actions button {
+    width: 36px;
+    height: 36px;
+    padding: 8px;
+  }
+  .grid-action-label {
+    display: none;
   }
 }
 

@@ -18,6 +18,10 @@ import {
   LoaderCircle,
   Pause,
   Play,
+  Pencil,
+  Upload,
+  GitFork,
+  Link2,
   Menu,
   X,
 } from "lucide-react";
@@ -917,8 +921,21 @@ function GridPage() {
         </div>
         <div className="actions">
           {(g.canEdit || g.published) && (
-            <button className="secondary" disabled={busy} onClick={configure}>
-              {g.published ? "FORK" : "EDIT"}
+            <button
+              className="secondary"
+              disabled={busy}
+              onClick={configure}
+              aria-label={g.published ? "FORK" : "EDIT"}
+              title={g.published ? "Fork grid" : "Edit grid"}
+            >
+              {g.published ? (
+                <GitFork aria-hidden="true" />
+              ) : (
+                <Pencil aria-hidden="true" />
+              )}
+              <span className="grid-action-label">
+                {g.published ? "FORK" : "EDIT"}
+              </span>
             </button>
           )}
           {g.canEdit && !g.published && (
@@ -926,13 +943,18 @@ function GridPage() {
               disabled={busy || g.status !== "complete"}
               className="primary"
               onClick={() => action("publish")}
+              aria-label="PUBLISH"
+              title="Publish grid"
             >
-              PUBLISH
+              <Upload aria-hidden="true" />
+              <span className="grid-action-label">PUBLISH</span>
             </button>
           )}
           {g.published && (
             <button
               className="secondary"
+              aria-label="Copy link"
+              title="Copy link"
               onClick={async () => {
                 try {
                   await navigator.clipboard.writeText(location.href);
@@ -944,7 +966,8 @@ function GridPage() {
                 }
               }}
             >
-              Copy link
+              <Link2 aria-hidden="true" />
+              <span className="grid-action-label">Copy link</span>
             </button>
           )}
         </div>

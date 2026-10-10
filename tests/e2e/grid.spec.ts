@@ -653,6 +653,20 @@ for (const viewport of [
       header.getByRole("progressbar", { name: "Grid generation" }),
     ).toHaveAttribute("aria-valuetext", "1 of 1 outputs complete");
     await expect(header.getByRole("button", { name: "PUBLISH" })).toBeEnabled();
+    async function expectActionsBesideTitle(names: string[]) {
+      const title = (await header
+        .getByRole("heading", { level: 1 })
+        .boundingBox())!;
+      for (const name of names) {
+        const button = header.getByRole("button", { name, exact: true });
+        const box = (await button.boundingBox())!;
+        expect(box.x).toBeGreaterThanOrEqual(title.x + title.width);
+        expect(box.y).toBeLessThan(title.y + title.height);
+        expect(box.y + box.height).toBeGreaterThan(title.y);
+        await expect(button.locator("svg")).toBeVisible();
+      }
+    }
+    await expectActionsBesideTitle(["EDIT", "PUBLISH"]);
     await expect(
       page.getByText("1 of 1 complete", { exact: true }),
     ).toHaveCount(0);
@@ -688,6 +702,7 @@ for (const viewport of [
       Math.abs(cell.y + cell.height - viewport.height),
     ).toBeLessThanOrEqual(2);
     await header.getByRole("button", { name: "PUBLISH" }).click();
+    await expectActionsBesideTitle(["FORK", "Copy link"]);
     await expect(header.getByText("Published", { exact: true })).toBeVisible();
     await expect(
       header.getByRole("button", { name: "Copy link" }),
