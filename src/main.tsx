@@ -665,6 +665,7 @@ function AxisEditor({
   onChange: (axis: GridInput["rows"]) => void;
 }) {
   const [filter, setFilter] = useState("");
+  const filterInput = useRef<HTMLInputElement>(null);
   const kinds =
     format === "image"
       ? (["model", "variable"] as const)
@@ -725,12 +726,25 @@ function AxisEditor({
             <div className="model-search">
               <Search aria-hidden="true" />
               <input
+                ref={filterInput}
                 type="search"
                 aria-label={`Filter ${label === "Rows" ? "row" : "column"} models`}
                 placeholder={`Filter ${label === "Rows" ? "row" : "column"} models`}
                 value={filter}
                 onChange={(e) => setFilter(e.target.value)}
               />
+              <button
+                type="button"
+                className="model-search-clear"
+                aria-label={`Clear ${label === "Rows" ? "row" : "column"} model filter`}
+                title="Clear filter"
+                onClick={() => {
+                  setFilter("");
+                  filterInput.current?.focus();
+                }}
+              >
+                <X aria-hidden="true" />
+              </button>
             </div>
           )}
           <div

@@ -429,6 +429,12 @@ test("model choices start empty and filtering preserves deliberate selections", 
     "Second model",
   ]);
   await expect(page.getByPlaceholder("Filter column models")).toBeVisible();
+  const filter = page.getByLabel("Filter column models");
+  const clear = page.getByRole("button", { name: "Clear column model filter" });
+  await expect(clear).toBeVisible();
+  await clear.click();
+  await expect(filter).toBeFocused();
+  await expect(filter).toHaveValue("");
   await expect(page.getByText("Row values", { exact: true })).toHaveCount(0);
   await expect(
     page.getByText("Filter column models", { exact: true }),
@@ -441,7 +447,10 @@ test("model choices start empty and filtering preserves deliberate selections", 
   await columns.getByRole("checkbox", { name: "Second model" }).check();
   await page.getByLabel("Filter column models").fill("no matching model");
   await expect(columns.getByText("No models match your filter.")).toBeVisible();
-  await page.getByLabel("Filter column models").fill("");
+  await clear.click();
+  await expect(filter).toHaveValue("");
+  await expect(filter).toBeFocused();
+  await expect(clear).toBeVisible();
   await expect(
     columns.getByRole("checkbox", { name: "Fixture text", exact: true }),
   ).toBeChecked();
@@ -458,6 +467,20 @@ test("model choices start empty and filtering preserves deliberate selections", 
     await expect(
       page.getByRole("group", { name: "Row values" }).locator("input:checked"),
     ).toHaveCount(0);
+    if (kind === "model") {
+      const rowFilter = page.getByLabel("Filter row models");
+      const rowClear = page.getByRole("button", {
+        name: "Clear row model filter",
+      });
+      await expect(rowClear).toBeVisible();
+      await rowFilter.fill("no matching model");
+      await rowClear.press("Enter");
+      await expect(rowFilter).toHaveValue("");
+      await expect(rowFilter).toBeFocused();
+      await expect(
+        page.getByRole("group", { name: "Row values" }).getByRole("checkbox"),
+      ).toHaveCount(2);
+    }
   }
 });
 

@@ -747,7 +747,7 @@ nav .create-grid-button[aria-current="page"] {
   position: relative;
   margin-bottom: 12px;
 }
-.model-search .lucide {
+.model-search > .lucide {
   position: absolute;
   top: 50%;
   left: 12px;
@@ -759,6 +759,26 @@ nav .create-grid-button[aria-current="page"] {
 }
 .model-search input[type="search"] {
   padding-left: 37px;
+  padding-right: 42px;
+}
+.model-search input[type="search"]::-webkit-search-cancel-button {
+  appearance: none;
+}
+.model-search-clear {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  width: 30px;
+  height: 30px;
+  padding: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+}
+.model-search-clear .lucide {
+  width: 16px;
+  height: 16px;
 }
 .cell-footer a {
   display: inline-flex;
