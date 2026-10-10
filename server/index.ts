@@ -30,6 +30,7 @@ const { app } = createApp({
   outputDomain,
   database: process.env.DATABASE_PATH ?? ".data/slopgrid.sqlite",
   secret,
+  workersMax: Number(process.env.WORKERS_MAX ?? 100),
 });
 if (production) {
   app.use(express.static("dist"));

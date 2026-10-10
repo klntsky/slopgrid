@@ -13,6 +13,7 @@ export type Config = {
   secret: Buffer;
   provider?: Provider;
   authURL?: string;
+  workersMax?: number;
 };
 const token = () => randomBytes(24).toString("hex");
 const escape = (s: string) =>
@@ -21,7 +22,7 @@ export function createApp(config: Config) {
   const app = express(),
     store = new Store(config.database, config.secret),
     provider = config.provider ?? new Provider(),
-    jobs = new Jobs(store, provider);
+    jobs = new Jobs(store, provider, config.workersMax);
   const origin = new URL(config.origin),
     secure = origin.protocol === "https:",
     cookieName = secure ? "__Host-slopgrid" : "slopgrid";
@@ -295,13 +296,6 @@ export function createApp(config: Config) {
       return res
         .status(429)
         .json({ error: "Grid limit reached. Try again in an hour." });
-    if (
-      jobs.active.size >= 4 ||
-      [...jobs.active.values()].some((g) => g.owner === s.id)
-    )
-      return res
-        .status(429)
-        .json({ error: "Wait for the current generation to finish." });
     const cells = expandGrid(parsed.data).map((c) => ({ ...c, id: token() }));
     try {
       const catalog = await models();
@@ -363,20 +357,27 @@ export function createApp(config: Config) {
       return res
         .status(401)
         .json({ error: "Reconnect OpenRouter to continue." });
-    if (jobs.active.has(g.id)) return res.json(snapshot(g, s));
-    if (
-      jobs.active.size >= 4 ||
-      [...jobs.active.values()].some((g) => g.owner === s.id)
-    )
-      return res
-        .status(429)
-        .json({ error: "Wait for the current generation to finish." });
+    const current = jobs.active.get(g.id);
+    if (current?.status === "running") return res.json(snapshot(current, s));
     if (!rate(`retry:${s.id}`, 30))
       return res
         .status(429)
         .json({ error: "Retry limit reached. Try again in an hour." });
-    if (g.cells.some((c) => c.status !== "complete")) jobs.start(g);
-    res.json(snapshot(g, s));
+    const resumed = g.cells.some((c) => c.status !== "complete")
+      ? jobs.start(g)
+      : g;
+    res.json(snapshot(resumed, s));
+  });
+  app.post("/api/grids/:id/pause", (req, res) => {
+    const s = session(req, res),
+      g = store.get(String(req.params.id));
+    if (!g || g.owner !== s.id)
+      return res.status(404).json({ error: "Grid not found" });
+    if (g.published || g.status === "complete")
+      return res
+        .status(409)
+        .json({ error: "This grid has finished generating." });
+    res.json(snapshot(jobs.pause(g), s));
   });
   app.post("/api/grids/:id/publish", (req, res) => {
     const s = session(req, res),

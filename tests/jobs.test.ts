@@ -1,0 +1,336 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { Store } from "../server/store.js";
+import { Jobs } from "../server/jobs.js";
+import { Provider } from "../server/provider.js";
+import { expandGrid, type Grid, type Cell } from "../server/domain.js";
+
+type Result = Awaited<ReturnType<Provider["generate"]>>;
+const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
+class ControlledProvider extends Provider {
+  started: { id: string; owner: string }[] = [];
+  pending = new Map<
+    string,
+    {
+      resolve: (r: Result) => void;
+      reject: (e: unknown) => void;
+      write: (text: string) => void;
+    }
+  >();
+  ignoreAbort = false;
+  override generate(
+    _key: string,
+    _format: Grid["input"]["format"],
+    cell: Cell,
+    onChunk: (text: string) => void,
+    signal?: AbortSignal,
+  ): Promise<Result> {
+    this.started.push({ id: cell.id, owner: cell.prompt.split(" ")[0] });
+    return new Promise((resolve, reject) => {
+      const abort = () => {
+        this.pending.delete(cell.id);
+        reject(new DOMException("Paused", "AbortError"));
+      };
+      const cleanup = () => signal?.removeEventListener("abort", abort);
+      this.pending.set(cell.id, {
+        resolve: (result) => {
+          cleanup();
+          resolve(result);
+        },
+        reject: (error) => {
+          cleanup();
+          reject(error);
+        },
+        write: onChunk,
+      });
+      if (!this.ignoreAbort) {
+        if (signal?.aborted) abort();
+        else signal?.addEventListener("abort", abort, { once: true });
+      }
+    });
+  }
+  finish(id: string) {
+    const held = this.pending.get(id)!;
+    this.pending.delete(id);
+    held.resolve({ files: { "index.md": id } });
+  }
+  fail(id: string, statusCode: number) {
+    const held = this.pending.get(id)!;
+    this.pending.delete(id);
+    held.reject({ statusCode });
+  }
+  owners() {
+    return [...this.pending.keys()].map((id) => id.split("/")[0]);
+  }
+}
+function harness(limit?: number) {
+  const store = new Store(":memory:", Buffer.alloc(32, 3)),
+    provider = new ControlledProvider(),
+    jobs = new Jobs(store, provider, limit);
+  function grid(owner: string, name: string, count: number): Grid {
+    store.saveSession({ id: owner, key: "fixture-key", created: Date.now() });
+    const rows = Math.min(count, 8);
+    const input: Grid["input"] = {
+      format: "markdown",
+      prompt: "$VARIABLE_ROW $VARIABLE_COLUMN",
+      rows: {
+        kind: "variable",
+        values: Array.from({ length: rows }, (_, i) => `${owner} ${i}`),
+      },
+      columns: {
+        kind: "variable",
+        values: Array.from({ length: count / rows }, (_, i) => String(i)),
+      },
+      model: "fixture/text",
+      effort: "none",
+      harness: "direct",
+    };
+    const g: Grid = {
+      id: `${owner}/${name}`,
+      revision: 0,
+      owner,
+      input,
+      published: false,
+      status: "running",
+      createdAt: new Date().toISOString(),
+      cells: expandGrid(input).map((cell, i) => ({
+        ...cell,
+        id: `${owner}/${name}/${i}`,
+      })),
+    };
+    store.save(g);
+    return g;
+  }
+  async function close() {
+    await flush();
+    while (provider.pending.size) {
+      for (const id of [...provider.pending.keys()]) provider.finish(id);
+      await flush();
+    }
+    store.db.close();
+  }
+  return { store, provider, jobs, grid, close };
+}
+
+test("the website uses up to 100 workers by default and fills every available slot", async () => {
+  const h = harness();
+  try {
+    h.jobs.start(h.grid("alice", "first", 64));
+    h.jobs.start(h.grid("alice", "second", 64));
+    await flush();
+    assert.equal(h.provider.pending.size, 100);
+    assert.equal(h.provider.started.length, 100);
+    h.provider.finish(h.provider.started[0].id);
+    await flush();
+    assert.equal(h.provider.pending.size, 100);
+    assert.equal(h.provider.started.length, 101);
+  } finally {
+    await h.close();
+  }
+});
+
+test("new users receive freed slots before a user with more workers, without interrupting active calls", async () => {
+  const h = harness(4);
+  try {
+    h.jobs.start(h.grid("alice", "grid", 8));
+    await flush();
+    assert.equal(h.provider.pending.size, 4);
+    h.jobs.start(h.grid("bob", "grid", 8));
+    h.jobs.start(h.grid("carol", "grid", 8));
+    await flush();
+    assert.equal(h.provider.started.length, 4);
+    h.provider.finish("alice/grid/0");
+    await flush();
+    assert.equal(h.provider.started.at(-1)!.owner, "bob");
+    assert.ok(h.provider.pending.has("alice/grid/1"));
+    h.provider.finish("alice/grid/1");
+    await flush();
+    assert.equal(h.provider.started.at(-1)!.owner, "carol");
+    h.provider.finish("alice/grid/2");
+    await flush();
+    const counts = ["alice", "bob", "carol"].map(
+      (owner) => h.provider.owners().filter((o) => o === owner).length,
+    );
+    assert.ok(Math.max(...counts) - Math.min(...counts) <= 1);
+    h.provider.finish("bob/grid/0");
+    await flush();
+    assert.equal(h.provider.started.at(-1)!.owner, "bob");
+    assert.equal(h.provider.pending.size, 4);
+  } finally {
+    await h.close();
+  }
+});
+
+test("allocation is per user across grids and rotates equal users when capacity is scarce", async () => {
+  const h = harness(1);
+  try {
+    h.jobs.start(h.grid("alice", "first", 2));
+    h.jobs.start(h.grid("alice", "second", 2));
+    h.jobs.start(h.grid("bob", "grid", 2));
+    h.jobs.start(h.grid("carol", "grid", 2));
+    await flush();
+    for (let i = 0; i < 5; i++) {
+      h.provider.finish([...h.provider.pending.keys()][0]);
+      await flush();
+    }
+    assert.deepEqual(
+      h.provider.started.map((call) => call.owner),
+      ["alice", "bob", "carol", "alice", "bob", "carol"],
+    );
+  } finally {
+    await h.close();
+  }
+});
+
+test("billing pauses queued work while other in-flight cells finish and completed cells survive retry", async () => {
+  const h = harness(3);
+  try {
+    const alice = h.grid("alice", "first", 6),
+      other = h.grid("alice", "second", 2);
+    h.jobs.start(alice);
+    await flush();
+    h.jobs.start(other);
+    h.jobs.start(h.grid("bob", "grid", 3));
+    h.provider.fail("alice/first/0", 402);
+    await flush();
+    assert.equal(alice.status, "paused");
+    assert.equal(other.status, "paused");
+    assert.ok(h.provider.pending.has("alice/first/1"));
+    assert.equal(h.provider.started.at(-1)!.owner, "bob");
+    h.provider.finish("alice/first/1");
+    h.provider.finish("alice/first/2");
+    await flush();
+    assert.equal(alice.cells.filter((c) => c.status === "complete").length, 2);
+    h.jobs.start(h.store.get(alice.id)!);
+    await flush();
+    while (h.provider.pending.size) {
+      for (const id of [...h.provider.pending.keys()]) h.provider.finish(id);
+      await flush();
+    }
+    assert.equal(h.store.get(alice.id)!.status, "complete");
+    for (const id of ["alice/first/1", "alice/first/2"])
+      assert.equal(h.provider.started.filter((c) => c.id === id).length, 1);
+    assert.equal(
+      h.provider.started.filter((c) => c.id === "alice/first/0").length,
+      2,
+    );
+  } finally {
+    await h.close();
+  }
+});
+
+test("retrying a paused grid while another cell is active cannot generate that cell twice", async () => {
+  const h = harness(2);
+  try {
+    const g = h.grid("alice", "grid", 3);
+    h.jobs.start(g);
+    await flush();
+    h.provider.fail("alice/grid/0", 402);
+    await flush();
+    h.jobs.start(h.store.get(g.id)!);
+    await flush();
+    assert.ok(h.provider.pending.has("alice/grid/1"));
+    assert.equal(
+      h.provider.started.filter((c) => c.id === "alice/grid/1").length,
+      1,
+    );
+    assert.equal(h.provider.pending.size, 2);
+  } finally {
+    await h.close();
+  }
+});
+
+test("manual pause aborts active cells, discards drafts and gives the released slots to waiting users", async () => {
+  const h = harness(2);
+  try {
+    const g = h.grid("alice", "grid", 3);
+    h.jobs.start(g);
+    await flush();
+    h.provider.pending.get("alice/grid/0")!.write("Temporary drawing");
+    h.jobs.start(h.grid("bob", "grid", 2));
+    h.jobs.pause(g);
+    await flush();
+    const paused = h.store.get(g.id)!;
+    assert.equal(paused.status, "paused");
+    assert.equal(paused.interruption, "manual");
+    assert.ok(
+      paused.cells.every((cell) => cell.status === "pending" && !cell.draft),
+    );
+    assert.deepEqual(h.provider.owners(), ["bob", "bob"]);
+    h.jobs.start(paused);
+    await flush();
+    assert.equal(h.provider.pending.size, 2);
+    h.provider.finish("bob/grid/0");
+    await flush();
+    assert.equal(h.provider.started.at(-1)!.owner, "alice");
+  } finally {
+    await h.close();
+  }
+});
+
+test("a late result from a paused request cannot restore its discarded preview or complete the cell", async () => {
+  const h = harness(1);
+  h.provider.ignoreAbort = true;
+  try {
+    const g = h.grid("alice", "grid", 1);
+    h.jobs.start(g);
+    await flush();
+    const held = h.provider.pending.get("alice/grid/0")!;
+    held.write("Before pause");
+    h.jobs.pause(g);
+    held.write("Late partial result");
+    h.provider.finish("alice/grid/0");
+    await flush();
+    const paused = h.store.get(g.id)!;
+    assert.equal(paused.cells[0].status, "pending");
+    assert.equal(paused.cells[0].draft, undefined);
+    assert.equal(paused.cells[0].files, undefined);
+    h.jobs.start(paused);
+    await flush();
+    assert.equal(h.provider.started.length, 2);
+  } finally {
+    await h.close();
+  }
+});
+
+test("WORKERS_MAX must be a positive safe integer", async () => {
+  const h = harness();
+  try {
+    for (const limit of [
+      0,
+      -1,
+      1.5,
+      NaN,
+      Infinity,
+      Number.MAX_SAFE_INTEGER + 1,
+    ])
+      assert.throws(() => new Jobs(h.store, h.provider, limit), /WORKERS_MAX/);
+  } finally {
+    await h.close();
+  }
+});
+
+test("a failed cell releases its slot without automatic retries and other cells can finish", async () => {
+  const h = harness(1);
+  try {
+    const g = h.grid("alice", "grid", 2);
+    h.jobs.start(g);
+    await flush();
+    h.provider.fail("alice/grid/0", 502);
+    await flush();
+    assert.equal(g.cells[0].status, "error");
+    assert.ok(h.provider.pending.has("alice/grid/1"));
+    h.provider.finish("alice/grid/1");
+    await flush();
+    assert.equal(h.store.get(g.id)!.status, "paused");
+    assert.equal(h.provider.started.length, 2);
+    h.jobs.start(h.store.get(g.id)!);
+    await flush();
+    assert.deepEqual(
+      h.provider.started.map((c) => c.id),
+      ["alice/grid/0", "alice/grid/1", "alice/grid/0"],
+    );
+  } finally {
+    await h.close();
+  }
+});

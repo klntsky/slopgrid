@@ -16,6 +16,8 @@ import {
   ArrowDown,
   ArrowRight,
   LoaderCircle,
+  Pause,
+  Play,
 } from "lucide-react";
 import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
@@ -730,7 +732,7 @@ function GridPage() {
     events.onerror = () => setStreamLost(true);
     return () => events.close();
   }, [id, cache]);
-  async function action(action: "retry" | "publish") {
+  async function action(action: "retry" | "publish" | "pause") {
     setBusy(true);
     setError("");
     if (action === "retry") setDismissed(false);
@@ -760,58 +762,69 @@ function GridPage() {
     complete = g.cells.filter((c) => c.status === "complete").length;
   const paused = g.status === "paused" && g.canEdit && !g.published;
   const toolbar = (
-    <div className="grid-heading">
-      <div className="grid-title">
-        <h1 title={g.input.prompt}>{g.input.prompt}</h1>
-        <div className="grid-progress">
-          <progress
-            aria-label="Grid generation"
-            value={complete}
-            max={g.cells.length}
-            aria-valuetext={`${complete} of ${g.cells.length} outputs complete`}
-            title={`${complete} of ${g.cells.length} outputs complete`}
-          />
+    <>
+      <div className="grid-heading">
+        {g.canEdit && !g.published && g.status !== "complete" && (
+          <button
+            className="secondary inference-toggle"
+            disabled={busy}
+            aria-label={paused ? "Resume generation" : "Pause generation"}
+            title={paused ? "Resume generation" : "Pause generation"}
+            onClick={() => action(paused ? "retry" : "pause")}
+          >
+            {paused ? (
+              <Play aria-hidden="true" />
+            ) : (
+              <Pause aria-hidden="true" />
+            )}
+          </button>
+        )}
+        <div className="grid-title">
+          <h1 title={g.input.prompt}>{g.input.prompt}</h1>
           {g.published && <span className="badge">Published</span>}
         </div>
+        <div className="actions">
+          {g.canEdit && !g.published && (
+            <button
+              disabled={busy || g.status !== "complete"}
+              className="primary"
+              onClick={() => action("publish")}
+            >
+              Publish grid
+            </button>
+          )}
+          {g.published && (
+            <button
+              className="secondary"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(location.href);
+                  setError("");
+                } catch {
+                  setError(
+                    "Copy the address from your browser to share this grid.",
+                  );
+                }
+              }}
+            >
+              Copy link
+            </button>
+          )}
+        </div>
       </div>
-      <div className="actions">
-        {paused && (
-          <button
-            disabled={busy}
-            className="secondary"
-            onClick={() => action("retry")}
-          >
-            Retry unfinished cells
-          </button>
-        )}
-        {g.canEdit && !g.published && (
-          <button
-            disabled={busy || g.status !== "complete"}
-            className="primary"
-            onClick={() => action("publish")}
-          >
-            Publish grid
-          </button>
-        )}
-        {g.published && (
-          <button
-            className="secondary"
-            onClick={async () => {
-              try {
-                await navigator.clipboard.writeText(location.href);
-                setError("");
-              } catch {
-                setError(
-                  "Copy the address from your browser to share this grid.",
-                );
-              }
-            }}
-          >
-            Copy link
-          </button>
+      <div className="grid-progress">
+        <progress
+          aria-label="Grid generation"
+          value={complete}
+          max={g.cells.length}
+          aria-valuetext={`${complete} of ${g.cells.length} outputs complete`}
+          title={`${complete} of ${g.cells.length} outputs complete`}
+        />
+        {g.status === "running" && (
+          <span className="progress-spark" aria-hidden="true" />
         )}
       </div>
-    </div>
+    </>
   );
   return (
     <>
@@ -819,8 +832,8 @@ function GridPage() {
       <main className="grid-page">
         {g.interruption === "restart" && (
           <p role="status">
-            Generation stopped when the server restarted. Retry unfinished cells
-            to continue.
+            Generation stopped when the server restarted. Resume generation to
+            continue.
           </p>
         )}
         {g.interruption === "auth" && g.canEdit && (
@@ -940,7 +953,7 @@ function GridPage() {
                                   {cell.draft && <pre>{cell.draft}</pre>}
                                 </>
                               ) : g.status === "paused" ? (
-                                "Waiting to retry"
+                                "Paused"
                               ) : (
                                 "Queued"
                               )}

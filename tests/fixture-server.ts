@@ -10,6 +10,9 @@ let unsafe = false;
 let svgStreaming = false;
 let advanceSvg: (() => void) | undefined;
 let svgProbes: string[] = [];
+let holdGenerations = false;
+const held: { prompt: string; release: () => void }[] = [];
+let aborted: string[] = [];
 let billing = false,
   calls: string[] = [];
 const codes = new Map<string, string>();
@@ -77,8 +80,28 @@ upstream.get("/api/v1/images/models", (_req, res) =>
     ],
   }),
 );
-upstream.post("/api/v1/images", (req, res) => {
+upstream.post("/api/v1/images", async (req, res) => {
   calls.push(req.body.prompt);
+  if (holdGenerations) {
+    await new Promise<void>((resolve) => {
+      const entry = {
+        prompt: req.body.prompt as string,
+        release: () => {
+          const i = held.indexOf(entry);
+          if (i >= 0) held.splice(i, 1);
+          resolve();
+        },
+      };
+      held.push(entry);
+      res.once("close", () => {
+        if (!res.writableEnded) {
+          aborted.push(entry.prompt);
+          entry.release();
+        }
+      });
+    });
+    if (res.destroyed) return;
+  }
   if (billing && req.body.prompt.includes("dog"))
     return res
       .status(402)
@@ -147,12 +170,17 @@ upstream.post("/api/v1/chat/completions", async (req, res) => {
       '"/><circle cx="100" cy="100" r="70" fill="blue',
       '"/></g></svg>\n```',
     ];
+    let release: (() => void) | undefined;
+    res.once("close", () => release?.());
     for (let i = 0; i < chunks.length; i++) {
       if (i) {
         await new Promise<void>((resolve) => {
+          release = resolve;
           advanceSvg = resolve;
         });
-        advanceSvg = undefined;
+        if (advanceSvg === release) advanceSvg = undefined;
+        release = undefined;
+        if (res.destroyed) return;
         // Each chunk crosses the app's 300 ms snapshot throttle.
         await new Promise((resolve) => setTimeout(resolve, 350));
       }
@@ -186,8 +214,12 @@ const { app } = createApp({
   secret: Buffer.alloc(32, 1),
   provider: new Provider("http://localhost:4318/api/v1"),
   authURL: "http://localhost:4318/auth",
+  workersMax: 2,
 });
 app.post("/fixture/reset", (req, res) => {
+  holdGenerations = !!req.body.holdGenerations;
+  for (const entry of [...held]) entry.release();
+  aborted = [];
   svgStreaming = !!req.body.svgStreaming;
   advanceSvg?.();
   advanceSvg = undefined;
@@ -200,6 +232,16 @@ app.post("/fixture/reset", (req, res) => {
 });
 app.post("/fixture/svg-next", (_req, res) => {
   advanceSvg?.();
+  res.json({ ok: true });
+});
+app.get("/fixture/workers", (_req, res) =>
+  res.json({ held: held.map((e) => e.prompt), aborted }),
+);
+app.post("/fixture/release", (req, res) => {
+  if (req.body.all) {
+    holdGenerations = false;
+    for (const entry of [...held]) entry.release();
+  } else held.find((entry) => entry.prompt === req.body.prompt)?.release();
   res.json({ ok: true });
 });
 app.post("/fixture/credits", (_req, res) => {

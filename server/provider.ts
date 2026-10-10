@@ -71,17 +71,23 @@ export class Provider {
     format: GridInput["format"],
     cell: Cell,
     onChunk: (text: string) => void,
+    signal?: AbortSignal,
   ): Promise<{
     files: Record<string, string>;
     usage?: { inputTokens?: number; outputTokens?: number };
   }> {
     const provider = createOpenRouter({ apiKey: key, baseURL: this.baseURL });
+    const requestSignal = () =>
+      AbortSignal.any([
+        AbortSignal.timeout(180000),
+        ...(signal ? [signal] : []),
+      ]);
     if (format === "image") {
       const result = await generateImage({
         model: provider.imageModel(cell.model),
         prompt: cell.prompt,
         maxRetries: 0,
-        abortSignal: AbortSignal.timeout(180000),
+        abortSignal: requestSignal(),
       });
       if (result.image.uint8Array.byteLength > 10_000_000)
         throw new Error("Image exceeds 10 MB");
@@ -107,8 +113,8 @@ export class Provider {
         : {},
     });
     const cancellation = new AbortController();
-    const signal = AbortSignal.any([
-      AbortSignal.timeout(180000),
+    const streamSignal = AbortSignal.any([
+      requestSignal(),
       cancellation.signal,
     ]);
     let failure: unknown;
@@ -117,7 +123,7 @@ export class Provider {
       system: instruction(format),
       prompt: cell.prompt,
       maxRetries: 0,
-      abortSignal: signal,
+      abortSignal: streamSignal,
       onError: ({ error }) => {
         failure = error;
       },
@@ -139,7 +145,7 @@ export class Provider {
         system: instruction(format),
         prompt: `Original request:\n${cell.prompt}\n\nDraft:\n${text}\n\nCheck the draft against the request and return the corrected final output.`,
         maxRetries: 0,
-        abortSignal: AbortSignal.timeout(180000),
+        abortSignal: requestSignal(),
       });
       text = reviewed.text;
       usage = {

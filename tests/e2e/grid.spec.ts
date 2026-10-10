@@ -57,7 +57,7 @@ test("billing can be dismissed and retried repeatedly without regenerating compl
     .getByRole("button", { name: "Close", exact: true })
     .click();
   await page
-    .getByRole("button", { name: "Retry unfinished cells", exact: true })
+    .getByRole("button", { name: "Resume generation", exact: true })
     .first()
     .click();
   await expect(page.getByRole("dialog")).toBeVisible();
@@ -664,3 +664,162 @@ for (const viewport of [
     ).toBeVisible();
     await expect(header.getByRole("progressbar")).toHaveCount(0);
   });
+
+test("parallel generation queues users and gives freed slots to users with fewer workers", async ({
+  page,
+  request,
+}) => {
+  await request.post("/fixture/reset", { data: { holdGenerations: true } });
+  const browser = page.context().browser()!,
+    baseURL = test.info().project.use.baseURL;
+  const bobContext = await browser.newContext({ baseURL }),
+    carolContext = await browser.newContext({ baseURL });
+  const bob = await bobContext.newPage(),
+    carol = await carolContext.newPage();
+  const calls = async (): Promise<string[]> =>
+    (await request.get("/fixture/calls")).json();
+  try {
+    await create(page, "Image", "A0\nA1\nA2\nA3", "hat");
+    await expect.poll(async () => (await calls()).length).toBe(2);
+    await create(bob, "Image", "B0\nB1\nB2", "hat");
+    await create(carol, "Image", "C0\nC1\nC2", "hat");
+    await expectProgress(bob, 0, 3);
+    await expectProgress(carol, 0, 3);
+    expect(await calls()).toHaveLength(2);
+    await request.post("/fixture/release", {
+      data: { prompt: (await calls())[0] },
+    });
+    await expect.poll(async () => (await calls()).length).toBe(3);
+    expect((await calls())[2]).toContain("Draw B0 ");
+    await expectProgress(page, 1, 4);
+    await request.post("/fixture/release", {
+      data: { prompt: (await calls())[1] },
+    });
+    await expect.poll(async () => (await calls()).length).toBe(4);
+    expect((await calls())[3]).toContain("Draw C0 ");
+    const workers = await (await request.get("/fixture/workers")).json();
+    expect(workers.held).toHaveLength(2);
+    expect(workers.aborted).toEqual([]);
+    await request.post("/fixture/release", { data: { all: true } });
+    await expectProgress(page, 4, 4);
+    await expectProgress(bob, 3, 3);
+    await expectProgress(carol, 3, 3);
+    expect(await calls()).toHaveLength(10);
+  } finally {
+    await request.post("/fixture/release", { data: { all: true } });
+    await bobContext.close();
+    await carolContext.close();
+  }
+});
+
+test("Pause aborts active inference and releases slots; Resume preserves completed images", async ({
+  page,
+  request,
+}) => {
+  await request.post("/fixture/reset", { data: { holdGenerations: true } });
+  try {
+    await create(page, "Image", "cat\ndog\nowl", "hat");
+    const calls = async (): Promise<string[]> =>
+      (await request.get("/fixture/calls")).json();
+    await expect.poll(async () => (await calls()).length).toBe(2);
+    await request.post("/fixture/release", {
+      data: { prompt: (await calls()).find((p) => p.includes("cat")) },
+    });
+    await expectProgress(page, 1, 3);
+    await expect.poll(async () => (await calls()).length).toBe(3);
+    await page.setViewportSize({ width: 390, height: 844 });
+    const header = page.getByRole("banner"),
+      pause = header.getByRole("button", { name: "Pause generation" });
+    const titleBox = (await header
+        .getByRole("heading", { level: 1 })
+        .boundingBox())!,
+      pauseBox = (await pause.boundingBox())!;
+    expect(pauseBox.x + pauseBox.width).toBeLessThanOrEqual(titleBox.x);
+    const bar = header.getByRole("progressbar", { name: "Grid generation" }),
+      barBox = (await bar.boundingBox())!,
+      headerBox = (await header.boundingBox())!;
+    expect(barBox.x).toBe(0);
+    expect(barBox.width).toBe(headerBox.width);
+    expect(barBox.height).toBeLessThanOrEqual(3);
+    expect(
+      Math.abs(barBox.y + barBox.height - headerBox.y - headerBox.height),
+    ).toBeLessThanOrEqual(2);
+    const spark = header.locator(".progress-spark");
+    await expect(spark).toBeVisible();
+    const sparkStart = (await spark.boundingBox())!.x;
+    await expect
+      .poll(async () => Math.abs((await spark.boundingBox())!.x - sparkStart))
+      .toBeGreaterThan(4);
+    const id = new URL(page.url()).pathname.split("/").pop()!;
+    const anonymous = await request.post(`/api/grids/${id}/pause`);
+    expect(anonymous.status()).toBe(404);
+    const crossOrigin = await page.request.post(`/api/grids/${id}/pause`, {
+      headers: { origin: "https://attacker.invalid" },
+    });
+    expect(crossOrigin.status()).toBe(403);
+    await pause.click();
+    await expect(
+      header.getByRole("button", { name: "Resume generation" }),
+    ).toBeVisible();
+    await expect(header.locator(".progress-spark")).toHaveCount(0);
+    await expectProgress(page, 1, 3);
+    await expect
+      .poll(
+        async () =>
+          (await (await request.get("/fixture/workers")).json()).aborted.length,
+      )
+      .toBe(2);
+    const snapshot = await (await page.request.get(`/api/grids/${id}`)).json();
+    expect(snapshot.interruption).toBe("manual");
+    expect(
+      snapshot.cells.filter((c: { status: string }) => c.status === "running"),
+    ).toHaveLength(0);
+    expect(snapshot.cells.every((c: { draft?: string }) => !c.draft)).toBe(
+      true,
+    );
+    await header.getByRole("button", { name: "Resume generation" }).click();
+    await expect(
+      header.getByRole("button", { name: "Pause generation" }),
+    ).toBeVisible();
+    await expect.poll(async () => (await calls()).length).toBe(5);
+    await request.post("/fixture/release", { data: { all: true } });
+    await expectProgress(page, 3, 3);
+    expect((await calls()).filter((p) => p.includes("cat"))).toHaveLength(1);
+    await expect(header.locator(".progress-spark")).toHaveCount(0);
+    await expect(
+      header.getByRole("button", { name: "Pause generation" }),
+    ).toHaveCount(0);
+    await header.getByRole("button", { name: "Publish grid" }).click();
+    expect((await page.request.post(`/api/grids/${id}/pause`)).status()).toBe(
+      409,
+    );
+  } finally {
+    await request.post("/fixture/release", { data: { all: true } });
+  }
+});
+
+test("pausing a streamed SVG discards its partial image and Resume generates it again", async ({
+  page,
+  request,
+}) => {
+  await request.post("/fixture/reset", { data: { svgStreaming: true } });
+  try {
+    await create(page, "SVG", "cat", "hat");
+    const preview = page.getByRole("img", { name: "SVG preview", exact: true });
+    await expect(preview).toBeVisible();
+    await page.getByRole("button", { name: "Pause generation" }).click();
+    await expect(preview).toHaveCount(0);
+    await expectProgress(page, 0, 1);
+    await page.getByRole("button", { name: "Resume generation" }).click();
+    await expect(preview).toBeVisible();
+    expect(await (await request.get("/fixture/calls")).json()).toHaveLength(2);
+    await request.post("/fixture/svg-next");
+    await expect
+      .poll(() => preview.getAttribute("src"))
+      .toContain("fill%3D%22blue");
+    await request.post("/fixture/svg-next");
+    await expectProgress(page, 1, 1);
+  } finally {
+    await request.post("/fixture/reset", { data: {} });
+  }
+});

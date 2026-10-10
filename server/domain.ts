@@ -90,7 +90,7 @@ export type Grid = {
   input: GridInput;
   status: "running" | "paused" | "complete";
   published: boolean;
-  interruption?: "billing" | "auth" | "restart";
+  interruption?: "billing" | "auth" | "restart" | "manual";
   cells: Cell[];
   createdAt: string;
 };
