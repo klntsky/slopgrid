@@ -1132,14 +1132,14 @@ test("model IDs in outputs and model legends copy to the real clipboard", async 
     .toBe("fixture/text");
 });
 
-test("unsupported model efforts are explained before generation and API bypasses make no inference calls", async ({
+test("model compatibility warnings allow generation and resuming unfinished cells", async ({
   page,
   request,
 }) => {
+  await page.setExtraHTTPHeaders({ "X-Forwarded-For": "192.0.2.47" });
   await request.post("/fixture/reset", { data: { billing: false } });
   await create(page, "SVG", "cat", "hat");
   await expectProgress(page, 1, 1);
-  const callsBefore = await (await request.get("/fixture/calls")).json();
   await page.goto("/");
   await page.getByRole("button", { name: "SVG", exact: true }).click();
   await page
@@ -1158,41 +1158,57 @@ test("unsupported model efforts are explained before generation and API bypasses
   await expect(warning).toContainText('"max"');
   await expect(warning).toContainText("low, medium, high");
 
-  await expect(
-    page.getByRole("button", { name: "Continue to prompt" }),
-  ).toBeDisabled();
-  const invalid = {
-    format: "svg",
-    prompt: "Draw a cat",
-    rows: { kind: "effort", values: ["none", "max"] },
-    columns: { kind: "model", values: ["fixture/other"] },
-    model: "fixture/text",
-    effort: "default",
-    harness: "direct",
-  };
-  const rejected = await page.request.post("/api/grids", { data: invalid });
-  expect(rejected.status()).toBe(400);
-  expect((await rejected.json()).issues).toHaveLength(2);
-  expect(await (await request.get("/fixture/calls")).json()).toEqual(
-    callsBefore,
-  );
-  await rows.getByRole("checkbox", { name: "None", exact: true }).uncheck();
-  await rows.getByRole("checkbox", { name: "max", exact: true }).uncheck();
-  await rows.getByRole("checkbox", { name: "high", exact: true }).check();
-  await expect(warning).toHaveCount(0);
   await page.getByRole("button", { name: "Continue to prompt" }).click();
   await page.getByLabel("Prompt", { exact: true }).fill("Draw a cat");
   await page.getByRole("button", { name: "Continue to key setup" }).click();
+  await expect(warning).toContainText('"max"');
   await expect(
     page.getByRole("button", { name: "Generate", exact: true }),
   ).toBeEnabled();
-  await rows.getByRole("checkbox", { name: "max", exact: true }).check();
-  await expect(
-    page.getByRole("button", { name: "Generate", exact: true }),
-  ).toBeDisabled();
-  await rows.getByRole("checkbox", { name: "max", exact: true }).uncheck();
   await page.getByRole("button", { name: "Generate", exact: true }).click();
-  await expectProgress(page, 1, 1);
+  await expectProgress(page, 2, 2);
+  await request.post("/fixture/reset", { data: { holdGenerations: true } });
+  try {
+    const input = {
+      format: "svg",
+      prompt: "Draw a cat",
+      rows: { kind: "effort", values: ["none", "max"] },
+      columns: { kind: "model", values: ["fixture/other"] },
+      model: "fixture/text",
+      effort: "default",
+      harness: "direct",
+    };
+    const created = await page.request.post("/api/grids", { data: input });
+    expect(created.status()).toBe(201);
+    const grid = await created.json();
+    await expect
+      .poll(
+        async () =>
+          (await (await request.get("/fixture/workers")).json()).held.length,
+      )
+      .toBe(2);
+    expect(
+      (await page.request.post(`/api/grids/${grid.id}/pause`)).status(),
+    ).toBe(200);
+    expect(
+      (await page.request.post(`/api/grids/${grid.id}/retry`)).status(),
+    ).toBe(200);
+    await expect
+      .poll(
+        async () => (await (await request.get("/fixture/calls")).json()).length,
+      )
+      .toBe(4);
+    await request.post("/fixture/release", { data: { all: true } });
+    await expect
+      .poll(
+        async () =>
+          (await (await page.request.get(`/api/grids/${grid.id}`)).json())
+            .status,
+      )
+      .toBe("complete");
+  } finally {
+    await request.post("/fixture/release", { data: { all: true } });
+  }
 });
 
 for (const theme of ["light", "dark"] as const)

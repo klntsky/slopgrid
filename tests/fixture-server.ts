@@ -87,12 +87,11 @@ upstream.get("/api/v1/images/models", (_req, res) =>
     ],
   }),
 );
-upstream.post("/api/v1/images", async (req, res) => {
-  calls.push(req.body.prompt);
+async function waitForRelease(prompt: string, res: express.Response) {
   if (holdGenerations) {
     await new Promise<void>((resolve) => {
       const entry = {
-        prompt: req.body.prompt as string,
+        prompt,
         release: () => {
           const i = held.indexOf(entry);
           if (i >= 0) held.splice(i, 1);
@@ -107,8 +106,12 @@ upstream.post("/api/v1/images", async (req, res) => {
         }
       });
     });
-    if (res.destroyed) return;
   }
+}
+upstream.post("/api/v1/images", async (req, res) => {
+  calls.push(req.body.prompt);
+  await waitForRelease(req.body.prompt, res);
+  if (res.destroyed) return;
   if (generationError && req.body.prompt.includes("dog"))
     return res
       .status(500)
@@ -138,6 +141,8 @@ upstream.post("/api/v1/chat/completions", async (req, res) => {
         ?.content ?? "",
     );
   calls.push(prompt);
+  await waitForRelease(prompt, res);
+  if (res.destroyed) return;
   if (billing && streamBilling && prompt.includes("dog")) {
     res.set("Content-Type", "text/event-stream");
     return res.end(

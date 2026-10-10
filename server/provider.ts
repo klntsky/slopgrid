@@ -8,7 +8,6 @@ import {
   type Cell,
   type GridInput,
 } from "./domain.js";
-import { compatibilityIssues } from "./compatibility.js";
 export type Model = {
   id: string;
   name: string;
@@ -110,9 +109,6 @@ export class Provider {
     mediaType?: string;
     usage?: Cell["usage"];
   }> {
-    const models = await this.models();
-    const issues = compatibilityIssues([cell], format, models);
-    if (issues.length) throw new Error(issues.join("\n"));
     let imageCost: number | undefined;
     const provider = createOpenRouter({
       apiKey: key,
@@ -159,12 +155,9 @@ export class Provider {
         },
       };
     }
-    const supportsReasoning = models.find(
-      (m) => m.id === cell.model,
-    )?.reasoning;
     const model = provider.chat(cell.model, {
       extraBody:
-        supportsReasoning && cell.effort !== "default"
+        cell.effort !== "default"
           ? {
               reasoning:
                 cell.effort === "none"

@@ -6,7 +6,6 @@ import { gridSchema, expandGrid, type Grid } from "./domain.js";
 import { Store, type Session } from "./store.js";
 import { Provider, type Model } from "./provider.js";
 import { Jobs } from "./jobs.js";
-import { compatibilityIssues } from "./compatibility.js";
 import { createHtmlHosts } from "./hosts.js";
 export type Config = {
   origin: string;
@@ -301,19 +300,6 @@ export function createApp(config: Config) {
     if (!parsed.success)
       return res.status(400).json({ error: parsed.error.issues[0].message });
     const cells = expandGrid(parsed.data).map((c) => ({ ...c, id: token() }));
-    try {
-      const issues = compatibilityIssues(
-        cells,
-        parsed.data.format,
-        await models(),
-      );
-      if (issues.length)
-        return res.status(400).json({ error: issues.join("\n"), issues });
-    } catch {
-      return res
-        .status(502)
-        .json({ error: "Could not load OpenRouter models. Try again." });
-    }
     if (!rate(`create:${s.id}`, 10) || !rate(`create-ip:${req.ip}`, 30))
       return res
         .status(429)
@@ -354,21 +340,6 @@ export function createApp(config: Config) {
         .json({ error: "Reconnect OpenRouter to continue." });
     const current = jobs.active.get(g.id);
     if (current?.status === "running") return res.json(snapshot(current, s));
-    try {
-      const issues = compatibilityIssues(
-        g.cells.filter(
-          (c) => c.status !== "complete" && c.status !== "running",
-        ),
-        g.input.format,
-        await models(),
-      );
-      if (issues.length)
-        return res.status(400).json({ error: issues.join("\n"), issues });
-    } catch {
-      return res
-        .status(502)
-        .json({ error: "Could not load OpenRouter models. Try again." });
-    }
     if (!rate(`retry:${s.id}`, 30))
       return res
         .status(429)

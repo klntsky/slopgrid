@@ -356,7 +356,7 @@ function Create() {
     ? compatibilityIssues(expandGrid(input), input.format, catalog.data)
     : [];
   async function generate() {
-    if (incompatibilities.length || !catalog.data) return;
+    if (!catalog.data) return;
     const issue = unusedVariableIssue(input);
     if (issue) {
       setError(issue);
@@ -524,6 +524,10 @@ function Create() {
                       <li key={issue}>{issue}</li>
                     ))}
                   </ul>
+                  <p>
+                    You can generate anyway; OpenRouter may reject these
+                    settings.
+                  </p>
                 </div>
               )}
               {catalog.isError && (
@@ -532,7 +536,7 @@ function Create() {
               {step < 2 && (
                 <button
                   className="secondary"
-                  disabled={incompatibilities.length > 0 || !catalog.data}
+                  disabled={!catalog.data}
                   onClick={() => {
                     if (
                       !input.rows.values.length ||
@@ -608,8 +612,7 @@ function Create() {
               !connection.data?.connected ||
               !input.prompt.trim() ||
               !!unusedVariableIssue(input) ||
-              !catalog.data ||
-              incompatibilities.length > 0
+              !catalog.data
             }
             onClick={generate}
           >

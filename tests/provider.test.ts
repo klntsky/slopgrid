@@ -111,7 +111,7 @@ test("catalog discovery distinguishes explicit, unrestricted, fixed, and unknown
     await h.close();
   }
 });
-test("validated settings reach the request correctly and invalid efforts never call inference", async () => {
+test("selected settings reach inference even when the catalog warns they are unsupported", async () => {
   const h = await upstream();
   try {
     await h.provider.generate(
@@ -136,34 +136,28 @@ test("validated settings reach the request correctly and invalid efforts never c
     assert.deepEqual(h.requests[1].reasoning, { enabled: false });
     assert.deepEqual(h.requests[2].reasoning, { effort: "high" });
     assert.deepEqual(h.requests[2].provider, { require_parameters: true });
-    await assert.rejects(
-      h.provider.generate(
-        "fixture-key",
-        "markdown",
-        cell("required", "none"),
-        () => {},
-      ),
-      /requires thinking/,
+    await h.provider.generate(
+      "fixture-key",
+      "markdown",
+      cell("required", "none"),
+      () => {},
     );
-    await assert.rejects(
-      h.provider.generate(
-        "fixture-key",
-        "markdown",
-        cell("required", "max"),
-        () => {},
-      ),
-      /max/,
+    await h.provider.generate(
+      "fixture-key",
+      "markdown",
+      cell("required", "max"),
+      () => {},
     );
-    await assert.rejects(
-      h.provider.generate(
-        "fixture-key",
-        "markdown",
-        cell("fixed", "high"),
-        () => {},
-      ),
-      /high/,
+    await h.provider.generate(
+      "fixture-key",
+      "markdown",
+      cell("fixed", "high"),
+      () => {},
     );
-    assert.equal(h.requests.length, 3);
+    assert.deepEqual(h.requests[3].reasoning, { enabled: false });
+    assert.deepEqual(h.requests[4].reasoning, { effort: "max" });
+    assert.deepEqual(h.requests[5].reasoning, { effort: "high" });
+    assert.equal(h.requests.length, 6);
   } finally {
     await h.close();
   }
