@@ -861,12 +861,7 @@ nav {
   .grid-title {
     grid-column: 1 / -1;
     grid-row: 2;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 2px;
-  }
-  .grid-title h1 {
-    width: 100%;
+    gap: 8px;
   }
 }
 
