@@ -876,6 +876,7 @@ function ResizeHandle({
   );
 }
 function GridPage() {
+  const { resolvedTheme } = useTheme();
   const { id } = gridRoute.useParams(),
     cache = useQueryClient(),
     headerTarget = useContext(GridHeaderTarget),
@@ -1131,6 +1132,10 @@ function GridPage() {
                     const cell = g.cells.find(
                       (c) => c.row === row && c.column === column,
                     )!;
+                    const outputURL =
+                      g.input.format === "markdown" && cell.outputURL
+                        ? `${cell.outputURL}?theme=${resolvedTheme}`
+                        : cell.outputURL;
                     return (
                       <td key={column}>
                         <article className="cell">
@@ -1148,24 +1153,29 @@ function GridPage() {
                                       ? "Generated SVG"
                                       : "Generated image"
                                   }
-                                  src={cell.outputURL}
+                                  src={outputURL}
                                   loading="lazy"
                                 />
                               ) : (
                                 <iframe
+                                  className={
+                                    g.input.format === "markdown"
+                                      ? "markdown-preview"
+                                      : undefined
+                                  }
                                   title={`${r} / ${g.input.columns.values[column]}`}
                                   sandbox={
                                     g.input.format === "html"
                                       ? "allow-scripts"
                                       : ""
                                   }
-                                  src={cell.outputURL}
+                                  src={outputURL}
                                   loading="lazy"
                                 />
                               )}
                               <div className="cell-footer">
                                 <a
-                                  href={cell.outputURL}
+                                  href={outputURL}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   aria-label="Open output"

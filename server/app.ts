@@ -116,11 +116,24 @@ export function createApp(config: Config) {
         .sendFile(file, { dotfiles: "allow" });
     if (output.format === "svg")
       return res.type("image/svg+xml").sendFile(file, { dotfiles: "allow" });
-    return res
-      .type("html")
-      .send(
-        `<html><head><style>body{font:16px/1.6 system-ui;margin:24px;color:#302b27}pre{overflow:auto}img{max-width:100%}</style></head><body>${marked.parse(readFileSync(file, "utf8"), { renderer: markdownRenderer })}</body></html>`,
-      );
+    const colorScheme =
+      req.query.theme === "dark"
+        ? "dark"
+        : req.query.theme === "light"
+          ? "light"
+          : "light dark";
+    return res.type("html").send(
+      `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>
+          :root{color-scheme:${colorScheme};background:light-dark(#faf8f2,#22211f);color:light-dark(#39352e,#e8e5df)}
+          body{font:16px/1.6 system-ui;margin:24px;overflow-wrap:anywhere}
+          a{color:light-dark(#67583f,#b5a181)}
+          pre{overflow:auto;padding:12px;background:light-dark(#f1ece3,#282623)}
+          code{background:light-dark(#f1ece3,#282623)}
+          blockquote{margin-left:0;padding-left:16px;border-left:3px solid light-dark(#d1cabd,#45423e)}
+          hr,th,td{border-color:light-dark(#d1cabd,#45423e)}
+          img{max-width:100%}
+        </style></head><body>${marked.parse(readFileSync(file, "utf8"), { renderer: markdownRenderer })}</body></html>`,
+    );
   });
   app.use(express.json({ limit: "100kb" }));
   const buckets = new Map<string, { count: number; expires: number }>();

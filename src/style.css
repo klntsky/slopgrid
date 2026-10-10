@@ -572,6 +572,11 @@ legend {
   background: white;
   color-scheme: light;
 }
+.cell .generated-image,
+.cell .markdown-preview {
+  background: var(--cell);
+  color-scheme: inherit;
+}
 .cell-footer {
   height: 52px;
   border-top: 1px solid var(--line);
@@ -588,8 +593,9 @@ legend {
 }
 .cell-usage {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
   line-height: 1.4;
 }
 .cell-footer a {

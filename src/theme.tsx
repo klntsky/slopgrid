@@ -6,7 +6,8 @@ import {
   type ReactNode,
 } from "react";
 
-type Theme = "system" | "light" | "dark";
+type ResolvedTheme = "light" | "dark";
+type Theme = "system" | ResolvedTheme;
 function preference(value: string | null): Theme {
   return value === "light" || value === "dark" ? value : "system";
 }
@@ -19,18 +20,25 @@ function savedTheme(): Theme {
 }
 const ThemeContext = createContext<{
   theme: Theme;
+  resolvedTheme: ResolvedTheme;
   setTheme: (theme: Theme) => void;
 }>({
   theme: "system",
+  resolvedTheme: "light",
   setTheme: () => {},
 });
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState(savedTheme);
+  const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() =>
+    document.documentElement.dataset.theme === "dark" ? "dark" : "light",
+  );
   useEffect(() => {
     const system = matchMedia("(prefers-color-scheme: dark)");
     const apply = () => {
-      document.documentElement.dataset.theme =
+      const resolved =
         theme === "system" ? (system.matches ? "dark" : "light") : theme;
+      document.documentElement.dataset.theme = resolved;
+      setResolvedTheme(resolved);
       const background = getComputedStyle(document.documentElement)
         .getPropertyValue("--background")
         .trim();
@@ -58,7 +66,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     } catch {}
   }
   return (
-    <ThemeContext.Provider value={{ theme, setTheme: chooseTheme }}>
+    <ThemeContext.Provider
+      value={{ theme, resolvedTheme, setTheme: chooseTheme }}
+    >
       {children}
     </ThemeContext.Provider>
   );
