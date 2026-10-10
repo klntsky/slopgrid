@@ -73,7 +73,7 @@ test("billing can be dismissed and retried repeatedly without regenerating compl
     .getByRole("button", { name: "Retry unfinished cells" })
     .click();
   await expectProgress(page, 2, 2);
-  await page.getByRole("button", { name: "Publish grid" }).click();
+  await page.getByRole("button", { name: "PUBLISH" }).click();
   await expect(page.getByText("Published", { exact: true })).toBeVisible();
   const url = page.url();
   const stranger = await page.context().browser()!.newContext();
@@ -81,7 +81,7 @@ test("billing can be dismissed and retried repeatedly without regenerating compl
   await publicPage.goto(url);
   await expectProgress(publicPage, 2, 2);
   await expect(
-    publicPage.getByRole("button", { name: "Publish grid" }),
+    publicPage.getByRole("button", { name: "PUBLISH" }),
   ).toHaveCount(0);
   await stranger.close();
   const calls = await (await request.get("/fixture/calls")).json();
@@ -481,21 +481,21 @@ test("the logo opens the form for a new browser and Your grids after creation", 
   await page.getByRole("link", { name: "slopgrid", exact: true }).click();
   await expect(page).toHaveURL("/");
   const navbar = page.getByRole("navigation");
-  await navbar.getByRole("link", { name: "Your grids" }).click();
+  await navbar.getByRole("link", { name: "YOUR GRIDS" }).click();
   await expect(page).toHaveURL("/grids");
   await expect(page.getByRole("heading", { name: "Your grids" })).toBeVisible();
   await expect(
     page.getByText("You haven’t created any grids yet."),
   ).toBeVisible();
   await navbar
-    .getByRole("link", { name: "Create a grid", exact: true })
+    .getByRole("link", { name: "NEW GRID", exact: true })
     .click();
   await expect(page).toHaveURL("/");
   await create(page, "Image", "cat", "hat");
   await expectProgress(page, 1, 1);
   const gridURL = page.url();
   await navbar
-    .getByRole("link", { name: "Create a grid", exact: true })
+    .getByRole("link", { name: "NEW GRID", exact: true })
     .click();
   await expect(page.getByRole("heading", { name: "Your grids" })).toHaveCount(
     0,
@@ -554,7 +554,7 @@ test("SVG images grow during generation without exposing markup or running SVG s
     await expect.poll(centerColor).toEqual([255, 0, 0, 255]);
     await expectProgress(page, 0, 1);
     await expect(
-      page.getByRole("button", { name: "Publish grid" }),
+      page.getByRole("button", { name: "PUBLISH" }),
     ).toBeDisabled();
     await expect(page.locator("iframe, .cell pre")).toHaveCount(0);
     await request.post("/fixture/svg-next");
@@ -612,7 +612,7 @@ for (const viewport of [
       header.getByRole("progressbar", { name: "Grid generation" }),
     ).toHaveAttribute("aria-valuetext", "1 of 1 outputs complete");
     await expect(
-      header.getByRole("button", { name: "Publish grid" }),
+      header.getByRole("button", { name: "PUBLISH" }),
     ).toBeEnabled();
     await expect(
       page.getByText("1 of 1 complete", { exact: true }),
@@ -648,14 +648,14 @@ for (const viewport of [
     expect(
       Math.abs(cell.y + cell.height - viewport.height),
     ).toBeLessThanOrEqual(2);
-    await header.getByRole("button", { name: "Publish grid" }).click();
+    await header.getByRole("button", { name: "PUBLISH" }).click();
     await expect(header.getByText("Published", { exact: true })).toBeVisible();
     await expect(
       header.getByRole("button", { name: "Copy link" }),
     ).toBeVisible();
     await header
       .getByRole("navigation")
-      .getByRole("link", { name: "Create a grid", exact: true })
+      .getByRole("link", { name: "NEW GRID", exact: true })
       .click();
     await expect(
       page.getByRole("heading", {
@@ -789,7 +789,7 @@ test("Pause aborts active inference and releases slots; Resume preserves complet
     await expect(
       header.getByRole("button", { name: "Pause generation" }),
     ).toHaveCount(0);
-    await header.getByRole("button", { name: "Publish grid" }).click();
+    await header.getByRole("button", { name: "PUBLISH" }).click();
     expect((await page.request.post(`/api/grids/${id}/pause`)).status()).toBe(
       409,
     );

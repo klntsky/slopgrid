@@ -63,7 +63,7 @@ function CreateGridButton() {
   return (
     <Link to="/" className="button primary create-grid-button">
       <Plus aria-hidden="true" />
-      Create a grid
+      NEW GRID
     </Link>
   );
 }
@@ -102,8 +102,8 @@ function Layout() {
           {isGrid && <div className="grid-header-slot" ref={setHeaderTarget} />}
           <nav>
             <CreateGridButton />
-            <Link to="/grids">Your grids</Link>
-            <Link to="/settings">Settings</Link>
+            <Link to="/grids">YOUR GRIDS</Link>
+            <Link to="/settings">SETTINGS</Link>
           </nav>
         </header>
         <Outlet />
@@ -790,7 +790,7 @@ function GridPage() {
               className="primary"
               onClick={() => action("publish")}
             >
-              Publish grid
+              PUBLISH
             </button>
           )}
           {g.published && (
