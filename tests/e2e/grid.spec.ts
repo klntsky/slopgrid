@@ -2,12 +2,12 @@ import { test, expect } from "@playwright/test";
 
 async function expectProgress(
   page: import("@playwright/test").Page,
-  completed: number,
+  finished: number,
   total: number,
 ) {
   const bar = page.getByRole("progressbar", { name: "Grid generation" });
   await expect(bar).toBeVisible();
-  await expect(bar).toHaveAttribute("value", String(completed));
+  await expect(bar).toHaveAttribute("value", String(finished));
   await expect(bar).toHaveAttribute("max", String(total));
 }
 
@@ -1179,3 +1179,70 @@ test("unsupported model efforts are explained before generation and API bypasses
   await page.getByRole("button", { name: "Generate", exact: true }).click();
   await expectProgress(page, 1, 1);
 });
+
+for (const theme of ["light", "dark"] as const)
+  test(`failed cells count toward progress and have red segments in ${theme} theme`, async ({
+    page,
+    request,
+  }) => {
+    await page.emulateMedia({ colorScheme: theme });
+    await page.setExtraHTTPHeaders({
+      "X-Forwarded-For": theme === "light" ? "192.0.2.41" : "192.0.2.42",
+    });
+    await request.post("/fixture/reset", {
+      data: { holdGenerations: true, generationError: true },
+    });
+    await create(page, "Image", "cat\ndog\nowl", "hat");
+    await expect
+      .poll(
+        async () =>
+          (await (await request.get("/fixture/workers")).json()).held.length,
+      )
+      .toBe(2);
+    await request.post("/fixture/release", {
+      data: { prompt: "Draw cat wearing a hat" },
+    });
+    await request.post("/fixture/release", {
+      data: { prompt: "Draw dog wearing a hat" },
+    });
+    await expectProgress(page, 2, 3);
+    const progress = page.getByRole("progressbar", { name: "Grid generation" });
+    await expect(progress).toHaveAttribute(
+      "aria-valuetext",
+      "2 of 3 outputs finished: 1 complete, 1 failed",
+    );
+    const segments = page.locator(".progress-segment");
+    await expect(segments).toHaveCount(3);
+    const colors = await segments.evaluateAll((elements) =>
+      elements.map((el) =>
+        getComputedStyle(el).backgroundColor.match(/\d+/g)!.map(Number),
+      ),
+    );
+    expect(colors[1][0]).toBeGreaterThan(colors[1][1] * 1.5);
+    expect(colors[0]).not.toEqual(colors[1]);
+    expect(colors[2]).not.toEqual(colors[1]);
+    const width = (await segments.nth(1).boundingBox())!.width;
+    expect(width).toBeCloseTo((await progress.boundingBox())!.width / 3, 0);
+    await request.post("/fixture/release", { data: { all: true } });
+    await expectProgress(page, 3, 3);
+    await expect(progress).toHaveAttribute(
+      "aria-valuetext",
+      "3 of 3 outputs finished: 2 complete, 1 failed",
+    );
+    await expect(page.getByRole("button", { name: "PUBLISH" })).toBeDisabled();
+    await page.reload();
+    await expectProgress(page, 3, 3);
+    await request.post("/fixture/reset", { data: { holdGenerations: true } });
+    await page.getByRole("button", { name: "Resume generation" }).click();
+    await expectProgress(page, 2, 3);
+    await expect(
+      page.locator('.progress-segment[data-status="error"]'),
+    ).toHaveCount(0);
+    await request.post("/fixture/release", { data: { all: true } });
+    await expectProgress(page, 3, 3);
+    await expect(progress).toHaveAttribute(
+      "aria-valuetext",
+      "3 of 3 outputs complete",
+    );
+    await expect(page.getByRole("button", { name: "PUBLISH" })).toBeEnabled();
+  });

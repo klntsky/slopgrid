@@ -13,7 +13,7 @@ When model, thinking effort, or harness is not a dimension, its selection applie
 
 ## Watch generation
 
-The grid fills the page below the header, which shows your prompt, a generation progress bar, and publishing controls. Outputs generate in parallel as capacity becomes available, with free capacity going to users currently running fewer outputs. The grid updates as generation progresses. SVG cells show a partial image while generation is running, completing unfinished markup for the preview and replacing it with the final output when ready. Completed outputs remain available when you reload the page. Row and column headers stay visible as you scroll, with labeled dimensions in the corner. Select **Open output** to view a result in a separate tab. Click or tap the model ID above an output, or in a model row or column label, to copy its full ID.
+The grid fills the page below the header, which shows your prompt, a generation progress bar, and publishing controls. Outputs generate in parallel as capacity becomes available, with free capacity going to users currently running fewer outputs. The progress bar has one segment per output in grid order: completed outputs use the normal accent color, failed outputs appear red, and unfinished outputs remain unfilled. Both completed and failed outputs count toward progress. The grid updates as generation progresses. SVG cells show a partial image while generation is running, completing unfinished markup for the preview and replacing it with the final output when ready. Completed outputs remain available when you reload the page. Row and column headers stay visible as you scroll, with labeled dimensions in the corner. Select **Open output** to view a result in a separate tab. Click or tap the model ID above an output, or in a model row or column label, to copy its full ID.
 
 On mobile, pinch with two fingers inside the grid to zoom the table, then swipe with one finger to scroll. The header stays at its normal size, and zooming out stops when the table fits within the available width and height. Zoom resets when the grid viewport changes size. Website and Markdown previews let these gestures reach the grid; use **Open output** to interact with a generated website or scroll a Markdown document separately.
 
@@ -25,7 +25,7 @@ If OpenRouter reports a billing problem, check your credits and key spending lim
 
 ## Publish and share
 
-Select **PUBLISH** after all cells finish, then **Copy link** to share the grid. Publishing makes the prompt, dimensions, and outputs accessible to anyone with the link. Published grids cannot be changed.
+Select **PUBLISH** after all outputs generate successfully, then **Copy link** to share the grid. Publishing makes the prompt, dimensions, and outputs accessible to anyone with the link. Published grids cannot be changed.
 
 Open **YOUR GRIDS** in the navigation bar to find grids created in this browser. Selecting the slopgrid logo opens **YOUR GRIDS** when you have created at least one grid, or the creation form when you have none. Keep that browser's cookies: ownership is tied to a 30-day browser session, with no separate slopgrid login or cross-device account. Each completed output has an unguessable URL that can be opened directly; anyone who receives that output URL can view it, even before the grid is published.
 

@@ -23,6 +23,7 @@
   --error-text: #8b462f;
   --error-background: #ede1d5;
   --progress-track: #dcd5c9;
+  --progress-error: #bd493f;
   --success-border: #b6b99b;
   --success-background: #e4e7d6;
   --success-text: #677148;
@@ -53,6 +54,7 @@
   --error-text: #e0aa93;
   --error-background: #372923;
   --progress-track: #45413a;
+  --progress-error: #e07468;
   --success-border: #687251;
   --success-background: #2d3326;
   --success-text: #bdc6a3;
@@ -422,17 +424,23 @@ legend {
   border: 0;
   border-radius: 0;
   appearance: none;
-  background: var(--progress-track);
-  color: var(--accent);
+  opacity: 0;
 }
-.grid-progress progress::-webkit-progress-bar {
+.progress-segments {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  pointer-events: none;
+}
+.progress-segment {
+  flex: 1;
   background: var(--progress-track);
 }
-.grid-progress progress::-webkit-progress-value {
+.progress-segment[data-status="complete"] {
   background: var(--accent);
 }
-.grid-progress progress::-moz-progress-bar {
-  background: var(--accent);
+.progress-segment[data-status="error"] {
+  background: var(--progress-error);
 }
 .progress-spark {
   position: absolute;

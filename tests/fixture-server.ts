@@ -14,6 +14,7 @@ let svgProbes: string[] = [];
 let holdGenerations = false;
 const held: { prompt: string; release: () => void }[] = [];
 let aborted: string[] = [];
+let generationError = false;
 let billing = false,
   calls: string[] = [];
 const codes = new Map<string, string>();
@@ -108,6 +109,10 @@ upstream.post("/api/v1/images", async (req, res) => {
     });
     if (res.destroyed) return;
   }
+  if (generationError && req.body.prompt.includes("dog"))
+    return res
+      .status(500)
+      .json({ error: { code: 500, message: "Fixture generation failed" } });
   if (billing && req.body.prompt.includes("dog"))
     return res
       .status(402)
@@ -237,6 +242,7 @@ const { app } = createApp({
   workersMax: 2,
 });
 app.post("/fixture/reset", (req, res) => {
+  generationError = !!req.body.generationError;
   omitReviewCost = !!req.body.omitReviewCost;
   holdGenerations = !!req.body.holdGenerations;
   for (const entry of [...held]) entry.release();

@@ -864,7 +864,12 @@ function GridPage() {
       </main>
     );
   const g = query.data,
-    complete = g.cells.filter((c) => c.status === "complete").length;
+    complete = g.cells.filter((c) => c.status === "complete").length,
+    failed = g.cells.filter((c) => c.status === "error").length,
+    finished = complete + failed,
+    progressText = failed
+      ? `${finished} of ${g.cells.length} outputs finished: ${complete} complete, ${failed} failed`
+      : `${complete} of ${g.cells.length} outputs complete`;
   const paused = g.status === "paused" && g.canEdit && !g.published;
   const toolbar = (
     <>
@@ -920,11 +925,20 @@ function GridPage() {
       <div className="grid-progress">
         <progress
           aria-label="Grid generation"
-          value={complete}
+          value={finished}
           max={g.cells.length}
-          aria-valuetext={`${complete} of ${g.cells.length} outputs complete`}
-          title={`${complete} of ${g.cells.length} outputs complete`}
+          aria-valuetext={progressText}
+          title={progressText}
         />
+        <div className="progress-segments" aria-hidden="true">
+          {g.cells.map((cell) => (
+            <span
+              key={cell.id}
+              className="progress-segment"
+              data-status={cell.status}
+            />
+          ))}
+        </div>
         {g.status === "running" && (
           <span className="progress-spark" aria-hidden="true" />
         )}
