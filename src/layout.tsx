@@ -47,26 +47,32 @@ export function Layout() {
             <img className="logo-grid" src="/slopgrid.svg" alt="" />
           </Link>
           {isGrid && <div className="grid-header-slot" ref={setHeaderTarget} />}
-          <button
-            ref={menuButton}
-            type="button"
-            className="mobile-menu-toggle secondary"
-            aria-label="Navigation menu"
-            aria-expanded={menuOpen}
-            aria-controls="main-navigation"
-            onClick={() => setMenuOpen(!menuOpen)}
-          >
-            {menuOpen ? <X aria-hidden="true" /> : <Menu aria-hidden="true" />}
-          </button>
-          <nav
-            id="main-navigation"
-            ref={navigation}
-            data-open={menuOpen}
-            onClick={() => setMenuOpen(false)}
-          >
-            <Link to="/billing">BILLING</Link>
-            <Link to="/settings">SETTINGS</Link>
-          </nav>
+          <div className="navigation-controls">
+            <button
+              ref={menuButton}
+              type="button"
+              className="mobile-menu-toggle secondary"
+              aria-label="Navigation menu"
+              aria-expanded={menuOpen}
+              aria-controls="main-navigation"
+              onClick={() => setMenuOpen(!menuOpen)}
+            >
+              {menuOpen ? (
+                <X aria-hidden="true" />
+              ) : (
+                <Menu aria-hidden="true" />
+              )}
+            </button>
+            <nav
+              id="main-navigation"
+              ref={navigation}
+              data-open={menuOpen}
+              onClick={() => setMenuOpen(false)}
+            >
+              <Link to="/billing">BILLING</Link>
+              <Link to="/settings">SETTINGS</Link>
+            </nav>
+          </div>
         </header>
         <Outlet />
       </div>

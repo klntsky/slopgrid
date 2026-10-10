@@ -825,7 +825,7 @@ nav {
     grid-template-columns: auto minmax(0, 1fr);
     gap: 8px 12px;
   }
-  .grid-layout > header > nav {
+  .grid-layout > header > .navigation-controls {
     justify-self: end;
   }
   .grid-header-slot {
@@ -880,6 +880,11 @@ textarea::placeholder {
 header {
   position: relative;
   z-index: 5;
+}
+.navigation-controls {
+  position: relative;
+  display: flex;
+  align-items: center;
 }
 .mobile-menu-toggle {
   display: none;
@@ -951,11 +956,11 @@ header {
     width: 22px;
     height: 22px;
   }
-  header > nav {
+  .navigation-controls > nav {
     display: none;
     position: absolute;
-    top: calc(100% + 8px);
-    right: 16px;
+    top: calc(100% + 4px);
+    right: 0;
     width: min(300px, calc(100vw - 32px));
     flex-direction: column;
     align-items: stretch;
@@ -967,20 +972,16 @@ header {
     box-shadow: 0 12px 35px var(--shadow);
     z-index: 10;
   }
-  header > nav[data-open="true"] {
+  .navigation-controls > nav[data-open="true"] {
     display: flex;
   }
-  header > nav > a:not(.button) {
+  .navigation-controls > nav > a:not(.button) {
     padding: 14px 12px;
   }
-  .grid-layout > header > .mobile-menu-toggle {
+  .grid-layout > header > .navigation-controls {
     grid-column: 3;
     grid-row: 1;
     justify-self: end;
-  }
-  .grid-layout > header > nav {
-    grid-column: auto;
-    grid-row: auto;
   }
 }
 
