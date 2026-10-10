@@ -1,6 +1,7 @@
 import { generateText, generateImage, streamText } from "ai";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { z } from "zod";
+import { upstreamFetch } from "./http.js";
 import {
   efforts,
   instruction,
@@ -33,9 +34,7 @@ export class Provider {
       return this.catalog.models;
     const responses = await Promise.all(
       ["models", "images/models"].map((path) =>
-        fetch(`${this.baseURL}/${path}`, {
-          signal: AbortSignal.timeout(15000),
-        }),
+        upstreamFetch(`${this.baseURL}/${path}`),
       ),
     );
     if (responses.some((response) => !response.ok))
@@ -120,7 +119,7 @@ export class Provider {
       fetch:
         format === "image"
           ? async (input, init) => {
-              const response = await fetch(input, init);
+              const response = await upstreamFetch(input, init);
               if (response.ok) {
                 const body = await response
                   .clone()
@@ -130,19 +129,14 @@ export class Provider {
               }
               return response;
             }
-          : undefined,
+          : upstreamFetch,
     });
-    const requestSignal = () =>
-      AbortSignal.any([
-        AbortSignal.timeout(180000),
-        ...(signal ? [signal] : []),
-      ]);
     if (format === "image") {
       const result = await generateImage({
         model: provider.imageModel(cell.model),
         prompt: cell.prompt,
         maxRetries: 0,
-        abortSignal: requestSignal(),
+        abortSignal: signal,
       });
       if (result.image.uint8Array.byteLength > 10_000_000)
         throw new Error("Image exceeds 10 MB");
@@ -172,8 +166,8 @@ export class Provider {
     });
     const cancellation = new AbortController();
     const streamSignal = AbortSignal.any([
-      requestSignal(),
       cancellation.signal,
+      ...(signal ? [signal] : []),
     ]);
     let failure: unknown;
     const result = streamText({
@@ -218,7 +212,7 @@ export class Provider {
         system: instruction(format),
         prompt: `Original request:\n${cell.prompt}\n\nDraft:\n${text}\n\nCheck the draft against the request and return the corrected final output.`,
         maxRetries: 0,
-        abortSignal: requestSignal(),
+        abortSignal: signal,
       });
       text = reviewed.text;
       const reviewCost = reportedCost(

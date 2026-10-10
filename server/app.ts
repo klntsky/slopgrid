@@ -5,6 +5,7 @@ import { marked, Renderer } from "marked";
 import { gridSchema, expandGrid, type Grid } from "./domain.js";
 import { Store, type Session } from "./store.js";
 import { Provider } from "./provider.js";
+import { upstreamFetch } from "./http.js";
 import { Jobs } from "./jobs.js";
 import { ModelResolutionError, resolveGridModels } from "./model-resolution.js";
 import { createHtmlHosts } from "./hosts.js";
@@ -265,7 +266,7 @@ export function createApp(config: Config) {
     delete s.returnTo;
     store.saveSession(s);
     try {
-      const response = await fetch(`${provider.baseURL}/auth/keys`, {
+      const response = await upstreamFetch(`${provider.baseURL}/auth/keys`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -273,7 +274,6 @@ export function createApp(config: Config) {
           code_verifier: verifier,
           code_challenge_method: "S256",
         }),
-        signal: AbortSignal.timeout(15000),
       });
       if (!response.ok) throw new Error("Exchange failed");
       const body = (await response.json()) as { key?: string };
