@@ -866,11 +866,14 @@ header {
   font-size: 13px;
 }
 .model-name {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   min-width: 0;
   max-width: 100%;
 }
 .model-copy {
+  min-width: 0;
   border: 0;
   padding: 5px 0;
   gap: 7px;
@@ -886,7 +889,8 @@ header {
   white-space: nowrap;
   user-select: text;
 }
-.model-copy .lucide {
+.model-copy .lucide,
+.model-link .lucide {
   width: 13px;
   height: 13px;
   color: var(--muted);
@@ -1114,4 +1118,26 @@ header {
 }
 .output-grid[data-resizing] iframe {
   pointer-events: none;
+}
+
+.model-link {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 5px 0;
+}
+.model-link:hover {
+  color: var(--text);
+}
+.cell-tokens {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.cell-tokens .lucide {
+  width: 12px;
+  height: 12px;
+}
+.cell-tokens .lucide-arrow-up {
+  margin-right: 4px;
 }

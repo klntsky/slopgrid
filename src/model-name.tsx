@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Check, Copy } from "lucide-react";
+import { Check, Copy, Link2 } from "lucide-react";
 
 export function ModelName({ model }: { model: string }) {
   const [feedback, setFeedback] = useState("");
@@ -32,6 +32,16 @@ export function ModelName({ model }: { model: string }) {
           <Copy aria-hidden="true" />
         )}
       </button>
+      <a
+        className="model-link"
+        href={`https://openrouter.ai/${model.split("/").map(encodeURIComponent).join("/")}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label={`View ${model} on OpenRouter`}
+        title="View model on OpenRouter"
+      >
+        <Link2 aria-hidden="true" />
+      </a>
       <span role="status" className="sr-only">
         {feedback}
       </span>

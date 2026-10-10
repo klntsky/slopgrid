@@ -13,6 +13,8 @@ import {
   Plus,
   Search,
   ArrowUpRight,
+  ArrowUp,
+  ArrowDown,
   LoaderCircle,
   Pause,
   Play,
@@ -194,8 +196,8 @@ const usd = new Intl.NumberFormat("en-US", {
 });
 function formatCost(cost: number | undefined): string {
   if (cost === undefined) return "Cost unavailable";
-  if (cost > 0 && cost < 0.00000001) return "<$0.00000001 USD";
-  return `${usd.format(cost)} USD`;
+  if (cost > 0 && cost < 0.00000001) return "<$0.00000001";
+  return usd.format(cost);
 }
 const dimensionNames = {
   model: "Model",
@@ -1165,16 +1167,24 @@ function GridPage() {
                                 <a
                                   href={cell.outputURL}
                                   target="_blank"
-                                  rel="noreferrer"
+                                  rel="noopener noreferrer"
+                                  aria-label="Open output"
+                                  title="Open output"
                                 >
-                                  Open output{" "}
                                   <ArrowUpRight aria-hidden="true" />
                                 </a>
                                 <small className="cell-usage">
                                   {cell.usage && (
-                                    <span>
-                                      {cell.usage.inputTokens ?? 0} in ·{" "}
-                                      {cell.usage.outputTokens ?? 0} out
+                                    <span
+                                      className="cell-tokens"
+                                      role="img"
+                                      aria-label={`${cell.usage.inputTokens ?? 0} input tokens, ${cell.usage.outputTokens ?? 0} output tokens`}
+                                      title={`${cell.usage.inputTokens ?? 0} input tokens, ${cell.usage.outputTokens ?? 0} output tokens`}
+                                    >
+                                      {cell.usage.inputTokens ?? 0}
+                                      <ArrowUp aria-hidden="true" />
+                                      {cell.usage.outputTokens ?? 0}
+                                      <ArrowDown aria-hidden="true" />
                                     </span>
                                   )}
                                   <span title="OpenRouter reported cost, including draft and review when used">
