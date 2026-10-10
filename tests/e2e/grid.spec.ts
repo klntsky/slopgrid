@@ -79,7 +79,9 @@ test("billing can be dismissed and retried repeatedly without regenerating compl
     .click();
   await expectProgress(page, 2, 2);
   await page.getByRole("button", { name: "PUBLISH" }).click();
-  await expect(page.getByText("Published", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "FORK", exact: true }),
+  ).toBeVisible();
   const url = page.url();
   const stranger = await page.context().browser()!.newContext();
   const publicPage = await stranger.newPage();
@@ -717,7 +719,7 @@ for (const viewport of [
     ).toBeLessThanOrEqual(2);
     await header.getByRole("button", { name: "PUBLISH" }).click();
     await expectActionsBesideTitle(["FORK", "Copy link"]);
-    await expect(header.getByText("Published", { exact: true })).toBeVisible();
+    await expect(header.getByText("Published", { exact: true })).toHaveCount(0);
     await expect(
       header.getByRole("button", { name: "Copy link" }),
     ).toBeVisible();
@@ -1304,7 +1306,9 @@ for (const theme of ["light", "dark"] as const)
     await expect(page.getByRole("button", { name: "PUBLISH" })).toBeEnabled();
     if (theme === "light") {
       await page.getByRole("button", { name: "PUBLISH" }).click();
-      await expect(page.getByText("Published", { exact: true })).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: "FORK", exact: true }),
+      ).toBeVisible();
       const publicGrid = await request.get(`/api/grids/${id}`);
       expect(publicGrid.status()).toBe(200);
       expect(
@@ -1440,7 +1444,9 @@ test("EDIT cancels inference and restores settings, while a public FORK creates 
       await expectProgress(visitor, 1, 1);
       expect(visitor.url()).not.toBe(published);
       await page.reload();
-      await expect(page.getByText("Published", { exact: true })).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: "FORK", exact: true }),
+      ).toBeVisible();
       await expect(
         page.getByRole("rowheader", { name: "owl", exact: true }),
       ).toBeVisible();
@@ -1579,7 +1585,9 @@ test("a grid with only failed outputs can be published and viewed publicly", asy
     page.getByRole("button", { name: "PUBLISH", exact: true }),
   ).toBeEnabled();
   await page.getByRole("button", { name: "PUBLISH", exact: true }).click();
-  await expect(page.getByText("Published", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "FORK", exact: true }),
+  ).toBeVisible();
   const id = new URL(page.url()).pathname.split("/").pop()!;
   const result = await request.get(`/api/grids/${id}`);
   expect(result.status()).toBe(200);
@@ -1652,7 +1660,9 @@ test("live updates close when generation settles and reopen after Resume, includ
     await expectProgress(page, 3, 3);
     await expect.poll(() => streams.size).toBe(0);
     await page.getByRole("button", { name: "PUBLISH", exact: true }).click();
-    await expect(page.getByText("Published", { exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "FORK", exact: true }),
+    ).toBeVisible();
     await page.reload();
     await expectProgress(page, 3, 3);
     expect(streams.size).toBe(0);

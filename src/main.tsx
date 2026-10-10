@@ -935,7 +935,6 @@ function GridPage() {
         )}
         <div className="grid-title">
           <h1 title={g.input.prompt}>{g.input.prompt}</h1>
-          {g.published && <span className="badge">Published</span>}
         </div>
         <div className="actions">
           {(g.canEdit || g.published) && (

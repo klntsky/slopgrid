@@ -24,9 +24,6 @@
   --error-background: #ede1d5;
   --progress-track: #dcd5c9;
   --progress-error: #bd493f;
-  --success-border: #b6b99b;
-  --success-background: #e4e7d6;
-  --success-text: #677148;
   --grid-header: #e9e3d7;
   --cell: #faf8f2;
   --backdrop: #28201666;
@@ -55,9 +52,6 @@
   --error-background: #372923;
   --progress-track: #45413a;
   --progress-error: #e07468;
-  --success-border: #687251;
-  --success-background: #2d3326;
-  --success-text: #bdc6a3;
   --grid-header: #2d2b28;
   --cell: #22211f;
   --backdrop: #00000099;
@@ -481,11 +475,6 @@ legend {
   width: 18px;
   height: 18px;
 }
-.grid-title .badge {
-  display: inline-block;
-  margin: 6px 0 0;
-  font-size: 11px;
-}
 @media (prefers-reduced-motion: reduce) {
   .progress-spark {
     display: none;
@@ -495,14 +484,6 @@ legend {
   display: flex;
   gap: 10px;
   flex-shrink: 0;
-}
-.badge {
-  border: 1px solid var(--success-border);
-  background: var(--success-background);
-  color: var(--success-text);
-  padding: 3px 9px;
-  border-radius: 3px;
-  margin-left: 14px;
 }
 .grid-scroll {
   flex: 1;
