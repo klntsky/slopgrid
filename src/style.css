@@ -151,7 +151,7 @@ header {
 nav {
   display: flex;
   gap: 28px;
-  font-size: 13px;
+  font-size: 16px;
 }
 nav a {
   text-decoration: none;
@@ -733,7 +733,7 @@ nav {
   min-height: 50px;
   padding: 14px 20px;
   gap: 9px;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
 }
 .create-grid-button .lucide {
@@ -916,6 +916,12 @@ header {
   border: 0;
 }
 @media (max-width: 700px) {
+  nav {
+    font-size: 13px;
+  }
+  .create-grid-button {
+    font-size: 15px;
+  }
   .mobile-menu-toggle {
     display: inline-flex;
     width: 44px;
@@ -1023,4 +1029,40 @@ header {
 .cell-error {
   overflow-wrap: anywhere;
   white-space: pre-wrap;
+}
+
+.selected-models {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+}
+.model-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 4px 6px 4px 10px;
+  border: 1px solid var(--selected-border);
+  border-radius: 5px;
+  background: var(--selected);
+  font-size: 13px;
+}
+.model-badge > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.model-badge button {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  padding: 4px;
+  border: 0;
+  background: transparent;
+}
+.model-badge .lucide {
+  width: 14px;
+  height: 14px;
 }

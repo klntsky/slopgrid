@@ -45,7 +45,7 @@ import type { GridInput } from "../server/domain";
 import { efforts, expandGrid, unusedVariableIssue } from "../server/domain";
 import { compatibilityIssues, effortLabel } from "../server/compatibility";
 import type { Model } from "../server/provider";
-import { api, type ViewGrid } from "./api";
+import { api, ApiError, type ViewGrid } from "./api";
 import { SvgPreview } from "./svg-preview-image";
 import { ModelName } from "./model-name";
 import { ZoomableGrid } from "./zoomable-grid";
@@ -782,6 +782,36 @@ function AxisEditor({
               </label>
             ))}
           </div>
+          {axis.kind === "model" && axis.values.length > 0 && (
+            <ul
+              className="selected-models"
+              aria-label={`Selected ${label === "Rows" ? "row" : "column"} models`}
+            >
+              {axis.values.map((id) => {
+                const name =
+                  models.find((model) => model.id === id)?.name ?? id;
+                return (
+                  <li className="model-badge" key={id}>
+                    <span title={id}>{name}</span>
+                    <button
+                      type="button"
+                      aria-label={`Remove ${name} from ${label.toLowerCase()}`}
+                      title={`Remove ${name}`}
+                      onClick={() => {
+                        onChange({
+                          ...axis,
+                          values: axis.values.filter((value) => value !== id),
+                        });
+                        filterInput.current?.focus();
+                      }}
+                    >
+                      <X aria-hidden="true" />
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </fieldset>
       )}
     </div>
@@ -851,13 +881,20 @@ function GridPage() {
   const query = useQuery({
     queryKey: ["grid", id],
     queryFn: () => api<ViewGrid>(`/grids/${id}`),
+    retry: (attempt, error) =>
+      !(error instanceof ApiError && error.status === 404) && attempt < 3,
+    refetchOnWindowFocus: (query) =>
+      !(
+        query.state.error instanceof ApiError &&
+        query.state.error.status === 404
+      ),
   });
   const [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [dismissed, setDismissed] = useState(false),
     [streamLost, setStreamLost] = useState(false);
   const live =
-    !!query.data &&
+    query.isSuccess &&
     !query.data.published &&
     (query.data.status === "running" ||
       query.data.cells.some((cell) => cell.status === "running"));
@@ -923,7 +960,6 @@ function GridPage() {
     return (
       <main>
         <ErrorMessage error={query.error.message} />
-        <Link to="/">Create a grid</Link>
       </main>
     );
   const g = query.data,

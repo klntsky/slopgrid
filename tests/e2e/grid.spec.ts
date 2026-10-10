@@ -450,16 +450,37 @@ test("model choices start empty and filtering preserves deliberate selections", 
   await columns.getByRole("checkbox", { name: "Second model" }).check();
   await page.getByLabel("Filter column models").fill("no matching model");
   await expect(columns.getByText("No models match your filter.")).toBeVisible();
+  const selectedModels = columns.getByRole("list", {
+    name: "Selected column models",
+  });
+  await expect(selectedModels.getByRole("listitem")).toHaveText([
+    "Fixture text",
+    "Second model",
+  ]);
+  await selectedModels
+    .getByRole("button", { name: "Remove Fixture text from columns" })
+    .click();
+  await expect(selectedModels.getByRole("listitem")).toHaveText([
+    "Second model",
+  ]);
+  await expect(columns.getByText("No models match your filter.")).toBeVisible();
   await clear.click();
   await expect(filter).toHaveValue("");
   await expect(filter).toBeFocused();
   await expect(clear).toBeVisible();
   await expect(
     columns.getByRole("checkbox", { name: "Fixture text", exact: true }),
-  ).toBeChecked();
+  ).not.toBeChecked();
   await expect(
     columns.getByRole("checkbox", { name: "Second model" }),
   ).toBeChecked();
+  await selectedModels
+    .getByRole("button", { name: "Remove Second model from columns" })
+    .press("Enter");
+  await expect(
+    columns.getByRole("checkbox", { name: "Second model" }),
+  ).not.toBeChecked();
+  await expect(selectedModels).toHaveCount(0);
   expect(
     (await columns.locator(".value-list").boundingBox())!.height,
   ).toBeGreaterThanOrEqual(264);
@@ -483,6 +504,16 @@ test("model choices start empty and filtering preserves deliberate selections", 
       await expect(
         page.getByRole("group", { name: "Row values" }).getByRole("checkbox"),
       ).toHaveCount(2);
+      const rowModels = page.getByRole("group", { name: "Row values" });
+      await rowModels
+        .getByRole("checkbox", { name: "Fixture text", exact: true })
+        .check();
+      await rowModels
+        .getByRole("button", { name: "Remove Fixture text from rows" })
+        .click();
+      await expect(
+        rowModels.getByRole("checkbox", { name: "Fixture text", exact: true }),
+      ).not.toBeChecked();
     }
   }
 });
@@ -679,6 +710,15 @@ for (const viewport of [
       header.getByRole("progressbar", { name: "Grid generation" }),
     ).toHaveAttribute("aria-valuetext", "1 of 1 outputs complete");
     await expect(header.getByRole("button", { name: "PUBLISH" })).toBeEnabled();
+    if (viewport.width > 700) {
+      expect(
+        await header
+          .getByRole("link", { name: "YOUR GRIDS", exact: true })
+          .evaluate((element) =>
+            parseFloat(getComputedStyle(element).fontSize),
+          ),
+      ).toBeGreaterThanOrEqual(16);
+    }
     async function expectActionsBesideTitle(names: string[]) {
       const title = (await header
         .getByRole("heading", { level: 1 })
@@ -1757,3 +1797,19 @@ for (const [index, mode] of [
     expect(calls.filter((prompt) => prompt.includes("dog"))).toHaveLength(2);
   });
 }
+
+test("a missing grid reports 404 immediately without retries or a creation link in the error state", async ({
+  page,
+}) => {
+  const id = "0".repeat(48);
+  let requests = 0;
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === `/api/grids/${id}`) requests++;
+  });
+  await page.goto(`/grid/${id}`);
+  await expect(page.getByRole("alert")).toHaveText("Grid not found", {
+    timeout: 1000,
+  });
+  expect(requests).toBe(1);
+  await expect(page.getByRole("main").getByRole("link")).toHaveCount(0);
+});

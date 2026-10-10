@@ -3,6 +3,15 @@ export type ViewGrid = Omit<Grid, "owner" | "cells"> & {
   canEdit: boolean;
   cells: (Cell & { outputURL?: string })[];
 };
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
 export async function api<T>(
   path: string,
   method = "GET",
@@ -14,6 +23,10 @@ export async function api<T>(
     body: body ? JSON.stringify(body) : undefined,
   });
   const data = await response.json();
-  if (!response.ok) throw new Error(data.error ?? "Request failed. Try again.");
+  if (!response.ok)
+    throw new ApiError(
+      data.error ?? "Request failed. Try again.",
+      response.status,
+    );
   return data;
 }
