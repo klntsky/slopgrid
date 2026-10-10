@@ -1424,9 +1424,9 @@ for (const width of [1280, 390]) {
     await page.setExtraHTTPHeaders({
       "X-Forwarded-For": width === 1280 ? "192.0.2.45" : "192.0.2.46",
     });
-    await request.post("/fixture/reset", { data: { billing: false } });
+    await request.post("/fixture/reset", { data: { holdGenerations: true } });
     await create(page, "Image", "cat", "hat");
-    await expectProgress(page, 1, 1);
+    await expectProgress(page, 0, 1);
     let failStream!: () => void;
     const failure = new Promise<void>((resolve) => {
       failStream = resolve;
@@ -1464,6 +1464,8 @@ for (const width of [1280, 390]) {
     await page.unroute("**/api/grids/*/events");
     await expect(status).toHaveCount(0, { timeout: 10000 });
     expect(await grid.boundingBox()).toEqual(before);
+    await request.post("/fixture/release", { data: { all: true } });
+    await expectProgress(page, 1, 1);
   });
 }
 
@@ -1548,4 +1550,85 @@ test("a grid with only failed outputs can be published and viewed publicly", asy
   expect(grid.published).toBe(true);
   expect(grid.cells[0].status).toBe("error");
   expect(grid.cells[0].outputURL).toBeUndefined();
+});
+
+test("live updates close when generation settles and reopen after Resume, including paused grids with active requests", async ({
+  page,
+  request,
+}) => {
+  await page.setExtraHTTPHeaders({ "X-Forwarded-For": "192.0.2.51" });
+  const streams = new Set<import("@playwright/test").Request>();
+  let opened = 0;
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname.endsWith("/events")) {
+      streams.add(request);
+      opened++;
+    }
+  });
+  page.on("requestfailed", (request) => streams.delete(request));
+  page.on("requestfinished", (request) => streams.delete(request));
+  await request.post("/fixture/reset", {
+    data: { holdGenerations: true, billing: true },
+  });
+  try {
+    await create(page, "Image", "cat\ndog\nowl", "hat");
+    await expect.poll(() => streams.size).toBe(1);
+    await expect
+      .poll(
+        async () =>
+          (await (await request.get("/fixture/workers")).json()).held.length,
+      )
+      .toBe(2);
+    await request.post("/fixture/release", {
+      data: { prompt: "Draw dog wearing a hat" },
+    });
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Close", exact: true })
+      .click();
+    await expect(
+      page.getByRole("button", { name: "Resume generation" }),
+    ).toBeVisible();
+    expect(streams.size).toBe(1);
+    await request.post("/fixture/release", {
+      data: { prompt: "Draw cat wearing a hat" },
+    });
+    await expectProgress(page, 1, 3);
+    await expect.poll(() => streams.size).toBe(0);
+    await request.post("/fixture/credits");
+    await page.getByRole("button", { name: "Resume generation" }).click();
+    await expect.poll(() => streams.size).toBe(1);
+    await expect.poll(() => opened).toBe(2);
+    await expect
+      .poll(
+        async () =>
+          (await (await request.get("/fixture/workers")).json()).held.length,
+      )
+      .toBe(2);
+    await page.getByRole("button", { name: "Pause generation" }).click();
+    await expect.poll(() => streams.size).toBe(0);
+    await page.getByRole("button", { name: "Resume generation" }).click();
+    await expect.poll(() => streams.size).toBe(1);
+    await expect.poll(() => opened).toBe(3);
+    await request.post("/fixture/release", { data: { all: true } });
+    await expectProgress(page, 3, 3);
+    await expect.poll(() => streams.size).toBe(0);
+    await page.getByRole("button", { name: "PUBLISH", exact: true }).click();
+    await expect(page.getByText("Published", { exact: true })).toBeVisible();
+    await page.reload();
+    await expectProgress(page, 3, 3);
+    expect(streams.size).toBe(0);
+    expect(opened).toBe(3);
+    const status = page
+      .getByRole("status")
+      .filter({ hasText: "Connection lost. Reconnecting…" });
+    await page.context().setOffline(true);
+    await expect(status).toHaveCount(0);
+    expect(streams.size).toBe(0);
+    await page.context().setOffline(false);
+  } finally {
+    await page.context().setOffline(false);
+    await request.post("/fixture/release", { data: { all: true } });
+  }
 });

@@ -837,15 +837,29 @@ function GridPage() {
     [busy, setBusy] = useState(false),
     [dismissed, setDismissed] = useState(false),
     [streamLost, setStreamLost] = useState(false);
+  const live =
+    !!query.data &&
+    !query.data.published &&
+    (query.data.status === "running" ||
+      query.data.cells.some((cell) => cell.status === "running"));
   useEffect(() => {
+    setStreamLost(false);
+    if (!live) return;
     const events = new EventSource(`/api/grids/${id}/events`);
+    let closed = false;
     events.onmessage = (e) => {
+      if (closed) return;
       setStreamLost(false);
       cache.setQueryData(["grid", id], JSON.parse(e.data));
     };
-    events.onerror = () => setStreamLost(true);
-    return () => events.close();
-  }, [id, cache]);
+    events.onerror = () => {
+      if (!closed) setStreamLost(true);
+    };
+    return () => {
+      closed = true;
+      events.close();
+    };
+  }, [id, cache, live]);
   async function action(action: "retry" | "publish" | "pause") {
     setBusy(true);
     setError("");
@@ -1012,7 +1026,7 @@ function GridPage() {
         {g.interruption === "auth" && g.canEdit && (
           <Connection returnTo={`/grid/${id}`} />
         )}
-        {streamLost && (
+        {streamLost && live && (
           <div role="status" className="connection-status">
             <LoaderCircle className="spinner" aria-hidden="true" />
             <span>Connection lost. Reconnecting…</span>
