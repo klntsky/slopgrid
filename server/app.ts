@@ -79,9 +79,10 @@ export function createApp(config: Config) {
       md: "text/plain",
       txt: "text/plain",
     };
+    // OutputFiles confines this path to generated files, including hidden storage roots.
     return res
       .type(mime[path.split(".").pop()!] ?? "text/plain")
-      .sendFile(file);
+      .sendFile(file, { dotfiles: "allow" });
   });
   const markdownRenderer = new Renderer();
   markdownRenderer.html = ({ text }) => escape(text);
@@ -110,9 +111,9 @@ export function createApp(config: Config) {
     if (output.format === "image")
       return res
         .type(output.mediaType ?? "application/octet-stream")
-        .sendFile(file);
+        .sendFile(file, { dotfiles: "allow" });
     if (output.format === "svg")
-      return res.type("image/svg+xml").sendFile(file);
+      return res.type("image/svg+xml").sendFile(file, { dotfiles: "allow" });
     return res
       .type("html")
       .send(

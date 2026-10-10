@@ -221,11 +221,11 @@ upstream.post("/api/v1/chat/completions", async (req, res) => {
 });
 upstream.listen(4318);
 const data = process.env.FIXTURE_DATA!;
-mkdirSync(data, { recursive: true });
+mkdirSync(`${data}/.data`, { recursive: true });
 const { app } = createApp({
   origin: "http://localhost:4317",
   outputDomain: "-slopgrid.localhost:4317",
-  database: `${data}/db.sqlite`,
+  database: `${data}/.data/db.sqlite`,
   secret: Buffer.alloc(32, 1),
   provider: new Provider("http://localhost:4318/api/v1"),
   authURL: "http://localhost:4318/auth",
