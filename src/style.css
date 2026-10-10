@@ -349,9 +349,9 @@ legend {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   height: auto;
-  min-height: 88px;
-  gap: 24px;
-  padding: 16px 24px;
+  min-height: 64px;
+  gap: 12px;
+  padding: 8px 12px;
 }
 .grid-header-slot,
 .grid-title {
@@ -375,14 +375,17 @@ legend {
 }
 .grid-heading {
   display: flex;
-  gap: 10px;
+  gap: 6px;
   align-items: center;
 }
 .grid-title {
   flex: 1;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
+}
+.grid-heading .actions {
+  gap: 4px;
 }
 .grid-heading .actions button {
   gap: 8px;
@@ -392,6 +395,7 @@ legend {
   height: 18px;
 }
 .grid-title h1 {
+  flex: 1;
   min-width: 0;
   font-size: 17px;
   font-weight: 500;
@@ -813,7 +817,7 @@ nav {
 @media (max-width: 1100px) {
   .grid-layout > header {
     grid-template-columns: auto minmax(0, 1fr);
-    gap: 16px 24px;
+    gap: 8px 12px;
   }
   .grid-layout > header > nav {
     justify-self: end;
@@ -825,20 +829,16 @@ nav {
 }
 @media (max-width: 700px) {
   .grid-layout > header {
-    padding: 12px 16px;
-    gap: 14px;
+    padding: 8px 10px;
+    gap: 8px;
   }
-  .grid-heading {
-    gap: 10px;
+  .grid-title {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
   }
-  .grid-heading .actions {
-    flex-wrap: nowrap;
-    gap: 6px;
-  }
-  .grid-heading .actions button {
-    width: 36px;
-    height: 36px;
-    padding: 8px;
+  .grid-title h1 {
+    width: 100%;
   }
 }
 
