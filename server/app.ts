@@ -321,7 +321,7 @@ export function createApp(config: Config) {
           c.effort !== "none"
         )
           return res.status(400).json({
-            error: "This model does not support thinking amounts. Select None.",
+            error: "This model does not support thinking effort. Select None.",
           });
       }
     } catch {

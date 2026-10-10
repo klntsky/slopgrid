@@ -1,6 +1,6 @@
 # slopgrid
 
-Compare generated outputs in a grid. Choose models, thinking amounts, prompt variables, or harnesses, then generate SVG, Markdown, static websites, or images using your OpenRouter account.
+Compare generated outputs in a grid. Choose models, thinking effort, prompt variables, or harnesses, then generate SVG, Markdown, static websites, or images using your OpenRouter account.
 
 ## Create a grid
 
@@ -9,7 +9,7 @@ Compare generated outputs in a grid. Choose models, thinking amounts, prompt var
 3. Enter your prompt. Use `$VARIABLE_ROW` and `$VARIABLE_COLUMN` to insert each cell's row and column values when those dimensions are prompt variables. Each enabled variable must appear in the prompt before you can generate.
 4. Connect OpenRouter and select **Generate**.
 
-When model, thinking amount, or harness is not a dimension, its selection applies to the whole grid. **Single pass** makes one request per cell. **Draft and review** generates a draft and makes a second request to check and revise it. A grid can contain up to 64 outputs, with up to eight values per dimension.
+When model, thinking effort, or harness is not a dimension, its selection applies to the whole grid. **Single pass** makes one request per cell. **Draft and review** generates a draft and makes a second request to check and revise it. A grid can contain up to 64 outputs, with up to eight values per dimension.
 
 ## Watch generation
 

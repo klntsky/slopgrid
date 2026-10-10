@@ -18,7 +18,7 @@ i want 4 output modes:
 grid layouts should be selectable (the user decides what rows and columns mean):
 
 - model
-- thinking amount
+- thinking effort
 - variable prompt part - for template prompts - can be referenced in the prompt as $VARIABLE_{ROW|COLUMN}, will be string-replaced. If there are two variables (rows and columns), $VARIABLE_ROW and $VARIABLE_COLUMN can both be used in the prompt.
 
 # pages

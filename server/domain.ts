@@ -44,7 +44,7 @@ export const gridSchema = z
         a.kind === "effort" &&
         a.values.some((v) => !efforts.includes(v as (typeof efforts)[number]))
       )
-        issue("Unknown thinking amount");
+        issue("Unknown thinking effort");
       if (
         a.kind === "harness" &&
         a.values.some((v) => !["direct", "review"].includes(v))

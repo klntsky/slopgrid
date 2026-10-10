@@ -75,7 +75,7 @@ const formatNames = {
 };
 const dimensionNames = {
   model: "Model",
-  effort: "Thinking amount",
+  effort: "Thinking effort",
   variable: "Prompt variable",
   harness: "Harness",
 };
@@ -314,7 +314,7 @@ function Create() {
                     "effort",
                   ) && (
                     <label>
-                      Thinking amount
+                      Thinking effort
                       <select
                         value={input.effort}
                         onChange={(e) =>
