@@ -22,7 +22,9 @@ export function ZoomableGrid({
       table = viewport.querySelector("table")!;
     const mobile = matchMedia("(max-width: 700px)");
     let scale = 1;
-    let gesture: { distance: number; scale: number; anchor: Point } | undefined;
+    let gesture:
+      | { distance: number; scale: number; minimum: number; anchor: Point }
+      | undefined;
     let pinching = false;
     function start(event: TouchEvent) {
       if (!mobile.matches || event.touches.length !== 2) return;
@@ -32,9 +34,15 @@ export function ZoomableGrid({
       const bounds = viewport.getBoundingClientRect();
       table.style.width = `${viewport.clientWidth}px`;
       table.style.height = `${viewport.clientHeight}px`;
+      const tableBounds = table.getBoundingClientRect();
       gesture = {
         distance,
         scale,
+        minimum: Math.min(
+          1,
+          (viewport.clientWidth * scale) / tableBounds.width,
+          (viewport.clientHeight * scale) / tableBounds.height,
+        ),
         anchor: {
           x: (viewport.scrollLeft + center.x - bounds.left) / scale,
           y: (viewport.scrollTop + center.y - bounds.top) / scale,
@@ -50,7 +58,10 @@ export function ZoomableGrid({
         bounds = viewport.getBoundingClientRect();
       scale = Math.min(
         3,
-        Math.max(0.3, (gesture.scale * distance) / gesture.distance),
+        Math.max(
+          gesture.minimum,
+          (gesture.scale * distance) / gesture.distance,
+        ),
       );
       table.style.zoom = String(scale);
       viewport.scrollLeft = gesture.anchor.x * scale - (center.x - bounds.left);

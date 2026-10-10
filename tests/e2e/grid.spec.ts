@@ -975,71 +975,96 @@ test.describe("mobile grid interaction", () => {
     await expect(nav).toBeHidden();
   });
 
-  test("pinching changes the table scale while the header stays fixed and one-finger scrolling still works", async ({
-    page,
-    request,
-  }) => {
-    await request.post("/fixture/reset", { data: { billing: false } });
-    await create(page, "Static website", "cat\ndog\nowl", "hat\ncape\nscarf");
-    await expectProgress(page, 9, 9);
-    await expect(
-      page
-        .frameLocator("iframe")
-        .first()
-        .getByText("Module loaded", { exact: true }),
-    ).toBeVisible();
-    const grid = page.getByLabel("Generated output grid"),
-      cell = page.locator(".cell").first(),
-      header = page.getByRole("banner");
-    const before = (await cell.boundingBox())!,
-      headerBefore = (await header.boundingBox())!;
-    const client = await page.context().newCDPSession(page);
-    async function touch(
-      type: "touchStart" | "touchMove" | "touchEnd",
-      points: { x: number; y: number; id: number }[],
-    ) {
-      await client.send("Input.dispatchTouchEvent", {
-        type,
-        touchPoints: points,
-      });
-    }
-    const y = Math.max(headerBefore.height + 190, 400);
-    await touch("touchStart", [
-      { x: 220, y, id: 1 },
-      { x: 320, y, id: 2 },
-    ]);
-    await touch("touchMove", [
-      { x: 190, y, id: 1 },
-      { x: 350, y, id: 2 },
-    ]);
-    await touch("touchEnd", []);
-    await expect
-      .poll(async () => (await cell.boundingBox())!.width)
-      .toBeGreaterThan(before.width * 1.4);
-    expect((await header.boundingBox())!.height).toBe(headerBefore.height);
-    expect(await page.evaluate(() => visualViewport!.scale)).toBe(1);
-    await touch("touchStart", [
-      { x: 190, y, id: 1 },
-      { x: 350, y, id: 2 },
-    ]);
-    await touch("touchMove", [
-      { x: 240, y, id: 1 },
-      { x: 300, y, id: 2 },
-    ]);
-    await touch("touchEnd", []);
-    await expect
-      .poll(async () => (await cell.boundingBox())!.width)
-      .toBeLessThan(before.width * 0.8);
-    const top = await grid.evaluate((el) => el.scrollTop);
-    await touch("touchStart", [{ x: 290, y: 620, id: 1 }]);
-    for (const nextY of [580, 530, 480, 430])
-      await touch("touchMove", [{ x: 290, y: nextY, id: 1 }]);
-    await touch("touchEnd", []);
-    await expect
-      .poll(() => grid.evaluate((el) => el.scrollTop))
-      .toBeGreaterThan(top);
-    await expect(header.getByRole("button", { name: "PUBLISH" })).toBeEnabled();
-  });
+  for (const { layout, columns, total } of [
+    { layout: "wide grid", columns: "hat\ncape\nscarf", total: 9 },
+    { layout: "tall grid", columns: "hat", total: 3 },
+  ])
+    test(`pinching changes the table scale while the header stays fixed and one-finger scrolling still works (${layout})`, async ({
+      page,
+      request,
+    }) => {
+      await request.post("/fixture/reset", { data: { billing: false } });
+      await create(page, "Static website", "cat\ndog\nowl", columns);
+      await expectProgress(page, total, total);
+      await expect(
+        page
+          .frameLocator("iframe")
+          .first()
+          .getByText("Module loaded", { exact: true }),
+      ).toBeVisible();
+      const grid = page.getByLabel("Generated output grid"),
+        cell = page.locator(".cell").first(),
+        header = page.getByRole("banner");
+      const before = (await cell.boundingBox())!,
+        headerBefore = (await header.boundingBox())!;
+      const client = await page.context().newCDPSession(page);
+      async function touch(
+        type: "touchStart" | "touchMove" | "touchEnd",
+        points: { x: number; y: number; id: number }[],
+      ) {
+        await client.send("Input.dispatchTouchEvent", {
+          type,
+          touchPoints: points,
+        });
+      }
+      const y = Math.max(headerBefore.height + 190, 400);
+      await touch("touchStart", [
+        { x: 220, y, id: 1 },
+        { x: 320, y, id: 2 },
+      ]);
+      await touch("touchMove", [
+        { x: 190, y, id: 1 },
+        { x: 350, y, id: 2 },
+      ]);
+      await touch("touchEnd", []);
+      await expect
+        .poll(async () => (await cell.boundingBox())!.width)
+        .toBeGreaterThan(before.width * 1.4);
+      expect((await header.boundingBox())!.height).toBe(headerBefore.height);
+      expect(await page.evaluate(() => visualViewport!.scale)).toBe(1);
+      await touch("touchStart", [
+        { x: 190, y, id: 1 },
+        { x: 350, y, id: 2 },
+      ]);
+      await touch("touchMove", [
+        { x: 240, y, id: 1 },
+        { x: 300, y, id: 2 },
+      ]);
+      await touch("touchEnd", []);
+      await expect
+        .poll(async () => (await cell.boundingBox())!.width)
+        .toBeLessThan(before.width * 0.8);
+      const top = await grid.evaluate((el) => el.scrollTop);
+      await touch("touchStart", [{ x: 290, y: 620, id: 1 }]);
+      for (const nextY of [580, 530, 480, 430])
+        await touch("touchMove", [{ x: 290, y: nextY, id: 1 }]);
+      await touch("touchEnd", []);
+      await expect
+        .poll(() => grid.evaluate((el) => el.scrollTop))
+        .toBeGreaterThan(top);
+      await expect(
+        header.getByRole("button", { name: "PUBLISH" }),
+      ).toBeEnabled();
+      for (let attempt = 0; attempt < 2; attempt++) {
+        await touch("touchStart", [
+          { x: 190, y, id: 1 },
+          { x: 350, y, id: 2 },
+        ]);
+        await touch("touchMove", [
+          { x: 265, y, id: 1 },
+          { x: 275, y, id: 2 },
+        ]);
+        await touch("touchEnd", []);
+        const viewport = (await grid.boundingBox())!,
+          table = (await grid.locator("table").boundingBox())!;
+        const fit = Math.max(
+          table.width / viewport.width,
+          table.height / viewport.height,
+        );
+        expect(fit).toBeGreaterThanOrEqual(0.99);
+        expect(fit).toBeLessThanOrEqual(1.01);
+      }
+    });
 });
 
 test("model IDs in outputs and model legends copy to the real clipboard", async ({
