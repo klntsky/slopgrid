@@ -79,7 +79,7 @@ test("billing can be dismissed and retried repeatedly without regenerating compl
   expect(calls.filter((p: string) => p.includes("dog")).length).toBe(3);
 });
 
-for (const format of ["SVG", "Markdown", "index.html", "Image"])
+for (const format of ["SVG", "Markdown", "Static website", "Image"])
   test(`${format} renders generated output`, async ({ page, request }) => {
     await request.post("/fixture/reset", { data: { billing: false } });
     await create(page, format);
@@ -90,7 +90,7 @@ for (const format of ["SVG", "Markdown", "index.html", "Image"])
         .first()
         .getAttribute("href"))!,
     );
-    if (format === "index.html")
+    if (format === "Static website")
       expect(output.hostname).toMatch(/^[a-f0-9]{48}-slopgrid\.localhost$/);
     else {
       expect(output.origin).toBe("http://localhost:4317");
@@ -123,7 +123,7 @@ for (const format of ["SVG", "Markdown", "index.html", "Image"])
         await expect(
           frame.getByRole("heading", { name: "A generated cat" }),
         ).toBeVisible();
-      if (format === "index.html") {
+      if (format === "Static website") {
         await expect(frame.getByText("Module loaded")).toBeVisible();
         await expect(
           frame.getByRole("heading", { name: "A generated site" }),
@@ -141,7 +141,7 @@ test("drafts, mutation endpoints, and generated hosts enforce ownership and orig
   request,
 }) => {
   await request.post("/fixture/reset", { data: { billing: false } });
-  await create(page, "index.html");
+  await create(page, "Static website");
   await expect(page.getByText("2 of 2 complete")).toBeVisible();
   const id = page.url().split("/").pop();
   const anonymous = await (
@@ -196,7 +196,7 @@ test("row and column headers stay visible while scrolling a larger grid", async 
   request,
 }) => {
   await request.post("/fixture/reset", { data: { billing: false } });
-  await create(page, "index.html", "cat\ndog\nowl", "hat\ncape\nscarf\ncrown");
+  await create(page, "Static website", "cat\ndog\nowl", "hat\ncape\nscarf\ncrown");
   await expect(page.getByText("12 of 12 complete")).toBeVisible();
   const viewport = page.getByLabel("Generated output grid");
   const column = page.getByRole("columnheader", { name: "hat", exact: true }),

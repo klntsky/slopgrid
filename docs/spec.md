@@ -12,7 +12,7 @@ i want 4 output modes:
 
 - svg
 - markdown
-- index.html (genrrates arbitrary content, basically a file folder that will be served later, only static content, no server side code. can be multiple files)
+- static website (genrrates arbitrary content, basically a file folder that will be served later, only static content, no server side code. can be multiple files)
 - image (for image models)
 
 grid layouts should be selectable (the user decides what rows and columns mean):

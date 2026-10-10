@@ -70,7 +70,7 @@ declare module "@tanstack/react-router" {
 const formatNames = {
   svg: "SVG",
   markdown: "Markdown",
-  html: "index.html",
+  html: "Static website",
   image: "Image",
 };
 const dimensionNames = {
