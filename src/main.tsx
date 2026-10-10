@@ -6,7 +6,6 @@ import React, {
   useContext,
 } from "react";
 import {
-  Grid2x2,
   FileCode,
   FileText,
   PanelsTopLeft,
@@ -96,7 +95,7 @@ function Layout() {
             }}
           >
             slopgrid
-            <Grid2x2 className="logo-grid" aria-hidden="true" />
+            <img className="logo-grid" src="/slopgrid.svg" alt="" />
           </Link>
           {isGrid && <div className="grid-header-slot" ref={setHeaderTarget} />}
           <nav>

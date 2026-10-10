@@ -46,4 +46,4 @@ Text output is limited to 2 MB per cell. Website bundles must contain `index.htm
 
 ## Icons
 
-Interface icons use `lucide-react`, under the [Lucide ISC license](https://lucide.dev/license), with MIT notices for icons derived from Feather. The distributed notices are included in `public/lucide-LICENSE.txt` and copied into the build. The OpenRouter connector uses its official brand asset.
+Interface icons use `lucide-react`, under the [Lucide ISC license](https://lucide.dev/license), with MIT notices for icons derived from Feather. The distributed notices are included in `public/lucide-LICENSE.txt` and copied into the build. The project mark is the custom 5×5 cell SVG in `public/slopgrid.svg`, shared by the wordmark and favicon. The OpenRouter connector uses its official brand asset.
