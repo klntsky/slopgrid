@@ -722,9 +722,6 @@ nav .create-grid-button[aria-current="page"] {
     flex-wrap: wrap;
     gap: 16px;
   }
-  nav .create-grid-button {
-    margin-left: auto;
-  }
 }
 
 .preview-status {

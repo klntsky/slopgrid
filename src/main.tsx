@@ -99,9 +99,9 @@ function Layout() {
           </Link>
           {isGrid && <div className="grid-header-slot" ref={setHeaderTarget} />}
           <nav>
+            <CreateGridButton />
             <Link to="/grids">Your grids</Link>
             <Link to="/settings">Settings</Link>
-            <CreateGridButton />
           </nav>
         </header>
         <Outlet />
