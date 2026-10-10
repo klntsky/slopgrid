@@ -975,6 +975,13 @@ function GridPage() {
     reportedCosts.length || complete === 0
       ? reportedCosts.reduce((sum, cost) => sum + cost, 0)
       : undefined;
+  const totalCostText =
+    totalCost === undefined
+      ? "Cost unavailable"
+      : totalCost.toLocaleString("en-US", {
+          style: "currency",
+          currency: "USD",
+        });
   const inferenceRunning =
     g.status === "running" || g.cells.some((cell) => cell.status === "running");
   const paused = g.status === "paused" && g.canEdit && !g.published;
@@ -1047,10 +1054,10 @@ function GridPage() {
           <h1 title={g.input.prompt}>{g.input.prompt}</h1>
           <span
             className="grid-cost"
-            aria-label={`Total reported cost: ${formatCost(totalCost)}`}
+            aria-label={`Total reported cost: ${totalCostText}`}
             title="Total reported cost of completed outputs; excludes unavailable charges and aborted or failed attempts"
           >
-            {formatCost(totalCost)}
+            {totalCostText}
             {inferenceRunning && (
               <span className="cost-ellipsis" aria-hidden="true">
                 <span>.</span>
