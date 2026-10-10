@@ -1008,7 +1008,12 @@ function GridPage() {
         {g.interruption === "auth" && g.canEdit && (
           <Connection returnTo={`/grid/${id}`} />
         )}
-        {streamLost && <p role="status">Connection lost. Reconnecting…</p>}
+        {streamLost && (
+          <div role="status" className="connection-status">
+            <LoaderCircle className="spinner" aria-hidden="true" />
+            <span>Connection lost. Reconnecting…</span>
+          </div>
+        )}
         <ErrorMessage error={error} />
         <ZoomableGrid key={g.id} columns={g.input.columns.values.length}>
           <table className="output-grid">

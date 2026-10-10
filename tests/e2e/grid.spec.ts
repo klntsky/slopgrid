@@ -1371,3 +1371,55 @@ test("EDIT cancels inference and restores settings, while a public FORK creates 
     await request.post("/fixture/release", { data: { all: true } });
   }
 });
+
+for (const width of [1280, 390]) {
+  test(`connection loss stays in a corner without shifting the grid at ${width}px and clears on recovery`, async ({
+    page,
+    request,
+  }) => {
+    await page.setViewportSize({ width, height: 844 });
+    await page.setExtraHTTPHeaders({
+      "X-Forwarded-For": width === 1280 ? "192.0.2.45" : "192.0.2.46",
+    });
+    await request.post("/fixture/reset", { data: { billing: false } });
+    await create(page, "Image", "cat", "hat");
+    await expectProgress(page, 1, 1);
+    let failStream!: () => void;
+    const failure = new Promise<void>((resolve) => {
+      failStream = resolve;
+    });
+    await page.route("**/api/grids/*/events", async (route) => {
+      await failure;
+      await route.abort("connectionfailed");
+    });
+    await page.reload();
+    const grid = page.getByLabel("Generated output grid");
+    await expect(grid).toBeVisible();
+    const before = (await grid.boundingBox())!;
+    failStream();
+    const status = page
+      .getByRole("status")
+      .filter({ hasText: "Connection lost. Reconnecting…" });
+    await expect(status).toBeVisible();
+    expect(await grid.boundingBox()).toEqual(before);
+    const label = (await status.boundingBox())!;
+    expect(label.x + label.width).toBeGreaterThan(width - 32);
+    expect(label.x + label.width).toBeLessThanOrEqual(width);
+    expect(label.y + label.height).toBeGreaterThan(844 - 32);
+    expect(label.y + label.height).toBeLessThanOrEqual(844);
+    expect(label.height).toBeLessThan(48);
+    const spinner = status.locator(".spinner");
+    await expect(spinner).toBeVisible();
+    const rotation = await spinner.evaluate(
+      (element) => getComputedStyle(element).transform,
+    );
+    await expect
+      .poll(() =>
+        spinner.evaluate((element) => getComputedStyle(element).transform),
+      )
+      .not.toBe(rotation);
+    await page.unroute("**/api/grids/*/events");
+    await expect(status).toHaveCount(0, { timeout: 10000 });
+    expect(await grid.boundingBox()).toEqual(before);
+  });
+}
