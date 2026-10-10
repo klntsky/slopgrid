@@ -7,6 +7,7 @@ import { createApp } from "../server/app.js";
 import { Provider } from "../server/provider.js";
 let streamBilling = false;
 let unsafe = false;
+let svgProbes: string[] = [];
 let billing = false,
   calls: string[] = [];
 const codes = new Map<string, string>();
@@ -104,7 +105,7 @@ upstream.post("/api/v1/chat/completions", async (req, res) => {
       .json({ error: { code: 402, message: "Insufficient credits" } });
   const text = system.includes("complete SVG")
     ? unsafe
-      ? '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><script>window.unsafeOutput=true</script><circle cx="100" cy="100" r="70"/></svg>'
+      ? '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><script>window.unsafeOutput=true;parent.unsafeOutput=true;document.cookie="svg_escape=1;path=/";fetch("http://localhost:4317/svg-probe?script")</script><image href="http://localhost:4317/svg-probe?image" width="10" height="10"/><circle cx="100" cy="100" r="70"/></svg>'
       : '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><circle cx="100" cy="100" r="70" fill="tan"/></svg>'
     : system.includes("JSON object")
       ? JSON.stringify({
@@ -165,6 +166,7 @@ app.post("/fixture/reset", (req, res) => {
   unsafe = !!req.body.unsafe;
   streamBilling = !!req.body.streamBilling;
   calls = [];
+  svgProbes = [];
   res.json({ ok: true });
 });
 app.post("/fixture/credits", (_req, res) => {
@@ -172,6 +174,11 @@ app.post("/fixture/credits", (_req, res) => {
   res.json({ ok: true });
 });
 app.get("/fixture/calls", (_req, res) => res.json(calls));
+app.get("/svg-probe", (req, res) => {
+  svgProbes.push(req.originalUrl);
+  res.sendStatus(204);
+});
+app.get("/fixture/svg-probes", (_req, res) => res.json(svgProbes));
 app.use(express.static("dist"));
 app.get(["/", "/grids", "/settings", /^\/grid\/[a-f0-9]{48}$/], (_req, res) =>
   res.sendFile("index.html", { root: "dist" }),

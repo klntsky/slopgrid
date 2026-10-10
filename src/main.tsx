@@ -839,10 +839,15 @@ function GridPage() {
                       <article className="cell">
                         {cell.status === "complete" ? (
                           <>
-                            {g.input.format === "image" ? (
+                            {g.input.format === "image" ||
+                            g.input.format === "svg" ? (
                               <img
                                 className="generated-image"
-                                alt="Generated image"
+                                alt={
+                                  g.input.format === "svg"
+                                    ? "Generated SVG"
+                                    : "Generated image"
+                                }
                                 src={cell.outputURL}
                                 loading="lazy"
                               />

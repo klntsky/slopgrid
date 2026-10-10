@@ -104,8 +104,12 @@ for (const format of ["SVG", "Markdown", "Static website", "Image"])
         ).status(),
       ).toBe(404);
     }
-    if (format === "Image") {
-      const image = page.getByRole("img", { name: "Generated image" }).first();
+    if (format === "Image" || format === "SVG") {
+      const image = page
+        .getByRole("img", {
+          name: format === "SVG" ? "Generated SVG" : "Generated image",
+        })
+        .first();
       await expect(image).toBeVisible();
       await expect
         .poll(() =>
@@ -113,12 +117,13 @@ for (const format of ["SVG", "Markdown", "Static website", "Image"])
         )
         .toBeGreaterThan(0);
       const response = await request.get(output.href);
-      expect(response.headers()["content-type"]).toContain("image/png");
+      expect(response.headers()["content-type"]).toContain(
+        format === "SVG" ? "image/svg+xml" : "image/png",
+      );
       expect(response.headers()["set-cookie"]).toBeUndefined();
       await expect(page.locator("iframe")).toHaveCount(0);
     } else {
       const frame = page.frameLocator("iframe").first();
-      if (format === "SVG") await expect(frame.locator("svg")).toBeVisible();
       if (format === "Markdown")
         await expect(
           frame.getByRole("heading", { name: "A generated cat" }),
@@ -305,6 +310,26 @@ for (const format of ["SVG", "Markdown"])
     });
     await create(page, format);
     await expect(page.getByText("2 of 2 complete")).toBeVisible();
+    if (format === "SVG") {
+      const image = page.getByRole("img", { name: "Generated SVG" }).first();
+      await expect
+        .poll(() =>
+          image.evaluate((img) => (img as HTMLImageElement).naturalWidth),
+        )
+        .toBeGreaterThan(0);
+      await expect(page.locator("iframe")).toHaveCount(0);
+      expect(
+        await page.evaluate(
+          () => (window as Window & { unsafeOutput?: boolean }).unsafeOutput,
+        ),
+      ).toBeUndefined();
+      expect(await page.evaluate(() => document.cookie)).not.toContain(
+        "svg_escape",
+      );
+      expect(await (await request.get("/fixture/svg-probes")).json()).toEqual(
+        [],
+      );
+    }
     const output = (await page
       .getByRole("link", { name: "Open output" })
       .first()
@@ -329,6 +354,7 @@ for (const format of ["SVG", "Markdown"])
     ).toBe(true);
     if (format === "Markdown")
       await expect(tab.locator("script")).toHaveCount(0);
+    expect(await (await request.get("/fixture/svg-probes")).json()).toEqual([]);
     await tab.close();
   });
 
