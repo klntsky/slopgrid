@@ -16,7 +16,7 @@ import {
   useNavigate,
 } from "@tanstack/react-router";
 import type { GridInput } from "../server/domain";
-import { efforts } from "../server/domain";
+import { efforts, unusedVariableIssue } from "../server/domain";
 import type { Model } from "../server/provider";
 import { api, type ViewGrid } from "./api";
 import "./style.css";
@@ -108,6 +108,7 @@ function Connection({ returnTo }: { returnTo: string }) {
         className="button secondary"
         href={`/api/auth/start?returnTo=${encodeURIComponent(returnTo)}`}
       >
+        <img className="openrouter-icon" src="/openrouter.svg" alt="" />
         {session.data?.connected
           ? "Reconnect OpenRouter"
           : "Connect OpenRouter"}
@@ -121,7 +122,7 @@ const initial: Draft = {
   input: {
     format: "svg",
     prompt: "",
-    rows: { kind: "effort", values: ["low", "high"] },
+    rows: { kind: "effort", values: [] },
     columns: { kind: "model", values: [] },
     model: "",
     effort: "medium",
@@ -175,10 +176,6 @@ function Create() {
           ...d.input,
           model: first.id,
           effort: first.reasoning ? "medium" : "none",
-          columns:
-            d.input.columns.kind === "model" && !d.input.columns.values.length
-              ? { kind: "model", values: models.slice(0, 2).map((m) => m.id) }
-              : d.input.columns,
         },
       }));
     }
@@ -200,17 +197,22 @@ function Create() {
           format === "image"
             ? { kind: "variable", values: ["cat", "dog"] }
             : first?.reasoning
-              ? { kind: "effort", values: ["low", "high"] }
+              ? { kind: "effort", values: [] }
               : { kind: "variable", values: ["cat", "dog"] },
         columns: {
           kind: "model",
-          values: compatible.slice(0, 2).map((m) => m.id),
+          values: [],
         },
       },
     }));
     setError("");
   }
   async function generate() {
+    const issue = unusedVariableIssue(input);
+    if (issue) {
+      setError(issue);
+      return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -226,11 +228,7 @@ function Create() {
   return (
     <main className="create-page">
       <div className="page-heading">
-        <p className="eyebrow">CREATE A GRID</p>
-        <h1>
-          One prompt.
-          <br />A grid of outputs.
-        </h1>
+        <h1>Create a grid to compare models and their settings</h1>
       </div>
       <section>
         <div className="section-heading">
@@ -389,15 +387,15 @@ function Create() {
             <span className="number">03</span>
             <h2>Enter your prompt</h2>
           </div>
-          <label>
-            Prompt
-            <textarea
-              rows={6}
-              value={input.prompt}
-              onChange={(e) => update({ prompt: e.target.value })}
-              placeholder="Describe what you want to generate"
-            />
-          </label>
+          <label htmlFor="grid-prompt">Prompt</label>
+          <textarea
+            id="grid-prompt"
+            rows={6}
+            value={input.prompt}
+            onChange={(e) => update({ prompt: e.target.value })}
+            placeholder="Describe what you want to generate"
+          />
+          {step >= 3 && <ErrorMessage error={unusedVariableIssue(input)} />}
           <p className="hint">
             Use $VARIABLE_ROW and $VARIABLE_COLUMN for prompt variable
             dimensions.
@@ -407,6 +405,11 @@ function Create() {
             onClick={() => {
               if (!input.prompt.trim()) {
                 setError("Enter a prompt.");
+                return;
+              }
+              const issue = unusedVariableIssue(input);
+              if (issue) {
+                setError(issue);
                 return;
               }
               setDraft((d) => ({ ...d, step: 3 }));
@@ -429,7 +432,12 @@ function Create() {
           )}
           <button
             className="primary generate"
-            disabled={busy || !connection.data?.connected}
+            disabled={
+              busy ||
+              !connection.data?.connected ||
+              !input.prompt.trim() ||
+              !!unusedVariableIssue(input)
+            }
             onClick={generate}
           >
             {busy ? "Starting generation…" : "Generate"}
@@ -465,6 +473,7 @@ function AxisEditor({
   models: Model[];
   onChange: (axis: GridInput["rows"]) => void;
 }) {
+  const [filter, setFilter] = useState("");
   const kinds =
     format === "image"
       ? (["model", "variable"] as const)
@@ -478,6 +487,11 @@ function AxisEditor({
             { id: "direct", name: "Single pass" },
             { id: "review", name: "Draft and review" },
           ];
+  const visibleChoices = choices.filter(
+    (c) =>
+      axis.kind !== "model" ||
+      `${c.name} ${c.id}`.toLowerCase().includes(filter.trim().toLowerCase()),
+  );
   return (
     <div className="axis">
       <label>
@@ -486,16 +500,10 @@ function AxisEditor({
           value={axis.kind}
           onChange={(e) => {
             const kind = e.target.value as GridInput["rows"]["kind"];
+            setFilter("");
             onChange({
               kind,
-              values:
-                kind === "variable"
-                  ? ["cat", "dog"]
-                  : kind === "model"
-                    ? models.slice(0, 2).map((m) => m.id)
-                    : kind === "effort"
-                      ? ["low", "high"]
-                      : ["direct", "review"],
+              values: kind === "variable" ? ["cat", "dog"] : [],
             });
           }}
         >
@@ -521,8 +529,23 @@ function AxisEditor({
       ) : (
         <fieldset>
           <legend>{label === "Rows" ? "Row values" : "Column values"}</legend>
-          <div className="value-list">
-            {choices.map((c) => (
+          {axis.kind === "model" && (
+            <label>
+              Filter {label === "Rows" ? "row" : "column"} models
+              <input
+                type="search"
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+              />
+            </label>
+          )}
+          <div
+            className={`value-list${axis.kind === "model" ? " model-list" : ""}`}
+          >
+            {axis.kind === "model" && !visibleChoices.length && (
+              <p className="hint">No models match your filter.</p>
+            )}
+            {visibleChoices.map((c) => (
               <label className="checkbox" key={c.id}>
                 <input
                   type="checkbox"
@@ -633,7 +656,6 @@ function GridPage() {
     <main className="grid-page">
       <div className="grid-heading">
         <div>
-          <p className="eyebrow">{formatNames[g.input.format]} GRID</p>
           <h1>{g.input.prompt}</h1>
           <p className="hint">
             {complete} of {g.cells.length} complete

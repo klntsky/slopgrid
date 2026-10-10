@@ -102,3 +102,18 @@ test("static bundles keep relative assets and reject traversal and executable se
     );
   assert.throws(() => parseOutput("html", '{"files":{"style.css":""}}'));
 });
+
+test("every enabled variable must be used before a grid can generate", () => {
+  const input = {
+    format: "markdown",
+    prompt: "$VARIABLE_ROW $VARIABLE_COLUMN",
+    rows: { kind: "variable", values: ["cat"] },
+    columns: { kind: "variable", values: ["hat"] },
+    model: "fixture/text",
+    effort: "none",
+    harness: "direct",
+  };
+  assert.equal(gridSchema.safeParse(input).success, true);
+  for (const prompt of ["Draw a cat", "$VARIABLE_ROW", "$VARIABLE_COLUMN"])
+    assert.equal(gridSchema.safeParse({ ...input, prompt }).success, false);
+});

@@ -39,6 +39,15 @@ upstream.get("/api/v1/models", (_req, res) =>
   res.json({
     data: [
       {
+        id: "fixture/other",
+        name: "Second model",
+        architecture: {
+          input_modalities: ["text"],
+          output_modalities: ["text"],
+        },
+        supported_parameters: ["reasoning"],
+      },
+      {
         id: "fixture/text",
         name: "Fixture text",
         architecture: {

@@ -551,3 +551,12 @@ legend {
 .cell .generated-image {
   object-fit: contain;
 }
+
+.model-list {
+  height: 264px;
+}
+.openrouter-icon {
+  width: 24px;
+  height: auto;
+  flex-shrink: 0;
+}

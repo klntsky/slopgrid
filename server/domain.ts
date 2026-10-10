@@ -51,12 +51,24 @@ export const gridSchema = z
       )
         issue("Unknown harness");
     }
+    const variableIssue = unusedVariableIssue(g);
+    if (variableIssue) issue(variableIssue);
     if (g.prompt.includes("$VARIABLE_ROW") && g.rows.kind !== "variable")
       issue("Choose prompt variables for rows to use $VARIABLE_ROW");
     if (g.prompt.includes("$VARIABLE_COLUMN") && g.columns.kind !== "variable")
       issue("Choose prompt variables for columns to use $VARIABLE_COLUMN");
   });
 export type GridInput = z.infer<typeof gridSchema>;
+export function unusedVariableIssue(
+  input: Pick<GridInput, "prompt" | "rows" | "columns">,
+): string | undefined {
+  for (const [axis, token, label] of [
+    [input.rows, "$VARIABLE_ROW", "row"],
+    [input.columns, "$VARIABLE_COLUMN", "column"],
+  ] as const)
+    if (axis.kind === "variable" && !input.prompt.includes(token))
+      return `Include ${token} in the prompt for ${label} variables.`;
+}
 export type Cell = {
   id: string;
   row: number;

@@ -326,3 +326,98 @@ for (const format of ["SVG", "Markdown"])
       await expect(tab.locator("script")).toHaveCount(0);
     await tab.close();
   });
+
+test("model choices start empty and filtering preserves deliberate selections", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(
+    page.getByRole("heading", {
+      name: "Create a grid to compare models and their settings",
+    }),
+  ).toBeVisible();
+  await expect(page.getByText("CREATE A GRID", { exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "SVG", exact: true }).click();
+  await expect(page.locator('input[type="checkbox"]:checked')).toHaveCount(0);
+  const columns = page.getByRole("group", { name: "Column values" });
+  await columns
+    .getByRole("checkbox", { name: "Fixture text", exact: true })
+    .check();
+  await page.getByLabel("Filter column models").fill("FIXTURE/OTHER");
+  await expect(columns.getByRole("checkbox")).toHaveCount(1);
+  await columns.getByRole("checkbox", { name: "Second model" }).check();
+  await page.getByLabel("Filter column models").fill("no matching model");
+  await expect(columns.getByText("No models match your filter.")).toBeVisible();
+  await page.getByLabel("Filter column models").fill("");
+  await expect(
+    columns.getByRole("checkbox", { name: "Fixture text", exact: true }),
+  ).toBeChecked();
+  await expect(
+    columns.getByRole("checkbox", { name: "Second model" }),
+  ).toBeChecked();
+  expect(
+    (await columns.locator(".value-list").boundingBox())!.height,
+  ).toBeGreaterThanOrEqual(264);
+  for (const kind of ["harness", "model", "effort"]) {
+    await page
+      .getByRole("combobox", { name: "Rows", exact: true })
+      .selectOption(kind);
+    await expect(
+      page.getByRole("group", { name: "Row values" }).locator("input:checked"),
+    ).toHaveCount(0);
+  }
+});
+
+test("unused prompt variables block setup, later edits block generation, and the API rejects bypasses", async ({
+  page,
+  request,
+}) => {
+  await request.post("/fixture/reset", { data: { billing: false } });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Image", exact: true }).click();
+  await page
+    .getByRole("combobox", { name: "Columns", exact: true })
+    .selectOption("variable");
+  await page.getByRole("button", { name: "Continue to prompt" }).click();
+  for (const prompt of ["Draw a cat", "$VARIABLE_ROW", "$VARIABLE_COLUMN"]) {
+    await page.getByLabel("Prompt", { exact: true }).fill(prompt);
+    await page.getByRole("button", { name: "Continue to key setup" }).click();
+    await expect(page.getByRole("heading", { name: "Key setup" })).toHaveCount(
+      0,
+    );
+    await expect(page.getByRole("alert")).toContainText("Include $VARIABLE_");
+  }
+  await page
+    .getByLabel("Prompt", { exact: true })
+    .fill("$VARIABLE_ROW $VARIABLE_COLUMN");
+  await page.getByRole("button", { name: "Continue to key setup" }).click();
+  const connect = page.getByRole("link", { name: "Connect OpenRouter" });
+  await expect(connect.locator("img")).toBeVisible();
+  await connect.click();
+  await expect(
+    page.getByRole("button", { name: "Generate", exact: true }),
+  ).toBeEnabled();
+  await page.getByLabel("Prompt", { exact: true }).fill("$VARIABLE_ROW");
+  await expect(
+    page.getByRole("button", { name: "Generate", exact: true }),
+  ).toBeDisabled();
+  const response = await page.request.post("/api/grids", {
+    data: {
+      format: "image",
+      prompt: "$VARIABLE_ROW",
+      rows: { kind: "variable", values: ["cat"] },
+      columns: { kind: "variable", values: ["hat"] },
+      model: "fixture/image",
+      effort: "none",
+      harness: "direct",
+    },
+  });
+  expect(response.status()).toBe(400);
+  expect(await (await request.get("/fixture/calls")).json()).toEqual([]);
+  await page
+    .getByLabel("Prompt", { exact: true })
+    .fill("$VARIABLE_ROW $VARIABLE_COLUMN");
+  await page.getByRole("button", { name: "Generate", exact: true }).click();
+  await expect(page.getByText("4 of 4 complete")).toBeVisible();
+  await expect(page.getByText("Image GRID", { exact: true })).toHaveCount(0);
+});
