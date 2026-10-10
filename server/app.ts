@@ -370,10 +370,14 @@ export function createApp(config: Config) {
       g = store.get(String(req.params.id));
     if (!g || g.owner !== s.id)
       return res.status(404).json({ error: "Grid not found" });
-    if (g.status !== "complete")
+    if (
+      g.cells.some(
+        (cell) => cell.status !== "complete" && cell.status !== "error",
+      )
+    )
       return res
         .status(409)
-        .json({ error: "Complete all cells before publishing." });
+        .json({ error: "Wait for every cell to finish before publishing." });
     g.published = true;
     jobs.emit(g);
     res.json(snapshot(g, s));

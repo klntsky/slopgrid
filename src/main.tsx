@@ -944,7 +944,7 @@ function GridPage() {
           )}
           {g.canEdit && !g.published && (
             <button
-              disabled={busy || g.status !== "complete"}
+              disabled={busy || finished !== g.cells.length}
               className="primary"
               onClick={() => action("publish")}
               aria-label="PUBLISH"

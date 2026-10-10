@@ -27,7 +27,7 @@ Before publishing, select **EDIT** to return to parameter selection with the cur
 
 ## Publish and share
 
-Select **PUBLISH** after all outputs generate successfully, then **Copy link** to share the grid. Publishing makes the prompt, dimensions, and outputs accessible to anyone with the link. Published grids cannot be changed. Select **FORK** to copy a published grid’s setup into the parameter form, change its settings or prompt, and generate a new grid using your own OpenRouter connection.
+Select **PUBLISH** after every output has finished, whether it succeeded or failed, then **Copy link** to share the grid. Failed cells remain visible in published grids. Publishing makes the prompt, dimensions, and outputs accessible to anyone with the link. Published grids cannot be changed. Select **FORK** to copy a published grid’s setup into the parameter form, change its settings or prompt, and generate a new grid using your own OpenRouter connection.
 
 Open **YOUR GRIDS** in the navigation bar to find grids created in this browser. Selecting the slopgrid logo opens **YOUR GRIDS** when you have created at least one grid, or the creation form when you have none. Keep that browser's cookies: ownership is tied to a 30-day browser session, with no separate slopgrid login or cross-device account. Each completed output has an unguessable URL that can be opened directly; anyone who receives that output URL can view it, even before the grid is published.
 

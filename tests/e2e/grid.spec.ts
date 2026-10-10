@@ -1241,6 +1241,11 @@ for (const theme of ["light", "dark"] as const)
       "aria-valuetext",
       "2 of 3 outputs finished: 1 complete, 1 failed",
     );
+    await expect(page.getByRole("button", { name: "PUBLISH" })).toBeDisabled();
+    const id = new URL(page.url()).pathname.split("/").pop()!;
+    expect((await page.request.post(`/api/grids/${id}/publish`)).status()).toBe(
+      409,
+    );
     const segments = page.locator(".progress-segment");
     await expect(segments).toHaveCount(3);
     const colors = await segments.evaluateAll((elements) =>
@@ -1259,7 +1264,30 @@ for (const theme of ["light", "dark"] as const)
       "aria-valuetext",
       "3 of 3 outputs finished: 2 complete, 1 failed",
     );
-    await expect(page.getByRole("button", { name: "PUBLISH" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "PUBLISH" })).toBeEnabled();
+    if (theme === "light") {
+      await page.getByRole("button", { name: "PUBLISH" }).click();
+      await expect(page.getByText("Published", { exact: true })).toBeVisible();
+      const publicGrid = await request.get(`/api/grids/${id}`);
+      expect(publicGrid.status()).toBe(200);
+      expect(
+        (await publicGrid.json()).cells.map(
+          (cell: { status: string }) => cell.status,
+        ),
+      ).toEqual(["complete", "error", "complete"]);
+      await page.reload();
+      await expectProgress(page, 3, 3);
+      await expect(
+        page.locator('.progress-segment[data-status="error"]'),
+      ).toHaveCount(1);
+      await expect(
+        page.getByRole("button", { name: "FORK", exact: true }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: "Resume generation" }),
+      ).toHaveCount(0);
+      return;
+    }
     await page.reload();
     await expectProgress(page, 3, 3);
     await request.post("/fixture/reset", { data: { holdGenerations: true } });
@@ -1496,3 +1524,28 @@ for (const axis of ["Rows", "Columns"] as const) {
     await expect(labels).toHaveText(["low", "high", "max"]);
   });
 }
+
+test("a grid with only failed outputs can be published and viewed publicly", async ({
+  page,
+  request,
+}) => {
+  await page.setExtraHTTPHeaders({ "X-Forwarded-For": "192.0.2.50" });
+  await request.post("/fixture/reset", { data: { generationError: true } });
+  await create(page, "Image", "dog", "hat");
+  await expectProgress(page, 1, 1);
+  await expect(
+    page.locator('.progress-segment[data-status="error"]'),
+  ).toHaveCount(1);
+  await expect(
+    page.getByRole("button", { name: "PUBLISH", exact: true }),
+  ).toBeEnabled();
+  await page.getByRole("button", { name: "PUBLISH", exact: true }).click();
+  await expect(page.getByText("Published", { exact: true })).toBeVisible();
+  const id = new URL(page.url()).pathname.split("/").pop()!;
+  const result = await request.get(`/api/grids/${id}`);
+  expect(result.status()).toBe(200);
+  const grid = await result.json();
+  expect(grid.published).toBe(true);
+  expect(grid.cells[0].status).toBe("error");
+  expect(grid.cells[0].outputURL).toBeUndefined();
+});
