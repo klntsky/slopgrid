@@ -4,7 +4,7 @@ Compare generated outputs in a grid. Choose models, thinking effort, prompt vari
 
 ## Create a grid
 
-1. Select **NEW GRID** in the navigation bar, then choose the output format.
+1. Select **NEW GRID** in the navigation bar, then choose the output format. On mobile, open the hamburger menu to find **NEW GRID**, **YOUR GRIDS**, and **SETTINGS**.
 2. Choose what rows and columns represent, then select their values. Filter model lists by name or ID to find the models you want to compare. For prompt variables, enter one value per line. Image grids support models and prompt variables.
 3. Enter your prompt. Use `$VARIABLE_ROW` and `$VARIABLE_COLUMN` to insert each cell's row and column values when those dimensions are prompt variables. Each enabled variable must appear in the prompt before you can generate.
 4. Connect OpenRouter and select **Generate**.
@@ -13,7 +13,9 @@ When model, thinking effort, or harness is not a dimension, its selection applie
 
 ## Watch generation
 
-The grid fills the page below the header, which shows your prompt, a generation progress bar, and publishing controls. Outputs generate in parallel as capacity becomes available, with free capacity going to users currently running fewer outputs. The grid updates as generation progresses. SVG cells show a partial image while generation is running, completing unfinished markup for the preview and replacing it with the final output when ready. Completed outputs remain available when you reload the page. Row and column headers stay visible as you scroll, with labeled dimensions in the corner. Select **Open output** to view a result in a separate tab.
+The grid fills the page below the header, which shows your prompt, a generation progress bar, and publishing controls. Outputs generate in parallel as capacity becomes available, with free capacity going to users currently running fewer outputs. The grid updates as generation progresses. SVG cells show a partial image while generation is running, completing unfinished markup for the preview and replacing it with the final output when ready. Completed outputs remain available when you reload the page. Row and column headers stay visible as you scroll, with labeled dimensions in the corner. Select **Open output** to view a result in a separate tab. Click or tap the model ID above an output, or in a model row or column label, to copy its full ID.
+
+On mobile, pinch with two fingers inside the grid to zoom the table, then swipe with one finger to scroll. The header stays at its normal size. Zoom resets when the grid viewport changes size. Website and Markdown previews let these gestures reach the grid; use **Open output** to interact with a generated website or scroll a Markdown document separately.
 
 Each completed cell shows token usage and its OpenRouter-reported cost in USD; draft and review includes both requests. If any request lacks a reported charge, the cost is shown as unavailable. Charges for aborted or failed attempts are not included in the completed output’s cost.
 

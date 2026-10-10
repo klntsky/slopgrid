@@ -18,6 +18,7 @@ async function create(
   columns = "hat",
   harness = "direct",
   prompt = "Draw $VARIABLE_ROW wearing a $VARIABLE_COLUMN",
+  model?: string,
 ) {
   await page.goto("/");
   await page.getByRole("button", { name: format, exact: true }).click();
@@ -29,6 +30,10 @@ async function create(
     .getByRole("combobox", { name: "Columns", exact: true })
     .selectOption("variable");
   await page.getByLabel("Column values").fill(columns);
+  if (model)
+    await page
+      .getByRole("combobox", { name: "Model", exact: true })
+      .selectOption(model);
   if (format !== "Image")
     await page
       .getByRole("combobox", { name: "Harness", exact: true })
@@ -687,6 +692,10 @@ for (const viewport of [
     await expect(
       header.getByRole("button", { name: "Copy link" }),
     ).toBeVisible();
+    if (viewport.width <= 700)
+      await header
+        .getByRole("button", { name: "Navigation menu", exact: true })
+        .click();
     await header
       .getByRole("navigation")
       .getByRole("link", { name: "NEW GRID", exact: true })
@@ -925,4 +934,160 @@ test("dark theme applies to generation controls, cell labels, and billing dialog
   await expect(
     page.getByRole("button", { name: "Resume generation" }),
   ).toBeEnabled();
+});
+
+test.describe("mobile grid interaction", () => {
+  test.use({
+    viewport: { width: 390, height: 844 },
+    isMobile: true,
+    hasTouch: true,
+  });
+
+  test("the hamburger keeps navigation compact and closes after navigation or Escape", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    const menu = page.getByRole("button", {
+      name: "Navigation menu",
+      exact: true,
+    });
+    const nav = page.getByRole("navigation");
+    await expect(menu).toHaveAttribute("aria-expanded", "false");
+    await expect(nav).toBeHidden();
+    expect((await page.getByRole("banner").boundingBox())!.height).toBeLessThan(
+      90,
+    );
+    await menu.click();
+    await expect(menu).toHaveAttribute("aria-expanded", "true");
+    await nav.getByRole("link", { name: "SETTINGS", exact: true }).click();
+    await expect(page).toHaveURL("/settings");
+    await expect(nav).toBeHidden();
+    await menu.click();
+    await page.keyboard.press("Escape");
+    await expect(nav).toBeHidden();
+    await expect(menu).toBeFocused();
+    await menu.click();
+    await page.getByRole("heading", { name: "Inference", exact: true }).click();
+    await expect(nav).toBeHidden();
+    await menu.click();
+    await nav.getByRole("link", { name: "NEW GRID", exact: true }).click();
+    await expect(page).toHaveURL("/");
+    await expect(nav).toBeHidden();
+  });
+
+  test("pinching changes the table scale while the header stays fixed and one-finger scrolling still works", async ({
+    page,
+    request,
+  }) => {
+    await request.post("/fixture/reset", { data: { billing: false } });
+    await create(page, "Static website", "cat\ndog\nowl", "hat\ncape\nscarf");
+    await expectProgress(page, 9, 9);
+    await expect(
+      page
+        .frameLocator("iframe")
+        .first()
+        .getByText("Module loaded", { exact: true }),
+    ).toBeVisible();
+    const grid = page.getByLabel("Generated output grid"),
+      cell = page.locator(".cell").first(),
+      header = page.getByRole("banner");
+    const before = (await cell.boundingBox())!,
+      headerBefore = (await header.boundingBox())!;
+    const client = await page.context().newCDPSession(page);
+    async function touch(
+      type: "touchStart" | "touchMove" | "touchEnd",
+      points: { x: number; y: number; id: number }[],
+    ) {
+      await client.send("Input.dispatchTouchEvent", {
+        type,
+        touchPoints: points,
+      });
+    }
+    const y = Math.max(headerBefore.height + 190, 400);
+    await touch("touchStart", [
+      { x: 220, y, id: 1 },
+      { x: 320, y, id: 2 },
+    ]);
+    await touch("touchMove", [
+      { x: 190, y, id: 1 },
+      { x: 350, y, id: 2 },
+    ]);
+    await touch("touchEnd", []);
+    await expect
+      .poll(async () => (await cell.boundingBox())!.width)
+      .toBeGreaterThan(before.width * 1.4);
+    expect((await header.boundingBox())!.height).toBe(headerBefore.height);
+    expect(await page.evaluate(() => visualViewport!.scale)).toBe(1);
+    await touch("touchStart", [
+      { x: 190, y, id: 1 },
+      { x: 350, y, id: 2 },
+    ]);
+    await touch("touchMove", [
+      { x: 240, y, id: 1 },
+      { x: 300, y, id: 2 },
+    ]);
+    await touch("touchEnd", []);
+    await expect
+      .poll(async () => (await cell.boundingBox())!.width)
+      .toBeLessThan(before.width * 0.8);
+    const top = await grid.evaluate((el) => el.scrollTop);
+    await touch("touchStart", [{ x: 290, y: 620, id: 1 }]);
+    for (const nextY of [580, 530, 480, 430])
+      await touch("touchMove", [{ x: 290, y: nextY, id: 1 }]);
+    await touch("touchEnd", []);
+    await expect
+      .poll(() => grid.evaluate((el) => el.scrollTop))
+      .toBeGreaterThan(top);
+    await expect(header.getByRole("button", { name: "PUBLISH" })).toBeEnabled();
+  });
+});
+
+test("model IDs in outputs and model legends copy to the real clipboard", async ({
+  page,
+  context,
+  request,
+}) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await request.post("/fixture/reset", { data: { billing: false } });
+  await create(
+    page,
+    "SVG",
+    "cat",
+    "hat",
+    "direct",
+    "Draw $VARIABLE_ROW wearing a $VARIABLE_COLUMN",
+    "fixture/other",
+  );
+  await expectProgress(page, 1, 1);
+  const copy = page
+    .locator(".cell")
+    .getByRole("button", { name: "Copy model ID fixture/other", exact: true });
+  await copy.click();
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .toBe("fixture/other");
+  await expect(page.getByText("Model ID copied", { exact: true })).toHaveText(
+    "Model ID copied",
+  );
+  const response = await page.request.post("/api/grids", {
+    data: {
+      format: "svg",
+      prompt: "Draw a cat",
+      rows: { kind: "model", values: ["fixture/text"] },
+      columns: { kind: "effort", values: ["none"] },
+      model: "fixture/text",
+      effort: "none",
+      harness: "direct",
+    },
+  });
+  expect(response.status()).toBe(201);
+  await page.goto(`/grid/${(await response.json()).id}`);
+  await expectProgress(page, 1, 1);
+  await page
+    .getByRole("rowheader")
+    .getByRole("button", { name: "Copy model ID fixture/text", exact: true })
+    .click();
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .toBe("fixture/text");
 });

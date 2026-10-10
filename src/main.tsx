@@ -18,6 +18,8 @@ import {
   LoaderCircle,
   Pause,
   Play,
+  Menu,
+  X,
 } from "lucide-react";
 import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
@@ -42,6 +44,8 @@ import { efforts, unusedVariableIssue } from "../server/domain";
 import type { Model } from "../server/provider";
 import { api, type ViewGrid } from "./api";
 import { SvgPreview } from "./svg-preview-image";
+import { ModelName } from "./model-name";
+import { ZoomableGrid } from "./zoomable-grid";
 import { ThemeProvider, useTheme } from "./theme";
 import "./style.css";
 function newestGrid(previous: unknown, incoming: unknown) {
@@ -72,8 +76,41 @@ const GridHeaderTarget = createContext<HTMLDivElement | null>(null);
 function Layout() {
   const history = useGrids(),
     navigate = useNavigate(),
-    isGrid = useLocation().pathname.startsWith("/grid/");
+    pathname = useLocation().pathname,
+    isGrid = pathname.startsWith("/grid/");
   const [headerTarget, setHeaderTarget] = useState<HTMLDivElement | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuButton = useRef<HTMLButtonElement>(null),
+    navigation = useRef<HTMLElement>(null);
+  useEffect(() => setMenuOpen(false), [pathname]);
+  useEffect(() => {
+    const mobile = matchMedia("(max-width: 700px)");
+    const close = () => setMenuOpen(false);
+    mobile.addEventListener("change", close);
+    return () => mobile.removeEventListener("change", close);
+  }, []);
+  useEffect(() => {
+    if (!menuOpen) return;
+    const outside = (event: PointerEvent) => {
+      if (
+        !navigation.current?.contains(event.target as Node) &&
+        !menuButton.current?.contains(event.target as Node)
+      )
+        setMenuOpen(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMenuOpen(false);
+        menuButton.current?.focus();
+      }
+    };
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [menuOpen]);
   return (
     <GridHeaderTarget.Provider value={headerTarget}>
       <div className={`app-shell${isGrid ? " grid-layout" : ""}`}>
@@ -101,7 +138,23 @@ function Layout() {
             <img className="logo-grid" src="/slopgrid.svg" alt="" />
           </Link>
           {isGrid && <div className="grid-header-slot" ref={setHeaderTarget} />}
-          <nav>
+          <button
+            ref={menuButton}
+            type="button"
+            className="mobile-menu-toggle secondary"
+            aria-label="Navigation menu"
+            aria-expanded={menuOpen}
+            aria-controls="main-navigation"
+            onClick={() => setMenuOpen(!menuOpen)}
+          >
+            {menuOpen ? <X aria-hidden="true" /> : <Menu aria-hidden="true" />}
+          </button>
+          <nav
+            id="main-navigation"
+            ref={navigation}
+            data-open={menuOpen}
+            onClick={() => setMenuOpen(false)}
+          >
             <CreateGridButton />
             <Link to="/grids">YOUR GRIDS</Link>
             <Link to="/settings">SETTINGS</Link>
@@ -874,16 +927,7 @@ function GridPage() {
         )}
         {streamLost && <p role="status">Connection lost. Reconnecting…</p>}
         <ErrorMessage error={error} />
-        <div
-          className="grid-scroll"
-          tabIndex={0}
-          aria-label="Generated output grid"
-          style={
-            {
-              "--grid-columns": g.input.columns.values.length,
-            } as React.CSSProperties
-          }
-        >
+        <ZoomableGrid key={g.id} columns={g.input.columns.values.length}>
           <table className="output-grid">
             <thead>
               <tr>
@@ -907,7 +951,11 @@ function GridPage() {
                 </th>
                 {g.input.columns.values.map((c) => (
                   <th scope="col" key={c}>
-                    {displayValue(c, g.input.columns.kind)}
+                    {g.input.columns.kind === "model" ? (
+                      <ModelName model={c} />
+                    ) : (
+                      displayValue(c, g.input.columns.kind)
+                    )}
                   </th>
                 ))}
               </tr>
@@ -917,7 +965,11 @@ function GridPage() {
                 <tr key={r}>
                   <th scope="row">
                     <span className="row-label">
-                      {displayValue(r, g.input.rows.kind)}
+                      {g.input.rows.kind === "model" ? (
+                        <ModelName model={r} />
+                      ) : (
+                        displayValue(r, g.input.rows.kind)
+                      )}
                     </span>
                   </th>
                   {g.input.columns.values.map((_, column) => {
@@ -927,6 +979,9 @@ function GridPage() {
                     return (
                       <td key={column}>
                         <article className="cell">
+                          <div className="cell-model">
+                            <ModelName model={cell.model} />
+                          </div>
                           {cell.status === "complete" ? (
                             <>
                               {g.input.format === "image" ||
@@ -1009,7 +1064,7 @@ function GridPage() {
               ))}
             </tbody>
           </table>
-        </div>
+        </ZoomableGrid>
         {g.interruption === "billing" && paused && !dismissed && (
           <BillingDialog
             busy={busy}
