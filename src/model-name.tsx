@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Check, Copy, Link2 } from "lucide-react";
+import { Check, Copy, Link } from "lucide-react";
 
 export function ModelName({ model }: { model: string }) {
   const [feedback, setFeedback] = useState("");
@@ -40,7 +40,7 @@ export function ModelName({ model }: { model: string }) {
         aria-label={`View ${model} on OpenRouter`}
         title="View model on OpenRouter"
       >
-        <Link2 aria-hidden="true" />
+        <Link aria-hidden="true" />
       </a>
       <span role="status" className="sr-only">
         {feedback}

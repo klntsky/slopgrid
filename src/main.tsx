@@ -831,10 +831,6 @@ function Settings() {
             <option value="dark">Dark</option>
           </select>
         </label>
-        <p className="hint">
-          System follows your device’s light or dark appearance. Your choice is
-          saved in this browser.
-        </p>
       </section>
       <section>
         <h2>Inference</h2>
