@@ -57,10 +57,10 @@ class ControlledProvider extends Provider {
     this.pending.delete(id);
     held.resolve({ files: { "index.md": id } });
   }
-  fail(id: string, statusCode: number) {
+  fail(id: string, statusCode: number, extra: Record<string, unknown> = {}) {
     const held = this.pending.get(id)!;
     this.pending.delete(id);
-    held.reject({ statusCode });
+    held.reject({ statusCode, ...extra });
   }
   owners() {
     return [...this.pending.keys()].map((id) => id.split("/")[0]);
@@ -335,6 +335,126 @@ test("a failed cell releases its slot without automatic retries and other cells 
       h.provider.started.map((c) => c.id),
       ["alice/grid/0", "alice/grid/1", "alice/grid/0"],
     );
+  } finally {
+    await h.close();
+  }
+});
+
+test("backoff releases workers to other users, honors Retry-After, and retries without losing completed cells", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: Date.now() });
+  const h = harness(1);
+  try {
+    const alice = h.grid("alice", "grid", 3);
+    h.jobs.start(alice);
+    await flush();
+    h.provider.finish("alice/grid/0");
+    await flush();
+    h.provider.pending.get("alice/grid/1")!.write("Partial output");
+    h.jobs.start(h.grid("bob", "grid", 1));
+    h.provider.fail("alice/grid/1", 429, {
+      message: "Too many requests",
+      responseHeaders: { "retry-after": "5" },
+    });
+    await flush();
+    assert.equal(alice.status, "running");
+    assert.equal(alice.cells[1].status, "pending");
+    assert.equal(alice.cells[1].draft, undefined);
+    assert.equal(alice.cells[1].error, "Too many requests");
+    assert.equal(alice.cells[1].errorCode, 429);
+    assert.ok(h.provider.pending.has("bob/grid/0"));
+    h.provider.finish("bob/grid/0");
+    await flush();
+    t.mock.timers.tick(4999);
+    await flush();
+    assert.equal(
+      h.provider.started.filter((call) => call.owner === "alice").length,
+      2,
+    );
+    t.mock.timers.tick(1);
+    await flush();
+    assert.ok(h.provider.pending.has("alice/grid/1"));
+    assert.equal(alice.cells[1].error, undefined);
+    h.provider.finish("alice/grid/1");
+    await flush();
+    h.provider.finish("alice/grid/2");
+    await flush();
+    assert.equal(alice.status, "complete");
+    assert.equal(
+      h.provider.started.filter((call) => call.id === "alice/grid/0").length,
+      1,
+    );
+  } finally {
+    await h.close();
+  }
+});
+
+test("temporary budget failures back off exponentially, stop after five retries, and retain the final error", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: Date.now() });
+  const h = harness(1);
+  try {
+    const grid = h.grid("alice", "grid", 1);
+    h.jobs.start(grid);
+    await flush();
+    for (let attempt = 0; attempt < 6; attempt++) {
+      h.provider.fail("alice/grid/0", 402, {
+        message: "In-flight spending budget is full",
+        metadata: { limit_source: "openrouter_in_flight_budget" },
+      });
+      await flush();
+      if (attempt < 5) {
+        assert.equal(grid.status, "running");
+        t.mock.timers.tick(1000 * 2 ** attempt - 1);
+        await flush();
+        assert.equal(h.provider.pending.size, 0);
+        t.mock.timers.tick(1000 * 2 ** attempt + 1);
+        await flush();
+        assert.equal(h.provider.pending.size, 1);
+      }
+    }
+    assert.equal(grid.status, "paused");
+    assert.equal(grid.cells[0].status, "error");
+    assert.equal(grid.cells[0].errorCode, 402);
+    assert.equal(
+      h.store.get(grid.id)!.cells[0].error,
+      "In-flight spending budget is full",
+    );
+    assert.equal(h.store.get(grid.id)!.cells[0].errorCode, 402);
+    t.mock.timers.tick(120000);
+    await flush();
+    assert.equal(h.provider.started.length, 6);
+  } finally {
+    await h.close();
+  }
+});
+
+test("pausing during backoff prevents the timer from restarting inference and Resume honors the cooldown", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: Date.now() });
+  const h = harness(1);
+  try {
+    const grid = h.grid("alice", "grid", 1);
+    h.jobs.start(grid);
+    await flush();
+    h.provider.fail("alice/grid/0", 429, {
+      responseHeaders: { "retry-after": "5" },
+    });
+    await flush();
+    h.jobs.pause(grid);
+    await flush();
+    t.mock.timers.tick(2000);
+    h.jobs.start(grid);
+    await flush();
+    assert.equal(h.provider.pending.size, 0);
+    t.mock.timers.tick(3000);
+    await flush();
+    assert.equal(h.provider.pending.size, 1);
+    h.provider.fail("alice/grid/0", 429);
+    await flush();
+    h.jobs.pause(grid);
+    await flush();
+    t.mock.timers.tick(60000);
+    await flush();
+    assert.equal(grid.status, "paused");
+    assert.equal(h.provider.started.length, 2);
   } finally {
     await h.close();
   }

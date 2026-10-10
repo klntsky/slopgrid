@@ -225,6 +225,11 @@ const dimensionNames = {
   variable: "Prompt variable",
   harness: "Harness",
 };
+function cellError(cell: ViewGrid["cells"][number]) {
+  return cell.errorCode === undefined
+    ? cell.error
+    : `Error ${cell.errorCode}: ${cell.error}`;
+}
 function ErrorMessage({ error }: { error?: string }) {
   return error ? (
     <p role="alert" className="error">
@@ -1133,7 +1138,7 @@ function GridPage() {
                               </div>
                             </>
                           ) : cell.status === "error" ? (
-                            <p className="cell-error">{cell.error}</p>
+                            <p className="cell-error">{cellError(cell)}</p>
                           ) : cell.status === "running" &&
                             g.input.format === "svg" ? (
                             <SvgPreview
@@ -1151,10 +1156,17 @@ function GridPage() {
                                   Generating…
                                   {cell.draft && <pre>{cell.draft}</pre>}
                                 </>
+                              ) : cell.retrying ? (
+                                <span>Waiting to retry…</span>
                               ) : g.status === "paused" ? (
                                 "Paused"
                               ) : (
                                 "Queued"
+                              )}
+                              {cell.status === "pending" && cell.error && (
+                                <small className="cell-provider-error">
+                                  {cellError(cell)}
+                                </small>
                               )}
                             </div>
                           )}

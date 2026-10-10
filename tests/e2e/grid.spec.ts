@@ -307,6 +307,9 @@ for (const format of ["Image", "SVG"])
     await create(page, format);
     await expect(page.getByRole("dialog")).toBeVisible();
     await expectProgress(page, 1, 2);
+    await expect(
+      page.getByText("Error 402: Insufficient credits", { exact: true }),
+    ).toBeVisible();
     await request.post("/fixture/credits");
     await page
       .getByRole("dialog")
@@ -1617,6 +1620,15 @@ test("a grid with only failed outputs can be published and viewed publicly", asy
   const grid = await result.json();
   expect(grid.published).toBe(true);
   expect(grid.cells[0].status).toBe("error");
+  expect(grid.cells[0].errorCode).toBe(500);
+  expect(grid.cells[0].error).toBe("Fixture generation failed");
+  await expect(
+    page.getByText("Error 500: Fixture generation failed", { exact: true }),
+  ).toBeVisible();
+  await page.reload();
+  await expect(
+    page.getByText("Error 500: Fixture generation failed", { exact: true }),
+  ).toBeVisible();
   expect(grid.cells[0].outputURL).toBeUndefined();
 });
 
@@ -1702,3 +1714,46 @@ test("live updates close when generation settles and reopen after Resume, includ
     await request.post("/fixture/release", { data: { all: true } });
   }
 });
+
+for (const [index, mode] of [
+  { format: "Image", code: 429, stream: false },
+  { format: "SVG", code: 402, stream: false },
+  { format: "SVG", code: 402, stream: true },
+  { format: "Markdown", code: 429, stream: true },
+].entries()) {
+  test(`${mode.format} automatically retries temporary ${mode.code} limits${mode.stream ? " during streaming" : ""} and preserves successful cells`, async ({
+    page,
+    request,
+  }) => {
+    await page.setExtraHTTPHeaders({
+      "X-Forwarded-For": `192.0.2.${52 + index}`,
+    });
+    await request.post("/fixture/reset", {
+      data: {
+        transientFailures: 1,
+        transientStatus: mode.code,
+        transientStream: mode.stream,
+      },
+    });
+    await create(page, mode.format, "cat\ndog", "hat");
+    await expect(
+      page.getByText("Waiting to retry…", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByText(`Error ${mode.code}: Temporary provider limit`, {
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Pause generation" }),
+    ).toBeVisible();
+    await expectProgress(page, 2, 2);
+    await expect(
+      page.getByText("Waiting to retry…", { exact: true }),
+    ).toHaveCount(0);
+    const calls: string[] = await (await request.get("/fixture/calls")).json();
+    expect(calls.filter((prompt) => prompt.includes("cat"))).toHaveLength(1);
+    expect(calls.filter((prompt) => prompt.includes("dog"))).toHaveLength(2);
+  });
+}

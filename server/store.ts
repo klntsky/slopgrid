@@ -81,12 +81,12 @@ export class Store {
         "INSERT INTO cells (id, grid_id, position, data) VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data",
       );
       cells.forEach((cell, position) => {
-        const { status, error, usage, mediaType } = cell;
+        const { status, error, errorCode, usage, mediaType } = cell;
         saveCell.run(
           cell.id,
           id,
           position,
-          JSON.stringify({ status, error, usage, mediaType }),
+          JSON.stringify({ status, error, errorCode, usage, mediaType }),
         );
       });
     })();

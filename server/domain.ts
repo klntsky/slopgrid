@@ -81,6 +81,8 @@ export type Cell = {
   prompt: string;
   status: "pending" | "running" | "complete" | "error";
   error?: string;
+  errorCode?: string | number;
+  retrying?: boolean;
   mediaType?: string;
   draft?: string;
   usage?: { inputTokens?: number; outputTokens?: number; costUsd?: number };

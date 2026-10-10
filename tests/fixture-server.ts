@@ -15,6 +15,9 @@ let holdGenerations = false;
 const held: { prompt: string; release: () => void }[] = [];
 let aborted: string[] = [];
 let generationError = false;
+let transientFailures = 0,
+  transientStatus = 429,
+  transientStream = false;
 let billing = false,
   calls: string[] = [];
 const codes = new Map<string, string>();
@@ -108,10 +111,34 @@ async function waitForRelease(prompt: string, res: express.Response) {
     });
   }
 }
+function transientFailure(prompt: string, res: express.Response): boolean {
+  if (!prompt.includes("dog") || transientFailures <= 0) return false;
+  transientFailures--;
+  const error = {
+    code: transientStatus,
+    message: "Temporary provider limit",
+    metadata:
+      transientStatus === 402
+        ? {
+            limit_source: "openrouter_in_flight_budget",
+            reason: "in_flight_budget_exhausted",
+          }
+        : { error_type: "rate_limit_exceeded" },
+  };
+  res.set("Retry-After", "2");
+  if (transientStream) {
+    res.set("Content-Type", "text/event-stream");
+    res.end(
+      `data: ${JSON.stringify({ error, choices: [{ index: 0, delta: {}, finish_reason: "error" }] })}\n\ndata: [DONE]\n\n`,
+    );
+  } else res.status(transientStatus).json({ error });
+  return true;
+}
 upstream.post("/api/v1/images", async (req, res) => {
   calls.push(req.body.prompt);
   await waitForRelease(req.body.prompt, res);
   if (res.destroyed) return;
+  if (transientFailure(req.body.prompt, res)) return;
   if (generationError && req.body.prompt.includes("dog"))
     return res
       .status(500)
@@ -143,6 +170,7 @@ upstream.post("/api/v1/chat/completions", async (req, res) => {
   calls.push(prompt);
   await waitForRelease(prompt, res);
   if (res.destroyed) return;
+  if (transientFailure(prompt, res)) return;
   if (billing && streamBilling && prompt.includes("dog")) {
     res.set("Content-Type", "text/event-stream");
     return res.end(
@@ -248,6 +276,9 @@ const { app } = createApp({
 });
 app.post("/fixture/reset", (req, res) => {
   generationError = !!req.body.generationError;
+  transientFailures = req.body.transientFailures ?? 0;
+  transientStatus = req.body.transientStatus ?? 429;
+  transientStream = !!req.body.transientStream;
   omitReviewCost = !!req.body.omitReviewCost;
   holdGenerations = !!req.body.holdGenerations;
   for (const entry of [...held]) entry.release();

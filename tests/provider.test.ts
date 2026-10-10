@@ -3,9 +3,10 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { once } from "node:events";
 import { Provider } from "../server/provider.js";
+import { failureDetails } from "../server/failures.js";
 import type { Cell } from "../server/domain.js";
 
-async function upstream() {
+async function upstream(streamError?: Record<string, unknown>) {
   const requests: Record<string, unknown>[] = [];
   const catalog = [
     {
@@ -47,6 +48,13 @@ async function upstream() {
     for await (const chunk of req) body += chunk;
     requests.push(JSON.parse(body));
     res.setHeader("Content-Type", "text/event-stream");
+    if (streamError) {
+      res.setHeader("Retry-After", "2");
+      res.end(
+        `data: ${JSON.stringify({ error: streamError, choices: [{ index: 0, delta: {}, finish_reason: "error" }] })}\n\ndata: [DONE]\n\n`,
+      );
+      return;
+    }
     const base = {
       id: "test",
       object: "chat.completion.chunk",
@@ -158,6 +166,34 @@ test("selected settings reach inference even when the catalog warns they are uns
     assert.deepEqual(h.requests[4].reasoning, { effort: "max" });
     assert.deepEqual(h.requests[5].reasoning, { effort: "high" });
     assert.equal(h.requests.length, 6);
+  } finally {
+    await h.close();
+  }
+});
+
+test("streamed budget errors retain metadata and Retry-After for automatic backoff", async () => {
+  const h = await upstream({
+    code: 402,
+    message: "Temporary budget limit",
+    metadata: { limit_source: "openrouter_in_flight_budget" },
+  });
+  try {
+    await assert.rejects(
+      h.provider.generate(
+        "fixture-key",
+        "markdown",
+        cell("all", "default"),
+        () => {},
+      ),
+      (error: unknown) => {
+        const failure = failureDetails(error);
+        assert.equal(failure.temporary, true, JSON.stringify(error));
+        assert.equal(failure.message, "Temporary budget limit");
+        assert.equal(failure.code, 402);
+        assert.equal(failure.retryAfterMs, 2000);
+        return true;
+      },
+    );
   } finally {
     await h.close();
   }

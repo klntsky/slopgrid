@@ -1,6 +1,7 @@
 import type { Cell, Grid } from "./domain.js";
 import type { Store } from "./store.js";
-import { Provider, interruption } from "./provider.js";
+import { Provider } from "./provider.js";
+import { failureDetails } from "./failures.js";
 
 export class Jobs {
   active = new Map<string, Grid>();
@@ -14,6 +15,9 @@ export class Jobs {
   private draftEmittedAt = new Map<string, number>();
   private allocation = 0;
   private scheduled = false;
+  private retries = new Map<string, number>();
+  private cooldowns = new Map<string, number>();
+  private wake?: ReturnType<typeof setTimeout>;
   constructor(
     private store: Store,
     private provider: Provider,
@@ -43,6 +47,9 @@ export class Jobs {
       if (cell.status !== "complete" && cell.status !== "running") {
         cell.status = "pending";
         delete cell.error;
+        delete cell.errorCode;
+        delete cell.retrying;
+        this.retries.delete(cell.id);
         delete cell.draft;
       }
     g.status = "running";
@@ -59,11 +66,20 @@ export class Jobs {
     g.status = "paused";
     g.interruption = "manual";
     this.draftEmittedAt.delete(g.id);
+    for (const cell of g.cells) {
+      this.retries.delete(cell.id);
+      if (cell.retrying) {
+        delete cell.retrying;
+        delete cell.error;
+        delete cell.errorCode;
+      }
+    }
     for (const { grid: runningGrid, cell, controller } of this.running.values())
       if (runningGrid.id === g.id) {
         cell.status = "pending";
         delete cell.draft;
         delete cell.error;
+        delete cell.errorCode;
         controller.abort();
       }
     this.settle(g);
@@ -80,10 +96,27 @@ export class Jobs {
     });
   }
   private dispatch() {
+    if (this.wake) clearTimeout(this.wake);
+    this.wake = undefined;
+    const now = Date.now();
+    for (const [owner, until] of this.cooldowns)
+      if (until <= now) this.cooldowns.delete(owner);
+    if (this.cooldowns.size) {
+      const until = Math.min(...this.cooldowns.values());
+      this.wake = setTimeout(
+        () => this.schedule(),
+        Math.min(2_147_483_647, Math.max(1, until - now)),
+      );
+      this.wake.unref?.();
+    }
     while (this.running.size < this.workersMax) {
       let next: { grid: Grid; cell: Cell } | undefined;
       for (const grid of this.active.values()) {
-        if (grid.status !== "running") continue;
+        if (
+          grid.status !== "running" ||
+          (this.cooldowns.get(grid.owner) ?? 0) > now
+        )
+          continue;
         const cell = grid.cells.find(
           (c) => c.status === "pending" && !this.running.has(c.id),
         );
@@ -107,6 +140,8 @@ export class Jobs {
       this.lastAllocation.set(grid.owner, ++this.allocation);
       cell.status = "running";
       delete cell.error;
+      delete cell.errorCode;
+      delete cell.retrying;
       delete cell.draft;
       this.emit(grid);
       void this.runCell(grid, cell, key, controller);
@@ -127,6 +162,7 @@ export class Jobs {
       if (grid.owner === owner && grid.status === "running") {
         grid.status = "paused";
         grid.interruption = reason;
+        for (const cell of grid.cells) delete cell.retrying;
         this.settle(grid);
         this.emit(grid);
       }
@@ -181,22 +217,47 @@ export class Jobs {
       cell.mediaType = result.mediaType;
       cell.usage = result.usage;
       cell.status = "complete";
+      this.retries.delete(cell.id);
     } catch (error) {
       if (controller.signal.aborted) return;
-      const reason = interruption(error);
-      if (reason) {
+      const failure = failureDetails(error);
+      cell.error = failure.message;
+      cell.errorCode = failure.code;
+      const attempt = this.retries.get(cell.id) ?? 0;
+      if (failure.temporary && attempt < 5) {
         cell.status = "pending";
-        delete cell.draft;
-        this.pauseOwner(grid.owner, reason);
+        if (grid.status === "running") {
+          cell.retrying = true;
+          this.retries.set(cell.id, attempt + 1);
+          const delay = Math.max(
+            failure.retryAfterMs ?? 0,
+            Math.min(30_000, 1000 * 2 ** attempt * (1 + Math.random() * 0.5)),
+          );
+          this.cooldowns.set(
+            grid.owner,
+            Math.max(this.cooldowns.get(grid.owner) ?? 0, Date.now() + delay),
+          );
+        }
+      } else if (
+        !failure.temporary &&
+        (failure.status === 402 ||
+          failure.status === 401 ||
+          failure.status === 403)
+      ) {
+        cell.status = "pending";
+        this.retries.delete(cell.id);
+        this.pauseOwner(
+          grid.owner,
+          failure.status === 402 ? "billing" : "auth",
+        );
       } else {
         cell.status = "error";
-        cell.error =
-          "This cell could not be generated. Retry unfinished cells.";
+        this.retries.delete(cell.id);
         console.error(
           "Generation failed",
           grid.id,
           cell.id,
-          error instanceof Error ? error.name : "unknown",
+          failure.code ?? (error instanceof Error ? error.name : "unknown"),
         );
       }
     } finally {

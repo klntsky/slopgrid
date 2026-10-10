@@ -1,4 +1,4 @@
-import { generateText, generateImage, streamText, APICallError } from "ai";
+import { generateText, generateImage, streamText } from "ai";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { z } from "zod";
 import {
@@ -192,7 +192,19 @@ export class Provider {
       }
       onChunk(text);
     }
-    if (failure) throw failure;
+    if (failure) {
+      if (
+        failure !== null &&
+        typeof failure === "object" &&
+        !Object.hasOwn(failure, "responseHeaders")
+      ) {
+        const response = await Promise.resolve(result.response).catch(
+          () => undefined,
+        );
+        Object.assign(failure, { responseHeaders: response?.headers });
+      }
+      throw failure;
+    }
     let usage = await result.usage;
     let costUsd = reportedCost(
       (await result.providerMetadata)?.openrouter?.usage,
@@ -230,12 +242,4 @@ export class Provider {
       },
     };
   }
-}
-export function interruption(error: unknown): "billing" | "auth" | undefined {
-  const details = error as { statusCode?: number; code?: number };
-  const status = APICallError.isInstance(error)
-    ? error.statusCode
-    : (details?.statusCode ?? details?.code);
-  if (status === 402) return "billing";
-  if (status === 401 || status === 403) return "auth";
 }
