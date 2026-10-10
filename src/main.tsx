@@ -1057,7 +1057,7 @@ function GridPage() {
           <span
             className="grid-cost"
             aria-label={`Total reported cost: ${totalCostText}`}
-            title="Total reported cost of completed outputs; excludes unavailable charges and aborted or failed attempts"
+            title="Total reported cost of completed inference calls; excludes unavailable charges and previous retry attempts"
           >
             {totalCostText}
             {inferenceRunning && (

@@ -71,6 +71,12 @@ export function unusedVariableIssue(
     if (axis.kind === "variable" && !input.prompt.includes(token))
       return `Include ${token} in the prompt for ${label} variables.`;
 }
+export type Completion = {
+  phase: "direct" | "draft" | "review" | "image";
+  finishReason?: string;
+  rawFinishReason?: string;
+  reasoningTokens?: number;
+};
 export type Cell = {
   id: string;
   row: number;
@@ -86,6 +92,7 @@ export type Cell = {
   mediaType?: string;
   draft?: string;
   usage?: { inputTokens?: number; outputTokens?: number; costUsd?: number };
+  completions?: Completion[];
 };
 export type Grid = {
   revision: number;
@@ -135,16 +142,12 @@ export function parseOutput(
     .trim()
     .replace(/^```(?:\w+)?\s*\n/, "")
     .replace(/\n```$/, "");
-  if (Buffer.byteLength(clean) > 2_000_000)
-    throw new Error("Output exceeds 2 MB");
   if (format === "markdown") return { "index.md": clean };
   if (format === "svg") return { "index.svg": clean };
   if (format === "html") {
     const parsed = z
       .object({
-        files: z
-          .record(z.string(), z.string())
-          .refine((f) => Object.keys(f).length <= 40),
+        files: z.record(z.string(), z.string()),
       })
       .parse(JSON.parse(clean));
     if (!Object.hasOwn(parsed.files, "index.html"))

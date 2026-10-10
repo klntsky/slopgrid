@@ -7,6 +7,7 @@ import {
   instruction,
   parseOutput,
   type Cell,
+  type Completion,
   type GridInput,
 } from "./domain.js";
 export type Model = {
@@ -106,11 +107,46 @@ export class Provider {
     cell: Cell,
     onChunk: (text: string) => void,
     signal?: AbortSignal,
+    onCompletion?: (completion: Completion, usage: Cell["usage"]) => void,
   ): Promise<{
     files: Record<string, string | Uint8Array>;
     mediaType?: string;
     usage?: Cell["usage"];
+    completions?: Completion[];
   }> {
+    const completions: Completion[] = [];
+    let usage: Cell["usage"];
+    function recordCompletion(completion: Completion, current: Cell["usage"]) {
+      completions.push(completion);
+      usage =
+        usage && current
+          ? {
+              inputTokens:
+                (usage.inputTokens ?? 0) + (current.inputTokens ?? 0),
+              outputTokens:
+                (usage.outputTokens ?? 0) + (current.outputTokens ?? 0),
+              costUsd:
+                usage.costUsd !== undefined && current.costUsd !== undefined
+                  ? usage.costUsd + current.costUsd
+                  : undefined,
+            }
+          : (current ?? usage);
+      onCompletion?.(completion, usage);
+    }
+    function requireSuccess(finishReason: string | undefined) {
+      if (finishReason !== "stop")
+        throw new Error(
+          "The model did not complete its response. Retry generation.",
+        );
+    }
+    async function optional<T>(value: PromiseLike<T>): Promise<T | undefined> {
+      try {
+        return await value;
+      } catch {
+        return undefined;
+      }
+    }
+    let imageFinishReason: string | undefined;
     let imageCost: number | undefined;
     const provider = createOpenRouter({
       apiKey: key,
@@ -126,6 +162,8 @@ export class Provider {
                   .json()
                   .catch(() => undefined);
                 imageCost = reportedCost(body?.usage);
+                imageFinishReason =
+                  body?.choices?.[0]?.finish_reason ?? body?.finish_reason;
               }
               return response;
             }
@@ -138,18 +176,26 @@ export class Provider {
         maxRetries: 0,
         abortSignal: signal,
       });
-      if (result.image.uint8Array.byteLength > 10_000_000)
-        throw new Error("Image exceeds 10 MB");
+      recordCompletion(
+        {
+          phase: "image",
+          finishReason: imageFinishReason ?? "stop",
+          rawFinishReason: imageFinishReason,
+        },
+        {
+          inputTokens: result.usage.inputTokens,
+          outputTokens: result.usage.outputTokens,
+          costUsd: imageCost,
+        },
+      );
+      requireSuccess(imageFinishReason ?? "stop");
       return {
         files: {
           image: result.image.uint8Array,
         },
         mediaType: result.image.mediaType,
-        usage: {
-          inputTokens: result.usage.inputTokens,
-          outputTokens: result.usage.outputTokens,
-          costUsd: imageCost,
-        },
+        usage,
+        completions,
       };
     }
     const model = provider.chat(cell.model, {
@@ -164,18 +210,13 @@ export class Provider {
             }
           : {},
     });
-    const cancellation = new AbortController();
-    const streamSignal = AbortSignal.any([
-      cancellation.signal,
-      ...(signal ? [signal] : []),
-    ]);
     let failure: unknown;
     const result = streamText({
       model,
       system: instruction(format),
       prompt: cell.prompt,
       maxRetries: 0,
-      abortSignal: streamSignal,
+      abortSignal: signal,
       onError: ({ error }) => {
         failure = error;
       },
@@ -183,12 +224,28 @@ export class Provider {
     let text = "";
     for await (const chunk of result.textStream) {
       text += chunk;
-      if (text.length > 2_000_000) {
-        cancellation.abort();
-        throw new Error("Output exceeds 2 MB");
-      }
       onChunk(text);
     }
+    const [streamUsage, metadata, finishReason, rawFinishReason] =
+      await Promise.all([
+        optional(result.usage),
+        optional(result.providerMetadata),
+        optional(result.finishReason),
+        optional(result.rawFinishReason),
+      ]);
+    recordCompletion(
+      {
+        phase: cell.harness === "review" ? "draft" : "direct",
+        finishReason,
+        rawFinishReason,
+        reasoningTokens: streamUsage?.outputTokenDetails.reasoningTokens,
+      },
+      streamUsage && {
+        inputTokens: streamUsage.inputTokens,
+        outputTokens: streamUsage.outputTokens,
+        costUsd: reportedCost(metadata?.openrouter?.usage),
+      },
+    );
     if (failure) {
       if (
         failure !== null &&
@@ -202,10 +259,7 @@ export class Provider {
       }
       throw failure;
     }
-    let usage = await result.usage;
-    let costUsd = reportedCost(
-      (await result.providerMetadata)?.openrouter?.usage,
-    );
+    requireSuccess(finishReason);
     if (cell.harness === "review") {
       const reviewed = await generateText({
         model,
@@ -215,28 +269,25 @@ export class Provider {
         abortSignal: signal,
       });
       text = reviewed.text;
-      const reviewCost = reportedCost(
-        reviewed.providerMetadata?.openrouter?.usage,
+      recordCompletion(
+        {
+          phase: "review",
+          finishReason: reviewed.finishReason,
+          rawFinishReason: reviewed.rawFinishReason,
+          reasoningTokens: reviewed.usage.outputTokenDetails.reasoningTokens,
+        },
+        {
+          inputTokens: reviewed.usage.inputTokens,
+          outputTokens: reviewed.usage.outputTokens,
+          costUsd: reportedCost(reviewed.providerMetadata?.openrouter?.usage),
+        },
       );
-      costUsd =
-        costUsd !== undefined && reviewCost !== undefined
-          ? costUsd + reviewCost
-          : undefined;
-      usage = {
-        ...reviewed.usage,
-        inputTokens:
-          (usage.inputTokens ?? 0) + (reviewed.usage.inputTokens ?? 0),
-        outputTokens:
-          (usage.outputTokens ?? 0) + (reviewed.usage.outputTokens ?? 0),
-      };
+      requireSuccess(reviewed.finishReason);
     }
     return {
       files: parseOutput(format, text),
-      usage: {
-        inputTokens: usage.inputTokens,
-        outputTokens: usage.outputTokens,
-        costUsd,
-      },
+      usage,
+      completions,
     };
   }
 }
