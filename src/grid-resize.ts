@@ -8,8 +8,12 @@ export function useGridResize(
 ) {
   useLayoutEffect(() => {
     const table = viewportRef.current!.querySelector("table")!;
-    const columns = Array.from(table.querySelectorAll("col"));
-    const rows = Array.from(table.rows);
+    const allColumns = Array.from(table.querySelectorAll("col"));
+    const columns = allColumns.slice(1);
+    const headingRow = table.tHead!.rows[0];
+    const rows = Array.from(table.tBodies[0].rows);
+    const headingWidth = headingRow.cells[0].offsetWidth;
+    const headingHeight = headingRow.offsetHeight;
     const storageKey = `slopgrid:grid:${gridId}:sizes`;
     let sizes: Sizes | undefined;
     let drag:
@@ -26,15 +30,19 @@ export function useGridResize(
 
     function measure(): Sizes {
       return {
-        columns: Array.from(table.rows[0].cells, (cell) => cell.offsetWidth),
+        columns: Array.from(headingRow.cells)
+          .slice(1)
+          .map((cell) => cell.offsetWidth),
         rows: rows.map((row) => row.offsetHeight),
       };
     }
     function apply() {
       if (!sizes) return;
       table.dataset.resized = "true";
-      table.style.width = `${sizes.columns.reduce((a, b) => a + b, 0)}px`;
-      table.style.height = `${sizes.rows.reduce((a, b) => a + b, 0)}px`;
+      table.style.width = `${headingWidth + sizes.columns.reduce((a, b) => a + b, 0)}px`;
+      table.style.height = `${headingHeight + sizes.rows.reduce((a, b) => a + b, 0)}px`;
+      allColumns[0].style.width = `${headingWidth}px`;
+      headingRow.style.height = `${headingHeight}px`;
       columns.forEach((col, index) => {
         col.style.width = `${sizes!.columns[index]}px`;
       });
@@ -98,8 +106,7 @@ export function useGridResize(
     }
     function resize(axis: "columns" | "rows", index: number, size: number) {
       sizes ??= measure();
-      const minimum =
-        axis === "columns" ? (index === 0 ? 40 : 120) : index === 0 ? 48 : 160;
+      const minimum = axis === "columns" ? 120 : 160;
       sizes[axis][index] = Math.min(20000, Math.max(minimum, size));
       apply();
     }

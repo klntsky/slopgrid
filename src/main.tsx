@@ -1095,10 +1095,7 @@ function GridPage() {
             </colgroup>
             <thead>
               <tr>
-                <th className="corner">
-                  <ResizeHandle axis="columns" index={0} />
-                  <ResizeHandle axis="rows" index={0} />
-                </th>
+                <th className="corner" />
                 {g.input.columns.values.map((c, column) => (
                   <th scope="col" key={c}>
                     {g.input.columns.kind === "model" ? (
@@ -1106,7 +1103,7 @@ function GridPage() {
                     ) : (
                       displayValue(c, g.input.columns.kind)
                     )}
-                    <ResizeHandle axis="columns" index={column + 1} />
+                    <ResizeHandle axis="columns" index={column} />
                   </th>
                 ))}
               </tr>
@@ -1122,7 +1119,7 @@ function GridPage() {
                         displayValue(r, g.input.rows.kind)
                       )}
                     </span>
-                    <ResizeHandle axis="rows" index={row + 1} />
+                    <ResizeHandle axis="rows" index={row} />
                   </th>
                   {g.input.columns.values.map((_, column) => {
                     const cell = g.cells.find(

@@ -1104,14 +1104,14 @@ header {
 .resize-columns {
   top: 0;
   bottom: 0;
-  right: 0;
+  left: 0;
   width: 8px;
   cursor: col-resize;
 }
 .resize-rows {
   left: 0;
   right: 0;
-  bottom: 0;
+  top: 0;
   height: 8px;
   cursor: row-resize;
 }
