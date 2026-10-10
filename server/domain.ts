@@ -138,11 +138,7 @@ export function parseOutput(
   if (Buffer.byteLength(clean) > 2_000_000)
     throw new Error("Output exceeds 2 MB");
   if (format === "markdown") return { "index.md": clean };
-  if (format === "svg") {
-    if (!/^<svg[\s>]/i.test(clean) || !/<\/svg>\s*$/i.test(clean))
-      throw new Error("The model did not return an SVG");
-    return { "index.svg": clean };
-  }
+  if (format === "svg") return { "index.svg": clean };
   if (format === "html") {
     const parsed = z
       .object({
