@@ -375,7 +375,7 @@ legend {
 }
 .grid-heading {
   display: flex;
-  gap: 20px;
+  gap: 10px;
   align-items: center;
 }
 .grid-title {
@@ -832,9 +832,6 @@ nav {
     width: 36px;
     height: 36px;
     padding: 8px;
-  }
-  .grid-action-label {
-    display: none;
   }
 }
 

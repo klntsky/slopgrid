@@ -969,13 +969,10 @@ function GridPage() {
             )}
           </button>
         )}
-        <div className="grid-title">
-          <h1 title={g.input.prompt}>{g.input.prompt}</h1>
-        </div>
         <div className="actions">
           {(g.canEdit || g.published) && (
             <button
-              className="secondary"
+              className="secondary inference-toggle"
               disabled={busy}
               onClick={configure}
               aria-label={g.published ? "FORK" : "EDIT"}
@@ -986,26 +983,22 @@ function GridPage() {
               ) : (
                 <Pencil aria-hidden="true" />
               )}
-              <span className="grid-action-label">
-                {g.published ? "FORK" : "EDIT"}
-              </span>
             </button>
           )}
           {g.canEdit && !g.published && (
             <button
               disabled={busy || finished !== g.cells.length}
-              className="primary"
+              className="secondary inference-toggle"
               onClick={() => action("publish")}
               aria-label="PUBLISH"
               title="Publish grid"
             >
               <Upload aria-hidden="true" />
-              <span className="grid-action-label">PUBLISH</span>
             </button>
           )}
           {g.published && (
             <button
-              className="secondary"
+              className="secondary inference-toggle"
               aria-label="Copy link"
               title="Copy link"
               onClick={async () => {
@@ -1020,9 +1013,11 @@ function GridPage() {
               }}
             >
               <Link2 aria-hidden="true" />
-              <span className="grid-action-label">Copy link</span>
             </button>
           )}
+        </div>
+        <div className="grid-title">
+          <h1 title={g.input.prompt}>{g.input.prompt}</h1>
         </div>
       </div>
       <div className="grid-progress">
