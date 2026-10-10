@@ -64,6 +64,7 @@ export function Layout() {
             data-open={menuOpen}
             onClick={() => setMenuOpen(false)}
           >
+            <Link to="/billing">BILLING</Link>
             <Link to="/settings">SETTINGS</Link>
           </nav>
         </header>

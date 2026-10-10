@@ -35,6 +35,10 @@ Select the upload button (**Publish**) after every output has finished, whether 
 
 Select the slopgrid logo to find grids created in this browser; the grid list also has a **NEW GRID** button. Keep that browser's cookies: ownership is tied to a 30-day browser session, with no separate slopgrid login or cross-device account. Each completed output has an unguessable URL that can be opened directly; anyone who receives that output URL can view it, even before the grid is published.
 
+## Billing history
+
+Open **BILLING** to see every recorded inference attempt, including automatic retries, failures, cancellations, and separate draft and review calls. Each entry links to its grid and shows its status, reported token usage, cost, and any error code and message. The total includes all reported charges in this history; missing charges are marked unavailable rather than counted as free. History is private to this browser session and begins when call recording is enabled; earlier requests are not reconstructed.
+
 ## OpenRouter settings
 
 Open **SETTINGS** to choose **System**, **Light**, or **Dark** appearance. **System** is the default and follows your device’s current preference; explicit choices are saved in this browser and also apply in other open tabs.

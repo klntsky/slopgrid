@@ -37,8 +37,9 @@ const { app, store } = createApp({
 recoverInterruptedGrids(store);
 if (production) {
   app.use(express.static("dist"));
-  app.get(["/", "/grids", "/settings", /^\/grid\/[a-f0-9]{48}$/], (_req, res) =>
-    res.sendFile("index.html", { root: "dist" }),
+  app.get(
+    ["/", "/grids", "/settings", "/billing", /^\/grid\/[a-f0-9]{48}$/],
+    (_req, res) => res.sendFile("index.html", { root: "dist" }),
   );
 } else {
   const { createServer } = await import("vite");

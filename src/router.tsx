@@ -3,6 +3,7 @@ import {
   createRoute,
   createRouter,
 } from "@tanstack/react-router";
+import { Billing } from "./pages/billing";
 import { Layout } from "./layout";
 import { Create } from "./pages/create";
 import { YourGrids } from "./pages/grids";
@@ -24,6 +25,11 @@ const settingsRoute = createRoute({
   path: "/settings",
   component: Settings,
 });
+const billingRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/billing",
+  component: Billing,
+});
 const gridRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/grid/$id",
@@ -34,6 +40,7 @@ export const router = createRouter({
     createRoutePage,
     gridsRoute,
     settingsRoute,
+    billingRoute,
     gridRoute,
   ]),
 });

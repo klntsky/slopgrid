@@ -1,0 +1,50 @@
+.billing-page {
+  width: 100%;
+}
+.billing-heading,
+.billing-pagination {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+.billing-heading {
+  justify-content: space-between;
+}
+.billing-heading button svg {
+  width: 1.2rem;
+  height: 1.2rem;
+}
+.billing-table-scroll {
+  overflow-x: auto;
+}
+.billing-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+.billing-table th,
+.billing-table td {
+  padding: 0.8rem;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+.billing-table small {
+  display: block;
+  margin-top: 0.3rem;
+  max-width: 26rem;
+  overflow-wrap: anywhere;
+}
+.billing-tokens {
+  white-space: nowrap;
+}
+.billing-tokens svg {
+  width: 0.85rem;
+  height: 0.85rem;
+  vertical-align: middle;
+}
+.billing-failed {
+  color: var(--error-text);
+}
+.billing-pagination {
+  margin-top: 1rem;
+}
