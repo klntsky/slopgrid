@@ -11,6 +11,7 @@ export class Jobs {
     { grid: Grid; cell: Cell; controller: AbortController }
   >();
   private workersByOwner = new Map<string, number>();
+  private concurrencyByOwner = new Map<string, number>();
   private lastAllocation = new Map<string, number>();
   private draftEmittedAt = new Map<string, number>();
   private allocation = 0;
@@ -43,6 +44,10 @@ export class Jobs {
     const current = this.active.get(grid.id);
     if (current?.status === "running") return current;
     const g = current ?? grid;
+    this.concurrencyByOwner.set(
+      grid.owner,
+      this.store.session(grid.owner)?.inferenceConcurrency ?? this.workersMax,
+    );
     for (const cell of g.cells)
       if (cell.status !== "complete" && cell.status !== "running") {
         cell.status = "pending";
@@ -114,7 +119,9 @@ export class Jobs {
       for (const grid of this.active.values()) {
         if (
           grid.status !== "running" ||
-          (this.cooldowns.get(grid.owner) ?? 0) > now
+          (this.cooldowns.get(grid.owner) ?? 0) > now ||
+          (this.workersByOwner.get(grid.owner) ?? 0) >=
+            (this.concurrencyByOwner.get(grid.owner) ?? this.workersMax)
         )
           continue;
         const cell = grid.cells.find(
@@ -189,8 +196,10 @@ export class Jobs {
     if (
       !this.workersByOwner.has(grid.owner) &&
       ![...this.active.values()].some((g) => g.owner === grid.owner)
-    )
+    ) {
       this.lastAllocation.delete(grid.owner);
+      this.concurrencyByOwner.delete(grid.owner);
+    }
   }
   private async runCell(
     grid: Grid,

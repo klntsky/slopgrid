@@ -298,6 +298,42 @@ export function createApp(config: Config) {
       res.redirect(`${returnTo}?connection=failed`);
     }
   });
+  async function allowInference(
+    req: express.Request,
+    res: express.Response,
+    s: Session,
+  ) {
+    let balanceUsd: number;
+    try {
+      balanceUsd = await provider.balanceUsd(s.key!);
+    } catch {
+      res
+        .status(502)
+        .json({ error: "Could not check your OpenRouter balance. Try again." });
+      return false;
+    }
+    if (balanceUsd < 3 && req.body?.continueWithLowBalance !== true) {
+      res.status(409).json({
+        code: "LOW_BALANCE",
+        balanceUsd,
+        error:
+          "Your OpenRouter balance is below $3. Top up or continue with one generation at a time.",
+      });
+      return false;
+    }
+    // Re-read the session so a concurrent OAuth or disconnect request is preserved.
+    const current = store.session(s.id);
+    if (!current?.key || current.key !== s.key) {
+      res
+        .status(401)
+        .json({ error: "Reconnect OpenRouter before generating." });
+      return false;
+    }
+    if (balanceUsd < 3) current.inferenceConcurrency = 1;
+    else delete current.inferenceConcurrency;
+    store.saveSession(current);
+    return true;
+  }
   app.post("/api/grids", async (req, res) => {
     const s = session(req, res);
     if (!s.key)
@@ -320,6 +356,7 @@ export function createApp(config: Config) {
               : "Could not load OpenRouter models. Try again.",
         });
     }
+    if (!(await allowInference(req, res, s))) return;
     const cells = expandGrid(input).map((c) => ({ ...c, id: token() }));
     if (!rate(`create:${s.id}`, 10) || !rate(`create-ip:${req.ip}`, 30))
       return res
@@ -361,6 +398,11 @@ export function createApp(config: Config) {
         .json({ error: "Reconnect OpenRouter to continue." });
     const current = jobs.active.get(g.id);
     if (current?.status === "running") return res.json(snapshot(current, s));
+    if (
+      g.cells.some((c) => c.status !== "complete") &&
+      !(await allowInference(req, res, s))
+    )
+      return;
     if (!rate(`retry:${s.id}`, 30))
       return res
         .status(429)

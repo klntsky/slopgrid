@@ -30,6 +30,24 @@ function reportedCost(usage: unknown): number | undefined {
 export class Provider {
   constructor(readonly baseURL = "https://openrouter.ai/api/v1") {}
   private catalog?: { at: number; models: Model[] };
+  async balanceUsd(key: string): Promise<number> {
+    const response = await upstreamFetch(`${this.baseURL}/credits`, {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    if (!response.ok)
+      throw new Error("Could not check your OpenRouter balance. Try again.");
+    const body = z
+      .object({
+        data: z.object({
+          total_credits: z.number().finite(),
+          total_usage: z.number().finite(),
+        }),
+      })
+      .safeParse(await response.json());
+    if (!body.success)
+      throw new Error("Could not check your OpenRouter balance. Try again.");
+    return body.data.data.total_credits - body.data.data.total_usage;
+  }
   async models(): Promise<Model[]> {
     if (this.catalog && Date.now() - this.catalog.at < 300000)
       return this.catalog.models;

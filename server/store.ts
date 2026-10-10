@@ -7,6 +7,7 @@ import { migrate } from "./migrations.js";
 export type Session = {
   id: string;
   key?: string;
+  inferenceConcurrency?: 1;
   verifier?: string;
   state?: string;
   oauthAt?: number;

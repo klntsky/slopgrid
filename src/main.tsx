@@ -272,7 +272,8 @@ function readDraft(): Draft {
 function Create() {
   const [draft, setDraft] = useState(readDraft),
     [error, setError] = useState(""),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(false),
+    [lowBalance, setLowBalance] = useState<number | null>(null);
   const { step, input } = draft,
     navigate = useNavigate(),
     connection = useConnection();
@@ -338,7 +339,7 @@ function Create() {
   const incompatibilities = catalog.data
     ? compatibilityIssues(expandGrid(input), input.format, catalog.data)
     : [];
-  async function generate() {
+  async function generate(continueWithLowBalance = false) {
     if (!catalog.data) return;
     const issue = unusedVariableIssue(input);
     if (issue) {
@@ -348,12 +349,22 @@ function Create() {
     setBusy(true);
     setError("");
     try {
-      const g = await api<ViewGrid>("/grids", "POST", input);
+      const g = await api<ViewGrid>("/grids", "POST", {
+        ...input,
+        continueWithLowBalance,
+      });
+      setLowBalance(null);
       await queryClient.invalidateQueries({ queryKey: ["grids"] });
       sessionStorage.removeItem("slopgrid-draft");
       await navigate({ to: "/grid/$id", params: { id: g.id } });
     } catch (e) {
-      setError((e as Error).message);
+      if (
+        e instanceof ApiError &&
+        e.code === "LOW_BALANCE" &&
+        e.balanceUsd !== undefined
+      )
+        setLowBalance(e.balanceUsd);
+      else setError((e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -594,7 +605,7 @@ function Create() {
               !!unusedVariableIssue(input) ||
               !catalog.data
             }
-            onClick={generate}
+            onClick={() => generate()}
           >
             {busy ? "Starting generation…" : "Generate"}
             <ArrowUpRight aria-hidden="true" />
@@ -602,6 +613,15 @@ function Create() {
         </section>
       )}
       <ErrorMessage error={error} />
+      {lowBalance !== null && (
+        <LowBalanceDialog
+          balanceUsd={lowBalance}
+          busy={busy}
+          error={error}
+          onProceed={generate}
+          onClose={() => setLowBalance(null)}
+        />
+      )}
     </main>
   );
 }
@@ -891,7 +911,8 @@ function GridPage() {
   const [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [dismissed, setDismissed] = useState(false),
-    [streamLost, setStreamLost] = useState(false);
+    [streamLost, setStreamLost] = useState(false),
+    [lowBalance, setLowBalance] = useState<number | null>(null);
   const live =
     query.isSuccess &&
     !query.data.published &&
@@ -915,15 +936,29 @@ function GridPage() {
       events.close();
     };
   }, [id, cache, live]);
-  async function action(action: "retry" | "publish" | "pause") {
+  async function action(
+    action: "retry" | "publish" | "pause",
+    continueWithLowBalance = false,
+  ) {
     setBusy(true);
     setError("");
     if (action === "retry") setDismissed(false);
     try {
-      const g = await api<ViewGrid>(`/grids/${id}/${action}`, "POST");
+      const g = await api<ViewGrid>(
+        `/grids/${id}/${action}`,
+        "POST",
+        action === "retry" ? { continueWithLowBalance } : undefined,
+      );
+      setLowBalance(null);
       cache.setQueryData(["grid", id], g);
     } catch (e) {
-      setError((e as Error).message);
+      if (
+        e instanceof ApiError &&
+        e.code === "LOW_BALANCE" &&
+        e.balanceUsd !== undefined
+      )
+        setLowBalance(e.balanceUsd);
+      else setError((e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -1267,16 +1302,99 @@ function GridPage() {
             </tbody>
           </table>
         </ZoomableGrid>
-        {g.interruption === "billing" && paused && !dismissed && (
-          <BillingDialog
+        {lowBalance !== null && (
+          <LowBalanceDialog
+            balanceUsd={lowBalance}
             busy={busy}
             error={error}
-            onRetry={() => action("retry")}
-            onClose={() => setDismissed(true)}
+            onProceed={(override) => action("retry", override)}
+            onClose={() => setLowBalance(null)}
           />
         )}
+        {g.interruption === "billing" &&
+          paused &&
+          !dismissed &&
+          lowBalance === null && (
+            <BillingDialog
+              busy={busy}
+              error={error}
+              onRetry={() => action("retry")}
+              onClose={() => setDismissed(true)}
+            />
+          )}
       </main>
     </>
+  );
+}
+function LowBalanceDialog({
+  balanceUsd,
+  busy,
+  error,
+  onProceed,
+  onClose,
+}: {
+  balanceUsd: number;
+  busy: boolean;
+  error: string;
+  onProceed: (override: boolean) => void;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const dialog = ref.current!;
+    dialog.showModal();
+    return () => dialog.close();
+  }, []);
+  return (
+    <dialog
+      ref={ref}
+      className="modal"
+      aria-labelledby="low-balance-title"
+      onCancel={(event) => {
+        event.preventDefault();
+        if (!busy) onClose();
+      }}
+    >
+      <h2 id="low-balance-title">Top up your OpenRouter credits</h2>
+      <p>
+        Your balance is {formatCost(balanceUsd)}, below $3. Top up before
+        starting inference, or continue with one generation at a time across
+        your grids.
+      </p>
+      <div className="modal-actions">
+        <a
+          className="button primary"
+          href="https://openrouter.ai/settings/credits"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Top up
+        </a>
+        <button
+          className="secondary"
+          disabled={busy}
+          onClick={() => onProceed(false)}
+        >
+          Check balance again
+        </button>
+        <button
+          className="secondary"
+          disabled={busy}
+          onClick={() => onProceed(true)}
+        >
+          Continue anyway
+        </button>
+        <button
+          className="text-button"
+          disabled={busy}
+          autoFocus
+          onClick={onClose}
+        >
+          Cancel
+        </button>
+      </div>
+      <ErrorMessage error={error} />
+    </dialog>
   );
 }
 function BillingDialog({

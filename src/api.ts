@@ -7,6 +7,8 @@ export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    readonly code?: string,
+    readonly balanceUsd?: number,
   ) {
     super(message);
     this.name = "ApiError";
@@ -27,6 +29,8 @@ export async function api<T>(
     throw new ApiError(
       data.error ?? "Request failed. Try again.",
       response.status,
+      typeof data.code === "string" ? data.code : undefined,
+      typeof data.balanceUsd === "number" ? data.balanceUsd : undefined,
     );
   return data;
 }

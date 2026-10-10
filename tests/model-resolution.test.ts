@@ -70,6 +70,9 @@ test("unresolvable or cyclic aliases fail explicitly instead of remaining dynami
 
 test("saved model IDs survive alias retargeting through retries, Edit, publishing, and Fork", async () => {
   class FixtureProvider extends Provider {
+    override async balanceUsd() {
+      return 100;
+    }
     target = "fixture/v1";
     failOnce = true;
     called: string[] = [];

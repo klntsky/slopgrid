@@ -5,6 +5,7 @@ import { randomBytes, createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { createApp } from "../server/app.js";
 import { Provider } from "../server/provider.js";
+let balanceUsd = 100;
 let streamBilling = false;
 let omitReviewCost = false;
 let unsafe = false;
@@ -46,6 +47,9 @@ upstream.post("/api/v1/auth/keys", (req, res) => {
   codes.delete(req.body.code);
   res.json({ key: "fixture-secret-key" });
 });
+upstream.get("/api/v1/credits", (_req, res) =>
+  res.json({ data: { total_credits: 100, total_usage: 100 - balanceUsd } }),
+);
 upstream.get("/api/v1/models", (_req, res) =>
   res.json({
     data: [
@@ -275,6 +279,7 @@ const { app } = createApp({
   workersMax: 2,
 });
 app.post("/fixture/reset", (req, res) => {
+  balanceUsd = req.body.balanceUsd ?? 100;
   generationError = !!req.body.generationError;
   transientFailures = req.body.transientFailures ?? 0;
   transientStatus = req.body.transientStatus ?? 429;
