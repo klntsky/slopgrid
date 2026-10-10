@@ -1,6 +1,9 @@
 import Database from "better-sqlite3";
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
-import type { Grid } from "./domain.js";
+import { expandGrid, type Grid } from "./domain.js";
+import { dirname, join, resolve } from "node:path";
+import { OutputFiles } from "./files.js";
+import { migrate } from "./migrations.js";
 export type Session = {
   id: string;
   key?: string;
@@ -12,18 +15,30 @@ export type Session = {
 };
 export class Store {
   db: Database.Database;
+  files: OutputFiles;
   constructor(
     path: string,
     private secret: Buffer,
+    outputsPath?: string,
   ) {
+    if (path === ":memory:" && !outputsPath)
+      throw new Error(
+        "An output directory is required for an in-memory database",
+      );
     this.db = new Database(path);
-    this.db.pragma("journal_mode = WAL");
-    this.db.exec(
-      "CREATE TABLE IF NOT EXISTS grids (id TEXT PRIMARY KEY, data TEXT NOT NULL); CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, data TEXT NOT NULL); CREATE TABLE IF NOT EXISTS outputs (id TEXT PRIMARY KEY, format TEXT NOT NULL, files TEXT NOT NULL);",
-    );
+    try {
+      this.db.pragma("journal_mode = WAL");
+      this.db.pragma("foreign_keys = ON");
+      migrate(this.db);
+      this.files = new OutputFiles(
+        resolve(outputsPath ?? join(dirname(path), "outputs")),
+      );
+    } catch (error) {
+      this.db.close();
+      throw error;
+    }
     // A process restart must never silently incur another charge.
     for (const g of this.all()) {
-      this.indexOutputs(g);
       if (g.status === "running") {
         g.status = "paused";
         g.interruption = "restart";
@@ -35,42 +50,63 @@ export class Store {
   }
   all(): Grid[] {
     return (
-      this.db.prepare("SELECT data FROM grids").all() as { data: string }[]
-    ).map((r) => JSON.parse(r.data));
+      this.db.prepare("SELECT id FROM grids").all() as { id: string }[]
+    ).map((row) => this.get(row.id)!);
   }
   get(id: string): Grid | undefined {
     const row = this.db.prepare("SELECT data FROM grids WHERE id=?").get(id) as
       { data: string } | undefined;
-    return row ? JSON.parse(row.data) : undefined;
+    if (!row) return;
+    const grid = { ...JSON.parse(row.data), id } as Grid;
+    const cells = this.db
+      .prepare("SELECT id, data FROM cells WHERE grid_id=? ORDER BY position")
+      .all(id) as { id: string; data: string }[];
+    grid.cells = expandGrid(grid.input).map((cell, index) => ({
+      ...cell,
+      ...JSON.parse(cells[index].data),
+      id: cells[index].id,
+    }));
+    return grid;
   }
   save(grid: Grid) {
-    grid.revision = (grid.revision ?? 0) + 1;
+    grid.revision += 1;
+    const { id, cells, ...data } = grid;
     this.db.transaction(() => {
       this.db
-        .prepare("INSERT OR REPLACE INTO grids VALUES (?,?)")
-        .run(grid.id, JSON.stringify(grid));
-      this.indexOutputs(grid);
+        .prepare(
+          "INSERT INTO grids (id, data) VALUES (?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data",
+        )
+        .run(id, JSON.stringify(data));
+      const saveCell = this.db.prepare(
+        "INSERT INTO cells (id, grid_id, position, data) VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data",
+      );
+      cells.forEach((cell, position) => {
+        const { status, error, usage, mediaType } = cell;
+        saveCell.run(
+          cell.id,
+          id,
+          position,
+          JSON.stringify({ status, error, usage, mediaType }),
+        );
+      });
     })();
-  }
-  private indexOutputs(grid: Grid) {
-    const insert = this.db.prepare(
-      "INSERT OR IGNORE INTO outputs VALUES (?,?,?)",
-    );
-    for (const cell of grid.cells)
-      if (cell.status === "complete" && cell.files)
-        insert.run(cell.id, grid.input.format, JSON.stringify(cell.files));
   }
   output(
     id: string,
-  ):
-    | { format: Grid["input"]["format"]; files: Record<string, string> }
-    | undefined {
+  ): { format: Grid["input"]["format"]; mediaType?: string } | undefined {
     const row = this.db
-      .prepare("SELECT format, files FROM outputs WHERE id=?")
+      .prepare(
+        `
+      SELECT json_extract(g.data, '$.input.format') AS format,
+        json_extract(c.data, '$.mediaType') AS mediaType
+      FROM cells c JOIN grids g ON g.id=c.grid_id
+      WHERE c.id=? AND json_extract(c.data, '$.status')='complete'
+    `,
+      )
       .get(id) as
-      { format: Grid["input"]["format"]; files: string } | undefined;
+      { format: Grid["input"]["format"]; mediaType: string | null } | undefined;
     return row
-      ? { format: row.format, files: JSON.parse(row.files) }
+      ? { format: row.format, mediaType: row.mediaType ?? undefined }
       : undefined;
   }
   session(id: string): Session | undefined {
@@ -78,7 +114,7 @@ export class Store {
       .prepare("SELECT data FROM sessions WHERE id=?")
       .get(id) as { data: string } | undefined;
     if (!row) return;
-    const s: Session = JSON.parse(row.data);
+    const s: Session = { ...JSON.parse(row.data), id };
     if (Date.now() - s.created > 30 * 86400000) {
       this.db.prepare("DELETE FROM sessions WHERE id=?").run(id);
       return;
@@ -87,13 +123,16 @@ export class Store {
     return s;
   }
   saveSession(session: Session) {
-    this.db.prepare("INSERT OR REPLACE INTO sessions VALUES (?,?)").run(
-      session.id,
-      JSON.stringify({
-        ...session,
-        key: session.key ? this.encrypt(session.key) : undefined,
-      }),
-    );
+    const { id, ...data } = session;
+    this.db
+      .prepare("INSERT OR REPLACE INTO sessions (id, data) VALUES (?,?)")
+      .run(
+        id,
+        JSON.stringify({
+          ...data,
+          key: session.key ? this.encrypt(session.key) : undefined,
+        }),
+      );
   }
   private encrypt(value: string) {
     const iv = randomBytes(12);

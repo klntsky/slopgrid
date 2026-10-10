@@ -1,4 +1,5 @@
 import express from "express";
+import { readFileSync } from "node:fs";
 import { createHash, randomBytes } from "node:crypto";
 import { marked, Renderer } from "marked";
 import { gridSchema, expandGrid, type Grid } from "./domain.js";
@@ -11,6 +12,7 @@ export type Config = {
   outputDomain: string;
   database: string;
   secret: Buffer;
+  outputsPath?: string;
   provider?: Provider;
   authURL?: string;
   workersMax?: number;
@@ -20,7 +22,7 @@ const escape = (s: string) =>
   s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll('"', "&quot;");
 export function createApp(config: Config) {
   const app = express(),
-    store = new Store(config.database, config.secret),
+    store = new Store(config.database, config.secret, config.outputsPath),
     provider = config.provider ?? new Provider(),
     jobs = new Jobs(store, provider, config.workersMax);
   const origin = new URL(config.origin),
@@ -66,7 +68,8 @@ export function createApp(config: Config) {
     } catch {
       return res.sendStatus(404);
     }
-    if (!Object.hasOwn(output.files, path)) return res.sendStatus(404);
+    const file = store.files.path(id, path);
+    if (!file) return res.sendStatus(404);
     const mime: Record<string, string> = {
       html: "text/html",
       css: "text/css",
@@ -78,7 +81,7 @@ export function createApp(config: Config) {
     };
     return res
       .type(mime[path.split(".").pop()!] ?? "text/plain")
-      .send(output.files[path]);
+      .sendFile(file);
   });
   const markdownRenderer = new Renderer();
   markdownRenderer.html = ({ text }) => escape(text);
@@ -96,20 +99,24 @@ export function createApp(config: Config) {
       "Content-Security-Policy",
       `sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors ${origin.origin}`,
     );
-    if (output.format === "image") {
-      const image =
-        /^data:(image\/[a-z0-9.+-]+);base64,([a-zA-Z0-9+/]+={0,2})$/.exec(
-          output.files.image,
-        );
-      if (!image) return res.sendStatus(500);
-      return res.type(image[1]).send(Buffer.from(image[2], "base64"));
-    }
+    const filename =
+      output.format === "image"
+        ? "image"
+        : output.format === "svg"
+          ? "index.svg"
+          : "index.md";
+    const file = store.files.path(id, filename);
+    if (!file) return res.sendStatus(404);
+    if (output.format === "image")
+      return res
+        .type(output.mediaType ?? "application/octet-stream")
+        .sendFile(file);
     if (output.format === "svg")
-      return res.type("image/svg+xml").send(output.files["index.svg"]);
+      return res.type("image/svg+xml").sendFile(file);
     return res
       .type("html")
       .send(
-        `<html><head><style>body{font:16px/1.6 system-ui;margin:24px;color:#302b27}pre{overflow:auto}img{max-width:100%}</style></head><body>${marked.parse(output.files["index.md"], { renderer: markdownRenderer })}</body></html>`,
+        `<html><head><style>body{font:16px/1.6 system-ui;margin:24px;color:#302b27}pre{overflow:auto}img{max-width:100%}</style></head><body>${marked.parse(readFileSync(file, "utf8"), { renderer: markdownRenderer })}</body></html>`,
       );
   });
   app.use(express.json({ limit: "100kb" }));
@@ -167,7 +174,6 @@ export function createApp(config: Config) {
     canEdit: g.owner === s.id,
     cells: g.cells.map((c) => ({
       ...c,
-      files: undefined,
       outputURL:
         c.status === "complete"
           ? g.input.format === "html"
@@ -342,7 +348,7 @@ export function createApp(config: Config) {
       g = store.get(String(req.params.id));
     if (!g || !visible(g, s))
       return res.status(404).json({ error: "Grid not found" });
-    res.json(snapshot(g, s));
+    res.json(snapshot(jobs.active.get(g.id) ?? g, s));
   });
   app.post("/api/grids/:id/retry", (req, res) => {
     const s = session(req, res),
@@ -413,7 +419,7 @@ export function createApp(config: Config) {
     res.flushHeaders();
     const send = (grid: Grid) =>
       res.write(`data: ${JSON.stringify(snapshot(grid, s))}\n\n`);
-    send(g);
+    send(jobs.active.get(id) ?? g);
     const unsubscribe = jobs.subscribe(id, send),
       heartbeat = setInterval(() => res.write(": heartbeat\n\n"), 15000);
     req.on("close", () => {

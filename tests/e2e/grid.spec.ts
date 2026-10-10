@@ -586,6 +586,8 @@ test("SVG images grow during generation without exposing markup or running SVG s
     await expect(preview).toBeVisible();
     await expect.poll(centerColor).toEqual([255, 0, 0, 255]);
     await expectProgress(page, 0, 1);
+    await page.reload();
+    await expect.poll(centerColor).toEqual([255, 0, 0, 255]);
     await expect(page.getByRole("button", { name: "PUBLISH" })).toBeDisabled();
     await expect(page.locator("iframe, .cell pre")).toHaveCount(0);
     await request.post("/fixture/svg-next");

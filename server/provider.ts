@@ -81,7 +81,8 @@ export class Provider {
     onChunk: (text: string) => void,
     signal?: AbortSignal,
   ): Promise<{
-    files: Record<string, string>;
+    files: Record<string, string | Uint8Array>;
+    mediaType?: string;
     usage?: Cell["usage"];
   }> {
     let imageCost: number | undefined;
@@ -120,8 +121,9 @@ export class Provider {
         throw new Error("Image exceeds 10 MB");
       return {
         files: {
-          image: `data:${result.image.mediaType};base64,${result.image.base64}`,
+          image: result.image.uint8Array,
         },
+        mediaType: result.image.mediaType,
         usage: {
           inputTokens: result.usage.inputTokens,
           outputTokens: result.usage.outputTokens,

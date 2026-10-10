@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { Store } from "../server/store.js";
@@ -45,7 +45,6 @@ test("a restart preserves finished outputs and pauses interrupted work until an 
           harness: "direct",
           prompt: "cat",
           status: "complete",
-          files: { "index.md": "Saved output" },
         },
         {
           id: "interrupted",
@@ -59,6 +58,7 @@ test("a restart preserves finished outputs and pauses interrupted work until an 
         },
       ],
     };
+    store.files.write("finished", { "index.md": "Saved output" });
     store.save(g);
     const raw = store.db.prepare("SELECT data FROM sessions").get() as {
       data: string;
@@ -96,8 +96,12 @@ test("a restart preserves finished outputs and pauses interrupted work until an 
     await completed;
     assert.deepEqual(requests, ["interrupted"]);
     assert.equal(
-      store.get("grid")!.cells[0].files!["index.md"],
+      readFileSync(store.files.path("finished", "index.md")!, "utf8"),
       "Saved output",
+    );
+    assert.equal(
+      readFileSync(store.files.path("interrupted", "index.md")!, "utf8"),
+      "Recovered output",
     );
     store.db.close();
   } finally {

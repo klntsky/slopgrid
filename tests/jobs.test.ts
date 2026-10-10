@@ -1,5 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Store } from "../server/store.js";
 import { Jobs } from "../server/jobs.js";
 import { Provider } from "../server/provider.js";
@@ -64,7 +67,8 @@ class ControlledProvider extends Provider {
   }
 }
 function harness(limit?: number) {
-  const store = new Store(":memory:", Buffer.alloc(32, 3)),
+  const dir = mkdtempSync(join(tmpdir(), "slopgrid-workers-"));
+  const store = new Store(":memory:", Buffer.alloc(32, 3), dir),
     provider = new ControlledProvider(),
     jobs = new Jobs(store, provider, limit);
   function grid(owner: string, name: string, count: number): Grid {
@@ -108,6 +112,7 @@ function harness(limit?: number) {
       await flush();
     }
     store.db.close();
+    rmSync(dir, { recursive: true, force: true });
   }
   return { store, provider, jobs, grid, close };
 }
@@ -284,7 +289,7 @@ test("a late result from a paused request cannot restore its discarded preview o
     const paused = h.store.get(g.id)!;
     assert.equal(paused.cells[0].status, "pending");
     assert.equal(paused.cells[0].draft, undefined);
-    assert.equal(paused.cells[0].files, undefined);
+    assert.equal(h.store.output(paused.cells[0].id), undefined);
     h.jobs.start(paused);
     await flush();
     assert.equal(h.provider.started.length, 2);

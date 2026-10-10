@@ -30,6 +30,7 @@ const { app } = createApp({
   outputDomain,
   database: process.env.DATABASE_PATH ?? ".data/slopgrid.sqlite",
   secret,
+  outputsPath: process.env.OUTPUTS_PATH,
   workersMax: Number(process.env.WORKERS_MAX ?? 100),
 });
 if (production) {

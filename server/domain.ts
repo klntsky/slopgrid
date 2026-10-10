@@ -79,7 +79,7 @@ export type Cell = {
   prompt: string;
   status: "pending" | "running" | "complete" | "error";
   error?: string;
-  files?: Record<string, string>;
+  mediaType?: string;
   draft?: string;
   usage?: { inputTokens?: number; outputTokens?: number; costUsd?: number };
 };

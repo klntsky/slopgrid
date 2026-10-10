@@ -177,7 +177,8 @@ export class Jobs {
         controller.signal,
       );
       if (controller.signal.aborted) return;
-      cell.files = result.files;
+      this.store.files.write(cell.id, result.files);
+      cell.mediaType = result.mediaType;
       cell.usage = result.usage;
       cell.status = "complete";
     } catch (error) {
