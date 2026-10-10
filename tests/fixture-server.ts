@@ -6,6 +6,7 @@ import { mkdirSync } from "node:fs";
 import { createApp } from "../server/app.js";
 import { Provider } from "../server/provider.js";
 let streamBilling = false;
+let omitReviewCost = false;
 let unsafe = false;
 let svgStreaming = false;
 let advanceSvg: (() => void) | undefined;
@@ -106,7 +107,16 @@ upstream.post("/api/v1/images", async (req, res) => {
     return res
       .status(402)
       .json({ error: { code: 402, message: "Insufficient credits" } });
-  res.json({ created: Date.now(), data: [{ b64_json: png }] });
+  res.json({
+    created: Date.now(),
+    data: [{ b64_json: png }],
+    usage: {
+      prompt_tokens: 10,
+      completion_tokens: 20,
+      total_tokens: 30,
+      cost: req.body.prompt.includes("cat") ? 0 : 0.012345,
+    },
+  });
 });
 upstream.post("/api/v1/chat/completions", async (req, res) => {
   const prompt = req.body.messages
@@ -161,7 +171,12 @@ upstream.post("/api/v1/chat/completions", async (req, res) => {
           finish_reason: "stop",
         },
       ],
-      usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 },
+      usage: {
+        prompt_tokens: 10,
+        completion_tokens: 20,
+        total_tokens: 30,
+        ...(omitReviewCost ? {} : { cost: 0.000123 }),
+      },
     });
   res.set("Content-Type", "text/event-stream");
   if (svgStreaming && system.includes("complete SVG")) {
@@ -200,7 +215,7 @@ upstream.post("/api/v1/chat/completions", async (req, res) => {
     await new Promise((resolve) => setTimeout(resolve, 30));
   }
   res.write(
-    `data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 } })}\n\ndata: [DONE]\n\n`,
+    `data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30, cost: 0.000123 } })}\n\ndata: [DONE]\n\n`,
   );
   res.end();
 });
@@ -217,6 +232,7 @@ const { app } = createApp({
   workersMax: 2,
 });
 app.post("/fixture/reset", (req, res) => {
+  omitReviewCost = !!req.body.omitReviewCost;
   holdGenerations = !!req.body.holdGenerations;
   for (const entry of [...held]) entry.release();
   aborted = [];

@@ -1,5 +1,6 @@
 import { generateText, generateImage, streamText, APICallError } from "ai";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
+import { z } from "zod";
 import {
   instruction,
   parseOutput,
@@ -13,6 +14,13 @@ export type Model = {
   text: boolean;
   reasoning: boolean;
 };
+const costUsage = z.object({
+  cost: z.number().finite().nonnegative().optional(),
+});
+function reportedCost(usage: unknown): number | undefined {
+  const result = costUsage.safeParse(usage);
+  return result.success ? result.data.cost : undefined;
+}
 export class Provider {
   constructor(readonly baseURL = "https://openrouter.ai/api/v1") {}
   private catalog?: { at: number; models: Model[] };
@@ -74,9 +82,28 @@ export class Provider {
     signal?: AbortSignal,
   ): Promise<{
     files: Record<string, string>;
-    usage?: { inputTokens?: number; outputTokens?: number };
+    usage?: Cell["usage"];
   }> {
-    const provider = createOpenRouter({ apiKey: key, baseURL: this.baseURL });
+    let imageCost: number | undefined;
+    const provider = createOpenRouter({
+      apiKey: key,
+      baseURL: this.baseURL,
+      // The image adapter currently omits response usage.cost from its result.
+      fetch:
+        format === "image"
+          ? async (input, init) => {
+              const response = await fetch(input, init);
+              if (response.ok) {
+                const body = await response
+                  .clone()
+                  .json()
+                  .catch(() => undefined);
+                imageCost = reportedCost(body?.usage);
+              }
+              return response;
+            }
+          : undefined,
+    });
     const requestSignal = () =>
       AbortSignal.any([
         AbortSignal.timeout(180000),
@@ -98,6 +125,7 @@ export class Provider {
         usage: {
           inputTokens: result.usage.inputTokens,
           outputTokens: result.usage.outputTokens,
+          costUsd: imageCost,
         },
       };
     }
@@ -139,6 +167,9 @@ export class Provider {
     }
     if (failure) throw failure;
     let usage = await result.usage;
+    let costUsd = reportedCost(
+      (await result.providerMetadata)?.openrouter?.usage,
+    );
     if (cell.harness === "review") {
       const reviewed = await generateText({
         model,
@@ -148,6 +179,13 @@ export class Provider {
         abortSignal: requestSignal(),
       });
       text = reviewed.text;
+      const reviewCost = reportedCost(
+        reviewed.providerMetadata?.openrouter?.usage,
+      );
+      costUsd =
+        costUsd !== undefined && reviewCost !== undefined
+          ? costUsd + reviewCost
+          : undefined;
       usage = {
         ...reviewed.usage,
         inputTokens:
@@ -161,6 +199,7 @@ export class Provider {
       usage: {
         inputTokens: usage.inputTokens,
         outputTokens: usage.outputTokens,
+        costUsd,
       },
     };
   }

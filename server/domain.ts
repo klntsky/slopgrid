@@ -81,7 +81,7 @@ export type Cell = {
   error?: string;
   files?: Record<string, string>;
   draft?: string;
-  usage?: { inputTokens?: number; outputTokens?: number };
+  usage?: { inputTokens?: number; outputTokens?: number; costUsd?: number };
 };
 export type Grid = {
   revision: number;

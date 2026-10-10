@@ -151,6 +151,17 @@ const formatNames = {
   html: "Static website",
   image: "Image",
 };
+const usd = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 8,
+});
+function formatCost(cost: number | undefined): string {
+  if (cost === undefined) return "Cost unavailable";
+  if (cost > 0 && cost < 0.00000001) return "<$0.00000001 USD";
+  return `${usd.format(cost)} USD`;
+}
 const dimensionNames = {
   model: "Model",
   effort: "Thinking effort",
@@ -929,12 +940,17 @@ function GridPage() {
                                   Open output{" "}
                                   <ArrowUpRight aria-hidden="true" />
                                 </a>
-                                {cell.usage && (
-                                  <small>
-                                    {cell.usage.inputTokens ?? 0} in ·{" "}
-                                    {cell.usage.outputTokens ?? 0} out
-                                  </small>
-                                )}
+                                <small className="cell-usage">
+                                  {cell.usage && (
+                                    <span>
+                                      {cell.usage.inputTokens ?? 0} in ·{" "}
+                                      {cell.usage.outputTokens ?? 0} out
+                                    </span>
+                                  )}
+                                  <span title="OpenRouter reported cost, including draft and review when used">
+                                    {formatCost(cell.usage?.costUsd)}
+                                  </span>
+                                </small>
                               </div>
                             </>
                           ) : cell.status === "error" ? (

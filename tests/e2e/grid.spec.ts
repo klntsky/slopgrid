@@ -81,8 +81,11 @@ test("billing can be dismissed and retried repeatedly without regenerating compl
   await publicPage.goto(url);
   await expectProgress(publicPage, 2, 2);
   await expect(
-    publicPage.getByRole("button", { name: "PUBLISH" }),
-  ).toHaveCount(0);
+    publicPage.getByText("$0.000123 USD", { exact: true }),
+  ).toHaveCount(2);
+  await expect(publicPage.getByRole("button", { name: "PUBLISH" })).toHaveCount(
+    0,
+  );
   await stranger.close();
   const calls = await (await request.get("/fixture/calls")).json();
   expect(calls.filter((p: string) => p.includes("cat")).length).toBe(1);
@@ -94,6 +97,23 @@ for (const format of ["SVG", "Markdown", "Static website", "Image"])
     await request.post("/fixture/reset", { data: { billing: false } });
     await create(page, format);
     await expectProgress(page, 2, 2);
+    if (format === "Image") {
+      await expect(page.getByText("$0.00 USD", { exact: true })).toHaveCount(1);
+      await expect(
+        page.getByText("$0.012345 USD", { exact: true }),
+      ).toHaveCount(1);
+    } else {
+      await expect(
+        page.getByText("$0.000123 USD", { exact: true }),
+      ).toHaveCount(2);
+    }
+    await page.reload();
+    await expectProgress(page, 2, 2);
+    await expect(
+      page.getByText(format === "Image" ? "$0.012345 USD" : "$0.000123 USD", {
+        exact: true,
+      }),
+    ).toHaveCount(format === "Image" ? 1 : 2);
     const output = new URL(
       (await page
         .getByRole("link", { name: "Open output" })
@@ -303,11 +323,28 @@ test("draft and review makes a second request for each cell and renders the fina
       .first()
       .getByRole("heading", { name: "A generated cat" }),
   ).toBeVisible();
+  await expect(page.getByText("$0.000246 USD", { exact: true })).toHaveCount(2);
   const calls = await (await request.get("/fixture/calls")).json();
   expect(calls).toHaveLength(4);
   expect(
     calls.filter((p: string) => p.includes("Check the draft")),
   ).toHaveLength(2);
+});
+
+test("a missing review charge is shown as unavailable rather than a partial cost", async ({
+  page,
+  request,
+}) => {
+  await request.post("/fixture/reset", {
+    data: { billing: false, omitReviewCost: true },
+  });
+  await create(page, "Markdown", "cat", "hat", "review");
+  await expectProgress(page, 1, 1);
+  await expect(page.getByText("20 in · 40 out", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("Cost unavailable", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("$0.000123 USD", { exact: true })).toHaveCount(0);
 });
 
 for (const format of ["SVG", "Markdown"])
@@ -487,16 +524,12 @@ test("the logo opens the form for a new browser and Your grids after creation", 
   await expect(
     page.getByText("You haven’t created any grids yet."),
   ).toBeVisible();
-  await navbar
-    .getByRole("link", { name: "NEW GRID", exact: true })
-    .click();
+  await navbar.getByRole("link", { name: "NEW GRID", exact: true }).click();
   await expect(page).toHaveURL("/");
   await create(page, "Image", "cat", "hat");
   await expectProgress(page, 1, 1);
   const gridURL = page.url();
-  await navbar
-    .getByRole("link", { name: "NEW GRID", exact: true })
-    .click();
+  await navbar.getByRole("link", { name: "NEW GRID", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Your grids" })).toHaveCount(
     0,
   );
@@ -553,9 +586,7 @@ test("SVG images grow during generation without exposing markup or running SVG s
     await expect(preview).toBeVisible();
     await expect.poll(centerColor).toEqual([255, 0, 0, 255]);
     await expectProgress(page, 0, 1);
-    await expect(
-      page.getByRole("button", { name: "PUBLISH" }),
-    ).toBeDisabled();
+    await expect(page.getByRole("button", { name: "PUBLISH" })).toBeDisabled();
     await expect(page.locator("iframe, .cell pre")).toHaveCount(0);
     await request.post("/fixture/svg-next");
     await expect.poll(centerColor).toEqual([0, 0, 255, 255]);
@@ -572,6 +603,9 @@ test("SVG images grow during generation without exposing markup or running SVG s
     await request.post("/fixture/svg-next");
     await expectProgress(page, 1, 1);
     await expect(preview).toHaveCount(0);
+    await expect(
+      page.getByText("Cost unavailable", { exact: true }),
+    ).toBeVisible();
     await expect(
       page.getByRole("img", { name: "Generated SVG", exact: true }),
     ).toBeVisible();
@@ -611,9 +645,7 @@ for (const viewport of [
     await expect(
       header.getByRole("progressbar", { name: "Grid generation" }),
     ).toHaveAttribute("aria-valuetext", "1 of 1 outputs complete");
-    await expect(
-      header.getByRole("button", { name: "PUBLISH" }),
-    ).toBeEnabled();
+    await expect(header.getByRole("button", { name: "PUBLISH" })).toBeEnabled();
     await expect(
       page.getByText("1 of 1 complete", { exact: true }),
     ).toHaveCount(0);
