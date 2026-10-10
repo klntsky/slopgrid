@@ -759,7 +759,6 @@ test("Pause aborts active inference and releases slots; Resume preserves complet
     });
     await expectProgress(page, 1, 3);
     await expect.poll(async () => (await calls()).length).toBe(3);
-    await page.setViewportSize({ width: 390, height: 844 });
     const header = page.getByRole("banner"),
       pause = header.getByRole("button", { name: "Pause generation" });
     const titleBox = (await header
@@ -854,4 +853,74 @@ test("pausing a streamed SVG discards its partial image and Resume generates it 
   } finally {
     await request.post("/fixture/reset", { data: {} });
   }
+});
+test("theme follows system changes unless a saved choice overrides them", async ({
+  page,
+}) => {
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.goto("/settings");
+  const theme = page.getByRole("combobox", { name: "Theme", exact: true });
+  await expect(theme).toHaveValue("system");
+  await expect(page.locator("html")).toHaveCSS("color-scheme", "dark");
+  await page.emulateMedia({ colorScheme: "light" });
+  await expect(page.locator("html")).toHaveCSS("color-scheme", "light");
+  await theme.selectOption("dark");
+  await expect(page.locator("html")).toHaveCSS("color-scheme", "dark");
+  await page
+    .getByRole("navigation")
+    .getByRole("link", { name: "NEW GRID", exact: true })
+    .click();
+  await expect(page.locator("html")).toHaveCSS("color-scheme", "dark");
+  await page.reload();
+  await expect(page.locator("html")).toHaveCSS("color-scheme", "dark");
+  await page
+    .getByRole("navigation")
+    .getByRole("link", { name: "SETTINGS", exact: true })
+    .click();
+  await expect(theme).toHaveValue("dark");
+  const otherTab = await page.context().newPage();
+  await otherTab.goto("/settings");
+  await expect(
+    otherTab.getByRole("combobox", { name: "Theme", exact: true }),
+  ).toHaveValue("dark");
+  await theme.selectOption("light");
+  await expect(otherTab.locator("html")).toHaveCSS("color-scheme", "light");
+  await otherTab.close();
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect(page.locator("html")).toHaveCSS("color-scheme", "light");
+  await theme.selectOption("system");
+  await expect(page.locator("html")).toHaveCSS("color-scheme", "dark");
+  await page.reload();
+  await expect(theme).toHaveValue("system");
+  await page.emulateMedia({ colorScheme: "light" });
+  await expect(page.locator("html")).toHaveCSS("color-scheme", "light");
+});
+
+test("dark theme applies to generation controls, cell labels, and billing dialogs", async ({
+  page,
+  request,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ colorScheme: "dark" });
+  await request.post("/fixture/reset", { data: { billing: true } });
+  await create(page);
+  await expectProgress(page, 1, 2);
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  await expect(page.locator("html")).toHaveCSS("color-scheme", "dark");
+  const backgrounds = await page
+    .locator("html, .output-grid th, .cell-footer, dialog")
+    .evaluateAll((elements) =>
+      elements.map((el) => getComputedStyle(el).backgroundColor),
+    );
+  for (const color of backgrounds) {
+    const channels = color.match(/[\d.]+/g)!.map(Number);
+    if (channels[3] === 0) continue;
+    expect(Math.max(...channels.slice(0, 3))).toBeLessThan(80);
+  }
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(page.getByText("$0.000123 USD", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Resume generation" }),
+  ).toBeEnabled();
 });

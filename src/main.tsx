@@ -42,6 +42,7 @@ import { efforts, unusedVariableIssue } from "../server/domain";
 import type { Model } from "../server/provider";
 import { api, type ViewGrid } from "./api";
 import { SvgPreview } from "./svg-preview-image";
+import { ThemeProvider, useTheme } from "./theme";
 import "./style.css";
 function newestGrid(previous: unknown, incoming: unknown) {
   const old = previous as ViewGrid | undefined,
@@ -688,6 +689,7 @@ function AxisEditor({
   );
 }
 function Settings() {
+  const { theme, setTheme } = useTheme();
   const cache = useQueryClient(),
     session = useConnection(),
     [error, setError] = useState("");
@@ -701,9 +703,29 @@ function Settings() {
   }
   return (
     <main className="settings-page">
-      <p className="eyebrow">SETTINGS</p>
-      <h1>Inference</h1>
+      <h1>Settings</h1>
+      <section aria-labelledby="appearance-heading">
+        <h2 id="appearance-heading">Appearance</h2>
+        <label className="theme-control">
+          Theme
+          <select
+            value={theme}
+            onChange={(event) =>
+              setTheme(event.target.value as "system" | "light" | "dark")
+            }
+          >
+            <option value="system">System</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </label>
+        <p className="hint">
+          System follows your device’s light or dark appearance. Your choice is
+          saved in this browser.
+        </p>
+      </section>
       <section>
+        <h2>Inference</h2>
         <Connection returnTo="/settings" />
         {session.data?.connected && (
           <button className="secondary" onClick={disconnect}>
@@ -1060,7 +1082,9 @@ function displayValue(value: string, kind: GridInput["rows"]["kind"]) {
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <ThemeProvider>
+        <RouterProvider router={router} />
+      </ThemeProvider>
     </QueryClientProvider>
   </React.StrictMode>,
 );
