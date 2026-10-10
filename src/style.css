@@ -1069,3 +1069,49 @@ header {
 .history-heading h1 {
   margin: 0;
 }
+
+.output-grid[data-resized] {
+  table-layout: fixed;
+  min-width: 0;
+}
+.output-grid[data-resized] th,
+.output-grid[data-resized] td {
+  min-width: 0;
+  overflow: hidden;
+}
+.output-grid[data-resized] td {
+  height: auto;
+}
+.output-grid[data-resized] .row-label {
+  max-height: calc(var(--row-height) - 32px);
+  overflow: hidden;
+}
+.grid-resize-handle {
+  position: absolute;
+  z-index: 5;
+  touch-action: none;
+}
+.resize-columns {
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 8px;
+  cursor: col-resize;
+}
+.resize-rows {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 8px;
+  cursor: row-resize;
+}
+.grid-resize-handle:hover,
+.grid-resize-handle:focus-visible {
+  background: var(--accent);
+}
+.output-grid[data-resizing] {
+  user-select: none;
+}
+.output-grid[data-resizing] iframe {
+  pointer-events: none;
+}

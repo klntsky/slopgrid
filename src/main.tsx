@@ -854,6 +854,25 @@ function Settings() {
     </main>
   );
 }
+function ResizeHandle({
+  axis,
+  index,
+}: {
+  axis: "columns" | "rows";
+  index: number;
+}) {
+  return (
+    <span
+      className={`grid-resize-handle resize-${axis}`}
+      data-resize-axis={axis}
+      data-resize-index={index}
+      role="separator"
+      tabIndex={0}
+      aria-orientation={axis === "columns" ? "vertical" : "horizontal"}
+      aria-label={`Resize ${axis === "columns" ? "column" : "row"} ${index + 1}`}
+    />
+  );
+}
 function GridPage() {
   const { id } = gridRoute.useParams(),
     cache = useQueryClient(),
@@ -1063,18 +1082,32 @@ function GridPage() {
           </div>
         )}
         <ErrorMessage error={error} />
-        <ZoomableGrid key={g.id} columns={g.input.columns.values.length}>
+        <ZoomableGrid
+          key={g.id}
+          gridId={g.id}
+          columns={g.input.columns.values.length}
+        >
           <table className="output-grid">
+            <colgroup>
+              <col />
+              {g.input.columns.values.map((c) => (
+                <col key={c} />
+              ))}
+            </colgroup>
             <thead>
               <tr>
-                <th className="corner" />
-                {g.input.columns.values.map((c) => (
+                <th className="corner">
+                  <ResizeHandle axis="columns" index={0} />
+                  <ResizeHandle axis="rows" index={0} />
+                </th>
+                {g.input.columns.values.map((c, column) => (
                   <th scope="col" key={c}>
                     {g.input.columns.kind === "model" ? (
                       <ModelName model={c} />
                     ) : (
                       displayValue(c, g.input.columns.kind)
                     )}
+                    <ResizeHandle axis="columns" index={column + 1} />
                   </th>
                 ))}
               </tr>
@@ -1090,6 +1123,7 @@ function GridPage() {
                         displayValue(r, g.input.rows.kind)
                       )}
                     </span>
+                    <ResizeHandle axis="rows" index={row + 1} />
                   </th>
                   {g.input.columns.values.map((_, column) => {
                     const cell = g.cells.find(

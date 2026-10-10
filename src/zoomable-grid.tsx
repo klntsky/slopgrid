@@ -5,6 +5,8 @@ import {
   type ReactNode,
 } from "react";
 
+import { useGridResize } from "./grid-resize";
+
 type Point = { x: number; y: number };
 function fingers(touches: TouchList): { center: Point; distance: number } {
   const a = touches[0],
@@ -15,13 +17,16 @@ function fingers(touches: TouchList): { center: Point; distance: number } {
   };
 }
 export function ZoomableGrid({
+  gridId,
   columns,
   children,
 }: {
+  gridId: string;
   columns: number;
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  useGridResize(ref, gridId);
   useLayoutEffect(() => {
     const viewport = ref.current!,
       table = viewport.querySelector("table")!;
@@ -37,8 +42,10 @@ export function ZoomableGrid({
       if (!distance) return;
       event.preventDefault();
       const bounds = viewport.getBoundingClientRect();
-      table.style.width = `${viewport.clientWidth}px`;
-      table.style.height = `${viewport.clientHeight}px`;
+      if (!table.dataset.resized) {
+        table.style.width = `${viewport.clientWidth}px`;
+        table.style.height = `${viewport.clientHeight}px`;
+      }
       const tableBounds = table.getBoundingClientRect();
       gesture = {
         distance,
@@ -83,11 +90,15 @@ export function ZoomableGrid({
       gesture = undefined;
       pinching = false;
       table.style.zoom = "";
-      table.style.width = "";
-      table.style.height = "";
+      if (!table.dataset.resized) {
+        table.style.width = "";
+        table.style.height = "";
+      }
       if (mobile.matches && viewport.clientWidth) {
-        table.style.width = `${viewport.clientWidth}px`;
-        table.style.height = `${viewport.clientHeight}px`;
+        if (!table.dataset.resized) {
+          table.style.width = `${viewport.clientWidth}px`;
+          table.style.height = `${viewport.clientHeight}px`;
+        }
         scale = Math.min(
           1,
           viewport.clientWidth / table.getBoundingClientRect().width,
