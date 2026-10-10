@@ -988,67 +988,69 @@ function GridPage() {
   const toolbar = (
     <>
       <div className="grid-heading">
-        {g.canEdit && !g.published && g.status !== "complete" && (
-          <button
-            className="secondary inference-toggle"
-            disabled={busy}
-            aria-label={paused ? "Resume generation" : "Pause generation"}
-            title={paused ? "Resume generation" : "Pause generation"}
-            onClick={() => action(paused ? "retry" : "pause")}
-          >
-            {paused ? (
-              <Play aria-hidden="true" />
-            ) : (
-              <Pause aria-hidden="true" />
-            )}
-          </button>
-        )}
-        <div className="actions">
-          {(g.canEdit || g.published) && (
+        <div className="grid-controls">
+          {g.canEdit && !g.published && g.status !== "complete" && (
             <button
               className="secondary inference-toggle"
               disabled={busy}
-              onClick={configure}
-              aria-label={g.published ? "FORK" : "EDIT"}
-              title={g.published ? "Fork grid" : "Edit grid"}
+              aria-label={paused ? "Resume generation" : "Pause generation"}
+              title={paused ? "Resume generation" : "Pause generation"}
+              onClick={() => action(paused ? "retry" : "pause")}
             >
-              {g.published ? (
-                <GitFork aria-hidden="true" />
+              {paused ? (
+                <Play aria-hidden="true" />
               ) : (
-                <Pencil aria-hidden="true" />
+                <Pause aria-hidden="true" />
               )}
             </button>
           )}
-          {g.canEdit && !g.published && (
-            <button
-              disabled={busy || finished !== g.cells.length}
-              className="secondary inference-toggle"
-              onClick={() => action("publish")}
-              aria-label="PUBLISH"
-              title="Publish grid"
-            >
-              <Upload aria-hidden="true" />
-            </button>
-          )}
-          {g.published && (
-            <button
-              className="secondary inference-toggle"
-              aria-label="Copy link"
-              title="Copy link"
-              onClick={async () => {
-                try {
-                  await navigator.clipboard.writeText(location.href);
-                  setError("");
-                } catch {
-                  setError(
-                    "Copy the address from your browser to share this grid.",
-                  );
-                }
-              }}
-            >
-              <Link2 aria-hidden="true" />
-            </button>
-          )}
+          <div className="actions">
+            {(g.canEdit || g.published) && (
+              <button
+                className="secondary inference-toggle"
+                disabled={busy}
+                onClick={configure}
+                aria-label={g.published ? "FORK" : "EDIT"}
+                title={g.published ? "Fork grid" : "Edit grid"}
+              >
+                {g.published ? (
+                  <GitFork aria-hidden="true" />
+                ) : (
+                  <Pencil aria-hidden="true" />
+                )}
+              </button>
+            )}
+            {g.canEdit && !g.published && (
+              <button
+                disabled={busy || finished !== g.cells.length}
+                className="secondary inference-toggle"
+                onClick={() => action("publish")}
+                aria-label="PUBLISH"
+                title="Publish grid"
+              >
+                <Upload aria-hidden="true" />
+              </button>
+            )}
+            {g.published && (
+              <button
+                className="secondary inference-toggle"
+                aria-label="Copy link"
+                title="Copy link"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(location.href);
+                    setError("");
+                  } catch {
+                    setError(
+                      "Copy the address from your browser to share this grid.",
+                    );
+                  }
+                }}
+              >
+                <Link2 aria-hidden="true" />
+              </button>
+            )}
+          </div>
         </div>
         <div className="grid-title">
           <h1 title={g.input.prompt}>{g.input.prompt}</h1>
