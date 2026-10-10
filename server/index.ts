@@ -2,6 +2,7 @@ import { mkdirSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import express from "express";
 import { createApp } from "./app.js";
+import { recoverInterruptedGrids } from "./recovery.js";
 const port = Number(process.env.PORT ?? 3000),
   production = process.env.NODE_ENV === "production";
 const origin = process.env.APP_ORIGIN ?? `http://localhost:${port}`,
@@ -25,7 +26,7 @@ if (
     !origin.startsWith("https://"))
 )
   throw new Error("Set HTTPS APP_ORIGIN and OUTPUT_DOMAIN in production");
-const { app } = createApp({
+const { app, store } = createApp({
   origin,
   outputDomain,
   database: process.env.DATABASE_PATH ?? ".data/slopgrid.sqlite",
@@ -33,6 +34,7 @@ const { app } = createApp({
   outputsPath: process.env.OUTPUTS_PATH,
   workersMax: Number(process.env.WORKERS_MAX ?? 100),
 });
+recoverInterruptedGrids(store);
 if (production) {
   app.use(express.static("dist"));
   app.get(["/", "/grids", "/settings", /^\/grid\/[a-f0-9]{48}$/], (_req, res) =>

@@ -38,16 +38,6 @@ export class Store {
       this.db.close();
       throw error;
     }
-    // A process restart must never silently incur another charge.
-    for (const g of this.all()) {
-      if (g.status === "running") {
-        g.status = "paused";
-        g.interruption = "restart";
-        for (const c of g.cells)
-          if (c.status === "running") c.status = "pending";
-        this.save(g);
-      }
-    }
   }
   all(): Grid[] {
     return (

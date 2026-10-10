@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { Store } from "../server/store.js";
+import { recoverInterruptedGrids } from "../server/recovery.js";
 import { Jobs } from "../server/jobs.js";
 import { Provider } from "../server/provider.js";
 import type { Grid } from "../server/domain.js";
@@ -69,6 +70,13 @@ test("a restart preserves finished outputs and pauses interrupted work until an 
     );
     store.db.close();
     store = new Store(file, secret);
+    assert.equal(
+      store.get("grid")!.status,
+      "running",
+      "opening a store must not pause inference",
+    );
+    assert.equal(store.get("grid")!.cells[1].status, "running");
+    recoverInterruptedGrids(store);
     assert.equal(store.session("owner")?.key, "private-openrouter-key");
     const restored = store.get("grid")!;
     assert.equal(restored.status, "paused");
