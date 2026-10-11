@@ -1,3 +1,5 @@
+import { useEffect } from "react";
+import type { inferenceCapacity } from "../server/inference-policy";
 import { useOpenRouterKey } from "./openrouter-key";
 import { QueryClient, useQuery } from "@tanstack/react-query";
 import type { GridSummary } from "../server/domain";
@@ -40,4 +42,25 @@ export function usePublicGrids() {
     queryKey: ["public-grids"],
     queryFn: () => api<GridSummary[]>("/grids/public"),
   });
+}
+
+export function useInferenceCapacity(enabled: boolean) {
+  const key = useOpenRouterKey();
+  const query = useQuery({
+    queryKey: ["inference-capacity"],
+    queryFn: () =>
+      api<Awaited<ReturnType<typeof inferenceCapacity>>>(
+        "/inference-capacity",
+        "GET",
+        undefined,
+        key,
+      ),
+    enabled,
+    retry: false,
+    staleTime: 30000,
+  });
+  useEffect(() => {
+    if (enabled) void query.refetch();
+  }, [key, enabled, query.refetch]);
+  return query;
 }

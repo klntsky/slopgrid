@@ -135,6 +135,46 @@ test("the website uses up to 100 workers by default and fills every available sl
   }
 });
 
+test("grid requests cap their own workers when another grid raises the owner's limit", async () => {
+  const h = harness(4);
+  try {
+    const first = h.grid("alice", "first", 4);
+    const second = h.grid("alice", "second", 4);
+    first.input.parallelWorkers = 1;
+    second.input.parallelWorkers = 3;
+    const session = h.store.session("alice")!;
+    session.inferenceConcurrency = 1;
+    h.store.saveSession(session);
+    h.jobs.start(first);
+    await flush();
+    session.inferenceConcurrency = 3;
+    h.store.saveSession(session);
+    h.jobs.start(second);
+    await flush();
+    h.jobs.start(h.grid("bob", "grid", 4));
+    await flush();
+    assert.deepEqual([...h.provider.pending.keys()].sort(), [
+      "alice/first/0",
+      "alice/second/0",
+      "alice/second/1",
+      "bob/grid/0",
+    ]);
+    h.provider.finish("alice/second/0");
+    await flush();
+    assert.equal(h.provider.started.at(-1)!.owner, "bob");
+    h.provider.finish("alice/first/0");
+    await flush();
+    assert.deepEqual([...h.provider.pending.keys()].sort(), [
+      "alice/first/1",
+      "alice/second/1",
+      "bob/grid/0",
+      "bob/grid/1",
+    ]);
+  } finally {
+    await h.close();
+  }
+});
+
 test("new users receive freed slots before a user with more workers, without interrupting active calls", async () => {
   const h = harness(4);
   try {

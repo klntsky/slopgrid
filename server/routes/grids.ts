@@ -20,7 +20,10 @@ import {
   ModelResolutionError,
   resolveGridModels,
 } from "../model-resolution.js";
-import { createInferenceGuard } from "../inference-policy.js";
+import {
+  createInferenceGuard,
+  inferenceCapacity,
+} from "../inference-policy.js";
 import { token } from "../ids.js";
 
 export function createGridRoutes({
@@ -61,6 +64,27 @@ export function createGridRoutes({
     if (g && allowed(g, s)) return { g, s };
     res.status(404).json({ error: "Grid not found" });
   }
+  app.get("/api/inference-capacity", async (req, res) => {
+    const s = session(req, res),
+      supplied = manualKey(req),
+      key = supplied ?? s.key;
+    res.set("Cache-Control", "no-store");
+    if (!key)
+      return res
+        .status(401)
+        .json({ error: "Connect OpenRouter before generating." });
+    if (!rate(`capacity:${s.id}`, 60, 60000))
+      return res
+        .status(429)
+        .json({ error: "Too many balance checks. Try again shortly." });
+    try {
+      res.json(await inferenceCapacity(provider, key, supplied !== undefined));
+    } catch {
+      res
+        .status(502)
+        .json({ error: "Could not check your OpenRouter balance. Try again." });
+    }
+  });
   app.get("/api/grids/public", (_req, res) => {
     res.json(
       store
@@ -106,7 +130,7 @@ export function createGridRoutes({
               : "Could not load OpenRouter models. Try again.",
         });
     }
-    if (!(await allowInference(req, res, s))) return;
+    if (!(await allowInference(req, res, s, input.parallelWorkers))) return;
     const cells = expandGrid(input).map((c) => ({ ...c, id: token() }));
     if (!rate(`create:${s.id}`, 10) || !rate(`create-ip:${req.ip}`, 30))
       return res
@@ -151,7 +175,7 @@ export function createGridRoutes({
     if (current?.status === "running") return res.json(snapshot(current, s));
     if (
       g.cells.some((c) => c.status !== "complete") &&
-      !(await allowInference(req, res, s))
+      !(await allowInference(req, res, s, g.input.parallelWorkers))
     )
       return;
     if (!rate(`retry:${s.id}`, 30))

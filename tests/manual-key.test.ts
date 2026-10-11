@@ -61,9 +61,20 @@ test("manual keys stay out of SQLite, serve queued cells, and require resending 
   });
   let gridId: string | undefined;
   try {
-    assert.equal(await provider.manualCredits("test-manual-key"), 12);
+    assert.equal((await fetch(`${origin}/api/inference-capacity`)).status, 401);
+    const capacity = async () => {
+      const response = await fetch(`${origin}/api/inference-capacity`, {
+        headers: { Authorization: "Bearer test-manual-key" },
+      });
+      assert.equal(response.headers.get("cache-control"), "no-store");
+      return response.json();
+    };
+    assert.deepEqual(await capacity(), { balanceUsd: 12, parallelWorkers: 4 });
     remaining = null;
-    assert.equal(await provider.manualCredits("test-manual-key"), null);
+    assert.deepEqual(await capacity(), {
+      balanceUsd: null,
+      parallelWorkers: 1,
+    });
     remaining = 12;
     const input: GridInput = {
       format: "markdown",

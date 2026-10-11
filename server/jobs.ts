@@ -138,7 +138,9 @@ export class Jobs {
         if (
           grid.status !== "running" ||
           (this.cooldowns.get(owner) ?? 0) > now ||
-          candidates.has(owner)
+          candidates.has(owner) ||
+          [...this.running.values()].filter((work) => work.grid.id === grid.id)
+            .length >= (grid.input.parallelWorkers ?? this.workersMax)
         )
           continue;
         const cell = grid.cells.find(

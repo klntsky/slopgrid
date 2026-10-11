@@ -27,6 +27,7 @@ export const gridSchema = z
     model: z.string().trim().max(200),
     effort: z.enum(efforts),
     budgetUsd: z.number().finite().positive(),
+    parallelWorkers: z.number().int().min(1).max(64).optional(),
   })
   .superRefine((g, c) => {
     const issue = (message: string) => c.addIssue({ code: "custom", message });

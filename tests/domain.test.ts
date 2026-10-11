@@ -49,6 +49,10 @@ test("rejects ambiguous axes, unresolved variables, image reasoning, and oversiz
     budgetUsd: 5,
   };
   for (const invalid of [
+    ...[0, -1, 1.5, 65].map((parallelWorkers) => ({
+      ...base,
+      parallelWorkers,
+    })),
     { ...base, columns: base.rows },
     { ...base, prompt: "$VARIABLE_ROW" },
     { ...base, format: "image" },

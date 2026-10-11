@@ -264,6 +264,43 @@ textarea {
   resize: vertical;
   line-height: 1.6;
 }
+.generation-limits {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 180px));
+  align-items: end;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.generation-limits .budget-field {
+  margin-bottom: 0;
+}
+.workers-field {
+  min-width: 0;
+}
+.workers-field label {
+  margin-bottom: 9px;
+}
+.workers-input {
+  display: block;
+  position: relative;
+}
+.workers-input input {
+  padding-right: 64px;
+  appearance: textfield;
+}
+.workers-input input::-webkit-inner-spin-button,
+.workers-input input::-webkit-outer-spin-button {
+  appearance: none;
+  margin: 0;
+}
+.workers-input button {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 5px 8px;
+  font-size: 11px;
+}
 .budget-field {
   width: 180px;
   max-width: 100%;

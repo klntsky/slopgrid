@@ -12,7 +12,7 @@ import {
 import { effortLabel } from "../../server/compatibility";
 import type { Model } from "../../server/provider";
 import { api } from "../api";
-import { queryClient, useConnection } from "../queries";
+import { queryClient, useConnection, useInferenceCapacity } from "../queries";
 import { formatNames } from "../format";
 import { useCreateDraft, clearDraft } from "../create/draft";
 import { AxisEditor } from "../create/axis-editor";
@@ -27,6 +27,22 @@ export function Create() {
   const { formatSelected, input } = draft,
     navigate = useNavigate(),
     connection = useConnection();
+  const capacity = useInferenceCapacity(
+    formatSelected && connection.data?.connected === true,
+  );
+  const cellCount = input.rows.values.length * input.columns.values.length;
+  const parallelWorkers = Math.min(
+    cellCount,
+    input.parallelWorkers ?? capacity.data?.parallelWorkers ?? 1,
+  );
+  const workersPending =
+    input.parallelWorkers === undefined &&
+    (!capacity.isSuccess || capacity.isFetching);
+  const workersValid =
+    Number.isInteger(parallelWorkers) && parallelWorkers >= 1;
+  const workersHint = useTooltip<HTMLInputElement>(
+    "How many parallel inferences to run (can be throttled by the backend under load). If your inference budget is low, spawning too many will lead to a lot of overhead due to failures; OpenRouter still charges you for unsuccessful calls",
+  );
   const inference = useInferenceMutation(async (grid) => {
     await queryClient.invalidateQueries({ queryKey: ["grids"] });
     clearDraft();
@@ -82,14 +98,19 @@ export function Create() {
   const modelMissing =
     ![input.rows.kind, input.columns.kind].includes("model") && !input.model;
   function generate(continueWithLowBalance = false) {
-    if (!catalog.data || modelMissing) return;
+    if (!catalog.data || modelMissing || workersPending || !workersValid)
+      return;
     const issue = unusedVariableIssue(input);
     if (issue) {
       setError(issue);
       return;
     }
     setError("");
-    inference.mutate({ path: "/grids", body: input, continueWithLowBalance });
+    inference.mutate({
+      path: "/grids",
+      body: { ...input, parallelWorkers },
+      continueWithLowBalance,
+    });
   }
 
   return (
@@ -264,32 +285,77 @@ export function Create() {
             <h2>Key setup</h2>
           </div>
           <Connection returnTo="/" />
-          {input.format !== "image" && (
-            <label
-              htmlFor="cell-budget"
-              className="budget-field"
-              ref={budgetHint}
-            >
-              Budget limit per cell
-              <span className="budget-input">
-                <DollarSign aria-hidden="true" />
+          <div className="generation-limits">
+            {input.format !== "image" && (
+              <label
+                htmlFor="cell-budget"
+                className="budget-field"
+                ref={budgetHint}
+              >
+                Budget limit per cell
+                <span className="budget-input">
+                  <DollarSign aria-hidden="true" />
+                  <input
+                    id="cell-budget"
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    value={input.budgetUsd}
+                    onChange={(event) =>
+                      update({ budgetUsd: event.target.valueAsNumber })
+                    }
+                  />
+                </span>
+              </label>
+            )}
+            <div className="workers-field">
+              <label htmlFor="parallel-workers"># of parallel workers:</label>
+              <span className="workers-input">
                 <input
-                  id="cell-budget"
+                  id="parallel-workers"
                   type="number"
-                  min="0.01"
-                  step="0.01"
-                  value={input.budgetUsd}
+                  min="1"
+                  max={Math.max(1, cellCount)}
+                  step="1"
+                  value={parallelWorkers}
+                  disabled={!cellCount}
+                  ref={workersHint}
                   onChange={(event) =>
-                    update({ budgetUsd: event.target.valueAsNumber })
+                    update({
+                      parallelWorkers: Number.isNaN(event.target.valueAsNumber)
+                        ? undefined
+                        : event.target.valueAsNumber,
+                    })
                   }
                 />
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={!cellCount}
+                  onClick={() => update({ parallelWorkers: cellCount })}
+                >
+                  MAX
+                </button>
               </span>
-            </label>
+            </div>
+          </div>
+          {capacity.isError && connection.data?.connected && (
+            <>
+              <ErrorMessage error={capacity.error.message} />
+              <button
+                className="secondary"
+                onClick={() => void capacity.refetch()}
+              >
+                Check balance again
+              </button>
+            </>
           )}
           <button
             className="primary generate"
             disabled={
               busy ||
+              workersPending ||
+              !workersValid ||
               modelMissing ||
               !input.rows.values.length ||
               !input.columns.values.length ||

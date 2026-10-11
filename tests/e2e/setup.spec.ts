@@ -463,3 +463,99 @@ test("a per-cell dollar budget defaults to five, changes the model token limit, 
     await request.post("/fixture/release", { data: { all: true } });
   }
 });
+
+test("worker recommendation follows grid size, overrides persist, and low-balance continuation honors the request", async ({
+  page,
+  request,
+}) => {
+  await page.route("**/api/grids", (route) =>
+    route.continue({
+      headers: {
+        ...route.request().headers(),
+        "X-Forwarded-For": "192.0.2.63",
+      },
+    }),
+  );
+  await request.post("/fixture/reset", {
+    data: { balanceUsd: 6, holdGenerations: true },
+  });
+  try {
+    await page.goto("/");
+    await page.getByRole("button", { name: "SVG", exact: true }).click();
+    await page
+      .getByRole("combobox", { name: "Rows", exact: true })
+      .selectOption("variable");
+    await page.getByLabel("Row values").fill("cat\ndog");
+    await page
+      .getByRole("combobox", { name: "Columns", exact: true })
+      .selectOption("variable");
+    await page.getByLabel("Column values").fill("hat\ncape");
+    await page
+      .getByRole("combobox", { name: "Model", exact: true })
+      .selectOption("fixture/text");
+    await page
+      .getByLabel("Prompt", { exact: true })
+      .fill("Draw $VARIABLE_ROW wearing a $VARIABLE_COLUMN");
+    await page.getByRole("link", { name: "Connect OpenRouter" }).click();
+    const workers = page.getByLabel("# of parallel workers:", { exact: true });
+    await expect(workers).toHaveValue("2");
+    await workers.focus();
+    await expect(page.getByRole("tooltip")).toHaveText(
+      "How many parallel inferences to run (can be throttled by the backend under load). If your inference budget is low, spawning too many will lead to a lot of overhead due to failures; OpenRouter still charges you for unsuccessful calls",
+    );
+    const max = page.getByRole("button", { name: "MAX", exact: true });
+    for (const width of [1280, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      const field = (await workers.boundingBox())!;
+      const budget = (await page
+        .getByLabel("Budget limit per cell", { exact: true })
+        .boundingBox())!;
+      const button = (await max.boundingBox())!;
+      expect(field.x).toBeGreaterThan(budget.x + budget.width);
+      expect(button.x).toBeGreaterThan(field.x);
+      expect(button.x + button.width).toBeLessThan(field.x + field.width);
+    }
+    await page.getByLabel("Row values").fill("cat");
+    await page.getByLabel("Column values").fill("hat");
+    await expect(workers).toHaveValue("1");
+    await page.getByLabel("Row values").fill("cat\ndog");
+    await page.getByLabel("Column values").fill("hat\ncape");
+    await expect(workers).toHaveValue("2");
+    await max.click();
+    await expect(workers).toHaveValue("4");
+    await workers.fill("1");
+    await page.reload();
+    await expect(workers).toHaveValue("1");
+    await workers.fill("");
+    await expect(workers).toHaveValue("2");
+    await workers.fill("2");
+    await request.post("/fixture/credits", { data: { balanceUsd: 1 } });
+    await page.getByRole("button", { name: "Generate", exact: true }).click();
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Continue anyway" })
+      .click();
+    await expectProgress(page, 0, 4);
+    await expect
+      .poll(
+        async () =>
+          (await (await request.get("/fixture/workers")).json()).held.length,
+      )
+      .toBe(2);
+    const grid = await (
+      await page.request.get(`/api/grids/${page.url().split("/").pop()}`)
+    ).json();
+    expect(grid.input.parallelWorkers).toBe(2);
+    expect(
+      grid.cells.filter(
+        (cell: { status: string }) => cell.status === "pending",
+      ),
+    ).toHaveLength(2);
+    await request.post("/fixture/release", { data: { all: true } });
+    await expectProgress(page, 4, 4);
+    await page.getByRole("button", { name: "EDIT", exact: true }).click();
+    await expect(workers).toHaveValue("2");
+  } finally {
+    await request.post("/fixture/release", { data: { all: true } });
+  }
+});
