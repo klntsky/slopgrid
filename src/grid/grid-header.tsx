@@ -1,5 +1,6 @@
 import { CopyButton } from "../components/copy-button";
 import { PublishGrid } from "./publish-grid";
+import { GridTitle } from "./grid-title";
 import { Author } from "../components/identity";
 import { Square, Play, Pencil, GitFork, Link2 } from "lucide-react";
 import type { ViewGrid } from "../api";
@@ -110,7 +111,7 @@ export function GridHeader({
         </div>
         <div className="grid-title">
           <div className="grid-title-text">
-            <h1 title={g.input.prompt}>{g.input.prompt}</h1>
+            <GridTitle grid={g} />
             <Author identity={g.author} />
           </div>
           <span

@@ -748,3 +748,171 @@ test("manual key entry persists in the browser, rejects invalid replacements, an
     await request.post("/fixture/release", { data: { all: true } });
   }
 });
+
+test("titles are independent owner-editable metadata and collapsed prompts expand and copy in full", async ({
+  page,
+  context,
+  request,
+  baseURL,
+}) => {
+  await page.setExtraHTTPHeaders({ "X-Forwarded-For": "192.0.2.64" });
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await request.post("/fixture/reset", { data: { holdGenerations: true } });
+  const prompt =
+    "Draw $VARIABLE_ROW wearing a $VARIABLE_COLUMN.\n" +
+    "Preserve all of these details, including punctuation & <plain text>. "
+      .repeat(12)
+      .trim();
+  const visitor = await context.browser()!.newContext({ baseURL });
+  try {
+    await create(page, "Image", "cat", "hat", prompt);
+    await expectProgress(page, 0, 1);
+    const id = page.url().split("/").pop();
+    const endpoint = `/api/grids/${id}/title`;
+    const header = page.getByRole("banner");
+    const heading = header.getByRole("heading", { level: 1 });
+    const titleField = page.getByRole("textbox", { name: "Grid title" });
+    await header
+      .getByRole("button", { name: "Set Title", exact: true })
+      .click();
+    await expect(titleField).toHaveValue("");
+    await titleField.fill("Discard this title");
+    await titleField.press("Escape");
+    await expect(
+      header.getByRole("button", { name: "Set Title", exact: true }),
+    ).toBeVisible();
+    await header
+      .getByRole("button", { name: "Set Title", exact: true })
+      .click();
+    await titleField.fill("  Flight study  ");
+    await titleField.press("Enter");
+    await expect(
+      header.getByRole("button", { name: "Edit title", exact: true }),
+    ).toHaveText("Flight study");
+    for (const width of [1280, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      expect(
+        await heading.evaluate((el) => el.scrollWidth > el.clientWidth),
+      ).toBe(true);
+      await heading.hover();
+      const tooltip = page.locator(
+        '[data-theme="grid-prompt"][data-state="visible"]',
+      );
+      await expect(tooltip).toHaveText(prompt);
+      const bounds = (await tooltip.boundingBox())!;
+      expect(bounds.x).toBeGreaterThanOrEqual(0);
+      expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
+      await page.keyboard.press("Escape");
+      await expect(tooltip).toHaveCount(0);
+    }
+    await header
+      .getByRole("button", { name: "Copy prompt", exact: true })
+      .click();
+    await expect
+      .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+      .toBe(prompt);
+    expect(
+      (
+        await visitor.request.patch(endpoint, {
+          data: { title: "Someone else's title" },
+        })
+      ).status(),
+    ).toBe(404);
+    expect(
+      (
+        await page.request.patch(endpoint, {
+          headers: { origin: "https://evil.example" },
+          data: { title: "Cross-origin title" },
+        })
+      ).status(),
+    ).toBe(403);
+    for (const data of [{}, { title: null }, { title: "x".repeat(201) }])
+      expect((await page.request.patch(endpoint, { data })).status()).toBe(400);
+    await request.post("/fixture/release", { data: { all: true } });
+    await expectProgress(page, 1, 1);
+    await page.reload();
+    await expect(
+      header.getByRole("button", { name: "Edit title", exact: true }),
+    ).toHaveText("Flight study");
+    await expect(heading).toHaveText(prompt);
+    const snapshot = await (await page.request.get(`/api/grids/${id}`)).json();
+    expect(snapshot.cells[0].prompt).toBe(
+      prompt
+        .replaceAll("$VARIABLE_ROW", "cat")
+        .replaceAll("$VARIABLE_COLUMN", "hat"),
+    );
+    expect(await (await request.get("/fixture/calls")).json()).toHaveLength(1);
+    expect(
+      (
+        await page.request.post(`/api/grids/${id}/publish`, {
+          data: { visibility: "public" },
+        })
+      ).status(),
+    ).toBe(200);
+    await page.reload();
+    await header
+      .getByRole("button", { name: "Edit title", exact: true })
+      .click();
+    await titleField.fill("Published flight study");
+    await heading.click();
+    await expect(
+      header.getByRole("button", { name: "Edit title", exact: true }),
+    ).toHaveText("Published flight study");
+    const publicPage = await visitor.newPage();
+    await publicPage.goto(`/grid/${id}`);
+    await expect(publicPage.locator(".grid-name")).toHaveText(
+      "Published flight study",
+    );
+    await expect(
+      publicPage.getByRole("button", { name: /Set Title|Edit title/ }),
+    ).toHaveCount(0);
+    expect(
+      (
+        await visitor.request.patch(endpoint, {
+          data: { title: "Unauthorized rename" },
+        })
+      ).status(),
+    ).toBe(404);
+    await publicPage.goto("/grids");
+    await expect(
+      publicPage.getByRole("link", {
+        name: "Published flight study",
+      }),
+    ).toBeVisible();
+    await header
+      .getByRole("button", { name: "Edit title", exact: true })
+      .click();
+    await titleField.fill("   ");
+    await titleField.press("Enter");
+    await expect(
+      header.getByRole("button", { name: "Set Title", exact: true }),
+    ).toBeVisible();
+    await publicPage.goto(`/grid/${id}`);
+    await expect(publicPage.locator(".grid-name, .grid-title-dot")).toHaveCount(
+      0,
+    );
+    await expect(publicPage.getByRole("heading", { level: 1 })).toHaveText(
+      prompt,
+    );
+    await page.getByRole("link", { name: "slopgrid", exact: true }).click();
+    await expect(
+      page.locator(".history-prompt").filter({ hasText: prompt }),
+    ).toHaveCount(2);
+    const short = await page.request.post("/api/grids", {
+      data: { ...snapshot.input, prompt: "$VARIABLE_ROW $VARIABLE_COLUMN" },
+    });
+    await page.setViewportSize({ width: 1600, height: 900 });
+    await page.goto(`/grid/${(await short.json()).id}`);
+    await expectProgress(page, 1, 1);
+    expect(
+      await heading.evaluate((el) => el.scrollWidth <= el.clientWidth),
+    ).toBe(true);
+    await heading.hover();
+    await expect(
+      page.locator('[data-theme="grid-prompt"][data-state="visible"]'),
+    ).toHaveCount(0);
+  } finally {
+    await request.post("/fixture/release", { data: { all: true } });
+    await visitor.close();
+  }
+});

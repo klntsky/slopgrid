@@ -6,6 +6,8 @@
   color: var(--text);
   background: var(--background);
   --text: #39352e;
+  --grid-title: #39352e;
+  --logo-color: #82755e;
   --background: #eeeae2;
   --line: #d1cabd;
   --paper: #f7f4ee;
@@ -33,6 +35,8 @@
 :root[data-theme="dark"] {
   color-scheme: dark;
   --text: #e8e5df;
+  --grid-title: #fff;
+  --logo-color: #c3b08d;
   --background: #191817;
   --line: #45423e;
   --paper: #242321;
@@ -161,12 +165,11 @@ header {
   gap: 11px;
   align-items: center;
 }
-.logo-grid,
-.wordmark-grid {
+.logo-grid {
   filter: var(--logo-filter);
 }
 .wordmark-grid {
-  color: #82755e;
+  color: var(--logo-color);
 }
 .logo-grid {
   width: 30px;
@@ -543,11 +546,69 @@ legend {
   letter-spacing: -0.3px;
   line-height: 1.4;
   margin: 0;
-  overflow-wrap: anywhere;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   overflow: hidden;
+}
+.grid-title-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.grid-name {
+  min-width: 0;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--grid-title);
+  font-size: 17px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+button.grid-name {
+  display: block;
+  padding: 3px 4px;
+  margin-left: -4px;
+  text-align: left;
+}
+.grid-title-line .grid-name-input {
+  width: 40%;
+  padding: 3px 6px;
+  font-size: 17px;
+  line-height: 1.4;
+}
+.grid-title-dot {
+  color: var(--muted);
+}
+.grid-prompt-text {
+  color: var(--logo-color);
+}
+.prompt-copy {
+  flex: none;
+  padding: 6px;
+  color: var(--logo-color);
+}
+.prompt-copy .lucide {
+  width: 16px;
+  height: 16px;
+}
+.tippy-box[data-theme~="grid-prompt"] {
+  background: var(--paper);
+  color: var(--logo-color);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 6px 24px var(--shadow);
+  font-size: 15px;
+  line-height: 1.5;
+}
+.tippy-box[data-theme~="grid-prompt"] .tippy-content {
+  padding: 12px 16px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 70vh;
+  overflow-y: auto;
 }
 .grid-progress {
   position: absolute;

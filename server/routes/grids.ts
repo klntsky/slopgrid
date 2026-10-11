@@ -47,6 +47,7 @@ export function createGridRoutes({
     allowInference = createInferenceGuard(store, provider);
   const summary = (g: Grid): GridSummary => ({
     id: g.id,
+    title: g.title,
     prompt: g.input.prompt,
     format: g.input.format,
     status: g.status,
@@ -157,6 +158,22 @@ export function createGridRoutes({
     if (!found) return;
     const { g, s } = found;
     res.json(snapshot(jobs.active.get(g.id) ?? g, s));
+  });
+  app.patch("/api/grids/:id/title", (req, res) => {
+    const found = readGrid(req, res);
+    if (!found) return;
+    const parsed = z
+      .object({ title: z.string().trim().max(200) })
+      .safeParse(req.body);
+    if (!parsed.success)
+      return res
+        .status(400)
+        .json({ error: "Use a title of up to 200 characters." });
+    const { g, s } = found;
+    const current = jobs.active.get(g.id) ?? g;
+    current.title = parsed.data.title || undefined;
+    save(current);
+    res.json(snapshot(current, s));
   });
   app.post("/api/grids/:id/retry", async (req, res) => {
     const found = readGrid(req, res);

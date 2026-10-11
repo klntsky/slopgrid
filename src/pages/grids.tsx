@@ -36,7 +36,7 @@ function GridListing({
               className="history-grid-link"
             >
               <GridFormatIcon format={g.format} />
-              <span className="history-prompt">{g.prompt}</span>
+              <span className="history-prompt">{g.title || g.prompt}</span>
             </Link>
             <Author identity={g.author} />
             <small>{g.published ? "Published" : g.status}</small>
