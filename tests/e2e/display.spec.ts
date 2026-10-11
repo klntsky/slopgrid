@@ -668,6 +668,18 @@ test("Markdown fits wide code to the preview width and scrolls only vertically",
   await request.post("/fixture/reset", { data: { markdownOutput: markdown } });
   await create(page, "Markdown", "cat", "hat");
   await expectProgress(page, 1, 1);
+  const viewRaw = page.getByRole("link", { name: "View raw", exact: true });
+  const rawBounds = (await viewRaw.boundingBox())!;
+  const expandBounds = (await page
+    .getByRole("button", { name: "Expand Markdown", exact: true })
+    .boundingBox())!;
+  expect(rawBounds.x + rawBounds.width).toBeLessThanOrEqual(expandBounds.x);
+  const opened = page.waitForEvent("popup");
+  await viewRaw.click();
+  const raw = await opened;
+  await raw.waitForLoadState();
+  expect(await raw.locator("body").textContent()).toBe(markdown);
+  await raw.close();
   const checkFit = async () => {
     const preview = page.locator(".markdown-preview:visible");
     await expect(preview.locator("pre")).toHaveText(code);

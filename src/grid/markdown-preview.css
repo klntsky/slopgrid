@@ -58,22 +58,26 @@
   max-width: 100%;
 }
 
-.markdown-expand {
+.markdown-actions {
   position: absolute;
   top: 8px;
   right: 8px;
   z-index: 1;
+  display: flex;
+  gap: 6px;
+}
+.markdown-actions > :is(button, a) {
   width: 36px;
   height: 36px;
   padding: 8px;
   background: var(--paper);
 }
-.markdown-expand .lucide {
+.markdown-actions .lucide {
   width: 18px;
   height: 18px;
 }
-.cell:has(.markdown-expand)
+.cell:has(.markdown-actions)
   .markdown-document
   > :first-child:not(pre):not(table) {
-  margin-right: 32px;
+  margin-right: 74px;
 }

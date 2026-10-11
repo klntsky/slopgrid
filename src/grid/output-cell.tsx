@@ -6,6 +6,7 @@ import {
   Maximize2,
   Minimize2,
   Download,
+  CodeXml,
 } from "lucide-react";
 import { CopyButton } from "../components/copy-button";
 import type { GridInput } from "../../server/domain";
@@ -33,6 +34,7 @@ export function OutputCell({
   onToggleExpand?: (button: HTMLButtonElement) => void;
 }) {
   const { resolvedTheme } = useTheme();
+  const rawHint = useTooltip<HTMLAnchorElement>("View raw");
   const downloadHint = useTooltip<HTMLAnchorElement>("Download output");
   const inputHint = useTooltip<HTMLSpanElement>("Input tokens");
   const outputHint = useTooltip<HTMLSpanElement>("Output tokens");
@@ -61,20 +63,36 @@ export function OutputCell({
               loading="lazy"
             />
           )}
-          {format === "markdown" && onToggleExpand && (
-            <button
-              className="secondary markdown-expand"
-              aria-label={expanded ? "Collapse Markdown" : "Expand Markdown"}
-              title={expanded ? "Collapse Markdown" : "Expand Markdown"}
-              aria-expanded={expanded}
-              onClick={(event) => onToggleExpand(event.currentTarget)}
-            >
-              {expanded ? (
-                <Minimize2 aria-hidden="true" />
-              ) : (
-                <Maximize2 aria-hidden="true" />
+          {format === "markdown" && (
+            <div className="markdown-actions">
+              <a
+                className="button secondary"
+                href={`${cell.outputURL}?raw=1`}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="View raw"
+                ref={rawHint}
+              >
+                <CodeXml aria-hidden="true" />
+              </a>
+              {onToggleExpand && (
+                <button
+                  className="secondary markdown-expand"
+                  aria-label={
+                    expanded ? "Collapse Markdown" : "Expand Markdown"
+                  }
+                  title={expanded ? "Collapse Markdown" : "Expand Markdown"}
+                  aria-expanded={expanded}
+                  onClick={(event) => onToggleExpand(event.currentTarget)}
+                >
+                  {expanded ? (
+                    <Minimize2 aria-hidden="true" />
+                  ) : (
+                    <Maximize2 aria-hidden="true" />
+                  )}
+                </button>
               )}
-            </button>
+            </div>
           )}
           {!expanded && (
             <div className="cell-footer">

@@ -117,7 +117,9 @@ export function createOutputRoutes(
     const file = store.files.path(id, filename);
     if (!file) return res.sendStatus(404);
     if (output.format !== "markdown" || req.query.raw === "1")
-      return res.type(mediaType).sendFile(file, { dotfiles: "allow" });
+      return res
+        .type(output.format === "markdown" ? "text/plain" : mediaType)
+        .sendFile(file, { dotfiles: "allow" });
     const colorScheme =
       req.query.theme === "dark"
         ? "dark"
