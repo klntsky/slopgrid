@@ -1,9 +1,9 @@
-import { getOpenRouterKey } from "../openrouter-key";
+import { useInferenceMutation } from "../use-inference-mutation";
 import { useState, useEffect } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { api, ApiError, type ViewGrid } from "../api";
-import type { Draft } from "../create/draft";
+import { saveDraft } from "../create/draft";
 export function useGrid(id: string) {
   const cache = useQueryClient(),
     navigate = useNavigate();
@@ -19,10 +19,8 @@ export function useGrid(id: string) {
       ),
   });
   const [error, setError] = useState(""),
-    [busy, setBusy] = useState(false),
     [dismissed, setDismissed] = useState(false),
-    [streamLost, setStreamLost] = useState(false),
-    [lowBalance, setLowBalance] = useState<number | null>(null);
+    [streamLost, setStreamLost] = useState(false);
   const live =
     query.isSuccess &&
     !query.data.published &&
@@ -46,67 +44,46 @@ export function useGrid(id: string) {
       events.close();
     };
   }, [id, cache, live]);
-  async function action(
-    action: "retry" | "pause",
-    continueWithLowBalance = false,
-  ) {
-    setBusy(true);
+  const inference = useInferenceMutation((grid) => {
+    cache.setQueryData(["grid", id], grid);
+  });
+  function action(action: "retry" | "pause", continueWithLowBalance = false) {
     setError("");
+    configure.reset();
     if (action === "retry") setDismissed(false);
-    try {
-      const g = await api<ViewGrid>(
-        `/grids/${id}/${action}`,
-        "POST",
-        action === "retry" ? { continueWithLowBalance } : undefined,
-        action === "retry" ? getOpenRouterKey() : undefined,
-      );
-      setLowBalance(null);
-      cache.setQueryData(["grid", id], g);
-    } catch (e) {
-      if (
-        e instanceof ApiError &&
-        e.code === "LOW_BALANCE" &&
-        e.balanceUsd !== undefined
-      )
-        setLowBalance(e.balanceUsd);
-      else setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
+    inference.mutate({
+      path: `/grids/${id}/${action}`,
+      continueWithLowBalance,
+    });
   }
-  async function configure() {
-    if (!query.data) return;
-    setBusy(true);
-    setError("");
-    try {
-      const grid = query.data.published
-        ? query.data
-        : await api<ViewGrid>(`/grids/${id}/edit`, "POST");
+  const configure = useMutation({
+    mutationFn: async () => {
+      const grid = query.data!;
+      return grid.published ? grid : api<ViewGrid>(`/grids/${id}/edit`, "POST");
+    },
+    onSuccess: async (grid) => {
       cache.setQueryData(["grid", id], grid);
-      sessionStorage.setItem(
-        "slopgrid-draft",
-        JSON.stringify({ step: 1, input: grid.input } satisfies Draft),
-      );
+      saveDraft({ step: 1, input: grid.input });
       await cache.invalidateQueries({ queryKey: ["grids"] });
       await navigate({ to: "/" });
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
+    },
+  });
   return {
     query,
-    error,
+    error: error || inference.message || configure.error?.message || "",
     setError,
-    busy,
+    busy: inference.isPending || configure.isPending,
     dismissed,
     setDismissed,
     streamLost,
     live,
-    lowBalance,
-    setLowBalance,
+    lowBalance: inference.lowBalance,
+    setLowBalance: inference.setLowBalance,
     action,
-    configure,
+    configure: () => {
+      setError("");
+      inference.reset();
+      configure.mutate();
+    },
   };
 }

@@ -1,4 +1,4 @@
-import { getOpenRouterKey } from "../openrouter-key";
+import { useInferenceMutation } from "../use-inference-mutation";
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
@@ -18,10 +18,10 @@ import {
 } from "../../server/domain";
 import { effortLabel } from "../../server/compatibility";
 import type { Model } from "../../server/provider";
-import { api, ApiError, type ViewGrid } from "../api";
+import { api } from "../api";
 import { queryClient, useConnection } from "../queries";
 import { formatNames } from "../format";
-import { useCreateDraft } from "../create/draft";
+import { useCreateDraft, clearDraft } from "../create/draft";
 import { AxisEditor } from "../create/axis-editor";
 import { CompatibilityTable } from "../create/compatibility-table";
 import { Connection } from "../components/connection";
@@ -30,12 +30,17 @@ import { LowBalanceDialog } from "../components/inference-dialogs";
 import { modelDefaultHint, useTooltip } from "../components/use-tooltip";
 export function Create() {
   const [draft, setDraft] = useCreateDraft(),
-    [error, setError] = useState(""),
-    [busy, setBusy] = useState(false),
-    [lowBalance, setLowBalance] = useState<number | null>(null);
+    [validationError, setError] = useState("");
   const { step, input } = draft,
     navigate = useNavigate(),
     connection = useConnection();
+  const inference = useInferenceMutation(async (grid) => {
+    await queryClient.invalidateQueries({ queryKey: ["grids"] });
+    clearDraft();
+    await navigate({ to: "/grid/$id", params: { id: grid.id } });
+  });
+  const { lowBalance, setLowBalance, isPending: busy } = inference;
+  const error = validationError || inference.message;
   const defaultHint = useTooltip<HTMLSelectElement>(
     input.effort === "default" ? modelDefaultHint : undefined,
   );
@@ -51,6 +56,7 @@ export function Create() {
   function update(partial: Partial<GridInput>) {
     setDraft((d) => ({ ...d, input: { ...d.input, ...partial } }));
     setError("");
+    inference.reset();
   }
   const models = (catalog.data ?? [])
     .filter((m) => (input.format === "image" ? m.image : m.text))
@@ -73,6 +79,7 @@ export function Create() {
     }
   }, [catalog.data, input.format, input.model, step]);
   function selectFormat(format: GridInput["format"]) {
+    inference.reset();
     const compatible = (catalog.data ?? []).filter((m) =>
         format === "image" ? m.image : m.text,
       ),
@@ -98,41 +105,17 @@ export function Create() {
     }));
     setError("");
   }
-  async function generate(continueWithLowBalance = false) {
+  function generate(continueWithLowBalance = false) {
     if (!catalog.data) return;
     const issue = unusedVariableIssue(input);
     if (issue) {
       setError(issue);
       return;
     }
-    setBusy(true);
     setError("");
-    try {
-      const g = await api<ViewGrid>(
-        "/grids",
-        "POST",
-        {
-          ...input,
-          continueWithLowBalance,
-        },
-        getOpenRouterKey(),
-      );
-      setLowBalance(null);
-      await queryClient.invalidateQueries({ queryKey: ["grids"] });
-      sessionStorage.removeItem("slopgrid-draft");
-      await navigate({ to: "/grid/$id", params: { id: g.id } });
-    } catch (e) {
-      if (
-        e instanceof ApiError &&
-        e.code === "LOW_BALANCE" &&
-        e.balanceUsd !== undefined
-      )
-        setLowBalance(e.balanceUsd);
-      else setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
+    inference.mutate({ path: "/grids", body: input, continueWithLowBalance });
   }
+
   return (
     <main className="create-page">
       <div className="page-heading">

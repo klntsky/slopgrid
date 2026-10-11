@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import type { GridInput } from "../../server/domain";
 export type Draft = { step: number; input: GridInput };
+const storageKey = "slopgrid-draft";
 const initial: Draft = {
   step: 0,
   input: {
@@ -15,17 +16,21 @@ const initial: Draft = {
 };
 function readDraft(): Draft {
   try {
-    return (
-      JSON.parse(sessionStorage.getItem("slopgrid-draft") ?? "null") ?? initial
-    );
+    return JSON.parse(sessionStorage.getItem(storageKey) ?? "null") ?? initial;
   } catch {
     return initial;
   }
 }
+export function saveDraft(draft: Draft) {
+  sessionStorage.setItem(storageKey, JSON.stringify(draft));
+}
+export function clearDraft() {
+  sessionStorage.removeItem(storageKey);
+}
 export function useCreateDraft() {
   const [draft, setDraft] = useState(readDraft);
   useEffect(() => {
-    sessionStorage.setItem("slopgrid-draft", JSON.stringify(draft));
+    saveDraft(draft);
   }, [draft]);
   return [draft, setDraft] as const;
 }
