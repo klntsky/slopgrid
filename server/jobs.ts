@@ -7,6 +7,13 @@ import { Provider } from "./provider.js";
 import { failureDetails } from "./failures.js";
 import { selectWorker } from "./worker-allocation.js";
 
+type GridRuntime = {
+  owner: string;
+  key?: string;
+  emittedAt?: number;
+  timer?: ReturnType<typeof setTimeout>;
+};
+
 export class Jobs {
   readonly previews: WebsitePreviews;
   active = new Map<string, Grid>();
@@ -14,15 +21,12 @@ export class Jobs {
     string,
     { grid: Grid; cell: Cell; controller: AbortController; owner: string }
   >();
-  private executionOwners = new Map<string, string>();
+  private runtime = new Map<string, GridRuntime>();
   private executionOwner(grid: Grid) {
-    return this.executionOwners.get(grid.id) ?? grid.owner;
+    return this.runtime.get(grid.id)?.owner ?? grid.owner;
   }
-  private keysByGrid = new Map<string, string>();
   private owners = new Map<string, { limit: number; last: number }>();
   private allocation = 0;
-  private draftEmittedAt = new Map<string, number>();
-  private draftTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private scheduled = false;
   private retries = new Map<string, number>();
   private cooldowns = new Map<string, number>();
@@ -38,20 +42,20 @@ export class Jobs {
     this.previews = new WebsitePreviews(join(store.files.root, ".previews"));
   }
   private emit(grid: Grid) {
-    const timer = this.draftTimers.get(grid.id);
-    if (timer) clearTimeout(timer);
-    this.draftTimers.delete(grid.id);
+    const state = this.runtime.get(grid.id);
+    clearTimeout(state?.timer);
+    if (state) delete state.timer;
     this.save(grid);
   }
   start(grid: Grid, key?: string, session?: Session): Grid {
     const current = this.active.get(grid.id);
     if (current?.status === "running") return current;
     const g = current ?? grid;
-    if (session)
-      this.executionOwners.set(g.id, session.anonymousId ?? session.id);
-    if (key) this.keysByGrid.set(g.id, key);
-    else this.keysByGrid.delete(g.id);
-    const owner = this.executionOwner(g);
+    const owner = session
+      ? (session.anonymousId ?? session.id)
+      : this.executionOwner(g);
+    clearTimeout(this.runtime.get(g.id)?.timer);
+    this.runtime.set(g.id, { owner, key: key || undefined });
     this.owners.set(owner, {
       limit:
         this.store.sessionForOwner(owner)?.inferenceConcurrency ??
@@ -69,7 +73,6 @@ export class Jobs {
       }
     g.status = "running";
     delete g.interruption;
-    this.draftEmittedAt.delete(g.id);
     this.active.set(g.id, g);
     this.emit(g);
     this.schedule();
@@ -79,9 +82,9 @@ export class Jobs {
     const g = this.active.get(grid.id) ?? grid;
     if (g.status === "complete") return g;
     g.status = "paused";
-    this.keysByGrid.delete(g.id);
+    const state = this.runtime.get(g.id);
+    if (state) delete state.key;
     g.interruption = "manual";
-    this.draftEmittedAt.delete(g.id);
     for (const cell of g.cells) {
       this.previews.clear(cell);
       this.retries.delete(cell.id);
@@ -150,7 +153,8 @@ export class Jobs {
       if (owner === undefined) return;
       const { grid, cell } = candidates.get(owner)!;
       const key =
-        this.keysByGrid.get(grid.id) ?? this.store.sessionForOwner(owner)?.key;
+        this.runtime.get(grid.id)?.key ??
+        this.store.sessionForOwner(owner)?.key;
       if (!key) {
         this.pauseOwner(owner, "auth");
         continue;
@@ -172,7 +176,7 @@ export class Jobs {
     for (const grid of [...this.active.values()])
       if (this.executionOwner(grid) === owner && grid.status === "running") {
         grid.status = "paused";
-        this.keysByGrid.delete(grid.id);
+        this.runtime.get(grid.id)!.key = undefined;
         grid.interruption = reason;
         for (const cell of grid.cells) delete cell.retrying;
         this.settle(grid);
@@ -194,8 +198,8 @@ export class Jobs {
       grid.status = "paused";
     if (grid.status !== "running") {
       this.active.delete(grid.id);
-      this.keysByGrid.delete(grid.id);
-      this.draftEmittedAt.delete(grid.id);
+      clearTimeout(this.runtime.get(grid.id)?.timer);
+      this.runtime.delete(grid.id);
     }
     const owners = new Set(
       [...this.active.values()].map((g) => this.executionOwner(g)),
@@ -203,26 +207,16 @@ export class Jobs {
     for (const work of this.running.values()) owners.add(work.owner);
     for (const owner of this.owners.keys())
       if (!owners.has(owner)) this.owners.delete(owner);
-    if (grid.status !== "running") this.executionOwners.delete(grid.id);
   }
   private previewUpdated(grid: Grid) {
-    const delay = Math.max(
-      0,
-      300 - (Date.now() - (this.draftEmittedAt.get(grid.id) ?? 0)),
-    );
-    if (!delay) {
-      this.draftEmittedAt.set(grid.id, Date.now());
+    const state = this.runtime.get(grid.id)!;
+    const delay = Math.max(0, 300 - (Date.now() - (state.emittedAt ?? 0)));
+    const flush = () => {
+      state.emittedAt = Date.now();
       this.emit(grid);
-    } else if (!this.draftTimers.has(grid.id)) {
-      this.draftTimers.set(
-        grid.id,
-        setTimeout(() => {
-          this.draftTimers.delete(grid.id);
-          this.draftEmittedAt.set(grid.id, Date.now());
-          this.emit(grid);
-        }, delay),
-      );
-    }
+    };
+    if (!delay) flush();
+    else if (!state.timer) state.timer = setTimeout(flush, delay);
   }
   private async runCell(
     grid: Grid,
