@@ -323,20 +323,27 @@ test("the compatibility table shows selected model support without blocking gene
     name: "Thinking effort compatibility",
   });
   await expect(table.getByRole("columnheader")).toHaveText([
-    "Model",
+    "Thinking effort",
+    "Second model",
+    "Fixture text",
+  ]);
+  await expect(table.getByRole("rowheader")).toHaveText([
     "None",
     "high",
     "max",
   ]);
-  const limited = table.getByRole("row", { name: /Second model/ });
-  for (const status of [
+  const expectedSupport = [
     "None: Unsupported",
+    "None: Supported",
+    "high: Supported",
     "high: Supported",
     "max: Unsupported",
-  ])
-    await expect(
-      limited.getByRole("cell", { name: status, exact: true }),
-    ).toBeVisible();
+    "max: Supported",
+  ];
+  for (const [index, status] of expectedSupport.entries())
+    await expect(table.getByRole("cell").nth(index)).toHaveAccessibleName(
+      status,
+    );
   await rows.getByRole("checkbox", { name: "None", exact: true }).uncheck();
   await expect(table).toBeVisible();
   await rows.getByRole("checkbox", { name: "max", exact: true }).uncheck();
@@ -354,6 +361,17 @@ test("the compatibility table shows selected model support without blocking gene
     "Second model",
     "Fixture text",
   ]);
+  for (const [index, status] of [
+    "None: Unsupported",
+    "high: Supported",
+    "max: Unsupported",
+    "None: Supported",
+    "high: Supported",
+    "max: Supported",
+  ].entries())
+    await expect(table.getByRole("cell").nth(index)).toHaveAccessibleName(
+      status,
+    );
   await page.getByRole("button", { name: "Clear row model filter" }).click();
   const secondModel = page
     .getByRole("group", { name: "Row values" })
@@ -410,6 +428,75 @@ test("the compatibility table shows selected model support without blocking gene
   } finally {
     await request.post("/fixture/release", { data: { all: true } });
   }
+});
+
+test("compatibility follows prompt-variable axes and fixed model or effort settings", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Markdown", exact: true }).click();
+  const rows = page.getByRole("combobox", { name: "Rows", exact: true });
+  const swap = page.getByRole("button", { name: "Swap rows and columns" });
+  const table = page.getByRole("table", {
+    name: "Thinking effort compatibility",
+  });
+  await rows.selectOption("variable");
+  await page.getByLabel("Row values").fill("cat\ndog\nfox");
+  await page.getByRole("button", { name: "Clear column model filter" }).click();
+  await page
+    .getByRole("checkbox", { name: "Second model", exact: true })
+    .check();
+  await expect(table).toHaveCount(0);
+  await page
+    .getByRole("combobox", { name: "Thinking effort", exact: true })
+    .selectOption("none");
+  await expect(table.getByRole("rowheader")).toHaveText(["cat", "dog", "fox"]);
+  await expect(table.getByRole("columnheader")).toHaveText([
+    "Prompt variable",
+    "Second model",
+  ]);
+  await expect(
+    table.getByRole("cell", { name: "None: Unsupported", exact: true }),
+  ).toHaveCount(3);
+  await swap.click();
+  await expect(table.getByRole("rowheader")).toHaveText(["Second model"]);
+  await expect(table.getByRole("columnheader")).toHaveText([
+    "Model",
+    "cat",
+    "dog",
+    "fox",
+  ]);
+  await rows.selectOption("effort");
+  await page.getByRole("checkbox", { name: "None", exact: true }).check();
+  await page.getByRole("checkbox", { name: "high", exact: true }).check();
+  await expect(table).toHaveCount(0);
+  await page
+    .getByRole("combobox", { name: "Model", exact: true })
+    .selectOption("fixture/other");
+  await expect(table.getByRole("rowheader")).toHaveText(["None", "high"]);
+  await expect(table.getByRole("columnheader")).toHaveText([
+    "Thinking effort",
+    "cat",
+    "dog",
+    "fox",
+  ]);
+  await expect(
+    table.getByRole("cell", { name: "None: Unsupported", exact: true }),
+  ).toHaveCount(3);
+  await expect(
+    table.getByRole("cell", { name: "high: Supported", exact: true }),
+  ).toHaveCount(3);
+  await swap.click();
+  await expect(table.getByRole("rowheader")).toHaveText(["cat", "dog", "fox"]);
+  await expect(table.getByRole("columnheader")).toHaveText([
+    "Prompt variable",
+    "None",
+    "high",
+  ]);
+  await page
+    .getByRole("combobox", { name: "Model", exact: true })
+    .selectOption("fixture/text");
+  await expect(table).toHaveCount(0);
 });
 
 for (const axis of ["Rows", "Columns"] as const) {

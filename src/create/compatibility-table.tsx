@@ -1,8 +1,9 @@
 import { tooltipRef } from "../components/use-tooltip";
 import { Check, TriangleAlert } from "lucide-react";
-import { efforts, type GridInput } from "../../server/domain";
+import { expandGrid, type GridInput } from "../../server/domain";
 import { effortLabel, thinkingEffortSupport } from "../../server/compatibility";
 import type { Model } from "../../server/provider";
+import { dimensionNames, displayValue } from "../format";
 
 export function CompatibilityTable({
   input,
@@ -11,57 +12,44 @@ export function CompatibilityTable({
   input: GridInput;
   models: readonly Model[];
 }) {
-  const modelIds = [
-    ...new Set(
-      input.rows.kind === "model"
-        ? input.rows.values
-        : input.columns.kind === "model"
-          ? input.columns.values
-          : [input.model],
-    ),
-  ].filter(Boolean);
-  const selectedEfforts =
-    input.rows.kind === "effort"
-      ? input.rows.values
-      : input.columns.kind === "effort"
-        ? input.columns.values
-        : [input.effort];
-  const pickedEfforts = efforts.filter((effort) =>
-    selectedEfforts.includes(effort),
-  );
-  if (input.format === "image" || !modelIds.length || !pickedEfforts.length)
+  if (
+    input.format === "image" ||
+    (![input.rows.kind, input.columns.kind].includes("model") && !input.model)
+  )
     return null;
-  const rows = modelIds.map((id) => {
-    const model = models.find((candidate) => candidate.id === id);
-    return {
-      id,
-      name: model?.name ?? id,
-      support: pickedEfforts.map((effort) =>
-        thinkingEffortSupport(model, effort),
-      ),
-    };
-  });
-  if (!rows.some((row) => row.support.includes("unsupported"))) return null;
+  const cells = expandGrid(input).map(({ model, effort }) => ({
+    effort,
+    support: thinkingEffortSupport(
+      models.find((candidate) => candidate.id === model),
+      effort,
+    ),
+  }));
+  if (!cells.some((cell) => cell.support === "unsupported")) return null;
+  const label = (value: string, kind: GridInput["rows"]["kind"]) =>
+    kind === "model"
+      ? (models.find((model) => model.id === value)?.name ?? value)
+      : displayValue(value, kind);
   return (
     <div className="compatibility-table-scroll">
       <table className="compatibility-table">
         <caption>Thinking effort compatibility</caption>
         <thead>
           <tr>
-            <th scope="col">Model</th>
-            {pickedEfforts.map((effort) => (
-              <th scope="col" key={effort}>
-                {effortLabel(effort)}
+            <th scope="col">{dimensionNames[input.rows.kind]}</th>
+            {input.columns.values.map((value, column) => (
+              <th scope="col" key={column}>
+                {label(value, input.columns.kind)}
               </th>
             ))}
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
-            <tr key={row.id}>
-              <th scope="row">{row.name}</th>
-              {pickedEfforts.map((effort, index) => {
-                const support = row.support[index];
+          {input.rows.values.map((value, row) => (
+            <tr key={row}>
+              <th scope="row">{label(value, input.rows.kind)}</th>
+              {input.columns.values.map((_, column) => {
+                const { effort, support } =
+                  cells[row * input.columns.values.length + column];
                 const status =
                   support === "supported"
                     ? "Supported"
@@ -70,7 +58,7 @@ export function CompatibilityTable({
                       : "Unsupported";
                 return (
                   <td
-                    key={effort}
+                    key={column}
                     aria-label={`${effortLabel(effort)}: ${status}`}
                     data-tooltip={support === "supported" ? undefined : status}
                     ref={support === "supported" ? undefined : tooltipRef}
