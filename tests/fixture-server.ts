@@ -49,9 +49,16 @@ upstream.post("/api/v1/auth/keys", (req, res) => {
   codes.delete(req.body.code);
   res.json({ key: "fixture-secret-key" });
 });
-upstream.get("/api/v1/credits", (_req, res) =>
-  res.json({ data: { total_credits: 100, total_usage: 100 - balanceUsd } }),
-);
+upstream.get("/api/v1/key", (req, res) => {
+  if (req.get("authorization") !== "Bearer fixture-manual-key")
+    return res.sendStatus(401);
+  res.json({ data: { limit_remaining: balanceUsd } });
+});
+upstream.get("/api/v1/credits", (req, res) => {
+  if (req.get("authorization") === "Bearer fixture-manual-key")
+    return res.sendStatus(403);
+  res.json({ data: { total_credits: 100, total_usage: 100 - balanceUsd } });
+});
 upstream.get("/api/v1/models", (_req, res) =>
   res.json({
     data: [

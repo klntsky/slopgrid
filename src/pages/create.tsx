@@ -1,3 +1,4 @@
+import { getOpenRouterKey } from "../openrouter-key";
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
@@ -100,10 +101,15 @@ export function Create() {
     setBusy(true);
     setError("");
     try {
-      const g = await api<ViewGrid>("/grids", "POST", {
-        ...input,
-        continueWithLowBalance,
-      });
+      const g = await api<ViewGrid>(
+        "/grids",
+        "POST",
+        {
+          ...input,
+          continueWithLowBalance,
+        },
+        getOpenRouterKey(),
+      );
       setLowBalance(null);
       await queryClient.invalidateQueries({ queryKey: ["grids"] });
       sessionStorage.removeItem("slopgrid-draft");

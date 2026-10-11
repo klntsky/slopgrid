@@ -296,6 +296,20 @@ legend {
   padding: 14px 16px;
   background: var(--panel);
 }
+.connection {
+  flex-wrap: wrap;
+}
+.connection-key-form {
+  flex-basis: 100%;
+  display: grid;
+  gap: 10px;
+}
+.connection-key-form input {
+  min-width: 0;
+}
+.connection .connection-actions {
+  flex-wrap: wrap;
+}
 .connection-identity {
   display: flex;
   align-items: center;

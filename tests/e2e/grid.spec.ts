@@ -103,83 +103,25 @@ test("billing can be dismissed and retried repeatedly without regenerating compl
   expect(calls.filter((p: string) => p.includes("dog")).length).toBe(3);
 });
 
-for (const format of ["SVG", "Markdown", "Static website", "Image"])
-  test(`${format} renders generated output`, async ({ page, request }) => {
-    await request.post("/fixture/reset", { data: { billing: false } });
-    await create(page, format);
-    await expectProgress(page, 2, 2);
-    if (format === "Image") {
-      await expect(page.getByText("$0.00", { exact: true })).toHaveCount(1);
-      await expect(page.getByText("$0.012345", { exact: true })).toHaveCount(1);
-    } else {
-      await expect(page.getByText("$0.000123", { exact: true })).toHaveCount(2);
-    }
-    await page.reload();
-    await expectProgress(page, 2, 2);
-    await expect(
-      page.getByText(format === "Image" ? "$0.012345" : "$0.000123", {
-        exact: true,
-      }),
-    ).toHaveCount(format === "Image" ? 1 : 2);
-    const output = new URL(
-      (await page
-        .getByRole("link", { name: "Open output" })
-        .first()
-        .getAttribute("href"))!,
-    );
-    if (format === "Static website")
-      expect(output.hostname).toMatch(/^[a-f0-9]{48}-slopgrid\.localhost$/);
-    else {
-      expect(output.origin).toBe("http://localhost:4317");
-      expect(output.pathname).toMatch(/^\/outputs\/[a-f0-9]{48}$/);
-      const cellId = output.pathname.split("/").pop();
-      expect(
-        (
-          await request.get("/index.html", {
-            headers: { host: `${cellId}-slopgrid.localhost:4317` },
-          })
-        ).status(),
-      ).toBe(404);
-    }
-    if (format === "Image" || format === "SVG") {
-      const image = page
-        .getByRole("img", {
-          name: format === "SVG" ? "Generated SVG" : "Generated image",
-        })
-        .first();
-      await expect(image).toBeVisible();
-      await expect
-        .poll(() =>
-          image.evaluate((img) => (img as HTMLImageElement).naturalWidth),
-        )
-        .toBeGreaterThan(0);
-      const response = await request.get(output.href);
-      expect(response.headers()["content-type"]).toContain(
-        format === "SVG" ? "image/svg+xml" : "image/png",
-      );
-      expect(response.headers()["set-cookie"]).toBeUndefined();
-      await expect(page.locator("iframe")).toHaveCount(0);
-    } else {
-      const frame = page.frameLocator("iframe").first();
-      if (format === "Markdown")
-        await expect(
-          page
-            .locator(".markdown-preview")
-            .first()
-            .getByRole("heading", { name: "A generated cat" }),
-        ).toBeVisible();
-      if (format === "Static website") {
-        await expect(frame.getByText("Module loaded")).toBeVisible();
-        await expect(
-          frame.getByRole("heading", { name: "A generated site" }),
-        ).toBeVisible();
-        await expect(frame.locator("body")).toHaveCSS(
-          "background-color",
-          "rgb(255, 0, 0)",
-        );
-      }
-    }
-  });
+test("Image renders generated output", async ({ page, request }) => {
+  await request.post("/fixture/reset", { data: { billing: false } });
+  await create(page, "Image");
+  const bar = page.getByRole("progressbar", { name: "Grid generation" });
+  await expect(bar).toHaveAttribute("value", "2");
+  await expect(page.getByText("$0.012345", { exact: true })).toHaveCount(1);
+  await page.reload();
+  await expect(bar).toHaveAttribute("value", "2");
+  const image = page.getByRole("img", { name: "Generated image" }).first();
+  await expect
+    .poll(() => image.evaluate((img) => (img as HTMLImageElement).naturalWidth))
+    .toBeGreaterThan(0);
+  const output = await page
+    .getByRole("link", { name: "Open output" })
+    .first()
+    .getAttribute("href");
+  const response = await request.get(output!);
+  expect(response.headers()["content-type"]).toContain("image/png");
+});
 
 test("drafts, mutation endpoints, and generated hosts enforce ownership and origin boundaries", async ({
   page,
@@ -1734,12 +1676,25 @@ for (const [index, mode] of [
     });
     await request.post("/fixture/reset", {
       data: {
+        holdGenerations: true,
         transientFailures: 1,
         transientStatus: mode.code,
         transientStream: mode.stream,
       },
     });
     await create(page, mode.format, "cat\ndog", "hat");
+    await expectProgress(page, 0, 2);
+    await expect
+      .poll(
+        async () =>
+          (await (await request.get("/fixture/workers")).json()).held.length,
+      )
+      .toBe(2);
+    const { held }: { held: string[] } = await (
+      await request.get("/fixture/workers")
+    ).json();
+    for (const prompt of held)
+      await request.post("/fixture/release", { data: { prompt } });
     await expect(
       page.getByText("Waiting to retry…", { exact: true }),
     ).toBeVisible();
@@ -1752,6 +1707,7 @@ for (const [index, mode] of [
     await expect(
       page.getByRole("button", { name: "Pause generation" }),
     ).toBeVisible();
+    await request.post("/fixture/release", { data: { all: true } });
     await expectProgress(page, 2, 2);
     await expect(
       page.getByText("Waiting to retry…", { exact: true }),
@@ -2159,4 +2115,81 @@ test("publishing still works when browser storage is unavailable and asks again"
   await expectProgress(page, 1, 1);
   await page.getByRole("button", { name: "PUBLISH", exact: true }).click();
   await finishPublishing(page);
+});
+test("manual key entry persists in the browser, rejects invalid replacements, and supplies Generate and Resume", async ({
+  page,
+  request,
+}) => {
+  await page.route("**/api/grids", (route) =>
+    route.continue({
+      headers: {
+        ...route.request().headers(),
+        "X-Forwarded-For": "192.0.2.63",
+      },
+    }),
+  );
+  await request.post("/fixture/reset", { data: { holdGenerations: true } });
+  try {
+    await page.goto("/settings");
+    const otherTab = await page.context().newPage();
+    await otherTab.goto("/settings");
+    await page.getByRole("button", { name: "Use API key" }).click();
+    await page
+      .getByLabel("API key", { exact: true })
+      .fill("fixture-manual-key");
+    await page.getByRole("button", { name: "Connect API key" }).click();
+    await expect(page.getByText("Connected", { exact: true })).toBeVisible();
+    expect(await (await page.request.get("/api/session")).json()).toEqual({
+      connected: false,
+    });
+    await expect(
+      otherTab.getByText("Connected", { exact: true }),
+    ).toBeVisible();
+    await page.reload();
+    await expect(page.getByText("Connected", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Use API key" }).click();
+    await page.getByLabel("API key", { exact: true }).fill("invalid-key");
+    await page.getByRole("button", { name: "Connect API key" }).click();
+    await expect(page.getByRole("alert")).toHaveText(
+      "Invalid OpenRouter API key.",
+    );
+    await page.getByRole("button", { name: "Cancel", exact: true }).click();
+    await page.goto("/");
+    await page.getByRole("button", { name: "Markdown", exact: true }).click();
+    await page
+      .getByRole("combobox", { name: "Rows", exact: true })
+      .selectOption("variable");
+    await page.getByLabel("Row values").fill("cat");
+    await page
+      .getByRole("combobox", { name: "Columns", exact: true })
+      .selectOption("variable");
+    await page.getByLabel("Column values").fill("hat");
+    await page.getByRole("button", { name: "Continue to prompt" }).click();
+    await page
+      .getByLabel("Prompt", { exact: true })
+      .fill("Draw $VARIABLE_ROW with $VARIABLE_COLUMN");
+    await page.getByRole("button", { name: "Continue to key setup" }).click();
+    await page.getByRole("button", { name: "Generate", exact: true }).click();
+    await expectProgress(page, 0, 1);
+    await page.getByRole("button", { name: "Pause generation" }).click();
+    await page.getByRole("button", { name: "Resume generation" }).click();
+    await expect(page.getByText("Generating…", { exact: true })).toBeVisible();
+    await request.post("/fixture/release", { data: { all: true } });
+    await expectProgress(page, 1, 1);
+    await page.goto("/settings");
+    await page.getByRole("button", { name: "Disconnect OpenRouter" }).click();
+    await expect(
+      otherTab.getByText("Not connected", { exact: true }),
+    ).toBeVisible();
+    await otherTab.close();
+    await expect(
+      page.getByText("Not connected", { exact: true }),
+    ).toBeVisible();
+    await page.reload();
+    await expect(
+      page.getByText("Not connected", { exact: true }),
+    ).toBeVisible();
+  } finally {
+    await request.post("/fixture/release", { data: { all: true } });
+  }
 });

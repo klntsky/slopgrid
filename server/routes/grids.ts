@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { manualKey } from "../manual-keys.js";
 import { Router } from "express";
 import type { Store } from "../store.js";
 import type { Provider } from "../provider.js";
@@ -69,7 +70,8 @@ export function createGridRoutes({
   });
   app.post("/api/grids", async (req, res) => {
     const s = session(req, res);
-    if (!s.key)
+    const suppliedKey = manualKey(req);
+    if (!(suppliedKey ?? s.key))
       return res
         .status(401)
         .json({ error: "Connect OpenRouter before generating." });
@@ -107,7 +109,7 @@ export function createGridRoutes({
       createdAt: new Date().toISOString(),
     };
     store.save(g);
-    jobs.start(g);
+    jobs.start(g, suppliedKey);
     res.status(201).json(snapshot(g, s));
   });
   app.get("/api/grids/:id", (req, res) => {
@@ -126,7 +128,8 @@ export function createGridRoutes({
       return res
         .status(409)
         .json({ error: "Published grids cannot be changed." });
-    if (!s.key)
+    const suppliedKey = manualKey(req);
+    if (!(suppliedKey ?? s.key))
       return res
         .status(401)
         .json({ error: "Reconnect OpenRouter to continue." });
@@ -142,7 +145,7 @@ export function createGridRoutes({
         .status(429)
         .json({ error: "Retry limit reached. Try again in an hour." });
     const resumed = g.cells.some((c) => c.status !== "complete")
-      ? jobs.start(g)
+      ? jobs.start(g, suppliedKey)
       : g;
     res.json(snapshot(resumed, s));
   });

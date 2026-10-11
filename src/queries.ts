@@ -1,3 +1,4 @@
+import { useOpenRouterKey } from "./openrouter-key";
 import { QueryClient, useQuery } from "@tanstack/react-query";
 import type { GridSummary } from "../server/domain";
 import { api, type ViewGrid } from "./api";
@@ -15,10 +16,20 @@ export function useGrids() {
   });
 }
 export function useConnection() {
-  return useQuery({
+  const key = useOpenRouterKey();
+  const session = useQuery({
     queryKey: ["session"],
     queryFn: () => api<{ connected: boolean }>("/session"),
   });
+  return {
+    ...session,
+    data:
+      session.data || key
+        ? { connected: !!key || session.data?.connected === true }
+        : undefined,
+    isPending: session.isPending && !key,
+    isError: session.isError && !key,
+  };
 }
 
 export function usePublicGrids() {

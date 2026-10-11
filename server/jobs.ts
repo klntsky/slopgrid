@@ -13,6 +13,7 @@ export class Jobs {
     string,
     { grid: Grid; cell: Cell; controller: AbortController }
   >();
+  private keysByGrid = new Map<string, string>();
   private workersByOwner = new Map<string, number>();
   private concurrencyByOwner = new Map<string, number>();
   private lastAllocation = new Map<string, number>();
@@ -48,10 +49,12 @@ export class Jobs {
       if (!set.size) this.listeners.delete(id);
     };
   }
-  start(grid: Grid): Grid {
+  start(grid: Grid, key?: string): Grid {
     const current = this.active.get(grid.id);
     if (current?.status === "running") return current;
     const g = current ?? grid;
+    if (key) this.keysByGrid.set(g.id, key);
+    else this.keysByGrid.delete(g.id);
     this.concurrencyByOwner.set(
       grid.owner,
       this.store.session(grid.owner)?.inferenceConcurrency ?? this.workersMax,
@@ -77,6 +80,7 @@ export class Jobs {
     const g = this.active.get(grid.id) ?? grid;
     if (g.status === "complete") return g;
     g.status = "paused";
+    this.keysByGrid.delete(g.id);
     g.interruption = "manual";
     this.draftEmittedAt.delete(g.id);
     for (const cell of g.cells) {
@@ -142,7 +146,8 @@ export class Jobs {
       }
       if (!next) return;
       const { grid, cell } = next,
-        key = this.store.session(grid.owner)?.key;
+        key =
+          this.keysByGrid.get(grid.id) ?? this.store.session(grid.owner)?.key;
       if (!key) {
         this.pauseOwner(grid.owner, "auth");
         continue;
@@ -178,6 +183,7 @@ export class Jobs {
     for (const grid of [...this.active.values()])
       if (grid.owner === owner && grid.status === "running") {
         grid.status = "paused";
+        this.keysByGrid.delete(grid.id);
         grid.interruption = reason;
         for (const cell of grid.cells) delete cell.retrying;
         this.settle(grid);
@@ -199,6 +205,7 @@ export class Jobs {
       grid.status = "paused";
     if (grid.status !== "running") {
       this.active.delete(grid.id);
+      this.keysByGrid.delete(grid.id);
       this.draftEmittedAt.delete(grid.id);
     }
     if (

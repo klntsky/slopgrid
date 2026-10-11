@@ -1,3 +1,5 @@
+import { useState } from "react";
+import { setOpenRouterKey } from "../openrouter-key";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { LoaderCircle } from "lucide-react";
@@ -14,8 +16,22 @@ export function Connection({
 }) {
   const session = useConnection(),
     cache = useQueryClient();
+  const [editing, setEditing] = useState(false),
+    [enteredKey, setEnteredKey] = useState("");
+  const connectKey = useMutation({
+    mutationFn: async () => {
+      const key = enteredKey.trim();
+      await api("/auth/key", "POST", undefined, key);
+      setOpenRouterKey(key);
+      setEnteredKey("");
+      setEditing(false);
+    },
+  });
   const disconnect = useMutation({
-    mutationFn: () => api("/session/key", "DELETE"),
+    mutationFn: () => {
+      setOpenRouterKey("");
+      return api("/session/key", "DELETE");
+    },
     onSuccess: () => cache.invalidateQueries({ queryKey: ["session"] }),
   });
   const checking = session.isPending || (session.isError && session.isFetching),
@@ -61,6 +77,7 @@ export function Connection({
                 className="button secondary"
                 href={authURL}
                 aria-label="Connect OpenRouter"
+                onClick={() => setOpenRouterKey("")}
               >
                 Connect
               </a>
@@ -81,6 +98,7 @@ export function Connection({
                   aria-disabled={disconnect.isPending}
                   onClick={(event) => {
                     if (disconnect.isPending) event.preventDefault();
+                    else setOpenRouterKey("");
                   }}
                 >
                   Change connection
@@ -90,7 +108,61 @@ export function Connection({
               <Link to="/settings">Settings</Link>
             ))
           )}
+          {!checking && !editing && (
+            <button
+              className="secondary"
+              disabled={disconnect.isPending}
+              onClick={() => {
+                connectKey.reset();
+                setEditing(true);
+              }}
+            >
+              Use API key
+            </button>
+          )}
         </div>
+        {editing && (
+          <form
+            className="connection-key-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              connectKey.mutate();
+            }}
+          >
+            <label htmlFor="openrouter-api-key">API key</label>
+            <input
+              id="openrouter-api-key"
+              type="password"
+              autoComplete="off"
+              value={enteredKey}
+              onChange={(event) => setEnteredKey(event.target.value)}
+              autoFocus
+            />
+            <div className="connection-actions">
+              <button
+                className="secondary"
+                type="submit"
+                aria-label="Connect API key"
+                disabled={!enteredKey.trim() || connectKey.isPending}
+              >
+                {connectKey.isPending ? "Connecting…" : "Connect"}
+              </button>
+              <button
+                className="secondary"
+                type="button"
+                disabled={connectKey.isPending}
+                onClick={() => {
+                  setEnteredKey("");
+                  setEditing(false);
+                  connectKey.reset();
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+            <ErrorMessage error={connectKey.error?.message} />
+          </form>
+        )}
       </div>
       <ErrorMessage error={disconnect.error?.message} />
       {new URLSearchParams(location.search).get("connection") === "failed" && (

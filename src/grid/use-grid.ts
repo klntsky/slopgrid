@@ -1,3 +1,4 @@
+import { getOpenRouterKey } from "../openrouter-key";
 import { useState, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
@@ -58,6 +59,7 @@ export function useGrid(id: string) {
         `/grids/${id}/${action}`,
         "POST",
         action === "retry" ? { continueWithLowBalance } : undefined,
+        action === "retry" ? getOpenRouterKey() : undefined,
       );
       setLowBalance(null);
       cache.setQueryData(["grid", id], g);
