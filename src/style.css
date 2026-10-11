@@ -539,7 +539,7 @@ legend {
   height: 18px;
 }
 .grid-title h1 {
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
   font-size: 17px;
   font-weight: 500;

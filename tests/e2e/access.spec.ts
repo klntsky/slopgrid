@@ -925,6 +925,19 @@ test("titles are independent owner-editable metadata and collapsed prompts expan
     await expect(
       page.locator('[data-theme="grid-prompt"][data-state="visible"]'),
     ).toHaveCount(0);
+    for (const width of [1600, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      const copyGap = await heading.evaluate((el) => {
+        const text = document.createRange();
+        text.selectNodeContents(el);
+        const textEnd = Math.min(
+          text.getBoundingClientRect().right,
+          el.getBoundingClientRect().right,
+        );
+        return el.nextElementSibling!.getBoundingClientRect().left - textEnd;
+      });
+      expect(copyGap).toBeCloseTo(8, 0);
+    }
   } finally {
     await request.post("/fixture/release", { data: { all: true } });
     await visitor.close();
