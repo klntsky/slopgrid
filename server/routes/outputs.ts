@@ -5,12 +5,79 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { MarkdownContent } from "../../shared/markdown.js";
 import type { Store } from "../store.js";
 import type { RateLimiter } from "../rate-limit.js";
+import { zip } from "fflate";
+import { downloadFilename } from "../download-filename.js";
 export function createOutputRoutes(
   store: Store,
   origin: URL,
   rate: RateLimiter,
 ) {
   const app = Router();
+  app.get("/outputs/:id/download", async (req, res) => {
+    const id = String(req.params.id);
+    if (!/^[a-f0-9]{48}$/.test(id)) return res.sendStatus(404);
+    if (!rate(`download:${req.ip}`, 100, 60000)) {
+      res.set("Retry-After", "60");
+      return res.status(429).send("Too many downloads. Try again in a minute.");
+    }
+    const output = store.outputDownload(id);
+    if (!output) return res.sendStatus(404);
+    const imageExtensions: Record<string, string> = {
+      "image/png": "png",
+      "image/jpeg": "jpg",
+      "image/webp": "webp",
+      "image/gif": "gif",
+      "image/avif": "avif",
+      "image/svg+xml": "svg",
+    };
+    const extension =
+      output.format === "html"
+        ? "zip"
+        : output.format === "markdown"
+          ? "md"
+          : output.format === "svg"
+            ? "svg"
+            : (imageExtensions[output.mediaType ?? ""] ?? "bin");
+    res.set("Cache-Control", "no-store");
+    res.set("Content-Security-Policy", "sandbox; default-src 'none'");
+    res.attachment(
+      downloadFilename(
+        output.prompt,
+        output.gridId,
+        output.row,
+        output.column,
+        extension,
+      ),
+    );
+    if (output.format === "html") {
+      const files = await store.files.bundle(id);
+      const archive = await new Promise<Uint8Array>((resolve, reject) => {
+        zip(files, { level: 6 }, (error, data) => {
+          if (error) reject(error);
+          else resolve(data);
+        });
+      });
+      return res.type("application/zip").send(Buffer.from(archive));
+    }
+    const file = store.files.path(
+      id,
+      output.format === "image"
+        ? "image"
+        : output.format === "svg"
+          ? "index.svg"
+          : "index.md",
+    );
+    if (!file) return res.sendStatus(404);
+    return res
+      .type(
+        output.format === "image"
+          ? (output.mediaType ?? "application/octet-stream")
+          : output.format === "svg"
+            ? "image/svg+xml"
+            : "text/markdown",
+      )
+      .sendFile(file, { dotfiles: "allow" });
+  });
   app.get("/outputs/:id", (req, res) => {
     const id = String(req.params.id);
     if (!/^[a-f0-9]{48}$/.test(id)) return res.sendStatus(404);

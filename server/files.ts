@@ -8,6 +8,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { readdir, readFile } from "node:fs/promises";
 
 export function safePath(path: string): boolean {
   return (
@@ -51,5 +52,22 @@ export class OutputFiles {
     if (!safePath(path)) return;
     const file = join(this.directory(id), path);
     return existsSync(file) && statSync(file).isFile() ? file : undefined;
+  }
+  async bundle(id: string): Promise<Record<string, Uint8Array>> {
+    const directory = this.directory(id);
+    const files: Record<string, Uint8Array> = Object.create(null);
+    async function collect(relative: string) {
+      for (const entry of await readdir(join(directory, relative), {
+        withFileTypes: true,
+      })) {
+        const path = relative ? `${relative}/${entry.name}` : entry.name;
+        if (!safePath(path)) continue;
+        if (entry.isDirectory()) await collect(path);
+        else if (entry.isFile())
+          files[path] = await readFile(join(directory, path));
+      }
+    }
+    await collect("");
+    return files;
   }
 }

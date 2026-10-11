@@ -665,6 +665,22 @@ legend {
 .cell-footer small {
   font-size: 12px;
 }
+.cell-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.cell-actions button {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: inherit;
+}
+.cell-actions .lucide {
+  width: 14px;
+  height: 14px;
+}
 .cell-usage {
   display: flex;
   align-items: center;

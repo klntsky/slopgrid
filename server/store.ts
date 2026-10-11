@@ -124,6 +124,34 @@ export class Store {
       ? { format: row.format, mediaType: row.mediaType ?? undefined }
       : undefined;
   }
+  outputDownload(id: string) {
+    const row = this.db
+      .prepare(
+        `SELECT g.id AS gridId, g.data, c.position,
+          json_extract(c.data, '$.mediaType') AS mediaType
+         FROM cells c JOIN grids g ON g.id=c.grid_id
+         WHERE c.id=? AND json_extract(c.data, '$.status')='complete'`,
+      )
+      .get(id) as
+      | {
+          gridId: string;
+          data: string;
+          position: number;
+          mediaType: string | null;
+        }
+      | undefined;
+    if (!row) return;
+    const { input } = JSON.parse(row.data) as Pick<Grid, "input">;
+    const columns = input.columns.values.length;
+    return {
+      gridId: row.gridId,
+      prompt: input.prompt,
+      row: input.rows.values[Math.floor(row.position / columns)],
+      column: input.columns.values[row.position % columns],
+      format: input.format,
+      mediaType: row.mediaType ?? undefined,
+    };
+  }
   session(id: string): Session | undefined {
     const row = this.db
       .prepare("SELECT data FROM sessions WHERE id=?")
