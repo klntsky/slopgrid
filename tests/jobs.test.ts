@@ -290,7 +290,7 @@ test("a late result from a paused request cannot restore its discarded preview o
     const paused = h.store.get(g.id)!;
     assert.equal(paused.cells[0].status, "pending");
     assert.equal(paused.cells[0].draft, undefined);
-    assert.equal(h.store.output(paused.cells[0].id), undefined);
+    assert.equal(h.store.files.path(paused.cells[0].id, "index.md"), undefined);
     h.jobs.start(paused);
     await flush();
     assert.equal(h.provider.started.length, 2);

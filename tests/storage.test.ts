@@ -61,7 +61,11 @@ test("outputs are real files and SQLite stores only configuration and cell state
     assert.ok(!gridData.includes(payload) && !cellData.includes(payload));
     assert.ok(!cellData.includes("Temporary preview payload"));
     assert.equal(store.get("grid")!.cells[0].prompt, "Draw cat");
-    assert.deepEqual(store.output("cell"), {
+    assert.deepEqual(store.outputMetadata("cell"), {
+      owner: "owner",
+      ownerUserId: undefined,
+      published: true,
+      status: "complete",
       format: "html",
       mediaType: undefined,
     });

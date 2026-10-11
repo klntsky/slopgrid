@@ -2,7 +2,13 @@ import type { OAuthAttempt } from "./oauth.js";
 import { Billing } from "./billing.js";
 import Database from "better-sqlite3";
 import { encrypt, decrypt } from "./encryption.js";
-import { expandGrid, type Grid, type User, type Identity } from "./domain.js";
+import {
+  expandGrid,
+  type Grid,
+  type Cell,
+  type User,
+  type Identity,
+} from "./domain.js";
 import { dirname, join, resolve } from "node:path";
 import { OutputFiles } from "./files.js";
 import { token } from "./ids.js";
@@ -98,56 +104,27 @@ export class Store {
       });
     })();
   }
-  outputOwner(
-    id: string,
-  ):
-    | (Pick<Grid, "owner" | "ownerUserId" | "published"> & {
-        format: Grid["input"]["format"];
-      })
-    | undefined {
+  outputMetadata(id: string) {
     const row = this.db
       .prepare(
-        `SELECT
-      json_extract(g.data, '$.owner') AS owner,
-      json_extract(g.data, '$.ownerUserId') AS ownerUserId,
-      json_extract(g.data, '$.published') AS published,
-      json_extract(g.data, '$.input.format') AS format
-      FROM cells c JOIN grids g ON g.id=c.grid_id WHERE c.id=?`,
-      )
-      .get(id) as
-      | {
-          owner: string;
-          ownerUserId: string | null;
-          published: number;
-          format: Grid["input"]["format"];
-        }
-      | undefined;
-    return (
-      row && {
-        owner: row.owner,
-        ownerUserId: row.ownerUserId ?? undefined,
-        published: !!row.published,
-        format: row.format,
-      }
-    );
-  }
-  output(
-    id: string,
-  ): { format: Grid["input"]["format"]; mediaType?: string } | undefined {
-    const row = this.db
-      .prepare(
-        `
-      SELECT json_extract(g.data, '$.input.format') AS format,
-        json_extract(c.data, '$.mediaType') AS mediaType
-      FROM cells c JOIN grids g ON g.id=c.grid_id
-      WHERE c.id=? AND json_extract(c.data, '$.status')='complete'
+        `SELECT g.data AS grid, c.data AS cell
+      FROM cells c JOIN grids g ON g.id=c.grid_id WHERE c.id=?
     `,
       )
-      .get(id) as
-      { format: Grid["input"]["format"]; mediaType: string | null } | undefined;
-    return row
-      ? { format: row.format, mediaType: row.mediaType ?? undefined }
-      : undefined;
+      .get(id) as { grid: string; cell: string } | undefined;
+    if (!row) return;
+    const { owner, ownerUserId, published, input } = JSON.parse(
+      row.grid,
+    ) as Grid;
+    const { status, mediaType } = JSON.parse(row.cell) as Cell;
+    return {
+      owner,
+      ownerUserId,
+      published,
+      format: input.format,
+      status,
+      mediaType,
+    };
   }
   outputDownload(id: string) {
     const row = this.db

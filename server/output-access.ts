@@ -24,18 +24,11 @@ export function createOutputAccess(
       expires: number;
     }
   >();
-  function allowed(cellId: string, sessionId?: string) {
-    const owner = store.outputOwner(cellId);
-    return (
-      !!owner &&
-      canViewGrid(owner, sessionId ? store.session(sessionId) : undefined)
-    );
-  }
   return {
     open(req: Request, res: Response) {
       res.set("Cache-Control", "no-store");
       const cellId = String(req.params.id);
-      const owner = store.outputOwner(cellId);
+      const owner = store.outputMetadata(cellId);
       const current = session.read(req);
       const path =
         typeof req.query.path === "string" ? req.query.path : "index.html";
@@ -77,7 +70,12 @@ export function createOutputAccess(
       const grant = grants.get(id);
       if (!grant || grant.cellId !== cellId) return res.sendStatus(404);
       grants.delete(id);
-      if (grant.expires <= Date.now() || !allowed(cellId, grant.sessionId))
+      const output = store.outputMetadata(cellId);
+      if (
+        grant.expires <= Date.now() ||
+        !output ||
+        !canViewGrid(output, store.session(grant.sessionId))
+      )
         return res.sendStatus(404);
       res.cookie(
         cookieName,
@@ -92,26 +90,28 @@ export function createOutputAccess(
       );
       res.redirect(303, "/" + grant.path);
     },
-    canRead(req: Request, cellId: string) {
-      if (allowed(cellId)) return true;
+    read(req: Request, cellId: string) {
+      const output = store.outputMetadata(cellId);
+      if (!output || output.published) return output;
       const value = req
         .get("cookie")
         ?.split(";")
         .map((part) => part.trim())
         .find((part) => part.startsWith(cookieName + "="))
         ?.slice(cookieName.length + 1);
-      if (!value) return false;
+      if (!value) return;
       try {
         const [scope, sessionId] = JSON.parse(
           decrypt(decodeURIComponent(value), secret),
         );
-        return (
+        if (
           scope === cellId &&
           typeof sessionId === "string" &&
-          allowed(cellId, sessionId)
-        );
+          canViewGrid(output, store.session(sessionId))
+        )
+          return output;
       } catch {
-        return false;
+        return undefined;
       }
     },
   };

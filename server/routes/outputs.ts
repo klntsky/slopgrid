@@ -19,9 +19,12 @@ export function createOutputRoutes(
   app.use("/outputs/:id", (req, res, next) => {
     res.set("Cache-Control", "no-store");
     const id = String(req.params.id);
-    const owner = /^[a-f0-9]{48}$/.test(id) ? store.outputOwner(id) : undefined;
-    if (!owner || !canViewGrid(owner, session.read(req)))
+    const output = /^[a-f0-9]{48}$/.test(id)
+      ? store.outputMetadata(id)
+      : undefined;
+    if (!output || !canViewGrid(output, session.read(req)))
       return res.sendStatus(404);
+    res.locals.output = output;
     next();
   });
   app.get("/outputs/:id/download", async (req, res) => {
@@ -96,8 +99,11 @@ export function createOutputRoutes(
       res.set("Retry-After", "60");
       return res.status(429).send("Too many requests. Try again in a minute.");
     }
-    const output = store.output(id);
-    if (!output || output.format === "html") return res.sendStatus(404);
+    const output = res.locals.output as NonNullable<
+      ReturnType<Store["outputMetadata"]>
+    >;
+    if (output.status !== "complete" || output.format === "html")
+      return res.sendStatus(404);
     res.set("Cache-Control", "no-store");
     res.set(
       "Content-Security-Policy",

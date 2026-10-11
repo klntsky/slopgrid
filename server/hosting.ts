@@ -50,8 +50,9 @@ export function createHostDispatcher(
     if (req.method !== "GET" && req.method !== "HEAD")
       return res.sendStatus(405);
     if (req.path.startsWith("/__session/")) return access.redeem(req, res, id);
-    if (!access.canRead(req, id)) return res.sendStatus(404);
-    const privateOutput = !store.outputOwner(id)!.published;
+    const output = access.read(req, id);
+    if (!output) return res.sendStatus(404);
+    const privateOutput = !output.published;
     if (!privateOutput) res.set("Access-Control-Allow-Origin", "*");
     else if (req.get("origin") === "null") {
       res.set("Access-Control-Allow-Origin", "null");
@@ -64,10 +65,9 @@ export function createHostDispatcher(
     } catch {
       return res.sendStatus(404);
     }
-    const output = store.output(id);
     const file = path.startsWith("__preview/")
       ? previews.path(id, path)
-      : output?.format === "html"
+      : output.status === "complete" && output.format === "html"
         ? store.files.path(id, path)
         : previews.path(id, path);
     if (!file) return res.sendStatus(404);
