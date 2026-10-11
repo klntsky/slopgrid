@@ -2,7 +2,7 @@ import { formatCost } from "../format";
 import { CopyButton } from "../components/copy-button";
 import { PublishGrid } from "./publish-grid";
 import { Author } from "../components/identity";
-import { Pause, Play, Pencil, GitFork, Link2 } from "lucide-react";
+import { Square, Play, Pencil, GitFork, Link2 } from "lucide-react";
 import type { ViewGrid } from "../api";
 import { useTooltip } from "../components/use-tooltip";
 export function GridHeader({
@@ -45,7 +45,7 @@ export function GridHeader({
   const pauseHint = useTooltip<HTMLButtonElement>(
     paused
       ? "Restarts unfinished outputs."
-      : "Stops active requests. Resume restarts unfinished outputs.",
+      : "Stops active requests. Work can be resumed later, unfinished responses will be lost.",
   );
   const costHint = useTooltip<HTMLSpanElement>(
     "Completed output costs plus current estimates; excludes failed attempts and unavailable charges",
@@ -65,7 +65,7 @@ export function GridHeader({
               {paused ? (
                 <Play aria-hidden="true" />
               ) : (
-                <Pause aria-hidden="true" />
+                <Square aria-hidden="true" fill="currentColor" />
               )}
             </button>
           )}

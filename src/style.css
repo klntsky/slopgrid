@@ -555,6 +555,9 @@ legend {
   height: 36px;
   padding: 8px;
 }
+.inference-toggle .lucide-square {
+  color: var(--progress-error);
+}
 .inference-toggle .lucide {
   width: 18px;
   height: 18px;

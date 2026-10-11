@@ -45,7 +45,7 @@ test("generation hints appear on keyboard focus before and after outputs finish"
       1,
     );
     await expect(page.locator('.tippy-box[data-state="visible"]')).toHaveText(
-      "Stops active requests. Resume restarts unfinished outputs.",
+      "Stops active requests. Work can be resumed later, unfinished responses will be lost.",
     );
     await request.post("/fixture/release", { data: { all: true } });
     await expectProgress(page, 1, 1);
