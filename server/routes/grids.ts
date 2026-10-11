@@ -1,6 +1,7 @@
+import { canViewGrid, ownsGrid, publicationError } from "../grid-policy.js";
 import { z } from "zod";
 import { manualKey } from "../manual-keys.js";
-import { Router } from "express";
+import { Router, type Request, type Response } from "express";
 import type { Store } from "../store.js";
 import type { Provider } from "../provider.js";
 import type { Jobs } from "../jobs.js";
@@ -8,12 +9,7 @@ import type { SessionReader } from "../session.js";
 import type { RateLimiter } from "../rate-limit.js";
 import type { GridPresenter } from "../grid-presentation.js";
 import { anonymousOwner } from "../session.js";
-import {
-  canViewGrid,
-  ownsGrid,
-  gridAuthor,
-  presentIdentity,
-} from "../grid-presentation.js";
+import { gridAuthor, presentIdentity } from "../grid-presentation.js";
 import {
   gridSchema,
   expandGrid,
@@ -55,6 +51,12 @@ export function createGridRoutes({
     visibility: g.visibility,
     author: gridAuthor(g, store),
   });
+  function readGrid(req: Request, res: Response, allowed = ownsGrid) {
+    const s = session(req, res),
+      g = store.get(String(req.params.id));
+    if (g && allowed(g, s)) return { g, s };
+    res.status(404).json({ error: "Grid not found" });
+  }
   app.get("/api/grids/public", (_req, res) => {
     res.json(
       store
@@ -123,17 +125,15 @@ export function createGridRoutes({
     res.status(201).json(snapshot(g, s));
   });
   app.get("/api/grids/:id", (req, res) => {
-    const s = session(req, res),
-      g = store.get(String(req.params.id));
-    if (!g || !canViewGrid(g, s))
-      return res.status(404).json({ error: "Grid not found" });
+    const found = readGrid(req, res, canViewGrid);
+    if (!found) return;
+    const { g, s } = found;
     res.json(snapshot(jobs.active.get(g.id) ?? g, s));
   });
   app.post("/api/grids/:id/retry", async (req, res) => {
-    const s = session(req, res),
-      g = store.get(String(req.params.id));
-    if (!g || !ownsGrid(g, s))
-      return res.status(404).json({ error: "Grid not found" });
+    const found = readGrid(req, res);
+    if (!found) return;
+    const { g, s } = found;
     if (g.published)
       return res
         .status(409)
@@ -160,10 +160,9 @@ export function createGridRoutes({
     res.json(snapshot(resumed, s));
   });
   app.post("/api/grids/:id/pause", (req, res) => {
-    const s = session(req, res),
-      g = store.get(String(req.params.id));
-    if (!g || !ownsGrid(g, s))
-      return res.status(404).json({ error: "Grid not found" });
+    const found = readGrid(req, res);
+    if (!found) return;
+    const { g, s } = found;
     if (g.published || g.status === "complete")
       return res
         .status(409)
@@ -171,10 +170,9 @@ export function createGridRoutes({
     res.json(snapshot(jobs.pause(g), s));
   });
   app.post("/api/grids/:id/edit", (req, res) => {
-    const s = session(req, res),
-      g = store.get(String(req.params.id));
-    if (!g || !ownsGrid(g, s))
-      return res.status(404).json({ error: "Grid not found" });
+    const found = readGrid(req, res);
+    if (!found) return;
+    const { g, s } = found;
     if (g.published)
       return res
         .status(409)
@@ -182,43 +180,24 @@ export function createGridRoutes({
     res.json(snapshot(jobs.pause(g), s));
   });
   app.post("/api/grids/:id/publish", (req, res) => {
-    const s = session(req, res),
-      g = store.get(String(req.params.id));
-    if (!g || !ownsGrid(g, s))
-      return res.status(404).json({ error: "Grid not found" });
+    const found = readGrid(req, res);
+    if (!found) return;
+    const { g, s } = found;
     const parsed = z
       .object({
         visibility: z.enum(["private", "unlisted", "public"]),
       })
-      .safeParse(
-        req.body === undefined ? { visibility: "unlisted" } : req.body,
-      );
+      .safeParse(req.body);
     if (!parsed.success)
       return res.status(400).json({ error: "Choose a valid visibility." });
     const { visibility } = parsed.data;
-    if (g.published) {
-      if (visibility === g.visibility) return res.json(snapshot(g, s));
-      if (g.visibility === "unlisted" && visibility === "public") {
-        g.visibility = visibility;
-        save(g);
-        return res.json(snapshot(g, s));
-      }
-      return res
-        .status(409)
-        .json({ error: "Published grid visibility cannot be changed." });
+    const error = publicationError(g, visibility);
+    if (error) return res.status(409).json({ error });
+    if (visibility === g.visibility) return res.json(snapshot(g, s));
+    if (!g.published) {
+      g.author = presentIdentity(s.userId ? store.user(s.userId) : undefined);
+      g.published = true;
     }
-    if (visibility === "private") return res.json(snapshot(g, s));
-    if (
-      g.cells.some(
-        (cell) => cell.status !== "complete" && cell.status !== "error",
-      )
-    )
-      return res
-        .status(409)
-        .json({ error: "Wait for every cell to finish before publishing." });
-    const user = s.userId ? store.user(s.userId) : undefined;
-    g.author = presentIdentity(user);
-    g.published = true;
     g.visibility = visibility;
     save(g);
     res.json(snapshot(g, s));

@@ -1,3 +1,4 @@
+import { ownsGrid } from "./grid-policy.js";
 import type { Grid, Identity } from "./domain.js";
 import type { Store, Session } from "./store.js";
 import type { createHtmlHosts } from "./hosts.js";
@@ -17,14 +18,6 @@ export function gridAuthor(grid: Grid, store: Store): Identity | null {
     : presentIdentity(
         grid.ownerUserId ? store.user(grid.ownerUserId) : undefined,
       );
-}
-export function ownsGrid(g: Grid, s: Session) {
-  return g.ownerUserId
-    ? g.ownerUserId === s.userId
-    : g.owner === (s.anonymousId ?? s.id);
-}
-export function canViewGrid(g: Grid, s: Session) {
-  return g.published || ownsGrid(g, s);
 }
 export function createGridPresenter(
   store: Store,

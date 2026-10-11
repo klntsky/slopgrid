@@ -29,3 +29,5 @@ Successful sign-in atomically claims the anonymous session’s grids and rotates
 Draft attribution resolves the current account profile. First publication stores a public identity snapshot or Anonymous, and subsequent account changes cannot modify it. Historical published grids without a snapshot remain Anonymous. Public grid snapshots and summaries contain author display data but omit both anonymous and account ownership identifiers. Profile links and grid links are separate anchors in listing rows.
 
 OAuth attempts share return-path, state, and expiry policy. `oauth4webapi` generates PKCE values and validates GitHub authorization-code exchanges; OpenRouter’s custom key exchange stays in the provider adapter. Signing in claims persisted and active anonymous grids before rotating the browser session.
+
+Grid ownership and publication rules live in `server/grid-policy.ts`. Grid routes share access lookup and apply publication only after policy validation. The client publishing widget owns its TanStack mutation and updates grid and list queries.

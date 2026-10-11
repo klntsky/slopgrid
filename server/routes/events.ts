@@ -5,7 +5,7 @@ import type { Jobs } from "../jobs.js";
 import type { Grid } from "../domain.js";
 import type { SessionReader } from "../session.js";
 import type { GridPresenter } from "../grid-presentation.js";
-import { canViewGrid } from "../grid-presentation.js";
+import { canViewGrid } from "../grid-policy.js";
 
 export function createEventRoutes({
   store,

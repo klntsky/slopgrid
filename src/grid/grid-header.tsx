@@ -1,19 +1,18 @@
+import { PublishGrid } from "./publish-grid";
 import { Author } from "../components/identity";
-import { Pause, Play, Pencil, GitFork, Upload, Link2, Eye } from "lucide-react";
+import { Pause, Play, Pencil, GitFork, Link2 } from "lucide-react";
 import type { ViewGrid } from "../api";
 import { useTooltip } from "../components/use-tooltip";
 export function GridHeader({
   grid: g,
   busy,
   onAction,
-  onPublish,
   onConfigure,
   onError,
 }: {
   grid: ViewGrid;
   busy: boolean;
   onAction: (action: "retry" | "pause") => void;
-  onPublish: () => void;
   onConfigure: () => void;
   onError: (message: string) => void;
 }) {
@@ -87,19 +86,7 @@ export function GridHeader({
               </button>
             )}
             {g.canEdit && (!g.published || g.visibility === "unlisted") && (
-              <button
-                disabled={busy || finished !== g.cells.length}
-                className="secondary inference-toggle"
-                onClick={onPublish}
-                aria-label={g.published ? "Change visibility" : "PUBLISH"}
-                title={g.published ? "Change visibility" : "Publish grid"}
-              >
-                {g.published ? (
-                  <Eye aria-hidden="true" />
-                ) : (
-                  <Upload aria-hidden="true" />
-                )}
-              </button>
+              <PublishGrid grid={g} disabled={busy} />
             )}
             {g.published && (
               <button

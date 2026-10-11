@@ -270,9 +270,13 @@ for (const theme of ["light", "dark"] as const)
     );
     await expect(page.getByRole("button", { name: "PUBLISH" })).toBeDisabled();
     const id = new URL(page.url()).pathname.split("/").pop()!;
-    expect((await page.request.post(`/api/grids/${id}/publish`)).status()).toBe(
-      409,
-    );
+    expect(
+      (
+        await page.request.post(`/api/grids/${id}/publish`, {
+          data: { visibility: "unlisted" },
+        })
+      ).status(),
+    ).toBe(409);
     const segments = page.locator(".progress-segment");
     await expect(segments).toHaveCount(3);
     const colors = await segments.evaluateAll((elements) =>

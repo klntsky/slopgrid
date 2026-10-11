@@ -81,7 +81,6 @@ test("publishing is permanent, link grids are unlisted, and public summaries omi
     grid("listed", "error", "svg");
     grid("pending", "pending");
     grid("running", "running");
-    grid("legacy-request");
     assert.equal((await fetch(`${origin}/api/grids/private`)).status, 404);
     assert.equal(
       (await fetch(`${origin}/api/grids/private/events`)).status,
@@ -91,7 +90,7 @@ test("publishing is permanent, link grids are unlisted, and public summaries omi
       (await publish("private", { visibility: "public" }, false)).status,
       404,
     );
-    for (const body of [{ visibility: "invalid" }, {}, null])
+    for (const body of [{ visibility: "invalid" }, {}, null, undefined])
       assert.equal((await publish("private", body)).status, 400);
     assert.equal(
       (await publish("private", { visibility: "private" })).status,
@@ -104,8 +103,6 @@ test("publishing is permanent, link grids are unlisted, and public summaries omi
       (await publish("link", { visibility: "unlisted" })).status,
       200,
     );
-    assert.equal((await publish("legacy-request")).status, 200);
-    assert.equal(store.get("legacy-request")!.visibility, "unlisted");
     assert.equal((await fetch(`${origin}/api/grids/link`)).status, 200);
     assert.deepEqual(await publicGrids(), []);
     assert.equal(
@@ -128,7 +125,7 @@ test("publishing is permanent, link grids are unlisted, and public summaries omi
         headers: { cookie: `slopgrid=${owner}` },
       })
     ).json();
-    assert.equal(mine.length, 6);
+    assert.equal(mine.length, 5);
     assert.ok(mine.every((g: Grid) => g.visibility));
     for (const id of ["link", "listed"]) {
       const previous = store.get(id)!;
