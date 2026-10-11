@@ -52,3 +52,21 @@
 .markdown-document img {
   max-width: 100%;
 }
+
+.markdown-expand {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+  width: 36px;
+  height: 36px;
+  padding: 8px;
+  background: var(--paper);
+}
+.markdown-expand .lucide {
+  width: 18px;
+  height: 18px;
+}
+.cell:has(.markdown-expand) .markdown-document > :first-child {
+  margin-right: 32px;
+}

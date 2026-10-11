@@ -1,0 +1,21 @@
+.grid-workspace,
+.grid-table-view {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.grid-workspace {
+  position: relative;
+}
+.grid-table-view[inert] {
+  visibility: hidden;
+}
+.expanded-markdown {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  padding: 0;
+  border: 0;
+  background: var(--cell);
+}

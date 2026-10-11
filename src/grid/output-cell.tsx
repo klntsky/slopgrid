@@ -1,4 +1,11 @@
-import { ArrowUpRight, ArrowUp, ArrowDown, LoaderCircle } from "lucide-react";
+import {
+  ArrowUpRight,
+  ArrowUp,
+  ArrowDown,
+  LoaderCircle,
+  Maximize2,
+  Minimize2,
+} from "lucide-react";
 import type { GridInput } from "../../server/domain";
 import type { ViewGrid } from "../api";
 import { useTheme } from "../theme";
@@ -10,11 +17,15 @@ export function OutputCell({
   format,
   gridStatus,
   title,
+  expanded = false,
+  onToggleExpand,
 }: {
   cell: ViewGrid["cells"][number];
   format: GridInput["format"];
   gridStatus: ViewGrid["status"];
   title: string;
+  expanded?: boolean;
+  onToggleExpand?: (button: HTMLButtonElement) => void;
 }) {
   const { resolvedTheme } = useTheme();
   const outputURL =
@@ -42,35 +53,52 @@ export function OutputCell({
               loading="lazy"
             />
           )}
-          <div className="cell-footer">
-            <a
-              href={outputURL}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label="Open output"
-              title="Open output"
+          {format === "markdown" && onToggleExpand && (
+            <button
+              className="secondary markdown-expand"
+              aria-label={expanded ? "Collapse Markdown" : "Expand Markdown"}
+              title={expanded ? "Collapse Markdown" : "Expand Markdown"}
+              aria-expanded={expanded}
+              onClick={(event) => onToggleExpand(event.currentTarget)}
             >
-              <ArrowUpRight aria-hidden="true" />
-            </a>
-            <small className="cell-usage">
-              {cell.usage && (
-                <span
-                  className="cell-tokens"
-                  role="img"
-                  aria-label={`${cell.usage.inputTokens ?? 0} input tokens, ${cell.usage.outputTokens ?? 0} output tokens`}
-                  title={`${cell.usage.inputTokens ?? 0} input tokens, ${cell.usage.outputTokens ?? 0} output tokens`}
-                >
-                  {cell.usage.inputTokens ?? 0}
-                  <ArrowUp aria-hidden="true" />
-                  {cell.usage.outputTokens ?? 0}
-                  <ArrowDown aria-hidden="true" />
-                </span>
+              {expanded ? (
+                <Minimize2 aria-hidden="true" />
+              ) : (
+                <Maximize2 aria-hidden="true" />
               )}
-              <span title="OpenRouter reported cost, including draft and review when used">
-                {formatCost(cell.usage?.costUsd)}
-              </span>
-            </small>
-          </div>
+            </button>
+          )}
+          {!expanded && (
+            <div className="cell-footer">
+              <a
+                href={outputURL}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Open output"
+                title="Open output"
+              >
+                <ArrowUpRight aria-hidden="true" />
+              </a>
+              <small className="cell-usage">
+                {cell.usage && (
+                  <span
+                    className="cell-tokens"
+                    role="img"
+                    aria-label={`${cell.usage.inputTokens ?? 0} input tokens, ${cell.usage.outputTokens ?? 0} output tokens`}
+                    title={`${cell.usage.inputTokens ?? 0} input tokens, ${cell.usage.outputTokens ?? 0} output tokens`}
+                  >
+                    {cell.usage.inputTokens ?? 0}
+                    <ArrowUp aria-hidden="true" />
+                    {cell.usage.outputTokens ?? 0}
+                    <ArrowDown aria-hidden="true" />
+                  </span>
+                )}
+                <span title="OpenRouter reported cost, including draft and review when used">
+                  {formatCost(cell.usage?.costUsd)}
+                </span>
+              </small>
+            </div>
+          )}
         </>
       ) : cell.status === "error" ? (
         <p className="cell-error">{cellError(cell)}</p>
