@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useLayoutEffect, useRef } from "react";
 import { ErrorMessage } from "../components/error-message";
 import { MarkdownContent } from "../../shared/markdown";
 import "./markdown-preview.css";
@@ -10,6 +11,8 @@ export function MarkdownPreview({
   url: string;
   title: string;
 }) {
+  const previewRef = useRef<HTMLDivElement>(null);
+  const documentRef = useRef<HTMLDivElement>(null);
   const query = useQuery({
     queryKey: ["markdown", url],
     staleTime: Infinity,
@@ -22,8 +25,37 @@ export function MarkdownPreview({
       return response.text();
     },
   });
+  useLayoutEffect(() => {
+    const preview = previewRef.current;
+    const document = documentRef.current;
+    if (!preview || !document) return;
+    const fit = () => {
+      const styles = getComputedStyle(preview);
+      const available =
+        preview.clientWidth -
+        parseFloat(styles.paddingLeft) -
+        parseFloat(styles.paddingRight);
+      if (available <= 0) return;
+      // Measure in CSS pixels so the surrounding table's zoom is independent.
+      document.style.zoom = "1";
+      document.style.width = `${available}px`;
+      const width = Math.max(available, document.scrollWidth);
+      document.style.width = `${width}px`;
+      document.style.zoom = `${available / width}`;
+    };
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(preview);
+    observer.observe(document);
+    preview.addEventListener("load", fit, true);
+    return () => {
+      observer.disconnect();
+      preview.removeEventListener("load", fit, true);
+    };
+  }, [query.data]);
   return (
     <div
+      ref={previewRef}
       className="markdown-preview"
       role="region"
       aria-label={title}
@@ -39,7 +71,7 @@ export function MarkdownPreview({
         </>
       )}
       {query.data !== undefined && (
-        <div className="markdown-document">
+        <div className="markdown-document" ref={documentRef}>
           <MarkdownContent markdown={query.data} />
         </div>
       )}

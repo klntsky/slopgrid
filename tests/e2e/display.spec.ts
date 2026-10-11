@@ -649,3 +649,64 @@ test("a missing grid reports 404 immediately without retries or a creation link 
   expect(requests).toBe(1);
   await expect(page.getByRole("main").getByRole("link")).toHaveCount(0);
 });
+
+test("Markdown fits wide code to the preview width and scrolls only vertically", async ({
+  page,
+  request,
+}) => {
+  await request.post("/fixture/reset", { data: { billing: false } });
+  const line = "const longExample = " + "abcdefghij".repeat(24) + ";";
+  const markdown =
+    "```js\n" +
+    Array(400).fill(line).join("\n") +
+    "\n```\n\nA paragraph after the code.";
+  await page.route(/\/outputs\/[^?]+\?raw=1$/, (route) =>
+    route.fulfill({ contentType: "text/plain", body: markdown }),
+  );
+  await create(page, "Markdown", "cat", "hat");
+  await expectProgress(page, 1, 1);
+  const checkFit = async () => {
+    const preview = page.locator(".markdown-preview:visible");
+    await expect(preview.locator("pre")).toContainText(line);
+    await expect
+      .poll(() =>
+        preview.evaluate((el) => {
+          const doc = el.querySelector<HTMLElement>(".markdown-document")!;
+          const pre = doc.querySelector("pre")!;
+          const bounds = el.getBoundingClientRect();
+          const code = pre.getBoundingClientRect();
+          return (
+            el.scrollWidth <= el.clientWidth + 1 &&
+            pre.scrollWidth <= pre.clientWidth + 1 &&
+            code.right <= bounds.right + 1 &&
+            Number(doc.style.zoom) < 1
+          );
+        }),
+      )
+      .toBe(true);
+    await expect
+      .poll(() => preview.evaluate((el) => el.scrollHeight > el.clientHeight))
+      .toBe(true);
+    await preview.evaluate((el) => {
+      el.scrollTop = 80;
+      el.scrollLeft = 80;
+    });
+    await expect
+      .poll(() => preview.evaluate((el) => el.scrollTop))
+      .toBeGreaterThan(0);
+    expect(await preview.evaluate((el) => el.scrollLeft)).toBe(0);
+  };
+  await checkFit();
+  await page
+    .getByRole("button", { name: "Expand Markdown", exact: true })
+    .click();
+  await checkFit();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await checkFit();
+  await page
+    .getByRole("button", { name: "Collapse Markdown", exact: true })
+    .click();
+  await checkFit();
+  await page.reload();
+  await checkFit();
+});

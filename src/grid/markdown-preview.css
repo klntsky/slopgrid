@@ -3,7 +3,9 @@
   height: 100%;
   min-width: 0;
   min-height: 0;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
   padding: 24px;
   font: 16px/1.6 system-ui;
   overflow-wrap: anywhere;
@@ -34,7 +36,10 @@
   color: var(--accent);
 }
 .markdown-document pre {
-  overflow: auto;
+  width: max-content;
+  min-width: 100%;
+  white-space: pre;
+  overflow-wrap: normal;
   padding: 12px;
   background: var(--panel);
 }
@@ -67,6 +72,8 @@
   width: 18px;
   height: 18px;
 }
-.cell:has(.markdown-expand) .markdown-document > :first-child {
+.cell:has(.markdown-expand)
+  .markdown-document
+  > :first-child:not(pre):not(table) {
   margin-right: 32px;
 }
