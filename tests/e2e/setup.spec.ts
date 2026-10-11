@@ -131,6 +131,69 @@ test("model choices start empty and filtering preserves deliberate selections", 
   }
 });
 
+test("Shift-click selects and clears visible model ranges while preserving hidden selections and drafts", async ({
+  page,
+}) => {
+  const names = ["A even", "B odd", "C even", "D odd", "E even", "F odd"];
+  await page.route("**/api/models", async (route) => {
+    const response = await route.fetch();
+    const [model] = await response.json();
+    await route.fulfill({
+      json: names.map((name, index) => ({
+        ...model,
+        id: `range/${index}`,
+        name,
+        text: true,
+        image: false,
+      })),
+    });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "SVG", exact: true }).click();
+  await page.getByRole("button", { name: "Clear column model filter" }).click();
+  const columns = page.getByRole("group", { name: "Column values" });
+  const box = (index: number) =>
+    columns.getByRole("checkbox", { name: names[index], exact: true });
+  const selected = columns.locator("label.checkbox:has(input:checked)");
+  await box(1).click();
+  await columns
+    .getByText(names[4], { exact: true })
+    .click({ modifiers: ["Shift"] });
+  await expect(selected).toHaveText(names.slice(1, 5));
+  await box(3).click();
+  await box(1).click({ modifiers: ["Shift"] });
+  await expect(selected).toHaveText([names[4]]);
+  await box(5).click();
+  await box(0).click();
+  await page.getByLabel("Search models").fill("even");
+  await box(2).click({ modifiers: ["Shift"] });
+  await expect(selected).toHaveText([names[0], names[2], names[4]]);
+  await box(4).click({ modifiers: ["Shift"] });
+  await expect(selected).toHaveText([names[0]]);
+  await page.getByLabel("Search models").fill("odd");
+  await box(1).click({ modifiers: ["Shift"] });
+  await expect(selected).toHaveText([names[1], names[5]]);
+  await box(1).press("Space");
+  await page.getByRole("button", { name: "Clear column model filter" }).click();
+  await expect(selected).toHaveText([names[0], names[5]]);
+  await page.reload();
+  await page.getByRole("button", { name: "Clear column model filter" }).click();
+  await expect(selected).toHaveText([names[0], names[5]]);
+  await page
+    .getByRole("combobox", { name: "Rows", exact: true })
+    .selectOption("model");
+  await page.getByRole("button", { name: "Clear row model filter" }).click();
+  const rows = page.getByRole("group", { name: "Row values" });
+  await rows.getByRole("checkbox", { name: names[0], exact: true }).click();
+  await rows
+    .getByRole("checkbox", { name: names[2], exact: true })
+    .click({ modifiers: ["Shift"] });
+  await expect(rows.locator("label.checkbox:has(input:checked)")).toHaveText(
+    names.slice(0, 3),
+  );
+  await expect(selected).toHaveText([names[0], names[5]]);
+});
+
 test("unused prompt variables block generation and the API rejects bypasses", async ({
   page,
   request,

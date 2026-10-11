@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Search, X } from "lucide-react";
 import { efforts, type GridInput } from "../../server/domain";
 import { effortLabel } from "../../server/compatibility";
@@ -25,6 +25,10 @@ export function AxisEditor({
   const defaultFilter = format === "image" ? "" : "latest";
   const [filter, setFilter] = useState(defaultFilter);
   const filterInput = useRef<HTMLInputElement>(null);
+  const rangeAnchor = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    rangeAnchor.current = undefined;
+  }, [axis.kind]);
   const defaultHint = useTooltip<HTMLLabelElement>(modelDefaultHint);
   const kinds =
     format === "image"
@@ -123,17 +127,30 @@ export function AxisEditor({
                   type="checkbox"
                   checked={axis.values.includes(c.id)}
                   onChange={(e) => {
-                    const selected = e.target.checked
-                      ? [...axis.values, c.id]
-                      : axis.values.filter((v) => v !== c.id);
+                    const anchor = visibleChoices.findIndex(
+                      (choice) => choice.id === rangeAnchor.current,
+                    );
+                    const target = visibleChoices.indexOf(c);
+                    const range =
+                      axis.kind === "model" &&
+                      (e.nativeEvent as MouseEvent).shiftKey &&
+                      anchor >= 0
+                        ? visibleChoices.slice(
+                            Math.min(anchor, target),
+                            Math.max(anchor, target) + 1,
+                          )
+                        : [c];
+                    const selected = new Set(axis.values);
+                    for (const choice of range)
+                      if (e.target.checked) selected.add(choice.id);
+                      else selected.delete(choice.id);
+                    rangeAnchor.current = c.id;
                     onChange({
                       ...axis,
                       values:
                         axis.kind === "effort"
-                          ? efforts.filter((effort) =>
-                              selected.includes(effort),
-                            )
-                          : selected,
+                          ? efforts.filter((effort) => selected.has(effort))
+                          : [...selected],
                     });
                   }}
                 />
