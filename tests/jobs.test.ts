@@ -17,7 +17,7 @@ class ControlledProvider extends Provider {
     {
       resolve: (r: Result) => void;
       reject: (e: unknown) => void;
-      write: (text: string) => void;
+      write: (text: string, estimatedCostUsd?: number) => void;
     }
   >();
   ignoreAbort = false;
@@ -25,7 +25,7 @@ class ControlledProvider extends Provider {
     _key: string,
     _format: Grid["input"]["format"],
     cell: Cell,
-    onChunk: (text: string) => void,
+    onChunk: (text: string, estimatedCostUsd?: number) => void,
     signal?: AbortSignal,
   ): Promise<Result> {
     this.started.push({ id: cell.id, owner: cell.prompt.split(" ")[0] });
@@ -282,9 +282,11 @@ test("a late result from a paused request cannot restore its discarded preview o
     h.jobs.start(g);
     await flush();
     const held = h.provider.pending.get("alice/grid/0")!;
-    held.write("Before pause");
+    held.write("Before pause", 0.1);
+    assert.equal(g.cells[0].estimatedCostUsd, 0.1);
     h.jobs.pause(g);
-    held.write("Late partial result");
+    held.write("Late partial result", 0.2);
+    assert.equal(g.cells[0].estimatedCostUsd, undefined);
     h.provider.finish("alice/grid/0");
     await flush();
     const paused = h.store.get(g.id)!;
@@ -350,7 +352,7 @@ test("backoff releases workers to other users, honors Retry-After, and retries w
     await flush();
     h.provider.finish("alice/grid/0");
     await flush();
-    h.provider.pending.get("alice/grid/1")!.write("Partial output");
+    h.provider.pending.get("alice/grid/1")!.write("Partial output", 0.1);
     h.jobs.start(h.grid("bob", "grid", 1));
     h.provider.fail("alice/grid/1", 429, {
       message: "Too many requests",
@@ -360,6 +362,7 @@ test("backoff releases workers to other users, honors Retry-After, and retries w
     assert.equal(alice.status, "running");
     assert.equal(alice.cells[1].status, "pending");
     assert.equal(alice.cells[1].draft, undefined);
+    assert.equal(alice.cells[1].estimatedCostUsd, undefined);
     assert.equal(alice.cells[1].error, "Too many requests");
     assert.equal(alice.cells[1].errorCode, 429);
     assert.ok(h.provider.pending.has("bob/grid/0"));

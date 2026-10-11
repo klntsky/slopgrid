@@ -38,6 +38,8 @@ export function createGridPresenter(store: Store, origin: URL) {
         retrying: c.retrying,
         mediaType: c.mediaType,
         usage: c.usage,
+        estimatedCostUsd:
+          c.status === "running" ? c.estimatedCostUsd : undefined,
         draft: g.input.format === "html" ? undefined : c.draft,
         previewURL:
           g.input.format === "html" && c.status === "running" && c.preview

@@ -70,6 +70,7 @@ export class Jobs {
         delete cell.retrying;
         this.retries.delete(cell.id);
         delete cell.draft;
+        delete cell.estimatedCostUsd;
       }
     g.status = "running";
     delete g.interruption;
@@ -98,6 +99,7 @@ export class Jobs {
       if (runningGrid.id === g.id) {
         cell.status = "pending";
         delete cell.draft;
+        delete cell.estimatedCostUsd;
         delete cell.error;
         delete cell.errorCode;
         controller.abort();
@@ -168,6 +170,7 @@ export class Jobs {
       delete cell.errorCode;
       delete cell.retrying;
       delete cell.draft;
+      delete cell.estimatedCostUsd;
       this.emit(grid);
       void this.runCell(grid, cell, key, controller, owner);
     }
@@ -230,12 +233,13 @@ export class Jobs {
         key,
         grid.input.format,
         cell,
-        (text) => {
+        (text, estimatedCostUsd) => {
           if (controller.signal.aborted) return;
+          const changed = cell.draft !== text;
           cell.draft = text;
-          if (grid.input.format === "html") {
+          cell.estimatedCostUsd = estimatedCostUsd;
+          if (changed && grid.input.format === "html") {
             this.previews.update(cell, text, () => this.previewUpdated(grid));
-            return;
           }
           this.previewUpdated(grid);
         },
@@ -292,6 +296,7 @@ export class Jobs {
       const billing = this.store.billing.cell(cell.id);
       if (billing) Object.assign(cell, billing);
       delete cell.draft;
+      delete cell.estimatedCostUsd;
       this.running.delete(cell.id);
       this.settle(grid);
       this.emit(grid);

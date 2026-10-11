@@ -19,7 +19,7 @@ export async function generateInference(
   key: string,
   format: GridInput["format"],
   cell: Cell,
-  onChunk: (text: string) => void,
+  onChunk: (text: string, estimatedCostUsd?: number) => void,
   signal?: AbortSignal,
   observe?: CallObserver,
   budget?: TextBudget,
@@ -133,10 +133,24 @@ export async function generateInference(
         failure = error;
       },
     });
-    let text = "";
-    for await (const chunk of result.textStream) {
-      text += chunk;
-      onChunk(text);
+    // Approximate tokens from UTF-8 bytes; final provider usage replaces this.
+    const inputTokens =
+      Math.ceil(
+        Buffer.byteLength(cell.prompt + instruction(format), "utf8") / 4,
+      ) + 8;
+    const inputCost =
+      inputTokens * budget.pricing.prompt + (budget.pricing.request ?? 0);
+    let text = "",
+      outputBytes = 0;
+    for await (const chunk of result.fullStream) {
+      if (chunk.type === "text-delta" || chunk.type === "reasoning-delta") {
+        outputBytes += Buffer.byteLength(chunk.text, "utf8");
+        if (chunk.type === "text-delta") text += chunk.text;
+      } else if (chunk.type !== "start-step") continue;
+      onChunk(
+        text,
+        inputCost + Math.ceil(outputBytes / 4) * budget.pricing.completion,
+      );
     }
     const [streamUsage, metadata, finishReason, rawFinishReason] =
       await Promise.all([

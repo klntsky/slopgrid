@@ -36,6 +36,7 @@ export function generationBudget(
   return {
     maxOutputTokens,
     inputCost,
+    pricing: model.pricing,
     maxPrice: {
       prompt: model.pricing.prompt * 1000000,
       completion: model.pricing.completion * 1000000,

@@ -17,6 +17,8 @@ async function upstream(streamError?: Record<string, unknown>) {
     { id: "all", reasoning: { mandatory: false, supported_efforts: null } },
     { id: "fixed", reasoning: { mandatory: true } },
     { id: "router" },
+    { id: "free" },
+    { id: "request-fee" },
     { id: "required:batch" },
     { id: "~fixture/batch", alias_target: { slug: "required:batch" } },
     { id: "all:batch:nitro" },
@@ -31,7 +33,14 @@ async function upstream(streamError?: Record<string, unknown>) {
     supported_parameters: ["reasoning", "reasoning_effort"],
     ...m,
     name: m.id,
-    pricing: { prompt: "0.000003", completion: "0.00002" },
+    pricing:
+      m.id === "free"
+        ? { prompt: "0", completion: "0" }
+        : {
+            prompt: "0.000003",
+            completion: "0.00002",
+            ...(m.id === "request-fee" && { request: "0.01" }),
+          },
     context_length: 1000000,
     top_provider: { max_completion_tokens: 128000 },
     architecture: { input_modalities: ["text"], output_modalities: ["text"] },
@@ -98,6 +107,9 @@ async function upstream(streamError?: Record<string, unknown>) {
           })),
         })
       : "# Output";
+    res.write(
+      `data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: { reasoning: "Private reasoning before the answer." }, finish_reason: null }] })}\n\n`,
+    );
     const midpoint = Math.floor(text.length / 2);
     for (const content of [text.slice(0, midpoint), text.slice(midpoint)])
       res.write(
@@ -330,6 +342,37 @@ test("the live model catalog excludes batch variants from both upstream catalogs
         models.some((model) => model.id === id),
         `${id} remains available for live generation`,
       );
+  } finally {
+    await h.close();
+  }
+});
+
+test("live cost includes reasoning and request fees without changing output or inventing final charges", async () => {
+  const h = await upstream();
+  try {
+    const estimates = new Map<string, { text: string; cost: number }[]>();
+    for (const model of ["router", "free", "request-fee"]) {
+      const updates: { text: string; cost: number }[] = [];
+      estimates.set(model, updates);
+      const result = await h.provider.generate(
+        "fixture-key",
+        "markdown",
+        cell(model, "default"),
+        (text, cost) => updates.push({ text, cost: cost! }),
+      );
+      assert.equal(result.files["index.md"], "# Output");
+      assert.equal(result.usage?.costUsd, undefined);
+    }
+    const paid = estimates.get("router")!;
+    const reasoning = paid.filter((update) => update.text === "");
+    assert.ok(reasoning.at(-1)!.cost > reasoning[0].cost);
+    assert.ok(paid.at(-1)!.cost > reasoning.at(-1)!.cost);
+    assert.ok(estimates.get("free")!.every((update) => update.cost === 0));
+    assert.ok(
+      Math.abs(
+        estimates.get("request-fee")!.at(-1)!.cost - paid.at(-1)!.cost - 0.01,
+      ) < 1e-12,
+    );
   } finally {
     await h.close();
   }

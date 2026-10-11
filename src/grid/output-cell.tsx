@@ -171,6 +171,19 @@ export function OutputCell({
           )}
         </div>
       )}
+      {!expanded &&
+        cell.status === "running" &&
+        cell.estimatedCostUsd !== undefined && (
+          <div className="cell-footer">
+            <small
+              className="cell-usage"
+              style={{ marginLeft: "auto" }}
+              title="Estimated cost"
+            >
+              ≈{formatCost(cell.estimatedCostUsd)}
+            </small>
+          </div>
+        )}
     </article>
   );
 }

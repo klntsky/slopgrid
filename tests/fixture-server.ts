@@ -13,6 +13,7 @@ let streamBilling = false;
 let unsafe = false;
 let markdownOutput: string | undefined;
 let websiteStreaming = false;
+let costStreaming = false;
 let advanceWebsite: (() => void) | undefined;
 let svgStreaming = false;
 let advanceSvg: (() => void) | undefined;
@@ -237,6 +238,22 @@ upstream.post("/api/v1/chat/completions", async (req, res) => {
     model: "fixture/text",
   };
   res.set("Content-Type", "text/event-stream");
+  if (costStreaming) {
+    for (const delta of [
+      { reasoning: "Thinking through the drawing. ".repeat(30) },
+      { content: "# Drawing\n\n" + "A detailed description. ".repeat(40) },
+    ]) {
+      res.write(
+        `data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta, finish_reason: null }] })}\n\n`,
+      );
+      await waitForRelease(prompt, res);
+      if (res.destroyed) return;
+    }
+    res.end(
+      `data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: {}, finish_reason: prompt.includes("dog") ? "length" : "stop" }], usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30, cost: prompt.includes("dog") ? 0.02 : 0.01 } })}\n\ndata: [DONE]\n\n`,
+    );
+    return;
+  }
   if (websiteStreaming && system.includes("JSON object")) {
     const heading = "Growing website";
     const html = `<!doctype html><link rel="stylesheet" href="style.css"><h1>${heading}</h1><p id="module">Waiting for JavaScript</p><script type="module" src="app.js"></script>`;
@@ -337,6 +354,7 @@ app.post("/fixture/reset", (req, res) => {
   for (const entry of [...held]) entry.release();
   aborted = [];
   websiteStreaming = !!req.body.websiteStreaming;
+  costStreaming = !!req.body.costStreaming;
   advanceWebsite?.();
   advanceWebsite = undefined;
   svgStreaming = !!req.body.svgStreaming;

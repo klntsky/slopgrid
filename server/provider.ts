@@ -193,7 +193,7 @@ export class Provider {
     key: string,
     format: GridInput["format"],
     cell: Cell,
-    onChunk: (text: string) => void,
+    onChunk: (text: string, estimatedCostUsd?: number) => void,
     signal?: AbortSignal,
     observe?: CallObserver,
   ): Promise<{

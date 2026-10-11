@@ -70,9 +70,7 @@ test("generation hints appear on keyboard focus before and after outputs finish"
     );
     await expect(
       page.locator('.tippy-box[data-state="visible"]'),
-    ).toContainText(
-      "Total reported cost of the displayed outputs and failures",
-    );
+    ).toContainText("Completed output costs plus current estimates");
     await page.goto("/");
     await page.getByRole("button", { name: "SVG", exact: true }).click();
     await page
@@ -187,7 +185,9 @@ test("one completed image covers rendering, reload, and desktop/mobile workspace
   await create(page, "Image", "dog", "hat", prompt);
   await expectProgress(page, 1, 1);
   const bar = page.getByRole("progressbar", { name: "Grid generation" });
-  await expect(page.getByText("$0.012345", { exact: true })).toHaveCount(1);
+  await expect(
+    page.locator(".cell-usage").getByText("$0.012345", { exact: true }),
+  ).toHaveCount(1);
   await page.reload();
   await expect(bar).toHaveAttribute("value", "1");
   const image = page.getByRole("img", { name: "Generated image" }).first();
@@ -374,7 +374,9 @@ test("dark theme applies to generation controls, cell labels, and billing dialog
     expect(Math.max(...channels.slice(0, 3))).toBeLessThan(80);
   }
   await dialog.getByRole("button", { name: "Close", exact: true }).click();
-  await expect(page.getByText("$0.000123", { exact: true })).toBeVisible();
+  await expect(
+    page.locator(".cell-usage").getByText("$0.000123", { exact: true }),
+  ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Resume generation" }),
   ).toBeEnabled();

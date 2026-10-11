@@ -671,3 +671,74 @@ test("OpenRouter balance sets parallel capacity and Resume refreshes it after a 
     await request.post("/fixture/release", { data: { all: true } });
   }
 });
+
+test("streaming prices grow with reasoning and output, reconcile on success, and leave the grid total on failure", async ({
+  page,
+  request,
+}) => {
+  await request.post("/fixture/reset", {
+    data: { costStreaming: true, holdGenerations: true },
+  });
+  try {
+    await create(page, "Markdown", "cat\ndog", "hat");
+    const cells = page.locator("article.cell");
+    const total = page.locator(".grid-cost");
+    const price = async (index: number) =>
+      Number(
+        (await cells.nth(index).locator(".cell-usage").innerText()).replace(
+          /[^0-9.]/g,
+          "",
+        ),
+      );
+    const release = (animal: string) =>
+      request.post("/fixture/release", {
+        data: { prompt: `Draw ${animal} wearing a hat` },
+      });
+    await expect
+      .poll(
+        async () =>
+          (await (await request.get("/fixture/workers")).json()).held.length,
+      )
+      .toBe(2);
+    await release("cat");
+    await release("dog");
+    await expect(cells.locator('[title="Estimated cost"]')).toHaveCount(2);
+    const reasoning = await price(0);
+    expect(reasoning).toBeGreaterThan(0);
+    const expectTotal = async (cost: number, estimated = true) => {
+      const formatted = cost.toLocaleString("en-US", {
+        style: "currency",
+        currency: "USD",
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 8,
+      });
+      await expect(total).toHaveAttribute(
+        "aria-label",
+        `Total cost: ${estimated ? "≈" : ""}${formatted}`,
+      );
+    };
+    await expectTotal(reasoning + (await price(1)));
+    await release("cat");
+    await expect.poll(() => price(0)).toBeGreaterThan(reasoning);
+    await expectTotal((await price(0)) + (await price(1)));
+    await release("cat");
+    await expectProgress(page, 1, 2);
+    await expect(
+      cells.nth(0).getByTitle("OpenRouter reported cost"),
+    ).toHaveText("$0.01");
+    await expectTotal(0.01 + (await price(1)));
+    await page.reload();
+    await expect(cells.nth(1).getByTitle("Estimated cost")).toBeVisible();
+    await expectTotal(0.01 + (await price(1)));
+    const before = await price(1);
+    await release("dog");
+    await expect.poll(() => price(1)).toBeGreaterThan(before);
+    await release("dog");
+    await expect(cells.nth(1).locator(".cell-error")).toBeVisible();
+    await expectTotal(0.01, false);
+    await page.reload();
+    await expectTotal(0.01, false);
+  } finally {
+    await request.post("/fixture/release", { data: { all: true } });
+  }
+});

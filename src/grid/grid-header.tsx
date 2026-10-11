@@ -1,3 +1,4 @@
+import { formatCost } from "../format";
 import { CopyButton } from "../components/copy-button";
 import { PublishGrid } from "./publish-grid";
 import { Author } from "../components/identity";
@@ -21,23 +22,23 @@ export function GridHeader({
     progressText = failed
       ? `${finished} of ${g.cells.length} outputs finished: ${complete} complete, ${failed} failed`
       : `${complete} of ${g.cells.length} outputs complete`;
-  const reportedCosts = g.cells.flatMap((cell) =>
-    (cell.status === "complete" || cell.status === "error") &&
-    cell.usage?.costUsd !== undefined
-      ? [cell.usage.costUsd]
-      : [],
+  const costs = g.cells.flatMap((cell) => {
+    const cost =
+      cell.status === "complete"
+        ? cell.usage?.costUsd
+        : cell.status === "running"
+          ? cell.estimatedCostUsd
+          : undefined;
+    return cost === undefined ? [] : [cost];
+  });
+  const estimated = g.cells.some(
+    (cell) => cell.status === "running" && cell.estimatedCostUsd !== undefined,
   );
   const totalCost =
-    reportedCosts.length || finished === 0
-      ? reportedCosts.reduce((sum, cost) => sum + cost, 0)
+    costs.length || complete === 0
+      ? costs.reduce((sum, cost) => sum + cost, 0)
       : undefined;
-  const totalCostText =
-    totalCost === undefined
-      ? "Cost unavailable"
-      : totalCost.toLocaleString("en-US", {
-          style: "currency",
-          currency: "USD",
-        });
+  const totalCostText = `${estimated ? "≈" : ""}${formatCost(totalCost)}`;
   const inferenceRunning =
     g.status === "running" || g.cells.some((cell) => cell.status === "running");
   const paused = g.status === "paused" && g.canEdit && !g.published;
@@ -47,7 +48,7 @@ export function GridHeader({
       : "Stops active requests. Resume restarts unfinished outputs.",
   );
   const costHint = useTooltip<HTMLSpanElement>(
-    "Total reported cost of the displayed outputs and failures; excludes unfinished outputs, unavailable charges, and previous retry attempts",
+    "Completed output costs plus current estimates; excludes failed attempts and unavailable charges",
   );
   return (
     <>
@@ -105,7 +106,7 @@ export function GridHeader({
           </div>
           <span
             className="grid-cost"
-            aria-label={`Total reported cost: ${totalCostText}`}
+            aria-label={`Total cost: ${totalCostText}`}
             ref={costHint}
             tabIndex={0}
           >

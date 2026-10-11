@@ -86,6 +86,7 @@ export type Cell = {
   retrying?: boolean;
   mediaType?: string;
   draft?: string;
+  estimatedCostUsd?: number;
   preview?: { attempt: string; revision: number };
   usage?: { inputTokens?: number; outputTokens?: number; costUsd?: number };
 };
