@@ -227,27 +227,39 @@ section {
 }
 .formats {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-auto-rows: 1fr;
   gap: 12px;
 }
 .format {
-  padding: 20px;
+  padding: 24px 16px;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  justify-content: flex-start;
   gap: 18px;
-  min-height: 120px;
-  background: var(--tile);
+  min-height: 152px;
+  border-radius: 14px;
+  background: var(--paper);
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: -0.4px;
+  text-align: center;
 }
 .format-symbol {
-  width: 28px;
-  height: 28px;
-  color: var(--icon);
+  width: 44px;
+  height: 44px;
+  stroke-width: 1.5;
+  color: var(--logo-color);
+}
+.format:enabled:hover {
+  border-color: var(--selected-border);
+  background: color-mix(in srgb, var(--paper) 70%, var(--selected));
 }
 .format.selected,
 .format.selected:hover {
   border-color: var(--selected-border);
   background: var(--selected);
+  box-shadow: inset 0 0 0 1px var(--selected-border);
 }
 .axes,
 .fixed-options {
@@ -930,9 +942,9 @@ button.grid-name {
     grid-template-columns: repeat(2, 1fr);
   }
   .format {
-    min-height: 110px;
-    gap: 20px;
-    padding: 20px;
+    padding: 20px 12px;
+    min-height: 140px;
+    font-size: 18px;
   }
   .axes,
   .fixed-options {
