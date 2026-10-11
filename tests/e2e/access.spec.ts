@@ -267,11 +267,9 @@ test("EDIT cancels inference and restores settings, while a public FORK creates 
     await page.reload();
     await expect(page.getByLabel("Column values")).toHaveValue("hat");
     await page.getByLabel("Row values").fill("owl");
-    await page.getByRole("button", { name: "Continue to prompt" }).click();
     await expect(page.getByLabel("Prompt", { exact: true })).toHaveValue(
       "Draw $VARIABLE_ROW wearing a $VARIABLE_COLUMN",
     );
-    await page.getByRole("button", { name: "Continue to key setup" }).click();
     await page.getByRole("button", { name: "Generate", exact: true }).click();
     await expectProgress(page, 1, 1);
     expect(page.url()).not.toBe(original);
@@ -300,13 +298,9 @@ test("EDIT cancels inference and restores settings, while a public FORK creates 
       await visitor.getByRole("button", { name: "FORK", exact: true }).click();
       await expect(visitor.getByLabel("Row values")).toHaveValue("owl");
       await visitor.getByLabel("Row values").fill("fox");
-      await visitor.getByRole("button", { name: "Continue to prompt" }).click();
       await expect(visitor.getByLabel("Prompt", { exact: true })).toHaveValue(
         "Draw $VARIABLE_ROW wearing a $VARIABLE_COLUMN",
       );
-      await visitor
-        .getByRole("button", { name: "Continue to key setup" })
-        .click();
       await visitor.getByRole("link", { name: "Connect OpenRouter" }).click();
       await visitor
         .getByRole("button", { name: "Generate", exact: true })
@@ -724,11 +718,9 @@ test("manual key entry persists in the browser, rejects invalid replacements, an
     await page
       .getByRole("combobox", { name: "Model", exact: true })
       .selectOption("fixture/text");
-    await page.getByRole("button", { name: "Continue to prompt" }).click();
     await page
       .getByLabel("Prompt", { exact: true })
       .fill("Draw $VARIABLE_ROW with $VARIABLE_COLUMN");
-    await page.getByRole("button", { name: "Continue to key setup" }).click();
     await page.getByRole("button", { name: "Generate", exact: true }).click();
     await expectProgress(page, 0, 1);
     await page.getByRole("button", { name: "Pause generation" }).click();

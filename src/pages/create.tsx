@@ -24,7 +24,7 @@ import { modelDefaultHint, useTooltip } from "../components/use-tooltip";
 export function Create() {
   const [draft, setDraft] = useCreateDraft(),
     [validationError, setError] = useState("");
-  const { step, input } = draft,
+  const { formatSelected, input } = draft,
     navigate = useNavigate(),
     connection = useConnection();
   const inference = useInferenceMutation(async (grid) => {
@@ -61,7 +61,7 @@ export function Create() {
   function selectFormat(format: GridInput["format"]) {
     inference.reset();
     setDraft((d) => ({
-      step: Math.max(1, d.step),
+      formatSelected: true,
       input: {
         ...d.input,
         format,
@@ -107,9 +107,11 @@ export function Create() {
             return (
               <button
                 key={f}
-                aria-pressed={step > 0 && input.format === f}
+                aria-pressed={formatSelected && input.format === f}
                 className={
-                  step > 0 && input.format === f ? "format selected" : "format"
+                  formatSelected && input.format === f
+                    ? "format selected"
+                    : "format"
                 }
                 onClick={() => selectFormat(f as GridInput["format"])}
               >
@@ -123,7 +125,7 @@ export function Create() {
           })}
         </div>
       </section>
-      {step >= 1 && (
+      {formatSelected && (
         <section>
           <div className="section-heading">
             <span className="number">02</span>
@@ -227,29 +229,11 @@ export function Create() {
                 {input.rows.values.length * input.columns.values.length} outputs
               </p>
               <CompatibilityTable input={input} models={catalog.data} />
-              {step < 2 && (
-                <button
-                  className="secondary"
-                  disabled={!catalog.data}
-                  onClick={() => {
-                    if (
-                      !input.rows.values.length ||
-                      !input.columns.values.length
-                    ) {
-                      setError("Add at least one value to each dimension.");
-                      return;
-                    }
-                    setDraft((d) => ({ ...d, step: Math.max(2, d.step) }));
-                  }}
-                >
-                  Continue to prompt
-                </button>
-              )}
             </>
           )}
         </section>
       )}
-      {step >= 2 && (
+      {formatSelected && (
         <section>
           <div className="section-heading">
             <span className="number">03</span>
@@ -264,31 +248,16 @@ export function Create() {
             onChange={(e) => update({ prompt: e.target.value })}
             placeholder="Describe what you want to generate"
           />
-          {step >= 3 && <ErrorMessage error={unusedVariableIssue(input)} />}
+          <ErrorMessage
+            error={input.prompt.trim() ? unusedVariableIssue(input) : undefined}
+          />
           <p className="hint">
             Use $VARIABLE_ROW and $VARIABLE_COLUMN for prompt variable
             dimensions.
           </p>
-          <button
-            className="secondary"
-            onClick={() => {
-              if (!input.prompt.trim()) {
-                setError("Enter a prompt.");
-                return;
-              }
-              const issue = unusedVariableIssue(input);
-              if (issue) {
-                setError(issue);
-                return;
-              }
-              setDraft((d) => ({ ...d, step: 3 }));
-            }}
-          >
-            Continue to key setup
-          </button>
         </section>
       )}
-      {step >= 3 && (
+      {formatSelected && (
         <section>
           <div className="section-heading">
             <span className="number">04</span>
@@ -322,6 +291,8 @@ export function Create() {
             disabled={
               busy ||
               modelMissing ||
+              !input.rows.values.length ||
+              !input.columns.values.length ||
               !connection.data?.connected ||
               !input.prompt.trim() ||
               !!unusedVariableIssue(input) ||

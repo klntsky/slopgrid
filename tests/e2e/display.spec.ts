@@ -101,11 +101,9 @@ test("generation hints appear on keyboard focus before and after outputs finish"
     await expect(page.locator('.tippy-box[data-state="visible"]')).toHaveText(
       "Uses the model’s default thinking settings.",
     );
-    await page.getByRole("button", { name: "Continue to prompt" }).click();
     await page
       .getByLabel("Prompt", { exact: true })
       .fill("Draw $VARIABLE_ROW with $VARIABLE_COLUMN");
-    await page.getByRole("button", { name: "Continue to key setup" }).click();
     await page.getByLabel("Budget limit per cell").focus();
     await expect(page.locator('.tippy-box[data-state="visible"]')).toHaveCount(
       1,

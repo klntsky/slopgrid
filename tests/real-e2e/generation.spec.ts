@@ -43,9 +43,7 @@ for (const [format, prompt] of Object.entries(prompts)) {
       .getByRole("combobox", { name: "Columns", exact: true })
       .selectOption("effort");
     await page.getByRole("checkbox", { name: "None", exact: true }).check();
-    await page.getByRole("button", { name: "Continue to prompt" }).click();
     await page.getByLabel("Prompt", { exact: true }).fill(prompt);
-    await page.getByRole("button", { name: "Continue to key setup" }).click();
     await page
       .getByRole("button", { name: "Use API key", exact: true })
       .click();

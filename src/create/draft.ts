@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
 import type { GridInput } from "../../server/domain";
-export type Draft = { step: number; input: GridInput };
+export type Draft = { formatSelected: boolean; input: GridInput };
 const storageKey = "slopgrid-draft";
 const initial: Draft = {
-  step: 0,
+  formatSelected: false,
   input: {
     format: "svg",
     prompt: "",

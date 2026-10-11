@@ -61,7 +61,7 @@ export function useGrid(id: string) {
     },
     onSuccess: async (grid) => {
       cache.setQueryData(["grid", id], grid);
-      saveDraft({ step: 1, input: grid.input });
+      saveDraft({ formatSelected: true, input: grid.input });
       await cache.invalidateQueries({ queryKey: ["grids"] });
       await navigate({ to: "/" });
     },

@@ -23,7 +23,6 @@ for (const width of [1280, 390]) {
     await columnValues
       .getByRole("checkbox", { name: "high", exact: true })
       .check();
-    await page.getByRole("button", { name: "Continue to prompt" }).click();
     const prompt = page.getByLabel("Prompt", { exact: true });
     await prompt.fill("Draw $VARIABLE_ROW");
     const swap = page.getByRole("button", { name: "Swap rows and columns" });
@@ -155,7 +154,7 @@ test("model choices start empty and filtering preserves deliberate selections", 
   }
 });
 
-test("unused prompt variables block setup, later edits block generation, and the API rejects bypasses", async ({
+test("unused prompt variables block generation and the API rejects bypasses", async ({
   page,
   request,
 }) => {
@@ -168,19 +167,13 @@ test("unused prompt variables block setup, later edits block generation, and the
   await expect(
     page.getByRole("combobox", { name: "Model", exact: true }),
   ).toHaveValue("");
-  await page.getByRole("button", { name: "Continue to prompt" }).click();
   for (const prompt of ["Draw a cat", "$VARIABLE_ROW", "$VARIABLE_COLUMN"]) {
     await page.getByLabel("Prompt", { exact: true }).fill(prompt);
-    await page.getByRole("button", { name: "Continue to key setup" }).click();
-    await expect(page.getByRole("heading", { name: "Key setup" })).toHaveCount(
-      0,
-    );
     await expect(page.getByRole("alert")).toContainText("Include $VARIABLE_");
   }
   await page
     .getByLabel("Prompt", { exact: true })
     .fill("$VARIABLE_ROW $VARIABLE_COLUMN");
-  await page.getByRole("button", { name: "Continue to key setup" }).click();
   const connect = page.getByRole("link", { name: "Connect OpenRouter" });
   await connect.click();
   await expect(
@@ -216,27 +209,42 @@ test("unused prompt variables block setup, later edits block generation, and the
   await expectProgress(page, 4, 4);
 });
 
-test("the prompt step removes redundant controls while keeping an accessible prompt", async ({
+test("selecting an output type reveals the entire form and preserves it on reload", async ({
   page,
 }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Image", exact: true }).click();
-  await page
-    .getByRole("combobox", { name: "Columns", exact: true })
-    .selectOption("variable");
-  await page.getByRole("button", { name: "Continue to prompt" }).click();
+  const prompt = page.getByLabel("Prompt", { exact: true });
+  await expect(prompt).toHaveCount(0);
+  for (const format of ["SVG", "Markdown", "Static website", "Image"]) {
+    await page.getByRole("button", { name: format, exact: true }).click();
+    await expect(
+      page.getByRole("combobox", { name: "Rows", exact: true }),
+    ).toBeVisible();
+    await expect(prompt).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "Connect OpenRouter" }),
+    ).toBeVisible();
+  }
+  await expect(page.getByRole("button", { name: /^Continue to/ })).toHaveCount(
+    0,
+  );
+  await prompt.fill("Draw $VARIABLE_ROW");
+  await page.reload();
+  await expect(prompt).toHaveValue("Draw $VARIABLE_ROW");
   await expect(
-    page.getByRole("heading", { name: "Enter your prompt" }),
+    page.getByRole("link", { name: "Connect OpenRouter" }),
   ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "Continue to prompt" }),
-  ).toHaveCount(0);
-  await expect(page.getByText("Prompt", { exact: true })).toHaveCount(0);
-  await page
-    .getByLabel("Prompt", { exact: true })
-    .fill("$VARIABLE_ROW $VARIABLE_COLUMN");
-  await page.getByRole("button", { name: "Continue to key setup" }).click();
-  await expect(page.getByRole("heading", { name: "Key setup" })).toBeVisible();
+  await page.getByRole("link", { name: "Connect OpenRouter" }).click();
+  const generate = page.getByRole("button", { name: "Generate", exact: true });
+  await expect(generate).toBeDisabled();
+  const model = page.getByRole("checkbox", {
+    name: "Fixture image",
+    exact: true,
+  });
+  await model.check();
+  await expect(generate).toBeEnabled();
+  await model.uncheck();
+  await expect(generate).toBeDisabled();
 });
 
 test("the compatibility table shows selected model support without blocking generation or resume", async ({
@@ -306,9 +314,7 @@ test("the compatibility table shows selected model support without blocking gene
     "Second model",
     "Fixture text",
   ]);
-  await page.getByRole("button", { name: "Continue to prompt" }).click();
   await page.getByLabel("Prompt", { exact: true }).fill("Draw a cat");
-  await page.getByRole("button", { name: "Continue to key setup" }).click();
   await expect(table).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Generate", exact: true }),
@@ -402,9 +408,7 @@ for (const axis of ["Rows", "Columns"] as const) {
       })
       .getByRole("checkbox", { name: "Fixture text", exact: true })
       .check();
-    await page.getByRole("button", { name: "Continue to prompt" }).click();
     await page.getByLabel("Prompt", { exact: true }).fill("Draw a cat");
-    await page.getByRole("button", { name: "Continue to key setup" }).click();
     await page.getByRole("button", { name: "Generate", exact: true }).click();
     await expectProgress(page, 3, 3);
     const labels =
@@ -439,8 +443,6 @@ test("a per-cell dollar budget defaults to five, changes the model token limit, 
       )
       .toBe(1);
     await page.getByRole("button", { name: "EDIT", exact: true }).click();
-    await page.getByRole("button", { name: "Continue to prompt" }).click();
-    await page.getByRole("button", { name: "Continue to key setup" }).click();
     const budget = page.getByLabel("Budget limit per cell", { exact: true });
     await expect(budget).toHaveValue("5");
     await budget.fill("2");
@@ -456,8 +458,6 @@ test("a per-cell dollar budget defaults to five, changes the model token limit, 
     expect(limits.at(-1).max_tokens).toBeLessThan(limits[0].max_tokens);
     expect(limits.at(-1).max_tokens).toBeGreaterThan(0);
     await page.getByRole("button", { name: "EDIT", exact: true }).click();
-    await page.getByRole("button", { name: "Continue to prompt" }).click();
-    await page.getByRole("button", { name: "Continue to key setup" }).click();
     await expect(budget).toHaveValue("2");
   } finally {
     await request.post("/fixture/release", { data: { all: true } });

@@ -42,9 +42,7 @@ export async function create(
     .selectOption(
       model ?? (format === "Image" ? "fixture/image" : "fixture/text"),
     );
-  await page.getByRole("button", { name: "Continue to prompt" }).click();
   await page.getByLabel("Prompt", { exact: true }).fill(prompt);
-  await page.getByRole("button", { name: "Continue to key setup" }).click();
   await page.getByRole("link", { name: "Connect OpenRouter" }).click();
   await expect(page.getByText("Connected", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Generate", exact: true }).click();
