@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 
-const model = "cohere/north-mini-code:free";
+const model = "nvidia/nemotron-3-super-120b-a12b:free";
 const prompts = {
   Markdown:
     "Return a Markdown document containing only a level-one heading with the text OK.",
@@ -8,12 +8,18 @@ const prompts = {
   "Static website":
     "Return exactly this JSON object, without fences or other text: " +
     JSON.stringify({
-      files: {
-        "index.html":
-          '<!doctype html><html><head><link rel="stylesheet" href="style.css"><script type="module" src="app.js"></script></head><body><h1>OK</h1><p id="status"></p></body></html>',
-        "style.css": "body { background-color: red; }",
-        "app.js": 'document.getElementById("status").textContent = "JS OK";',
-      },
+      files: [
+        {
+          path: "index.html",
+          content:
+            '<!doctype html><html><head><link rel="stylesheet" href="style.css"><script type="module" src="app.js"></script></head><body><h1>OK</h1><p id="status"></p></body></html>',
+        },
+        { path: "style.css", content: "body { background-color: red; }" },
+        {
+          path: "app.js",
+          content: 'document.getElementById("status").textContent = "JS OK";',
+        },
+      ],
     }),
 };
 

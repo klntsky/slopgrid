@@ -5,6 +5,7 @@ import { once } from "node:events";
 import { Provider } from "../server/provider.js";
 import { failureDetails } from "../server/failures.js";
 import type { Cell } from "../server/domain.js";
+import { PartialWebsite } from "../server/partial-website.js";
 
 async function upstream(streamError?: Record<string, unknown>) {
   const requests: Record<string, unknown>[] = [];
@@ -21,14 +22,20 @@ async function upstream(streamError?: Record<string, unknown>) {
     { id: "~fixture/batch", alias_target: { slug: "required:batch" } },
     { id: "all:batch:nitro" },
     { id: "fixture/batch-friendly" },
+    { id: "structured", supported_parameters: ["structured_outputs"] },
+    {
+      id: "structured-object",
+      supported_parameters: { structured_outputs: {} },
+    },
+    { id: "json-only", supported_parameters: ["response_format"] },
   ].map((m) => ({
+    supported_parameters: ["reasoning", "reasoning_effort"],
     ...m,
     name: m.id,
     pricing: { prompt: "0.000003", completion: "0.00002" },
     context_length: 1000000,
     top_provider: { max_completion_tokens: 128000 },
     architecture: { input_modalities: ["text"], output_modalities: ["text"] },
-    supported_parameters: ["reasoning", "reasoning_effort"],
   }));
   const server = createServer(async (req, res) => {
     if (req.url === "/models" || req.url === "/images/models") {
@@ -62,7 +69,8 @@ async function upstream(streamError?: Record<string, unknown>) {
     }
     let body = "";
     for await (const chunk of req) body += chunk;
-    requests.push(JSON.parse(body));
+    const request = JSON.parse(body);
+    requests.push(request);
     res.setHeader("Content-Type", "text/event-stream");
     if (streamError) {
       res.setHeader("Retry-After", "2");
@@ -77,8 +85,29 @@ async function upstream(streamError?: Record<string, unknown>) {
       created: 0,
       model: "test",
     };
+    const files = {
+      "index.html": "<h1>Output</h1>",
+      "style.css": "body { color: red; }",
+    };
+    const text = JSON.stringify(request.messages).includes(
+      "complete static website",
+    )
+      ? JSON.stringify({
+          files: request.response_format
+            ? Object.entries(files).map(([path, content]) => ({
+                path,
+                content,
+              }))
+            : files,
+        })
+      : "# Output";
+    const midpoint = Math.floor(text.length / 2);
+    for (const content of [text.slice(0, midpoint), text.slice(midpoint)])
+      res.write(
+        `data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: { content }, finish_reason: null }] })}\n\n`,
+      );
     res.end(
-      `data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: { content: "# Output" }, finish_reason: null }] })}\n\ndata: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } })}\n\ndata: [DONE]\n\n`,
+      `data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } })}\n\ndata: [DONE]\n\n`,
     );
   });
   server.listen(0, "127.0.0.1");
@@ -135,6 +164,85 @@ test("catalog discovery distinguishes explicit, unrestricted, fixed, and unknown
       models.find((m) => m.id === "router")!.reasoningEfforts,
       undefined,
     );
+  } finally {
+    await h.close();
+  }
+});
+
+test("website requests require a schema only when advertised and stream previews in either format", async () => {
+  const h = await upstream();
+  try {
+    for (const model of [
+      "structured",
+      "structured-object",
+      "json-only",
+      "router",
+    ]) {
+      const preview = new PartialWebsite();
+      let earlyPreview = false;
+      const result = await h.provider.generate(
+        "fixture-key",
+        "html",
+        cell(model, "default"),
+        (text) => {
+          preview.update(text);
+          if (preview.files["index.html"] && !text.endsWith("}"))
+            earlyPreview = true;
+        },
+      );
+      assert.equal(earlyPreview, true, model);
+      assert.deepEqual({ ...preview.files }, result.files);
+      assert.equal(result.files["index.html"], "<h1>Output</h1>");
+      const request = h.requests.at(-1)!;
+      assert.equal(request.stream, true);
+      assert.equal(
+        (request.provider as { require_parameters: boolean })
+          .require_parameters,
+        true,
+      );
+      if (model.startsWith("structured")) {
+        const format = request.response_format as {
+          type: string;
+          json_schema: { strict: boolean; schema: any };
+        };
+        assert.equal(format.type, "json_schema");
+        assert.equal(format.json_schema.strict, true);
+        assert.equal(format.json_schema.schema.additionalProperties, false);
+        assert.equal(
+          format.json_schema.schema.properties.files.items.additionalProperties,
+          false,
+        );
+        assert.deepEqual(
+          format.json_schema.schema.properties.files.items.required,
+          ["path", "content"],
+        );
+      } else assert.equal(request.response_format, undefined);
+    }
+    await h.provider.generate(
+      "fixture-key",
+      "markdown",
+      cell("structured", "default"),
+      () => {},
+    );
+    assert.equal(h.requests.at(-1)!.response_format, undefined);
+  } finally {
+    await h.close();
+  }
+});
+
+test("a schema-capable provider rejecting a request never triggers an unconstrained fallback", async () => {
+  const h = await upstream({ code: 400, message: "Unsupported schema" });
+  try {
+    await assert.rejects(
+      h.provider.generate(
+        "fixture-key",
+        "html",
+        cell("structured", "default"),
+        () => {},
+      ),
+      /Unsupported schema/,
+    );
+    assert.equal(h.requests.length, 1);
   } finally {
     await h.close();
   }

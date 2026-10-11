@@ -5,6 +5,7 @@ type Frame = {
   files: boolean;
   state: "key" | "value" | "colon" | "comma";
   key?: string;
+  entry?: { path?: string; content?: string };
 };
 type StringToken = {
   frame: Frame;
@@ -15,7 +16,7 @@ type StringToken = {
   unicode?: string;
 };
 
-/** Decode the files object as its JSON strings arrive, including unfinished values. */
+/** Decode either website wire format as strings arrive, including unfinished values. */
 export class PartialWebsite {
   readonly files: Record<string, string> = Object.create(null);
   readonly changed = new Set<string>();
@@ -24,10 +25,22 @@ export class PartialWebsite {
   private string?: StringToken;
   update(source: string): boolean {
     let changed = false;
+    const publish = (path: string | undefined, content: string | undefined) => {
+      if (!path || !safePath(path) || content === undefined) return;
+      this.files[path] = content;
+      this.changed.add(path);
+      changed = true;
+    };
     const append = (value: string) => {
       const token = this.string!;
       if (token.key) token.value += value;
-      else if (token.file) {
+      else if (token.frame.entry) {
+        token.value += value;
+        if (token.frame.key === "content") {
+          token.frame.entry.content = token.value;
+          publish(token.frame.entry.path, token.value);
+        }
+      } else if (token.file) {
         this.files[token.file] += value;
         this.changed.add(token.file);
         changed = true;
@@ -67,7 +80,14 @@ export class PartialWebsite {
           if (token.key) {
             token.frame.key = token.value;
             token.frame.state = "colon";
-          } else token.frame.state = "comma";
+          } else {
+            const entry = token.frame.entry;
+            if (entry && token.frame.key === "path") {
+              entry.path = token.value;
+              publish(entry.path, entry.content);
+            }
+            token.frame.state = "comma";
+          }
           this.string = undefined;
         } else append(char);
         continue;
@@ -78,12 +98,17 @@ export class PartialWebsite {
         const file =
           !key &&
           frame.files &&
+          frame.object &&
           frame.state === "value" &&
           frame.key &&
           safePath(frame.key)
             ? frame.key
             : undefined;
         this.string = { frame, key, file, value: "", escape: false };
+        if (!key && frame.entry && frame.key === "content") {
+          frame.entry.content = "";
+          publish(frame.entry.path, "");
+        }
         if (file) {
           this.files[file] = "";
           this.changed.add(file);
@@ -92,8 +117,8 @@ export class PartialWebsite {
       } else if (char === "{" || char === "[") {
         this.frames.push({
           object: char === "{",
-          files:
-            char === "{" && this.frames.length === 1 && frame?.key === "files",
+          files: this.frames.length === 1 && frame?.key === "files",
+          entry: char === "{" && frame?.files && !frame.object ? {} : undefined,
           state: char === "{" ? "key" : "value",
         });
       } else if (char === "}" || char === "]") {

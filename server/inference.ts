@@ -1,6 +1,6 @@
 import { completionFailure } from "./failures.js";
-import { instruction, parseOutput } from "./output-format.js";
-import { generateImage, streamText } from "ai";
+import { instruction, parseOutput, websiteSchema } from "./output-format.js";
+import { generateImage, streamText, Output } from "ai";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { z } from "zod";
 import type { TextBudget } from "./generation-budget.js";
@@ -23,6 +23,7 @@ export async function generateInference(
   signal?: AbortSignal,
   observe?: CallObserver,
   budget?: TextBudget,
+  structured = false,
 ): Promise<{
   files: Record<string, string | Uint8Array>;
   mediaType?: string;
@@ -120,7 +121,10 @@ export async function generateInference(
     let failure: unknown;
     const result = streamText({
       model,
-      system: instruction(format),
+      system: instruction(format, structured),
+      ...(structured && {
+        output: Output.object({ schema: websiteSchema, name: "website" }),
+      }),
       prompt: cell.prompt,
       maxOutputTokens,
       maxRetries: 0,
@@ -168,7 +172,7 @@ export async function generateInference(
     }
     requireSuccess(finishReason);
     return {
-      files: parseOutput(format, text),
+      files: parseOutput(format, text, structured),
       usage,
     };
   } catch (error) {

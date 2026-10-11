@@ -571,59 +571,67 @@ for (const [index, mode] of [
   });
 }
 
-test("website bundles preview HTML, CSS, and JavaScript before completion and restart after Pause", async ({
-  page,
-  request,
-}) => {
-  await page.route("**/api/grids", (route) =>
-    route.continue({
-      headers: {
-        ...route.request().headers(),
-        "X-Forwarded-For": "192.0.2.60",
-      },
-    }),
-  );
-  await request.post("/fixture/reset", { data: { websiteStreaming: true } });
-  await create(page, "Static website", "cat", "hat");
-  const frame = page.frameLocator("iframe").first();
-  const iframe = page.locator("iframe").first();
-  await expect(
-    frame.getByRole("heading", { name: "Growing website" }),
-  ).toBeVisible();
-  await expectProgress(page, 0, 1);
-  const original = (await iframe.getAttribute("src"))!;
-  await request.post("/fixture/website-next");
-  await expect(frame.locator("body")).toHaveCSS(
-    "background-color",
-    "rgb(255, 0, 0)",
-  );
-  await request.post("/fixture/website-next");
-  await expect(frame.getByText("Streaming module loaded")).toBeVisible();
-  await expectProgress(page, 0, 1);
-  await page.getByRole("button", { name: "Pause generation" }).click();
-  await expect(iframe).toHaveCount(0);
-  expect((await page.request.get(original)).status()).toBe(404);
-  await page.getByRole("button", { name: "Resume generation" }).click();
-  await expect(
-    frame.getByRole("heading", { name: "Growing website" }),
-  ).toBeVisible();
-  expect(await iframe.getAttribute("src")).not.toBe(original);
-  await request.post("/fixture/website-next");
-  await expect(frame.locator("body")).toHaveCSS(
-    "background-color",
-    "rgb(255, 0, 0)",
-  );
-  await request.post("/fixture/website-next");
-  await expect(frame.getByText("Streaming module loaded")).toBeVisible();
-  await request.post("/fixture/website-next");
-  await expectProgress(page, 1, 1);
-  await expect(
-    frame.getByRole("heading", { name: "Growing website" }),
-  ).toBeVisible();
-  await expect(frame.getByText("Streaming module loaded")).toBeVisible();
-  expect(await iframe.getAttribute("src")).not.toContain("__preview");
-  expect((await page.request.get(original)).status()).toBe(404);
-});
+for (const model of ["fixture/text", "fixture/other"])
+  test(`website bundles (${model}) preview HTML, CSS, and JavaScript before completion and restart after Pause`, async ({
+    page,
+    request,
+  }) => {
+    await page.route("**/api/grids", (route) =>
+      route.continue({
+        headers: {
+          ...route.request().headers(),
+          "X-Forwarded-For": "192.0.2.60",
+        },
+      }),
+    );
+    await request.post("/fixture/reset", { data: { websiteStreaming: true } });
+    await create(
+      page,
+      "Static website",
+      "cat",
+      "hat",
+      "Draw $VARIABLE_ROW wearing a $VARIABLE_COLUMN",
+      model,
+    );
+    const frame = page.frameLocator("iframe").first();
+    const iframe = page.locator("iframe").first();
+    await expect(
+      frame.getByRole("heading", { name: "Growing website" }),
+    ).toBeVisible();
+    await expectProgress(page, 0, 1);
+    const original = (await iframe.getAttribute("src"))!;
+    await request.post("/fixture/website-next");
+    await expect(frame.locator("body")).toHaveCSS(
+      "background-color",
+      "rgb(255, 0, 0)",
+    );
+    await request.post("/fixture/website-next");
+    await expect(frame.getByText("Streaming module loaded")).toBeVisible();
+    await expectProgress(page, 0, 1);
+    await page.getByRole("button", { name: "Pause generation" }).click();
+    await expect(iframe).toHaveCount(0);
+    expect((await page.request.get(original)).status()).toBe(404);
+    await page.getByRole("button", { name: "Resume generation" }).click();
+    await expect(
+      frame.getByRole("heading", { name: "Growing website" }),
+    ).toBeVisible();
+    expect(await iframe.getAttribute("src")).not.toBe(original);
+    await request.post("/fixture/website-next");
+    await expect(frame.locator("body")).toHaveCSS(
+      "background-color",
+      "rgb(255, 0, 0)",
+    );
+    await request.post("/fixture/website-next");
+    await expect(frame.getByText("Streaming module loaded")).toBeVisible();
+    await request.post("/fixture/website-next");
+    await expectProgress(page, 1, 1);
+    await expect(
+      frame.getByRole("heading", { name: "Growing website" }),
+    ).toBeVisible();
+    await expect(frame.getByText("Streaming module loaded")).toBeVisible();
+    expect(await iframe.getAttribute("src")).not.toContain("__preview");
+    expect((await page.request.get(original)).status()).toBe(404);
+  });
 
 test("OpenRouter balance sets parallel capacity and Resume refreshes it after a top-up", async ({
   page,

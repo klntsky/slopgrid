@@ -74,7 +74,11 @@ upstream.get("/api/v1/models", (_req, res) =>
           input_modalities: ["text"],
           output_modalities: ["text"],
         },
-        supported_parameters: ["reasoning", "reasoning_effort"],
+        supported_parameters: [
+          "reasoning",
+          "reasoning_effort",
+          "structured_outputs",
+        ],
         reasoning: {
           mandatory: true,
           supported_efforts: ["low", "medium", "high"],
@@ -203,19 +207,23 @@ upstream.post("/api/v1/chat/completions", async (req, res) => {
     return res
       .status(402)
       .json({ error: { code: 402, message: "Insufficient credits" } });
+  const bundle = (files: Record<string, string>) =>
+    JSON.stringify({
+      files: req.body.response_format
+        ? Object.entries(files).map(([path, content]) => ({ path, content }))
+        : files,
+    });
   const text = system.includes("image/svg+xml")
     ? unsafe
       ? '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><script>window.unsafeOutput=true;parent.unsafeOutput=true;document.cookie="svg_escape=1;path=/";fetch("http://localhost:4317/svg-probe?script")</script><image href="http://localhost:4317/svg-probe?image" width="10" height="10"/><circle cx="100" cy="100" r="70"/></svg>'
       : '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><circle cx="100" cy="100" r="70" fill="tan"/></svg>'
     : system.includes("JSON object")
-      ? JSON.stringify({
-          files: {
-            "index.html":
-              '<!doctype html><link rel="stylesheet" href="style.css"><h1>A generated site</h1><p id="module">Loading module...</p><script type="module" src="app.js"></script>',
-            "style.css": "body { background: rgb(255, 0, 0); }",
-            "app.js":
-              "document.getElementById('module').textContent='Module loaded';",
-          },
+      ? bundle({
+          "index.html":
+            '<!doctype html><link rel="stylesheet" href="style.css"><h1>A generated site</h1><p id="module">Loading module...</p><script type="module" src="app.js"></script>',
+          "style.css": "body { background: rgb(255, 0, 0); }",
+          "app.js":
+            "document.getElementById('module').textContent='Module loaded';",
         })
       : "# A generated cat\n\nWearing a hat." +
         (unsafe ? "\n\n<script>window.unsafeOutput=true</script>" : "");
@@ -232,12 +240,21 @@ upstream.post("/api/v1/chat/completions", async (req, res) => {
     const css = "body { background: rgb(255, 0, 0); }";
     const js =
       'document.getElementById("module").textContent="Streaming module loaded";';
-    const chunks = [
-      '{"files":{"index.html":' + JSON.stringify(html).slice(0, -1),
-      '","style.css":' + JSON.stringify(css).slice(0, -1),
-      '","app.js":' + JSON.stringify(js).slice(0, -1),
-      '"}}',
-    ];
+    const chunks = req.body.response_format
+      ? [
+          '{"files":[{"path":"index.html","content":' +
+            JSON.stringify(html).slice(0, -1),
+          '"},{"path":"style.css","content":' +
+            JSON.stringify(css).slice(0, -1),
+          '"},{"path":"app.js","content":' + JSON.stringify(js).slice(0, -1),
+          '"}]}',
+        ]
+      : [
+          '{"files":{"index.html":' + JSON.stringify(html).slice(0, -1),
+          '","style.css":' + JSON.stringify(css).slice(0, -1),
+          '","app.js":' + JSON.stringify(js).slice(0, -1),
+          '"}}',
+        ];
     let release: (() => void) | undefined;
     res.once("close", () => release?.());
     for (let i = 0; i < chunks.length; i++) {

@@ -13,6 +13,7 @@ export type Model = {
   text: boolean;
   reasoning: boolean;
   reasoningMandatory: boolean;
+  structuredOutputs?: boolean;
   reasoningEfforts?: GridInput["effort"][];
   pricing?: { prompt: number; completion: number; request?: number };
   contextLength?: number;
@@ -176,6 +177,9 @@ export class Provider {
           false,
         reasoning: previous?.reasoning || reasoning,
         reasoningMandatory: previous?.reasoningMandatory || mandatory,
+        structuredOutputs:
+          previous?.structuredOutputs ||
+          parameters.includes("structured_outputs"),
         reasoningEfforts: previous?.reasoning
           ? previous.reasoningEfforts
           : reasoningEfforts,
@@ -203,6 +207,8 @@ export class Provider {
         : undefined;
     if (format !== "image" && !pricedModel)
       throw new Error(`Pricing is unavailable for ${cell.model}.`);
+    const structured =
+      format === "html" && pricedModel?.structuredOutputs === true;
     return generateInference(
       this.baseURL,
       key,
@@ -215,10 +221,11 @@ export class Provider {
         ? generationBudget(
             pricedModel,
             cell.prompt,
-            instruction(format),
+            instruction(format, structured),
             cell.budgetUsd,
           )
         : undefined,
+      structured,
     );
   }
 }
