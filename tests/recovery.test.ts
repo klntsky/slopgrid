@@ -34,7 +34,6 @@ test("a restart preserves finished outputs and pauses interrupted work until an 
         columns: { kind: "variable", values: ["hat"] },
         model: "fixture/text",
         effort: "none",
-        harness: "direct",
       },
       cells: [
         {
@@ -43,7 +42,6 @@ test("a restart preserves finished outputs and pauses interrupted work until an 
           column: 0,
           model: "fixture/text",
           effort: "none",
-          harness: "direct",
           prompt: "cat",
           status: "complete",
         },
@@ -53,7 +51,6 @@ test("a restart preserves finished outputs and pauses interrupted work until an 
           column: 0,
           model: "fixture/text",
           effort: "none",
-          harness: "direct",
           prompt: "dog",
           status: "running",
         },

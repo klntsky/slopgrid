@@ -73,7 +73,6 @@ export function Create() {
         format,
         model: first?.id ?? "",
         effort: "default",
-        harness: "direct",
         rows:
           format === "image"
             ? { kind: "variable", values: ["cat", "dog"] }
@@ -231,36 +230,12 @@ export function Create() {
                       </select>
                     </label>
                   )}
-                  {![input.rows.kind, input.columns.kind].includes(
-                    "harness",
-                  ) && (
-                    <label>
-                      Harness
-                      <select
-                        value={input.harness}
-                        onChange={(e) =>
-                          update({
-                            harness: e.target.value as GridInput["harness"],
-                          })
-                        }
-                      >
-                        <option value="direct">Single pass</option>
-                        <option value="review">Draft and review</option>
-                      </select>
-                    </label>
-                  )}
                 </div>
               )}
               <p className="hint">
                 {input.rows.values.length} rows × {input.columns.values.length}{" "}
                 columns ·{" "}
                 {input.rows.values.length * input.columns.values.length} outputs
-                {input.harness === "review" ||
-                [input.rows, input.columns].some(
-                  (a) => a.kind === "harness" && a.values.includes("review"),
-                )
-                  ? " · Draft and review makes two requests per cell."
-                  : ""}
               </p>
               {incompatibilities.length > 0 && (
                 <div className="warning" role="alert">
@@ -358,8 +333,8 @@ export function Create() {
                 }
               />
               <p className="hint">
-                Estimated maximum cost per cell attempt, including thinking,
-                input, and draft/review.
+                Estimated maximum cost per cell attempt, including thinking, and
+                input.
               </p>
             </>
           )}

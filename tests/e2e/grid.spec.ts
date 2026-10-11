@@ -16,7 +16,6 @@ async function create(
   format = "SVG",
   rows = "cat\ndog",
   columns = "hat",
-  harness = "direct",
   prompt = "Draw $VARIABLE_ROW wearing a $VARIABLE_COLUMN",
   model?: string,
 ) {
@@ -34,10 +33,6 @@ async function create(
     await page
       .getByRole("combobox", { name: "Model", exact: true })
       .selectOption(model);
-  if (format !== "Image")
-    await page
-      .getByRole("combobox", { name: "Harness", exact: true })
-      .selectOption(harness);
   await page.getByRole("button", { name: "Continue to prompt" }).click();
   await page.getByLabel("Prompt", { exact: true }).fill(prompt);
   await page.getByRole("button", { name: "Continue to key setup" }).click();
@@ -319,48 +314,6 @@ for (const format of ["Image", "SVG"])
     expect(calls.filter((p: string) => p.includes("cat"))).toHaveLength(1);
   });
 
-test("draft and review makes a second request for each cell and renders the final output", async ({
-  page,
-  request,
-}) => {
-  await request.post("/fixture/reset", { data: { billing: false } });
-  await create(page, "Markdown", "cat\ndog", "hat", "review");
-  await expectProgress(page, 2, 2);
-  await expect(
-    page
-      .locator(".markdown-preview")
-      .first()
-      .getByRole("heading", { name: "A generated cat" }),
-  ).toBeVisible();
-  await expect(page.getByText("$0.000246", { exact: true })).toHaveCount(2);
-  const calls = await (await request.get("/fixture/calls")).json();
-  expect(calls).toHaveLength(4);
-  expect(
-    calls.filter((p: string) => p.includes("Check the draft")),
-  ).toHaveLength(2);
-});
-
-test("a missing review charge is shown as unavailable rather than a partial cost", async ({
-  page,
-  request,
-}) => {
-  await request.post("/fixture/reset", {
-    data: { billing: false, omitReviewCost: true },
-  });
-  await create(page, "Markdown", "cat", "hat", "review");
-  await expectProgress(page, 1, 1);
-  await expect(
-    page.getByRole("img", {
-      name: "20 input tokens, 40 output tokens",
-      exact: true,
-    }),
-  ).toBeVisible();
-  await expect(
-    page.locator(".cell-usage").getByText("Cost unavailable", { exact: true }),
-  ).toBeVisible();
-  await expect(page.getByText("$0.000123", { exact: true })).toHaveCount(0);
-});
-
 for (const format of ["SVG", "Markdown"])
   test(`${format} on the app host cannot execute generated scripts or access cookies`, async ({
     page,
@@ -488,7 +441,7 @@ test("model choices start empty and filtering preserves deliberate selections", 
   expect(
     (await columns.locator(".value-list").boundingBox())!.height,
   ).toBeGreaterThanOrEqual(264);
-  for (const kind of ["harness", "model", "effort"]) {
+  for (const kind of ["model", "effort"]) {
     await page
       .getByRole("combobox", { name: "Rows", exact: true })
       .selectOption(kind);
@@ -562,7 +515,6 @@ test("unused prompt variables block setup, later edits block generation, and the
       columns: { kind: "variable", values: ["hat"] },
       model: "fixture/image",
       effort: "none",
-      harness: "direct",
     },
   });
   expect(response.status()).toBe(400);
@@ -698,7 +650,7 @@ for (const viewport of [
     const prompt =
       "Draw $VARIABLE_ROW wearing a $VARIABLE_COLUMN " +
       "with a carefully detailed background ".repeat(12);
-    await create(page, "Image", "cat", "hat", "direct", prompt);
+    await create(page, "Image", "cat", "hat", prompt);
     await expectProgress(page, 1, 1);
     const header = page.getByRole("banner");
     await expect(header.getByRole("heading", { level: 1 })).toHaveText(
@@ -1213,7 +1165,6 @@ test("model IDs in row and column labels copy to the real clipboard", async ({
             : { kind: "effort", values: ["none"] },
         model,
         effort: "none",
-        harness: "direct",
       },
     });
     expect(response.status()).toBe(201);
@@ -1276,7 +1227,6 @@ test("model compatibility warnings allow generation and resuming unfinished cell
       columns: { kind: "model", values: ["fixture/other"] },
       model: "fixture/text",
       effort: "default",
-      harness: "direct",
     };
     const created = await page.request.post("/api/grids", { data: input });
     expect(created.status()).toBe(201);
@@ -1810,7 +1760,7 @@ test("a missing grid reports 404 immediately without retries or a creation link 
   await expect(page.getByRole("main").getByRole("link")).toHaveCount(0);
 });
 
-test("website bundles preview HTML, CSS, and JavaScript before completion, restart after Pause, and stream the review pass", async ({
+test("website bundles preview HTML, CSS, and JavaScript before completion and restart after Pause", async ({
   page,
   request,
 }) => {
@@ -1823,7 +1773,7 @@ test("website bundles preview HTML, CSS, and JavaScript before completion, resta
     }),
   );
   await request.post("/fixture/reset", { data: { websiteStreaming: true } });
-  await create(page, "Static website", "cat", "hat", "review");
+  await create(page, "Static website", "cat", "hat");
   const frame = page.frameLocator("iframe").first();
   const iframe = page.locator("iframe").first();
   await expect(
@@ -1855,21 +1805,9 @@ test("website bundles preview HTML, CSS, and JavaScript before completion, resta
   await request.post("/fixture/website-next");
   await expect(frame.getByText("Streaming module loaded")).toBeVisible();
   await request.post("/fixture/website-next");
-  await expect(
-    frame.getByRole("heading", { name: "Reviewed website" }),
-  ).toBeVisible();
-  await expectProgress(page, 0, 1);
-  await request.post("/fixture/website-next");
-  await expect(frame.locator("body")).toHaveCSS(
-    "background-color",
-    "rgb(255, 0, 0)",
-  );
-  await request.post("/fixture/website-next");
-  await expect(frame.getByText("Streaming module loaded")).toBeVisible();
-  await request.post("/fixture/website-next");
   await expectProgress(page, 1, 1);
   await expect(
-    frame.getByRole("heading", { name: "Reviewed website" }),
+    frame.getByRole("heading", { name: "Growing website" }),
   ).toBeVisible();
   await expect(frame.getByText("Streaming module loaded")).toBeVisible();
   expect(await iframe.getAttribute("src")).not.toContain("__preview");

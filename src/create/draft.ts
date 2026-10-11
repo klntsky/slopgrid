@@ -10,7 +10,6 @@ const initial: Draft = {
     columns: { kind: "model", values: [] },
     model: "",
     effort: "default",
-    harness: "direct",
     budgetUsd: 5,
   },
 };

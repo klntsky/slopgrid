@@ -1,4 +1,4 @@
-import { generateText, generateImage, streamText } from "ai";
+import { generateImage, streamText } from "ai";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { z } from "zod";
 import type { Model } from "./provider.js";
@@ -35,12 +35,7 @@ export async function generateInference(
   usage?: Cell["usage"];
   completions?: Completion[];
 }> {
-  let phase: Completion["phase"] =
-    format === "image"
-      ? "image"
-      : cell.harness === "review"
-        ? "draft"
-        : "direct";
+  const phase: Completion["phase"] = format === "image" ? "image" : "direct";
   let call: CallRecorder | undefined;
   const inferenceFetch: typeof upstreamFetch = async (input, init) => {
     call = observe?.(phase);
@@ -65,42 +60,10 @@ export async function generateInference(
   try {
     const completions: Completion[] = [];
     let usage: Cell["usage"];
-    let spent = 0;
-    let callBudget: ReturnType<typeof generationBudget> | undefined;
-    const budgetUsd = cell.budgetUsd ?? 5;
-    function budget(prompt: string) {
-      callBudget = pricedModel
-        ? generationBudget(
-            pricedModel,
-            prompt,
-            instruction(format),
-            budgetUsd - spent,
-          )
-        : undefined;
-      return callBudget?.maxOutputTokens;
-    }
     function recordCompletion(completion: Completion, current: Cell["usage"]) {
-      if (callBudget && pricedModel?.pricing)
-        spent +=
-          current?.costUsd ??
-          callBudget.inputCost +
-            (current?.outputTokens ?? callBudget.maxOutputTokens) *
-              pricedModel.pricing.completion;
       call?.complete(completion, current);
       completions.push(completion);
-      usage =
-        usage && current
-          ? {
-              inputTokens:
-                (usage.inputTokens ?? 0) + (current.inputTokens ?? 0),
-              outputTokens:
-                (usage.outputTokens ?? 0) + (current.outputTokens ?? 0),
-              costUsd:
-                usage.costUsd !== undefined && current.costUsd !== undefined
-                  ? usage.costUsd + current.costUsd
-                  : undefined,
-            }
-          : (current ?? usage);
+      usage = current;
       onCompletion?.(completion, usage);
     }
     function requireSuccess(finishReason: string | undefined) {
@@ -195,16 +158,20 @@ export async function generateInference(
           ? { provider: { require_parameters: true } }
           : {}),
     });
-    async function streamed(
-      prompt: string,
-      streamPhase: Completion["phase"],
-    ): Promise<string> {
+    async function streamed(prompt: string): Promise<string> {
       let failure: unknown;
       const result = streamText({
         model,
         system: instruction(format),
         prompt,
-        maxOutputTokens: budget(prompt),
+        maxOutputTokens: pricedModel
+          ? generationBudget(
+              pricedModel,
+              prompt,
+              instruction(format),
+              cell.budgetUsd ?? 5,
+            ).maxOutputTokens
+          : undefined,
         maxRetries: 0,
         abortSignal: signal,
         onError: ({ error }) => {
@@ -227,7 +194,7 @@ export async function generateInference(
       if (streamResponse?.id) call?.update({ generationId: streamResponse.id });
       recordCompletion(
         {
-          phase: streamPhase,
+          phase: "direct",
           finishReason,
           rawFinishReason,
           reasoningTokens: streamUsage?.outputTokenDetails.reasoningTokens,
@@ -254,44 +221,7 @@ export async function generateInference(
       requireSuccess(finishReason);
       return text;
     }
-    let text = await streamed(
-      cell.prompt,
-      cell.harness === "review" ? "draft" : "direct",
-    );
-    if (cell.harness === "review") {
-      phase = "review";
-      const reviewPrompt = `Original request:\n${cell.prompt}\n\nDraft:\n${text}\n\nCheck the draft against the request and return the corrected final output.`;
-      if (format === "html") {
-        onChunk("");
-        text = await streamed(reviewPrompt, "review");
-      } else {
-        const reviewed = await generateText({
-          model,
-          system: instruction(format),
-          prompt: reviewPrompt,
-          maxOutputTokens: budget(reviewPrompt),
-          maxRetries: 0,
-          abortSignal: signal,
-        });
-        if (reviewed.response.id)
-          call?.update({ generationId: reviewed.response.id });
-        text = reviewed.text;
-        recordCompletion(
-          {
-            phase: "review",
-            finishReason: reviewed.finishReason,
-            rawFinishReason: reviewed.rawFinishReason,
-            reasoningTokens: reviewed.usage.outputTokenDetails.reasoningTokens,
-          },
-          {
-            inputTokens: reviewed.usage.inputTokens,
-            outputTokens: reviewed.usage.outputTokens,
-            costUsd: reportedCost(reviewed.providerMetadata?.openrouter?.usage),
-          },
-        );
-        requireSuccess(reviewed.finishReason);
-      }
-    }
+    const text = await streamed(cell.prompt);
     return {
       files: parseOutput(format, text),
       usage,

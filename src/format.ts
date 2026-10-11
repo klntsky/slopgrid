@@ -22,7 +22,6 @@ export const dimensionNames = {
   model: "Model",
   effort: "Thinking effort",
   variable: "Prompt variable",
-  harness: "Harness",
 };
 export function cellError(cell: ViewGrid["cells"][number]) {
   return cell.errorCode === undefined
@@ -31,7 +30,5 @@ export function cellError(cell: ViewGrid["cells"][number]) {
 }
 export function displayValue(value: string, kind: GridInput["rows"]["kind"]) {
   if (kind === "effort") return effortLabel(value);
-  if (kind === "harness")
-    return value === "review" ? "Draft and review" : "Single pass";
   return value;
 }

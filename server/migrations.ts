@@ -30,6 +30,12 @@ const migrations: readonly Migration[] = [
       CREATE INDEX inference_calls_started ON inference_calls(started_at DESC, id DESC);
     `,
   },
+  {
+    version: 3,
+    sql: `
+      UPDATE grids SET data=json_remove(data, '$.input.harness');
+    `,
+  },
 ];
 
 export function migrate(

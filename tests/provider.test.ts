@@ -84,7 +84,6 @@ function cell(model: string, effort: string): Cell {
     column: 0,
     model,
     effort,
-    harness: "direct",
     prompt: "Draw a cat",
     status: "running",
   };

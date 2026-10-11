@@ -22,16 +22,11 @@ export function AxisEditor({
   const kinds =
     format === "image"
       ? (["model", "variable"] as const)
-      : (["model", "effort", "variable", "harness"] as const);
+      : (["model", "effort", "variable"] as const);
   const choices =
     axis.kind === "model"
       ? models.map((m) => ({ id: m.id, name: m.name }))
-      : axis.kind === "effort"
-        ? efforts.map((e) => ({ id: e, name: effortLabel(e) }))
-        : [
-            { id: "direct", name: "Single pass" },
-            { id: "review", name: "Draft and review" },
-          ];
+      : efforts.map((e) => ({ id: e, name: effortLabel(e) }));
   const visibleChoices = choices.filter(
     (c) =>
       axis.kind !== "model" ||

@@ -9,7 +9,7 @@ export const efforts = [
   "xhigh",
   "max",
 ] as const;
-export const kinds = ["model", "effort", "variable", "harness"] as const;
+export const kinds = ["model", "effort", "variable"] as const;
 const axis = z.object({
   kind: z.enum(kinds),
   values: z
@@ -26,7 +26,6 @@ export const gridSchema = z
     columns: axis,
     model: z.string().min(1).max(200),
     effort: z.enum(efforts),
-    harness: z.enum(["direct", "review"]),
     budgetUsd: z.number().finite().positive().default(5),
   })
   .superRefine((g, c) => {
@@ -37,9 +36,7 @@ export const gridSchema = z
       issue("Use at most 64 cells");
     if (
       g.format === "image" &&
-      ([g.rows.kind, g.columns.kind].includes("effort") ||
-        [g.rows.kind, g.columns.kind].includes("harness") ||
-        g.harness !== "direct")
+      [g.rows.kind, g.columns.kind].includes("effort")
     )
       issue("Images support model and prompt variable dimensions");
     for (const a of [g.rows, g.columns]) {
@@ -48,11 +45,6 @@ export const gridSchema = z
         a.values.some((v) => !efforts.includes(v as (typeof efforts)[number]))
       )
         issue("Unknown thinking effort");
-      if (
-        a.kind === "harness" &&
-        a.values.some((v) => !["direct", "review"].includes(v))
-      )
-        issue("Unknown harness");
     }
     const variableIssue = unusedVariableIssue(g);
     if (variableIssue) issue(variableIssue);
@@ -73,7 +65,7 @@ export function unusedVariableIssue(
       return `Include ${token} in the prompt for ${label} variables.`;
 }
 export type Completion = {
-  phase: "direct" | "draft" | "review" | "image";
+  phase: "direct" | "image";
   finishReason?: string;
   rawFinishReason?: string;
   reasoningTokens?: number;
@@ -84,7 +76,6 @@ export type Cell = {
   column: number;
   model: string;
   effort: string;
-  harness: string;
   prompt: string;
   budgetUsd?: number;
   status: "pending" | "running" | "complete" | "error";
@@ -114,7 +105,6 @@ export function expandGrid(input: GridInput): Omit<Cell, "id">[] {
       const selections: Record<string, string> = {
         model: input.model,
         effort: input.effort,
-        harness: input.harness,
       };
       for (const [a, v] of [
         [input.rows, r],
@@ -127,7 +117,6 @@ export function expandGrid(input: GridInput): Omit<Cell, "id">[] {
         ...selections,
         model: selections.model,
         effort: selections.effort,
-        harness: selections.harness,
         prompt: input.prompt
           .replaceAll("$VARIABLE_ROW", () => r)
           .replaceAll("$VARIABLE_COLUMN", () => c),

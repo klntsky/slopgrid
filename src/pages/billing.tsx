@@ -30,9 +30,8 @@ export function Billing() {
         </button>
       </div>
       <p className="hint">
-        Each inference attempt appears here, including retries, failures,
-        cancellations, and draft and review calls. OpenRouter bills your account
-        directly.
+        Each inference attempt appears here, including retries, failures, and
+        cancellations. OpenRouter bills your account directly.
       </p>
       <ErrorMessage error={query.error?.message ?? ""} />
       {query.isPending && <p role="status">Loading billing history…</p>}

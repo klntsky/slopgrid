@@ -8,7 +8,6 @@ import { Provider } from "../server/provider.js";
 let balanceUsd = 100;
 let tokenLimits: { model: string; max_tokens: number }[] = [];
 let streamBilling = false;
-let omitReviewCost = false;
 let unsafe = false;
 let websiteStreaming = false;
 let advanceWebsite: (() => void) | undefined;
@@ -217,29 +216,9 @@ upstream.post("/api/v1/chat/completions", async (req, res) => {
     created: Math.floor(Date.now() / 1000),
     model: "fixture/text",
   };
-  if (!req.body.stream)
-    return res.json({
-      ...base,
-      object: "chat.completion",
-      choices: [
-        {
-          index: 0,
-          message: { role: "assistant", content: text },
-          finish_reason: "stop",
-        },
-      ],
-      usage: {
-        prompt_tokens: 10,
-        completion_tokens: 20,
-        total_tokens: 30,
-        ...(omitReviewCost ? {} : { cost: 0.000123 }),
-      },
-    });
   res.set("Content-Type", "text/event-stream");
   if (websiteStreaming && system.includes("JSON object")) {
-    const heading = prompt.startsWith("Original request:")
-      ? "Reviewed website"
-      : "Growing website";
+    const heading = "Growing website";
     const html = `<!doctype html><link rel="stylesheet" href="style.css"><h1>${heading}</h1><p id="module">Waiting for JavaScript</p><script type="module" src="app.js"></script>`;
     const css = "body { background: rgb(255, 0, 0); }";
     const js =
@@ -329,7 +308,6 @@ app.post("/fixture/reset", (req, res) => {
   transientFailures = req.body.transientFailures ?? 0;
   transientStatus = req.body.transientStatus ?? 429;
   transientStream = !!req.body.transientStream;
-  omitReviewCost = !!req.body.omitReviewCost;
   holdGenerations = !!req.body.holdGenerations;
   for (const entry of [...held]) entry.release();
   aborted = [];

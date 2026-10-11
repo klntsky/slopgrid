@@ -94,7 +94,7 @@ export function OutputCell({
                     <ArrowDown aria-hidden="true" />
                   </span>
                 )}
-                <span title="OpenRouter reported cost, including draft and review when used">
+                <span title="OpenRouter reported cost">
                   {formatCost(cell.usage?.costUsd)}
                 </span>
               </small>

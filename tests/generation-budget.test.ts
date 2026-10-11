@@ -30,7 +30,7 @@ test("dollar budgets reserve input costs, price reasoning as output, and respect
   );
 });
 
-test("draft and review requests share the dollar budget and constrain provider pricing", async () => {
+test("a cell request uses the full dollar budget and constrains provider pricing", async () => {
   const { createServer } = await import("node:http");
   const { once } = await import("node:events");
   const { Provider } = await import("../server/provider.js");
@@ -104,16 +104,14 @@ test("draft and review requests share the dollar budget and constrain provider p
         column: 0,
         model: "example/model",
         effort: "max",
-        harness: "review",
         prompt: "Make a heading",
         status: "running",
         budgetUsd: 1,
       },
       () => {},
     );
-    assert.equal(requests.length, 2);
+    assert.equal(requests.length, 1);
     assert.ok(requests[0].max_tokens > 49000 && requests[0].max_tokens < 50000);
-    assert.ok(requests[1].max_tokens > 44000 && requests[1].max_tokens < 45000);
     assert.deepEqual(requests[0].provider.max_price, {
       prompt: 3,
       completion: 20,
