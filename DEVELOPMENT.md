@@ -24,7 +24,7 @@ Never editorialize user-facing text. When creating new UX surfaces, summarize th
 
 ## Frontend builds
 
-Vite retains previous files in `dist` during rebuilds so open pages can still fetch lazy chunks from their original build. The frontend router serves HTML with `Cache-Control: no-store`, hashed assets with immutable caching, and missing assets with `no-store` to avoid caching a temporary 404.
+The Markdown renderer is included directly in the main browser bundle, so opening a Markdown preview does not request a separate renderer chunk. Vite retains previous files in `dist` during rebuilds so open pages can still fetch assets from their original build. The frontend router serves HTML with `Cache-Control: no-store`, hashed assets with immutable caching, and missing assets with `no-store` to avoid caching a temporary 404.
 
 ## Validation
 

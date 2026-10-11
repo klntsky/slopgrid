@@ -1,13 +1,7 @@
-import { lazy, Suspense } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ErrorMessage } from "../components/error-message";
+import { MarkdownContent } from "../../shared/markdown";
 import "./markdown-preview.css";
-
-const MarkdownContent = lazy(() =>
-  import("../../shared/markdown").then(({ MarkdownContent }) => ({
-    default: MarkdownContent,
-  })),
-);
 
 export function MarkdownPreview({
   url,
@@ -46,9 +40,7 @@ export function MarkdownPreview({
       )}
       {query.data !== undefined && (
         <div className="markdown-document">
-          <Suspense fallback={<p role="status">Loading Markdown…</p>}>
-            <MarkdownContent markdown={query.data} />
-          </Suspense>
+          <MarkdownContent markdown={query.data} />
         </div>
       )}
     </div>

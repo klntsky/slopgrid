@@ -13,6 +13,14 @@ for (const [format, prompt] of Object.entries(prompts)) {
   test(`${format} completes with a real OpenRouter key and remains usable after reload`, async ({
     page,
   }) => {
+    const markdownChunks: string[] = [];
+    page.on("request", (request) => {
+      if (
+        /\/assets\/markdown-[^/]+\.js$/.test(new URL(request.url()).pathname)
+      ) {
+        markdownChunks.push(request.url());
+      }
+    });
     await page.goto("/");
     await page.getByRole("button", { name: format, exact: true }).click();
     await page
@@ -73,6 +81,7 @@ for (const [format, prompt] of Object.entries(prompts)) {
           .getByRole("heading", { name: "OK", exact: true }),
       ).toBeVisible();
       expect(await response.text()).toContain("OK");
+      expect(markdownChunks).toEqual([]);
     } else if (format === "SVG") {
       const image = page.getByRole("img", { name: "Generated SVG" });
       await expect
