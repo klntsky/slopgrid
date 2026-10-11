@@ -13,6 +13,7 @@ import { formatCost, cellError } from "../format";
 import { WebsitePreview } from "./website-preview";
 import { MarkdownPreview } from "./markdown-preview";
 import { SvgPreview } from "../svg-preview-image";
+import { useTooltip } from "../components/use-tooltip";
 export function OutputCell({
   cell,
   format,
@@ -29,6 +30,8 @@ export function OutputCell({
   onToggleExpand?: (button: HTMLButtonElement) => void;
 }) {
   const { resolvedTheme } = useTheme();
+  const inputHint = useTooltip<HTMLSpanElement>("Input tokens");
+  const outputHint = useTooltip<HTMLSpanElement>("Output tokens");
   const outputURL =
     format === "markdown" && cell.outputURL
       ? `${cell.outputURL}?theme=${resolvedTheme}`
@@ -86,12 +89,15 @@ export function OutputCell({
                     className="cell-tokens"
                     role="img"
                     aria-label={`${cell.usage.inputTokens ?? 0} input tokens, ${cell.usage.outputTokens ?? 0} output tokens`}
-                    title={`${cell.usage.inputTokens ?? 0} input tokens, ${cell.usage.outputTokens ?? 0} output tokens`}
                   >
-                    {cell.usage.inputTokens ?? 0}
-                    <ArrowUp aria-hidden="true" />
-                    {cell.usage.outputTokens ?? 0}
-                    <ArrowDown aria-hidden="true" />
+                    <span className="token-count" ref={inputHint} tabIndex={0}>
+                      {cell.usage.inputTokens ?? 0}
+                      <ArrowUp aria-hidden="true" />
+                    </span>
+                    <span className="token-count" ref={outputHint} tabIndex={0}>
+                      {cell.usage.outputTokens ?? 0}
+                      <ArrowDown aria-hidden="true" />
+                    </span>
                   </span>
                 )}
                 <span title="OpenRouter reported cost">

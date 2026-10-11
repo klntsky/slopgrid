@@ -324,13 +324,99 @@ for (const format of ["SVG", "Markdown"])
     await tab.close();
   });
 
+test("generation hints appear on keyboard focus before and after outputs finish", async ({
+  page,
+  request,
+}) => {
+  await request.post("/fixture/reset", { data: { holdGenerations: true } });
+  try {
+    await create(page, "SVG", "cat", "hat");
+    await page.mouse.move(0, 0);
+    await page.getByRole("button", { name: "Pause generation" }).focus();
+    await expect(page.locator('.tippy-box[data-state="visible"]')).toHaveCount(
+      1,
+    );
+    await expect(page.locator('.tippy-box[data-state="visible"]')).toHaveText(
+      "Stops active requests. Resume restarts unfinished outputs.",
+    );
+    await request.post("/fixture/release", { data: { all: true } });
+    await expectProgress(page, 1, 1);
+    const tokens = page.locator(".token-count");
+    await tokens.nth(0).focus();
+    await expect(page.locator('.tippy-box[data-state="visible"]')).toHaveCount(
+      1,
+    );
+    await expect(page.locator('.tippy-box[data-state="visible"]')).toHaveText(
+      "Input tokens",
+    );
+    await tokens.nth(1).focus();
+    await expect(page.locator('.tippy-box[data-state="visible"]')).toHaveCount(
+      1,
+    );
+    await expect(page.locator('.tippy-box[data-state="visible"]')).toHaveText(
+      "Output tokens",
+    );
+    await page.locator(".grid-cost").focus();
+    await expect(page.locator('.tippy-box[data-state="visible"]')).toHaveCount(
+      1,
+    );
+    await expect(
+      page.locator('.tippy-box[data-state="visible"]'),
+    ).toContainText(
+      "Total reported cost of the displayed outputs and failures",
+    );
+    await page.goto("/");
+    await page.getByRole("button", { name: "SVG", exact: true }).click();
+    await page
+      .getByRole("combobox", { name: "Rows", exact: true })
+      .selectOption("effort");
+    await page
+      .getByRole("checkbox", { name: "Model default", exact: true })
+      .focus();
+    await expect(page.locator('.tippy-box[data-state="visible"]')).toHaveCount(
+      1,
+    );
+    await expect(page.locator('.tippy-box[data-state="visible"]')).toHaveText(
+      "Uses the model’s default thinking settings.",
+    );
+    for (const axis of ["Rows", "Columns"]) {
+      await page
+        .getByRole("combobox", { name: axis, exact: true })
+        .selectOption("variable");
+    }
+    await page
+      .getByRole("combobox", { name: "Thinking effort", exact: true })
+      .focus();
+    await expect(page.locator('.tippy-box[data-state="visible"]')).toHaveCount(
+      1,
+    );
+    await expect(page.locator('.tippy-box[data-state="visible"]')).toHaveText(
+      "Uses the model’s default thinking settings.",
+    );
+    await page.getByRole("button", { name: "Continue to prompt" }).click();
+    await page
+      .getByLabel("Prompt", { exact: true })
+      .fill("Draw $VARIABLE_ROW with $VARIABLE_COLUMN");
+    await page.getByRole("button", { name: "Continue to key setup" }).click();
+    await page.getByLabel("Budget per cell ($)").focus();
+    await expect(page.locator('.tippy-box[data-state="visible"]')).toHaveCount(
+      1,
+    );
+    await expect(page.locator('.tippy-box[data-state="visible"]')).toHaveText(
+      "Used to calculate each output’s token limit.",
+    );
+  } finally {
+    await request.post("/fixture/release", { data: { all: true } });
+  }
+});
+
 test("model choices start empty and filtering preserves deliberate selections", async ({
   page,
 }) => {
   await page.goto("/");
   await expect(
     page.getByRole("heading", {
-      name: "Create a grid to compare models and their settings",
+      name: "Create your own visual AI model benchmark",
     }),
   ).toBeVisible();
   await page.getByRole("button", { name: "SVG", exact: true }).click();
@@ -340,24 +426,22 @@ test("model choices start empty and filtering preserves deliberate selections", 
     "Fixture text",
     "Second model",
   ]);
-  await expect(page.getByPlaceholder("Filter column models")).toBeVisible();
-  const filter = page.getByLabel("Filter column models");
+  await expect(page.getByPlaceholder("Search models")).toBeVisible();
+  const filter = page.getByLabel("Search models");
   const clear = page.getByRole("button", { name: "Clear column model filter" });
   await expect(clear).toBeVisible();
   await clear.click();
   await expect(filter).toBeFocused();
   await expect(filter).toHaveValue("");
   await expect(page.getByText("Row values", { exact: true })).toHaveCount(0);
-  await expect(
-    page.getByText("Filter column models", { exact: true }),
-  ).toHaveCount(0);
+  await expect(page.getByText("Search models", { exact: true })).toHaveCount(0);
   await columns
     .getByRole("checkbox", { name: "Fixture text", exact: true })
     .check();
-  await page.getByLabel("Filter column models").fill("FIXTURE/OTHER");
+  await page.getByLabel("Search models").fill("FIXTURE/OTHER");
   await expect(columns.getByRole("checkbox")).toHaveCount(1);
   await columns.getByRole("checkbox", { name: "Second model" }).check();
-  await page.getByLabel("Filter column models").fill("no matching model");
+  await page.getByLabel("Search models").fill("no matching model");
   await expect(columns.getByText("No models match your filter.")).toBeVisible();
   const selectedModels = columns.getByRole("list", {
     name: "Selected column models",
@@ -401,7 +485,9 @@ test("model choices start empty and filtering preserves deliberate selections", 
       page.getByRole("group", { name: "Row values" }).locator("input:checked"),
     ).toHaveCount(0);
     if (kind === "model") {
-      const rowFilter = page.getByLabel("Filter row models");
+      const rowFilter = page
+        .getByRole("group", { name: "Row values" })
+        .getByLabel("Search models");
       const rowClear = page.getByRole("button", {
         name: "Clear row model filter",
       });
@@ -706,7 +792,7 @@ for (const viewport of [
     await page.getByRole("link", { name: "NEW GRID", exact: true }).click();
     await expect(
       page.getByRole("heading", {
-        name: "Create a grid to compare models and their settings",
+        name: "Create your own visual AI model benchmark",
       }),
     ).toBeVisible();
     await expect(header.getByRole("progressbar")).toHaveCount(0);
@@ -1976,6 +2062,83 @@ test("publishing dialogs preserve private grids, handle failures, and remember s
   ).toBe("public");
 });
 
+test("owners can list a link-only published grid publicly without regenerating outputs", async ({
+  page,
+  request,
+}) => {
+  await page.setExtraHTTPHeaders({ "X-Forwarded-For": "192.0.2.60" });
+  await request.post("/fixture/reset", { data: {} });
+  const prompt = "Promoted grid $VARIABLE_ROW $VARIABLE_COLUMN";
+  await create(page, "SVG", "cat", "hat", prompt);
+  await expectProgress(page, 1, 1);
+  const url = page.url();
+  const id = new URL(url).pathname.split("/").pop()!;
+  await page.getByRole("button", { name: "PUBLISH", exact: true }).click();
+  await finishPublishing(page);
+  const before = await (await page.request.get(`/api/grids/${id}`)).json();
+  const calls = await (await request.get("/fixture/calls")).json();
+  await page.reload();
+  const visibility = page.getByRole("button", { name: "Change visibility" });
+  await visibility.click();
+  const dialog = page.getByRole("dialog");
+  await expect(
+    dialog.getByRole("radio", { name: "Accessible by link" }),
+  ).toBeChecked();
+  await expect(dialog.getByRole("radio", { name: "Keep private" })).toHaveCount(
+    0,
+  );
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(visibility).toBeFocused();
+  const visitorContext = await page.context().browser()!.newContext();
+  const visitor = await visitorContext.newPage();
+  try {
+    await visitor.goto(url);
+    await expect(
+      visitor.getByRole("button", { name: "Change visibility" }),
+    ).toHaveCount(0);
+    expect(
+      (
+        await visitor.request.post(`/api/grids/${id}/publish`, {
+          data: { visibility: "public" },
+        })
+      ).status(),
+    ).toBe(404);
+    await visitor.goto("/grids");
+    const publicGrids = visitor.getByRole("region", {
+      name: "Public grids",
+      exact: true,
+    });
+    await expect(
+      publicGrids.getByRole("link", { name: new RegExp("Promoted grid") }),
+    ).toHaveCount(0);
+    await visibility.click();
+    await dialog.getByRole("radio", { name: "Listed publicly" }).check();
+    await dialog.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(visibility).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Copy link" })).toBeVisible();
+    expect(page.url()).toBe(url);
+    await page.reload();
+    const after = await (await page.request.get(`/api/grids/${id}`)).json();
+    expect(after.visibility).toBe("public");
+    expect(after.cells).toEqual(before.cells);
+    expect(after.input).toEqual(before.input);
+    expect(await (await request.get("/fixture/calls")).json()).toEqual(calls);
+    await visitor.reload();
+    await expect(
+      publicGrids.getByRole("link", { name: new RegExp("Promoted grid") }),
+    ).toBeVisible();
+    await page.goto("/grids");
+    await expect(
+      page
+        .getByRole("region", { name: "Public grids", exact: true })
+        .getByRole("link", { name: new RegExp("Promoted grid") }),
+    ).toBeVisible();
+  } finally {
+    await visitorContext.close();
+  }
+});
+
 test("both grid listings show format icons with Tippy tooltips and public grids are visible to visitors", async ({
   page,
   request,
@@ -2050,13 +2213,27 @@ test("both grid listings show format icons with Tippy tooltips and public grids 
         .getByRole("img", { name: type, exact: true })
         .first();
       await icon.hover();
-      await expect(page.getByRole("tooltip")).toHaveText(type);
+      await expect(
+        page.locator('.tippy-box[data-state="visible"]'),
+      ).toHaveCount(1);
+      await expect(page.locator('.tippy-box[data-state="visible"]')).toHaveText(
+        type,
+      );
       await page.mouse.move(0, 0);
-      await expect(page.getByRole("tooltip")).toHaveCount(0);
+      await expect(
+        page.locator('.tippy-box[data-state="visible"]'),
+      ).toHaveCount(0);
       await icon.focus();
-      await expect(page.getByRole("tooltip")).toHaveText(type);
+      await expect(
+        page.locator('.tippy-box[data-state="visible"]'),
+      ).toHaveCount(1);
+      await expect(page.locator('.tippy-box[data-state="visible"]')).toHaveText(
+        type,
+      );
       await icon.evaluate((element) => (element as HTMLElement).blur());
-      await expect(page.getByRole("tooltip")).toHaveCount(0);
+      await expect(
+        page.locator('.tippy-box[data-state="visible"]'),
+      ).toHaveCount(0);
     }
   }
   const visitor = await page.context().browser()!.newContext();

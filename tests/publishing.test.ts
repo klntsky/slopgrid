@@ -139,10 +139,9 @@ test("publishing is permanent, link grids are unlisted, and public summaries omi
         (await publish(id, { visibility: previous.visibility })).status,
         200,
       );
-      for (const visibility of [
-        "private",
-        id === "link" ? "public" : "unlisted",
-      ])
+      for (const visibility of id === "link"
+        ? ["private"]
+        : ["private", "unlisted"])
         assert.equal((await publish(id, { visibility })).status, 409);
       assert.equal(store.get(id)!.revision, previous.revision);
       for (const action of ["edit", "retry", "pause"]) {
@@ -159,10 +158,29 @@ test("publishing is permanent, link grids are unlisted, and public summaries omi
       (await publicGrids()).map((g: Grid) => g.id),
       ["newer", "listed"],
     );
+    const beforePromotion = store.get("link")!;
+    assert.equal(
+      (await publish("link", { visibility: "public" }, false)).status,
+      404,
+    );
+    assert.equal(store.get("link")!.visibility, "unlisted");
+    assert.equal((await publish("link", { visibility: "public" })).status, 200);
+    assert.deepEqual(store.get("link"), {
+      ...beforePromotion,
+      visibility: "public",
+      revision: beforePromotion.revision + 1,
+    });
+    assert.deepEqual(
+      (await publicGrids()).map((g: Grid) => g.id),
+      ["newer", "listed", "link"],
+    );
+    assert.equal((await publish("link", { visibility: "public" })).status, 200);
+    for (const visibility of ["private", "unlisted"])
+      assert.equal((await publish("link", { visibility })).status, 409);
     const reopened = new Store(join(dir, "db.sqlite"), Buffer.alloc(32, 4));
     try {
       assert.equal(reopened.get("listed")!.visibility, "public");
-      assert.equal(reopened.get("link")!.visibility, "unlisted");
+      assert.equal(reopened.get("link")!.visibility, "public");
       assert.equal(reopened.get("private")!.visibility, "private");
     } finally {
       reopened.db.close();

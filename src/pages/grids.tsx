@@ -56,16 +56,20 @@ export function YourGrids() {
   const history = useGrids();
   const publicGrids = usePublicGrids();
   return (
-    <main>
+    <main className="grid-list-page">
       <section aria-labelledby="your-grids-title">
         <div className="history-heading">
-          <h1 id="your-grids-title">Your grids</h1>
+          <h1 id="your-grids-title" className="grid-list-title">
+            Your grids
+          </h1>
           <CreateGridButton />
         </div>
         <GridListing query={history} />
       </section>
       <section className="public-grids" aria-labelledby="public-grids-title">
-        <h2 id="public-grids-title">Public grids</h2>
+        <h2 id="public-grids-title" className="grid-list-title">
+          Public grids
+        </h2>
         <p>See what others have created</p>
         <GridListing query={publicGrids} publicListing />
       </section>

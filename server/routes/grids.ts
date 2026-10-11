@@ -191,6 +191,11 @@ export function createGridRoutes({
     const { visibility } = parsed.data;
     if (g.published) {
       if (visibility === g.visibility) return res.json(snapshot(g, s));
+      if (g.visibility === "unlisted" && visibility === "public") {
+        g.visibility = visibility;
+        jobs.emit(g);
+        return res.json(snapshot(g, s));
+      }
       return res
         .status(409)
         .json({ error: "Published grid visibility cannot be changed." });

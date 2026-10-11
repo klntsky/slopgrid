@@ -41,7 +41,9 @@ export function Layout() {
   }, [menuOpen]);
   return (
     <GridHeaderTarget.Provider value={headerTarget}>
-      <div className={`app-shell${isGrid ? " grid-layout" : ""}`}>
+      <div
+        className={`app-shell${isGrid ? " grid-layout" : pathname === "/grids" ? " grid-list-layout" : ""}`}
+      >
         <header>
           <Link to="/grids" className="wordmark" aria-label="slopgrid">
             slopgrid

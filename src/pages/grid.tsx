@@ -80,6 +80,7 @@ export function GridPage() {
         <OutputGrid grid={g} />
         {publishing && (
           <PublishDialog
+            initialVisibility={g.visibility}
             busy={busy}
             onPublish={publish}
             onClose={() => setPublishing(false)}

@@ -4,6 +4,7 @@ import { efforts, type GridInput } from "../../server/domain";
 import { effortLabel } from "../../server/compatibility";
 import type { Model } from "../../server/provider";
 import { dimensionNames } from "../format";
+import { modelDefaultHint, useTooltip } from "../components/use-tooltip";
 export function AxisEditor({
   label,
   axis,
@@ -19,6 +20,7 @@ export function AxisEditor({
 }) {
   const [filter, setFilter] = useState("");
   const filterInput = useRef<HTMLInputElement>(null);
+  const defaultHint = useTooltip<HTMLLabelElement>(modelDefaultHint);
   const kinds =
     format === "image"
       ? (["model", "variable"] as const)
@@ -76,8 +78,8 @@ export function AxisEditor({
               <input
                 ref={filterInput}
                 type="search"
-                aria-label={`Filter ${label === "Rows" ? "row" : "column"} models`}
-                placeholder={`Filter ${label === "Rows" ? "row" : "column"} models`}
+                aria-label="Search models"
+                placeholder="Search models"
                 value={filter}
                 onChange={(e) => setFilter(e.target.value)}
               />
@@ -102,7 +104,15 @@ export function AxisEditor({
               <p className="hint">No models match your filter.</p>
             )}
             {visibleChoices.map((c) => (
-              <label className="checkbox" key={c.id}>
+              <label
+                className="checkbox"
+                key={c.id}
+                ref={
+                  axis.kind === "effort" && c.id === "default"
+                    ? defaultHint
+                    : undefined
+                }
+              >
                 <input
                   type="checkbox"
                   checked={axis.values.includes(c.id)}

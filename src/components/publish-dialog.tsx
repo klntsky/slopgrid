@@ -12,16 +12,19 @@ function skipConfirmation() {
 }
 
 export function PublishDialog({
+  initialVisibility,
   busy,
   onPublish,
   onClose,
 }: {
+  initialVisibility: GridVisibility;
   busy: boolean;
   onPublish: (visibility: GridVisibility) => Promise<void>;
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
-  const [visibility, setVisibility] = useState<GridVisibility>("private");
+  const [visibility, setVisibility] = useState(initialVisibility);
+  const published = initialVisibility !== "private";
   const [confirming, setConfirming] = useState(false);
   const [remember, setRemember] = useState(false);
   const [error, setError] = useState("");
@@ -106,21 +109,23 @@ export function PublishDialog({
               ["unlisted", "Accessible by link"],
               ["public", "Listed publicly"],
             ] as const
-          ).map(([value, label]) => (
-            <label className="publish-choice" key={value}>
-              <input
-                type="radio"
-                name="grid-visibility"
-                value={value}
-                checked={visibility === value}
-                onChange={() => {
-                  setVisibility(value);
-                  setError("");
-                }}
-              />
-              {label}
-            </label>
-          ))}
+          )
+            .filter(([value]) => !published || value !== "private")
+            .map(([value, label]) => (
+              <label className="publish-choice" key={value}>
+                <input
+                  type="radio"
+                  name="grid-visibility"
+                  value={value}
+                  checked={visibility === value}
+                  onChange={() => {
+                    setVisibility(value);
+                    setError("");
+                  }}
+                />
+                {label}
+              </label>
+            ))}
         </fieldset>
       )}
       <div className="modal-actions">
@@ -130,7 +135,7 @@ export function PublishDialog({
           disabled={busy}
           onClick={() => {
             if (visibility === "private") onClose();
-            else if (confirming || skipConfirmation()) void save();
+            else if (published || confirming || skipConfirmation()) void save();
             else setConfirming(true);
           }}
         >

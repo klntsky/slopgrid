@@ -166,7 +166,8 @@ main {
   padding: 56px 28px 100px;
   margin: auto;
 }
-h1 {
+h1,
+.grid-list-title {
   font-size: 48px;
   font-weight: 500;
   letter-spacing: -2px;
@@ -260,8 +261,6 @@ legend {
   margin-bottom: 10px;
 }
 .value-list {
-  height: 132px;
-  overflow: auto;
   background: var(--paper);
   border: 1px solid var(--line);
   padding: 9px 12px;
@@ -729,7 +728,8 @@ legend {
   main {
     padding: 36px 20px 70px;
   }
-  h1 {
+  h1,
+  .grid-list-title {
     font-size: 38px;
   }
   .formats {
@@ -771,6 +771,7 @@ legend {
 
 .model-list {
   height: 264px;
+  overflow: auto;
 }
 .openrouter-icon {
   filter: var(--brand-filter);
@@ -1186,7 +1187,8 @@ header {
 .model-link:hover {
   color: var(--text);
 }
-.cell-tokens {
+.cell-tokens,
+.token-count {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -1253,6 +1255,11 @@ header {
 }
 .public-grids {
   margin-top: 40px;
+}
+.grid-list-layout > header,
+.grid-list-page > section,
+.grid-list-page .history > .history-row:last-child {
+  border: 0;
 }
 .history .grid-format-icon {
   display: inline-flex;

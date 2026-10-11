@@ -1,6 +1,7 @@
 import { Author } from "../components/identity";
-import { Pause, Play, Pencil, GitFork, Upload, Link2 } from "lucide-react";
+import { Pause, Play, Pencil, GitFork, Upload, Link2, Eye } from "lucide-react";
 import type { ViewGrid } from "../api";
+import { useTooltip } from "../components/use-tooltip";
 export function GridHeader({
   grid: g,
   busy,
@@ -42,6 +43,14 @@ export function GridHeader({
   const inferenceRunning =
     g.status === "running" || g.cells.some((cell) => cell.status === "running");
   const paused = g.status === "paused" && g.canEdit && !g.published;
+  const pauseHint = useTooltip<HTMLButtonElement>(
+    paused
+      ? "Restarts unfinished outputs."
+      : "Stops active requests. Resume restarts unfinished outputs.",
+  );
+  const costHint = useTooltip<HTMLSpanElement>(
+    "Total reported cost of the displayed outputs and failures; excludes unfinished outputs, unavailable charges, and previous retry attempts",
+  );
   return (
     <>
       <div className="grid-heading">
@@ -51,7 +60,7 @@ export function GridHeader({
               className="secondary inference-toggle"
               disabled={busy}
               aria-label={paused ? "Resume generation" : "Pause generation"}
-              title={paused ? "Resume generation" : "Pause generation"}
+              ref={pauseHint}
               onClick={() => onAction(paused ? "retry" : "pause")}
             >
               {paused ? (
@@ -77,15 +86,19 @@ export function GridHeader({
                 )}
               </button>
             )}
-            {g.canEdit && !g.published && (
+            {g.canEdit && (!g.published || g.visibility === "unlisted") && (
               <button
                 disabled={busy || finished !== g.cells.length}
                 className="secondary inference-toggle"
                 onClick={onPublish}
-                aria-label="PUBLISH"
-                title="Publish grid"
+                aria-label={g.published ? "Change visibility" : "PUBLISH"}
+                title={g.published ? "Change visibility" : "Publish grid"}
               >
-                <Upload aria-hidden="true" />
+                {g.published ? (
+                  <Eye aria-hidden="true" />
+                ) : (
+                  <Upload aria-hidden="true" />
+                )}
               </button>
             )}
             {g.published && (
@@ -117,7 +130,8 @@ export function GridHeader({
           <span
             className="grid-cost"
             aria-label={`Total reported cost: ${totalCostText}`}
-            title="Total reported cost of the displayed outputs and failures; excludes unfinished outputs, unavailable charges, and previous retry attempts"
+            ref={costHint}
+            tabIndex={0}
           >
             {totalCostText}
             {inferenceRunning && (

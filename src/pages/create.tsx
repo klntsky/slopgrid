@@ -25,6 +25,7 @@ import { AxisEditor } from "../create/axis-editor";
 import { Connection } from "../components/connection";
 import { ErrorMessage } from "../components/error-message";
 import { LowBalanceDialog } from "../components/inference-dialogs";
+import { modelDefaultHint, useTooltip } from "../components/use-tooltip";
 export function Create() {
   const [draft, setDraft] = useCreateDraft(),
     [error, setError] = useState(""),
@@ -33,6 +34,12 @@ export function Create() {
   const { step, input } = draft,
     navigate = useNavigate(),
     connection = useConnection();
+  const defaultHint = useTooltip<HTMLSelectElement>(
+    input.effort === "default" ? modelDefaultHint : undefined,
+  );
+  const budgetHint = useTooltip<HTMLLabelElement>(
+    "Used to calculate each output’s token limit.",
+  );
   const catalog = useQuery({
     queryKey: ["models"],
     queryFn: () => api<Model[]>("/models"),
@@ -129,7 +136,7 @@ export function Create() {
   return (
     <main className="create-page">
       <div className="page-heading">
-        <h1>Create a grid to compare models and their settings</h1>
+        <h1>Create your own visual AI model benchmark</h1>
       </div>
       <section>
         <div className="section-heading">
@@ -221,6 +228,7 @@ export function Create() {
                     <label>
                       Thinking effort
                       <select
+                        ref={defaultHint}
                         value={input.effort}
                         onChange={(e) =>
                           update({
@@ -326,8 +334,8 @@ export function Create() {
           </div>
           <Connection returnTo="/" />
           {input.format !== "image" && (
-            <>
-              <label htmlFor="cell-budget">Budget per cell ($)</label>
+            <label htmlFor="cell-budget" ref={budgetHint}>
+              Budget per cell ($)
               <input
                 id="cell-budget"
                 type="number"
@@ -338,7 +346,7 @@ export function Create() {
                   update({ budgetUsd: event.target.valueAsNumber })
                 }
               />
-            </>
+            </label>
           )}
           <button
             className="primary generate"
