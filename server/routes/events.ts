@@ -1,3 +1,4 @@
+import type { EventEmitter } from "node:events";
 import { Router } from "express";
 import type { Store } from "../store.js";
 import type { Jobs } from "../jobs.js";
@@ -11,11 +12,13 @@ export function createEventRoutes({
   jobs,
   session,
   snapshot,
+  updates,
 }: {
   store: Store;
   jobs: Jobs;
   session: SessionReader;
   snapshot: GridPresenter;
+  updates: EventEmitter;
 }) {
   const app = Router();
   const connections = new Map<string, number>();
@@ -46,14 +49,14 @@ export function createEventRoutes({
       res.write(`data: ${JSON.stringify(snapshot(grid, current))}\n\n`);
     };
     send(jobs.active.get(id) ?? g);
-    const unsubscribe = jobs.subscribe(id, send),
-      heartbeat = setInterval(() => {
-        if (!store.session(s.id)) res.end();
-        else res.write(": heartbeat\n\n");
-      }, 15000);
+    updates.on(id, send);
+    const heartbeat = setInterval(() => {
+      if (!store.session(s.id)) res.end();
+      else res.write(": heartbeat\n\n");
+    }, 15000);
     res.on("close", () => {
       clearInterval(heartbeat);
-      unsubscribe();
+      updates.off(id, send);
       const remaining = (connections.get(s.id) ?? 1) - 1;
       if (remaining) connections.set(s.id, remaining);
       else connections.delete(s.id);

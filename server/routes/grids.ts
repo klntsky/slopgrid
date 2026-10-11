@@ -34,6 +34,7 @@ export function createGridRoutes({
   session,
   rate,
   snapshot,
+  save,
 }: {
   store: Store;
   provider: Provider;
@@ -41,6 +42,7 @@ export function createGridRoutes({
   session: SessionReader;
   rate: RateLimiter;
   snapshot: GridPresenter;
+  save: (grid: Grid) => void;
 }) {
   const app = Router(),
     allowInference = createInferenceGuard(store, provider);
@@ -198,7 +200,7 @@ export function createGridRoutes({
       if (visibility === g.visibility) return res.json(snapshot(g, s));
       if (g.visibility === "unlisted" && visibility === "public") {
         g.visibility = visibility;
-        jobs.emit(g);
+        save(g);
         return res.json(snapshot(g, s));
       }
       return res
@@ -218,7 +220,7 @@ export function createGridRoutes({
     g.author = presentIdentity(user);
     g.published = true;
     g.visibility = visibility;
-    jobs.emit(g);
+    save(g);
     res.json(snapshot(g, s));
   });
   return app;

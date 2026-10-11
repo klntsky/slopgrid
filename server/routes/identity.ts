@@ -1,3 +1,4 @@
+import type { Grid } from "../domain.js";
 import { Router } from "express";
 import { token } from "../ids.js";
 import { anonymousOwner, type SessionReader } from "../session.js";
@@ -9,6 +10,7 @@ import { oauthReturnTo, oauthVerifier, type OAuthProvider } from "../oauth.js";
 export function createIdentityRoutes(
   store: Store,
   jobs: Jobs,
+  save: (grid: Grid) => void,
   session: SessionReader,
   rate: RateLimiter,
   origin: string,
@@ -79,7 +81,13 @@ export function createIdentityRoutes(
             profile.subject,
             profile.identity,
           );
-          jobs.claim(anonymousOwner(current), user.id);
+          const owner = anonymousOwner(current);
+          store.claim(owner, user.id);
+          for (const grid of jobs.active.values())
+            if (grid.owner === owner && !grid.ownerUserId) {
+              grid.ownerUserId = user.id;
+              save(grid);
+            }
           session.rotate(current, res, user.id);
         })();
         res.redirect(pending.returnTo);

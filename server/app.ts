@@ -1,3 +1,5 @@
+import { EventEmitter } from "node:events";
+import type { Grid } from "./domain.js";
 import {
   githubCredentials,
   githubProvider,
@@ -41,7 +43,12 @@ export function createApp(config: Config) {
   const app = express();
   const store = new Store(config.database, config.secret, config.outputsPath);
   const provider = config.provider ?? new Provider();
-  const jobs = new Jobs(store, provider, config.workersMax);
+  const updates = new EventEmitter().setMaxListeners(0);
+  const save = (grid: Grid) => {
+    store.save(grid);
+    updates.emit(grid.id, grid);
+  };
+  const jobs = new Jobs(store, provider, config.workersMax, save);
   const origin = new URL(config.origin);
   const htmlHosts = createHtmlHosts(origin, config.outputDomain);
   const rate = createRateLimiter();
@@ -64,15 +71,17 @@ export function createApp(config: Config) {
     }),
   );
   app.use(
-    createIdentityRoutes(store, jobs, session, rate, origin.origin, [
+    createIdentityRoutes(store, jobs, save, session, rate, origin.origin, [
       githubProvider(credentials),
     ]),
   );
   app.use(createManualKeyRoutes(provider, session, rate));
   app.use(createModelRoutes(provider));
   app.use(createBillingRoutes(store, session));
-  app.use(createGridRoutes({ store, provider, jobs, session, rate, snapshot }));
-  app.use(createEventRoutes({ store, jobs, session, snapshot }));
+  app.use(
+    createGridRoutes({ store, provider, jobs, session, rate, snapshot, save }),
+  );
+  app.use(createEventRoutes({ store, jobs, session, snapshot, updates }));
   app.use("/api", (_req, res) => res.status(404).json({ error: "Not found" }));
   app.use(
     (

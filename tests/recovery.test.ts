@@ -95,13 +95,18 @@ test("a restart preserves finished outputs and pauses interrupted work until an 
         return { files: { "index.md": "Recovered output" }, usage: undefined };
       }
     }
-    const jobs = new Jobs(store, new RecoveryProvider());
-    const completed = new Promise<void>((resolve) =>
-      jobs.subscribe("grid", (g) => {
-        if (g.status === "complete") resolve();
-      }),
-    );
-    jobs.start(restored);
+    const completed = new Promise<void>((resolve) => {
+      const jobs = new Jobs(
+        store,
+        new RecoveryProvider(),
+        undefined,
+        (grid) => {
+          store.save(grid);
+          if (grid.status === "complete") resolve();
+        },
+      );
+      jobs.start(restored);
+    });
     await completed;
     assert.deepEqual(requests, ["interrupted"]);
     assert.equal(

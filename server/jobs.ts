@@ -10,7 +10,6 @@ import { selectWorker } from "./worker-allocation.js";
 export class Jobs {
   readonly previews: WebsitePreviews;
   active = new Map<string, Grid>();
-  listeners = new Map<string, Set<(grid: Grid) => void>>();
   private running = new Map<
     string,
     { grid: Grid; cell: Cell; controller: AbortController; owner: string }
@@ -18,14 +17,6 @@ export class Jobs {
   private executionOwners = new Map<string, string>();
   private executionOwner(grid: Grid) {
     return this.executionOwners.get(grid.id) ?? grid.owner;
-  }
-  claim(anonymousId: string, userId: string) {
-    this.store.claim(anonymousId, userId);
-    for (const grid of this.active.values())
-      if (grid.owner === anonymousId && !grid.ownerUserId) {
-        grid.ownerUserId = userId;
-        this.emit(grid);
-      }
   }
   private keysByGrid = new Map<string, string>();
   private owners = new Map<string, { limit: number; last: number }>();
@@ -40,26 +31,17 @@ export class Jobs {
     private store: Store,
     private provider: Provider,
     readonly workersMax = 100,
+    private save: (grid: Grid) => void = (grid) => store.save(grid),
   ) {
     if (!Number.isSafeInteger(workersMax) || workersMax < 1)
       throw new Error("WORKERS_MAX must be a positive safe integer");
     this.previews = new WebsitePreviews(join(store.files.root, ".previews"));
   }
-  emit(grid: Grid) {
+  private emit(grid: Grid) {
     const timer = this.draftTimers.get(grid.id);
     if (timer) clearTimeout(timer);
     this.draftTimers.delete(grid.id);
-    this.store.save(grid);
-    for (const callback of this.listeners.get(grid.id) ?? []) callback(grid);
-  }
-  subscribe(id: string, callback: (grid: Grid) => void) {
-    const set = this.listeners.get(id) ?? new Set();
-    set.add(callback);
-    this.listeners.set(id, set);
-    return () => {
-      set.delete(callback);
-      if (!set.size) this.listeners.delete(id);
-    };
+    this.save(grid);
   }
   start(grid: Grid, key?: string, session?: Session): Grid {
     const current = this.active.get(grid.id);
@@ -261,11 +243,7 @@ export class Jobs {
             this.previews.update(cell, text, () => this.previewUpdated(grid));
             return;
           }
-          const now = Date.now();
-          if (now - (this.draftEmittedAt.get(grid.id) ?? 0) > 300) {
-            this.draftEmittedAt.set(grid.id, now);
-            this.emit(grid);
-          }
+          this.previewUpdated(grid);
         },
         controller.signal,
         this.store.billing.observe(cell.id),

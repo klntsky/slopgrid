@@ -125,11 +125,8 @@ test("account ownership, frozen authors, browser credentials, and real OAuth rou
     });
   try {
     assert.equal((await request("/api/grids/draft", second)).status, 404);
-    jobs.active.set(draft.id, draft);
-    jobs.claim(anonymous, alice.id);
-    assert.equal(jobs.active.get(draft.id)!.ownerUserId, alice.id);
+    store.claim(anonymous, alice.id);
     assert.equal(store.get(draft.id)!.ownerUserId, alice.id);
-    jobs.active.delete(draft.id);
     store.saveSession({ ...store.session(anonymous)!, userId: alice.id });
     assert.equal((await request("/api/grids/draft", second)).status, 200);
     assert.equal((await request("/api/grids/draft", other)).status, 404);
