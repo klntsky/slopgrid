@@ -67,13 +67,15 @@ test("model choices start empty and filtering preserves deliberate selections", 
   await page.getByRole("button", { name: "SVG", exact: true }).click();
   await expect(page.locator('input[type="checkbox"]:checked')).toHaveCount(0);
   const columns = page.getByRole("group", { name: "Column values" });
+  const filter = page.getByLabel("Search models");
+  const clear = page.getByRole("button", { name: "Clear column model filter" });
+  await expect(filter).toHaveValue("latest");
+  await expect(columns.getByRole("checkbox")).toHaveCount(0);
+  await clear.click();
   await expect(columns.locator("label.checkbox")).toHaveText([
     "Fixture text",
     "Second model",
   ]);
-  const filter = page.getByLabel("Search models");
-  const clear = page.getByRole("button", { name: "Clear column model filter" });
-  await clear.click();
   await expect(filter).toBeFocused();
   await expect(filter).toHaveValue("");
   await expect(page.getByText("Row values", { exact: true })).toHaveCount(0);
@@ -133,6 +135,7 @@ test("model choices start empty and filtering preserves deliberate selections", 
       const rowClear = page.getByRole("button", {
         name: "Clear row model filter",
       });
+      await expect(rowFilter).toHaveValue("latest");
       await rowFilter.fill("no matching model");
       await rowClear.press("Enter");
       await expect(rowFilter).toHaveValue("");
@@ -237,6 +240,7 @@ test("selecting an output type reveals the entire form and preserves it on reloa
   await page.getByRole("link", { name: "Connect OpenRouter" }).click();
   const generate = page.getByRole("button", { name: "Generate", exact: true });
   await expect(generate).toBeDisabled();
+  await page.getByRole("button", { name: "Clear column model filter" }).click();
   const model = page.getByRole("checkbox", {
     name: "Fixture image",
     exact: true,
@@ -263,6 +267,7 @@ test("the compatibility table shows selected model support without blocking gene
   const rows = page.getByRole("group", { name: "Row values" });
   await rows.getByRole("checkbox", { name: "None", exact: true }).check();
   await rows.getByRole("checkbox", { name: "max", exact: true }).check();
+  await page.getByRole("button", { name: "Clear column model filter" }).click();
   await page
     .getByRole("group", { name: "Column values" })
     .getByRole("checkbox", { name: "Second model", exact: true })
@@ -385,6 +390,7 @@ for (const axis of ["Rows", "Columns"] as const) {
     await page
       .getByRole("combobox", { name: other, exact: true })
       .selectOption("model");
+    await page.getByLabel("Search models").fill("");
     const values = page.getByRole("group", {
       name: axis === "Rows" ? "Row values" : "Column values",
     });
