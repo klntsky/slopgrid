@@ -8,7 +8,6 @@ import { join } from "node:path";
 import { createApp } from "../server/app.js";
 import { expandGrid, type Grid } from "../server/domain.js";
 import { Store } from "../server/store.js";
-import { migrate } from "../server/migrations.js";
 
 // Exercise the real session, ownership, persistence, and publishing routes.
 test("publishing is permanent, link grids are unlisted, and public summaries omit private data", async () => {
@@ -182,16 +181,6 @@ test("publishing is permanent, link grids are unlisted, and public summaries omi
     } finally {
       reopened.db.close();
     }
-    // Re-run the new migration against persisted legacy grid JSON.
-    store.db.exec("UPDATE grids SET data=json_remove(data, '$.visibility')");
-    store.db.pragma("user_version = 6");
-    migrate(store.db);
-    assert.equal(store.get("private")!.visibility, "private");
-    assert.equal(store.get("link")!.visibility, "unlisted");
-    assert.equal(store.get("listed")!.visibility, "unlisted");
-    migrate(store.db);
-    assert.equal(store.get("listed")!.visibility, "unlisted");
-    assert.equal(store.db.pragma("user_version", { simple: true }), 8);
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
     store.db.close();

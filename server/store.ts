@@ -6,7 +6,7 @@ import { expandGrid, type Grid, type User, type Identity } from "./domain.js";
 import { dirname, join, resolve } from "node:path";
 import { OutputFiles } from "./files.js";
 import { token } from "./ids.js";
-import { migrate } from "./migrations.js";
+import { initializeDatabase } from "./database.js";
 export type Session = {
   id: string;
   anonymousId?: string;
@@ -34,7 +34,7 @@ export class Store {
     try {
       this.db.pragma("journal_mode = WAL");
       this.db.pragma("foreign_keys = ON");
-      migrate(this.db);
+      initializeDatabase(this.db);
       this.billing = new Billing(this.db);
       this.files = new OutputFiles(
         resolve(outputsPath ?? join(dirname(path), "outputs")),
