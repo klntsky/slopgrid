@@ -5,7 +5,9 @@ export function Settings() {
   const { theme, setTheme } = useTheme();
   return (
     <main className="settings-page">
-      <h1>Settings</h1>
+      <div className="page-title">
+        <h1>Settings</h1>
+      </div>
       <section aria-labelledby="account-heading">
         <h2 id="account-heading">Account</h2>
         <Account returnTo="/settings" settings />

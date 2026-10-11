@@ -1,16 +1,9 @@
-.billing-page {
-  width: 100%;
-}
-.billing-heading,
 .billing-pagination {
   display: flex;
   align-items: center;
   gap: 1rem;
 }
-.billing-heading {
-  justify-content: space-between;
-}
-.billing-heading button svg {
+.billing-page .page-title button svg {
   width: 1.2rem;
   height: 1.2rem;
 }

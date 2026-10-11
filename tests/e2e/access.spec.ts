@@ -187,7 +187,7 @@ for (const format of ["SVG", "Markdown"])
     await tab.close();
   });
 
-test("the logo opens the grid list and its creation link starts a new grid", async ({
+test("navigation connects grid creation and the shared content page layout", async ({
   page,
   request,
 }) => {
@@ -213,6 +213,28 @@ test("the logo opens the grid list and its creation link starts a new grid", asy
     })
     .click();
   await expect(page).toHaveURL(gridURL);
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    const layouts = [];
+    for (const route of ["/grids", "/billing", "/settings"]) {
+      await page.goto(route);
+      const heading = page.getByRole("heading", { level: 1 });
+      await expect(heading).toBeVisible();
+      const main = (await page.getByRole("main").boundingBox())!,
+        title = (await heading.boundingBox())!;
+      layouts.push({
+        left: main.x,
+        width: main.width,
+        titleX: title.x,
+        titleY: title.y,
+      });
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth),
+      ).toBe(width);
+    }
+    expect(layouts[1]).toEqual(layouts[0]);
+    expect(layouts[2]).toEqual(layouts[0]);
+  }
 });
 
 test("EDIT cancels inference and restores settings, while a public FORK creates a separate grid", async ({

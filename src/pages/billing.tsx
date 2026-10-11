@@ -19,7 +19,7 @@ export function Billing() {
   const data = query.data;
   return (
     <main className="billing-page">
-      <div className="billing-heading">
+      <div className="page-title">
         <h1>Billing</h1>
         <button
           className="secondary"

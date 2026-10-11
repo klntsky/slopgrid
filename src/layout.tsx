@@ -42,7 +42,7 @@ export function Layout() {
   return (
     <GridHeaderTarget.Provider value={headerTarget}>
       <div
-        className={`app-shell${isGrid ? " grid-layout" : pathname === "/grids" ? " grid-list-layout" : ""}`}
+        className={`app-shell${isGrid ? " grid-layout" : ["/grids", "/billing", "/settings"].includes(pathname) ? " content-layout" : ""}`}
       >
         <header>
           <Link to="/grids" className="wordmark" aria-label="slopgrid">

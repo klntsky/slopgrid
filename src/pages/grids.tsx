@@ -58,7 +58,7 @@ export function YourGrids() {
   return (
     <main className="grid-list-page">
       <section aria-labelledby="your-grids-title">
-        <div className="history-heading">
+        <div className="page-title">
           <h1 id="your-grids-title" className="grid-list-title">
             Your grids
           </h1>
