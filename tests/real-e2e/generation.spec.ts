@@ -6,7 +6,15 @@ const prompts = {
     "Return a Markdown document containing only a level-one heading with the text OK.",
   SVG: 'Draw a single red rectangle in an SVG with xmlns="http://www.w3.org/2000/svg", width="10", height="10" and viewBox="0 0 10 10". No other elements are needed.',
   "Static website":
-    'Create exactly three files: index.html, style.css and app.js. index.html links style.css, loads app.js as a module, and contains <h1>OK</h1> and <p id="status"></p>. style.css sets body background-color to red. app.js sets the status element textContent to "JS OK". Use relative paths. Return only the JSON object with a files property as specified by the system instruction. Start with { and end with }. No Markdown fences, commentary, or text before or after the JSON.',
+    "Return exactly this JSON object, without fences or other text: " +
+    JSON.stringify({
+      files: {
+        "index.html":
+          '<!doctype html><html><head><link rel="stylesheet" href="style.css"><script type="module" src="app.js"></script></head><body><h1>OK</h1><p id="status"></p></body></html>',
+        "style.css": "body { background-color: red; }",
+        "app.js": 'document.getElementById("status").textContent = "JS OK";',
+      },
+    }),
 };
 
 for (const [format, prompt] of Object.entries(prompts)) {
@@ -14,6 +22,8 @@ for (const [format, prompt] of Object.entries(prompts)) {
     page,
   }) => {
     const markdownChunks: string[] = [];
+    const browserErrors: string[] = [];
+    page.on("pageerror", (error) => browserErrors.push(error.message));
     page.on("request", (request) => {
       if (
         /\/assets\/markdown-[^/]+\.js$/.test(new URL(request.url()).pathname)
@@ -98,7 +108,16 @@ for (const [format, prompt] of Object.entries(prompts)) {
       await expect(
         frame.getByRole("heading", { name: "OK", exact: true }),
       ).toBeVisible();
-      await expect(frame.getByText("JS OK", { exact: true })).toBeVisible();
+      const script = await page.request.get(new URL("app.js", output!).href);
+      await expect(
+        frame.getByText("JS OK", { exact: true }),
+        JSON.stringify({
+          html: await response.text(),
+          scriptStatus: script.status(),
+          script: await script.text(),
+          browserErrors,
+        }),
+      ).toBeVisible();
       await expect(frame.locator("body")).toHaveCSS(
         "background-color",
         "rgb(255, 0, 0)",
