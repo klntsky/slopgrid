@@ -322,6 +322,10 @@ upstream.post("/api/v1/chat/completions", async (req, res) => {
     res.write(
       `data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: { content: text.slice(i, i + chunkSize) }, finish_reason: null }] })}\n\n`,
     );
+    if (markdownOutput) {
+      await waitForRelease(prompt, res);
+      if (res.destroyed) return;
+    }
     await new Promise((resolve) => setTimeout(resolve, 30));
   }
   res.write(

@@ -720,16 +720,7 @@ legend {
   color: var(--muted);
   padding: 20px;
 }
-.pending pre {
-  font:
-    13px/1.5 ui-monospace,
-    monospace;
-  white-space: pre-wrap;
-  overflow: auto;
-  height: 200px;
-  width: 100%;
-  color: var(--muted);
-}
+
 .cell-error {
   padding: 22px;
   color: var(--error-text);

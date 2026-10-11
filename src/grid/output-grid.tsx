@@ -31,7 +31,9 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
   }
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const expanded = g.cells.find(
-    (cell) => cell.id === expandedId && cell.status === "complete",
+    (cell) =>
+      cell.id === expandedId &&
+      (cell.status === "complete" || cell.status === "running"),
   );
   const expandedView = useRef<HTMLElement>(null);
   const returnButton = useRef<HTMLButtonElement>(null);

@@ -742,3 +742,122 @@ test("streaming prices grow with reasoning and output, reconcile on success, and
     await request.post("/fixture/release", { data: { all: true } });
   }
 });
+
+test("Markdown renders during streaming and preserves its preview, layout, and scroll while completion loads", async ({
+  page,
+  request,
+}) => {
+  const markdown =
+    "# Streaming Markdown\n\n" +
+    Array.from(
+      { length: 120 },
+      (_, i) => `Paragraph ${i} with **formatted text**.\n\n`,
+    ).join("") +
+    "## Finished\n";
+  await request.post("/fixture/reset", {
+    data: { markdownOutput: markdown, holdGenerations: true },
+  });
+  let releaseOutput: () => void = () => {};
+  try {
+    await create(page, "Markdown", "cat", "hat");
+    const cell = page.locator("article.cell");
+    const preview = cell.locator(".markdown-preview");
+    await expect
+      .poll(
+        async () =>
+          (await (await request.get("/fixture/workers")).json()).held.length,
+      )
+      .toBe(1);
+    const next = () =>
+      request.post("/fixture/release", {
+        data: { prompt: "Draw cat wearing a hat" },
+      });
+    await next();
+    await expect(
+      preview.getByRole("heading", { name: "Streaming Markdown" }),
+    ).toBeVisible();
+    await expect(preview.locator("strong").first()).toHaveText(
+      "formatted text",
+    );
+    await expectProgress(page, 0, 1);
+    await cell.getByRole("button", { name: "View raw", exact: true }).click();
+    const partial = (await preview.locator("pre").textContent())!;
+    expect(partial).toContain("# Streaming Markdown");
+    await next();
+    await expect
+      .poll(async () => (await preview.locator("pre").textContent())!.length)
+      .toBeGreaterThan(partial.length);
+    await cell
+      .getByRole("button", { name: "View Markdown", exact: true })
+      .click();
+    await cell
+      .getByRole("button", { name: "Expand Markdown", exact: true })
+      .click();
+    await expect(
+      page
+        .locator(".expanded-markdown")
+        .getByRole("heading", { name: "Streaming Markdown" }),
+    ).toBeVisible();
+    await page
+      .getByRole("button", { name: "Collapse Markdown", exact: true })
+      .click();
+    const document = (await preview
+      .locator(".markdown-document")
+      .elementHandle())!;
+    const footerHeight =
+      (await cell.boundingBox())!.height -
+      (await preview.boundingBox())!.height;
+    await preview.evaluate((el) => {
+      el.scrollTop = 80;
+    });
+    const scrollTop = await preview.evaluate((el) => el.scrollTop);
+    expect(scrollTop).toBeGreaterThan(0);
+    const gate = new Promise<void>((resolve) => {
+      releaseOutput = resolve;
+    });
+    await page.route("**/outputs/*?raw=1", async (route) => {
+      await gate;
+      await route.continue();
+    });
+    const fetching = page.waitForRequest((request) =>
+      request.url().includes("?raw=1"),
+    );
+    await request.post("/fixture/release", { data: { all: true } });
+    await expectProgress(page, 1, 1);
+    await fetching;
+    expect(await document.evaluate((el) => el.isConnected)).toBe(true);
+    await expect(
+      preview.getByRole("heading", { name: "Streaming Markdown" }),
+    ).toBeAttached();
+    await expect(
+      preview.getByText("Loading Markdown…", { exact: true }),
+    ).toHaveCount(0);
+    // The navbar can reflow when Stop disappears; the cell must keep its footer allocation.
+    expect(
+      (await cell.boundingBox())!.height -
+        (await preview.boundingBox())!.height,
+    ).toBeCloseTo(footerHeight, 0);
+    expect(await preview.evaluate((el) => el.scrollTop)).toBeCloseTo(
+      scrollTop,
+      0,
+    );
+    const loaded = page.waitForResponse((response) =>
+      response.url().includes("?raw=1"),
+    );
+    releaseOutput();
+    await loaded;
+    await expect(
+      preview.getByRole("heading", { name: "Finished", exact: true }),
+    ).toBeAttached();
+    expect(await document.evaluate((el) => el.isConnected)).toBe(true);
+    expect(await preview.evaluate((el) => el.scrollTop)).toBeCloseTo(
+      scrollTop,
+      0,
+    );
+    await cell.getByRole("button", { name: "View raw", exact: true }).click();
+    expect(await preview.locator("pre").textContent()).toBe(markdown);
+  } finally {
+    releaseOutput();
+    await request.post("/fixture/release", { data: { all: true } });
+  }
+});

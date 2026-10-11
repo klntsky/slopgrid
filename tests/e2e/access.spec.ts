@@ -725,7 +725,10 @@ test("manual key entry persists in the browser, rejects invalid replacements, an
     await expectProgress(page, 0, 1);
     await page.getByRole("button", { name: "Pause generation" }).click();
     await page.getByRole("button", { name: "Resume generation" }).click();
-    await expect(page.getByText("Generating…", { exact: true })).toBeVisible();
+    await expect(page.locator(".markdown-preview")).toHaveAttribute(
+      "aria-busy",
+      "true",
+    );
     await request.post("/fixture/release", { data: { all: true } });
     await expectProgress(page, 1, 1);
     await page.goto("/settings");

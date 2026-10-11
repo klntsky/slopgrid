@@ -8,16 +8,25 @@ export function MarkdownPreview({
   url,
   title,
   raw = false,
+  draft,
+  streaming = false,
 }: {
   url: string;
   title: string;
   raw?: boolean;
+  draft?: string;
+  streaming?: boolean;
 }) {
   const previewRef = useRef<HTMLDivElement>(null);
   const documentRef = useRef<HTMLDivElement>(null);
+  const lastDraft = useRef(draft);
+  useLayoutEffect(() => {
+    if (streaming) lastDraft.current = draft ?? "";
+  }, [draft, streaming]);
   const query = useQuery({
     queryKey: ["markdown", url],
     staleTime: Infinity,
+    enabled: !streaming,
     retry: false,
     queryFn: async ({ signal }) => {
       const source = new URL(url, location.origin);
@@ -27,6 +36,9 @@ export function MarkdownPreview({
       return response.text();
     },
   });
+  const markdown = streaming
+    ? (draft ?? "")
+    : (query.data ?? lastDraft.current);
   useLayoutEffect(() => {
     const preview = previewRef.current;
     const document = documentRef.current;
@@ -59,16 +71,19 @@ export function MarkdownPreview({
       observer.disconnect();
       preview.removeEventListener("load", fit, true);
     };
-  }, [query.data, raw]);
+  }, [markdown, raw]);
   return (
     <div
       ref={previewRef}
       className="markdown-preview"
       role="region"
       aria-label={title}
+      aria-busy={streaming}
       tabIndex={0}
     >
-      {query.isPending && <p role="status">Loading Markdown…</p>}
+      {markdown === undefined && query.isPending && (
+        <p role="status">Loading Markdown…</p>
+      )}
       {query.error && (
         <>
           <ErrorMessage error={query.error.message} />
@@ -77,12 +92,12 @@ export function MarkdownPreview({
           </button>
         </>
       )}
-      {query.data !== undefined && (
+      {markdown !== undefined && (
         <div className="markdown-document" ref={documentRef}>
           {raw ? (
-            <pre className="markdown-raw">{query.data}</pre>
+            <pre className="markdown-raw">{markdown}</pre>
           ) : (
-            <MarkdownContent markdown={query.data} />
+            <MarkdownContent markdown={markdown} />
           )}
         </div>
       )}

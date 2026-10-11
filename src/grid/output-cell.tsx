@@ -47,127 +47,36 @@ export function OutputCell({
     format === "markdown" && cell.outputURL
       ? `${cell.outputURL}?theme=${resolvedTheme}`
       : cell.outputURL;
+  const complete = cell.status === "complete";
+  const markdown =
+    format === "markdown" && (complete || cell.status === "running");
   return (
     <article className="cell">
-      {cell.status === "complete" ? (
-        <>
-          {format === "image" || format === "svg" ? (
-            <img
-              className="generated-image"
-              alt={format === "svg" ? "Generated SVG" : "Generated image"}
-              src={outputURL}
-              loading="lazy"
-            />
-          ) : format === "markdown" ? (
-            <MarkdownPreview
-              url={cell.outputURL!}
-              title={title}
-              raw={rawMarkdown}
-            />
-          ) : (
-            <iframe
-              title={title}
-              sandbox="allow-scripts"
-              src={outputURL}
-              loading="lazy"
-            />
-          )}
-          {format === "markdown" && (
-            <div className="markdown-actions">
-              <button
-                className="secondary"
-                aria-label={rawLabel}
-                onClick={onToggleRawMarkdown}
-                ref={rawHint}
-              >
-                {rawMarkdown ? (
-                  <svg
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
-                  >
-                    <path d="M2 18V6l5 7 5-7v12M16 6h1a6 6 0 0 1 0 12h-1Z" />
-                  </svg>
-                ) : (
-                  <CodeXml aria-hidden="true" />
-                )}
-              </button>
-              {onToggleExpand && (
-                <button
-                  className="secondary markdown-expand"
-                  aria-label={
-                    expanded ? "Collapse Markdown" : "Expand Markdown"
-                  }
-                  title={expanded ? "Collapse Markdown" : "Expand Markdown"}
-                  aria-expanded={expanded}
-                  onClick={(event) => onToggleExpand(event.currentTarget)}
-                >
-                  {expanded ? (
-                    <Minimize2 aria-hidden="true" />
-                  ) : (
-                    <Maximize2 aria-hidden="true" />
-                  )}
-                </button>
-              )}
-            </div>
-          )}
-          {!expanded && (
-            <div className="cell-footer">
-              <div className="cell-actions">
-                <a
-                  href={outputURL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label="Open output"
-                  title="Open output"
-                >
-                  <ArrowUpRight aria-hidden="true" />
-                </a>
-                {format !== "html" && (
-                  <CopyButton
-                    label="Copy output"
-                    copy={() => copyOutput(cell.outputURL!, format)}
-                  />
-                )}
-                <a
-                  href={`/outputs/${cell.id}/download`}
-                  aria-label="Download output"
-                  ref={downloadHint}
-                  download
-                >
-                  <Download aria-hidden="true" />
-                </a>
-              </div>
-              <small className="cell-usage">
-                {cell.usage && (
-                  <span
-                    className="cell-tokens"
-                    role="img"
-                    aria-label={`${cell.usage.inputTokens ?? 0} input tokens, ${cell.usage.outputTokens ?? 0} output tokens`}
-                  >
-                    <span className="token-count" ref={inputHint} tabIndex={0}>
-                      {cell.usage.inputTokens ?? 0}
-                      <ArrowUp aria-hidden="true" />
-                    </span>
-                    <span className="token-count" ref={outputHint} tabIndex={0}>
-                      {cell.usage.outputTokens ?? 0}
-                      <ArrowDown aria-hidden="true" />
-                    </span>
-                  </span>
-                )}
-                <span title="OpenRouter reported cost">
-                  {formatCost(cell.usage?.costUsd)}
-                </span>
-              </small>
-            </div>
-          )}
-        </>
+      {markdown ? (
+        <MarkdownPreview
+          key={cell.id}
+          url={cell.outputURL ?? `/outputs/${cell.id}`}
+          draft={cell.draft}
+          streaming={!complete}
+          title={title}
+          raw={rawMarkdown}
+        />
+      ) : complete ? (
+        format === "image" || format === "svg" ? (
+          <img
+            className="generated-image"
+            alt={format === "svg" ? "Generated SVG" : "Generated image"}
+            src={outputURL}
+            loading="lazy"
+          />
+        ) : (
+          <iframe
+            title={title}
+            sandbox="allow-scripts"
+            src={outputURL}
+            loading="lazy"
+          />
+        )
       ) : cell.status === "error" ? (
         <p className="cell-error">{cellError(cell)}</p>
       ) : cell.status === "running" && format === "html" ? (
@@ -180,7 +89,6 @@ export function OutputCell({
             <>
               <LoaderCircle className="spinner" aria-hidden="true" />
               Generating…
-              {cell.draft && <pre>{cell.draft}</pre>}
             </>
           ) : cell.retrying ? (
             <span>Waiting to retry…</span>
@@ -194,16 +102,111 @@ export function OutputCell({
           )}
         </div>
       )}
-      {!expanded &&
-        cell.status === "running" &&
-        cell.estimatedCostUsd !== undefined && (
-          <div className="cell-footer">
-            <small
-              className="cell-usage"
-              style={{ marginLeft: "auto" }}
-              title="Estimated cost"
+      {markdown && (
+        <div className="markdown-actions">
+          <button
+            className="secondary"
+            aria-label={rawLabel}
+            onClick={onToggleRawMarkdown}
+            ref={rawHint}
+          >
+            {rawMarkdown ? (
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M2 18V6l5 7 5-7v12M16 6h1a6 6 0 0 1 0 12h-1Z" />
+              </svg>
+            ) : (
+              <CodeXml aria-hidden="true" />
+            )}
+          </button>
+          {onToggleExpand && (
+            <button
+              className="secondary markdown-expand"
+              aria-label={expanded ? "Collapse Markdown" : "Expand Markdown"}
+              title={expanded ? "Collapse Markdown" : "Expand Markdown"}
+              aria-expanded={expanded}
+              onClick={(event) => onToggleExpand(event.currentTarget)}
             >
-              ≈{formatCost(cell.estimatedCostUsd)}
+              {expanded ? (
+                <Minimize2 aria-hidden="true" />
+              ) : (
+                <Maximize2 aria-hidden="true" />
+              )}
+            </button>
+          )}
+        </div>
+      )}
+      {!expanded &&
+        (complete ||
+          (cell.status === "running" &&
+            (markdown || cell.estimatedCostUsd !== undefined))) && (
+          <div className="cell-footer">
+            <div className="cell-actions">
+              {complete && (
+                <>
+                  <a
+                    href={outputURL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label="Open output"
+                    title="Open output"
+                  >
+                    <ArrowUpRight aria-hidden="true" />
+                  </a>
+                  {format !== "html" && (
+                    <CopyButton
+                      label="Copy output"
+                      copy={() => copyOutput(cell.outputURL!, format)}
+                    />
+                  )}
+                  <a
+                    href={`/outputs/${cell.id}/download`}
+                    aria-label="Download output"
+                    ref={downloadHint}
+                    download
+                  >
+                    <Download aria-hidden="true" />
+                  </a>
+                </>
+              )}
+            </div>
+            <small className="cell-usage">
+              {complete && cell.usage && (
+                <span
+                  className="cell-tokens"
+                  role="img"
+                  aria-label={`${cell.usage.inputTokens ?? 0} input tokens, ${cell.usage.outputTokens ?? 0} output tokens`}
+                >
+                  <span className="token-count" ref={inputHint} tabIndex={0}>
+                    {cell.usage.inputTokens ?? 0}
+                    <ArrowUp aria-hidden="true" />
+                  </span>
+                  <span className="token-count" ref={outputHint} tabIndex={0}>
+                    {cell.usage.outputTokens ?? 0}
+                    <ArrowDown aria-hidden="true" />
+                  </span>
+                </span>
+              )}
+              {(complete || cell.estimatedCostUsd !== undefined) && (
+                <span
+                  title={
+                    complete ? "OpenRouter reported cost" : "Estimated cost"
+                  }
+                >
+                  {complete
+                    ? formatCost(cell.usage?.costUsd)
+                    : `≈${formatCost(cell.estimatedCostUsd)}`}
+                </span>
+              )}
             </small>
           </div>
         )}
