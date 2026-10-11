@@ -1,0 +1,54 @@
+.cell .markdown-preview {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 24px;
+  font: 16px/1.6 system-ui;
+  overflow-wrap: anywhere;
+  color: var(--text);
+}
+.markdown-document > :first-child {
+  margin-top: 0;
+}
+.markdown-document h1 {
+  font-size: 1.8em;
+}
+.markdown-document h2 {
+  font-size: 1.5em;
+}
+.markdown-document h3 {
+  font-size: 1.25em;
+}
+.markdown-document :is(h4, h5, h6) {
+  font-size: 1em;
+}
+.markdown-document :is(h1, h2, h3, h4, h5, h6) {
+  line-height: 1.3;
+}
+.markdown-document p {
+  margin: 1em 0;
+}
+.markdown-document a {
+  color: var(--accent);
+}
+.markdown-document pre {
+  overflow: auto;
+  padding: 12px;
+  background: var(--panel);
+}
+.markdown-document code {
+  background: var(--panel);
+}
+.markdown-document blockquote {
+  margin-left: 0;
+  padding-left: 16px;
+  border-left: 3px solid var(--line);
+}
+.markdown-document :is(hr, th, td) {
+  border-color: var(--line);
+}
+.markdown-document img {
+  max-width: 100%;
+}

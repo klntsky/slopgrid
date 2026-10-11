@@ -3,6 +3,7 @@ import type { GridInput } from "../../server/domain";
 import type { ViewGrid } from "../api";
 import { useTheme } from "../theme";
 import { formatCost, cellError } from "../format";
+import { MarkdownPreview } from "./markdown-preview";
 import { SvgPreview } from "../svg-preview-image";
 export function OutputCell({
   cell,
@@ -31,11 +32,12 @@ export function OutputCell({
               src={outputURL}
               loading="lazy"
             />
+          ) : format === "markdown" ? (
+            <MarkdownPreview url={cell.outputURL!} title={title} />
           ) : (
             <iframe
-              className={format === "markdown" ? "markdown-preview" : undefined}
               title={title}
-              sandbox={format === "html" ? "allow-scripts" : ""}
+              sandbox="allow-scripts"
               src={outputURL}
               loading="lazy"
             />

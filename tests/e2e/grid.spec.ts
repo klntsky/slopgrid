@@ -159,7 +159,10 @@ for (const format of ["SVG", "Markdown", "Static website", "Image"])
       const frame = page.frameLocator("iframe").first();
       if (format === "Markdown")
         await expect(
-          frame.getByRole("heading", { name: "A generated cat" }),
+          page
+            .locator(".markdown-preview")
+            .first()
+            .getByRole("heading", { name: "A generated cat" }),
         ).toBeVisible();
       if (format === "Static website") {
         await expect(frame.getByText("Module loaded")).toBeVisible();
@@ -325,7 +328,7 @@ test("draft and review makes a second request for each cell and renders the fina
   await expectProgress(page, 2, 2);
   await expect(
     page
-      .frameLocator("iframe")
+      .locator(".markdown-preview")
       .first()
       .getByRole("heading", { name: "A generated cat" }),
   ).toBeVisible();
@@ -387,6 +390,20 @@ for (const format of ["SVG", "Markdown"])
       expect(await (await request.get("/fixture/svg-probes")).json()).toEqual(
         [],
       );
+    }
+    if (format === "Markdown") {
+      const preview = page.locator(".markdown-preview").first();
+      await expect(
+        preview.getByRole("heading", { name: "A generated cat" }),
+      ).toBeVisible();
+      await expect(
+        preview.locator("script, [href^='javascript:'], img[src^='http']"),
+      ).toHaveCount(0);
+      expect(
+        await page.evaluate(
+          () => (window as Window & { unsafeOutput?: boolean }).unsafeOutput,
+        ),
+      ).toBeUndefined();
     }
     const output = (await page
       .getByRole("link", { name: "Open output" })
