@@ -432,7 +432,7 @@ legend {
 }
 .grid-heading {
   display: flex;
-  gap: 6px;
+  gap: 12px;
   align-items: center;
 }
 .grid-controls {
