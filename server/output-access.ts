@@ -54,6 +54,7 @@ export function createOutputAccess(
           .length >= 128
       )
         return res.sendStatus(429);
+      // Bridge the app session to one isolated cell host without sharing the app cookie.
       const id = token();
       grants.set(id, {
         sessionId: current!.id,
@@ -90,8 +91,9 @@ export function createOutputAccess(
         },
       );
       if (req.get("sec-fetch-mode") === "navigate") {
-        // Navigation and opaque sandbox subresources use different cookie
-        // partitions on same-site hosts. Authorize both before loading assets.
+        // Navigation and opaque sandbox subresources use different cookie partitions.
+        // Keep the grant until the bootstrap fetch sets the subresource cookie;
+        // only this trusted document gets the connect-src exception.
         res.set(
           "Content-Security-Policy",
           "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'",
@@ -125,6 +127,8 @@ export function createOutputAccess(
         const [scope, sessionId] = JSON.parse(
           decrypt(decodeURIComponent(value), secret),
         );
+        // The cookie references a live session, so rotation or expiry revokes access
+        // even while the browser still holds the encrypted cookie.
         if (
           scope === cellId &&
           typeof sessionId === "string" &&

@@ -52,6 +52,7 @@ export function createHostDispatcher(
     if (req.path.startsWith("/__session/")) return access.redeem(req, res, id);
     const output = access.read(req, id);
     if (!output) return res.sendStatus(404);
+    // A null origin identifies an opaque sandbox, not its owner; authorize first.
     const privateOutput = !output.published;
     if (!privateOutput) res.set("Access-Control-Allow-Origin", "*");
     else if (req.get("origin") === "null") {
