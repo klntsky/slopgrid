@@ -95,6 +95,7 @@ function harness(limit?: number) {
       owner,
       input,
       published: false,
+      visibility: "private",
       status: "running",
       createdAt: new Date().toISOString(),
       cells: expandGrid(input).map((cell, i) => ({

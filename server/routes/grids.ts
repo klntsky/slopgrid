@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { Router } from "express";
 import type { Store } from "../store.js";
 import type { Provider } from "../provider.js";
@@ -6,7 +7,12 @@ import type { SessionReader } from "../session.js";
 import type { RateLimiter } from "../rate-limit.js";
 import type { GridPresenter } from "../grid-presentation.js";
 import { canViewGrid } from "../grid-presentation.js";
-import { gridSchema, expandGrid, type Grid } from "../domain.js";
+import {
+  gridSchema,
+  expandGrid,
+  type Grid,
+  type GridSummary,
+} from "../domain.js";
 import {
   ModelResolutionError,
   resolveGridModels,
@@ -31,6 +37,26 @@ export function createGridRoutes({
 }) {
   const app = Router(),
     allowInference = createInferenceGuard(store, provider);
+  const summary = (g: Grid): GridSummary => ({
+    id: g.id,
+    prompt: g.input.prompt,
+    format: g.input.format,
+    status: g.status,
+    published: g.published,
+    visibility: g.visibility,
+  });
+  app.get("/api/grids/public", (_req, res) => {
+    res.json(
+      store
+        .all()
+        .filter((g) => g.visibility === "public")
+        .sort(
+          (a, b) =>
+            b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id),
+        )
+        .map(summary),
+    );
+  });
   app.get("/api/grids", (req, res) => {
     const s = session(req, res);
     res.json(
@@ -38,12 +64,7 @@ export function createGridRoutes({
         .all()
         .filter((g) => g.owner === s.id)
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-        .map((g) => ({
-          id: g.id,
-          prompt: g.input.prompt,
-          status: g.status,
-          published: g.published,
-        })),
+        .map(summary),
     );
   });
   app.post("/api/grids", async (req, res) => {
@@ -81,6 +102,7 @@ export function createGridRoutes({
       input,
       status: "running",
       published: false,
+      visibility: "private",
       cells,
       createdAt: new Date().toISOString(),
     };
@@ -151,6 +173,23 @@ export function createGridRoutes({
       g = store.get(String(req.params.id));
     if (!g || g.owner !== s.id)
       return res.status(404).json({ error: "Grid not found" });
+    const parsed = z
+      .object({
+        visibility: z.enum(["private", "unlisted", "public"]),
+      })
+      .safeParse(
+        req.body === undefined ? { visibility: "unlisted" } : req.body,
+      );
+    if (!parsed.success)
+      return res.status(400).json({ error: "Choose a valid visibility." });
+    const { visibility } = parsed.data;
+    if (g.published) {
+      if (visibility === g.visibility) return res.json(snapshot(g, s));
+      return res
+        .status(409)
+        .json({ error: "Published grid visibility cannot be changed." });
+    }
+    if (visibility === "private") return res.json(snapshot(g, s));
     if (
       g.cells.some(
         (cell) => cell.status !== "complete" && cell.status !== "error",
@@ -160,6 +199,7 @@ export function createGridRoutes({
         .status(409)
         .json({ error: "Wait for every cell to finish before publishing." });
     g.published = true;
+    g.visibility = visibility;
     jobs.emit(g);
     res.json(snapshot(g, s));
   });

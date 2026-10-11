@@ -25,6 +25,7 @@ test("a restart preserves finished outputs and pauses interrupted work until an 
       id: "grid",
       owner: "owner",
       published: false,
+      visibility: "private",
       createdAt: new Date().toISOString(),
       status: "running",
       input: {

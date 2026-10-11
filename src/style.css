@@ -1227,3 +1227,41 @@ header {
     opacity: 1;
   }
 }
+
+.publish-choices {
+  border: 0;
+  padding: 0;
+  margin: 20px 0;
+}
+.publish-choice {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0;
+}
+.publish-choice input {
+  width: auto;
+  margin: 0;
+}
+.public-grids {
+  margin-top: 40px;
+}
+.history .grid-format-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  overflow: visible;
+}
+.grid-format-icon svg {
+  width: 20px;
+  height: 20px;
+}
+.history .history-prompt {
+  flex: 1;
+  min-width: 0;
+  max-width: none;
+}
+.history small {
+  flex-shrink: 0;
+}

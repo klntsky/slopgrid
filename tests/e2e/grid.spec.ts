@@ -1,5 +1,13 @@
 import { test, expect } from "@playwright/test";
 
+async function finishPublishing(page: import("@playwright/test").Page) {
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("radio", { name: "Accessible by link" }).check();
+  await dialog.getByRole("button", { name: "Save", exact: true }).click();
+  await dialog.getByRole("button", { name: "Confirm", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+}
+
 async function expectProgress(
   page: import("@playwright/test").Page,
   finished: number,
@@ -74,6 +82,7 @@ test("billing can be dismissed and retried repeatedly without regenerating compl
     .click();
   await expectProgress(page, 2, 2);
   await page.getByRole("button", { name: "PUBLISH" }).click();
+  await finishPublishing(page);
   await expect(
     page.getByRole("button", { name: "FORK", exact: true }),
   ).toBeVisible();
@@ -744,6 +753,7 @@ for (const viewport of [
       Math.abs(cell.y + cell.height - viewport.height),
     ).toBeLessThanOrEqual(2);
     await header.getByRole("button", { name: "PUBLISH" }).click();
+    await finishPublishing(page);
     await expectActionsBesideTitle(["FORK", "Copy link"]);
     await expect(header.getByText("Published", { exact: true })).toHaveCount(0);
     await expect(
@@ -883,6 +893,7 @@ test("Pause aborts active inference and releases slots; Resume preserves complet
       header.getByRole("button", { name: "Pause generation" }),
     ).toHaveCount(0);
     await header.getByRole("button", { name: "PUBLISH" }).click();
+    await finishPublishing(page);
     expect((await page.request.post(`/api/grids/${id}/pause`)).status()).toBe(
       409,
     );
@@ -1321,6 +1332,7 @@ for (const theme of ["light", "dark"] as const)
     await expect(page.getByRole("button", { name: "PUBLISH" })).toBeEnabled();
     if (theme === "light") {
       await page.getByRole("button", { name: "PUBLISH" }).click();
+      await finishPublishing(page);
       await expect(
         page.getByRole("button", { name: "FORK", exact: true }),
       ).toBeVisible();
@@ -1428,6 +1440,7 @@ test("EDIT cancels inference and restores settings, while a public FORK creates 
     await expect(page.getByLabel("Row values")).toHaveValue("owl");
     await page.goBack();
     await publish.click();
+    await finishPublishing(page);
     const published = page.url();
     expect(
       (
@@ -1600,6 +1613,7 @@ test("a grid with only failed outputs can be published and viewed publicly", asy
     page.getByRole("button", { name: "PUBLISH", exact: true }),
   ).toBeEnabled();
   await page.getByRole("button", { name: "PUBLISH", exact: true }).click();
+  await finishPublishing(page);
   await expect(
     page.getByRole("button", { name: "FORK", exact: true }),
   ).toBeVisible();
@@ -1684,6 +1698,7 @@ test("live updates close when generation settles and reopen after Resume, includ
     await expectProgress(page, 3, 3);
     await expect.poll(() => streams.size).toBe(0);
     await page.getByRole("button", { name: "PUBLISH", exact: true }).click();
+    await finishPublishing(page);
     await expect(
       page.getByRole("button", { name: "FORK", exact: true }),
     ).toBeVisible();
@@ -1901,4 +1916,247 @@ test("a per-cell dollar budget defaults to five, changes the model token limit, 
   } finally {
     await request.post("/fixture/release", { data: { all: true } });
   }
+});
+
+test("publishing dialogs preserve private grids, handle failures, and remember successful confirmation", async ({
+  page,
+  request,
+}) => {
+  await request.post("/fixture/reset", { data: {} });
+  await create(page, "SVG", "cat");
+  await expectProgress(page, 1, 1);
+  const id = new URL(page.url()).pathname.split("/").pop()!;
+  const publish = page.getByRole("button", { name: "PUBLISH", exact: true });
+  const dialog = page.getByRole("dialog");
+  await publish.click();
+  await expect(dialog).toHaveAccessibleName("Control who can see this grid");
+  await expect(
+    dialog.getByRole("radio", { name: "Keep private" }),
+  ).toBeChecked();
+  await expect(
+    dialog.getByRole("radio", { name: "Keep private" }),
+  ).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(publish).toBeFocused();
+  await publish.click();
+  await dialog.getByRole("button", { name: "Save", exact: true }).click();
+  expect(
+    (await (await page.request.get(`/api/grids/${id}`)).json()).published,
+  ).toBe(false);
+  await publish.click();
+  await dialog.getByRole("radio", { name: "Accessible by link" }).check();
+  await dialog.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(dialog).toHaveAccessibleName("Confirm publishing");
+  await expect(
+    dialog.getByText(
+      "This projects aims to facilitate model benchmarking and research, and we don't want valuable data to disappear. For this reason, making a published grid private is impossible.",
+    ),
+  ).toBeVisible();
+  await dialog.getByRole("checkbox", { name: "Don’t ask again" }).check();
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(
+    dialog.getByRole("radio", { name: "Accessible by link" }),
+  ).toBeChecked();
+  expect(
+    (await (await page.request.get(`/api/grids/${id}`)).json()).published,
+  ).toBe(false);
+  await dialog.getByRole("button", { name: "Save", exact: true }).click();
+  await page.route(`**/api/grids/${id}/publish`, (route) =>
+    route.fulfill({
+      status: 500,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "Publishing failed" }),
+    }),
+  );
+  await dialog.getByRole("button", { name: "Confirm", exact: true }).click();
+  await expect(dialog.getByRole("alert")).toHaveText("Publishing failed");
+  expect(
+    await page.evaluate(() =>
+      localStorage.getItem("slopgrid-skip-publish-confirmation"),
+    ),
+  ).toBeNull();
+  await page.unroute(`**/api/grids/${id}/publish`);
+  let release!: () => void;
+  await page.route(`**/api/grids/${id}/publish`, async (route) => {
+    await new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await route.continue();
+  });
+  await dialog.getByRole("button", { name: "Confirm", exact: true }).click();
+  await expect(
+    dialog.getByRole("button", { name: "Cancel", exact: true }),
+  ).toBeDisabled();
+  await expect(dialog.getByRole("checkbox")).toBeDisabled();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeVisible();
+  release();
+  await expect(dialog).toHaveCount(0);
+  expect(
+    await page.evaluate(() =>
+      localStorage.getItem("slopgrid-skip-publish-confirmation"),
+    ),
+  ).toBe("true");
+  await expect(publish).toHaveCount(0);
+  const first = await (await page.request.get(`/api/grids/${id}`)).json();
+  const next = await (
+    await page.request.post("/api/grids", { data: first.input })
+  ).json();
+  await page.goto(`/grid/${next.id}`);
+  await expectProgress(page, 1, 1);
+  await page.reload();
+  await publish.click();
+  await dialog.getByRole("radio", { name: "Listed publicly" }).check();
+  await dialog.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(
+    (await (await page.request.get(`/api/grids/${next.id}`)).json()).visibility,
+  ).toBe("public");
+});
+
+test("both grid listings show format icons with Tippy tooltips and public grids are visible to visitors", async ({
+  page,
+  request,
+}) => {
+  await request.post("/fixture/reset", { data: {} });
+  await create(
+    page,
+    "SVG",
+    "cat",
+    "hat",
+    "Public SVG $VARIABLE_ROW $VARIABLE_COLUMN",
+  );
+  await expectProgress(page, 1, 1);
+  const firstId = new URL(page.url()).pathname.split("/").pop()!;
+  const first = await (await page.request.get(`/api/grids/${firstId}`)).json();
+  const ids = [firstId];
+  for (const format of ["markdown", "html", "image"]) {
+    const result = await page.request.post("/api/grids", {
+      data: {
+        ...first.input,
+        format,
+        model: format === "image" ? "fixture/image" : first.input.model,
+        prompt: `Public ${format} $VARIABLE_ROW $VARIABLE_COLUMN`,
+      },
+    });
+    expect(result.status()).toBe(201);
+    const grid = await result.json();
+    ids.push(grid.id);
+    await page.goto(`/grid/${grid.id}`);
+    await expectProgress(page, 1, 1);
+  }
+  for (const id of ids) {
+    expect(
+      (
+        await page.request.post(`/api/grids/${id}/publish`, {
+          data: { visibility: "public" },
+        })
+      ).status(),
+    ).toBe(200);
+  }
+  const unlisted = await (
+    await page.request.post("/api/grids", {
+      data: {
+        ...first.input,
+        prompt: "Unlisted $VARIABLE_ROW $VARIABLE_COLUMN",
+      },
+    })
+  ).json();
+  await page.goto(`/grid/${unlisted.id}`);
+  await expectProgress(page, 1, 1);
+  await page.getByRole("button", { name: "PUBLISH", exact: true }).click();
+  await finishPublishing(page);
+  await page.goto("/grids");
+  const mine = page.getByRole("region", { name: "Your grids", exact: true });
+  const publiclyListed = page.getByRole("region", {
+    name: "Public grids",
+    exact: true,
+  });
+  await expect(
+    publiclyListed.getByText("See what others have created"),
+  ).toBeVisible();
+  await expect(mine.getByRole("link", { name: /Unlisted/ })).toBeVisible();
+  await expect(
+    publiclyListed.getByRole("link", { name: /Unlisted/ }),
+  ).toHaveCount(0);
+  for (const listing of [mine, publiclyListed]) {
+    for (const type of ["SVG", "Markdown", "Static website", "Image"]) {
+      const icon = listing
+        .getByRole("img", { name: type, exact: true })
+        .first();
+      await icon.hover();
+      await expect(page.getByRole("tooltip")).toHaveText(type);
+      await page.mouse.move(0, 0);
+      await expect(page.getByRole("tooltip")).toHaveCount(0);
+      await icon.focus();
+      await expect(page.getByRole("tooltip")).toHaveText(type);
+      await icon.evaluate((element) => (element as HTMLElement).blur());
+      await expect(page.getByRole("tooltip")).toHaveCount(0);
+    }
+  }
+  const visitor = await page.context().browser()!.newContext();
+  try {
+    const other = await visitor.newPage();
+    await other.goto("/grids");
+    await expect(
+      other
+        .getByRole("region", { name: "Your grids", exact: true })
+        .locator(".history")
+        .getByRole("link"),
+    ).toHaveCount(0);
+    await expect(
+      other
+        .getByRole("region", { name: "Public grids", exact: true })
+        .getByRole("link", { name: /Public SVG/ }),
+    ).toBeVisible();
+    await other.goto(`/grid/${firstId}`);
+    await expectProgress(other, 1, 1);
+    await other.getByRole("button", { name: "FORK", exact: true }).click();
+    await expect(other.getByLabel("Row values")).toHaveValue("cat");
+  } finally {
+    await visitor.close();
+  }
+});
+
+test("publishing still works when browser storage is unavailable and asks again", async ({
+  page,
+  request,
+}) => {
+  await page.addInitScript(() => {
+    const get = Storage.prototype.getItem;
+    const set = Storage.prototype.setItem;
+    Storage.prototype.getItem = function (key) {
+      if (key === "slopgrid-skip-publish-confirmation")
+        throw new Error("Storage unavailable");
+      return get.call(this, key);
+    };
+    Storage.prototype.setItem = function (key, value) {
+      if (key === "slopgrid-skip-publish-confirmation")
+        throw new Error("Storage unavailable");
+      set.call(this, key, value);
+    };
+  });
+  await request.post("/fixture/reset", { data: {} });
+  await create(page, "SVG", "cat");
+  await expectProgress(page, 1, 1);
+  const id = new URL(page.url()).pathname.split("/").pop()!;
+  const initial = await (await page.request.get(`/api/grids/${id}`)).json();
+  await page.getByRole("button", { name: "PUBLISH", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("radio", { name: "Accessible by link" }).check();
+  await dialog.getByRole("button", { name: "Save", exact: true }).click();
+  await dialog.getByRole("checkbox", { name: "Don’t ask again" }).check();
+  await dialog.getByRole("button", { name: "Confirm", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "FORK", exact: true }),
+  ).toBeVisible();
+  const next = await (
+    await page.request.post("/api/grids", { data: initial.input })
+  ).json();
+  await page.goto(`/grid/${next.id}`);
+  await expectProgress(page, 1, 1);
+  await page.getByRole("button", { name: "PUBLISH", exact: true }).click();
+  await finishPublishing(page);
 });

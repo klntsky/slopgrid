@@ -54,6 +54,11 @@ const migrations: readonly Migration[] = [
     version: 6,
     sql: `ALTER TABLE inference_calls DROP COLUMN attempt_id;`,
   },
+  {
+    version: 7,
+    sql: `UPDATE grids SET data=json_set(data, '$.visibility',
+      CASE WHEN json_extract(data, '$.published')=1 THEN 'unlisted' ELSE 'private' END);`,
+  },
 ];
 
 export function migrate(

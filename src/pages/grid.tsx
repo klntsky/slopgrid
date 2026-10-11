@@ -1,4 +1,4 @@
-import { useContext } from "react";
+import { useContext, useState } from "react";
 import { useParams } from "@tanstack/react-router";
 import { createPortal } from "react-dom";
 import { LoaderCircle } from "lucide-react";
@@ -12,7 +12,9 @@ import {
   LowBalanceDialog,
   BillingDialog,
 } from "../components/inference-dialogs";
+import { PublishDialog } from "../components/publish-dialog";
 export function GridPage() {
+  const [publishing, setPublishing] = useState(false);
   const { id } = useParams({ from: "/grid/$id" });
   const headerTarget = useContext(GridHeaderTarget);
   const {
@@ -28,6 +30,7 @@ export function GridPage() {
     setLowBalance,
     action,
     configure,
+    publish,
   } = useGrid(id);
   if (query.isPending)
     return (
@@ -52,6 +55,7 @@ export function GridPage() {
             busy={busy}
             onAction={action}
             onConfigure={configure}
+            onPublish={() => setPublishing(true)}
             onError={setError}
           />,
           headerTarget,
@@ -74,6 +78,13 @@ export function GridPage() {
         )}
         <ErrorMessage error={error} />
         <OutputGrid grid={g} />
+        {publishing && (
+          <PublishDialog
+            busy={busy}
+            onPublish={publish}
+            onClose={() => setPublishing(false)}
+          />
+        )}
         {lowBalance !== null && (
           <LowBalanceDialog
             balanceUsd={lowBalance}

@@ -133,7 +133,7 @@ test("saved model IDs survive alias retargeting through retries, Edit, publishin
     const edited = await post(`/grids/${created.id}/edit`);
     assert.equal(edited.input.model, "fixture/v1");
     await post("/grids", edited.input);
-    await post(`/grids/${created.id}/publish`);
+    await post(`/grids/${created.id}/publish`, { visibility: "unlisted" });
     const published = await (
       await fetch(`${origin}/api/grids/${created.id}`)
     ).json();

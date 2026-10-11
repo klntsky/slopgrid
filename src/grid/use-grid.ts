@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { api, ApiError, type ViewGrid } from "../api";
+import type { GridVisibility } from "../../server/domain";
 import type { Draft } from "../create/draft";
 export function useGrid(id: string) {
   const cache = useQueryClient(),
@@ -46,7 +47,7 @@ export function useGrid(id: string) {
     };
   }, [id, cache, live]);
   async function action(
-    action: "retry" | "publish" | "pause",
+    action: "retry" | "pause",
     continueWithLowBalance = false,
   ) {
     setBusy(true);
@@ -68,6 +69,22 @@ export function useGrid(id: string) {
       )
         setLowBalance(e.balanceUsd);
       else setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function publish(visibility: GridVisibility) {
+    setBusy(true);
+    setError("");
+    try {
+      const grid = await api<ViewGrid>(`/grids/${id}/publish`, "POST", {
+        visibility,
+      });
+      cache.setQueryData(["grid", id], grid);
+      await Promise.all([
+        cache.invalidateQueries({ queryKey: ["grids"] }),
+        cache.invalidateQueries({ queryKey: ["public-grids"] }),
+      ]);
     } finally {
       setBusy(false);
     }
@@ -106,5 +123,6 @@ export function useGrid(id: string) {
     setLowBalance,
     action,
     configure,
+    publish,
   };
 }

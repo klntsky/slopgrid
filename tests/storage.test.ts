@@ -26,6 +26,7 @@ test("outputs are real files and SQLite stores only configuration and cell state
       revision: 0,
       status: "running",
       published: false,
+      visibility: "private",
       createdAt: new Date().toISOString(),
       cells: expandGrid(input).map((cell) => ({ ...cell, id: "cell" })),
     };
@@ -46,6 +47,7 @@ test("outputs are real files and SQLite stores only configuration and cell state
     );
     const before = statSync(path);
     grid.published = true;
+    grid.visibility = "unlisted";
     store.save(grid);
     assert.equal(statSync(path).mtimeMs, before.mtimeMs);
     const gridData = (

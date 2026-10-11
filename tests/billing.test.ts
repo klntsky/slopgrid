@@ -26,6 +26,7 @@ test("cell cost follows the latest call while billing preserves earlier attempts
       input,
       status: "running",
       published: false,
+      visibility: "private",
       createdAt: new Date().toISOString(),
       cells: expandGrid(input).map((c) => ({ ...c, id: "cell" })),
     });

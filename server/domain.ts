@@ -87,6 +87,14 @@ export type Cell = {
   preview?: { attempt: string; revision: number };
   usage?: { inputTokens?: number; outputTokens?: number; costUsd?: number };
 };
+export type GridVisibility = "private" | "unlisted" | "public";
+export type GridSummary = Pick<
+  Grid,
+  "id" | "status" | "published" | "visibility"
+> & {
+  prompt: string;
+  format: GridInput["format"];
+};
 export type Grid = {
   revision: number;
   id: string;
@@ -94,6 +102,7 @@ export type Grid = {
   input: GridInput;
   status: "running" | "paused" | "complete";
   published: boolean;
+  visibility: GridVisibility;
   interruption?: "billing" | "auth" | "restart" | "manual";
   cells: Cell[];
   createdAt: string;

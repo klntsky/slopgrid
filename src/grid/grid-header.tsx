@@ -4,12 +4,14 @@ export function GridHeader({
   grid: g,
   busy,
   onAction,
+  onPublish,
   onConfigure,
   onError,
 }: {
   grid: ViewGrid;
   busy: boolean;
-  onAction: (action: "retry" | "publish" | "pause") => void;
+  onAction: (action: "retry" | "pause") => void;
+  onPublish: () => void;
   onConfigure: () => void;
   onError: (message: string) => void;
 }) {
@@ -78,7 +80,7 @@ export function GridHeader({
               <button
                 disabled={busy || finished !== g.cells.length}
                 className="secondary inference-toggle"
-                onClick={() => onAction("publish")}
+                onClick={onPublish}
                 aria-label="PUBLISH"
                 title="Publish grid"
               >
