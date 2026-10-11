@@ -2,10 +2,10 @@ import type { GridInput } from "../server/domain";
 import { effortLabel } from "../server/compatibility";
 import type { ViewGrid } from "./api";
 export const formatNames = {
-  svg: "SVG",
   markdown: "Markdown",
-  html: "Static website",
   image: "Image",
+  svg: "SVG",
+  html: "Static website",
 };
 const usd = new Intl.NumberFormat("en-US", {
   style: "currency",
