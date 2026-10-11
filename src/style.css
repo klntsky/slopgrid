@@ -1195,10 +1195,6 @@ header {
 .grid-scroll[data-touch="true"] {
   touch-action: pan-x pan-y;
 }
-.grid-scroll[data-touch="true"] .cell iframe {
-  pointer-events: none;
-}
-
 .grid-cost {
   flex-shrink: 0;
   color: var(--muted);
