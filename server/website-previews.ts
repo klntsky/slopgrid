@@ -19,12 +19,6 @@ export class WebsitePreviews {
     this.files = new OutputFiles(root);
   }
   update(cell: Cell, source: string, notify: () => void) {
-    if (!source) {
-      const visible = !!cell.preview;
-      this.clear(cell);
-      if (visible) notify();
-      return;
-    }
     let entry = this.entries.get(cell.id);
     if (!entry) {
       entry = {
