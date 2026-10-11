@@ -34,6 +34,8 @@ export async function generateInference(
 }> {
   const phase: Completion["phase"] = format === "image" ? "image" : "direct";
   let call: CallRecorder | undefined;
+  let imageFinishReason: string | undefined;
+  let imageCost: number | undefined;
   const inferenceFetch: typeof upstreamFetch = async (input, init) => {
     call = observe?.(phase);
     const response = await upstreamFetch(input, init);
@@ -41,16 +43,16 @@ export async function generateInference(
       httpStatus: response.status,
       generationId: response.headers.get("x-generation-id") ?? undefined,
     });
-    if (
-      !init?.body ||
-      typeof init.body !== "string" ||
-      JSON.parse(init.body).stream !== true
-    ) {
+    if (format === "image" && response.ok) {
       const body = await response
         .clone()
         .json()
         .catch(() => undefined);
       if (typeof body?.id === "string") call?.update({ generationId: body.id });
+      // The image adapter currently omits response usage.cost from its result.
+      imageCost = reportedCost(body?.usage);
+      imageFinishReason =
+        body?.choices?.[0]?.finish_reason ?? body?.finish_reason;
     }
     return response;
   };
@@ -73,28 +75,10 @@ export async function generateInference(
         return undefined;
       }
     }
-    let imageFinishReason: string | undefined;
-    let imageCost: number | undefined;
     const provider = createOpenRouter({
       apiKey: key,
       baseURL: baseURL,
-      // The image adapter currently omits response usage.cost from its result.
-      fetch:
-        format === "image"
-          ? async (input, init) => {
-              const response = await inferenceFetch(input, init);
-              if (response.ok) {
-                const body = await response
-                  .clone()
-                  .json()
-                  .catch(() => undefined);
-                imageCost = reportedCost(body?.usage);
-                imageFinishReason =
-                  body?.choices?.[0]?.finish_reason ?? body?.finish_reason;
-              }
-              return response;
-            }
-          : inferenceFetch,
+      fetch: inferenceFetch,
     });
     if (format === "image") {
       const result = await generateImage({
@@ -139,63 +123,56 @@ export async function generateInference(
           : {},
       provider: { require_parameters: true, max_price: maxPrice },
     });
-    async function streamed(prompt: string): Promise<string> {
-      let failure: unknown;
-      const result = streamText({
-        model,
-        system: instruction(format),
-        prompt,
-        maxOutputTokens,
-        maxRetries: 0,
-        abortSignal: signal,
-        onError: ({ error }) => {
-          failure = error;
-        },
-      });
-      let text = "";
-      for await (const chunk of result.textStream) {
-        text += chunk;
-        onChunk(text);
-      }
-      const [streamUsage, metadata, finishReason, rawFinishReason] =
-        await Promise.all([
-          optional(result.usage),
-          optional(result.providerMetadata),
-          optional(result.finishReason),
-          optional(result.rawFinishReason),
-        ]);
-      const streamResponse = await optional(result.response);
-      if (streamResponse?.id) call?.update({ generationId: streamResponse.id });
-      recordCompletion(
-        {
-          phase: "direct",
-          finishReason,
-          rawFinishReason,
-          reasoningTokens: streamUsage?.outputTokenDetails.reasoningTokens,
-        },
-        streamUsage && {
-          inputTokens: streamUsage.inputTokens,
-          outputTokens: streamUsage.outputTokens,
-          costUsd: reportedCost(metadata?.openrouter?.usage),
-        },
-      );
-      if (failure) {
-        if (
-          failure !== null &&
-          typeof failure === "object" &&
-          !Object.hasOwn(failure, "responseHeaders")
-        ) {
-          const response = await Promise.resolve(result.response).catch(
-            () => undefined,
-          );
-          Object.assign(failure, { responseHeaders: response?.headers });
-        }
-        throw failure;
-      }
-      requireSuccess(finishReason);
-      return text;
+    let failure: unknown;
+    const result = streamText({
+      model,
+      system: instruction(format),
+      prompt: cell.prompt,
+      maxOutputTokens,
+      maxRetries: 0,
+      abortSignal: signal,
+      onError: ({ error }) => {
+        failure = error;
+      },
+    });
+    let text = "";
+    for await (const chunk of result.textStream) {
+      text += chunk;
+      onChunk(text);
     }
-    const text = await streamed(cell.prompt);
+    const [streamUsage, metadata, finishReason, rawFinishReason] =
+      await Promise.all([
+        optional(result.usage),
+        optional(result.providerMetadata),
+        optional(result.finishReason),
+        optional(result.rawFinishReason),
+      ]);
+    const streamResponse = await optional(result.response);
+    if (streamResponse?.id) call?.update({ generationId: streamResponse.id });
+    recordCompletion(
+      {
+        phase: "direct",
+        finishReason,
+        rawFinishReason,
+        reasoningTokens: streamUsage?.outputTokenDetails.reasoningTokens,
+      },
+      streamUsage && {
+        inputTokens: streamUsage.inputTokens,
+        outputTokens: streamUsage.outputTokens,
+        costUsd: reportedCost(metadata?.openrouter?.usage),
+      },
+    );
+    if (failure) {
+      if (
+        failure !== null &&
+        typeof failure === "object" &&
+        !Object.hasOwn(failure, "responseHeaders")
+      ) {
+        Object.assign(failure, { responseHeaders: streamResponse?.headers });
+      }
+      throw failure;
+    }
+    requireSuccess(finishReason);
     return {
       files: parseOutput(format, text),
       usage,

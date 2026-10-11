@@ -69,13 +69,6 @@ test("a cell request uses the full dollar budget and constrains provider pricing
     requests.push(request);
     const response = {
       id: "generation",
-      choices: [
-        {
-          index: 0,
-          message: { role: "assistant", content: "# Output" },
-          finish_reason: "stop",
-        },
-      ],
       usage: {
         prompt_tokens: 10,
         completion_tokens: 20,
@@ -83,12 +76,10 @@ test("a cell request uses the full dollar budget and constrains provider pricing
         cost: 0.1,
       },
     };
-    if (request.stream) {
-      res.setHeader("Content-Type", "text/event-stream");
-      res.end(
-        `data: ${JSON.stringify({ ...response, choices: [{ index: 0, delta: { content: "# Output" }, finish_reason: "stop" }] })}\n\ndata: [DONE]\n\n`,
-      );
-    } else res.end(JSON.stringify(response));
+    res.setHeader("Content-Type", "text/event-stream");
+    res.end(
+      `data: ${JSON.stringify({ ...response, choices: [{ index: 0, delta: { content: "# Output" }, finish_reason: "stop" }] })}\n\ndata: [DONE]\n\n`,
+    );
   });
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
