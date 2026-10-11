@@ -250,7 +250,7 @@ upstream.post("/api/v1/chat/completions", async (req, res) => {
       if (res.destroyed) return;
     }
     res.end(
-      `data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: {}, finish_reason: prompt.includes("dog") ? "length" : "stop" }], usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30, cost: prompt.includes("dog") ? 0.02 : 0.01 } })}\n\ndata: [DONE]\n\n`,
+      `data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: {}, finish_reason: prompt.includes("dog") ? "length" : "stop" }], usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30, cost: prompt.includes("dog") ? 0.02 : 0.019876 } })}\n\ndata: [DONE]\n\n`,
     );
     return;
   }

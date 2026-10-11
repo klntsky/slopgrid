@@ -705,39 +705,33 @@ test("streaming prices grow with reasoning and output, reconcile on success, and
     await expect(cells.locator('[title="Estimated cost"]')).toHaveCount(2);
     const reasoning = await price(0);
     expect(reasoning).toBeGreaterThan(0);
-    const expectTotal = async (cost: number, estimated = true) => {
-      const formatted = cost.toLocaleString("en-US", {
-        style: "currency",
-        currency: "USD",
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 8,
-      });
+    const expectTotal = async (formatted: string, estimated = true) => {
       await expect(total).toHaveAttribute(
         "aria-label",
         `Total cost: ${estimated ? "≈" : ""}${formatted}`,
       );
     };
-    await expectTotal(reasoning + (await price(1)));
+    await expectTotal("$0.00");
     await release("cat");
     await expect.poll(() => price(0)).toBeGreaterThan(reasoning);
-    await expectTotal((await price(0)) + (await price(1)));
+    await expectTotal("$0.01");
     await release("cat");
     await expectProgress(page, 1, 2);
     await expect(
       cells.nth(0).getByTitle("OpenRouter reported cost"),
-    ).toHaveText("$0.01");
-    await expectTotal(0.01 + (await price(1)));
+    ).toHaveText("$0.019876");
+    await expectTotal("$0.02");
     await page.reload();
     await expect(cells.nth(1).getByTitle("Estimated cost")).toBeVisible();
-    await expectTotal(0.01 + (await price(1)));
+    await expectTotal("$0.02");
     const before = await price(1);
     await release("dog");
     await expect.poll(() => price(1)).toBeGreaterThan(before);
     await release("dog");
     await expect(cells.nth(1).locator(".cell-error")).toBeVisible();
-    await expectTotal(0.01, false);
+    await expectTotal("$0.01", false);
     await page.reload();
-    await expectTotal(0.01, false);
+    await expectTotal("$0.01", false);
   } finally {
     await request.post("/fixture/release", { data: { all: true } });
   }

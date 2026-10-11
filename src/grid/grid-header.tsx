@@ -1,10 +1,16 @@
-import { formatCost } from "../format";
 import { CopyButton } from "../components/copy-button";
 import { PublishGrid } from "./publish-grid";
 import { Author } from "../components/identity";
 import { Square, Play, Pencil, GitFork, Link2 } from "lucide-react";
 import type { ViewGrid } from "../api";
 import { useTooltip } from "../components/use-tooltip";
+const totalUsd = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+  roundingMode: "trunc",
+});
 export function GridHeader({
   grid: g,
   busy,
@@ -38,7 +44,10 @@ export function GridHeader({
     costs.length || complete === 0
       ? costs.reduce((sum, cost) => sum + cost, 0)
       : undefined;
-  const totalCostText = `${estimated ? "≈" : ""}${formatCost(totalCost)}`;
+  const totalCostText =
+    totalCost === undefined
+      ? "Cost unavailable"
+      : `${estimated ? "≈" : ""}${totalUsd.format(totalCost)}`;
   const inferenceRunning =
     g.status === "running" || g.cells.some((cell) => cell.status === "running");
   const paused = g.status === "paused" && g.canEdit && !g.published;
