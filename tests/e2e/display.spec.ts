@@ -660,7 +660,7 @@ test("a missing grid reports 404 immediately without retries or a creation link 
   await expect(page.getByRole("main").getByRole("link")).toHaveCount(0);
 });
 
-test("Markdown toggles raw text in place, preserves the view on expansion, and fits rendered code", async ({
+test("Markdown toggles raw text in place, preserves the view on expansion, and fits unwrapped raw text and rendered code", async ({
   page,
   request,
 }) => {
@@ -676,40 +676,8 @@ test("Markdown toggles raw text in place, preserves the view on expansion, and f
     .getByRole("button", { name: "Expand Markdown", exact: true })
     .boundingBox())!;
   expect(rawBounds.x + rawBounds.width).toBeLessThanOrEqual(expandBounds.x);
-  const checkRaw = async () => {
+  const checkSizing = async () => {
     const preview = page.locator(".markdown-preview:visible");
-    await expect(
-      page.getByRole("button", { name: "View Markdown", exact: true }),
-    ).toBeVisible();
-    expect(await preview.locator("pre").textContent()).toBe(markdown);
-    await expect(preview.locator("code, p")).toHaveCount(0);
-    expect(
-      await preview.evaluate(
-        (el) =>
-          el.scrollWidth <= el.clientWidth + 1 &&
-          el.scrollHeight > el.clientHeight,
-      ),
-    ).toBe(true);
-  };
-  await viewRaw.click();
-  await checkRaw();
-  await page
-    .getByRole("button", { name: "Expand Markdown", exact: true })
-    .click();
-  await checkRaw();
-  await page
-    .getByRole("button", { name: "Collapse Markdown", exact: true })
-    .click();
-  await checkRaw();
-  await page
-    .getByRole("button", { name: "View Markdown", exact: true })
-    .click();
-  const checkFit = async () => {
-    const preview = page.locator(".markdown-preview:visible");
-    await expect(preview.locator("pre")).toHaveText(code);
-    await expect(preview.locator("p")).toHaveText(
-      "A paragraph after the code.",
-    );
     await expect
       .poll(() =>
         preview.evaluate((el) => {
@@ -737,6 +705,44 @@ test("Markdown toggles raw text in place, preserves the view on expansion, and f
       .poll(() => preview.evaluate((el) => el.scrollTop))
       .toBeGreaterThan(0);
     expect(await preview.evaluate((el) => el.scrollLeft)).toBe(0);
+  };
+  const checkRaw = async () => {
+    const preview = page.locator(".markdown-preview:visible");
+    await expect(
+      page.getByRole("button", { name: "View Markdown", exact: true }),
+    ).toBeVisible();
+    expect(await preview.locator("pre").textContent()).toBe(markdown);
+    await expect(preview.locator("code, p")).toHaveCount(0);
+    await checkSizing();
+    const lineFragments = await preview.locator("pre").evaluate((el, line) => {
+      const start = el.textContent!.indexOf(line);
+      const range = document.createRange();
+      range.setStart(el.firstChild!, start);
+      range.setEnd(el.firstChild!, start + line.length);
+      return range.getClientRects().length;
+    }, line);
+    expect(lineFragments).toBe(1);
+  };
+  await viewRaw.click();
+  await checkRaw();
+  await page
+    .getByRole("button", { name: "Expand Markdown", exact: true })
+    .click();
+  await checkRaw();
+  await page
+    .getByRole("button", { name: "Collapse Markdown", exact: true })
+    .click();
+  await checkRaw();
+  await page
+    .getByRole("button", { name: "View Markdown", exact: true })
+    .click();
+  const checkFit = async () => {
+    const preview = page.locator(".markdown-preview:visible");
+    await expect(preview.locator("pre")).toHaveText(code);
+    await expect(preview.locator("p")).toHaveText(
+      "A paragraph after the code.",
+    );
+    await checkSizing();
   };
   await checkFit();
   await page

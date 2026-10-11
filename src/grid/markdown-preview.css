@@ -44,9 +44,6 @@
   background: var(--panel);
 }
 .markdown-document .markdown-raw {
-  width: 100%;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
   padding: 28px 0 0;
   margin: 0;
   background: none;

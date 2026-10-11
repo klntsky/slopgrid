@@ -43,11 +43,6 @@ export function MarkdownPreview({
     const preview = previewRef.current;
     const document = documentRef.current;
     if (!preview || !document) return;
-    if (raw) {
-      document.style.zoom = "1";
-      document.style.width = "";
-      return;
-    }
     const fit = () => {
       const styles = getComputedStyle(preview);
       const available =
