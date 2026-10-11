@@ -1411,6 +1411,12 @@ header {
 .grid-scroll[data-touch="true"] {
   touch-action: pan-x pan-y;
 }
+.grid-byline {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0 6px;
+}
 .grid-cost {
   flex-shrink: 0;
   color: var(--muted);

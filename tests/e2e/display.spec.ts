@@ -284,6 +284,16 @@ test("one completed image covers rendering, reload, and desktop/mobile workspace
       ).toBeGreaterThanOrEqual(16);
     }
     await expectActionsBesideTitle(["EDIT", "PUBLISH"], viewport.width);
+    await expect(header.locator(".grid-byline")).toHaveText(
+      "by Anonymous· spent $0.01",
+    );
+    const authorBox = (await header.locator(".grid-author").boundingBox())!,
+      costBox = (await header.locator(".grid-cost").boundingBox())!;
+    expect(costBox.x - (authorBox.x + authorBox.width)).toBeCloseTo(6, 0);
+    expect(costBox.y + costBox.height / 2).toBeCloseTo(
+      authorBox.y + authorBox.height / 2,
+      0,
+    );
     await expect(
       page.getByText("1 of 1 complete", { exact: true }),
     ).toHaveCount(0);

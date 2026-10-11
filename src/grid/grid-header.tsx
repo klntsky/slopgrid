@@ -113,23 +113,28 @@ export function GridHeader({
         <div className="grid-title">
           <div className="grid-title-text">
             <GridTitle grid={g} />
-            <Author identity={g.author} />
-          </div>
-          <span
-            className="grid-cost"
-            aria-label={`Total cost: ${totalCostText}`}
-            ref={costHint}
-            tabIndex={0}
-          >
-            {totalCostText}
-            {inferenceRunning && (
-              <span className="cost-ellipsis" aria-hidden="true">
-                <span>.</span>
-                <span>.</span>
-                <span>.</span>
+            <div className="grid-byline">
+              <Author identity={g.author} />
+              <span
+                className="grid-cost"
+                aria-label={`Total cost: ${totalCostText}`}
+                ref={costHint}
+                tabIndex={0}
+              >
+                <span aria-hidden="true">· </span>
+                {totalCost === undefined
+                  ? totalCostText
+                  : `spent ${totalCostText}`}
+                {inferenceRunning && (
+                  <span className="cost-ellipsis" aria-hidden="true">
+                    <span>.</span>
+                    <span>.</span>
+                    <span>.</span>
+                  </span>
+                )}
               </span>
-            )}
-          </span>
+            </div>
+          </div>
         </div>
       </div>
       <div
