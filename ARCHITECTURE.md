@@ -37,3 +37,5 @@ Creation and grid retry/pause actions share a TanStack inference mutation hook f
 New grids never select a model from catalog order. Generation requires a deliberate fixed model or model-axis selection; the unused fixed-model field is empty for model-axis grids.
 
 Shared modal, clipboard-button, and format-icon components own their UI lifecycles. Tooltips use one shared hook across creation, grid headers, output cells, and grid lists.
+
+The browser’s grid response type is inferred directly from the server presenter, so response fields have one TypeScript definition. Ownership tokens are excluded before constructing the presented object.

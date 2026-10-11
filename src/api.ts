@@ -1,16 +1,7 @@
-import type { Grid, Cell, Identity, User } from "../server/domain";
+import type { User } from "../server/domain";
+import type { GridPresenter } from "../server/grid-presentation";
 export type SessionInfo = { connected: boolean; user: User | null };
-export type ViewGrid = Omit<
-  Grid,
-  "owner" | "ownerUserId" | "author" | "cells"
-> & {
-  author: Identity | null;
-  canEdit: boolean;
-  cells: (Omit<Cell, "budgetUsd" | "preview"> & {
-    outputURL?: string;
-    previewURL?: string;
-  })[];
-};
+export type ViewGrid = ReturnType<GridPresenter>;
 export class ApiError extends Error {
   constructor(
     message: string,

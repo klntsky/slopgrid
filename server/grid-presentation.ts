@@ -24,38 +24,39 @@ export function createGridPresenter(
   origin: URL,
   htmlHosts: ReturnType<typeof createHtmlHosts>,
 ) {
-  const snapshot = (g: Grid, s: Session) => ({
-    ...g,
-    owner: undefined,
-    ownerUserId: undefined,
-    author: gridAuthor(g, store),
-    canEdit: ownsGrid(g, s),
-    cells: g.cells.map((c) => ({
-      id: c.id,
-      row: c.row,
-      column: c.column,
-      model: c.model,
-      effort: c.effort,
-      prompt: c.prompt,
-      status: c.status,
-      error: c.error,
-      errorCode: c.errorCode,
-      retrying: c.retrying,
-      mediaType: c.mediaType,
-      usage: c.usage,
-      draft: g.input.format === "html" ? undefined : c.draft,
-      previewURL:
-        g.input.format === "html" && c.status === "running" && c.preview
-          ? htmlHosts.previewURL(c.id, c.preview.attempt, c.preview.revision)
-          : undefined,
-      outputURL:
-        c.status === "complete"
-          ? g.input.format === "html"
-            ? htmlHosts.url(c.id)
-            : `${origin.origin}/outputs/${c.id}`
-          : undefined,
-    })),
-  });
+  const snapshot = (g: Grid, s: Session) => {
+    const { owner: _owner, ownerUserId: _ownerUserId, ...grid } = g;
+    return {
+      ...grid,
+      author: gridAuthor(g, store),
+      canEdit: ownsGrid(g, s),
+      cells: g.cells.map((c) => ({
+        id: c.id,
+        row: c.row,
+        column: c.column,
+        model: c.model,
+        effort: c.effort,
+        prompt: c.prompt,
+        status: c.status,
+        error: c.error,
+        errorCode: c.errorCode,
+        retrying: c.retrying,
+        mediaType: c.mediaType,
+        usage: c.usage,
+        draft: g.input.format === "html" ? undefined : c.draft,
+        previewURL:
+          g.input.format === "html" && c.status === "running" && c.preview
+            ? htmlHosts.previewURL(c.id, c.preview.attempt, c.preview.revision)
+            : undefined,
+        outputURL:
+          c.status === "complete"
+            ? g.input.format === "html"
+              ? htmlHosts.url(c.id)
+              : `${origin.origin}/outputs/${c.id}`
+            : undefined,
+      })),
+    };
+  };
   return snapshot;
 }
 export type GridPresenter = ReturnType<typeof createGridPresenter>;
