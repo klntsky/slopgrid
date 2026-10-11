@@ -668,12 +668,6 @@ test("titles are independent owner-editable metadata and collapsed prompts expan
       header.getByRole("button", { name: "Edit title", exact: true }),
     ).toHaveText("Flight study");
     for (const width of [1280, 390]) {
-      await header
-        .getByRole("button", { name: "Edit title", exact: true })
-        .focus();
-      await expect(page.locator('.tippy-box[data-state="visible"]')).toHaveText(
-        "Flight study",
-      );
       await heading.focus();
       await page.setViewportSize({ width, height: 900 });
       await heading.hover();

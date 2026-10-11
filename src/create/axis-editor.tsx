@@ -151,7 +151,11 @@ export function AxisEditor({
                   models.find((model) => model.id === id)?.name ?? id;
                 return (
                   <li className="model-badge" key={id}>
-                    <span data-tooltip={id} ref={tooltipRef} tabIndex={0}>
+                    <span
+                      data-tooltip={name !== id ? id : undefined}
+                      ref={name !== id ? tooltipRef : undefined}
+                      tabIndex={name !== id ? 0 : undefined}
+                    >
                       {name}
                     </span>
                     <button

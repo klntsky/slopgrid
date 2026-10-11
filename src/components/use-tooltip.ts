@@ -11,13 +11,7 @@ function attachTooltip(element: Element, content: () => string | undefined) {
     appendTo: () => document.body,
     onShow(instance) {
       const text = content();
-      if (
-        !text ||
-        (text.trim() === element.textContent?.trim() &&
-          element.scrollWidth <= element.clientWidth &&
-          element.scrollHeight <= element.clientHeight)
-      )
-        return false;
+      if (!text) return false;
       instance.setContent(text);
     },
   });

@@ -59,14 +59,7 @@ export function CompatibilityTable({
         <tbody>
           {rows.map((row) => (
             <tr key={row.id}>
-              <th
-                scope="row"
-                data-tooltip={row.id}
-                ref={tooltipRef}
-                tabIndex={0}
-              >
-                {row.name}
-              </th>
+              <th scope="row">{row.name}</th>
               {pickedEfforts.map((effort, index) => {
                 const support = row.support[index];
                 const status =
