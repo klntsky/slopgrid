@@ -43,7 +43,7 @@ export function Create() {
     (!capacity.isSuccess || capacity.isFetching);
   const workersValid =
     Number.isInteger(parallelWorkers) && parallelWorkers >= 1;
-  const workersHint = useTooltip<HTMLInputElement>(
+  const workersHint = useTooltip<HTMLDivElement>(
     "How many parallel inferences to run (can be throttled by the backend under load). If your inference budget is low, spawning too many will lead to a lot of overhead due to failures; OpenRouter still charges you for unsuccessful calls",
   );
   const inference = useInferenceMutation(async (grid) => {
@@ -312,7 +312,7 @@ export function Create() {
                 </span>
               </label>
             )}
-            <div className="workers-field">
+            <div className="workers-field" ref={workersHint}>
               <label htmlFor="parallel-workers"># of parallel workers:</label>
               <span className="workers-input">
                 <input
@@ -323,7 +323,6 @@ export function Create() {
                   step="1"
                   value={parallelWorkers}
                   disabled={!cellCount}
-                  ref={workersHint}
                   onChange={(event) =>
                     update({
                       parallelWorkers: Number.isNaN(event.target.valueAsNumber)
