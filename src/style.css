@@ -635,7 +635,7 @@ legend {
   border-bottom: 1px solid var(--line);
   vertical-align: top;
   min-width: 340px;
-  height: 390px;
+  height: var(--grid-row-height, 390px);
 }
 .cell {
   display: grid;

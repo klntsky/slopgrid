@@ -91,12 +91,15 @@ export function ZoomableGrid({
       pinching = false;
       table.style.zoom = "";
       if (!table.dataset.resized) {
-        table.style.width = "";
+        table.style.width = `${viewport.clientWidth}px`;
+        const rowHeight = Math.max(
+          390,
+          (viewport.clientHeight - table.tHead!.offsetHeight) /
+            table.tBodies[0].rows.length,
+        );
+        table.style.setProperty("--grid-row-height", `${rowHeight}px`);
       }
       if (hasTouch() && viewport.clientWidth) {
-        if (!table.dataset.resized) {
-          table.style.width = `${viewport.clientWidth}px`;
-        }
         scale = Math.min(
           1,
           viewport.clientWidth / table.getBoundingClientRect().width,

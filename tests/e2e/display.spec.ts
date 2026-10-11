@@ -563,12 +563,25 @@ test("saved output row sizes do not stretch the table header", async ({
   const heading = page.locator(".output-grid thead");
   const originalHeight = (await heading.boundingBox())!.height;
   expect(originalHeight).toBeLessThanOrEqual(70);
-  expect(
-    (await page.locator(".output-grid").boundingBox())!.height,
-  ).toBeLessThan(500);
-  expect(
-    (await page.locator(".output-grid tbody tr").boundingBox())!.height,
-  ).toBeCloseTo(390, 0);
+  const viewport = page.getByLabel("Generated output grid");
+  await expect
+    .poll(async () =>
+      Math.abs(
+        (await page.locator(".output-grid").boundingBox())!.height -
+          (await viewport.boundingBox())!.height,
+      ),
+    )
+    .toBeLessThan(2);
+  await page.setViewportSize({ width: 1280, height: 2000 });
+  await expect
+    .poll(async () =>
+      Math.abs(
+        (await page.locator(".output-grid").boundingBox())!.height -
+          (await viewport.boundingBox())!.height,
+      ),
+    )
+    .toBeLessThan(2);
+  expect((await heading.boundingBox())!.height).toBeCloseTo(originalHeight, 0);
   await expect(heading.locator('[data-resize-axis="rows"]')).toHaveCount(0);
   await page.evaluate((gridId) => {
     localStorage.setItem(
