@@ -40,7 +40,6 @@ export type BillingPage = {
 export class Billing {
   constructor(private db: Database.Database) {}
   observe(cellId: string): CallObserver {
-    const attemptId = token();
     return (phase) => {
       const id = token(),
         started = Date.now();
@@ -50,8 +49,10 @@ export class Billing {
           .prepare("UPDATE inference_calls SET data=? WHERE id=?")
           .run(JSON.stringify(data), id);
       this.db
-        .prepare("INSERT INTO inference_calls VALUES (?,?,?,?,?)")
-        .run(id, cellId, attemptId, started, JSON.stringify(data));
+        .prepare(
+          "INSERT INTO inference_calls (id, cell_id, started_at, data) VALUES (?,?,?,?)",
+        )
+        .run(id, cellId, started, JSON.stringify(data));
       return {
         update: (details) => {
           data = { ...data, ...details };
@@ -87,35 +88,17 @@ export class Billing {
     };
   }
   cell(cellId: string): { usage?: Cell["usage"] } | undefined {
-    const rows = this.db
+    const row = this.db
       .prepare(
         `
-      SELECT data FROM inference_calls WHERE cell_id=? AND attempt_id=(
-        SELECT attempt_id FROM inference_calls WHERE cell_id=?
-        ORDER BY started_at DESC, rowid DESC LIMIT 1
-      ) ORDER BY started_at, rowid`,
+      SELECT data FROM inference_calls WHERE cell_id=?
+      ORDER BY started_at DESC, rowid DESC LIMIT 1
+    `,
       )
-      .all(cellId, cellId) as { data: string }[];
-    if (!rows.length) return;
-    const calls = rows.map((row) => JSON.parse(row.data) as CallDetails);
-    const reported = calls.filter((call) => call.usage !== undefined);
-    return {
-      usage: reported.length
-        ? {
-            inputTokens: reported.reduce(
-              (sum, c) => sum + (c.usage?.inputTokens ?? 0),
-              0,
-            ),
-            outputTokens: reported.reduce(
-              (sum, c) => sum + (c.usage?.outputTokens ?? 0),
-              0,
-            ),
-            costUsd: calls.every((c) => c.usage?.costUsd !== undefined)
-              ? calls.reduce((sum, c) => sum + c.usage!.costUsd!, 0)
-              : undefined,
-          }
-        : undefined,
-    };
+      .get(cellId) as { data: string } | undefined;
+    return row
+      ? { usage: (JSON.parse(row.data) as CallDetails).usage }
+      : undefined;
   }
   page(owner: string, offset: number): BillingPage {
     const join = `FROM inference_calls b JOIN cells c ON c.id=b.cell_id

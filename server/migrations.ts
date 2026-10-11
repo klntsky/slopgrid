@@ -50,6 +50,10 @@ const migrations: readonly Migration[] = [
       WHERE EXISTS (SELECT 1 FROM inference_calls WHERE cell_id=cells.id);
     `,
   },
+  {
+    version: 6,
+    sql: `ALTER TABLE inference_calls DROP COLUMN attempt_id;`,
+  },
 ];
 
 export function migrate(
