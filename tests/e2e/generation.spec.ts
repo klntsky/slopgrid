@@ -531,16 +531,47 @@ for (const model of ["fixture/text", "fixture/other"])
       "Draw $ROW wearing a $COLUMN",
       model,
     );
-    const frame = page.frameLocator("iframe").first();
-    const iframe = page.locator("iframe").first();
+    const frame = page.frameLocator("iframe:visible").first();
+    const iframe = page.locator("iframe:visible").first();
     await expect(
       frame.getByRole("heading", { name: "Growing website" }),
     ).toBeVisible();
     await expectProgress(page, 0, 1);
     const original = (await iframe.getAttribute("src"))!;
-    await request.post("/fixture/website-next");
-    await request.post("/fixture/website-next");
+    const originalFrame = (await iframe.elementHandle())!;
+    let releasePreview!: () => void;
+    const previewGate = new Promise<void>((resolve) => {
+      releasePreview = resolve;
+    });
+    let previewBlocked = false;
+    await page.route(
+      "**/__preview/**/index.html",
+      async (route) => {
+        previewBlocked = true;
+        await previewGate;
+        await route.continue();
+      },
+      { times: 1 },
+    );
+    try {
+      await request.post("/fixture/website-next");
+      await expect.poll(() => previewBlocked).toBe(true);
+      // The hidden frame has already loaded its authorization bootstrap here.
+      // The old document must remain visible until the generated HTML loads too.
+      await expect(page.locator("iframe")).toHaveCount(2);
+      expect(await originalFrame.isVisible()).toBe(true);
+      await expect(iframe).toHaveAttribute("src", original);
+      await expect(
+        frame.getByRole("heading", { name: "Growing website" }),
+      ).toBeVisible();
+      await request.post("/fixture/website-next");
+    } finally {
+      releasePreview();
+    }
     await expect(frame.getByText("Streaming module loaded")).toBeVisible();
+    await expect
+      .poll(() => originalFrame.evaluate((element) => element.isConnected))
+      .toBe(false);
     await expectProgress(page, 0, 1);
     await page.getByRole("button", { name: "Pause generation" }).click();
     await expect(iframe).toHaveCount(0);
@@ -553,13 +584,31 @@ for (const model of ["fixture/text", "fixture/other"])
     await request.post("/fixture/website-next");
     await request.post("/fixture/website-next");
     await expect(frame.getByText("Streaming module loaded")).toBeVisible();
-    await request.post("/fixture/website-next");
-    await expectProgress(page, 1, 1);
-    await expect(
-      frame.getByRole("heading", { name: "Growing website" }),
-    ).toBeVisible();
+    let releaseSaved!: () => void;
+    const savedGate = new Promise<void>((resolve) => {
+      releaseSaved = resolve;
+    });
+    let savedBlocked = false;
+    await page.route(
+      (url) => url.pathname === "/index.html",
+      async (route) => {
+        savedBlocked = true;
+        await savedGate;
+        await route.continue();
+      },
+      { times: 1 },
+    );
+    try {
+      await request.post("/fixture/website-next");
+      await expect.poll(() => savedBlocked).toBe(true);
+      await expectProgress(page, 1, 1);
+      await expect(iframe).toHaveAttribute("src", /__preview/);
+      await expect(frame.getByText("Streaming module loaded")).toBeVisible();
+    } finally {
+      releaseSaved();
+    }
+    await expect(iframe).not.toHaveAttribute("src", /__preview/);
     await expect(frame.getByText("Streaming module loaded")).toBeVisible();
-    expect(await iframe.getAttribute("src")).not.toContain("__preview");
     expect((await page.request.get(original)).status()).toBe(404);
   });
 

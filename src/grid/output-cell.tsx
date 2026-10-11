@@ -22,6 +22,7 @@ export function OutputCell({
   cell,
   format,
   gridStatus,
+  published,
   title,
   expanded = false,
   rawMarkdown = false,
@@ -31,6 +32,7 @@ export function OutputCell({
   cell: ViewGrid["cells"][number];
   format: GridInput["format"];
   gridStatus: ViewGrid["status"];
+  published: boolean;
   title: string;
   expanded?: boolean;
   rawMarkdown?: boolean;
@@ -61,26 +63,23 @@ export function OutputCell({
           title={title}
           raw={rawMarkdown}
         />
+      ) : format === "html" && (complete || cell.status === "running") ? (
+        <WebsitePreview
+          key={cell.id}
+          url={complete ? cell.outputURL : cell.previewURL}
+          title={title}
+          streaming={!complete}
+          published={published}
+        />
       ) : complete ? (
-        format === "image" || format === "svg" ? (
-          <img
-            className="generated-image"
-            alt={format === "svg" ? "Generated SVG" : "Generated image"}
-            src={outputURL}
-            loading="lazy"
-          />
-        ) : (
-          <iframe
-            aria-label={title}
-            sandbox="allow-scripts"
-            src={outputURL}
-            loading="lazy"
-          />
-        )
+        <img
+          className="generated-image"
+          alt={format === "svg" ? "Generated SVG" : "Generated image"}
+          src={outputURL}
+          loading="lazy"
+        />
       ) : cell.status === "error" ? (
         <p className="cell-error">{cellError(cell)}</p>
-      ) : cell.status === "running" && format === "html" ? (
-        <WebsitePreview url={cell.previewURL} title={title} />
       ) : cell.status === "running" && format === "svg" ? (
         <SvgPreview key={cell.id} draft={cell.draft ?? ""} />
       ) : (

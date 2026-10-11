@@ -93,7 +93,8 @@ export function createOutputAccess(
       if (req.get("sec-fetch-mode") === "navigate") {
         // Navigation and opaque sandbox subresources use different cookie partitions.
         // Keep the grant until the bootstrap fetch sets the subresource cookie;
-        // only this trusted document gets the connect-src exception.
+        // only this trusted document gets the connect-src exception. Starting the
+        // fetch after load lets the parent distinguish bootstrap and output loads.
         res.set(
           "Content-Security-Policy",
           "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'",
@@ -101,7 +102,7 @@ export function createOutputAccess(
         return res
           .type("html")
           .send(
-            `<script>fetch(location.href,{credentials:"include"}).then(response=>{if(response.ok)location.replace(${JSON.stringify("/" + grant.path)})})</script>`,
+            `<script>addEventListener("load",()=>{fetch(location.href,{credentials:"include"}).then(response=>{if(response.ok)location.replace(${JSON.stringify("/" + grant.path)})})})</script>`,
           );
       }
       grants.delete(id);

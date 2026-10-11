@@ -145,6 +145,7 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
                           cell={cell}
                           format={g.input.format}
                           gridStatus={g.status}
+                          published={g.published}
                           title={title(cell)}
                           rawMarkdown={!!rawMarkdown[cell.id]}
                           onToggleRawMarkdown={() => toggleRawMarkdown(cell.id)}
@@ -169,6 +170,7 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
             cell={expanded}
             format={g.input.format}
             gridStatus={g.status}
+            published={g.published}
             title={title(expanded)}
             rawMarkdown={!!rawMarkdown[expanded.id]}
             onToggleRawMarkdown={() => toggleRawMarkdown(expanded.id)}
