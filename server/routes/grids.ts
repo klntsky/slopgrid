@@ -7,7 +7,8 @@ import type { Jobs } from "../jobs.js";
 import type { SessionReader } from "../session.js";
 import type { RateLimiter } from "../rate-limit.js";
 import type { GridPresenter } from "../grid-presentation.js";
-import { canViewGrid } from "../grid-presentation.js";
+import { anonymousOwner } from "../session.js";
+import { canViewGrid, ownsGrid } from "../grid-presentation.js";
 import {
   gridSchema,
   expandGrid,
@@ -45,6 +46,7 @@ export function createGridRoutes({
     status: g.status,
     published: g.published,
     visibility: g.visibility,
+    author: store.author(g),
   });
   app.get("/api/grids/public", (_req, res) => {
     res.json(
@@ -63,7 +65,7 @@ export function createGridRoutes({
     res.json(
       store
         .all()
-        .filter((g) => g.owner === s.id)
+        .filter((g) => ownsGrid(g, s))
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
         .map(summary),
     );
@@ -100,7 +102,8 @@ export function createGridRoutes({
     const g: Grid = {
       revision: 0,
       id: token(),
-      owner: s.id,
+      owner: anonymousOwner(s),
+      ownerUserId: s.userId,
       input,
       status: "running",
       published: false,
@@ -109,7 +112,7 @@ export function createGridRoutes({
       createdAt: new Date().toISOString(),
     };
     store.save(g);
-    jobs.start(g, suppliedKey);
+    jobs.start(g, suppliedKey, s);
     res.status(201).json(snapshot(g, s));
   });
   app.get("/api/grids/:id", (req, res) => {
@@ -122,7 +125,7 @@ export function createGridRoutes({
   app.post("/api/grids/:id/retry", async (req, res) => {
     const s = session(req, res),
       g = store.get(String(req.params.id));
-    if (!g || g.owner !== s.id)
+    if (!g || !ownsGrid(g, s))
       return res.status(404).json({ error: "Grid not found" });
     if (g.published)
       return res
@@ -145,14 +148,14 @@ export function createGridRoutes({
         .status(429)
         .json({ error: "Retry limit reached. Try again in an hour." });
     const resumed = g.cells.some((c) => c.status !== "complete")
-      ? jobs.start(g, suppliedKey)
+      ? jobs.start(g, suppliedKey, s)
       : g;
     res.json(snapshot(resumed, s));
   });
   app.post("/api/grids/:id/pause", (req, res) => {
     const s = session(req, res),
       g = store.get(String(req.params.id));
-    if (!g || g.owner !== s.id)
+    if (!g || !ownsGrid(g, s))
       return res.status(404).json({ error: "Grid not found" });
     if (g.published || g.status === "complete")
       return res
@@ -163,7 +166,7 @@ export function createGridRoutes({
   app.post("/api/grids/:id/edit", (req, res) => {
     const s = session(req, res),
       g = store.get(String(req.params.id));
-    if (!g || g.owner !== s.id)
+    if (!g || !ownsGrid(g, s))
       return res.status(404).json({ error: "Grid not found" });
     if (g.published)
       return res
@@ -174,7 +177,7 @@ export function createGridRoutes({
   app.post("/api/grids/:id/publish", (req, res) => {
     const s = session(req, res),
       g = store.get(String(req.params.id));
-    if (!g || g.owner !== s.id)
+    if (!g || !ownsGrid(g, s))
       return res.status(404).json({ error: "Grid not found" });
     const parsed = z
       .object({
@@ -201,6 +204,14 @@ export function createGridRoutes({
       return res
         .status(409)
         .json({ error: "Wait for every cell to finish before publishing." });
+    const user = s.userId ? store.user(s.userId) : undefined;
+    g.author = user
+      ? {
+          provider: user.provider,
+          username: user.username,
+          profileURL: user.profileURL,
+        }
+      : null;
     g.published = true;
     g.visibility = visibility;
     jobs.emit(g);

@@ -1,7 +1,7 @@
 import { useOpenRouterKey } from "./openrouter-key";
 import { QueryClient, useQuery } from "@tanstack/react-query";
 import type { GridSummary } from "../server/domain";
-import { api, type ViewGrid } from "./api";
+import { api, type ViewGrid, type SessionInfo } from "./api";
 function newestGrid(previous: unknown, incoming: unknown) {
   const old = previous as ViewGrid | undefined,
     next = incoming as ViewGrid;
@@ -15,12 +15,15 @@ export function useGrids() {
     queryFn: () => api<GridSummary[]>("/grids"),
   });
 }
+export function useSession() {
+  return useQuery({
+    queryKey: ["session"],
+    queryFn: () => api<SessionInfo>("/session"),
+  });
+}
 export function useConnection() {
   const key = useOpenRouterKey();
-  const session = useQuery({
-    queryKey: ["session"],
-    queryFn: () => api<{ connected: boolean }>("/session"),
-  });
+  const session = useSession();
   return {
     ...session,
     data:

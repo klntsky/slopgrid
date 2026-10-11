@@ -100,6 +100,10 @@ test("saved model IDs survive alias retargeting through retries, Edit, publishin
   const origin = `http://127.0.0.1:${port}`;
   const provider = new FixtureProvider();
   const { app, store } = createApp({
+    github: {
+      clientId: "route-test-client",
+      clientSecret: "route-test-secret",
+    },
     origin,
     outputDomain: `-slopgrid.localhost:${port}`,
     database: join(dir, "app.sqlite"),

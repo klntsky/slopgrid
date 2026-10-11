@@ -37,12 +37,21 @@ export function createEventRoutes({
       Connection: "keep-alive",
     });
     res.flushHeaders();
-    const send = (grid: Grid) =>
-      res.write(`data: ${JSON.stringify(snapshot(grid, s))}\n\n`);
+    const send = (grid: Grid) => {
+      const current = store.session(s.id);
+      if (!current || !canViewGrid(grid, current)) {
+        res.end();
+        return;
+      }
+      res.write(`data: ${JSON.stringify(snapshot(grid, current))}\n\n`);
+    };
     send(jobs.active.get(id) ?? g);
     const unsubscribe = jobs.subscribe(id, send),
-      heartbeat = setInterval(() => res.write(": heartbeat\n\n"), 15000);
-    req.on("close", () => {
+      heartbeat = setInterval(() => {
+        if (!store.session(s.id)) res.end();
+        else res.write(": heartbeat\n\n");
+      }, 15000);
+    res.on("close", () => {
       clearInterval(heartbeat);
       unsubscribe();
       const remaining = (connections.get(s.id) ?? 1) - 1;

@@ -2,7 +2,7 @@
 
 ## Requirements and setup
 
-Use Node.js 22.12 or newer, pnpm 12.4.2, and tmux. SQLite uses `better-sqlite3`; environments without a matching prebuilt binary need Python and a C/C++ build toolchain. Native build permissions are in `pnpm-workspace.yaml`.
+Use Node.js 22.12 or newer, pnpm 12.4.2, and tmux. Supply `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` through private runtime configuration before starting the app; either missing or empty variable prevents startup. SQLite uses `better-sqlite3`; environments without a matching prebuilt binary need Python and a C/C++ build toolchain. Native build permissions are in `pnpm-workspace.yaml`.
 
 ```sh
 pnpm install
@@ -11,6 +11,12 @@ pnpm dev
 ```
 
 Open http://localhost:3000. Chromium resolves HTML output hosts ending in `.localhost` to loopback. Images, Markdown, and SVG use paths on the application origin. OpenRouter OAuth supports localhost callbacks. The development server creates a SQLite database and encryption key under `.data/`; preserve both to retain sessions. Manual API keys are entered through the shared connection control and saved only in browser localStorage. OAuth credentials retain their existing encrypted server-side storage.
+
+## GitHub integration verification
+
+`pnpm test:e2e:github` runs against real GitHub and OpenRouter. Supply GitHub client credentials and the normal real OpenRouter test credential source. Set `GITHUB_INTERACTIVE=1` to complete GitHub login and any two-factor challenge in a visible browser, or provide `GITHUB_BROWSER_STATE` referencing a private Playwright storage-state file containing an authenticated GitHub browser session. Keep this file outside the repository. Register the callback using the test application origin followed by `/api/auth/github/callback`. The runner rejects an occupied test port before launching.
+
+The test creates and generates an anonymous grid, signs in through GitHub, verifies claiming and publication attribution, signs in through GitHub in a separate browser context, checks account access and billing, and signs out. It uses no mocked OAuth or inference endpoints. Missing credentials, authorization failure, and provider errors fail verification rather than silently skipping it. Unit identity tests exercise the real app and database without exchanging OAuth codes; their route-only client credentials do not authenticate with GitHub.
 
 ## Interface text
 
@@ -54,7 +60,7 @@ Development creates a local encryption key automatically. Changing the encryptio
 
 ## Storage and migrations
 
-SQLite stores grid configuration, cell state, and encrypted session credentials. Generated output bodies live on disk, with one directory per cell; image files contain binary bytes and website files retain their relative paths. Streaming drafts remain in memory. Changing metadata or publishing a grid never rewrites its completed output files.
+SQLite stores grid configuration, cell state, encrypted OpenRouter session credentials, users, and provider identities. Migration 8 adds users and identities keyed by provider and provider subject. GitHub access tokens are used only for profile retrieval and are not persisted. Generated output bodies live on disk, with one directory per cell; image files contain binary bytes and website files retain their relative paths. Streaming drafts remain in memory. Changing metadata or publishing a grid never rewrites its completed output files.
 
 Append schema changes to the SQL migration list in `server/migrations.ts`, using a positive integer version greater than every previous version. Do not reorder or edit applied migrations. Startup validates the full sequence, applies only pending versions, and records each version through SQLite’s `user_version` in the same transaction as its SQL. A failed step rolls back its SQL and version, while earlier successful steps remain applied. A database with an unsupported or newer version cannot start. Tests cover migration ordering, reruns, data preservation, and rollback.
 
@@ -68,7 +74,7 @@ Generation has no application output-byte or bundle-file-count limit. Grid creat
 
 ## Icons
 
-Interface icons use `lucide-react`, under the [Lucide ISC license](https://lucide.dev/license), with MIT notices for icons derived from Feather. The distributed notices are included in `public/lucide-LICENSE.txt` and copied into the build. The project mark is the custom 5×5 cell SVG in `public/slopgrid.svg`, shared by the wordmark and favicon. The OpenRouter connector uses its official brand asset.
+Interface icons use `lucide-react`, under the [Lucide ISC license](https://lucide.dev/license), with MIT notices for icons derived from Feather. The distributed notices are included in `public/lucide-LICENSE.txt` and copied into the build. The project mark is the custom 5×5 cell SVG in `public/slopgrid.svg`, shared by the wordmark and favicon. The OpenRouter connector uses its official brand asset. The GitHub sign-in button uses the unmodified white Invertocat SVG from [GitHub’s logo assets](https://brand.github.com/foundations/logo).
 
 Markdown rendering uses the shared React component with `react-markdown` and `remark-gfm`, with no raw HTML parser plugin. The output route serves the stored Markdown source for `?raw=1` and uses React server rendering for direct pages. Vite aliases `decode-named-character-reference` to its default lookup-table implementation because its browser implementation uses an innerHTML assignment.
 

@@ -1,12 +1,22 @@
 import { Billing } from "./billing.js";
 import Database from "better-sqlite3";
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
-import { expandGrid, type Grid } from "./domain.js";
+import { expandGrid, type Grid, type User, type Identity } from "./domain.js";
 import { dirname, join, resolve } from "node:path";
 import { OutputFiles } from "./files.js";
+import { token } from "./ids.js";
 import { migrate } from "./migrations.js";
 export type Session = {
   id: string;
+  anonymousId?: string;
+  userId?: string;
+  identityOAuth?: {
+    provider: string;
+    verifier: string;
+    state: string;
+    startedAt: number;
+    returnTo: string;
+  };
   key?: string;
   inferenceConcurrency?: number;
   verifier?: string;
@@ -138,6 +148,63 @@ export class Store {
           key: session.key ? this.encrypt(session.key) : undefined,
         }),
       );
+  }
+  user(id: string): User | undefined {
+    const row = this.db.prepare("SELECT data FROM users WHERE id=?").get(id) as
+      { data: string } | undefined;
+    return row ? { ...JSON.parse(row.data), id } : undefined;
+  }
+  identify(provider: string, subject: string, identity: Identity): User {
+    return this.db.transaction(() => {
+      const existing = this.db
+        .prepare(
+          "SELECT user_id FROM oauth_identities WHERE provider=? AND subject=?",
+        )
+        .get(provider, subject) as { user_id: string } | undefined;
+      const id = existing?.user_id ?? token();
+      this.db
+        .prepare(
+          "INSERT INTO users (id,data) VALUES (?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data",
+        )
+        .run(id, JSON.stringify(identity));
+      if (!existing)
+        this.db
+          .prepare(
+            "INSERT INTO oauth_identities (provider,subject,user_id) VALUES (?,?,?)",
+          )
+          .run(provider, subject, id);
+      return { ...identity, id };
+    })();
+  }
+  claim(anonymousId: string, userId: string) {
+    this.db
+      .prepare(
+        `UPDATE grids SET data=json_set(data, '$.ownerUserId', ?, '$.revision', COALESCE(json_extract(data,'$.revision'),0)+1)
+      WHERE json_extract(data,'$.owner')=? AND json_extract(data,'$.ownerUserId') IS NULL`,
+      )
+      .run(userId, anonymousId);
+  }
+  author(grid: Grid): Identity | null {
+    if (grid.published) return grid.author ?? null;
+    const user = grid.ownerUserId ? this.user(grid.ownerUserId) : undefined;
+    return user
+      ? {
+          provider: user.provider,
+          username: user.username,
+          profileURL: user.profileURL,
+        }
+      : null;
+  }
+  sessionForOwner(owner: string): Session | undefined {
+    const row = this.db
+      .prepare(
+        "SELECT id FROM sessions WHERE id=? OR json_extract(data,'$.anonymousId')=? ORDER BY json_extract(data,'$.created') DESC LIMIT 1",
+      )
+      .get(owner, owner) as { id: string } | undefined;
+    return row ? this.session(row.id) : undefined;
+  }
+  deleteSession(id: string) {
+    this.db.prepare("DELETE FROM sessions WHERE id=?").run(id);
   }
   private encrypt(value: string) {
     const iv = randomBytes(12);

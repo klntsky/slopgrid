@@ -88,17 +88,26 @@ export type Cell = {
   usage?: { inputTokens?: number; outputTokens?: number; costUsd?: number };
 };
 export type GridVisibility = "private" | "unlisted" | "public";
+export type Identity = {
+  provider: string;
+  username: string;
+  profileURL: string;
+};
+export type User = Identity & { id: string };
 export type GridSummary = Pick<
   Grid,
   "id" | "status" | "published" | "visibility"
 > & {
   prompt: string;
   format: GridInput["format"];
+  author: Identity | null;
 };
 export type Grid = {
   revision: number;
   id: string;
   owner: string;
+  ownerUserId?: string;
+  author?: Identity | null;
   input: GridInput;
   status: "running" | "paused" | "complete";
   published: boolean;

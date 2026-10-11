@@ -2,9 +2,22 @@ import type { Request, Response } from "express";
 import { token } from "./ids.js";
 import type { Store, Session } from "./store.js";
 
+export function anonymousOwner(s: Session) {
+  return s.anonymousId ?? s.id;
+}
+
 export function createSessionReader(store: Store, origin: URL) {
   const secure = origin.protocol === "https:",
     cookieName = secure ? "__Host-slopgrid" : "slopgrid";
+  function cookie(res: Response, id: string) {
+    res.cookie(cookieName, id, {
+      httpOnly: true,
+      secure,
+      sameSite: "lax",
+      path: "/",
+      maxAge: 30 * 86400000,
+    });
+  }
   function session(req: Request, res: Response): Session {
     const value = req
       .get("cookie")
@@ -17,16 +30,30 @@ export function createSessionReader(store: Store, origin: URL) {
     if (!s) {
       s = { id: token(), created: Date.now() };
       store.saveSession(s);
-      res.cookie(cookieName, s.id, {
-        httpOnly: true,
-        secure,
-        sameSite: "lax",
-        path: "/",
-        maxAge: 30 * 86400000,
-      });
+      cookie(res, s.id);
     }
     return s;
   }
+  session.rotate = (s: Session, res: Response, userId?: string) => {
+    const next: Session = {
+      ...s,
+      id: token(),
+      anonymousId: anonymousOwner(s),
+      userId,
+      created: Date.now(),
+    };
+    delete next.identityOAuth;
+    delete next.verifier;
+    delete next.state;
+    delete next.oauthAt;
+    delete next.returnTo;
+    store.db.transaction(() => {
+      store.saveSession(next);
+      store.deleteSession(s.id);
+    })();
+    cookie(res, next.id);
+    return next;
+  };
   return session;
 }
 export type SessionReader = ReturnType<typeof createSessionReader>;

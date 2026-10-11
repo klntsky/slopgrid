@@ -12,6 +12,7 @@
     "format": "prettier --write src server tests *.ts *.json *.md pnpm-workspace.yaml",
     "test:unit": "tsx --test tests/*.test.ts",
     "test:e2e:mock": "pnpm build && tsx tests/run-e2e.ts --suite mock",
+    "test:e2e:github": "pnpm build && tsx tests/run-e2e.ts --suite github",
     "test:e2e:real": "pnpm build && tsx tests/run-e2e.ts --suite real"
   },
   "dependencies": {

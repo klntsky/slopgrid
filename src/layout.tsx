@@ -1,3 +1,4 @@
+import { Account } from "./components/account";
 import { useEffect, useState, useRef, createContext } from "react";
 import { Link, Outlet, useLocation } from "@tanstack/react-router";
 import { Menu, X } from "lucide-react";
@@ -69,6 +70,7 @@ export function Layout() {
               data-open={menuOpen}
               onClick={() => setMenuOpen(false)}
             >
+              <Account returnTo={pathname} />
               <Link to="/billing">BILLING</Link>
               <Link to="/settings">SETTINGS</Link>
             </nav>

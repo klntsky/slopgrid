@@ -65,6 +65,10 @@ test("manual keys stay out of SQLite, serve queued cells, and require resending 
   await once(server, "listening");
   const origin = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   const { app, store, jobs } = createApp({
+    github: {
+      clientId: "route-test-client",
+      clientSecret: "route-test-secret",
+    },
     origin,
     outputDomain: "-outputs.example",
     database: join(directory, "db.sqlite"),
@@ -103,7 +107,7 @@ test("manual keys stay out of SQLite, serve queued cells, and require resending 
     const session = await fetch(`${origin}/api/session`, {
       headers: { Cookie: cookie },
     });
-    assert.deepEqual(await session.json(), { connected: false });
+    assert.deepEqual(await session.json(), { connected: false, user: null });
     const rows = store.db.prepare("SELECT data FROM sessions").all() as {
       data: string;
     }[];

@@ -59,6 +59,18 @@ const migrations: readonly Migration[] = [
     sql: `UPDATE grids SET data=json_set(data, '$.visibility',
       CASE WHEN json_extract(data, '$.published')=1 THEN 'unlisted' ELSE 'private' END);`,
   },
+  {
+    version: 8,
+    sql: `
+      CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, data TEXT NOT NULL) STRICT;
+      CREATE TABLE IF NOT EXISTS oauth_identities (
+        provider TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        user_id TEXT NOT NULL REFERENCES users(id),
+        PRIMARY KEY (provider, subject)
+      ) STRICT;
+    `,
+  },
 ];
 
 export function migrate(

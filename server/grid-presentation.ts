@@ -1,18 +1,26 @@
 import type { Grid } from "./domain.js";
-import type { Session } from "./store.js";
+import type { Store, Session } from "./store.js";
 import type { createHtmlHosts } from "./hosts.js";
 
+export function ownsGrid(g: Grid, s: Session) {
+  return g.ownerUserId
+    ? g.ownerUserId === s.userId
+    : g.owner === (s.anonymousId ?? s.id);
+}
 export function canViewGrid(g: Grid, s: Session) {
-  return g.published || g.owner === s.id;
+  return g.published || ownsGrid(g, s);
 }
 export function createGridPresenter(
+  store: Store,
   origin: URL,
   htmlHosts: ReturnType<typeof createHtmlHosts>,
 ) {
   const snapshot = (g: Grid, s: Session) => ({
     ...g,
     owner: undefined,
-    canEdit: g.owner === s.id,
+    ownerUserId: undefined,
+    author: store.author(g),
+    canEdit: ownsGrid(g, s),
     cells: g.cells.map((c) => ({
       id: c.id,
       row: c.row,

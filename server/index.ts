@@ -1,8 +1,13 @@
+import { githubCredentials } from "./oauth.js";
 import { mkdirSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import express from "express";
 import { createApp } from "./app.js";
 import { recoverInterruptedGrids } from "./recovery.js";
+const github = githubCredentials(
+  process.env.GITHUB_CLIENT_ID,
+  process.env.GITHUB_CLIENT_SECRET,
+);
 const port = Number(process.env.PORT ?? 3000),
   production = process.env.NODE_ENV === "production";
 const origin = process.env.APP_ORIGIN ?? `http://localhost:${port}`,
@@ -27,6 +32,7 @@ if (
 )
   throw new Error("Set HTTPS APP_ORIGIN and OUTPUT_DOMAIN in production");
 const { app, store, jobs } = createApp({
+  github,
   origin,
   outputDomain,
   database: process.env.DATABASE_PATH ?? ".data/slopgrid.sqlite",

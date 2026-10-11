@@ -18,6 +18,10 @@ test("publishing is permanent, link grids are unlisted, and public summaries omi
   await once(server, "listening");
   const origin = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   const { app, store } = createApp({
+    github: {
+      clientId: "route-test-client",
+      clientSecret: "route-test-secret",
+    },
     origin,
     outputDomain: "-outputs.localhost",
     database: join(dir, "db.sqlite"),
@@ -172,7 +176,7 @@ test("publishing is permanent, link grids are unlisted, and public summaries omi
     assert.equal(store.get("listed")!.visibility, "unlisted");
     migrate(store.db);
     assert.equal(store.get("listed")!.visibility, "unlisted");
-    assert.equal(store.db.pragma("user_version", { simple: true }), 7);
+    assert.equal(store.db.pragma("user_version", { simple: true }), 8);
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
     store.db.close();

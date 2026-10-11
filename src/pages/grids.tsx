@@ -1,3 +1,4 @@
+import { Author } from "../components/identity";
 import { Link } from "@tanstack/react-router";
 import type { UseQueryResult } from "@tanstack/react-query";
 import type { GridSummary } from "../../server/domain";
@@ -28,11 +29,18 @@ function GridListing({
     <div className="history">
       {query.data.length ? (
         query.data.map((g) => (
-          <Link to="/grid/$id" params={{ id: g.id }} key={g.id}>
-            <GridFormatIcon format={g.format} />
-            <span className="history-prompt">{g.prompt}</span>
+          <div className="history-row" key={g.id}>
+            <Link
+              to="/grid/$id"
+              params={{ id: g.id }}
+              className="history-grid-link"
+            >
+              <GridFormatIcon format={g.format} />
+              <span className="history-prompt">{g.prompt}</span>
+            </Link>
+            <Author identity={g.author} />
             <small>{g.published ? "Published" : g.status}</small>
-          </Link>
+          </div>
         ))
       ) : (
         <p>

@@ -218,7 +218,7 @@ test("settings connects and disconnects OpenRouter without exposing a key to the
   const session = await page.evaluate(
     async () => await (await fetch("/api/session")).json(),
   );
-  expect(session).toEqual({ connected: true });
+  expect(session).toEqual({ connected: true, user: null });
   await page.getByRole("button", { name: "Disconnect OpenRouter" }).click();
   await expect(
     page.getByRole("link", { name: "Connect OpenRouter" }),
@@ -238,6 +238,7 @@ test("OAuth rejects a forged callback", async ({ request }) => {
   ).toBe(400);
   expect(await (await request.get("/api/session")).json()).toEqual({
     connected: false,
+    user: null,
   });
 });
 
@@ -2152,6 +2153,7 @@ test("manual key entry persists in the browser, rejects invalid replacements, an
     await expect(page.getByText("Connected", { exact: true })).toBeVisible();
     expect(await (await page.request.get("/api/session")).json()).toEqual({
       connected: false,
+      user: null,
     });
     await expect(
       otherTab.getByText("Connected", { exact: true }),

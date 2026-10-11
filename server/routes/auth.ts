@@ -25,7 +25,10 @@ export function createAuthRoutes({
   const app = Router();
   app.get("/api/session", (req, res) => {
     const s = session(req, res);
-    res.json({ connected: !!s.key });
+    res.json({
+      connected: !!s.key,
+      user: s.userId ? (store.user(s.userId) ?? null) : null,
+    });
   });
   app.delete("/api/session/key", (req, res) => {
     const s = session(req, res);
@@ -92,8 +95,10 @@ export function createAuthRoutes({
       if (!response.ok) throw new Error("Exchange failed");
       const body = (await response.json()) as { key?: string };
       if (!body.key) throw new Error("Missing key");
-      s.key = body.key;
-      store.saveSession(s);
+      const current = store.session(s.id);
+      if (!current) return res.redirect(`${returnTo}?connection=failed`);
+      current.key = body.key;
+      store.saveSession(current);
       res.redirect(returnTo);
     } catch {
       res.redirect(`${returnTo}?connection=failed`);

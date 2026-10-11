@@ -9,7 +9,8 @@ export function createBillingRoutes(store: Store, session: SessionReader) {
     if (!Number.isSafeInteger(offset) || offset < 0)
       return res.status(400).json({ error: "Invalid page" });
     res.set("Cache-Control", "no-store");
-    res.json(store.billing.page(session(req, res).id, offset));
+    const s = session(req, res);
+    res.json(store.billing.page(s.anonymousId ?? s.id, offset, s.userId));
   });
   return routes;
 }

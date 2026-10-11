@@ -1,3 +1,4 @@
+import { Author } from "../components/identity";
 import { Pause, Play, Pencil, GitFork, Upload, Link2 } from "lucide-react";
 import type { ViewGrid } from "../api";
 export function GridHeader({
@@ -109,7 +110,10 @@ export function GridHeader({
           </div>
         </div>
         <div className="grid-title">
-          <h1 title={g.input.prompt}>{g.input.prompt}</h1>
+          <div className="grid-title-text">
+            <h1 title={g.input.prompt}>{g.input.prompt}</h1>
+            <Author identity={g.author} />
+          </div>
           <span
             className="grid-cost"
             aria-label={`Total reported cost: ${totalCostText}`}

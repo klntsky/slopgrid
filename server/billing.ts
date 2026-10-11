@@ -100,9 +100,9 @@ export class Billing {
       ? { usage: (JSON.parse(row.data) as CallDetails).usage }
       : undefined;
   }
-  page(owner: string, offset: number): BillingPage {
+  page(owner: string, offset: number, userId?: string): BillingPage {
     const join = `FROM inference_calls b JOIN cells c ON c.id=b.cell_id
-      JOIN grids g ON g.id=c.grid_id WHERE json_extract(g.data,'$.owner')=?`;
+      JOIN grids g ON g.id=c.grid_id WHERE ${userId ? "json_extract(g.data,'$.ownerUserId')=?" : "json_extract(g.data,'$.owner')=? AND json_extract(g.data,'$.ownerUserId') IS NULL"}`;
     const summary = this.db
       .prepare(
         `SELECT COUNT(*) total,
@@ -110,13 +110,13 @@ export class Billing {
       COUNT(*)-COUNT(json_extract(b.data,'$.usage.costUsd')) unavailable,
       SUM(json_extract(b.data,'$.status')='running') running ${join}`,
       )
-      .get(owner) as Omit<BillingPage, "calls">;
+      .get(userId ?? owner) as Omit<BillingPage, "calls">;
     const rows = this.db
       .prepare(
         `SELECT b.id,b.started_at,b.data,c.grid_id,c.position,
       g.data grid_data ${join} ORDER BY b.started_at DESC,b.rowid DESC LIMIT 50 OFFSET ?`,
       )
-      .all(owner, offset) as {
+      .all(userId ?? owner, offset) as {
       id: string;
       started_at: number;
       data: string;

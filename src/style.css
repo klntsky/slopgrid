@@ -150,6 +150,7 @@ header {
 }
 nav {
   display: flex;
+  align-items: center;
   gap: 28px;
   font-size: 16px;
 }
@@ -362,14 +363,6 @@ legend {
   background: var(--error-background);
   font-size: 14px;
   line-height: 1.5;
-}
-.history > a {
-  padding: 15px 0;
-  border-bottom: 1px solid var(--line);
-  display: flex;
-  justify-content: space-between;
-  gap: 20px;
-  text-decoration: none;
 }
 .history span {
   max-width: 70%;
@@ -1278,4 +1271,90 @@ header {
 }
 .history small {
   flex-shrink: 0;
+}
+
+.identity-link,
+.account-control,
+.grid-author {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.identity-link {
+  text-decoration: none;
+}
+.github-icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+.account-control {
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+.button.account-signin {
+  min-height: 40px;
+  padding: 9px 14px;
+  gap: 8px;
+  border: 1px solid #57606a;
+  border-radius: 6px;
+  background: #24292f;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  white-space: nowrap;
+}
+.button.account-signin:hover {
+  background: #32383f;
+  border-color: #8c959f;
+}
+:root[data-theme="dark"] .button.account-signin {
+  border-color: #8c959f;
+}
+.github-signin-logo {
+  width: 20px;
+  height: auto;
+  flex: none;
+}
+.grid-author {
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.grid-title-text {
+  flex: 1;
+  min-width: 0;
+}
+.history-row {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 15px 0;
+  border-bottom: 1px solid var(--line);
+}
+.history-grid-link {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  gap: 20px;
+  text-decoration: none;
+}
+.history .grid-author,
+.history .identity-link span {
+  max-width: none;
+  overflow: visible;
+}
+.history-row small {
+  white-space: nowrap;
+}
+@media (max-width: 700px) {
+  .history-row {
+    flex-wrap: wrap;
+    gap: 8px 16px;
+  }
+  .history-grid-link {
+    flex-basis: 100%;
+  }
 }

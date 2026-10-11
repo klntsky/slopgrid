@@ -1,5 +1,10 @@
-import type { Grid, Cell } from "../server/domain";
-export type ViewGrid = Omit<Grid, "owner" | "cells"> & {
+import type { Grid, Cell, Identity, User } from "../server/domain";
+export type SessionInfo = { connected: boolean; user: User | null };
+export type ViewGrid = Omit<
+  Grid,
+  "owner" | "ownerUserId" | "author" | "cells"
+> & {
+  author: Identity | null;
   canEdit: boolean;
   cells: (Omit<Cell, "budgetUsd" | "preview"> & {
     outputURL?: string;

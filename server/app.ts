@@ -1,3 +1,9 @@
+import {
+  githubCredentials,
+  githubProvider,
+  type OAuthCredentials,
+} from "./oauth.js";
+import { createIdentityRoutes } from "./routes/identity.js";
 import { createBillingRoutes } from "./routes/billing.js";
 import express from "express";
 import { Store } from "./store.js";
@@ -16,6 +22,7 @@ import { createModelRoutes } from "./routes/models.js";
 import { createGridRoutes } from "./routes/grids.js";
 import { createEventRoutes } from "./routes/events.js";
 export type Config = {
+  github?: OAuthCredentials;
   origin: string;
   outputDomain: string;
   database: string;
@@ -27,6 +34,10 @@ export type Config = {
 };
 
 export function createApp(config: Config) {
+  const credentials = githubCredentials(
+    config.github?.clientId ?? process.env.GITHUB_CLIENT_ID,
+    config.github?.clientSecret ?? process.env.GITHUB_CLIENT_SECRET,
+  );
   const app = express();
   const store = new Store(config.database, config.secret, config.outputsPath);
   const provider = config.provider ?? new Provider();
@@ -35,7 +46,7 @@ export function createApp(config: Config) {
   const htmlHosts = createHtmlHosts(origin, config.outputDomain);
   const rate = createRateLimiter();
   const session = createSessionReader(store, origin);
-  const snapshot = createGridPresenter(origin, htmlHosts);
+  const snapshot = createGridPresenter(store, origin, htmlHosts);
   app.disable("x-powered-by");
   app.set("trust proxy", "loopback");
   app.use(createHostDispatcher(store, origin, htmlHosts, rate, jobs.previews));
@@ -51,6 +62,11 @@ export function createApp(config: Config) {
       origin: config.origin,
       authURL: config.authURL,
     }),
+  );
+  app.use(
+    createIdentityRoutes(store, jobs, session, rate, origin.origin, [
+      githubProvider(credentials),
+    ]),
   );
   app.use(createManualKeyRoutes(provider, session, rate));
   app.use(createModelRoutes(provider));

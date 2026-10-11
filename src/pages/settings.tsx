@@ -1,3 +1,4 @@
+import { Account } from "../components/account";
 import { useTheme } from "../theme";
 import { Connection } from "../components/connection";
 export function Settings() {
@@ -5,6 +6,10 @@ export function Settings() {
   return (
     <main className="settings-page">
       <h1>Settings</h1>
+      <section aria-labelledby="account-heading">
+        <h2 id="account-heading">Account</h2>
+        <Account returnTo="/settings" settings />
+      </section>
       <section aria-labelledby="appearance-heading">
         <h2 id="appearance-heading">Appearance</h2>
         <label className="theme-control">
