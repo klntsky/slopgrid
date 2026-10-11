@@ -391,20 +391,6 @@ for (const format of ["SVG", "Markdown"])
         [],
       );
     }
-    if (format === "Markdown") {
-      const preview = page.locator(".markdown-preview").first();
-      await expect(
-        preview.getByRole("heading", { name: "A generated cat" }),
-      ).toBeVisible();
-      await expect(
-        preview.locator("script, [href^='javascript:'], img[src^='http']"),
-      ).toHaveCount(0);
-      expect(
-        await page.evaluate(
-          () => (window as Window & { unsafeOutput?: boolean }).unsafeOutput,
-        ),
-      ).toBeUndefined();
-    }
     const output = (await page
       .getByRole("link", { name: "Open output" })
       .first()

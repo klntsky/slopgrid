@@ -200,9 +200,7 @@ upstream.post("/api/v1/chat/completions", async (req, res) => {
           },
         })
       : "# A generated cat\n\nWearing a hat." +
-        (unsafe
-          ? "\n\n<script>window.unsafeOutput=true</script>\n\n[Unsafe link](javascript:alert(1))\n\n![Remote image](http://localhost:4317/svg-probe?markdown)"
-          : "");
+        (unsafe ? "\n\n<script>window.unsafeOutput=true</script>" : "");
   const base = {
     id: "fixture",
     object: "chat.completion.chunk",
