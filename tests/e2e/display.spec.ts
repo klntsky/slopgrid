@@ -186,7 +186,7 @@ test("one completed image covers rendering, reload, and desktop/mobile workspace
   const prompt =
     "Draw $VARIABLE_ROW wearing a $VARIABLE_COLUMN " +
     "with a carefully detailed background ".repeat(12);
-  await create(page, "Image", "cat", "hat", prompt);
+  await create(page, "Image", "dog", "hat", prompt);
   await expectProgress(page, 1, 1);
   const bar = page.getByRole("progressbar", { name: "Grid generation" });
   await expect(bar).toHaveAttribute("value", "1");
@@ -276,7 +276,7 @@ test("one completed image covers rendering, reload, and desktop/mobile workspace
       page.getByRole("columnheader", { name: /^hat(?:\s|$)/ }),
     ).toBeVisible();
     await expect(
-      page.getByRole("rowheader", { name: /^cat(?:\s|$)/ }),
+      page.getByRole("rowheader", { name: /^dog(?:\s|$)/ }),
     ).toBeVisible();
     await expect
       .poll(() =>
@@ -287,7 +287,7 @@ test("one completed image covers rendering, reload, and desktop/mobile workspace
       .toBeGreaterThan(0);
     const cell = (await page.locator(".cell").first().boundingBox())!,
       corner = (await cornerCell.boundingBox())!;
-    const rowLabel = page.getByRole("rowheader", { name: /^cat(?:\s|$)/ });
+    const rowLabel = page.getByRole("rowheader", { name: /^dog(?:\s|$)/ });
     const contentWidth = (await rowLabel.locator(".row-label").boundingBox())!
       .width;
     const padding = await rowLabel.evaluate((element) => {
