@@ -1,3 +1,4 @@
+import { createFrontendRoutes } from "../server/frontend.js";
 // Only the upstream service is faked: the browser uses the real app, SQLite,
 // OAuth callback, AI SDK, worker and SSE endpoint.
 import express from "express";
@@ -367,9 +368,5 @@ app.get("/svg-probe", (req, res) => {
   res.sendStatus(204);
 });
 app.get("/fixture/svg-probes", (_req, res) => res.json(svgProbes));
-app.use(express.static("dist"));
-app.get(
-  ["/", "/grids", "/settings", "/billing", /^\/grid\/[a-f0-9]{48}$/],
-  (_req, res) => res.sendFile("index.html", { root: "dist" }),
-);
+app.use(createFrontendRoutes("dist"));
 app.listen(port, () => console.log("Fixture ready"));

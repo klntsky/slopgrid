@@ -1,4 +1,4 @@
-import express from "express";
+import { createFrontendRoutes } from "../server/frontend.js";
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 import { createApp } from "../server/app.js";
@@ -11,9 +11,5 @@ const { app } = createApp({
   outputsPath: join(data, "outputs"),
   secret: randomBytes(32),
 });
-app.use(express.static("dist"));
-app.get(
-  ["/", "/grids", "/settings", "/billing", /^\/grid\/[a-f0-9]{48}$/],
-  (_req, res) => res.sendFile("index.html", { root: "dist" }),
-);
+app.use(createFrontendRoutes("dist"));
 app.listen(port, () => console.log("Real-provider app ready"));

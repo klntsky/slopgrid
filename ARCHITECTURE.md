@@ -39,3 +39,5 @@ New grids never select a model from catalog order. Generation requires a deliber
 Shared modal, clipboard-button, and format-icon components own their UI lifecycles. Tooltips use one shared hook across creation, grid headers, output cells, and grid lists.
 
 The browser’s grid response type is inferred directly from the server presenter, so response fields have one TypeScript definition. Ownership tokens are excluded before constructing the presented object.
+
+Both mock and real-provider browser fixtures mount the application’s frontend router, including its HTML and asset caching policy.
