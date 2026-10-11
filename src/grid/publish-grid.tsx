@@ -36,7 +36,10 @@ export function PublishGrid({
           )
         }
         className="secondary inference-toggle"
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          publish.reset();
+          setOpen(true);
+        }}
         aria-label={grid.published ? "Change visibility" : "PUBLISH"}
         title={grid.published ? "Change visibility" : "Publish grid"}
       >
@@ -49,10 +52,7 @@ export function PublishGrid({
       {open && (
         <PublishDialog
           initialVisibility={grid.visibility}
-          busy={publish.isPending}
-          onPublish={async (visibility) => {
-            await publish.mutateAsync(visibility);
-          }}
+          publish={publish}
           onClose={() => setOpen(false)}
         />
       )}

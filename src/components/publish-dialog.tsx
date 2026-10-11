@@ -1,3 +1,5 @@
+import type { UseMutationResult } from "@tanstack/react-query";
+import type { ViewGrid } from "../api";
 import { Modal } from "./modal";
 import { useEffect, useRef, useState } from "react";
 import type { GridVisibility } from "../../server/domain";
@@ -14,13 +16,11 @@ function skipConfirmation() {
 
 export function PublishDialog({
   initialVisibility,
-  busy,
-  onPublish,
+  publish,
   onClose,
 }: {
   initialVisibility: GridVisibility;
-  busy: boolean;
-  onPublish: (visibility: GridVisibility) => Promise<void>;
+  publish: UseMutationResult<ViewGrid, Error, GridVisibility>;
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -28,7 +28,7 @@ export function PublishDialog({
   const published = initialVisibility !== "private";
   const [confirming, setConfirming] = useState(false);
   const [remember, setRemember] = useState(false);
-  const [error, setError] = useState("");
+  const { isPending: busy, error, reset } = publish;
   useEffect(() => {
     ref.current
       ?.querySelector<HTMLElement>(
@@ -38,9 +38,8 @@ export function PublishDialog({
   }, [confirming]);
 
   async function save() {
-    setError("");
     try {
-      await onPublish(visibility);
+      await publish.mutateAsync(visibility);
       if (confirming && remember) {
         try {
           localStorage.setItem(confirmationPreference, "true");
@@ -49,13 +48,13 @@ export function PublishDialog({
         }
       }
       onClose();
-    } catch (error) {
-      setError((error as Error).message);
+    } catch {
+      // The mutation supplies the error displayed below.
     }
   }
   function cancel() {
     if (busy) return;
-    setError("");
+    reset();
     if (confirming) setConfirming(false);
     else onClose();
   }
@@ -110,7 +109,7 @@ export function PublishDialog({
                   checked={visibility === value}
                   onChange={() => {
                     setVisibility(value);
-                    setError("");
+                    reset();
                   }}
                 />
                 {label}
@@ -135,7 +134,7 @@ export function PublishDialog({
           Cancel
         </button>
       </div>
-      <ErrorMessage error={error} />
+      <ErrorMessage error={error?.message} />
     </Modal>
   );
 }
