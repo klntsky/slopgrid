@@ -69,13 +69,18 @@
   right: 8px;
   z-index: 1;
   display: flex;
-  gap: 6px;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper);
 }
 .markdown-actions > button {
   width: 36px;
   height: 36px;
   padding: 8px;
-  background: var(--paper);
+  border-color: transparent;
+  background: transparent;
 }
 .markdown-actions .lucide {
   width: 18px;

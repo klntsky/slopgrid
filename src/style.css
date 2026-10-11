@@ -11,7 +11,6 @@
   --paper: #f7f4ee;
   --accent: #67583f;
   --on-accent: #fffaf1;
-  --hover: #8d806c;
   --focus: #826c45;
   --icon: #93846a;
   --muted: #837967;
@@ -39,7 +38,6 @@
   --paper: #242321;
   --accent: #b5a181;
   --on-accent: #211d17;
-  --hover: #a69a87;
   --focus: #c5b18e;
   --icon: #b5aa97;
   --muted: #b0aba2;
@@ -85,8 +83,8 @@ a {
 button,
 .button {
   border: 1px solid var(--line);
-  border-radius: 5px;
-  padding: 11px 17px;
+  border-radius: 8px;
+  padding: 9px 14px;
   background: var(--paper);
   color: inherit;
   cursor: pointer;
@@ -94,12 +92,23 @@ button,
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 18px;
-  line-height: 1.3;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.4;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
 }
-button:hover,
-.button:hover {
-  border-color: var(--hover);
+button:enabled:hover,
+.button:where(:not([aria-disabled="true"])):hover {
+  background: color-mix(in srgb, var(--paper) 88%, var(--text));
+  border-color: color-mix(in srgb, var(--line) 65%, var(--muted));
+}
+button:enabled:active,
+.button:where(:not([aria-disabled="true"])):active {
+  background: color-mix(in srgb, var(--paper) 80%, var(--text));
 }
 button:disabled {
   opacity: 0.45;
@@ -109,6 +118,15 @@ button:disabled {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--on-accent);
+}
+.primary:enabled:hover,
+.button.primary:hover {
+  background: color-mix(in srgb, var(--accent) 88%, var(--text));
+  border-color: transparent;
+}
+.primary:enabled:active,
+.button.primary:active {
+  background: color-mix(in srgb, var(--accent) 76%, var(--text));
 }
 .secondary {
   background: transparent;
@@ -210,12 +228,12 @@ section {
   gap: 12px;
 }
 .format {
-  padding: 24px 18px;
+  padding: 20px;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 25px;
-  min-height: 135px;
+  gap: 18px;
+  min-height: 120px;
   background: var(--tile);
 }
 .format-symbol {
@@ -223,10 +241,10 @@ section {
   height: 28px;
   color: var(--icon);
 }
-.format.selected {
+.format.selected,
+.format.selected:hover {
   border-color: var(--selected-border);
   background: var(--selected);
-  box-shadow: inset 0 0 0 1px var(--selected-border);
 }
 .axes,
 .fixed-options {
@@ -306,6 +324,10 @@ textarea {
   transform: translateY(-50%);
   padding: 5px 8px;
   font-size: 11px;
+  border-color: transparent;
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--muted);
 }
 .budget-field {
   width: 180px;
@@ -429,7 +451,7 @@ legend {
 .generate {
   width: 100%;
   justify-content: space-between;
-  padding: 16px 20px;
+  padding: 13px 16px;
 }
 .error {
   border-left: 3px solid var(--error-border);
@@ -597,6 +619,7 @@ legend {
   width: 36px;
   height: 36px;
   padding: 8px;
+  border-color: transparent;
 }
 .inference-toggle .lucide-square {
   color: var(--progress-error);
@@ -606,6 +629,10 @@ legend {
   height: 18px;
 }
 @media (prefers-reduced-motion: reduce) {
+  button,
+  .button {
+    transition: none;
+  }
   .progress-spark {
     display: none;
   }
@@ -729,18 +756,28 @@ legend {
 .cell-actions {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: 2px;
   flex-shrink: 0;
 }
-.cell-actions button {
+.cell-actions :is(button, a) {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: 0;
+  border-radius: 6px;
   background: none;
   padding: 0;
   color: inherit;
 }
+.cell-actions :is(button:enabled, a):hover {
+  background: var(--panel);
+  color: var(--text);
+}
 .cell-actions .lucide {
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
 }
 .cell-usage {
   display: flex;
@@ -883,11 +920,6 @@ legend {
 nav {
   align-items: center;
 }
-.create-grid-button {
-  gap: 9px;
-  font-size: 16px;
-  font-weight: 600;
-}
 .create-grid-button .lucide {
   width: 20px;
   height: 20px;
@@ -933,10 +965,6 @@ nav {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-}
-.cell-footer a .lucide {
-  width: 14px;
-  height: 14px;
 }
 @media (max-width: 700px) {
   header {
@@ -1079,9 +1107,6 @@ header {
 @media (max-width: 700px) {
   nav {
     font-size: 13px;
-  }
-  .create-grid-button {
-    font-size: 15px;
   }
   .mobile-menu-toggle {
     display: inline-flex;
@@ -1420,7 +1445,7 @@ header {
   padding: 9px 14px;
   gap: 8px;
   border: 1px solid #57606a;
-  border-radius: 6px;
+  border-radius: 8px;
   background: #24292f;
   color: #fff;
   font-size: 14px;
