@@ -642,7 +642,7 @@ test("the logo opens the grid list and its creation link starts a new grid", asy
   await page.reload();
   await page
     .getByRole("link", {
-      name: "Draw $VARIABLE_ROW wearing a $VARIABLE_COLUMN complete",
+      name: "Draw $VARIABLE_ROW wearing a $VARIABLE_COLUMN",
     })
     .click();
   await expect(page).toHaveURL(gridURL);
