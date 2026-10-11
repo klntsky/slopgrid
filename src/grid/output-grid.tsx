@@ -25,6 +25,10 @@ function ResizeHandle({
   );
 }
 export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
+  const [rawMarkdown, setRawMarkdown] = useState<Record<string, boolean>>({});
+  function toggleRawMarkdown(id: string) {
+    setRawMarkdown((current) => ({ ...current, [id]: !current[id] }));
+  }
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const expanded = g.cells.find(
     (cell) => cell.id === expandedId && cell.status === "complete",
@@ -140,6 +144,8 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
                           format={g.input.format}
                           gridStatus={g.status}
                           title={title(cell)}
+                          rawMarkdown={!!rawMarkdown[cell.id]}
+                          onToggleRawMarkdown={() => toggleRawMarkdown(cell.id)}
                           onToggleExpand={(button) => expand(cell.id, button)}
                         />
                       </td>
@@ -162,6 +168,8 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
             format={g.input.format}
             gridStatus={g.status}
             title={title(expanded)}
+            rawMarkdown={!!rawMarkdown[expanded.id]}
+            onToggleRawMarkdown={() => toggleRawMarkdown(expanded.id)}
             expanded
             onToggleExpand={collapse}
           />

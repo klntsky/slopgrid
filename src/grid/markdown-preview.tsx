@@ -7,9 +7,11 @@ import "./markdown-preview.css";
 export function MarkdownPreview({
   url,
   title,
+  raw = false,
 }: {
   url: string;
   title: string;
+  raw?: boolean;
 }) {
   const previewRef = useRef<HTMLDivElement>(null);
   const documentRef = useRef<HTMLDivElement>(null);
@@ -29,6 +31,11 @@ export function MarkdownPreview({
     const preview = previewRef.current;
     const document = documentRef.current;
     if (!preview || !document) return;
+    if (raw) {
+      document.style.zoom = "1";
+      document.style.width = "";
+      return;
+    }
     const fit = () => {
       const styles = getComputedStyle(preview);
       const available =
@@ -52,7 +59,7 @@ export function MarkdownPreview({
       observer.disconnect();
       preview.removeEventListener("load", fit, true);
     };
-  }, [query.data]);
+  }, [query.data, raw]);
   return (
     <div
       ref={previewRef}
@@ -72,7 +79,11 @@ export function MarkdownPreview({
       )}
       {query.data !== undefined && (
         <div className="markdown-document" ref={documentRef}>
-          <MarkdownContent markdown={query.data} />
+          {raw ? (
+            <pre className="markdown-raw">{query.data}</pre>
+          ) : (
+            <MarkdownContent markdown={query.data} />
+          )}
         </div>
       )}
     </div>

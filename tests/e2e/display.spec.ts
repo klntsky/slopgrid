@@ -660,7 +660,7 @@ test("a missing grid reports 404 immediately without retries or a creation link 
   await expect(page.getByRole("main").getByRole("link")).toHaveCount(0);
 });
 
-test("Markdown fits wide code to the preview width and scrolls only vertically", async ({
+test("Markdown toggles raw text in place, preserves the view on expansion, and fits rendered code", async ({
   page,
   request,
 }) => {
@@ -670,18 +670,40 @@ test("Markdown fits wide code to the preview width and scrolls only vertically",
   await request.post("/fixture/reset", { data: { markdownOutput: markdown } });
   await create(page, "Markdown", "cat", "hat");
   await expectProgress(page, 1, 1);
-  const viewRaw = page.getByRole("link", { name: "View raw", exact: true });
+  const viewRaw = page.getByRole("button", { name: "View raw", exact: true });
   const rawBounds = (await viewRaw.boundingBox())!;
   const expandBounds = (await page
     .getByRole("button", { name: "Expand Markdown", exact: true })
     .boundingBox())!;
   expect(rawBounds.x + rawBounds.width).toBeLessThanOrEqual(expandBounds.x);
-  const opened = page.waitForEvent("popup");
+  const checkRaw = async () => {
+    const preview = page.locator(".markdown-preview:visible");
+    await expect(
+      page.getByRole("button", { name: "View Markdown", exact: true }),
+    ).toBeVisible();
+    expect(await preview.locator("pre").textContent()).toBe(markdown);
+    await expect(preview.locator("code, p")).toHaveCount(0);
+    expect(
+      await preview.evaluate(
+        (el) =>
+          el.scrollWidth <= el.clientWidth + 1 &&
+          el.scrollHeight > el.clientHeight,
+      ),
+    ).toBe(true);
+  };
   await viewRaw.click();
-  const raw = await opened;
-  await raw.waitForLoadState();
-  expect(await raw.locator("body").textContent()).toBe(markdown);
-  await raw.close();
+  await checkRaw();
+  await page
+    .getByRole("button", { name: "Expand Markdown", exact: true })
+    .click();
+  await checkRaw();
+  await page
+    .getByRole("button", { name: "Collapse Markdown", exact: true })
+    .click();
+  await checkRaw();
+  await page
+    .getByRole("button", { name: "View Markdown", exact: true })
+    .click();
   const checkFit = async () => {
     const preview = page.locator(".markdown-preview:visible");
     await expect(preview.locator("pre")).toHaveText(code);
@@ -722,6 +744,12 @@ test("Markdown fits wide code to the preview width and scrolls only vertically",
     .click();
   await checkFit();
   await page.setViewportSize({ width: 390, height: 844 });
+  await checkFit();
+  await viewRaw.click();
+  await checkRaw();
+  await page
+    .getByRole("button", { name: "View Markdown", exact: true })
+    .click();
   await checkFit();
   await page
     .getByRole("button", { name: "Collapse Markdown", exact: true })

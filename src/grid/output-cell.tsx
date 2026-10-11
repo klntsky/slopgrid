@@ -24,6 +24,8 @@ export function OutputCell({
   gridStatus,
   title,
   expanded = false,
+  rawMarkdown = false,
+  onToggleRawMarkdown,
   onToggleExpand,
 }: {
   cell: ViewGrid["cells"][number];
@@ -31,10 +33,13 @@ export function OutputCell({
   gridStatus: ViewGrid["status"];
   title: string;
   expanded?: boolean;
+  rawMarkdown?: boolean;
+  onToggleRawMarkdown?: () => void;
   onToggleExpand?: (button: HTMLButtonElement) => void;
 }) {
   const { resolvedTheme } = useTheme();
-  const rawHint = useTooltip<HTMLAnchorElement>("View raw");
+  const rawLabel = rawMarkdown ? "View Markdown" : "View raw";
+  const rawHint = useTooltip<HTMLButtonElement>(rawLabel);
   const downloadHint = useTooltip<HTMLAnchorElement>("Download output");
   const inputHint = useTooltip<HTMLSpanElement>("Input tokens");
   const outputHint = useTooltip<HTMLSpanElement>("Output tokens");
@@ -54,7 +59,11 @@ export function OutputCell({
               loading="lazy"
             />
           ) : format === "markdown" ? (
-            <MarkdownPreview url={cell.outputURL!} title={title} />
+            <MarkdownPreview
+              url={cell.outputURL!}
+              title={title}
+              raw={rawMarkdown}
+            />
           ) : (
             <iframe
               title={title}
@@ -65,16 +74,30 @@ export function OutputCell({
           )}
           {format === "markdown" && (
             <div className="markdown-actions">
-              <a
-                className="button secondary"
-                href={`${cell.outputURL}?raw=1`}
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label="View raw"
+              <button
+                className="secondary"
+                aria-label={rawLabel}
+                onClick={onToggleRawMarkdown}
                 ref={rawHint}
               >
-                <CodeXml aria-hidden="true" />
-              </a>
+                {rawMarkdown ? (
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M2 18V6l5 7 5-7v12M16 6h1a6 6 0 0 1 0 12h-1Z" />
+                  </svg>
+                ) : (
+                  <CodeXml aria-hidden="true" />
+                )}
+              </button>
               {onToggleExpand && (
                 <button
                   className="secondary markdown-expand"

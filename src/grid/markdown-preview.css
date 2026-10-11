@@ -43,6 +43,14 @@
   padding: 12px;
   background: var(--panel);
 }
+.markdown-document .markdown-raw {
+  width: 100%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 28px 0 0;
+  margin: 0;
+  background: none;
+}
 .markdown-document code {
   background: var(--panel);
 }
@@ -66,7 +74,7 @@
   display: flex;
   gap: 6px;
 }
-.markdown-actions > :is(button, a) {
+.markdown-actions > button {
   width: 36px;
   height: 36px;
   padding: 8px;
