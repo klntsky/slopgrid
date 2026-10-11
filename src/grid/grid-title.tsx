@@ -78,7 +78,7 @@ export function GridTitle({ grid }: { grid: ViewGrid }) {
           ) : (
             <button
               ref={titleButton}
-              className="text-button grid-name"
+              className={`text-button grid-name${grid.title ? "" : " grid-name-unset"}`}
               aria-label={grid.title ? "Edit title" : "Set Title"}
               onClick={() => {
                 rename.reset();

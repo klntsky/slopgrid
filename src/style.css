@@ -583,6 +583,10 @@ button.grid-name {
   margin-left: -4px;
   text-align: left;
 }
+.grid-name-unset {
+  flex-shrink: 0;
+  max-width: none;
+}
 .grid-title-line .grid-name-input {
   width: 40%;
   padding: 3px 6px;
