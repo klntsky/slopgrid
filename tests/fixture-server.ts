@@ -9,6 +9,8 @@ let balanceUsd = 100;
 let streamBilling = false;
 let omitReviewCost = false;
 let unsafe = false;
+let websiteStreaming = false;
+let advanceWebsite: (() => void) | undefined;
 let svgStreaming = false;
 let advanceSvg: (() => void) | undefined;
 let svgProbes: string[] = [];
@@ -226,6 +228,41 @@ upstream.post("/api/v1/chat/completions", async (req, res) => {
       },
     });
   res.set("Content-Type", "text/event-stream");
+  if (websiteStreaming && system.includes("JSON object")) {
+    const heading = prompt.startsWith("Original request:")
+      ? "Reviewed website"
+      : "Growing website";
+    const html = `<!doctype html><link rel="stylesheet" href="style.css"><h1>${heading}</h1><p id="module">Waiting for JavaScript</p><script type="module" src="app.js"></script>`;
+    const css = "body { background: rgb(255, 0, 0); }";
+    const js =
+      'document.getElementById("module").textContent="Streaming module loaded";';
+    const chunks = [
+      '{"files":{"index.html":' + JSON.stringify(html).slice(0, -1),
+      '","style.css":' + JSON.stringify(css).slice(0, -1),
+      '","app.js":' + JSON.stringify(js).slice(0, -1),
+      '"}}',
+    ];
+    let release: (() => void) | undefined;
+    res.once("close", () => release?.());
+    for (let i = 0; i < chunks.length; i++) {
+      if (i) {
+        await new Promise<void>((resolve) => {
+          release = resolve;
+          advanceWebsite = resolve;
+        });
+        if (advanceWebsite === release) advanceWebsite = undefined;
+        release = undefined;
+        if (res.destroyed) return;
+      }
+      res.write(
+        `data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: { content: chunks[i] }, finish_reason: null }] })}\n\n`,
+      );
+    }
+    res.end(
+      `data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30, cost: 0.000123 } })}\n\ndata: [DONE]\n\n`,
+    );
+    return;
+  }
   if (svgStreaming && system.includes("image/svg+xml")) {
     const chunks = [
       '```svg\n<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><g><script>window.unsafeOutput=true;document.cookie="svg_escape=1;path=/";fetch("http://localhost:4317/svg-probe?script")</script><image href="http://localhost:4317/svg-probe?image" width="1" height="1"/><rect width="200" height="200" fill="red',
@@ -288,6 +325,9 @@ app.post("/fixture/reset", (req, res) => {
   holdGenerations = !!req.body.holdGenerations;
   for (const entry of [...held]) entry.release();
   aborted = [];
+  websiteStreaming = !!req.body.websiteStreaming;
+  advanceWebsite?.();
+  advanceWebsite = undefined;
   svgStreaming = !!req.body.svgStreaming;
   advanceSvg?.();
   advanceSvg = undefined;
@@ -296,6 +336,10 @@ app.post("/fixture/reset", (req, res) => {
   streamBilling = !!req.body.streamBilling;
   calls = [];
   svgProbes = [];
+  res.json({ ok: true });
+});
+app.post("/fixture/website-next", (_req, res) => {
+  advanceWebsite?.();
   res.json({ ok: true });
 });
 app.post("/fixture/svg-next", (_req, res) => {

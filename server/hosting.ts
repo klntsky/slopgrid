@@ -1,3 +1,4 @@
+import type { WebsitePreviews } from "./website-previews.js";
 import type { RequestHandler } from "express";
 import type { Store } from "./store.js";
 import type { RateLimiter } from "./rate-limit.js";
@@ -8,6 +9,7 @@ export function createHostDispatcher(
   origin: URL,
   htmlHosts: ReturnType<typeof createHtmlHosts>,
   rate: RateLimiter,
+  previews: WebsitePreviews,
 ): RequestHandler {
   const secure = origin.protocol === "https:";
   return (req, res, next) => {
@@ -24,12 +26,17 @@ export function createHostDispatcher(
     }
     const id = host ? htmlHosts.cellId(host) : undefined;
     if (!id) return res.status(421).send("Unknown host");
-    if (!rate(`output:${req.ip}`, 2000, 60000)) {
+    const previewRequest = req.path.startsWith("/__preview/");
+    if (
+      !rate(
+        `${previewRequest ? "preview" : "output"}:${req.ip}`,
+        previewRequest ? 20000 : 2000,
+        60000,
+      )
+    ) {
       res.set("Retry-After", "60");
       return res.status(429).send("Too many requests. Try again in a minute.");
     }
-    const output = store.output(id);
-    if (!output || output.format !== "html") return res.sendStatus(404);
     // Sandboxed module scripts have an opaque origin. These credential-free
     // static assets can be fetched with CORS without opening any API endpoint.
     res.set("Access-Control-Allow-Origin", "*");
@@ -47,7 +54,12 @@ export function createHostDispatcher(
     } catch {
       return res.sendStatus(404);
     }
-    const file = store.files.path(id, path);
+    const output = store.output(id);
+    const file = path.startsWith("__preview/")
+      ? previews.path(id, path)
+      : output?.format === "html"
+        ? store.files.path(id, path)
+        : previews.path(id, path);
     if (!file) return res.sendStatus(404);
     const mime: Record<string, string> = {
       html: "text/html",

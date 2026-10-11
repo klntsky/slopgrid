@@ -1,9 +1,12 @@
+import { join } from "node:path";
+import { WebsitePreviews } from "./website-previews.js";
 import type { Cell, Grid } from "./domain.js";
 import type { Store } from "./store.js";
 import { Provider } from "./provider.js";
 import { failureDetails } from "./failures.js";
 
 export class Jobs {
+  readonly previews: WebsitePreviews;
   active = new Map<string, Grid>();
   listeners = new Map<string, Set<(grid: Grid) => void>>();
   private running = new Map<
@@ -14,6 +17,7 @@ export class Jobs {
   private concurrencyByOwner = new Map<string, number>();
   private lastAllocation = new Map<string, number>();
   private draftEmittedAt = new Map<string, number>();
+  private draftTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private allocation = 0;
   private scheduled = false;
   private retries = new Map<string, number>();
@@ -26,8 +30,12 @@ export class Jobs {
   ) {
     if (!Number.isSafeInteger(workersMax) || workersMax < 1)
       throw new Error("WORKERS_MAX must be a positive safe integer");
+    this.previews = new WebsitePreviews(join(store.files.root, ".previews"));
   }
   emit(grid: Grid) {
+    const timer = this.draftTimers.get(grid.id);
+    if (timer) clearTimeout(timer);
+    this.draftTimers.delete(grid.id);
     this.store.save(grid);
     for (const callback of this.listeners.get(grid.id) ?? []) callback(grid);
   }
@@ -72,6 +80,7 @@ export class Jobs {
     g.interruption = "manual";
     this.draftEmittedAt.delete(g.id);
     for (const cell of g.cells) {
+      this.previews.clear(cell);
       this.retries.delete(cell.id);
       if (cell.retrying) {
         delete cell.retrying;
@@ -201,6 +210,25 @@ export class Jobs {
       this.concurrencyByOwner.delete(grid.owner);
     }
   }
+  private previewUpdated(grid: Grid) {
+    const delay = Math.max(
+      0,
+      300 - (Date.now() - (this.draftEmittedAt.get(grid.id) ?? 0)),
+    );
+    if (!delay) {
+      this.draftEmittedAt.set(grid.id, Date.now());
+      this.emit(grid);
+    } else if (!this.draftTimers.has(grid.id)) {
+      this.draftTimers.set(
+        grid.id,
+        setTimeout(() => {
+          this.draftTimers.delete(grid.id);
+          this.draftEmittedAt.set(grid.id, Date.now());
+          this.emit(grid);
+        }, delay),
+      );
+    }
+  }
   private async runCell(
     grid: Grid,
     cell: Cell,
@@ -215,6 +243,10 @@ export class Jobs {
         (text) => {
           if (controller.signal.aborted) return;
           cell.draft = text;
+          if (grid.input.format === "html") {
+            this.previews.update(cell, text, () => this.previewUpdated(grid));
+            return;
+          }
           const now = Date.now();
           if (now - (this.draftEmittedAt.get(grid.id) ?? 0) > 300) {
             this.draftEmittedAt.set(grid.id, now);
@@ -279,6 +311,7 @@ export class Jobs {
         );
       }
     } finally {
+      this.previews.clear(cell);
       const billing = this.store.billing.cell(cell.id);
       if (billing) Object.assign(cell, billing);
       delete cell.draft;

@@ -1108,7 +1108,8 @@ test.describe("mobile grid interaction", () => {
           touchPoints: points,
         });
       }
-      const y = Math.max(headerBefore.height + 190, 400);
+      const headings = (await grid.locator("thead").boundingBox())!;
+      const y = headings.y + headings.height / 2;
       await touch("touchStart", [
         { x: 220, y, id: 1 },
         { x: 320, y, id: 2 },
@@ -1124,9 +1125,9 @@ test.describe("mobile grid interaction", () => {
       expect((await header.boundingBox())!.height).toBe(headerBefore.height);
       expect(await page.evaluate(() => visualViewport!.scale)).toBe(1);
       const left = await grid.evaluate((el) => el.scrollLeft);
-      await touch("touchStart", [{ x: 290, y: 620, id: 1 }]);
+      await touch("touchStart", [{ x: 290, y, id: 1 }]);
       for (const nextX of [250, 200, 150, 100])
-        await touch("touchMove", [{ x: nextX, y: 620, id: 1 }]);
+        await touch("touchMove", [{ x: nextX, y, id: 1 }]);
       await touch("touchEnd", []);
       await expect
         .poll(() => grid.evaluate((el) => el.scrollLeft))
@@ -1807,4 +1808,70 @@ test("a missing grid reports 404 immediately without retries or a creation link 
   });
   expect(requests).toBe(1);
   await expect(page.getByRole("main").getByRole("link")).toHaveCount(0);
+});
+
+test("website bundles preview HTML, CSS, and JavaScript before completion, restart after Pause, and stream the review pass", async ({
+  page,
+  request,
+}) => {
+  await page.route("**/api/grids", (route) =>
+    route.continue({
+      headers: {
+        ...route.request().headers(),
+        "X-Forwarded-For": "192.0.2.60",
+      },
+    }),
+  );
+  await request.post("/fixture/reset", { data: { websiteStreaming: true } });
+  await create(page, "Static website", "cat", "hat", "review");
+  const frame = page.frameLocator("iframe").first();
+  const iframe = page.locator("iframe").first();
+  await expect(
+    frame.getByRole("heading", { name: "Growing website" }),
+  ).toBeVisible();
+  await expectProgress(page, 0, 1);
+  const original = (await iframe.getAttribute("src"))!;
+  await request.post("/fixture/website-next");
+  await expect(frame.locator("body")).toHaveCSS(
+    "background-color",
+    "rgb(255, 0, 0)",
+  );
+  await request.post("/fixture/website-next");
+  await expect(frame.getByText("Streaming module loaded")).toBeVisible();
+  await expectProgress(page, 0, 1);
+  await page.getByRole("button", { name: "Pause generation" }).click();
+  await expect(iframe).toHaveCount(0);
+  expect((await request.get(original)).status()).toBe(404);
+  await page.getByRole("button", { name: "Resume generation" }).click();
+  await expect(
+    frame.getByRole("heading", { name: "Growing website" }),
+  ).toBeVisible();
+  expect(await iframe.getAttribute("src")).not.toBe(original);
+  await request.post("/fixture/website-next");
+  await expect(frame.locator("body")).toHaveCSS(
+    "background-color",
+    "rgb(255, 0, 0)",
+  );
+  await request.post("/fixture/website-next");
+  await expect(frame.getByText("Streaming module loaded")).toBeVisible();
+  await request.post("/fixture/website-next");
+  await expect(
+    frame.getByRole("heading", { name: "Reviewed website" }),
+  ).toBeVisible();
+  await expectProgress(page, 0, 1);
+  await request.post("/fixture/website-next");
+  await expect(frame.locator("body")).toHaveCSS(
+    "background-color",
+    "rgb(255, 0, 0)",
+  );
+  await request.post("/fixture/website-next");
+  await expect(frame.getByText("Streaming module loaded")).toBeVisible();
+  await request.post("/fixture/website-next");
+  await expectProgress(page, 1, 1);
+  await expect(
+    frame.getByRole("heading", { name: "Reviewed website" }),
+  ).toBeVisible();
+  await expect(frame.getByText("Streaming module loaded")).toBeVisible();
+  expect(await iframe.getAttribute("src")).not.toContain("__preview");
+  expect((await request.get(original)).status()).toBe(404);
 });

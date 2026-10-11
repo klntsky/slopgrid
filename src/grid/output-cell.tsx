@@ -10,6 +10,7 @@ import type { GridInput } from "../../server/domain";
 import type { ViewGrid } from "../api";
 import { useTheme } from "../theme";
 import { formatCost, cellError } from "../format";
+import { WebsitePreview } from "./website-preview";
 import { MarkdownPreview } from "./markdown-preview";
 import { SvgPreview } from "../svg-preview-image";
 export function OutputCell({
@@ -102,6 +103,8 @@ export function OutputCell({
         </>
       ) : cell.status === "error" ? (
         <p className="cell-error">{cellError(cell)}</p>
+      ) : cell.status === "running" && format === "html" ? (
+        <WebsitePreview url={cell.previewURL} title={title} />
       ) : cell.status === "running" && format === "svg" ? (
         <SvgPreview key={cell.id} draft={cell.draft ?? ""} />
       ) : (

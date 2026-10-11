@@ -1,7 +1,7 @@
 import type { Grid, Cell } from "../server/domain";
 export type ViewGrid = Omit<Grid, "owner" | "cells"> & {
   canEdit: boolean;
-  cells: (Cell & { outputURL?: string })[];
+  cells: (Cell & { outputURL?: string; previewURL?: string })[];
 };
 export class ApiError extends Error {
   constructor(

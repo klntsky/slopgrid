@@ -9,7 +9,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 
-function safePath(path: string): boolean {
+export function safePath(path: string): boolean {
   return (
     /^[a-zA-Z0-9_-][a-zA-Z0-9_./-]*$/.test(path) &&
     path

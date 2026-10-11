@@ -157,84 +157,100 @@ export async function generateInference(
             }
           : {},
     });
-    let failure: unknown;
-    const result = streamText({
-      model,
-      system: instruction(format),
-      prompt: cell.prompt,
-      maxRetries: 0,
-      abortSignal: signal,
-      onError: ({ error }) => {
-        failure = error;
-      },
-    });
-    let text = "";
-    for await (const chunk of result.textStream) {
-      text += chunk;
-      onChunk(text);
-    }
-    const [streamUsage, metadata, finishReason, rawFinishReason] =
-      await Promise.all([
-        optional(result.usage),
-        optional(result.providerMetadata),
-        optional(result.finishReason),
-        optional(result.rawFinishReason),
-      ]);
-    const streamResponse = await optional(result.response);
-    if (streamResponse?.id) call?.update({ generationId: streamResponse.id });
-    recordCompletion(
-      {
-        phase: cell.harness === "review" ? "draft" : "direct",
-        finishReason,
-        rawFinishReason,
-        reasoningTokens: streamUsage?.outputTokenDetails.reasoningTokens,
-      },
-      streamUsage && {
-        inputTokens: streamUsage.inputTokens,
-        outputTokens: streamUsage.outputTokens,
-        costUsd: reportedCost(metadata?.openrouter?.usage),
-      },
-    );
-    if (failure) {
-      if (
-        failure !== null &&
-        typeof failure === "object" &&
-        !Object.hasOwn(failure, "responseHeaders")
-      ) {
-        const response = await Promise.resolve(result.response).catch(
-          () => undefined,
-        );
-        Object.assign(failure, { responseHeaders: response?.headers });
-      }
-      throw failure;
-    }
-    requireSuccess(finishReason);
-    if (cell.harness === "review") {
-      phase = "review";
-      const reviewed = await generateText({
+    async function streamed(
+      prompt: string,
+      streamPhase: Completion["phase"],
+    ): Promise<string> {
+      let failure: unknown;
+      const result = streamText({
         model,
         system: instruction(format),
-        prompt: `Original request:\n${cell.prompt}\n\nDraft:\n${text}\n\nCheck the draft against the request and return the corrected final output.`,
+        prompt,
         maxRetries: 0,
         abortSignal: signal,
+        onError: ({ error }) => {
+          failure = error;
+        },
       });
-      if (reviewed.response.id)
-        call?.update({ generationId: reviewed.response.id });
-      text = reviewed.text;
+      let text = "";
+      for await (const chunk of result.textStream) {
+        text += chunk;
+        onChunk(text);
+      }
+      const [streamUsage, metadata, finishReason, rawFinishReason] =
+        await Promise.all([
+          optional(result.usage),
+          optional(result.providerMetadata),
+          optional(result.finishReason),
+          optional(result.rawFinishReason),
+        ]);
+      const streamResponse = await optional(result.response);
+      if (streamResponse?.id) call?.update({ generationId: streamResponse.id });
       recordCompletion(
         {
-          phase: "review",
-          finishReason: reviewed.finishReason,
-          rawFinishReason: reviewed.rawFinishReason,
-          reasoningTokens: reviewed.usage.outputTokenDetails.reasoningTokens,
+          phase: streamPhase,
+          finishReason,
+          rawFinishReason,
+          reasoningTokens: streamUsage?.outputTokenDetails.reasoningTokens,
         },
-        {
-          inputTokens: reviewed.usage.inputTokens,
-          outputTokens: reviewed.usage.outputTokens,
-          costUsd: reportedCost(reviewed.providerMetadata?.openrouter?.usage),
+        streamUsage && {
+          inputTokens: streamUsage.inputTokens,
+          outputTokens: streamUsage.outputTokens,
+          costUsd: reportedCost(metadata?.openrouter?.usage),
         },
       );
-      requireSuccess(reviewed.finishReason);
+      if (failure) {
+        if (
+          failure !== null &&
+          typeof failure === "object" &&
+          !Object.hasOwn(failure, "responseHeaders")
+        ) {
+          const response = await Promise.resolve(result.response).catch(
+            () => undefined,
+          );
+          Object.assign(failure, { responseHeaders: response?.headers });
+        }
+        throw failure;
+      }
+      requireSuccess(finishReason);
+      return text;
+    }
+    let text = await streamed(
+      cell.prompt,
+      cell.harness === "review" ? "draft" : "direct",
+    );
+    if (cell.harness === "review") {
+      phase = "review";
+      const reviewPrompt = `Original request:\n${cell.prompt}\n\nDraft:\n${text}\n\nCheck the draft against the request and return the corrected final output.`;
+      if (format === "html") {
+        onChunk("");
+        text = await streamed(reviewPrompt, "review");
+      } else {
+        const reviewed = await generateText({
+          model,
+          system: instruction(format),
+          prompt: reviewPrompt,
+          maxRetries: 0,
+          abortSignal: signal,
+        });
+        if (reviewed.response.id)
+          call?.update({ generationId: reviewed.response.id });
+        text = reviewed.text;
+        recordCompletion(
+          {
+            phase: "review",
+            finishReason: reviewed.finishReason,
+            rawFinishReason: reviewed.rawFinishReason,
+            reasoningTokens: reviewed.usage.outputTokenDetails.reasoningTokens,
+          },
+          {
+            inputTokens: reviewed.usage.inputTokens,
+            outputTokens: reviewed.usage.outputTokens,
+            costUsd: reportedCost(reviewed.providerMetadata?.openrouter?.usage),
+          },
+        );
+        requireSuccess(reviewed.finishReason);
+      }
     }
     return {
       files: parseOutput(format, text),

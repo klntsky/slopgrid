@@ -26,7 +26,7 @@ if (
     !origin.startsWith("https://"))
 )
   throw new Error("Set HTTPS APP_ORIGIN and OUTPUT_DOMAIN in production");
-const { app, store } = createApp({
+const { app, store, jobs } = createApp({
   origin,
   outputDomain,
   database: process.env.DATABASE_PATH ?? ".data/slopgrid.sqlite",
@@ -34,6 +34,7 @@ const { app, store } = createApp({
   outputsPath: process.env.OUTPUTS_PATH,
   workersMax: Number(process.env.WORKERS_MAX ?? 100),
 });
+jobs.previews.clearAll();
 recoverInterruptedGrids(store);
 if (production) {
   app.use(express.static("dist"));

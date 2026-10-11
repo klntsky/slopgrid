@@ -1,0 +1,18 @@
+.website-preview-status {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  background: var(--paper);
+  color: var(--muted);
+  font-size: 12px;
+  pointer-events: none;
+}
+.website-preview-status .spinner {
+  width: 14px;
+  height: 14px;
+}

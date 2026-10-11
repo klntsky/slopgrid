@@ -37,7 +37,7 @@ export function createApp(config: Config) {
   const snapshot = createGridPresenter(origin, htmlHosts);
   app.disable("x-powered-by");
   app.set("trust proxy", "loopback");
-  app.use(createHostDispatcher(store, origin, htmlHosts, rate));
+  app.use(createHostDispatcher(store, origin, htmlHosts, rate, jobs.previews));
   app.use(createOutputRoutes(store, origin, rate));
   app.use(express.json({ limit: "100kb" }));
   app.use("/api", createApiSecurity(config.origin, rate));
