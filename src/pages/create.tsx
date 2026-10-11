@@ -1,16 +1,9 @@
+import { FormatIcon } from "../components/grid-format-icon";
 import { useInferenceMutation } from "../use-inference-mutation";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import {
-  FileCode,
-  FileText,
-  PanelsTopLeft,
-  Image,
-  ArrowUpRight,
-  DollarSign,
-  ArrowLeftRight,
-} from "lucide-react";
+import { ArrowUpRight, DollarSign, ArrowLeftRight } from "lucide-react";
 import {
   efforts,
   unusedVariableIssue,
@@ -111,12 +104,6 @@ export function Create() {
         </div>
         <div className="formats">
           {Object.entries(formatNames).map(([f, name]) => {
-            const FormatIcon = {
-              svg: FileCode,
-              markdown: FileText,
-              html: PanelsTopLeft,
-              image: Image,
-            }[f as GridInput["format"]];
             return (
               <button
                 key={f}
@@ -126,7 +113,10 @@ export function Create() {
                 }
                 onClick={() => selectFormat(f as GridInput["format"])}
               >
-                <FormatIcon className="format-symbol" aria-hidden="true" />
+                <FormatIcon
+                  format={f as GridInput["format"]}
+                  className="format-symbol"
+                />
                 <span>{name}</span>
               </button>
             );

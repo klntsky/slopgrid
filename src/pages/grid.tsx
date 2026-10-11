@@ -18,7 +18,6 @@ export function GridPage() {
   const {
     query,
     error,
-    setError,
     busy,
     dismissed,
     setDismissed,
@@ -52,7 +51,6 @@ export function GridPage() {
             busy={busy}
             onAction={action}
             onConfigure={configure}
-            onError={setError}
           />,
           headerTarget,
         )}

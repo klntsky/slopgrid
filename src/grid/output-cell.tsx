@@ -5,12 +5,9 @@ import {
   LoaderCircle,
   Maximize2,
   Minimize2,
-  Copy,
-  Check,
   Download,
-  TriangleAlert,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { CopyButton } from "../components/copy-button";
 import type { GridInput } from "../../server/domain";
 import type { ViewGrid } from "../api";
 import { useTheme } from "../theme";
@@ -36,28 +33,7 @@ export function OutputCell({
   onToggleExpand?: (button: HTMLButtonElement) => void;
 }) {
   const { resolvedTheme } = useTheme();
-  const [copying, setCopying] = useState(false);
-  const [copyFeedback, setCopyFeedback] = useState("");
-  const copyHint = useTooltip<HTMLButtonElement>(copyFeedback || "Copy output");
   const downloadHint = useTooltip<HTMLAnchorElement>("Download output");
-  useEffect(() => {
-    if (!copyFeedback) return;
-    const timer = setTimeout(() => setCopyFeedback(""), 2500);
-    return () => clearTimeout(timer);
-  }, [copyFeedback]);
-  async function copy() {
-    if (!cell.outputURL || format === "html") return;
-    setCopying(true);
-    setCopyFeedback("");
-    try {
-      await copyOutput(cell.outputURL, format);
-      setCopyFeedback("Copied");
-    } catch {
-      setCopyFeedback("Copy failed");
-    } finally {
-      setCopying(false);
-    }
-  }
   const inputHint = useTooltip<HTMLSpanElement>("Input tokens");
   const outputHint = useTooltip<HTMLSpanElement>("Output tokens");
   const outputURL =
@@ -113,23 +89,10 @@ export function OutputCell({
                   <ArrowUpRight aria-hidden="true" />
                 </a>
                 {format !== "html" && (
-                  <button
-                    type="button"
-                    aria-label="Copy output"
-                    ref={copyHint}
-                    disabled={copying}
-                    onClick={() => void copy()}
-                  >
-                    {copying ? (
-                      <LoaderCircle className="spinner" aria-hidden="true" />
-                    ) : copyFeedback === "Copied" ? (
-                      <Check aria-hidden="true" />
-                    ) : copyFeedback === "Copy failed" ? (
-                      <TriangleAlert aria-hidden="true" />
-                    ) : (
-                      <Copy aria-hidden="true" />
-                    )}
-                  </button>
+                  <CopyButton
+                    label="Copy output"
+                    copy={() => copyOutput(cell.outputURL!, format)}
+                  />
                 )}
                 <a
                   href={`/outputs/${cell.id}/download`}
@@ -139,9 +102,6 @@ export function OutputCell({
                 >
                   <Download aria-hidden="true" />
                 </a>
-                <span className="sr-only" role="status">
-                  {copyFeedback}
-                </span>
               </div>
               <small className="cell-usage">
                 {cell.usage && (

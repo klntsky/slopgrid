@@ -35,3 +35,5 @@ Grid ownership and publication rules live in `server/grid-policy.ts`. Grid route
 Creation and grid retry/pause actions share a TanStack inference mutation hook for request credentials, pending state, failures, and low-balance confirmation. Creation, editing, and successful generation use the same draft-storage helpers.
 
 New grids never select a model from catalog order. Generation requires a deliberate fixed model or model-axis selection; the unused fixed-model field is empty for model-axis grids.
+
+Shared modal, clipboard-button, and format-icon components own their UI lifecycles. Tooltips use one shared hook across creation, grid headers, output cells, and grid lists.

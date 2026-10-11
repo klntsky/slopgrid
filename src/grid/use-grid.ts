@@ -18,8 +18,7 @@ export function useGrid(id: string) {
         query.state.error.status === 404
       ),
   });
-  const [error, setError] = useState(""),
-    [dismissed, setDismissed] = useState(false),
+  const [dismissed, setDismissed] = useState(false),
     [streamLost, setStreamLost] = useState(false);
   const live =
     query.isSuccess &&
@@ -48,7 +47,6 @@ export function useGrid(id: string) {
     cache.setQueryData(["grid", id], grid);
   });
   function action(action: "retry" | "pause", continueWithLowBalance = false) {
-    setError("");
     configure.reset();
     if (action === "retry") setDismissed(false);
     inference.mutate({
@@ -70,8 +68,7 @@ export function useGrid(id: string) {
   });
   return {
     query,
-    error: error || inference.message || configure.error?.message || "",
-    setError,
+    error: inference.message || configure.error?.message || "",
     busy: inference.isPending || configure.isPending,
     dismissed,
     setDismissed,
@@ -81,7 +78,6 @@ export function useGrid(id: string) {
     setLowBalance: inference.setLowBalance,
     action,
     configure: () => {
-      setError("");
       inference.reset();
       configure.mutate();
     },

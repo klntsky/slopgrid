@@ -1,3 +1,4 @@
+import { Modal } from "./modal";
 import { useEffect, useRef, useState } from "react";
 import type { GridVisibility } from "../../server/domain";
 import { ErrorMessage } from "./error-message";
@@ -29,15 +30,6 @@ export function PublishDialog({
   const [remember, setRemember] = useState(false);
   const [error, setError] = useState("");
   useEffect(() => {
-    const dialog = ref.current!;
-    const trigger = document.activeElement as HTMLElement | null;
-    dialog.showModal();
-    return () => {
-      dialog.close();
-      if (trigger?.isConnected) trigger.focus();
-    };
-  }, []);
-  useEffect(() => {
     ref.current
       ?.querySelector<HTMLElement>(
         confirming ? "[data-confirm]" : "input:checked",
@@ -68,14 +60,12 @@ export function PublishDialog({
     else onClose();
   }
   return (
-    <dialog
+    <Modal
       ref={ref}
-      className="modal publish-modal"
-      aria-labelledby="publish-title"
-      onCancel={(event) => {
-        event.preventDefault();
-        cancel();
-      }}
+      className="publish-modal"
+      titleId="publish-title"
+      busy={busy}
+      onClose={cancel}
     >
       <h2 id="publish-title">
         {confirming ? "Confirm publishing" : "Control who can see this grid"}
@@ -146,6 +136,6 @@ export function PublishDialog({
         </button>
       </div>
       <ErrorMessage error={error} />
-    </dialog>
+    </Modal>
   );
 }

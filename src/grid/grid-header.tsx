@@ -1,3 +1,4 @@
+import { CopyButton } from "../components/copy-button";
 import { PublishGrid } from "./publish-grid";
 import { Author } from "../components/identity";
 import { Pause, Play, Pencil, GitFork, Link2 } from "lucide-react";
@@ -8,13 +9,11 @@ export function GridHeader({
   busy,
   onAction,
   onConfigure,
-  onError,
 }: {
   grid: ViewGrid;
   busy: boolean;
   onAction: (action: "retry" | "pause") => void;
   onConfigure: () => void;
-  onError: (message: string) => void;
 }) {
   const complete = g.cells.filter((c) => c.status === "complete").length,
     failed = g.cells.filter((c) => c.status === "error").length,
@@ -89,23 +88,13 @@ export function GridHeader({
               <PublishGrid grid={g} disabled={busy} />
             )}
             {g.published && (
-              <button
+              <CopyButton
                 className="secondary inference-toggle"
-                aria-label="Copy link"
-                title="Copy link"
-                onClick={async () => {
-                  try {
-                    await navigator.clipboard.writeText(location.href);
-                    onError("");
-                  } catch {
-                    onError(
-                      "Copy the address from your browser to share this grid.",
-                    );
-                  }
-                }}
-              >
-                <Link2 aria-hidden="true" />
-              </button>
+                label="Copy link"
+                icon={Link2}
+                copy={() => navigator.clipboard.writeText(location.href)}
+                failure="Copy the address from your browser to share this grid."
+              />
             )}
           </div>
         </div>

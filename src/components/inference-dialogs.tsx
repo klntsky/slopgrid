@@ -1,4 +1,4 @@
-import { useRef, useEffect } from "react";
+import { Modal } from "./modal";
 import { formatCost } from "../format";
 import { ErrorMessage } from "./error-message";
 export function LowBalanceDialog({
@@ -14,22 +14,8 @@ export function LowBalanceDialog({
   onProceed: (override: boolean) => void;
   onClose: () => void;
 }) {
-  const ref = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    const dialog = ref.current!;
-    dialog.showModal();
-    return () => dialog.close();
-  }, []);
   return (
-    <dialog
-      ref={ref}
-      className="modal"
-      aria-labelledby="low-balance-title"
-      onCancel={(event) => {
-        event.preventDefault();
-        if (!busy) onClose();
-      }}
-    >
+    <Modal titleId="low-balance-title" onClose={onClose} busy={busy}>
       <h2 id="low-balance-title">Top up your OpenRouter credits</h2>
       <p>
         Your balance is {formatCost(balanceUsd)}, below $3. Top up before
@@ -69,7 +55,7 @@ export function LowBalanceDialog({
         </button>
       </div>
       <ErrorMessage error={error} />
-    </dialog>
+    </Modal>
   );
 }
 export function BillingDialog({
@@ -83,22 +69,8 @@ export function BillingDialog({
   onRetry: () => void;
   onClose: () => void;
 }) {
-  const ref = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    const dialog = ref.current!;
-    dialog.showModal();
-    return () => dialog.close();
-  }, []);
   return (
-    <dialog
-      ref={ref}
-      aria-labelledby="billing-title"
-      className="modal"
-      onCancel={(event) => {
-        event.preventDefault();
-        onClose();
-      }}
-    >
+    <Modal titleId="billing-title" onClose={onClose}>
       <h2 id="billing-title">OpenRouter credits needed</h2>
       <p>
         OpenRouter could not bill this request. Check your credits or key
@@ -121,6 +93,6 @@ export function BillingDialog({
         </button>
       </div>
       <ErrorMessage error={error} />
-    </dialog>
+    </Modal>
   );
 }
