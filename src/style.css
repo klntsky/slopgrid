@@ -1262,6 +1262,10 @@ header {
   color: var(--accent);
   vertical-align: middle;
 }
+.compatibility-table .compatibility-warning {
+  color: #6f5000;
+  fill: #facc15;
+}
 .error {
   white-space: pre-line;
 }

@@ -148,9 +148,7 @@ test("unused prompt variables block generation and the API rejects bypasses", as
     await page.getByLabel("Prompt", { exact: true }).fill(prompt);
     await expect(page.getByRole("alert")).toBeVisible();
   }
-  await page
-    .getByLabel("Prompt", { exact: true })
-    .fill("$ROW $COLUMN");
+  await page.getByLabel("Prompt", { exact: true }).fill("$ROW $COLUMN");
   const connect = page.getByRole("link", { name: "Connect OpenRouter" });
   await connect.click();
   await expect(
@@ -179,9 +177,7 @@ test("unused prompt variables block generation and the API rejects bypasses", as
   });
   expect(response.status()).toBe(400);
   expect(await (await request.get("/fixture/calls")).json()).toEqual([]);
-  await page
-    .getByLabel("Prompt", { exact: true })
-    .fill("$ROW $COLUMN");
+  await page.getByLabel("Prompt", { exact: true }).fill("$ROW $COLUMN");
   await page.getByRole("button", { name: "Generate", exact: true }).click();
   await expectProgress(page, 4, 4);
 });
@@ -270,24 +266,20 @@ test("the compatibility table shows selected model support without blocking gene
     "max",
   ]);
   const limited = table.getByRole("row", { name: /Second model/ });
-  await expect(
-    limited
-      .getByRole("cell", { name: "None: Unsupported", exact: true })
-      .locator("svg"),
-  ).toHaveCount(0);
-  await expect(
-    limited
-      .getByRole("cell", { name: "high: Supported", exact: true })
-      .locator("svg"),
-  ).toHaveCount(1);
-  await expect(
-    limited
-      .getByRole("cell", { name: "max: Unsupported", exact: true })
-      .locator("svg"),
-  ).toHaveCount(0);
-  await expect(
-    table.getByRole("row", { name: /Fixture text/ }).locator("svg"),
-  ).toHaveCount(3);
+  for (const status of [
+    "None: Unsupported",
+    "high: Supported",
+    "max: Unsupported",
+  ])
+    await expect(
+      limited.getByRole("cell", { name: status, exact: true }),
+    ).toBeVisible();
+  await rows.getByRole("checkbox", { name: "None", exact: true }).uncheck();
+  await expect(table).toBeVisible();
+  await rows.getByRole("checkbox", { name: "max", exact: true }).uncheck();
+  await expect(table).toHaveCount(0);
+  await rows.getByRole("checkbox", { name: "None", exact: true }).check();
+  await rows.getByRole("checkbox", { name: "max", exact: true }).check();
   await page.getByRole("button", { name: "Swap rows and columns" }).click();
   await expect(table.getByRole("columnheader")).toHaveText([
     "Model",
@@ -299,6 +291,13 @@ test("the compatibility table shows selected model support without blocking gene
     "Second model",
     "Fixture text",
   ]);
+  await page.getByRole("button", { name: "Clear row model filter" }).click();
+  const secondModel = page
+    .getByRole("group", { name: "Row values" })
+    .getByRole("checkbox", { name: "Second model", exact: true });
+  await secondModel.uncheck();
+  await expect(table).toHaveCount(0);
+  await secondModel.check();
   await page.getByLabel("Prompt", { exact: true }).fill("Draw a cat");
   await expect(table).toBeVisible();
   await expect(
