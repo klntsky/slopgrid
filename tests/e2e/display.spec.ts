@@ -664,20 +664,18 @@ test("Markdown fits wide code to the preview width and scrolls only vertically",
   page,
   request,
 }) => {
-  await request.post("/fixture/reset", { data: { billing: false } });
   const line = "const longExample = " + "abcdefghij".repeat(24) + ";";
-  const markdown =
-    "```js\n" +
-    Array(400).fill(line).join("\n") +
-    "\n```\n\nA paragraph after the code.";
-  await page.route(/\/outputs\/[^?]+\?raw=1$/, (route) =>
-    route.fulfill({ contentType: "text/plain", body: markdown }),
-  );
+  const code = Array(300).fill(line).join("\n") + "\n";
+  const markdown = "```js\n" + code + "```\n\nA paragraph after the code.";
+  await request.post("/fixture/reset", { data: { markdownOutput: markdown } });
   await create(page, "Markdown", "cat", "hat");
   await expectProgress(page, 1, 1);
   const checkFit = async () => {
     const preview = page.locator(".markdown-preview:visible");
-    await expect(preview.locator("pre")).toContainText(line);
+    await expect(preview.locator("pre")).toHaveText(code);
+    await expect(preview.locator("p")).toHaveText(
+      "A paragraph after the code.",
+    );
     await expect
       .poll(() =>
         preview.evaluate((el) => {

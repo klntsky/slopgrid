@@ -10,11 +10,11 @@ export function parseOutput(
   raw: string,
   structured = false,
 ): Record<string, string> {
+  if (format === "markdown") return { "index.md": raw };
   const clean = raw
     .trim()
     .replace(/^```(?:\w+)?\s*\n/, "")
     .replace(/\n```$/, "");
-  if (format === "markdown") return { "index.md": clean };
   if (format === "svg") return { "index.svg": clean };
   if (format === "html") {
     const value: unknown = JSON.parse(clean);

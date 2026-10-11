@@ -11,6 +11,7 @@ let balanceUsd = 100;
 let tokenLimits: { model: string; max_tokens: number }[] = [];
 let streamBilling = false;
 let unsafe = false;
+let markdownOutput: string | undefined;
 let websiteStreaming = false;
 let advanceWebsite: (() => void) | undefined;
 let svgStreaming = false;
@@ -225,8 +226,9 @@ upstream.post("/api/v1/chat/completions", async (req, res) => {
           "app.js":
             "document.getElementById('module').textContent='Module loaded';",
         })
-      : "# A generated cat\n\nWearing a hat." +
-        (unsafe ? "\n\n<script>window.unsafeOutput=true</script>" : "");
+      : (markdownOutput ??
+        "# A generated cat\n\nWearing a hat." +
+          (unsafe ? "\n\n<script>window.unsafeOutput=true</script>" : ""));
   const base = {
     id: "fixture",
     object: "chat.completion.chunk",
@@ -305,9 +307,10 @@ upstream.post("/api/v1/chat/completions", async (req, res) => {
     );
     return;
   }
-  for (let i = 0; i < text.length; i += 40) {
+  const chunkSize = Math.max(40, Math.ceil(text.length / 8));
+  for (let i = 0; i < text.length; i += chunkSize) {
     res.write(
-      `data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: { content: text.slice(i, i + 40) }, finish_reason: null }] })}\n\n`,
+      `data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: { content: text.slice(i, i + chunkSize) }, finish_reason: null }] })}\n\n`,
     );
     await new Promise((resolve) => setTimeout(resolve, 30));
   }
@@ -348,6 +351,7 @@ app.post("/fixture/reset", (req, res) => {
   advanceSvg = undefined;
   billing = !!req.body.billing;
   unsafe = !!req.body.unsafe;
+  markdownOutput = req.body.markdownOutput;
   streamBilling = !!req.body.streamBilling;
   calls = [];
   tokenLimits = [];
