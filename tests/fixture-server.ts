@@ -256,7 +256,7 @@ upstream.post("/api/v1/chat/completions", async (req, res) => {
   }
   if (websiteStreaming && system.includes("JSON object")) {
     const heading = "Growing website";
-    const html = `<!doctype html><link rel="stylesheet" href="style.css"><h1>${heading}</h1><p id="module">Waiting for JavaScript</p><script type="module" src="app.js"></script>`;
+    const html = `<!doctype html><link rel="stylesheet" href="style.css"><style>html { scroll-behavior: smooth; } body { width: 1800px; min-height: 3000px; } #scroll-panel { width: 180px; height: 120px; overflow: auto; scroll-behavior: smooth; } #scroll-panel > div { width: 600px; height: 800px; }</style><h1>${heading}</h1><p id="module">Waiting for JavaScript</p><div id="scroll-panel"><div>Scrollable panel</div></div><script type="module" src="app.js"></script>`;
     const css = "body { background: rgb(255, 0, 0); }";
     const js =
       'document.getElementById("module").textContent="Streaming module loaded";';

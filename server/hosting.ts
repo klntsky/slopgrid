@@ -5,7 +5,7 @@ import type { RateLimiter } from "./rate-limit.js";
 import type { createHtmlHosts } from "./hosts.js";
 import type { OutputAccess } from "./output-access.js";
 import { readFileSync } from "node:fs";
-import { privateHtml } from "./private-html.js";
+import { websiteHtml } from "./website-html.js";
 
 export function createHostDispatcher(
   store: Store,
@@ -72,8 +72,12 @@ export function createHostDispatcher(
         ? store.files.path(id, path)
         : previews.path(id, path);
     if (!file) return res.sendStatus(404);
-    if (privateOutput && path.endsWith(".html"))
-      return res.type("html").send(privateHtml(readFileSync(file, "utf8")));
+    if (path.endsWith(".html"))
+      return res
+        .type("html")
+        .send(
+          websiteHtml(readFileSync(file, "utf8"), privateOutput, origin.origin),
+        );
     const mime: Record<string, string> = {
       html: "text/html",
       css: "text/css",

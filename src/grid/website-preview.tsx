@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { LoaderCircle } from "lucide-react";
+import { syncFrameScroll } from "./frame-scroll";
 import "./website-preview.css";
 
 export function WebsitePreview({
@@ -40,13 +41,20 @@ export function WebsitePreview({
             sandbox="allow-scripts"
             src={frame.url}
             style={{ visibility: frame.ready ? "visible" : "hidden" }}
-            onLoad={(event) => {
+            onLoad={async (event) => {
               const element = event.currentTarget;
               const count = (loads.current.get(element) ?? 0) + 1;
               loads.current.set(element, count);
               // Private navigation loads the trusted bootstrap first, then HTML.
-              if (!frame.ready && count >= (published ? 1 : 2))
-                setFrames([{ url: frame.url, ready: true }]);
+              if (!frame.ready && count >= (published ? 1 : 2)) {
+                const previous =
+                  element.parentElement?.querySelector<HTMLIFrameElement>(
+                    'iframe[aria-hidden="false"]',
+                  );
+                if (previous) await syncFrameScroll(previous, element);
+                if (element.isConnected)
+                  setFrames([{ url: frame.url, ready: true }]);
+              }
             }}
           />
         ))}
