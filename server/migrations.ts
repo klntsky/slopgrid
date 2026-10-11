@@ -43,6 +43,13 @@ const migrations: readonly Migration[] = [
       WHERE json_type(data, '$.input.budgetUsd') IS NULL;
     `,
   },
+  {
+    version: 5,
+    sql: `
+      UPDATE cells SET data=json_remove(data, '$.completions')
+      WHERE EXISTS (SELECT 1 FROM inference_calls WHERE cell_id=cells.id);
+    `,
+  },
 ];
 
 export function migrate(

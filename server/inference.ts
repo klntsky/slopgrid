@@ -25,14 +25,12 @@ export async function generateInference(
   cell: Cell,
   onChunk: (text: string) => void,
   signal?: AbortSignal,
-  onCompletion?: (completion: Completion, usage: Cell["usage"]) => void,
   observe?: CallObserver,
   budget?: TextBudget,
 ): Promise<{
   files: Record<string, string | Uint8Array>;
   mediaType?: string;
   usage?: Cell["usage"];
-  completions?: Completion[];
 }> {
   const phase: Completion["phase"] = format === "image" ? "image" : "direct";
   let call: CallRecorder | undefined;
@@ -57,13 +55,10 @@ export async function generateInference(
     return response;
   };
   try {
-    const completions: Completion[] = [];
     let usage: Cell["usage"];
     function recordCompletion(completion: Completion, current: Cell["usage"]) {
       call?.complete(completion, current);
-      completions.push(completion);
       usage = current;
-      onCompletion?.(completion, usage);
     }
     function requireSuccess(finishReason: string | undefined) {
       if (finishReason !== "stop")
@@ -127,7 +122,6 @@ export async function generateInference(
         },
         mediaType: result.image.mediaType,
         usage,
-        completions,
       };
     }
     if (!budget)
@@ -205,7 +199,6 @@ export async function generateInference(
     return {
       files: parseOutput(format, text),
       usage,
-      completions,
     };
   } catch (error) {
     call?.fail(error, signal?.aborted === true);

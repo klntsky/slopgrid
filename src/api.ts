@@ -1,7 +1,10 @@
 import type { Grid, Cell } from "../server/domain";
 export type ViewGrid = Omit<Grid, "owner" | "cells"> & {
   canEdit: boolean;
-  cells: (Cell & { outputURL?: string; previewURL?: string })[];
+  cells: (Omit<Cell, "budgetUsd" | "preview"> & {
+    outputURL?: string;
+    previewURL?: string;
+  })[];
 };
 export class ApiError extends Error {
   constructor(

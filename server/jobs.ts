@@ -155,7 +155,6 @@ export class Jobs {
       );
       this.lastAllocation.set(grid.owner, ++this.allocation);
       cell.status = "running";
-      delete cell.completions;
       delete cell.usage;
       delete cell.error;
       delete cell.errorCode;
@@ -254,18 +253,12 @@ export class Jobs {
           }
         },
         controller.signal,
-        (completion, usage) => {
-          if (controller.signal.aborted) return;
-          cell.completions = [...(cell.completions ?? []), completion];
-          cell.usage = usage;
-        },
         this.store.billing.observe(cell.id),
       );
       if (controller.signal.aborted) return;
       this.store.files.write(cell.id, result.files);
       cell.mediaType = result.mediaType;
       cell.usage = result.usage;
-      cell.completions = result.completions;
       cell.status = "complete";
       this.retries.delete(cell.id);
     } catch (error) {

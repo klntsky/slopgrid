@@ -3,13 +3,7 @@ import { generationBudget } from "./generation-budget.js";
 import { generateInference } from "./inference.js";
 import type { CallObserver } from "./billing.js";
 import { upstreamFetch } from "./http.js";
-import {
-  efforts,
-  instruction,
-  type Cell,
-  type Completion,
-  type GridInput,
-} from "./domain.js";
+import { efforts, instruction, type Cell, type GridInput } from "./domain.js";
 export type Model = {
   id: string;
   aliasTarget?: string;
@@ -145,13 +139,11 @@ export class Provider {
     cell: Cell,
     onChunk: (text: string) => void,
     signal?: AbortSignal,
-    onCompletion?: (completion: Completion, usage: Cell["usage"]) => void,
     observe?: CallObserver,
   ): Promise<{
     files: Record<string, string | Uint8Array>;
     mediaType?: string;
     usage?: Cell["usage"];
-    completions?: Completion[];
   }> {
     const pricedModel =
       format !== "image"
@@ -166,7 +158,6 @@ export class Provider {
       cell,
       onChunk,
       signal,
-      onCompletion,
       observe,
       pricedModel
         ? generationBudget(

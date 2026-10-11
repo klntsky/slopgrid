@@ -86,9 +86,7 @@ export class Billing {
       };
     };
   }
-  cell(
-    cellId: string,
-  ): { usage?: Cell["usage"]; completions?: Completion[] } | undefined {
+  cell(cellId: string): { usage?: Cell["usage"] } | undefined {
     const rows = this.db
       .prepare(
         `
@@ -102,9 +100,6 @@ export class Billing {
     const calls = rows.map((row) => JSON.parse(row.data) as CallDetails);
     const reported = calls.filter((call) => call.usage !== undefined);
     return {
-      completions: calls.flatMap((call) =>
-        call.completion ? [call.completion] : [],
-      ),
       usage: reported.length
         ? {
             inputTokens: reported.reduce(

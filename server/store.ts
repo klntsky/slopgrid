@@ -80,8 +80,7 @@ export class Store {
       );
       cells.forEach((cell, position) => {
         const recorded = !!hasCalls.get(cell.id);
-        const { status, error, errorCode, usage, mediaType, completions } =
-          cell;
+        const { status, error, errorCode, usage, mediaType } = cell;
         saveCell.run(
           cell.id,
           id,
@@ -92,7 +91,6 @@ export class Store {
             errorCode,
             usage: recorded ? undefined : usage,
             mediaType,
-            completions: recorded ? undefined : completions,
           }),
         );
       });

@@ -86,7 +86,6 @@ export type Cell = {
   draft?: string;
   preview?: { attempt: string; revision: number };
   usage?: { inputTokens?: number; outputTokens?: number; costUsd?: number };
-  completions?: Completion[];
 };
 export type Grid = {
   revision: number;

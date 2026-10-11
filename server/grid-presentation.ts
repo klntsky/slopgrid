@@ -14,8 +14,18 @@ export function createGridPresenter(
     owner: undefined,
     canEdit: g.owner === s.id,
     cells: g.cells.map((c) => ({
-      ...c,
-      preview: undefined,
+      id: c.id,
+      row: c.row,
+      column: c.column,
+      model: c.model,
+      effort: c.effort,
+      prompt: c.prompt,
+      status: c.status,
+      error: c.error,
+      errorCode: c.errorCode,
+      retrying: c.retrying,
+      mediaType: c.mediaType,
+      usage: c.usage,
       draft: g.input.format === "html" ? undefined : c.draft,
       previewURL:
         g.input.format === "html" && c.status === "running" && c.preview
