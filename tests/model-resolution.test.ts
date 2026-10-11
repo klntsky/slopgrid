@@ -1,11 +1,6 @@
+import { appFixture } from "./app-fixture.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createServer } from "node:http";
-import { once } from "node:events";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { createApp } from "../server/app.js";
 import { Provider, type Model } from "../server/provider.js";
 import { resolveGridModels } from "../server/model-resolution.js";
 import type { Cell, GridInput } from "../server/domain.js";
@@ -67,7 +62,7 @@ test("unresolvable or cyclic aliases fail explicitly instead of remaining dynami
   );
 });
 
-test("saved model IDs survive alias retargeting through retries, Edit, publishing, and Fork", async () => {
+test("saved model IDs survive alias retargeting through retries, Edit, publishing, and Fork", async (t) => {
   class FixtureProvider extends Provider {
     override async balanceUsd() {
       return 100;
@@ -91,25 +86,8 @@ test("saved model IDs survive alias retargeting through retries, Edit, publishin
       return { files: { "index.md": "Generated output" } };
     }
   }
-  const dir = mkdtempSync(join(tmpdir(), "slopgrid-alias-"));
-  const server = createServer();
-  server.listen(0, "127.0.0.1");
-  await once(server, "listening");
-  const port = (server.address() as { port: number }).port;
-  const origin = `http://127.0.0.1:${port}`;
   const provider = new FixtureProvider();
-  const { app, store } = createApp({
-    github: {
-      clientId: "route-test-client",
-      clientSecret: "route-test-secret",
-    },
-    origin,
-    outputDomain: `-slopgrid.localhost:${port}`,
-    database: join(dir, "app.sqlite"),
-    secret: Buffer.alloc(32, 7),
-    provider,
-  });
-  server.on("request", app);
+  const { origin, store } = await appFixture(t, { provider });
   const owner = "a".repeat(48);
   store.saveSession({ id: owner, key: "fixture-key", created: Date.now() });
   async function post(path: string, body?: unknown) {
@@ -126,33 +104,27 @@ test("saved model IDs survive alias retargeting through retries, Edit, publishin
     return response.json();
   }
   const settle = () => new Promise<void>((resolve) => setImmediate(resolve));
-  try {
-    const created = await post("/grids", input);
-    await settle();
-    assert.equal(store.get(created.id)!.input.model, "fixture/v1");
-    provider.target = "fixture/v2";
-    await post(`/grids/${created.id}/retry`);
-    await settle();
-    const edited = await post(`/grids/${created.id}/edit`);
-    assert.equal(edited.input.model, "fixture/v1");
-    await post("/grids", edited.input);
-    await post(`/grids/${created.id}/publish`, { visibility: "unlisted" });
-    const published = await (
-      await fetch(`${origin}/api/grids/${created.id}`)
-    ).json();
-    assert.equal(published.input.model, "fixture/v1");
-    await post("/grids", published.input);
-    await settle();
-    assert.deepEqual(provider.called, [
-      "fixture/v1",
-      "fixture/v1",
-      "fixture/v1",
-      "fixture/v1",
-    ]);
-    assert.ok(!JSON.stringify(store.all()).includes("~fixture/latest"));
-  } finally {
-    await new Promise<void>((resolve) => server.close(() => resolve()));
-    store.db.close();
-    rmSync(dir, { recursive: true, force: true });
-  }
+  const created = await post("/grids", input);
+  await settle();
+  assert.equal(store.get(created.id)!.input.model, "fixture/v1");
+  provider.target = "fixture/v2";
+  await post(`/grids/${created.id}/retry`);
+  await settle();
+  const edited = await post(`/grids/${created.id}/edit`);
+  assert.equal(edited.input.model, "fixture/v1");
+  await post("/grids", edited.input);
+  await post(`/grids/${created.id}/publish`, { visibility: "unlisted" });
+  const published = await (
+    await fetch(`${origin}/api/grids/${created.id}`)
+  ).json();
+  assert.equal(published.input.model, "fixture/v1");
+  await post("/grids", published.input);
+  await settle();
+  assert.deepEqual(provider.called, [
+    "fixture/v1",
+    "fixture/v1",
+    "fixture/v1",
+    "fixture/v1",
+  ]);
+  assert.ok(!JSON.stringify(store.all()).includes("~fixture/latest"));
 });

@@ -1,15 +1,12 @@
+import { appFixture } from "./app-fixture.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { once } from "node:events";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { Provider } from "../server/provider.js";
-import { createApp } from "../server/app.js";
 import type { Cell, GridInput } from "../server/domain.js";
 
-test("manual keys stay out of SQLite, serve queued cells, and require resending after Pause", async () => {
+test("manual keys stay out of SQLite, serve queued cells, and require resending after Pause", async (t) => {
   let remaining: number | null = 12;
   const upstream = createServer((req, res) => {
     res.setHeader("Content-Type", "application/json");
@@ -58,24 +55,10 @@ test("manual keys stay out of SQLite, serve queued cells, and require resending 
     }
   }
   const provider = new ControlledProvider(`http://127.0.0.1:${upstreamPort}`);
-  const directory = mkdtempSync(join(tmpdir(), "slopgrid-key-"));
-  const server = createServer();
-  server.listen(0, "127.0.0.1");
-  await once(server, "listening");
-  const origin = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
-  const { app, store, jobs } = createApp({
-    github: {
-      clientId: "route-test-client",
-      clientSecret: "route-test-secret",
-    },
-    origin,
-    outputDomain: "-outputs.example",
-    database: join(directory, "db.sqlite"),
-    secret: Buffer.alloc(32, 1),
+  const { origin, store, jobs } = await appFixture(t, {
     provider,
     workersMax: 1,
   });
-  server.on("request", app);
   let gridId: string | undefined;
   try {
     assert.equal(await provider.manualCredits("test-manual-key"), 12);
@@ -130,11 +113,6 @@ test("manual keys stay out of SQLite, serve queued cells, and require resending 
   } finally {
     if (gridId) jobs.pause(store.get(gridId)!);
     await new Promise((resolve) => setImmediate(resolve));
-    store.db.close();
-    await Promise.all([
-      new Promise<void>((resolve) => server.close(() => resolve())),
-      new Promise<void>((resolve) => upstream.close(() => resolve())),
-    ]);
-    rmSync(directory, { recursive: true, force: true });
+    await new Promise<void>((resolve) => upstream.close(() => resolve()));
   }
 });
