@@ -40,7 +40,9 @@ for (const [format, prompt] of Object.entries(prompts)) {
       .getByRole("button", { name: "Connect API key", exact: true })
       .click();
     await expect(page.getByText("Connected", { exact: true })).toBeVisible();
-    await page.getByLabel("Budget per cell ($)", { exact: true }).fill("0.001");
+    await page
+      .getByLabel("Budget limit per cell", { exact: true })
+      .fill("0.001");
     await page.getByRole("button", { name: "Generate", exact: true }).click();
     // A real account with low remaining credit must use the app's own continuation flow.
     await expect

@@ -8,6 +8,7 @@ import {
   PanelsTopLeft,
   Image,
   ArrowUpRight,
+  DollarSign,
 } from "lucide-react";
 import {
   efforts,
@@ -334,18 +335,25 @@ export function Create() {
           </div>
           <Connection returnTo="/" />
           {input.format !== "image" && (
-            <label htmlFor="cell-budget" ref={budgetHint}>
-              Budget per cell ($)
-              <input
-                id="cell-budget"
-                type="number"
-                min="0.01"
-                step="0.01"
-                value={input.budgetUsd}
-                onChange={(event) =>
-                  update({ budgetUsd: event.target.valueAsNumber })
-                }
-              />
+            <label
+              htmlFor="cell-budget"
+              className="budget-field"
+              ref={budgetHint}
+            >
+              Budget limit per cell
+              <span className="budget-input">
+                <DollarSign aria-hidden="true" />
+                <input
+                  id="cell-budget"
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={input.budgetUsd}
+                  onChange={(event) =>
+                    update({ budgetUsd: event.target.valueAsNumber })
+                  }
+                />
+              </span>
             </label>
           )}
           <button

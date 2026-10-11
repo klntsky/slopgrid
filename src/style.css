@@ -251,6 +251,26 @@ textarea {
   resize: vertical;
   line-height: 1.6;
 }
+.budget-field {
+  width: 180px;
+  max-width: 100%;
+}
+.budget-input {
+  position: relative;
+}
+.budget-input .lucide {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  color: var(--muted);
+  pointer-events: none;
+}
+.budget-input input {
+  padding-left: 37px;
+}
 fieldset {
   border: 0;
   padding: 0;

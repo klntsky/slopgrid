@@ -398,7 +398,7 @@ test("generation hints appear on keyboard focus before and after outputs finish"
       .getByLabel("Prompt", { exact: true })
       .fill("Draw $VARIABLE_ROW with $VARIABLE_COLUMN");
     await page.getByRole("button", { name: "Continue to key setup" }).click();
-    await page.getByLabel("Budget per cell ($)").focus();
+    await page.getByLabel("Budget limit per cell").focus();
     await expect(page.locator('.tippy-box[data-state="visible"]')).toHaveCount(
       1,
     );
@@ -1938,7 +1938,7 @@ test("a per-cell dollar budget defaults to five, changes the model token limit, 
     await page.getByRole("button", { name: "EDIT", exact: true }).click();
     await page.getByRole("button", { name: "Continue to prompt" }).click();
     await page.getByRole("button", { name: "Continue to key setup" }).click();
-    const budget = page.getByLabel("Budget per cell ($)", { exact: true });
+    const budget = page.getByLabel("Budget limit per cell", { exact: true });
     await expect(budget).toHaveValue("5");
     await budget.fill("2");
     await page.getByRole("button", { name: "Generate", exact: true }).click();
