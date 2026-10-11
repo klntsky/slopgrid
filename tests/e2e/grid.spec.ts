@@ -1914,3 +1914,50 @@ test("OpenRouter balance sets parallel capacity and Resume refreshes it after a 
     await request.post("/fixture/release", { data: { all: true } });
   }
 });
+
+test("a per-cell dollar budget defaults to five, changes the model token limit, and survives Edit", async ({
+  page,
+  request,
+}) => {
+  await page.route("**/api/grids", (route) =>
+    route.continue({
+      headers: {
+        ...route.request().headers(),
+        "X-Forwarded-For": "192.0.2.62",
+      },
+    }),
+  );
+  await request.post("/fixture/reset", { data: { holdGenerations: true } });
+  try {
+    await create(page, "Markdown", "cat", "hat");
+    await expect
+      .poll(
+        async () =>
+          (await (await request.get("/fixture/token-limits")).json()).length,
+      )
+      .toBe(1);
+    await page.getByRole("button", { name: "EDIT", exact: true }).click();
+    await page.getByRole("button", { name: "Continue to prompt" }).click();
+    await page.getByRole("button", { name: "Continue to key setup" }).click();
+    const budget = page.getByLabel("Budget per cell ($)", { exact: true });
+    await expect(budget).toHaveValue("5");
+    await budget.fill("2");
+    await page.getByRole("button", { name: "Generate", exact: true }).click();
+    await expectProgress(page, 0, 1);
+    await expect
+      .poll(
+        async () =>
+          (await (await request.get("/fixture/token-limits")).json()).length,
+      )
+      .toBe(2);
+    const limits = await (await request.get("/fixture/token-limits")).json();
+    expect(limits.at(-1).max_tokens).toBeLessThan(limits[0].max_tokens);
+    expect(limits.at(-1).max_tokens).toBeGreaterThan(0);
+    await page.getByRole("button", { name: "EDIT", exact: true }).click();
+    await page.getByRole("button", { name: "Continue to prompt" }).click();
+    await page.getByRole("button", { name: "Continue to key setup" }).click();
+    await expect(budget).toHaveValue("2");
+  } finally {
+    await request.post("/fixture/release", { data: { all: true } });
+  }
+});

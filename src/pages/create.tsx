@@ -344,6 +344,25 @@ export function Create() {
             <h2>Key setup</h2>
           </div>
           <Connection returnTo="/" />
+          {input.format !== "image" && (
+            <>
+              <label htmlFor="cell-budget">Budget per cell ($)</label>
+              <input
+                id="cell-budget"
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={input.budgetUsd ?? 5}
+                onChange={(event) =>
+                  update({ budgetUsd: event.target.valueAsNumber })
+                }
+              />
+              <p className="hint">
+                Estimated maximum cost per cell attempt, including thinking,
+                input, and draft/review.
+              </p>
+            </>
+          )}
           <button
             className="primary generate"
             disabled={
@@ -351,7 +370,9 @@ export function Create() {
               !connection.data?.connected ||
               !input.prompt.trim() ||
               !!unusedVariableIssue(input) ||
-              !catalog.data
+              !catalog.data ||
+              !Number.isFinite(input.budgetUsd ?? 5) ||
+              (input.budgetUsd ?? 5) <= 0
             }
             onClick={() => generate()}
           >

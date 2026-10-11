@@ -17,6 +17,9 @@ export type Model = {
   reasoning: boolean;
   reasoningMandatory: boolean;
   reasoningEfforts?: GridInput["effort"][];
+  pricing?: { prompt: number; completion: number; request?: number };
+  contextLength?: number;
+  maxCompletionTokens?: number;
 };
 export class Provider {
   constructor(readonly baseURL = "https://openrouter.ai/api/v1") {}
@@ -53,6 +56,9 @@ export class Provider {
       id: string;
       alias_target?: { slug?: string };
       name: string;
+      pricing?: { prompt?: string; completion?: string; request?: string };
+      context_length?: number;
+      top_provider?: { max_completion_tokens?: number | null };
       architecture?: {
         input_modalities?: string[];
         output_modalities?: string[];
@@ -90,10 +96,31 @@ export class Provider {
             (e === "none" ? !mandatory : supported.includes(e)),
         );
       }
+      const price = (value: string | undefined) => {
+        if (value === undefined || value.trim() === "") return undefined;
+        const parsed = Number(value);
+        return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+      };
+      const promptPrice = price(m.pricing?.prompt),
+        completionPrice = price(m.pricing?.completion);
       byId.set(m.id, {
         id: m.id,
         aliasTarget: previous?.aliasTarget ?? m.alias_target?.slug,
         name: m.name,
+        pricing:
+          previous?.pricing ??
+          (promptPrice !== undefined && completionPrice !== undefined
+            ? {
+                prompt: promptPrice,
+                completion: completionPrice,
+                request: price(m.pricing?.request),
+              }
+            : undefined),
+        contextLength: previous?.contextLength ?? m.context_length,
+        maxCompletionTokens:
+          previous?.maxCompletionTokens ??
+          m.top_provider?.max_completion_tokens ??
+          undefined,
         image: imageIds.has(m.id),
         text:
           previous?.text ||
@@ -124,6 +151,12 @@ export class Provider {
     usage?: Cell["usage"];
     completions?: Completion[];
   }> {
+    const pricedModel =
+      format !== "image" && cell.budgetUsd !== undefined
+        ? (await this.models()).find((model) => model.id === cell.model)
+        : undefined;
+    if (format !== "image" && cell.budgetUsd !== undefined && !pricedModel)
+      throw new Error(`Pricing is unavailable for ${cell.model}.`);
     return generateInference(
       this.baseURL,
       key,
@@ -133,6 +166,7 @@ export class Provider {
       signal,
       onCompletion,
       observe,
+      pricedModel,
     );
   }
 }

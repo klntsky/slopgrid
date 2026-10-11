@@ -6,6 +6,7 @@ import { mkdirSync } from "node:fs";
 import { createApp } from "../server/app.js";
 import { Provider } from "../server/provider.js";
 let balanceUsd = 100;
+let tokenLimits: { model: string; max_tokens: number }[] = [];
 let streamBilling = false;
 let omitReviewCost = false;
 let unsafe = false;
@@ -58,6 +59,9 @@ upstream.get("/api/v1/models", (_req, res) =>
       {
         id: "fixture/other",
         name: "Second model",
+        pricing: { prompt: "0.000003", completion: "0.00002" },
+        context_length: 1000000,
+        top_provider: { max_completion_tokens: 500000 },
         architecture: {
           input_modalities: ["text"],
           output_modalities: ["text"],
@@ -71,6 +75,9 @@ upstream.get("/api/v1/models", (_req, res) =>
       {
         id: "fixture/text",
         name: "Fixture text",
+        pricing: { prompt: "0.000003", completion: "0.00002" },
+        context_length: 1000000,
+        top_provider: { max_completion_tokens: 500000 },
         architecture: {
           input_modalities: ["text"],
           output_modalities: ["text"],
@@ -173,6 +180,7 @@ upstream.post("/api/v1/chat/completions", async (req, res) => {
       req.body.messages.find((m: { role: string }) => m.role === "system")
         ?.content ?? "",
     );
+  tokenLimits.push({ model: req.body.model, max_tokens: req.body.max_tokens });
   calls.push(prompt);
   await waitForRelease(prompt, res);
   if (res.destroyed) return;
@@ -335,6 +343,7 @@ app.post("/fixture/reset", (req, res) => {
   unsafe = !!req.body.unsafe;
   streamBilling = !!req.body.streamBilling;
   calls = [];
+  tokenLimits = [];
   svgProbes = [];
   res.json({ ok: true });
 });
@@ -362,6 +371,7 @@ app.post("/fixture/credits", (req, res) => {
   billing = false;
   res.json({ ok: true });
 });
+app.get("/fixture/token-limits", (_req, res) => res.json(tokenLimits));
 app.get("/fixture/calls", (_req, res) => res.json(calls));
 app.get("/svg-probe", (req, res) => {
   svgProbes.push(req.originalUrl);

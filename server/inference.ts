@@ -1,6 +1,8 @@
 import { generateText, generateImage, streamText } from "ai";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { z } from "zod";
+import type { Model } from "./provider.js";
+import { generationBudget } from "./generation-budget.js";
 import type { CallObserver, CallRecorder } from "./billing.js";
 import { upstreamFetch } from "./http.js";
 import {
@@ -26,6 +28,7 @@ export async function generateInference(
   signal?: AbortSignal,
   onCompletion?: (completion: Completion, usage: Cell["usage"]) => void,
   observe?: CallObserver,
+  pricedModel?: Model,
 ): Promise<{
   files: Record<string, string | Uint8Array>;
   mediaType?: string;
@@ -62,7 +65,27 @@ export async function generateInference(
   try {
     const completions: Completion[] = [];
     let usage: Cell["usage"];
+    let spent = 0;
+    let callBudget: ReturnType<typeof generationBudget> | undefined;
+    const budgetUsd = cell.budgetUsd ?? 5;
+    function budget(prompt: string) {
+      callBudget = pricedModel
+        ? generationBudget(
+            pricedModel,
+            prompt,
+            instruction(format),
+            budgetUsd - spent,
+          )
+        : undefined;
+      return callBudget?.maxOutputTokens;
+    }
     function recordCompletion(completion: Completion, current: Cell["usage"]) {
+      if (callBudget && pricedModel?.pricing)
+        spent +=
+          current?.costUsd ??
+          callBudget.inputCost +
+            (current?.outputTokens ?? callBudget.maxOutputTokens) *
+              pricedModel.pricing.completion;
       call?.complete(completion, current);
       completions.push(completion);
       usage =
@@ -153,9 +176,24 @@ export async function generateInference(
                 cell.effort === "none"
                   ? { enabled: false }
                   : { effort: cell.effort },
-              provider: { require_parameters: true },
             }
           : {},
+      ...(pricedModel?.pricing
+        ? {
+            provider: {
+              require_parameters: true,
+              max_price: {
+                prompt: pricedModel.pricing.prompt * 1000000,
+                completion: pricedModel.pricing.completion * 1000000,
+                ...(pricedModel.pricing.request !== undefined && {
+                  request: pricedModel.pricing.request,
+                }),
+              },
+            },
+          }
+        : cell.effort !== "default"
+          ? { provider: { require_parameters: true } }
+          : {}),
     });
     async function streamed(
       prompt: string,
@@ -166,6 +204,7 @@ export async function generateInference(
         model,
         system: instruction(format),
         prompt,
+        maxOutputTokens: budget(prompt),
         maxRetries: 0,
         abortSignal: signal,
         onError: ({ error }) => {
@@ -230,6 +269,7 @@ export async function generateInference(
           model,
           system: instruction(format),
           prompt: reviewPrompt,
+          maxOutputTokens: budget(reviewPrompt),
           maxRetries: 0,
           abortSignal: signal,
         });

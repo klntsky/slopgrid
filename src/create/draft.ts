@@ -11,6 +11,7 @@ const initial: Draft = {
     model: "",
     effort: "default",
     harness: "direct",
+    budgetUsd: 5,
   },
 };
 function readDraft(): Draft {
