@@ -1,7 +1,7 @@
 import { githubCredentials } from "./oauth.js";
 import { mkdirSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
-import express from "express";
+import { createFrontendRoutes } from "./frontend.js";
 import { createApp } from "./app.js";
 import { recoverInterruptedGrids } from "./recovery.js";
 const github = githubCredentials(
@@ -43,11 +43,7 @@ const { app, store, jobs } = createApp({
 jobs.previews.clearAll();
 recoverInterruptedGrids(store);
 if (production) {
-  app.use(express.static("dist"));
-  app.get(
-    ["/", "/grids", "/settings", "/billing", /^\/grid\/[a-f0-9]{48}$/],
-    (_req, res) => res.sendFile("index.html", { root: "dist" }),
-  );
+  app.use(createFrontendRoutes("dist"));
 } else {
   const { createServer } = await import("vite");
   const vite = await createServer({

@@ -5,6 +5,10 @@ import react from "@vitejs/plugin-react";
 const require = createRequire(import.meta.url);
 export default defineConfig({
   plugins: [react()],
+  build: {
+    // Open pages may still request lazy chunks from an earlier build.
+    emptyOutDir: false,
+  },
   resolve: {
     // The browser decoder uses innerHTML; select the DOM-free lookup table.
     alias: [

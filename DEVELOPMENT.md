@@ -22,6 +22,10 @@ The test creates and generates an anonymous grid, signs in through GitHub, verif
 
 Never editorialize user-facing text. When creating new UX surfaces, summarize the user-facing text in the conversation so the user can review it.
 
+## Frontend builds
+
+Vite retains previous files in `dist` during rebuilds so open pages can still fetch lazy chunks from their original build. The frontend router serves HTML with `Cache-Control: no-store`, hashed assets with immutable caching, and missing assets with `no-store` to avoid caching a temporary 404.
+
 ## Validation
 
 ```sh
