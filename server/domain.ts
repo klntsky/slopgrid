@@ -26,7 +26,7 @@ export const gridSchema = z
     columns: axis,
     model: z.string().min(1).max(200),
     effort: z.enum(efforts),
-    budgetUsd: z.number().finite().positive().default(5),
+    budgetUsd: z.number().finite().positive(),
   })
   .superRefine((g, c) => {
     const issue = (message: string) => c.addIssue({ code: "custom", message });
@@ -53,7 +53,7 @@ export const gridSchema = z
     if (g.prompt.includes("$VARIABLE_COLUMN") && g.columns.kind !== "variable")
       issue("Choose prompt variables for columns to use $VARIABLE_COLUMN");
   });
-export type GridInput = z.input<typeof gridSchema>;
+export type GridInput = z.infer<typeof gridSchema>;
 export function unusedVariableIssue(
   input: Pick<GridInput, "prompt" | "rows" | "columns">,
 ): string | undefined {
@@ -77,7 +77,7 @@ export type Cell = {
   model: string;
   effort: string;
   prompt: string;
-  budgetUsd?: number;
+  budgetUsd: number;
   status: "pending" | "running" | "complete" | "error";
   error?: string;
   errorCode?: string | number;
@@ -120,7 +120,7 @@ export function expandGrid(input: GridInput): Omit<Cell, "id">[] {
         prompt: input.prompt
           .replaceAll("$VARIABLE_ROW", () => r)
           .replaceAll("$VARIABLE_COLUMN", () => c),
-        budgetUsd: input.budgetUsd ?? 5,
+        budgetUsd: input.budgetUsd,
         status: "pending" as const,
       };
     }),

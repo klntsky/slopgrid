@@ -10,6 +10,7 @@ test("two prompt variables are replaced literally, including dollar signs in val
     columns: { kind: "variable", values: ["hat", "cape"] },
     model: "test/model",
     effort: "medium",
+    budgetUsd: 5,
   });
   assert.equal(cells.length, 4);
   assert.equal(cells[0].prompt, "Draw a $& cat with hat. a $& cat");
@@ -24,6 +25,7 @@ test("model and thinking axes determine each request independently", () => {
     columns: { kind: "model", values: ["a/model", "b/model"] },
     model: "a/model",
     effort: "medium",
+    budgetUsd: 5,
   });
   assert.deepEqual(
     cells.map((c) => [c.model, c.effort]),
@@ -44,6 +46,7 @@ test("rejects ambiguous axes, unresolved variables, image reasoning, and oversiz
     columns: { kind: "effort", values: ["low"] },
     model: "a",
     effort: "low",
+    budgetUsd: 5,
   };
   for (const invalid of [
     { ...base, columns: base.rows },
@@ -108,6 +111,7 @@ test("every enabled variable must be used before a grid can generate", () => {
     columns: { kind: "variable", values: ["hat"] },
     model: "fixture/text",
     effort: "none",
+    budgetUsd: 5,
   };
   assert.equal(gridSchema.safeParse(input).success, true);
   for (const prompt of ["Draw a cat", "$VARIABLE_ROW", "$VARIABLE_COLUMN"])

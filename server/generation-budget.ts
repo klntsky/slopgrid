@@ -33,5 +33,17 @@ export function generationBudget(
     throw new Error(
       `The cell budget is too small for ${model.name}. Increase it before generating.`,
     );
-  return { maxOutputTokens, inputCost };
+  return {
+    maxOutputTokens,
+    inputCost,
+    maxPrice: {
+      prompt: model.pricing.prompt * 1000000,
+      completion: model.pricing.completion * 1000000,
+      ...(model.pricing.request !== undefined && {
+        request: model.pricing.request,
+      }),
+    },
+  };
 }
+
+export type TextBudget = ReturnType<typeof generationBudget>;

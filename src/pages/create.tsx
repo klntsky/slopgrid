@@ -327,7 +327,7 @@ export function Create() {
                 type="number"
                 min="0.01"
                 step="0.01"
-                value={input.budgetUsd ?? 5}
+                value={input.budgetUsd}
                 onChange={(event) =>
                   update({ budgetUsd: event.target.valueAsNumber })
                 }
@@ -346,8 +346,8 @@ export function Create() {
               !input.prompt.trim() ||
               !!unusedVariableIssue(input) ||
               !catalog.data ||
-              !Number.isFinite(input.budgetUsd ?? 5) ||
-              (input.budgetUsd ?? 5) <= 0
+              !Number.isFinite(input.budgetUsd) ||
+              input.budgetUsd <= 0
             }
             onClick={() => generate()}
           >

@@ -87,6 +87,7 @@ function harness(limit?: number) {
       },
       model: "fixture/text",
       effort: "none",
+      budgetUsd: 5,
     };
     const g: Grid = {
       id: `${owner}/${name}`,

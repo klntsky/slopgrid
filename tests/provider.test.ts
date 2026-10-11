@@ -20,6 +20,9 @@ async function upstream(streamError?: Record<string, unknown>) {
   ].map((m) => ({
     ...m,
     name: m.id,
+    pricing: { prompt: "0.000003", completion: "0.00002" },
+    context_length: 1000000,
+    top_provider: { max_completion_tokens: 128000 },
     architecture: { input_modalities: ["text"], output_modalities: ["text"] },
     supported_parameters: ["reasoning", "reasoning_effort"],
   }));
@@ -84,6 +87,7 @@ function cell(model: string, effort: string): Cell {
     column: 0,
     model,
     effort,
+    budgetUsd: 5,
     prompt: "Draw a cat",
     status: "running",
   };
@@ -147,7 +151,10 @@ test("selected settings reach inference even when the catalog warns they are uns
     assert.equal(h.requests[0].reasoning, undefined);
     assert.deepEqual(h.requests[1].reasoning, { enabled: false });
     assert.deepEqual(h.requests[2].reasoning, { effort: "high" });
-    assert.deepEqual(h.requests[2].provider, { require_parameters: true });
+    assert.deepEqual(h.requests[2].provider, {
+      require_parameters: true,
+      max_price: { prompt: 3, completion: 20 },
+    });
     await h.provider.generate(
       "fixture-key",
       "markdown",

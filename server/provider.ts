@@ -1,9 +1,11 @@
 import { z } from "zod";
+import { generationBudget } from "./generation-budget.js";
 import { generateInference } from "./inference.js";
 import type { CallObserver } from "./billing.js";
 import { upstreamFetch } from "./http.js";
 import {
   efforts,
+  instruction,
   type Cell,
   type Completion,
   type GridInput,
@@ -152,10 +154,10 @@ export class Provider {
     completions?: Completion[];
   }> {
     const pricedModel =
-      format !== "image" && cell.budgetUsd !== undefined
+      format !== "image"
         ? (await this.models()).find((model) => model.id === cell.model)
         : undefined;
-    if (format !== "image" && cell.budgetUsd !== undefined && !pricedModel)
+    if (format !== "image" && !pricedModel)
       throw new Error(`Pricing is unavailable for ${cell.model}.`);
     return generateInference(
       this.baseURL,
@@ -166,7 +168,14 @@ export class Provider {
       signal,
       onCompletion,
       observe,
-      pricedModel,
+      pricedModel
+        ? generationBudget(
+            pricedModel,
+            cell.prompt,
+            instruction(format),
+            cell.budgetUsd,
+          )
+        : undefined,
     );
   }
 }

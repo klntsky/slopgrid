@@ -1,8 +1,7 @@
 import { generateImage, streamText } from "ai";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { z } from "zod";
-import type { Model } from "./provider.js";
-import { generationBudget } from "./generation-budget.js";
+import type { TextBudget } from "./generation-budget.js";
 import type { CallObserver, CallRecorder } from "./billing.js";
 import { upstreamFetch } from "./http.js";
 import {
@@ -28,7 +27,7 @@ export async function generateInference(
   signal?: AbortSignal,
   onCompletion?: (completion: Completion, usage: Cell["usage"]) => void,
   observe?: CallObserver,
-  pricedModel?: Model,
+  budget?: TextBudget,
 ): Promise<{
   files: Record<string, string | Uint8Array>;
   mediaType?: string;
@@ -131,6 +130,9 @@ export async function generateInference(
         completions,
       };
     }
+    if (!budget)
+      throw new Error("A priced token budget is required for text generation.");
+    const { maxOutputTokens, maxPrice } = budget;
     const model = provider.chat(cell.model, {
       extraBody:
         cell.effort !== "default"
@@ -141,22 +143,7 @@ export async function generateInference(
                   : { effort: cell.effort },
             }
           : {},
-      ...(pricedModel?.pricing
-        ? {
-            provider: {
-              require_parameters: true,
-              max_price: {
-                prompt: pricedModel.pricing.prompt * 1000000,
-                completion: pricedModel.pricing.completion * 1000000,
-                ...(pricedModel.pricing.request !== undefined && {
-                  request: pricedModel.pricing.request,
-                }),
-              },
-            },
-          }
-        : cell.effort !== "default"
-          ? { provider: { require_parameters: true } }
-          : {}),
+      provider: { require_parameters: true, max_price: maxPrice },
     });
     async function streamed(prompt: string): Promise<string> {
       let failure: unknown;
@@ -164,14 +151,7 @@ export async function generateInference(
         model,
         system: instruction(format),
         prompt,
-        maxOutputTokens: pricedModel
-          ? generationBudget(
-              pricedModel,
-              prompt,
-              instruction(format),
-              cell.budgetUsd ?? 5,
-            ).maxOutputTokens
-          : undefined,
+        maxOutputTokens,
         maxRetries: 0,
         abortSignal: signal,
         onError: ({ error }) => {

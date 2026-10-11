@@ -17,6 +17,7 @@ const input: GridInput = {
   columns: { kind: "variable", values: ["hat"] },
   model: "~fixture/latest",
   effort: "default",
+  budgetUsd: 5,
 };
 function models(target = "fixture/v1"): Model[] {
   return [

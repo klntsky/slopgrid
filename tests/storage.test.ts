@@ -17,6 +17,7 @@ test("outputs are real files and SQLite stores only configuration and cell state
       columns: { kind: "effort", values: ["none"] },
       model: "fixture/text",
       effort: "none",
+      budgetUsd: 5,
     };
     const grid: Grid = {
       id: "grid",

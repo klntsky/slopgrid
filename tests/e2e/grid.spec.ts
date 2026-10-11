@@ -515,6 +515,7 @@ test("unused prompt variables block setup, later edits block generation, and the
       columns: { kind: "variable", values: ["hat"] },
       model: "fixture/image",
       effort: "none",
+      budgetUsd: 5,
     },
   });
   expect(response.status()).toBe(400);
@@ -1165,6 +1166,7 @@ test("model IDs in row and column labels copy to the real clipboard", async ({
             : { kind: "effort", values: ["none"] },
         model,
         effort: "none",
+        budgetUsd: 5,
       },
     });
     expect(response.status()).toBe(201);
@@ -1227,6 +1229,7 @@ test("model compatibility warnings allow generation and resuming unfinished cell
       columns: { kind: "model", values: ["fixture/other"] },
       model: "fixture/text",
       effort: "default",
+      budgetUsd: 5,
     };
     const created = await page.request.post("/api/grids", { data: input });
     expect(created.status()).toBe(201);

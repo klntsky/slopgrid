@@ -36,6 +36,13 @@ const migrations: readonly Migration[] = [
       UPDATE grids SET data=json_remove(data, '$.input.harness');
     `,
   },
+  {
+    version: 4,
+    sql: `
+      UPDATE grids SET data=json_set(data, '$.input.budgetUsd', 5)
+      WHERE json_type(data, '$.input.budgetUsd') IS NULL;
+    `,
+  },
 ];
 
 export function migrate(
