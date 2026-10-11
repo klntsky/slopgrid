@@ -1661,12 +1661,25 @@ for (const [index, mode] of [
     });
     await request.post("/fixture/reset", {
       data: {
+        holdGenerations: true,
         transientFailures: 1,
         transientStatus: mode.code,
         transientStream: mode.stream,
       },
     });
     await create(page, mode.format, "cat\ndog", "hat");
+    await expectProgress(page, 0, 2);
+    await expect
+      .poll(
+        async () =>
+          (await (await request.get("/fixture/workers")).json()).held.length,
+      )
+      .toBe(2);
+    const { held }: { held: string[] } = await (
+      await request.get("/fixture/workers")
+    ).json();
+    for (const prompt of held)
+      await request.post("/fixture/release", { data: { prompt } });
     await expect(
       page.getByText("Waiting to retry…", { exact: true }),
     ).toBeVisible();
@@ -1679,6 +1692,7 @@ for (const [index, mode] of [
     await expect(
       page.getByRole("button", { name: "Pause generation" }),
     ).toBeVisible();
+    await request.post("/fixture/release", { data: { all: true } });
     await expectProgress(page, 2, 2);
     await expect(
       page.getByText("Waiting to retry…", { exact: true }),
