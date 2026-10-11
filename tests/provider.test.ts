@@ -17,6 +17,10 @@ async function upstream(streamError?: Record<string, unknown>) {
     { id: "all", reasoning: { mandatory: false, supported_efforts: null } },
     { id: "fixed", reasoning: { mandatory: true } },
     { id: "router" },
+    { id: "required:batch" },
+    { id: "~fixture/batch", alias_target: { slug: "required:batch" } },
+    { id: "all:batch:nitro" },
+    { id: "fixture/batch-friendly" },
   ].map((m) => ({
     ...m,
     name: m.id,
@@ -35,6 +39,14 @@ async function upstream(streamError?: Record<string, unknown>) {
             req.url === "/models"
               ? catalog
               : [
+                  {
+                    id: "image:batch",
+                    name: "Batch image model",
+                    architecture: {
+                      input_modalities: ["text"],
+                      output_modalities: ["image"],
+                    },
+                  },
                   {
                     id: "image",
                     name: "Image model",
@@ -205,6 +217,30 @@ test("streamed budget errors retain metadata and Retry-After for automatic backo
         return true;
       },
     );
+  } finally {
+    await h.close();
+  }
+});
+
+test("the live model catalog excludes batch variants from both upstream catalogs", async () => {
+  const h = await upstream();
+  try {
+    const models = await h.provider.models();
+    assert.ok(
+      !models.some((model) =>
+        [
+          "required:batch",
+          "all:batch:nitro",
+          "image:batch",
+          "~fixture/batch",
+        ].includes(model.id),
+      ),
+    );
+    for (const id of ["required", "all", "image", "fixture/batch-friendly"])
+      assert.ok(
+        models.some((model) => model.id === id),
+        `${id} remains available for live generation`,
+      );
   } finally {
     await h.close();
   }

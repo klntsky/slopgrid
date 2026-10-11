@@ -70,6 +70,12 @@ export class Provider {
     const imageIds = new Set(imageCatalog.data.map((m) => m.id));
     const byId = new Map<string, Model>();
     for (const m of [...textCatalog.data, ...imageCatalog.data]) {
+      if (
+        [m.id, m.alias_target?.slug].some((id) =>
+          id?.split(":").slice(1).includes("batch"),
+        )
+      )
+        continue;
       if (!m.architecture?.input_modalities?.includes("text")) continue;
       const previous = byId.get(m.id);
       const parameters = Array.isArray(m.supported_parameters)
