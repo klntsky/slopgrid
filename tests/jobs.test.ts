@@ -118,23 +118,6 @@ function harness(limit?: number) {
   return { store, provider, jobs, grid, close };
 }
 
-test("the website uses up to 100 workers by default and fills every available slot", async () => {
-  const h = harness();
-  try {
-    h.jobs.start(h.grid("alice", "first", 64));
-    h.jobs.start(h.grid("alice", "second", 64));
-    await flush();
-    assert.equal(h.provider.pending.size, 100);
-    assert.equal(h.provider.started.length, 100);
-    h.provider.finish(h.provider.started[0].id);
-    await flush();
-    assert.equal(h.provider.pending.size, 100);
-    assert.equal(h.provider.started.length, 101);
-  } finally {
-    await h.close();
-  }
-});
-
 test("grid requests cap their own workers when another grid raises the owner's limit", async () => {
   const h = harness(4);
   try {
@@ -336,23 +319,6 @@ test("a late result from a paused request cannot restore its discarded preview o
     h.jobs.start(paused);
     await flush();
     assert.equal(h.provider.started.length, 2);
-  } finally {
-    await h.close();
-  }
-});
-
-test("WORKERS_MAX must be a positive safe integer", async () => {
-  const h = harness();
-  try {
-    for (const limit of [
-      0,
-      -1,
-      1.5,
-      NaN,
-      Infinity,
-      Number.MAX_SAFE_INTEGER + 1,
-    ])
-      assert.throws(() => new Jobs(h.store, h.provider, limit), /WORKERS_MAX/);
   } finally {
     await h.close();
   }

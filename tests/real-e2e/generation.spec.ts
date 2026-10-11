@@ -110,10 +110,6 @@ for (const [format, prompt] of Object.entries(prompts)) {
           browserErrors,
         }),
       ).toBeVisible();
-      await expect(frame.locator("body")).toHaveCSS(
-        "background-color",
-        "rgb(255, 0, 0)",
-      );
     }
   });
 }

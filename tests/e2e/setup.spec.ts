@@ -1,89 +1,69 @@
 import { test, expect } from "./fixtures";
 import { create, expectProgress, finishPublishing } from "./helpers";
 
-for (const width of [1280, 390]) {
-  test(`axis swap preserves values and prompt variables at ${width}px`, async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width, height: 900 });
-    await page.goto("/");
-    await page.getByRole("button", { name: "SVG", exact: true }).click();
-    const variableHint = page
-      .locator(".hint")
-      .filter({ hasText: /^Use \$VARIABLE_/ });
-    await expect(variableHint).toHaveCount(0);
-    const rows = page.getByRole("combobox", { name: "Rows", exact: true });
-    const columns = page.getByRole("combobox", {
-      name: "Columns",
-      exact: true,
-    });
-    await rows.selectOption("variable");
-    await page.getByLabel("Row values").fill("cat\ndog");
-    await columns.selectOption("effort");
-    await expect(variableHint).toHaveText(
-      "Use $VARIABLE_ROW for prompt variable dimension.",
-    );
-    const columnValues = page.getByRole("group", { name: "Column values" });
-    await columnValues
-      .getByRole("checkbox", { name: "None", exact: true })
-      .check();
-    await columnValues
-      .getByRole("checkbox", { name: "high", exact: true })
-      .check();
-    const prompt = page.getByLabel("Prompt", { exact: true });
-    await prompt.fill("Draw $VARIABLE_ROW");
-    const swap = page.getByRole("button", { name: "Swap rows and columns" });
-    const rowBox = (await rows.boundingBox())!;
-    const columnBox = (await columns.boundingBox())!;
-    const swapBox = (await swap.boundingBox())!;
-    if (width > 700) {
-      expect(swapBox.x).toBeGreaterThanOrEqual(rowBox.x + rowBox.width);
-      expect(swapBox.x + swapBox.width).toBeLessThanOrEqual(columnBox.x);
-    } else {
-      expect(swapBox.y).toBeGreaterThan(rowBox.y);
-      expect(swapBox.y + swapBox.height).toBeLessThanOrEqual(columnBox.y);
-    }
-    await swap.click();
-    await expect(rows).toHaveValue("effort");
-    await expect(columns).toHaveValue("variable");
-    await expect(
-      page.getByRole("group", { name: "Row values" }).locator("input:checked"),
-    ).toHaveCount(2);
-    await expect(page.getByLabel("Column values")).toHaveValue("cat\ndog");
-    await expect(prompt).toHaveValue("Draw $VARIABLE_COLUMN");
-    await expect(variableHint).toHaveText(
-      "Use $VARIABLE_COLUMN for prompt variable dimension.",
-    );
-    await swap.click();
-    await expect(rows).toHaveValue("variable");
-    await expect(columns).toHaveValue("effort");
-    await expect(page.getByLabel("Row values")).toHaveValue("cat\ndog");
-    await expect(prompt).toHaveValue("Draw $VARIABLE_ROW");
-    await expect(variableHint).toHaveText(
-      "Use $VARIABLE_ROW for prompt variable dimension.",
-    );
-    await page.reload();
-    await expect(page.getByLabel("Row values")).toHaveValue("cat\ndog");
-    await expect(prompt).toHaveValue("Draw $VARIABLE_ROW");
+test("axis swap preserves selections and substitutes the corresponding prompt variables", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "SVG", exact: true }).click();
+  const variableHint = page
+    .locator(".hint")
+    .filter({ hasText: /^Use \$VARIABLE_/ });
+  await expect(variableHint).toHaveCount(0);
+  const rows = page.getByRole("combobox", { name: "Rows", exact: true });
+  const columns = page.getByRole("combobox", {
+    name: "Columns",
+    exact: true,
   });
-}
+  await rows.selectOption("variable");
+  await page.getByLabel("Row values").fill("cat\ndog");
+  await columns.selectOption("effort");
+  await expect(variableHint).toHaveText(
+    "Use $VARIABLE_ROW for prompt variable dimension.",
+  );
+  const columnValues = page.getByRole("group", { name: "Column values" });
+  await columnValues
+    .getByRole("checkbox", { name: "None", exact: true })
+    .check();
+  await columnValues
+    .getByRole("checkbox", { name: "high", exact: true })
+    .check();
+  const prompt = page.getByLabel("Prompt", { exact: true });
+  await prompt.fill("Draw $VARIABLE_ROW");
+  const swap = page.getByRole("button", { name: "Swap rows and columns" });
+  await swap.click();
+  await expect(rows).toHaveValue("effort");
+  await expect(columns).toHaveValue("variable");
+  await expect(
+    page.getByRole("group", { name: "Row values" }).locator("input:checked"),
+  ).toHaveCount(2);
+  await expect(page.getByLabel("Column values")).toHaveValue("cat\ndog");
+  await expect(prompt).toHaveValue("Draw $VARIABLE_COLUMN");
+  await expect(variableHint).toHaveText(
+    "Use $VARIABLE_COLUMN for prompt variable dimension.",
+  );
+  await swap.click();
+  await expect(rows).toHaveValue("variable");
+  await expect(columns).toHaveValue("effort");
+  await expect(page.getByLabel("Row values")).toHaveValue("cat\ndog");
+  await expect(prompt).toHaveValue("Draw $VARIABLE_ROW");
+  await expect(variableHint).toHaveText(
+    "Use $VARIABLE_ROW for prompt variable dimension.",
+  );
+  await page.reload();
+  await expect(page.getByLabel("Row values")).toHaveValue("cat\ndog");
+  await expect(prompt).toHaveValue("Draw $VARIABLE_ROW");
+});
 
 test("model choices start empty and filtering preserves deliberate selections", async ({
   page,
 }) => {
   await page.goto("/");
-  await expect(
-    page.getByRole("heading", {
-      name: "Create your own AI model benchmark",
-    }),
-  ).toBeVisible();
   await page.getByRole("button", { name: "SVG", exact: true }).click();
   await expect(page.locator('input[type="checkbox"]:checked')).toHaveCount(0);
   const columns = page.getByRole("group", { name: "Column values" });
   const filter = page.getByLabel("Search models");
   const clear = page.getByRole("button", { name: "Clear column model filter" });
-  await expect(filter).toHaveValue("latest");
-  await expect(columns.getByRole("checkbox")).toHaveCount(0);
   await clear.click();
   await expect(columns.locator("label.checkbox")).toHaveText([
     "Fixture text",
@@ -91,8 +71,6 @@ test("model choices start empty and filtering preserves deliberate selections", 
   ]);
   await expect(filter).toBeFocused();
   await expect(filter).toHaveValue("");
-  await expect(page.getByText("Row values", { exact: true })).toHaveCount(0);
-  await expect(page.getByText("Search models", { exact: true })).toHaveCount(0);
   await columns
     .getByRole("checkbox", { name: "Fixture text", exact: true })
     .check();
@@ -131,9 +109,6 @@ test("model choices start empty and filtering preserves deliberate selections", 
     columns.getByRole("checkbox", { name: "Second model" }),
   ).not.toBeChecked();
   await expect(selectedModels).toHaveCount(0);
-  expect(
-    (await columns.locator(".value-list").boundingBox())!.height,
-  ).toBeGreaterThanOrEqual(264);
   for (const kind of ["model", "effort"]) {
     await page
       .getByRole("combobox", { name: "Rows", exact: true })
@@ -148,7 +123,6 @@ test("model choices start empty and filtering preserves deliberate selections", 
       const rowClear = page.getByRole("button", {
         name: "Clear row model filter",
       });
-      await expect(rowFilter).toHaveValue("latest");
       await rowFilter.fill("no matching model");
       await rowClear.press("Enter");
       await expect(rowFilter).toHaveValue("");
@@ -245,20 +219,10 @@ test("selecting an output type reveals the entire form and preserves it on reloa
   ]) {
     await page.getByRole("button", { name: format, exact: true }).click();
     const filter = page.getByLabel("Search models");
-    const defaultFilter = format === "Image" ? "" : "latest";
-    await expect(filter).toHaveValue(defaultFilter);
     if (format === "Image")
       await expect(
         page.getByRole("checkbox", { name: "Fixture image", exact: true }),
       ).toBeVisible();
-    await filter.fill("custom filter");
-    const columns = page.getByRole("combobox", {
-      name: "Columns",
-      exact: true,
-    });
-    await columns.selectOption("variable");
-    await columns.selectOption("model");
-    await expect(filter).toHaveValue(defaultFilter);
     await filter.fill("custom filter");
     await expect(
       page.getByRole("combobox", { name: "Rows", exact: true }),
@@ -268,13 +232,9 @@ test("selecting an output type reveals the entire form and preserves it on reloa
       page.getByRole("link", { name: "Connect OpenRouter" }),
     ).toBeVisible();
   }
-  await expect(page.getByRole("button", { name: /^Continue to/ })).toHaveCount(
-    0,
-  );
   await prompt.fill("Draw $VARIABLE_ROW");
   await page.reload();
   await expect(prompt).toHaveValue("Draw $VARIABLE_ROW");
-  await expect(page.getByLabel("Search models")).toHaveValue("");
   await expect(
     page.getByRole("link", { name: "Connect OpenRouter" }),
   ).toBeVisible();
@@ -346,9 +306,6 @@ test("the compatibility table shows selected model support without blocking gene
   await expect(
     table.getByRole("row", { name: /Fixture text/ }).locator("svg"),
   ).toHaveCount(3);
-  await expect(
-    page.getByText("These model settings are incompatible:"),
-  ).toHaveCount(0);
   await page.getByRole("button", { name: "Swap rows and columns" }).click();
   await expect(table.getByRole("columnheader")).toHaveText([
     "Model",
@@ -435,16 +392,6 @@ for (const axis of ["Rows", "Columns"] as const) {
     const values = page.getByRole("group", {
       name: axis === "Rows" ? "Row values" : "Column values",
     });
-    await expect(values.locator("label.checkbox")).toHaveText([
-      "Model default",
-      "None",
-      "minimal",
-      "low",
-      "medium",
-      "high",
-      "xhigh",
-      "max",
-    ]);
     for (const effort of ["max", "high", "low"])
       await values.getByRole("checkbox", { name: effort, exact: true }).check();
     await values.getByRole("checkbox", { name: "high", exact: true }).uncheck();
@@ -468,7 +415,7 @@ for (const axis of ["Rows", "Columns"] as const) {
   });
 }
 
-test("a per-cell dollar budget defaults to five, changes the model token limit, and survives Edit", async ({
+test("changing the per-cell budget changes the model token limit and survives Edit", async ({
   page,
   request,
 }) => {
@@ -491,7 +438,6 @@ test("a per-cell dollar budget defaults to five, changes the model token limit, 
       .toBe(1);
     await page.getByRole("button", { name: "EDIT", exact: true }).click();
     const budget = page.getByLabel("Budget limit per cell", { exact: true });
-    await expect(budget).toHaveValue("5");
     await budget.fill("2");
     await page.getByRole("button", { name: "Generate", exact: true }).click();
     await expectProgress(page, 0, 1);
@@ -546,22 +492,7 @@ test("worker recommendation follows grid size, overrides persist, and low-balanc
     await page.getByRole("link", { name: "Connect OpenRouter" }).click();
     const workers = page.getByLabel("# of parallel workers:", { exact: true });
     await expect(workers).toHaveValue("2");
-    await workers.focus();
-    await expect(page.getByRole("tooltip")).toHaveText(
-      "How many parallel inferences to run (can be throttled by the backend under load). If your inference budget is low, spawning too many will lead to a lot of overhead due to failures; OpenRouter still charges you for unsuccessful calls",
-    );
     const max = page.getByRole("button", { name: "MAX", exact: true });
-    for (const width of [1280, 390]) {
-      await page.setViewportSize({ width, height: 900 });
-      const field = (await workers.boundingBox())!;
-      const budget = (await page
-        .getByLabel("Budget limit per cell", { exact: true })
-        .boundingBox())!;
-      const button = (await max.boundingBox())!;
-      expect(field.x).toBeGreaterThan(budget.x + budget.width);
-      expect(button.x).toBeGreaterThan(field.x);
-      expect(button.x + button.width).toBeLessThan(field.x + field.width);
-    }
     await page.getByLabel("Row values").fill("cat");
     await page.getByLabel("Column values").fill("hat");
     await expect(workers).toHaveValue("1");

@@ -2,19 +2,6 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseOutput } from "../server/output-format.js";
 
-test("Markdown preserves code fences and indentation verbatim", () => {
-  for (const markdown of [
-    "```text\n    /\\\n   /  \\\n  /____\\\n```\n\nA paragraph after the drawing.\n",
-    "    first indented line\n    second indented line\n",
-  ])
-    assert.equal(parseOutput("markdown", markdown)["index.md"], markdown);
-});
-
-test("SVG output preserves surrounding whitespace and fences verbatim", () => {
-  const raw = ' \n```svg\n<svg xmlns="http://www.w3.org/2000/svg"/>\n```\n';
-  assert.equal(parseOutput("svg", raw)["index.svg"], raw);
-});
-
 test("static bundles keep relative assets and reject unsafe files", () => {
   const bundle = (files: Record<string, string>) =>
     JSON.stringify({

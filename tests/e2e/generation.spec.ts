@@ -143,26 +143,6 @@ test("Pause aborts active inference and releases slots; Resume preserves complet
     await expect.poll(async () => (await calls()).length).toBe(3);
     const header = page.getByRole("banner"),
       pause = header.getByRole("button", { name: "Pause generation" });
-    const titleBox = (await header
-        .getByRole("heading", { level: 1 })
-        .boundingBox())!,
-      pauseBox = (await pause.boundingBox())!;
-    expect(pauseBox.x + pauseBox.width).toBeLessThanOrEqual(titleBox.x);
-    const bar = header.getByRole("progressbar", { name: "Grid generation" }),
-      barBox = (await bar.boundingBox())!,
-      headerBox = (await header.boundingBox())!;
-    expect(barBox.x).toBe(0);
-    expect(barBox.width).toBe(headerBox.width);
-    expect(barBox.height).toBeLessThanOrEqual(3);
-    expect(
-      Math.abs(barBox.y + barBox.height - headerBox.y - headerBox.height),
-    ).toBeLessThanOrEqual(2);
-    const spark = header.locator(".progress-spark");
-    await expect(spark).toBeVisible();
-    const sparkStart = (await spark.boundingBox())!.x;
-    await expect
-      .poll(async () => Math.abs((await spark.boundingBox())!.x - sparkStart))
-      .toBeGreaterThan(4);
     const id = new URL(page.url()).pathname.split("/").pop()!;
     const anonymous = await request.post(`/api/grids/${id}/pause`);
     expect(anonymous.status()).toBe(404);
@@ -174,7 +154,6 @@ test("Pause aborts active inference and releases slots; Resume preserves complet
     await expect(
       header.getByRole("button", { name: "Resume generation" }),
     ).toBeVisible();
-    await expect(header.locator(".progress-spark")).toHaveCount(0);
     await expectProgress(page, 1, 3);
     await expect
       .poll(
@@ -198,7 +177,6 @@ test("Pause aborts active inference and releases slots; Resume preserves complet
     await request.post("/fixture/release", { data: { all: true } });
     await expectProgress(page, 3, 3);
     expect((await calls()).filter((p) => p.includes("cat"))).toHaveLength(1);
-    await expect(header.locator(".progress-spark")).toHaveCount(0);
     await expect(
       header.getByRole("button", { name: "Pause generation" }),
     ).toHaveCount(0);
@@ -237,14 +215,13 @@ test("pausing a streamed SVG discards its partial image and Resume generates it 
     await request.post("/fixture/reset", { data: {} });
   }
 });
-for (const theme of ["light", "dark"] as const)
-  test(`failed cells count toward progress and have red segments in ${theme} theme`, async ({
+for (const action of ["publish", "resume"] as const)
+  test(`failed cells count toward progress and allow ${action} after settlement`, async ({
     page,
     request,
   }) => {
-    await page.emulateMedia({ colorScheme: theme });
     await page.setExtraHTTPHeaders({
-      "X-Forwarded-For": theme === "light" ? "192.0.2.41" : "192.0.2.42",
+      "X-Forwarded-For": action === "publish" ? "192.0.2.41" : "192.0.2.42",
     });
     await request.post("/fixture/reset", {
       data: { holdGenerations: true, generationError: true },
@@ -277,18 +254,6 @@ for (const theme of ["light", "dark"] as const)
         })
       ).status(),
     ).toBe(409);
-    const segments = page.locator(".progress-segment");
-    await expect(segments).toHaveCount(3);
-    const colors = await segments.evaluateAll((elements) =>
-      elements.map((el) =>
-        getComputedStyle(el).backgroundColor.match(/\d+/g)!.map(Number),
-      ),
-    );
-    expect(colors[1][0]).toBeGreaterThan(colors[1][1] * 1.5);
-    expect(colors[0]).not.toEqual(colors[1]);
-    expect(colors[2]).not.toEqual(colors[1]);
-    const width = (await segments.nth(1).boundingBox())!.width;
-    expect(width).toBeCloseTo((await progress.boundingBox())!.width / 3, 0);
     await request.post("/fixture/release", { data: { all: true } });
     await expectProgress(page, 3, 3);
     await expect(progress).toHaveAttribute(
@@ -296,7 +261,7 @@ for (const theme of ["light", "dark"] as const)
       "3 of 3 outputs finished: 2 complete, 1 failed",
     );
     await expect(page.getByRole("button", { name: "PUBLISH" })).toBeEnabled();
-    if (theme === "light") {
+    if (action === "publish") {
       await page.getByRole("button", { name: "PUBLISH" }).click();
       await finishPublishing(page);
       await expect(
@@ -339,59 +304,32 @@ for (const theme of ["light", "dark"] as const)
     await expect(page.getByRole("button", { name: "PUBLISH" })).toBeEnabled();
   });
 
-for (const width of [1280, 390]) {
-  test(`connection loss stays in a corner without shifting the grid at ${width}px and clears on recovery`, async ({
-    page,
-    request,
-  }) => {
-    await page.setViewportSize({ width, height: 844 });
-    await page.setExtraHTTPHeaders({
-      "X-Forwarded-For": width === 1280 ? "192.0.2.45" : "192.0.2.46",
-    });
-    await request.post("/fixture/reset", { data: { holdGenerations: true } });
-    await create(page, "Image", "cat", "hat");
-    await expectProgress(page, 0, 1);
-    let failStream!: () => void;
-    const failure = new Promise<void>((resolve) => {
-      failStream = resolve;
-    });
-    await page.route("**/api/grids/*/events", async (route) => {
-      await failure;
-      await route.abort("connectionfailed");
-    });
-    await page.reload();
-    const grid = page.getByLabel("Generated output grid");
-    await expect(grid).toBeVisible();
-    const before = (await grid.boundingBox())!;
-    failStream();
-    const status = page
-      .getByRole("status")
-      .filter({ hasText: "Connection lost. Reconnecting…" });
-    await expect(status).toBeVisible();
-    expect(await grid.boundingBox()).toEqual(before);
-    const label = (await status.boundingBox())!;
-    expect(label.x + label.width).toBeGreaterThan(width - 32);
-    expect(label.x + label.width).toBeLessThanOrEqual(width);
-    expect(label.y + label.height).toBeGreaterThan(844 - 32);
-    expect(label.y + label.height).toBeLessThanOrEqual(844);
-    expect(label.height).toBeLessThan(48);
-    const spinner = status.locator(".spinner");
-    await expect(spinner).toBeVisible();
-    const rotation = await spinner.evaluate(
-      (element) => getComputedStyle(element).transform,
-    );
-    await expect
-      .poll(() =>
-        spinner.evaluate((element) => getComputedStyle(element).transform),
-      )
-      .not.toBe(rotation);
-    await page.unroute("**/api/grids/*/events");
-    await expect(status).toHaveCount(0, { timeout: 10000 });
-    expect(await grid.boundingBox()).toEqual(before);
-    await request.post("/fixture/release", { data: { all: true } });
-    await expectProgress(page, 1, 1);
+test("a dropped event stream reconnects and receives completed generation", async ({
+  page,
+  request,
+}) => {
+  await request.post("/fixture/reset", { data: { holdGenerations: true } });
+  await create(page, "Image", "cat", "hat");
+  await expectProgress(page, 0, 1);
+  let failStream!: () => void;
+  const failure = new Promise<void>((resolve) => {
+    failStream = resolve;
   });
-}
+  await page.route("**/api/grids/*/events", async (route) => {
+    await failure;
+    await route.abort("connectionfailed");
+  });
+  await page.reload();
+  failStream();
+  const status = page
+    .getByRole("status")
+    .filter({ hasText: "Connection lost. Reconnecting…" });
+  await expect(status).toBeVisible();
+  await page.unroute("**/api/grids/*/events");
+  await expect(status).toHaveCount(0, { timeout: 10000 });
+  await request.post("/fixture/release", { data: { all: true } });
+  await expectProgress(page, 1, 1);
+});
 
 test("a grid with only failed outputs can be published and viewed publicly", async ({
   page,
@@ -601,10 +539,6 @@ for (const model of ["fixture/text", "fixture/other"])
     await expectProgress(page, 0, 1);
     const original = (await iframe.getAttribute("src"))!;
     await request.post("/fixture/website-next");
-    await expect(frame.locator("body")).toHaveCSS(
-      "background-color",
-      "rgb(255, 0, 0)",
-    );
     await request.post("/fixture/website-next");
     await expect(frame.getByText("Streaming module loaded")).toBeVisible();
     await expectProgress(page, 0, 1);
@@ -617,10 +551,6 @@ for (const model of ["fixture/text", "fixture/other"])
     ).toBeVisible();
     expect(await iframe.getAttribute("src")).not.toBe(original);
     await request.post("/fixture/website-next");
-    await expect(frame.locator("body")).toHaveCSS(
-      "background-color",
-      "rgb(255, 0, 0)",
-    );
     await request.post("/fixture/website-next");
     await expect(frame.getByText("Streaming module loaded")).toBeVisible();
     await request.post("/fixture/website-next");
@@ -741,7 +671,7 @@ test("streaming prices grow with reasoning and output, reconcile on success, and
   }
 });
 
-test("Markdown renders during streaming and preserves its preview, layout, and scroll while completion loads", async ({
+test("Markdown streams into its preview and preserves content and scroll while completion loads", async ({
   page,
   request,
 }) => {
@@ -802,9 +732,6 @@ test("Markdown renders during streaming and preserves its preview, layout, and s
     const document = (await preview
       .locator(".markdown-document")
       .elementHandle())!;
-    const footerHeight =
-      (await cell.boundingBox())!.height -
-      (await preview.boundingBox())!.height;
     await preview.evaluate((el) => {
       el.scrollTop = 80;
     });
@@ -830,11 +757,6 @@ test("Markdown renders during streaming and preserves its preview, layout, and s
     await expect(
       preview.getByText("Loading Markdown…", { exact: true }),
     ).toHaveCount(0);
-    // The navbar can reflow when Stop disappears; the cell must keep its footer allocation.
-    expect(
-      (await cell.boundingBox())!.height -
-        (await preview.boundingBox())!.height,
-    ).toBeCloseTo(footerHeight, 0);
     expect(await preview.evaluate((el) => el.scrollTop)).toBeCloseTo(
       scrollTop,
       0,

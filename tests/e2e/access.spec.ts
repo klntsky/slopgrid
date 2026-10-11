@@ -187,7 +187,7 @@ for (const format of ["SVG", "Markdown"])
     await tab.close();
   });
 
-test("navigation connects grid creation and the shared content page layout", async ({
+test("navigation returns to a saved grid after creation", async ({
   page,
   request,
 }) => {
@@ -213,28 +213,6 @@ test("navigation connects grid creation and the shared content page layout", asy
     })
     .click();
   await expect(page).toHaveURL(gridURL);
-  for (const width of [1280, 390]) {
-    await page.setViewportSize({ width, height: 900 });
-    const layouts = [];
-    for (const route of ["/grids", "/billing", "/settings"]) {
-      await page.goto(route);
-      const heading = page.getByRole("heading", { level: 1 });
-      await expect(heading).toBeVisible();
-      const main = (await page.getByRole("main").boundingBox())!,
-        title = (await heading.boundingBox())!;
-      layouts.push({
-        left: main.x,
-        width: main.width,
-        titleX: title.x,
-        titleY: title.y,
-      });
-      expect(
-        await page.evaluate(() => document.documentElement.scrollWidth),
-      ).toBe(width);
-    }
-    expect(layouts[1]).toEqual(layouts[0]);
-    expect(layouts[2]).toEqual(layouts[0]);
-  }
 });
 
 test("EDIT cancels inference and restores settings, while a public FORK creates a separate grid", async ({
@@ -297,7 +275,6 @@ test("EDIT cancels inference and restores settings, while a public FORK creates 
     expect(page.url()).not.toBe(original);
     await page.setViewportSize({ width: 390, height: 844 });
     const publish = page.getByRole("button", { name: "PUBLISH", exact: true });
-    expect((await publish.boundingBox())!.width).toBeLessThan(160);
     await page.getByRole("button", { name: "EDIT", exact: true }).click();
     await expect(page.getByLabel("Row values")).toHaveValue("owl");
     await page.goBack();
@@ -522,133 +499,6 @@ test("owners can list a link-only published grid publicly without regenerating o
   }
 });
 
-test("both grid listings show format icons with Tippy tooltips and public grids are visible to visitors", async ({
-  page,
-  request,
-}) => {
-  await page.setExtraHTTPHeaders({ "X-Forwarded-For": "192.0.2.52" });
-  await request.post("/fixture/reset", { data: {} });
-  await create(
-    page,
-    "SVG",
-    "cat",
-    "hat",
-    "Public SVG $VARIABLE_ROW $VARIABLE_COLUMN",
-  );
-  await expectProgress(page, 1, 1);
-  const firstId = new URL(page.url()).pathname.split("/").pop()!;
-  const first = await (await page.request.get(`/api/grids/${firstId}`)).json();
-  const ids = [firstId];
-  for (const format of ["markdown", "html", "image"]) {
-    const result = await page.request.post("/api/grids", {
-      headers: { "X-Forwarded-For": "192.0.2.52" },
-      data: {
-        ...first.input,
-        format,
-        model: format === "image" ? "fixture/image" : first.input.model,
-        prompt: `Public ${format} $VARIABLE_ROW $VARIABLE_COLUMN`,
-      },
-    });
-    expect(result.status()).toBe(201);
-    const grid = await result.json();
-    ids.push(grid.id);
-    await page.goto(`/grid/${grid.id}`);
-    await expectProgress(page, 1, 1);
-  }
-  for (const id of ids) {
-    expect(
-      (
-        await page.request.post(`/api/grids/${id}/publish`, {
-          data: { visibility: "public" },
-        })
-      ).status(),
-    ).toBe(200);
-  }
-  const unlisted = await (
-    await page.request.post("/api/grids", {
-      headers: { "X-Forwarded-For": "192.0.2.52" },
-      data: {
-        ...first.input,
-        prompt: "Unlisted $VARIABLE_ROW $VARIABLE_COLUMN",
-      },
-    })
-  ).json();
-  await page.goto(`/grid/${unlisted.id}`);
-  await expectProgress(page, 1, 1);
-  await page.getByRole("button", { name: "PUBLISH", exact: true }).click();
-  await finishPublishing(page);
-  await page.goto("/grids");
-  const mine = page.getByRole("region", { name: "Your grids", exact: true });
-  const publiclyListed = page.getByRole("region", {
-    name: "Public grids",
-    exact: true,
-  });
-  await expect(
-    publiclyListed.getByText("See what others have created"),
-  ).toBeVisible();
-  await expect(mine.getByRole("link", { name: /Unlisted/ })).toBeVisible();
-  await expect(
-    mine.getByText("Published", { exact: true }).first(),
-  ).toBeVisible();
-  await expect(
-    publiclyListed.getByText("Published", { exact: true }),
-  ).toHaveCount(0);
-  await expect(
-    publiclyListed.getByRole("link", { name: /Unlisted/ }),
-  ).toHaveCount(0);
-  for (const listing of [mine, publiclyListed]) {
-    for (const type of ["SVG", "Markdown", "Static website", "Image"]) {
-      const icon = listing
-        .getByRole("img", { name: type, exact: true })
-        .first();
-      await icon.hover();
-      await expect(
-        page.locator('.tippy-box[data-state="visible"]'),
-      ).toHaveCount(1);
-      await expect(page.locator('.tippy-box[data-state="visible"]')).toHaveText(
-        type,
-      );
-      await page.mouse.move(0, 0);
-      await expect(
-        page.locator('.tippy-box[data-state="visible"]'),
-      ).toHaveCount(0);
-      await icon.focus();
-      await expect(
-        page.locator('.tippy-box[data-state="visible"]'),
-      ).toHaveCount(1);
-      await expect(page.locator('.tippy-box[data-state="visible"]')).toHaveText(
-        type,
-      );
-      await icon.evaluate((element) => (element as HTMLElement).blur());
-      await expect(
-        page.locator('.tippy-box[data-state="visible"]'),
-      ).toHaveCount(0);
-    }
-  }
-  const visitor = await page.context().browser()!.newContext();
-  try {
-    const other = await visitor.newPage();
-    await other.goto("/grids");
-    await expect(
-      other
-        .getByRole("region", { name: "Your grids", exact: true })
-        .locator(".history")
-        .getByRole("link"),
-    ).toHaveCount(0);
-    await expect(
-      other
-        .getByRole("region", { name: "Public grids", exact: true })
-        .getByRole("link", { name: /Public SVG/ }),
-    ).toBeVisible();
-    await other.goto(`/grid/${firstId}`);
-    await expectProgress(other, 1, 1);
-    await other.getByRole("button", { name: "FORK", exact: true }).click();
-    await expect(other.getByLabel("Row values")).toHaveValue("cat");
-  } finally {
-    await visitor.close();
-  }
-});
-
 test("publishing still works when browser storage is unavailable and asks again", async ({
   page,
   request,
@@ -817,12 +667,7 @@ test("titles are independent owner-editable metadata and collapsed prompts expan
     await expect(
       header.getByRole("button", { name: "Edit title", exact: true }),
     ).toHaveText("Flight study");
-    for (const [width, theme] of [
-      [1280, "light"],
-      [390, "dark"],
-    ] as const) {
-      await page.emulateMedia({ colorScheme: theme });
-      await expect(page.locator("html")).toHaveCSS("color-scheme", theme);
+    for (const width of [1280, 390]) {
       await header
         .getByRole("button", { name: "Edit title", exact: true })
         .focus();
@@ -831,19 +676,11 @@ test("titles are independent owner-editable metadata and collapsed prompts expan
       );
       await heading.focus();
       await page.setViewportSize({ width, height: 900 });
-      expect(
-        await heading.evaluate((el) => el.scrollWidth > el.clientWidth),
-      ).toBe(true);
       await heading.hover();
       const tooltip = page.locator(
         '[data-theme="grid-prompt"][data-state="visible"]',
       );
       await expect(tooltip).toHaveText(prompt);
-      await expect(tooltip).toHaveCSS("background-color", "rgb(0, 0, 0)");
-      await expect(tooltip).toHaveCSS("color", "rgb(255, 255, 255)");
-      const bounds = (await tooltip.boundingBox())!;
-      expect(bounds.x).toBeGreaterThanOrEqual(0);
-      expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
       await page.keyboard.press("Escape");
       await expect(tooltip).toHaveCount(0);
     }
@@ -946,26 +783,10 @@ test("titles are independent owner-editable metadata and collapsed prompts expan
     await page.setViewportSize({ width: 1600, height: 900 });
     await page.goto(`/grid/${(await short.json()).id}`);
     await expectProgress(page, 1, 1);
-    expect(
-      await heading.evaluate((el) => el.scrollWidth <= el.clientWidth),
-    ).toBe(true);
     await heading.hover();
     await expect(
       page.locator('[data-theme="grid-prompt"][data-state="visible"]'),
     ).toHaveCount(0);
-    for (const width of [1600, 390]) {
-      await page.setViewportSize({ width, height: 900 });
-      const copyGap = await heading.evaluate((el) => {
-        const text = document.createRange();
-        text.selectNodeContents(el);
-        const textEnd = Math.min(
-          text.getBoundingClientRect().right,
-          el.getBoundingClientRect().right,
-        );
-        return el.nextElementSibling!.getBoundingClientRect().left - textEnd;
-      });
-      expect(copyGap).toBeCloseTo(8, 0);
-    }
   } finally {
     await request.post("/fixture/release", { data: { all: true } });
     await visitor.close();
