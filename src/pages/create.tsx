@@ -332,10 +332,6 @@ export function Create() {
                   update({ budgetUsd: event.target.valueAsNumber })
                 }
               />
-              <p className="hint">
-                Estimated maximum cost per cell attempt, including thinking, and
-                input.
-              </p>
             </>
           )}
           <button
