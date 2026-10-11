@@ -274,7 +274,8 @@ section {
 .axis-swap {
   align-self: start;
   margin-top: 24px;
-  padding: 11px;
+  padding: 12px;
+  color: var(--logo-color);
 }
 .axis-swap .lucide {
   width: 20px;
@@ -399,6 +400,9 @@ legend {
 }
 .connection {
   display: flex;
+  flex-wrap: wrap;
+  width: fit-content;
+  max-width: 100%;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
@@ -407,9 +411,6 @@ legend {
   border-radius: 5px;
   padding: 14px 16px;
   background: var(--panel);
-}
-.connection {
-  flex-wrap: wrap;
 }
 .connection-key-form {
   flex-basis: 100%;

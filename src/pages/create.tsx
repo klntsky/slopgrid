@@ -174,7 +174,7 @@ export function Create() {
                 />
                 <button
                   type="button"
-                  className="secondary axis-swap"
+                  className="text-button axis-swap"
                   aria-label="Swap rows and columns"
                   ref={swapHint}
                   onClick={() =>
@@ -286,7 +286,7 @@ export function Create() {
         <section>
           <div className="section-heading">
             <span className="number">04</span>
-            <h2>Key setup</h2>
+            <h2>Inference provider setup</h2>
           </div>
           <Connection returnTo="/" />
           <div className="generation-limits">
