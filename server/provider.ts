@@ -1,9 +1,10 @@
+import { instruction } from "./output-format.js";
 import { z } from "zod";
 import { generationBudget } from "./generation-budget.js";
 import { generateInference } from "./inference.js";
 import type { CallObserver } from "./billing.js";
 import { upstreamFetch } from "./http.js";
-import { efforts, instruction, type Cell, type GridInput } from "./domain.js";
+import { efforts, type Cell, type GridInput } from "./domain.js";
 export type Model = {
   id: string;
   aliasTarget?: string;

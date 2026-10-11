@@ -1,16 +1,11 @@
+import { instruction, parseOutput } from "./output-format.js";
 import { generateImage, streamText } from "ai";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { z } from "zod";
 import type { TextBudget } from "./generation-budget.js";
 import type { CallObserver, CallRecorder } from "./billing.js";
 import { upstreamFetch } from "./http.js";
-import {
-  instruction,
-  parseOutput,
-  type Cell,
-  type Completion,
-  type GridInput,
-} from "./domain.js";
+import { type Cell, type Completion, type GridInput } from "./domain.js";
 const costUsage = z.object({
   cost: z.number().finite().nonnegative().optional(),
 });
