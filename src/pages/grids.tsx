@@ -39,7 +39,9 @@ function GridListing({
               <span className="history-prompt">{g.title || g.prompt}</span>
             </Link>
             <Author identity={g.author} />
-            <small>{g.published ? "Published" : g.status}</small>
+            {!publicListing && (
+              <small>{g.published ? "Published" : g.status}</small>
+            )}
           </div>
         ))
       ) : (

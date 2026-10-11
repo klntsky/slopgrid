@@ -588,6 +588,12 @@ test("both grid listings show format icons with Tippy tooltips and public grids 
   ).toBeVisible();
   await expect(mine.getByRole("link", { name: /Unlisted/ })).toBeVisible();
   await expect(
+    mine.getByText("Published", { exact: true }).first(),
+  ).toBeVisible();
+  await expect(
+    publiclyListed.getByText("Published", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
     publiclyListed.getByRole("link", { name: /Unlisted/ }),
   ).toHaveCount(0);
   for (const listing of [mine, publiclyListed]) {
