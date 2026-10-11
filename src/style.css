@@ -289,18 +289,49 @@ legend {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 20px;
+  gap: 16px;
   margin-bottom: 24px;
   border: 1px solid var(--line);
   border-radius: 5px;
-  padding: 22px;
+  padding: 14px 16px;
   background: var(--panel);
 }
-.connection p {
+.connection-identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.connection-state {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 13px;
-  margin: 8px 0 0;
+  margin-top: 3px;
   color: var(--muted);
 }
+.connection-state .spinner {
+  width: 14px;
+  height: 14px;
+}
+.connection-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.connection-actions a:not(.button) {
+  font-size: 14px;
+}
+.connection-change {
+  color: var(--muted);
+}
+.connection-change[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .connection strong {
   font-size: 14px;
   font-weight: 550;
@@ -708,8 +739,9 @@ legend {
     gap: 10px;
   }
   .connection {
-    align-items: flex-start;
-    flex-direction: column;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 12px;
   }
   .actions {
     flex-wrap: wrap;

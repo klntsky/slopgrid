@@ -42,7 +42,7 @@ async function create(
   await page.getByLabel("Prompt", { exact: true }).fill(prompt);
   await page.getByRole("button", { name: "Continue to key setup" }).click();
   await page.getByRole("link", { name: "Connect OpenRouter" }).click();
-  await expect(page.getByText("OpenRouter connected")).toBeVisible();
+  await expect(page.getByText("Connected", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Generate", exact: true }).click();
 }
 
@@ -265,7 +265,7 @@ test("settings connects and disconnects OpenRouter without exposing a key to the
 }) => {
   await page.goto("/settings");
   await page.getByRole("link", { name: "Connect OpenRouter" }).click();
-  await expect(page.getByText("OpenRouter connected")).toBeVisible();
+  await expect(page.getByText("Connected", { exact: true })).toBeVisible();
   const session = await page.evaluate(
     async () => await (await fetch("/api/session")).json(),
   );
@@ -543,7 +543,6 @@ test("unused prompt variables block setup, later edits block generation, and the
     .fill("$VARIABLE_ROW $VARIABLE_COLUMN");
   await page.getByRole("button", { name: "Continue to key setup" }).click();
   const connect = page.getByRole("link", { name: "Connect OpenRouter" });
-  await expect(connect.locator("img")).toBeVisible();
   await connect.click();
   await expect(
     page.getByRole("button", { name: "Generate", exact: true }),

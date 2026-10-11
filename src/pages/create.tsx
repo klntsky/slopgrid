@@ -344,10 +344,6 @@ export function Create() {
             <h2>Key setup</h2>
           </div>
           <Connection returnTo="/" />
-          {new URLSearchParams(location.search).get("connection") ===
-            "failed" && (
-            <ErrorMessage error="OpenRouter connection failed. Connect again." />
-          )}
           <button
             className="primary generate"
             disabled={

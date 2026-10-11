@@ -43,6 +43,6 @@ Open **BILLING** to see every recorded inference attempt, including automatic re
 
 Open **SETTINGS** to choose **System**, **Light**, or **Dark** appearance. **System** is the default and follows your device’s current preference; explicit choices are saved in this browser and also apply in other open tabs.
 
-You can also connect, reconnect, or disconnect OpenRouter there. Generation uses your account's credits. Disconnecting prevents further requests; an already-running request may still finish.
+The OpenRouter row shows your connection status. Select **Connect** when disconnected; once connected, use **Disconnect** or **Change connection** in Settings. On the creation page, the connected row links to Settings. While the connection is being checked, the row shows that status, and a failed check offers **Check again** without claiming that you are disconnected. Generation uses your account's credits. Disconnecting prevents further requests; an already-running request may still finish.
 
 Generated websites run in an isolated sandbox. Static HTML, CSS, and JavaScript are supported; server-side code, network requests, forms, and browser cookies are blocked. Images and SVG render as images, with SVG scripts and external resources disabled. Opening an SVG output directly retains script and cookie restrictions, while Markdown previews also disable scripts and cookie access. Raw HTML in Markdown is shown as text.
