@@ -45,7 +45,6 @@ export function ZoomableGrid({
       const bounds = viewport.getBoundingClientRect();
       if (!table.dataset.resized) {
         table.style.width = `${viewport.clientWidth}px`;
-        table.style.height = `${viewport.clientHeight}px`;
       }
       const tableBounds = table.getBoundingClientRect();
       gesture = {
@@ -54,7 +53,6 @@ export function ZoomableGrid({
         minimum: Math.min(
           1,
           (viewport.clientWidth * scale) / tableBounds.width,
-          (viewport.clientHeight * scale) / tableBounds.height,
         ),
         anchor: {
           x: (viewport.scrollLeft + center.x - bounds.left) / scale,
@@ -94,12 +92,10 @@ export function ZoomableGrid({
       table.style.zoom = "";
       if (!table.dataset.resized) {
         table.style.width = "";
-        table.style.height = "";
       }
       if (hasTouch() && viewport.clientWidth) {
         if (!table.dataset.resized) {
           table.style.width = `${viewport.clientWidth}px`;
-          table.style.height = `${viewport.clientHeight}px`;
         }
         scale = Math.min(
           1,

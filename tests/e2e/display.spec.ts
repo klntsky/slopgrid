@@ -470,6 +470,9 @@ test.describe("mobile grid interaction", () => {
           touchPoints: points,
         });
       }
+      expect(
+        await grid.locator("table").evaluate((el) => el.style.height),
+      ).toBe("");
       const headings = (await grid.locator("thead").boundingBox())!;
       const y = headings.y + headings.height / 2;
       await touch("touchStart", [
@@ -485,6 +488,9 @@ test.describe("mobile grid interaction", () => {
         .poll(async () => (await cell.boundingBox())!.width)
         .toBeGreaterThan(before.width * 1.4);
       expect((await header.boundingBox())!.height).toBe(headerBefore.height);
+      expect(
+        await grid.locator("table").evaluate((el) => el.style.height),
+      ).toBe("");
       expect(await page.evaluate(() => visualViewport!.scale)).toBe(1);
       const left = await grid.evaluate((el) => el.scrollLeft);
       await touch("touchStart", [{ x: 290, y, id: 1 }]);
@@ -505,7 +511,7 @@ test.describe("mobile grid interaction", () => {
       await touch("touchEnd", []);
       await expect
         .poll(async () => (await cell.boundingBox())!.width)
-        .toBeLessThan(before.width * (layout === "wide grid" ? 1.01 : 0.8));
+        .toBeLessThan(before.width * 1.01);
       await expect(
         header.getByRole("button", { name: "PUBLISH" }),
       ).toBeEnabled();
@@ -521,10 +527,7 @@ test.describe("mobile grid interaction", () => {
         await touch("touchEnd", []);
         const viewport = (await grid.boundingBox())!,
           table = (await grid.locator("table").boundingBox())!;
-        const fit = Math.max(
-          table.width / viewport.width,
-          table.height / viewport.height,
-        );
+        const fit = table.width / viewport.width;
         expect(fit).toBeGreaterThanOrEqual(0.99);
         expect(fit).toBeLessThanOrEqual(1.01);
       }
@@ -560,6 +563,12 @@ test("saved output row sizes do not stretch the table header", async ({
   const heading = page.locator(".output-grid thead");
   const originalHeight = (await heading.boundingBox())!.height;
   expect(originalHeight).toBeLessThanOrEqual(70);
+  expect(
+    (await page.locator(".output-grid").boundingBox())!.height,
+  ).toBeLessThan(500);
+  expect(
+    (await page.locator(".output-grid tbody tr").boundingBox())!.height,
+  ).toBeCloseTo(390, 0);
   await expect(heading.locator('[data-resize-axis="rows"]')).toHaveCount(0);
   await page.evaluate((gridId) => {
     localStorage.setItem(
