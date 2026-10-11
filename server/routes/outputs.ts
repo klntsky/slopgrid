@@ -9,6 +9,39 @@ import { zip } from "fflate";
 import { downloadFilename } from "../download-filename.js";
 import { canViewGrid } from "../grid-policy.js";
 import type { SessionReader } from "../session.js";
+function outputFile(output: NonNullable<ReturnType<Store["outputMetadata"]>>) {
+  if (output.format !== "image")
+    return {
+      html: {
+        filename: "index.html",
+        mediaType: "text/html",
+        extension: "zip",
+      },
+      svg: {
+        filename: "index.svg",
+        mediaType: "image/svg+xml",
+        extension: "svg",
+      },
+      markdown: {
+        filename: "index.md",
+        mediaType: "text/markdown",
+        extension: "md",
+      },
+    }[output.format];
+  const extensions: Record<string, string> = {
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/webp": "webp",
+    "image/gif": "gif",
+    "image/avif": "avif",
+    "image/svg+xml": "svg",
+  };
+  return {
+    filename: "image",
+    mediaType: output.mediaType ?? "application/octet-stream",
+    extension: extensions[output.mediaType ?? ""] ?? "bin",
+  };
+}
 export function createOutputRoutes(
   store: Store,
   origin: URL,
@@ -25,34 +58,20 @@ export function createOutputRoutes(
     if (!output || !canViewGrid(output, session.read(req)))
       return res.sendStatus(404);
     res.locals.output = output;
+    res.locals.file = outputFile(output);
     next();
   });
   app.get("/outputs/:id/download", async (req, res) => {
     const id = String(req.params.id);
-    if (!/^[a-f0-9]{48}$/.test(id)) return res.sendStatus(404);
     if (!rate(`download:${req.ip}`, 100, 60000)) {
       res.set("Retry-After", "60");
       return res.status(429).send("Too many downloads. Try again in a minute.");
     }
     const output = store.outputDownload(id);
     if (!output) return res.sendStatus(404);
-    const imageExtensions: Record<string, string> = {
-      "image/png": "png",
-      "image/jpeg": "jpg",
-      "image/webp": "webp",
-      "image/gif": "gif",
-      "image/avif": "avif",
-      "image/svg+xml": "svg",
-    };
-    const extension =
-      output.format === "html"
-        ? "zip"
-        : output.format === "markdown"
-          ? "md"
-          : output.format === "svg"
-            ? "svg"
-            : (imageExtensions[output.mediaType ?? ""] ?? "bin");
-    res.set("Cache-Control", "no-store");
+    const { filename, mediaType, extension } = res.locals.file as ReturnType<
+      typeof outputFile
+    >;
     res.set("Content-Security-Policy", "sandbox; default-src 'none'");
     res.attachment(
       downloadFilename(
@@ -73,28 +92,12 @@ export function createOutputRoutes(
       });
       return res.type("application/zip").send(Buffer.from(archive));
     }
-    const file = store.files.path(
-      id,
-      output.format === "image"
-        ? "image"
-        : output.format === "svg"
-          ? "index.svg"
-          : "index.md",
-    );
+    const file = store.files.path(id, filename);
     if (!file) return res.sendStatus(404);
-    return res
-      .type(
-        output.format === "image"
-          ? (output.mediaType ?? "application/octet-stream")
-          : output.format === "svg"
-            ? "image/svg+xml"
-            : "text/markdown",
-      )
-      .sendFile(file, { dotfiles: "allow" });
+    return res.type(mediaType).sendFile(file, { dotfiles: "allow" });
   });
   app.get("/outputs/:id", (req, res) => {
     const id = String(req.params.id);
-    if (!/^[a-f0-9]{48}$/.test(id)) return res.sendStatus(404);
     if (!rate(`output:${req.ip}`, 2000, 60000)) {
       res.set("Retry-After", "60");
       return res.status(429).send("Too many requests. Try again in a minute.");
@@ -104,27 +107,17 @@ export function createOutputRoutes(
     >;
     if (output.status !== "complete" || output.format === "html")
       return res.sendStatus(404);
-    res.set("Cache-Control", "no-store");
     res.set(
       "Content-Security-Policy",
       `sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors ${origin.origin}`,
     );
-    const filename =
-      output.format === "image"
-        ? "image"
-        : output.format === "svg"
-          ? "index.svg"
-          : "index.md";
+    const { filename, mediaType } = res.locals.file as ReturnType<
+      typeof outputFile
+    >;
     const file = store.files.path(id, filename);
     if (!file) return res.sendStatus(404);
-    if (output.format === "image")
-      return res
-        .type(output.mediaType ?? "application/octet-stream")
-        .sendFile(file, { dotfiles: "allow" });
-    if (output.format === "svg")
-      return res.type("image/svg+xml").sendFile(file, { dotfiles: "allow" });
-    if (req.query.raw === "1")
-      return res.type("text/markdown").sendFile(file, { dotfiles: "allow" });
+    if (output.format !== "markdown" || req.query.raw === "1")
+      return res.type(mediaType).sendFile(file, { dotfiles: "allow" });
     const colorScheme =
       req.query.theme === "dark"
         ? "dark"
