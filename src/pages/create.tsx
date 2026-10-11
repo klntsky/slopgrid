@@ -31,6 +31,9 @@ export function Create() {
     formatSelected && connection.data?.connected === true,
   );
   const cellCount = input.rows.values.length * input.columns.values.length;
+  const promptVariables = (["rows", "columns"] as const)
+    .filter((axis) => input[axis].kind === "variable")
+    .map((axis) => (axis === "rows" ? "$VARIABLE_ROW" : "$VARIABLE_COLUMN"));
   const parallelWorkers = Math.min(
     cellCount,
     input.parallelWorkers ?? capacity.data?.parallelWorkers ?? 1,
@@ -272,10 +275,12 @@ export function Create() {
           <ErrorMessage
             error={input.prompt.trim() ? unusedVariableIssue(input) : undefined}
           />
-          <p className="hint">
-            Use $VARIABLE_ROW and $VARIABLE_COLUMN for prompt variable
-            dimensions.
-          </p>
+          {promptVariables.length > 0 && (
+            <p className="hint">
+              Use {promptVariables.join(" and ")} for prompt variable{" "}
+              {promptVariables.length === 1 ? "dimension" : "dimensions"}.
+            </p>
+          )}
         </section>
       )}
       {formatSelected && (

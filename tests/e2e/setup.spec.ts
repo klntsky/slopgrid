@@ -8,6 +8,10 @@ for (const width of [1280, 390]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto("/");
     await page.getByRole("button", { name: "SVG", exact: true }).click();
+    const variableHint = page
+      .locator(".hint")
+      .filter({ hasText: /^Use \$VARIABLE_/ });
+    await expect(variableHint).toHaveCount(0);
     const rows = page.getByRole("combobox", { name: "Rows", exact: true });
     const columns = page.getByRole("combobox", {
       name: "Columns",
@@ -16,6 +20,9 @@ for (const width of [1280, 390]) {
     await rows.selectOption("variable");
     await page.getByLabel("Row values").fill("cat\ndog");
     await columns.selectOption("effort");
+    await expect(variableHint).toHaveText(
+      "Use $VARIABLE_ROW for prompt variable dimension.",
+    );
     const columnValues = page.getByRole("group", { name: "Column values" });
     await columnValues
       .getByRole("checkbox", { name: "None", exact: true })
@@ -44,11 +51,17 @@ for (const width of [1280, 390]) {
     ).toHaveCount(2);
     await expect(page.getByLabel("Column values")).toHaveValue("cat\ndog");
     await expect(prompt).toHaveValue("Draw $VARIABLE_COLUMN");
+    await expect(variableHint).toHaveText(
+      "Use $VARIABLE_COLUMN for prompt variable dimension.",
+    );
     await swap.click();
     await expect(rows).toHaveValue("variable");
     await expect(columns).toHaveValue("effort");
     await expect(page.getByLabel("Row values")).toHaveValue("cat\ndog");
     await expect(prompt).toHaveValue("Draw $VARIABLE_ROW");
+    await expect(variableHint).toHaveText(
+      "Use $VARIABLE_ROW for prompt variable dimension.",
+    );
     await page.reload();
     await expect(page.getByLabel("Row values")).toHaveValue("cat\ndog");
     await expect(prompt).toHaveValue("Draw $VARIABLE_ROW");
@@ -167,6 +180,11 @@ test("unused prompt variables block generation and the API rejects bypasses", as
   await page
     .getByRole("combobox", { name: "Columns", exact: true })
     .selectOption("variable");
+  await expect(
+    page.locator(".hint").filter({ hasText: /^Use \$VARIABLE_/ }),
+  ).toHaveText(
+    "Use $VARIABLE_ROW and $VARIABLE_COLUMN for prompt variable dimensions.",
+  );
   await expect(
     page.getByRole("combobox", { name: "Model", exact: true }),
   ).toHaveValue("");
