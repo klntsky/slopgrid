@@ -143,8 +143,14 @@ header {
   gap: 11px;
   align-items: center;
 }
-.logo-grid {
+.logo-grid,
+.wordmark-grid {
   filter: var(--logo-filter);
+}
+.wordmark-grid {
+  color: #82755e;
+}
+.logo-grid {
   width: 30px;
   height: 30px;
 }

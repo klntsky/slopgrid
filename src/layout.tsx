@@ -47,7 +47,9 @@ export function Layout() {
         <header>
           <Link to="/grids" className="wordmark" aria-label="slopgrid">
             <img className="logo-grid" src="/slopgrid.svg" alt="" />
-            slopgrid
+            <span>
+              slop<span className="wordmark-grid">grid</span>
+            </span>
           </Link>
           {isGrid && <div className="grid-header-slot" ref={setHeaderTarget} />}
           <div className="navigation-controls">
