@@ -221,7 +221,7 @@ export class Provider {
         ? generationBudget(
             pricedModel,
             cell.prompt,
-            instruction(format, structured),
+            instruction(format),
             cell.budgetUsd,
           )
         : undefined,

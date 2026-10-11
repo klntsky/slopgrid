@@ -210,9 +210,10 @@ upstream.post("/api/v1/chat/completions", async (req, res) => {
       .json({ error: { code: 402, message: "Insufficient credits" } });
   const bundle = (files: Record<string, string>) =>
     JSON.stringify({
-      files: req.body.response_format
-        ? Object.entries(files).map(([path, content]) => ({ path, content }))
-        : files,
+      files: Object.entries(files).map(([path, content]) => ({
+        path,
+        content,
+      })),
     });
   const text = system.includes("image/svg+xml")
     ? unsafe
@@ -242,21 +243,13 @@ upstream.post("/api/v1/chat/completions", async (req, res) => {
     const css = "body { background: rgb(255, 0, 0); }";
     const js =
       'document.getElementById("module").textContent="Streaming module loaded";';
-    const chunks = req.body.response_format
-      ? [
-          '{"files":[{"path":"index.html","content":' +
-            JSON.stringify(html).slice(0, -1),
-          '"},{"path":"style.css","content":' +
-            JSON.stringify(css).slice(0, -1),
-          '"},{"path":"app.js","content":' + JSON.stringify(js).slice(0, -1),
-          '"}]}',
-        ]
-      : [
-          '{"files":{"index.html":' + JSON.stringify(html).slice(0, -1),
-          '","style.css":' + JSON.stringify(css).slice(0, -1),
-          '","app.js":' + JSON.stringify(js).slice(0, -1),
-          '"}}',
-        ];
+    const chunks = [
+      '{"files":[{"path":"index.html","content":' +
+        JSON.stringify(html).slice(0, -1),
+      '"},{"path":"style.css","content":' + JSON.stringify(css).slice(0, -1),
+      '"},{"path":"app.js","content":' + JSON.stringify(js).slice(0, -1),
+      '"}]}',
+    ];
     let release: (() => void) | undefined;
     res.once("close", () => release?.());
     for (let i = 0; i < chunks.length; i++) {

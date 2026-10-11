@@ -10,13 +10,12 @@ type Frame = {
 type StringToken = {
   frame: Frame;
   key: boolean;
-  file?: string;
   value: string;
   escape: boolean;
   unicode?: string;
 };
 
-/** Decode either website wire format as strings arrive, including unfinished values. */
+/** Decode website entries as strings arrive, including unfinished values. */
 export class PartialWebsite {
   readonly files: Record<string, string> = Object.create(null);
   readonly changed = new Set<string>();
@@ -40,10 +39,6 @@ export class PartialWebsite {
           token.frame.entry.content = token.value;
           publish(token.frame.entry.path, token.value);
         }
-      } else if (token.file) {
-        this.files[token.file] += value;
-        this.changed.add(token.file);
-        changed = true;
       }
     };
     for (; this.offset < source.length; this.offset++) {
@@ -95,24 +90,10 @@ export class PartialWebsite {
       const frame = this.frames.at(-1);
       if (char === '"' && frame) {
         const key = frame.object && frame.state === "key";
-        const file =
-          !key &&
-          frame.files &&
-          frame.object &&
-          frame.state === "value" &&
-          frame.key &&
-          safePath(frame.key)
-            ? frame.key
-            : undefined;
-        this.string = { frame, key, file, value: "", escape: false };
+        this.string = { frame, key, value: "", escape: false };
         if (!key && frame.entry && frame.key === "content") {
           frame.entry.content = "";
           publish(frame.entry.path, "");
-        }
-        if (file) {
-          this.files[file] = "";
-          this.changed.add(file);
-          changed = true;
         }
       } else if (char === "{" || char === "[") {
         this.frames.push({

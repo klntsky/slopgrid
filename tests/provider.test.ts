@@ -92,12 +92,10 @@ async function upstream(streamError?: Record<string, unknown>) {
       "complete static website",
     )
       ? JSON.stringify({
-          files: request.response_format
-            ? Object.entries(files).map(([path, content]) => ({
-                path,
-                content,
-              }))
-            : files,
+          files: Object.entries(files).map(([path, content]) => ({
+            path,
+            content,
+          })),
         })
       : "# Output";
     const midpoint = Math.floor(text.length / 2);

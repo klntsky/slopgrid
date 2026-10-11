@@ -121,7 +121,7 @@ export async function generateInference(
     let failure: unknown;
     const result = streamText({
       model,
-      system: instruction(format, structured),
+      system: instruction(format),
       ...(structured && {
         output: Output.object({ schema: websiteSchema, name: "website" }),
       }),
@@ -172,7 +172,7 @@ export async function generateInference(
     }
     requireSuccess(finishReason);
     return {
-      files: parseOutput(format, text, structured),
+      files: parseOutput(format, text),
       usage,
     };
   } catch (error) {

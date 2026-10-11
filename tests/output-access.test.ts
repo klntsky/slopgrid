@@ -59,7 +59,7 @@ test("private outputs require ownership, isolated grants are scoped and revoked 
     if (running)
       jobs.previews.update(
         cell,
-        '{"files":{"index.html":"<h1>Private preview</h1>"}}',
+        '{"files":[{"path":"index.html","content":"<h1>Private preview</h1>"}]}',
         () => {},
       );
     else
