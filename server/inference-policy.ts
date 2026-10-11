@@ -1,19 +1,28 @@
+import { manualKey, manualCredits } from "./manual-keys.js";
 import type { Request, Response } from "express";
 import type { Store, Session } from "./store.js";
 import type { Provider } from "./provider.js";
 
 export function createInferenceGuard(store: Store, provider: Provider) {
   async function allowInference(req: Request, res: Response, s: Session) {
-    let balanceUsd: number;
+    const supplied = manualKey(req);
+    let balanceUsd: number | null;
     try {
-      balanceUsd = await provider.balanceUsd(s.key!);
+      balanceUsd =
+        supplied !== undefined
+          ? await manualCredits(provider, supplied)
+          : await provider.balanceUsd(s.key!);
     } catch {
       res
         .status(502)
         .json({ error: "Could not check your OpenRouter balance. Try again." });
       return false;
     }
-    if (balanceUsd < 3 && req.body?.continueWithLowBalance !== true) {
+    if (
+      balanceUsd !== null &&
+      balanceUsd < 3 &&
+      req.body?.continueWithLowBalance !== true
+    ) {
       res.status(409).json({
         code: "LOW_BALANCE",
         balanceUsd,
@@ -24,13 +33,17 @@ export function createInferenceGuard(store: Store, provider: Provider) {
     }
     // Re-read the session so a concurrent OAuth or disconnect request is preserved.
     const current = store.session(s.id);
-    if (!current?.key || current.key !== s.key) {
+    if (
+      !current ||
+      (supplied === undefined && (!current.key || current.key !== s.key))
+    ) {
       res
         .status(401)
         .json({ error: "Reconnect OpenRouter before generating." });
       return false;
     }
-    current.inferenceConcurrency = Math.max(1, Math.floor(balanceUsd / 3));
+    current.inferenceConcurrency =
+      balanceUsd === null ? 1 : Math.max(1, Math.floor(balanceUsd / 3));
     store.saveSession(current);
     return true;
   }

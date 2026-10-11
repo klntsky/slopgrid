@@ -10,7 +10,7 @@ pnpm exec playwright install chromium
 pnpm dev
 ```
 
-Open http://localhost:3000. Chromium resolves HTML output hosts ending in `.localhost` to loopback. Images, Markdown, and SVG use paths on the application origin. OpenRouter OAuth supports localhost callbacks. The development server creates a SQLite database and encryption key under `.data/`; preserve both to retain sessions. No manually entered API-key flow exists.
+Open http://localhost:3000. Chromium resolves HTML output hosts ending in `.localhost` to loopback. Images, Markdown, and SVG use paths on the application origin. OpenRouter OAuth supports localhost callbacks. The development server creates a SQLite database and encryption key under `.data/`; preserve both to retain sessions. Manual API keys are entered through the shared connection control and saved only in browser localStorage. OAuth credentials retain their existing encrypted server-side storage.
 
 ## Interface text
 

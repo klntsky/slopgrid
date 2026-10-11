@@ -1902,3 +1902,81 @@ test("a per-cell dollar budget defaults to five, changes the model token limit, 
     await request.post("/fixture/release", { data: { all: true } });
   }
 });
+
+test("manual key entry persists in the browser, rejects invalid replacements, and supplies Generate and Resume", async ({
+  page,
+  request,
+}) => {
+  await page.route("**/api/grids", (route) =>
+    route.continue({
+      headers: {
+        ...route.request().headers(),
+        "X-Forwarded-For": "192.0.2.63",
+      },
+    }),
+  );
+  await request.post("/fixture/reset", { data: { holdGenerations: true } });
+  try {
+    await page.goto("/settings");
+    const otherTab = await page.context().newPage();
+    await otherTab.goto("/settings");
+    await page.getByRole("button", { name: "Use API key" }).click();
+    await page
+      .getByLabel("API key", { exact: true })
+      .fill("fixture-manual-key");
+    await page.getByRole("button", { name: "Connect API key" }).click();
+    await expect(page.getByText("Connected", { exact: true })).toBeVisible();
+    expect(await (await page.request.get("/api/session")).json()).toEqual({
+      connected: false,
+    });
+    await expect(
+      otherTab.getByText("Connected", { exact: true }),
+    ).toBeVisible();
+    await page.reload();
+    await expect(page.getByText("Connected", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Use API key" }).click();
+    await page.getByLabel("API key", { exact: true }).fill("invalid-key");
+    await page.getByRole("button", { name: "Connect API key" }).click();
+    await expect(page.getByRole("alert")).toHaveText(
+      "Invalid OpenRouter API key.",
+    );
+    await page.getByRole("button", { name: "Cancel", exact: true }).click();
+    await page.goto("/");
+    await page.getByRole("button", { name: "Markdown", exact: true }).click();
+    await page
+      .getByRole("combobox", { name: "Rows", exact: true })
+      .selectOption("variable");
+    await page.getByLabel("Row values").fill("cat");
+    await page
+      .getByRole("combobox", { name: "Columns", exact: true })
+      .selectOption("variable");
+    await page.getByLabel("Column values").fill("hat");
+    await page.getByRole("button", { name: "Continue to prompt" }).click();
+    await page
+      .getByLabel("Prompt", { exact: true })
+      .fill("Draw $VARIABLE_ROW with $VARIABLE_COLUMN");
+    await page.getByRole("button", { name: "Continue to key setup" }).click();
+    await page.getByRole("button", { name: "Generate", exact: true }).click();
+    await expectProgress(page, 0, 1);
+    await page.getByRole("button", { name: "Pause generation" }).click();
+    await page.getByRole("button", { name: "Resume generation" }).click();
+    await expect(page.getByText("Generating…", { exact: true })).toBeVisible();
+    await request.post("/fixture/release", { data: { all: true } });
+    await expectProgress(page, 1, 1);
+    await page.goto("/settings");
+    await page.getByRole("button", { name: "Disconnect OpenRouter" }).click();
+    await expect(
+      otherTab.getByText("Not connected", { exact: true }),
+    ).toBeVisible();
+    await otherTab.close();
+    await expect(
+      page.getByText("Not connected", { exact: true }),
+    ).toBeVisible();
+    await page.reload();
+    await expect(
+      page.getByText("Not connected", { exact: true }),
+    ).toBeVisible();
+  } finally {
+    await request.post("/fixture/release", { data: { all: true } });
+  }
+});

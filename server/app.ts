@@ -10,6 +10,7 @@ import { createRateLimiter } from "./rate-limit.js";
 import { createSessionReader } from "./session.js";
 import { createGridPresenter } from "./grid-presentation.js";
 import { createOutputRoutes } from "./routes/outputs.js";
+import { createManualKeyRoutes } from "./manual-keys.js";
 import { createAuthRoutes } from "./routes/auth.js";
 import { createModelRoutes } from "./routes/models.js";
 import { createGridRoutes } from "./routes/grids.js";
@@ -51,6 +52,7 @@ export function createApp(config: Config) {
       authURL: config.authURL,
     }),
   );
+  app.use(createManualKeyRoutes(provider, session, rate));
   app.use(createModelRoutes(provider));
   app.use(createBillingRoutes(store, session));
   app.use(createGridRoutes({ store, provider, jobs, session, rate, snapshot }));
