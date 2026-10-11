@@ -356,7 +356,9 @@ app.post("/fixture/release", (req, res) => {
   } else held.find((entry) => entry.prompt === req.body.prompt)?.release();
   res.json({ ok: true });
 });
-app.post("/fixture/credits", (_req, res) => {
+app.post("/fixture/credits", (req, res) => {
+  if (typeof req.body?.balanceUsd === "number")
+    balanceUsd = req.body.balanceUsd;
   billing = false;
   res.json({ ok: true });
 });

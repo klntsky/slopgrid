@@ -1875,3 +1875,42 @@ test("website bundles preview HTML, CSS, and JavaScript before completion, resta
   expect(await iframe.getAttribute("src")).not.toContain("__preview");
   expect((await request.get(original)).status()).toBe(404);
 });
+
+test("OpenRouter balance sets parallel capacity and Resume refreshes it after a top-up", async ({
+  page,
+  request,
+}) => {
+  await page.route("**/api/grids", (route) =>
+    route.continue({
+      headers: {
+        ...route.request().headers(),
+        "X-Forwarded-For": "192.0.2.61",
+      },
+    }),
+  );
+  await request.post("/fixture/reset", {
+    data: { balanceUsd: 5.99, holdGenerations: true },
+  });
+  const calls = async (): Promise<string[]> =>
+    (await request.get("/fixture/calls")).json();
+  try {
+    await create(page, "Image", "cat\ndog\nowl", "hat");
+    await expect(page.getByText("Generating…", { exact: true })).toHaveCount(1);
+    await expect(page.getByText("Queued", { exact: true })).toHaveCount(2);
+    expect(await calls()).toHaveLength(1);
+    await request.post("/fixture/release", {
+      data: { prompt: (await calls())[0] },
+    });
+    await expectProgress(page, 1, 3);
+    await expect.poll(async () => (await calls()).length).toBe(2);
+    await expect(page.getByText("Generating…", { exact: true })).toHaveCount(1);
+    await page.getByRole("button", { name: "Pause generation" }).click();
+    await request.post("/fixture/credits", { data: { balanceUsd: 6 } });
+    await page.getByRole("button", { name: "Resume generation" }).click();
+    await expect(page.getByText("Generating…", { exact: true })).toHaveCount(2);
+    await request.post("/fixture/release", { data: { all: true } });
+    await expectProgress(page, 3, 3);
+  } finally {
+    await request.post("/fixture/release", { data: { all: true } });
+  }
+});

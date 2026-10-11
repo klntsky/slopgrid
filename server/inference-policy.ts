@@ -30,8 +30,7 @@ export function createInferenceGuard(store: Store, provider: Provider) {
         .json({ error: "Reconnect OpenRouter before generating." });
       return false;
     }
-    if (balanceUsd < 3) current.inferenceConcurrency = 1;
-    else delete current.inferenceConcurrency;
+    current.inferenceConcurrency = Math.max(1, Math.floor(balanceUsd / 3));
     store.saveSession(current);
     return true;
   }
