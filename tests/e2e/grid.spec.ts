@@ -1320,7 +1320,7 @@ test("model IDs in row and column labels copy to the real clipboard", async ({
   }
 });
 
-test("model compatibility warnings allow generation and resuming unfinished cells", async ({
+test("the compatibility table shows selected model support without blocking generation or resume", async ({
   page,
   request,
 }) => {
@@ -1340,21 +1340,62 @@ test("model compatibility warnings allow generation and resuming unfinished cell
     .getByRole("group", { name: "Column values" })
     .getByRole("checkbox", { name: "Second model", exact: true })
     .check();
-  const warning = page.getByRole("alert");
-  await expect(warning).toContainText("Second model (fixture/other)");
-  await expect(warning).toContainText("requires thinking");
-  await expect(warning).toContainText('"max"');
-  await expect(warning).toContainText("low, medium, high");
-
+  await rows.getByRole("checkbox", { name: "high", exact: true }).check();
+  await page
+    .getByRole("group", { name: "Column values" })
+    .getByRole("checkbox", { name: "Fixture text", exact: true })
+    .check();
+  const table = page.getByRole("table", {
+    name: "Thinking effort compatibility",
+  });
+  await expect(table.getByRole("columnheader")).toHaveText([
+    "Model",
+    "None",
+    "high",
+    "max",
+  ]);
+  const limited = table.getByRole("row", { name: /Second model/ });
+  await expect(
+    limited
+      .getByRole("cell", { name: "None: Unsupported", exact: true })
+      .locator("svg"),
+  ).toHaveCount(0);
+  await expect(
+    limited
+      .getByRole("cell", { name: "high: Supported", exact: true })
+      .locator("svg"),
+  ).toHaveCount(1);
+  await expect(
+    limited
+      .getByRole("cell", { name: "max: Unsupported", exact: true })
+      .locator("svg"),
+  ).toHaveCount(0);
+  await expect(
+    table.getByRole("row", { name: /Fixture text/ }).locator("svg"),
+  ).toHaveCount(3);
+  await expect(
+    page.getByText("These model settings are incompatible:"),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "Swap rows and columns" }).click();
+  await expect(table.getByRole("columnheader")).toHaveText([
+    "Model",
+    "None",
+    "high",
+    "max",
+  ]);
+  await expect(table.getByRole("rowheader")).toHaveText([
+    "Second model",
+    "Fixture text",
+  ]);
   await page.getByRole("button", { name: "Continue to prompt" }).click();
   await page.getByLabel("Prompt", { exact: true }).fill("Draw a cat");
   await page.getByRole("button", { name: "Continue to key setup" }).click();
-  await expect(warning).toContainText('"max"');
+  await expect(table).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Generate", exact: true }),
   ).toBeEnabled();
   await page.getByRole("button", { name: "Generate", exact: true }).click();
-  await expectProgress(page, 2, 2);
+  await expectProgress(page, 6, 6);
   await request.post("/fixture/reset", { data: { holdGenerations: true } });
   try {
     const input = {

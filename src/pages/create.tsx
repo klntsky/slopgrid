@@ -13,17 +13,17 @@ import {
 } from "lucide-react";
 import {
   efforts,
-  expandGrid,
   unusedVariableIssue,
   type GridInput,
 } from "../../server/domain";
-import { compatibilityIssues, effortLabel } from "../../server/compatibility";
+import { effortLabel } from "../../server/compatibility";
 import type { Model } from "../../server/provider";
 import { api, ApiError, type ViewGrid } from "../api";
 import { queryClient, useConnection } from "../queries";
 import { formatNames } from "../format";
 import { useCreateDraft } from "../create/draft";
 import { AxisEditor } from "../create/axis-editor";
+import { CompatibilityTable } from "../create/compatibility-table";
 import { Connection } from "../components/connection";
 import { ErrorMessage } from "../components/error-message";
 import { LowBalanceDialog } from "../components/inference-dialogs";
@@ -98,9 +98,6 @@ export function Create() {
     }));
     setError("");
   }
-  const incompatibilities = catalog.data
-    ? compatibilityIssues(expandGrid(input), input.format, catalog.data)
-    : [];
   async function generate(continueWithLowBalance = false) {
     if (!catalog.data) return;
     const issue = unusedVariableIssue(input);
@@ -273,20 +270,7 @@ export function Create() {
                 columns ·{" "}
                 {input.rows.values.length * input.columns.values.length} outputs
               </p>
-              {incompatibilities.length > 0 && (
-                <div className="warning" role="alert">
-                  <p>These model settings are incompatible:</p>
-                  <ul>
-                    {incompatibilities.map((issue) => (
-                      <li key={issue}>{issue}</li>
-                    ))}
-                  </ul>
-                  <p>
-                    You can generate anyway; OpenRouter may reject these
-                    settings.
-                  </p>
-                </div>
-              )}
+              <CompatibilityTable input={input} models={catalog.data} />
               {step < 2 && (
                 <button
                   className="secondary"
