@@ -69,7 +69,7 @@ test("private outputs require ownership, isolated grants are scoped and revoked 
         const chunks: Buffer[] = [];
         for await (const chunk of response) chunks.push(chunk);
         resolve(
-          new Response(Buffer.concat(chunks), {
+          new Response(chunks.length ? Buffer.concat(chunks) : null, {
             status: response.statusCode,
             headers: Object.fromEntries(
               Object.entries(response.headers).map(([name, value]) => [
@@ -95,8 +95,18 @@ test("private outputs require ownership, isolated grants are scoped and revoked 
     );
     assert.equal(entry.status, 302);
     const grantPath = new URL(entry.headers.get("location")!).pathname;
-    const grant = await isolated(cellId, grantPath);
-    assert.equal(grant.status, 303, await grant.text());
+    const bootstrap = await get(grantPath, {
+      Host: `${cellId}-output.localhost:${port}`,
+      "Sec-Fetch-Mode": "navigate",
+    });
+    assert.equal(bootstrap.status, 200);
+    const grant = await get(grantPath, {
+      Host: `${cellId}-output.localhost:${port}`,
+      Origin: "null",
+    });
+    assert.equal(grant.status, 204, await grant.text());
+    assert.equal(grant.headers.get("access-control-allow-origin"), "null");
+    assert.equal(grant.headers.get("access-control-allow-credentials"), "true");
     const outputCookie = grant.headers.get("set-cookie")!;
     for (const flag of ["HttpOnly", "Secure", "SameSite=None", "Partitioned"])
       assert.ok(outputCookie.includes(flag));

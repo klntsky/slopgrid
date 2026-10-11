@@ -69,14 +69,15 @@ export function createOutputAccess(
       const id = req.path.slice("/__session/".length);
       const grant = grants.get(id);
       if (!grant || grant.cellId !== cellId) return res.sendStatus(404);
-      grants.delete(id);
       const output = store.outputMetadata(cellId);
       if (
         grant.expires <= Date.now() ||
         !output ||
         !canViewGrid(output, store.session(grant.sessionId))
-      )
+      ) {
+        grants.delete(id);
         return res.sendStatus(404);
+      }
       res.cookie(
         cookieName,
         encrypt(JSON.stringify([cellId, grant.sessionId]), secret),
@@ -88,6 +89,26 @@ export function createOutputAccess(
           path: "/",
         },
       );
+      if (req.get("sec-fetch-mode") === "navigate") {
+        // Navigation and opaque sandbox subresources use different cookie
+        // partitions on same-site hosts. Authorize both before loading assets.
+        res.set(
+          "Content-Security-Policy",
+          "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'",
+        );
+        return res
+          .type("html")
+          .send(
+            `<script>fetch(location.href,{credentials:"include"}).then(response=>{if(response.ok)location.replace(${JSON.stringify("/" + grant.path)})})</script>`,
+          );
+      }
+      grants.delete(id);
+      if (req.get("origin") === "null") {
+        res.set("Access-Control-Allow-Origin", "null");
+        res.set("Access-Control-Allow-Credentials", "true");
+        res.vary("Origin");
+        return res.sendStatus(204);
+      }
       res.redirect(303, "/" + grant.path);
     },
     read(req: Request, cellId: string) {

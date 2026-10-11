@@ -54,6 +54,7 @@ test("drafts, mutation endpoints, and generated hosts enforce ownership and orig
   // A direct output tab must be isolated too, without relying on the iframe sandbox.
   const outputTab = await page.context().newPage();
   await outputTab.goto(output!);
+  await outputTab.waitForURL((url) => url.pathname === "/index.html");
   expect(
     await outputTab.evaluate(() => {
       try {
