@@ -33,3 +33,5 @@ OAuth attempts share return-path, state, and expiry policy. `oauth4webapi` gener
 Grid ownership and publication rules live in `server/grid-policy.ts`. Grid routes share access lookup and apply publication only after policy validation. The client publishing widget owns its TanStack mutation and updates grid and list queries.
 
 Creation and grid retry/pause actions share a TanStack inference mutation hook for request credentials, pending state, failures, and low-balance confirmation. Creation, editing, and successful generation use the same draft-storage helpers.
+
+New grids never select a model from catalog order. Generation requires a deliberate fixed model or model-axis selection; the unused fixed-model field is empty for model-axis grids.

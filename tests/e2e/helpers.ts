@@ -37,10 +37,11 @@ export async function create(
     .getByRole("combobox", { name: "Columns", exact: true })
     .selectOption("variable");
   await page.getByLabel("Column values").fill(columns);
-  if (model)
-    await page
-      .getByRole("combobox", { name: "Model", exact: true })
-      .selectOption(model);
+  await page
+    .getByRole("combobox", { name: "Model", exact: true })
+    .selectOption(
+      model ?? (format === "Image" ? "fixture/image" : "fixture/text"),
+    );
   await page.getByRole("button", { name: "Continue to prompt" }).click();
   await page.getByLabel("Prompt", { exact: true }).fill(prompt);
   await page.getByRole("button", { name: "Continue to key setup" }).click();

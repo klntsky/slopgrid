@@ -81,3 +81,27 @@ test("every enabled variable must be used before a grid can generate", () => {
   for (const prompt of ["Draw a cat", "$VARIABLE_ROW", "$VARIABLE_COLUMN"])
     assert.equal(gridSchema.safeParse({ ...input, prompt }).success, false);
 });
+
+test("generation requires an explicit fixed model or selected model axis", () => {
+  const input = {
+    format: "markdown",
+    prompt: "$VARIABLE_ROW",
+    model: "",
+    effort: "default",
+    budgetUsd: 5,
+    rows: { kind: "variable", values: ["cat"] },
+    columns: { kind: "effort", values: ["none"] },
+  };
+  assert.equal(gridSchema.safeParse(input).success, false);
+  assert.equal(
+    gridSchema.safeParse({ ...input, model: "fixture/text" }).success,
+    true,
+  );
+  assert.equal(
+    gridSchema.safeParse({
+      ...input,
+      columns: { kind: "model", values: ["fixture/text"] },
+    }).success,
+    true,
+  );
+});

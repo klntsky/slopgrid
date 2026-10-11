@@ -1,5 +1,5 @@
 import { useInferenceMutation } from "../use-inference-mutation";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
@@ -65,38 +65,19 @@ export function Create() {
         a.name.localeCompare(b.name, "en", { sensitivity: "base" }) ||
         a.id.localeCompare(b.id, "en"),
     );
-  useEffect(() => {
-    if (step >= 1 && !input.model && models.length) {
-      const first = models[0];
-      setDraft((d) => ({
-        ...d,
-        input: {
-          ...d.input,
-          model: first.id,
-          effort: "default",
-        },
-      }));
-    }
-  }, [catalog.data, input.format, input.model, step]);
   function selectFormat(format: GridInput["format"]) {
     inference.reset();
-    const compatible = (catalog.data ?? []).filter((m) =>
-        format === "image" ? m.image : m.text,
-      ),
-      first = compatible[0];
     setDraft((d) => ({
       step: Math.max(1, d.step),
       input: {
         ...d.input,
         format,
-        model: first?.id ?? "",
+        model: "",
         effort: "default",
         rows:
           format === "image"
             ? { kind: "variable", values: ["cat", "dog"] }
-            : first?.reasoning
-              ? { kind: "effort", values: [] }
-              : { kind: "variable", values: ["cat", "dog"] },
+            : { kind: "effort", values: [] },
         columns: {
           kind: "model",
           values: [],
@@ -105,8 +86,10 @@ export function Create() {
     }));
     setError("");
   }
+  const modelMissing =
+    ![input.rows.kind, input.columns.kind].includes("model") && !input.model;
   function generate(continueWithLowBalance = false) {
-    if (!catalog.data) return;
+    if (!catalog.data || modelMissing) return;
     const issue = unusedVariableIssue(input);
     if (issue) {
       setError(issue);
@@ -348,6 +331,7 @@ export function Create() {
             className="primary generate"
             disabled={
               busy ||
+              modelMissing ||
               !connection.data?.connected ||
               !input.prompt.trim() ||
               !!unusedVariableIssue(input) ||

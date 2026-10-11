@@ -169,6 +169,9 @@ test("unused prompt variables block setup, later edits block generation, and the
   await page
     .getByRole("combobox", { name: "Columns", exact: true })
     .selectOption("variable");
+  await expect(
+    page.getByRole("combobox", { name: "Model", exact: true }),
+  ).toHaveValue("");
   await page.getByRole("button", { name: "Continue to prompt" }).click();
   for (const prompt of ["Draw a cat", "$VARIABLE_ROW", "$VARIABLE_COLUMN"]) {
     await page.getByLabel("Prompt", { exact: true }).fill(prompt);
@@ -184,6 +187,12 @@ test("unused prompt variables block setup, later edits block generation, and the
   await page.getByRole("button", { name: "Continue to key setup" }).click();
   const connect = page.getByRole("link", { name: "Connect OpenRouter" });
   await connect.click();
+  await expect(
+    page.getByRole("button", { name: "Generate", exact: true }),
+  ).toBeDisabled();
+  await page
+    .getByRole("combobox", { name: "Model", exact: true })
+    .selectOption("fixture/image");
   await expect(
     page.getByRole("button", { name: "Generate", exact: true }),
   ).toBeEnabled();

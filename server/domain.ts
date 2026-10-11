@@ -24,12 +24,14 @@ export const gridSchema = z
     prompt: z.string().trim().min(1).max(20000),
     rows: axis,
     columns: axis,
-    model: z.string().min(1).max(200),
+    model: z.string().trim().max(200),
     effort: z.enum(efforts),
     budgetUsd: z.number().finite().positive(),
   })
   .superRefine((g, c) => {
     const issue = (message: string) => c.addIssue({ code: "custom", message });
+    if (![g.rows.kind, g.columns.kind].includes("model") && !g.model)
+      issue("Select a model.");
     if (g.rows.kind === g.columns.kind && g.rows.kind !== "variable")
       issue("Choose different row and column dimensions");
     if (g.rows.values.length * g.columns.values.length > 64)

@@ -34,11 +34,8 @@ export function resolveGridModels(
       : { ...value, values: [...value.values] };
   const rows = axis(input.rows),
     columns = axis(input.columns);
-  const model =
-    rows.kind === "model"
-      ? rows.values[0]
-      : columns.kind === "model"
-        ? columns.values[0]
-        : resolve(input.model);
+  const model = [rows.kind, columns.kind].includes("model")
+    ? ""
+    : resolve(input.model);
   return { ...input, model, rows, columns };
 }

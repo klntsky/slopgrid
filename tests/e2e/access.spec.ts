@@ -682,6 +682,9 @@ test("manual key entry persists in the browser, rejects invalid replacements, an
       .getByRole("combobox", { name: "Columns", exact: true })
       .selectOption("variable");
     await page.getByLabel("Column values").fill("hat");
+    await page
+      .getByRole("combobox", { name: "Model", exact: true })
+      .selectOption("fixture/text");
     await page.getByRole("button", { name: "Continue to prompt" }).click();
     await page
       .getByLabel("Prompt", { exact: true })
