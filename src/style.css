@@ -584,6 +584,9 @@ legend {
   border-right: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
 }
+.output-grid thead tr {
+  height: 1px;
+}
 .output-grid thead th {
   position: sticky;
   top: 0;

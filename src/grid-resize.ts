@@ -13,7 +13,6 @@ export function useGridResize(
     const headingRow = table.tHead!.rows[0];
     const rows = Array.from(table.tBodies[0].rows);
     const headingWidth = headingRow.cells[0].offsetWidth;
-    const headingHeight = headingRow.offsetHeight;
     const storageKey = `slopgrid:grid:${gridId}:sizes`;
     let sizes: Sizes | undefined;
     let drag:
@@ -40,9 +39,8 @@ export function useGridResize(
       if (!sizes) return;
       table.dataset.resized = "true";
       table.style.width = `${headingWidth + sizes.columns.reduce((a, b) => a + b, 0)}px`;
-      table.style.height = `${headingHeight + sizes.rows.reduce((a, b) => a + b, 0)}px`;
+      table.style.height = "auto";
       allColumns[0].style.width = `${headingWidth}px`;
-      headingRow.style.height = `${headingHeight}px`;
       columns.forEach((col, index) => {
         col.style.width = `${sizes!.columns[index]}px`;
       });

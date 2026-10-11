@@ -1179,6 +1179,46 @@ test.describe("mobile grid interaction", () => {
     });
 });
 
+test("saved output row sizes do not stretch the table header", async ({
+  page,
+  request,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 1600 });
+  await request.post("/fixture/reset", { data: { billing: false } });
+  await create(page, "SVG", "cat", "hat");
+  await expectProgress(page, 1, 1);
+  const id = new URL(page.url()).pathname.split("/").pop()!;
+  const heading = page.locator(".output-grid thead");
+  const originalHeight = (await heading.boundingBox())!.height;
+  expect(originalHeight).toBeLessThanOrEqual(70);
+  await expect(heading.locator('[data-resize-axis="rows"]')).toHaveCount(0);
+  await page.evaluate((gridId) => {
+    localStorage.setItem(
+      `slopgrid:grid:${gridId}:sizes`,
+      JSON.stringify({ columns: [500], rows: [3000] }),
+    );
+  }, id);
+  await page.reload();
+  await expectProgress(page, 1, 1);
+  expect((await heading.boundingBox())!.height).toBeCloseTo(originalHeight, 0);
+  expect(
+    (await page.locator(".output-grid tbody tr").boundingBox())!.height,
+  ).toBeCloseTo(3000, 0);
+  const handle = page.getByRole("separator", {
+    name: "Resize row 1",
+    exact: true,
+  });
+  await handle.focus();
+  await page.keyboard.press("ArrowDown");
+  expect((await heading.boundingBox())!.height).toBeCloseTo(originalHeight, 0);
+  await page.reload();
+  await expectProgress(page, 1, 1);
+  expect((await heading.boundingBox())!.height).toBeCloseTo(originalHeight, 0);
+  expect(
+    (await page.locator(".output-grid tbody tr").boundingBox())!.height,
+  ).toBeCloseTo(3010, 0);
+});
+
 test("model IDs in row and column labels copy to the real clipboard", async ({
   page,
   context,
