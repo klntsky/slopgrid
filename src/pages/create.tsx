@@ -119,7 +119,7 @@ export function Create() {
   return (
     <main className="create-page">
       <div className="page-heading">
-        <h1>Create your own visual AI model benchmark</h1>
+        <h1>Create your own AI model benchmark</h1>
       </div>
       <section>
         <div className="section-heading">

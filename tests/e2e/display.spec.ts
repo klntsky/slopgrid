@@ -304,7 +304,7 @@ test("one completed image covers rendering, reload, and desktop/mobile workspace
     await page.getByRole("link", { name: "NEW GRID", exact: true }).click();
     await expect(
       page.getByRole("heading", {
-        name: "Create your own visual AI model benchmark",
+        name: "Create your own AI model benchmark",
       }),
     ).toBeVisible();
     await expect(header.getByRole("progressbar")).toHaveCount(0);

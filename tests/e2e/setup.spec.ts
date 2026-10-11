@@ -74,7 +74,7 @@ test("model choices start empty and filtering preserves deliberate selections", 
   await page.goto("/");
   await expect(
     page.getByRole("heading", {
-      name: "Create your own visual AI model benchmark",
+      name: "Create your own AI model benchmark",
     }),
   ).toBeVisible();
   await page.getByRole("button", { name: "SVG", exact: true }).click();
