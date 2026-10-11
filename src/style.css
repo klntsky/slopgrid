@@ -600,6 +600,7 @@ legend {
   height: 1px;
 }
 .output-grid thead th {
+  padding-block: 8px;
   position: sticky;
   top: 0;
   z-index: 3;
@@ -607,6 +608,7 @@ legend {
 }
 
 .output-grid tbody th {
+  padding-inline: 8px;
   position: sticky;
   left: 0;
   z-index: 2;
@@ -623,6 +625,7 @@ legend {
   text-align: center;
 }
 .output-grid thead .corner {
+  padding-inline: 8px;
   left: 0;
   z-index: 4;
   min-width: 0;
@@ -811,9 +814,8 @@ legend {
   .actions {
     flex-wrap: wrap;
   }
-  .output-grid tbody th,
-  .output-grid thead .corner {
-    padding: 12px;
+  .output-grid tbody th {
+    padding-block: 12px;
   }
   .modal {
     padding: 24px;
