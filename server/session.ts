@@ -43,10 +43,7 @@ export function createSessionReader(store: Store, origin: URL) {
       created: Date.now(),
     };
     delete next.identityOAuth;
-    delete next.verifier;
-    delete next.state;
-    delete next.oauthAt;
-    delete next.returnTo;
+    delete next.keyOAuth;
     store.db.transaction(() => {
       store.saveSession(next);
       store.deleteSession(s.id);

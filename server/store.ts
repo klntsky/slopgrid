@@ -1,3 +1,4 @@
+import type { OAuthAttempt } from "./oauth.js";
 import { Billing } from "./billing.js";
 import Database from "better-sqlite3";
 import { encrypt, decrypt } from "./encryption.js";
@@ -10,19 +11,10 @@ export type Session = {
   id: string;
   anonymousId?: string;
   userId?: string;
-  identityOAuth?: {
-    provider: string;
-    verifier: string;
-    state: string;
-    startedAt: number;
-    returnTo: string;
-  };
+  identityOAuth?: OAuthAttempt;
+  keyOAuth?: OAuthAttempt;
   key?: string;
   inferenceConcurrency?: number;
-  verifier?: string;
-  state?: string;
-  oauthAt?: number;
-  returnTo?: string;
   created: number;
 };
 export class Store {

@@ -23,6 +23,20 @@ export class InvalidKey extends Error {}
 export class Provider {
   constructor(readonly baseURL = "https://openrouter.ai/api/v1") {}
   private catalog?: { at: number; models: Model[] };
+  async exchangeKey(code: string, verifier: string): Promise<string> {
+    const response = await upstreamFetch(`${this.baseURL}/auth/keys`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        code,
+        code_verifier: verifier,
+        code_challenge_method: "S256",
+      }),
+    });
+    if (!response.ok) throw new Error("Exchange failed");
+    return z.object({ key: z.string().min(1) }).parse(await response.json())
+      .key;
+  }
   async keyInfo(key: string) {
     const response = await upstreamFetch(`${this.baseURL}/key`, {
       headers: { Authorization: `Bearer ${key}` },

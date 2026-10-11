@@ -1,11 +1,10 @@
 import type { Grid } from "../domain.js";
 import { Router } from "express";
-import { token } from "../ids.js";
 import { anonymousOwner, type SessionReader } from "../session.js";
 import type { Store } from "../store.js";
 import type { Jobs } from "../jobs.js";
 import type { RateLimiter } from "../rate-limit.js";
-import { oauthReturnTo, oauthVerifier, type OAuthProvider } from "../oauth.js";
+import { startOAuth, validOAuth, type OAuthProvider } from "../oauth.js";
 
 export function createIdentityRoutes(
   store: Store,
@@ -24,23 +23,21 @@ export function createIdentityRoutes(
   });
   for (const provider of providers) {
     const callback = `${origin}/api/auth/${provider.id}/callback`;
-    routes.get(`/api/auth/${provider.id}/start`, (req, res) => {
+    routes.get(`/api/auth/${provider.id}/start`, async (req, res) => {
       const s = session(req, res);
       if (!rate(`identity:${s.id}`, 20))
         return res
           .status(429)
           .send("Too many sign-in attempts. Try again later.");
-      const pending = {
-        provider: provider.id,
-        verifier: oauthVerifier(),
-        state: token(),
-        startedAt: Date.now(),
-        returnTo: oauthReturnTo(req.query.returnTo),
-      };
+      const pending = startOAuth(provider.id, req.query.returnTo);
       s.identityOAuth = pending;
       store.saveSession(s);
       res.redirect(
-        provider.authorizationURL(callback, pending.state, pending.verifier),
+        await provider.authorizationURL(
+          callback,
+          pending.state,
+          pending.verifier,
+        ),
       );
     });
     routes.get(`/api/auth/${provider.id}/callback`, async (req, res) => {
@@ -49,9 +46,7 @@ export function createIdentityRoutes(
       if (
         !pending ||
         pending.provider !== provider.id ||
-        typeof req.query.state !== "string" ||
-        req.query.state !== pending.state ||
-        Date.now() - pending.startedAt > 600000
+        !validOAuth(pending, req.query.state)
       )
         return res
           .status(400)
@@ -67,9 +62,10 @@ export function createIdentityRoutes(
         return res.redirect(failed);
       try {
         const profile = await provider.identity(
-          req.query.code,
+          new URL(req.originalUrl, origin).searchParams,
           pending.verifier,
           callback,
+          pending.state,
         );
         // A logout, account switch, or new sign-in during exchange invalidates this result.
         const current = store.session(s.id);

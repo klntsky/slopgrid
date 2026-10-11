@@ -36,14 +36,12 @@ test("GitHub credentials are mandatory and OAuth return paths stay local", () =>
   );
 });
 
-test("account ownership, frozen authors, browser credentials, and real OAuth route validation", async () => {
+test("account ownership, frozen authors, browser credentials, and OAuth callbacks claim active grids and rotate sessions", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "slopgrid-identity-"));
   const server = createServer();
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
   const origin = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
-  // These credentials only configure routes; this test never exchanges a code.
-  // Successful authorization is verified separately against real GitHub.
   const { app, store, jobs } = createApp({
     origin,
     outputDomain: "-outputs.localhost",
@@ -65,7 +63,8 @@ test("account ownership, frozen authors, browser credentials, and real OAuth rou
     username: "bob",
     profileURL: "https://github.com/bob",
   });
-  const anonymous = "a".repeat(48),
+  let anonymous = "a".repeat(48);
+  const originalOwner = anonymous,
     second = "b".repeat(48),
     other = "c".repeat(48);
   store.saveSession({
@@ -125,9 +124,56 @@ test("account ownership, frozen authors, browser credentials, and real OAuth rou
     });
   try {
     assert.equal((await request("/api/grids/draft", second)).status, 404);
-    store.claim(anonymous, alice.id);
+    jobs.active.set(draft.id, draft);
+    const realFetch = globalThis.fetch;
+    let exchanges = 0;
+    t.mock.method(
+      globalThis,
+      "fetch",
+      async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+        const url = String(input);
+        if (url === "https://github.com/login/oauth/access_token") {
+          exchanges++;
+          const body = new URLSearchParams(String(init?.body));
+          assert.equal(body.get("code"), "test-code");
+          assert.equal(body.get("code_verifier"), verifier);
+          assert.equal(
+            body.get("redirect_uri"),
+            origin + "/api/auth/github/callback",
+          );
+          assert.equal(body.get("client_secret"), "route-test-secret");
+          return Response.json({
+            access_token: "github-test-token",
+            token_type: "bearer",
+            scope: "",
+          });
+        }
+        if (url === "https://api.github.com/user") {
+          assert.equal(
+            new Headers(init?.headers).get("authorization"),
+            "Bearer github-test-token",
+          );
+          return Response.json({ id: 123, login: "alice" });
+        }
+        return realFetch(input, init);
+      },
+    );
+    const login = await request("/api/auth/github/start?returnTo=%2Fgrids");
+    const loginURL = new URL(login.headers.get("location")!);
+    const verifier = store.session(anonymous)!.identityOAuth!.verifier;
+    const callback = `/api/auth/github/callback?state=${loginURL.searchParams.get("state")}&code=test-code`;
+    const signedIn = await request(callback);
+    assert.equal(signedIn.headers.get("location"), "/grids");
+    anonymous = signedIn.headers
+      .get("set-cookie")!
+      .match(/slopgrid=([a-f0-9]+)/)![1];
+    assert.notEqual(anonymous, originalOwner);
+    assert.equal(store.session(originalOwner), undefined);
+    assert.equal(jobs.active.get(draft.id)!.ownerUserId, alice.id);
     assert.equal(store.get(draft.id)!.ownerUserId, alice.id);
-    store.saveSession({ ...store.session(anonymous)!, userId: alice.id });
+    jobs.active.delete(draft.id);
+    assert.equal((await request(callback)).status, 400);
+    assert.equal(exchanges, 1);
     assert.equal((await request("/api/grids/draft", second)).status, 200);
     assert.equal((await request("/api/grids/draft", other)).status, 404);
     assert.equal(
@@ -238,7 +284,7 @@ test("account ownership, frozen authors, browser credentials, and real OAuth rou
       (await (await request("/api/billing", nextId)).json()).total,
       0,
     );
-    assert.equal(store.sessionForOwner(anonymous)!.id, nextId);
+    assert.equal(store.sessionForOwner(originalOwner)!.id, nextId);
   } finally {
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));

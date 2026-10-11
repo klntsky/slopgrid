@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import * as oauth from "oauth4webapi";
 import { z } from "zod";
 import { upstreamFetch } from "./http.js";
 import type { Identity } from "./domain.js";
@@ -6,11 +6,16 @@ import type { Identity } from "./domain.js";
 export type OAuthCredentials = { clientId: string; clientSecret: string };
 export interface OAuthProvider {
   id: string;
-  authorizationURL(callback: string, state: string, verifier: string): string;
+  authorizationURL(
+    callback: string,
+    state: string,
+    verifier: string,
+  ): Promise<string>;
   identity(
-    code: string,
+    params: URLSearchParams,
     verifier: string,
     callback: string,
+    state: string,
   ): Promise<{ subject: string; identity: Identity }>;
 }
 export function githubCredentials(
@@ -22,48 +27,72 @@ export function githubCredentials(
     throw new Error("GITHUB_CLIENT_SECRET is required");
   return { clientId: clientId.trim(), clientSecret: clientSecret.trim() };
 }
-export function oauthVerifier() {
-  return randomBytes(32).toString("base64url");
+export type OAuthAttempt = {
+  provider: string;
+  verifier: string;
+  state: string;
+  startedAt: number;
+  returnTo: string;
+};
+export function startOAuth(provider: string, returnTo: unknown): OAuthAttempt {
+  return {
+    provider,
+    verifier: oauth.generateRandomCodeVerifier(),
+    state: oauth.generateRandomState(),
+    startedAt: Date.now(),
+    returnTo: oauthReturnTo(returnTo),
+  };
 }
+export function validOAuth(attempt: OAuthAttempt | undefined, state: unknown) {
+  return (
+    !!attempt &&
+    state === attempt.state &&
+    Date.now() - attempt.startedAt <= 600000
+  );
+}
+export const codeChallenge = oauth.calculatePKCECodeChallenge;
 export function githubProvider(credentials: OAuthCredentials): OAuthProvider {
+  const server = {
+    issuer: "https://github.com",
+    token_endpoint: "https://github.com/login/oauth/access_token",
+  };
+  const client = { client_id: credentials.clientId };
   return {
     id: "github",
-    authorizationURL(callback, state, verifier) {
+    async authorizationURL(callback, state, verifier) {
       const url = new URL("https://github.com/login/oauth/authorize");
       url.searchParams.set("client_id", credentials.clientId);
       url.searchParams.set("redirect_uri", callback);
       url.searchParams.set("scope", "");
       url.searchParams.set("state", state);
-      url.searchParams.set(
-        "code_challenge",
-        createHash("sha256").update(verifier).digest("base64url"),
-      );
+      url.searchParams.set("code_challenge", await codeChallenge(verifier));
       url.searchParams.set("code_challenge_method", "S256");
       return url.href;
     },
-    async identity(code, verifier, callback) {
-      const response = await upstreamFetch(
-        "https://github.com/login/oauth/access_token",
+    async identity(params, verifier, callback, state) {
+      const validated = oauth.validateAuthResponse(
+        server,
+        client,
+        params,
+        state,
+      );
+      const response = await oauth.authorizationCodeGrantRequest(
+        server,
+        client,
+        oauth.ClientSecretPost(credentials.clientSecret),
+        validated,
+        callback,
+        verifier,
         {
-          method: "POST",
-          headers: {
-            Accept: "application/json",
-            "Content-Type": "application/x-www-form-urlencoded",
-          },
-          body: new URLSearchParams({
-            client_id: credentials.clientId,
-            client_secret: credentials.clientSecret,
-            code,
-            code_verifier: verifier,
-            redirect_uri: callback,
-          }),
+          [oauth.customFetch]: upstreamFetch,
           signal: AbortSignal.timeout(30000),
         },
       );
-      if (!response.ok) throw new Error("GitHub exchange failed");
-      const { access_token } = z
-        .object({ access_token: z.string().min(1) })
-        .parse(await response.json());
+      const { access_token } = await oauth.processAuthorizationCodeResponse(
+        server,
+        client,
+        response,
+      );
       const profile = await upstreamFetch("https://api.github.com/user", {
         headers: {
           Accept: "application/vnd.github+json",
