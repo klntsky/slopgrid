@@ -10,13 +10,15 @@ export function effortLabel(effort: string): string {
 }
 export function thinkingEffortSupport(
   model: Model | undefined,
-  effort: GridInput["effort"],
+  effort: string,
 ): "supported" | "unsupported" | "unknown" {
   if (!model?.text) return "unsupported";
   if (effort === "default") return "supported";
   if (effort === "none" && model.reasoningMandatory) return "unsupported";
   if (model.reasoningEfforts === undefined) return "unknown";
-  return model.reasoningEfforts.includes(effort) ? "supported" : "unsupported";
+  return model.reasoningEfforts.includes(effort as GridInput["effort"])
+    ? "supported"
+    : "unsupported";
 }
 export function compatibilityIssues(
   cells: readonly Pick<Cell, "model" | "effort">[],
