@@ -204,12 +204,35 @@ test("one completed image covers rendering, reload, and desktop/mobile workspace
   const response = await request.get(output!);
   expect(response.headers()["content-type"]).toContain("image/png");
   const gridURL = page.url();
-  for (const viewport of [
+  const viewports = [
     { width: 1280, height: 900 },
     { width: 390, height: 844 },
-  ]) {
+  ];
+  async function expectActionsBesideTitle(names: string[], width: number) {
+    const header = page.getByRole("banner");
+    const title = (await header
+      .getByRole("heading", { level: 1 })
+      .boundingBox())!;
+    for (const name of names) {
+      const button = header.getByRole("button", { name, exact: true });
+      const box = (await button.boundingBox())!;
+      if (width > 700) {
+        expect(box.x + box.width).toBeLessThanOrEqual(title.x);
+        expect(box.y).toBeLessThan(title.y + title.height);
+        expect(box.y + box.height).toBeGreaterThan(title.y);
+      } else {
+        expect(box.y + box.height).toBeLessThanOrEqual(title.y);
+        const logo = (await header
+          .getByRole("link", { name: "slopgrid", exact: true })
+          .boundingBox())!;
+        expect(box.y).toBeLessThan(logo.y + logo.height);
+        expect(box.y + box.height).toBeGreaterThan(logo.y);
+      }
+      await expect(button.locator("svg")).toBeVisible();
+    }
+  }
+  for (const viewport of viewports) {
     await page.setViewportSize(viewport);
-    await page.goto(gridURL);
     await expectProgress(page, 1, 1);
     const header = page.getByRole("banner");
     await expect(header.getByRole("heading", { level: 1 })).toHaveText(
@@ -218,10 +241,7 @@ test("one completed image covers rendering, reload, and desktop/mobile workspace
     await expect(
       header.getByRole("progressbar", { name: "Grid generation" }),
     ).toHaveAttribute("aria-valuetext", "1 of 1 outputs complete");
-    if (viewport.width > 700)
-      await expect(
-        header.getByRole("button", { name: "PUBLISH" }),
-      ).toBeEnabled();
+    await expect(header.getByRole("button", { name: "PUBLISH" })).toBeEnabled();
     if (viewport.width > 700) {
       expect(
         await header
@@ -231,31 +251,7 @@ test("one completed image covers rendering, reload, and desktop/mobile workspace
           ),
       ).toBeGreaterThanOrEqual(16);
     }
-    async function expectActionsBesideTitle(names: string[]) {
-      const title = (await header
-        .getByRole("heading", { level: 1 })
-        .boundingBox())!;
-      for (const name of names) {
-        const button = header.getByRole("button", { name, exact: true });
-        const box = (await button.boundingBox())!;
-        if (viewport.width > 700) {
-          expect(box.x + box.width).toBeLessThanOrEqual(title.x);
-          expect(box.y).toBeLessThan(title.y + title.height);
-          expect(box.y + box.height).toBeGreaterThan(title.y);
-        } else {
-          expect(box.y + box.height).toBeLessThanOrEqual(title.y);
-          const logo = (await header
-            .getByRole("link", { name: "slopgrid", exact: true })
-            .boundingBox())!;
-          expect(box.y).toBeLessThan(logo.y + logo.height);
-          expect(box.y + box.height).toBeGreaterThan(logo.y);
-        }
-        await expect(button.locator("svg")).toBeVisible();
-      }
-    }
-    await expectActionsBesideTitle(
-      viewport.width > 700 ? ["EDIT", "PUBLISH"] : ["FORK", "Copy link"],
-    );
+    await expectActionsBesideTitle(["EDIT", "PUBLISH"], viewport.width);
     await expect(
       page.getByText("1 of 1 complete", { exact: true }),
     ).toHaveCount(0);
@@ -306,11 +302,14 @@ test("one completed image covers rendering, reload, and desktop/mobile workspace
     expect(
       Math.abs(cell.y + cell.height - viewport.height),
     ).toBeLessThanOrEqual(2);
-    if (viewport.width > 700) {
-      await header.getByRole("button", { name: "PUBLISH" }).click();
-      await finishPublishing(page);
-    }
-    await expectActionsBesideTitle(["FORK", "Copy link"]);
+  }
+  await page.getByRole("button", { name: "PUBLISH", exact: true }).click();
+  await finishPublishing(page);
+  for (const viewport of viewports) {
+    await page.setViewportSize(viewport);
+    if (page.url() !== gridURL) await page.goto(gridURL);
+    const header = page.getByRole("banner");
+    await expectActionsBesideTitle(["FORK", "Copy link"], viewport.width);
     await expect(header.getByText("Published", { exact: true })).toHaveCount(0);
     await expect(
       header.getByRole("button", { name: "Copy link" }),
