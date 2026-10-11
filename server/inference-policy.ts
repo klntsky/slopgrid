@@ -1,4 +1,4 @@
-import { manualKey, manualCredits } from "./manual-keys.js";
+import { manualKey } from "./manual-keys.js";
 import type { Request, Response } from "express";
 import type { Store, Session } from "./store.js";
 import type { Provider } from "./provider.js";
@@ -10,7 +10,7 @@ export function createInferenceGuard(store: Store, provider: Provider) {
     try {
       balanceUsd =
         supplied !== undefined
-          ? await manualCredits(provider, supplied)
+          ? await provider.manualCredits(supplied)
           : await provider.balanceUsd(s.key!);
     } catch {
       res

@@ -7,7 +7,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Provider } from "../server/provider.js";
 import { createApp } from "../server/app.js";
-import { manualCredits } from "../server/manual-keys.js";
 import type { Cell, GridInput } from "../server/domain.js";
 
 test("manual keys stay out of SQLite, serve queued cells, and require resending after Pause", async () => {
@@ -79,9 +78,9 @@ test("manual keys stay out of SQLite, serve queued cells, and require resending 
   server.on("request", app);
   let gridId: string | undefined;
   try {
-    assert.equal(await manualCredits(provider, "test-manual-key"), 12);
+    assert.equal(await provider.manualCredits("test-manual-key"), 12);
     remaining = null;
-    assert.equal(await manualCredits(provider, "test-manual-key"), null);
+    assert.equal(await provider.manualCredits("test-manual-key"), null);
     remaining = 12;
     const input: GridInput = {
       format: "markdown",

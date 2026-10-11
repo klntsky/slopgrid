@@ -17,13 +17,34 @@ export type Model = {
   contextLength?: number;
   maxCompletionTokens?: number;
 };
+export class InvalidKey extends Error {}
+
 export class Provider {
   constructor(readonly baseURL = "https://openrouter.ai/api/v1") {}
   private catalog?: { at: number; models: Model[] };
-  async balanceUsd(key: string): Promise<number> {
+  async keyInfo(key: string) {
+    const response = await upstreamFetch(`${this.baseURL}/key`, {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    if (response.status === 401 || response.status === 403)
+      throw new InvalidKey();
+    if (!response.ok) throw new Error("Key lookup failed");
+    return z
+      .object({
+        data: z.object({
+          limit_remaining: z.number().finite().nullable().optional(),
+        }),
+      })
+      .parse(await response.json()).data;
+  }
+  private async credits(
+    key: string,
+    allowForbidden = false,
+  ): Promise<number | null> {
     const response = await upstreamFetch(`${this.baseURL}/credits`, {
       headers: { Authorization: `Bearer ${key}` },
     });
+    if (allowForbidden && response.status === 403) return null;
     if (!response.ok)
       throw new Error("Could not check your OpenRouter balance. Try again.");
     const body = z
@@ -33,10 +54,20 @@ export class Provider {
           total_usage: z.number().finite(),
         }),
       })
-      .safeParse(await response.json());
-    if (!body.success)
-      throw new Error("Could not check your OpenRouter balance. Try again.");
-    return body.data.data.total_credits - body.data.data.total_usage;
+      .parse(await response.json());
+    return body.data.total_credits - body.data.total_usage;
+  }
+  async balanceUsd(key: string): Promise<number> {
+    return (await this.credits(key))!;
+  }
+  async manualCredits(key: string): Promise<number | null> {
+    const { limit_remaining: limit } = await this.keyInfo(key);
+    const balance = await this.credits(key, true);
+    return balance === null
+      ? (limit ?? null)
+      : limit == null
+        ? balance
+        : Math.min(balance, limit);
   }
   async models(): Promise<Model[]> {
     if (this.catalog && Date.now() - this.catalog.at < 300000)
