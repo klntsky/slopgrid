@@ -30,12 +30,15 @@ The Markdown renderer is included directly in the main browser bundle, so openin
 
 ```sh
 pnpm test
+pnpm test:built
 pnpm test:unit
 pnpm test:e2e:mock
 pnpm test:e2e:real
 ```
 
-`pnpm test` runs unit tests and both Playwright projects. `test:e2e` builds once and runs the mock and real suites sequentially. The separate E2E commands build and run their respective project. Each app server runs in a uniquely named window in tmux session `bg`, using temporary SQLite, outputs, and test artifacts outside the checkout, which are removed after the run.
+`pnpm test` runs unit tests, builds once, and runs the mock and real Playwright projects. `pnpm test:built` runs the same suites against the existing build, without rebuilding it. The E2E runner also accepts `--reuse-build` for focused runs against an existing build. The separate E2E commands build once and run their respective project.
+
+Mock E2E tests are grouped into setup, display, access, and generation files and run with three workers. Each worker has its own app, upstream fixture, unused ports, temporary SQLite database, outputs, and tmux window in session `bg`; state-changing tests remain sequential within each file. Shared helpers keep setup consistent, and the completed-image display journey reuses one generated grid for rendering, reload, desktop/mobile layout, and publication checks. Real-provider and GitHub suites run serially in one isolated app server each. Temporary app data and test artifacts are removed after each worker or suite finishes.
 
 The mock project exercises the real app and AI SDK against a local HTTP OpenRouter fixture. It covers OAuth with PKCE, manual connection and invalid-key replacement, image rendering, controlled billing and provider failures, retries, publishing, ownership, isolated hosting, layout, streaming stages, fair scheduling, and HTTP cancellation. It never contacts OpenRouter or spends credits.
 

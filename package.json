@@ -7,13 +7,14 @@
     "build": "tsc --noEmit && vite build",
     "start": "NODE_ENV=production tsx server/index.ts",
     "test": "pnpm test:unit && pnpm test:e2e",
-    "test:e2e": "pnpm build && tsx tests/run-e2e.ts --suite all",
+    "test:e2e": "tsx tests/run-e2e.ts --suite all",
     "check": "tsc --noEmit",
     "format": "prettier --write src server tests *.ts *.json *.md pnpm-workspace.yaml",
     "test:unit": "tsx --test tests/*.test.ts",
-    "test:e2e:mock": "pnpm build && tsx tests/run-e2e.ts --suite mock",
-    "test:e2e:github": "pnpm build && tsx tests/run-e2e.ts --suite github",
-    "test:e2e:real": "pnpm build && tsx tests/run-e2e.ts --suite real"
+    "test:e2e:mock": "tsx tests/run-e2e.ts --suite mock",
+    "test:e2e:github": "tsx tests/run-e2e.ts --suite github",
+    "test:e2e:real": "tsx tests/run-e2e.ts --suite real",
+    "test:built": "pnpm test:unit && tsx tests/run-e2e.ts --suite all --reuse-build"
   },
   "dependencies": {
     "@openrouter/ai-sdk-provider": "3.1.0",

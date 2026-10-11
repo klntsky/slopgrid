@@ -3,6 +3,7 @@
 import express from "express";
 import { randomBytes, createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
+import { once } from "node:events";
 import { createApp } from "../server/app.js";
 import { Provider } from "../server/provider.js";
 let balanceUsd = 100;
@@ -297,16 +298,19 @@ upstream.post("/api/v1/chat/completions", async (req, res) => {
   );
   res.end();
 });
-upstream.listen(4318);
+const upstreamServer = upstream.listen(0);
+await once(upstreamServer, "listening");
+const upstreamOrigin = `http://localhost:${(upstreamServer.address() as { port: number }).port}`;
+const port = Number(process.env.E2E_PORT ?? 4317);
 const data = process.env.FIXTURE_DATA!;
 mkdirSync(`${data}/.data`, { recursive: true });
 const { app } = createApp({
-  origin: "http://localhost:4317",
-  outputDomain: "-slopgrid.localhost:4317",
+  origin: `http://localhost:${port}`,
+  outputDomain: `-slopgrid.localhost:${port}`,
   database: `${data}/.data/db.sqlite`,
   secret: Buffer.alloc(32, 1),
-  provider: new Provider("http://localhost:4318/api/v1"),
-  authURL: "http://localhost:4318/auth",
+  provider: new Provider(`${upstreamOrigin}/api/v1`),
+  authURL: `${upstreamOrigin}/auth`,
   workersMax: 2,
 });
 app.post("/fixture/reset", (req, res) => {
@@ -368,4 +372,4 @@ app.get(
   ["/", "/grids", "/settings", "/billing", /^\/grid\/[a-f0-9]{48}$/],
   (_req, res) => res.sendFile("index.html", { root: "dist" }),
 );
-app.listen(4317, () => console.log("Fixture ready"));
+app.listen(port, () => console.log("Fixture ready"));
