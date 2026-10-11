@@ -20,12 +20,20 @@ Never editorialize user-facing text. When creating new UX surfaces, summarize th
 
 ```sh
 pnpm test
-pnpm test:e2e
+pnpm test:unit
+pnpm test:e2e:mock
+pnpm test:e2e:real
 ```
 
-The unit tests cover prompt expansion, input and bundle validation, encrypted key storage, fair worker allocation, cancellation and retry, and recovery after restart. Playwright exercises the real app and AI SDK against a local HTTP OpenRouter fixture: OAuth with PKCE, all output modes, billing interruptions and repeated retries, publishing, ownership, isolated hosting, settings, scrolling headers, parallel generation across browser sessions, and pause/resume with real HTTP cancellation. The fixture never contacts OpenRouter or spends credits. `test:e2e` builds the app, starts the fixture in a uniquely named window of tmux session `bg`, runs Chromium, and removes its temporary database and window.
+`pnpm test` runs unit tests and both Playwright projects. `test:e2e` builds once and runs the mock and real suites sequentially. The separate E2E commands build and run their respective project. Each app server runs in a uniquely named window in tmux session `bg`, using temporary SQLite, outputs, and test artifacts outside the checkout, which are removed after the run.
 
-Tests are written around user outcomes and consequential boundaries; do not add snapshots of implementation details or assertions that repeat the code. Live OpenRouter generation requires your own account and is not covered by the fixture suite.
+The mock project exercises the real app and AI SDK against a local HTTP OpenRouter fixture. It covers OAuth with PKCE, manual connection and invalid-key replacement, image rendering, controlled billing and provider failures, retries, publishing, ownership, isolated hosting, layout, streaming stages, fair scheduling, and HTTP cancellation. It never contacts OpenRouter or spends credits.
+
+The real project uses OpenRouter directly for one-cell Markdown, SVG, and static website generations, including rendering and reload. These success scenarios replace their mocked equivalents. It selects `cohere/north-mini-code:free`, disables thinking, and uses a $0.001 cell budget. There is no paid-model fallback, retry of failed tests, or silent skip when credentials or the model are unavailable. Real-test traces, screenshots, and videos are disabled.
+
+Provide `OPENROUTER_API_KEY` to the test process, or create `slopgrid/test.config.json` under your user configuration directory (`XDG_CONFIG_HOME`, otherwise `~/.config`) with `keySource` pointing to an existing environment file and optional `keyVariable` (default `OPENROUTER_API_KEY`). The configuration contains a reference rather than a copied credential. The runner supplies the resolved key only to Playwright; the browser connects through the normal manual-key form. Keep credentials and this private configuration outside the repository.
+
+Tests focus on user outcomes and consequential boundaries rather than implementation snapshots. Controlled error responses, exact billing amounts, timing gates, and scheduling scenarios remain mocked because their outcomes must be reproducible.
 
 ## Runtime configuration
 

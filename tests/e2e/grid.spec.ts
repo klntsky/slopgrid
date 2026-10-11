@@ -94,83 +94,25 @@ test("billing can be dismissed and retried repeatedly without regenerating compl
   expect(calls.filter((p: string) => p.includes("dog")).length).toBe(3);
 });
 
-for (const format of ["SVG", "Markdown", "Static website", "Image"])
-  test(`${format} renders generated output`, async ({ page, request }) => {
-    await request.post("/fixture/reset", { data: { billing: false } });
-    await create(page, format);
-    await expectProgress(page, 2, 2);
-    if (format === "Image") {
-      await expect(page.getByText("$0.00", { exact: true })).toHaveCount(1);
-      await expect(page.getByText("$0.012345", { exact: true })).toHaveCount(1);
-    } else {
-      await expect(page.getByText("$0.000123", { exact: true })).toHaveCount(2);
-    }
-    await page.reload();
-    await expectProgress(page, 2, 2);
-    await expect(
-      page.getByText(format === "Image" ? "$0.012345" : "$0.000123", {
-        exact: true,
-      }),
-    ).toHaveCount(format === "Image" ? 1 : 2);
-    const output = new URL(
-      (await page
-        .getByRole("link", { name: "Open output" })
-        .first()
-        .getAttribute("href"))!,
-    );
-    if (format === "Static website")
-      expect(output.hostname).toMatch(/^[a-f0-9]{48}-slopgrid\.localhost$/);
-    else {
-      expect(output.origin).toBe("http://localhost:4317");
-      expect(output.pathname).toMatch(/^\/outputs\/[a-f0-9]{48}$/);
-      const cellId = output.pathname.split("/").pop();
-      expect(
-        (
-          await request.get("/index.html", {
-            headers: { host: `${cellId}-slopgrid.localhost:4317` },
-          })
-        ).status(),
-      ).toBe(404);
-    }
-    if (format === "Image" || format === "SVG") {
-      const image = page
-        .getByRole("img", {
-          name: format === "SVG" ? "Generated SVG" : "Generated image",
-        })
-        .first();
-      await expect(image).toBeVisible();
-      await expect
-        .poll(() =>
-          image.evaluate((img) => (img as HTMLImageElement).naturalWidth),
-        )
-        .toBeGreaterThan(0);
-      const response = await request.get(output.href);
-      expect(response.headers()["content-type"]).toContain(
-        format === "SVG" ? "image/svg+xml" : "image/png",
-      );
-      expect(response.headers()["set-cookie"]).toBeUndefined();
-      await expect(page.locator("iframe")).toHaveCount(0);
-    } else {
-      const frame = page.frameLocator("iframe").first();
-      if (format === "Markdown")
-        await expect(
-          page
-            .locator(".markdown-preview")
-            .first()
-            .getByRole("heading", { name: "A generated cat" }),
-        ).toBeVisible();
-      if (format === "Static website") {
-        await expect(frame.getByText("Module loaded")).toBeVisible();
-        await expect(
-          frame.getByRole("heading", { name: "A generated site" }),
-        ).toBeVisible();
-        await expect(frame.locator("body")).toHaveCSS(
-          "background-color",
-          "rgb(255, 0, 0)",
-        );
-      }
-    }
-  });
+test("Image renders generated output", async ({ page, request }) => {
+  await request.post("/fixture/reset", { data: { billing: false } });
+  await create(page, "Image");
+  const bar = page.getByRole("progressbar", { name: "Grid generation" });
+  await expect(bar).toHaveAttribute("value", "2");
+  await expect(page.getByText("$0.012345", { exact: true })).toHaveCount(1);
+  await page.reload();
+  await expect(bar).toHaveAttribute("value", "2");
+  const image = page.getByRole("img", { name: "Generated image" }).first();
+  await expect
+    .poll(() => image.evaluate((img) => (img as HTMLImageElement).naturalWidth))
+    .toBeGreaterThan(0);
+  const output = await page
+    .getByRole("link", { name: "Open output" })
+    .first()
+    .getAttribute("href");
+  const response = await request.get(output!);
+  expect(response.headers()["content-type"]).toContain("image/png");
+});
 
 test("drafts, mutation endpoints, and generated hosts enforce ownership and origin boundaries", async ({
   page,
