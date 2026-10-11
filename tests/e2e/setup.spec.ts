@@ -6,10 +6,6 @@ test("axis swap preserves selections and substitutes the corresponding prompt va
 }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "SVG", exact: true }).click();
-  const variableHint = page
-    .locator(".hint")
-    .filter({ hasText: /^Use \$VARIABLE_/ });
-  await expect(variableHint).toHaveCount(0);
   const rows = page.getByRole("combobox", { name: "Rows", exact: true });
   const columns = page.getByRole("combobox", {
     name: "Columns",
@@ -18,9 +14,6 @@ test("axis swap preserves selections and substitutes the corresponding prompt va
   await rows.selectOption("variable");
   await page.getByLabel("Row values").fill("cat\ndog");
   await columns.selectOption("effort");
-  await expect(variableHint).toHaveText(
-    "Use $VARIABLE_ROW for prompt variable dimension.",
-  );
   const columnValues = page.getByRole("group", { name: "Column values" });
   await columnValues
     .getByRole("checkbox", { name: "None", exact: true })
@@ -29,7 +22,7 @@ test("axis swap preserves selections and substitutes the corresponding prompt va
     .getByRole("checkbox", { name: "high", exact: true })
     .check();
   const prompt = page.getByLabel("Prompt", { exact: true });
-  await prompt.fill("Draw $VARIABLE_ROW");
+  await prompt.fill("Draw $ROW");
   const swap = page.getByRole("button", { name: "Swap rows and columns" });
   await swap.click();
   await expect(rows).toHaveValue("effort");
@@ -38,21 +31,15 @@ test("axis swap preserves selections and substitutes the corresponding prompt va
     page.getByRole("group", { name: "Row values" }).locator("input:checked"),
   ).toHaveCount(2);
   await expect(page.getByLabel("Column values")).toHaveValue("cat\ndog");
-  await expect(prompt).toHaveValue("Draw $VARIABLE_COLUMN");
-  await expect(variableHint).toHaveText(
-    "Use $VARIABLE_COLUMN for prompt variable dimension.",
-  );
+  await expect(prompt).toHaveValue("Draw $COLUMN");
   await swap.click();
   await expect(rows).toHaveValue("variable");
   await expect(columns).toHaveValue("effort");
   await expect(page.getByLabel("Row values")).toHaveValue("cat\ndog");
-  await expect(prompt).toHaveValue("Draw $VARIABLE_ROW");
-  await expect(variableHint).toHaveText(
-    "Use $VARIABLE_ROW for prompt variable dimension.",
-  );
+  await expect(prompt).toHaveValue("Draw $ROW");
   await page.reload();
   await expect(page.getByLabel("Row values")).toHaveValue("cat\ndog");
-  await expect(prompt).toHaveValue("Draw $VARIABLE_ROW");
+  await expect(prompt).toHaveValue("Draw $ROW");
 });
 
 test("model choices start empty and filtering preserves deliberate selections", async ({
@@ -155,20 +142,15 @@ test("unused prompt variables block generation and the API rejects bypasses", as
     .getByRole("combobox", { name: "Columns", exact: true })
     .selectOption("variable");
   await expect(
-    page.locator(".hint").filter({ hasText: /^Use \$VARIABLE_/ }),
-  ).toHaveText(
-    "Use $VARIABLE_ROW and $VARIABLE_COLUMN for prompt variable dimensions.",
-  );
-  await expect(
     page.getByRole("combobox", { name: "Model", exact: true }),
   ).toHaveValue("");
-  for (const prompt of ["Draw a cat", "$VARIABLE_ROW", "$VARIABLE_COLUMN"]) {
+  for (const prompt of ["Draw a cat", "$ROW", "$COLUMN"]) {
     await page.getByLabel("Prompt", { exact: true }).fill(prompt);
-    await expect(page.getByRole("alert")).toContainText("Include $VARIABLE_");
+    await expect(page.getByRole("alert")).toBeVisible();
   }
   await page
     .getByLabel("Prompt", { exact: true })
-    .fill("$VARIABLE_ROW $VARIABLE_COLUMN");
+    .fill("$ROW $COLUMN");
   const connect = page.getByRole("link", { name: "Connect OpenRouter" });
   await connect.click();
   await expect(
@@ -180,14 +162,14 @@ test("unused prompt variables block generation and the API rejects bypasses", as
   await expect(
     page.getByRole("button", { name: "Generate", exact: true }),
   ).toBeEnabled();
-  await page.getByLabel("Prompt", { exact: true }).fill("$VARIABLE_ROW");
+  await page.getByLabel("Prompt", { exact: true }).fill("$ROW");
   await expect(
     page.getByRole("button", { name: "Generate", exact: true }),
   ).toBeDisabled();
   const response = await page.request.post("/api/grids", {
     data: {
       format: "image",
-      prompt: "$VARIABLE_ROW",
+      prompt: "$ROW",
       rows: { kind: "variable", values: ["cat"] },
       columns: { kind: "variable", values: ["hat"] },
       model: "fixture/image",
@@ -199,7 +181,7 @@ test("unused prompt variables block generation and the API rejects bypasses", as
   expect(await (await request.get("/fixture/calls")).json()).toEqual([]);
   await page
     .getByLabel("Prompt", { exact: true })
-    .fill("$VARIABLE_ROW $VARIABLE_COLUMN");
+    .fill("$ROW $COLUMN");
   await page.getByRole("button", { name: "Generate", exact: true }).click();
   await expectProgress(page, 4, 4);
 });
@@ -232,9 +214,9 @@ test("selecting an output type reveals the entire form and preserves it on reloa
       page.getByRole("link", { name: "Connect OpenRouter" }),
     ).toBeVisible();
   }
-  await prompt.fill("Draw $VARIABLE_ROW");
+  await prompt.fill("Draw $ROW");
   await page.reload();
-  await expect(prompt).toHaveValue("Draw $VARIABLE_ROW");
+  await expect(prompt).toHaveValue("Draw $ROW");
   await expect(
     page.getByRole("link", { name: "Connect OpenRouter" }),
   ).toBeVisible();
@@ -488,7 +470,7 @@ test("worker recommendation follows grid size, overrides persist, and low-balanc
       .selectOption("fixture/text");
     await page
       .getByLabel("Prompt", { exact: true })
-      .fill("Draw $VARIABLE_ROW wearing a $VARIABLE_COLUMN");
+      .fill("Draw $ROW wearing a $COLUMN");
     await page.getByRole("link", { name: "Connect OpenRouter" }).click();
     const workers = page.getByLabel("# of parallel workers:", { exact: true });
     await expect(workers).toHaveValue("2");

@@ -19,7 +19,7 @@ grid layouts should be selectable (the user decides what rows and columns mean):
 
 - model
 - thinking effort
-- variable prompt part - for template prompts - can be referenced in the prompt as $VARIABLE_{ROW|COLUMN}, will be string-replaced. If there are two variables (rows and columns), $VARIABLE_ROW and $VARIABLE_COLUMN can both be used in the prompt.
+- variable prompt part - for template prompts - can be referenced in the prompt as $ROW or $COLUMN, will be string-replaced. If there are two variables (rows and columns), $ROW and $COLUMN can both be used in the prompt.
 
 # pages
 

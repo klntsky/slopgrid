@@ -78,7 +78,7 @@ test("manual keys stay out of SQLite, serve queued cells, and require resending 
     remaining = 12;
     const input: GridInput = {
       format: "markdown",
-      prompt: "$VARIABLE_ROW $VARIABLE_COLUMN",
+      prompt: "$ROW $COLUMN",
       rows: { kind: "variable", values: ["cat", "dog"] },
       columns: { kind: "variable", values: ["hat"] },
       model: "fixture/text",

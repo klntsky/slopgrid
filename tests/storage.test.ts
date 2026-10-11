@@ -12,7 +12,7 @@ test("outputs are real files and SQLite stores only configuration and cell state
   try {
     const input: Grid["input"] = {
       format: "html",
-      prompt: "Draw $VARIABLE_ROW",
+      prompt: "Draw $ROW",
       rows: { kind: "variable", values: ["cat"] },
       columns: { kind: "effort", values: ["none"] },
       model: "fixture/text",

@@ -209,7 +209,7 @@ test("navigation returns to a saved grid after creation", async ({
   await page.reload();
   await page
     .getByRole("link", {
-      name: "Draw $VARIABLE_ROW wearing a $VARIABLE_COLUMN",
+      name: "Draw $ROW wearing a $COLUMN",
     })
     .click();
   await expect(page).toHaveURL(gridURL);
@@ -268,7 +268,7 @@ test("EDIT cancels inference and restores settings, while a public FORK creates 
     await expect(page.getByLabel("Column values")).toHaveValue("hat");
     await page.getByLabel("Row values").fill("owl");
     await expect(page.getByLabel("Prompt", { exact: true })).toHaveValue(
-      "Draw $VARIABLE_ROW wearing a $VARIABLE_COLUMN",
+      "Draw $ROW wearing a $COLUMN",
     );
     await page.getByRole("button", { name: "Generate", exact: true }).click();
     await expectProgress(page, 1, 1);
@@ -298,7 +298,7 @@ test("EDIT cancels inference and restores settings, while a public FORK creates 
       await expect(visitor.getByLabel("Row values")).toHaveValue("owl");
       await visitor.getByLabel("Row values").fill("fox");
       await expect(visitor.getByLabel("Prompt", { exact: true })).toHaveValue(
-        "Draw $VARIABLE_ROW wearing a $VARIABLE_COLUMN",
+        "Draw $ROW wearing a $COLUMN",
       );
       await visitor.getByRole("link", { name: "Connect OpenRouter" }).click();
       await visitor
@@ -428,7 +428,7 @@ test("owners can list a link-only published grid publicly without regenerating o
 }) => {
   await page.setExtraHTTPHeaders({ "X-Forwarded-For": "192.0.2.60" });
   await request.post("/fixture/reset", { data: {} });
-  const prompt = "Promoted grid $VARIABLE_ROW $VARIABLE_COLUMN";
+  const prompt = "Promoted grid $ROW $COLUMN";
   await create(page, "SVG", "cat", "hat", prompt);
   await expectProgress(page, 1, 1);
   const url = page.url();
@@ -598,7 +598,7 @@ test("manual key entry persists in the browser, rejects invalid replacements, an
       .selectOption("fixture/text");
     await page
       .getByLabel("Prompt", { exact: true })
-      .fill("Draw $VARIABLE_ROW with $VARIABLE_COLUMN");
+      .fill("Draw $ROW with $COLUMN");
     await page.getByRole("button", { name: "Generate", exact: true }).click();
     await expectProgress(page, 0, 1);
     await page.getByRole("button", { name: "Pause generation" }).click();
@@ -637,7 +637,7 @@ test("titles are independent owner-editable metadata and collapsed prompts expan
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await request.post("/fixture/reset", { data: { holdGenerations: true } });
   const prompt =
-    "Draw $VARIABLE_ROW wearing a $VARIABLE_COLUMN.\n" +
+    "Draw $ROW wearing a $COLUMN.\n" +
     "Preserve all of these details, including punctuation & <plain text>. "
       .repeat(12)
       .trim();
@@ -717,8 +717,8 @@ test("titles are independent owner-editable metadata and collapsed prompts expan
     const snapshot = await (await page.request.get(`/api/grids/${id}`)).json();
     expect(snapshot.cells[0].prompt).toBe(
       prompt
-        .replaceAll("$VARIABLE_ROW", "cat")
-        .replaceAll("$VARIABLE_COLUMN", "hat"),
+        .replaceAll("$ROW", "cat")
+        .replaceAll("$COLUMN", "hat"),
     );
     expect(await (await request.get("/fixture/calls")).json()).toHaveLength(1);
     expect(
@@ -778,7 +778,7 @@ test("titles are independent owner-editable metadata and collapsed prompts expan
       page.locator(".history-prompt").filter({ hasText: prompt }),
     ).toHaveCount(2);
     const short = await page.request.post("/api/grids", {
-      data: { ...snapshot.input, prompt: "$VARIABLE_ROW $VARIABLE_COLUMN" },
+      data: { ...snapshot.input, prompt: "$ROW $COLUMN" },
     });
     await page.setViewportSize({ width: 1600, height: 900 });
     await page.goto(`/grid/${(await short.json()).id}`);

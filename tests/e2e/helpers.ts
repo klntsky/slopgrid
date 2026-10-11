@@ -24,7 +24,7 @@ export async function create(
   format = "SVG",
   rows = "cat\ndog",
   columns = "hat",
-  prompt = "Draw $VARIABLE_ROW wearing a $VARIABLE_COLUMN",
+  prompt = "Draw $ROW wearing a $COLUMN",
   model?: string,
 ) {
   await page.goto("/");

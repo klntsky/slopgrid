@@ -33,7 +33,7 @@ export function Create() {
   const cellCount = input.rows.values.length * input.columns.values.length;
   const promptVariables = (["rows", "columns"] as const)
     .filter((axis) => input[axis].kind === "variable")
-    .map((axis) => (axis === "rows" ? "$VARIABLE_ROW" : "$VARIABLE_COLUMN"));
+    .map((axis) => (axis === "rows" ? "$ROW" : "$COLUMN"));
   const parallelWorkers = Math.min(
     cellCount,
     input.parallelWorkers ?? capacity.data?.parallelWorkers ?? 1,
@@ -182,9 +182,9 @@ export function Create() {
                       rows: input.columns,
                       columns: input.rows,
                       prompt: input.prompt.replace(
-                        /\$VARIABLE_(ROW|COLUMN)/g,
+                        /\$(ROW|COLUMN)/g,
                         (_, axis) =>
-                          axis === "ROW" ? "$VARIABLE_COLUMN" : "$VARIABLE_ROW",
+                          axis === "ROW" ? "$COLUMN" : "$ROW",
                       ),
                     })
                   }
@@ -275,12 +275,11 @@ export function Create() {
           <ErrorMessage
             error={input.prompt.trim() ? unusedVariableIssue(input) : undefined}
           />
-          {promptVariables.length > 0 && (
-            <p className="hint">
-              Use {promptVariables.join(" and ")} for prompt variable{" "}
-              {promptVariables.length === 1 ? "dimension" : "dimensions"}.
+          {promptVariables.map((variable) => (
+            <p className="hint" key={variable}>
+              {variable} will be replaced with the values you specify above.
             </p>
-          )}
+          ))}
         </section>
       )}
       {formatSelected && (

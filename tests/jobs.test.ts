@@ -76,7 +76,7 @@ function harness(limit?: number) {
     const rows = Math.min(count, 8);
     const input: Grid["input"] = {
       format: "markdown",
-      prompt: "$VARIABLE_ROW $VARIABLE_COLUMN",
+      prompt: "$ROW $COLUMN",
       rows: {
         kind: "variable",
         values: Array.from({ length: rows }, (_, i) => `${owner} ${i}`),

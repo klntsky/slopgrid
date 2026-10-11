@@ -16,7 +16,7 @@ test("publishing is permanent, link grids are unlisted, and public summaries omi
   ) {
     const input: Grid["input"] = {
       format,
-      prompt: "Draw $VARIABLE_ROW",
+      prompt: "Draw $ROW",
       rows: { kind: "variable", values: ["cat"] },
       columns: { kind: "effort", values: ["none"] },
       model: "fixture/text",

@@ -7,7 +7,7 @@ import type { Cell, GridInput } from "../server/domain.js";
 
 const input: GridInput = {
   format: "markdown",
-  prompt: "Draw $VARIABLE_ROW with $VARIABLE_COLUMN",
+  prompt: "Draw $ROW with $COLUMN",
   rows: { kind: "variable", values: ["cat"] },
   columns: { kind: "variable", values: ["hat"] },
   model: "~fixture/latest",
@@ -34,7 +34,7 @@ test("grid settings contain only concrete models, including both axis orientatio
   for (const axis of ["rows", "columns"] as const) {
     const setup = {
       ...input,
-      prompt: axis === "rows" ? "Draw $VARIABLE_COLUMN" : "Draw $VARIABLE_ROW",
+      prompt: axis === "rows" ? "Draw $COLUMN" : "Draw $ROW",
       [axis]: {
         kind: "model",
         values: ["~fixture/latest", "fixture/v1", "fixture/v2"],

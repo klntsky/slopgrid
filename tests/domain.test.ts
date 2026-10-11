@@ -5,7 +5,7 @@ import { expandGrid, gridSchema } from "../server/domain.js";
 test("two prompt variables are replaced literally, including dollar signs in values", () => {
   const cells = expandGrid({
     format: "markdown",
-    prompt: "Draw $VARIABLE_ROW with $VARIABLE_COLUMN. $VARIABLE_ROW",
+    prompt: "Draw $ROW with $COLUMN. $ROW",
     rows: { kind: "variable", values: ["a $& cat", "dog"] },
     columns: { kind: "variable", values: ["hat", "cape"] },
     model: "test/model",
@@ -54,7 +54,7 @@ test("rejects ambiguous axes, unresolved variables, image reasoning, and oversiz
       parallelWorkers,
     })),
     { ...base, columns: base.rows },
-    { ...base, prompt: "$VARIABLE_ROW" },
+    { ...base, prompt: "$ROW" },
     { ...base, format: "image" },
     {
       ...base,
@@ -74,7 +74,7 @@ test("rejects ambiguous axes, unresolved variables, image reasoning, and oversiz
 test("every enabled variable must be used before a grid can generate", () => {
   const input = {
     format: "markdown",
-    prompt: "$VARIABLE_ROW $VARIABLE_COLUMN",
+    prompt: "$ROW $COLUMN",
     rows: { kind: "variable", values: ["cat"] },
     columns: { kind: "variable", values: ["hat"] },
     model: "fixture/text",
@@ -82,14 +82,14 @@ test("every enabled variable must be used before a grid can generate", () => {
     budgetUsd: 5,
   };
   assert.equal(gridSchema.safeParse(input).success, true);
-  for (const prompt of ["Draw a cat", "$VARIABLE_ROW", "$VARIABLE_COLUMN"])
+  for (const prompt of ["Draw a cat", "$ROW", "$COLUMN"])
     assert.equal(gridSchema.safeParse({ ...input, prompt }).success, false);
 });
 
 test("generation requires an explicit fixed model or selected model axis", () => {
   const input = {
     format: "markdown",
-    prompt: "$VARIABLE_ROW",
+    prompt: "$ROW",
     model: "",
     effort: "default",
     budgetUsd: 5,

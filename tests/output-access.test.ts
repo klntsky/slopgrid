@@ -15,7 +15,7 @@ test("private outputs require ownership, isolated grants are scoped and revoked 
   function makeGrid(format: Grid["input"]["format"], running = false) {
     const input: Grid["input"] = {
       format,
-      prompt: "$VARIABLE_ROW",
+      prompt: "$ROW",
       rows: { kind: "variable", values: ["cat"] },
       columns: { kind: "effort", values: ["none"] },
       model: "fixture/text",
