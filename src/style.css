@@ -238,7 +238,6 @@ section {
   justify-content: flex-start;
   gap: 18px;
   min-height: 152px;
-  border-radius: 14px;
   background: var(--paper);
   font-size: 20px;
   font-weight: 500;

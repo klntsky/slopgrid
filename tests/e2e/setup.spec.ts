@@ -236,8 +236,30 @@ test("selecting an output type reveals the entire form and preserves it on reloa
   await page.goto("/");
   const prompt = page.getByLabel("Prompt", { exact: true });
   await expect(prompt).toHaveCount(0);
-  for (const format of ["SVG", "Markdown", "Static website", "Image"]) {
+  for (const format of [
+    "Image",
+    "SVG",
+    "Markdown",
+    "Static website",
+    "Image",
+  ]) {
     await page.getByRole("button", { name: format, exact: true }).click();
+    const filter = page.getByLabel("Search models");
+    const defaultFilter = format === "Image" ? "" : "latest";
+    await expect(filter).toHaveValue(defaultFilter);
+    if (format === "Image")
+      await expect(
+        page.getByRole("checkbox", { name: "Fixture image", exact: true }),
+      ).toBeVisible();
+    await filter.fill("custom filter");
+    const columns = page.getByRole("combobox", {
+      name: "Columns",
+      exact: true,
+    });
+    await columns.selectOption("variable");
+    await columns.selectOption("model");
+    await expect(filter).toHaveValue(defaultFilter);
+    await filter.fill("custom filter");
     await expect(
       page.getByRole("combobox", { name: "Rows", exact: true }),
     ).toBeVisible();
@@ -252,6 +274,7 @@ test("selecting an output type reveals the entire form and preserves it on reloa
   await prompt.fill("Draw $VARIABLE_ROW");
   await page.reload();
   await expect(prompt).toHaveValue("Draw $VARIABLE_ROW");
+  await expect(page.getByLabel("Search models")).toHaveValue("");
   await expect(
     page.getByRole("link", { name: "Connect OpenRouter" }),
   ).toBeVisible();

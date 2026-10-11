@@ -164,7 +164,7 @@ export function Create() {
             <p>Loading models…</p>
           ) : (
             <>
-              <div className="axes">
+              <div className="axes" key={input.format}>
                 <AxisEditor
                   label="Rows"
                   axis={input.rows}

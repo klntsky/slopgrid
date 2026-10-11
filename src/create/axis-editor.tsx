@@ -22,7 +22,8 @@ export function AxisEditor({
   models: Model[];
   onChange: (axis: GridInput["rows"]) => void;
 }) {
-  const [filter, setFilter] = useState("latest");
+  const defaultFilter = format === "image" ? "" : "latest";
+  const [filter, setFilter] = useState(defaultFilter);
   const filterInput = useRef<HTMLInputElement>(null);
   const defaultHint = useTooltip<HTMLLabelElement>(modelDefaultHint);
   const kinds =
@@ -46,7 +47,7 @@ export function AxisEditor({
           value={axis.kind}
           onChange={(e) => {
             const kind = e.target.value as GridInput["rows"]["kind"];
-            setFilter("latest");
+            setFilter(defaultFilter);
             onChange({
               kind,
               values: kind === "variable" ? ["cat", "dog"] : [],
