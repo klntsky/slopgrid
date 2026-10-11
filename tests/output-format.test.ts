@@ -10,6 +10,11 @@ test("Markdown preserves code fences and indentation verbatim", () => {
     assert.equal(parseOutput("markdown", markdown)["index.md"], markdown);
 });
 
+test("SVG output preserves surrounding whitespace and fences verbatim", () => {
+  const raw = ' \n```svg\n<svg xmlns="http://www.w3.org/2000/svg"/>\n```\n';
+  assert.equal(parseOutput("svg", raw)["index.svg"], raw);
+});
+
 for (const structured of [false, true])
   test(`static bundles (${structured ? "structured" : "prompted"}) keep relative assets and reject unsafe files`, () => {
     const bundle = (files: Record<string, string>) =>
@@ -54,6 +59,15 @@ for (const structured of [false, true])
       parseOutput("html", bundle({ "style.css": "" }), structured),
     );
     assert.throws(() => parseOutput("html", '{"files":', structured));
+    assert.throws(
+      () =>
+        parseOutput(
+          "html",
+          "```json\n" + bundle({ "index.html": "ok" }) + "\n```",
+          structured,
+        ),
+      SyntaxError,
+    );
   });
 
 test("structured website output rejects duplicate paths and schema violations", () => {

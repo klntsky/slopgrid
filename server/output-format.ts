@@ -11,13 +11,9 @@ export function parseOutput(
   structured = false,
 ): Record<string, string> {
   if (format === "markdown") return { "index.md": raw };
-  const clean = raw
-    .trim()
-    .replace(/^```(?:\w+)?\s*\n/, "")
-    .replace(/\n```$/, "");
-  if (format === "svg") return { "index.svg": clean };
+  if (format === "svg") return { "index.svg": raw };
   if (format === "html") {
-    const value: unknown = JSON.parse(clean);
+    const value: unknown = JSON.parse(raw);
     const entries = structured
       ? websiteSchema
           .parse(value)
