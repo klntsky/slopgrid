@@ -1,6 +1,6 @@
 import { Billing } from "./billing.js";
 import Database from "better-sqlite3";
-import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import { encrypt, decrypt } from "./encryption.js";
 import { expandGrid, type Grid, type User, type Identity } from "./domain.js";
 import { dirname, join, resolve } from "node:path";
 import { OutputFiles } from "./files.js";
@@ -162,7 +162,7 @@ export class Store {
       this.db.prepare("DELETE FROM sessions WHERE id=?").run(id);
       return;
     }
-    if (s.key) s.key = this.decrypt(s.key);
+    if (s.key) s.key = decrypt(s.key, this.secret);
     return s;
   }
   saveSession(session: Session) {
@@ -173,7 +173,7 @@ export class Store {
         id,
         JSON.stringify({
           ...data,
-          key: session.key ? this.encrypt(session.key) : undefined,
+          key: session.key ? encrypt(session.key, this.secret) : undefined,
         }),
       );
   }
@@ -212,17 +212,6 @@ export class Store {
       )
       .run(userId, anonymousId);
   }
-  author(grid: Grid): Identity | null {
-    if (grid.published) return grid.author ?? null;
-    const user = grid.ownerUserId ? this.user(grid.ownerUserId) : undefined;
-    return user
-      ? {
-          provider: user.provider,
-          username: user.username,
-          profileURL: user.profileURL,
-        }
-      : null;
-  }
   sessionForOwner(owner: string): Session | undefined {
     const row = this.db
       .prepare(
@@ -233,28 +222,5 @@ export class Store {
   }
   deleteSession(id: string) {
     this.db.prepare("DELETE FROM sessions WHERE id=?").run(id);
-  }
-  private encrypt(value: string) {
-    const iv = randomBytes(12);
-    const cipher = createCipheriv("aes-256-gcm", this.secret, iv);
-    return Buffer.concat([
-      iv,
-      cipher.update(value),
-      cipher.final(),
-      cipher.getAuthTag(),
-    ]).toString("base64");
-  }
-  private decrypt(value: string) {
-    const data = Buffer.from(value, "base64");
-    const cipher = createDecipheriv(
-      "aes-256-gcm",
-      this.secret,
-      data.subarray(0, 12),
-    );
-    cipher.setAuthTag(data.subarray(-16));
-    return Buffer.concat([
-      cipher.update(data.subarray(12, -16)),
-      cipher.final(),
-    ]).toString();
   }
 }

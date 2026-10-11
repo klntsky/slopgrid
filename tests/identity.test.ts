@@ -1,3 +1,4 @@
+import { gridAuthor } from "../server/grid-presentation.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
@@ -177,7 +178,7 @@ test("account ownership, frozen authors, browser credentials, and real OAuth rou
     assert.equal(renamed.id, alice.id);
     store.claim(anonymous, bob.id);
     assert.equal(store.get("draft")!.ownerUserId, alice.id);
-    assert.equal(store.author(store.get("draft")!)?.username, "alice");
+    assert.equal(gridAuthor(store.get("draft")!, store)?.username, "alice");
     assert.equal(
       (await (await request("/api/grids/public")).json()).find(
         (g: Grid) => g.id === "draft",

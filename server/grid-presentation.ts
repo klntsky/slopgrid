@@ -1,7 +1,23 @@
-import type { Grid } from "./domain.js";
+import type { Grid, Identity } from "./domain.js";
 import type { Store, Session } from "./store.js";
 import type { createHtmlHosts } from "./hosts.js";
 
+export function presentIdentity(user?: Identity): Identity | null {
+  return user
+    ? {
+        provider: user.provider,
+        username: user.username,
+        profileURL: user.profileURL,
+      }
+    : null;
+}
+export function gridAuthor(grid: Grid, store: Store): Identity | null {
+  return grid.published
+    ? (grid.author ?? null)
+    : presentIdentity(
+        grid.ownerUserId ? store.user(grid.ownerUserId) : undefined,
+      );
+}
 export function ownsGrid(g: Grid, s: Session) {
   return g.ownerUserId
     ? g.ownerUserId === s.userId
@@ -19,7 +35,7 @@ export function createGridPresenter(
     ...g,
     owner: undefined,
     ownerUserId: undefined,
-    author: store.author(g),
+    author: gridAuthor(g, store),
     canEdit: ownsGrid(g, s),
     cells: g.cells.map((c) => ({
       id: c.id,

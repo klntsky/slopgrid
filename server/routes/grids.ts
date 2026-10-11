@@ -8,7 +8,12 @@ import type { SessionReader } from "../session.js";
 import type { RateLimiter } from "../rate-limit.js";
 import type { GridPresenter } from "../grid-presentation.js";
 import { anonymousOwner } from "../session.js";
-import { canViewGrid, ownsGrid } from "../grid-presentation.js";
+import {
+  canViewGrid,
+  ownsGrid,
+  gridAuthor,
+  presentIdentity,
+} from "../grid-presentation.js";
 import {
   gridSchema,
   expandGrid,
@@ -46,7 +51,7 @@ export function createGridRoutes({
     status: g.status,
     published: g.published,
     visibility: g.visibility,
-    author: store.author(g),
+    author: gridAuthor(g, store),
   });
   app.get("/api/grids/public", (_req, res) => {
     res.json(
@@ -210,13 +215,7 @@ export function createGridRoutes({
         .status(409)
         .json({ error: "Wait for every cell to finish before publishing." });
     const user = s.userId ? store.user(s.userId) : undefined;
-    g.author = user
-      ? {
-          provider: user.provider,
-          username: user.username,
-          profileURL: user.profileURL,
-        }
-      : null;
+    g.author = presentIdentity(user);
     g.published = true;
     g.visibility = visibility;
     jobs.emit(g);
