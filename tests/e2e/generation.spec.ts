@@ -602,7 +602,7 @@ test("website bundles preview HTML, CSS, and JavaScript before completion and re
   await expectProgress(page, 0, 1);
   await page.getByRole("button", { name: "Pause generation" }).click();
   await expect(iframe).toHaveCount(0);
-  expect((await request.get(original)).status()).toBe(404);
+  expect((await page.request.get(original)).status()).toBe(404);
   await page.getByRole("button", { name: "Resume generation" }).click();
   await expect(
     frame.getByRole("heading", { name: "Growing website" }),
@@ -622,7 +622,7 @@ test("website bundles preview HTML, CSS, and JavaScript before completion and re
   ).toBeVisible();
   await expect(frame.getByText("Streaming module loaded")).toBeVisible();
   expect(await iframe.getAttribute("src")).not.toContain("__preview");
-  expect((await request.get(original)).status()).toBe(404);
+  expect((await page.request.get(original)).status()).toBe(404);
 });
 
 test("OpenRouter balance sets parallel capacity and Resume refreshes it after a top-up", async ({

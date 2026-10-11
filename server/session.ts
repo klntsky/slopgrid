@@ -18,15 +18,19 @@ export function createSessionReader(store: Store, origin: URL) {
       maxAge: 30 * 86400000,
     });
   }
-  function session(req: Request, res: Response): Session {
+  function read(req: Request): Session | undefined {
     const value = req
       .get("cookie")
       ?.split(";")
       .map((v) => v.trim())
       .find((v) => v.startsWith(`${cookieName}=`))
       ?.slice(cookieName.length + 1);
-    let s =
-      value && /^[a-f0-9]{48}$/.test(value) ? store.session(value) : undefined;
+    return value && /^[a-f0-9]{48}$/.test(value)
+      ? store.session(value)
+      : undefined;
+  }
+  function session(req: Request, res: Response): Session {
+    let s = read(req);
     if (!s) {
       s = { id: token(), created: Date.now() };
       store.saveSession(s);
@@ -34,6 +38,7 @@ export function createSessionReader(store: Store, origin: URL) {
     }
     return s;
   }
+  session.read = read;
   session.rotate = (s: Session, res: Response, userId?: string) => {
     const next: Session = {
       ...s,

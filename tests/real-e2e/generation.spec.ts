@@ -101,14 +101,16 @@ for (const [format, prompt] of Object.entries(prompts)) {
         .toBeGreaterThan(0);
       expect(response.headers()["content-type"]).toContain("image/svg+xml");
     } else {
-      expect(new URL(output!).hostname).toMatch(
+      expect(new URL(response.url()).hostname).toMatch(
         /^[a-f0-9]{48}-slopgrid\.localhost$/,
       );
       const frame = page.frameLocator("iframe");
       await expect(
         frame.getByRole("heading", { name: "OK", exact: true }),
       ).toBeVisible();
-      const script = await page.request.get(new URL("app.js", output!).href);
+      const script = await page.request.get(
+        new URL("app.js", response.url()).href,
+      );
       await expect(
         frame.getByText("JS OK", { exact: true }),
         JSON.stringify({

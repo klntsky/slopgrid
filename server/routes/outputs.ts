@@ -7,12 +7,23 @@ import type { Store } from "../store.js";
 import type { RateLimiter } from "../rate-limit.js";
 import { zip } from "fflate";
 import { downloadFilename } from "../download-filename.js";
+import { canViewGrid } from "../grid-policy.js";
+import type { SessionReader } from "../session.js";
 export function createOutputRoutes(
   store: Store,
   origin: URL,
   rate: RateLimiter,
+  session: SessionReader,
 ) {
   const app = Router();
+  app.use("/outputs/:id", (req, res, next) => {
+    res.set("Cache-Control", "no-store");
+    const id = String(req.params.id);
+    const owner = /^[a-f0-9]{48}$/.test(id) ? store.outputOwner(id) : undefined;
+    if (!owner || !canViewGrid(owner, session.read(req)))
+      return res.sendStatus(404);
+    next();
+  });
   app.get("/outputs/:id/download", async (req, res) => {
     const id = String(req.params.id);
     if (!/^[a-f0-9]{48}$/.test(id)) return res.sendStatus(404);

@@ -164,7 +164,7 @@ test("SVG images grow during generation without exposing markup or running SVG s
     await expect(
       page.getByRole("img", { name: "Generated SVG", exact: true }),
     ).toBeVisible();
-    const output = await request.get(
+    const output = await page.request.get(
       (await page
         .getByRole("link", { name: "Open output" })
         .getAttribute("href"))!,
@@ -201,7 +201,7 @@ test("one completed image covers rendering, reload, and desktop/mobile workspace
     .getByRole("link", { name: "Open output" })
     .first()
     .getAttribute("href");
-  const response = await request.get(output!);
+  const response = await page.request.get(output!);
   expect(response.headers()["content-type"]).toContain("image/png");
   const gridURL = page.url();
   const viewports = [

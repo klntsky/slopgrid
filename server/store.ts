@@ -98,6 +98,39 @@ export class Store {
       });
     })();
   }
+  outputOwner(
+    id: string,
+  ):
+    | (Pick<Grid, "owner" | "ownerUserId" | "published"> & {
+        format: Grid["input"]["format"];
+      })
+    | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT
+      json_extract(g.data, '$.owner') AS owner,
+      json_extract(g.data, '$.ownerUserId') AS ownerUserId,
+      json_extract(g.data, '$.published') AS published,
+      json_extract(g.data, '$.input.format') AS format
+      FROM cells c JOIN grids g ON g.id=c.grid_id WHERE c.id=?`,
+      )
+      .get(id) as
+      | {
+          owner: string;
+          ownerUserId: string | null;
+          published: number;
+          format: Grid["input"]["format"];
+        }
+      | undefined;
+    return (
+      row && {
+        owner: row.owner,
+        ownerUserId: row.ownerUserId ?? undefined,
+        published: !!row.published,
+        format: row.format,
+      }
+    );
+  }
   output(
     id: string,
   ): { format: Grid["input"]["format"]; mediaType?: string } | undefined {

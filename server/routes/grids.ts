@@ -2,7 +2,7 @@ import { canViewGrid, ownsGrid, publicationError } from "../grid-policy.js";
 import { z } from "zod";
 import { manualKey } from "../manual-keys.js";
 import { Router, type Request, type Response } from "express";
-import type { Store } from "../store.js";
+import type { Store, Session } from "../store.js";
 import type { Provider } from "../provider.js";
 import type { Jobs } from "../jobs.js";
 import type { SessionReader } from "../session.js";
@@ -51,7 +51,11 @@ export function createGridRoutes({
     visibility: g.visibility,
     author: gridAuthor(g, store),
   });
-  function readGrid(req: Request, res: Response, allowed = ownsGrid) {
+  function readGrid(
+    req: Request,
+    res: Response,
+    allowed: (grid: Grid, session: Session) => boolean = ownsGrid,
+  ) {
     const s = session(req, res),
       g = store.get(String(req.params.id));
     if (g && allowed(g, s)) return { g, s };

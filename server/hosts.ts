@@ -27,9 +27,6 @@ export function createHtmlHosts(origin: URL, suffix: string) {
     cellId,
     // CSP supports whole-label wildcards, not partial-label '*-suffix' sources.
     frameSource: `${origin.protocol}//*.${labels.slice(1).join(".")}${sample.port ? `:${sample.port}` : ""}`,
-    previewURL(id: string, attempt: string, revision: number) {
-      return `${origin.protocol}//${id}${normalizedSuffix}/__preview/${attempt}/index.html?revision=${revision}`;
-    },
     url(id: string) {
       if (!cellPattern.test(id)) throw new Error("Invalid output identifier");
       return `${origin.protocol}//${id}${normalizedSuffix}/index.html`;

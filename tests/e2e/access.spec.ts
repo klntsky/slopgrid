@@ -23,11 +23,15 @@ test("drafts, mutation endpoints, and generated hosts enforce ownership and orig
     ).status(),
   ).toBe(403);
   const output = await page.locator("iframe").first().getAttribute("src");
-  const isolated = new URL(output!);
+  const isolated = new URL(
+    page
+      .frames()
+      .find((frame) => frame !== page.mainFrame())!
+      .url(),
+  );
   expect(isolated.hostname).toMatch(/^[a-f0-9]{48}-slopgrid\.localhost$/);
-  const response = await request.get(`${baseURL}${isolated.pathname}`, {
-    headers: { host: isolated.host },
-  });
+  const response = await page.request.get(output!);
+  expect(response.status()).toBe(200);
   expect(response.headers()["set-cookie"]).toBeUndefined();
   expect(response.headers()["content-security-policy"]).toContain("sandbox");
   expect(
@@ -38,6 +42,14 @@ test("drafts, mutation endpoints, and generated hosts enforce ownership and orig
     ).status(),
   ).toBe(404);
   const cellId = isolated.hostname.split("-")[0];
+  for (const url of [
+    output!,
+    isolated.href,
+    new URL("style.css", isolated).href,
+    new URL("app.js", isolated).href,
+    `/outputs/${cellId}/download`,
+  ])
+    expect((await anonymous.get(url)).status(), url).toBe(404);
   expect((await request.get(`/outputs/${cellId}`)).status()).toBe(404);
   // A direct output tab must be isolated too, without relying on the iframe sandbox.
   const outputTab = await page.context().newPage();
@@ -53,6 +65,33 @@ test("drafts, mutation endpoints, and generated hosts enforce ownership and orig
     }),
   ).toBe(true);
   await outputTab.close();
+  const attacker = await page.context().newPage();
+  const asset = new URL("app.js", isolated).href;
+  await attacker.route("http://attacker.localhost/**", (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: `<script>onmessage = event => document.body.dataset.result = event.data</script><iframe sandbox="allow-scripts" srcdoc='${`<script>fetch(${JSON.stringify(asset)}, {credentials:"include"}).then(response => response.text()).then(() => parent.postMessage("leaked", "*"), () => parent.postMessage("blocked", "*"))</script>`.replaceAll("'", "&#39;")}'></iframe>`,
+    }),
+  );
+  await attacker.goto("http://attacker.localhost/");
+  await expect(attacker.locator("body")).toHaveAttribute(
+    "data-result",
+    "blocked",
+  );
+  await attacker.close();
+  // An already issued output cookie stops authorizing files after session rotation.
+  await page.request.post("/api/auth/logout");
+  expect((await page.request.get(isolated.href)).status()).toBe(404);
+  // Reopening through the app reauthorizes this still-owned anonymous grid.
+  await page.reload();
+  await page.getByRole("button", { name: "PUBLISH", exact: true }).click();
+  await finishPublishing(page);
+  expect((await anonymous.get(output!)).status()).toBe(200);
+  expect((await anonymous.get(isolated.href)).status()).toBe(200);
+  expect((await anonymous.get(asset)).status()).toBe(200);
+  expect((await anonymous.get(`/outputs/${cellId}/download`)).status()).toBe(
+    200,
+  );
   await anonymous.dispose();
 });
 

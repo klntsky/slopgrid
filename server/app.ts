@@ -23,6 +23,7 @@ import { createAuthRoutes } from "./routes/auth.js";
 import { createModelRoutes } from "./routes/models.js";
 import { createGridRoutes } from "./routes/grids.js";
 import { createEventRoutes } from "./routes/events.js";
+import { createOutputAccess } from "./output-access.js";
 export type Config = {
   github?: OAuthCredentials;
   origin: string;
@@ -53,11 +54,27 @@ export function createApp(config: Config) {
   const htmlHosts = createHtmlHosts(origin, config.outputDomain);
   const rate = createRateLimiter();
   const session = createSessionReader(store, origin);
-  const snapshot = createGridPresenter(store, origin, htmlHosts);
+  const outputAccess = createOutputAccess(
+    store,
+    session,
+    htmlHosts,
+    config.secret,
+  );
+  const snapshot = createGridPresenter(store, origin);
   app.disable("x-powered-by");
   app.set("trust proxy", "loopback");
-  app.use(createHostDispatcher(store, origin, htmlHosts, rate, jobs.previews));
-  app.use(createOutputRoutes(store, origin, rate));
+  app.use(
+    createHostDispatcher(
+      store,
+      origin,
+      htmlHosts,
+      rate,
+      jobs.previews,
+      outputAccess,
+    ),
+  );
+  app.use(createOutputRoutes(store, origin, rate, session));
+  app.get("/outputs/:id/website", outputAccess.open);
   app.use(express.json({ limit: "100kb" }));
   app.use("/api", createApiSecurity(config.origin, rate));
   app.use(

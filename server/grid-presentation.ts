@@ -1,7 +1,6 @@
 import { ownsGrid } from "./grid-policy.js";
 import type { Grid, Identity } from "./domain.js";
 import type { Store, Session } from "./store.js";
-import type { createHtmlHosts } from "./hosts.js";
 
 export function presentIdentity(user?: Identity): Identity | null {
   return user
@@ -19,11 +18,7 @@ export function gridAuthor(grid: Grid, store: Store): Identity | null {
         grid.ownerUserId ? store.user(grid.ownerUserId) : undefined,
       );
 }
-export function createGridPresenter(
-  store: Store,
-  origin: URL,
-  htmlHosts: ReturnType<typeof createHtmlHosts>,
-) {
+export function createGridPresenter(store: Store, origin: URL) {
   const snapshot = (g: Grid, s: Session) => {
     const { owner: _owner, ownerUserId: _ownerUserId, ...grid } = g;
     return {
@@ -46,12 +41,12 @@ export function createGridPresenter(
         draft: g.input.format === "html" ? undefined : c.draft,
         previewURL:
           g.input.format === "html" && c.status === "running" && c.preview
-            ? htmlHosts.previewURL(c.id, c.preview.attempt, c.preview.revision)
+            ? `${origin.origin}/outputs/${c.id}/website?path=${encodeURIComponent(`__preview/${c.preview.attempt}/index.html`)}&revision=${c.preview.revision}`
             : undefined,
         outputURL:
           c.status === "complete"
             ? g.input.format === "html"
-              ? htmlHosts.url(c.id)
+              ? `${origin.origin}/outputs/${c.id}/website`
               : `${origin.origin}/outputs/${c.id}`
             : undefined,
       })),
