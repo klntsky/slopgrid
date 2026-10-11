@@ -1,3 +1,4 @@
+import { completionFailure } from "./failures.js";
 import { instruction, parseOutput } from "./output-format.js";
 import { generateImage, streamText } from "ai";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
@@ -58,10 +59,8 @@ export async function generateInference(
       usage = current;
     }
     function requireSuccess(finishReason: string | undefined) {
-      if (finishReason !== "stop")
-        throw new Error(
-          "The model did not complete its response. Retry generation.",
-        );
+      const error = completionFailure(finishReason);
+      if (error) throw new Error(error);
     }
     async function optional<T>(value: PromiseLike<T>): Promise<T | undefined> {
       try {

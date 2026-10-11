@@ -2,7 +2,7 @@ import type Database from "better-sqlite3";
 import type { Cell, Completion } from "./domain.js";
 import { expandGrid } from "./domain.js";
 import { token } from "./ids.js";
-import { failureDetails } from "./failures.js";
+import { completionFailure, failureDetails } from "./failures.js";
 
 export type CallDetails = {
   phase: Completion["phase"];
@@ -59,16 +59,14 @@ export class Billing {
           save();
         },
         complete: (completion, usage) => {
+          const error = completionFailure(completion.finishReason);
           data = {
             ...data,
             completion,
             usage,
             finishedAt: Date.now(),
-            status: completion.finishReason === "stop" ? "succeeded" : "failed",
-            error:
-              completion.finishReason === "stop"
-                ? undefined
-                : "The model did not complete its response. Retry generation.",
+            status: error ? "failed" : "succeeded",
+            error,
           };
           save();
         },

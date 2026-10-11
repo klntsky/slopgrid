@@ -49,3 +49,9 @@ export function failureDetails(error: unknown) {
   }
   return { message, code, status, temporary, retryAfterMs };
 }
+
+export function completionFailure(finishReason: string | undefined) {
+  return finishReason === "stop"
+    ? undefined
+    : "The model did not complete its response. Retry generation.";
+}
