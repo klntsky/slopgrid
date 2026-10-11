@@ -1,19 +1,16 @@
 import { Router } from "express";
 import { readFileSync } from "node:fs";
-import { marked, Renderer } from "marked";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { MarkdownContent } from "../../shared/markdown.js";
 import type { Store } from "../store.js";
 import type { RateLimiter } from "../rate-limit.js";
-const escape = (s: string) =>
-  s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll('"', "&quot;");
-
 export function createOutputRoutes(
   store: Store,
   origin: URL,
   rate: RateLimiter,
 ) {
   const app = Router();
-  const markdownRenderer = new Renderer();
-  markdownRenderer.html = ({ text }) => escape(text);
   app.get("/outputs/:id", (req, res) => {
     const id = String(req.params.id);
     if (!/^[a-f0-9]{48}$/.test(id)) return res.sendStatus(404);
@@ -42,6 +39,8 @@ export function createOutputRoutes(
         .sendFile(file, { dotfiles: "allow" });
     if (output.format === "svg")
       return res.type("image/svg+xml").sendFile(file, { dotfiles: "allow" });
+    if (req.query.raw === "1")
+      return res.type("text/markdown").sendFile(file, { dotfiles: "allow" });
     const colorScheme =
       req.query.theme === "dark"
         ? "dark"
@@ -58,7 +57,7 @@ export function createOutputRoutes(
         blockquote{margin-left:0;padding-left:16px;border-left:3px solid light-dark(#d1cabd,#45423e)}
         hr,th,td{border-color:light-dark(#d1cabd,#45423e)}
         img{max-width:100%}
-      </style></head><body>${marked.parse(readFileSync(file, "utf8"), { renderer: markdownRenderer })}</body></html>`,
+      </style></head><body>${renderToStaticMarkup(createElement(MarkdownContent, { markdown: readFileSync(file, "utf8") }))}</body></html>`,
     );
   });
   return app;

@@ -61,3 +61,5 @@ Generation has no application output-byte, output-token, or bundle-file-count li
 ## Icons
 
 Interface icons use `lucide-react`, under the [Lucide ISC license](https://lucide.dev/license), with MIT notices for icons derived from Feather. The distributed notices are included in `public/lucide-LICENSE.txt` and copied into the build. The project mark is the custom 5×5 cell SVG in `public/slopgrid.svg`, shared by the wordmark and favicon. The OpenRouter connector uses its official brand asset.
+
+Markdown rendering uses the shared React component with `react-markdown` and `remark-gfm`, with no raw HTML parser plugin. The output route serves the stored Markdown source for `?raw=1` and uses React server rendering for direct pages. Vite aliases `decode-named-character-reference` to its default lookup-table implementation because its browser implementation uses an innerHTML assignment. Keep this alias when updating Markdown dependencies, and inspect the selected browser modules for HTML insertion or code-evaluation APIs.
