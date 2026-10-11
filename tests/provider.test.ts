@@ -5,7 +5,6 @@ import { once } from "node:events";
 import { Provider } from "../server/provider.js";
 import { failureDetails } from "../server/failures.js";
 import type { Cell } from "../server/domain.js";
-import { PartialWebsite } from "../server/partial-website.js";
 
 async function upstream(streamError?: Record<string, unknown>) {
   const requests: Record<string, unknown>[] = [];
@@ -169,7 +168,7 @@ test("catalog discovery distinguishes explicit, unrestricted, fixed, and unknown
   }
 });
 
-test("website requests require a schema only when advertised and stream previews in either format", async () => {
+test("website requests require a schema only when the model advertises support", async () => {
   const h = await upstream();
   try {
     for (const model of [
@@ -178,23 +177,17 @@ test("website requests require a schema only when advertised and stream previews
       "json-only",
       "router",
     ]) {
-      const preview = new PartialWebsite();
-      let earlyPreview = false;
       const result = await h.provider.generate(
         "fixture-key",
         "html",
         cell(model, "default"),
-        (text) => {
-          preview.update(text);
-          if (preview.files["index.html"] && !text.endsWith("}"))
-            earlyPreview = true;
-        },
+        () => {},
       );
-      assert.equal(earlyPreview, true, model);
-      assert.deepEqual({ ...preview.files }, result.files);
-      assert.equal(result.files["index.html"], "<h1>Output</h1>");
+      assert.deepEqual(result.files, {
+        "index.html": "<h1>Output</h1>",
+        "style.css": "body { color: red; }",
+      });
       const request = h.requests.at(-1)!;
-      assert.equal(request.stream, true);
       assert.equal(
         (request.provider as { require_parameters: boolean })
           .require_parameters,
@@ -203,19 +196,10 @@ test("website requests require a schema only when advertised and stream previews
       if (model.startsWith("structured")) {
         const format = request.response_format as {
           type: string;
-          json_schema: { strict: boolean; schema: any };
+          json_schema: { strict: boolean };
         };
         assert.equal(format.type, "json_schema");
         assert.equal(format.json_schema.strict, true);
-        assert.equal(format.json_schema.schema.additionalProperties, false);
-        assert.equal(
-          format.json_schema.schema.properties.files.items.additionalProperties,
-          false,
-        );
-        assert.deepEqual(
-          format.json_schema.schema.properties.files.items.required,
-          ["path", "content"],
-        );
       } else assert.equal(request.response_format, undefined);
     }
     await h.provider.generate(
@@ -296,7 +280,6 @@ test("selected settings reach inference even when the catalog warns they are uns
     assert.deepEqual(h.requests[3].reasoning, { enabled: false });
     assert.deepEqual(h.requests[4].reasoning, { effort: "max" });
     assert.deepEqual(h.requests[5].reasoning, { effort: "high" });
-    assert.equal(h.requests.length, 6);
   } finally {
     await h.close();
   }

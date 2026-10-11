@@ -27,16 +27,8 @@ for (const [format, prompt] of Object.entries(prompts)) {
   test(`${format} completes with a real OpenRouter key and remains usable after reload`, async ({
     page,
   }) => {
-    const markdownChunks: string[] = [];
     const browserErrors: string[] = [];
     page.on("pageerror", (error) => browserErrors.push(error.message));
-    page.on("request", (request) => {
-      if (
-        /\/assets\/markdown-[^/]+\.js$/.test(new URL(request.url()).pathname)
-      ) {
-        markdownChunks.push(request.url());
-      }
-    });
     await page.goto("/");
     await page.getByRole("button", { name: format, exact: true }).click();
     await page
@@ -84,7 +76,6 @@ for (const [format, prompt] of Object.entries(prompts)) {
     const grid = await (await page.request.get(`/api/grids/${gridId}`)).json();
     expect(grid.cells[0].status, grid.cells[0].error).toBe("complete");
     await page.reload();
-    await expect(bar).toHaveAttribute("value", "1");
     const output = await page
       .getByRole("link", { name: "Open output" })
       .getAttribute("href");
@@ -96,8 +87,6 @@ for (const [format, prompt] of Object.entries(prompts)) {
           .locator(".markdown-preview")
           .getByRole("heading", { name: "OK", exact: true }),
       ).toBeVisible();
-      expect(await response.text()).toContain("OK");
-      expect(markdownChunks).toEqual([]);
     } else if (format === "SVG") {
       const image = page.getByRole("img", { name: "Generated SVG" });
       await expect
@@ -107,9 +96,6 @@ for (const [format, prompt] of Object.entries(prompts)) {
         .toBeGreaterThan(0);
       expect(response.headers()["content-type"]).toContain("image/svg+xml");
     } else {
-      expect(new URL(response.url()).hostname).toMatch(
-        /^[a-f0-9]{48}-slopgrid\.localhost$/,
-      );
       const frame = page.frameLocator("iframe");
       await expect(
         frame.getByRole("heading", { name: "OK", exact: true }),

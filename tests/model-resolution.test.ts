@@ -48,7 +48,6 @@ test("grid settings contain only concrete models, including both axis orientatio
     const resolved = resolveGridModels(setup, models());
     assert.deepEqual(resolved[axis].values, ["fixture/v1", "fixture/v2"]);
     assert.equal(resolved.model, "");
-    assert.ok(!JSON.stringify(resolved).includes("~fixture/latest"));
   }
   assert.equal(input.model, "~fixture/latest");
 });

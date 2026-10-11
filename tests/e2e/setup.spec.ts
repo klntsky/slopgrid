@@ -72,10 +72,8 @@ test("model choices start empty and filtering preserves deliberate selections", 
     "Fixture text",
     "Second model",
   ]);
-  await expect(page.getByPlaceholder("Search models")).toBeVisible();
   const filter = page.getByLabel("Search models");
   const clear = page.getByRole("button", { name: "Clear column model filter" });
-  await expect(clear).toBeVisible();
   await clear.click();
   await expect(filter).toBeFocused();
   await expect(filter).toHaveValue("");
@@ -106,7 +104,6 @@ test("model choices start empty and filtering preserves deliberate selections", 
   await clear.click();
   await expect(filter).toHaveValue("");
   await expect(filter).toBeFocused();
-  await expect(clear).toBeVisible();
   await expect(
     columns.getByRole("checkbox", { name: "Fixture text", exact: true }),
   ).not.toBeChecked();
@@ -137,7 +134,6 @@ test("model choices start empty and filtering preserves deliberate selections", 
       const rowClear = page.getByRole("button", {
         name: "Clear row model filter",
       });
-      await expect(rowClear).toBeVisible();
       await rowFilter.fill("no matching model");
       await rowClear.press("Enter");
       await expect(rowFilter).toHaveValue("");

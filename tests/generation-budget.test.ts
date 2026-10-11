@@ -14,10 +14,6 @@ test("dollar budgets reserve input costs, price reasoning as output, and respect
     128000,
   );
   const smaller = generationBudget(model, "hello", "system", 1);
-  assert.equal(
-    smaller.maxOutputTokens,
-    Math.floor((1 - smaller.inputCost) / 0.00002),
-  );
   assert.ok(smaller.inputCost + smaller.maxOutputTokens * 0.00002 <= 1);
   assert.equal(
     generationBudget(

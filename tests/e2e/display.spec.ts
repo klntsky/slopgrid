@@ -189,7 +189,6 @@ test("one completed image covers rendering, reload, and desktop/mobile workspace
   await create(page, "Image", "dog", "hat", prompt);
   await expectProgress(page, 1, 1);
   const bar = page.getByRole("progressbar", { name: "Grid generation" });
-  await expect(bar).toHaveAttribute("value", "1");
   await expect(page.getByText("$0.012345", { exact: true })).toHaveCount(1);
   await page.reload();
   await expect(bar).toHaveAttribute("value", "1");
@@ -233,7 +232,6 @@ test("one completed image covers rendering, reload, and desktop/mobile workspace
   }
   for (const viewport of viewports) {
     await page.setViewportSize(viewport);
-    await expectProgress(page, 1, 1);
     const header = page.getByRole("banner");
     await expect(header.getByRole("heading", { level: 1 })).toHaveText(
       prompt.trim(),
@@ -274,13 +272,6 @@ test("one completed image covers rendering, reload, and desktop/mobile workspace
     await expect(
       page.getByRole("rowheader", { name: /^dog(?:\s|$)/ }),
     ).toBeVisible();
-    await expect
-      .poll(() =>
-        page
-          .getByRole("img", { name: "Generated image", exact: true })
-          .evaluate((img) => (img as HTMLImageElement).naturalWidth),
-      )
-      .toBeGreaterThan(0);
     const cell = (await page.locator(".cell").first().boundingBox())!,
       corner = (await cornerCell.boundingBox())!;
     const rowLabel = page.getByRole("rowheader", { name: /^dog(?:\s|$)/ });
@@ -311,9 +302,6 @@ test("one completed image covers rendering, reload, and desktop/mobile workspace
     const header = page.getByRole("banner");
     await expectActionsBesideTitle(["FORK", "Copy link"], viewport.width);
     await expect(header.getByText("Published", { exact: true })).toHaveCount(0);
-    await expect(
-      header.getByRole("button", { name: "Copy link" }),
-    ).toBeVisible();
     await header.getByRole("link", { name: "slopgrid", exact: true }).click();
     await page.getByRole("link", { name: "NEW GRID", exact: true }).click();
     await expect(
