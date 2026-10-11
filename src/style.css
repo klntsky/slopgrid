@@ -229,6 +229,19 @@ section {
   gap: 24px;
   margin-bottom: 22px;
 }
+.axes {
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 12px;
+}
+.axis-swap {
+  align-self: start;
+  margin-top: 24px;
+  padding: 11px;
+}
+.axis-swap .lucide {
+  width: 20px;
+  height: 20px;
+}
 label {
   display: flex;
   flex-direction: column;
@@ -783,6 +796,13 @@ legend {
   .fixed-options {
     grid-template-columns: 1fr;
     gap: 10px;
+  }
+  .axis-swap {
+    margin-top: 0;
+    justify-self: center;
+  }
+  .axis-swap .lucide {
+    transform: rotate(90deg);
   }
   .connection {
     flex-wrap: wrap;

@@ -9,6 +9,7 @@ import {
   Image,
   ArrowUpRight,
   DollarSign,
+  ArrowLeftRight,
 } from "lucide-react";
 import {
   efforts,
@@ -41,6 +42,7 @@ export function Create() {
   const budgetHint = useTooltip<HTMLLabelElement>(
     "Used to calculate each output’s token limit.",
   );
+  const swapHint = useTooltip<HTMLButtonElement>("Swap rows and columns");
   const catalog = useQuery({
     queryKey: ["models"],
     queryFn: () => api<Model[]>("/models"),
@@ -191,6 +193,25 @@ export function Create() {
                   models={models}
                   onChange={(rows) => update({ rows })}
                 />
+                <button
+                  type="button"
+                  className="secondary axis-swap"
+                  aria-label="Swap rows and columns"
+                  ref={swapHint}
+                  onClick={() =>
+                    update({
+                      rows: input.columns,
+                      columns: input.rows,
+                      prompt: input.prompt.replace(
+                        /\$VARIABLE_(ROW|COLUMN)/g,
+                        (_, axis) =>
+                          axis === "ROW" ? "$VARIABLE_COLUMN" : "$VARIABLE_ROW",
+                      ),
+                    })
+                  }
+                >
+                  <ArrowLeftRight aria-hidden="true" />
+                </button>
                 <AxisEditor
                   label="Columns"
                   axis={input.columns}

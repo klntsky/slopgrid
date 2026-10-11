@@ -410,6 +410,61 @@ test("generation hints appear on keyboard focus before and after outputs finish"
   }
 });
 
+for (const width of [1280, 390]) {
+  test(`axis swap preserves values and prompt variables at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/");
+    await page.getByRole("button", { name: "SVG", exact: true }).click();
+    const rows = page.getByRole("combobox", { name: "Rows", exact: true });
+    const columns = page.getByRole("combobox", {
+      name: "Columns",
+      exact: true,
+    });
+    await rows.selectOption("variable");
+    await page.getByLabel("Row values").fill("cat\ndog");
+    await columns.selectOption("effort");
+    const columnValues = page.getByRole("group", { name: "Column values" });
+    await columnValues
+      .getByRole("checkbox", { name: "None", exact: true })
+      .check();
+    await columnValues
+      .getByRole("checkbox", { name: "high", exact: true })
+      .check();
+    await page.getByRole("button", { name: "Continue to prompt" }).click();
+    const prompt = page.getByLabel("Prompt", { exact: true });
+    await prompt.fill("Draw $VARIABLE_ROW");
+    const swap = page.getByRole("button", { name: "Swap rows and columns" });
+    const rowBox = (await rows.boundingBox())!;
+    const columnBox = (await columns.boundingBox())!;
+    const swapBox = (await swap.boundingBox())!;
+    if (width > 700) {
+      expect(swapBox.x).toBeGreaterThanOrEqual(rowBox.x + rowBox.width);
+      expect(swapBox.x + swapBox.width).toBeLessThanOrEqual(columnBox.x);
+    } else {
+      expect(swapBox.y).toBeGreaterThan(rowBox.y);
+      expect(swapBox.y + swapBox.height).toBeLessThanOrEqual(columnBox.y);
+    }
+    await swap.click();
+    await expect(rows).toHaveValue("effort");
+    await expect(columns).toHaveValue("variable");
+    await expect(
+      page.getByRole("group", { name: "Row values" }).locator("input:checked"),
+    ).toHaveCount(2);
+    await expect(page.getByLabel("Column values")).toHaveValue("cat\ndog");
+    await expect(prompt).toHaveValue("Draw $VARIABLE_COLUMN");
+    await swap.click();
+    await expect(rows).toHaveValue("variable");
+    await expect(columns).toHaveValue("effort");
+    await expect(page.getByLabel("Row values")).toHaveValue("cat\ndog");
+    await expect(prompt).toHaveValue("Draw $VARIABLE_ROW");
+    await page.reload();
+    await expect(page.getByLabel("Row values")).toHaveValue("cat\ndog");
+    await expect(prompt).toHaveValue("Draw $VARIABLE_ROW");
+  });
+}
+
 test("model choices start empty and filtering preserves deliberate selections", async ({
   page,
 }) => {
