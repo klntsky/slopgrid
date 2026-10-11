@@ -26,7 +26,7 @@ export function ZoomableGrid({
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  useGridResize(ref, gridId);
+  const fitViewport = useGridResize(ref, gridId);
   useLayoutEffect(() => {
     const viewport = ref.current!,
       table = viewport.querySelector("table")!;
@@ -43,9 +43,7 @@ export function ZoomableGrid({
       if (!distance) return;
       event.preventDefault();
       const bounds = viewport.getBoundingClientRect();
-      if (!table.dataset.resized) {
-        table.style.width = `${viewport.clientWidth}px`;
-      }
+      fitViewport();
       const tableBounds = table.getBoundingClientRect();
       gesture = {
         distance,
@@ -90,15 +88,7 @@ export function ZoomableGrid({
       gesture = undefined;
       pinching = false;
       table.style.zoom = "";
-      if (!table.dataset.resized) {
-        table.style.width = `${viewport.clientWidth}px`;
-        const rowHeight = Math.max(
-          390,
-          (viewport.clientHeight - table.tHead!.offsetHeight) /
-            table.tBodies[0].rows.length,
-        );
-        table.style.setProperty("--grid-row-height", `${rowHeight}px`);
-      }
+      fitViewport();
       if (hasTouch() && viewport.clientWidth) {
         scale = Math.min(
           1,
@@ -125,7 +115,7 @@ export function ZoomableGrid({
       viewport.removeEventListener("touchcancel", end);
       touchPointer.removeEventListener("change", reset);
     };
-  }, []);
+  }, [fitViewport]);
   return (
     <div
       ref={ref}

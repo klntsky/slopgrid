@@ -1,4 +1,4 @@
-import { useLayoutEffect, type RefObject } from "react";
+import { useCallback, useLayoutEffect, type RefObject } from "react";
 
 type Sizes = { columns: number[]; rows: number[] };
 
@@ -6,6 +6,18 @@ export function useGridResize(
   viewportRef: RefObject<HTMLDivElement | null>,
   gridId: string,
 ) {
+  const fitViewport = useCallback(() => {
+    const viewport = viewportRef.current!,
+      table = viewport.querySelector("table")!;
+    if (table.dataset.resized) return;
+    table.style.width = `${viewport.clientWidth}px`;
+    const rowHeight = Math.max(
+      390,
+      (viewport.clientHeight - table.tHead!.offsetHeight) /
+        table.tBodies[0].rows.length,
+    );
+    table.style.setProperty("--grid-row-height", `${rowHeight}px`);
+  }, [viewportRef]);
   useLayoutEffect(() => {
     const table = viewportRef.current!.querySelector("table")!;
     const allColumns = Array.from(table.querySelectorAll("col"));
@@ -172,4 +184,5 @@ export function useGridResize(
     table.addEventListener("keydown", key, { signal: events.signal });
     return () => events.abort();
   }, [viewportRef, gridId]);
+  return fitViewport;
 }
