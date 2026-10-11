@@ -39,7 +39,11 @@ test("generation hints appear on keyboard focus before and after outputs finish"
   await request.post("/fixture/reset", { data: { holdGenerations: true } });
   try {
     await create(page, "SVG", "cat", "hat");
-    await page.mouse.move(0, 0);
+    await expectProgress(page, 0, 1);
+    const tooltip = page.locator('.tippy-box[data-state="visible"]');
+    await page.mouse.move(1, page.viewportSize()!.height - 1);
+    await page.locator(".grid-progress").focus();
+    await expect(tooltip).toHaveText("0 of 1 outputs complete");
     await page.getByRole("button", { name: "Pause generation" }).focus();
     await expect(page.locator('.tippy-box[data-state="visible"]')).toHaveCount(
       1,
@@ -49,6 +53,38 @@ test("generation hints appear on keyboard focus before and after outputs finish"
     );
     await request.post("/fixture/release", { data: { all: true } });
     await expectProgress(page, 1, 1);
+    await page.locator(".grid-progress").focus();
+    await expect(tooltip).toHaveText("1 of 1 outputs complete");
+    for (const theme of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme: theme });
+      await expect(page.locator("html")).toHaveCSS("color-scheme", theme);
+      for (const [control, hint] of [
+        [page.getByRole("button", { name: "EDIT", exact: true }), "Edit grid"],
+        [
+          page.getByRole("button", { name: "PUBLISH", exact: true }),
+          "Publish grid",
+        ],
+        [
+          page.getByRole("link", { name: "Open output", exact: true }),
+          "Open output",
+        ],
+        [
+          page.locator('[data-tooltip="OpenRouter reported cost"]'),
+          "OpenRouter reported cost",
+        ],
+      ] as const) {
+        await control.focus();
+        await expect(tooltip).toHaveCount(1);
+        await expect(tooltip).toHaveText(hint);
+        await expect(tooltip).toHaveCSS("background-color", "rgb(0, 0, 0)");
+        await expect(tooltip).toHaveCSS("color", "rgb(255, 255, 255)");
+        await expect(tooltip.locator(".tippy-arrow")).toHaveCSS(
+          "color",
+          "rgb(0, 0, 0)",
+        );
+      }
+    }
+    await expect(page.locator("[title]")).toHaveCount(0);
     const tokens = page.locator(".token-count");
     await tokens.nth(0).focus();
     await expect(page.locator('.tippy-box[data-state="visible"]')).toHaveCount(

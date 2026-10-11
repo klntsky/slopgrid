@@ -1,3 +1,4 @@
+import { tooltipRef } from "../components/use-tooltip";
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Eye, Upload } from "lucide-react";
@@ -41,7 +42,8 @@ export function PublishGrid({
           setOpen(true);
         }}
         aria-label={grid.published ? "Change visibility" : "PUBLISH"}
-        title={grid.published ? "Change visibility" : "Publish grid"}
+        data-tooltip={grid.published ? "Change visibility" : "Publish grid"}
+        ref={tooltipRef}
       >
         {grid.published ? (
           <Eye aria-hidden="true" />

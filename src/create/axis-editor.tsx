@@ -4,7 +4,11 @@ import { efforts, type GridInput } from "../../server/domain";
 import { effortLabel } from "../../server/compatibility";
 import type { Model } from "../../server/provider";
 import { dimensionNames } from "../format";
-import { modelDefaultHint, useTooltip } from "../components/use-tooltip";
+import {
+  modelDefaultHint,
+  useTooltip,
+  tooltipRef,
+} from "../components/use-tooltip";
 export function AxisEditor({
   label,
   axis,
@@ -87,7 +91,8 @@ export function AxisEditor({
                 type="button"
                 className="model-search-clear"
                 aria-label={`Clear ${label === "Rows" ? "row" : "column"} model filter`}
-                title="Clear filter"
+                data-tooltip="Clear filter"
+                ref={tooltipRef}
                 onClick={() => {
                   setFilter("");
                   filterInput.current?.focus();
@@ -145,11 +150,14 @@ export function AxisEditor({
                   models.find((model) => model.id === id)?.name ?? id;
                 return (
                   <li className="model-badge" key={id}>
-                    <span title={id}>{name}</span>
+                    <span data-tooltip={id} ref={tooltipRef} tabIndex={0}>
+                      {name}
+                    </span>
                     <button
                       type="button"
                       aria-label={`Remove ${name} from ${label.toLowerCase()}`}
-                      title={`Remove ${name}`}
+                      data-tooltip={`Remove ${name}`}
+                      ref={tooltipRef}
                       onClick={() => {
                         onChange({
                           ...axis,

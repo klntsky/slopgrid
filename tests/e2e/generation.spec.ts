@@ -702,7 +702,9 @@ test("streaming prices grow with reasoning and output, reconcile on success, and
       .toBe(2);
     await release("cat");
     await release("dog");
-    await expect(cells.locator('[title="Estimated cost"]')).toHaveCount(2);
+    await expect(cells.locator('[data-tooltip="Estimated cost"]')).toHaveCount(
+      2,
+    );
     const reasoning = await price(0);
     expect(reasoning).toBeGreaterThan(0);
     const expectTotal = async (formatted: string, estimated = true) => {
@@ -718,11 +720,13 @@ test("streaming prices grow with reasoning and output, reconcile on success, and
     await release("cat");
     await expectProgress(page, 1, 2);
     await expect(
-      cells.nth(0).getByTitle("OpenRouter reported cost"),
+      cells.nth(0).locator('[data-tooltip="OpenRouter reported cost"]'),
     ).toHaveText("$0.019876");
     await expectTotal("$0.02");
     await page.reload();
-    await expect(cells.nth(1).getByTitle("Estimated cost")).toBeVisible();
+    await expect(
+      cells.nth(1).locator('[data-tooltip="Estimated cost"]'),
+    ).toBeVisible();
     await expectTotal("$0.02");
     const before = await price(1);
     await release("dog");

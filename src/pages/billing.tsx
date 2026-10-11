@@ -1,3 +1,4 @@
+import { tooltipRef } from "../components/use-tooltip";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
@@ -72,7 +73,8 @@ export function Billing() {
                           to="/grid/$id"
                           params={{ id: call.gridId }}
                           className="billing-grid-link"
-                          title={call.gridPrompt}
+                          data-tooltip={call.gridPrompt}
+                          ref={tooltipRef}
                         >
                           {call.gridPrompt}
                         </Link>

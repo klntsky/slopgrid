@@ -1,3 +1,4 @@
+import { tooltipRef } from "./components/use-tooltip";
 import { Link } from "lucide-react";
 import { CopyButton } from "./components/copy-button";
 
@@ -20,7 +21,8 @@ export function ModelName({ model }: { model: string }) {
         target="_blank"
         rel="noopener noreferrer"
         aria-label={`View ${model} on OpenRouter`}
-        title="View model on OpenRouter"
+        data-tooltip="View model on OpenRouter"
+        ref={tooltipRef}
       >
         <Link aria-hidden="true" />
       </a>

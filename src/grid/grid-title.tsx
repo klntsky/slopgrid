@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { tooltipRef } from "../components/use-tooltip";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import tippy from "tippy.js";
 import { api, type ViewGrid } from "../api";
@@ -10,6 +11,10 @@ export function GridTitle({ grid }: { grid: ViewGrid }) {
   const [editing, setEditing] = useState(false);
   const prompt = useRef<HTMLHeadingElement>(null);
   const titleButton = useRef<HTMLButtonElement>(null);
+  const titleRef = useCallback((element: HTMLButtonElement | null) => {
+    titleButton.current = element;
+    return tooltipRef(element);
+  }, []);
   const rename = useMutation({
     mutationFn: (title: string) =>
       api<ViewGrid>(`/grids/${grid.id}/title`, "PATCH", { title }),
@@ -77,10 +82,10 @@ export function GridTitle({ grid }: { grid: ViewGrid }) {
             />
           ) : (
             <button
-              ref={titleButton}
+              ref={titleRef}
               className="text-button grid-name"
               aria-label={grid.title ? "Edit title" : "Set Title"}
-              title={grid.title || undefined}
+              data-tooltip={grid.title}
               onClick={() => {
                 rename.reset();
                 setEditing(true);
@@ -90,7 +95,12 @@ export function GridTitle({ grid }: { grid: ViewGrid }) {
             </button>
           )
         ) : grid.title ? (
-          <span className="grid-name" title={grid.title}>
+          <span
+            className="grid-name"
+            data-tooltip={grid.title}
+            ref={tooltipRef}
+            tabIndex={0}
+          >
             {grid.title}
           </span>
         ) : null}

@@ -789,7 +789,19 @@ test("titles are independent owner-editable metadata and collapsed prompts expan
     await expect(
       header.getByRole("button", { name: "Edit title", exact: true }),
     ).toHaveText("Flight study");
-    for (const width of [1280, 390]) {
+    for (const [width, theme] of [
+      [1280, "light"],
+      [390, "dark"],
+    ] as const) {
+      await page.emulateMedia({ colorScheme: theme });
+      await expect(page.locator("html")).toHaveCSS("color-scheme", theme);
+      await header
+        .getByRole("button", { name: "Edit title", exact: true })
+        .focus();
+      await expect(page.locator('.tippy-box[data-state="visible"]')).toHaveText(
+        "Flight study",
+      );
+      await heading.focus();
       await page.setViewportSize({ width, height: 900 });
       expect(
         await heading.evaluate((el) => el.scrollWidth > el.clientWidth),
@@ -799,6 +811,8 @@ test("titles are independent owner-editable metadata and collapsed prompts expan
         '[data-theme="grid-prompt"][data-state="visible"]',
       );
       await expect(tooltip).toHaveText(prompt);
+      await expect(tooltip).toHaveCSS("background-color", "rgb(0, 0, 0)");
+      await expect(tooltip).toHaveCSS("color", "rgb(255, 255, 255)");
       const bounds = (await tooltip.boundingBox())!;
       expect(bounds.x).toBeGreaterThanOrEqual(0);
       expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);

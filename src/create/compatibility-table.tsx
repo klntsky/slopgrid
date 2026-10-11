@@ -1,3 +1,4 @@
+import { tooltipRef } from "../components/use-tooltip";
 import { Check } from "lucide-react";
 import { efforts, type GridInput } from "../../server/domain";
 import { effortLabel, thinkingEffortSupport } from "../../server/compatibility";
@@ -49,7 +50,7 @@ export function CompatibilityTable({
             const model = models.find((candidate) => candidate.id === id);
             return (
               <tr key={id}>
-                <th scope="row" title={id}>
+                <th scope="row" data-tooltip={id} ref={tooltipRef} tabIndex={0}>
                   {model?.name ?? id}
                 </th>
                 {pickedEfforts.map((effort) => {
@@ -64,7 +65,9 @@ export function CompatibilityTable({
                     <td
                       key={effort}
                       aria-label={`${effortLabel(effort)}: ${status}`}
-                      title={status}
+                      data-tooltip={status}
+                      ref={tooltipRef}
+                      tabIndex={0}
                     >
                       {support === "supported" && <Check aria-hidden="true" />}
                     </td>

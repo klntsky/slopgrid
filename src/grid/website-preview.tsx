@@ -17,7 +17,12 @@ export function WebsitePreview({
     );
   return (
     <>
-      <iframe title={title} sandbox="allow-scripts" src={url} loading="lazy" />
+      <iframe
+        aria-label={title}
+        sandbox="allow-scripts"
+        src={url}
+        loading="lazy"
+      />
       <span className="website-preview-status" role="status">
         <LoaderCircle className="spinner" aria-hidden="true" />
         Generating…

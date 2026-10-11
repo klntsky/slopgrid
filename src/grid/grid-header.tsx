@@ -4,7 +4,7 @@ import { GridTitle } from "./grid-title";
 import { Author } from "../components/identity";
 import { Square, Play, Pencil, GitFork, Link2 } from "lucide-react";
 import type { ViewGrid } from "../api";
-import { useTooltip } from "../components/use-tooltip";
+import { useTooltip, tooltipRef } from "../components/use-tooltip";
 const totalUsd = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
@@ -86,7 +86,8 @@ export function GridHeader({
                 disabled={busy}
                 onClick={onConfigure}
                 aria-label={g.published ? "FORK" : "EDIT"}
-                title={g.published ? "Fork grid" : "Edit grid"}
+                data-tooltip={g.published ? "Fork grid" : "Edit grid"}
+                ref={tooltipRef}
               >
                 {g.published ? (
                   <GitFork aria-hidden="true" />
@@ -131,13 +132,17 @@ export function GridHeader({
           </span>
         </div>
       </div>
-      <div className="grid-progress">
+      <div
+        className="grid-progress"
+        data-tooltip={progressText}
+        ref={tooltipRef}
+        tabIndex={0}
+      >
         <progress
           aria-label="Grid generation"
           value={finished}
           max={g.cells.length}
           aria-valuetext={progressText}
-          title={progressText}
         />
         <div className="progress-segments" aria-hidden="true">
           {g.cells.map((cell) => (

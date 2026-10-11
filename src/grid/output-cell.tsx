@@ -16,7 +16,7 @@ import { formatCost, cellError } from "../format";
 import { WebsitePreview } from "./website-preview";
 import { MarkdownPreview } from "./markdown-preview";
 import { SvgPreview } from "../svg-preview-image";
-import { useTooltip } from "../components/use-tooltip";
+import { useTooltip, tooltipRef } from "../components/use-tooltip";
 import { copyOutput } from "./copy-output";
 export function OutputCell({
   cell,
@@ -71,7 +71,7 @@ export function OutputCell({
           />
         ) : (
           <iframe
-            title={title}
+            aria-label={title}
             sandbox="allow-scripts"
             src={outputURL}
             loading="lazy"
@@ -132,7 +132,8 @@ export function OutputCell({
             <button
               className="secondary markdown-expand"
               aria-label={expanded ? "Collapse Markdown" : "Expand Markdown"}
-              title={expanded ? "Collapse Markdown" : "Expand Markdown"}
+              data-tooltip={expanded ? "Collapse Markdown" : "Expand Markdown"}
+              ref={tooltipRef}
               aria-expanded={expanded}
               onClick={(event) => onToggleExpand(event.currentTarget)}
             >
@@ -158,7 +159,8 @@ export function OutputCell({
                     target="_blank"
                     rel="noopener noreferrer"
                     aria-label="Open output"
-                    title="Open output"
+                    data-tooltip="Open output"
+                    ref={tooltipRef}
                   >
                     <ArrowUpRight aria-hidden="true" />
                   </a>
@@ -198,7 +200,9 @@ export function OutputCell({
               )}
               {(complete || cell.estimatedCostUsd !== undefined) && (
                 <span
-                  title={
+                  ref={tooltipRef}
+                  tabIndex={0}
+                  data-tooltip={
                     complete ? "OpenRouter reported cost" : "Estimated cost"
                   }
                 >
