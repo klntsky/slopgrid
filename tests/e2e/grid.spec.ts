@@ -1878,6 +1878,7 @@ test("publishing dialogs preserve private grids, handle failures, and remember s
   page,
   request,
 }) => {
+  await page.setExtraHTTPHeaders({ "X-Forwarded-For": "192.0.2.51" });
   await request.post("/fixture/reset", { data: {} });
   await create(page, "SVG", "cat");
   await expectProgress(page, 1, 1);
@@ -1957,7 +1958,10 @@ test("publishing dialogs preserve private grids, handle failures, and remember s
   await expect(publish).toHaveCount(0);
   const first = await (await page.request.get(`/api/grids/${id}`)).json();
   const next = await (
-    await page.request.post("/api/grids", { data: first.input })
+    await page.request.post("/api/grids", {
+      headers: { "X-Forwarded-For": "192.0.2.51" },
+      data: first.input,
+    })
   ).json();
   await page.goto(`/grid/${next.id}`);
   await expectProgress(page, 1, 1);
@@ -1975,6 +1979,7 @@ test("both grid listings show format icons with Tippy tooltips and public grids 
   page,
   request,
 }) => {
+  await page.setExtraHTTPHeaders({ "X-Forwarded-For": "192.0.2.52" });
   await request.post("/fixture/reset", { data: {} });
   await create(
     page,
@@ -1989,6 +1994,7 @@ test("both grid listings show format icons with Tippy tooltips and public grids 
   const ids = [firstId];
   for (const format of ["markdown", "html", "image"]) {
     const result = await page.request.post("/api/grids", {
+      headers: { "X-Forwarded-For": "192.0.2.52" },
       data: {
         ...first.input,
         format,
@@ -2013,6 +2019,7 @@ test("both grid listings show format icons with Tippy tooltips and public grids 
   }
   const unlisted = await (
     await page.request.post("/api/grids", {
+      headers: { "X-Forwarded-For": "192.0.2.52" },
       data: {
         ...first.input,
         prompt: "Unlisted $VARIABLE_ROW $VARIABLE_COLUMN",
@@ -2079,6 +2086,7 @@ test("publishing still works when browser storage is unavailable and asks again"
   page,
   request,
 }) => {
+  await page.setExtraHTTPHeaders({ "X-Forwarded-For": "192.0.2.53" });
   await page.addInitScript(() => {
     const get = Storage.prototype.getItem;
     const set = Storage.prototype.setItem;
@@ -2109,7 +2117,10 @@ test("publishing still works when browser storage is unavailable and asks again"
     page.getByRole("button", { name: "FORK", exact: true }),
   ).toBeVisible();
   const next = await (
-    await page.request.post("/api/grids", { data: initial.input })
+    await page.request.post("/api/grids", {
+      headers: { "X-Forwarded-For": "192.0.2.53" },
+      data: initial.input,
+    })
   ).json();
   await page.goto(`/grid/${next.id}`);
   await expectProgress(page, 1, 1);
