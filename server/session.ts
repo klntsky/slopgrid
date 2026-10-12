@@ -2,6 +2,8 @@ import type { Request, Response } from "express";
 import { token } from "./ids.js";
 import type { Store, Session } from "./store.js";
 
+export const sessionMaxAge = 30 * 86400000;
+
 export function anonymousOwner(s: Session) {
   return s.anonymousId ?? s.id;
 }
@@ -15,7 +17,7 @@ export function createSessionReader(store: Store, origin: URL) {
       secure,
       sameSite: "lax",
       path: "/",
-      maxAge: 30 * 86400000,
+      maxAge: sessionMaxAge,
     });
   }
   function read(req: Request): Session | undefined {

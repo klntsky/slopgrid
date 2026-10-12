@@ -1,5 +1,5 @@
 import { test, expect } from "./fixtures";
-import { create, expectProgress } from "./helpers";
+import { create, expectProgress, finishPublishing } from "./helpers";
 
 test("SVG images grow during generation without exposing markup or running SVG scripts", async ({
   page,
@@ -68,6 +68,45 @@ test("SVG images grow during generation without exposing markup or running SVG s
     await request.post("/fixture/reset", { data: {} });
   }
 });
+
+for (const format of ["Image", "SVG"])
+  test(`completed ${format} uses browser caching without sharing private entries between sessions`, async ({ page, request, browser }) => {
+    await request.post("/fixture/reset", { data: {} });
+    await create(page, format, "cat", "hat");
+    await expectProgress(page, 1, 1);
+    const gridURL = page.url();
+    const source = await page.getByRole("img", { name: format === "SVG" ? "Generated SVG" : "Generated image", exact: true }).getAttribute("src");
+    const outputURL = new URL(source!, gridURL).href;
+    await expect.poll(() => page.locator(".generated-image").evaluate((el) => (el as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+    const ownerCookies = await page.context().cookies();
+    async function cachedVisit(view: import("@playwright/test").Page) {
+      await view.goto(new URL("/grids", gridURL).href);
+      await view.goto(gridURL);
+      await expect.poll(() => view.evaluate((url) => {
+        const entry = performance.getEntriesByName(url).at(-1) as PerformanceResourceTiming | undefined;
+        return entry && { transfer: entry.transferSize, decoded: entry.decodedBodySize > 0 };
+      }, outputURL)).toEqual({ transfer: 0, decoded: true });
+    }
+    await cachedVisit(page);
+    await page.context().clearCookies();
+    const denied = await page.goto(outputURL);
+    expect(denied!.status()).toBe(404);
+    await page.context().addCookies(ownerCookies);
+    await page.goto(gridURL);
+    await page.getByRole("button", { name: "PUBLISH", exact: true }).click();
+    await finishPublishing(page);
+    const visitor = await browser.newContext();
+    try {
+      const shared = await visitor.newPage();
+      await shared.goto(gridURL);
+      await expect(shared.getByRole("img", { name: format === "SVG" ? "Generated SVG" : "Generated image", exact: true })).toBeVisible();
+      await expect.poll(() => shared.locator(".generated-image").evaluate((el) => (el as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+      await visitor.clearCookies();
+      await cachedVisit(shared);
+    } finally {
+      await visitor.close();
+    }
+  });
 
 for (const format of ["Image", "SVG", "Markdown", "Static website"])
   test(`mouse panning respects ${format} content, controls and resize handles`, async ({

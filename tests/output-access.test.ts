@@ -159,6 +159,29 @@ test("private outputs require ownership, isolated grants are scoped and revoked 
         path.endsWith("website") ? 302 : 200,
       );
     }
+    if (format === "svg" || format === "image") {
+      // An almost-expired session must not receive a fresh full-duration cache.
+      store.saveSession({
+        id: owner,
+        created: Date.now() - 30 * 86400000 + 5000,
+      });
+      const file = await get(`/outputs/${id}`, { Cookie: cookie });
+      const cache = file.headers.get("cache-control")!;
+      assert.match(cache, /^private, max-age=\d+, immutable, must-revalidate$/);
+      const seconds = Number(/max-age=(\d+)/.exec(cache)![1]);
+      assert.ok(seconds >= 0 && seconds <= 5);
+      assert.equal(file.headers.get("vary"), "Cookie");
+      const conditional = {
+        Cookie: cookie,
+        "If-None-Match": file.headers.get("etag")!,
+      };
+      assert.equal((await get(`/outputs/${id}`, conditional)).status, 304);
+      store.saveSession({ id: owner, created: Date.now() - 31 * 86400000 });
+      const expired = await get(`/outputs/${id}`, conditional);
+      assert.equal(expired.status, 404);
+      assert.equal(expired.headers.get("cache-control"), "no-store");
+      store.saveSession({ id: owner, created: Date.now() });
+    }
     if (format === "html") {
       for (const path of ["/index.html", "/app.js"])
         for (const value of [
@@ -190,6 +213,19 @@ test("private outputs require ownership, isolated grants are scoped and revoked 
       store.saveSession({ id: owner, created: Date.now() });
     }
     store.publish(grid.id, "unlisted", null);
+    if (format === "svg" || format === "image") {
+      const file = await get(`/outputs/${id}`);
+      assert.equal(
+        file.headers.get("cache-control"),
+        "public, max-age=31536000, immutable",
+      );
+      assert.equal(file.headers.get("vary"), null);
+      const cached = await get(`/outputs/${id}`, {
+        "If-None-Match": file.headers.get("etag")!,
+      });
+      assert.equal(cached.status, 304);
+      assert.equal(await cached.text(), "");
+    }
     for (const path of paths)
       assert.equal(
         (await get(path)).status,
