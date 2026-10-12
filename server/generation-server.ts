@@ -56,11 +56,7 @@ export async function serveGeneration(api: GenerationAPI, socket: string) {
       },
       () => res.end(),
     );
-    const heartbeat = setInterval(() => {
-      if (!res.writableNeedDrain) res.write("\n");
-    }, 15000);
     res.on("close", () => {
-      clearInterval(heartbeat);
       unsubscribe();
     });
   });

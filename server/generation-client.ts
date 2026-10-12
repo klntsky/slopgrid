@@ -1,5 +1,6 @@
-import { request } from "node:http";
-import { StringDecoder } from "node:string_decoder";
+import { request, type IncomingMessage, type RequestOptions } from "node:http";
+import { createInterface } from "node:readline";
+import { json } from "node:stream/consumers";
 import {
   generationProtocol,
   generationError,
@@ -8,63 +9,44 @@ import {
 } from "./generation-api.js";
 
 export function generationClient(socketPath: string): GenerationAPI {
-  function call<T>(method: string, path: string, body?: unknown): Promise<T> {
-    return new Promise((resolve, reject) => {
-      const req = request(
-        {
-          socketPath,
-          method,
-          path,
-          headers: { "Content-Type": "application/json" },
-        },
-        (res) => {
-          let text = "";
-          res.setEncoding("utf8");
-          res.on("data", (chunk) => {
-            text += chunk;
-          });
-          res.on("error", () =>
-            reject(
-              generationFailure(
-                "UNAVAILABLE",
-                "Generation service is unavailable.",
-              ),
-            ),
-          );
-          res.on("end", () => {
-            try {
-              if (
-                res.headers["x-generation-protocol"] !==
-                String(generationProtocol)
-              )
-                throw new Error("Incompatible generation protocol");
-              const value = JSON.parse(text);
-              if (res.statusCode !== 200) {
-                const failure = generationError.parse(value);
-                reject(generationFailure(failure.code, failure.error));
-              } else resolve(value as T);
-            } catch {
-              reject(
-                generationFailure(
-                  "UNAVAILABLE",
-                  "Generation service is unavailable.",
-                ),
-              );
-            }
-          });
-        },
-      );
-      req.setTimeout(10000, () => req.destroy());
-      req.on("error", () =>
-        reject(
-          generationFailure(
-            "UNAVAILABLE",
-            "Generation service is unavailable.",
-          ),
-        ),
-      );
+  const unavailable = () =>
+    generationFailure("UNAVAILABLE", "Generation service is unavailable.");
+  function open(path: string, options: RequestOptions, body?: unknown) {
+    return new Promise<IncomingMessage>((resolve, reject) => {
+      const req = request({ socketPath, path, ...options }, (res) => {
+        if (
+          res.headers["x-generation-protocol"] !== String(generationProtocol)
+        ) {
+          res.destroy();
+          reject(unavailable());
+        } else resolve(res);
+      });
+      req.on("error", reject);
+      // Subscriptions have no idle timeout; their AbortSignal owns cancellation.
+      if (!options.signal)
+        req.setTimeout(10000, () => req.destroy(unavailable()));
       req.end(body === undefined ? undefined : JSON.stringify(body));
     });
+  }
+  async function call<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+  ): Promise<T> {
+    let failure;
+    try {
+      const res = await open(
+        path,
+        { method, headers: { "Content-Type": "application/json" } },
+        body,
+      );
+      const value = await json(res);
+      if (res.statusCode === 200) return value as T;
+      failure = generationError.parse(value);
+    } catch {
+      throw unavailable();
+    }
+    throw generationFailure(failure.code, failure.error);
   }
   return {
     startGrid: (body) => call("POST", "/v1/grids/start", body),
@@ -77,52 +59,30 @@ export function generationClient(socketPath: string): GenerationAPI {
     drain: () => call("POST", "/v1/drain"),
     accept: () => call("POST", "/v1/accept"),
     subscribeGrid(id, snapshot, disconnected) {
-      let closed = false;
-      const ended = () => {
-        if (!closed) {
-          closed = true;
-          disconnected();
-        }
-      };
-      const req = request(
-        { socketPath, path: `/v1/grids/${encodeURIComponent(id)}/events` },
-        (res) => {
-          if (
-            res.statusCode !== 200 ||
-            res.headers["x-generation-protocol"] !== String(generationProtocol)
-          ) {
-            res.destroy();
-            ended();
-            return;
-          }
-          const decoder = new StringDecoder("utf8");
-          let pending = "";
-          res.on("data", (chunk: Buffer) => {
-            pending += decoder.write(chunk);
-            let newline: number;
-            while (!closed && (newline = pending.indexOf("\n")) >= 0) {
-              const line = pending.slice(0, newline);
-              pending = pending.slice(newline + 1);
-              if (line) {
-                try {
-                  snapshot(JSON.parse(line));
-                } catch {
-                  req.destroy();
-                  ended();
-                }
-              }
-            }
+      const controller = new AbortController();
+      const { signal } = controller;
+      void (async () => {
+        try {
+          const res = await open(`/v1/grids/${encodeURIComponent(id)}/events`, {
+            signal,
           });
-          res.on("end", ended);
-          res.on("error", ended);
-        },
-      );
-      req.on("error", ended);
-      req.end();
-      return () => {
-        closed = true;
-        req.destroy();
-      };
+          if (res.statusCode !== 200) throw unavailable();
+          const lines = createInterface({ input: res, crlfDelay: Infinity });
+          // Keep input failures handled even after the iterator is cancelled.
+          lines.on("error", () => lines.close());
+          for await (const line of lines) {
+            if (signal.aborted) break;
+            if (line) snapshot(JSON.parse(line));
+          }
+        } catch {
+          // EOF, malformed data, and socket failure all require a fresh snapshot.
+        } finally {
+          const notify = !signal.aborted;
+          controller.abort();
+          if (notify) disconnected();
+        }
+      })();
+      return () => controller.abort();
     },
   };
 }
