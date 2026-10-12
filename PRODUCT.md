@@ -93,7 +93,7 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 
 ### 3.6. Inference-provider setup
 
-1. Label the section "Inference provider setup". Use a compact OpenRouter status row with the provider identified once.
+1. Provider connection controls belong in the creation form and Settings. Label the section "Inference provider setup" and use a compact OpenRouter status row with the provider identified once.
 2. Show Connect when disconnected. In creation, a connected row links to Settings; in Settings, offer Disconnect and a less prominent Change connection action.
 3. Show the connection-checking state while it is pending. On a failed check, offer retry without falsely asserting that the user is disconnected or their credentials are invalid.
 4. Offer both manual API-key entry and OpenRouter OAuth.

@@ -6,7 +6,6 @@ import { GridHeaderTarget } from "../layout";
 import { useGrid } from "../grid/use-grid";
 import { GridHeader } from "../grid/grid-header";
 import { OutputGrid } from "../grid/output-grid";
-import { Connection } from "../components/connection";
 import { ErrorMessage } from "../components/error-message";
 import {
   LowBalanceDialog,
@@ -60,9 +59,6 @@ export function GridPage() {
             Generation stopped when the server restarted. Resume generation to
             continue.
           </p>
-        )}
-        {g.interruption === "auth" && g.canEdit && (
-          <Connection returnTo={`/grid/${id}`} />
         )}
         {streamLost && live && (
           <div role="status" className="connection-status">
