@@ -133,6 +133,8 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
         <span className={axis === "rows" ? "row-label" : undefined}>
           {kind === "model" ? (
             <ModelName model={value} />
+          ) : kind === "input_references" ? (
+            `references: ${value}`
           ) : (
             displayValue(value, kind)
           )}
