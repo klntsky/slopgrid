@@ -56,7 +56,6 @@ export function createIdentityRoutes(
         req.query.error
       )
         return res.redirect(failed);
-      let stage = "identity";
       try {
         const profile = await provider.identity(
           new URL(req.originalUrl, origin).searchParams,
@@ -66,14 +65,8 @@ export function createIdentityRoutes(
         );
         // A logout, account switch, or new sign-in during exchange invalidates this result.
         const current = store.session(s.id);
-        if (!current || current.identityOAuth || current.userId !== s.userId) {
-          console.error("Sign-in failed", {
-            provider: provider.id,
-            stage: "session changed",
-          });
+        if (!current || current.identityOAuth || current.userId !== s.userId)
           return res.redirect(failed);
-        }
-        stage = "account update";
         store.db.transaction(() => {
           const user = store.identify(
             provider.id,
@@ -85,40 +78,7 @@ export function createIdentityRoutes(
           session.rotate(current, res, user.id);
         })();
         res.redirect(pending.returnTo);
-      } catch (error) {
-        const details = (error instanceof Error ? error : {}) as {
-          code?: string;
-          error?: string;
-          status?: number;
-          cause?: { code?: string; status?: number; body?: { error?: string } };
-        };
-        const code = details.code ?? details.cause?.code;
-        const upstream = details.error ?? details.cause?.body?.error;
-        // Never log the exception, message, callback, response body, or credentials.
-        console.error("Sign-in failed", {
-          provider: provider.id,
-          stage,
-          code:
-            code &&
-            /^(OAUTH_|ERR_|SQLITE_|UND_ERR_|GITHUB_|E)[A-Z_0-9]{1,64}$/.test(
-              code,
-            )
-              ? code
-              : undefined,
-          status: details.status ?? details.cause?.status,
-          upstream: [
-            "incorrect_client_credentials",
-            "redirect_uri_mismatch",
-            "bad_verification_code",
-            "invalid_client",
-            "invalid_grant",
-            "access_denied",
-          ].includes(upstream ?? "")
-            ? upstream
-            : undefined,
-          type:
-            error instanceof Error ? error.constructor.name : "UnknownError",
-        });
+      } catch {
         res.redirect(failed);
       }
     });

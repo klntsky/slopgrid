@@ -1,4 +1,9 @@
 import * as oauth from "oauth4webapi";
+import {
+  exchangeWebFlowCode,
+  getWebFlowAuthorizationUrl,
+} from "@octokit/oauth-methods";
+import { request } from "@octokit/request";
 import { z } from "zod";
 import { upstreamFetch } from "./http.js";
 import type { Identity } from "./domain.js";
@@ -52,65 +57,53 @@ export function validOAuth(attempt: OAuthAttempt | undefined, state: unknown) {
 }
 export const codeChallenge = oauth.calculatePKCECodeChallenge;
 export function githubProvider(credentials: OAuthCredentials): OAuthProvider {
-  const server = {
-    issuer: "https://github.com",
-    token_endpoint: "https://github.com/login/oauth/access_token",
-  };
-  const client = { client_id: credentials.clientId };
+  const github = request.defaults({
+    headers: { "user-agent": "slopgrid" },
+    request: { fetch: upstreamFetch },
+  });
   return {
     id: "github",
     async authorizationURL(callback, state, verifier) {
-      const url = new URL("https://github.com/login/oauth/authorize");
-      url.searchParams.set("client_id", credentials.clientId);
-      url.searchParams.set("redirect_uri", callback);
-      url.searchParams.set("scope", "");
-      url.searchParams.set("state", state);
-      url.searchParams.set("code_challenge", await codeChallenge(verifier));
-      url.searchParams.set("code_challenge_method", "S256");
-      return url.href;
+      const { url } = getWebFlowAuthorizationUrl({
+        clientType: "oauth-app",
+        clientId: credentials.clientId,
+        redirectUrl: callback,
+        state,
+        scopes: [],
+      });
+      const authorization = new URL(url);
+      // Octokit's OAuth methods do not expose PKCE options yet.
+      authorization.searchParams.set(
+        "code_challenge",
+        await codeChallenge(verifier),
+      );
+      authorization.searchParams.set("code_challenge_method", "S256");
+      return authorization.href;
     },
     async identity(params, verifier, callback, state) {
-      const validated = oauth.validateAuthResponse(
-        server,
-        client,
-        params,
-        state,
-      );
-      const response = await oauth.authorizationCodeGrantRequest(
-        server,
-        client,
-        oauth.ClientSecretPost(credentials.clientSecret),
-        validated,
-        callback,
-        verifier,
-        {
-          [oauth.customFetch]: upstreamFetch,
-          signal: AbortSignal.timeout(30000),
-        },
-      );
-      const { access_token } = await oauth.processAuthorizationCodeResponse(
-        server,
-        client,
-        response,
-      );
-      const profile = await upstreamFetch("https://api.github.com/user", {
-        headers: {
-          Accept: "application/vnd.github+json",
-          Authorization: `Bearer ${access_token}`,
-          "User-Agent": "slopgrid",
-        },
-        signal: AbortSignal.timeout(30000),
+      const code = params.get("code");
+      if (!code || params.get("state") !== state || params.has("error"))
+        throw new Error("Invalid GitHub callback");
+      const { authentication } = await exchangeWebFlowCode({
+        clientType: "oauth-app",
+        ...credentials,
+        code,
+        redirectUrl: callback,
+        request: github.defaults({
+          code_verifier: verifier,
+          request: { signal: AbortSignal.timeout(30000) },
+        }),
       });
-      if (!profile.ok)
-        throw new Error("GitHub profile failed", {
-          cause: { code: "GITHUB_PROFILE_FAILED", status: profile.status },
-        });
+      const profile = await github("GET /user", {
+        headers: { authorization: `Bearer ${authentication.token}` },
+        request: { signal: AbortSignal.timeout(30000) },
+      });
       const user = z
         .object({
           id: z.number().int().positive().safe(),
           login: z.string().regex(/^[a-zA-Z0-9-]{1,39}$/),
         })
-        .parse(await profile.json());
+        .parse(profile.data);
       return {
         subject: String(user.id),
         identity: {

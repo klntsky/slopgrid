@@ -113,14 +113,11 @@ test("account ownership, frozen authors, browser credentials, and OAuth callback
       const url = String(input);
       if (url === "https://github.com/login/oauth/access_token") {
         exchanges++;
-        const body = new URLSearchParams(String(init?.body));
-        assert.equal(body.get("code"), "test-code");
-        assert.equal(body.get("code_verifier"), verifier);
-        assert.equal(
-          body.get("redirect_uri"),
-          origin + "/api/auth/github/callback",
-        );
-        assert.equal(body.get("client_secret"), "route-test-secret");
+        const body = JSON.parse(String(init?.body));
+        assert.equal(body.code, "test-code");
+        assert.equal(body.code_verifier, verifier);
+        assert.equal(body.redirect_uri, origin + "/api/auth/github/callback");
+        assert.equal(body.client_secret, "route-test-secret");
         return Response.json({
           access_token: "github-test-token",
           token_type: "bearer",
@@ -205,7 +202,7 @@ test("account ownership, frozen authors, browser credentials, and OAuth callback
     url.searchParams.get("redirect_uri"),
     origin + "/api/auth/github/callback",
   );
-  assert.equal(url.searchParams.get("scope"), "");
+  assert.equal(url.searchParams.get("scope") ?? "", "");
   const state = url.searchParams.get("state")!;
   assert.equal(
     (await request("/api/auth/github/callback?state=bad&code=unused")).status,
