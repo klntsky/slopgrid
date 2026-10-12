@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { readReferenceFile, saveReferenceFile } from "./reference-files";
-import { X } from "lucide-react";
+import { Paperclip, Pencil, X } from "lucide-react";
 import type {
   ReferenceGroups as Groups,
   ReferenceImage,
@@ -51,15 +51,16 @@ export function ReferenceGroups({
       onBusy(false);
     }
   }
-  function picker(label: string, group?: string) {
+  function picker(group?: string) {
     return (
       <label className="button secondary reference-upload">
-        {label}
+        {group && <Paperclip aria-hidden="true" />}
+        {group ? "Add images" : "Add reference group"}
         <input
           type="file"
           multiple
           accept="image/png,image/jpeg,image/webp"
-          aria-label={label}
+          aria-label={group ? `Add images to ${group}` : "Add reference group"}
           disabled={busy}
           onChange={(event) => {
             void select(event.target.files, group);
@@ -74,22 +75,26 @@ export function ReferenceGroups({
       {values.map((name, position) => (
         <div className="reference-group" key={position}>
           <div className="reference-heading">
-            <EditableTitle
-              key={name}
-              value={name}
-              label="Reference group title"
-              editLabel={`Edit reference group title: ${name}`}
-              disabled={busy}
-              onSave={(title) => {
-                if (!title) throw new Error("Enter a reference group title.");
-                if (values.includes(title))
-                  throw new Error("Use a different reference group title.");
-                onChange(
-                  values.map((value) => (value === name ? title : value)),
-                  { [title]: groups[name] },
-                );
-              }}
-            />
+            <div className="reference-title-line">
+              <EditableTitle
+                key={name}
+                value={name}
+                label="Reference group title"
+                editLabel={`Edit reference group title: ${name}`}
+                disabled={busy}
+                icon={<Pencil aria-hidden="true" />}
+                onSave={(title) => {
+                  if (!title) throw new Error("Enter a reference group title.");
+                  if (values.includes(title))
+                    throw new Error("Use a different reference group title.");
+                  onChange(
+                    values.map((value) => (value === name ? title : value)),
+                    { [title]: groups[name] },
+                  );
+                }}
+              />
+              <span className="hint">· reference image group</span>
+            </div>
             <button
               type="button"
               className="text-button"
@@ -127,10 +132,10 @@ export function ReferenceGroups({
               </div>
             ))}
           </div>
-          {picker(`Add images to ${name}`, name)}
+          {picker(name)}
         </div>
       ))}
-      {picker("Add reference group")}
+      {picker()}
       {busy && <span role="status">Reading images...</span>}
       <ErrorMessage error={error} />
     </div>

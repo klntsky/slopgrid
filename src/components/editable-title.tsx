@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { ErrorMessage } from "./error-message";
 
@@ -9,6 +9,7 @@ export function EditableTitle({
   placeholder = "Set Title",
   maxLength,
   disabled = false,
+  icon,
   onSave,
 }: {
   value: string;
@@ -17,6 +18,7 @@ export function EditableTitle({
   placeholder?: string;
   maxLength?: number;
   disabled?: boolean;
+  icon?: ReactNode;
   onSave: (title: string) => void | Promise<void>;
 }) {
   const [editing, setEditing] = useState(false);
@@ -64,7 +66,8 @@ export function EditableTitle({
             setEditing(true);
           }}
         >
-          {value || placeholder}
+          {icon}
+          <span>{value || placeholder}</span>
         </button>
       )}
       <ErrorMessage error={save.error?.message} />
