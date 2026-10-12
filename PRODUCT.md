@@ -141,7 +141,7 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 3. Put the pause/resume action to the left of the title/prompt. Edit and Publish are compact icon-only controls to its right, using the same visual treatment.
 4. Before publication, Edit immediately cancels active inference and returns to parameter selection with the existing setup restored. Generating the edited setup creates a new generation rather than altering published outputs.
 5. After publication, offer Fork to restore the setup for modification and generation using the forking user's own connection. Its icon depicts a branch splitting from a continuing main branch.
-6. Show model names in row or column labels. Clicking a model name copies its ID without a hover hint, while preserving copy-result feedback; a chain icon to the right of its copy icon opens the model's OpenRouter page in a new tab.
+6. Show model names in row or column labels. Clicking a model name copies its ID without a hover hint, while preserving copy-result feedback; a chain icon to the right of its copy icon opens the model's OpenRouter page in a new tab. Copy and link icons follow the same orientation as the label text, including in rotated row titles.
 
 ## 5. Outputs and streaming
 

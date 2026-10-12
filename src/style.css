@@ -1179,6 +1179,10 @@ header {
   height: 13px;
   color: var(--muted);
 }
+.row-label .lucide {
+  /* Vertical writing rotates the text, but leaves inline SVGs upright. */
+  rotate: 90deg;
+}
 .model-copy:hover {
   color: var(--text);
   text-decoration: underline;
