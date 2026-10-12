@@ -37,6 +37,8 @@ The Markdown renderer is included directly in the main browser bundle, so openin
 
 ### Running the suites
 
+Select tests that cover the features changed. Simple wording, styling, and documentation changes do not require tests. Run tests only on staging through SSH, and run the complete unit, mock browser, and real-provider browser suites on staging before production deployment.
+
 ```sh
 pnpm test
 pnpm test:built
