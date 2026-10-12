@@ -8,7 +8,7 @@ export function ModelName({ model }: { model: string }) {
       <CopyButton
         className="model-copy"
         label={`Copy model ID ${model}`}
-        title={`Copy ${model}`}
+        title=""
         copy={() => navigator.clipboard.writeText(model)}
         success="Model ID copied"
         failure="Copy failed. Select the model ID and copy it manually."
