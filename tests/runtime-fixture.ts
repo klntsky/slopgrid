@@ -69,7 +69,7 @@ export async function runtimeFixture(
     aborted: boolean;
     write: (delta: object) => void;
     finish: (cost?: number) => void;
-    fail: () => void;
+    fail: (status?: number) => void;
   }[] = [];
   upstream.post("/chat/completions", (req, res) => {
     const id = `call-${calls.length}`;
@@ -100,9 +100,9 @@ export async function runtimeFixture(
         });
         res.end("data: [DONE]\n\n");
       },
-      fail: () =>
+      fail: (status = 429) =>
         res.end(
-          `data: ${JSON.stringify({ error: { code: 429, message: "Temporary provider limit" } })}\n\ndata: [DONE]\n\n`,
+          `data: ${JSON.stringify({ error: { code: status, message: "Controlled provider failure" } })}\n\ndata: [DONE]\n\n`,
         ),
     };
     res.on("close", () => {
