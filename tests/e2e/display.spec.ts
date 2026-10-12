@@ -131,16 +131,22 @@ for (const format of ["Image", "SVG", "Markdown", "Static website"])
     const output = cell.locator(image ? "img" : format === "Markdown" ? ".markdown-preview" : "iframe:visible");
     await expect(output).toBeVisible();
     if (image) await expect.poll(() => output.evaluate((el) => (el as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
-    if (image) {
+    if (image || format === "Static website") {
       const source = await output.getAttribute("src");
       const mounted = await output.elementHandle();
       const expand = cell.getByRole("button", { name: `Expand ${format}`, exact: true });
       const dimensions = await handle.getAttribute("aria-valuenow");
       await expand.click();
       const expanded = page.getByRole("region", { name: /^Expanded output:/ });
-      const expandedImage = expanded.getByRole("img");
-      await expect(expandedImage).toHaveAttribute("src", source!);
-      await expect.poll(() => expandedImage.evaluate((el) => (el as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+      if (image) {
+        const expandedImage = expanded.getByRole("img");
+        await expect(expandedImage).toHaveAttribute("src", source!);
+        await expect.poll(() => expandedImage.evaluate((el) => (el as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+      } else {
+        const website = expanded.frameLocator("iframe:visible");
+        await expect(website.getByText("Module loaded")).toBeVisible();
+        await website.locator("body").click();
+      }
       await page.keyboard.press("Escape");
       await expect(expanded).toHaveCount(0);
       await expect(expand).toBeFocused();

@@ -66,11 +66,7 @@ export function OutputCell({
     hasThinking && (showThinking ?? (cell.status === "running" && !hasOutput));
   const thinkingLabel = thinking ? "Show output" : "Show thinking";
   const expandable =
-    markdown ||
-    ((format === "svg" || format === "image") &&
-      (complete || cell.status === "running")) ||
-    thinking ||
-    expanded;
+    complete || cell.status === "running" || thinking || expanded;
   const expandLabel = `${expanded ? "Collapse" : "Expand"} ${thinking ? "thinking" : formatNames[format]}`;
   return (
     <article className="cell">

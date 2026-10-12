@@ -626,8 +626,28 @@ for (const model of ["fixture/text", "fixture/other"])
       frame.getByRole("heading", { name: "Growing website" }),
     ).toBeVisible();
     expect(await iframe.getAttribute("src")).not.toBe(original);
+    const expand = page.getByRole("button", {
+      name: "Expand Static website",
+      exact: true,
+    });
+    await expect(expand).toBeVisible();
+    await expand.click();
+    const expanded = page.getByRole("region", { name: /^Expanded output:/ });
+    await expect(
+      expanded.frameLocator("iframe:visible").getByRole("heading", {
+        name: "Growing website",
+      }),
+    ).toBeVisible();
     await request.post("/fixture/website-next");
     await request.post("/fixture/website-next");
+    await expect(
+      expanded.frameLocator("iframe:visible").getByText("Streaming module loaded"),
+    ).toBeVisible();
+    await expanded
+      .getByRole("button", { name: "Collapse Static website", exact: true })
+      .click();
+    await expect(expanded).toHaveCount(0);
+    await expect(expand).toBeFocused();
     await expect(frame.getByText("Streaming module loaded")).toBeVisible();
     let releaseSaved!: () => void;
     const savedGate = new Promise<void>((resolve) => {

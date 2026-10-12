@@ -167,6 +167,7 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 4. Keep the current website preview visible until the next preview is ready. Streaming updates and the transition to completed output must avoid a blank-frame blink.
 5. Preserve document and scrollable-panel positions across preview updates. Display the latest content without reverting to an older preview.
 6. Pause, failure, and a new attempt must not retain a stale temporary website preview.
+7. Provide icon-only expansion for streaming and completed websites in the full grid workspace while keeping the navbar visible. Websites remain interactive and keep receiving streamed updates while expanded. Collapse or Escape, including Escape from inside the website, restores the grid layout and button focus.
 
 ### 5.5. Thinking traces
 

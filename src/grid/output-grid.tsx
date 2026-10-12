@@ -89,8 +89,23 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
         collapse();
       }
     }
+    function frameEscape(event: MessageEvent) {
+      if (
+        event.origin === "null" &&
+        event.data?.type === "slopgrid:escape" &&
+        !document.querySelector("dialog[open]") &&
+        [...(expandedView.current?.querySelectorAll("iframe") ?? [])].some(
+          (frame) => frame.contentWindow === event.source,
+        )
+      )
+        collapse();
+    }
     document.addEventListener("keydown", escape);
-    return () => document.removeEventListener("keydown", escape);
+    window.addEventListener("message", frameEscape);
+    return () => {
+      document.removeEventListener("keydown", escape);
+      window.removeEventListener("message", frameEscape);
+    };
   }, [expanded?.id]);
   const title = (cell: ViewGrid["cells"][number]) =>
     `${g.input.rows.values[cell.row]} / ${g.input.columns.values[cell.column]}`;

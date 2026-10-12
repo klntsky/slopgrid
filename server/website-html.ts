@@ -39,6 +39,10 @@ export function websiteHtml(
       // The port carries only scroll coordinates; it grants no parent DOM or cookie access.
       const bridge =
         parseFragment(`<meta http-equiv="Content-Security-Policy" content="connect-src 'none'"><script>
+        addEventListener("keydown", event => {
+          if (event.key === "Escape" && !event.defaultPrevented && parent !== window)
+            parent.postMessage({ type: "slopgrid:escape" }, ${JSON.stringify(appOrigin)});
+        });
         addEventListener("message", event => {
           if (parent === window || event.source !== parent || event.origin !== ${JSON.stringify(appOrigin)} || event.data?.type !== "slopgrid:scroll" || !event.ports[0]) return;
           const port = event.ports[0];
