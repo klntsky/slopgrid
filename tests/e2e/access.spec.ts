@@ -201,7 +201,7 @@ test("navigation returns to a saved grid after creation", async ({
   await expect(page).toHaveURL("/grids");
   await expect(page.getByRole("heading", { name: "Your grids" })).toBeVisible();
   await expect(
-    page.getByText("You haven’t created any grids yet."),
+    page.getByText("You haven't created any grids yet."),
   ).toBeVisible();
   await page.getByRole("link", { name: "NEW GRID", exact: true }).click();
   await expect(page).toHaveURL("/");
@@ -492,6 +492,21 @@ test("owners can list a link-only published grid publicly without regenerating o
     await expect(
       publicGrids.getByRole("link", { name: new RegExp("Promoted grid") }),
     ).toBeVisible();
+    await visitor.goto("/");
+    const discoveryLink = publicGrids.getByRole("link", {
+      name: new RegExp("Promoted grid"),
+    });
+    await expect(discoveryLink).toBeVisible();
+    await discoveryLink.click();
+    await expect(visitor).toHaveURL(url);
+    await visitor.goto("/");
+    await visitor.getByRole("button", { name: "Markdown", exact: true }).click();
+    await expect(publicGrids).toHaveCount(0);
+    await visitor.reload();
+    await expect(
+      visitor.getByRole("heading", { name: "Select grid layout" }),
+    ).toBeVisible();
+    await expect(publicGrids).toHaveCount(0);
     await page.goto("/grids");
     await expect(
       page

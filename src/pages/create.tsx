@@ -1,3 +1,4 @@
+import { PublicGrids } from "../components/grid-listing";
 import { FormatIcon } from "../components/grid-format-icon";
 import { useInferenceMutation } from "../use-inference-mutation";
 import { useState } from "react";
@@ -149,6 +150,7 @@ export function Create() {
           })}
         </div>
       </section>
+      {!formatSelected && <PublicGrids />}
       {formatSelected && (
         <section>
           <div className="section-heading">

@@ -1518,7 +1518,7 @@ header {
 }
 .content-layout > header,
 .content-layout > main > section,
-.grid-list-page .history > .history-row:last-child {
+.history > .history-row:last-child {
   border: 0;
 }
 .history .grid-format-icon {

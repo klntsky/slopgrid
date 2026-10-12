@@ -50,7 +50,7 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 ### 3.1. Form and output selection
 
 1. The creation-page call to action is "Create your own AI model benchmark".
-2. Selecting an output type reveals all remaining form sections immediately, while keeping the output choice visible.
+2. Before an output type is selected, show public grids below the output-type selection. Selecting an output type hides this list and reveals all remaining form sections immediately, while keeping the output choice visible. A restored draft with an output type already selected also hides the list.
 3. Preserve the in-progress setup through provider authorization and restore the applicable setup when editing or forking.
 4. Put an icon-only swap button between the row and column selectors. It has no border and swaps axis types, selected values, and corresponding prompt-variable references together.
 5. Checkbox lists start unselected. Every generation must use an explicitly selected model, including when model is a fixed setting rather than an axis.
@@ -250,7 +250,7 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 4. Publication is allowed when every cell is complete or failed. Errors do not prevent publication; pending or running cells do.
 5. Publishing permanently locks generation inputs and outputs and prevents returning to private visibility. Title editing remains allowed independently.
 6. Provide an owner-visible route and control to promote an already link-accessible grid to public listing. A publicly listed grid cannot be demoted to link-only or private visibility.
-7. Link-accessible grids are readable by anyone with the link but excluded from public discovery. Public grids appear newest first beneath Your grids, including the owner's own public grids.
+7. Link-accessible grids are readable by anyone with the link but excluded from public discovery. Public grids appear newest first beneath Your grids and below the creation page's output-type selection until a type is selected, including the owner's own public grids.
 8. Give public discovery its own loading, empty, and failure states, and refresh relevant lists after publication. Show format icons and authors without exposing ownership/session identifiers or nesting profile links inside grid links.
 9. Retain copy-link and fork controls for published grids. Dialogs must support keyboard operation, focus restoration, disabled controls while saving, and visible request errors.
 
