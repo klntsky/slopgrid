@@ -155,7 +155,7 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 ### 5.3. Images and SVG
 
 1. Display generated images and SVG as images that always fit the cell.
-2. During SVG streaming, make a disposable partial-image preview by closing unfinished tags where possible. This preview recovery must not modify stored final source.
+2. During SVG streaming, make a disposable partial-image preview by closing unfinished tags where possible. This preview recovery must not modify stored final source. Continue updating the preview while thinking is shown, and reveal the latest preview when switching back to output.
 3. Do not reject SVG merely because markup validation considers it malformed or unconventional; browsers may still recover it.
 
 ### 5.4. Static websites

@@ -68,3 +68,90 @@ test("thinking follows streaming text until scrolled up and resumes at the botto
     await fixture.close();
   }
 });
+
+test("SVG streaming advances behind thinking and survives view switches through completion", async ({
+  browser,
+}) => {
+  const fixture = await runtimeFixture();
+  const context = await browser.newContext();
+  try {
+    await context.addCookies([
+      { name: "slopgrid", value: fixture.owner, url: fixture.origin },
+    ]);
+    const grid = fixture.grid({
+      format: "svg",
+      rows: { kind: "variable", values: ["svg"] },
+    });
+    await fixture.engine.api.startGrid({
+      gridId: grid.id,
+      sessionId: fixture.owner,
+    });
+    const call = await fixture.call(0);
+    call.write({ reasoning: "Thinking before drawing." });
+    const page = await context.newPage();
+    await page.goto(`${fixture.origin}/grid/${grid.id}`);
+    const trace = page.getByRole("region", { name: /^Thinking:/ });
+    await expect(trace).toContainText("Thinking before drawing.");
+    await page
+      .getByRole("button", { name: "Show output", exact: true })
+      .click();
+    call.write({
+      content:
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><rect width="200" height="200" fill="red"/>',
+    });
+    const preview = page.getByRole("img", {
+      name: "SVG preview",
+      exact: true,
+      includeHidden: true,
+    });
+    const color = () =>
+      preview.evaluate((el) => {
+        const canvas = document.createElement("canvas");
+        canvas.width = canvas.height = 200;
+        const context = canvas.getContext("2d")!;
+        context.drawImage(el as HTMLImageElement, 0, 0, 200, 200);
+        return [...context.getImageData(100, 100, 1, 1).data];
+      });
+    await expect(preview).toBeVisible();
+    await expect.poll(color).toEqual([255, 0, 0, 255]);
+    const mounted = await preview.elementHandle();
+    await page
+      .getByRole("button", { name: "Show thinking", exact: true })
+      .click();
+    await expect(preview).toBeHidden();
+    call.write({
+      reasoning: "Now adding blue.",
+      content: '<circle cx="100" cy="100" r="70" fill="blue"/>',
+    });
+    await expect(trace).toContainText("Now adding blue.");
+    await expect.poll(color).toEqual([0, 0, 255, 255]);
+    await page
+      .getByRole("button", { name: "Show output", exact: true })
+      .click();
+    await expect(preview).toBeVisible();
+    expect(await mounted!.evaluate((el) => el.isConnected)).toBe(true);
+    await expect.poll(color).toEqual([0, 0, 255, 255]);
+    await page
+      .getByRole("button", { name: "Show thinking", exact: true })
+      .click();
+    call.write({ content: "</svg>" });
+    call.finish();
+    await expect(page.locator(".grid-cost")).toHaveAttribute(
+      "aria-label",
+      "Total cost: $0.01",
+    );
+    await expect(trace).toContainText("Now adding blue.");
+    await page
+      .getByRole("button", { name: "Show output", exact: true })
+      .click();
+    const final = page.getByRole("img", { name: "Generated SVG", exact: true });
+    await expect(final).toBeVisible();
+    await expect
+      .poll(() => final.evaluate((el) => (el as HTMLImageElement).naturalWidth))
+      .toBeGreaterThan(0);
+    expect(fixture.calls).toHaveLength(1);
+  } finally {
+    await context.close();
+    await fixture.close();
+  }
+});
