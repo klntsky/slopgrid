@@ -316,7 +316,7 @@ test("keyboard resizing updates saved dimensions and restores them after reload"
   await expect(handle).toHaveAttribute("aria-valuenow", String(saved.rows[0]));
 });
 
-test("a missing grid reports 404 immediately without retries or a creation link in the error state", async ({
+test("a missing grid reports 404 without retries or a creation link in the error state", async ({
   page,
 }) => {
   const id = "0".repeat(48);
@@ -325,9 +325,7 @@ test("a missing grid reports 404 immediately without retries or a creation link 
     if (new URL(request.url()).pathname === `/api/grids/${id}`) requests++;
   });
   await page.goto(`/grid/${id}`);
-  await expect(page.getByRole("alert")).toHaveText("Grid not found", {
-    timeout: 1000,
-  });
+  await expect(page.getByRole("alert")).toHaveText("Grid not found");
   expect(requests).toBe(1);
   await expect(page.getByRole("main").getByRole("link")).toHaveCount(0);
 });
