@@ -24,7 +24,7 @@ export function MarkdownPreview({
     if (streaming) lastDraft.current = draft ?? "";
   }, [draft, streaming]);
   const query = useQuery({
-    queryKey: ["markdown", url],
+    queryKey: ["text-output", url],
     staleTime: Infinity,
     enabled: !streaming,
     retry: false,
@@ -32,7 +32,7 @@ export function MarkdownPreview({
       const source = new URL(url, location.origin);
       source.searchParams.set("raw", "1");
       const response = await fetch(source, { signal });
-      if (!response.ok) throw new Error("Could not load the Markdown preview.");
+      if (!response.ok) throw new Error("Could not load the preview.");
       return response.text();
     },
   });
@@ -77,7 +77,7 @@ export function MarkdownPreview({
       tabIndex={0}
     >
       {markdown === undefined && query.isPending && (
-        <p role="status">Loading Markdown…</p>
+        <p role="status">Loading…</p>
       )}
       {query.error && (
         <>

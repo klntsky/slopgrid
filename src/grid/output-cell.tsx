@@ -7,6 +7,7 @@ import {
   Minimize2,
   Download,
   CodeXml,
+  Brain,
 } from "lucide-react";
 import { CopyButton } from "../components/copy-button";
 import type { GridInput } from "../../server/domain";
@@ -27,6 +28,8 @@ export function OutputCell({
   expanded = false,
   rawMarkdown = false,
   onToggleRawMarkdown,
+  showThinking,
+  onShowThinking,
   onToggleExpand,
 }: {
   cell: ViewGrid["cells"][number];
@@ -37,6 +40,8 @@ export function OutputCell({
   expanded?: boolean;
   rawMarkdown?: boolean;
   onToggleRawMarkdown?: () => void;
+  showThinking?: boolean;
+  onShowThinking?: (thinking: boolean) => void;
   onToggleExpand?: (button: HTMLButtonElement) => void;
 }) {
   const { resolvedTheme } = useTheme();
@@ -52,86 +57,122 @@ export function OutputCell({
   const complete = cell.status === "complete";
   const markdown =
     format === "markdown" && (complete || cell.status === "running");
+  const hasThinking = !!(cell.thinking || cell.thinkingURL);
+  const hasOutput =
+    complete || !!(format === "html" ? cell.previewURL : cell.draft?.trim());
+  const thinking =
+    hasThinking && (showThinking ?? (cell.status === "running" && !hasOutput));
+  const thinkingLabel = thinking ? "Show output" : "Show thinking";
+  const expandable = markdown || thinking || expanded;
+  const expandLabel = `${expanded ? "Collapse" : "Expand"} ${thinking ? "thinking" : format === "markdown" ? "Markdown" : "output"}`;
   return (
     <article className="cell">
-      {markdown ? (
-        <MarkdownPreview
-          key={cell.id}
-          url={cell.outputURL ?? `/outputs/${cell.id}`}
-          draft={cell.draft}
-          streaming={!complete}
-          title={title}
-          raw={rawMarkdown}
-        />
-      ) : format === "html" && (complete || cell.status === "running") ? (
-        <WebsitePreview
-          key={cell.id}
-          url={complete ? cell.outputURL : cell.previewURL}
-          title={title}
-          streaming={!complete}
-          published={published}
-        />
-      ) : complete ? (
-        <img
-          className="generated-image"
-          alt={format === "svg" ? "Generated SVG" : "Generated image"}
-          src={outputURL}
-          loading="lazy"
-        />
-      ) : cell.status === "error" ? (
-        <p className="cell-error">{cellError(cell)}</p>
-      ) : cell.status === "running" && format === "svg" ? (
-        <SvgPreview key={cell.id} draft={cell.draft ?? ""} />
-      ) : (
-        <div className="pending" role="status">
-          {cell.status === "running" ? (
-            <>
-              <LoaderCircle className="spinner" aria-hidden="true" />
-              Generating…
-            </>
-          ) : cell.retrying ? (
-            <span>Waiting to retry…</span>
-          ) : gridStatus === "paused" ? (
-            "Paused"
-          ) : (
-            "Queued"
-          )}
-          {cell.status === "pending" && cell.error && (
-            <small className="cell-provider-error">{cellError(cell)}</small>
-          )}
+      <div className="cell-view" aria-hidden={thinking} inert={thinking}>
+        {markdown ? (
+          <MarkdownPreview
+            key={cell.id}
+            url={cell.outputURL ?? `/outputs/${cell.id}`}
+            draft={cell.draft}
+            streaming={!complete}
+            title={title}
+            raw={rawMarkdown}
+          />
+        ) : format === "html" && (complete || cell.status === "running") ? (
+          <WebsitePreview
+            key={cell.id}
+            url={complete ? cell.outputURL : cell.previewURL}
+            title={title}
+            streaming={!complete}
+            published={published}
+          />
+        ) : complete ? (
+          <img
+            className="generated-image"
+            alt={format === "svg" ? "Generated SVG" : "Generated image"}
+            src={outputURL}
+            loading="lazy"
+          />
+        ) : cell.status === "error" ? (
+          <p className="cell-error">{cellError(cell)}</p>
+        ) : cell.status === "running" && format === "svg" ? (
+          <SvgPreview key={cell.id} draft={cell.draft ?? ""} />
+        ) : (
+          <div className="pending" role="status">
+            {cell.status === "running" ? (
+              <>
+                <LoaderCircle className="spinner" aria-hidden="true" />
+                Generating…
+              </>
+            ) : cell.retrying ? (
+              <span>Waiting to retry…</span>
+            ) : gridStatus === "paused" ? (
+              "Paused"
+            ) : (
+              "Queued"
+            )}
+            {cell.status === "pending" && cell.error && (
+              <small className="cell-provider-error">{cellError(cell)}</small>
+            )}
+          </div>
+        )}
+      </div>
+      {hasThinking && (
+        <div className="cell-view" aria-hidden={!thinking} inert={!thinking}>
+          <MarkdownPreview
+            key={cell.thinkingURL}
+            url={cell.thinkingURL!}
+            title={`Thinking: ${title}`}
+            raw
+            draft={cell.thinking}
+            streaming={cell.status === "running"}
+          />
         </div>
       )}
-      {markdown && (
+      {(markdown || hasThinking || expanded) && (
         <div className="markdown-actions">
-          <button
-            className="secondary"
-            aria-label={rawLabel}
-            onClick={onToggleRawMarkdown}
-            ref={rawHint}
-          >
-            {rawMarkdown ? (
-              <svg
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <path d="M2 18V6l5 7 5-7v12M16 6h1a6 6 0 0 1 0 12h-1Z" />
-              </svg>
-            ) : (
-              <CodeXml aria-hidden="true" />
-            )}
-          </button>
-          {onToggleExpand && (
+          {markdown && !thinking && (
+            <button
+              className="secondary"
+              aria-label={rawLabel}
+              onClick={onToggleRawMarkdown}
+              ref={rawHint}
+            >
+              {rawMarkdown ? (
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M2 18V6l5 7 5-7v12M16 6h1a6 6 0 0 1 0 12h-1Z" />
+                </svg>
+              ) : (
+                <CodeXml aria-hidden="true" />
+              )}
+            </button>
+          )}
+          {hasThinking && (
+            <button
+              className="secondary"
+              aria-label={thinkingLabel}
+              aria-pressed={thinking}
+              data-tooltip={thinkingLabel}
+              ref={tooltipRef}
+              onClick={() => onShowThinking?.(!thinking)}
+            >
+              <Brain aria-hidden="true" />
+            </button>
+          )}
+          {expandable && onToggleExpand && (
             <button
               className="secondary markdown-expand"
-              aria-label={expanded ? "Collapse Markdown" : "Expand Markdown"}
-              data-tooltip={expanded ? "Collapse Markdown" : "Expand Markdown"}
+              aria-label={expandLabel}
+              data-tooltip={expandLabel}
               ref={tooltipRef}
               aria-expanded={expanded}
               onClick={(event) => onToggleExpand(event.currentTarget)}

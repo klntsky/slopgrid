@@ -241,7 +241,15 @@ upstream.post("/api/v1/chat/completions", async (req, res) => {
   if (costStreaming) {
     for (const delta of [
       { reasoning: "Thinking through the drawing. ".repeat(30) },
-      { content: "# Drawing\n\n" + "A detailed description. ".repeat(40) },
+      {
+        content: "# Drawing\n\n" + "A detailed description. ".repeat(40),
+        reasoning_details: [
+          {
+            type: "reasoning.text",
+            text: "\n**Literal thinking** <b>not HTML</b>",
+          },
+        ],
+      },
     ]) {
       res.write(
         `data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta, finish_reason: null }] })}\n\n`,
@@ -255,6 +263,9 @@ upstream.post("/api/v1/chat/completions", async (req, res) => {
     return;
   }
   if (websiteStreaming && system.includes("JSON object")) {
+    res.write(
+      `data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: { reasoning: "Planning the website layout." }, finish_reason: null }] })}\n\n`,
+    );
     const heading = "Growing website";
     const html = `<!doctype html><link rel="stylesheet" href="style.css"><style>html { scroll-behavior: smooth; } body { width: 1800px; min-height: 3000px; } #scroll-panel { width: 180px; height: 120px; overflow: auto; scroll-behavior: smooth; } #scroll-panel > div { width: 600px; height: 800px; }</style><h1>${heading}</h1><p id="module">Waiting for JavaScript</p><div id="scroll-panel"><div>Scrollable panel</div></div><script type="module" src="app.js"></script>`;
     const css = "body { background: rgb(255, 0, 0); }";

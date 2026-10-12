@@ -1,4 +1,5 @@
 import type { Session } from "./store.js";
+import { token } from "./ids.js";
 import { join } from "node:path";
 import { WebsitePreviews } from "./website-previews.js";
 import type { Cell, Grid } from "./domain.js";
@@ -70,6 +71,7 @@ export class Jobs {
         delete cell.retrying;
         this.retries.delete(cell.id);
         delete cell.draft;
+        delete cell.thinking;
         delete cell.estimatedCostUsd;
       }
     g.status = "running";
@@ -99,6 +101,7 @@ export class Jobs {
       if (runningGrid.id === g.id) {
         cell.status = "pending";
         delete cell.draft;
+        delete cell.thinking;
         delete cell.estimatedCostUsd;
         delete cell.error;
         delete cell.errorCode;
@@ -167,11 +170,13 @@ export class Jobs {
       this.running.set(cell.id, { grid, cell, controller, owner });
       this.owners.get(owner)!.last = ++this.allocation;
       cell.status = "running";
+      delete cell.thinkingId;
       delete cell.usage;
       delete cell.error;
       delete cell.errorCode;
       delete cell.retrying;
       delete cell.draft;
+      delete cell.thinking;
       delete cell.estimatedCostUsd;
       this.emit(grid);
       void this.runCell(grid, cell, key, controller, owner);
@@ -217,6 +222,7 @@ export class Jobs {
     const state = this.runtime.get(grid.id)!;
     const delay = Math.max(0, 300 - (Date.now() - (state.emittedAt ?? 0)));
     const flush = () => {
+      if (this.runtime.get(grid.id) !== state) return;
       state.emittedAt = Date.now();
       this.emit(grid);
     };
@@ -230,13 +236,30 @@ export class Jobs {
     controller: AbortController,
     owner: string,
   ) {
+    const thinkingId = token();
+    const current = () =>
+      !controller.signal.aborted &&
+      this.running.get(cell.id)?.controller === controller;
     try {
       const result = await this.provider.generate(
         key,
         grid.input.format,
         cell,
-        (text, estimatedCostUsd) => {
-          if (controller.signal.aborted) return;
+        ({ text, thinking, estimatedCostUsd }) => {
+          if (!current()) return;
+          // Drafts can be read between throttled SSE emissions. Give each update
+          // its own revision so a late HTTP snapshot cannot regress live text.
+          grid.revision += 1;
+          const previousLength = cell.thinking?.length ?? 0;
+          if (thinking.length > previousLength) {
+            this.store.files.appendThinking(
+              cell.id,
+              thinkingId,
+              thinking.slice(previousLength),
+            );
+            cell.thinkingId = thinkingId;
+          }
+          cell.thinking = thinking;
           const changed = cell.draft !== text;
           cell.draft = text;
           cell.estimatedCostUsd = estimatedCostUsd;
@@ -248,14 +271,14 @@ export class Jobs {
         controller.signal,
         this.store.billing.observe(cell.id),
       );
-      if (controller.signal.aborted) return;
+      if (!current()) return;
       this.store.files.write(cell.id, result.files);
       cell.mediaType = result.mediaType;
       cell.usage = result.usage;
       cell.status = "complete";
       this.retries.delete(cell.id);
     } catch (error) {
-      if (controller.signal.aborted) return;
+      if (!current()) return;
       const failure = failureDetails(error);
       cell.error = failure.message;
       cell.errorCode = failure.code;
@@ -298,6 +321,7 @@ export class Jobs {
       const billing = this.store.billing.cell(cell.id);
       if (billing) Object.assign(cell, billing);
       delete cell.draft;
+      delete cell.thinking;
       delete cell.estimatedCostUsd;
       this.running.delete(cell.id);
       this.settle(grid);

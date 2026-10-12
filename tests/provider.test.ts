@@ -115,6 +115,27 @@ async function upstream(streamError?: Record<string, unknown>) {
       res.write(
         `data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: { content }, finish_reason: null }] })}\n\n`,
       );
+    res.write(
+      `data: ${JSON.stringify({
+        ...base,
+        choices: [
+          {
+            index: 0,
+            delta: {
+              reasoning: "More thinking after the answer.",
+              reasoning_details: [
+                {
+                  type: "reasoning.summary",
+                  summary: "More thinking after the answer.",
+                },
+                { type: "reasoning.encrypted", data: "opaque-private-block" },
+              ],
+            },
+            finish_reason: null,
+          },
+        ],
+      })}\n\n`,
+    );
     res.end(
       `data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } })}\n\ndata: [DONE]\n\n`,
     );
@@ -352,15 +373,20 @@ test("live cost includes reasoning and request fees without changing output or i
   try {
     const estimates = new Map<string, { text: string; cost: number }[]>();
     for (const model of ["router", "free", "request-fee"]) {
-      const updates: { text: string; cost: number }[] = [];
+      const updates: { text: string; cost: number; thinking: string }[] = [];
       estimates.set(model, updates);
       const result = await h.provider.generate(
         "fixture-key",
         "markdown",
         cell(model, "default"),
-        (text, cost) => updates.push({ text, cost: cost! }),
+        ({ text, thinking, estimatedCostUsd }) =>
+          updates.push({ text, thinking, cost: estimatedCostUsd! }),
       );
       assert.equal(result.files["index.md"], "# Output");
+      assert.equal(
+        updates.at(-1)!.thinking,
+        "Private reasoning before the answer.More thinking after the answer.",
+      );
       assert.equal(result.usage?.costUsd, undefined);
     }
     const paid = estimates.get("router")!;

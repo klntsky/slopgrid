@@ -25,21 +25,27 @@ function ResizeHandle({
   );
 }
 export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
-  const [rawMarkdown, setRawMarkdown] = useState<Record<string, boolean>>({});
-  function toggleRawMarkdown(id: string) {
-    setRawMarkdown((current) => ({ ...current, [id]: !current[id] }));
+  const [views, setViews] = useState<
+    Record<string, { raw?: boolean; thinking?: boolean }>
+  >({});
+  function setView(id: string, view: { raw?: boolean; thinking?: boolean }) {
+    setViews((current) => ({ ...current, [id]: { ...current[id], ...view } }));
   }
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const expanded = g.cells.find(
     (cell) =>
       cell.id === expandedId &&
-      (cell.status === "complete" || cell.status === "running"),
+      (cell.status === "complete" ||
+        cell.status === "running" ||
+        !!cell.thinkingURL),
   );
   const expandedView = useRef<HTMLElement>(null);
   const returnButton = useRef<HTMLButtonElement>(null);
   const position = useRef({ top: 0, left: 0 });
   function rememberScroll(button: HTMLButtonElement) {
-    const preview = button.closest(".cell")?.querySelector(".markdown-preview");
+    const preview = button
+      .closest(".cell")
+      ?.querySelector('.cell-view[aria-hidden="false"] .markdown-preview');
     position.current = {
       top: preview?.scrollTop ?? 0,
       left: preview?.scrollLeft ?? 0,
@@ -61,7 +67,7 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
   useLayoutEffect(() => {
     const preview = (
       expandedView.current ?? returnButton.current?.closest(".cell")
-    )?.querySelector(".markdown-preview");
+    )?.querySelector('.cell-view[aria-hidden="false"] .markdown-preview');
     if (preview) {
       preview.scrollTop = position.current.top;
       preview.scrollLeft = position.current.left;
@@ -147,8 +153,14 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
                           gridStatus={g.status}
                           published={g.published}
                           title={title(cell)}
-                          rawMarkdown={!!rawMarkdown[cell.id]}
-                          onToggleRawMarkdown={() => toggleRawMarkdown(cell.id)}
+                          rawMarkdown={views[cell.id]?.raw}
+                          showThinking={views[cell.id]?.thinking}
+                          onShowThinking={(thinking) =>
+                            setView(cell.id, { thinking })
+                          }
+                          onToggleRawMarkdown={() =>
+                            setView(cell.id, { raw: !views[cell.id]?.raw })
+                          }
                           onToggleExpand={(button) => expand(cell.id, button)}
                         />
                       </td>
@@ -164,7 +176,7 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
         <section
           ref={expandedView}
           className="expanded-markdown"
-          aria-label={`Expanded Markdown: ${title(expanded)}`}
+          aria-label={`Expanded output: ${title(expanded)}`}
         >
           <OutputCell
             cell={expanded}
@@ -172,8 +184,12 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
             gridStatus={g.status}
             published={g.published}
             title={title(expanded)}
-            rawMarkdown={!!rawMarkdown[expanded.id]}
-            onToggleRawMarkdown={() => toggleRawMarkdown(expanded.id)}
+            rawMarkdown={views[expanded.id]?.raw}
+            showThinking={views[expanded.id]?.thinking}
+            onShowThinking={(thinking) => setView(expanded.id, { thinking })}
+            onToggleRawMarkdown={() =>
+              setView(expanded.id, { raw: !views[expanded.id]?.raw })
+            }
             expanded
             onToggleExpand={collapse}
           />

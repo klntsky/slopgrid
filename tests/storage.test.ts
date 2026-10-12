@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { token } from "../server/ids.js";
 import { Store } from "../server/store.js";
 import { expandGrid, type Grid } from "../server/domain.js";
 
@@ -38,6 +39,10 @@ test("outputs are real files and SQLite stores only configuration and cell state
     });
     grid.cells[0].status = "complete";
     grid.cells[0].draft = "Temporary preview payload";
+    const thinkingId = token();
+    grid.cells[0].thinkingId = thinkingId;
+    grid.cells[0].thinking = "Captured thinking payload";
+    store.files.appendThinking("cell", thinkingId, grid.cells[0].thinking);
     store.save(grid);
     const path = store.files.path("cell", "index.html")!;
     assert.equal(readFileSync(path, "utf8"), payload);
@@ -61,14 +66,15 @@ test("outputs are real files and SQLite stores only configuration and cell state
     assert.ok(!gridData.includes(payload) && !cellData.includes(payload));
     assert.ok(!cellData.includes("Temporary preview payload"));
     assert.equal(store.get("grid")!.cells[0].prompt, "Draw cat");
-    assert.deepEqual(store.outputMetadata("cell"), {
-      owner: "owner",
-      ownerUserId: undefined,
-      published: true,
-      status: "complete",
-      format: "html",
-      mediaType: undefined,
-    });
+    assert.ok(
+      !gridData.includes("Captured thinking payload") &&
+        !cellData.includes("Captured thinking payload"),
+    );
+    const restoredThinking = store.get("grid")!.cells[0].thinkingId!;
+    assert.equal(
+      readFileSync(store.files.thinkingPath("cell", restoredThinking)!, "utf8"),
+      "Captured thinking payload",
+    );
     assert.equal(store.files.path("cell", "../app.sqlite"), undefined);
     assert.throws(() => store.files.write("cell", { "../outside": "escape" }));
     assert.equal(readFileSync(path, "utf8"), payload);

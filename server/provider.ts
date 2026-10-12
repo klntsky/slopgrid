@@ -4,7 +4,12 @@ import { generationBudget } from "./generation-budget.js";
 import { generateInference } from "./inference.js";
 import type { CallObserver } from "./billing.js";
 import { upstreamFetch } from "./http.js";
-import { efforts, type Cell, type GridInput } from "./domain.js";
+import {
+  efforts,
+  type Cell,
+  type GridInput,
+  type InferenceProgress,
+} from "./domain.js";
 export type Model = {
   id: string;
   aliasTarget?: string;
@@ -193,7 +198,7 @@ export class Provider {
     key: string,
     format: GridInput["format"],
     cell: Cell,
-    onChunk: (text: string, estimatedCostUsd?: number) => void,
+    onChunk: (progress: InferenceProgress) => void,
     signal?: AbortSignal,
     observe?: CallObserver,
   ): Promise<{

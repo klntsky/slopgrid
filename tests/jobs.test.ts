@@ -1,12 +1,17 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "../server/store.js";
 import { Jobs } from "../server/jobs.js";
 import { Provider } from "../server/provider.js";
-import { expandGrid, type Grid, type Cell } from "../server/domain.js";
+import {
+  expandGrid,
+  type Grid,
+  type Cell,
+  type InferenceProgress,
+} from "../server/domain.js";
 
 type Result = Awaited<ReturnType<Provider["generate"]>>;
 const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
@@ -17,7 +22,11 @@ class ControlledProvider extends Provider {
     {
       resolve: (r: Result) => void;
       reject: (e: unknown) => void;
-      write: (text: string, estimatedCostUsd?: number) => void;
+      write: (
+        text: string,
+        estimatedCostUsd?: number,
+        thinking?: string,
+      ) => void;
     }
   >();
   ignoreAbort = false;
@@ -25,7 +34,7 @@ class ControlledProvider extends Provider {
     _key: string,
     _format: Grid["input"]["format"],
     cell: Cell,
-    onChunk: (text: string, estimatedCostUsd?: number) => void,
+    onChunk: (progress: InferenceProgress) => void,
     signal?: AbortSignal,
   ): Promise<Result> {
     this.started.push({ id: cell.id, owner: cell.prompt.split(" ")[0] });
@@ -44,7 +53,8 @@ class ControlledProvider extends Provider {
           cleanup();
           reject(error);
         },
-        write: onChunk,
+        write: (text, estimatedCostUsd, thinking = "") =>
+          onChunk({ text, thinking, estimatedCostUsd }),
       });
       if (!this.ignoreAbort) {
         if (signal?.aborted) abort();
@@ -305,10 +315,15 @@ test("a late result from a paused request cannot restore its discarded preview o
     h.jobs.start(g);
     await flush();
     const held = h.provider.pending.get("alice/grid/0")!;
-    held.write("Before pause", 0.1);
+    held.write("Before pause", 0.1, "Saved partial thinking");
+    const oldThinking = g.cells[0].thinkingId!;
     assert.equal(g.cells[0].estimatedCostUsd, 0.1);
     h.jobs.pause(g);
-    held.write("Late partial result", 0.2);
+    held.write(
+      "Late partial result",
+      0.2,
+      "Saved partial thinking plus late text",
+    );
     assert.equal(g.cells[0].estimatedCostUsd, undefined);
     h.provider.finish("alice/grid/0");
     await flush();
@@ -316,9 +331,38 @@ test("a late result from a paused request cannot restore its discarded preview o
     assert.equal(paused.cells[0].status, "pending");
     assert.equal(paused.cells[0].draft, undefined);
     assert.equal(h.store.files.path(paused.cells[0].id, "index.md"), undefined);
-    h.jobs.start(paused);
+    const resumed = h.jobs.start(paused);
     await flush();
     assert.equal(h.provider.started.length, 2);
+    const replacement = h.provider.pending.get("alice/grid/0")!;
+    replacement.write("", 0.3, "New attempt thinking");
+    held.write("Stale response", 9, "Stale thinking");
+    assert.equal(resumed.cells[0].thinking, "New attempt thinking");
+    assert.equal(
+      readFileSync(
+        h.store.files.thinkingPath(g.cells[0].id, oldThinking)!,
+        "utf8",
+      ),
+      "Saved partial thinking",
+    );
+    const newThinking = resumed.cells[0].thinkingId!;
+    assert.notEqual(newThinking, oldThinking);
+    h.provider.finish("alice/grid/0");
+    await flush();
+    replacement.write(
+      "After completion",
+      10,
+      "New attempt thinking plus late text",
+    );
+    assert.equal(resumed.cells[0].thinking, undefined);
+    assert.equal(h.store.get(g.id)!.cells[0].thinkingId, newThinking);
+    assert.equal(
+      readFileSync(
+        h.store.files.thinkingPath(resumed.cells[0].id, newThinking)!,
+        "utf8",
+      ),
+      "New attempt thinking",
+    );
   } finally {
     await h.close();
   }

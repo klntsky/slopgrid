@@ -117,7 +117,28 @@ test("private outputs require ownership, isolated grants are scoped and revoked 
   for (const format of ["markdown", "svg", "image", "html"] as const) {
     const grid = makeGrid(format),
       id = grid.cells[0].id;
+    const thinkingId = token();
+    grid.cells[0].thinkingId = thinkingId;
+    store.files.appendThinking(
+      id,
+      thinkingId,
+      "Private thinking <script>still text</script>",
+    );
+    store.save(grid);
+    const thinkingPath = `/outputs/${id}/thinking/${thinkingId}`;
+    assert.equal(
+      (await get(`/outputs/${id}/thinking/${token()}`, { Cookie: cookie }))
+        .status,
+      404,
+    );
+    const trace = await get(thinkingPath, { Cookie: cookie });
+    assert.equal(
+      await trace.text(),
+      "Private thinking <script>still text</script>",
+    );
+    assert.match(trace.headers.get("content-type")!, /^text\/plain/);
     const paths = [
+      thinkingPath,
       `/outputs/${id}/download`,
       format === "html" ? `/outputs/${id}/website` : `/outputs/${id}`,
       ...(format === "markdown" ? [`/outputs/${id}?raw=1`] : []),

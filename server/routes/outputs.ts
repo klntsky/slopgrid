@@ -61,6 +61,15 @@ export function createOutputRoutes(
     res.locals.file = outputFile(output);
     next();
   });
+  app.get("/outputs/:id/thinking/:attempt", (req, res) => {
+    // A versioned URL cannot return a newer attempt under an older query key.
+    const attempt = String(req.params.attempt);
+    if (res.locals.output.thinkingId !== attempt) return res.sendStatus(404);
+    const file = store.files.thinkingPath(String(req.params.id), attempt);
+    if (!file) return res.sendStatus(404);
+    res.set("Content-Security-Policy", "sandbox; default-src 'none'");
+    return res.type("text/plain").sendFile(file, { dotfiles: "allow" });
+  });
   app.get("/outputs/:id/download", async (req, res) => {
     const id = String(req.params.id);
     if (!rate(`download:${req.ip}`, 100, 60000)) {

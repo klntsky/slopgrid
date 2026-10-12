@@ -551,6 +551,16 @@ for (const model of ["fixture/text", "fixture/other"])
     await expectProgress(page, 0, 1);
     const original = (await iframe.getAttribute("src"))!;
     const originalFrame = (await iframe.elementHandle())!;
+    await page.getByRole("button", { name: "Show thinking" }).click();
+    await expect(
+      page.getByRole("region", { name: /^Thinking:/ }),
+    ).toContainText("Planning the website layout.");
+    await page.getByRole("button", { name: "Expand thinking" }).click();
+    await page.getByRole("button", { name: "Collapse thinking" }).click();
+    await page.getByRole("button", { name: "Show output" }).click();
+    expect(await originalFrame.evaluate((element) => element.isConnected)).toBe(
+      true,
+    );
     let releasePreview!: () => void;
     const previewGate = new Promise<void>((resolve) => {
       releasePreview = resolve;
@@ -721,6 +731,14 @@ test("streaming prices grow with reasoning and output, reconcile on success, and
     await expect(cells.locator('[data-tooltip="Estimated cost"]')).toHaveCount(
       2,
     );
+    const thinkingView = (index: number) =>
+      cells.nth(index).getByRole("region", { name: /^Thinking:/ });
+    await expect(thinkingView(0)).toContainText(
+      "Thinking through the drawing.",
+    );
+    await expect(
+      cells.nth(0).getByRole("button", { name: "Show output" }),
+    ).toBeVisible();
     const reasoning = await price(0);
     expect(reasoning).toBeGreaterThan(0);
     const expectTotal = async (formatted: string, estimated = true) => {
@@ -733,13 +751,32 @@ test("streaming prices grow with reasoning and output, reconcile on success, and
     await release("cat");
     await expect.poll(() => price(0)).toBeGreaterThan(reasoning);
     await expectTotal("$0.01");
+    await expect(thinkingView(0)).toBeHidden();
+    await cells.nth(0).getByRole("button", { name: "Show thinking" }).click();
+    await expect(thinkingView(0)).toContainText(
+      "**Literal thinking** <b>not HTML</b>",
+    );
+    await cells.nth(0).getByRole("button", { name: "Expand thinking" }).click();
+    await expect(
+      page
+        .getByRole("region", { name: /^Expanded output:/ })
+        .getByRole("region", { name: /^Thinking:/ }),
+    ).toContainText("Literal thinking");
+    await page.getByRole("button", { name: "Collapse thinking" }).click();
     await release("cat");
     await expectProgress(page, 1, 2);
     await expect(
       cells.nth(0).locator('[data-tooltip="OpenRouter reported cost"]'),
     ).toHaveText("$0.019876");
     await expectTotal("$0.02");
+    await expect(thinkingView(0)).toContainText(
+      "**Literal thinking** <b>not HTML</b>",
+    );
     await page.reload();
+    await cells.nth(0).getByRole("button", { name: "Show thinking" }).click();
+    await expect(thinkingView(0)).toContainText(
+      "**Literal thinking** <b>not HTML</b>",
+    );
     await expect(
       cells.nth(1).locator('[data-tooltip="Estimated cost"]'),
     ).toBeVisible();
@@ -752,6 +789,10 @@ test("streaming prices grow with reasoning and output, reconcile on success, and
     await expectTotal("$0.01", false);
     await page.reload();
     await expectTotal("$0.01", false);
+    await cells.nth(1).getByRole("button", { name: "Show thinking" }).click();
+    await expect(thinkingView(1)).toContainText(
+      "**Literal thinking** <b>not HTML</b>",
+    );
   } finally {
     await request.post("/fixture/release", { data: { all: true } });
   }

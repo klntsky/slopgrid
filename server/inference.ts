@@ -6,7 +6,12 @@ import { z } from "zod";
 import type { TextBudget } from "./generation-budget.js";
 import type { CallObserver, CallRecorder } from "./billing.js";
 import { upstreamFetch } from "./http.js";
-import { type Cell, type Completion, type GridInput } from "./domain.js";
+import {
+  type Cell,
+  type Completion,
+  type GridInput,
+  type InferenceProgress,
+} from "./domain.js";
 const costUsage = z.object({
   cost: z.number().finite().nonnegative().optional(),
 });
@@ -14,12 +19,53 @@ function reportedCost(usage: unknown): number | undefined {
   const result = costUsage.safeParse(usage);
   return result.success ? result.data.cost : undefined;
 }
+const thinkingMessage = z.object({
+  reasoning: z.string().nullish(),
+  reasoning_details: z
+    .array(
+      z.object({
+        type: z.string(),
+        text: z.string().nullish(),
+        summary: z.string().nullish(),
+      }),
+    )
+    .nullish(),
+});
+const thinkingResponse = z.object({
+  choices: z.array(
+    z.object({
+      delta: thinkingMessage.nullish(),
+      message: thinkingMessage.nullish(),
+    }),
+  ),
+});
+function thinkingText(value: unknown): string {
+  const parsed = thinkingResponse.safeParse(value);
+  if (!parsed.success) return "";
+  const choice = parsed.data.choices[0];
+  const message = choice?.delta ?? choice?.message;
+  // Details and the legacy reasoning field can contain the same text. Prefer
+  // readable details, never opaque encrypted blocks, and never concatenate both.
+  return (
+    message?.reasoning_details
+      ?.map((detail) =>
+        detail.type === "reasoning.text"
+          ? (detail.text ?? "")
+          : detail.type === "reasoning.summary"
+            ? (detail.summary ?? "")
+            : "",
+      )
+      .join("") ||
+    message?.reasoning ||
+    ""
+  );
+}
 export async function generateInference(
   baseURL: string,
   key: string,
   format: GridInput["format"],
   cell: Cell,
-  onChunk: (text: string, estimatedCostUsd?: number) => void,
+  onChunk: (progress: InferenceProgress) => void,
   signal?: AbortSignal,
   observe?: CallObserver,
   budget?: TextBudget,
@@ -48,6 +94,8 @@ export async function generateInference(
       if (typeof body?.id === "string") call?.update({ generationId: body.id });
       // The image adapter currently omits response usage.cost from its result.
       imageCost = reportedCost(body?.usage);
+      const thinking = thinkingText(body);
+      if (thinking) onChunk({ text: "", thinking });
       imageFinishReason =
         body?.choices?.[0]?.finish_reason ?? body?.finish_reason;
     }
@@ -121,6 +169,7 @@ export async function generateInference(
     let failure: unknown;
     const result = streamText({
       model,
+      includeRawChunks: true,
       system: instruction(format),
       ...(structured && {
         output: Output.object({ schema: websiteSchema, name: "website" }),
@@ -141,16 +190,26 @@ export async function generateInference(
     const inputCost =
       inputTokens * budget.pricing.prompt + (budget.pricing.request ?? 0);
     let text = "",
+      thinking = "",
       outputBytes = 0;
     for await (const chunk of result.fullStream) {
-      if (chunk.type === "text-delta" || chunk.type === "reasoning-delta") {
+      if (chunk.type === "text-delta") {
         outputBytes += Buffer.byteLength(chunk.text, "utf8");
-        if (chunk.type === "text-delta") text += chunk.text;
+        text += chunk.text;
+      } else if (chunk.type === "raw") {
+        // The adapter omits reasoning deltas after text starts. Raw events retain
+        // interleaved thinking; ignoring normalized reasoning avoids duplicates.
+        const delta = thinkingText(chunk.rawValue);
+        if (!delta) continue;
+        thinking += delta;
+        outputBytes += Buffer.byteLength(delta, "utf8");
       } else if (chunk.type !== "start-step") continue;
-      onChunk(
+      onChunk({
         text,
-        inputCost + Math.ceil(outputBytes / 4) * budget.pricing.completion,
-      );
+        thinking,
+        estimatedCostUsd:
+          inputCost + Math.ceil(outputBytes / 4) * budget.pricing.completion,
+      });
     }
     const [streamUsage, metadata, finishReason, rawFinishReason] =
       await Promise.all([

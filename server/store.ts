@@ -88,7 +88,7 @@ export class Store {
       );
       cells.forEach((cell, position) => {
         const recorded = !!hasCalls.get(cell.id);
-        const { status, error, errorCode, usage, mediaType } = cell;
+        const { status, error, errorCode, usage, mediaType, thinkingId } = cell;
         saveCell.run(
           cell.id,
           id,
@@ -99,6 +99,7 @@ export class Store {
             errorCode,
             usage: recorded ? undefined : usage,
             mediaType,
+            thinkingId,
           }),
         );
       });
@@ -116,12 +117,13 @@ export class Store {
     const { owner, ownerUserId, published, input } = JSON.parse(
       row.grid,
     ) as Grid;
-    const { status, mediaType } = JSON.parse(row.cell) as Cell;
+    const { status, mediaType, thinkingId } = JSON.parse(row.cell) as Cell;
     return {
       owner,
       ownerUserId,
       published,
       format: input.format,
+      thinkingId,
       status,
       mediaType,
     };

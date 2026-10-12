@@ -1,5 +1,6 @@
 import {
   existsSync,
+  appendFileSync,
   mkdirSync,
   mkdtempSync,
   renameSync,
@@ -52,6 +53,22 @@ export class OutputFiles {
     if (!safePath(path)) return;
     const file = join(this.directory(id), path);
     return existsSync(file) && statSync(file).isFile() ? file : undefined;
+  }
+  appendThinking(cellId: string, id: string, text: string) {
+    if (!/^[a-f0-9]{48}$/.test(id)) throw new Error("Invalid thinking ID");
+    const directory = join(this.root, ".thinking", encodeURIComponent(cellId));
+    mkdirSync(directory, { recursive: true, mode: 0o700 });
+    appendFileSync(join(directory, id + ".txt"), text, { mode: 0o600 });
+  }
+  thinkingPath(cellId: string, id: string): string | undefined {
+    if (!/^[a-f0-9]{48}$/.test(id)) return;
+    const file = join(
+      this.root,
+      ".thinking",
+      encodeURIComponent(cellId),
+      id + ".txt",
+    );
+    return existsSync(file) ? file : undefined;
   }
   async bundle(id: string): Promise<Record<string, Uint8Array>> {
     const directory = this.directory(id);

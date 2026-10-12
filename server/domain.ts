@@ -73,6 +73,11 @@ export type Completion = {
   rawFinishReason?: string;
   reasoningTokens?: number;
 };
+export type InferenceProgress = {
+  text: string;
+  thinking: string;
+  estimatedCostUsd?: number;
+};
 export type Cell = {
   id: string;
   row: number;
@@ -87,6 +92,8 @@ export type Cell = {
   retrying?: boolean;
   mediaType?: string;
   draft?: string;
+  thinking?: string;
+  thinkingId?: string;
   estimatedCostUsd?: number;
   preview?: { attempt: string; revision: number };
   usage?: { inputTokens?: number; outputTokens?: number; costUsd?: number };

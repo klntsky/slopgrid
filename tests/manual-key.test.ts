@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { once } from "node:events";
 import { Provider } from "../server/provider.js";
-import type { Cell, GridInput } from "../server/domain.js";
+import type { Cell, GridInput, InferenceProgress } from "../server/domain.js";
 
 test("manual keys stay out of SQLite, serve queued cells, and require resending after Pause", async (t) => {
   let remaining: number | null = 12;
@@ -39,7 +39,7 @@ test("manual keys stay out of SQLite, serve queued cells, and require resending 
       key: string,
       _format: GridInput["format"],
       cell: Cell,
-      _write: (text: string) => void,
+      _write: (progress: InferenceProgress) => void,
       signal?: AbortSignal,
     ) {
       this.calls.push(key);

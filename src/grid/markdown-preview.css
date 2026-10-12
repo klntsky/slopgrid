@@ -91,3 +91,9 @@
   > :first-child:not(pre):not(table) {
   margin-right: 74px;
 }
+
+.cell:has(.markdown-actions > :nth-child(3))
+  .markdown-document
+  > :first-child:not(pre):not(table) {
+  margin-right: 112px;
+}
