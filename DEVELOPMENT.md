@@ -20,15 +20,22 @@ Open http://localhost:3000. Chromium resolves HTML output hosts ending in `.loca
 
 The test creates and generates an anonymous grid, signs in through GitHub, verifies claiming and publication attribution, signs in through GitHub in a separate browser context, checks account access and billing, and signs out. It uses no mocked OAuth or inference endpoints. Missing credentials, authorization failure, and provider errors fail verification rather than silently skipping it. Unit identity tests exercise the real app and database with mocked GitHub token and profile responses, including claiming active grids, session rotation, and callback replay rejection. They do not authenticate with GitHub.
 
-## Interface text
-
-Never editorialize user-facing text. When creating new UX surfaces, summarize the user-facing text in the conversation so the user can review it.
-
 ## Frontend builds
 
 The Markdown renderer is included directly in the main browser bundle, so opening a Markdown preview does not request a separate renderer chunk. Vite retains previous files in `dist` during rebuilds so open pages can still fetch assets from their original build. The frontend router serves HTML with `Cache-Control: no-store`, hashed assets with immutable caching, and missing assets with `no-store` to avoid caching a temporary 404.
 
 ## Validation
+
+### Test design
+
+1. Use pnpm and Playwright, with real-provider browser suites separate but enabled in the default full run. Exercise the normal manual-key flow with a cheap or free model and cover structured website streaming with an explicitly selected capable model.
+2. Assertions enforce complex behavioral properties: state transitions, persistence, ownership, recovery, and component interactions. Exclude trivial assertions, constant checks, CSS appearance tests, and checks that merely mirror implementation.
+3. Group independent browser scenarios with isolated fixture state and unused ports for parallel execution. Reuse generated grids for related read-only checks while keeping mutation scenarios isolated.
+4. Share integration-test resource setup and teardown through a small fixture, keeping scenarios and assertions explicit. Test servers must use the real frontend-serving implementation so routing and cache behavior are exercised.
+5. Verify the GitHub OAuth integration through its real flow. Use controlled inference streams for deterministic scheduling, failure, billing, and ordering scenarios while retaining the real provider adapter/parser, database, files, engine, web process, internal API, and browser.
+6. Use explicit synchronization points, and keep crash controls confined to test processes. An upstream inference HTTP fixture supplies model responses; application generation APIs remain real.
+
+### Running the suites
 
 ```sh
 pnpm test
@@ -48,19 +55,19 @@ The real project uses OpenRouter directly for one-cell Markdown, SVG, and static
 
 Provide `OPENROUTER_API_KEY` to the test process, or create `slopgrid/test.config.json` under your user configuration directory (`XDG_CONFIG_HOME`, otherwise `~/.config`) with `keySource` pointing to an existing environment file and optional `keyVariable` (default `OPENROUTER_API_KEY`). The configuration contains a reference rather than a copied credential. The runner supplies the resolved key only to Playwright; the browser connects through the normal manual-key form. Keep credentials and this private configuration outside the repository.
 
-Tests focus on state transitions, persistence, security boundaries, and interactions across components. CSS appearance, fixed layout measurements, static UI copy, default constants, and simple passthroughs are not asserted. Touch gestures retain checks that zooming and scrolling respond to interaction, and keyboard resizing is checked through saved dimensions and restored handle values. Controlled error responses, exact billing amounts, timing gates, and scheduling scenarios remain mocked because their outcomes must be reproducible.
+Touch gestures retain checks that zooming and scrolling respond to interaction, and keyboard resizing is checked through saved dimensions and restored handle values. Controlled error responses, exact billing amounts, timing gates, and scheduling scenarios remain mocked because their outcomes must be reproducible.
 
 The runtime behavior tests share `tests/runtime-fixture.ts`: a controlled OpenRouter HTTP service, a real inference child, a replaceable web child, and a temporary SQLite database and output directory. The actual provider SDK, stream parser, billing recorder, and Unix-socket API remain in use. Tests explicitly release streaming chunks or failures instead of relying on provider response timing. Sessions are seeded directly; authentication flows have separate coverage.
 
-| Test                                | Behavior exercised                                                                                                                                    |
-| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tests/e2e/runtime.spec.ts`         | Open browsers reconnect after web replacement while markdown, thinking, and private website assets continue streaming.                                |
-| `tests/generation-commands.test.ts` | A lost start acknowledgement and concurrent retries cannot duplicate inference.                                                                       |
-| `tests/generation-metadata.test.ts` | Concurrent metadata and generation writes preserve both, while publication and retry admission serialize.                                             |
-| `tests/generation-drain.test.ts`    | Draining preserves accepted queues and retry timers, waits for unsettled cancellations, and permits admission to reopen.                              |
-| `tests/generation-crash.test.ts`    | Real engine death around billing, output-file, and cell-state persistence preserves committed work and requires explicit resume for unfinished cells. |
-| `tests/e2e/ordering.spec.ts`        | Late HTTP responses and replayed stream snapshots cannot regress browser state, including transient DOM changes.                                      |
-| `tests/generation-viewers.test.ts`  | Stalled subscribers cannot block inference or healthy viewers; disconnects release connection capacity.                                               |
+### Required runtime coverage
+
+1. **Web replacement during generation:** keep a real browser open while Markdown, thinking, and website assets stream; replace the web process and verify reconnection, continued previews, correct final content and prices, and no extra provider calls. See `tests/e2e/runtime.spec.ts`.
+2. **Lost acknowledgements and competing starts:** lose the response after the engine accepts Start, retry through a replacement web process, and race multiple starts; each cell must run only once. See `tests/generation-commands.test.ts`.
+3. **Concurrent writes:** interleave title edits, ownership claims, generation completion, publication, and retries across processes; preserve both metadata and generation changes and prevent publication while work is active. See `tests/generation-metadata.test.ts`.
+4. **Complete draining:** cover queued cells, retry timers, and cancelled calls whose provider work has not settled. Accepted work finishes, new work is rejected, drained status waits correctly, and cancelling maintenance restores admission. See `tests/generation-drain.test.ts`.
+5. **Engine death at persistence boundaries:** kill the real process midstream and around billing, file, and cell-state persistence. Preserve committed outputs, retain recorded charges, settle interrupted ledger entries, and require explicit Resume without duplicating completed work. See `tests/generation-crash.test.ts`.
+6. **Reordered browser updates:** release older HTTP or SSE snapshots after newer state, including across reconnection, and ensure output, thinking, title, status, and prices never regress even transiently. See `tests/e2e/ordering.spec.ts`.
+7. **Slow and disconnected viewers:** stall one subscriber while another remains healthy, repeatedly disconnect/reconnect, and verify generation continues, abandoned capacity is released, and a reconnect sees current state. See `tests/generation-viewers.test.ts`.
 
 Crash tests use `tests/crash-checkpoint.ts` to attach Node's inspector to the fixture engine and stop at a specific statement before killing the process. Checkpoints are located in the executed script and must identify a unique statement. Inspector activation exists only in the test child entry point. The abort-ignoring cancellation case reuses the scheduler's `ControlledProvider` because an HTTP client settles locally when its request is aborted, even if the remote server keeps working.
 

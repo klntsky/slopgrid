@@ -1,10 +1,10 @@
 # Slopgrid requirements
 
-This document defines the current agreed requirements for Slopgrid. Implementation status is documented separately.
+This document defines Slopgrid’s product behavior and user experience.
 
-Implementation explanations belong in [ARCHITECTURE.md](ARCHITECTURE.md), development guidance belongs in [DEVELOPMENT.md](DEVELOPMENT.md), and the end-user guide belongs in [README.md](README.md). Host-specific operational details remain outside the repository in the user-wide AGENTS.md.
+See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.md) for architecture constraints and implementation, and [DEVELOPMENT.md](DEVELOPMENT.md) for development and validation guidance.
 
-## 1. Product and technology
+## 1. Product
 
 ### 1.1. Benchmarking model outputs
 
@@ -13,13 +13,7 @@ Implementation explanations belong in [ARCHITECTURE.md](ARCHITECTURE.md), develo
 3. Offer four output types in this order: Markdown, Image, SVG, and Static website. Image generation uses image-capable models; static websites may contain multiple files but no server-side code.
 4. Generate outputs on the server, stream progress to the browser, retain completed results, and let owners publish their grids afterward.
 5. A cell attempt makes one inference call.
-
-### 1.2. Stack and boundaries
-
-1. Use TypeScript, React, TanStack, and SSE for the frontend, with the AI SDK on the server and SQLite for persistent application data.
-2. Use pnpm for package management and Playwright for browser tests.
-3. Apply sensible rate limits to application requests and generation admission without imposing application deadlines on inference.
-4. Keep identity-provider and inference-provider responsibilities separate. Support GitHub identity and OpenRouter inference now, with boundaries that allow additional providers later without spreading provider-specific logic through the application.
+6. Apply sensible request and generation rate limits without imposing deadlines on accepted inference.
 
 ## 2. Interface, navigation, and presentation
 
@@ -27,10 +21,9 @@ Implementation explanations belong in [ARCHITECTURE.md](ARCHITECTURE.md), develo
 
 1. Use a dim, slightly warm light theme and a subtly warm dark theme. Settings offers System, Light, and Dark; System is the default and follows system appearance.
 2. Use the custom 5×5-cell SVG project mark. Place it to the left of the website name, and give the word “grid” the same accent color as the logo squares.
-3. Use permissively licensed stock interface icons, currently Lucide, alongside official OpenRouter and GitHub brand assets. Brand icons must remain recognizable and uncropped.
+3. Use permissively licensed stock interface icons alongside official OpenRouter and GitHub brand assets. Brand icons must remain recognizable and uncropped.
 4. Keep buttons consistent throughout the interface, with restrained borders, padding, and corner rounding. Output-type cards should have larger icons and labels without excessively rounded corners.
-5. Do not add unsolicited commentary, explanations, caveats, advice, or value judgments to UI text. Explicitly requested explanatory text remains allowed. Recheck this rule whenever changing visible UI text.
-6. Use concise, distinct headings and labels without repeating information already visible in the section.
+5. Use concise, distinct headings and labels without repeating information already visible in the section.
 
 ### 2.2. Navigation and page layout
 
@@ -45,7 +38,7 @@ Implementation explanations belong in [ARCHITECTURE.md](ARCHITECTURE.md), develo
 
 ### 2.3. Tooltips
 
-1. Use Tippy for all tooltips. Tooltips have a pitch-black background and white text in both themes.
+1. Tooltips have consistent behavior and a pitch-black background with white text in both themes.
 2. Use hints only to explain a non-obvious action, icon, or value, consistently across the frontend.
 3. Explain Model default as “Uses the model’s default thinking settings.” Explain the budget as “Used to calculate each output’s token limit.” Give total cost a hint explaining which costs it includes.
 4. Give token-arrow indicators “Input tokens” and “Output tokens” hints. Supported compatibility checkmarks do not get tooltips.
@@ -89,7 +82,7 @@ Implementation explanations belong in [ARCHITECTURE.md](ARCHITECTURE.md), develo
 
 ### 3.5. Budget and requested parallelism
 
-1. Text generation requires a per-cell monetary budget, defaulting to $5 per attempt. It covers estimated total cost, including input, output, and thinking, and is translated into a token ceiling using model pricing.
+1. Text generation requires a per-cell monetary budget, defaulting to $5 per attempt. It covers estimated total cost, including input, output, and thinking.
 2. Label the compact field “Budget limit per cell,” prepend a dollar icon, and give it proper surrounding spacing. It must not stretch across the form’s full width.
 3. Respect provider/model limits when translating the budget, without adding an unrelated fixed output-size ceiling. A retry gets a new attempt allowance.
 4. Show “# of parallel workers” to the right of the budget before generation starts. Compute its initial value automatically from available balance divided by $3, rounded down with a minimum of one and capped by the grid’s cell count.
@@ -115,9 +108,8 @@ Implementation explanations belong in [ARCHITECTURE.md](ARCHITECTURE.md), develo
 4. Page-height filling may expand output rows, but must never stretch the header row. Its height stays natural through viewport fitting, zoom, resizing, and restoration from localStorage.
 5. Users resize output columns and rows through their corresponding header edges. Each shared edge controls the column to its right or row below it, including the last output row. The header row and label column themselves are not resizable.
 6. Persist only output dimensions per grid in browser localStorage, without server-wide size persistence. Restoring output sizes must preserve the header’s natural height.
-7. Use one owner for table dimensions; resizing and zooming must communicate through it rather than independently writing conflicting geometry.
-8. Support pinch zoom whenever a touchscreen is present, regardless of screen width. Start by fitting the table to available width and prevent zooming out beyond that width fit.
-9. Keep one-finger scrolling usable, including within Markdown cells. Zoom the grid rather than the application navbar.
+7. Support pinch zoom whenever a touchscreen is present, regardless of screen width. Start by fitting the table to available width and prevent zooming out beyond that width fit.
+8. Keep one-finger scrolling usable, including within Markdown cells. Zoom the grid rather than the application navbar.
 
 ### 4.2. Title, prompt, author, and price
 
@@ -146,13 +138,13 @@ Implementation explanations belong in [ARCHITECTURE.md](ARCHITECTURE.md), develo
 1. Place icon-only Open output, Copy output, and Download output controls at the bottom left of cells as applicable. Open output opens a separate tab.
 2. Copy copies the output content and is not shown for websites. Download saves a website as a ZIP containing its files and relative paths.
 3. Download filenames follow `<prompt>.slopgrid.com.<grid-id>.<row_parameter>.<column_parameter>.<extension>`. Normalize filename components, replacing spaces and characters unsuitable for filenames with underscores. The domain in this pattern is product-facing filename text.
-4. Store generated SVG and Markdown source verbatim, preserving whitespace and code fences. Parse website JSON directly from the unmodified response.
-5. Keep output files on disk, independently of metadata edits and publication. Do not impose an application output-byte limit.
+4. Store generated SVG and Markdown source verbatim, preserving whitespace and code fences.
+5. Preserve generated output independently of metadata edits and publication, without an application output-byte limit.
 6. Store provider finish reasons without displaying them in the interface. Treat an unsuccessful completion reason as a generation failure rather than silently accepting incomplete output.
 
 ### 5.2. Markdown
 
-1. Use a React Markdown renderer that produces React elements without unsafe DOM insertion. Render raw HTML as text.
+1. Render Markdown formatting while displaying embedded raw HTML as text.
 2. Render Markdown incrementally into the same rendered layout used for completion, retaining the preview and scroll position throughout.
 3. Let code blocks take their full natural content width, then scale the whole Markdown document to fit the cell width. Scrolling is vertical only.
 4. Add an icon-only raw-view toggle to the left of Expand. Raw mode shows the original Markdown as unformatted text, preserves line breaks, disables wrapping, and scales to the cell width.
@@ -161,22 +153,18 @@ Implementation explanations belong in [ARCHITECTURE.md](ARCHITECTURE.md), develo
 
 ### 5.3. Images and SVG
 
-1. Render generated images and SVG through image elements and always fit them to the cell.
+1. Display generated images and SVG as images that always fit the cell.
 2. During SVG streaming, make a disposable partial-image preview by closing unfinished tags where possible. This preview recovery must not modify stored final source.
 3. Do not reject SVG merely because markup validation considers it malformed or unconventional; browsers may still recover it.
-4. Use this SVG instruction: “Fulfill user's SVG generation request. Your response will be saved directly as an image/svg+xml file. Start immediately with <svg and end immediately with </svg>. Include no introduction, explanation, Markdown fences, or other text outside the SVG element.”
 
 ### 5.4. Static websites
 
 1. Generate a static bundle containing `index.html` and optional supporting HTML, CSS, and JavaScript files.
-2. Use one website response shape for all models: a JSON object whose `files` value is a list of `{path, content}` entries. Share this schema between request construction and final validation.
-3. Require strict structured outputs and compatible provider routing when the selected model advertises support. For models without support, request the same shape through the prompt and use ordinary JSON parsing. Preserve streaming in both cases.
-4. Do not silently downgrade a failed structured-output request to an unconstrained request.
-5. Stream file contents incrementally, including partial files, and serve snapshots from the isolated output host. Request the entry HTML first so useful content can appear before all assets arrive.
-6. Load generated CSS, module scripts, and relative assets correctly inside private frames while preserving authorization and sandbox isolation.
-7. Keep the current iframe visible while a replacement iframe loads, then swap it in place. Apply this handoff to streaming updates and the transition to completed output, avoiding a blank-frame blink.
-8. Synchronize document and scrollable-panel positions into the replacement before revealing it. Coalesce incoming updates so frames cannot accumulate without bound or replace a newer preview with an older one.
-9. Pause, failure, and a new attempt must not retain a stale temporary website preview.
+2. Stream website previews as file contents arrive, including partial files. Show entry-page content before all supporting assets have arrived.
+3. Load generated CSS, module scripts, and relative assets correctly inside private frames while preserving authorization and sandbox isolation.
+4. Keep the current website preview visible until the next preview is ready. Streaming updates and the transition to completed output must avoid a blank-frame blink.
+5. Preserve document and scrollable-panel positions across preview updates. Display the latest content without reverting to an older preview.
+6. Pause, failure, and a new attempt must not retain a stale temporary website preview.
 
 ### 5.5. Thinking traces
 
@@ -190,11 +178,10 @@ Implementation explanations belong in [ARCHITECTURE.md](ARCHITECTURE.md), develo
 
 ### 6.1. Worker allocation
 
-1. Use a shared configurable worker pool with `WORKERS_MAX` defaulting to 100.
+1. Use a shared configurable worker pool with a default limit of 100 concurrent cell generations.
 2. Aim to give each eligible user at least one worker when possible, then distribute capacity as evenly as possible. Give a newly freed worker to an eligible user with the fewest active workers.
 3. Count a user’s allocation across their grids. Respect requested grid/session concurrency ceilings as well as the global cap.
 4. Do not cancel active work or reserve idle slots merely to rebalance. When limits change, allow existing work to finish while applying limits to new dispatches.
-5. Separate allocation policy from execution mechanics using ordinary functions and records, without adding an OOP hierarchy or unnecessary boilerplate.
 
 ### 6.2. Balance, errors, and retries
 
@@ -203,16 +190,16 @@ Implementation explanations belong in [ARCHITECTURE.md](ARCHITECTURE.md), develo
 3. Apply backoff to temporary provider rate and in-flight spending limits, honoring provider retry guidance and releasing worker capacity while waiting so other users can continue.
 4. Distinguish transient throttling from genuine billing or authentication failures, which require user action.
 5. Propagate provider error messages and codes to the client and retain them with failed cells, including after reload and publication.
-6. Do not impose inference deadlines or HTTP transport timeouts that abort otherwise ongoing generation. Explicit user cancellation remains supported.
+6. Ongoing generation continues regardless of elapsed time until it finishes, fails, or the user cancels it.
 
 ### 6.3. Pause, resume, and updates
 
 1. Pause immediately aborts active requests for that grid, removes queued work, and discards unfinished output previews. Completed outputs remain intact.
 2. Resume restarts unfinished cells, including retries, while preserving completed outputs. It must remain possible after dismissing an interruption popup.
 3. Use a red stop-square icon for the stop/pause action and the hint “Work can be resumed later, unfinished responses will be lost”.
-4. Keep SSE open while a grid can still change from queued or active generation, including unsettled requests after a pause. Close it once stable and reopen it when an action starts work again.
-5. Reordered HTTP responses and stream events must not move title, output, thinking, status, or price backward. Scope attempt-specific state so retries cannot inherit stale content.
-6. Startup recovery is explicit generation lifecycle work; opening a data store must not itself mutate generation state. Interrupted unfinished work requires an explicit Resume rather than automatic replay.
+4. Keep live updates connected while a grid can still change from queued or active generation, including unsettled requests after a pause. Disconnect once stable and reconnect when an action starts work again.
+5. Delayed updates must not move title, output, thinking, status, or price backward. Retries must show content from the current attempt.
+6. Interrupted unfinished work requires an explicit Resume, preserving completed outputs.
 
 ## 7. Costs and billing
 
@@ -236,22 +223,20 @@ Implementation explanations belong in [ARCHITECTURE.md](ARCHITECTURE.md), develo
 
 ### 8.1. Anonymous and GitHub accounts
 
-1. Users are anonymous by default. Offer recognizable GitHub sign-in in the interface, with a provider identity boundary that can accommodate additional identity providers later.
+1. Users are anonymous by default. Offer recognizable GitHub sign-in in the interface.
 2. A GitHub identity displays as the GitHub icon followed by a username linked to the profile. Otherwise display “by Anonymous”. Show authors near grid titles and in grid listings.
-3. Identify an account by the provider’s stable user ID rather than a mutable display name. Refresh display identity on sign-in.
+3. Account ownership persists when a GitHub username changes. Refresh display identity on sign-in.
 4. On sign-in, atomically claim the current anonymous session’s grids for the account, including their billing history. Never claim another account’s grids.
-5. Account grids and billing are accessible across browsers signed into that account. Signing out removes account access and rotates the session; newly created anonymous grids belong to the current anonymous session.
+5. Account grids and billing are accessible across browsers signed into that account. Signing out removes account access; newly created anonymous grids belong to the current anonymous session.
 6. Preserve the initiating inference connection during identity changes so signing in or out does not silently replace credentials or interrupt accepted work.
 7. Freeze author attribution at first publication. Later claims, sign-ins, or profile changes must not rewrite a published grid’s author; unpublished grids may show the current identity.
-8. GitHub configuration is required at startup. Missing credentials must fail startup.
-9. Use session-bound single-use OAuth state, expiry, PKCE, and validated local return destinations. Discard GitHub tokens after identifying the user, and keep GitHub and OpenRouter authorization attempts separate.
 
 ### 8.2. Inference credentials
 
 1. Keep OpenRouter connections browser/session-scoped; do not attach them to the GitHub account or copy them to other browsers.
 2. Store manually entered keys in the user’s localStorage and resend them for authenticated key checks and inference start/resume requests. Hold them only ephemerally on the server while needed for execution, without persistent server storage.
 3. Support OpenRouter OAuth connections alongside browser-stored manual keys, with each flow’s credential lifecycle handled independently.
-4. Keep credentials, session ownership tokens, private runtime data, and private test artifacts out of public responses, logs intended for sharing, and repository files.
+4. Public responses must not expose credentials, session ownership tokens, or private runtime data.
 
 ### 8.3. Publication and discovery
 
@@ -270,92 +255,11 @@ Implementation explanations belong in [ARCHITECTURE.md](ARCHITECTURE.md), develo
 1. Private output must be accessible only through an authorized live user session. Knowing a grid, output, preview, download, or thinking URL does not grant access.
 2. Apply ownership and session checks consistently to every output format, website asset, preview, download, and thinking trace. Expiry, logout, and account changes must revoke access appropriately.
 3. Serve arbitrary HTML bundles from separate per-output hosts. Images, SVG, and Markdown use the application host.
-4. Configure output hostnames through the environment, using a suffix that keeps the generated host within one wildcard-covered DNS label. Do not hardcode deployment hostnames into application code.
-5. Generated HTML must not receive application session cookies, access other outputs’ cookies, or reach application API handlers through its output host. Retain isolation while allowing its static scripts and assets to render.
-6. Private HTML authorization may use a narrowly scoped, host-only output cookie tied to the live application session. A grant or cookie must not become permanent public access, and authorization bootstrapping must not relax generated-document isolation.
-7. Validate website file paths and static bundle structure before serving. Never expose arbitrary filesystem paths through generated filenames.
-8. Keep brief comments around the non-obvious access handshake and document its actual security boundaries in ARCHITECTURE.md.
+4. Generated HTML must not receive application session cookies, access other outputs’ cookies, or reach application API handlers through its output host. Retain isolation while allowing its static scripts and assets to render.
+5. Generated websites can access only their own bundle’s files.
 
-## 9. Architecture and code maintenance
+## 9. Availability and updates
 
-### 9.1. Responsibility and duplication
-
-1. Prefer less code and clear functional boundaries over class hierarchies, generic frameworks, or boilerplate. Refactor one coherent responsibility at a time and keep commits atomic.
-2. Separate persistence, encryption, and presentation. Extract encryption and author/grid response construction from the data store.
-3. Keep identity claiming and notification/throttling mechanics out of generation orchestration where their actual owner can handle them directly. Use one consistent preview-notification policy rather than duplicated throttle implementations.
-4. Provider modules handle provider logic, including catalog, credit interpretation, and SDK adaptation. Keep HTTP request handling and application balance/concurrency policy outside those modules, and share credit lookup rather than duplicating it in manual-key routes.
-5. Separate grid input/expansion logic from output protocols, generation instructions, and parsing. Reuse one relative-path validator for output parsing and storage.
-6. Share completion-success policy between inference and billing instead of interpreting finish reasons twice.
-7. Deduplicate OAuth primitives; prefer a substantial established library when it simplifies the code, otherwise retain straightforward local code rather than adding an obscure dependency.
-8. Centralize grid access, publication policy, and author presentation. Use a separate React publishing component with TanStack queries/mutations; let its mutation own request errors instead of duplicating error state in the dialog.
-9. Share creation/resume inference-request handling, balance dialogs, and draft persistence instead of maintaining parallel implementations.
-10. Deduplicate equivalent UI widgets and behaviors, including modal lifecycle, clipboard feedback, format icons, and tooltip setup.
-11. Derive or share API snapshot types so client/server contract drift is impossible. Avoid manually maintaining the same response shape twice.
-12. Make test servers use the real frontend-serving implementation so tests exercise the actual routing and cache behavior.
-13. Keep code and tests focused on supported behavior, removing unused implementations and tests that serve no current purpose.
-14. Give table sizing one owner, with explicit cooperation between resizing and zooming.
-15. Consolidate output metadata/authorization lookup and filename/MIME selection, while distinguishing running previews from completed saved outputs.
-16. Group scheduler state by lifetime in plain per-grid and per-owner records instead of parallel maps with duplicated cleanup.
-17. Share integration-test resource setup and teardown through a small fixture while keeping scenario behavior and assertions explicit.
-
-### 9.2. Persistence
-
-1. Use SQLite as the application database, with an explicit monotonically versioned schema. Support the current schema version; a development-data reset is acceptable when a deliberate schema change requires it.
-2. Store generated bodies as files, not database blobs. Store configuration once and avoid duplicating derived prompts, model settings, budget, output bodies, or call usage.
-3. Keep temporary previews and live drafts distinct from committed output files. Metadata edits must not rewrite outputs.
-4. Preserve ordinary user data, credentials, and sessions across deployments. Permission to discard development data for a deliberate incompatible refactor is not permission to reset live data during routine updates.
-
-### 9.3. Independent generation runtime
-
-1. The inference process owns the complete generation lifecycle: admission, queued/running work, worker allocation, provider calls and execution credentials, retries, cancellation, budget enforcement, output/thinking streams, previews, usage/charges, generation state, and recovery.
-2. The web process owns authentication, sessions, account/settings UI, model discovery for creation, grid metadata, authorized output delivery, billing presentation, HTTP routes, and browser event connections.
-3. Keep the process API explicit and small, with defined commands and snapshots/subscriptions over local transport. Do not introduce a separate queue service or an OOP hierarchy merely to split process lifetimes.
-4. Give generation state and editable metadata separate write ownership. Coordinate publication, ownership changes, and generation admission so stale whole-grid writes cannot overwrite newer state or publish a running grid.
-5. Reconnecting browsers receive current ordered snapshots, including partial output, thinking, estimates, and preview identifiers. Subscription registration and initial snapshot delivery must not leave an update gap.
-6. Lost command acknowledgements or simultaneous starts must not duplicate inference. Slow or abandoned viewers must not block generation or leak subscription capacity.
-7. Use standard HTTP/stream utilities for transport and only the connection monitoring needed to detect disconnection. Changes to revision or preview handling must demonstrate a clear simplification.
-
-## 10. Testing and delivery discipline
-
-### 10.1. Test quality and execution
-
-1. Use test-driven development for meaningful behavior changes. Keep a human-readable suite that protects complex interactions, state transitions, persistence, ownership, and recovery.
-2. Assertions must enforce meaningful behavioral properties. Exclude trivial assertions, constant checks, CSS appearance tests, and checks that merely mirror implementation. Do not add tests solely for reversible wording or styling changes.
-3. Run tests only on staging through SSH, never in the local checkout or on production. Unless explicitly told to skip tests, run the complete unit, mock-browser, and real-provider browser suites before deployment.
-4. An explicit instruction to skip tests applies to that work: proceed to the requested deployment without testing. Production still requires an explicit deployment request.
-5. Group independent browser scenarios into suites with isolated fixture state and unused ports so they can run concurrently. Reuse generated grids for related read-only display checks while isolating mutation scenarios.
-6. Build once and reuse the tested build for deployment. Group related changes into one commit and one full suite run; use separate atomic commits for independently requested refactors or numbered scenarios.
-7. Keep real-provider tests separate but enabled by default. Exercise normal manual-key entry and a simple, inexpensive or free inference request; include structured-output streaming with an explicitly chosen capable model.
-8. Verify GitHub OAuth through its real flow rather than adding fake identity-provider success responses. Existing controlled inference fixtures remain appropriate for deterministic scheduling, error, cost, and streaming tests.
-9. Runtime tests reuse or extend controlled inference streaming. Keep the actual provider adapter/parser, database, files, engine, web process, internal API, and browser in the path; mock the upstream inference HTTP service while exercising the app’s real generation API.
-
-### 10.2. Required runtime behavior coverage
-
-1. **Web replacement during generation:** keep a real browser open while Markdown, thinking, and website assets stream; replace the web process and verify reconnection, continued previews, correct final content and prices, and no extra provider calls.
-2. **Lost acknowledgements and competing starts:** lose the response after the engine accepts Start, retry through a replacement web process, and race multiple starts; each cell must run only once.
-3. **Concurrent writes:** interleave title edits, ownership claims, generation completion, publication, and retries across processes; preserve both metadata and generation changes and prevent publication while work is active.
-4. **Complete draining:** cover queued cells, retry timers, and cancelled calls whose provider work has not settled. Accepted work finishes, new work is rejected, drained status waits correctly, and cancelling maintenance restores admission.
-5. **Engine death at persistence boundaries:** kill the real process midstream and around billing, file, and cell-state persistence. Preserve committed outputs, retain recorded charges, settle interrupted ledger entries, and require explicit Resume without duplicating completed work.
-6. **Reordered browser updates:** release older HTTP or SSE snapshots after newer state, including across reconnection, and ensure output, thinking, title, status, and prices never regress even transiently.
-7. **Slow and disconnected viewers:** stall one subscriber while another remains healthy, repeatedly disconnect/reconnect, and verify generation continues, abandoned capacity is released, and a reconnect sees current state.
-8. Fix structural issues uncovered by these tests at their proper responsibility boundary instead of accumulating scenario-specific patches. Keep synchronization deterministic and test-only crash controls out of the normal runtime.
-
-### 10.3. Releases and working practices
-
-1. Commit completed repository changes before deployment or reporting completion, unless explicitly asked to leave them uncommitted. Every completed repository commit goes to staging; production deployment requires a separate explicit request.
-2. Test the intended revision on staging before production, unless testing was explicitly waived. Never run tests or verification requests against production.
-3. A soft update replaces web/UI code without cancelling or restarting inference. Use independent immutable releases and retain frontend assets needed by already-open tabs; include the Markdown renderer in the main bundle and make missing-asset responses uncacheable.
-4. Treat engine, shared contract, schema, or incompatible dependency changes as machinery updates. A machinery update closes admission and waits for all accepted grids and unsettled calls without a cancellation timeout; queued cells must continue draining.
-5. Keep the admission gate inside the engine. A separate status check before restart is insufficient because it races new starts. Allow cancelling maintenance and reopening admission.
-6. Do not overwrite files or dependencies under a running engine during a soft update. Recovery and preview cleanup belong to engine startup, not web startup.
-7. Use inspectable background sessions and isolated non-default service ports as specified in the user-wide AGENTS.md. Preserve runtime configuration and data, and keep host-specific scripts/configuration outside the repository.
-8. The user manages nginx and certificates. Prepare or install extra host configuration only when explicitly requested.
-
-## 11. Documentation and collaboration
-
-1. Keep this document focused exclusively on current requirements. Recover accepted numbered proposals from available conversation history and ask for clarification only when the intended requirement remains uncertain.
-2. README is a brief, readable introduction that helps users understand the product and get started. DEVELOPMENT contains development information, and ARCHITECTURE explains the actual implementation, responsibility boundaries, and access mechanisms.
-3. Documentation must describe what is implemented, with requirements distinguished from implementation claims. Do not present speculative features, unimplemented alternatives, or candidate shortcuts as supported behavior.
-4. Never commit deployment-specific server names, accounts, domains, paths, ports, operational commands, secrets, private runtime data, or unnecessary generated artifacts. Keep such operations in the user-wide instructions and private configuration.
-5. Write connected prose rather than staccato fragments. Use numbered lists rather than bullet lists in answers, with nested numbering when it helps reference individual points.
-6. If pre-existing documentation violates these rules, finish the requested work and ask whether to address that separate cleanup rather than silently expanding scope.
+1. Web and interface updates must preserve accepted inference, including queued work, output, thinking, and charges. Browsers reconnect automatically after a brief connection interruption.
+2. An inference-machinery update stops accepting new work and lets accepted grids and unsettled calls finish without a cancellation timeout. Cancelling maintenance restores admission.
+3. Open browser tabs retain access to their frontend assets across updates. Routine deployments preserve grids, outputs, credentials, and sessions.
