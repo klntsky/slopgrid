@@ -70,10 +70,36 @@ export function ReferenceGroups({
   }
   return (
     <div className="reference-groups" aria-busy={busy}>
-      {values.map((name) => (
-        <div className="reference-group" key={name}>
+      {values.map((name, position) => (
+        <div className="reference-group" key={position}>
           <div className="reference-heading">
-            <strong>{name}</strong>
+            <input
+              key={name}
+              aria-label="Reference group title"
+              defaultValue={name}
+              disabled={busy}
+              onBlur={(event) => {
+                const title = event.currentTarget.value.trim();
+                const error = !title
+                  ? "Enter a reference group title."
+                  : title !== name && values.includes(title)
+                    ? "Use a different reference group title."
+                    : "";
+                setError(error);
+                event.currentTarget.value = error ? name : title;
+                if (!error && title !== name)
+                  onChange(
+                    values.map((value) => (value === name ? title : value)),
+                    { [title]: groups[name] },
+                  );
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  event.currentTarget.blur();
+                }
+              }}
+            />
             <button
               type="button"
               className="text-button"

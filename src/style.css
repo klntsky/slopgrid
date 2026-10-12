@@ -1657,6 +1657,11 @@ header {
   justify-content: space-between;
   margin-bottom: 8px;
 }
+.reference-heading input {
+  min-width: 0;
+  flex: 1;
+  font-weight: 600;
+}
 .reference-images {
   display: grid;
   gap: 8px;
