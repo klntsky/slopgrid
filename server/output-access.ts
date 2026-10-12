@@ -3,7 +3,7 @@ import { encrypt, decrypt } from "./encryption.js";
 import { token } from "./ids.js";
 import { canViewGrid } from "./grid-policy.js";
 import { safePath } from "./files.js";
-import type { Store } from "./store.js";
+import type { Store, Session } from "./store.js";
 import type { SessionReader } from "./session.js";
 import type { createHtmlHosts } from "./hosts.js";
 
@@ -24,6 +24,48 @@ export function createOutputAccess(
       expires: number;
     }
   >();
+  function grant(current: Session, cellId: string, path: string) {
+    const now = Date.now();
+    for (const [id, grant] of grants)
+      if (grant.expires <= now) grants.delete(id);
+    const ownerId = current.userId ?? current.anonymousId ?? current.id;
+    if (
+      grants.size >= 1000 ||
+      [...grants.values()].filter((grant) => grant.owner === ownerId).length >=
+        128
+    )
+      return;
+    // Bridge the app session to one isolated cell host without sharing the app cookie.
+    const id = token();
+    grants.set(id, {
+      sessionId: current.id,
+      owner: ownerId,
+      cellId,
+      path,
+      expires: now + 30000,
+    });
+    return id;
+  }
+  function viewer(req: Request, cellId: string) {
+    const value = req
+      .get("cookie")
+      ?.split(";")
+      .map((part) => part.trim())
+      .find((part) => part.startsWith(cookieName + "="))
+      ?.slice(cookieName.length + 1);
+    if (!value) return;
+    try {
+      const [scope, sessionId] = JSON.parse(
+        decrypt(decodeURIComponent(value), secret),
+      );
+      // The cookie references a live session, so rotation or expiry revokes access
+      // even while the browser still holds the encrypted cookie.
+      if (scope === cellId && typeof sessionId === "string")
+        return store.session(sessionId);
+    } catch {
+      return undefined;
+    }
+  }
   return {
     open(req: Request, res: Response) {
       res.set("Cache-Control", "no-store");
@@ -44,25 +86,8 @@ export function createOutputAccess(
         target.pathname = "/" + path;
         return res.redirect(target.href);
       }
-      const now = Date.now();
-      for (const [id, grant] of grants)
-        if (grant.expires <= now) grants.delete(id);
-      const ownerId = owner.ownerUserId ?? owner.owner;
-      if (
-        grants.size >= 1000 ||
-        [...grants.values()].filter((grant) => grant.owner === ownerId)
-          .length >= 128
-      )
-        return res.sendStatus(429);
-      // Bridge the app session to one isolated cell host without sharing the app cookie.
-      const id = token();
-      grants.set(id, {
-        sessionId: current!.id,
-        owner: ownerId,
-        cellId,
-        path,
-        expires: now + 30000,
-      });
+      const id = grant(current!, cellId, path);
+      if (!id) return res.sendStatus(429);
       target.pathname = `/__session/${id}`;
       res.redirect(target.href);
     },
@@ -90,6 +115,10 @@ export function createOutputAccess(
           path: "/",
         },
       );
+      if (req.get("sec-fetch-dest") === "document") {
+        grants.delete(id);
+        return res.redirect(303, "/" + grant.path);
+      }
       if (req.get("sec-fetch-mode") === "navigate") {
         // Navigation and opaque sandbox subresources use different cookie partitions.
         // Keep the grant until the bootstrap fetch sets the subresource cookie;
@@ -114,31 +143,30 @@ export function createOutputAccess(
       }
       res.redirect(303, "/" + grant.path);
     },
+    document(req: Request, res: Response, cellId: string, html: string) {
+      const current = viewer(req, cellId);
+      if (!current) return res.sendStatus(404);
+      const id = grant(current, cellId, req.path.slice(1));
+      if (!id) return res.sendStatus(429);
+      // Authorize in this document's opaque partition without navigating away.
+      // Generated HTML adds connect-src 'none' before any generated scripts run.
+      res.set(
+        "Content-Security-Policy",
+        String(res.get("Content-Security-Policy")).replace(
+          "connect-src 'none'",
+          "connect-src 'self'",
+        ),
+      );
+      return res
+        .type("html")
+        .send(
+          `<script>fetch("/__session/${id}",{credentials:"include"}).then(response=>{if(response.ok){document.open();document.write(${JSON.stringify(html).replaceAll("<", "\\u003c")});document.close()}})</script>`,
+        );
+    },
     read(req: Request, cellId: string) {
       const output = store.outputMetadata(cellId);
       if (!output || output.published) return output;
-      const value = req
-        .get("cookie")
-        ?.split(";")
-        .map((part) => part.trim())
-        .find((part) => part.startsWith(cookieName + "="))
-        ?.slice(cookieName.length + 1);
-      if (!value) return;
-      try {
-        const [scope, sessionId] = JSON.parse(
-          decrypt(decodeURIComponent(value), secret),
-        );
-        // The cookie references a live session, so rotation or expiry revokes access
-        // even while the browser still holds the encrypted cookie.
-        if (
-          scope === cellId &&
-          typeof sessionId === "string" &&
-          canViewGrid(output, store.session(sessionId))
-        )
-          return output;
-      } catch {
-        return undefined;
-      }
+      return canViewGrid(output, viewer(req, cellId)) ? output : undefined;
     },
   };
 }

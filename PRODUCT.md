@@ -163,7 +163,7 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 
 1. Generate a static bundle containing `index.html` and optional supporting HTML, CSS, and JavaScript files.
 2. Stream website previews as file contents arrive, including partial files. Show entry-page content before all supporting assets have arrived.
-3. Load generated CSS, module scripts, and relative assets correctly inside private frames while preserving authorization and sandbox isolation.
+3. Load generated CSS, module scripts, and relative assets correctly inside private frames and when opening or reloading a direct output URL. Direct tabs render the website at its isolated output URL without a frame wrapper, while preserving authorization and sandbox isolation.
 4. Keep the current website preview visible until the next preview is ready. Streaming updates and the transition to completed output must avoid a blank-frame blink.
 5. Preserve document and scrollable-panel positions across preview updates. Display the latest content without reverting to an older preview.
 6. Pause, failure, and a new attempt must not retain a stale temporary website preview.

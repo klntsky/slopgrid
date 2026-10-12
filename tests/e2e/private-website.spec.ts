@@ -112,6 +112,12 @@ test("private website assets load on same-site HTTPS hosts while remaining sessi
         sameSite: "Lax",
       },
     ]);
+    const output = `https://${cell.id}-output.slopgrid.test:${port}/index.html`;
+    const direct = await context.newPage();
+    await direct.goto(output);
+    await expect(direct.getByText("Private module loaded")).toBeVisible();
+    await expect(direct).toHaveURL(output);
+    await direct.close();
     const page = await context.newPage();
     const importedCSS = page.waitForResponse((response) =>
       response.url().endsWith("/theme.css"),
@@ -134,7 +140,32 @@ test("private website assets load on same-site HTTPS hosts while remaining sessi
         frame.locator('link[rel="stylesheet"]').evaluate(sheetsLoaded),
       )
       .toBe(true);
-    const output = `https://${cell.id}-output.slopgrid.test:${port}/index.html`;
+    const opened = context.waitForEvent("page");
+    await page.getByRole("link", { name: "Open output" }).click();
+    const tab = await opened;
+    await expect(tab.getByText("Private module loaded")).toBeVisible();
+    await expect
+      .poll(() => tab.locator('link[rel="stylesheet"]').evaluate(sheetsLoaded))
+      .toBe(true);
+    await expect(tab).toHaveURL(output);
+    await expect(tab.locator("iframe")).toHaveCount(0);
+    expect(
+      await tab.evaluate(async () => {
+        document
+          .querySelectorAll('meta[http-equiv="Content-Security-Policy"]')
+          .forEach((node) => node.remove());
+        try {
+          await fetch("/style.css", { credentials: "include" });
+          return true;
+        } catch {
+          return false;
+        }
+      }),
+    ).toBe(false);
+    await tab.reload();
+    await expect(tab.getByText("Private module loaded")).toBeVisible();
+    await tab.goto(output);
+    await expect(tab.getByText("Private module loaded")).toBeVisible();
     const outsider = await browser.newContext({ ignoreHTTPSErrors: true });
     const outsidePage = await outsider.newPage();
     expect((await outsidePage.goto(output))!.status()).toBe(404);
@@ -142,6 +173,10 @@ test("private website assets load on same-site HTTPS hosts while remaining sessi
       .frames()
       .find((frame) => frame !== page.mainFrame())!;
     await page.evaluate(() => fetch("/api/auth/logout", { method: "POST" }));
+    expect((await tab.goto(new URL("app.js", output).href))!.status()).toBe(
+      404,
+    );
+    await tab.close();
     expect((await outputFrame.goto(output))!.status()).toBe(404);
     await page.reload();
     await expect(frame.getByText("Private module loaded")).toBeVisible();

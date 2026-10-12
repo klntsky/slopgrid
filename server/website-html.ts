@@ -37,7 +37,8 @@ export function websiteHtml(
     );
     if (head && "childNodes" in head) {
       // The port carries only scroll coordinates; it grants no parent DOM or cookie access.
-      const bridge = parseFragment(`<script>
+      const bridge =
+        parseFragment(`<meta http-equiv="Content-Security-Policy" content="connect-src 'none'"><script>
         addEventListener("message", event => {
           if (parent === window || event.source !== parent || event.origin !== ${JSON.stringify(appOrigin)} || event.data?.type !== "slopgrid:scroll" || !event.ports[0]) return;
           const port = event.ports[0];
@@ -63,9 +64,9 @@ export function websiteHtml(
           }
           port.close();
         });
-      </script>`).childNodes[0];
-      bridge.parentNode = head;
-      head.childNodes.unshift(bridge);
+      </script>`).childNodes;
+      for (const node of bridge) node.parentNode = head;
+      head.childNodes.unshift(...bridge);
     }
   }
   return serialize(document);

@@ -51,7 +51,18 @@ export function createHostDispatcher(
       return res.sendStatus(405);
     if (req.path.startsWith("/__session/")) return access.redeem(req, res, id);
     const output = access.read(req, id);
-    if (!output) return res.sendStatus(404);
+    if (!output) {
+      // A direct HTML navigation can establish access through the app's live session.
+      // Asset requests cannot use this redirect to obtain authorization.
+      if (
+        req.get("sec-fetch-dest") === "document" &&
+        (req.path === "/" || req.path.endsWith(".html"))
+      )
+        return res.redirect(
+          `${origin.origin}/outputs/${id}/website?path=${encodeURIComponent(req.path.slice(1) || "index.html")}`,
+        );
+      return res.sendStatus(404);
+    }
     // A null origin identifies an opaque sandbox, not its owner; authorize first.
     const privateOutput = !output.published;
     if (!privateOutput) res.set("Access-Control-Allow-Origin", "*");
@@ -72,12 +83,16 @@ export function createHostDispatcher(
         ? store.files.path(id, path)
         : await generation.previewPath({ cellId: id, path });
     if (!file) return res.sendStatus(404);
-    if (path.endsWith(".html"))
-      return res
-        .type("html")
-        .send(
-          websiteHtml(readFileSync(file, "utf8"), privateOutput, origin.origin),
-        );
+    if (path.endsWith(".html")) {
+      const html = websiteHtml(
+        readFileSync(file, "utf8"),
+        privateOutput,
+        origin.origin,
+      );
+      if (privateOutput && req.get("sec-fetch-dest") === "document")
+        return access.document(req, res, id, html);
+      return res.type("html").send(html);
+    }
     const mime: Record<string, string> = {
       html: "text/html",
       css: "text/css",
