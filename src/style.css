@@ -325,12 +325,10 @@ textarea {
 }
 .workers-input input {
   padding-right: 64px;
-  appearance: textfield;
 }
-.workers-input input::-webkit-inner-spin-button,
-.workers-input input::-webkit-outer-spin-button {
-  appearance: none;
-  margin: 0;
+.workers-input input[aria-invalid="true"] {
+  border-color: var(--progress-error);
+  outline-color: var(--progress-error);
 }
 .workers-input button {
   position: absolute;

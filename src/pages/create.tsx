@@ -24,7 +24,8 @@ import { LowBalanceDialog } from "../components/inference-dialogs";
 import { modelDefaultHint, useTooltip } from "../components/use-tooltip";
 export function Create() {
   const [draft, setDraft] = useCreateDraft(),
-    [validationError, setError] = useState("");
+    [validationError, setError] = useState(""),
+    [workersInvalid, setWorkersInvalid] = useState(false);
   const { formatSelected, input } = draft,
     navigate = useNavigate(),
     connection = useConnection();
@@ -35,15 +36,16 @@ export function Create() {
   const promptVariables = (["rows", "columns"] as const)
     .filter((axis) => input[axis].kind === "variable")
     .map((axis) => (axis === "rows" ? "$ROW" : "$COLUMN"));
-  const parallelWorkers = Math.min(
-    cellCount,
-    input.parallelWorkers ?? capacity.data?.parallelWorkers ?? 1,
-  );
+  const workerInput =
+    draft.workerInput ??
+    String(
+      input.parallelWorkers ??
+        Math.min(cellCount, capacity.data?.parallelWorkers ?? 1),
+    );
   const workersPending =
+    draft.workerInput === undefined &&
     input.parallelWorkers === undefined &&
     (!capacity.isSuccess || capacity.isFetching);
-  const workersValid =
-    Number.isInteger(parallelWorkers) && parallelWorkers >= 1;
   const workersHint = useTooltip<HTMLDivElement>(
     "How many parallel inferences to run (can be throttled by the backend under load). If your inference budget is low, spawning too many will lead to a lot of overhead due to failures; OpenRouter still charges you for unsuccessful calls",
   );
@@ -71,6 +73,12 @@ export function Create() {
     setError("");
     inference.reset();
   }
+  function editWorkers(value: string) {
+    setDraft((d) => ({ ...d, workerInput: value }));
+    setWorkersInvalid(false);
+    setError("");
+    inference.reset();
+  }
   const models = (catalog.data ?? [])
     .filter((m) => (input.format === "image" ? m.image : m.text))
     .sort(
@@ -81,6 +89,7 @@ export function Create() {
   function selectFormat(format: GridInput["format"]) {
     inference.reset();
     setDraft((d) => ({
+      ...d,
       formatSelected: true,
       input: {
         ...d.input,
@@ -102,8 +111,15 @@ export function Create() {
   const modelMissing =
     ![input.rows.kind, input.columns.kind].includes("model") && !input.model;
   function generate(continueWithLowBalance = false) {
-    if (!catalog.data || modelMissing || workersPending || !workersValid)
+    if (!catalog.data || modelMissing || workersPending) return;
+    const parallelWorkers = Number(workerInput);
+    const invalid =
+      !Number.isSafeInteger(parallelWorkers) || parallelWorkers < 1;
+    setWorkersInvalid(invalid);
+    if (invalid) {
+      setError("Enter a positive whole number of parallel workers.");
       return;
+    }
     const issue = unusedVariableIssue(input);
     if (issue) {
       setError(issue);
@@ -185,8 +201,7 @@ export function Create() {
                       columns: input.rows,
                       prompt: input.prompt.replace(
                         /\$(ROW|COLUMN)/g,
-                        (_, axis) =>
-                          axis === "ROW" ? "$COLUMN" : "$ROW",
+                        (_, axis) => (axis === "ROW" ? "$COLUMN" : "$ROW"),
                       ),
                     })
                   }
@@ -319,25 +334,17 @@ export function Create() {
               <span className="workers-input">
                 <input
                   id="parallel-workers"
-                  type="number"
-                  min="1"
-                  max={Math.max(1, cellCount)}
-                  step="1"
-                  value={parallelWorkers}
-                  disabled={!cellCount}
-                  onChange={(event) =>
-                    update({
-                      parallelWorkers: Number.isNaN(event.target.valueAsNumber)
-                        ? undefined
-                        : event.target.valueAsNumber,
-                    })
-                  }
+                  type="text"
+                  inputMode="numeric"
+                  value={workerInput}
+                  aria-invalid={workersInvalid}
+                  onChange={(event) => editWorkers(event.target.value)}
                 />
                 <button
                   type="button"
                   className="secondary"
                   disabled={!cellCount}
-                  onClick={() => update({ parallelWorkers: cellCount })}
+                  onClick={() => editWorkers(String(cellCount))}
                 >
                   MAX
                 </button>
@@ -360,7 +367,6 @@ export function Create() {
             disabled={
               busy ||
               workersPending ||
-              !workersValid ||
               modelMissing ||
               !input.rows.values.length ||
               !input.columns.values.length ||

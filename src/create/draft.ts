@@ -1,6 +1,10 @@
 import { useState, useEffect } from "react";
 import type { GridInput } from "../../server/domain";
-export type Draft = { formatSelected: boolean; input: GridInput };
+export type Draft = {
+  formatSelected: boolean;
+  input: GridInput;
+  workerInput?: string;
+};
 const storageKey = "slopgrid-draft";
 const initial: Draft = {
   formatSelected: false,

@@ -592,14 +592,16 @@ test("worker recommendation follows grid size, overrides persist, and low-balanc
   page,
   request,
 }) => {
-  await page.route("**/api/grids", (route) =>
-    route.continue({
+  let submissions = 0;
+  await page.route("**/api/grids", (route) => {
+    if (route.request().method() === "POST") submissions++;
+    return route.continue({
       headers: {
         ...route.request().headers(),
         "X-Forwarded-For": "192.0.2.63",
       },
-    }),
-  );
+    });
+  });
   await request.post("/fixture/reset", {
     data: { balanceUsd: 6, holdGenerations: true },
   });
@@ -635,9 +637,32 @@ test("worker recommendation follows grid size, overrides persist, and low-balanc
     await workers.fill("1");
     await page.reload();
     await expect(workers).toHaveValue("1");
-    await workers.fill("");
-    await expect(workers).toHaveValue("2");
-    await workers.fill("2");
+    await workers.fill("12");
+    await expect(workers).toHaveValue("12");
+    await workers.press("End");
+    await workers.press("Backspace");
+    await expect(workers).toHaveValue("1");
+    await workers.press("Backspace");
+    await expect(workers).toHaveValue("");
+    await page.reload();
+    await expect(workers).toHaveValue("");
+    const generate = page.getByRole("button", {
+      name: "Generate",
+      exact: true,
+    });
+    for (const value of ["", "0", "-2", "1.5", "abc"]) {
+      await workers.fill(value);
+      await expect(workers).not.toHaveAttribute("aria-invalid", "true");
+      await generate.click();
+      await expect(workers).toHaveAttribute("aria-invalid", "true");
+      await expect(workers).toHaveValue(value);
+    }
+    expect(submissions).toBe(0);
+    await workers.fill("12");
+    await page.getByLabel("Row values").fill("cat");
+    await expect(workers).toHaveValue("12");
+    await page.getByLabel("Row values").fill("cat\ndog");
+    await expect(workers).not.toHaveAttribute("aria-invalid", "true");
     await request.post("/fixture/credits", { data: { balanceUsd: 1 } });
     await page.getByRole("button", { name: "Generate", exact: true }).click();
     await page
@@ -654,7 +679,7 @@ test("worker recommendation follows grid size, overrides persist, and low-balanc
     const grid = await (
       await page.request.get(`/api/grids/${page.url().split("/").pop()}`)
     ).json();
-    expect(grid.input.parallelWorkers).toBe(2);
+    expect(grid.input.parallelWorkers).toBe(12);
     expect(
       grid.cells.filter(
         (cell: { status: string }) => cell.status === "pending",
@@ -663,7 +688,7 @@ test("worker recommendation follows grid size, overrides persist, and low-balanc
     await request.post("/fixture/release", { data: { all: true } });
     await expectProgress(page, 4, 4);
     await page.getByRole("button", { name: "EDIT", exact: true }).click();
-    await expect(workers).toHaveValue("2");
+    await expect(workers).toHaveValue("12");
   } finally {
     await request.post("/fixture/release", { data: { all: true } });
   }
