@@ -2,7 +2,7 @@ import { CopyButton } from "../components/copy-button";
 import { PublishGrid } from "./publish-grid";
 import { GridTitle } from "./grid-title";
 import { Author } from "../components/identity";
-import { Square, Play, Pencil, GitFork, Link2 } from "lucide-react";
+import { Square, Play, Pencil, GitBranch, Link2 } from "lucide-react";
 import type { ViewGrid } from "../api";
 import { useTooltip, tooltipRef } from "../components/use-tooltip";
 const totalUsd = new Intl.NumberFormat("en-US", {
@@ -97,7 +97,7 @@ export function GridHeader({
                 ref={tooltipRef}
               >
                 {g.published ? (
-                  <GitFork aria-hidden="true" />
+                  <GitBranch aria-hidden="true" />
                 ) : (
                   <Pencil aria-hidden="true" />
                 )}

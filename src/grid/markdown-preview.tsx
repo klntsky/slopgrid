@@ -20,6 +20,7 @@ export function MarkdownPreview({
   const previewRef = useRef<HTMLDivElement>(null);
   const documentRef = useRef<HTMLDivElement>(null);
   const lastDraft = useRef(draft);
+  const following = useRef(true);
   useLayoutEffect(() => {
     if (streaming) lastDraft.current = draft ?? "";
   }, [draft, streaming]);
@@ -46,7 +47,14 @@ export function MarkdownPreview({
     if (raw === "wrap") {
       document.style.removeProperty("width");
       document.style.removeProperty("zoom");
-      return;
+      const follow = () => {
+        if (following.current) preview.scrollTop = preview.scrollHeight;
+      };
+      follow();
+      const observer = new ResizeObserver(follow);
+      observer.observe(preview);
+      observer.observe(document);
+      return () => observer.disconnect();
     }
     const fit = () => {
       const styles = getComputedStyle(preview);
@@ -80,6 +88,15 @@ export function MarkdownPreview({
       aria-label={title}
       aria-busy={streaming}
       tabIndex={0}
+      onScroll={({ currentTarget: preview }) => {
+        if (raw === "wrap")
+          following.current =
+            preview.scrollHeight - preview.clientHeight - preview.scrollTop <= 2;
+      }}
+      onWheel={(event) => {
+        if (raw === "wrap" && event.deltaY < 0 && event.currentTarget.scrollTop > 0)
+          following.current = false;
+      }}
     >
       {markdown === undefined && query.isPending && (
         <p role="status">Loading…</p>

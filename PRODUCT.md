@@ -129,7 +129,7 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 2. Show a pulsing spark moving left to right during generation.
 3. Put the pause/resume action to the left of the title/prompt. Edit and Publish are compact icon-only controls to its right, using the same visual treatment.
 4. Before publication, Edit immediately cancels active inference and returns to parameter selection with the existing setup restored. Generating the edited setup creates a new generation rather than altering published outputs.
-5. After publication, offer Fork to restore the setup for modification and generation using the forking user's own connection.
+5. After publication, offer Fork to restore the setup for modification and generation using the forking user's own connection. Its icon depicts a branch splitting from a continuing main branch.
 6. Show model names in row or column labels. Clicking a model name copies its ID without a hover hint, while preserving copy-result feedback; a chain icon to the right of its copy icon opens the model's OpenRouter page in a new tab.
 
 ## 5. Outputs and streaming
@@ -172,6 +172,7 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 1. Capture provider-exposed thinking whenever available, stream it separately from output, and store it for later viewing.
 2. Add an icon-only brain button to the left of Expand. It toggles between cell content and the corresponding thinking trace displayed as raw text. Thinking uses a fixed readable font size with word wrapping and vertical scrolling, without scaling text to fit its content width, during streaming and after completion, including expanded views.
 3. While output is empty, show arriving thinking automatically; also stream it whenever the cell is explicitly in thinking mode.
+   Automatically follow new thinking at the bottom until the user scrolls up. Preserve that reading position as more text arrives, and resume following when the user scrolls back to the bottom.
 4. Keep trace state associated with the correct cell and attempt. Late events or fetch responses must not replace the thinking for a newer attempt.
 5. Preserve captured thinking across completion, failure, pause, and restart, with the same access policy as the corresponding grid. Do not mix trace files into generated website bundles or downloads.
 
