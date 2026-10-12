@@ -13,7 +13,7 @@ export function MarkdownPreview({
 }: {
   url: string;
   title: string;
-  raw?: boolean;
+  raw?: boolean | "wrap";
   draft?: string;
   streaming?: boolean;
 }) {
@@ -43,6 +43,11 @@ export function MarkdownPreview({
     const preview = previewRef.current;
     const document = documentRef.current;
     if (!preview || !document) return;
+    if (raw === "wrap") {
+      document.style.removeProperty("width");
+      document.style.removeProperty("zoom");
+      return;
+    }
     const fit = () => {
       const styles = getComputedStyle(preview);
       const available =
@@ -90,7 +95,11 @@ export function MarkdownPreview({
       {markdown !== undefined && (
         <div className="markdown-document" ref={documentRef}>
           {raw ? (
-            <pre className="markdown-raw">{markdown}</pre>
+            <pre
+              className={`markdown-raw${raw === "wrap" ? " markdown-wrapped" : ""}`}
+            >
+              {markdown}
+            </pre>
           ) : (
             <MarkdownContent markdown={markdown} />
           )}

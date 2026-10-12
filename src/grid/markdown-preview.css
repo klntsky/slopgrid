@@ -48,6 +48,13 @@
   margin: 0;
   background: none;
 }
+.markdown-document .markdown-wrapped {
+  width: 100%;
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: 14px/1.6 monospace;
+}
 .markdown-document code {
   background: var(--panel);
 }

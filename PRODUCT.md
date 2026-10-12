@@ -169,7 +169,7 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 ### 5.5. Thinking traces
 
 1. Capture provider-exposed thinking whenever available, stream it separately from output, and store it for later viewing.
-2. Add an icon-only brain button to the left of Expand. It toggles between cell content and the corresponding thinking trace displayed as raw text.
+2. Add an icon-only brain button to the left of Expand. It toggles between cell content and the corresponding thinking trace displayed as raw text. Thinking uses a fixed readable font size with word wrapping and vertical scrolling, without scaling text to fit its content width, during streaming and after completion, including expanded views.
 3. While output is empty, show arriving thinking automatically; also stream it whenever the cell is explicitly in thinking mode.
 4. Keep trace state associated with the correct cell and attempt. Late events or fetch responses must not replace the thinking for a newer attempt.
 5. Preserve captured thinking across completion, failure, pause, and restart, with the same access policy as the corresponding grid. Do not mix trace files into generated website bundles or downloads.
