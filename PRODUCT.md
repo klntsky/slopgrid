@@ -256,7 +256,7 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 
 ### 8.4. Output isolation and private access
 
-1. Fetching private output requires an authorized live user session. Knowing a grid, output, preview, download, or thinking URL does not grant access.
+1. Private output belongs to the owning user account and is accessible from any live session signed into that account, including direct output links in another browser. Anonymous grids remain accessible through their anonymous browser identity until claimed on sign-in. Knowing a grid, output, preview, download, or thinking URL does not grant access to another user or an unauthenticated visitor.
 2. Apply ownership and session checks to network requests for every output format, website asset, preview, download, and thinking trace. Completed private SVGs and images may reuse a browser cache entry for the same session cookie until expiry. Cookie changes after logout or account switching must prevent reuse of that private entry; expiry requires authorization again.
 3. Serve arbitrary HTML bundles from separate per-output hosts. Images, SVG, and Markdown use the application host.
 4. Generated HTML must not receive application session cookies, access other outputs' cookies, or reach application API handlers through its output host. Retain isolation while allowing its static scripts and assets to render.

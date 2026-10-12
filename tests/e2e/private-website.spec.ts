@@ -11,7 +11,7 @@ import { createFrontendRoutes } from "../../server/frontend";
 import { expandGrid, type GridInput, type Grid } from "../../server/domain";
 import { token } from "../../server/ids";
 
-test("private website assets load on same-site HTTPS hosts while remaining session-bound", async ({
+test("private websites load in frames and direct tabs for the owning user across sessions", async ({
   playwright,
 }) => {
   const directory = mkdtempSync(join(tmpdir(), "slopgrid-private-website-"));
@@ -185,6 +185,58 @@ test("private website assets load on same-site HTTPS hosts while remaining sessi
         frame.locator('link[rel="stylesheet"]').evaluate(sheetsLoaded),
       )
       .toBe(true);
+    const account = store.identify("github", "123", {
+      provider: "github",
+      username: "owner",
+      profileURL: "https://github.com/owner",
+    });
+    store.claim(owner, account.id);
+    async function signedInBrowser(userId: string) {
+      const sessionId = token();
+      store.saveSession({ id: sessionId, userId, created: Date.now() });
+      const browserContext = await browser.newContext({
+        ignoreHTTPSErrors: true,
+      });
+      await browserContext.addCookies([
+        {
+          name: "__Host-slopgrid",
+          value: sessionId,
+          url: origin,
+          httpOnly: true,
+          secure: true,
+          sameSite: "Lax",
+        },
+      ]);
+      return { page: await browserContext.newPage(), sessionId };
+    }
+    const first = await signedInBrowser(account.id);
+    const second = await signedInBrowser(account.id);
+    for (const signedIn of [first, second]) {
+      await signedIn.page.goto(output);
+      await expect(
+        signedIn.page.getByText("Private module loaded"),
+      ).toBeVisible();
+      await expect(signedIn.page).toHaveURL(output);
+      await expect
+        .poll(() =>
+          signedIn.page
+            .locator('link[rel="stylesheet"]')
+            .evaluate(sheetsLoaded),
+        )
+        .toBe(true);
+    }
+    store.deleteSession(first.sessionId);
+    expect((await first.page.reload())!.status()).toBe(404);
+    await second.page.reload();
+    await expect(second.page.getByText("Private module loaded")).toBeVisible();
+    const otherAccount = store.identify("github", "456", {
+      provider: "github",
+      username: "other",
+      profileURL: "https://github.com/other",
+    });
+    const other = await signedInBrowser(otherAccount.id);
+    expect((await other.page.goto(output))!.status()).toBe(404);
+    expect((await outsidePage.goto(output))!.status()).toBe(404);
   } finally {
     await browser.close();
     server.closeAllConnections();
