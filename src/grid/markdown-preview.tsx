@@ -21,6 +21,7 @@ export function MarkdownPreview({
   const documentRef = useRef<HTMLDivElement>(null);
   const lastDraft = useRef(draft);
   const following = useRef(true);
+  const lastScrollTop = useRef(0);
   useLayoutEffect(() => {
     if (streaming) lastDraft.current = draft ?? "";
   }, [draft, streaming]);
@@ -48,7 +49,10 @@ export function MarkdownPreview({
       document.style.removeProperty("width");
       document.style.removeProperty("zoom");
       const follow = () => {
-        if (following.current) preview.scrollTop = preview.scrollHeight;
+        if (following.current) {
+          preview.scrollTop = preview.scrollHeight;
+          lastScrollTop.current = preview.scrollTop;
+        }
       };
       follow();
       const observer = new ResizeObserver(follow);
@@ -89,12 +93,21 @@ export function MarkdownPreview({
       aria-busy={streaming}
       tabIndex={0}
       onScroll={({ currentTarget: preview }) => {
-        if (raw === "wrap")
-          following.current =
-            preview.scrollHeight - preview.clientHeight - preview.scrollTop <= 2;
+        if (raw !== "wrap") return;
+        const top = preview.scrollTop;
+        const atBottom = preview.scrollHeight - preview.clientHeight - top <= 2;
+        // Appends and queued programmatic scroll events do not signal user intent.
+        if (atBottom && top !== lastScrollTop.current) following.current = true;
+        else if (!atBottom && top < lastScrollTop.current)
+          following.current = false;
+        lastScrollTop.current = top;
       }}
       onWheel={(event) => {
-        if (raw === "wrap" && event.deltaY < 0 && event.currentTarget.scrollTop > 0)
+        if (
+          raw === "wrap" &&
+          event.deltaY < 0 &&
+          event.currentTarget.scrollTop > 0
+        )
           following.current = false;
       }}
     >

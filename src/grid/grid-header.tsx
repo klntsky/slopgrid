@@ -129,16 +129,11 @@ export function GridHeader({
                 tabIndex={0}
               >
                 <span aria-hidden="true">· </span>
-                {totalCost === undefined
-                  ? totalCostText
-                  : `cost ${totalCostText}`}
-                {inferenceRunning && (
-                  <span className="cost-ellipsis" aria-hidden="true">
-                    <span>.</span>
-                    <span>.</span>
-                    <span>.</span>
-                  </span>
-                )}
+                <span className={inferenceRunning ? "live-cost" : undefined}>
+                  {totalCost === undefined
+                    ? totalCostText
+                    : `cost ${totalCostText}`}
+                </span>
               </span>
               {g.canEdit && spentText !== undefined && (
                 <span
@@ -148,7 +143,9 @@ export function GridHeader({
                   tabIndex={0}
                 >
                   <span aria-hidden="true">&middot; </span>
-                  {`spent ${spentText}`}
+                  <span className={inferenceRunning ? "live-cost" : undefined}>
+                    {`spent ${spentText}`}
+                  </span>
                 </span>
               )}
             </div>

@@ -243,6 +243,19 @@ export async function generateInference(
       }
       throw failure;
     }
+    if (
+      finishReason === "length" &&
+      !text.trim() &&
+      (streamUsage?.outputTokenDetails.reasoningTokens ?? 0) >= maxOutputTokens
+    ) {
+      const limit =
+        maxOutputTokens >= 1000
+          ? `${maxOutputTokens / 1000}K`
+          : String(maxOutputTokens);
+      throw new Error(
+        `The model spent all of its ${limit} output token limit on thinking without producing output - this is a common failure mode of some models indicating that the thinking level is too high for the task`,
+      );
+    }
     requireSuccess(finishReason);
     return {
       files: parseOutput(format, text),

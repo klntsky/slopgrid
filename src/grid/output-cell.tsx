@@ -8,6 +8,7 @@ import {
   Download,
   CodeXml,
   Brain,
+  Palette,
 } from "lucide-react";
 import { CopyButton } from "../components/copy-button";
 import type { GridInput } from "../../server/domain";
@@ -165,7 +166,11 @@ export function OutputCell({
               ref={tooltipRef}
               onClick={() => onShowThinking?.(!thinking)}
             >
-              <Brain aria-hidden="true" />
+              {thinking ? (
+                <Palette aria-hidden="true" />
+              ) : (
+                <Brain aria-hidden="true" />
+              )}
             </button>
           )}
           {expandable && onToggleExpand && (

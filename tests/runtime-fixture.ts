@@ -68,7 +68,14 @@ export async function runtimeFixture(
     prompt: string;
     aborted: boolean;
     write: (delta: object) => void;
-    finish: (cost?: number) => void;
+    finish: (
+      cost?: number,
+      completion?: {
+        reason: string;
+        outputTokens: number;
+        reasoningTokens?: number;
+      },
+    ) => void;
     fail: (status?: number) => void;
   }[] = [];
   upstream.post("/chat/completions", (req, res) => {
@@ -91,11 +98,24 @@ export async function runtimeFixture(
       write: (delta: object) => {
         event(delta);
       },
-      finish: (cost = 0.0123) => {
-        event({}, "stop", {
+      finish: (
+        cost = 0.0123,
+        completion?: {
+          reason: string;
+          outputTokens: number;
+          reasoningTokens?: number;
+        },
+      ) => {
+        const outputTokens = completion?.outputTokens ?? 20;
+        event({}, completion?.reason ?? "stop", {
           prompt_tokens: 10,
-          completion_tokens: 20,
-          total_tokens: 30,
+          completion_tokens: outputTokens,
+          ...(completion?.reasoningTokens !== undefined && {
+            completion_tokens_details: {
+              reasoning_tokens: completion.reasoningTokens,
+            },
+          }),
+          total_tokens: 10 + outputTokens,
           cost,
         });
         res.end("data: [DONE]\n\n");

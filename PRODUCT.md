@@ -121,7 +121,7 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 5. Collapse long prompts, with a hover element over the collapsed prompt showing the complete text.
 6. Place an icon-only copy button directly after the inline prompt text; copying applies to the prompt only.
 7. Show the author near the title, followed by "cost $0.NN" and, for the grid owner only, "spent $0.MM", separated by centered dots.
-8. Truncate both grid totals to two decimal places in the UI. Show an animated ellipsis while inference runs, without wasting navbar space.
+8. Truncate both grid totals to two decimal places in the UI. While inference runs, animate a gradient wave across the cost and spent text themselves.
 
 ### 4.3. Progress and actions
 
@@ -141,7 +141,7 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 3. Download filenames follow `<prompt>.slopgrid.com.<grid-id>.<row_parameter>.<column_parameter>.<extension>`. Normalize filename components, replacing spaces and characters unsuitable for filenames with underscores. The domain in this pattern is product-facing filename text.
 4. Store generated SVG and Markdown source verbatim, preserving whitespace and code fences.
 5. Preserve generated output independently of metadata edits and publication, without an application output-byte limit.
-6. Store provider finish reasons without displaying them in the interface. Treat an unsuccessful completion reason as a generation failure rather than silently accepting incomplete output.
+6. Store provider finish reasons without displaying them in the interface. Treat an unsuccessful completion reason as a generation failure rather than silently accepting incomplete output. When reported thinking tokens exhaust the requested output-token limit without producing output, show "The model spent all of its <limit> output token limit on thinking without producing output - this is a common failure mode of some models indicating that the thinking level is too high for the task", substituting the actual limit (for example, 234K). Preserve its thinking trace and charges.
 
 ### 5.2. Markdown
 
@@ -170,9 +170,9 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 ### 5.5. Thinking traces
 
 1. Capture provider-exposed thinking whenever available, stream it separately from output, and store it for later viewing.
-2. Add an icon-only brain button to the left of Expand. It toggles between cell content and the corresponding thinking trace displayed as raw text. Thinking uses a fixed readable font size with word wrapping and vertical scrolling, without scaling text to fit its content width, during streaming and after completion, including expanded views.
+2. Add an icon-only button to the left of Expand that toggles between cell content and the corresponding thinking trace displayed as raw text. Use a brain icon to show thinking and a palette icon to return to output. Thinking uses a fixed readable font size with word wrapping and vertical scrolling, without scaling text to fit its content width, during streaming and after completion, including expanded views.
 3. While output is empty, show arriving thinking automatically; also stream it whenever the cell is explicitly in thinking mode.
-   Automatically follow new thinking at the bottom until the user scrolls up. Preserve that reading position as more text arrives, and resume following when the user scrolls back to the bottom.
+   Automatically follow new thinking at the bottom until the user scrolls up. Preserve that reading position as more text arrives, and resume following when the user scrolls back to the bottom. Appended content and layout changes must not stop following.
 4. Keep trace state associated with the correct cell and attempt. Late events or fetch responses must not replace the thinking for a newer attempt.
 5. Preserve captured thinking across completion, failure, pause, and restart, with the same access policy as the corresponding grid. Do not mix trace files into generated website bundles or downloads.
 
@@ -199,7 +199,7 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 1. Pause immediately aborts active requests for that grid, removes queued work, and discards unfinished output previews. Completed outputs remain intact.
 2. Resume restarts unfinished cells, including retries, while preserving completed outputs. It must remain possible after dismissing an interruption popup.
 3. Use a red stop-square icon for the stop/pause action and the hint "Work can be resumed later, unfinished responses will be lost".
-4. Keep live updates connected while a grid can still change from queued or active generation, including unsettled requests after a pause. Disconnect once stable and reconnect when an action starts work again.
+4. Keep live updates connected while a grid can still change from queued or active generation, including unsettled requests after a pause. Close the SSE connection once inference finishes and the grid is stable, and reconnect when an action starts work again.
 5. Delayed updates must not move title, output, thinking, status, or price backward. Retries must show content from the current attempt.
 6. Interrupted unfinished work requires an explicit Resume, preserving completed outputs.
 

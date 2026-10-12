@@ -32,6 +32,12 @@ test("thinking follows streaming text until scrolled up and resumes at the botto
     await expect(trace).toContainText("First marker.");
     await expect.poll(top).toBeGreaterThan(200);
     await expect.poll(bottomGap).toBeLessThanOrEqual(2);
+    for (let chunk = 0; chunk < 4; chunk++) {
+      call.write({ reasoning: paragraph + `Burst ${chunk}.` });
+      await page.setViewportSize({ width: chunk % 2 ? 900 : 750, height: 650 });
+      await expect(trace).toContainText(`Burst ${chunk}.`);
+      await expect.poll(bottomGap).toBeLessThanOrEqual(2);
+    }
     await trace.hover();
     await page.mouse.wheel(0, -400);
     await expect.poll(bottomGap).toBeGreaterThan(200);
@@ -63,6 +69,87 @@ test("thinking follows streaming text until scrolled up and resumes at the botto
     await expect(trace).toContainText("Final marker.");
     await expect.poll(bottomGap).toBeLessThanOrEqual(2);
     expect(fixture.calls).toHaveLength(1);
+  } finally {
+    await context.close();
+    await fixture.close();
+  }
+});
+
+test("thinking-only token exhaustion explains the failure, retains charges and closes live updates", async ({
+  browser,
+}) => {
+  const fixture = await runtimeFixture();
+  const context = await browser.newContext();
+  try {
+    await context.addCookies([
+      { name: "slopgrid", value: fixture.owner, url: fixture.origin },
+    ]);
+    const grid = fixture.grid({
+      rows: { kind: "variable", values: ["exhausted", "partial", "early"] },
+    });
+    await fixture.engine.api.startGrid({
+      gridId: grid.id,
+      sessionId: fixture.owner,
+    });
+    const page = await context.newPage();
+    const streams = new Set<import("@playwright/test").Request>();
+    page.on("request", (request) => {
+      if (new URL(request.url()).pathname.endsWith("/events"))
+        streams.add(request);
+    });
+    page.on("requestfinished", (request) => streams.delete(request));
+    page.on("requestfailed", (request) => streams.delete(request));
+    await page.goto(`${fixture.origin}/grid/${grid.id}`);
+    await expect.poll(() => streams.size).toBe(1);
+    const exhausted = await fixture.call(0);
+    exhausted.write({ reasoning: "Still considering the answer." });
+    exhausted.finish(0.0123, {
+      reason: "length",
+      outputTokens: 1000,
+      reasoningTokens: 1000,
+    });
+    const message =
+      "The model spent all of its 1K output token limit on thinking without producing output - this is a common failure mode of some models indicating that the thinking level is too high for the task";
+    await expect(page.getByText(message, { exact: true })).toBeVisible();
+    const partial = await fixture.call(1);
+    partial.write({ reasoning: "Some thought.", content: "Unfinished answer" });
+    partial.finish(0.0123, {
+      reason: "length",
+      outputTokens: 1000,
+      reasoningTokens: 980,
+    });
+    const early = await fixture.call(2);
+    early.write({ reasoning: "Stopped below the requested limit." });
+    early.finish(0.0123, {
+      reason: "length",
+      outputTokens: 100,
+      reasoningTokens: 100,
+    });
+    await expect(
+      page.getByText(
+        "The model did not complete its response. Retry generation.",
+        { exact: true },
+      ),
+    ).toHaveCount(2);
+    await expect.poll(() => streams.size).toBe(0);
+    await expect(page.locator(".grid-cost")).toHaveAttribute(
+      "aria-label",
+      "Total cost: $0.00",
+    );
+    await expect(page.locator(".grid-spent")).toHaveAttribute(
+      "aria-label",
+      "Total spent: $0.03",
+    );
+    await page.reload();
+    await expect(page.getByText(message, { exact: true })).toBeVisible();
+    await page
+      .getByRole("button", { name: "Show thinking", exact: true })
+      .first()
+      .click();
+    await expect(
+      page.getByRole("region", { name: /^Thinking:/ }).first(),
+    ).toContainText("Still considering the answer.");
+    expect(fixture.calls).toHaveLength(3);
   } finally {
     await context.close();
     await fixture.close();
