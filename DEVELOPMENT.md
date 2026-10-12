@@ -50,6 +50,20 @@ Provide `OPENROUTER_API_KEY` to the test process, or create `slopgrid/test.confi
 
 Tests focus on state transitions, persistence, security boundaries, and interactions across components. CSS appearance, fixed layout measurements, static UI copy, default constants, and simple passthroughs are not asserted. Touch gestures retain checks that zooming and scrolling respond to interaction, and keyboard resizing is checked through saved dimensions and restored handle values. Controlled error responses, exact billing amounts, timing gates, and scheduling scenarios remain mocked because their outcomes must be reproducible.
 
+The runtime behavior tests share `tests/runtime-fixture.ts`: a controlled OpenRouter HTTP service, a real inference child, a replaceable web child, and a temporary SQLite database and output directory. The actual provider SDK, stream parser, billing recorder, and Unix-socket API remain in use. Tests explicitly release streaming chunks or failures instead of relying on provider response timing. Sessions are seeded directly; authentication flows have separate coverage.
+
+| Test                                | Behavior exercised                                                                                                                                    |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tests/e2e/runtime.spec.ts`         | Open browsers reconnect after web replacement while markdown, thinking, and private website assets continue streaming.                                |
+| `tests/generation-commands.test.ts` | A lost start acknowledgement and concurrent retries cannot duplicate inference.                                                                       |
+| `tests/generation-metadata.test.ts` | Concurrent metadata and generation writes preserve both, while publication and retry admission serialize.                                             |
+| `tests/generation-drain.test.ts`    | Draining preserves accepted queues and retry timers, waits for unsettled cancellations, and permits admission to reopen.                              |
+| `tests/generation-crash.test.ts`    | Real engine death around billing, output-file, and cell-state persistence preserves committed work and requires explicit resume for unfinished cells. |
+| `tests/e2e/ordering.spec.ts`        | Late HTTP responses and replayed stream snapshots cannot regress browser state, including transient DOM changes.                                      |
+| `tests/generation-viewers.test.ts`  | Stalled subscribers cannot block inference or healthy viewers; disconnects release connection capacity.                                               |
+
+Crash tests use `tests/crash-checkpoint.ts` to attach Node's inspector to the fixture engine and stop at a specific statement before killing the process. Checkpoints are located in the executed script and must identify a unique statement. Inspector activation exists only in the test child entry point. The abort-ignoring cancellation case reuses the scheduler's `ControlledProvider` because an HTTP client settles locally when its request is aborted, even if the remote server keeps working.
+
 ## Runtime configuration
 
 `pnpm build` checks TypeScript and creates the frontend build. `pnpm start` serves that build in production mode and connects to the separately managed inference process started with `pnpm start:engine`. The production process requires `APP_ORIGIN`, `OUTPUT_DOMAIN`, and `KEY_ENCRYPTION_SECRET` to be provided in its environment.
