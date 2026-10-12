@@ -163,12 +163,12 @@ export function createGridRoutes({
     const found = readGrid(req, res);
     if (!found) return;
     const parsed = z
-      .object({ title: z.string().trim().max(200) })
+      .object({ title: z.string().trim().max(40) })
       .safeParse(req.body);
     if (!parsed.success)
       return res
         .status(400)
-        .json({ error: "Use a title of up to 200 characters." });
+        .json({ error: "Use a title of up to 40 characters." });
     const { g, s } = found;
     const current = jobs.active.get(g.id) ?? g;
     current.title = parsed.data.title || undefined;

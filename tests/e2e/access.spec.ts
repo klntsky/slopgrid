@@ -700,7 +700,7 @@ test("titles are independent owner-editable metadata and collapsed prompts expan
         })
       ).status(),
     ).toBe(403);
-    for (const data of [{}, { title: null }, { title: "x".repeat(201) }])
+    for (const data of [{}, { title: null }, { title: "x".repeat(41) }])
       expect((await page.request.patch(endpoint, { data })).status()).toBe(400);
     await request.post("/fixture/release", { data: { all: true } });
     await expectProgress(page, 1, 1);
@@ -711,9 +711,7 @@ test("titles are independent owner-editable metadata and collapsed prompts expan
     await expect(heading).toHaveText(prompt);
     const snapshot = await (await page.request.get(`/api/grids/${id}`)).json();
     expect(snapshot.cells[0].prompt).toBe(
-      prompt
-        .replaceAll("$ROW", "cat")
-        .replaceAll("$COLUMN", "hat"),
+      prompt.replaceAll("$ROW", "cat").replaceAll("$COLUMN", "hat"),
     );
     expect(await (await request.get("/fixture/calls")).json()).toHaveLength(1);
     expect(
@@ -727,16 +725,15 @@ test("titles are independent owner-editable metadata and collapsed prompts expan
     await header
       .getByRole("button", { name: "Edit title", exact: true })
       .click();
-    await titleField.fill("Published flight study");
+    const publishedTitle = "Flight study comparing autumn landscapes";
+    await titleField.fill(publishedTitle);
     await heading.click();
     await expect(
       header.getByRole("button", { name: "Edit title", exact: true }),
-    ).toHaveText("Published flight study");
+    ).toHaveText(publishedTitle);
     const publicPage = await visitor.newPage();
     await publicPage.goto(`/grid/${id}`);
-    await expect(publicPage.locator(".grid-name")).toHaveText(
-      "Published flight study",
-    );
+    await expect(publicPage.locator(".grid-name")).toHaveText(publishedTitle);
     await expect(
       publicPage.getByRole("button", { name: /Set Title|Edit title/ }),
     ).toHaveCount(0);
@@ -750,7 +747,7 @@ test("titles are independent owner-editable metadata and collapsed prompts expan
     await publicPage.goto("/grids");
     await expect(
       publicPage.getByRole("link", {
-        name: "Published flight study",
+        name: publishedTitle,
       }),
     ).toBeVisible();
     await header

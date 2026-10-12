@@ -567,11 +567,10 @@ legend {
   min-width: 0;
 }
 .grid-name {
-  min-width: 0;
-  max-width: 40%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  flex-shrink: 0;
+  max-width: 75%;
+  white-space: normal;
+  overflow-wrap: anywhere;
   color: var(--grid-title);
   font-size: 17px;
   font-weight: 500;
@@ -582,10 +581,6 @@ button.grid-name {
   padding: 3px 4px;
   margin-left: -4px;
   text-align: left;
-}
-.grid-name-unset {
-  flex-shrink: 0;
-  max-width: none;
 }
 .grid-title-line .grid-name-input {
   width: 40%;
@@ -1512,6 +1507,11 @@ header {
   flex: 1;
   min-width: 0;
   max-width: none;
+}
+.history .history-title {
+  overflow: visible;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .history small {
   flex-shrink: 0;

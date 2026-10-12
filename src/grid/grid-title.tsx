@@ -60,7 +60,7 @@ export function GridTitle({ grid }: { grid: ViewGrid }) {
               className="grid-name-input"
               aria-label="Grid title"
               defaultValue={grid.title ?? ""}
-              maxLength={200}
+              maxLength={40}
               autoFocus
               disabled={rename.isPending}
               onBlur={(event) => save(event.currentTarget.value)}
@@ -78,7 +78,7 @@ export function GridTitle({ grid }: { grid: ViewGrid }) {
           ) : (
             <button
               ref={titleButton}
-              className={`text-button grid-name${grid.title ? "" : " grid-name-unset"}`}
+              className="text-button grid-name"
               aria-label={grid.title ? "Edit title" : "Set Title"}
               onClick={() => {
                 rename.reset();
