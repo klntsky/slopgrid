@@ -5,6 +5,7 @@ import {
   type ReferenceGroups as Groups,
 } from "../../server/image-settings";
 import { ReferenceGroups } from "./reference-groups";
+import { ImageModelPrice } from "./image-model-price";
 import { ErrorMessage } from "../components/error-message";
 import { useState, useRef, useEffect } from "react";
 import { Search, X } from "lucide-react";
@@ -156,6 +157,7 @@ export function AxisEditor({
               >
                 <input
                   type="checkbox"
+                  aria-label={c.name}
                   checked={axis.values.includes(c.id)}
                   onChange={(e) => {
                     const anchor = visibleChoices.findIndex(
@@ -185,7 +187,10 @@ export function AxisEditor({
                     });
                   }}
                 />
-                {c.name}
+                <span>{c.name}</span>
+                {axis.kind === "model" && format === "image" && (
+                  <ImageModelPrice model={c.id} />
+                )}
               </label>
             ))}
           </div>

@@ -1,6 +1,5 @@
 import { useQueries } from "@tanstack/react-query";
-import { api } from "../api";
-import type { ImageCapabilities } from "../../server/image-settings";
+import { imageEndpointQuery } from "../queries";
 import { tooltipRef } from "../components/use-tooltip";
 import { Check, TriangleAlert } from "lucide-react";
 import { expandGrid, type GridInput } from "../../server/domain";
@@ -25,15 +24,7 @@ export function CompatibilityTable({
       ? [...new Set(expanded.map((cell) => cell.model).filter(Boolean))]
       : [];
   const capabilities = useQueries({
-    queries: imageModels.map((model) => ({
-      queryKey: ["image-capabilities", model],
-      queryFn: () =>
-        api<ImageCapabilities[]>(
-          `/models/image-capabilities?model=${encodeURIComponent(model)}`,
-        ),
-      staleTime: 300000,
-      retry: 1,
-    })),
+    queries: imageModels.map(imageEndpointQuery),
   });
   if (![input.rows.kind, input.columns.kind].includes("model") && !input.model)
     return null;
@@ -41,7 +32,9 @@ export function CompatibilityTable({
     effort,
     ...(input.format === "image"
       ? imageSettingsSupport(
-          capabilities[imageModels.indexOf(model)]?.data,
+          capabilities[imageModels.indexOf(model)]?.data?.map(
+            (endpoint) => endpoint.supported_parameters,
+          ),
           imageSettings ?? {},
         )
       : {

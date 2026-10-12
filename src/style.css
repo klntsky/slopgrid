@@ -1005,6 +1005,15 @@ button.editable-title > .lucide {
   height: 264px;
   overflow: auto;
 }
+.model-price {
+  margin-inline-start: auto;
+  padding-inline-start: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: right;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
 .openrouter-icon {
   filter: var(--brand-filter);
   width: 24px;

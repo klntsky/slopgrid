@@ -291,3 +291,56 @@ test("renamed reference groups survive reload, Edit and Fork without mixing thei
       .sort((a: any[], b: any[]) => a.length - b.length),
   ).toEqual(expected);
 });
+
+test("image model prices preserve published units and tiers without changing selection or compatibility", async ({
+  page,
+}) => {
+  await setup(page, false);
+  const list = page.getByRole("group", { name: "Column values" });
+  const item = (name: string) =>
+    list
+      .locator("label.checkbox")
+      .filter({ has: page.getByRole("checkbox", { name, exact: true }) });
+  await expect(
+    item("Fixture image").getByText("$0.04/image", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    item("Fixture megapixels").getByText("$0.003/MP", { exact: true }),
+  ).toBeVisible();
+  const tokens = item("Fixture tokens").getByText("$40.00–$80.00/1M tokens", {
+    exact: true,
+  });
+  await expect(tokens).toBeVisible();
+  await expect(
+    item("Fixture unpriced").getByText("Price unavailable", { exact: true }),
+  ).toBeVisible();
+  await tokens.hover();
+  const tip = page.getByRole("tooltip");
+  await expect(tip).toContainText("Input text: $5.00/1M tokens");
+  await expect(tip).toContainText("Output image (high): $80.00/1M tokens");
+  await expect(tip).toContainText("Fixture provider");
+  await page
+    .getByRole("checkbox", { name: "Fixture image", exact: true })
+    .check();
+  await page
+    .getByRole("combobox", { name: "Rows", exact: true })
+    .selectOption("quality");
+  await page.getByRole("checkbox", { name: "low", exact: true }).check();
+  await expect(
+    page.getByRole("cell", {
+      name: "low / Fixture image: Unsupported",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Swap rows and columns" }).click();
+  await expect(
+    page
+      .getByRole("group", { name: "Row values" })
+      .getByRole("checkbox", { name: "Fixture image", exact: true }),
+  ).toBeChecked();
+  await expect(
+    page
+      .getByRole("group", { name: "Row values" })
+      .getByText("$0.04/image", { exact: true }),
+  ).toBeVisible();
+});

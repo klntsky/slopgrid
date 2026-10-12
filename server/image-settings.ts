@@ -59,6 +59,21 @@ export const imageCapabilitiesSchema = z.record(
   ]),
 );
 export type ImageCapabilities = z.infer<typeof imageCapabilitiesSchema>;
+export const imageEndpointSchema = z.object({
+  provider_name: z.string().optional(),
+  supported_parameters: imageCapabilitiesSchema,
+  pricing: z
+    .array(
+      z.object({
+        billable: z.string(),
+        unit: z.string(),
+        cost_usd: z.number().finite().nonnegative(),
+        variant: z.string().optional(),
+      }),
+    )
+    .default([]),
+});
+export type ImageEndpoint = z.infer<typeof imageEndpointSchema>;
 export function validImageSize(value: string) {
   return imageChoices.size.includes(value) || /^[1-9]\d*x[1-9]\d*$/.test(value);
 }

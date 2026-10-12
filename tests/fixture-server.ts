@@ -107,22 +107,61 @@ upstream.get("/api/v1/models", (_req, res) =>
 upstream.get("/api/v1/images/models", (_req, res) =>
   res.json({
     data: [
-      {
-        id: "fixture/image",
-        name: "Fixture image",
-        architecture: {
-          input_modalities: ["text"],
-          output_modalities: ["image"],
-        },
-        supported_parameters: { n: { type: "integer" } },
+      ["image", "Fixture image"],
+      ["megapixels", "Fixture megapixels"],
+      ["tokens", "Fixture tokens"],
+      ["unpriced", "Fixture unpriced"],
+    ].map(([id, name]) => ({
+      id: `fixture/${id}`,
+      name,
+      architecture: {
+        input_modalities: ["text"],
+        output_modalities: ["image"],
       },
-    ],
+      supported_parameters: { n: { type: "integer" } },
+    })),
   }),
 );
-upstream.get("/api/v1/images/models/fixture/image/endpoints", (_req, res) =>
+upstream.get("/api/v1/images/models/fixture/:model/endpoints", (req, res) =>
   res.json({
     endpoints: [
       {
+        provider_name: "Fixture provider",
+        pricing:
+          req.params.model === "image"
+            ? [
+                { billable: "output_image", unit: "image", cost_usd: 0.04 },
+                { billable: "input_reference", unit: "image", cost_usd: 0.01 },
+              ]
+            : req.params.model === "megapixels"
+              ? [
+                  {
+                    billable: "output_image",
+                    unit: "megapixel",
+                    cost_usd: 0.003,
+                  },
+                ]
+              : req.params.model === "tokens"
+                ? [
+                    {
+                      billable: "input_text",
+                      unit: "token",
+                      cost_usd: 0.000005,
+                    },
+                    {
+                      billable: "output_image",
+                      unit: "token",
+                      cost_usd: 0.00004,
+                      variant: "standard",
+                    },
+                    {
+                      billable: "output_image",
+                      unit: "token",
+                      cost_usd: 0.00008,
+                      variant: "high",
+                    },
+                  ]
+                : [],
         supported_parameters: {
           resolution: { type: "enum", values: ["1K", "2K"] },
           size: { type: "enum", values: ["1536x1024"] },
