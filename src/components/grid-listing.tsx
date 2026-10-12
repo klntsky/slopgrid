@@ -41,7 +41,7 @@ export function GridListing({
                 {g.title || g.prompt}
               </span>
             </Link>
-            <Author identity={g.author} />
+            {publicListing && <Author identity={g.author} />}
             {!publicListing && (
               <small>{g.published ? "Published" : g.status}</small>
             )}
