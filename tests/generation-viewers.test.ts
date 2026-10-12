@@ -123,22 +123,32 @@ test(
       const call = await f.call(0);
       const endpoint = `${f.origin}/api/grids/${grid.id}/events`;
       for (let round = 0; round < 12; round++) {
-        const controllers = Array.from(
-          { length: 4 },
-          () => new AbortController(),
+        // Client aborts reach the web process asynchronously. Probe its capacity
+        // directly instead of using an unrelated engine request as a barrier.
+        await until(
+          async () => {
+            const controllers = Array.from(
+              { length: 4 },
+              () => new AbortController(),
+            );
+            try {
+              const responses = await Promise.all(
+                controllers.map((controller) =>
+                  fetch(endpoint, {
+                    headers: { cookie: `slopgrid=${f.owner}` },
+                    signal: controller.signal,
+                  }),
+                ),
+              );
+              for (const response of responses)
+                if (response.status !== 429) assert.equal(response.status, 200);
+              return responses.every((response) => response.status === 200);
+            } finally {
+              for (const controller of controllers) controller.abort();
+            }
+          },
+          (available) => available,
         );
-        const responses = await Promise.all(
-          controllers.map((controller) =>
-            fetch(endpoint, {
-              headers: { cookie: `slopgrid=${f.owner}` },
-              signal: controller.signal,
-            }),
-          ),
-        );
-        for (const response of responses) assert.equal(response.status, 200);
-        for (const controller of controllers) controller.abort();
-        // An ordinary round-trip lets the server observe the previous cancellations.
-        await f.engine.api.status();
       }
       call.write({
         content: "Latest content after reconnect",
