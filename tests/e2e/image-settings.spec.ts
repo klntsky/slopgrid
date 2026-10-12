@@ -139,11 +139,18 @@ test("renamed reference groups survive reload, Edit and Fork without mixing thei
   await page
     .getByLabel("Add images to Group 2", { exact: true })
     .setInputFiles(second.slice(1));
-  const titles = page.getByRole("textbox", { name: "Reference group title" });
-  await titles.nth(0).fill("Landscape");
-  await titles.nth(0).press("Enter");
-  await titles.nth(1).fill("Details");
-  await titles.nth(1).press("Tab");
+  const titles = page.getByRole("button", {
+    name: /^Edit reference group title:/,
+  });
+  const titleField = page.getByRole("textbox", {
+    name: "Reference group title",
+  });
+  await titles.nth(0).click();
+  await titleField.fill("Landscape");
+  await titleField.press("Enter");
+  await titles.nth(1).click();
+  await titleField.fill("Details");
+  await titleField.press("Tab");
   const warning = page.getByRole("cell", {
     name: "Details / 1K: Unsupported",
     exact: true,
@@ -163,17 +170,26 @@ test("renamed reference groups survive reload, Edit and Fork without mixing thei
   await expect(page.getByText("Connected", { exact: true })).toBeVisible();
   await expect(page.getByRole("img", { name: /\.png$/ })).toHaveCount(5);
   expect(uploads).toBe(0);
-  await expect(titles.nth(0)).toHaveValue("Landscape");
-  await expect(titles.nth(1)).toHaveValue("Details");
+  await expect(titles.nth(0)).toHaveText("Landscape");
+  await expect(titles.nth(1)).toHaveText("Details");
   // Rejected titles preserve both groups and their file associations.
   for (const invalid of ["Landscape", "   "]) {
-    await titles.nth(1).fill(invalid);
-    await titles.nth(1).press("Tab");
-    await expect(titles.nth(1)).toHaveValue("Details");
+    await titles.nth(1).click();
+    await titleField.fill(invalid);
+    await titleField.press("Enter");
+    await expect(page.getByRole("alert")).toHaveText(
+      invalid.trim()
+        ? "Use a different reference group title."
+        : "Enter a reference group title.",
+    );
+    await titleField.press("Escape");
+    await expect(titles.nth(1)).toHaveText("Details");
     expect(uploads).toBe(0);
   }
-  await titles.nth(1).fill("Details");
-  await titles.nth(1).press("Tab");
+  await titles.nth(1).click();
+  await titleField.fill("Discard this edit");
+  await titleField.press("Escape");
+  await expect(titles.nth(1)).toBeFocused();
   await page.getByRole("button", { name: "Swap rows and columns" }).click();
   await expect(
     page.getByRole("cell", { name: "1K / Details: Unsupported", exact: true }),
@@ -197,8 +213,8 @@ test("renamed reference groups survive reload, Edit and Fork without mixing thei
   ).toEqual(expected);
   const url = page.url();
   await page.getByRole("button", { name: "EDIT", exact: true }).click();
-  await expect(titles.nth(0)).toHaveValue("Landscape");
-  await expect(titles.nth(1)).toHaveValue("Details");
+  await expect(titles.nth(0)).toHaveText("Landscape");
+  await expect(titles.nth(1)).toHaveText("Details");
   await expect(page.getByRole("img", { name: /\.png$/ })).toHaveCount(5);
   await expect
     .poll(() =>
@@ -211,8 +227,8 @@ test("renamed reference groups survive reload, Edit and Fork without mixing thei
   await page.getByRole("button", { name: "PUBLISH", exact: true }).click();
   await finishPublishing(page);
   await page.getByRole("button", { name: "FORK", exact: true }).click();
-  await expect(titles.nth(0)).toHaveValue("Landscape");
-  await expect(titles.nth(1)).toHaveValue("Details");
+  await expect(titles.nth(0)).toHaveText("Landscape");
+  await expect(titles.nth(1)).toHaveText("Details");
   await expect(page.getByRole("img", { name: /\.png$/ })).toHaveCount(5);
   await page.getByRole("button", { name: "Generate", exact: true }).click();
   await expectProgress(page, 2, 2);

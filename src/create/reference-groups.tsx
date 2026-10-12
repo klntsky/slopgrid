@@ -5,6 +5,7 @@ import type {
   ReferenceGroups as Groups,
   ReferenceImage,
 } from "../../server/image-settings";
+import { EditableTitle } from "../components/editable-title";
 import { ErrorMessage } from "../components/error-message";
 
 export function ReferenceGroups({
@@ -73,31 +74,20 @@ export function ReferenceGroups({
       {values.map((name, position) => (
         <div className="reference-group" key={position}>
           <div className="reference-heading">
-            <input
+            <EditableTitle
               key={name}
-              aria-label="Reference group title"
-              defaultValue={name}
+              value={name}
+              label="Reference group title"
+              editLabel={`Edit reference group title: ${name}`}
               disabled={busy}
-              onBlur={(event) => {
-                const title = event.currentTarget.value.trim();
-                const error = !title
-                  ? "Enter a reference group title."
-                  : title !== name && values.includes(title)
-                    ? "Use a different reference group title."
-                    : "";
-                setError(error);
-                event.currentTarget.value = error ? name : title;
-                if (!error && title !== name)
-                  onChange(
-                    values.map((value) => (value === name ? title : value)),
-                    { [title]: groups[name] },
-                  );
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  event.currentTarget.blur();
-                }
+              onSave={(title) => {
+                if (!title) throw new Error("Enter a reference group title.");
+                if (values.includes(title))
+                  throw new Error("Use a different reference group title.");
+                onChange(
+                  values.map((value) => (value === name ? title : value)),
+                  { [title]: groups[name] },
+                );
               }}
             />
             <button

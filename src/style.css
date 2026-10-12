@@ -564,7 +564,8 @@ legend {
   gap: 8px;
   min-width: 0;
 }
-.grid-name {
+.grid-name,
+.editable-title {
   flex-shrink: 0;
   max-width: 75%;
   white-space: normal;
@@ -574,13 +575,13 @@ legend {
   font-weight: 500;
   line-height: 1.4;
 }
-button.grid-name {
+button.editable-title {
   display: block;
   padding: 3px 4px;
   margin-left: -4px;
   text-align: left;
 }
-.grid-title-line .grid-name-input {
+.editable-title-input {
   width: 40%;
   padding: 3px 6px;
   font-size: 17px;
@@ -1657,10 +1658,9 @@ header {
   justify-content: space-between;
   margin-bottom: 8px;
 }
-.reference-heading input {
+.reference-heading .editable-title-input {
   min-width: 0;
   flex: 1;
-  font-weight: 600;
 }
 .reference-images {
   display: grid;
