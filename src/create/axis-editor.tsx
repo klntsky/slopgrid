@@ -103,7 +103,10 @@ export function AxisEditor({
               onChange({ ...axis, values: e.target.value.split("\n") })
             }
           />
-          <span className="hint">One value per line.</span>
+          <span className="hint">
+            One value per line. Use {label === "Rows" ? "$ROW" : "$COLUMN"} to
+            reference this value in the prompt.
+          </span>
         </label>
       ) : (
         <fieldset

@@ -72,6 +72,7 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 2. Support either or both axes as prompt variables, using the values supplied for each axis to expand the grid.
 3. Each enabled prompt variable must occur in the prompt before generation can start.
 4. Show variable guidance only when a prompt-variable dimension is selected, and only for the usable variable or variables. Use "$ROW will be replaced with the values you specify above" and the corresponding `$COLUMN` wording.
+5. Beneath each prompt-variable values field, show "One value per line. Use $ROW to reference this value in the prompt." for rows and the corresponding `$COLUMN` wording for columns.
 
 ### 3.4. Compatibility presentation
 
