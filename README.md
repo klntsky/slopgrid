@@ -15,9 +15,9 @@ Pause stops unfinished work; Resume starts those cells again while keeping compl
 
 ## Keep and share your results
 
-Grids start private. Once all cells have finished, including any failures, use **Publish** to make a grid accessible by link or list it publicly. Publication is permanent: you can still rename the grid, but its prompt and outputs become fixed and it cannot return to private visibility. Use **Fork** to create a new comparison from a published grid’s setup.
+Grids start private. Once all cells have finished, including any failures, use **Publish** to make a grid accessible by link or list it publicly. Publication is permanent: you can still rename the grid, but its prompt and outputs become fixed and it cannot return to private visibility. Use **Fork** to create a new comparison from a published grid's setup.
 
-You can use Slopgrid anonymously or sign in with GitHub. Signing in adds this browser’s anonymous grids to your account so you can access them and their billing history from other browsers. Each browser needs its own OpenRouter connection; manually entered API keys stay in that browser.
+You can use Slopgrid anonymously or sign in with GitHub. Signing in adds this browser's anonymous grids to your account so you can access them and their billing history from other browsers. Each browser needs its own OpenRouter connection; manually entered API keys stay in that browser.
 
 ## Track spending and preferences
 
