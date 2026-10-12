@@ -446,3 +446,72 @@ test("pausing during backoff prevents the timer from restarting inference and Re
     await h.close();
   }
 });
+
+test("non-pricing failures stay on their cells while queued grids keep generating", async () => {
+  const h = harness(1);
+  try {
+    const first = h.grid("alice", "first", 4);
+    const second = h.grid("alice", "second", 2);
+    h.jobs.start(first);
+    h.jobs.start(second);
+    await flush();
+    for (const [index, code] of [401, 403, 502].entries()) {
+      h.provider.fail(`alice/first/${index}`, code, {
+        message:
+          code === 403
+            ? "Age verification required"
+            : "Provider rejected this request",
+      });
+      await flush();
+      assert.equal(first.cells[index].status, "error");
+      assert.equal(first.interruption, undefined);
+      assert.equal(second.status, "running");
+      assert.ok(h.provider.pending.has(`alice/first/${index + 1}`));
+    }
+    while (h.provider.pending.size) {
+      for (const id of [...h.provider.pending.keys()]) h.provider.finish(id);
+      await flush();
+    }
+    assert.equal(h.store.get(second.id)!.status, "complete");
+    const saved = h.store.get(first.id)!;
+    assert.deepEqual(
+      saved.cells.map((cell) => cell.status),
+      ["error", "error", "error", "complete"],
+    );
+    assert.equal(saved.cells[1].error, "Age verification required");
+    assert.equal(saved.cells[1].errorCode, 403);
+    assert.equal(h.provider.started.length, 6);
+  } finally {
+    await h.close();
+  }
+});
+
+test("losing a queued grid's credential does not pause another grid with its own key", async () => {
+  const h = harness(1);
+  try {
+    const first = h.grid("alice", "first", 2);
+    const second = h.grid("alice", "second", 2);
+    h.jobs.start(first);
+    h.jobs.start(second, "independent-key");
+    await flush();
+    const session = h.store.session("alice")!;
+    delete session.key;
+    h.store.saveSession(session);
+    h.provider.finish("alice/first/0");
+    await flush();
+    assert.equal(first.cells[1].status, "error");
+    assert.equal(first.interruption, undefined);
+    assert.ok(h.provider.pending.has("alice/second/0"));
+    while (h.provider.pending.size) {
+      for (const id of [...h.provider.pending.keys()]) h.provider.finish(id);
+      await flush();
+    }
+    assert.equal(h.store.get(second.id)!.status, "complete");
+    assert.deepEqual(
+      h.provider.started.map((call) => call.id),
+      ["alice/first/0", "alice/second/0", "alice/second/1"],
+    );
+  } finally {
+    await h.close();
+  }
+});

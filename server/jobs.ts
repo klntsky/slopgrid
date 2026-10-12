@@ -185,10 +185,6 @@ export class Jobs {
       const key =
         this.runtime.get(grid.id)?.key ??
         this.store.sessionForOwner(owner)?.key;
-      if (!key) {
-        this.pauseOwner(owner, "auth");
-        continue;
-      }
       const controller = new AbortController();
       this.running.set(cell.id, { grid, cell, controller, owner });
       this.owners.get(owner)!.last = ++this.allocation;
@@ -205,12 +201,12 @@ export class Jobs {
       void this.runCell(grid, cell, key, controller, owner);
     }
   }
-  private pauseOwner(owner: string, reason: "billing" | "auth") {
+  private pauseOwner(owner: string) {
     for (const grid of [...this.active.values()])
       if (this.executionOwner(grid) === owner && grid.status === "running") {
         grid.status = "paused";
         this.runtime.get(grid.id)!.key = undefined;
-        grid.interruption = reason;
+        grid.interruption = "billing";
         for (const cell of grid.cells) delete cell.retrying;
         this.settle(grid);
         this.emit(grid);
@@ -255,7 +251,7 @@ export class Jobs {
   private async runCell(
     grid: Grid,
     cell: Cell,
-    key: string,
+    key: string | undefined,
     controller: AbortController,
     owner: string,
   ) {
@@ -264,6 +260,7 @@ export class Jobs {
       !controller.signal.aborted &&
       this.running.get(cell.id)?.controller === controller;
     try {
+      if (!key) throw new Error("Reconnect OpenRouter to continue.");
       const result = await this.provider.generate(
         key,
         grid.input.format,
@@ -320,15 +317,10 @@ export class Jobs {
             Math.max(this.cooldowns.get(owner) ?? 0, Date.now() + delay),
           );
         }
-      } else if (
-        !failure.temporary &&
-        (failure.status === 402 ||
-          failure.status === 401 ||
-          failure.status === 403)
-      ) {
+      } else if (!failure.temporary && failure.status === 402) {
         cell.status = "pending";
         this.retries.delete(cell.id);
-        this.pauseOwner(owner, failure.status === 402 ? "billing" : "auth");
+        this.pauseOwner(owner);
       } else {
         cell.status = "error";
         this.retries.delete(cell.id);

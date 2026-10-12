@@ -121,7 +121,7 @@ export type Grid = {
   status: "running" | "paused" | "complete";
   published: boolean;
   visibility: GridVisibility;
-  interruption?: "billing" | "auth" | "restart" | "manual";
+  interruption?: "billing" | "restart" | "manual";
   cells: Cell[];
   createdAt: string;
 };
