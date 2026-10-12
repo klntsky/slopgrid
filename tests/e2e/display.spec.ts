@@ -22,6 +22,10 @@ test("SVG images grow during generation without exposing markup or running SVG s
     await expectProgress(page, 0, 1);
     await page.reload();
     await expect.poll(centerColor).toEqual([255, 0, 0, 255]);
+    await page.getByRole("button", { name: "Expand SVG", exact: true }).click();
+    const expanded = page.getByRole("region", { name: /^Expanded output:/ });
+    await expect(expanded.getByRole("img", { name: "SVG preview", exact: true })).toBeVisible();
+    await expect.poll(centerColor).toEqual([255, 0, 0, 255]);
     await expect(page.getByRole("button", { name: "PUBLISH" })).toBeDisabled();
     await expect(page.locator("iframe, .cell pre")).toHaveCount(0);
     await request.post("/fixture/svg-next");
@@ -39,6 +43,10 @@ test("SVG images grow during generation without exposing markup or running SVG s
     await request.post("/fixture/svg-next");
     await expectProgress(page, 1, 1);
     await expect(preview).toHaveCount(0);
+    await expect(expanded.getByRole("img", { name: "Generated SVG", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Collapse SVG", exact: true }).click();
+    await expect(expanded).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Expand SVG", exact: true })).toBeFocused();
     await expect(
       page
         .locator(".cell-usage")
@@ -84,6 +92,22 @@ for (const format of ["Image", "SVG", "Markdown", "Static website"])
     const output = cell.locator(image ? "img" : format === "Markdown" ? ".markdown-preview" : "iframe:visible");
     await expect(output).toBeVisible();
     if (image) await expect.poll(() => output.evaluate((el) => (el as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+    if (image) {
+      const source = await output.getAttribute("src");
+      const mounted = await output.elementHandle();
+      const expand = cell.getByRole("button", { name: `Expand ${format}`, exact: true });
+      const dimensions = await handle.getAttribute("aria-valuenow");
+      await expand.click();
+      const expanded = page.getByRole("region", { name: /^Expanded output:/ });
+      const expandedImage = expanded.getByRole("img");
+      await expect(expandedImage).toHaveAttribute("src", source!);
+      await expect.poll(() => expandedImage.evaluate((el) => (el as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+      await page.keyboard.press("Escape");
+      await expect(expanded).toHaveCount(0);
+      await expect(expand).toBeFocused();
+      expect(await mounted!.evaluate((el) => el.isConnected)).toBe(true);
+      await expect(handle).toHaveAttribute("aria-valuenow", dimensions!);
+    }
     if (format === "Static website")
       await expect(cell.frameLocator("iframe:visible").getByText("Module loaded")).toBeVisible();
     const content = (await output.boundingBox())!;

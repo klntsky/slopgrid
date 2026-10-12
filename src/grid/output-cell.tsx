@@ -14,7 +14,7 @@ import { CopyButton } from "../components/copy-button";
 import type { GridInput } from "../../server/domain";
 import type { ViewGrid } from "../api";
 import { useTheme } from "../theme";
-import { formatCost, cellError } from "../format";
+import { formatCost, cellError, formatNames } from "../format";
 import { WebsitePreview } from "./website-preview";
 import { MarkdownPreview } from "./markdown-preview";
 import { SvgPreview } from "../svg-preview-image";
@@ -65,8 +65,13 @@ export function OutputCell({
   const thinking =
     hasThinking && (showThinking ?? (cell.status === "running" && !hasOutput));
   const thinkingLabel = thinking ? "Show output" : "Show thinking";
-  const expandable = markdown || thinking || expanded;
-  const expandLabel = `${expanded ? "Collapse" : "Expand"} ${thinking ? "thinking" : format === "markdown" ? "Markdown" : "output"}`;
+  const expandable =
+    markdown ||
+    ((format === "svg" || format === "image") &&
+      (complete || cell.status === "running")) ||
+    thinking ||
+    expanded;
+  const expandLabel = `${expanded ? "Collapse" : "Expand"} ${thinking ? "thinking" : formatNames[format]}`;
   return (
     <article className="cell">
       <div className="cell-view" aria-hidden={thinking} inert={thinking}>
@@ -129,7 +134,7 @@ export function OutputCell({
           />
         </div>
       )}
-      {(markdown || hasThinking || expanded) && (
+      {(expandable || hasThinking) && (
         <div className="markdown-actions">
           {markdown && !thinking && (
             <button
