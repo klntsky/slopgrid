@@ -234,18 +234,10 @@ export function AxisEditor({
                   models.find((model) => model.id === id)?.name ?? id;
                 return (
                   <li className="model-badge" key={id}>
-                    <span
-                      data-tooltip={name !== id ? id : undefined}
-                      ref={name !== id ? tooltipRef : undefined}
-                      tabIndex={name !== id ? 0 : undefined}
-                    >
-                      {name}
-                    </span>
+                    <span>{name}</span>
                     <button
                       type="button"
                       aria-label={`Remove ${name} from ${label.toLowerCase()}`}
-                      data-tooltip={`Remove ${name}`}
-                      ref={tooltipRef}
                       onClick={() => {
                         onChange({
                           ...axis,
