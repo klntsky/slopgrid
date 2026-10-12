@@ -1,6 +1,6 @@
 # Slopgrid requirements
 
-This document consolidates the current requirements from the original product brief and the project conversation through 12 October 2026, including explicitly accepted proposals and subsequent corrections. It replaces the original specification. Superseded requests, abandoned proposals, and completed one-off investigations or data repairs are omitted. These are the agreed requirements, rather than a claim that every behavior has been independently verified against this document.
+This document defines the current agreed requirements for Slopgrid. Implementation status is documented separately.
 
 Implementation explanations belong in [ARCHITECTURE.md](ARCHITECTURE.md), development guidance belongs in [DEVELOPMENT.md](DEVELOPMENT.md), and the end-user guide belongs in [README.md](README.md). Host-specific operational details remain outside the repository in the user-wide AGENTS.md.
 
@@ -9,10 +9,10 @@ Implementation explanations belong in [ARCHITECTURE.md](ARCHITECTURE.md), develo
 ### 1.1. Benchmarking model outputs
 
 1. Slopgrid lets people submit a prompt and compare generated outputs in a two-dimensional grid whose row and column meanings they choose.
-2. Support exactly three axis types: models, thinking effort, and prompt variables. Do not introduce harness comparison or a harness selector.
+2. Support exactly three axis types: models, thinking effort, and prompt variables.
 3. Offer four output types in this order: Markdown, Image, SVG, and Static website. Image generation uses image-capable models; static websites may contain multiple files but no server-side code.
 4. Generate outputs on the server, stream progress to the browser, retain completed results, and let owners publish their grids afterward.
-5. A cell attempt makes one inference call. Do not restore the removed draft/review generation harness.
+5. A cell attempt makes one inference call.
 
 ### 1.2. Stack and boundaries
 
@@ -30,26 +30,26 @@ Implementation explanations belong in [ARCHITECTURE.md](ARCHITECTURE.md), develo
 3. Use permissively licensed stock interface icons, currently Lucide, alongside official OpenRouter and GitHub brand assets. Brand icons must remain recognizable and uncropped.
 4. Keep buttons consistent throughout the interface, with restrained borders, padding, and corner rounding. Output-type cards should have larger icons and labels without excessively rounded corners.
 5. Do not add unsolicited commentary, explanations, caveats, advice, or value judgments to UI text. Explicitly requested explanatory text remains allowed. Recheck this rule whenever changing visible UI text.
-6. Remove redundant headings and labels, including “Image GRID,” “CREATE A GRID,” repeated prompt labels, and unused row-value labels.
+6. Use concise, distinct headings and labels without repeating information already visible in the section.
 
 ### 2.2. Navigation and page layout
 
-1. The logo opens `/grids`. Put the prominent NEW GRID action, with a plus icon, on the grid-list page; do not duplicate it as a large navbar button or add a redundant YOUR GRIDS navbar link.
-2. Keep remaining navbar link labels uppercase, with readable desktop text and enough space for grid information. Use matching gaps between the brand, action buttons, and title/prompt group.
+1. The logo opens `/grids` and serves as the navbar’s grid-list link. Put the prominent NEW GRID action, with a plus icon, on the grid-list page.
+2. Keep navbar link labels uppercase, with readable desktop text and enough space for grid information. Use matching gaps between the brand, action buttons, and title/prompt group.
 3. On mobile, move navigation into a hamburger menu anchored close to its button. Keep compact grid action buttons on the first navbar row where they fit.
-4. Give “Your grids” and “Public grids” matching large heading styles. Keep separators only between grid entries in the lists, rather than repeatedly separating page sections.
+4. Give “Your grids” and “Public grids” matching large heading styles. Keep separators only between grid entries in the lists.
 5. Billing and Settings use the same wider page-layout approach as `/grids`.
-6. Do not display a redundant Published badge on the grid page or public-list entries.
-7. A missing grid should show its 404 promptly without retrying and without a “create a grid” link inside the error message.
+6. Publication state is conveyed through the available grid actions and placement in the public list.
+7. A missing grid should show its 404 promptly without retrying. Keep the error message focused on the missing grid.
 8. Connection loss appears as a small bottom-right label with a rotating preloader and must not shift page layout. Generation preloaders must visibly spin.
 
 ### 2.3. Tooltips
 
-1. Use Tippy consistently instead of native HTML title tooltips. Tooltips have a pitch-black background and white text in both themes.
-2. Keep hints that explain a non-obvious action, icon, or value; remove calls that merely repeat already visible text. Review the whole frontend for this duplication.
+1. Use Tippy for all tooltips. Tooltips have a pitch-black background and white text in both themes.
+2. Use hints only to explain a non-obvious action, icon, or value, consistently across the frontend.
 3. Explain Model default as “Uses the model’s default thinking settings.” Explain the budget as “Used to calculate each output’s token limit.” Give total cost a hint explaining which costs it includes.
 4. Give token-arrow indicators “Input tokens” and “Output tokens” hints. Supported compatibility checkmarks do not get tooltips.
-5. Budget and parallel-worker hints use the same field-level interaction as the budget control, rather than inconsistent separate hint targets.
+5. Budget and parallel-worker hints use the same field-level interaction.
 6. Use the current pause hint and parallel-worker hint specified in sections 3.5 and 6.3.
 
 ## 3. Grid creation
@@ -57,14 +57,14 @@ Implementation explanations belong in [ARCHITECTURE.md](ARCHITECTURE.md), develo
 ### 3.1. Form and output selection
 
 1. The creation-page call to action is “Create your own AI model benchmark”.
-2. Selecting an output type reveals all remaining form sections immediately. Do not require Continue buttons to reveal successive steps, and keep earlier choices visible.
+2. Selecting an output type reveals all remaining form sections immediately, while keeping the output choice visible.
 3. Preserve the in-progress setup through provider authorization and restore the applicable setup when editing or forking.
 4. Put an icon-only swap button between the row and column selectors. It has no border and swaps axis types, selected values, and corresponding prompt-variable references together.
-5. Do not preselect checkbox-list values or choose a default model automatically. Every generation must use an explicitly selected model, including when model is a fixed setting rather than an axis.
+5. Checkbox lists start unselected. Every generation must use an explicitly selected model, including when model is a fixed setting rather than an axis.
 
 ### 3.2. Model and thinking-effort selection
 
-1. Model lists are filterable, alphabetically ordered, and tall enough to show substantially more options than the original short list.
+1. Model lists are filterable and alphabetically ordered, with a tall selection area that makes multiple options visible at once.
 2. The filter has a magnifying-glass icon, the placeholder “Search models,” and an always-visible clear cross.
 3. Initialize the model search to an empty string for Image and to `latest` for every other output type. This filter must not select a model automatically.
 4. Show selected models as removable badges under the model list, including selections currently hidden by the filter.
@@ -74,7 +74,7 @@ Implementation explanations belong in [ARCHITECTURE.md](ARCHITECTURE.md), develo
 
 ### 3.3. Prompt variables
 
-1. Use `$ROW` and `$COLUMN` for literal substitution of the corresponding prompt-variable values. Do not use the old `$VARIABLE_ROW` or `$VARIABLE_COLUMN` names.
+1. Use `$ROW` and `$COLUMN` for literal substitution of the corresponding prompt-variable values.
 2. Support either or both axes as prompt variables, using the values supplied for each axis to expand the grid.
 3. Each enabled prompt variable must occur in the prompt before generation can start.
 4. Show variable guidance only when a prompt-variable dimension is selected, and only for the usable variable or variables. Use “$ROW will be replaced with the values you specify above” and the corresponding `$COLUMN` wording.
@@ -82,7 +82,7 @@ Implementation explanations belong in [ARCHITECTURE.md](ARCHITECTURE.md), develo
 ### 3.4. Compatibility presentation
 
 1. Show a compact thinking-effort compatibility table only when at least one selected model/effort combination is known to be unsupported.
-2. Its rows and columns match the selected grid dimensions and orientation, including prompt-variable axes and fixed model or effort settings. Do not always put models on rows.
+2. Its rows and columns match the selected grid dimensions and orientation, including prompt-variable axes and fixed model or effort settings.
 3. Use SVG checkmarks for supported combinations and yellow warning icons for unsupported combinations. Unknown support must not be presented as confirmed support.
 4. Do not show a tooltip on a supported checkmark. Explanatory hints may identify unsupported or unknown combinations.
 5. Compatibility warnings are advisory and must not block generation. Send the selected settings and show an upstream rejection as a cell error if the provider rejects them.
@@ -99,22 +99,22 @@ Implementation explanations belong in [ARCHITECTURE.md](ARCHITECTURE.md), develo
 
 ### 3.6. Inference-provider setup
 
-1. Label the section “Inference provider setup”. Use a compact OpenRouter status row rather than a full-width widget with repeated provider text.
+1. Label the section “Inference provider setup”. Use a compact OpenRouter status row with the provider identified once.
 2. Show Connect when disconnected. In creation, a connected row links to Settings; in Settings, offer Disconnect and a less prominent Change connection action.
 3. Show the connection-checking state while it is pending. On a failed check, offer retry without falsely asserting that the user is disconnected or their credentials are invalid.
-4. Offer manual API-key entry alongside the existing OpenRouter OAuth flow. Do not replace or unnecessarily alter OAuth when adding manual keys.
-5. Keep the explicitly requested Settings note: “More providers coming in the future. For now, use bring-your-own-key feature on OpenRouter to get inference without paying OpenRouter's markup”.
+4. Offer both manual API-key entry and OpenRouter OAuth.
+5. Use this Settings note: “More providers coming in the future. For now, use bring-your-own-key feature on OpenRouter to get inference without paying OpenRouter's markup”.
 
 ## 4. Grid layout and metadata
 
 ### 4.1. Table geometry and gestures
 
 1. The grid fills the page below the navbar, with the same overall layout during generation and after publication. Both row and column headers remain sticky, and the top-left corner cell is empty.
-2. Rotate row labels 90 degrees counterclockwise and keep header/cell text readable. The row-label column should fit its contents instead of taking unnecessary width.
-3. Keep headers compact: the first row is thinner in height and the label column narrower, approximately three quarters of their earlier padding-driven sizes. This requirement concerns headers, not smaller output cells.
+2. Rotate row labels 90 degrees counterclockwise and keep header/cell text readable. The row-label column should fit its contents.
+3. Keep the first row compact in height and the label column compact in width through restrained header padding. Size output cells independently.
 4. Page-height filling may expand output rows, but must never stretch the header row. Its height stays natural through viewport fitting, zoom, resizing, and restoration from localStorage.
 5. Users resize output columns and rows through their corresponding header edges. Each shared edge controls the column to its right or row below it, including the last output row. The header row and label column themselves are not resizable.
-6. Persist only output dimensions per grid in browser localStorage, without server-wide size persistence. Stored sizes must not reintroduce expanded header heights.
+6. Persist only output dimensions per grid in browser localStorage, without server-wide size persistence. Restoring output sizes must preserve the header’s natural height.
 7. Use one owner for table dimensions; resizing and zooming must communicate through it rather than independently writing conflicting geometry.
 8. Support pinch zoom whenever a touchscreen is present, regardless of screen width. Start by fitting the table to available width and prevent zooming out beyond that width fit.
 9. Keep one-finger scrolling usable, including within Markdown cells. Zoom the grid rather than the application navbar.
@@ -126,7 +126,7 @@ Implementation explanations belong in [ARCHITECTURE.md](ARCHITECTURE.md), develo
 3. Limit titles to 40 characters. Neither the title nor “Set Title” may be ellipsized.
 4. Title text is dark in light mode and white in dark mode. Prompt text uses the same accent color as “grid” in the wordmark.
 5. Collapse long prompts, with a hover element over the collapsed prompt showing the complete text.
-6. Add an icon-only copy button for the prompt, directly after the inline text rather than aligned to the far right. Do not add a title copy button.
+6. Place an icon-only copy button directly after the inline prompt text; copying applies to the prompt only.
 7. Show the author near the title and price near the author, using the pattern “by Anonymous · spent $0.12” or the linked GitHub identity equivalent.
 8. Truncate the total grid price to two decimal places in the UI. Show an animated ellipsis while inference runs, without wasting navbar space.
 
@@ -137,7 +137,7 @@ Implementation explanations belong in [ARCHITECTURE.md](ARCHITECTURE.md), develo
 3. Put the pause/resume action to the left of the title/prompt. Edit and Publish are compact icon-only controls to its right, using the same visual treatment.
 4. Before publication, Edit immediately cancels active inference and returns to parameter selection with the existing setup restored. Generating the edited setup creates a new generation rather than altering published outputs.
 5. After publication, offer Fork to restore the setup for modification and generation using the forking user’s own connection.
-6. Do not repeat model names in unused per-cell headers. Clicking a model name in a row or column label copies its ID; a chain icon to the right of its copy icon opens the model’s OpenRouter page in a new tab.
+6. Show model names in row or column labels. Clicking a model name copies its ID; a chain icon to the right of its copy icon opens the model’s OpenRouter page in a new tab.
 
 ## 5. Outputs and streaming
 
@@ -146,14 +146,14 @@ Implementation explanations belong in [ARCHITECTURE.md](ARCHITECTURE.md), develo
 1. Place icon-only Open output, Copy output, and Download output controls at the bottom left of cells as applicable. Open output opens a separate tab.
 2. Copy copies the output content and is not shown for websites. Download saves a website as a ZIP containing its files and relative paths.
 3. Download filenames follow `<prompt>.slopgrid.com.<grid-id>.<row_parameter>.<column_parameter>.<extension>`. Normalize filename components, replacing spaces and characters unsuitable for filenames with underscores. The domain in this pattern is product-facing filename text.
-4. Do not strip Markdown fences, trim text, extract a guessed fragment, or otherwise rewrite generated SVG/Markdown source before storage. Keep generated text verbatim; website JSON is parsed directly without fence stripping or trimming.
+4. Store generated SVG and Markdown source verbatim, preserving whitespace and code fences. Parse website JSON directly from the unmodified response.
 5. Keep output files on disk, independently of metadata edits and publication. Do not impose an application output-byte limit.
 6. Store provider finish reasons without displaying them in the interface. Treat an unsuccessful completion reason as a generation failure rather than silently accepting incomplete output.
 
 ### 5.2. Markdown
 
-1. Use a React Markdown renderer, with no DOMPurify dependency or unsafe DOM insertion needed for rendering. Render raw HTML as text rather than executing it.
-2. Render Markdown incrementally into the same rendered layout used for completion. Do not stream plain text and switch to a different layout when done; retain the preview and scroll position to avoid flicker.
+1. Use a React Markdown renderer that produces React elements without unsafe DOM insertion. Render raw HTML as text.
+2. Render Markdown incrementally into the same rendered layout used for completion, retaining the preview and scroll position throughout.
 3. Let code blocks take their full natural content width, then scale the whole Markdown document to fit the cell width. Scrolling is vertical only.
 4. Add an icon-only raw-view toggle to the left of Expand. Raw mode shows the original Markdown as unformatted text, preserves line breaks, disables wrapping, and scales to the cell width.
 5. In raw mode, the button becomes a Markdown icon that returns to rendered Markdown. Keep raw view available during streaming.
@@ -164,11 +164,11 @@ Implementation explanations belong in [ARCHITECTURE.md](ARCHITECTURE.md), develo
 1. Render generated images and SVG through image elements and always fit them to the cell.
 2. During SVG streaming, make a disposable partial-image preview by closing unfinished tags where possible. This preview recovery must not modify stored final source.
 3. Do not reject SVG merely because markup validation considers it malformed or unconventional; browsers may still recover it.
-4. Use the accepted SVG instruction: “Fulfill user's SVG generation request. Your response will be saved directly as an image/svg+xml file. Start immediately with <svg and end immediately with </svg>. Include no introduction, explanation, Markdown fences, or other text outside the SVG element.”
+4. Use this SVG instruction: “Fulfill user's SVG generation request. Your response will be saved directly as an image/svg+xml file. Start immediately with <svg and end immediately with </svg>. Include no introduction, explanation, Markdown fences, or other text outside the SVG element.”
 
 ### 5.4. Static websites
 
-1. Generate a static bundle containing `index.html` and optional supporting files, retaining multi-file HTML, CSS, and JavaScript rather than forcing everything into one document.
+1. Generate a static bundle containing `index.html` and optional supporting HTML, CSS, and JavaScript files.
 2. Use one website response shape for all models: a JSON object whose `files` value is a list of `{path, content}` entries. Share this schema between request construction and final validation.
 3. Require strict structured outputs and compatible provider routing when the selected model advertises support. For models without support, request the same shape through the prompt and use ordinary JSON parsing. Preserve streaming in both cases.
 4. Do not silently downgrade a failed structured-output request to an unconstrained request.
@@ -243,21 +243,21 @@ Implementation explanations belong in [ARCHITECTURE.md](ARCHITECTURE.md), develo
 5. Account grids and billing are accessible across browsers signed into that account. Signing out removes account access and rotates the session; newly created anonymous grids belong to the current anonymous session.
 6. Preserve the initiating inference connection during identity changes so signing in or out does not silently replace credentials or interrupt accepted work.
 7. Freeze author attribution at first publication. Later claims, sign-ins, or profile changes must not rewrite a published grid’s author; unpublished grids may show the current identity.
-8. GitHub configuration is required at startup. Missing credentials must fail startup instead of presenting a partially configured optional sign-in flow.
+8. GitHub configuration is required at startup. Missing credentials must fail startup.
 9. Use session-bound single-use OAuth state, expiry, PKCE, and validated local return destinations. Discard GitHub tokens after identifying the user, and keep GitHub and OpenRouter authorization attempts separate.
 
 ### 8.2. Inference credentials
 
 1. Keep OpenRouter connections browser/session-scoped; do not attach them to the GitHub account or copy them to other browsers.
 2. Store manually entered keys in the user’s localStorage and resend them for authenticated key checks and inference start/resume requests. Hold them only ephemerally on the server while needed for execution, without persistent server storage.
-3. Preserve the existing OpenRouter OAuth connection flow alongside manual-key entry. The manual-key persistence restriction must not be used to remove that existing flow.
+3. Support OpenRouter OAuth connections alongside browser-stored manual keys, with each flow’s credential lifecycle handled independently.
 4. Keep credentials, session ownership tokens, private runtime data, and private test artifacts out of public responses, logs intended for sharing, and repository files.
 
 ### 8.3. Publication and discovery
 
 1. New grids are private. Publish opens “Control who can see this grid” with radio choices “Keep private,” “Accessible by link,” and “Listed publicly,” plus Save and Cancel.
 2. Saving Keep private closes without publication. First publication requires confirmation, with Confirm, Cancel, and a “Don’t ask again” preference remembered in this browser only after successful confirmation. Failure to access localStorage must not block publication.
-3. The accepted confirmation text is: “This projects aims to facilitate model benchmarking and research, and we don't want valuable data to disappear. For this reason, making a published grid private is impossible.”
+3. Use this confirmation text: “This projects aims to facilitate model benchmarking and research, and we don't want valuable data to disappear. For this reason, making a published grid private is impossible.”
 4. Publication is allowed when every cell is complete or failed. Errors do not prevent publication; pending or running cells do.
 5. Publishing permanently locks generation inputs and outputs and prevents returning to private visibility. Title editing remains allowed independently.
 6. Provide an owner-visible route and control to promote an already link-accessible grid to public listing. A publicly listed grid cannot be demoted to link-only or private visibility.
@@ -292,7 +292,7 @@ Implementation explanations belong in [ARCHITECTURE.md](ARCHITECTURE.md), develo
 10. Deduplicate equivalent UI widgets and behaviors, including modal lifecycle, clipboard feedback, format icons, and tooltip setup.
 11. Derive or share API snapshot types so client/server contract drift is impossible. Avoid manually maintaining the same response shape twice.
 12. Make test servers use the real frontend-serving implementation so tests exercise the actual routing and cache behavior.
-13. Remove dead code and its obsolete tests, including old compatibility-message formatters and removed harness bookkeeping. Do not preserve legacy behavior simply for old tests.
+13. Keep code and tests focused on supported behavior, removing unused implementations and tests that serve no current purpose.
 14. Give table sizing one owner, with explicit cooperation between resizing and zooming.
 15. Consolidate output metadata/authorization lookup and filename/MIME selection, while distinguishing running previews from completed saved outputs.
 16. Group scheduler state by lifetime in plain per-grid and per-owner records instead of parallel maps with duplicated cleanup.
@@ -300,7 +300,7 @@ Implementation explanations belong in [ARCHITECTURE.md](ARCHITECTURE.md), develo
 
 ### 9.2. Persistence
 
-1. Use SQLite as the application database, with an explicit monotonically versioned schema. Do not maintain legacy conversions or historical migrations solely to support abandoned development data; a reset is acceptable when a deliberate schema change requires it.
+1. Use SQLite as the application database, with an explicit monotonically versioned schema. Support the current schema version; a development-data reset is acceptable when a deliberate schema change requires it.
 2. Store generated bodies as files, not database blobs. Store configuration once and avoid duplicating derived prompts, model settings, budget, output bodies, or call usage.
 3. Keep temporary previews and live drafts distinct from committed output files. Metadata edits must not rewrite outputs.
 4. Preserve ordinary user data, credentials, and sessions across deployments. Permission to discard development data for a deliberate incompatible refactor is not permission to reset live data during routine updates.
@@ -313,21 +313,21 @@ Implementation explanations belong in [ARCHITECTURE.md](ARCHITECTURE.md), develo
 4. Give generation state and editable metadata separate write ownership. Coordinate publication, ownership changes, and generation admission so stale whole-grid writes cannot overwrite newer state or publish a running grid.
 5. Reconnecting browsers receive current ordered snapshots, including partial output, thinking, estimates, and preview identifiers. Subscription registration and initial snapshot delivery must not leave an update gap.
 6. Lost command acknowledgements or simultaneous starts must not duplicate inference. Slow or abandoned viewers must not block generation or leak subscription capacity.
-7. Simplify transport plumbing with existing HTTP/stream utilities and remove redundant internal heartbeat machinery. Further revision or preview redesigns require a demonstrated simplification rather than extra bookkeeping.
+7. Use standard HTTP/stream utilities for transport and only the connection monitoring needed to detect disconnection. Changes to revision or preview handling must demonstrate a clear simplification.
 
 ## 10. Testing and delivery discipline
 
 ### 10.1. Test quality and execution
 
 1. Use test-driven development for meaningful behavior changes. Keep a human-readable suite that protects complex interactions, state transitions, persistence, ownership, and recovery.
-2. Remove trivial assertions, constant checks, CSS appearance tests, and tests that merely mirror implementation or preserve removed behavior. Do not add tests solely for reversible wording or styling changes.
+2. Assertions must enforce meaningful behavioral properties. Exclude trivial assertions, constant checks, CSS appearance tests, and checks that merely mirror implementation. Do not add tests solely for reversible wording or styling changes.
 3. Run tests only on staging through SSH, never in the local checkout or on production. Unless explicitly told to skip tests, run the complete unit, mock-browser, and real-provider browser suites before deployment.
 4. An explicit instruction to skip tests applies to that work: proceed to the requested deployment without testing. Production still requires an explicit deployment request.
 5. Group independent browser scenarios into suites with isolated fixture state and unused ports so they can run concurrently. Reuse generated grids for related read-only display checks while isolating mutation scenarios.
 6. Build once and reuse the tested build for deployment. Group related changes into one commit and one full suite run; use separate atomic commits for independently requested refactors or numbered scenarios.
 7. Keep real-provider tests separate but enabled by default. Exercise normal manual-key entry and a simple, inexpensive or free inference request; include structured-output streaming with an explicitly chosen capable model.
 8. Verify GitHub OAuth through its real flow rather than adding fake identity-provider success responses. Existing controlled inference fixtures remain appropriate for deterministic scheduling, error, cost, and streaming tests.
-9. Runtime tests reuse or extend controlled inference streaming. Keep the actual provider adapter/parser, database, files, engine, web process, internal API, and browser in the path; the accepted fixture mocks the upstream inference HTTP service rather than replacing the app’s generation API with canned results.
+9. Runtime tests reuse or extend controlled inference streaming. Keep the actual provider adapter/parser, database, files, engine, web process, internal API, and browser in the path; mock the upstream inference HTTP service while exercising the app’s real generation API.
 
 ### 10.2. Required runtime behavior coverage
 
@@ -344,17 +344,17 @@ Implementation explanations belong in [ARCHITECTURE.md](ARCHITECTURE.md), develo
 
 1. Commit completed repository changes before deployment or reporting completion, unless explicitly asked to leave them uncommitted. Every completed repository commit goes to staging; production deployment requires a separate explicit request.
 2. Test the intended revision on staging before production, unless testing was explicitly waived. Never run tests or verification requests against production.
-3. A soft update replaces web/UI code without cancelling or restarting inference. Use independent immutable releases and retain frontend assets needed by already-open tabs; avoid stale lazy Markdown imports and cacheable missing-asset responses.
+3. A soft update replaces web/UI code without cancelling or restarting inference. Use independent immutable releases and retain frontend assets needed by already-open tabs; include the Markdown renderer in the main bundle and make missing-asset responses uncacheable.
 4. Treat engine, shared contract, schema, or incompatible dependency changes as machinery updates. A machinery update closes admission and waits for all accepted grids and unsettled calls without a cancellation timeout; queued cells must continue draining.
 5. Keep the admission gate inside the engine. A separate status check before restart is insufficient because it races new starts. Allow cancelling maintenance and reopening admission.
 6. Do not overwrite files or dependencies under a running engine during a soft update. Recovery and preview cleanup belong to engine startup, not web startup.
 7. Use inspectable background sessions and isolated non-default service ports as specified in the user-wide AGENTS.md. Preserve runtime configuration and data, and keep host-specific scripts/configuration outside the repository.
-8. The user manages nginx and certificates. Prepare or install extra host configuration only when explicitly requested; do not infer ongoing permission from an earlier one-off configuration request.
+8. The user manages nginx and certificates. Prepare or install extra host configuration only when explicitly requested.
 
 ## 11. Documentation and collaboration
 
-1. Keep this document as the consolidated current requirements, updating replaced requirements rather than accumulating contradictory historical versions. Recover accepted numbered proposals from available conversation history and ask for clarification only when the intended requirement remains uncertain.
-2. README is an end-user guide. DEVELOPMENT contains development information, and ARCHITECTURE explains the actual implementation, responsibility boundaries, and access mechanisms.
+1. Keep this document focused exclusively on current requirements. Recover accepted numbered proposals from available conversation history and ask for clarification only when the intended requirement remains uncertain.
+2. README is a brief, readable introduction that helps users understand the product and get started. DEVELOPMENT contains development information, and ARCHITECTURE explains the actual implementation, responsibility boundaries, and access mechanisms.
 3. Documentation must describe what is implemented, with requirements distinguished from implementation claims. Do not present speculative features, unimplemented alternatives, or candidate shortcuts as supported behavior.
 4. Never commit deployment-specific server names, accounts, domains, paths, ports, operational commands, secrets, private runtime data, or unnecessary generated artifacts. Keep such operations in the user-wide instructions and private configuration.
 5. Write connected prose rather than staccato fragments. Use numbered lists rather than bullet lists in answers, with nested numbering when it helps reference individual points.
