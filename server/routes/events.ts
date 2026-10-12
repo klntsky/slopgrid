@@ -1,8 +1,7 @@
 import type { EventEmitter } from "node:events";
 import { Router } from "express";
 import type { Store } from "../store.js";
-import type { GenerationAPI } from "../generation-api.js";
-import type { Grid } from "../domain.js";
+import type { GenerationAPI, GenerationSnapshot } from "../generation-api.js";
 import type { SessionReader } from "../session.js";
 import type { GridPresenter } from "../grid-presentation.js";
 import { canViewGrid } from "../grid-policy.js";
@@ -41,7 +40,7 @@ export function createEventRoutes({
     });
     res.flushHeaders();
     let revision = -1;
-    const send = (grid: Grid) => {
+    const send = (grid: GenerationSnapshot) => {
       const current = store.session(s.id),
         stored = store.get(id);
       if (!current || !stored || !canViewGrid(stored, current)) {

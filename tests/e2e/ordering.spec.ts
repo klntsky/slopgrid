@@ -69,7 +69,9 @@ test("late HTTP and reconnected stream snapshots cannot roll back content, think
     ).toContainText("Newer thinking.");
     // Observe every DOM commit, so a transient rollback followed by recovery fails too.
     const observations = await page.evaluateHandle(() => {
-      const states: { title: string; content: string; price: string }[] = [];
+      const states: {
+        title: string; content: string; price: string; spent: string;
+      }[] = [];
       const observer = new MutationObserver(() =>
         states.push({
           title:
@@ -78,6 +80,9 @@ test("late HTTP and reconnected stream snapshots cannot roll back content, think
           content: document.querySelector("article.cell")?.textContent ?? "",
           price:
             document.querySelector(".grid-cost")?.getAttribute("aria-label") ??
+            "",
+          spent:
+            document.querySelector(".grid-spent")?.getAttribute("aria-label") ??
             "",
         }),
       );
@@ -151,6 +156,7 @@ test("late HTTP and reconnected stream snapshots cannot roll back content, think
       expect(state.content).toContain("Newer output.");
       expect(state.content).toContain("Still advancing.");
       expect(state.price).toBe("Total cost: $0.01");
+      expect(state.spent).toBe("Total spent: $0.01");
     }
     expect(f.calls).toHaveLength(1);
   } finally {

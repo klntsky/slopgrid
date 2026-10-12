@@ -58,8 +58,15 @@ export function GridHeader({
       : "Stops active requests. Work can be resumed later, unfinished responses will be lost.",
   );
   const costHint = useTooltip<HTMLSpanElement>(
-    "Completed output costs plus current estimates; excludes failed attempts and unavailable charges",
+    "Inference costs for this grid, not including failed attempts",
   );
+  const spentHint = useTooltip<HTMLSpanElement>(
+    "Inference costs for this grid, including failed attempts - how much you have actually spent on this page",
+  );
+  const spentText =
+    g.spentUsd === undefined
+      ? undefined
+      : `${estimated ? "\u2248" : ""}${totalUsd.format(g.spentUsd)}`;
   return (
     <>
       <div className="grid-heading">
@@ -124,7 +131,7 @@ export function GridHeader({
                 <span aria-hidden="true">· </span>
                 {totalCost === undefined
                   ? totalCostText
-                  : `spent ${totalCostText}`}
+                  : `cost ${totalCostText}`}
                 {inferenceRunning && (
                   <span className="cost-ellipsis" aria-hidden="true">
                     <span>.</span>
@@ -133,6 +140,17 @@ export function GridHeader({
                   </span>
                 )}
               </span>
+              {g.canEdit && spentText !== undefined && (
+                <span
+                  className="grid-spent"
+                  aria-label={`Total spent: ${spentText}`}
+                  ref={spentHint}
+                  tabIndex={0}
+                >
+                  <span aria-hidden="true">&middot; </span>
+                  {`spent ${spentText}`}
+                </span>
+              )}
             </div>
           </div>
         </div>

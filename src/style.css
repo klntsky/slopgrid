@@ -1442,7 +1442,8 @@ header {
   flex-wrap: wrap;
   gap: 0 6px;
 }
-.grid-cost {
+.grid-cost,
+.grid-spent {
   flex-shrink: 0;
   color: var(--muted);
   font-size: 13px;

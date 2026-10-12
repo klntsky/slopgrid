@@ -698,9 +698,10 @@ test("OpenRouter balance sets initial parallel capacity and Resume preserves the
   }
 });
 
-test("streaming prices grow with reasoning and output, reconcile on success, and leave the grid total on failure", async ({
+test("cost excludes failed attempts while owner spending retains them through streaming, retries and publication", async ({
   page,
   request,
+  browser,
 }) => {
   await request.post("/fixture/reset", {
     data: { costStreaming: true, holdGenerations: true },
@@ -709,6 +710,7 @@ test("streaming prices grow with reasoning and output, reconcile on success, and
     await create(page, "Markdown", "cat\ndog", "hat");
     const cells = page.locator("article.cell");
     const total = page.locator(".grid-cost");
+    const spent = page.locator(".grid-spent");
     const price = async (index: number) =>
       Number(
         (await cells.nth(index).locator(".cell-usage").innerText()).replace(
@@ -748,6 +750,7 @@ test("streaming prices grow with reasoning and output, reconcile on success, and
       );
     };
     await expectTotal("$0.00");
+    await expect(spent).toHaveAttribute("aria-label", "Total spent: \u2248$0.00");
     await release("cat");
     await expect.poll(() => price(0)).toBeGreaterThan(reasoning);
     await expectTotal("$0.01");
@@ -787,12 +790,47 @@ test("streaming prices grow with reasoning and output, reconcile on success, and
     await release("dog");
     await expect(cells.nth(1).locator(".cell-error")).toBeVisible();
     await expectTotal("$0.01", false);
+    await expect(spent).toHaveAttribute("aria-label", "Total spent: $0.03");
     await page.reload();
     await expectTotal("$0.01", false);
     await cells.nth(1).getByRole("button", { name: "Show thinking" }).click();
     await expect(thinkingView(1)).toContainText(
       "**Literal thinking** <b>not HTML</b>",
     );
+    await expect(spent).toHaveAttribute("aria-label", "Total spent: $0.03");
+    await cells.nth(1).getByRole("button", { name: "Show output" }).click();
+    await page.getByRole("button", { name: "Resume generation" }).click();
+    await expect
+      .poll(async () =>
+        (await (await request.get("/fixture/workers")).json()).held.length,
+      )
+      .toBe(1);
+    await release("dog");
+    await expectTotal("$0.02");
+    await expect(spent).toHaveAttribute("aria-label", "Total spent: \u2248$0.04");
+    await release("dog");
+    await expect.poll(() => price(1)).toBeGreaterThan(before);
+    await release("dog");
+    await expect(cells.nth(1).locator(".cell-error")).toBeVisible();
+    await expectTotal("$0.01", false);
+    await expect(spent).toHaveAttribute("aria-label", "Total spent: $0.05");
+    const history = await (await page.request.get("/api/billing")).json();
+    expect(history.costUsd).toBeCloseTo(0.059876, 6);
+    await page.getByRole("button", { name: "PUBLISH", exact: true }).click();
+    await finishPublishing(page);
+    const viewer = await browser.newContext();
+    try {
+      const publicPage = await viewer.newPage();
+      await publicPage.goto(page.url());
+      await expect(publicPage.locator(".grid-cost")).toHaveAttribute(
+        "aria-label", "Total cost: $0.01",
+      );
+      await expect(publicPage.locator(".grid-spent")).toHaveCount(0);
+    } finally {
+      await viewer.close();
+    }
+    await page.reload();
+    await expect(spent).toHaveAttribute("aria-label", "Total spent: $0.05");
   } finally {
     await request.post("/fixture/release", { data: { all: true } });
   }

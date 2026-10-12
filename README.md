@@ -21,6 +21,6 @@ You can use Slopgrid anonymously or sign in with GitHub. Signing in adds this br
 
 ## Track spending and preferences
 
-The grid price combines completed results with estimates for work in progress. **Billing** shows all recorded inference charges, including failed, cancelled, and retried calls, so its total can differ from the grid price.
+**Cost** combines successful results with estimates for work in progress. Owners also see **spent**, which includes all recorded charges for that grid, including failed and retried attempts, plus running estimates. **Billing** shows the individual inference charges.
 
 Open **Settings** to manage your OpenRouter connection and choose System, Light, or Dark appearance. Select the Slopgrid logo to return to your grids and browse public comparisons.

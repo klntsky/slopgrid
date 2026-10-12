@@ -75,7 +75,37 @@ test("publishing is permanent, link grids are unlisted, and public summaries omi
   for (const id of ["pending", "running"])
     assert.equal((await publish(id, { visibility: "public" })).status, 409);
   assert.equal((await publish("link", { visibility: "unlisted" })).status, 200);
-  assert.equal((await fetch(`${origin}/api/grids/link`)).status, 200);
+  const billed = store.billing.observe("link-cell")("direct");
+  billed.complete({ phase: "direct", finishReason: "stop" }, { costUsd: 0.125 });
+  for (const asOwner of [true, false]) {
+    const headers: HeadersInit = asOwner ? { cookie: `slopgrid=${owner}` } : {};
+    const view = await (
+      await fetch(`${origin}/api/grids/link`, { headers })
+    ).json();
+    assert.equal(Object.hasOwn(view, "spentUsd"), asOwner);
+    if (asOwner) assert.equal(view.spentUsd, 0.125);
+    const controller = new AbortController();
+    try {
+      const stream = await fetch(`${origin}/api/grids/link/events`, {
+        headers,
+        signal: controller.signal,
+      });
+      const reader = stream.body!.getReader();
+      let event = "";
+      while (!event.includes("\n\n")) {
+        const chunk = await reader.read();
+        if (chunk.done) throw new Error("Grid stream ended before its snapshot");
+        event += new TextDecoder().decode(chunk.value);
+      }
+      const snapshot = JSON.parse(
+        event.split("\n").find((line) => line.startsWith("data: "))!.slice(6),
+      );
+      assert.equal(Object.hasOwn(snapshot, "spentUsd"), asOwner);
+      if (asOwner) assert.equal(snapshot.spentUsd, 0.125);
+    } finally {
+      controller.abort();
+    }
+  }
   assert.deepEqual(await publicGrids(), []);
   assert.equal((await publish("listed", { visibility: "public" })).status, 200);
   assert.equal((await fetch(`${origin}/api/grids/public`)).status, 200);

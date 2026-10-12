@@ -40,7 +40,7 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 
 1. Tooltips have consistent behavior and a pitch-black background with white text in both themes.
 2. Use hints only to explain a non-obvious action, icon, or value, consistently across the frontend.
-3. Explain Model default as "Uses the model's default thinking settings." Explain the budget as "Used to calculate each output's token limit." Give total cost a hint explaining which costs it includes.
+3. Explain Model default as "Uses the model's default thinking settings." Explain the budget as "Used to calculate each output's token limit." Use the cost and spent hints specified in section 7.1.
 4. Give token-arrow indicators "Input tokens" and "Output tokens" hints. Supported compatibility checkmarks do not get tooltips.
 5. Budget and parallel-worker hints use the same field-level interaction.
 6. Use the current pause hint and parallel-worker hint specified in sections 3.5 and 6.3.
@@ -119,8 +119,8 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 4. Title text is dark in light mode and white in dark mode. Prompt text uses the same accent color as "grid" in the wordmark.
 5. Collapse long prompts, with a hover element over the collapsed prompt showing the complete text.
 6. Place an icon-only copy button directly after the inline prompt text; copying applies to the prompt only.
-7. Show the author near the title and price near the author, separating "by Anonymous" and "spent $0.12" with a centered dot, or using the linked GitHub identity equivalent.
-8. Truncate the total grid price to two decimal places in the UI. Show an animated ellipsis while inference runs, without wasting navbar space.
+7. Show the author near the title, followed by "cost $0.NN" and, for the grid owner only, "spent $0.MM", separated by centered dots.
+8. Truncate both grid totals to two decimal places in the UI. Show an animated ellipsis while inference runs, without wasting navbar space.
 
 ### 4.3. Progress and actions
 
@@ -207,9 +207,10 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 
 1. Show cost information per generation. Display input tokens with an upward arrow and output tokens with a downward arrow, using `$` without a redundant USD suffix.
 2. Estimate each text cell's price while its response streams, accounting for input, visible output, and available thinking. Replace the estimate with the reported price when the call completes.
-3. Compute the grid total independently as successful visible outputs' final prices plus currently running estimates. Do not include failed attempts, cancelled work, or attempts superseded by retries.
-4. Remove an in-progress estimate if that attempt fails or is discarded. A charge may remain in billing even though it no longer contributes to the grid total.
-5. Keep the grid total's two-decimal UI truncation separate from stored billing precision.
+3. The cost total is the sum of successful outputs currently shown on the grid plus running inference estimates.
+4. The spent total is the sum of all reported billing charges for this grid plus running inference estimates, including failed, cancelled, and retried calls. Replace each running estimate with its reported charge without counting the attempt twice; discard its estimate when work stops. Show spent only to the grid owner and omit it from responses to other viewers.
+5. Keep both totals' two-decimal UI truncation separate from stored billing precision.
+6. The cost tooltip is "Inference costs for this grid, not including failed attempts". The spent tooltip is "Inference costs for this grid, including failed attempts - how much you have actually spent on this page".
 
 ### 7.2. Billing history
 

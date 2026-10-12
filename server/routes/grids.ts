@@ -210,7 +210,7 @@ export function createGridRoutes({
           sessionId: s.id,
           manualKey: suppliedKey,
         })
-      : g;
+      : current;
     res.json(snapshot(resumed, s));
   });
   app.post("/api/grids/:id/pause", async (req, res) => {

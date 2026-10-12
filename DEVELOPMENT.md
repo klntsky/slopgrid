@@ -59,6 +59,8 @@ Touch gestures retain checks that zooming and scrolling respond to interaction, 
 
 The runtime behavior tests share `tests/runtime-fixture.ts`: a controlled OpenRouter HTTP service, a real inference child, a replaceable web child, and a temporary SQLite database and output directory. The actual provider SDK, stream parser, billing recorder, and Unix-socket API remain in use. Tests explicitly release streaming chunks or failures instead of relying on provider response timing. Sessions are seeded directly; authentication flows have separate coverage.
 
+Grid-price coverage distinguishes visible successful-output cost from owner-only lifetime spending. Billing tests cover reported usage arriving before cell settlement, reported zero charges, cancellation, retries, and isolation between grids. Browser coverage follows both totals through streaming, failure, retry, reload, and publication; HTTP and SSE coverage ensures non-owners never receive `spentUsd`. Reordered-snapshot coverage checks both displayed totals.
+
 ### Required runtime coverage
 
 1. **Web replacement during generation:** keep a real browser open while Markdown, thinking, and website assets stream; replace the web process and verify reconnection, continued previews, correct final content and prices, and no extra provider calls. See `tests/e2e/runtime.spec.ts`.

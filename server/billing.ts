@@ -98,6 +98,33 @@ export class Billing {
       ? { usage: (JSON.parse(row.data) as CallDetails).usage }
       : undefined;
   }
+  gridSpent(gridId: string, cells: readonly Cell[]): number {
+    const rows = this.db
+      .prepare(
+        `SELECT c.id, COALESCE(SUM(json_extract(b.data,'$.usage.costUsd')),0) costUsd,
+        (SELECT json_extract(latest.data,'$.usage.costUsd') FROM inference_calls latest
+          WHERE latest.cell_id=c.id ORDER BY latest.started_at DESC,latest.rowid DESC LIMIT 1) latestCostUsd
+        FROM cells c LEFT JOIN inference_calls b ON b.cell_id=c.id
+        WHERE c.grid_id=? GROUP BY c.id`,
+      )
+      .all(gridId) as {
+      id: string;
+      costUsd: number;
+      latestCostUsd: number | null;
+    }[];
+    const estimates = new Map(
+      cells
+        .filter((cell) => cell.status === "running")
+        .map((cell) => [cell.id, cell.estimatedCostUsd ?? 0]),
+    );
+    return rows.reduce(
+      (sum, row) =>
+        sum + row.costUsd +
+        // A reported charge can arrive before the running cell settles.
+        (row.latestCostUsd === null ? estimates.get(row.id) ?? 0 : 0),
+      0,
+    );
+  }
   page(owner: string, offset: number, userId?: string): BillingPage {
     const join = `FROM inference_calls b JOIN cells c ON c.id=b.cell_id
       JOIN grids g ON g.id=c.grid_id WHERE ${userId ? "json_extract(g.data,'$.ownerUserId')=?" : "json_extract(g.data,'$.owner')=? AND json_extract(g.data,'$.ownerUserId') IS NULL"}`;

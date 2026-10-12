@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { Grid } from "./domain.js";
 
 // Version this contract when a web release cannot talk to the running engine.
-export const generationProtocol = 1;
+export const generationProtocol = 2;
 const id = z.string().min(1).max(200);
 export const startGridRequest = z.strictObject({
   gridId: id,
@@ -48,17 +48,19 @@ export const generationErrorStatus: Record<GenerationError["code"], number> = {
   UNAVAILABLE: 503,
 };
 
+export type GenerationSnapshot = Grid & { spentUsd: number };
+
 /** Private, local API. It never accepts mutable grid objects or arbitrary store operations. */
 export type GenerationAPI = {
-  startGrid(request: z.infer<typeof startGridRequest>): Promise<Grid>;
-  pauseGrid(request: z.infer<typeof pauseGridRequest>): Promise<Grid>;
-  getGrid(gridId: string): Promise<Grid>;
+  startGrid(request: z.infer<typeof startGridRequest>): Promise<GenerationSnapshot>;
+  pauseGrid(request: z.infer<typeof pauseGridRequest>): Promise<GenerationSnapshot>;
+  getGrid(gridId: string): Promise<GenerationSnapshot>;
   previewPath(
     request: z.infer<typeof previewRequest>,
   ): Promise<string | undefined>;
   subscribeGrid(
     gridId: string,
-    snapshot: (grid: Grid) => void,
+    snapshot: (grid: GenerationSnapshot) => void,
     disconnected: () => void,
   ): () => void;
   status(): Promise<GenerationStatus>;

@@ -1,6 +1,7 @@
 import { ownsGrid } from "./grid-policy.js";
 import type { Grid, Identity } from "./domain.js";
 import type { Store, Session } from "./store.js";
+import type { GenerationSnapshot } from "./generation-api.js";
 
 export function presentIdentity(user?: Identity): Identity | null {
   return user
@@ -19,12 +20,14 @@ export function gridAuthor(grid: Grid, store: Store): Identity | null {
       );
 }
 export function createGridPresenter(store: Store, origin: URL) {
-  const snapshot = (g: Grid, s: Session) => {
-    const { owner: _owner, ownerUserId: _ownerUserId, ...grid } = g;
+  const snapshot = (g: GenerationSnapshot, s: Session) => {
+    const { owner: _owner, ownerUserId: _ownerUserId, spentUsd, ...grid } = g;
+    const canEdit = ownsGrid(g, s);
     return {
       ...grid,
       author: gridAuthor(g, store),
-      canEdit: ownsGrid(g, s),
+      canEdit,
+      spentUsd: canEdit ? spentUsd : undefined,
       cells: g.cells.map((c) => ({
         id: c.id,
         row: c.row,
