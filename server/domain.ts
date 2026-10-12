@@ -15,7 +15,6 @@ const axis = z.object({
   values: z
     .array(z.string().trim().min(1).max(500))
     .min(1)
-    .max(8)
     .refine((v) => new Set(v).size === v.length, "Values must be distinct"),
 });
 export const gridSchema = z
@@ -27,7 +26,7 @@ export const gridSchema = z
     model: z.string().trim().max(200),
     effort: z.enum(efforts),
     budgetUsd: z.number().finite().positive(),
-    parallelWorkers: z.number().int().min(1).max(64).optional(),
+    parallelWorkers: z.number().int().min(1).optional(),
   })
   .superRefine((g, c) => {
     const issue = (message: string) => c.addIssue({ code: "custom", message });
@@ -35,8 +34,6 @@ export const gridSchema = z
       issue("Select a model.");
     if (g.rows.kind === g.columns.kind && g.rows.kind !== "variable")
       issue("Choose different row and column dimensions");
-    if (g.rows.values.length * g.columns.values.length > 64)
-      issue("Use at most 64 cells");
     if (
       g.format === "image" &&
       [g.rows.kind, g.columns.kind].includes("effort")

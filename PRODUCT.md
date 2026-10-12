@@ -54,6 +54,7 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 3. Preserve the in-progress setup through provider authorization and restore the applicable setup when editing or forking.
 4. Put an icon-only swap button between the row and column selectors. It has no border and swaps axis types, selected values, and corresponding prompt-variable references together.
 5. Checkbox lists start unselected. Every generation must use an explicitly selected model, including when model is a fixed setting rather than an axis.
+6. Grid creation has no fixed maximum number of axis values, cells, or requested parallel workers. Actual concurrency follows the shared worker allocation policy.
 
 ### 3.2. Model and thinking-effort selection
 

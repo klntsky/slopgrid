@@ -38,7 +38,7 @@ test("model and thinking axes determine each request independently", () => {
   );
 });
 
-test("rejects ambiguous axes, unresolved variables, image reasoning, and oversized grids", () => {
+test("rejects ambiguous axes, unresolved variables, and image reasoning", () => {
   const base = {
     format: "markdown",
     prompt: "Hello",
@@ -49,24 +49,13 @@ test("rejects ambiguous axes, unresolved variables, image reasoning, and oversiz
     budgetUsd: 5,
   };
   for (const invalid of [
-    ...[0, -1, 1.5, 65].map((parallelWorkers) => ({
+    ...[0, -1, 1.5].map((parallelWorkers) => ({
       ...base,
       parallelWorkers,
     })),
     { ...base, columns: base.rows },
     { ...base, prompt: "$ROW" },
     { ...base, format: "image" },
-    {
-      ...base,
-      rows: {
-        kind: "variable",
-        values: Array.from({ length: 9 }, (_, i) => String(i)),
-      },
-      columns: {
-        kind: "variable",
-        values: Array.from({ length: 9 }, (_, i) => String(i)),
-      },
-    },
   ])
     assert.equal(gridSchema.safeParse(invalid).success, false);
 });
@@ -107,5 +96,28 @@ test("generation requires an explicit fixed model or selected model axis", () =>
       columns: { kind: "model", values: ["fixture/text"] },
     }).success,
     true,
+  );
+});
+
+test("large grids preserve every axis combination and requested parallelism", () => {
+  const values = Array.from({ length: 9 }, (_, i) => String(i));
+  const input = gridSchema.parse({
+    format: "markdown",
+    prompt: "$ROW/$COLUMN",
+    rows: { kind: "variable", values },
+    columns: { kind: "variable", values },
+    model: "fixture/text",
+    effort: "none",
+    budgetUsd: 5,
+    parallelWorkers: 81,
+  });
+  const cells = expandGrid(input);
+  assert.equal(input.parallelWorkers, cells.length);
+  assert.equal(new Set(cells.map((cell) => cell.prompt)).size, 81);
+  assert.deepEqual(
+    cells
+      .filter((cell) => cell.row === 8)
+      .map((cell) => [cell.column, cell.prompt]),
+    values.map((value, column) => [column, `8/${value}`]),
   );
 });
