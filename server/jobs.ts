@@ -290,6 +290,9 @@ export class Jobs {
         },
         controller.signal,
         this.store.billing.observe(cell.id),
+        this.store.references.dataURLs(
+          cell.imageSettings?.input_references ?? [],
+        ),
       );
       if (!current()) return;
       this.store.files.write(cell.id, result.files);

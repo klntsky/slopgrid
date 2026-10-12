@@ -1,3 +1,7 @@
+import {
+  imageCapabilitiesSchema,
+  type ImageCapabilities,
+} from "./image-settings.js";
 import { instruction } from "./output-format.js";
 import { z } from "zod";
 import { generationBudget } from "./generation-budget.js";
@@ -194,6 +198,36 @@ export class Provider {
     this.catalog = { at: Date.now(), models };
     return models;
   }
+  private imageEndpoints = new Map<
+    string,
+    { at: number; parameters: ImageCapabilities[] }
+  >();
+  async imageCapabilities(model: string): Promise<ImageCapabilities[]> {
+    const known = (await this.models()).find(
+      (candidate) => candidate.id === model && candidate.image,
+    );
+    if (!known) throw new Error("Unknown image model");
+    const id = known.aliasTarget ?? model;
+    const cached = this.imageEndpoints.get(id);
+    if (cached && Date.now() - cached.at < 300000) return cached.parameters;
+    const path = id.split("/").map(encodeURIComponent).join("/");
+    const response = await upstreamFetch(
+      `${this.baseURL}/images/models/${path}/endpoints`,
+    );
+    if (!response.ok) throw new Error("Could not load image capabilities");
+    const result = z
+      .object({
+        endpoints: z.array(
+          z.object({ supported_parameters: imageCapabilitiesSchema }),
+        ),
+      })
+      .parse(await response.json());
+    const parameters = result.endpoints.map(
+      (endpoint) => endpoint.supported_parameters,
+    );
+    this.imageEndpoints.set(id, { at: Date.now(), parameters });
+    return parameters;
+  }
   async generate(
     key: string,
     format: GridInput["format"],
@@ -201,6 +235,7 @@ export class Provider {
     onChunk: (progress: InferenceProgress) => void,
     signal?: AbortSignal,
     observe?: CallObserver,
+    references?: string[],
   ): Promise<{
     files: Record<string, string | Uint8Array>;
     mediaType?: string;
@@ -231,6 +266,7 @@ export class Provider {
           )
         : undefined,
       structured,
+      references,
     );
   }
 }

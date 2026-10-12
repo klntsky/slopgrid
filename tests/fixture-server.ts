@@ -10,6 +10,7 @@ import { createApp } from "../server/app.js";
 import { Provider } from "../server/provider.js";
 let balanceUsd = 100;
 let tokenLimits: { model: string; max_tokens: number }[] = [];
+let imageRequests: Record<string, unknown>[] = [];
 let streamBilling = false;
 let unsafe = false;
 let markdownOutput: string | undefined;
@@ -118,6 +119,22 @@ upstream.get("/api/v1/images/models", (_req, res) =>
     ],
   }),
 );
+upstream.get("/api/v1/images/models/fixture/image/endpoints", (_req, res) =>
+  res.json({
+    endpoints: [
+      {
+        supported_parameters: {
+          resolution: { type: "enum", values: ["1K", "2K"] },
+          size: { type: "enum", values: ["1536x1024"] },
+          aspect_ratio: { type: "enum", values: ["1:1", "3:2"] },
+          quality: { type: "enum", values: ["auto", "high"] },
+          background: { type: "enum", values: ["opaque"] },
+          input_references: { type: "range", min: 0, max: 2 },
+        },
+      },
+    ],
+  }),
+);
 async function waitForRelease(prompt: string, res: express.Response) {
   if (holdGenerations) {
     await new Promise<void>((resolve) => {
@@ -163,6 +180,7 @@ function transientFailure(prompt: string, res: express.Response): boolean {
   return true;
 }
 upstream.post("/api/v1/images", async (req, res) => {
+  imageRequests.push(req.body);
   calls.push(req.body.prompt);
   await waitForRelease(req.body.prompt, res);
   if (res.destroyed) return;
@@ -388,6 +406,7 @@ app.post("/fixture/reset", (req, res) => {
   streamBilling = !!req.body.streamBilling;
   calls = [];
   tokenLimits = [];
+  imageRequests = [];
   svgProbes = [];
   res.json({ ok: true });
 });
@@ -416,6 +435,7 @@ app.post("/fixture/credits", (req, res) => {
   res.json({ ok: true });
 });
 app.get("/fixture/token-limits", (_req, res) => res.json(tokenLimits));
+app.get("/fixture/image-requests", (_req, res) => res.json(imageRequests));
 app.get("/fixture/calls", (_req, res) => res.json(calls));
 app.get("/svg-probe", (req, res) => {
   svgProbes.push(req.originalUrl);

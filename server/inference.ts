@@ -70,6 +70,7 @@ export async function generateInference(
   observe?: CallObserver,
   budget?: TextBudget,
   structured = false,
+  references: string[] = [],
 ): Promise<{
   files: Record<string, string | Uint8Array>;
   mediaType?: string;
@@ -127,6 +128,17 @@ export async function generateInference(
       const result = await generateImage({
         model: provider.imageModel(cell.model),
         prompt: cell.prompt,
+        providerOptions: {
+          openrouter: {
+            ...cell.imageSettings,
+            input_references: references.length
+              ? references.map((url) => ({
+                  type: "image_url",
+                  image_url: { url },
+                }))
+              : undefined,
+          },
+        },
         maxRetries: 0,
         abortSignal: signal,
       });

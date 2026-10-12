@@ -1,4 +1,11 @@
 import { z } from "zod";
+import {
+  imageKinds,
+  imageChoices,
+  validImageSize,
+  referenceImageSchema,
+  type ImageSettings,
+} from "./image-settings.js";
 export const efforts = [
   "default",
   "none",
@@ -9,7 +16,7 @@ export const efforts = [
   "xhigh",
   "max",
 ] as const;
-export const kinds = ["model", "effort", "variable"] as const;
+export const kinds = ["model", "effort", "variable", ...imageKinds] as const;
 const axis = z.object({
   kind: z.enum(kinds),
   values: z
@@ -23,6 +30,9 @@ export const gridSchema = z
     prompt: z.string().trim().min(1).max(20000),
     rows: axis,
     columns: axis,
+    referenceGroups: z
+      .record(z.string(), z.array(referenceImageSchema))
+      .optional(),
     model: z.string().trim().max(200),
     effort: z.enum(efforts),
     budgetUsd: z.number().finite().positive(),
@@ -38,7 +48,7 @@ export const gridSchema = z
       g.format === "image" &&
       [g.rows.kind, g.columns.kind].includes("effort")
     )
-      issue("Images support model and prompt variable dimensions");
+      issue("Images do not support thinking effort dimensions");
     for (const a of [g.rows, g.columns]) {
       if (
         a.kind === "effort" &&
@@ -46,12 +56,49 @@ export const gridSchema = z
       )
         issue("Unknown thinking effort");
     }
+    for (const axis of [g.rows, g.columns]) {
+      if (imageKinds.some((kind) => kind === axis.kind) && g.format !== "image")
+        issue("Image settings require Image output");
+      if (
+        axis.kind === "size" &&
+        axis.values.some((value) => !validImageSize(value))
+      )
+        issue("Use a resolution or a size such as 1536x1024");
+      if (
+        (axis.kind === "aspect_ratio" ||
+          axis.kind === "quality" ||
+          axis.kind === "background") &&
+        axis.values.some(
+          (value) =>
+            !imageChoices[axis.kind as keyof typeof imageChoices].includes(
+              value,
+            ),
+        )
+      )
+        issue("Unknown image setting");
+      if (
+        axis.kind === "input_references" &&
+        axis.values.some((value) => !g.referenceGroups?.[value]?.length)
+      )
+        issue("Add images to every reference group");
+    }
     const variableIssue = unusedVariableIssue(g);
     if (variableIssue) issue(variableIssue);
     if (g.prompt.includes("$ROW") && g.rows.kind !== "variable")
       issue("Choose prompt variables for rows to use $ROW");
     if (g.prompt.includes("$COLUMN") && g.columns.kind !== "variable")
       issue("Choose prompt variables for columns to use $COLUMN");
+  })
+  .transform((g) => {
+    const groups = [g.rows, g.columns]
+      .filter((axis) => axis.kind === "input_references")
+      .flatMap((axis) => axis.values);
+    if (groups.length)
+      g.referenceGroups = Object.fromEntries(
+        groups.map((name) => [name, g.referenceGroups![name]]),
+      );
+    else delete g.referenceGroups;
+    return g;
   });
 export type GridInput = z.infer<typeof gridSchema>;
 export function unusedVariableIssue(
@@ -83,6 +130,7 @@ export type Cell = {
   effort: string;
   prompt: string;
   budgetUsd: number;
+  imageSettings?: ImageSettings;
   status: "pending" | "running" | "complete" | "error";
   error?: string;
   errorCode?: string | number;
@@ -132,11 +180,16 @@ export function expandGrid(input: GridInput): Omit<Cell, "id">[] {
         model: input.model,
         effort: input.effort,
       };
+      const imageSettings: ImageSettings = {};
       for (const [a, v] of [
         [input.rows, r],
         [input.columns, c],
       ] as const)
-        if (a.kind !== "variable") selections[a.kind] = v;
+        if (a.kind === "model" || a.kind === "effort") selections[a.kind] = v;
+        else if (a.kind === "input_references")
+          imageSettings.input_references =
+            input.referenceGroups?.[v]?.map((image) => image.id) ?? [];
+        else if (a.kind !== "variable") imageSettings[a.kind] = v;
       return {
         row,
         column,
@@ -147,6 +200,7 @@ export function expandGrid(input: GridInput): Omit<Cell, "id">[] {
           .replaceAll("$ROW", () => r)
           .replaceAll("$COLUMN", () => c),
         budgetUsd: input.budgetUsd,
+        ...(input.format === "image" ? { imageSettings } : {}),
         status: "pending" as const,
       };
     }),

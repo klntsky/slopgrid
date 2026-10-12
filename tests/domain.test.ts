@@ -121,3 +121,41 @@ test("large grids preserve every axis combination and requested parallelism", ()
     values.map((value, column) => [column, `8/${value}`]),
   );
 });
+
+test("image axes expand settings and reference groups per cell without substituting them into the prompt", () => {
+  const reference = { id: "a".repeat(48), name: "reference.png" };
+  const input = gridSchema.parse({
+    format: "image",
+    prompt: "A landscape",
+    model: "fixture/image",
+    effort: "default",
+    budgetUsd: 5,
+    rows: { kind: "size", values: ["2K", "1536x1024"] },
+    columns: { kind: "input_references", values: ["Single", "Pair"] },
+    referenceGroups: {
+      Single: [reference],
+      Pair: [reference, { id: "b".repeat(48), name: "second.png" }],
+      Unused: [reference],
+    },
+  });
+  const cells = expandGrid(input);
+  assert.deepEqual(
+    cells.map((cell) => cell.imageSettings),
+    [
+      { size: "2K", input_references: [reference.id] },
+      { size: "2K", input_references: [reference.id, "b".repeat(48)] },
+      { size: "1536x1024", input_references: [reference.id] },
+      { size: "1536x1024", input_references: [reference.id, "b".repeat(48)] },
+    ],
+  );
+  assert.equal(cells[3].prompt, "A landscape");
+  assert.equal(input.referenceGroups?.Unused, undefined);
+  assert.equal(
+    gridSchema.safeParse({ ...input, format: "markdown" }).success,
+    false,
+  );
+  assert.equal(
+    gridSchema.safeParse({ ...input, referenceGroups: {} }).success,
+    false,
+  );
+});

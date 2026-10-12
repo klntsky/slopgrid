@@ -1,12 +1,14 @@
 import type Database from "better-sqlite3";
 
-const schemaVersion = 8;
+const schemaVersion = 9;
 export function initializeDatabase(db: Database.Database) {
   const version = db.pragma("user_version", { simple: true });
   if (version === schemaVersion) return;
-  if (version !== 0) throw new Error("Unsupported database version");
+  if (version !== 0 && version !== 8)
+    throw new Error("Unsupported database version");
   db.transaction(() => {
-    db.exec(`
+    if (version === 0)
+      db.exec(`
       CREATE TABLE grids (id TEXT PRIMARY KEY, data TEXT NOT NULL) STRICT;
       CREATE TABLE cells (
         id TEXT PRIMARY KEY,
@@ -32,6 +34,10 @@ export function initializeDatabase(db: Database.Database) {
         PRIMARY KEY (provider, subject)
       ) STRICT;
     `);
+    db.exec(`CREATE TABLE reference_images (
+      id TEXT PRIMARY KEY, owner TEXT NOT NULL, owner_user_id TEXT,
+      name TEXT NOT NULL, media_type TEXT NOT NULL
+    ) STRICT;`);
     db.pragma(`user_version = ${schemaVersion}`);
   }).immediate();
 }

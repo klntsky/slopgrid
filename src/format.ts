@@ -22,6 +22,11 @@ export const dimensionNames = {
   model: "Model",
   effort: "Thinking effort",
   variable: "Prompt variable",
+  size: "Size",
+  aspect_ratio: "Aspect ratio",
+  quality: "Quality",
+  background: "Background",
+  input_references: "Input references",
 };
 export function cellError(cell: ViewGrid["cells"][number]) {
   return cell.errorCode === undefined

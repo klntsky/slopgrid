@@ -1,3 +1,11 @@
+import {
+  imageKinds,
+  imageChoices,
+  validImageSize,
+  type ReferenceGroups as Groups,
+} from "../../server/image-settings";
+import { ReferenceGroups } from "./reference-groups";
+import { ErrorMessage } from "../components/error-message";
 import { useState, useRef, useEffect } from "react";
 import { Search, X } from "lucide-react";
 import { efforts, type GridInput } from "../../server/domain";
@@ -15,15 +23,21 @@ export function AxisEditor({
   format,
   models,
   onChange,
+  referenceGroups = {},
+  onUploading,
 }: {
   label: "Rows" | "Columns";
   axis: GridInput["rows"];
   format: GridInput["format"];
   models: Model[];
-  onChange: (axis: GridInput["rows"]) => void;
+  onChange: (axis: GridInput["rows"], groups?: Groups) => void;
+  referenceGroups?: Groups;
+  onUploading: (busy: boolean) => void;
 }) {
   const defaultFilter = format === "image" ? "" : "latest";
   const [filter, setFilter] = useState(defaultFilter);
+  const [customSize, setCustomSize] = useState(""),
+    [sizeError, setSizeError] = useState("");
   const filterInput = useRef<HTMLInputElement>(null);
   const rangeAnchor = useRef<string | undefined>(undefined);
   useEffect(() => {
@@ -32,12 +46,19 @@ export function AxisEditor({
   const defaultHint = useTooltip<HTMLLabelElement>(modelDefaultHint);
   const kinds =
     format === "image"
-      ? (["model", "variable"] as const)
+      ? (["model", "variable", ...imageKinds] as const)
       : (["model", "effort", "variable"] as const);
   const choices =
     axis.kind === "model"
       ? models.map((m) => ({ id: m.id, name: m.name }))
-      : efforts.map((e) => ({ id: e, name: effortLabel(e) }));
+      : axis.kind === "effort"
+        ? efforts.map((e) => ({ id: e, name: effortLabel(e) }))
+        : [
+            ...new Set([
+              ...(imageChoices[axis.kind as keyof typeof imageChoices] ?? []),
+              ...axis.values,
+            ]),
+          ].map((value) => ({ id: value, name: value }));
   const visibleChoices = choices.filter(
     (c) =>
       axis.kind !== "model" ||
@@ -65,7 +86,14 @@ export function AxisEditor({
           ))}
         </select>
       </label>
-      {axis.kind === "variable" ? (
+      {axis.kind === "input_references" ? (
+        <ReferenceGroups
+          values={axis.values}
+          groups={referenceGroups}
+          onBusy={onUploading}
+          onChange={(values, groups) => onChange({ ...axis, values }, groups)}
+        />
+      ) : axis.kind === "variable" ? (
         <label>
           <textarea
             aria-label={label === "Rows" ? "Row values" : "Column values"}
@@ -158,6 +186,41 @@ export function AxisEditor({
               </label>
             ))}
           </div>
+          {axis.kind === "size" && (
+            <div className="custom-image-size">
+              <input
+                aria-label={`Custom ${label.toLowerCase()} size`}
+                placeholder="1536x1024"
+                value={customSize}
+                onChange={(event) => {
+                  setCustomSize(event.target.value);
+                  setSizeError("");
+                }}
+              />
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => {
+                  const size = customSize.trim();
+                  if (!validImageSize(size)) {
+                    setSizeError(
+                      "Use a resolution or a size such as 1536x1024.",
+                    );
+                    return;
+                  }
+                  onChange({
+                    ...axis,
+                    values: [...new Set([...axis.values, size])],
+                  });
+                  setCustomSize("");
+                  setSizeError("");
+                }}
+              >
+                Add size
+              </button>
+              <ErrorMessage error={sizeError} />
+            </div>
+          )}
           {axis.kind === "model" && axis.values.length > 0 && (
             <ul
               className="selected-models"

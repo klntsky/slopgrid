@@ -132,6 +132,14 @@ export function createGridRoutes({
               : "Could not load OpenRouter models. Try again.",
         });
     }
+    if (
+      Object.values(input.referenceGroups ?? {})
+        .flat()
+        .some((image) => !store.references.allowed(image.id, s))
+    )
+      return res
+        .status(400)
+        .json({ error: "A reference image is unavailable." });
     if (!(await allowInference(req, res, s, input.parallelWorkers))) return;
     const cells = expandGrid(input).map((c) => ({ ...c, id: token() }));
     if (!rate(`create:${s.id}`, 10) || !rate(`create-ip:${req.ip}`, 30))

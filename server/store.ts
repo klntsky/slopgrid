@@ -1,3 +1,4 @@
+import { createImageReferences } from "./image-references.js";
 import type { OAuthAttempt } from "./oauth.js";
 import { publicationError } from "./grid-policy.js";
 import { Billing } from "./billing.js";
@@ -28,6 +29,7 @@ export class Store {
   db: Database.Database;
   files: OutputFiles;
   billing: Billing;
+  references: ReturnType<typeof createImageReferences>;
   constructor(
     path: string,
     private secret: Buffer,
@@ -46,6 +48,7 @@ export class Store {
       this.files = new OutputFiles(
         resolve(outputsPath ?? join(dirname(path), "outputs")),
       );
+      this.references = createImageReferences(this.db, this.files);
     } catch (error) {
       this.db.close();
       throw error;
@@ -261,6 +264,11 @@ export class Store {
     })();
   }
   claim(anonymousId: string, userId: string) {
+    this.db
+      .prepare(
+        "UPDATE reference_images SET owner_user_id=? WHERE owner=? AND owner_user_id IS NULL",
+      )
+      .run(userId, anonymousId);
     this.db
       .prepare(
         `UPDATE grids SET data=json_set(data, '$.ownerUserId', ?, '$.revision', COALESCE(json_extract(data,'$.revision'),0)+1)

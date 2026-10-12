@@ -5,7 +5,7 @@ Slopgrid lets you compare AI-generated outputs side by side. Build a grid of mod
 ## Create your first grid
 
 1. Open **NEW GRID** from the grid list and choose an output type.
-2. Choose what the rows and columns represent, then select the models, thinking efforts, or prompt values to compare.
+2. Choose what the rows and columns represent, then select the models, thinking efforts, prompt values, or image settings to compare. Image grids can also compare groups of reference images; files stay in your browser until you select Generate.
 3. Enter your prompt. If an axis uses prompt variables, include `$ROW` or `$COLUMN` where its values should appear.
 4. Connect OpenRouter or enter your own API key. For text outputs, set **Budget limit per cell** (default $5), adjust the requested parallel workers if needed, and select **Generate**.
 
@@ -15,7 +15,7 @@ Pause stops unfinished work; Resume starts those cells again while keeping compl
 
 ## Keep and share your results
 
-Grids start private. Once all cells have finished, including any failures, use **Publish** to make a grid accessible by link or list it publicly. Publication is permanent: you can still rename the grid, but its prompt and outputs become fixed and it cannot return to private visibility. Use **Fork** to create a new comparison from a published grid's setup.
+Grids start private. Once all cells have finished, including any failures, use **Publish** to make a grid accessible by link or list it publicly. Publication is permanent: you can still rename the grid, but its prompt, selected reference images, and outputs become fixed and it cannot return to private visibility. Use **Fork** to create a new comparison from a published grid's setup.
 
 You can use Slopgrid anonymously or sign in with GitHub. Signing in adds this browser's anonymous grids to your account so you can access them and their billing history from other browsers. Each browser needs its own OpenRouter connection; manually entered API keys stay in that browser.
 

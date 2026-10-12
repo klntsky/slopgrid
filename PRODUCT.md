@@ -9,7 +9,7 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 ### 1.1. Benchmarking model outputs
 
 1. Slopgrid lets people submit a prompt and compare generated outputs in a two-dimensional grid whose row and column meanings they choose.
-2. Support exactly three axis types: models, thinking effort, and prompt variables.
+2. Support model and prompt-variable axes for every output type, thinking-effort axes for text outputs, and size, aspect ratio, quality, background, and input-reference axes for images.
 3. Offer four output types in this order: Markdown, Image, SVG, and Static website. Image generation uses image-capable models; static websites may contain multiple files but no server-side code.
 4. Generate outputs on the server, stream progress to the browser, retain completed results, and let owners publish their grids afterward.
 5. A cell attempt makes one inference call.
@@ -75,8 +75,8 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 
 ### 3.4. Compatibility presentation
 
-1. Show a compact thinking-effort compatibility table only when at least one selected model/effort combination is known to be unsupported.
-2. Its rows and columns match the selected grid dimensions and orientation, including prompt-variable axes and fixed model or effort settings.
+1. Show a compact compatibility table for thinking efforts or image settings only when at least one selected combination is known to be unsupported.
+2. Its rows and columns match the selected grid dimensions and orientation, including prompt-variable axes and fixed model or effort settings. Image compatibility checks the complete settings for each cell against individual provider endpoints, including reference-group counts.
 3. Use SVG checkmarks for supported combinations and yellow warning icons for unsupported combinations. Unknown support must not be presented as confirmed support.
 4. Do not show a tooltip on a supported checkmark. Explanatory hints may identify unsupported or unknown combinations.
 5. Compatibility warnings are advisory and must not block generation. Send the selected settings and show an upstream rejection as a cell error if the provider rejects them.
@@ -98,6 +98,14 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 3. Show the connection-checking state while it is pending. On a failed check, offer retry without falsely asserting that the user is disconnected or their credentials are invalid.
 4. Offer both manual API-key entry and OpenRouter OAuth.
 5. Use this Settings note: "More providers coming in the future. For now, use bring-your-own-key feature on OpenRouter to get inference without paying OpenRouter's markup".
+
+### 3.7. Image-generation dimensions
+
+1. Either image axis can compare Size, Aspect ratio, Quality, Background, or Input references, alongside models and prompt variables. Keep the selected model explicit when neither axis contains models.
+2. Size offers resolution presets and an Add size control for custom pixel dimensions such as `1536x1024`. Aspect ratio, quality, and background provide selectable values; capability warnings do not remove those choices.
+3. Each Input references axis value is a group of user-selected image files sent together to each corresponding cell. Allow adding groups, adding files to a group, and removing individual files or groups, with image previews.
+4. Keep newly selected files in the browser until Generate is clicked. Retain the local selection across reloads and provider authorization, and start uploading only on submission. Upload files separately and reuse stored references when editing or forking saved grids.
+5. Preserve image settings and selected reference groups with the grid. Settings affect inference parameters without being inserted into the prompt. A private reference is accessible to its owner or through an owned grid that uses it; publishing a grid shares only its selected references with viewers and forks.
 
 ## 4. Grid layout and metadata
 

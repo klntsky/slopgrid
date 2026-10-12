@@ -1628,3 +1628,63 @@ header {
     flex-basis: 100%;
   }
 }
+
+.custom-image-size {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.custom-image-size input {
+  width: 150px;
+}
+.reference-groups {
+  display: grid;
+  gap: 12px;
+}
+.reference-group {
+  border: 1px solid var(--line);
+  padding: 12px;
+  border-radius: 4px;
+}
+.reference-heading,
+.reference-image {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.reference-heading {
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.reference-images {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.reference-image img {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+}
+.reference-image span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  flex: 1;
+}
+.reference-upload {
+  position: relative;
+  width: fit-content;
+  overflow: hidden;
+  margin: 0;
+}
+.reference-upload input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  width: 100%;
+}
+.reference-upload:focus-within {
+  outline: 2px solid var(--accent);
+}

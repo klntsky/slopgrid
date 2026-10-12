@@ -1,12 +1,17 @@
 import { PublicGrids } from "../components/grid-listing";
 import { FormatIcon } from "../components/grid-format-icon";
 import { useInferenceMutation } from "../use-inference-mutation";
-import { useState } from "react";
+import {
+  uploadReferences,
+  removeReferenceFile,
+} from "../create/reference-files";
+import { useState, useRef, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { ArrowUpRight, DollarSign, ArrowLeftRight } from "lucide-react";
 import {
   efforts,
+  gridSchema,
   unusedVariableIssue,
   type GridInput,
 } from "../../server/domain";
@@ -25,7 +30,11 @@ import { modelDefaultHint, useTooltip } from "../components/use-tooltip";
 export function Create() {
   const [draft, setDraft] = useCreateDraft(),
     [validationError, setError] = useState(""),
-    [workersInvalid, setWorkersInvalid] = useState(false);
+    [workersInvalid, setWorkersInvalid] = useState(false),
+    [uploads, setUploads] = useState(0);
+  const uploading = uploads > 0;
+  const uploadController = useRef<AbortController | undefined>(undefined);
+  useEffect(() => () => uploadController.current?.abort(), []);
   const { formatSelected, input } = draft,
     navigate = useNavigate(),
     connection = useConnection();
@@ -69,7 +78,16 @@ export function Create() {
     retry: 1,
   });
   function update(partial: Partial<GridInput>) {
-    setDraft((d) => ({ ...d, input: { ...d.input, ...partial } }));
+    setDraft((d) => ({
+      ...d,
+      input: {
+        ...d.input,
+        ...partial,
+        referenceGroups: partial.referenceGroups
+          ? { ...d.input.referenceGroups, ...partial.referenceGroups }
+          : d.input.referenceGroups,
+      },
+    }));
     setError("");
     inference.reset();
   }
@@ -110,8 +128,16 @@ export function Create() {
   }
   const modelMissing =
     ![input.rows.kind, input.columns.kind].includes("model") && !input.model;
-  function generate(continueWithLowBalance = false) {
-    if (!catalog.data || modelMissing || workersPending) return;
+  async function generate(continueWithLowBalance = false) {
+    if (
+      !catalog.data ||
+      modelMissing ||
+      workersPending ||
+      uploading ||
+      busy ||
+      uploadController.current
+    )
+      return;
     const parallelWorkers = Number(workerInput);
     const invalid =
       !Number.isSafeInteger(parallelWorkers) || parallelWorkers < 1;
@@ -120,17 +146,51 @@ export function Create() {
       setError("Enter a positive whole number of parallel workers.");
       return;
     }
-    const issue = unusedVariableIssue(input);
-    if (issue) {
-      setError(issue);
+    const parsed = gridSchema.safeParse({ ...input, parallelWorkers });
+    if (!parsed.success) {
+      setError(parsed.error.issues[0].message);
       return;
     }
     setError("");
-    inference.mutate({
-      path: "/grids",
-      body: { ...input, parallelWorkers },
-      continueWithLowBalance,
-    });
+    const controller = new AbortController();
+    uploadController.current = controller;
+    setUploads((count) => count + 1);
+    try {
+      const prepared = await uploadReferences(
+        parsed.data,
+        (localId, image) => {
+          setDraft((d) => ({
+            ...d,
+            input: {
+              ...d.input,
+              referenceGroups: Object.fromEntries(
+                Object.entries(d.input.referenceGroups ?? {}).map(
+                  ([name, images]) => [
+                    name,
+                    images.map((candidate) =>
+                      candidate.id === localId ? image : candidate,
+                    ),
+                  ],
+                ),
+              ),
+            },
+          }));
+          void removeReferenceFile(localId).catch(() => {});
+        },
+        controller.signal,
+      );
+      if (!controller.signal.aborted)
+        inference.mutate({
+          path: "/grids",
+          body: { ...prepared, parallelWorkers },
+          continueWithLowBalance,
+        });
+    } catch (error) {
+      if (!controller.signal.aborted) setError((error as Error).message);
+    } finally {
+      uploadController.current = undefined;
+      setUploads((count) => count - 1);
+    }
   }
 
   return (
@@ -188,7 +248,13 @@ export function Create() {
                   axis={input.rows}
                   format={input.format}
                   models={models}
-                  onChange={(rows) => update({ rows })}
+                  referenceGroups={input.referenceGroups}
+                  onUploading={(busy) =>
+                    setUploads((count) => count + (busy ? 1 : -1))
+                  }
+                  onChange={(rows, referenceGroups) =>
+                    update({ rows, referenceGroups })
+                  }
                 />
                 <button
                   type="button"
@@ -213,7 +279,13 @@ export function Create() {
                   axis={input.columns}
                   format={input.format}
                   models={models}
-                  onChange={(columns) => update({ columns })}
+                  referenceGroups={input.referenceGroups}
+                  onUploading={(busy) =>
+                    setUploads((count) => count + (busy ? 1 : -1))
+                  }
+                  onChange={(columns, referenceGroups) =>
+                    update({ columns, referenceGroups })
+                  }
                 />
               </div>
               {![input.rows.kind, input.columns.kind].includes("model") && (
@@ -366,6 +438,7 @@ export function Create() {
             className="primary generate"
             disabled={
               busy ||
+              uploading ||
               workersPending ||
               modelMissing ||
               !input.rows.values.length ||

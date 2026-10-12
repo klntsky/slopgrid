@@ -1,3 +1,4 @@
+import { createReferenceRoutes } from "./routes/references.js";
 import { EventEmitter } from "node:events";
 import {
   githubCredentials,
@@ -90,6 +91,7 @@ export function createApp(config: Config) {
   );
   app.use(createManualKeyRoutes(provider, session, rate));
   app.use(createModelRoutes(provider));
+  app.use(createReferenceRoutes(store, session));
   app.use(createBillingRoutes(store, session));
   app.use(
     createGridRoutes({
