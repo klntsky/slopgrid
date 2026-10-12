@@ -101,7 +101,10 @@ export function githubProvider(credentials: OAuthCredentials): OAuthProvider {
         },
         signal: AbortSignal.timeout(30000),
       });
-      if (!profile.ok) throw new Error("GitHub profile failed");
+      if (!profile.ok)
+        throw new Error("GitHub profile failed", {
+          cause: { code: "GITHUB_PROFILE_FAILED", status: profile.status },
+        });
       const user = z
         .object({
           id: z.number().int().positive().safe(),

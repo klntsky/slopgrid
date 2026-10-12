@@ -149,3 +149,5 @@ A soft update replaces web code and frontend assets while leaving the engine and
 Runtime validation and crash-boundary coverage are described in [DEVELOPMENT.md](DEVELOPMENT.md#validation).
 
 `src/grid-pan.ts` handles primary mouse drags on the grid scroll container, excluding output content, controls, and resize handles. Pointer capture keeps a drag active across cells and releases it on pointer-up, cancellation, or capture loss. Touch gestures remain in `ZoomableGrid`. `src/contained-image.tsx` centers an image inside a size container and uses its natural aspect ratio with container-relative width and height limits to size the image element itself. Both completed images and streamed SVG previews share this layout, so letterbox padding is outside the image hit area and can start grid panning.
+
+GitHub sign-in failures retain the generic browser error while server logs record the failing stage, error type, bounded diagnostic codes, and available HTTP status. Provider error names are allowlisted; exception messages, callback parameters, response bodies, and credentials are excluded. Profile request failures preserve their HTTP status for these diagnostics.
