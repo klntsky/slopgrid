@@ -2,7 +2,7 @@
 
 ## Architecture constraints
 
-These constraints define the implementation boundaries for the behavior in [requirements.md](requirements.md).
+These constraints define the implementation boundaries for the behavior in [PRODUCT.md](PRODUCT.md).
 
 ### Stack and rendering
 
