@@ -3,13 +3,12 @@ import {
   ArrowUp,
   ArrowDown,
   LoaderCircle,
-  Maximize2,
-  Minimize2,
   Download,
   CodeXml,
   Brain,
   Palette,
 } from "lucide-react";
+import { ExpandButton } from "../components/expand-button";
 import { CopyButton } from "../components/copy-button";
 import type { GridInput } from "../../server/domain";
 import type { ViewGrid } from "../api";
@@ -175,20 +174,11 @@ export function OutputCell({
             </button>
           )}
           {expandable && onToggleExpand && (
-            <button
-              className="secondary markdown-expand"
-              aria-label={expandLabel}
-              data-tooltip={expandLabel}
-              ref={tooltipRef}
-              aria-expanded={expanded}
-              onClick={(event) => onToggleExpand(event.currentTarget)}
-            >
-              {expanded ? (
-                <Minimize2 aria-hidden="true" />
-              ) : (
-                <Maximize2 aria-hidden="true" />
-              )}
-            </button>
+            <ExpandButton
+              expanded={expanded}
+              label={expandLabel}
+              onClick={onToggleExpand}
+            />
           )}
         </div>
       )}

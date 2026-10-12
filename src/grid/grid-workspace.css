@@ -19,3 +19,26 @@
   border: 0;
   background: var(--cell);
 }
+.axis-reference-previews {
+  display: inline-flex;
+  gap: 4px;
+  margin-inline-start: 6px;
+  vertical-align: middle;
+  flex-wrap: wrap;
+}
+.axis-reference-previews button {
+  padding: 0;
+  flex-shrink: 0;
+}
+.axis-reference-previews img {
+  display: block;
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+}
+th[scope="row"] .axis-reference-previews {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: 6px 0 0;
+}

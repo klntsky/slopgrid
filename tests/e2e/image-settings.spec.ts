@@ -96,6 +96,7 @@ test("image warnings follow axis orientation and remain advisory, while custom s
 test("renamed reference groups survive reload, Edit and Fork without mixing their files", async ({
   page,
   request,
+  browser,
 }) => {
   await request.post("/fixture/reset", { data: {} });
   await setup(page, false);
@@ -212,6 +213,42 @@ test("renamed reference groups survive reload, Edit and Fork without mixing thei
       .sort((a: any[], b: any[]) => a.length - b.length),
   ).toEqual(expected);
   const url = page.url();
+  async function expandReference(
+    target: import("@playwright/test").Page,
+    orientation: "columnheader" | "rowheader",
+    name: string,
+    escape = true,
+  ) {
+    const thumbnail = target.getByRole(orientation).getByRole("button", {
+      name: `Expand reference image: ${name}`,
+      exact: true,
+    });
+    const source = await thumbnail.getByRole("img").getAttribute("src");
+    await thumbnail.click();
+    const expanded = target.getByRole("region", {
+      name: `Expanded reference: ${name}`,
+      exact: true,
+    });
+    const image = expanded.getByRole("img", { name, exact: true });
+    await expect(image).toHaveAttribute("src", source!);
+    await expect
+      .poll(() => image.evaluate((img: HTMLImageElement) => img.naturalWidth))
+      .toBe(1);
+    if (escape) await target.keyboard.press("Escape");
+    else
+      await expanded
+        .getByRole("button", { name: "Collapse Image", exact: true })
+        .click();
+    await expect(expanded).toHaveCount(0);
+    await expect(thumbnail).toBeFocused();
+    return source!;
+  }
+  // Reloaded headers use saved files rather than local selection or generated output.
+  await page.reload();
+  const source = await expandReference(page, "columnheader", "two.png");
+  expect(await (await page.request.get(source)).body()).toEqual(
+    first[1].buffer,
+  );
   await page.getByRole("button", { name: "EDIT", exact: true }).click();
   await expect(titles.nth(0)).toHaveText("Landscape");
   await expect(titles.nth(1)).toHaveText("Details");
@@ -224,14 +261,28 @@ test("renamed reference groups survive reload, Edit and Fork without mixing thei
     )
     .toBe(1);
   await page.goto(url);
-  await page.getByRole("button", { name: "PUBLISH", exact: true }).click();
-  await finishPublishing(page);
+  const visitor = await browser.newContext();
+  try {
+    expect(
+      (await visitor.request.get(new URL(source, url).href)).status(),
+    ).toBe(404);
+    await page.getByRole("button", { name: "PUBLISH", exact: true }).click();
+    await finishPublishing(page);
+    const publicPage = await visitor.newPage();
+    await publicPage.goto(url);
+    await expandReference(publicPage, "columnheader", "five.png", false);
+  } finally {
+    await visitor.close();
+  }
   await page.getByRole("button", { name: "FORK", exact: true }).click();
   await expect(titles.nth(0)).toHaveText("Landscape");
   await expect(titles.nth(1)).toHaveText("Details");
   await expect(page.getByRole("img", { name: /\.png$/ })).toHaveCount(5);
+  await page.getByRole("button", { name: "Swap rows and columns" }).click();
   await page.getByRole("button", { name: "Generate", exact: true }).click();
   await expectProgress(page, 2, 2);
+  await page.reload();
+  await expandReference(page, "rowheader", "one.png");
   expect(uploads).toBe(5);
   expect(
     (await (await request.get("/fixture/image-requests")).json())
