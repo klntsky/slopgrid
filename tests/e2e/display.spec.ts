@@ -61,6 +61,53 @@ test("SVG images grow during generation without exposing markup or running SVG s
   }
 });
 
+for (const format of ["Image", "SVG", "Markdown", "Static website"])
+  test(`mouse panning respects ${format} content, controls and resize handles`, async ({
+    page, request,
+  }) => {
+    await page.setViewportSize({ width: 800, height: 650 });
+    await request.post("/fixture/reset", { data: {} });
+    await create(page, format, "cat\ndog\nowl", "hat\ncape\nscarf");
+    await expectProgress(page, 9, 9);
+    const grid = page.getByLabel("Generated output grid");
+    const cell = page.locator("article.cell").first();
+    const handle = page.getByRole("separator", { name: "Resize column 1", exact: true });
+    for (let i = 0; i < 4; i++) await handle.press("Shift+ArrowRight");
+    const position = () => grid.evaluate((el) => [el.scrollLeft, el.scrollTop]);
+    const drag = async (x: number, y: number, dx = -70, dy = -60) => {
+      await page.mouse.move(x, y);
+      await page.mouse.down();
+      await page.mouse.move(x + dx, y + dy, { steps: 6 });
+      await page.mouse.up();
+    };
+    const image = format === "Image" || format === "SVG";
+    const output = cell.locator(image ? "img" : format === "Markdown" ? ".markdown-preview" : "iframe:visible");
+    await expect(output).toBeVisible();
+    if (image) await expect.poll(() => output.evaluate((el) => (el as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+    if (format === "Static website")
+      await expect(cell.frameLocator("iframe:visible").getByText("Module loaded")).toBeVisible();
+    const content = (await output.boundingBox())!;
+    await drag(content.x + content.width / 2, content.y + content.height / 2);
+    expect(await position()).toEqual([0, 0]);
+    const control = (await cell.getByRole("link", { name: "Open output", exact: true }).boundingBox())!;
+    await drag(control.x + control.width / 2, control.y + control.height / 2);
+    expect(await position()).toEqual([0, 0]);
+    const surface = (await cell.locator(image ? ".image-preview" : ".cell-footer").boundingBox())!;
+    // Image padding starts the drag; pointer capture keeps it moving over content.
+    await drag(surface.x + surface.width - 10, surface.y + surface.height / 2);
+    await expect.poll(async () => (await position())[0]).toBeGreaterThan(50);
+    await expect.poll(async () => (await position())[1]).toBeGreaterThan(40);
+    const released = await position();
+    await page.mouse.move(750, 100);
+    expect(await position()).toEqual(released);
+    await grid.evaluate((el) => el.scrollTo(0, 0));
+    const width = Number(await handle.getAttribute("aria-valuenow"));
+    const edge = (await handle.boundingBox())!;
+    await drag(edge.x + edge.width / 2, edge.y + edge.height / 2, 60, 0);
+    expect(Number(await handle.getAttribute("aria-valuenow"))).toBeGreaterThan(width + 40);
+    expect(await position()).toEqual([0, 0]);
+  });
+
 test("theme follows system changes unless a saved choice overrides them", async ({
   page,
 }) => {

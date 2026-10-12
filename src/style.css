@@ -810,8 +810,7 @@ button.grid-name {
   visibility: hidden;
   pointer-events: none;
 }
-.cell iframe,
-.cell .generated-image {
+.cell iframe {
   width: 100%;
   height: 100%;
   min-width: 0;
@@ -821,7 +820,6 @@ button.grid-name {
   background: white;
   color-scheme: light;
 }
-.cell .generated-image,
 .cell .markdown-preview {
   background: var(--cell);
   color-scheme: inherit;
@@ -983,11 +981,18 @@ button.grid-name {
   }
 }
 
-.cell .generated-image {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
-  object-position: center;
+.image-preview {
+  container-type: size;
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  min-height: 0;
+}
+.image-preview .generated-image {
+  display: block;
+  width: 100cqw;
+  height: auto;
+  color-scheme: inherit;
 }
 
 .model-list {
@@ -1407,6 +1412,13 @@ header {
   user-select: none;
 }
 .output-grid[data-resizing] iframe {
+  pointer-events: none;
+}
+.grid-scroll[data-panning] {
+  cursor: grabbing;
+  user-select: none;
+}
+.grid-scroll[data-panning] iframe {
   pointer-events: none;
 }
 

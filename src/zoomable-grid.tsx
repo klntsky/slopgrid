@@ -6,6 +6,7 @@ import {
 } from "react";
 
 import { useGridResize } from "./grid-resize";
+import { useGridPan } from "./grid-pan";
 
 type Point = { x: number; y: number };
 function fingers(touches: TouchList): { center: Point; distance: number } {
@@ -27,6 +28,7 @@ export function ZoomableGrid({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const fitViewport = useGridResize(ref, gridId);
+  useGridPan(ref);
   useLayoutEffect(() => {
     const viewport = ref.current!,
       table = viewport.querySelector("table")!;

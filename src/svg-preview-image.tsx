@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { LoaderCircle } from "lucide-react";
 import { completeSvgPreview } from "./svg-preview";
+import { ContainedImage } from "./contained-image";
 
 export function SvgPreview({ draft }: { draft: string }) {
   const [source, setSource] = useState("");
@@ -24,7 +25,7 @@ export function SvgPreview({ draft }: { draft: string }) {
   }, [draft]);
   return source ? (
     <>
-      <img className="generated-image" alt="SVG preview" src={source} />
+      <ContainedImage alt="SVG preview" src={source} />
       <div className="cell-footer preview-status" role="status">
         <LoaderCircle className="spinner" aria-hidden="true" />
         Generating…

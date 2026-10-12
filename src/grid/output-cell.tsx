@@ -17,6 +17,7 @@ import { formatCost, cellError } from "../format";
 import { WebsitePreview } from "./website-preview";
 import { MarkdownPreview } from "./markdown-preview";
 import { SvgPreview } from "../svg-preview-image";
+import { ContainedImage } from "../contained-image";
 import { useTooltip, tooltipRef } from "../components/use-tooltip";
 import { copyOutput } from "./copy-output";
 export function OutputCell({
@@ -86,8 +87,7 @@ export function OutputCell({
             published={published}
           />
         ) : complete ? (
-          <img
-            className="generated-image"
+          <ContainedImage
             alt={format === "svg" ? "Generated SVG" : "Generated image"}
             src={outputURL}
             loading="lazy"

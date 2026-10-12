@@ -110,6 +110,7 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 6. Persist only output dimensions per grid in browser localStorage, without server-wide size persistence. Restoring output sizes must preserve the header's natural height.
 7. Support pinch zoom whenever a touchscreen is present, regardless of screen width. Start by fitting the table to available width and prevent zooming out beyond that width fit.
 8. Keep one-finger scrolling usable, including within Markdown cells. Zoom the grid rather than the application navbar.
+9. Click-dragging empty grid areas scrolls both axes. Drags starting on images, website frames, Markdown or thinking previews, interactive controls, and resize handles retain their own behavior. Image padding belongs to the draggable grid, while images retain their centered, aspect-ratio-preserving fit.
 
 ### 4.2. Title, prompt, author, and price
 
