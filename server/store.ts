@@ -1,4 +1,5 @@
 import type { OAuthAttempt } from "./oauth.js";
+import { publicationError } from "./grid-policy.js";
 import { Billing } from "./billing.js";
 import Database from "better-sqlite3";
 import { encrypt, decrypt } from "./encryption.js";
@@ -60,6 +61,8 @@ export class Store {
       { data: string } | undefined;
     if (!row) return;
     const grid = { ...JSON.parse(row.data), id } as Grid;
+    if (!grid.title) delete grid.title;
+    if (!grid.interruption) delete grid.interruption;
     const cells = this.db
       .prepare("SELECT id, data FROM cells WHERE grid_id=? ORDER BY position")
       .all(id) as { id: string; data: string }[];
@@ -71,39 +74,88 @@ export class Store {
     }));
     return grid;
   }
-  save(grid: Grid) {
-    grid.revision += 1;
+  // Creation is the only operation that writes both metadata and generation state.
+  insert(grid: Grid) {
     const { id, cells, ...data } = grid;
     this.db.transaction(() => {
       this.db
-        .prepare(
-          "INSERT INTO grids (id, data) VALUES (?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data",
-        )
+        .prepare("INSERT INTO grids (id, data) VALUES (?,?)")
         .run(id, JSON.stringify(data));
+      const insert = this.db.prepare(
+        "INSERT INTO cells (id, grid_id, position, data) VALUES (?,?,?,?)",
+      );
+      cells.forEach((cell, position) =>
+        insert.run(cell.id, id, position, "{}"),
+      );
+      this.saveGeneration(grid);
+    })();
+  }
+  nextRevision(grid: Grid) {
+    const row = this.db
+      .prepare(
+        `UPDATE grids SET data=json_set(data, '$.revision', COALESCE(json_extract(data,'$.revision'),0)+1) WHERE id=? RETURNING json_extract(data,'$.revision') AS revision`,
+      )
+      .get(grid.id) as { revision: number };
+    grid.revision = row.revision;
+  }
+  saveGeneration(grid: Grid) {
+    this.db.transaction(() => {
+      this.nextRevision(grid);
+      this.db
+        .prepare(
+          `UPDATE grids SET data=json_set(data, '$.status', ?, '$.interruption', json(?)) WHERE id=?`,
+        )
+        .run(grid.status, JSON.stringify(grid.interruption ?? null), grid.id);
       const saveCell = this.db.prepare(
-        "INSERT INTO cells (id, grid_id, position, data) VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data",
+        "UPDATE cells SET data=? WHERE id=? AND grid_id=?",
       );
       const hasCalls = this.db.prepare(
         "SELECT 1 FROM inference_calls WHERE cell_id=? LIMIT 1",
       );
-      cells.forEach((cell, position) => {
-        const recorded = !!hasCalls.get(cell.id);
+      for (const cell of grid.cells) {
         const { status, error, errorCode, usage, mediaType, thinkingId } = cell;
         saveCell.run(
-          cell.id,
-          id,
-          position,
           JSON.stringify({
             status,
             error,
             errorCode,
-            usage: recorded ? undefined : usage,
+            usage: hasCalls.get(cell.id) ? undefined : usage,
             mediaType,
             thinkingId,
           }),
+          cell.id,
+          grid.id,
         );
-      });
+      }
     })();
+  }
+  setTitle(id: string, title: string) {
+    this.db
+      .prepare(
+        `UPDATE grids SET data=json_set(data, '$.title', json(?), '$.revision', COALESCE(json_extract(data,'$.revision'),0)+1) WHERE id=?`,
+      )
+      .run(JSON.stringify(title || null), id);
+  }
+  publish(id: string, visibility: Grid["visibility"], author: Grid["author"]) {
+    // Serialize the terminal-state check with engine writes and retry admission.
+    return this.db
+      .transaction(() => {
+        const grid = this.get(id)!;
+        const error = publicationError(grid, visibility);
+        if (error || visibility === grid.visibility) return error;
+        this.db
+          .prepare(
+            `UPDATE grids SET data=json_set(data, '$.published', json('true'), '$.visibility', ?, '$.author', json(?), '$.revision', COALESCE(json_extract(data,'$.revision'),0)+1) WHERE id=?`,
+          )
+          .run(
+            visibility,
+            JSON.stringify(
+              grid.published ? (grid.author ?? null) : (author ?? null),
+            ),
+            id,
+          );
+      })
+      .immediate();
   }
   outputMetadata(id: string) {
     const row = this.db

@@ -36,7 +36,7 @@ export class Jobs {
     private store: Store,
     private provider: Provider,
     readonly workersMax = 100,
-    private save: (grid: Grid) => void = (grid) => store.save(grid),
+    private save: (grid: Grid) => void = (grid) => store.saveGeneration(grid),
   ) {
     if (!Number.isSafeInteger(workersMax) || workersMax < 1)
       throw new Error("WORKERS_MAX must be a positive safe integer");
@@ -47,6 +47,29 @@ export class Jobs {
     clearTimeout(state?.timer);
     if (state) delete state.timer;
     this.save(grid);
+  }
+  draining = false;
+  status() {
+    return {
+      draining: this.draining,
+      runningCalls: this.running.size,
+      activeGrids: [...this.active.values()].filter(
+        (grid) => grid.status === "running",
+      ).length,
+    };
+  }
+  snapshot(id: string): Grid | undefined {
+    const stored = this.store.get(id);
+    if (!stored) return;
+    const active = this.active.get(id);
+    return active
+      ? {
+          ...stored,
+          status: active.status,
+          interruption: active.interruption,
+          cells: active.cells,
+        }
+      : stored;
   }
   start(grid: Grid, key?: string, session?: Session): Grid {
     const current = this.active.get(grid.id);
@@ -249,7 +272,7 @@ export class Jobs {
           if (!current()) return;
           // Drafts can be read between throttled SSE emissions. Give each update
           // its own revision so a late HTTP snapshot cannot regress live text.
-          grid.revision += 1;
+          this.store.nextRevision(grid);
           const previousLength = cell.thinking?.length ?? 0;
           if (thinking.length > previousLength) {
             this.store.files.appendThinking(

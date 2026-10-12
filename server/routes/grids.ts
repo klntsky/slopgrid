@@ -1,10 +1,11 @@
-import { canViewGrid, ownsGrid, publicationError } from "../grid-policy.js";
+import { canViewGrid, ownsGrid } from "../grid-policy.js";
 import { z } from "zod";
 import { manualKey } from "../manual-keys.js";
 import { Router, type Request, type Response } from "express";
 import type { Store, Session } from "../store.js";
 import type { Provider } from "../provider.js";
-import type { Jobs } from "../jobs.js";
+import type { GenerationAPI } from "../generation-api.js";
+import type { EventEmitter } from "node:events";
 import type { SessionReader } from "../session.js";
 import type { RateLimiter } from "../rate-limit.js";
 import type { GridPresenter } from "../grid-presentation.js";
@@ -29,19 +30,19 @@ import { token } from "../ids.js";
 export function createGridRoutes({
   store,
   provider,
-  jobs,
+  generation,
   session,
   rate,
   snapshot,
-  save,
+  updates,
 }: {
   store: Store;
   provider: Provider;
-  jobs: Jobs;
+  generation: GenerationAPI;
   session: SessionReader;
   rate: RateLimiter;
   snapshot: GridPresenter;
-  save: (grid: Grid) => void;
+  updates: EventEmitter;
 }) {
   const app = Router(),
     allowInference = createInferenceGuard(store, provider);
@@ -143,23 +144,27 @@ export function createGridRoutes({
       owner: anonymousOwner(s),
       ownerUserId: s.userId,
       input,
-      status: "running",
+      status: "paused",
       published: false,
       visibility: "private",
       cells,
       createdAt: new Date().toISOString(),
     };
-    store.save(g);
-    jobs.start(g, suppliedKey, s);
-    res.status(201).json(snapshot(g, s));
+    store.insert(g);
+    const started = await generation.startGrid({
+      gridId: g.id,
+      sessionId: s.id,
+      manualKey: suppliedKey,
+    });
+    res.status(201).json(snapshot(started, s));
   });
-  app.get("/api/grids/:id", (req, res) => {
+  app.get("/api/grids/:id", async (req, res) => {
     const found = readGrid(req, res, canViewGrid);
     if (!found) return;
     const { g, s } = found;
-    res.json(snapshot(jobs.active.get(g.id) ?? g, s));
+    res.json(snapshot(await generation.getGrid(g.id), s));
   });
-  app.patch("/api/grids/:id/title", (req, res) => {
+  app.patch("/api/grids/:id/title", async (req, res) => {
     const found = readGrid(req, res);
     if (!found) return;
     const parsed = z
@@ -170,9 +175,9 @@ export function createGridRoutes({
         .status(400)
         .json({ error: "Use a title of up to 40 characters." });
     const { g, s } = found;
-    const current = jobs.active.get(g.id) ?? g;
-    current.title = parsed.data.title || undefined;
-    save(current);
+    store.setTitle(g.id, parsed.data.title);
+    const current = await generation.getGrid(g.id);
+    updates.emit(g.id, current);
     res.json(snapshot(current, s));
   });
   app.post("/api/grids/:id/retry", async (req, res) => {
@@ -188,8 +193,8 @@ export function createGridRoutes({
       return res
         .status(401)
         .json({ error: "Reconnect OpenRouter to continue." });
-    const current = jobs.active.get(g.id);
-    if (current?.status === "running") return res.json(snapshot(current, s));
+    const current = await generation.getGrid(g.id);
+    if (current.status === "running") return res.json(snapshot(current, s));
     if (
       g.cells.some((c) => c.status !== "complete") &&
       !(await allowInference(req, res, s, g.input.parallelWorkers))
@@ -200,11 +205,15 @@ export function createGridRoutes({
         .status(429)
         .json({ error: "Retry limit reached. Try again in an hour." });
     const resumed = g.cells.some((c) => c.status !== "complete")
-      ? jobs.start(g, suppliedKey, s)
+      ? await generation.startGrid({
+          gridId: g.id,
+          sessionId: s.id,
+          manualKey: suppliedKey,
+        })
       : g;
     res.json(snapshot(resumed, s));
   });
-  app.post("/api/grids/:id/pause", (req, res) => {
+  app.post("/api/grids/:id/pause", async (req, res) => {
     const found = readGrid(req, res);
     if (!found) return;
     const { g, s } = found;
@@ -212,9 +221,14 @@ export function createGridRoutes({
       return res
         .status(409)
         .json({ error: "This grid has finished generating." });
-    res.json(snapshot(jobs.pause(g), s));
+    res.json(
+      snapshot(
+        await generation.pauseGrid({ gridId: g.id, sessionId: s.id }),
+        s,
+      ),
+    );
   });
-  app.post("/api/grids/:id/edit", (req, res) => {
+  app.post("/api/grids/:id/edit", async (req, res) => {
     const found = readGrid(req, res);
     if (!found) return;
     const { g, s } = found;
@@ -222,9 +236,14 @@ export function createGridRoutes({
       return res
         .status(409)
         .json({ error: "Published grids can only be forked." });
-    res.json(snapshot(jobs.pause(g), s));
+    res.json(
+      snapshot(
+        await generation.pauseGrid({ gridId: g.id, sessionId: s.id }),
+        s,
+      ),
+    );
   });
-  app.post("/api/grids/:id/publish", (req, res) => {
+  app.post("/api/grids/:id/publish", async (req, res) => {
     const found = readGrid(req, res);
     if (!found) return;
     const { g, s } = found;
@@ -236,16 +255,15 @@ export function createGridRoutes({
     if (!parsed.success)
       return res.status(400).json({ error: "Choose a valid visibility." });
     const { visibility } = parsed.data;
-    const error = publicationError(g, visibility);
+    const error = store.publish(
+      g.id,
+      visibility,
+      presentIdentity(s.userId ? store.user(s.userId) : undefined),
+    );
     if (error) return res.status(409).json({ error });
-    if (visibility === g.visibility) return res.json(snapshot(g, s));
-    if (!g.published) {
-      g.author = presentIdentity(s.userId ? store.user(s.userId) : undefined);
-      g.published = true;
-    }
-    g.visibility = visibility;
-    save(g);
-    res.json(snapshot(g, s));
+    const current = await generation.getGrid(g.id);
+    updates.emit(g.id, current);
+    res.json(snapshot(current, s));
   });
   return app;
 }

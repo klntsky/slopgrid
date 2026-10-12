@@ -113,7 +113,7 @@ function harness(limit?: number) {
         id: `${owner}/${name}/${i}`,
       })),
     };
-    store.save(g);
+    store.insert(g);
     return g;
   }
   async function close() {

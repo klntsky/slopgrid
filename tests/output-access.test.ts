@@ -37,7 +37,7 @@ test("private outputs require ownership, isolated grants are scoped and revoked 
         status: running ? "running" : "complete",
       })),
     };
-    store.save(g);
+    store.insert(g);
     const cell = g.cells[0];
     if (running)
       jobs.previews.update(
@@ -124,7 +124,7 @@ test("private outputs require ownership, isolated grants are scoped and revoked 
       thinkingId,
       "Private thinking <script>still text</script>",
     );
-    store.save(grid);
+    store.saveGeneration(grid);
     const thinkingPath = `/outputs/${id}/thinking/${thinkingId}`;
     assert.equal(
       (await get(`/outputs/${id}/thinking/${token()}`, { Cookie: cookie }))
@@ -189,9 +189,7 @@ test("private outputs require ownership, isolated grants are scoped and revoked 
       assert.equal((await isolated(id, "/app.js", outputCookie)).status, 404);
       store.saveSession({ id: owner, created: Date.now() });
     }
-    grid.published = true;
-    grid.visibility = "unlisted";
-    store.save(grid);
+    store.publish(grid.id, "unlisted", null);
     for (const path of paths)
       assert.equal(
         (await get(path)).status,
@@ -211,8 +209,7 @@ test("private outputs require ownership, isolated grants are scoped and revoked 
     404,
   );
   const accountGrid = makeGrid("markdown");
-  accountGrid.ownerUserId = "account";
-  store.save(accountGrid);
+  store.claim(owner, "account");
   assert.equal(
     (await get(`/outputs/${accountGrid.cells[0].id}`, { Cookie: cookie }))
       .status,

@@ -1,4 +1,4 @@
-import type { WebsitePreviews } from "./website-previews.js";
+import type { GenerationAPI } from "./generation-api.js";
 import type { RequestHandler } from "express";
 import type { Store } from "./store.js";
 import type { RateLimiter } from "./rate-limit.js";
@@ -12,11 +12,11 @@ export function createHostDispatcher(
   origin: URL,
   htmlHosts: ReturnType<typeof createHtmlHosts>,
   rate: RateLimiter,
-  previews: WebsitePreviews,
+  generation: GenerationAPI,
   access: OutputAccess,
 ): RequestHandler {
   const secure = origin.protocol === "https:";
-  return (req, res, next) => {
+  return async (req, res, next) => {
     res.set("X-Content-Type-Options", "nosniff");
     res.set("Referrer-Policy", "no-referrer");
     const host = req.get("host")?.toLowerCase();
@@ -67,10 +67,10 @@ export function createHostDispatcher(
       return res.sendStatus(404);
     }
     const file = path.startsWith("__preview/")
-      ? previews.path(id, path)
+      ? await generation.previewPath({ cellId: id, path })
       : output.status === "complete" && output.format === "html"
         ? store.files.path(id, path)
-        : previews.path(id, path);
+        : await generation.previewPath({ cellId: id, path });
     if (!file) return res.sendStatus(404);
     if (path.endsWith(".html"))
       return res

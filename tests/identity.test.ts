@@ -79,7 +79,7 @@ test("account ownership, frozen authors, browser credentials, and OAuth callback
         status: "complete",
       })),
     };
-    store.save(g);
+    store.insert(g);
     return g;
   }
   const draft = grid("draft");
@@ -148,7 +148,7 @@ test("account ownership, frozen authors, browser credentials, and OAuth callback
     .match(/slopgrid=([a-f0-9]+)/)![1];
   assert.notEqual(anonymous, originalOwner);
   assert.equal(store.session(originalOwner), undefined);
-  assert.equal(jobs.active.get(draft.id)!.ownerUserId, alice.id);
+  assert.equal(jobs.snapshot(draft.id)!.ownerUserId, alice.id);
   assert.equal(store.get(draft.id)!.ownerUserId, alice.id);
   jobs.active.delete(draft.id);
   assert.equal((await request(callback)).status, 400);

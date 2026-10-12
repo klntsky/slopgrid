@@ -9,6 +9,6 @@ export function recoverInterruptedGrids(store: Store) {
     grid.interruption = "restart";
     for (const cell of grid.cells)
       if (cell.status === "running") cell.status = "pending";
-    store.save(grid);
+    store.saveGeneration(grid);
   }
 }

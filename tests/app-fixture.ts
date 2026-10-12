@@ -4,25 +4,41 @@ import { once } from "node:events";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Store } from "../server/store.js";
+import { Provider } from "../server/provider.js";
+import { createGenerationService } from "../server/generation-service.js";
+import { serveGeneration } from "../server/generation-server.js";
+import { generationClient } from "../server/generation-client.js";
 import { createApp, type Config } from "../server/app.js";
 
 export async function appFixture(
   t: TestContext,
-  options: Pick<Config, "provider" | "workersMax"> = {},
+  options: Pick<Config, "provider"> & { workersMax?: number } = {},
 ) {
   const directory = mkdtempSync(join(tmpdir(), "slopgrid-test-"));
   const database = join(directory, "db.sqlite"),
     secret = Buffer.alloc(32, 7);
   const server = createServer();
+  const engineStore = new Store(database, secret);
+  const { api, jobs } = createGenerationService(
+    engineStore,
+    options.provider ?? new Provider(),
+    options.workersMax,
+  );
+  const socket = join(directory, "generation.sock");
+  const engineServer = await serveGeneration(api, socket);
+  const generation = generationClient(socket);
   let application: ReturnType<typeof createApp> | undefined;
   t.after(async () => {
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
     if (application) {
-      for (const grid of application.jobs.active.values())
-        application.jobs.pause(grid);
+      for (const grid of jobs.active.values()) jobs.pause(grid);
       await new Promise((resolve) => setImmediate(resolve));
-      application.jobs.previews.clearAll();
+      jobs.previews.clearAll();
+      engineServer.closeAllConnections();
+      await new Promise<void>((resolve) => engineServer.close(() => resolve()));
+      engineStore.db.close();
       application.store.db.close();
     }
     rmSync(directory, { recursive: true, force: true });
@@ -41,7 +57,8 @@ export async function appFixture(
     secret,
     outputDomain: `-output.localhost:${port}`,
     ...options,
+    generation,
   });
   server.on("request", application.app);
-  return { ...application, origin, port, database, secret };
+  return { ...application, jobs, generation, origin, port, database, secret };
 }

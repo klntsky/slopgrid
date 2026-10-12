@@ -1,3 +1,4 @@
+import { startGenerationFixture } from "./generation-fixture.js";
 import { createFrontendRoutes } from "../server/frontend.js";
 // Only the upstream service is faked: the browser uses the real app, SQLite,
 // OAuth callback, AI SDK, worker and SSE endpoint.
@@ -350,6 +351,12 @@ const upstreamOrigin = `http://localhost:${(upstreamServer.address() as { port: 
 const port = Number(process.env.E2E_PORT ?? 4317);
 const data = process.env.FIXTURE_DATA!;
 mkdirSync(`${data}/.data`, { recursive: true });
+const generation = await startGenerationFixture({
+  database: `${data}/.data/db.sqlite`,
+  secret: Buffer.alloc(32, 1),
+  providerURL: `${upstreamOrigin}/api/v1`,
+  workersMax: 2,
+});
 const { app } = createApp({
   origin: `http://localhost:${port}`,
   outputDomain: `-slopgrid.localhost:${port}`,
@@ -357,7 +364,7 @@ const { app } = createApp({
   secret: Buffer.alloc(32, 1),
   provider: new Provider(`${upstreamOrigin}/api/v1`),
   authURL: `${upstreamOrigin}/auth`,
-  workersMax: 2,
+  generation: generation.api,
 });
 app.post("/fixture/reset", (req, res) => {
   balanceUsd = req.body.balanceUsd ?? 100;

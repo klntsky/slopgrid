@@ -31,7 +31,7 @@ test("outputs are real files and SQLite stores only configuration and cell state
       createdAt: new Date().toISOString(),
       cells: expandGrid(input).map((cell) => ({ ...cell, id: "cell" })),
     };
-    store.save(grid);
+    store.insert(grid);
     const payload = "Unique generated website payload";
     store.files.write("cell", {
       "index.html": payload,
@@ -43,7 +43,7 @@ test("outputs are real files and SQLite stores only configuration and cell state
     grid.cells[0].thinkingId = thinkingId;
     grid.cells[0].thinking = "Captured thinking payload";
     store.files.appendThinking("cell", thinkingId, grid.cells[0].thinking);
-    store.save(grid);
+    store.saveGeneration(grid);
     const path = store.files.path("cell", "index.html")!;
     assert.equal(readFileSync(path, "utf8"), payload);
     assert.equal(
@@ -51,9 +51,7 @@ test("outputs are real files and SQLite stores only configuration and cell state
       "body{color:red}",
     );
     const before = statSync(path);
-    grid.published = true;
-    grid.visibility = "unlisted";
-    store.save(grid);
+    store.publish(grid.id, "unlisted", null);
     assert.equal(statSync(path).mtimeMs, before.mtimeMs);
     const gridData = (
       store.db.prepare("SELECT data FROM grids").get() as { data: string }

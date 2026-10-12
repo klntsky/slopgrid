@@ -5,6 +5,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { once } from "node:events";
+import { startGenerationFixture } from "../generation-fixture";
 import { createApp } from "../../server/app";
 import { createFrontendRoutes } from "../../server/frontend";
 import { expandGrid, type GridInput, type Grid } from "../../server/domain";
@@ -43,8 +44,13 @@ test("private website assets load on same-site HTTPS hosts while remaining sessi
   await once(server, "listening");
   const port = (server.address() as { port: number }).port;
   const origin = `https://slopgrid.test:${port}`;
-  const { app, store, jobs } = createApp({
+  const generation = await startGenerationFixture({
+    database: join(directory, "db.sqlite"),
+    secret: Buffer.alloc(32, 7),
+  });
+  const { app, store } = createApp({
     origin,
+    generation: generation.api,
     outputDomain: `-output.slopgrid.test:${port}`,
     database: join(directory, "db.sqlite"),
     secret: Buffer.alloc(32, 7),
@@ -84,7 +90,7 @@ test("private website assets load on same-site HTTPS hosts while remaining sessi
         status: "complete",
       })),
     };
-    store.save(grid);
+    store.insert(grid);
     const cell = grid.cells[0];
     store.files.write(cell.id, {
       "index.html":
@@ -148,7 +154,7 @@ test("private website assets load on same-site HTTPS hosts while remaining sessi
     await browser.close();
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
-    jobs.previews.clearAll();
+    await generation.close();
     store.db.close();
     rmSync(directory, { recursive: true, force: true });
   }

@@ -38,7 +38,7 @@ test("publishing is permanent, link grids are unlisted, and public summaries omi
         status,
       })),
     };
-    store.save(grid);
+    store.insert(grid);
   }
   async function publish(id: string, body?: unknown, asOwner = true) {
     return fetch(`${origin}/api/grids/${id}/publish`, {

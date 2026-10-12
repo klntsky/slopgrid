@@ -19,7 +19,7 @@ test("cell cost follows the latest call while billing preserves earlier attempts
       rows: { kind: "variable", values: ["cat"] },
       columns: { kind: "variable", values: ["hat"] },
     };
-    store.save({
+    store.insert({
       id: "grid",
       revision: 0,
       owner: "owner",

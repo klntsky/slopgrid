@@ -7,6 +7,8 @@ Use Node.js 22.12 or newer, pnpm 12.4.2, and tmux. The same-site HTTPS browser t
 ```sh
 pnpm install
 pnpm exec playwright install chromium
+pnpm dev:engine
+# In another terminal:
 pnpm dev
 ```
 
@@ -50,7 +52,7 @@ Tests focus on state transitions, persistence, security boundaries, and interact
 
 ## Runtime configuration
 
-`pnpm build` checks TypeScript and creates the frontend build. `pnpm start` serves that build in production mode. The production process requires `APP_ORIGIN`, `OUTPUT_DOMAIN`, and `KEY_ENCRYPTION_SECRET` to be provided in its environment.
+`pnpm build` checks TypeScript and creates the frontend build. `pnpm start` serves that build in production mode and connects to the separately managed inference process started with `pnpm start:engine`. The production process requires `APP_ORIGIN`, `OUTPUT_DOMAIN`, and `KEY_ENCRYPTION_SECRET` to be provided in its environment.
 
 | Variable                | Behavior                                                                                                                                                          |
 | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -61,9 +63,13 @@ Tests focus on state transitions, persistence, security boundaries, and interact
 | `OUTPUTS_PATH`          | Directory for generated output files; defaults to an `outputs` directory beside the SQLite database.                                                              |
 | `PORT`                  | Listening port; defaults to 3000.                                                                                                                                 |
 | `BIND_ADDRESS`          | Listening address; defaults to `127.0.0.1`.                                                                                                                       |
-| `WORKERS_MAX`           | Maximum concurrent cell generations across the application process; defaults to 100 and must be a positive safe integer.                                          |
+| `GENERATION_SOCKET`     | Private Unix socket shared by web and inference processes; defaults to `generation.sock` beside the database.                                                     |
+| `GENERATION_DRAINING`   | Set to `1` to start the inference process with admission closed.                                                                                                  |
+| `FRONTEND_PATH`         | Frontend build directory served by the web process; defaults to `dist`.                                                                                           |
+| `OPENROUTER_BASE_URL`   | Provider API base URL for both processes; defaults to the OpenRouter API.                                                                                         |
+| `WORKERS_MAX`           | Maximum concurrent cell generations across the inference process; defaults to 100 and must be a positive safe integer.                                            |
 
-Development creates a local encryption key automatically. Changing the encryption key makes existing stored credentials unreadable. Run one application process per database: workers and SSE subscribers are process-local.
+Development creates a local encryption key automatically. Changing the encryption key makes existing stored credentials unreadable. Run exactly one inference process per database. The web process connects through the configured generation socket and can restart independently. Both processes must use the same database, output directory, and encryption key.
 
 ## Storage
 
@@ -71,7 +77,7 @@ SQLite stores grid configuration, cell state, encrypted OpenRouter session crede
 
 `server/database.ts` defines the current schema. Startup creates it atomically for an empty database and accepts existing databases only at the current SQLite `user_version`. Historical migrations and data conversions are not supported. Storage and route tests exercise persistence and reopening; unsupported-version tests check that rejection preserves existing data.
 
-The current schema starts with version 1 on an empty database and does not import the previous unversioned schema. Migration 3 removes the obsolete harness setting from saved grid inputs. SQLite backups and generated file backups must be kept together, along with the encryption key needed to read stored credentials. Temporary output directories can remain after a process crash; an unfinished cell stays retryable, and retry replaces any uncommitted output for that cell. Completed outputs are not automatically removed; temporary website previews are cleared at startup and when an attempt ends.
+SQLite backups and generated file backups must be kept together, along with the encryption key needed to read stored credentials. Temporary output directories can remain after a process crash; an unfinished cell stays retryable, and retry replaces any uncommitted output for that cell. Completed outputs are not automatically removed; temporary website previews are cleared at inference-process startup and when an attempt ends.
 
 ## Operational limits
 
@@ -88,3 +94,9 @@ Markdown output is saved verbatim, including code fences and leading indentation
 ## Publishing and listings
 
 Grid visibility uses `private`, `unlisted`, and `public`, while `published` retains the generation lock. `POST /api/grids/:id/publish` requires `{ visibility }`. An already published grid accepts its existing visibility, and its owner can promote an unlisted grid to public visibility. `GET /api/grids/public` returns public summaries without ownership or cell data, newest first. Both summary APIs include output format and visibility. The publish dialog remembers confirmation suppression under `slopgrid-skip-publish-confirmation` in local storage after successful confirmation. Listing format icons use Tippy on hover and keyboard focus. Publishing tests cover access, immutable visibility, summary filtering, and persistence; browser tests cover the dialogs and saved preferences.
+
+## Generation process control
+
+`pnpm generation status` reads the engine instance and workload counts. `pnpm generation drain` closes admission and waits for accepted grids and unsettled requests to finish. `pnpm generation accept` reopens admission, including when cancelling a planned machinery update. These commands require the same runtime configuration as the application and connect only through its private socket. A drain has no inference timeout and does not cancel user work.
+
+A web restart can briefly disconnect browser streams; generation continues, and reconnecting browsers receive the latest complete snapshot. Engine code, shared storage, and protocol changes must use machinery updates. A soft update must leave the running engine's release files and dependencies unchanged. Both mocked and real-provider browser suites use a separate inference child process. The process-lifetime regression additionally replaces the web child during an active streamed call and verifies queue draining and recorded costs.

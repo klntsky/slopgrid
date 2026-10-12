@@ -1,7 +1,7 @@
 import type { EventEmitter } from "node:events";
 import { Router } from "express";
 import type { Store } from "../store.js";
-import type { Jobs } from "../jobs.js";
+import type { GenerationAPI } from "../generation-api.js";
 import type { Grid } from "../domain.js";
 import type { SessionReader } from "../session.js";
 import type { GridPresenter } from "../grid-presentation.js";
@@ -9,13 +9,13 @@ import { canViewGrid } from "../grid-policy.js";
 
 export function createEventRoutes({
   store,
-  jobs,
+  generation,
   session,
   snapshot,
   updates,
 }: {
   store: Store;
-  jobs: Jobs;
+  generation: GenerationAPI;
   session: SessionReader;
   snapshot: GridPresenter;
   updates: EventEmitter;
@@ -40,16 +40,24 @@ export function createEventRoutes({
       Connection: "keep-alive",
     });
     res.flushHeaders();
+    let revision = -1;
     const send = (grid: Grid) => {
-      const current = store.session(s.id);
-      if (!current || !canViewGrid(grid, current)) {
+      const current = store.session(s.id),
+        stored = store.get(id);
+      if (!current || !stored || !canViewGrid(stored, current)) {
         res.end();
+        return;
+      }
+      if (grid.revision < revision) return;
+      revision = grid.revision;
+      if (res.writableNeedDrain) {
+        res.destroy();
         return;
       }
       res.write(`data: ${JSON.stringify(snapshot(grid, current))}\n\n`);
     };
-    send(jobs.active.get(id) ?? g);
     updates.on(id, send);
+    const unsubscribe = generation.subscribeGrid(id, send, () => res.end());
     const heartbeat = setInterval(() => {
       if (!store.session(s.id)) res.end();
       else res.write(": heartbeat\n\n");
@@ -57,6 +65,7 @@ export function createEventRoutes({
     res.on("close", () => {
       clearInterval(heartbeat);
       updates.off(id, send);
+      unsubscribe();
       const remaining = (connections.get(s.id) ?? 1) - 1;
       if (remaining) connections.set(s.id, remaining);
       else connections.delete(s.id);

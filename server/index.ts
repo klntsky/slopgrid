@@ -1,9 +1,9 @@
 import { githubCredentials } from "./oauth.js";
-import { mkdirSync, existsSync, readFileSync, writeFileSync } from "node:fs";
-import { randomBytes } from "node:crypto";
 import { createFrontendRoutes } from "./frontend.js";
 import { createApp } from "./app.js";
-import { recoverInterruptedGrids } from "./recovery.js";
+import { generationClient } from "./generation-client.js";
+import { runtimeConfig } from "./runtime-config.js";
+
 const github = githubCredentials(
   process.env.GITHUB_CLIENT_ID,
   process.env.GITHUB_CLIENT_SECRET,
@@ -12,18 +12,6 @@ const port = Number(process.env.PORT ?? 3000),
   production = process.env.NODE_ENV === "production";
 const origin = process.env.APP_ORIGIN ?? `http://localhost:${port}`,
   outputDomain = process.env.OUTPUT_DOMAIN ?? `-slopgrid.localhost:${port}`;
-mkdirSync(".data", { recursive: true, mode: 0o700 });
-let secret: Buffer;
-if (process.env.KEY_ENCRYPTION_SECRET) {
-  secret = Buffer.from(process.env.KEY_ENCRYPTION_SECRET, "hex");
-  if (!/^[a-fA-F0-9]{64}$/.test(process.env.KEY_ENCRYPTION_SECRET))
-    throw new Error("KEY_ENCRYPTION_SECRET must be 64 hex characters");
-} else {
-  if (production) throw new Error("Set KEY_ENCRYPTION_SECRET in production");
-  if (!existsSync(".data/secret"))
-    writeFileSync(".data/secret", randomBytes(32), { mode: 0o600 });
-  secret = readFileSync(".data/secret");
-}
 if (
   production &&
   (!process.env.APP_ORIGIN ||
@@ -31,20 +19,19 @@ if (
     !origin.startsWith("https://"))
 )
   throw new Error("Set HTTPS APP_ORIGIN and OUTPUT_DOMAIN in production");
-const { app, store, jobs } = createApp({
+const config = runtimeConfig();
+const generation = generationClient(config.socket);
+await generation.status();
+const { app } = createApp({
   github,
   origin,
   outputDomain,
-  database: process.env.DATABASE_PATH ?? ".data/slopgrid.sqlite",
-  secret,
-  outputsPath: process.env.OUTPUTS_PATH,
-  workersMax: Number(process.env.WORKERS_MAX ?? 100),
+  ...config,
+  generation,
 });
-jobs.previews.clearAll();
-recoverInterruptedGrids(store);
-if (production) {
-  app.use(createFrontendRoutes("dist"));
-} else {
+if (production)
+  app.use(createFrontendRoutes(process.env.FRONTEND_PATH ?? "dist"));
+else {
   const { createServer } = await import("vite");
   const vite = await createServer({
     server: { middlewareMode: true },
@@ -52,6 +39,12 @@ if (production) {
   });
   app.use(vite.middlewares);
 }
-app.listen(port, process.env.BIND_ADDRESS ?? "127.0.0.1", () =>
+const server = app.listen(port, process.env.BIND_ADDRESS ?? "127.0.0.1", () =>
   console.log(`slopgrid: ${origin}`),
 );
+// SSE clients reconnect to the replacement web process and receive an engine snapshot.
+for (const signal of ["SIGTERM", "SIGINT"] as const)
+  process.on(signal, () => {
+    server.closeAllConnections();
+    server.close(() => process.exit(0));
+  });

@@ -61,7 +61,7 @@ test("a restart preserves finished outputs and pauses interrupted work until an 
       ],
     };
     store.files.write("finished", { "index.md": "Saved output" });
-    store.save(g);
+    store.insert(g);
     const raw = store.db.prepare("SELECT data FROM sessions").get() as {
       data: string;
     };
@@ -101,7 +101,7 @@ test("a restart preserves finished outputs and pauses interrupted work until an 
         new RecoveryProvider(),
         undefined,
         (grid) => {
-          store.save(grid);
+          store.saveGeneration(grid);
           if (grid.status === "complete") resolve();
         },
       );

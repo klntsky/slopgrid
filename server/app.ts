@@ -1,5 +1,4 @@
 import { EventEmitter } from "node:events";
-import type { Grid } from "./domain.js";
 import {
   githubCredentials,
   githubProvider,
@@ -10,7 +9,7 @@ import { createBillingRoutes } from "./routes/billing.js";
 import express from "express";
 import { Store } from "./store.js";
 import { Provider } from "./provider.js";
-import { Jobs } from "./jobs.js";
+import { type GenerationAPI, generationErrorStatus } from "./generation-api.js";
 import { createHtmlHosts } from "./hosts.js";
 import { createHostDispatcher } from "./hosting.js";
 import { createApiSecurity } from "./security.js";
@@ -33,7 +32,7 @@ export type Config = {
   outputsPath?: string;
   provider?: Provider;
   authURL?: string;
-  workersMax?: number;
+  generation: GenerationAPI;
 };
 
 export function createApp(config: Config) {
@@ -43,13 +42,10 @@ export function createApp(config: Config) {
   );
   const app = express();
   const store = new Store(config.database, config.secret, config.outputsPath);
-  const provider = config.provider ?? new Provider();
+  const provider =
+    config.provider ?? new Provider(process.env.OPENROUTER_BASE_URL);
   const updates = new EventEmitter().setMaxListeners(0);
-  const save = (grid: Grid) => {
-    store.save(grid);
-    updates.emit(grid.id, grid);
-  };
-  const jobs = new Jobs(store, provider, config.workersMax, save);
+  const generation = config.generation;
   const origin = new URL(config.origin);
   const htmlHosts = createHtmlHosts(origin, config.outputDomain);
   const rate = createRateLimiter();
@@ -69,7 +65,7 @@ export function createApp(config: Config) {
       origin,
       htmlHosts,
       rate,
-      jobs.previews,
+      generation,
       outputAccess,
     ),
   );
@@ -88,7 +84,7 @@ export function createApp(config: Config) {
     }),
   );
   app.use(
-    createIdentityRoutes(store, jobs, save, session, rate, origin.origin, [
+    createIdentityRoutes(store, session, rate, origin.origin, [
       githubProvider(credentials),
     ]),
   );
@@ -96,19 +92,33 @@ export function createApp(config: Config) {
   app.use(createModelRoutes(provider));
   app.use(createBillingRoutes(store, session));
   app.use(
-    createGridRoutes({ store, provider, jobs, session, rate, snapshot, save }),
+    createGridRoutes({
+      store,
+      provider,
+      generation,
+      session,
+      rate,
+      snapshot,
+      updates,
+    }),
   );
-  app.use(createEventRoutes({ store, jobs, session, snapshot, updates }));
+  app.use(createEventRoutes({ store, generation, session, snapshot, updates }));
   app.use("/api", (_req, res) => res.status(404).json({ error: "Not found" }));
   app.use(
     (
-      _error: unknown,
+      error: unknown,
       _req: express.Request,
       res: express.Response,
       _next: express.NextFunction,
     ) => {
-      res.status(400).json({ error: "Invalid request" });
+      const code = (error as { code?: keyof typeof generationErrorStatus })
+        ?.code;
+      if (code && Object.hasOwn(generationErrorStatus, code))
+        res
+          .status(generationErrorStatus[code])
+          .json({ code, error: (error as Error).message });
+      else res.status(400).json({ error: "Invalid request" });
     },
   );
-  return { app, store, jobs };
+  return { app, store };
 }
