@@ -22,12 +22,15 @@ test("drafts, mutation endpoints, and generated hosts enforce ownership and orig
       })
     ).status(),
   ).toBe(403);
-  const output = await page.locator("iframe").first().getAttribute("src");
+  // Generation can finish before the private bootstrap has navigated to HTML.
+  // Capture the loaded output, not a consumed one-time authorization grant.
+  const frame = page.locator("iframe:visible").first();
+  await expect(
+    frame.contentFrame().getByRole("heading", { name: "A generated site" }),
+  ).toBeVisible();
+  const output = await frame.getAttribute("src");
   const isolated = new URL(
-    page
-      .frames()
-      .find((frame) => frame !== page.mainFrame())!
-      .url(),
+    (await (await frame.elementHandle())!.contentFrame())!.url(),
   );
   expect(isolated.hostname).toMatch(/^[a-f0-9]{48}-slopgrid\.localhost$/);
   const response = await page.request.get(output!);

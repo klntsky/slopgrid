@@ -5,77 +5,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "../server/store.js";
 import { Jobs } from "../server/jobs.js";
-import { Provider } from "../server/provider.js";
-import {
-  expandGrid,
-  type Grid,
-  type Cell,
-  type InferenceProgress,
-} from "../server/domain.js";
+import { ControlledProvider } from "./controlled-provider.js";
+import { expandGrid, type Grid } from "../server/domain.js";
 
-type Result = Awaited<ReturnType<Provider["generate"]>>;
 const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
-class ControlledProvider extends Provider {
-  started: { id: string; owner: string }[] = [];
-  pending = new Map<
-    string,
-    {
-      resolve: (r: Result) => void;
-      reject: (e: unknown) => void;
-      write: (
-        text: string,
-        estimatedCostUsd?: number,
-        thinking?: string,
-      ) => void;
-    }
-  >();
-  ignoreAbort = false;
-  override generate(
-    _key: string,
-    _format: Grid["input"]["format"],
-    cell: Cell,
-    onChunk: (progress: InferenceProgress) => void,
-    signal?: AbortSignal,
-  ): Promise<Result> {
-    this.started.push({ id: cell.id, owner: cell.prompt.split(" ")[0] });
-    return new Promise((resolve, reject) => {
-      const abort = () => {
-        this.pending.delete(cell.id);
-        reject(new DOMException("Paused", "AbortError"));
-      };
-      const cleanup = () => signal?.removeEventListener("abort", abort);
-      this.pending.set(cell.id, {
-        resolve: (result) => {
-          cleanup();
-          resolve(result);
-        },
-        reject: (error) => {
-          cleanup();
-          reject(error);
-        },
-        write: (text, estimatedCostUsd, thinking = "") =>
-          onChunk({ text, thinking, estimatedCostUsd }),
-      });
-      if (!this.ignoreAbort) {
-        if (signal?.aborted) abort();
-        else signal?.addEventListener("abort", abort, { once: true });
-      }
-    });
-  }
-  finish(id: string) {
-    const held = this.pending.get(id)!;
-    this.pending.delete(id);
-    held.resolve({ files: { "index.md": id } });
-  }
-  fail(id: string, statusCode: number, extra: Record<string, unknown> = {}) {
-    const held = this.pending.get(id)!;
-    this.pending.delete(id);
-    held.reject({ statusCode, ...extra });
-  }
-  owners() {
-    return [...this.pending.keys()].map((id) => id.split("/")[0]);
-  }
-}
 function harness(limit?: number) {
   const dir = mkdtempSync(join(tmpdir(), "slopgrid-workers-"));
   const store = new Store(":memory:", Buffer.alloc(32, 3), dir),
