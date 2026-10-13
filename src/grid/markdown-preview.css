@@ -1,3 +1,9 @@
+@font-face {
+  font-family: "Slopgrid Mono";
+  src: url("/fonts/DejaVuSansMono.woff2") format("woff2");
+  font-display: block;
+}
+
 .cell .markdown-preview {
   width: 100%;
   height: 100%;
@@ -45,11 +51,11 @@
 }
 .markdown-document pre:has(> code),
 .markdown-document pre > code {
-  font-family: ui-monospace, monospace;
+  font-family: "Slopgrid Mono", monospace;
   line-height: normal;
 }
 .markdown-document .markdown-raw {
-  font-family: ui-monospace, monospace;
+  font-family: "Slopgrid Mono", monospace;
   padding: 28px 0 0;
   margin: 0;
   background: none;
@@ -59,7 +65,9 @@
   min-width: 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font: 14px/1.6 monospace;
+  font:
+    14px/1.6 "Slopgrid Mono",
+    monospace;
 }
 .markdown-document code {
   background: var(--panel);

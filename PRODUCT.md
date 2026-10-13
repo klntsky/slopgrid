@@ -165,7 +165,7 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 
 1. Render Markdown formatting while displaying embedded raw HTML as text.
 2. Render Markdown incrementally into the same rendered layout used for completion, retaining the preview and scroll position throughout.
-3. Let code blocks take their full natural content width, then scale the whole Markdown document to fit the cell width. Scrolling is vertical only. Use a monospace font and `line-height: normal` for rendered code blocks in grid previews and direct output pages.
+3. Let code blocks take their full natural content width, then scale the whole Markdown document to fit the cell width. Scrolling is vertical only. Use a bundled monospace font with equal advance widths for spaces and full-block characters, and `line-height: normal` for rendered code blocks in grid previews and direct output pages. Use the same bundled font for Markdown source views.
 4. Add an icon-only raw-view toggle to the left of Expand. Raw mode shows the original Markdown as unformatted text in a monospace font, preserves line breaks, disables wrapping, and scales to the cell width.
 5. In raw mode, the button becomes a Markdown icon that returns to rendered Markdown. Keep raw view available during streaming.
 6. Put Expand in the top-right corner. Expansion occupies the grid workspace while keeping the navbar visible; collapsing restores the grid's layout and viewing state.

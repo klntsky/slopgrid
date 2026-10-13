@@ -173,3 +173,7 @@ Reuse returns immediately when the source has no signed completed cells. Pricing
 Prepared inference is a discriminated union: image requests contain image options, while text requests contain text options and the pricing needed for streaming estimates. Text construction requires a calculated budget. The estimator pricing stays outside the signature, preserving the existing effective-request identity. Every successful provider result carries a signature; optional provenance is limited to stored historical cells.
 
 Reference loaders cache reads and content hashes by identifier for one reuse operation or one grid execution. Concurrent cells share pending reads, array order and repeated references are preserved, and failed reads are evicted so they can be retried. Web reuse and engine execution have independent lifetimes and loaders; reference bytes remain out of persistence and the internal API. The signature retains its existing reference encoding so previously signed artifacts remain reusable.
+
+## Markdown fonts
+
+Markdown code blocks and source views use the bundled DejaVu Sans Mono WOFF2 font so spaces and full-block characters share one font and advance width. Grid previews load the static font asset; direct Markdown pages embed it as a data URL and allow only data fonts in their existing sandbox CSP. The font license ships beside the asset.

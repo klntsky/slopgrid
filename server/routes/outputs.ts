@@ -9,6 +9,11 @@ import { zip } from "fflate";
 import { downloadFilename } from "../download-filename.js";
 import { canViewGrid } from "../grid-policy.js";
 import type { SessionReader } from "../session.js";
+
+const markdownFont = readFileSync(
+  new URL("../../public/fonts/DejaVuSansMono.woff2", import.meta.url),
+).toString("base64");
+
 function outputFile(output: NonNullable<ReturnType<Store["outputMetadata"]>>) {
   if (output.format !== "image")
     return {
@@ -147,13 +152,19 @@ export function createOutputRoutes(
         : req.query.theme === "light"
           ? "light"
           : "light dark";
+    // Embed the font so sandboxed Markdown needs no external font access.
+    res.set(
+      "Content-Security-Policy",
+      `${res.get("Content-Security-Policy")}; font-src data:`,
+    );
     return res.type("html").send(
       `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>
+        @font-face{font-family:"Slopgrid Mono";src:url(data:font/woff2;base64,${markdownFont}) format("woff2");font-display:block}
         :root{color-scheme:${colorScheme};background:light-dark(#faf8f2,#22211f);color:light-dark(#39352e,#e8e5df)}
         body{font:16px/1.6 system-ui;margin:24px;overflow-wrap:anywhere}
         a{color:light-dark(#67583f,#b5a181)}
         pre{overflow:auto;padding:12px;background:light-dark(#f1ece3,#282623);line-height:normal}
-        pre,pre>code{font-family:ui-monospace,monospace}
+        pre,pre>code{font-family:"Slopgrid Mono",monospace}
         code{background:light-dark(#f1ece3,#282623)}
         blockquote{margin-left:0;padding-left:16px;border-left:3px solid light-dark(#d1cabd,#45423e)}
         hr,th,td{border-color:light-dark(#d1cabd,#45423e)}
