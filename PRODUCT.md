@@ -122,9 +122,9 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 2. Rotate row labels 90 degrees counterclockwise and keep header/cell text readable. The row-label column should fit its contents.
 3. Keep the first row compact in height and the label column compact in width through restrained header padding. Size output cells independently.
 4. Page-height filling may expand output rows, but must never stretch the header row. Its height stays natural through viewport fitting, zoom, resizing, and restoration from localStorage.
-5. Users resize output columns and rows through their corresponding header edges. Each shared edge controls the column to its right or row below it, including the last output row. The header row and label column themselves are not resizable.
+5. Users resize output columns and rows through their corresponding header edges. Each shared edge controls the column to its right or row below it, including the last output row. The header row and label column themselves are not resizable. Resizing permits column widths from 120 to 20,000 pixels and row heights from 160 to 20,000 pixels.
 6. Persist only output dimensions per grid in browser localStorage, without server-wide size persistence. Restoring output sizes must preserve the header's natural height.
-7. Support pinch zoom whenever a touchscreen is present, regardless of screen width. Start by fitting the table to available width and prevent zooming out beyond that width fit.
+7. Support pinch zoom whenever a touchscreen is present, regardless of screen width. Start by fitting the table to available width and prevent zooming out beyond that width fit. Limit zooming in to three times the table's unscaled size.
 8. Keep one-finger scrolling usable, including within Markdown cells. Zoom the grid rather than the application navbar.
 9. Click-dragging empty grid areas scrolls both axes. Drags starting on images, website frames, Markdown or thinking previews, interactive controls, and resize handles retain their own behavior. Image padding belongs to the draggable grid, while images retain their centered, aspect-ratio-preserving fit.
 
