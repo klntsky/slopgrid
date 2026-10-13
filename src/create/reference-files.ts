@@ -51,7 +51,7 @@ export async function uploadReferences(
     .filter((axis) => axis.kind === "input_references")
     .flatMap((axis) => axis.values);
   const groups = Object.fromEntries(
-    names.map((name) => [name, [...(input.referenceGroups?.[name] ?? [])]]),
+    names.map((name) => [name, [...input.referenceGroups![name]]]),
   );
   const replacements = new Map<string, ReferenceImage>();
   for (const images of Object.values(groups)) {
