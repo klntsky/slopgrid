@@ -6,13 +6,13 @@ Slopgrid lets you compare AI-generated outputs side by side. Build a grid of mod
 
 ## Useful features
 
-- Allows you to limit inference spending in USD per text inference call.
-- Tries to prevent hitting inference budget limits by pre-checking your OpenRouter allowance and suggesting parallelism with a safety margin, while sharing available workers fairly.
-- Makes sharing and collaboration easy through forking. Your data is private by default, and public grids cannot be deleted because we don't want important benchmark data to disappear.
+- Allows you to limit inference spending in USD per inference call;
+- Tries to prevent hitting inference budget limits by pre-checking your openrouter allowance and running as many parallel inferences as possible, with some safety margin
+- Easy sharing and collaboration via forking; your data is private by default; deletion of public grids is impossible on purpose - we don't want important benchmark data to disappear
 
 ## Supported grid layouts
 
-You define what the columns and rows of a grid mean, choosing from the following dimensions for each axis.
+The user defines what columns and rows of a grid mean;
 
 ### Image outputs
 
