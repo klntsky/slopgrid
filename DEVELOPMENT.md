@@ -139,3 +139,5 @@ Request-matching scenarios observe actual upstream calls for changes to model, s
 Reuse preparation coverage combines a valid copy with an unpriced model, checks insufficient budgets with signed and unsigned sources, and verifies that these errors remain per-cell failures without upstream calls.
 
 Controlled provider fixtures must supply a signature for successful results, while unsigned-history scenarios remove provenance from stored cell metadata. Request preparation types enforce the text budget and image/text distinction before execution.
+
+Image reuse matrices vary one value within the same axis kind, compare complete captured SDK requests, and include unchanged-request controls. Each setting must independently force generation. The checkbox journey uses fixture charges large enough for Cost and Spent to display distinct totals, while checking their precise API values and token usage.

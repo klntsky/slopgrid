@@ -6,7 +6,7 @@ test("reuse selection survives Edit, reload, OAuth and Fork, and unchecked draft
   page,
   request,
 }) => {
-  await request.post("/fixture/reset", { data: {} });
+  await request.post("/fixture/reset", { data: { textCost: 0.25 } });
   await page.goto("/");
   await expect(page.getByRole("checkbox", { name: label })).toHaveCount(0);
   await create(page, "Markdown", "dog", "hat");
@@ -26,7 +26,9 @@ test("reuse selection survives Edit, reload, OAuth and Fork, and unchecked draft
   await expect(reuse).not.toBeChecked();
   await reuse.check();
   await page.getByLabel("Row values").fill("dog\ncat");
-  await request.post("/fixture/reset", { data: { holdGenerations: true } });
+  await request.post("/fixture/reset", {
+    data: { holdGenerations: true, textCost: 0.25 },
+  });
   await page.getByRole("button", { name: "Generate", exact: true }).click();
   await expectProgress(page, 1, 2);
   const id = page.url().split("/").pop();
@@ -39,20 +41,20 @@ test("reuse selection survives Edit, reload, OAuth and Fork, and unchecked draft
   await request.post("/fixture/release", { data: { all: true } });
   await expectProgress(page, 2, 2);
   const complete = await (await page.request.get(`/api/grids/${id}`)).json();
-  expect(complete.spentUsd).toBe(0.000123);
+  expect(complete.spentUsd).toBe(0.25);
   expect(complete.cells.map((c: any) => c.usage)).toEqual([
     source.cells[0].usage,
-    { inputTokens: 10, outputTokens: 20, costUsd: 0.000123 },
+    { inputTokens: 10, outputTokens: 20, costUsd: 0.25 },
   ]);
   await expect(page.locator(".grid-cost")).toHaveAttribute(
     "aria-label",
-    "Total cost: $0.00",
+    "Total cost: $0.50",
   );
   await expect(page.locator(".cell-tokens").first()).toHaveAttribute(
     "aria-label",
     "10 input tokens, 20 output tokens",
   );
-  await expect(page.locator(".grid-spent")).toContainText("$0.00");
+  await expect(page.locator(".grid-spent")).toContainText("$0.25");
   await page.getByRole("button", { name: "EDIT", exact: true }).click();
   await reuse.uncheck();
   await page.reload();
@@ -147,10 +149,6 @@ test("image reuse follows ordered reference bytes and effective image settings t
   for (const change of [
     { referenceGroups: { A: [different, first], B: [different, same] } },
     { referenceGroups: { A: [first, first], B: [same, same] } },
-    { columns: { kind: "size", values: ["2K"] } },
-    { columns: { kind: "quality", values: ["high"] } },
-    { columns: { kind: "background", values: ["transparent"] } },
-    { columns: { kind: "aspect_ratio", values: ["16:9"] } },
   ]) {
     await generate({
       ...input,
@@ -167,8 +165,56 @@ test("image reuse follows ordered reference bytes and effective image settings t
   expect(sent[2].input_references[0].image_url.url).toBe(
     sent[0].input_references[1].image_url.url,
   );
-  expect(sent[6].size).toBe("2K");
-  expect(sent[8].quality).toBe("high");
-  expect(sent[10].background).toBe("transparent");
-  expect(sent[14 - 1].aspect_ratio).toBe("16:9");
 });
+
+for (const [kind, initial, changed] of [
+  ["size", "1K", "2K"],
+  ["quality", "low", "high"],
+  ["background", "opaque", "transparent"],
+  ["aspect_ratio", "1:1", "16:9"],
+] as const) {
+  test(`image reuse changes only ${kind} while keeping every other parameter fixed`, async ({
+    page,
+    request,
+  }) => {
+    await request.post("/fixture/reset", { data: {} });
+    await page.goto("/");
+    await page.getByRole("button", { name: "Image", exact: true }).click();
+    await page.getByRole("link", { name: "Connect OpenRouter" }).click();
+    await expect(page.getByText("Connected", { exact: true })).toBeVisible();
+    const config = {
+      format: "image",
+      prompt: "Draw $ROW",
+      model: "fixture/image",
+      effort: "default",
+      budgetUsd: 5,
+      rows: { kind: "variable", values: ["landscape"] },
+      columns: { kind, values: [initial] },
+    };
+    async function generate(body: object) {
+      const response = await page.request.post("/api/grids", { data: body });
+      expect(response.status()).toBe(201);
+      const grid = await response.json();
+      await expect
+        .poll(
+          async () =>
+            (await (await page.request.get(`/api/grids/${grid.id}`)).json())
+              .status,
+        )
+        .toBe("complete");
+      return grid;
+    }
+    const source = await generate(config);
+    const reuse = { ...config, sourceGridId: source.id, reuseArtifacts: true };
+    const copy = await generate(reuse);
+    expect(copy.status).toBe("complete");
+    expect(
+      await (await request.get("/fixture/image-requests")).json(),
+    ).toHaveLength(1);
+    await generate({ ...reuse, columns: { kind, values: [changed] } });
+    const sent = await (await request.get("/fixture/image-requests")).json();
+    expect(sent).toHaveLength(2);
+    expect(sent[0][kind]).toBe(initial);
+    expect(sent[1]).toEqual({ ...sent[0], [kind]: changed });
+  });
+}

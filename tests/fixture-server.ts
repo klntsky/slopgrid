@@ -16,6 +16,7 @@ let unsafe = false;
 let markdownOutput: string | undefined;
 let websiteStreaming = false;
 let costStreaming = false;
+let textCost = 0.000123;
 let advanceWebsite: (() => void) | undefined;
 let svgStreaming = false;
 let advanceSvg: (() => void) | undefined;
@@ -398,7 +399,7 @@ upstream.post("/api/v1/chat/completions", async (req, res) => {
     await new Promise((resolve) => setTimeout(resolve, 30));
   }
   res.write(
-    `data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30, cost: 0.000123 } })}\n\ndata: [DONE]\n\n`,
+    `data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30, cost: textCost } })}\n\ndata: [DONE]\n\n`,
   );
   res.end();
 });
@@ -440,6 +441,7 @@ app.post("/fixture/reset", (req, res) => {
   aborted = [];
   websiteStreaming = !!req.body.websiteStreaming;
   costStreaming = !!req.body.costStreaming;
+  textCost = req.body.textCost ?? 0.000123;
   advanceWebsite?.();
   advanceWebsite = undefined;
   svgStreaming = !!req.body.svgStreaming;
