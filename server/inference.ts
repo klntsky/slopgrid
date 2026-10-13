@@ -124,7 +124,19 @@ export async function generateInference(
       const result = await generateImage({
         model: provider.imageModel(prepared.model),
         prompt: prepared.prompt,
-        providerOptions: { openrouter: prepared.image },
+        providerOptions: {
+          openrouter: {
+            ...prepared.image,
+            input_references: prepared.image.input_references?.map(
+              ({ bytes, mediaType }) => ({
+                type: "image_url",
+                image_url: {
+                  url: `data:${mediaType};base64,${bytes.toString("base64")}`,
+                },
+              }),
+            ),
+          },
+        },
         maxRetries: 0,
         abortSignal: signal,
       });

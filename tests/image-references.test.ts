@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { renameSync, writeFileSync, unlinkSync } from "node:fs";
@@ -150,8 +151,12 @@ test("reference uploads follow ownership, account claims, selected publication a
   const reopened = new Store(database, secret);
   try {
     assert.deepEqual(
-      reopened.references.dataURLs([image.id, image.id]),
-      [1, 2].map(() => `data:image/png;base64,${png.toString("base64")}`),
+      await reopened.references.loader()([image.id, image.id]),
+      [1, 2].map(() => ({
+        bytes: png,
+        mediaType: "image/png",
+        sha256: createHash("sha256").update(png).digest("hex"),
+      })),
     );
   } finally {
     reopened.db.close();
@@ -204,7 +209,38 @@ test("reference uploads distinguish invalid files from storage failures and reco
   const recovered = await upload();
   assert.equal(recovered.status, 201);
   const image = await recovered.json();
-  assert.deepEqual(store.references.dataURLs([image.id]), [
-    `data:image/png;base64,${png.toString("base64")}`,
+  assert.deepEqual(await store.references.loader()([image.id]), [
+    {
+      bytes: png,
+      mediaType: "image/png",
+      sha256: createHash("sha256").update(png).digest("hex"),
+    },
   ]);
+});
+
+test("reference loaders share exact bytes and hashes while retaining order and execution boundaries", async (t) => {
+  const { store } = await appFixture(t);
+  const session = { id: "reference-loader-owner", created: Date.now() };
+  const other = Buffer.concat([png, Buffer.from("different")]);
+  const first = store.references.add(png, "one.png", session)!;
+  const second = store.references.add(other, "two.png", session)!;
+  const load = store.references.loader();
+  const [a, b] = await Promise.all([
+    load([first.id, second.id, first.id]),
+    load([first.id]),
+  ]);
+  assert.deepEqual(
+    a.map((ref) => ref.bytes),
+    [png, other, png],
+  );
+  assert.equal(a[0], a[2]);
+  assert.equal(a[0], b[0]);
+  assert.equal(a[0].sha256, createHash("sha256").update(png).digest("hex"));
+  const file = store.references.path(first.id)!;
+  renameSync(file, file + ".held");
+  assert.deepEqual((await load([first.id]))[0].bytes, png);
+  const fresh = store.references.loader();
+  await assert.rejects(fresh([first.id]), /unavailable/);
+  renameSync(file + ".held", file);
+  assert.deepEqual((await fresh([first.id]))[0].bytes, png);
 });

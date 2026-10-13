@@ -9,6 +9,7 @@ import { failureDetails } from "./failures.js";
 import { selectWorker } from "./worker-allocation.js";
 
 type GridRuntime = {
+  references: ReturnType<Store["references"]["loader"]>;
   owner: string;
   key?: string;
   emittedAt?: number;
@@ -79,7 +80,11 @@ export class Jobs {
       ? (session.anonymousId ?? session.id)
       : this.executionOwner(g);
     clearTimeout(this.runtime.get(g.id)?.timer);
-    this.runtime.set(g.id, { owner, key: key || undefined });
+    this.runtime.set(g.id, {
+      owner,
+      key: key || undefined,
+      references: this.store.references.loader(),
+    });
     this.owners.set(owner, {
       limit:
         this.store.sessionForOwner(owner)?.inferenceConcurrency ??
@@ -261,6 +266,10 @@ export class Jobs {
       this.running.get(cell.id)?.controller === controller;
     try {
       if (!key) throw new Error("Reconnect OpenRouter to continue.");
+      const references = await this.runtime
+        .get(grid.id)!
+        .references(cell.imageSettings?.input_references ?? []);
+      if (!current()) return;
       const result = await this.provider.generate(
         key,
         grid.input.format,
@@ -290,9 +299,7 @@ export class Jobs {
         },
         controller.signal,
         this.store.billing.observe(cell.id),
-        this.store.references.dataURLs(
-          cell.imageSettings?.input_references ?? [],
-        ),
+        references,
       );
       if (!current()) return;
       this.store.files.write(cell.id, result.files);

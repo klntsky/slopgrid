@@ -1,3 +1,4 @@
+import type { ReferenceContent } from "./image-references.js";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { z } from "zod";
@@ -18,19 +19,17 @@ function common(cell: Cell) {
     budgetUsd: cell.budgetUsd,
   };
 }
-export function prepareImageInference(cell: Cell, references: string[]) {
+export function prepareImageInference(
+  cell: Cell,
+  references: ReferenceContent[],
+) {
   const { input_references: _ids, ...imageSettings } = cell.imageSettings ?? {};
   return {
     ...common(cell),
     format: "image" as const,
     image: {
       ...imageSettings,
-      input_references: references.length
-        ? references.map((url) => ({
-            type: "image_url" as const,
-            image_url: { url },
-          }))
-        : undefined,
+      input_references: references.length ? references : undefined,
     },
   };
 }
@@ -88,15 +87,10 @@ export function inferenceSignature(prepared: PreparedInference): string {
     return digest(request);
   }
   const references = prepared.image.input_references?.map(
-    ({ image_url: { url } }) => {
-      const [header, data] = url.split(",", 2);
-      return {
-        mediaType: header,
-        sha256: createHash("sha256")
-          .update(Buffer.from(data, "base64"))
-          .digest("hex"),
-      };
-    },
+    ({ mediaType, sha256 }) => ({
+      mediaType: `data:${mediaType};base64`,
+      sha256,
+    }),
   );
   return digest({
     ...prepared,

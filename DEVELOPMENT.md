@@ -143,3 +143,5 @@ Controlled provider fixtures must supply a signature for successful results, whi
 Image reuse matrices vary one value within the same axis kind, compare complete captured SDK requests, and include unchanged-request controls. Each setting must independently force generation. The checkbox journey uses fixture charges large enough for Cost and Spent to display distinct totals, while checking their precise API values and token usage.
 
 Storage copy coverage reads and writes real bundles asynchronously, preserves binary artifact and thinking bytes, rejects incomplete source inventories, and checks that copies survive source removal. Runtime reuse coverage also exercises one source serving multiple destination cells.
+
+Reference loader tests use real files to verify byte/hash consistency, ordered duplicates, reuse within one loader after a source file becomes unavailable, and fresh reads for a new loader. Browser reference scenarios continue checking the actual SDK data URLs and copied image bytes.

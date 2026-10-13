@@ -1,5 +1,12 @@
 import type Database from "better-sqlite3";
-import { readFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+
+export type ReferenceContent = {
+  bytes: Buffer;
+  mediaType: string;
+  sha256: string;
+};
 import type { OutputFiles } from "./files.js";
 import type { Session } from "./store.js";
 import { anonymousOwner } from "./session.js";
@@ -77,14 +84,34 @@ export function createImageReferences(
     path(id: string) {
       return files.path(`reference-${id}`, "image");
     },
-    dataURLs(ids: string[]) {
-      return ids.map((id) => {
+    loader() {
+      const cache = new Map<string, Promise<ReferenceContent>>();
+      async function read(id: string): Promise<ReferenceContent> {
         const reference = get(id),
           path = files.path(`reference-${id}`, "image");
         if (!reference || !path)
           throw new Error("Reference image is unavailable");
-        return `data:${reference.mediaType};base64,${readFileSync(path).toString("base64")}`;
-      });
+        const bytes = await readFile(path);
+        return {
+          bytes,
+          mediaType: reference.mediaType,
+          sha256: createHash("sha256").update(bytes).digest("hex"),
+        };
+      }
+      return (ids: readonly string[]) =>
+        Promise.all(
+          ids.map((id) => {
+            let pending = cache.get(id);
+            if (!pending) {
+              pending = read(id).catch((error) => {
+                cache.delete(id);
+                throw error;
+              });
+              cache.set(id, pending);
+            }
+            return pending;
+          }),
+        );
     },
   };
 }

@@ -21,13 +21,14 @@ export async function reuseArtifacts(
       candidates.set(cell.provenance.signature, cell);
   if (!candidates.size) return;
   const matches = new Map<Cell, Cell[]>();
+  const readReferences = store.references.loader();
   for (const cell of cells) {
     let prepared;
     try {
       prepared = await provider.prepare(
         format,
         cell,
-        store.references.dataURLs(cell.imageSettings?.input_references ?? []),
+        await readReferences(cell.imageSettings?.input_references ?? []),
       );
     } catch (error) {
       if (error instanceof PreparationError) continue;

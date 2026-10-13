@@ -1,3 +1,4 @@
+import type { ReferenceContent } from "./image-references.js";
 import {
   prepareTextInference,
   prepareImageInference,
@@ -238,7 +239,7 @@ export class Provider {
     onChunk: (progress: InferenceProgress) => void,
     signal?: AbortSignal,
     observe?: CallObserver,
-    references?: string[],
+    references?: ReferenceContent[],
   ): Promise<{
     signature: string;
     files: Record<string, string | Uint8Array>;
@@ -259,7 +260,7 @@ export class Provider {
   async prepare(
     format: GridInput["format"],
     cell: Cell,
-    references: string[] = [],
+    references: ReferenceContent[] = [],
   ) {
     if (format === "image") return prepareImageInference(cell, references);
     const pricedModel = (await this.models()).find(
