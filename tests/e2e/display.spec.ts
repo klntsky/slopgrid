@@ -24,7 +24,9 @@ test("SVG images grow during generation without exposing markup or running SVG s
     await expect.poll(centerColor).toEqual([255, 0, 0, 255]);
     await page.getByRole("button", { name: "Expand SVG", exact: true }).click();
     const expanded = page.getByRole("region", { name: /^Expanded output:/ });
-    await expect(expanded.getByRole("img", { name: "SVG preview", exact: true })).toBeVisible();
+    await expect(
+      expanded.getByRole("img", { name: "SVG preview", exact: true }),
+    ).toBeVisible();
     await expect.poll(centerColor).toEqual([255, 0, 0, 255]);
     await expect(page.getByRole("button", { name: "PUBLISH" })).toBeDisabled();
     await expect(page.locator("iframe, .cell pre")).toHaveCount(0);
@@ -43,10 +45,16 @@ test("SVG images grow during generation without exposing markup or running SVG s
     await request.post("/fixture/svg-next");
     await expectProgress(page, 1, 1);
     await expect(preview).toHaveCount(0);
-    await expect(expanded.getByRole("img", { name: "Generated SVG", exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "Collapse SVG", exact: true }).click();
+    await expect(
+      expanded.getByRole("img", { name: "Generated SVG", exact: true }),
+    ).toBeVisible();
+    await page
+      .getByRole("button", { name: "Collapse SVG", exact: true })
+      .click();
     await expect(expanded).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Expand SVG", exact: true })).toBeFocused();
+    await expect(
+      page.getByRole("button", { name: "Expand SVG", exact: true }),
+    ).toBeFocused();
     await expect(
       page
         .locator(".cell-usage")
@@ -70,22 +78,47 @@ test("SVG images grow during generation without exposing markup or running SVG s
 });
 
 for (const format of ["Image", "SVG"])
-  test(`completed ${format} uses browser caching without sharing private entries between sessions`, async ({ page, request, browser }) => {
+  test(`completed ${format} uses browser caching without sharing private entries between sessions`, async ({
+    page,
+    request,
+    browser,
+  }) => {
     await request.post("/fixture/reset", { data: {} });
     await create(page, format, "cat", "hat");
     await expectProgress(page, 1, 1);
     const gridURL = page.url();
-    const source = await page.getByRole("img", { name: format === "SVG" ? "Generated SVG" : "Generated image", exact: true }).getAttribute("src");
+    const source = await page
+      .getByRole("img", {
+        name: format === "SVG" ? "Generated SVG" : "Generated image",
+        exact: true,
+      })
+      .getAttribute("src");
     const outputURL = new URL(source!, gridURL).href;
-    await expect.poll(() => page.locator(".generated-image").evaluate((el) => (el as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+    await expect
+      .poll(() =>
+        page
+          .locator(".generated-image")
+          .evaluate((el) => (el as HTMLImageElement).naturalWidth),
+      )
+      .toBeGreaterThan(0);
     const ownerCookies = await page.context().cookies();
     async function cachedVisit(view: import("@playwright/test").Page) {
       await view.goto(new URL("/grids", gridURL).href);
       await view.goto(gridURL);
-      await expect.poll(() => view.evaluate((url) => {
-        const entry = performance.getEntriesByName(url).at(-1) as PerformanceResourceTiming | undefined;
-        return entry && { transfer: entry.transferSize, decoded: entry.decodedBodySize > 0 };
-      }, outputURL)).toEqual({ transfer: 0, decoded: true });
+      await expect
+        .poll(() =>
+          view.evaluate((url) => {
+            const entry = performance.getEntriesByName(url).at(-1) as
+              PerformanceResourceTiming | undefined;
+            return (
+              entry && {
+                transfer: entry.transferSize,
+                decoded: entry.decodedBodySize > 0,
+              }
+            );
+          }, outputURL),
+        )
+        .toEqual({ transfer: 0, decoded: true });
     }
     await cachedVisit(page);
     await page.context().clearCookies();
@@ -99,8 +132,19 @@ for (const format of ["Image", "SVG"])
     try {
       const shared = await visitor.newPage();
       await shared.goto(gridURL);
-      await expect(shared.getByRole("img", { name: format === "SVG" ? "Generated SVG" : "Generated image", exact: true })).toBeVisible();
-      await expect.poll(() => shared.locator(".generated-image").evaluate((el) => (el as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+      await expect(
+        shared.getByRole("img", {
+          name: format === "SVG" ? "Generated SVG" : "Generated image",
+          exact: true,
+        }),
+      ).toBeVisible();
+      await expect
+        .poll(() =>
+          shared
+            .locator(".generated-image")
+            .evaluate((el) => (el as HTMLImageElement).naturalWidth),
+        )
+        .toBeGreaterThan(0);
       await visitor.clearCookies();
       await cachedVisit(shared);
     } finally {
@@ -110,7 +154,8 @@ for (const format of ["Image", "SVG"])
 
 for (const format of ["Image", "SVG", "Markdown", "Static website"])
   test(`mouse panning respects ${format} content, controls and resize handles`, async ({
-    page, request,
+    page,
+    request,
   }) => {
     await page.setViewportSize({ width: 800, height: 650 });
     await request.post("/fixture/reset", { data: {} });
@@ -118,7 +163,10 @@ for (const format of ["Image", "SVG", "Markdown", "Static website"])
     await expectProgress(page, 9, 9);
     const grid = page.getByLabel("Generated output grid");
     const cell = page.locator("article.cell").first();
-    const handle = page.getByRole("separator", { name: "Resize column 1", exact: true });
+    const handle = page.getByRole("separator", {
+      name: "Resize column 1",
+      exact: true,
+    });
     for (let i = 0; i < 4; i++) await handle.press("Shift+ArrowRight");
     const position = () => grid.evaluate((el) => [el.scrollLeft, el.scrollTop]);
     const drag = async (x: number, y: number, dx = -70, dy = -60) => {
@@ -128,20 +176,40 @@ for (const format of ["Image", "SVG", "Markdown", "Static website"])
       await page.mouse.up();
     };
     const image = format === "Image" || format === "SVG";
-    const output = cell.locator(image ? "img" : format === "Markdown" ? ".markdown-preview" : "iframe:visible");
+    const output = cell.locator(
+      image
+        ? "img"
+        : format === "Markdown"
+          ? ".markdown-preview"
+          : "iframe:visible",
+    );
     await expect(output).toBeVisible();
-    if (image) await expect.poll(() => output.evaluate((el) => (el as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+    if (image)
+      await expect
+        .poll(() =>
+          output.evaluate((el) => (el as HTMLImageElement).naturalWidth),
+        )
+        .toBeGreaterThan(0);
     if (image || format === "Static website") {
       const source = await output.getAttribute("src");
       const mounted = await output.elementHandle();
-      const expand = cell.getByRole("button", { name: `Expand ${format}`, exact: true });
+      const expand = cell.getByRole("button", {
+        name: `Expand ${format}`,
+        exact: true,
+      });
       const dimensions = await handle.getAttribute("aria-valuenow");
       await expand.click();
       const expanded = page.getByRole("region", { name: /^Expanded output:/ });
       if (image) {
         const expandedImage = expanded.getByRole("img");
         await expect(expandedImage).toHaveAttribute("src", source!);
-        await expect.poll(() => expandedImage.evaluate((el) => (el as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+        await expect
+          .poll(() =>
+            expandedImage.evaluate(
+              (el) => (el as HTMLImageElement).naturalWidth,
+            ),
+          )
+          .toBeGreaterThan(0);
       } else {
         const website = expanded.frameLocator("iframe:visible");
         await expect(website.getByText("Module loaded")).toBeVisible();
@@ -154,14 +222,20 @@ for (const format of ["Image", "SVG", "Markdown", "Static website"])
       await expect(handle).toHaveAttribute("aria-valuenow", dimensions!);
     }
     if (format === "Static website")
-      await expect(cell.frameLocator("iframe:visible").getByText("Module loaded")).toBeVisible();
+      await expect(
+        cell.frameLocator("iframe:visible").getByText("Module loaded"),
+      ).toBeVisible();
     const content = (await output.boundingBox())!;
     await drag(content.x + content.width / 2, content.y + content.height / 2);
     expect(await position()).toEqual([0, 0]);
-    const control = (await cell.getByRole("link", { name: "Open output", exact: true }).boundingBox())!;
+    const control = (await cell
+      .getByRole("link", { name: "Open output", exact: true })
+      .boundingBox())!;
     await drag(control.x + control.width / 2, control.y + control.height / 2);
     expect(await position()).toEqual([0, 0]);
-    const surface = (await cell.locator(image ? ".image-preview" : ".cell-footer").boundingBox())!;
+    const surface = (await cell
+      .locator(image ? ".image-preview" : ".cell-footer")
+      .boundingBox())!;
     // Image padding starts the drag; pointer capture keeps it moving over content.
     await drag(surface.x + surface.width - 10, surface.y + surface.height / 2);
     await expect.poll(async () => (await position())[0]).toBeGreaterThan(50);
@@ -173,7 +247,9 @@ for (const format of ["Image", "SVG", "Markdown", "Static website"])
     const width = Number(await handle.getAttribute("aria-valuenow"));
     const edge = (await handle.boundingBox())!;
     await drag(edge.x + edge.width / 2, edge.y + edge.height / 2, 60, 0);
-    expect(Number(await handle.getAttribute("aria-valuenow"))).toBeGreaterThan(width + 40);
+    expect(Number(await handle.getAttribute("aria-valuenow"))).toBeGreaterThan(
+      width + 40,
+    );
     expect(await position()).toEqual([0, 0]);
   });
 
@@ -187,16 +263,13 @@ test("theme follows system changes unless a saved choice overrides them", async 
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await page.emulateMedia({ colorScheme: "light" });
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-  await theme.selectOption("dark");
+  await page.getByRole("button", { name: "Switch to dark theme" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await page.getByRole("link", { name: "slopgrid", exact: true }).click();
   await page.getByRole("link", { name: "NEW GRID", exact: true }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-  await page
-    .getByRole("button", { name: "Navigation menu", exact: true })
-    .click();
   await page
     .getByRole("navigation")
     .getByRole("link", { name: "SETTINGS", exact: true })
@@ -207,7 +280,7 @@ test("theme follows system changes unless a saved choice overrides them", async 
   await expect(
     otherTab.getByRole("combobox", { name: "Theme", exact: true }),
   ).toHaveValue("dark");
-  await theme.selectOption("light");
+  await page.getByRole("button", { name: "Switch to light theme" }).click();
   await expect(otherTab.locator("html")).toHaveAttribute("data-theme", "light");
   await otherTab.close();
   await page.emulateMedia({ colorScheme: "dark" });
@@ -221,7 +294,7 @@ test("theme follows system changes unless a saved choice overrides them", async 
 });
 
 for (const width of [390, 700, 701, 1280]) {
-  test(`navigation closes after navigation, Escape, or an outside click (${width}px)`, async ({
+  test(`navigation adapts to desktop and mobile interactions (${width}px)`, async ({
     page,
   }) => {
     await page.setViewportSize({ width, height: 844 });
@@ -231,6 +304,20 @@ for (const width of [390, 700, 701, 1280]) {
       exact: true,
     });
     const nav = page.getByRole("navigation");
+    if (width > 700) {
+      await expect(menu).toBeHidden();
+      await expect(nav).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: /Switch to .* theme/ }),
+      ).toBeVisible();
+      await nav.getByRole("link", { name: "SETTINGS", exact: true }).click();
+      await expect(page).toHaveURL("/settings");
+      await expect(nav).toBeVisible();
+      return;
+    }
+    await expect(
+      page.getByRole("button", { name: /Switch to .* theme/ }),
+    ).toBeHidden();
     await expect(menu).toHaveAttribute("aria-expanded", "false");
     await expect(nav).toBeHidden();
     await menu.click();

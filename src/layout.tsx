@@ -1,9 +1,11 @@
+import { useTheme } from "./theme";
 import { Account } from "./components/account";
 import { useEffect, useState, useRef, createContext } from "react";
 import { Link, Outlet, useLocation } from "@tanstack/react-router";
-import { Menu, X } from "lucide-react";
+import { Menu, X, Sun, Moon } from "lucide-react";
 export const GridHeaderTarget = createContext<HTMLDivElement | null>(null);
 export function Layout() {
+  const { resolvedTheme, setTheme } = useTheme();
   const pathname = useLocation().pathname,
     isGrid = pathname.startsWith("/grid/");
   const [headerTarget, setHeaderTarget] = useState<HTMLDivElement | null>(null);
@@ -72,6 +74,24 @@ export function Layout() {
               <Link to="/billing">BILLING</Link>
               <Link to="/settings">SETTINGS</Link>
             </nav>
+            <button
+              type="button"
+              className="desktop-theme-toggle secondary"
+              aria-label={
+                resolvedTheme === "dark"
+                  ? "Switch to light theme"
+                  : "Switch to dark theme"
+              }
+              onClick={() =>
+                setTheme(resolvedTheme === "dark" ? "light" : "dark")
+              }
+            >
+              {resolvedTheme === "dark" ? (
+                <Sun aria-hidden="true" />
+              ) : (
+                <Moon aria-hidden="true" />
+              )}
+            </button>
           </div>
         </header>
         <Outlet />

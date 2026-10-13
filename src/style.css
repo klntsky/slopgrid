@@ -1227,15 +1227,21 @@ header {
   white-space: nowrap;
   border: 0;
 }
-.navigation-menu-toggle {
+.navigation-menu-toggle,
+.desktop-theme-toggle {
   display: inline-flex;
   width: 44px;
   height: 44px;
   padding: 10px;
 }
-.navigation-menu-toggle .lucide {
+.navigation-menu-toggle .lucide,
+.desktop-theme-toggle .lucide {
   width: 22px;
   height: 22px;
+}
+.desktop-theme-toggle {
+  display: none;
+  flex-shrink: 0;
 }
 .navigation-controls > nav {
   display: none;
@@ -1258,6 +1264,32 @@ header {
 }
 .navigation-controls > nav > a:not(.button) {
   padding: 14px 12px;
+}
+@media (min-width: 701px) {
+  .navigation-controls {
+    gap: 16px;
+  }
+  .navigation-menu-toggle {
+    display: none;
+  }
+  .desktop-theme-toggle {
+    display: inline-flex;
+  }
+  .navigation-controls > nav {
+    display: flex;
+    position: static;
+    width: auto;
+    flex-direction: row;
+    align-items: center;
+    gap: 16px;
+    padding: 0;
+    background: none;
+    border: 0;
+    box-shadow: none;
+  }
+  .navigation-controls > nav > a:not(.button) {
+    padding: 0;
+  }
 }
 @media (max-width: 700px) {
   nav {

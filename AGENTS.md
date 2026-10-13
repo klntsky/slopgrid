@@ -11,3 +11,5 @@
 5. Always commit and push together in one shell command using `git commit ... && git push`.
 
 6. When the agent starts a background task, run its top-level command in tmux session `bg` so the user can inspect it. Application code, test runners, and CI manage their own child processes without requiring tmux.
+
+7. Use the LLM patch tools for text edits, and never use Python for string replacement.
