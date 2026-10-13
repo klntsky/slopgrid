@@ -267,7 +267,7 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 2. Saving Keep private closes without publication. First publication requires confirmation, with Confirm, Cancel, and a "Don't ask again" preference remembered in this browser only after successful confirmation. Failure to access localStorage must not block publication.
 3. Use this confirmation text: "This projects aims to facilitate model benchmarking and research, and we don't want valuable data to disappear. For this reason, making a published grid private is impossible."
 4. Publication is allowed when every cell is complete or failed. Errors do not prevent publication; pending or running cells do.
-5. Publishing permanently locks generation inputs and outputs and prevents returning to private visibility. Title editing remains allowed independently.
+5. Publishing permanently locks generation inputs and outputs and prevents returning to private visibility. Public grids cannot be deleted so that benchmark data remains available. Title editing remains allowed independently.
 6. Provide an owner-visible route and control to promote an already link-accessible grid to public listing. A publicly listed grid cannot be demoted to link-only or private visibility.
 7. Link-accessible grids are readable by anyone with the link but excluded from public discovery. Public grids appear newest first beneath Your grids and below the creation page's output-type selection until a type is selected, including the owner's own public grids.
 8. Give public discovery its own loading, empty, and failure states, and refresh relevant lists after publication. Show format icons and authors without exposing ownership/session identifiers or nesting profile links inside grid links.
