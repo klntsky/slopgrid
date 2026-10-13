@@ -17,11 +17,15 @@ export function createReferenceRoutes(store: Store, session: SessionReader) {
       )
         return res.status(400).json({ error: "Choose an image file." });
       try {
-        res
-          .status(201)
-          .json(store.references.add(req.body, name, session(req, res)));
-      } catch {
-        res.status(400).json({ error: "Choose a PNG, JPEG, or WebP image." });
+        const image = store.references.add(req.body, name, session(req, res));
+        if (!image)
+          return res
+            .status(400)
+            .json({ error: "Choose a PNG, JPEG, or WebP image." });
+        res.status(201).json(image);
+      } catch (error) {
+        console.error("Reference image upload failed", error);
+        res.status(500).json({ error: "Could not upload image." });
       }
     },
   );

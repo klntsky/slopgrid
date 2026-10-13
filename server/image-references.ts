@@ -60,7 +60,7 @@ export function createImageReferences(
               data.subarray(8, 12).toString() === "WEBP"
             ? "image/webp"
             : undefined;
-      if (!mediaType) throw new Error("Choose a PNG, JPEG, or WebP image.");
+      if (!mediaType) return;
       const id = token();
       files.write(`reference-${id}`, { image: data });
       db.prepare(

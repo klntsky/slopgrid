@@ -78,7 +78,9 @@ export async function uploadReferences(
           throw new Error(
             response.status === 413
               ? `${image.name} is too large.`
-              : `Could not upload ${image.name}. Use PNG, JPEG, or WebP.`,
+              : response.status === 400
+                ? `Could not upload ${image.name}. Use PNG, JPEG, or WebP.`
+                : `Could not upload ${image.name}.`,
           );
         saved = (await response.json()) as ReferenceImage;
         replacements.set(image.id, saved);

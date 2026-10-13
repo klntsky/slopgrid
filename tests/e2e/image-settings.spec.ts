@@ -195,9 +195,18 @@ test("renamed reference groups survive reload, Edit and Fork without mixing thei
   await expect(
     page.getByRole("cell", { name: "1K / Details: Unsupported", exact: true }),
   ).toBeVisible();
+  await request.post("/fixture/reset", {
+    data: { referenceStorageFailure: true },
+  });
+  await page.getByRole("button", { name: "Generate", exact: true }).click();
+  await expect(page.getByRole("alert")).toHaveText("Could not upload one.png.");
+  expect(await (await request.get("/fixture/image-requests")).json()).toEqual(
+    [],
+  );
+  await request.post("/fixture/reset", { data: {} });
   await page.getByRole("button", { name: "Generate", exact: true }).click();
   await expectProgress(page, 2, 2);
-  expect(uploads).toBe(5);
+  expect(uploads).toBe(6);
   const sent = await (await request.get("/fixture/image-requests")).json();
   const expected = [first, second].map((group) =>
     group.map((f) => ({
@@ -283,7 +292,7 @@ test("renamed reference groups survive reload, Edit and Fork without mixing thei
   await expectProgress(page, 2, 2);
   await page.reload();
   await expandReference(page, "rowheader", "one.png");
-  expect(uploads).toBe(5);
+  expect(uploads).toBe(6);
   expect(
     (await (await request.get("/fixture/image-requests")).json())
       .slice(2)

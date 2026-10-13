@@ -414,7 +414,7 @@ const generation = await startGenerationFixture({
   providerURL: `${upstreamOrigin}/api/v1`,
   workersMax: 2,
 });
-const { app } = createApp({
+const { app, store } = createApp({
   origin: `http://localhost:${port}`,
   outputDomain: `-slopgrid.localhost:${port}`,
   database: `${data}/.data/db.sqlite`,
@@ -424,6 +424,12 @@ const { app } = createApp({
   generation: generation.api,
 });
 app.post("/fixture/reset", (req, res) => {
+  store.db.exec("DROP TRIGGER IF EXISTS fail_reference_upload");
+  if (req.body.referenceStorageFailure)
+    store.db.exec(`CREATE TEMP TRIGGER fail_reference_upload
+      BEFORE INSERT ON reference_images BEGIN
+        SELECT RAISE(FAIL, 'Injected reference storage failure');
+      END`);
   balanceUsd = req.body.balanceUsd ?? 100;
   generationError = !!req.body.generationError;
   transientFailures = req.body.transientFailures ?? 0;

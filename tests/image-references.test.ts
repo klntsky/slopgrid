@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { renameSync, writeFileSync, unlinkSync } from "node:fs";
 import { appFixture } from "./app-fixture.js";
 import { Provider } from "../server/provider.js";
 import { Store } from "../server/store.js";
@@ -155,4 +156,55 @@ test("reference uploads follow ownership, account claims, selected publication a
   } finally {
     reopened.db.close();
   }
+});
+
+test("reference uploads distinguish invalid files from storage failures and recover on retry", async (t) => {
+  const { origin, store } = await appFixture(t);
+  const upload = (data = png) =>
+    fetch(`${origin}/api/references?name=photo.png`, {
+      method: "POST",
+      headers: { "Content-Type": "application/octet-stream", Origin: origin },
+      body: new Uint8Array(data),
+    });
+  const invalid = await upload(Buffer.from("not an image"));
+  assert.equal(invalid.status, 400);
+  assert.deepEqual(await invalid.json(), {
+    error: "Choose a PNG, JPEG, or WebP image.",
+  });
+  const root = store.files.root;
+  renameSync(root, `${root}.backup`);
+  writeFileSync(root, "This file blocks output directory creation.");
+  try {
+    const failed = await upload();
+    assert.equal(failed.status, 500);
+    assert.deepEqual(await failed.json(), { error: "Could not upload image." });
+  } finally {
+    unlinkSync(root);
+    renameSync(`${root}.backup`, root);
+  }
+  store.db.exec(`CREATE TEMP TRIGGER fail_reference_upload
+    BEFORE INSERT ON reference_images BEGIN
+      SELECT RAISE(FAIL, 'Injected database failure');
+    END`);
+  try {
+    const failed = await upload();
+    assert.equal(failed.status, 500);
+    assert.deepEqual(await failed.json(), { error: "Could not upload image." });
+    assert.equal(
+      (
+        store.db
+          .prepare("SELECT COUNT(*) AS count FROM reference_images")
+          .get() as { count: number }
+      ).count,
+      0,
+    );
+  } finally {
+    store.db.exec("DROP TRIGGER fail_reference_upload");
+  }
+  const recovered = await upload();
+  assert.equal(recovered.status, 201);
+  const image = await recovered.json();
+  assert.deepEqual(store.references.dataURLs([image.id]), [
+    `data:image/png;base64,${png.toString("base64")}`,
+  ]);
 });
