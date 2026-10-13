@@ -17,23 +17,23 @@ test("static bundles keep relative assets and reject unsafe files", () => {
         "index.html": '<link href="style.css">',
         "style.css": "body{color:red}",
         "assets/app.js": "console.log(1)",
+        "assets/module.mjs": "export default 1",
+        "server.php": "<?php echo 'stored, never executed'; ?>",
+        "api.ts": "const value: number = 1;",
+        LICENSE: "license text",
       }),
     ),
     {
       "index.html": '<link href="style.css">',
       "style.css": "body{color:red}",
       "assets/app.js": "console.log(1)",
+      "assets/module.mjs": "export default 1",
+      "server.php": "<?php echo 'stored, never executed'; ?>",
+      "api.ts": "const value: number = 1;",
+      LICENSE: "license text",
     },
   );
-  for (const path of [
-    "../secret",
-    "/index.html",
-    "a/../../x",
-    "server.php",
-    "a\\x",
-    "a//x",
-    "api.ts",
-  ])
+  for (const path of ["../secret", "/index.html", "a/../../x", "a\\x", "a//x"])
     assert.throws(() =>
       parseOutput("html", bundle({ "index.html": "ok", [path]: "bad" })),
     );

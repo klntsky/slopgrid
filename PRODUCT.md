@@ -10,7 +10,7 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 
 1. Slopgrid lets people submit a prompt and compare generated outputs in a two-dimensional grid whose row and column meanings they choose.
 2. Support model and prompt-variable axes for every output type, thinking-effort axes for text outputs, and size, aspect ratio, quality, background, and input-reference axes for images.
-3. Offer four output types in this order: Markdown, Image, SVG, and Static website. Image generation uses image-capable models; static websites may contain multiple files but no server-side code.
+3. Offer four output types in this order: Markdown, Image, SVG, and Static website. Image generation uses image-capable models; static websites may contain multiple files, which are served without server-side execution.
 4. Generate outputs on the server, stream progress to the browser, retain completed results, and let owners publish their grids afterward.
 5. A cell attempt makes one inference call.
 6. Apply sensible request and generation rate limits without imposing deadlines on accepted inference.
@@ -178,7 +178,7 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 
 ### 5.4. Static websites
 
-1. Generate a static bundle containing `index.html` and optional supporting HTML, CSS, and JavaScript files.
+1. Generate a static bundle containing `index.html` and optional supporting files of any extension, including files without an extension. Accept generated assets regardless of file type or contents and serve them statically without server-side execution. Bundle paths remain confined to that output's files.
 2. Stream website previews as file contents arrive, including partial files. Show entry-page content before all supporting assets have arrived.
 3. Load generated CSS, module scripts, and relative assets correctly inside private frames and when opening or reloading a direct output URL. Direct tabs render the website at its isolated output URL without a frame wrapper, while preserving authorization and sandbox isolation.
 4. Keep the current website preview visible until the next preview is ready. Streaming updates and the transition to completed output must avoid a blank-frame blink.
