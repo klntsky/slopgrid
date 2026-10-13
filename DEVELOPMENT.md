@@ -45,7 +45,7 @@ The Markdown renderer is included directly in the main browser bundle, so openin
 ### Test design
 
 1. Use pnpm and Playwright, with real-provider browser suites separate but enabled in the default full run. Exercise the normal manual-key flow with a cheap or free model and cover structured website streaming with an explicitly selected capable model.
-2. Assertions enforce complex behavioral properties: state transitions, persistence, ownership, recovery, and component interactions. Exclude trivial assertions, constant checks, CSS appearance tests, and checks that merely mirror implementation.
+2. Assertions enforce complex behavioral properties: state transitions, persistence, ownership, recovery, and component interactions. Assert on UI text only when it depends on application logic, such as a computed value or state-dependent message. Exclude static copy assertions, trivial assertions, constant checks, CSS appearance tests, and checks that merely mirror implementation.
 3. Group independent browser scenarios with isolated fixture state and unused ports for parallel execution. Reuse generated grids for related read-only checks while keeping mutation scenarios isolated.
 4. Share integration-test resource setup and teardown through a small fixture, keeping scenarios and assertions explicit. Test servers must use the real frontend-serving implementation so routing and cache behavior are exercised.
 5. Verify the GitHub OAuth integration through its real flow. Use controlled inference streams for deterministic scheduling, failure, billing, and ordering scenarios while retaining the real provider adapter/parser, database, files, engine, web process, internal API, and browser.

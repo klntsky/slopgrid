@@ -697,7 +697,7 @@ test("OpenRouter balance sets initial parallel capacity and Resume preserves the
   const calls = async (): Promise<string[]> =>
     (await request.get("/fixture/calls")).json();
   try {
-    await create(page, "Image", "cat\ndog\nowl", "hat");
+    await create(page, "SVG", "cat\ndog\nowl", "hat");
     await expect(page.getByText("Generating…", { exact: true })).toHaveCount(1);
     await expect(page.getByText("Queued", { exact: true })).toHaveCount(2);
     expect(await calls()).toHaveLength(1);

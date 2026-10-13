@@ -363,11 +363,6 @@ test("publishing dialogs preserve private grids, handle failures, and remember s
   await dialog.getByRole("radio", { name: "Accessible by link" }).check();
   await dialog.getByRole("button", { name: "Save", exact: true }).click();
   await expect(dialog).toHaveAccessibleName("Confirm publishing");
-  await expect(
-    dialog.getByText(
-      "This projects aims to facilitate model benchmarking and research, and we don't want valuable data to disappear. For this reason, making a published grid private is impossible.",
-    ),
-  ).toBeVisible();
   await dialog.getByRole("checkbox", { name: "Don’t ask again" }).check();
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(
