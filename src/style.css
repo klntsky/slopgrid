@@ -954,7 +954,7 @@ button.editable-title > .lucide {
   margin-top: 25px;
 }
 @media (max-width: 700px), (any-pointer: coarse) {
-  .wordmark > span {
+  .grid-layout .wordmark > span {
     display: none;
   }
 }

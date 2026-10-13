@@ -21,7 +21,7 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 ### 2.1. Visual language
 
 1. Use a dim, slightly warm light theme and a subtly warm dark theme. Settings offers System, Light, and Dark; System is the default and follows system appearance.
-2. Use the custom 5x5-cell SVG project mark. On mobile and touch devices, show only the logo regardless of viewport width or orientation, while keeping the link's accessible site name. Also use the logo alone at widths of 700px or less. On wider screens without a coarse pointer, place the logo to the left of the website name, and give the word "grid" the same accent color as the logo squares.
+2. Use the custom 5x5-cell SVG project mark to the left of the website name, and give the word "grid" the same accent color as the logo squares. On grid pages, show only the logo on mobile and touch devices regardless of viewport width or orientation, and at widths of 700px or less, while keeping the link's accessible site name. All other pages show both the logo and website name at every width.
 3. Use permissively licensed stock interface icons alongside official OpenRouter and GitHub brand assets. Brand icons must remain recognizable and uncropped.
 4. Keep buttons consistent throughout the interface, with restrained borders, padding, and corner rounding. Output-type cards should have larger icons and labels without excessively rounded corners.
 5. Use concise, distinct headings and labels without repeating information already visible in the section.
