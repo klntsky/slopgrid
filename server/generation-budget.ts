@@ -1,5 +1,7 @@
 import type { Model } from "./provider.js";
 
+export class PreparationError extends Error {}
+
 /** Reserve a conservative input estimate; provider tokenization remains authoritative. */
 export function generationBudget(
   model: Pick<
@@ -11,7 +13,7 @@ export function generationBudget(
   dollars: number,
 ) {
   if (!model.pricing || !model.contextLength)
-    throw new Error(
+    throw new PreparationError(
       `Pricing or token limits are unavailable for ${model.name}.`,
     );
   const inputTokens = Buffer.byteLength(prompt + system, "utf8") + 256;
@@ -30,7 +32,7 @@ export function generationBudget(
     ),
   );
   if (dollars <= inputCost || maxOutputTokens < 1)
-    throw new Error(
+    throw new PreparationError(
       `The cell budget is too small for ${model.name}. Increase it before generating.`,
     );
   return {

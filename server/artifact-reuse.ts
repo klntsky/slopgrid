@@ -1,3 +1,4 @@
+import { PreparationError } from "./generation-budget.js";
 import { readFileSync } from "node:fs";
 import type { Cell, Grid } from "./domain.js";
 import type { Store } from "./store.js";
@@ -20,12 +21,19 @@ export async function reuseArtifacts(
       !candidates.has(cell.provenance.signature)
     )
       candidates.set(cell.provenance.signature, cell);
+  if (!candidates.size) return;
   for (const cell of cells) {
-    const { prepared } = await provider.prepare(
-      format,
-      cell,
-      store.references.dataURLs(cell.imageSettings?.input_references ?? []),
-    );
+    let prepared;
+    try {
+      ({ prepared } = await provider.prepare(
+        format,
+        cell,
+        store.references.dataURLs(cell.imageSettings?.input_references ?? []),
+      ));
+    } catch (error) {
+      if (error instanceof PreparationError) continue;
+      throw error;
+    }
     const match = candidates.get(inferenceSignature(prepared));
     if (!match) continue;
     const files: Record<string, Uint8Array> = Object.create(null);

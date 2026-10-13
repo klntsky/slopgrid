@@ -2,7 +2,7 @@ import { prepareInference, inferenceSignature } from "./prepared-inference.js";
 import { imageEndpointSchema, type ImageEndpoint } from "./image-settings.js";
 import { instruction } from "./output-format.js";
 import { z } from "zod";
-import { generationBudget } from "./generation-budget.js";
+import { generationBudget, PreparationError } from "./generation-budget.js";
 import { generateInference } from "./inference.js";
 import type { CallObserver } from "./billing.js";
 import { upstreamFetch } from "./http.js";
@@ -263,7 +263,7 @@ export class Provider {
         ? (await this.models()).find((model) => model.id === cell.model)
         : undefined;
     if (format !== "image" && !pricedModel)
-      throw new Error(`Pricing is unavailable for ${cell.model}.`);
+      throw new PreparationError(`Pricing is unavailable for ${cell.model}.`);
     const structured =
       format === "html" && pricedModel?.structuredOutputs === true;
     const budget = pricedModel

@@ -504,3 +504,64 @@ test("duplicate effective prompts choose the first source cell and model alias r
     await f.close();
   }
 });
+
+test("reuse leaves preparation failures on individual cells and skips unsigned sources", async () => {
+  const f = await runtimeFixture();
+  try {
+    f.catalog.data.push({
+      ...f.catalog.data[0],
+      id: "fixture/unpriced",
+      pricing: { prompt: "", completion: "" },
+    });
+    const config: GridInput = {
+      ...input,
+      prompt: "$ROW",
+      rows: { kind: "variable", values: ["cat"] },
+      columns: { kind: "model", values: ["fixture/text"] },
+    };
+    const source = await create(f, config);
+    finish(await f.call(0));
+    await settled(f, source.id);
+    const mixed = await create(f, {
+      ...config,
+      columns: { kind: "model", values: ["fixture/text", "fixture/unpriced"] },
+      sourceGridId: source.id,
+      reuseArtifacts: true,
+    });
+    const result = await settled(f, mixed.id);
+    assert.deepEqual(
+      result.cells.map((cell) => cell.status),
+      ["complete", "error"],
+    );
+    assert.match(result.cells[1].error!, /Pricing/);
+    assert.equal(f.calls.length, 1);
+    const small = await create(f, {
+      ...config,
+      budgetUsd: 0.000001,
+      sourceGridId: source.id,
+      reuseArtifacts: true,
+    });
+    assert.match(
+      (await settled(f, small.id)).cells[0].error!,
+      /budget is too small/,
+    );
+    f.store.db
+      .prepare(
+        "UPDATE cells SET data=json_remove(data,'$.provenance') WHERE grid_id=?",
+      )
+      .run(source.id);
+    const unsigned = await create(f, {
+      ...config,
+      budgetUsd: 0.000001,
+      sourceGridId: source.id,
+      reuseArtifacts: true,
+    });
+    assert.match(
+      (await settled(f, unsigned.id)).cells[0].error!,
+      /budget is too small/,
+    );
+    assert.equal(f.calls.length, 1);
+  } finally {
+    await f.close();
+  }
+});
