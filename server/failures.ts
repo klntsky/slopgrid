@@ -24,29 +24,33 @@ export function failureDetails(error: unknown) {
       : undefined;
   const status = Number(details.statusCode ?? code);
   const metadata = record(payload.metadata);
-  const temporary =
-    status === 429 ||
-    (status === 402 &&
-      (metadata.limit_source === "openrouter_in_flight_budget" ||
-        metadata.reason === "in_flight_budget_exhausted"));
   const message =
     typeof payload.message === "string" && payload.message.trim()
       ? payload.message
       : typeof details.message === "string" && details.message.trim()
         ? details.message
         : "This cell could not be generated.";
-  const headers = record(details.responseHeaders);
-  const header = Object.entries(headers).find(
-    ([key]) => key.toLowerCase() === "retry-after",
-  )?.[1];
   let retryAfterMs: number | undefined;
-  if (typeof header === "string") {
+  for (const headers of [details.responseHeaders, metadata.headers]) {
+    const header = Object.entries(record(headers)).find(
+      ([key]) => key.toLowerCase() === "retry-after",
+    )?.[1];
+    if (typeof header !== "string" || !header.trim()) continue;
     const value = header.trim();
     const delay = /^\d+(?:\.\d+)?$/.test(value)
       ? Number(value) * 1000
       : Date.parse(value) - Date.now();
-    if (Number.isFinite(delay)) retryAfterMs = Math.max(0, delay);
+    if (Number.isFinite(delay)) {
+      retryAfterMs = Math.max(0, delay);
+      break;
+    }
   }
+  const temporary =
+    status === 429 ||
+    (status === 402 &&
+      retryAfterMs !== undefined &&
+      (metadata.limit_source === "openrouter_in_flight_budget" ||
+        metadata.reason === "in_flight_budget_exhausted"));
   return { message, code, status, temporary, retryAfterMs };
 }
 

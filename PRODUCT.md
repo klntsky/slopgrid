@@ -207,7 +207,7 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 
 1. Check available OpenRouter balance before starting or resuming. Below $3, show a top-up popup with an explicit Continue anyway option; that option uses the selected parallelism.
 2. Billing interruptions must let users fix the problem and retry repeatedly without breaking the flow. Preserve completed cells and regenerate only unfinished work.
-3. Apply backoff to temporary provider rate and in-flight spending limits, honoring provider retry guidance and releasing worker capacity while waiting so other users can continue.
+3. Apply exponential backoff to provider rate limits, honoring provider retry guidance and releasing worker capacity while waiting so other users can continue. Automatically retry in-flight spending-limit billing errors only when OpenRouter supplies a valid Retry-After delay or another documented backoff mechanism; otherwise pause for user intervention rather than automatically retrying the billing failure.
 4. Only pricing or billing errors may automatically pause queued batch work. Other failures, including age verification, model access restrictions, and invalid or missing credentials, fail only their affected cells while other cells and grids continue. Preserve the provider explanation on each failed cell.
 5. Propagate provider error messages and codes to the client and retain them with failed cells, including after reload and publication.
 6. Ongoing generation continues regardless of elapsed time until it finishes, fails, or the user cancels it.

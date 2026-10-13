@@ -38,28 +38,49 @@ test("rate limits honor Retry-After seconds and dates and preserve the provider 
 test("temporary in-flight budget limits retry while exhausted credits and oversized requests require intervention", () => {
   assert.equal(
     failureDetails(
-      response(402, {
-        limit_source: "openrouter_in_flight_budget",
-        reason: "in_flight_budget_exhausted",
-      }),
+      response(
+        402,
+        {
+          limit_source: "openrouter_in_flight_budget",
+          reason: "in_flight_budget_exhausted",
+        },
+        "5",
+      ),
     ).temporary,
     true,
   );
   for (const metadata of [
     undefined,
+    { limit_source: "openrouter_in_flight_budget" },
+    { reason: "in_flight_budget_exhausted" },
     { limit_source: "openrouter_key_limit" },
     { limit_source: "openrouter_credits", reason: "weight_exceeds_budget" },
   ])
     assert.equal(failureDetails(response(402, metadata)).temporary, false);
+  for (const retryAfter of ["", "nonsense"])
+    assert.equal(
+      failureDetails(
+        response(
+          402,
+          { limit_source: "openrouter_in_flight_budget" },
+          retryAfter,
+        ),
+      ).temporary,
+      false,
+    );
   assert.equal(failureDetails(response(500)).temporary, false);
 });
 test("streamed errors and local failures preserve their message and code without exposing request details", () => {
   const streamed = failureDetails({
     code: 402,
     message: "Wait for existing requests",
-    metadata: { limit_source: "openrouter_in_flight_budget" },
+    metadata: {
+      limit_source: "openrouter_in_flight_budget",
+      headers: { "Retry-After": "5" },
+    },
   });
   assert.equal(streamed.temporary, true);
+  assert.equal(streamed.retryAfterMs, 5000);
   assert.equal(streamed.message, "Wait for existing requests");
   assert.equal(streamed.code, 402);
   assert.equal(failureDetails(new Error("Invalid SVG")).message, "Invalid SVG");

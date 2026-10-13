@@ -375,7 +375,32 @@ test("backoff releases workers to other users, honors Retry-After, and retries w
   }
 });
 
-test("temporary budget failures back off exponentially, stop after five retries, and retain the final error", async (t) => {
+test("billing failures without retry guidance pause until explicitly resumed", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: Date.now() });
+  const h = harness(1);
+  try {
+    const grid = h.grid("alice", "grid", 2);
+    h.jobs.start(grid);
+    await flush();
+    h.provider.fail("alice/grid/0", 402, {
+      message: "In-flight spending budget is full",
+      metadata: { limit_source: "openrouter_in_flight_budget" },
+    });
+    await flush();
+    assert.equal(grid.status, "paused");
+    assert.equal(grid.interruption, "billing");
+    t.mock.timers.tick(120000);
+    await flush();
+    assert.equal(h.provider.started.length, 1);
+    h.jobs.start(grid);
+    await flush();
+    assert.equal(h.provider.started.length, 2);
+  } finally {
+    await h.close();
+  }
+});
+
+test("temporary budget failures with retry guidance back off, stop after five retries, and retain the final error", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: Date.now() });
   const h = harness(1);
   try {
@@ -386,6 +411,7 @@ test("temporary budget failures back off exponentially, stop after five retries,
       h.provider.fail("alice/grid/0", 402, {
         message: "In-flight spending budget is full",
         metadata: { limit_source: "openrouter_in_flight_budget" },
+        responseHeaders: { "retry-after": "1" },
       });
       await flush();
       if (attempt < 5) {
