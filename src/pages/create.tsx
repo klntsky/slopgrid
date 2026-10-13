@@ -134,8 +134,13 @@ export function Create() {
     }));
     setError("");
   }
-  const modelMissing =
-    ![input.rows.kind, input.columns.kind].includes("model") && !input.model;
+  const commonModel = ![input.rows.kind, input.columns.kind].includes("model");
+  const commonEffort =
+    input.format !== "image" &&
+    ![input.rows.kind, input.columns.kind].includes("effort");
+  const commonParameters =
+    input.format === "image" || commonModel || commonEffort;
+  const modelMissing = commonModel && !input.model;
   const generateReasons = [
     busy && "Starting generation.",
     uploading && "Uploading reference images.",
@@ -329,13 +334,13 @@ export function Create() {
           </p>
         </section>
       )}
-      {formatSelected && (
+      {formatSelected && commonParameters && (
         <section>
           <div className="section-heading">
             <span className="number">03</span>
             <h2>Specify common parameters</h2>
           </div>
-          {![input.rows.kind, input.columns.kind].includes("model") && (
+          {commonModel && (
             <fieldset role="radiogroup" aria-label="Model">
               <legend>Model</legend>
               <ModelSelector
@@ -354,31 +359,29 @@ export function Create() {
               onBusy={(busy) => setUploads((count) => count + (busy ? 1 : -1))}
             />
           )}
-          {input.format !== "image" && (
+          {commonEffort && (
             <div className="fixed-options">
-              {![input.rows.kind, input.columns.kind].includes("effort") && (
-                <div>
-                  <label>
-                    Thinking effort
-                    <select
-                      ref={defaultHint}
-                      value={input.effort}
-                      onChange={(e) =>
-                        update({
-                          effort: e.target.value as GridInput["effort"],
-                        })
-                      }
-                    >
-                      {efforts.map((e) => (
-                        <option key={e} value={e}>
-                          {effortLabel(e)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  {compatibility.effort}
-                </div>
-              )}
+              <div>
+                <label>
+                  Thinking effort
+                  <select
+                    ref={defaultHint}
+                    value={input.effort}
+                    onChange={(e) =>
+                      update({
+                        effort: e.target.value as GridInput["effort"],
+                      })
+                    }
+                  >
+                    {efforts.map((e) => (
+                      <option key={e} value={e}>
+                        {effortLabel(e)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {compatibility.effort}
+              </div>
             </div>
           )}
         </section>
@@ -386,7 +389,7 @@ export function Create() {
       {formatSelected && (
         <section>
           <div className="section-heading">
-            <span className="number">04</span>
+            <span className="number">{commonParameters ? "04" : "03"}</span>
             <h2>Enter your prompt</h2>
           </div>
 
@@ -411,7 +414,7 @@ export function Create() {
       {formatSelected && (
         <section>
           <div className="section-heading">
-            <span className="number">05</span>
+            <span className="number">{commonParameters ? "05" : "04"}</span>
             <h2>Inference provider setup</h2>
           </div>
           <Connection returnTo="/" />
