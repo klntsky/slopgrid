@@ -700,7 +700,7 @@ test("OpenRouter balance sets initial parallel capacity and Resume preserves the
     await create(page, "SVG", "cat\ndog\nowl", "hat");
     await expect(page.getByText("Generating…", { exact: true })).toHaveCount(1);
     await expect(page.getByText("Queued", { exact: true })).toHaveCount(2);
-    expect(await calls()).toHaveLength(1);
+    await expect.poll(calls).toHaveLength(1);
     await request.post("/fixture/release", {
       data: { prompt: (await calls())[0] },
     });
