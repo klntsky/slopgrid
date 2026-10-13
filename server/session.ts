@@ -2,7 +2,8 @@ import type { Request, Response } from "express";
 import { token } from "./ids.js";
 import type { Store, Session } from "./store.js";
 
-export const sessionMaxAge = 30 * 86400000;
+// Browsers cap persistent cookies at 400 days; renew them during use.
+export const cookieMaxAge = 400 * 86400000;
 
 export function anonymousOwner(s: Session) {
   return s.anonymousId ?? s.id;
@@ -12,12 +13,21 @@ export function createSessionReader(store: Store, origin: URL) {
   const secure = origin.protocol === "https:",
     cookieName = secure ? "__Host-slopgrid" : "slopgrid";
   function cookie(res: Response, id: string) {
+    // Rotation replaces any renewal already added to this response.
+    const existing = res.getHeader("Set-Cookie");
+    if (existing)
+      res.setHeader(
+        "Set-Cookie",
+        (Array.isArray(existing) ? existing : [String(existing)]).filter(
+          (value) => !value.startsWith(`${cookieName}=`),
+        ),
+      );
     res.cookie(cookieName, id, {
       httpOnly: true,
       secure,
       sameSite: "lax",
       path: "/",
-      maxAge: sessionMaxAge,
+      maxAge: cookieMaxAge,
     });
   }
   function read(req: Request): Session | undefined {
@@ -36,8 +46,8 @@ export function createSessionReader(store: Store, origin: URL) {
     if (!s) {
       s = { id: token(), created: Date.now() };
       store.saveSession(s);
-      cookie(res, s.id);
     }
+    cookie(res, s.id);
     return s;
   }
   session.read = read;

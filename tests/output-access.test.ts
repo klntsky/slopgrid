@@ -111,6 +111,7 @@ test("private outputs require ownership, isolated grants are scoped and revoked 
     for (const flag of ["HttpOnly", "Secure", "SameSite=None", "Partitioned"])
       assert.ok(outputCookie.includes(flag));
     assert.ok(!outputCookie.includes("Domain="));
+    assert.match(outputCookie, /Max-Age=34560000;/);
     assert.equal((await isolated(cellId, grantPath)).status, 404);
     return outputCookie.split(";")[0];
   }
@@ -160,26 +161,27 @@ test("private outputs require ownership, isolated grants are scoped and revoked 
       );
     }
     if (format === "svg" || format === "image") {
-      // An almost-expired session must not receive a fresh full-duration cache.
       store.saveSession({
         id: owner,
-        created: Date.now() - 30 * 86400000 + 5000,
+        created: 0,
       });
       const file = await get(`/outputs/${id}`, { Cookie: cookie });
+      assert.equal(file.status, 200);
       const cache = file.headers.get("cache-control")!;
-      assert.match(cache, /^private, max-age=\d+, immutable, must-revalidate$/);
-      const seconds = Number(/max-age=(\d+)/.exec(cache)![1]);
-      assert.ok(seconds >= 0 && seconds <= 5);
+      assert.equal(
+        cache,
+        "private, max-age=31536000, immutable, must-revalidate",
+      );
       assert.equal(file.headers.get("vary"), "Cookie");
       const conditional = {
         Cookie: cookie,
         "If-None-Match": file.headers.get("etag")!,
       };
       assert.equal((await get(`/outputs/${id}`, conditional)).status, 304);
-      store.saveSession({ id: owner, created: Date.now() - 31 * 86400000 });
-      const expired = await get(`/outputs/${id}`, conditional);
-      assert.equal(expired.status, 404);
-      assert.equal(expired.headers.get("cache-control"), "no-store");
+      store.deleteSession(owner);
+      const revoked = await get(`/outputs/${id}`, conditional);
+      assert.equal(revoked.status, 404);
+      assert.equal(revoked.headers.get("cache-control"), "no-store");
       store.saveSession({ id: owner, created: Date.now() });
     }
     if (format === "html") {
@@ -208,8 +210,8 @@ test("private outputs require ownership, isolated grants are scoped and revoked 
           .status,
         404,
       );
-      store.saveSession({ id: owner, created: Date.now() - 31 * 86400000 });
-      assert.equal((await isolated(id, "/app.js", outputCookie)).status, 404);
+      store.saveSession({ id: owner, created: 0 });
+      assert.equal((await isolated(id, "/app.js", outputCookie)).status, 200);
       store.saveSession({ id: owner, created: Date.now() });
     }
     store.publish(grid.id, "unlisted", null);

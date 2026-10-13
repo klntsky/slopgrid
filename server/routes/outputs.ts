@@ -3,12 +3,12 @@ import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MarkdownContent } from "../../shared/markdown.js";
-import type { Store, Session } from "../store.js";
+import type { Store } from "../store.js";
 import type { RateLimiter } from "../rate-limit.js";
 import { zip } from "fflate";
 import { downloadFilename } from "../download-filename.js";
 import { canViewGrid } from "../grid-policy.js";
-import { sessionMaxAge, type SessionReader } from "../session.js";
+import type { SessionReader } from "../session.js";
 function outputFile(output: NonNullable<ReturnType<Store["outputMetadata"]>>) {
   if (output.format !== "image")
     return {
@@ -57,7 +57,6 @@ export function createOutputRoutes(
       : undefined;
     const viewer = session.read(req);
     if (!output || !canViewGrid(output, viewer)) return res.sendStatus(404);
-    res.locals.viewer = viewer;
     res.locals.output = output;
     res.locals.file = outputFile(output);
     next();
@@ -130,16 +129,11 @@ export function createOutputRoutes(
       if (output.published) {
         res.set("Cache-Control", "public, max-age=31536000, immutable");
       } else {
-        const viewer = res.locals.viewer as Session;
-        const remaining = Math.max(
-          0,
-          Math.floor((viewer.created + sessionMaxAge - Date.now()) / 1000),
-        );
         res
           .vary("Cookie")
           .set(
             "Cache-Control",
-            `private, max-age=${remaining}, immutable, must-revalidate`,
+            "private, max-age=31536000, immutable, must-revalidate",
           );
       }
     }

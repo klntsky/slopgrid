@@ -65,7 +65,7 @@ test("private websites load in frames and direct tabs for the owning user across
   });
   try {
     const owner = token();
-    store.saveSession({ id: owner, created: Date.now() });
+    store.saveSession({ id: owner, created: 0 });
     const input: GridInput = {
       format: "html",
       prompt: "A website",
@@ -126,6 +126,20 @@ test("private websites load in frames and direct tabs for the owning user across
     expect((await importedCSS).status()).toBe(200);
     const frame = page.frameLocator("iframe");
     await expect(frame.getByText("Private module loaded")).toBeVisible();
+    const cookies = (await context.cookies()).filter((cookie) =>
+      cookie.name.startsWith("__Host-slopgrid"),
+    );
+    expect(cookies.some((cookie) => cookie.name === "__Host-slopgrid")).toBe(
+      true,
+    );
+    expect(
+      cookies.some((cookie) => cookie.name === "__Host-slopgrid-output"),
+    ).toBe(true);
+    for (const cookie of cookies) {
+      expect(cookie.expires).toBeGreaterThan(Date.now() / 1000 + 399 * 86400);
+      expect(cookie.httpOnly).toBe(true);
+      expect(cookie.secure).toBe(true);
+    }
     const sheetsLoaded = (element: Element) => {
       const sheet = (element as HTMLLinkElement).sheet;
       if (!sheet) return false;

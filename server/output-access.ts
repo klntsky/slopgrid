@@ -4,7 +4,7 @@ import { token } from "./ids.js";
 import { canViewGrid } from "./grid-policy.js";
 import { safePath } from "./files.js";
 import type { Store, Session } from "./store.js";
-import type { SessionReader } from "./session.js";
+import { cookieMaxAge, type SessionReader } from "./session.js";
 import type { createHtmlHosts } from "./hosts.js";
 
 export function createOutputAccess(
@@ -58,7 +58,7 @@ export function createOutputAccess(
       const [scope, sessionId] = JSON.parse(
         decrypt(decodeURIComponent(value), secret),
       );
-      // The cookie references a live session, so rotation or expiry revokes access
+      // The cookie references a live session, so rotation or deletion revokes access
       // even while the browser still holds the encrypted cookie.
       if (scope === cellId && typeof sessionId === "string")
         return store.session(sessionId);
@@ -113,6 +113,7 @@ export function createOutputAccess(
           sameSite: "none",
           partitioned: true,
           path: "/",
+          maxAge: cookieMaxAge,
         },
       );
       if (req.get("sec-fetch-dest") === "document") {

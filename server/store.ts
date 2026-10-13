@@ -226,10 +226,6 @@ export class Store {
       .get(id) as { data: string } | undefined;
     if (!row) return;
     const s: Session = { ...JSON.parse(row.data), id };
-    if (Date.now() - s.created > 30 * 86400000) {
-      this.db.prepare("DELETE FROM sessions WHERE id=?").run(id);
-      return;
-    }
     if (s.key) s.key = decrypt(s.key, this.secret);
     return s;
   }
