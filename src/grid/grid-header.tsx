@@ -56,7 +56,7 @@ export function GridHeader({
   const pauseHint = useTooltip<HTMLButtonElement>(
     paused
       ? "Restarts unfinished outputs."
-      : "Stops active requests. Work can be resumed later, unfinished responses will be lost.",
+      : "Stops active requests. Work can be resumed later, but unfinished responses will be lost.",
   );
   const costHint = useTooltip<HTMLSpanElement>(
     "Inference costs for this grid, not including failed attempts",

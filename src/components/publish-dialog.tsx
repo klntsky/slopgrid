@@ -72,7 +72,7 @@ export function PublishDialog({
       {confirming ? (
         <>
           <p>
-            This projects aims to facilitate model benchmarking and research,
+            This project aims to facilitate model benchmarking and research,
             and we don't want valuable data to disappear. For this reason,
             making a published grid private is impossible.
           </p>

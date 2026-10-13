@@ -32,7 +32,7 @@ export function Settings() {
         <h2>Inference</h2>
         <Connection returnTo="/settings" settings />
         <p className="hint">
-          More providers coming in the future. For now, use bring-your-own-key
+          More providers coming in the future. For now, use the bring-your-own-key
           feature on OpenRouter to get inference without paying OpenRouter's
           markup
         </p>
