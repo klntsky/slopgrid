@@ -501,6 +501,9 @@ test("duplicate effective prompts choose the first source cell and model alias r
       id: "fixture/latest",
       alias_target: { slug: "fixture/text" },
     });
+    // The web process caches the catalog while preparing its frontend.
+    await kill(f.web);
+    await f.startWeb();
     const config = {
       ...input,
       prompt: "$ROW$COLUMN",
