@@ -252,7 +252,10 @@ export function Create() {
         <section>
           <div className="section-heading">
             <span className="number">02</span>
-            <h2>Select grid layout</h2>
+            <h2>
+              Specify grid layout · what should be the rows and the columns of
+              the grid?
+            </h2>
           </div>
           {catalog.isError ? (
             <>

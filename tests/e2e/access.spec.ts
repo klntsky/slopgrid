@@ -251,7 +251,9 @@ test("EDIT cancels inference and restores settings, while a public FORK creates 
     ).toBe(403);
     await page.getByRole("button", { name: "EDIT", exact: true }).click();
     await expect(
-      page.getByRole("heading", { name: "Select grid layout" }),
+      page.getByRole("heading", {
+        name: "Specify grid layout · what should be the rows and the columns of the grid?",
+      }),
     ).toBeVisible();
     await expect(page.getByLabel("Row values")).toHaveValue("cat\ndog");
     await expect(page.getByLabel("Column values")).toHaveValue("hat");
@@ -511,7 +513,9 @@ test("owners can list a link-only published grid publicly without regenerating o
     await expect(publicGrids).toHaveCount(0);
     await visitor.reload();
     await expect(
-      visitor.getByRole("heading", { name: "Select grid layout" }),
+      visitor.getByRole("heading", {
+        name: "Specify grid layout · what should be the rows and the columns of the grid?",
+      }),
     ).toBeVisible();
     await expect(publicGrids).toHaveCount(0);
     await page.goto("/grids");

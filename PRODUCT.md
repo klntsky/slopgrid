@@ -51,7 +51,7 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 
 ### 3.1. Form and output selection
 
-1. The creation-page call to action is "Create your own AI model benchmark".
+1. The creation-page call to action is "Create your own AI model benchmark". The layout heading is "Specify grid layout", followed by a centered dot and "what should be the rows and the columns of the grid?".
 2. Before an output type is selected, show public grids below the output-type selection. Selecting an output type hides this list and reveals all remaining form sections immediately, while keeping the output choice visible. A restored draft with an output type already selected also hides the list.
 3. Preserve the in-progress setup through provider authorization and restore the applicable setup when editing or forking.
 4. Put an icon-only swap button between the row and column selectors. It has no border and swaps axis types, selected values, and corresponding prompt-variable references together.
@@ -112,7 +112,7 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 4. Keep newly selected files in the browser until Generate is clicked. Retain the local selection across reloads and provider authorization, and start uploading only on submission. Upload files separately and reuse stored references when editing or forking saved grids.
 5. Preserve image settings and selected reference groups with the grid. Settings affect inference parameters without being inserted into the prompt. A private reference is accessible to its owner or through an owned grid that uses it; publishing a grid shares only its selected references with viewers and forks.
 6. Save reference images with the grid and format the corresponding row or column headers as "references: <title>" followed by tiny inline image previews in group order. Clicking a preview opens that reference in the full-page image view, with the same collapse and Escape behavior as generated images.
-7. In Select grid layout, show each reference group's heading as a pencil icon, editable group title, centered dot, and "reference image group". Its file-selection button shows a paperclip icon and "Add images".
+7. In Specify grid layout, show each reference group's heading as a pencil icon, editable group title, centered dot, and "reference image group". Its file-selection button shows a paperclip icon and "Add images".
 8. Right-align OpenRouter's published output rates in the image-model checkbox list, preserving per-image and per-megapixel units and displaying token rates per million tokens. Show a range when published rates differ within the same unit, and keep different units separate. A tooltip lists provider names, additional charges, and pricing tiers. Missing prices display "Price unavailable". Rates are independent of the selected generation settings.
 9. Reference uploads accept PNG, JPEG, and WebP images, with a maximum of 20 MiB per file. Reject other formats and oversized uploads with a visible error.
 10. Removing a group's last image preserves the empty group and its title, including after reload. Generate validates that every selected group contains at least one image and shows an error for an empty group. Users may refill or explicitly remove the group.
