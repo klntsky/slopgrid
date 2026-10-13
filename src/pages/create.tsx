@@ -316,52 +316,6 @@ export function Create() {
                   }
                 />
               </div>
-              {![input.rows.kind, input.columns.kind].includes("model") && (
-                <fieldset role="radiogroup" aria-label="Model">
-                  <legend>Model</legend>
-                  <ModelSelector
-                    models={models}
-                    format={input.format}
-                    values={input.model ? [input.model] : []}
-                    onChange={(values) => update({ model: values[0] ?? "" })}
-                  />
-                </fieldset>
-              )}
-              {input.format === "image" && (
-                <ImageOptions
-                  input={input}
-                  onChange={update}
-                  onBusy={(busy) =>
-                    setUploads((count) => count + (busy ? 1 : -1))
-                  }
-                />
-              )}
-              {input.format !== "image" && (
-                <div className="fixed-options">
-                  {![input.rows.kind, input.columns.kind].includes(
-                    "effort",
-                  ) && (
-                    <label>
-                      Thinking effort
-                      <select
-                        ref={defaultHint}
-                        value={input.effort}
-                        onChange={(e) =>
-                          update({
-                            effort: e.target.value as GridInput["effort"],
-                          })
-                        }
-                      >
-                        {efforts.map((e) => (
-                          <option key={e} value={e}>
-                            {effortLabel(e)}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  )}
-                </div>
-              )}
               <p className="hint">
                 {input.rows.values.length} rows × {input.columns.values.length}{" "}
                 columns ·{" "}
@@ -372,10 +326,60 @@ export function Create() {
           )}
         </section>
       )}
-      {formatSelected && (
+      {formatSelected && catalog.data && (
         <section>
           <div className="section-heading">
             <span className="number">03</span>
+            <h2>Specify common parameters</h2>
+          </div>
+          {![input.rows.kind, input.columns.kind].includes("model") && (
+            <fieldset role="radiogroup" aria-label="Model">
+              <legend>Model</legend>
+              <ModelSelector
+                models={models}
+                format={input.format}
+                values={input.model ? [input.model] : []}
+                onChange={(values) => update({ model: values[0] ?? "" })}
+              />
+            </fieldset>
+          )}
+          {input.format === "image" && (
+            <ImageOptions
+              input={input}
+              onChange={update}
+              onBusy={(busy) => setUploads((count) => count + (busy ? 1 : -1))}
+            />
+          )}
+          {input.format !== "image" && (
+            <div className="fixed-options">
+              {![input.rows.kind, input.columns.kind].includes("effort") && (
+                <label>
+                  Thinking effort
+                  <select
+                    ref={defaultHint}
+                    value={input.effort}
+                    onChange={(e) =>
+                      update({
+                        effort: e.target.value as GridInput["effort"],
+                      })
+                    }
+                  >
+                    {efforts.map((e) => (
+                      <option key={e} value={e}>
+                        {effortLabel(e)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+            </div>
+          )}
+        </section>
+      )}
+      {formatSelected && (
+        <section>
+          <div className="section-heading">
+            <span className="number">04</span>
             <h2>Enter your prompt</h2>
           </div>
 
@@ -400,7 +404,7 @@ export function Create() {
       {formatSelected && (
         <section>
           <div className="section-heading">
-            <span className="number">04</span>
+            <span className="number">05</span>
             <h2>Inference provider setup</h2>
           </div>
           <Connection returnTo="/" />
