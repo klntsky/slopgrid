@@ -91,7 +91,7 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 ### 3.5. Budget and requested parallelism
 
 1. Text generation requires a per-cell monetary budget, defaulting to $5 per attempt. It covers estimated total cost, including input, output, and thinking.
-2. Label the compact field "Budget limit per cell," prepend a dollar icon, and give it proper surrounding spacing. It must not stretch across the form's full width.
+2. Label the compact field "Budget limit per cell," prepend a dollar icon, and reserve enough input padding to keep the value clear of the icon. It must not stretch across the form's full width.
 3. Respect provider/model limits when translating the budget, without adding an unrelated fixed output-size ceiling. A retry gets a new attempt allowance.
 4. Show "# of parallel workers" to the right of the budget before generation starts. Compute its initial value automatically from available balance divided by $0.40 for Image or $3 for other output types, rounded down with a minimum of one and capped by the grid's cell count.
 5. Allow manual override as freely editable text, including an empty value. Preserve typed values without clamping or replacing them, and validate a positive whole number only when Generate is clicked. Highlight invalid input in red while allowing further editing. Put MAX inside the field; it requests rows x columns workers. Preserve the request with the grid so Resume and restored setup use it.

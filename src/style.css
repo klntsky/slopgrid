@@ -376,7 +376,7 @@ textarea {
   color: var(--muted);
   pointer-events: none;
 }
-.budget-input input {
+.budget-input input[type="number"] {
   padding-left: 37px;
 }
 fieldset {
