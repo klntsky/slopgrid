@@ -53,6 +53,12 @@ test("model choices start empty and filtering preserves deliberate selections", 
 }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "SVG", exact: true }).click();
+  await page
+    .getByRole("combobox", { name: "Rows", exact: true })
+    .selectOption("effort");
+  await page
+    .getByRole("combobox", { name: "Columns", exact: true })
+    .selectOption("model");
   await expect(page.locator('input[type="checkbox"]:checked')).toHaveCount(0);
   const columns = page.getByRole("group", { name: "Column values" });
   const filter = page.getByLabel("Search models");
@@ -156,6 +162,12 @@ test("Shift-click selects and clears visible model ranges while preserving hidde
   });
   await page.goto("/");
   await page.getByRole("button", { name: "SVG", exact: true }).click();
+  await page
+    .getByRole("combobox", { name: "Rows", exact: true })
+    .selectOption("effort");
+  await page
+    .getByRole("combobox", { name: "Columns", exact: true })
+    .selectOption("model");
   await page.getByRole("button", { name: "Clear column model filter" }).click();
   const columns = page.getByRole("group", { name: "Column values" });
   const box = (index: number) =>
@@ -324,6 +336,12 @@ test("the compatibility table shows selected model support without blocking gene
   await expectProgress(page, 1, 1);
   await page.goto("/");
   await page.getByRole("button", { name: "SVG", exact: true }).click();
+  await page
+    .getByRole("combobox", { name: "Rows", exact: true })
+    .selectOption("effort");
+  await page
+    .getByRole("combobox", { name: "Columns", exact: true })
+    .selectOption("model");
   await page
     .getByRole("combobox", { name: "Rows", exact: true })
     .selectOption("effort");
@@ -807,3 +825,50 @@ test("default image layout generates with automatic quality and preserves edits"
     page.getByRole("checkbox", { name: "Fixture image", exact: true }),
   ).toBeChecked();
 });
+
+for (const format of ["SVG", "Static website"]) {
+  test(`default ${format} layout compares models by thinking effort and preserves edits`, async ({
+    page,
+    request,
+  }) => {
+    await request.post("/fixture/reset", { data: {} });
+    await page.goto("/");
+    await page.getByRole("button", { name: format, exact: true }).click();
+    const rows = page.getByRole("combobox", { name: "Rows", exact: true });
+    const columns = page.getByRole("combobox", {
+      name: "Columns",
+      exact: true,
+    });
+    await expect(rows).toHaveValue("model");
+    await expect(columns).toHaveValue("effort");
+    await expect(page.locator('input[type="checkbox"]:checked')).toHaveCount(0);
+    await expect(
+      page.getByRole("searchbox", { name: "Search models" }),
+    ).toHaveValue("latest");
+    await page.getByRole("button", { name: "Clear row model filter" }).click();
+    await page
+      .getByRole("checkbox", { name: "Fixture text", exact: true })
+      .check();
+    await page.getByLabel("Prompt", { exact: true }).fill("Draw a landscape");
+    await page.getByRole("link", { name: "Connect OpenRouter" }).click();
+    await expect(page.getByText("Connected", { exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Generate", exact: true }),
+    ).toBeDisabled();
+    await page.getByRole("checkbox", { name: "None", exact: true }).check();
+    await page.getByRole("button", { name: "Generate", exact: true }).click();
+    await expectProgress(page, 1, 1);
+    await page.getByRole("button", { name: "EDIT", exact: true }).click();
+    await expect(rows).toHaveValue("model");
+    await expect(columns).toHaveValue("effort");
+    await expect(
+      page.getByRole("checkbox", { name: "None", exact: true }),
+    ).toBeChecked();
+    await columns.selectOption("variable");
+    await page.getByLabel("Column values").fill("landscape");
+    await page.reload();
+    await expect(rows).toHaveValue("model");
+    await expect(columns).toHaveValue("variable");
+    await expect(page.getByLabel("Column values")).toHaveValue("landscape");
+  });
+}

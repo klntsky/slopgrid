@@ -13,8 +13,8 @@ const initial: Draft = {
   input: {
     format: "svg",
     prompt: "",
-    rows: { kind: "effort", values: [] },
-    columns: { kind: "model", values: [] },
+    rows: { kind: "model", values: [] },
+    columns: { kind: "effort", values: [] },
     model: "",
     effort: "default",
     budgetUsd: 5,

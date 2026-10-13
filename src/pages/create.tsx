@@ -128,13 +128,13 @@ export function Create() {
         model: "",
         effort: "default",
         rows:
-          format === "image"
-            ? { kind: "model", values: [] }
-            : { kind: "effort", values: [] },
+          format === "markdown"
+            ? { kind: "effort", values: [] }
+            : { kind: "model", values: [] },
         columns:
           format === "image"
             ? { kind: "quality", values: ["auto"] }
-            : { kind: "model", values: [] },
+            : { kind: format === "markdown" ? "model" : "effort", values: [] },
       },
     }));
     setError("");
