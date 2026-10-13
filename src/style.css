@@ -377,6 +377,14 @@ legend {
   padding: 9px 12px;
   border-radius: 4px;
 }
+.value-list:not(.model-list) {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 18px;
+}
+.value-list:not(.model-list) > .checkbox {
+  white-space: nowrap;
+}
 .checkbox {
   display: flex;
   flex-direction: row;

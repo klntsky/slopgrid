@@ -57,6 +57,7 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 4. Put an icon-only swap button between the row and column selectors. It has no border and swaps axis types, selected values, and corresponding prompt-variable references together.
 5. Checkbox lists start unselected. Every generation must use an explicitly selected model, including when model is a fixed setting rather than an axis.
 6. Grid creation has no application limit on prompt length, axis-value length, model-ID length, JSON request size, number of axis values, cells, or requested parallel workers. Forward these inputs subject to OpenRouter's limits. Actual concurrency follows the shared worker allocation policy.
+7. Arrange short axis choices, including aspect ratios, size presets, quality, background, and thinking efforts, as inline checkboxes that wrap onto additional rows as needed. Keep each checkbox and its label together.
 
 ### 3.2. Model and thinking-effort selection
 
