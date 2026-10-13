@@ -30,7 +30,7 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 
 1. The logo opens `/grids` and serves as the navbar's grid-list link. Put the prominent NEW GRID action, with a plus icon, on the grid-list page.
 2. Keep navbar link labels uppercase, with readable desktop text and enough space for grid information. Use matching gaps between the brand, action buttons, and title/prompt group.
-3. On mobile, move navigation into a hamburger menu anchored close to its button. Keep compact grid action buttons on the first navbar row where they fit.
+3. At every viewport width, keep navigation collapsed into a hamburger menu anchored close to its button. Keep compact grid action buttons on the first navbar row where they fit.
 4. Give "Your grids" and "Public grids" matching large heading styles. Keep separators only between grid entries in the lists.
 5. Billing and Settings use the same wider page-layout approach as `/grids`.
 6. Convey publication state through the available grid actions, placement in the public list, and a lowercase "published" label in the owner's grid list. Unpublished entries show their lowercase generation status.

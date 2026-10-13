@@ -12,12 +12,6 @@ export function Layout() {
     navigation = useRef<HTMLElement>(null);
   useEffect(() => setMenuOpen(false), [pathname]);
   useEffect(() => {
-    const mobile = matchMedia("(max-width: 700px)");
-    const close = () => setMenuOpen(false);
-    mobile.addEventListener("change", close);
-    return () => mobile.removeEventListener("change", close);
-  }, []);
-  useEffect(() => {
     if (!menuOpen) return;
     const outside = (event: PointerEvent) => {
       if (
@@ -56,7 +50,7 @@ export function Layout() {
             <button
               ref={menuButton}
               type="button"
-              className="mobile-menu-toggle secondary"
+              className="navigation-menu-toggle secondary"
               aria-label="Navigation menu"
               aria-expanded={menuOpen}
               aria-controls="main-navigation"

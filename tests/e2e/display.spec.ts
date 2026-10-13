@@ -195,6 +195,9 @@ test("theme follows system changes unless a saved choice overrides them", async 
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await page
+    .getByRole("button", { name: "Navigation menu", exact: true })
+    .click();
+  await page
     .getByRole("navigation")
     .getByRole("link", { name: "SETTINGS", exact: true })
     .click();
@@ -217,16 +220,11 @@ test("theme follows system changes unless a saved choice overrides them", async 
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
 });
 
-test.describe("mobile grid interaction", () => {
-  test.use({
-    viewport: { width: 390, height: 844 },
-    isMobile: true,
-    hasTouch: true,
-  });
-
-  test("mobile navigation closes after navigation, Escape, or an outside click", async ({
+for (const width of [390, 700, 701, 1280]) {
+  test(`navigation closes after navigation, Escape, or an outside click (${width}px)`, async ({
     page,
   }) => {
+    await page.setViewportSize({ width, height: 844 });
     await page.goto("/");
     const menu = page.getByRole("button", {
       name: "Navigation menu",
@@ -251,6 +249,14 @@ test.describe("mobile grid interaction", () => {
     await nav.getByRole("link", { name: "SETTINGS", exact: true }).click();
     await expect(page).toHaveURL("/settings");
     await expect(nav).toBeHidden();
+  });
+}
+
+test.describe("mobile grid interaction", () => {
+  test.use({
+    viewport: { width: 390, height: 844 },
+    isMobile: true,
+    hasTouch: true,
   });
 
   for (const { layout, columns, total } of [
