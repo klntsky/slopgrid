@@ -115,6 +115,8 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 8. Right-align OpenRouter's published output rates in the image-model checkbox list, preserving per-image and per-megapixel units and displaying token rates per million tokens. Show a range when published rates differ within the same unit, and keep different units separate. A tooltip lists provider names, additional charges, and pricing tiers. Missing prices display "Price unavailable". Rates are independent of the selected generation settings.
 9. Reference uploads accept PNG, JPEG, and WebP images, with a maximum of 20 MiB per file. Reject other formats and oversized uploads with a visible error.
 10. Removing a group's last image preserves the empty group and its title, including after reload. Generate validates that every selected group contains at least one image and shows an error for an empty group. Users may refill or explicitly remove the group.
+11. For Image output, show separate configurable Size, Aspect ratio, Quality, Background, and Input references fields whenever they are absent from both axes. Scalar fields start at Auto, which is equivalent to unspecified and omits the parameter from inference requests; Auto axis values behave the same way. Shared references start empty and apply to every cell. Preserve shared settings and references through draft reload, authorization, Generate, Edit, and Fork.
+12. Moving a configured image field into a row or column dimension transfers its value into the axis selection; shared references become one selected reference group. When a parameter leaves an axis, its separate field resets to Auto or an empty reference collection. Swapping axes preserves selections.
 
 ## 4. Grid layout and metadata
 

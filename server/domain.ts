@@ -1,8 +1,10 @@
 import { z } from "zod";
 import {
   imageKinds,
-  imageChoices,
-  validImageSize,
+  validImageSetting,
+  sharedImageSettingsSchema,
+  normalizeImageSettings,
+  type ScalarImageKind,
   referenceImageSchema,
   type ImageSettings,
 } from "./image-settings.js";
@@ -30,6 +32,8 @@ export const gridSchema = z
     prompt: z.string().trim().min(1),
     rows: axis,
     columns: axis,
+    imageSettings: sharedImageSettingsSchema.optional(),
+    inputReferences: z.array(referenceImageSchema).optional(),
     referenceGroups: z
       .record(z.string(), z.array(referenceImageSchema))
       .optional(),
@@ -60,22 +64,17 @@ export const gridSchema = z
       if (imageKinds.some((kind) => kind === axis.kind) && g.format !== "image")
         issue("Image settings require Image output");
       if (
-        axis.kind === "size" &&
-        axis.values.some((value) => !validImageSize(value))
-      )
-        issue("Use a resolution or a size such as 1536x1024");
-      if (
-        (axis.kind === "aspect_ratio" ||
-          axis.kind === "quality" ||
-          axis.kind === "background") &&
+        imageKinds.some((kind) => kind === axis.kind) &&
+        axis.kind !== "input_references" &&
         axis.values.some(
-          (value) =>
-            !imageChoices[axis.kind as keyof typeof imageChoices].includes(
-              value,
-            ),
+          (value) => !validImageSetting(axis.kind as ScalarImageKind, value),
         )
       )
-        issue("Unknown image setting");
+        issue(
+          axis.kind === "size"
+            ? "Use a resolution or a size such as 1536x1024"
+            : "Unknown image setting",
+        );
       if (
         axis.kind === "input_references" &&
         axis.values.some((value) => !g.referenceGroups?.[value]?.length)
@@ -90,6 +89,18 @@ export const gridSchema = z
       issue("Choose prompt variables for columns to use $COLUMN");
   })
   .transform((g) => {
+    const dimensions = [g.rows.kind, g.columns.kind];
+    const settings = normalizeImageSettings(g.imageSettings);
+    for (const kind of dimensions) delete settings[kind as ScalarImageKind];
+    if (g.format === "image" && Object.keys(settings).length)
+      g.imageSettings = settings;
+    else delete g.imageSettings;
+    if (
+      g.format !== "image" ||
+      dimensions.includes("input_references") ||
+      !g.inputReferences?.length
+    )
+      delete g.inputReferences;
     const groups = [g.rows, g.columns]
       .filter((axis) => axis.kind === "input_references")
       .flatMap((axis) => axis.values);
@@ -181,7 +192,11 @@ export function expandGrid(input: GridInput): Omit<Cell, "id">[] {
         model: input.model,
         effort: input.effort,
       };
-      const imageSettings: ImageSettings = {};
+      const imageSettings: ImageSettings = { ...input.imageSettings };
+      if (input.inputReferences?.length)
+        imageSettings.input_references = input.inputReferences.map(
+          (image) => image.id,
+        );
       for (const [a, v] of [
         [input.rows, r],
         [input.columns, c],
@@ -201,7 +216,9 @@ export function expandGrid(input: GridInput): Omit<Cell, "id">[] {
           .replaceAll("$ROW", () => r)
           .replaceAll("$COLUMN", () => c),
         budgetUsd: input.budgetUsd,
-        ...(input.format === "image" ? { imageSettings } : {}),
+        ...(input.format === "image"
+          ? { imageSettings: normalizeImageSettings(imageSettings) }
+          : {}),
         status: "pending" as const,
       };
     }),

@@ -118,3 +118,21 @@ test("image compatibility requires one endpoint to support the whole combination
     "supported",
   );
 });
+
+test("Auto settings use default compatibility even when an endpoint has no matching parameter", () => {
+  const endpoints = [{ resolution: { type: "enum", values: ["1K"] } }];
+  assert.deepEqual(
+    imageSettingsSupport(endpoints, {
+      size: "auto",
+      aspect_ratio: "auto",
+      quality: "auto",
+      background: "auto",
+      input_references: [],
+    }),
+    imageSettingsSupport(endpoints, {}),
+  );
+  assert.equal(
+    imageSettingsSupport(endpoints, { quality: "high" }).support,
+    "unsupported",
+  );
+});

@@ -1,3 +1,4 @@
+import { selectedReferences } from "../image-settings.js";
 import { reuseArtifacts } from "../artifact-reuse.js";
 import { canViewGrid, ownsGrid } from "../grid-policy.js";
 import { z } from "zod";
@@ -147,9 +148,9 @@ export function createGridRoutes({
         });
     }
     if (
-      Object.values(input.referenceGroups ?? {})
-        .flat()
-        .some((image) => !store.references.allowed(image.id, s))
+      selectedReferences(input).some(
+        (image) => !store.references.allowed(image.id, s),
+      )
     )
       return res
         .status(400)

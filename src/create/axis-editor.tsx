@@ -1,12 +1,11 @@
 import {
   imageKinds,
   imageChoices,
-  validImageSize,
   type ReferenceGroups as Groups,
 } from "../../server/image-settings";
 import { ReferenceGroups } from "./reference-groups";
 import { ImageModelPrice } from "./image-model-price";
-import { ErrorMessage } from "../components/error-message";
+import { CustomImageSize } from "./custom-image-size";
 import { useState, useRef, useEffect } from "react";
 import { Search, X } from "lucide-react";
 import { efforts, type GridInput } from "../../server/domain";
@@ -37,8 +36,6 @@ export function AxisEditor({
 }) {
   const defaultFilter = format === "image" ? "" : "latest";
   const [filter, setFilter] = useState(defaultFilter);
-  const [customSize, setCustomSize] = useState(""),
-    [sizeError, setSizeError] = useState("");
   const filterInput = useRef<HTMLInputElement>(null);
   const rangeAnchor = useRef<string | undefined>(undefined);
   useEffect(() => {
@@ -59,7 +56,10 @@ export function AxisEditor({
               ...(imageChoices[axis.kind as keyof typeof imageChoices] ?? []),
               ...axis.values,
             ]),
-          ].map((value) => ({ id: value, name: value }));
+          ].map((value) => ({
+            id: value,
+            name: value === "auto" ? "Auto" : value,
+          }));
   const visibleChoices = choices.filter(
     (c) =>
       axis.kind !== "model" ||
@@ -196,40 +196,17 @@ export function AxisEditor({
             ))}
           </div>
           {axis.kind === "size" && (
-            <div className="custom-image-size">
-              <input
-                aria-label={`Custom ${label.toLowerCase()} size`}
-                placeholder="1536x1024"
-                value={customSize}
-                onChange={(event) => {
-                  setCustomSize(event.target.value);
-                  setSizeError("");
-                }}
-              />
-              <button
-                type="button"
-                className="secondary"
-                onClick={() => {
-                  const size = customSize.trim();
-                  if (!validImageSize(size)) {
-                    setSizeError(
-                      "Use a resolution or a size such as 1536x1024.",
-                    );
-                    return;
-                  }
-                  onChange({
-                    ...axis,
-                    values: [...new Set([...axis.values, size])],
-                  });
-                  setCustomSize("");
-                  setSizeError("");
-                }}
-              >
-                Add size
-              </button>
-              <ErrorMessage error={sizeError} />
-            </div>
+            <CustomImageSize
+              label={`Custom ${label.toLowerCase()} size`}
+              onSelect={(size) =>
+                onChange({
+                  ...axis,
+                  values: [...new Set([...axis.values, size])],
+                })
+              }
+            />
           )}
+
           {axis.kind === "model" && axis.values.length > 0 && (
             <ul
               className="selected-models"

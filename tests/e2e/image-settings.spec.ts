@@ -372,3 +372,191 @@ test("image model prices preserve published units and tiers without changing sel
       .getByText("$0.04/image", { exact: true }),
   ).toBeVisible();
 });
+
+test("shared image settings transfer to axes, reset on removal, and preserve defaults through Edit and Fork", async ({
+  page,
+  request,
+}) => {
+  await request.post("/fixture/reset", { data: {} });
+  await setup(page);
+  const field = (name: string) =>
+    page.getByRole("combobox", { name, exact: true });
+  await field("Rows").selectOption("quality");
+  await page.getByRole("checkbox", { name: "Auto", exact: true }).check();
+  await page
+    .getByRole("checkbox", { name: "Fixture image", exact: true })
+    .check();
+  await field("Background").selectOption("transparent");
+  await field("Rows").selectOption("background");
+  await expect(
+    page.getByRole("checkbox", { name: "transparent", exact: true }),
+  ).toBeChecked();
+  await expect(field("Background")).toHaveCount(0);
+  await expect(field("Quality")).toHaveValue("auto");
+  await field("Rows").selectOption("quality");
+  await expect(field("Background")).toHaveValue("auto");
+  await page.getByRole("checkbox", { name: "Auto", exact: true }).check();
+  await field("Aspect ratio").selectOption("3:2");
+  await page
+    .getByRole("textbox", { name: "Custom size", exact: true })
+    .fill("1536x1024");
+  await page.getByRole("button", { name: "Add size", exact: true }).click();
+  await expect(field("Size")).toHaveValue("1536x1024");
+  await page.getByRole("button", { name: "Swap rows and columns" }).click();
+  await page.reload();
+  await expect(field("Size")).toHaveValue("1536x1024");
+  await expect(field("Aspect ratio")).toHaveValue("3:2");
+  await page.getByRole("button", { name: "Generate", exact: true }).click();
+  await expectProgress(page, 1, 1);
+  let sent = await (await request.get("/fixture/image-requests")).json();
+  expect(sent).toHaveLength(1);
+  expect(sent[0].size).toBe("1536x1024");
+  expect(sent[0].aspect_ratio).toBe("3:2");
+  for (const key of ["quality", "background", "input_references"])
+    expect(sent[0]).not.toHaveProperty(key);
+  await page.getByRole("button", { name: "EDIT", exact: true }).click();
+  await expect(field("Size")).toHaveValue("1536x1024");
+  await field("Size").selectOption("auto");
+  await field("Aspect ratio").selectOption("auto");
+  await page.getByRole("button", { name: "Generate", exact: true }).click();
+  await expectProgress(page, 1, 1);
+  sent = await (await request.get("/fixture/image-requests")).json();
+  expect(sent).toHaveLength(2);
+  for (const key of [
+    "size",
+    "aspect_ratio",
+    "quality",
+    "background",
+    "input_references",
+  ])
+    expect(sent[1]).not.toHaveProperty(key);
+  await page.getByRole("button", { name: "PUBLISH", exact: true }).click();
+  await finishPublishing(page);
+  await page.getByRole("button", { name: "FORK", exact: true }).click();
+  await field("Columns").selectOption("background");
+  await page.getByRole("checkbox", { name: "Auto", exact: true }).check();
+  await page.getByRole("button", { name: "Generate", exact: true }).click();
+  await expectProgress(page, 1, 1);
+  expect(
+    await (await request.get("/fixture/image-requests")).json(),
+  ).toHaveLength(2);
+});
+
+test("shared references survive uploads, reload, publication and forks, and transfer to an axis", async ({
+  page,
+  request,
+  browser,
+}) => {
+  await request.post("/fixture/reset", { data: {} });
+  await setup(page);
+  await page
+    .getByRole("combobox", { name: "Rows", exact: true })
+    .selectOption("quality");
+  await page.getByRole("checkbox", { name: "high", exact: true }).check();
+  await page
+    .getByRole("checkbox", { name: "Fixture image", exact: true })
+    .check();
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
+    "base64",
+  );
+  const files = ["shared-one.png", "shared-two.png"].map((name) => ({
+    name,
+    mimeType: "image/png",
+    buffer: Buffer.concat([png, Buffer.from(name)]),
+  }));
+  let uploads = 0;
+  page.on("request", (req) => {
+    if (
+      req.method() === "POST" &&
+      new URL(req.url()).pathname === "/api/references"
+    )
+      uploads++;
+  });
+  await page
+    .getByLabel("Add input references", { exact: true })
+    .setInputFiles(files);
+  await expect(
+    page.getByRole("img", { name: files[1].name, exact: true }),
+  ).toBeVisible();
+  await page.reload();
+  expect(uploads).toBe(0);
+  await expect(
+    page.getByRole("img", { name: files[0].name, exact: true }),
+  ).toBeVisible();
+  await request.post("/fixture/reset", {
+    data: { referenceStorageFailure: true },
+  });
+  await page.getByRole("button", { name: "Generate", exact: true }).click();
+  await expect(page.getByRole("alert")).toHaveText(
+    "Could not upload shared-one.png.",
+  );
+  await request.post("/fixture/reset", { data: {} });
+  await page.getByRole("button", { name: "Generate", exact: true }).click();
+  await expectProgress(page, 1, 1);
+  expect(uploads).toBe(3);
+  const sent = await (await request.get("/fixture/image-requests")).json();
+  expect(sent[0].input_references).toEqual(
+    files.map((file) => ({
+      type: "image_url",
+      image_url: {
+        url: `data:image/png;base64,${file.buffer.toString("base64")}`,
+      },
+    })),
+  );
+  const url = page.url();
+  await page.getByRole("button", { name: "EDIT", exact: true }).click();
+  const source = await page
+    .getByRole("img", { name: files[0].name, exact: true })
+    .getAttribute("src");
+  const visitor = await browser.newContext();
+  try {
+    expect(
+      (await visitor.request.get(new URL(source!, url).href)).status(),
+    ).toBe(404);
+    await page.goto(url);
+    await page.getByRole("button", { name: "PUBLISH", exact: true }).click();
+    await finishPublishing(page);
+    expect(
+      await (await visitor.request.get(new URL(source!, url).href)).body(),
+    ).toEqual(files[0].buffer);
+  } finally {
+    await visitor.close();
+  }
+  await page.getByRole("button", { name: "FORK", exact: true }).click();
+  await page.reload();
+  await expect(
+    page.getByRole("img", { name: files[1].name, exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("combobox", { name: "Rows", exact: true })
+    .selectOption("input_references");
+  await expect(
+    page.getByRole("button", {
+      name: "Edit reference group title: Group 1",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByLabel("Add input references", { exact: true }),
+  ).toHaveCount(0);
+  await page
+    .getByRole("combobox", { name: "Quality", exact: true })
+    .selectOption("high");
+  await page.getByRole("button", { name: "Generate", exact: true }).click();
+  await expectProgress(page, 1, 1);
+  expect(uploads).toBe(3);
+  expect(
+    await (await request.get("/fixture/image-requests")).json(),
+  ).toHaveLength(1);
+  await page.getByRole("button", { name: "EDIT", exact: true }).click();
+  await page
+    .getByRole("combobox", { name: "Rows", exact: true })
+    .selectOption("quality");
+  await expect(
+    page.getByRole("checkbox", { name: "high", exact: true }),
+  ).toBeChecked();
+  await expect(page.getByRole("img", { name: /shared-.*\.png/ })).toHaveCount(
+    0,
+  );
+});

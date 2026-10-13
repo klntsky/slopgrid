@@ -1,3 +1,4 @@
+import { normalizeImageSettings } from "./image-settings.js";
 import type { ReferenceContent } from "./image-references.js";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -23,7 +24,9 @@ export function prepareImageInference(
   cell: Cell,
   references: ReferenceContent[],
 ) {
-  const { input_references: _ids, ...imageSettings } = cell.imageSettings ?? {};
+  const { input_references: _ids, ...imageSettings } = normalizeImageSettings(
+    cell.imageSettings,
+  );
   return {
     ...common(cell),
     format: "image" as const,

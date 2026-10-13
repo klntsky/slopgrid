@@ -1,3 +1,4 @@
+import { normalizeImageSettings } from "./image-settings.js";
 import type { GridInput } from "./domain.js";
 import type { Model } from "./provider.js";
 
@@ -26,6 +27,7 @@ export function imageSettingsSupport(
     readonly import("./image-settings.js").ImageCapabilities[] | undefined,
   settings: import("./image-settings.js").ImageSettings,
 ): { support: "supported" | "unsupported" | "unknown"; reason?: string } {
+  settings = normalizeImageSettings(settings);
   const pixels = settings.size?.match(/^(\d+)x(\d+)$/);
   const ratio = settings.aspect_ratio?.match(/^([\d.]+):([\d.]+)$/);
   if (

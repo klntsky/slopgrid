@@ -40,7 +40,8 @@ export function createImageReferences(
     // uploads remain private; publication and forks share only selected files.
     return !!db
       .prepare(
-        `SELECT 1 FROM grids g, json_tree(g.data, '$.input.referenceGroups') r
+        `SELECT 1 FROM grids g, json_tree(json_array(json_extract(g.data, '$.input.referenceGroups'),
+        json_extract(g.data, '$.input.inputReferences'))) r
       WHERE r.key='id' AND r.value=? AND (
         json_extract(g.data,'$.published')=1 OR
         (json_extract(g.data,'$.ownerUserId') IS NOT NULL AND json_extract(g.data,'$.ownerUserId')=?) OR

@@ -53,8 +53,9 @@ export async function uploadReferences(
   const groups = Object.fromEntries(
     names.map((name) => [name, [...input.referenceGroups![name]]]),
   );
+  const inputReferences = [...(input.inputReferences ?? [])];
   const replacements = new Map<string, ReferenceImage>();
-  for (const images of Object.values(groups)) {
+  for (const images of [...Object.values(groups), inputReferences]) {
     for (let index = 0; index < images.length; index++) {
       const image = images[index];
       if (!image.id.startsWith("local-")) continue;
@@ -89,5 +90,5 @@ export async function uploadReferences(
       images[index] = saved;
     }
   }
-  return { ...input, referenceGroups: groups };
+  return { ...input, referenceGroups: groups, inputReferences };
 }

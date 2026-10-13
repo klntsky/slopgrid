@@ -1,3 +1,5 @@
+import { ImageOptions } from "../create/image-options";
+import { changeAxis } from "../create/change-axis";
 import { PublicGrids } from "../components/grid-listing";
 import { FormatIcon } from "../components/grid-format-icon";
 import { useInferenceMutation } from "../use-inference-mutation";
@@ -80,17 +82,22 @@ export function Create() {
     queryFn: () => api<Model[]>("/models"),
     retry: 1,
   });
-  function update(partial: Partial<GridInput>) {
-    setDraft((d) => ({
-      ...d,
-      input: {
-        ...d.input,
-        ...partial,
-        referenceGroups: partial.referenceGroups
-          ? { ...d.input.referenceGroups, ...partial.referenceGroups }
-          : d.input.referenceGroups,
-      },
-    }));
+  function update(
+    change: Partial<GridInput> | ((input: GridInput) => Partial<GridInput>),
+  ) {
+    setDraft((d) => {
+      const partial = typeof change === "function" ? change(d.input) : change;
+      return {
+        ...d,
+        input: {
+          ...d.input,
+          ...partial,
+          referenceGroups: partial.referenceGroups
+            ? { ...d.input.referenceGroups, ...partial.referenceGroups }
+            : d.input.referenceGroups,
+        },
+      };
+    });
     setError("");
     inference.reset();
   }
@@ -115,6 +122,8 @@ export function Create() {
       input: {
         ...d.input,
         format,
+        imageSettings: undefined,
+        inputReferences: undefined,
         model: "",
         effort: "default",
         rows:
@@ -166,6 +175,9 @@ export function Create() {
             ...d,
             input: {
               ...d.input,
+              inputReferences: d.input.inputReferences?.map((candidate) =>
+                candidate.id === localId ? image : candidate,
+              ),
               referenceGroups: Object.fromEntries(
                 Object.entries(d.input.referenceGroups ?? {}).map(
                   ([name, images]) => [
@@ -261,7 +273,9 @@ export function Create() {
                     setUploads((count) => count + (busy ? 1 : -1))
                   }
                   onChange={(rows, referenceGroups) =>
-                    update({ rows, referenceGroups })
+                    update((current) =>
+                      changeAxis(current, "rows", rows, referenceGroups),
+                    )
                   }
                 />
                 <button
@@ -292,7 +306,9 @@ export function Create() {
                     setUploads((count) => count + (busy ? 1 : -1))
                   }
                   onChange={(columns, referenceGroups) =>
-                    update({ columns, referenceGroups })
+                    update((current) =>
+                      changeAxis(current, "columns", columns, referenceGroups),
+                    )
                   }
                 />
               </div>
@@ -317,6 +333,15 @@ export function Create() {
                     ))}
                   </select>
                 </label>
+              )}
+              {input.format === "image" && (
+                <ImageOptions
+                  input={input}
+                  onChange={update}
+                  onBusy={(busy) =>
+                    setUploads((count) => count + (busy ? 1 : -1))
+                  }
+                />
               )}
               {input.format !== "image" && (
                 <div className="fixed-options">

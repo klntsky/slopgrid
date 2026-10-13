@@ -13,7 +13,9 @@ export function ReferenceGroups({
   groups,
   onChange,
   onBusy,
+  shared = false,
 }: {
+  shared?: boolean;
   values: string[];
   groups: Groups;
   onChange: (values: string[], groups?: Groups) => void;
@@ -60,7 +62,13 @@ export function ReferenceGroups({
           type="file"
           multiple
           accept="image/png,image/jpeg,image/webp"
-          aria-label={group ? `Add images to ${group}` : "Add reference group"}
+          aria-label={
+            shared
+              ? "Add input references"
+              : group
+                ? `Add images to ${group}`
+                : "Add reference group"
+          }
           disabled={busy}
           onChange={(event) => {
             void select(event.target.files, group);
@@ -74,37 +82,42 @@ export function ReferenceGroups({
     <div className="reference-groups" aria-busy={busy}>
       {values.map((name, position) => (
         <div className="reference-group" key={position}>
-          <div className="reference-heading">
-            <div className="reference-title-line">
-              <EditableTitle
-                key={name}
-                value={name}
-                label="Reference group title"
-                editLabel={`Edit reference group title: ${name}`}
+          {!shared && (
+            <div className="reference-heading">
+              <div className="reference-title-line">
+                <EditableTitle
+                  key={name}
+                  value={name}
+                  label="Reference group title"
+                  editLabel={`Edit reference group title: ${name}`}
+                  disabled={busy}
+                  icon={<Pencil aria-hidden="true" />}
+                  onSave={(title) => {
+                    if (!title)
+                      throw new Error("Enter a reference group title.");
+                    if (values.includes(title))
+                      throw new Error("Use a different reference group title.");
+                    onChange(
+                      values.map((value) => (value === name ? title : value)),
+                      { [title]: groups[name] },
+                    );
+                  }}
+                />
+                <span className="hint">· reference image group</span>
+              </div>
+              <button
+                type="button"
+                className="text-button"
                 disabled={busy}
-                icon={<Pencil aria-hidden="true" />}
-                onSave={(title) => {
-                  if (!title) throw new Error("Enter a reference group title.");
-                  if (values.includes(title))
-                    throw new Error("Use a different reference group title.");
-                  onChange(
-                    values.map((value) => (value === name ? title : value)),
-                    { [title]: groups[name] },
-                  );
-                }}
-              />
-              <span className="hint">· reference image group</span>
+                aria-label={`Remove ${name}`}
+                onClick={() =>
+                  onChange(values.filter((value) => value !== name))
+                }
+              >
+                <X aria-hidden="true" />
+              </button>
             </div>
-            <button
-              type="button"
-              className="text-button"
-              disabled={busy}
-              aria-label={`Remove ${name}`}
-              onClick={() => onChange(values.filter((value) => value !== name))}
-            >
-              <X aria-hidden="true" />
-            </button>
-          </div>
+          )}
           <div className="reference-images">
             {(groups[name] ?? []).map((image, index) => (
               <div className="reference-image" key={`${image.id}-${index}`}>
@@ -130,7 +143,7 @@ export function ReferenceGroups({
           {picker(name)}
         </div>
       ))}
-      {picker()}
+      {!shared && picker()}
       {busy && <span role="status">Reading images...</span>}
       <ErrorMessage error={error} />
     </div>

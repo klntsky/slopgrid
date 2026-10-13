@@ -159,3 +159,98 @@ test("image axes expand settings and reference groups per cell without substitut
     false,
   );
 });
+
+test("shared image settings combine with axes and omit Auto defaults", () => {
+  const reference = { id: "shared-image", name: "shared.png" };
+  const input = gridSchema.parse({
+    format: "image",
+    prompt: "Draw it",
+    model: "fixture/image",
+    effort: "default",
+    budgetUsd: 5,
+    rows: { kind: "quality", values: ["auto", "high"] },
+    columns: { kind: "size", values: ["auto", "2K"] },
+    imageSettings: { quality: "low", background: "auto", aspect_ratio: "3:2" },
+    inputReferences: [reference],
+  });
+  assert.deepEqual(
+    expandGrid(input).map((cell) => cell.imageSettings),
+    [
+      { aspect_ratio: "3:2", input_references: [reference.id] },
+      { aspect_ratio: "3:2", size: "2K", input_references: [reference.id] },
+      {
+        aspect_ratio: "3:2",
+        quality: "high",
+        input_references: [reference.id],
+      },
+      {
+        aspect_ratio: "3:2",
+        size: "2K",
+        quality: "high",
+        input_references: [reference.id],
+      },
+    ],
+  );
+  for (const imageSettings of [{ size: "invalid" }, { quality: "invalid" }])
+    assert.equal(
+      gridSchema.safeParse({
+        ...input,
+        rows: { kind: "variable", values: ["cat"] },
+        prompt: "$ROW",
+        imageSettings,
+      }).success,
+      false,
+    );
+  const axisReferences = gridSchema.parse({
+    ...input,
+    rows: { kind: "input_references", values: ["Group 1"] },
+    referenceGroups: { "Group 1": [{ id: "axis-image", name: "axis.png" }] },
+  });
+  assert.equal(axisReferences.inputReferences, undefined);
+  assert.deepEqual(
+    expandGrid(axisReferences)[0].imageSettings?.input_references,
+    ["axis-image"],
+  );
+});
+
+test("Auto and omitted image settings prepare identical requests and artifact signatures", async () => {
+  const { prepareImageInference, inferenceSignature } =
+    await import("../server/prepared-inference.js");
+  const cell = {
+    ...expandGrid({
+      format: "image",
+      prompt: "Draw it",
+      model: "fixture/image",
+      effort: "default",
+      budgetUsd: 5,
+      rows: { kind: "quality", values: ["auto"] },
+      columns: { kind: "size", values: ["auto"] },
+    })[0],
+    id: "cell",
+  };
+  const omitted = prepareImageInference(cell, []);
+  const automatic = prepareImageInference(
+    {
+      ...cell,
+      imageSettings: {
+        size: "auto",
+        quality: "auto",
+        aspect_ratio: "auto",
+        background: "auto",
+        input_references: [],
+      },
+    },
+    [],
+  );
+  assert.deepEqual(automatic, omitted);
+  assert.equal(inferenceSignature(automatic), inferenceSignature(omitted));
+  assert.notEqual(
+    inferenceSignature(
+      prepareImageInference(
+        { ...cell, imageSettings: { quality: "high" } },
+        [],
+      ),
+    ),
+    inferenceSignature(omitted),
+  );
+});

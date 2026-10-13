@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const imageChoices = {
-  size: ["512", "768", "1K", "1.5K", "2K", "4K"],
+  size: ["auto", "512", "768", "1K", "1.5K", "2K", "4K"],
   aspect_ratio: [
     "auto",
     "1:1",
@@ -74,4 +74,47 @@ export const imageEndpointSchema = z.object({
 export type ImageEndpoint = z.infer<typeof imageEndpointSchema>;
 export function validImageSize(value: string) {
   return imageChoices.size.includes(value) || /^[1-9]\d*x[1-9]\d*$/.test(value);
+}
+
+export type ScalarImageKind = keyof typeof imageChoices;
+export function validImageSetting(kind: ScalarImageKind, value: string) {
+  return kind === "size"
+    ? validImageSize(value)
+    : imageChoices[kind].includes(value);
+}
+function sharedSetting(kind: ScalarImageKind) {
+  return z
+    .string()
+    .trim()
+    .refine(
+      (value) => !value || validImageSetting(kind, value),
+      kind === "size"
+        ? "Use a resolution or a size such as 1536x1024"
+        : "Unknown image setting",
+    )
+    .optional();
+}
+export const sharedImageSettingsSchema = z.object({
+  size: sharedSetting("size"),
+  aspect_ratio: sharedSetting("aspect_ratio"),
+  quality: sharedSetting("quality"),
+  background: sharedSetting("background"),
+});
+export function normalizeImageSettings(
+  settings: ImageSettings = {},
+): ImageSettings {
+  return Object.fromEntries(
+    Object.entries(settings).filter(([, value]) =>
+      Array.isArray(value) ? value.length > 0 : !!value && value !== "auto",
+    ),
+  );
+}
+export function selectedReferences(input: {
+  referenceGroups?: ReferenceGroups;
+  inputReferences?: ReferenceImage[];
+}) {
+  return [
+    ...Object.values(input.referenceGroups ?? {}).flat(),
+    ...(input.inputReferences ?? []),
+  ];
 }
