@@ -68,6 +68,7 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 5. Shift-click selects or clears a range of visible model checkboxes according to the clicked checkbox's new state.
 6. Use the term "thinking effort." Order efforts by their semantic levels rather than alphabetically or by selection order, and let the effort selector expand to its full content height without an inner scrollbar.
 7. A model or effort that is not an axis applies as a fixed selection to the grid. Use the same searchable model selector for the fixed model, with radio buttons allowing one selection and a selected-model badge. Keep "Model default" thinking distinct from automatic model selection: the former leaves the model's thinking configuration unspecified.
+8. Make the complete model catalog, image pricing, and image capabilities available on the first client render through a JSON data script baked into the page HTML. The browser uses that snapshot without model refetches or server-side component rendering. The server loads the data together, refreshes its in-memory snapshot periodically, and serves model-list reads without rate limits.
 
 ### 3.3. Prompt variables
 

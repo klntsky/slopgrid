@@ -1,5 +1,10 @@
 import { test, expect } from "./fixtures";
-import { finishPublishing, expectProgress, selectModel } from "./helpers";
+import {
+  finishPublishing,
+  expectProgress,
+  selectModel,
+  mockModels,
+} from "./helpers";
 
 async function setup(page: import("@playwright/test").Page, connect = true) {
   await page.goto("/");
@@ -373,6 +378,11 @@ test("renamed reference groups survive reload, Edit and Fork without mixing thei
 test("image model prices preserve published units and tiers without changing selection or compatibility", async ({
   page,
 }) => {
+  const catalogRequests: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().includes("/api/models"))
+      catalogRequests.push(request.url());
+  });
   await setup(page, false);
   const list = page.getByRole("group", { name: "Column values" });
   const item = (name: string) =>
@@ -421,6 +431,13 @@ test("image model prices preserve published units and tiers without changing sel
       .getByRole("group", { name: "Row values" })
       .getByText("$0.04/image", { exact: true }),
   ).toBeVisible();
+  await page.reload();
+  await expect(
+    page
+      .getByRole("group", { name: "Row values" })
+      .getByText("$0.04/image", { exact: true }),
+  ).toBeVisible();
+  expect(catalogRequests).toEqual([]);
 });
 
 test("shared image settings transfer to axes, reset on removal, and preserve defaults through Edit and Fork", async ({
@@ -641,9 +658,12 @@ test("shared references survive uploads, reload, publication and forks, and tran
 test("parameter compatibility grids isolate simultaneous warnings, unknown models, and dimensional conflicts", async ({
   page,
 }) => {
-  await page.route(
-    "**/api/models/image-endpoints?model=fixture%2Fmegapixels",
-    (route) => route.fulfill({ json: [] }),
+  await mockModels(page, (models) =>
+    models.map((model) =>
+      model.id === "fixture/megapixels"
+        ? { ...model, imageEndpoints: [] }
+        : model,
+    ),
   );
   await setup(page, false);
   const select = (name: string) =>

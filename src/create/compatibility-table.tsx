@@ -1,6 +1,4 @@
 import type { ReactNode } from "react";
-import { useQueries } from "@tanstack/react-query";
-import { imageEndpointQuery } from "../queries";
 import { tooltipRef } from "../components/use-tooltip";
 import { Check, TriangleAlert } from "lucide-react";
 import { expandGrid, type GridInput } from "../../server/domain";
@@ -12,15 +10,15 @@ import {
   imageParameterNames,
   type Compatibility,
 } from "../../server/compatibility";
-import type { Model } from "../../server/provider";
+import type { ModelInfo } from "../../server/model-catalog";
 import { dimensionNames, displayValue } from "../format";
 
-type Props = { input: GridInput; models: readonly Model[] };
+type Props = { input: GridInput; models: readonly ModelInfo[] };
 export type CompatibilityTables = Partial<
   Record<GridInput["rows"]["kind"], ReactNode>
 >;
 
-export function useCompatibilityTables({
+export function compatibilityTables({
   input,
   models,
 }: Props): CompatibilityTables {
@@ -30,10 +28,6 @@ export function useCompatibilityTables({
   const imageModels = [
     ...new Set(modelAxis ? modelAxis.values : [input.model].filter(Boolean)),
   ];
-  const capabilities = useQueries({
-    queries:
-      input.format === "image" ? imageModels.map(imageEndpointQuery) : [],
-  });
   if (input.format !== "image")
     return {
       effort: <ThinkingCompatibilityTable input={input} models={models} />,
@@ -52,9 +46,9 @@ export function useCompatibilityTables({
   }).map((cell) => ({
     ...cell,
     compatibility: imageSettingsSupport(
-      capabilities[imageModels.indexOf(cell.model)]?.data?.map(
-        (endpoint) => endpoint.supported_parameters,
-      ),
+      models
+        .find((model) => model.id === cell.model)
+        ?.imageEndpoints?.map((endpoint) => endpoint.supported_parameters),
       cell.imageSettings ?? {},
     ),
   }));

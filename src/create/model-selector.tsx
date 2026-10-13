@@ -1,6 +1,6 @@
 import { useId, useRef, useState } from "react";
 import { Search, X } from "lucide-react";
-import type { Model } from "../../server/provider";
+import type { ModelInfo } from "../../server/model-catalog";
 import type { GridInput } from "../../server/domain";
 import { tooltipRef } from "../components/use-tooltip";
 import { ImageModelPrice } from "./image-model-price";
@@ -13,7 +13,7 @@ export function ModelSelector({
   label = "Model",
   multiple = false,
 }: {
-  models: Model[];
+  models: ModelInfo[];
   format: GridInput["format"];
   values: string[];
   onChange: (values: string[]) => void;
@@ -98,7 +98,9 @@ export function ModelSelector({
               }}
             />
             <span>{c.name}</span>
-            {format === "image" && <ImageModelPrice model={c.id} />}
+            {format === "image" && (
+              <ImageModelPrice endpoints={c.imageEndpoints} />
+            )}
           </label>
         ))}
       </div>

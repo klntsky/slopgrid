@@ -10,6 +10,7 @@ import { createBillingRoutes } from "./routes/billing.js";
 import express from "express";
 import { Store } from "./store.js";
 import { Provider } from "./provider.js";
+import { createModelCatalog } from "./model-catalog.js";
 import { type GenerationAPI, generationErrorStatus } from "./generation-api.js";
 import { createHtmlHosts } from "./hosts.js";
 import { createHostDispatcher } from "./hosting.js";
@@ -45,6 +46,7 @@ export function createApp(config: Config) {
   const store = new Store(config.database, config.secret, config.outputsPath);
   const provider =
     config.provider ?? new Provider(process.env.OPENROUTER_BASE_URL);
+  const modelCatalog = createModelCatalog(provider);
   const updates = new EventEmitter().setMaxListeners(0);
   const generation = config.generation;
   const origin = new URL(config.origin);
@@ -90,7 +92,7 @@ export function createApp(config: Config) {
     ]),
   );
   app.use(createManualKeyRoutes(provider, session, rate));
-  app.use(createModelRoutes(provider));
+  app.use(createModelRoutes(modelCatalog));
   app.use(createReferenceRoutes(store, session));
   app.use(createBillingRoutes(store, session));
   app.use(
@@ -122,5 +124,5 @@ export function createApp(config: Config) {
       else res.status(400).json({ error: "Invalid request" });
     },
   );
-  return { app, store };
+  return { app, store, modelCatalog };
 }

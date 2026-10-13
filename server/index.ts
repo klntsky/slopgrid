@@ -1,5 +1,5 @@
 import { githubCredentials } from "./oauth.js";
-import { createFrontendRoutes } from "./frontend.js";
+import { createFrontendRoutes, modelDataScript } from "./frontend.js";
 import { createApp } from "./app.js";
 import { generationClient } from "./generation-client.js";
 import { runtimeConfig } from "./runtime-config.js";
@@ -22,7 +22,7 @@ if (
 const config = runtimeConfig();
 const generation = generationClient(config.socket);
 await generation.status();
-const { app } = createApp({
+const { app, modelCatalog } = createApp({
   github,
   origin,
   outputDomain,
@@ -30,10 +30,34 @@ const { app } = createApp({
   generation,
 });
 if (production)
-  app.use(createFrontendRoutes(process.env.FRONTEND_PATH ?? "dist"));
+  app.use(
+    await createFrontendRoutes(
+      process.env.FRONTEND_PATH ?? "dist",
+      modelCatalog,
+    ),
+  );
 else {
+  let script = modelDataScript(await modelCatalog.read());
+  modelCatalog.subscribe((models) => {
+    script = modelDataScript(models);
+  });
   const { createServer } = await import("vite");
   const vite = await createServer({
+    plugins: [
+      {
+        name: "model-catalog-bootstrap",
+        transformIndexHtml() {
+          return [
+            {
+              tag: "script",
+              attrs: { id: "slopgrid-models" },
+              children: script,
+              injectTo: "head",
+            },
+          ];
+        },
+      },
+    ],
     server: { middlewareMode: true },
     appType: "spa",
   });
@@ -45,6 +69,7 @@ const server = app.listen(port, process.env.BIND_ADDRESS ?? "127.0.0.1", () =>
 // SSE clients reconnect to the replacement web process and receive an engine snapshot.
 for (const signal of ["SIGTERM", "SIGINT"] as const)
   process.on(signal, () => {
+    modelCatalog.close();
     server.closeAllConnections();
     server.close(() => process.exit(0));
   });

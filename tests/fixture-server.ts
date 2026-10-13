@@ -416,7 +416,7 @@ const generation = await startGenerationFixture({
   providerURL: `${upstreamOrigin}/api/v1`,
   workersMax: 2,
 });
-const { app, store } = createApp({
+const { app, store, modelCatalog } = createApp({
   origin: `http://localhost:${port}`,
   outputDomain: `-slopgrid.localhost:${port}`,
   database: `${data}/.data/db.sqlite`,
@@ -490,8 +490,11 @@ app.get("/svg-probe", (req, res) => {
   res.sendStatus(204);
 });
 app.get("/fixture/svg-probes", (_req, res) => res.json(svgProbes));
-app.use(createFrontendRoutes("dist"));
-export const close = () => generation.close();
+app.use(await createFrontendRoutes("dist", modelCatalog));
+export const close = () => {
+  modelCatalog.close();
+  return generation.close();
+};
 app.listen(port, () => {
   console.log("Fixture ready");
   signalReady();

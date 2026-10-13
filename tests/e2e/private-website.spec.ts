@@ -56,7 +56,7 @@ test("private websites load in frames and direct tabs for the owning user across
     secret: Buffer.alloc(32, 7),
     github: { clientId: "test-client", clientSecret: "test-secret" },
   });
-  app.use(createFrontendRoutes("dist"));
+  app.use(await createFrontendRoutes("dist"));
   server.on("request", app);
   const browser = await playwright.chromium.launch({
     args: [

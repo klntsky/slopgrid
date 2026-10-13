@@ -11,7 +11,7 @@ const generation = await startGenerationFixture({
   database: join(data, "app.sqlite"),
   secret,
 });
-const { app } = createApp({
+const { app, modelCatalog } = createApp({
   origin: `http://localhost:${port}`,
   outputDomain: `-slopgrid.localhost:${port}`,
   database: join(data, "app.sqlite"),
@@ -19,8 +19,11 @@ const { app } = createApp({
   secret,
   generation: generation.api,
 });
-app.use(createFrontendRoutes("dist"));
-export const close = () => generation.close();
+app.use(await createFrontendRoutes("dist", modelCatalog));
+export const close = () => {
+  modelCatalog.close();
+  return generation.close();
+};
 app.listen(port, () => {
   console.log("Real-provider app ready");
   signalReady();

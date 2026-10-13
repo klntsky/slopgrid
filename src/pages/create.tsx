@@ -9,7 +9,6 @@ import {
   removeReferenceFile,
 } from "../create/reference-files";
 import { useState, useRef, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { ArrowUpRight, DollarSign, ArrowLeftRight } from "lucide-react";
 import {
@@ -19,13 +18,12 @@ import {
   type GridInput,
 } from "../../server/domain";
 import { effortLabel } from "../../server/compatibility";
-import type { Model } from "../../server/provider";
-import { api } from "../api";
 import { queryClient, useConnection, useInferenceCapacity } from "../queries";
+import { modelCatalog } from "../model-catalog";
 import { formatNames } from "../format";
 import { useCreateDraft, clearDraft } from "../create/draft";
 import { AxisEditor } from "../create/axis-editor";
-import { useCompatibilityTables } from "../create/compatibility-table";
+import { compatibilityTables } from "../create/compatibility-table";
 import { Connection } from "../components/connection";
 import { ErrorMessage } from "../components/error-message";
 import { LowBalanceDialog } from "../components/inference-dialogs";
@@ -79,11 +77,6 @@ export function Create() {
     "When checked, existing artifacts will be copied to the new grid if their parameters match exactly",
   );
   const swapHint = useTooltip<HTMLButtonElement>("Swap rows and columns");
-  const catalog = useQuery({
-    queryKey: ["models"],
-    queryFn: () => api<Model[]>("/models"),
-    retry: 1,
-  });
   function update(
     change: Partial<GridInput> | ((input: GridInput) => Partial<GridInput>),
   ) {
@@ -109,14 +102,14 @@ export function Create() {
     setError("");
     inference.reset();
   }
-  const models = (catalog.data ?? [])
+  const models = modelCatalog
     .filter((m) => (input.format === "image" ? m.image : m.text))
     .sort(
       (a, b) =>
         a.name.localeCompare(b.name, "en", { sensitivity: "base" }) ||
         a.id.localeCompare(b.id, "en"),
     );
-  const compatibility = useCompatibilityTables({ input, models });
+  const compatibility = compatibilityTables({ input, models });
   function selectFormat(format: GridInput["format"]) {
     inference.reset();
     setDraft((d) => ({
@@ -145,7 +138,6 @@ export function Create() {
     ![input.rows.kind, input.columns.kind].includes("model") && !input.model;
   async function generate(continueWithLowBalance = false) {
     if (
-      !catalog.data ||
       modelMissing ||
       workersPending ||
       uploading ||
@@ -259,77 +251,65 @@ export function Create() {
               the grid?
             </h2>
           </div>
-          {catalog.isError ? (
-            <>
-              <ErrorMessage error={catalog.error.message} />
-              <button onClick={() => catalog.refetch()}>Reload models</button>
-            </>
-          ) : catalog.isPending ? (
-            <p>Loading models…</p>
-          ) : (
-            <>
-              <div className="axes" key={input.format}>
-                <AxisEditor
-                  label="Rows"
-                  children={compatibility[input.rows.kind]}
-                  axis={input.rows}
-                  format={input.format}
-                  models={models}
-                  referenceGroups={input.referenceGroups}
-                  onUploading={(busy) =>
-                    setUploads((count) => count + (busy ? 1 : -1))
-                  }
-                  onChange={(rows, referenceGroups) =>
-                    update((current) =>
-                      changeAxis(current, "rows", rows, referenceGroups),
-                    )
-                  }
-                />
-                <button
-                  type="button"
-                  className="text-button axis-swap"
-                  aria-label="Swap rows and columns"
-                  ref={swapHint}
-                  onClick={() =>
-                    update({
-                      rows: input.columns,
-                      columns: input.rows,
-                      prompt: input.prompt.replace(
-                        /\$(ROW|COLUMN)/g,
-                        (_, axis) => (axis === "ROW" ? "$COLUMN" : "$ROW"),
-                      ),
-                    })
-                  }
-                >
-                  <ArrowLeftRight aria-hidden="true" />
-                </button>
-                <AxisEditor
-                  label="Columns"
-                  children={compatibility[input.columns.kind]}
-                  axis={input.columns}
-                  format={input.format}
-                  models={models}
-                  referenceGroups={input.referenceGroups}
-                  onUploading={(busy) =>
-                    setUploads((count) => count + (busy ? 1 : -1))
-                  }
-                  onChange={(columns, referenceGroups) =>
-                    update((current) =>
-                      changeAxis(current, "columns", columns, referenceGroups),
-                    )
-                  }
-                />
-              </div>
-              <p className="hint">
-                {input.rows.values.length} rows × {input.columns.values.length}{" "}
-                columns ·{" "}
-                {input.rows.values.length * input.columns.values.length} outputs
-              </p>
-            </>
-          )}
+          <div className="axes" key={input.format}>
+            <AxisEditor
+              label="Rows"
+              children={compatibility[input.rows.kind]}
+              axis={input.rows}
+              format={input.format}
+              models={models}
+              referenceGroups={input.referenceGroups}
+              onUploading={(busy) =>
+                setUploads((count) => count + (busy ? 1 : -1))
+              }
+              onChange={(rows, referenceGroups) =>
+                update((current) =>
+                  changeAxis(current, "rows", rows, referenceGroups),
+                )
+              }
+            />
+            <button
+              type="button"
+              className="text-button axis-swap"
+              aria-label="Swap rows and columns"
+              ref={swapHint}
+              onClick={() =>
+                update({
+                  rows: input.columns,
+                  columns: input.rows,
+                  prompt: input.prompt.replace(/\$(ROW|COLUMN)/g, (_, axis) =>
+                    axis === "ROW" ? "$COLUMN" : "$ROW",
+                  ),
+                })
+              }
+            >
+              <ArrowLeftRight aria-hidden="true" />
+            </button>
+            <AxisEditor
+              label="Columns"
+              children={compatibility[input.columns.kind]}
+              axis={input.columns}
+              format={input.format}
+              models={models}
+              referenceGroups={input.referenceGroups}
+              onUploading={(busy) =>
+                setUploads((count) => count + (busy ? 1 : -1))
+              }
+              onChange={(columns, referenceGroups) =>
+                update((current) =>
+                  changeAxis(current, "columns", columns, referenceGroups),
+                )
+              }
+            />
+          </div>
+          <p className="hint">
+            {input.rows.values.length} rows × {input.columns.values.length}{" "}
+            columns · {input.rows.values.length * input.columns.values.length}{" "}
+            outputs
+          </p>
         </section>
       )}
-      {formatSelected && catalog.data && (
+      {formatSelected && (
         <section>
           <div className="section-heading">
             <span className="number">03</span>
@@ -498,7 +478,6 @@ export function Create() {
               !connection.data?.connected ||
               !input.prompt.trim() ||
               !!unusedVariableIssue(input) ||
-              !catalog.data ||
               !Number.isFinite(input.budgetUsd) ||
               input.budgetUsd <= 0
             }

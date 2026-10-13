@@ -1,5 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
-import { imageEndpointQuery } from "../queries";
+import type { ImageEndpoint } from "../../server/image-settings";
 import { formatCost } from "../format";
 import { useTooltip } from "../components/use-tooltip";
 
@@ -9,9 +8,11 @@ function rate(cost: number, unit: string) {
   }`;
 }
 
-export function ImageModelPrice({ model }: { model: string }) {
-  const query = useQuery(imageEndpointQuery(model));
-  const endpoints = query.data ?? [];
+export function ImageModelPrice({
+  endpoints = [],
+}: {
+  endpoints?: ImageEndpoint[];
+}) {
   const outputs = endpoints
     .flatMap((endpoint) => endpoint.pricing)
     .filter((price) => price.billable === "output_image");
@@ -40,7 +41,7 @@ export function ImageModelPrice({ model }: { model: string }) {
   const hint = useTooltip<HTMLSpanElement>(details || undefined);
   return (
     <span className="model-price" ref={hint} tabIndex={details ? 0 : undefined}>
-      {summary || (query.isPending ? "" : "Price unavailable")}
+      {summary || "Price unavailable"}
     </span>
   );
 }

@@ -4,6 +4,7 @@ import {
   expectProgress,
   finishPublishing,
   selectModel,
+  mockModels,
 } from "./helpers";
 
 test("axis swap preserves selections and substitutes the corresponding prompt variables", async ({
@@ -147,19 +148,15 @@ test("Shift-click selects and clears visible model ranges while preserving hidde
   page,
 }) => {
   const names = ["A even", "B odd", "C even", "D odd", "E even", "F odd"];
-  await page.route("**/api/models", async (route) => {
-    const response = await route.fetch();
-    const [model] = await response.json();
-    await route.fulfill({
-      json: names.map((name, index) => ({
-        ...model,
-        id: `range/${index}`,
-        name,
-        text: true,
-        image: false,
-      })),
-    });
-  });
+  await mockModels(page, ([model]) =>
+    names.map((name, index) => ({
+      ...model,
+      id: `range/${index}`,
+      name,
+      text: true,
+      image: false,
+    })),
+  );
   await page.goto("/");
   await page.getByRole("button", { name: "SVG", exact: true }).click();
   await page

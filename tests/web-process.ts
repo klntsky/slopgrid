@@ -26,7 +26,7 @@ async function start() {
   const origin = tls
     ? `https://slopgrid.test:${port}`
     : `http://127.0.0.1:${port}`;
-  const { app } = createApp({
+  const { app, modelCatalog } = createApp({
     ...config,
     origin,
     outputDomain: `-output.${tls ? "slopgrid.test" : "localhost"}:${port}`,
@@ -34,7 +34,7 @@ async function start() {
     provider: new Provider(process.env.OPENROUTER_BASE_URL),
     generation: generationClient(config.socket),
   });
-  app.use(createFrontendRoutes("dist"));
+  app.use(await createFrontendRoutes("dist", modelCatalog));
   server.on("request", app);
   signalReady(origin);
 }

@@ -7,7 +7,9 @@ export function createApiSecurity(
 ): RequestHandler {
   return (req, res, next) => {
     res.set("Cache-Control", "no-store");
-    if (!rate(`api:${req.ip}`, 600, 60000)) {
+    const catalogRead =
+      ["GET", "HEAD"].includes(req.method) && req.path === "/models";
+    if (!catalogRead && !rate(`api:${req.ip}`, 600, 60000)) {
       res.set("Retry-After", "60");
       return res
         .status(429)

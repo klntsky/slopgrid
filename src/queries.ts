@@ -4,18 +4,6 @@ import { useOpenRouterKey } from "./openrouter-key";
 import { QueryClient, useQuery } from "@tanstack/react-query";
 import type { GridSummary, GridInput } from "../server/domain";
 import { api, type ViewGrid, type SessionInfo } from "./api";
-import type { ImageEndpoint } from "../server/image-settings";
-export function imageEndpointQuery(model: string) {
-  return {
-    queryKey: ["image-endpoints", model],
-    queryFn: () =>
-      api<ImageEndpoint[]>(
-        `/models/image-endpoints?model=${encodeURIComponent(model)}`,
-      ),
-    staleTime: 300000,
-    retry: 1,
-  };
-}
 function newestGrid(previous: unknown, incoming: unknown) {
   const old = previous as ViewGrid | undefined,
     next = incoming as ViewGrid;

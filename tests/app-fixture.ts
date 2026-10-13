@@ -33,6 +33,7 @@ export async function appFixture(
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
     if (application) {
+      application.modelCatalog.close();
       for (const grid of jobs.active.values()) jobs.pause(grid);
       await new Promise((resolve) => setImmediate(resolve));
       jobs.previews.clearAll();

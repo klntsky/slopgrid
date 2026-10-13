@@ -1,4 +1,36 @@
 import { expect } from "@playwright/test";
+import type { ModelInfo } from "../../server/model-catalog";
+import { createHash } from "node:crypto";
+
+export async function mockModels(
+  page: import("@playwright/test").Page,
+  change: (models: ModelInfo[]) => ModelInfo[],
+) {
+  await page.route("**/*", async (route) => {
+    if (
+      route.request().resourceType() !== "document" ||
+      route.request().frame() !== page.mainFrame()
+    )
+      return route.fallback();
+    const response = await route.fetch();
+    const body = await response.text();
+    let hash = "";
+    const updated = body.replace(
+      /(<script id="slopgrid-models">)window\.__SLOPGRID_MODELS__ = ([\s\S]*?);(<\/script>)/,
+      (_, start, data, end) => {
+        const script = `window.__SLOPGRID_MODELS__ = ${JSON.stringify(change(JSON.parse(data))).replaceAll("<", "\\u003c")};`;
+        hash = createHash("sha256").update(script).digest("base64");
+        return start + script + end;
+      },
+    );
+    const headers = response.headers();
+    if (hash && headers["content-security-policy"])
+      headers["content-security-policy"] = headers[
+        "content-security-policy"
+      ].replace(/'sha256-[^']*'/g, `'sha256-${hash}'`);
+    await route.fulfill({ response, headers, body: updated });
+  });
+}
 
 export async function finishPublishing(page: import("@playwright/test").Page) {
   const dialog = page.getByRole("dialog");
