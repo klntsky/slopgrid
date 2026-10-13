@@ -43,6 +43,9 @@
   padding: 12px;
   background: var(--panel);
 }
+.markdown-document pre:has(> code) {
+  line-height: normal;
+}
 .markdown-document .markdown-raw {
   padding: 28px 0 0;
   margin: 0;
