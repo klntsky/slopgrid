@@ -34,7 +34,7 @@ export function ImageModelPrice({ model }: { model: string }) {
         const name = price.billable.replaceAll("_", " ");
         return `${name[0].toUpperCase()}${name.slice(1)}${price.variant ? ` (${price.variant})` : ""}: ${rate(price.cost_usd, price.unit)}`;
       });
-      return `${endpoint.provider_name ?? "OpenRouter"}: ${lines.join("; ")}.`;
+      return `${endpoint.provider_name}: ${lines.join("; ")}.`;
     })
     .join(" ");
   const hint = useTooltip<HTMLSpanElement>(details || undefined);

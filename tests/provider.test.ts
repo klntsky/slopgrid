@@ -8,6 +8,8 @@ import type { Cell } from "../server/domain.js";
 
 async function upstream(streamError?: Record<string, unknown>) {
   const requests: Record<string, unknown>[] = [];
+  const imageEndpoints: Record<string, unknown>[] = [];
+  let imageEndpointRequests = 0;
   const catalog = [
     {
       id: "required",
@@ -74,6 +76,11 @@ async function upstream(streamError?: Record<string, unknown>) {
                 ],
         }),
       );
+    }
+    if (req.url === "/images/models/image/endpoints") {
+      imageEndpointRequests++;
+      res.setHeader("Content-Type", "application/json");
+      return res.end(JSON.stringify({ endpoints: imageEndpoints }));
     }
     let body = "";
     for await (const chunk of req) body += chunk;
@@ -148,6 +155,10 @@ async function upstream(streamError?: Record<string, unknown>) {
   return {
     provider,
     requests,
+    imageEndpoints,
+    get imageEndpointRequests() {
+      return imageEndpointRequests;
+    },
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };
 }
@@ -399,6 +410,26 @@ test("live cost includes reasoning and request fees without changing output or i
         estimates.get("request-fee")!.at(-1)!.cost - paid.at(-1)!.cost - 0.01,
       ) < 1e-12,
     );
+  } finally {
+    await h.close();
+  }
+});
+
+test("image endpoint metadata rejects missing provider attribution and recovers after correction", async () => {
+  const h = await upstream();
+  try {
+    const endpoint: Record<string, unknown> = {
+      supported_parameters: {},
+      pricing: [{ billable: "output_image", unit: "image", cost_usd: 0.04 }],
+    };
+    h.imageEndpoints.push(endpoint);
+    await assert.rejects(h.provider.imageEndpoints("image"), /provider_name/);
+    endpoint.provider_name = "";
+    await assert.rejects(h.provider.imageEndpoints("image"), /provider_name/);
+    endpoint.provider_name = "Actual provider";
+    assert.deepEqual(await h.provider.imageEndpoints("image"), [endpoint]);
+    assert.deepEqual(await h.provider.imageEndpoints("image"), [endpoint]);
+    assert.equal(h.imageEndpointRequests, 3);
   } finally {
     await h.close();
   }

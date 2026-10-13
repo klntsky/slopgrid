@@ -60,7 +60,7 @@ export const imageCapabilitiesSchema = z.record(
 );
 export type ImageCapabilities = z.infer<typeof imageCapabilitiesSchema>;
 export const imageEndpointSchema = z.object({
-  provider_name: z.string().optional(),
+  provider_name: z.string().trim().min(1),
   supported_parameters: imageCapabilitiesSchema,
   pricing: z
     .array(
