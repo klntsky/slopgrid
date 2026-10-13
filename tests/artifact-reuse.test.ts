@@ -1,9 +1,17 @@
+import type { ViewGrid } from "../src/api.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, rmSync, chmodSync } from "node:fs";
+import { readFileSync, rmSync, chmodSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import type { Grid, GridInput } from "../server/domain.js";
-import { runtimeFixture, until, kill } from "./runtime-fixture.js";
+import type { GridInput } from "../server/domain.js";
+import {
+  runtimeFixture,
+  until,
+  kill,
+  messageText,
+  type RuntimeFixture,
+  type RuntimeCall,
+} from "./runtime-fixture.js";
 
 const input: GridInput = {
   format: "markdown",
@@ -15,27 +23,24 @@ const input: GridInput = {
   budgetUsd: 0.1,
   parallelWorkers: 1,
 };
-async function create(
-  f: Awaited<ReturnType<typeof runtimeFixture>>,
-  value: object,
-) {
+async function create(f: RuntimeFixture, value: object) {
   const response = await f.request("/api/grids", value);
   assert.equal(response.status, 201, await response.clone().text());
-  return (await response.json()) as Grid;
+  return (await response.json()) as ViewGrid;
 }
-async function settled(
-  f: Awaited<ReturnType<typeof runtimeFixture>>,
-  id: string,
-) {
+async function settled(f: RuntimeFixture, id: string) {
   return until(
     () => f.engine.api.getGrid(id),
     (g) => g.status !== "running",
   );
 }
-function finish(
-  call: Awaited<ReturnType<Awaited<ReturnType<typeof runtimeFixture>>["call"]>>,
-  text = "Artifact",
-) {
+function assertCost(actual: number, expected: number) {
+  assert.ok(
+    Math.abs(actual - expected) < 1e-9,
+    `Expected $${expected}, received $${actual}`,
+  );
+}
+function finish(call: RuntimeCall, text = "Artifact") {
   call.write({ content: text, reasoning: "Recorded thinking." });
   call.finish();
 }
@@ -44,9 +49,9 @@ test("edit copies exact completed cells through reorder, cancellation, web repla
   const f = await runtimeFixture();
   try {
     const source = await create(f, input);
-    finish(await f.call(0), "cat one");
-    (await f.call(1)).fail(400);
-    const cancelled = await f.call(2);
+    finish(await f.nextCall(), "cat one");
+    (await f.nextCall()).fail(400);
+    const cancelled = await f.nextCall();
     cancelled.write({ content: "Discarded" });
     await f.request(`/api/grids/${source.id}/edit`, {});
     await until(
@@ -59,6 +64,7 @@ test("edit copies exact completed cells through reorder, cancellation, web repla
       rows: { kind: "variable", values: ["fox", "cat", "dog", "owl", "new"] },
       columns: { kind: "variable", values: ["two", "one"] },
     };
+    const callsBeforeEdit = f.calls.length;
     const next = await create(f, {
       ...changed,
       sourceGridId: source.id,
@@ -86,35 +92,28 @@ test("edit copies exact completed cells through reorder, cancellation, web repla
     );
     cancelled.write({ content: "Late" });
     cancelled.finish();
-    const pending = await f.call(3);
+    const expectedPrompts = [
+      "fox two",
+      "fox one",
+      "cat two",
+      "dog two",
+      "dog one",
+      "owl two",
+      "owl one",
+      "new two",
+      "new one",
+    ];
+    const pending = await f.nextCall();
     pending.write({ content: "Before restart. " });
     await kill(f.web);
     await f.startWeb();
     finish(pending, "After restart.");
-    for (let i = 4; i < 12; i++) finish(await f.call(i), `new ${i}`);
+    for (const prompt of expectedPrompts.slice(1))
+      finish(await f.nextCall(), prompt);
     assert.equal((await settled(f, next.id)).status, "complete");
     assert.deepEqual(
-      f.calls.slice(3).map((c) =>
-        c.request.messages
-          .filter((m: { role: string }) => m.role === "user")
-          .flatMap((m: { content: string | { text: string }[] }) =>
-            typeof m.content === "string"
-              ? [m.content]
-              : m.content.map((part) => part.text),
-          )
-          .join(""),
-      ),
-      [
-        "fox two",
-        "fox one",
-        "cat two",
-        "dog two",
-        "dog one",
-        "owl two",
-        "owl one",
-        "new two",
-        "new one",
-      ],
+      f.calls.slice(callsBeforeEdit).map((call) => call.prompt),
+      expectedPrompts,
     );
     await f.engine.close();
     await f.startEngine();
@@ -124,11 +123,11 @@ test("edit copies exact completed cells through reorder, cancellation, web repla
       reuseArtifacts: true,
     });
     assert.equal(again.status, "complete");
-    assert.equal(f.calls.length, 12);
+    assert.equal(f.calls.length, callsBeforeEdit + expectedPrompts.length);
     assert.equal((await f.engine.api.getGrid(again.id)).spentUsd, 0);
-    assert.equal(
+    assertCost(
       again.cells.reduce((sum, c) => sum + (c.usage?.costUsd ?? 0), 0),
-      0.12300000000000003,
+      0.123,
     );
   } finally {
     await f.close();
@@ -147,12 +146,12 @@ test("copies require intact inventories and thinking, and remain independent of 
       },
     };
     const source = await create(f, config);
-    for (let i = 0; i < 5; i++)
+    for (const name of config.rows.values)
       finish(
-        await f.call(i),
+        await f.nextCall(),
         JSON.stringify({
           files: [
-            { path: "index.html", content: `<h1>${i}</h1>` },
+            { path: "index.html", content: `<h1>${name}</h1>` },
             { path: "nested/style.css", content: "h1{color:red}" },
           ],
         }),
@@ -180,9 +179,11 @@ test("copies require intact inventories and thinking, and remain independent of 
       copied.cells.filter((c) => c.status === "complete").map((c) => c.row),
       [0],
     );
-    for (let i = 5; i < 9; i++)
+    for (const _cell of copied.cells.filter(
+      (cell) => cell.status !== "complete",
+    ))
       finish(
-        await f.call(i),
+        await f.nextCall(),
         '{"files":[{"path":"index.html","content":"Fresh"}]}',
       );
     await settled(f, copied.id);
@@ -215,14 +216,14 @@ test("forks isolate access and billing while preserving artifact costs and admis
   try {
     const config = { ...input, rows: { kind: "variable", values: ["cat"] } };
     const source = await create(f, config);
-    finish(await f.call(0));
+    finish(await f.nextCall());
     await settled(f, source.id);
     f.store.claim(f.owner, "source-user");
     f.store.saveSession({
       ...f.store.session(f.owner)!,
       userId: "destination-user",
     });
-    const before = (await import("node:fs")).readdirSync(f.store.files.root);
+    const before = readdirSync(f.store.files.root);
     assert.equal(
       (
         await f.request("/api/grids", {
@@ -233,10 +234,7 @@ test("forks isolate access and billing while preserving artifact costs and admis
       ).status,
       404,
     );
-    assert.deepEqual(
-      (await import("node:fs")).readdirSync(f.store.files.root),
-      before,
-    );
+    assert.deepEqual(readdirSync(f.store.files.root), before);
     assert.equal(f.calls.length, 1);
     assert.equal(f.store.publish(source.id, "public", null), undefined);
     const destination = await create(f, {
@@ -245,12 +243,12 @@ test("forks isolate access and billing while preserving artifact costs and admis
       sourceGridId: source.id,
       reuseArtifacts: true,
     });
-    const failed = await f.call(1);
+    const failed = await f.nextCall();
     failed.write({ content: "Incomplete" });
     failed.finish(0.02, { reason: "length", outputTokens: 4 });
     await settled(f, destination.id);
     await f.request(`/api/grids/${destination.id}/retry`, {});
-    finish(await f.call(2));
+    finish(await f.nextCall());
     const completed = await settled(f, destination.id);
     assert.equal(completed.spentUsd, 0.0323);
     assert.equal(
@@ -335,37 +333,56 @@ test("effective model, prompt, effort, budget, token ceiling and format determin
       rows: { kind: "variable", values: ["cat"] },
     };
     const source = await create(f, config);
-    finish(await f.call(0));
+    finish(await f.nextCall());
     await settled(f, source.id);
-    const changes: Partial<GridInput>[] = [
-      { model: "fixture/other" },
-      { prompt: "Changed $ROW $COLUMN" },
-      { effort: "high" },
-      { budgetUsd: 0.2 },
-      { format: "svg" },
+    const cases: {
+      name: string;
+      input: Partial<GridInput>;
+      verify: (call: RuntimeCall) => void;
+    }[] = [
+      {
+        name: "model",
+        input: { model: "fixture/other" },
+        verify: (call) => assert.equal(call.request.model, "fixture/other"),
+      },
+      {
+        name: "prompt",
+        input: { prompt: "Changed $ROW $COLUMN" },
+        verify: (call) => assert.equal(call.prompt, "Changed cat one"),
+      },
+      {
+        name: "effort",
+        input: { effort: "high" },
+        verify: (call) => assert.equal(call.request.reasoning?.effort, "high"),
+      },
+      {
+        name: "budget",
+        input: { budgetUsd: 0.2 },
+        verify: (call) => assert.equal(call.request.max_tokens, 1000),
+      },
+      {
+        name: "format",
+        input: { format: "svg" },
+        verify: (call) =>
+          assert.match(
+            messageText(call.request.messages[0].content),
+            /image\/svg\+xml/,
+          ),
+      },
     ];
-    for (const [i, change] of changes.entries()) {
+    for (const scenario of cases) {
       const next = await create(f, {
         ...config,
-        ...change,
+        ...scenario.input,
         sourceGridId: source.id,
         reuseArtifacts: true,
       });
-      assert.equal(next.cells[0].status === "complete", false);
-      finish(
-        await f.call(i + 1),
-        change.format === "svg" ? "<svg/>" : "Changed",
-      );
+      assert.notEqual(next.cells[0].status, "complete", scenario.name);
+      const call = await f.nextCall();
+      scenario.verify(call);
+      finish(call, scenario.input.format === "svg" ? "<svg/>" : "Changed");
       await settled(f, next.id);
     }
-    assert.equal(f.calls[1].request.model, "fixture/other");
-    assert.equal(f.calls[3].request.reasoning.effort, "high");
-    assert.equal(
-      JSON.stringify(f.calls[5].request.messages[0].content).includes(
-        "image/svg+xml",
-      ),
-      true,
-    );
     const positive = await create(f, {
       ...config,
       parallelWorkers: 3,
@@ -373,7 +390,7 @@ test("effective model, prompt, effort, budget, token ceiling and format determin
       reuseArtifacts: true,
     });
     assert.equal(positive.status, "complete");
-    assert.equal(f.calls.length, 6);
+    assert.equal(f.calls.length, 1 + cases.length);
     f.catalog.data[0].top_provider.max_completion_tokens = 500;
     await kill(f.web);
     await f.startWeb();
@@ -384,17 +401,18 @@ test("effective model, prompt, effort, budget, token ceiling and format determin
       sourceGridId: source.id,
       reuseArtifacts: true,
     });
-    finish(await f.call(6));
+    const ceilingCall = await f.nextCall();
+    assert.equal(ceilingCall.request.max_tokens, 500);
+    finish(ceilingCall);
     await settled(f, ceiling.id);
-    assert.equal(f.calls[6].request.max_tokens, 500);
     const disabled = await create(f, {
       ...config,
       sourceGridId: ceiling.id,
       reuseArtifacts: false,
     });
-    finish(await f.call(7));
+    finish(await f.nextCall());
     await settled(f, disabled.id);
-    assert.equal(f.calls.length, 8);
+    assert.equal(f.calls.length, 3 + cases.length);
   } finally {
     await f.close();
   }
@@ -410,7 +428,7 @@ test("shared preparation changes invalidate reuse and reordered request keys pre
     };
     const artifact = '{"files":[{"path":"index.html","content":"Prepared"}]}';
     const source = await create(f, config);
-    finish(await f.call(0), artifact);
+    finish(await f.nextCall(), artifact);
     await settled(f, source.id);
     f.prepare({ reorder: true });
     const identical = await create(f, {
@@ -420,31 +438,55 @@ test("shared preparation changes invalidate reuse and reordered request keys pre
     });
     assert.equal(identical.status, "complete");
     assert.equal(f.calls.length, 1);
-    for (const [i, change] of [
-      { system: "New instructions" },
-      { schema: "New schema" },
-      { routing: 2 },
-      { adapterVersion: "next" },
-    ].entries()) {
-      f.prepare(change);
+    const cases: {
+      name: string;
+      change: object;
+      verify: (call: RuntimeCall) => void;
+    }[] = [
+      {
+        name: "instructions",
+        change: { system: "New instructions" },
+        verify: (call) =>
+          assert.equal(
+            messageText(call.request.messages[0].content),
+            "New instructions",
+          ),
+      },
+      {
+        name: "schema",
+        change: { schema: "New schema" },
+        verify: (call) =>
+          assert.equal(
+            call.request.response_format?.json_schema.schema.description,
+            "New schema",
+          ),
+      },
+      {
+        name: "routing",
+        change: { routing: 2 },
+        verify: (call) =>
+          assert.equal(call.request.provider?.max_price?.prompt, 2),
+      },
+      {
+        name: "adapter",
+        change: { adapterVersion: "next" },
+        verify: (call) => assert.deepEqual(call.request, f.calls[0].request),
+      },
+    ];
+    for (const scenario of cases) {
+      f.prepare(scenario.change);
       const next = await create(f, {
         ...config,
         sourceGridId: source.id,
         reuseArtifacts: true,
       });
-      finish(await f.call(i + 1), artifact);
+      assert.notEqual(next.cells[0].status, "complete", scenario.name);
+      const call = await f.nextCall();
+      scenario.verify(call);
+      finish(call, artifact);
       await settled(f, next.id);
     }
-    assert.equal(
-      f.calls[1].request.messages[0].content[0].text,
-      "New instructions",
-    );
-    assert.equal(
-      f.calls[2].request.response_format.json_schema.schema.description,
-      "New schema",
-    );
-    assert.equal(f.calls[3].request.provider.max_price.prompt, 2);
-    assert.equal(f.calls.length, 5);
+    assert.equal(f.calls.length, 1 + cases.length);
   } finally {
     await f.close();
   }
@@ -458,7 +500,7 @@ test("duplicate effective prompts choose the first source cell and model alias r
       ...f.catalog.data[0],
       id: "fixture/latest",
       alias_target: { slug: "fixture/text" },
-    } as (typeof f.catalog.data)[number]);
+    });
     const config = {
       ...input,
       prompt: "$ROW$COLUMN",
@@ -467,7 +509,7 @@ test("duplicate effective prompts choose the first source cell and model alias r
       columns: { kind: "variable", values: ["bc", "c"] },
     };
     const source = await create(f, config);
-    for (let i = 0; i < 4; i++) finish(await f.call(i), `Output ${i}`);
+    for (let i = 0; i < 4; i++) finish(await f.nextCall(), `Output ${i}`);
     await settled(f, source.id);
     const copied = await create(f, {
       ...config,
@@ -480,11 +522,7 @@ test("duplicate effective prompts choose the first source cell and model alias r
       readFileSync(f.store.files.path(copied.cells[3].id, "index.md")!, "utf8"),
       "Output 0",
     );
-    (
-      f.catalog.data[2] as (typeof f.catalog.data)[number] & {
-        alias_target: { slug: string };
-      }
-    ).alias_target.slug = "fixture/other";
+    f.catalog.data[2].alias_target!.slug = "fixture/other";
     await kill(f.web);
     await f.startWeb();
     await f.engine.close();
@@ -494,12 +532,12 @@ test("duplicate effective prompts choose the first source cell and model alias r
       sourceGridId: source.id,
       reuseArtifacts: true,
     });
-    for (let i = 4; i < 8; i++) finish(await f.call(i), `Changed ${i}`);
+    for (const cell of changed.cells) {
+      const call = await f.nextCall();
+      assert.equal(call.request.model, "fixture/other");
+      finish(call, cell.prompt);
+    }
     await settled(f, changed.id);
-    assert.deepEqual(
-      f.calls.slice(4).map((c) => c.request.model),
-      Array(4).fill("fixture/other"),
-    );
   } finally {
     await f.close();
   }
@@ -520,7 +558,7 @@ test("reuse leaves preparation failures on individual cells and skips unsigned s
       columns: { kind: "model", values: ["fixture/text"] },
     };
     const source = await create(f, config);
-    finish(await f.call(0));
+    finish(await f.nextCall());
     await settled(f, source.id);
     const mixed = await create(f, {
       ...config,

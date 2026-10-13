@@ -1,3 +1,4 @@
+import { waitForReady } from "./process-ready.js";
 import { fork } from "node:child_process";
 import { join } from "node:path";
 import { generationClient } from "../server/generation-client.js";
@@ -18,6 +19,7 @@ export async function startGenerationFixture(config: {
     env: {
       ...process.env,
       FIXTURE_PREPARATION: config.preparation,
+      FIXTURE_READY_PATH: undefined,
       DATABASE_PATH: config.database,
       OUTPUTS_PATH: config.outputsPath,
       KEY_ENCRYPTION_SECRET: config.secret.toString("hex"),
@@ -37,15 +39,8 @@ export async function startGenerationFixture(config: {
     await exited;
   };
   try {
-    for (let i = 0; i < 100; i++) {
-      if (child.exitCode !== null) throw new Error("Generation fixture exited");
-      try {
-        await api.status();
-        return { api, child, close };
-      } catch {}
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    }
-    throw new Error("Generation fixture did not start");
+    await waitForReady(child, "Generation fixture");
+    return { api, child, close };
   } catch (error) {
     await close();
     throw error;

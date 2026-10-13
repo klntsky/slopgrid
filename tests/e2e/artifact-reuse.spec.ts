@@ -1,6 +1,26 @@
+import type { Page } from "@playwright/test";
+import type { ViewGrid } from "../../src/api";
 import { test, expect } from "./fixtures";
 import { create, expectProgress, finishPublishing } from "./helpers";
 
+async function readGrid(
+  page: Page,
+  id = page.url().split("/").pop()!,
+): Promise<ViewGrid> {
+  return (await page.request.get(`/api/grids/${id}`)).json();
+}
+async function createGrid(page: Page, body: object): Promise<ViewGrid> {
+  const response = await page.request.post("/api/grids", { data: body });
+  expect(response.status()).toBe(201);
+  return response.json();
+}
+async function generate(page: Page, body: object): Promise<ViewGrid> {
+  const grid = await createGrid(page, body);
+  await expect
+    .poll(async () => (await readGrid(page, grid.id)).status)
+    .toBe("complete");
+  return readGrid(page, grid.id);
+}
 const label = "Reuse existing artifacts from the previous version";
 test("reuse selection survives Edit, reload, OAuth and Fork, and unchecked drafts regenerate every cell", async ({
   page,
@@ -11,9 +31,7 @@ test("reuse selection survives Edit, reload, OAuth and Fork, and unchecked draft
   await expect(page.getByRole("checkbox", { name: label })).toHaveCount(0);
   await create(page, "Markdown", "dog", "hat");
   await expectProgress(page, 1, 1);
-  const source = await (
-    await page.request.get(`/api/grids/${page.url().split("/").pop()}`)
-  ).json();
+  const source = await readGrid(page);
   await page.getByRole("button", { name: "EDIT", exact: true }).click();
   const reuse = page.getByRole("checkbox", { name: label });
   await expect(reuse).toBeChecked();
@@ -32,7 +50,7 @@ test("reuse selection survives Edit, reload, OAuth and Fork, and unchecked draft
   await page.getByRole("button", { name: "Generate", exact: true }).click();
   await expectProgress(page, 1, 2);
   const id = page.url().split("/").pop();
-  const current = await (await page.request.get(`/api/grids/${id}`)).json();
+  const current = await readGrid(page, id);
   expect(current.cells[0].usage).toEqual(source.cells[0].usage);
   expect(current.cells[0].id).not.toBe(source.cells[0].id);
   await expect(page.locator(".markdown-preview:visible").first()).toContainText(
@@ -40,9 +58,9 @@ test("reuse selection survives Edit, reload, OAuth and Fork, and unchecked draft
   );
   await request.post("/fixture/release", { data: { all: true } });
   await expectProgress(page, 2, 2);
-  const complete = await (await page.request.get(`/api/grids/${id}`)).json();
+  const complete = await readGrid(page, id);
   expect(complete.spentUsd).toBe(0.25);
-  expect(complete.cells.map((c: any) => c.usage)).toEqual([
+  expect(complete.cells.map((c) => c.usage)).toEqual([
     source.cells[0].usage,
     { inputTokens: 10, outputTokens: 20, costUsd: 0.25 },
   ]);
@@ -113,22 +131,9 @@ test("image reuse follows ordered reference bytes and effective image settings t
     columns: { kind: "size", values: ["1K"] },
     referenceGroups: { A: [first, different], B: [same, different] },
   };
-  async function generate(config: object) {
-    const response = await page.request.post("/api/grids", { data: config });
-    expect(response.status()).toBe(201);
-    const grid = await response.json();
-    await expect
-      .poll(
-        async () =>
-          (await (await page.request.get(`/api/grids/${grid.id}`)).json())
-            .status,
-      )
-      .toBe("complete");
-    return (await page.request.get(`/api/grids/${grid.id}`)).json();
-  }
-  const source = await generate(input);
+  const source = await generate(page, input);
   let count = 2;
-  const copied = await generate({
+  const copied = await createGrid(page, {
     ...input,
     sourceGridId: source.id,
     reuseArtifacts: true,
@@ -138,19 +143,20 @@ test("image reuse follows ordered reference bytes and effective image settings t
   expect(
     (await (await request.get("/fixture/image-requests")).json()).length,
   ).toBe(count);
-  expect(copied.cells.map((c: any) => c.usage)).toEqual(
-    source.cells.map((c: any) => c.usage),
+  expect(copied.cells.map((c) => c.usage)).toEqual(
+    source.cells.map((c) => c.usage),
   );
   expect(copied.spentUsd).toBe(0);
   for (const cell of copied.cells) {
     expect(cell.mediaType).toBe("image/png");
-    expect(await (await page.request.get(cell.outputURL)).body()).toEqual(png);
+    expect(cell.outputURL).toBeDefined();
+    expect(await (await page.request.get(cell.outputURL!)).body()).toEqual(png);
   }
   for (const change of [
     { referenceGroups: { A: [different, first], B: [different, same] } },
     { referenceGroups: { A: [first, first], B: [same, same] } },
   ]) {
-    await generate({
+    await generate(page, {
       ...input,
       ...change,
       sourceGridId: source.id,
@@ -191,27 +197,14 @@ for (const [kind, initial, changed] of [
       rows: { kind: "variable", values: ["landscape"] },
       columns: { kind, values: [initial] },
     };
-    async function generate(body: object) {
-      const response = await page.request.post("/api/grids", { data: body });
-      expect(response.status()).toBe(201);
-      const grid = await response.json();
-      await expect
-        .poll(
-          async () =>
-            (await (await page.request.get(`/api/grids/${grid.id}`)).json())
-              .status,
-        )
-        .toBe("complete");
-      return grid;
-    }
-    const source = await generate(config);
+    const source = await generate(page, config);
     const reuse = { ...config, sourceGridId: source.id, reuseArtifacts: true };
-    const copy = await generate(reuse);
+    const copy = await createGrid(page, reuse);
     expect(copy.status).toBe("complete");
     expect(
       await (await request.get("/fixture/image-requests")).json(),
     ).toHaveLength(1);
-    await generate({ ...reuse, columns: { kind, values: [changed] } });
+    await generate(page, { ...reuse, columns: { kind, values: [changed] } });
     const sent = await (await request.get("/fixture/image-requests")).json();
     expect(sent).toHaveLength(2);
     expect(sent[0][kind]).toBe(initial);

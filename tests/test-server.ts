@@ -1,5 +1,11 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  rmSync,
+  readFileSync,
+  writeFileSync,
+  existsSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "node:net";
@@ -29,6 +35,8 @@ export async function startTestServer(
   const origin = `http://localhost:${port}`;
   const data = mkdtempSync(join(tmpdir(), "slopgrid-e2e-"));
   const credentials = join(data, "github.env");
+  const ready = join(data, "ready"),
+    exited = join(data, "exit");
   writeFileSync(
     credentials,
     `GITHUB_CLIENT_ID=${JSON.stringify(process.env.GITHUB_CLIENT_ID)}\nGITHUB_CLIENT_SECRET=${JSON.stringify(process.env.GITHUB_CLIENT_SECRET)}\n`,
@@ -56,13 +64,15 @@ export async function startTestServer(
       "bg",
       "-n",
       window,
-      `cd ${quote(process.cwd())} && env -u OPENROUTER_API_KEY E2E_PORT=${port} FIXTURE_DATA=${quote(data)} NODE_ENV=production ${quote(process.execPath)} --env-file=${quote(credentials)} --import tsx tests/${project === "mock" ? "fixture" : "real"}-server.ts > ${quote(join(data, "server.log"))} 2>&1`,
+      `cd ${quote(process.cwd())} && env -u OPENROUTER_API_KEY E2E_PORT=${port} FIXTURE_DATA=${quote(data)} FIXTURE_READY_PATH=${quote(ready)} NODE_ENV=production ${quote(process.execPath)} --env-file=${quote(credentials)} --import tsx tests/${project === "mock" ? "fixture" : "real"}-server.ts > ${quote(join(data, "server.log"))} 2>&1; printf '%s\\n' $? > ${quote(exited)}`,
     ]);
-    for (let i = 0; i < 100; i++) {
-      try {
-        const response = await fetch(`${origin}/api/session`);
-        if (response.ok) return { origin, data, close };
-      } catch {}
+    const deadline = Date.now() + 35000;
+    while (Date.now() < deadline) {
+      if (existsSync(ready)) return { origin, data, close };
+      if (existsSync(exited))
+        throw new Error(
+          `Test app exited with ${readFileSync(exited, "utf8").trim()}: ${readFileSync(join(data, "server.log"), "utf8")}`,
+        );
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
     throw new Error(

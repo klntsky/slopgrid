@@ -11,7 +11,7 @@ export const test = base.extend<{}, { mockServer: string }>({
         server.close();
       }
     },
-    { scope: "worker" },
+    { scope: "worker", timeout: 45000 },
   ],
   baseURL: async ({ mockServer }, use) => {
     await use(mockServer);

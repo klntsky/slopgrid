@@ -1,3 +1,4 @@
+import { signalReady } from "./process-ready.js";
 import { startGenerationFixture } from "./generation-fixture.js";
 import { createFrontendRoutes } from "../server/frontend.js";
 // Only the upstream service is faked: the browser uses the real app, SQLite,
@@ -490,4 +491,7 @@ app.get("/svg-probe", (req, res) => {
 });
 app.get("/fixture/svg-probes", (_req, res) => res.json(svgProbes));
 app.use(createFrontendRoutes("dist"));
-app.listen(port, () => console.log("Fixture ready"));
+app.listen(port, () => {
+  console.log("Fixture ready");
+  signalReady();
+});

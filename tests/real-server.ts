@@ -1,3 +1,4 @@
+import { signalReady } from "./process-ready.js";
 import { startGenerationFixture } from "./generation-fixture.js";
 import { createFrontendRoutes } from "../server/frontend.js";
 import { randomBytes } from "node:crypto";
@@ -19,4 +20,7 @@ const { app } = createApp({
   generation: generation.api,
 });
 app.use(createFrontendRoutes("dist"));
-app.listen(port, () => console.log("Real-provider app ready"));
+app.listen(port, () => {
+  console.log("Real-provider app ready");
+  signalReady();
+});

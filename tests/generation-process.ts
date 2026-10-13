@@ -1,4 +1,4 @@
-import "./request-preparation-fixture.js";
+import { signalReady, startupFailed } from "./process-ready.js";
 // A fixture engine must not outlive the tmux-owned fixture that launched it.
 process.on("disconnect", () => process.exit(0));
 // Only fixture children expose an inspector, and only when a crash test asks.
@@ -9,5 +9,11 @@ process.on("message", async (message) => {
     process.send?.(inspector.url());
   }
 });
-await import("../server/engine.js");
+try {
+  await import("./request-preparation-fixture.js");
+  await import("../server/engine.js");
+  signalReady();
+} catch (error) {
+  startupFailed(error);
+}
 export {};

@@ -1,3 +1,4 @@
+import { waitForReady } from "./process-ready.js";
 import { fork, type ChildProcess, execFileSync } from "node:child_process";
 import { once } from "node:events";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -8,6 +9,25 @@ import { startGenerationFixture } from "./generation-fixture.js";
 import { Store } from "../server/store.js";
 import { expandGrid, type GridInput, type Grid } from "../server/domain.js";
 import { token } from "../server/ids.js";
+
+export type CapturedRequest = {
+  model: string;
+  messages: {
+    role: string;
+    content: string | { type: string; text?: string }[];
+  }[];
+  max_tokens?: number;
+  reasoning?: { effort?: string };
+  provider?: { max_price?: Record<string, number> };
+  response_format?: { json_schema: { schema: Record<string, unknown> } };
+};
+export function messageText(
+  content: CapturedRequest["messages"][number]["content"],
+): string {
+  return typeof content === "string"
+    ? content
+    : content.map((part) => part.text ?? "").join("");
+}
 
 export async function until<T>(
   read: () => Promise<T> | T,
@@ -41,7 +61,18 @@ export async function runtimeFixture(
   store.saveSession({ id: owner, key: "manual-test-key", created: Date.now() });
   const upstream = express();
   upstream.use(express.json());
-  const catalog = {
+  const catalog: {
+    data: {
+      id: string;
+      name: string;
+      alias_target?: { slug: string };
+      pricing: { prompt: string; completion: string };
+      context_length: number;
+      top_provider: { max_completion_tokens: number };
+      architecture: { input_modalities: string[]; output_modalities: string[] };
+      supported_parameters: string[];
+    }[];
+  } = {
     data: [
       {
         id: "fixture/text",
@@ -65,7 +96,7 @@ export async function runtimeFixture(
     res.json({ data: { limit_remaining: 100 } }),
   );
   const calls: {
-    request: Record<string, any>;
+    request: CapturedRequest;
     prompt: string;
     aborted: boolean;
     write: (delta: object) => void;
@@ -93,9 +124,10 @@ export async function runtimeFixture(
     res.flushHeaders();
     const call = {
       request: req.body,
-      prompt: JSON.stringify(
-        req.body.messages.filter((m: { role: string }) => m.role === "user"),
-      ),
+      prompt: (req.body as CapturedRequest).messages
+        .filter((message) => message.role === "user")
+        .map((message) => messageText(message.content))
+        .join(""),
       aborted: false,
       write: (delta: object) => {
         event(delta);
@@ -163,16 +195,9 @@ export async function runtimeFixture(
         FIXTURE_TLS: options.tls ? directory : undefined,
       },
     });
-    origin = String(
-      (
-        await Promise.race([
-          once(web, "message"),
-          once(web, "exit").then(() => {
-            throw new Error("Web fixture exited");
-          }),
-        ])
-      )[0],
-    );
+    const ready = await waitForReady(web, "Web fixture");
+    if (!ready.origin) throw new Error("Web fixture reported no origin");
+    origin = ready.origin;
     port = Number(new URL(origin).port);
   }
   async function close() {
@@ -210,7 +235,12 @@ export async function runtimeFixture(
     await close();
     throw error;
   }
+  let nextCallIndex = 0;
   return {
+    nextCall: () => {
+      const index = nextCallIndex++;
+      return until(() => calls[index], Boolean);
+    },
     prepare(change: object) {
       writeFileSync(preparation, JSON.stringify(change));
     },
@@ -273,3 +303,6 @@ export async function runtimeFixture(
     call: (index: number) => until(() => calls[index], Boolean),
   };
 }
+
+export type RuntimeFixture = Awaited<ReturnType<typeof runtimeFixture>>;
+export type RuntimeCall = RuntimeFixture["calls"][number];
