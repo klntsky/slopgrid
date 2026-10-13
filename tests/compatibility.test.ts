@@ -136,3 +136,60 @@ test("Auto settings use default compatibility even when an endpoint has no match
     "unsupported",
   );
 });
+
+test("image incompatibilities identify each failing parameter without blaming unrelated settings", () => {
+  const endpoints = [
+    {
+      resolution: { type: "enum", values: ["1K"] },
+      quality: { type: "enum", values: ["high"] },
+      background: { type: "enum", values: ["opaque"] },
+      input_references: { type: "range", min: 0, max: 2 },
+    },
+  ];
+  const result = imageSettingsSupport(endpoints, {
+    size: "1K",
+    quality: "low",
+    background: "transparent",
+    input_references: ["a", "b", "c"],
+  });
+  assert.equal(result.parameters.size.support, "supported");
+  for (const kind of ["quality", "background", "input_references"] as const)
+    assert.equal(result.parameters[kind].support, "unsupported");
+  assert.match(result.parameters.quality.reason!, /low/);
+  assert.match(result.parameters.background.reason!, /transparent/);
+  assert.match(result.parameters.input_references.reason!, /3 images/);
+});
+
+test("image diagnostics isolate provider combination conflicts and dimensional mismatches", () => {
+  const endpoints = [
+    {
+      resolution: { type: "enum", values: ["1K"] },
+      quality: { type: "enum", values: ["high"] },
+      background: { type: "enum", values: ["opaque"] },
+    },
+    {
+      resolution: { type: "enum", values: ["2K"] },
+      quality: { type: "enum", values: ["low"] },
+      background: { type: "enum", values: ["opaque"] },
+    },
+  ];
+  const result = imageSettingsSupport(endpoints, {
+    size: "2K",
+    quality: "high",
+    background: "opaque",
+  });
+  assert.equal(result.support, "unsupported");
+  assert.equal(result.parameters.size.support, "unsupported");
+  assert.equal(result.parameters.quality.support, "unsupported");
+  assert.equal(result.parameters.background.support, "supported");
+  assert.match(result.parameters.size.reason!, /2K.*high/);
+  const mismatch = imageSettingsSupport(undefined, {
+    size: "1536x1024",
+    aspect_ratio: "1:1",
+  });
+  assert.equal(mismatch.parameters.size.support, "unsupported");
+  assert.equal(mismatch.parameters.aspect_ratio.support, "unsupported");
+  assert.match(mismatch.parameters.aspect_ratio.reason!, /1536x1024.*1:1/);
+  const unknown = imageSettingsSupport(undefined, { quality: "high" });
+  assert.equal(unknown.parameters.quality.support, "unknown");
+});

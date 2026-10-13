@@ -3,78 +3,194 @@ import { imageEndpointQuery } from "../queries";
 import { tooltipRef } from "../components/use-tooltip";
 import { Check, TriangleAlert } from "lucide-react";
 import { expandGrid, type GridInput } from "../../server/domain";
+import { imageKinds } from "../../server/image-settings";
 import {
   effortLabel,
   thinkingEffortSupport,
   imageSettingsSupport,
+  imageParameterNames,
+  type Compatibility,
 } from "../../server/compatibility";
 import type { Model } from "../../server/provider";
 import { dimensionNames, displayValue } from "../format";
 
-export function CompatibilityTable({
-  input,
-  models,
-}: {
-  input: GridInput;
-  models: readonly Model[];
-}) {
-  const expanded = expandGrid(input);
-  const imageModels =
-    input.format === "image"
-      ? [...new Set(expanded.map((cell) => cell.model).filter(Boolean))]
-      : [];
+type Props = { input: GridInput; models: readonly Model[] };
+export function CompatibilityTable(props: Props) {
+  return props.input.format === "image" ? (
+    <ImageCompatibilityTables {...props} />
+  ) : (
+    <ThinkingCompatibilityTable {...props} />
+  );
+}
+
+function ImageCompatibilityTables({ input, models }: Props) {
+  const modelAxis = [input.rows, input.columns].find(
+    (axis) => axis.kind === "model",
+  );
+  const imageModels = [
+    ...new Set(modelAxis ? modelAxis.values : [input.model].filter(Boolean)),
+  ];
   const capabilities = useQueries({
     queries: imageModels.map(imageEndpointQuery),
   });
+  // Unfilled unrelated axes do not hide compatibility for settings already chosen.
+  const expanded = expandGrid({
+    ...input,
+    rows: {
+      ...input.rows,
+      values: input.rows.values.length ? input.rows.values : [""],
+    },
+    columns: {
+      ...input.columns,
+      values: input.columns.values.length ? input.columns.values : [""],
+    },
+  }).map((cell) => ({
+    ...cell,
+    compatibility: imageSettingsSupport(
+      capabilities[imageModels.indexOf(cell.model)]?.data?.map(
+        (endpoint) => endpoint.supported_parameters,
+      ),
+      cell.imageSettings ?? {},
+    ),
+  }));
+  return (
+    <>
+      {imageKinds.map((kind) => {
+        const side =
+          input.rows.kind === kind
+            ? "rows"
+            : input.columns.kind === kind
+              ? "columns"
+              : undefined;
+        const values = side
+          ? input[side].values
+          : [
+              kind === "input_references"
+                ? `${input.inputReferences?.length ?? 0} images`
+                : input.imageSettings?.[kind] || "auto",
+            ];
+        const cells = imageModels.map((model) =>
+          values.map((value) => {
+            const matches = expanded
+              .filter(
+                (cell) =>
+                  cell.model === model &&
+                  (!side ||
+                    input[side].values[
+                      side === "rows" ? cell.row : cell.column
+                    ] === value),
+              )
+              .map((cell) => cell.compatibility.parameters[kind]);
+            const support = matches.some(
+              (cell) => cell.support === "unsupported",
+            )
+              ? "unsupported"
+              : !matches.length ||
+                  matches.some((cell) => cell.support === "unknown")
+                ? "unknown"
+                : "supported";
+            return {
+              support,
+              reason:
+                [
+                  ...new Set(
+                    matches
+                      .filter((cell) => cell.support === support)
+                      .map((cell) => cell.reason)
+                      .filter(Boolean),
+                  ),
+                ].join("\n") || undefined,
+            } as Compatibility;
+          }),
+        );
+        return (
+          <CompatibilityGrid
+            key={kind}
+            caption={`${imageParameterNames[kind]} compatibility`}
+            corner="Model"
+            rows={imageModels.map(
+              (id) => models.find((model) => model.id === id)?.name ?? id,
+            )}
+            columns={values.map((value) => (value === "auto" ? "Auto" : value))}
+            cells={cells}
+          />
+        );
+      })}
+    </>
+  );
+}
+
+function ThinkingCompatibilityTable({ input, models }: Props) {
   if (![input.rows.kind, input.columns.kind].includes("model") && !input.model)
     return null;
-  const cells = expanded.map(({ model, effort, imageSettings }) => ({
-    effort,
-    ...(input.format === "image"
-      ? imageSettingsSupport(
-          capabilities[imageModels.indexOf(model)]?.data?.map(
-            (endpoint) => endpoint.supported_parameters,
-          ),
-          imageSettings ?? {},
-        )
-      : {
-          support: thinkingEffortSupport(
-            models.find((candidate) => candidate.id === model),
-            effort,
-          ),
-          reason: undefined,
-        }),
-  }));
-  if (!cells.some((cell) => cell.support === "unsupported")) return null;
+  const expanded = expandGrid(input);
   const label = (value: string, kind: GridInput["rows"]["kind"]) =>
     kind === "model"
       ? (models.find((model) => model.id === value)?.name ?? value)
       : displayValue(value, kind);
   return (
+    <CompatibilityGrid
+      caption="Thinking effort compatibility"
+      corner={dimensionNames[input.rows.kind]}
+      rows={input.rows.values.map((value) => label(value, input.rows.kind))}
+      columns={input.columns.values.map((value) =>
+        label(value, input.columns.kind),
+      )}
+      cells={input.rows.values.map((_, row) =>
+        input.columns.values.map((_, column) => {
+          const cell = expanded[row * input.columns.values.length + column];
+          return {
+            support: thinkingEffortSupport(
+              models.find((model) => model.id === cell.model),
+              cell.effort,
+            ),
+          };
+        }),
+      )}
+      cellLabel={(row, column) =>
+        effortLabel(expanded[row * input.columns.values.length + column].effort)
+      }
+    />
+  );
+}
+
+function CompatibilityGrid({
+  caption,
+  corner,
+  rows,
+  columns,
+  cells,
+  cellLabel,
+}: {
+  caption: string;
+  corner: string;
+  rows: string[];
+  columns: string[];
+  cells: Compatibility[][];
+  cellLabel?: (row: number, column: number) => string;
+}) {
+  if (!cells.some((row) => row.some((cell) => cell.support === "unsupported")))
+    return null;
+  return (
     <div className="compatibility-table-scroll">
       <table className="compatibility-table">
-        <caption>
-          {input.format === "image"
-            ? "Image settings compatibility"
-            : "Thinking effort compatibility"}
-        </caption>
+        <caption>{caption}</caption>
         <thead>
           <tr>
-            <th scope="col">{dimensionNames[input.rows.kind]}</th>
-            {input.columns.values.map((value, column) => (
-              <th scope="col" key={column}>
-                {label(value, input.columns.kind)}
+            <th scope="col">{corner}</th>
+            {columns.map((label, index) => (
+              <th scope="col" key={index}>
+                {label}
               </th>
             ))}
           </tr>
         </thead>
         <tbody>
-          {input.rows.values.map((value, row) => (
+          {rows.map((label, row) => (
             <tr key={row}>
-              <th scope="row">{label(value, input.rows.kind)}</th>
-              {input.columns.values.map((_, column) => {
-                const { effort, support, reason } =
-                  cells[row * input.columns.values.length + column];
+              <th scope="row">{label}</th>
+              {columns.map((value, column) => {
+                const { support, reason } = cells[row][column];
                 const status =
                   support === "supported"
                     ? "Supported"
@@ -84,7 +200,7 @@ export function CompatibilityTable({
                 return (
                   <td
                     key={column}
-                    aria-label={`${input.format === "image" ? `${label(value, input.rows.kind)} / ${label(input.columns.values[column], input.columns.kind)}` : effortLabel(effort)}: ${status}`}
+                    aria-label={`${cellLabel ? cellLabel(row, column) : `${label} / ${value}`}: ${status}`}
                     data-tooltip={
                       support === "supported" ? undefined : (reason ?? status)
                     }

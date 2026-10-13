@@ -11,7 +11,7 @@ async function setup(page: import("@playwright/test").Page, connect = true) {
   await page.getByLabel("Prompt", { exact: true }).fill("Draw a landscape");
 }
 
-test("image warnings follow axis orientation and remain advisory, while custom sizes and settings reach inference", async ({
+test("image warning grids compare models with parameter values and remain advisory, while custom sizes and settings reach inference", async ({
   page,
   request,
 }) => {
@@ -26,17 +26,17 @@ test("image warnings follow axis orientation and remain advisory, while custom s
     .getByRole("checkbox", { name: "Fixture image", exact: true })
     .check();
   const table = page.getByRole("table", {
-    name: "Image settings compatibility",
+    name: "Quality compatibility",
   });
   await expect(
     table.getByRole("cell", {
-      name: "low / Fixture image: Unsupported",
+      name: "Fixture image / low: Unsupported",
       exact: true,
     }),
   ).toBeVisible();
   await expect(
     table.getByRole("cell", {
-      name: "high / Fixture image: Supported",
+      name: "Fixture image / high: Supported",
       exact: true,
     }),
   ).toBeVisible();
@@ -102,10 +102,12 @@ test("image warnings follow axis orientation and remain advisory, while custom s
     .getByRole("button", { name: "Remove custom rows size 3", exact: true })
     .click();
   await expect(
-    table.getByRole("cell", {
-      name: "768x512 / 3:2: Unsupported",
-      exact: true,
-    }),
+    page
+      .getByRole("table", { name: "Size compatibility", exact: true })
+      .getByRole("cell", {
+        name: "Fixture image / 768x512: Unsupported",
+        exact: true,
+      }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Swap rows and columns" }).click();
   await expect(
@@ -218,7 +220,7 @@ test("renamed reference groups survive reload, Edit and Fork without mixing thei
   await titleField.fill("Details");
   await titleField.press("Tab");
   const warning = page.getByRole("cell", {
-    name: "Details / 1K: Unsupported",
+    name: "Fixture image / Details: Unsupported",
     exact: true,
   });
   await expect(warning).toBeVisible();
@@ -256,7 +258,10 @@ test("renamed reference groups survive reload, Edit and Fork without mixing thei
   await expect(titles.nth(1)).toBeFocused();
   await page.getByRole("button", { name: "Swap rows and columns" }).click();
   await expect(
-    page.getByRole("cell", { name: "1K / Details: Unsupported", exact: true }),
+    page.getByRole("cell", {
+      name: "Fixture image / Details: Unsupported",
+      exact: true,
+    }),
   ).toBeVisible();
   await request.post("/fixture/reset", {
     data: { referenceStorageFailure: true },
@@ -399,7 +404,7 @@ test("image model prices preserve published units and tiers without changing sel
   await page.getByRole("checkbox", { name: "low", exact: true }).check();
   await expect(
     page.getByRole("cell", {
-      name: "low / Fixture image: Unsupported",
+      name: "Fixture image / low: Unsupported",
       exact: true,
     }),
   ).toBeVisible();
@@ -629,4 +634,113 @@ test("shared references survive uploads, reload, publication and forks, and tran
   await expect(page.getByRole("img", { name: /shared-.*\.png/ })).toHaveCount(
     0,
   );
+});
+
+test("parameter compatibility grids isolate simultaneous warnings, unknown models, and dimensional conflicts", async ({
+  page,
+}) => {
+  await page.route(
+    "**/api/models/image-endpoints?model=fixture%2Fmegapixels",
+    (route) => route.fulfill({ json: [] }),
+  );
+  await setup(page, false);
+  const select = (name: string) =>
+    page.getByRole("combobox", { name, exact: true });
+  const table = (name: string) =>
+    page.getByRole("table", { name: `${name} compatibility`, exact: true });
+  await select("Rows").selectOption("quality");
+  await page.getByRole("checkbox", { name: "low", exact: true }).check();
+  await page.getByRole("checkbox", { name: "high", exact: true }).check();
+  for (const model of ["Fixture image", "Fixture megapixels"])
+    await page.getByRole("checkbox", { name: model, exact: true }).check();
+  await select("Background").selectOption("transparent");
+  await expect(table("Quality").getByRole("columnheader")).toHaveText([
+    "Model",
+    "low",
+    "high",
+  ]);
+  await expect(table("Quality").getByRole("rowheader")).toHaveText([
+    "Fixture image",
+    "Fixture megapixels",
+  ]);
+  await expect(
+    table("Quality").getByRole("cell", {
+      name: "Fixture image / high: Supported",
+      exact: true,
+    }),
+  ).toBeVisible();
+  const low = table("Quality").getByRole("cell", {
+    name: "Fixture image / low: Unsupported",
+    exact: true,
+  });
+  await low.hover();
+  await expect(
+    page.getByRole("tooltip", {
+      name: "Unsupported quality: low.",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    table("Quality").getByRole("cell", {
+      name: "Fixture megapixels / high: Support unknown",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(table("Background").getByRole("columnheader")).toHaveText([
+    "Model",
+    "transparent",
+  ]);
+  await expect(
+    table("Background").getByRole("cell", {
+      name: "Fixture image / transparent: Unsupported",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(page.getByRole("table")).toHaveCount(2);
+  await select("Aspect ratio").selectOption("16:9");
+  await expect(table("Aspect ratio").getByRole("columnheader")).toHaveText([
+    "Model",
+    "16:9",
+  ]);
+  await expect(page.getByRole("table")).toHaveCount(3);
+  await page.getByRole("button", { name: "Swap rows and columns" }).click();
+  await expect(table("Quality").getByRole("columnheader")).toHaveText([
+    "Model",
+    "low",
+    "high",
+  ]);
+  await expect(table("Quality").getByRole("rowheader")).toHaveText([
+    "Fixture image",
+    "Fixture megapixels",
+  ]);
+  await select("Background").selectOption("opaque");
+  await expect(table("Background")).toHaveCount(0);
+  await select("Aspect ratio").selectOption("auto");
+  await expect(table("Aspect ratio")).toHaveCount(0);
+  await page.getByRole("checkbox", { name: "low", exact: true }).uncheck();
+  await expect(page.getByRole("table")).toHaveCount(0);
+  await select("Size").selectOption("custom");
+  await page.getByLabel("Custom size width", { exact: true }).fill("1536");
+  await page.getByLabel("Custom size height", { exact: true }).fill("1024");
+  await select("Aspect ratio").selectOption("1:1");
+  await expect(page.getByRole("table")).toHaveCount(2);
+  const mismatch = table("Aspect ratio").getByRole("cell", {
+    name: "Fixture image / 1:1: Unsupported",
+    exact: true,
+  });
+  await mismatch.hover();
+  await expect(
+    page.getByRole("tooltip", {
+      name: "Size 1536x1024 does not match aspect ratio 1:1.",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    table("Size").getByRole("cell", {
+      name: "Fixture image / 1536x1024: Unsupported",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await select("Aspect ratio").selectOption("3:2");
+  await expect(page.getByRole("table")).toHaveCount(0);
 });

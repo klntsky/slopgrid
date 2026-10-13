@@ -1,5 +1,5 @@
 import type { GridInput } from "../server/domain";
-import { effortLabel } from "../server/compatibility";
+import { effortLabel, imageParameterNames } from "../server/compatibility";
 import type { ViewGrid } from "./api";
 export const formatNames = {
   markdown: "Markdown",
@@ -22,11 +22,7 @@ export const dimensionNames = {
   model: "Model",
   effort: "Thinking effort",
   variable: "Prompt variable",
-  size: "Size",
-  aspect_ratio: "Aspect ratio",
-  quality: "Quality",
-  background: "Background",
-  input_references: "Input references",
+  ...imageParameterNames,
 };
 export function cellError(cell: ViewGrid["cells"][number]) {
   return cell.errorCode === undefined

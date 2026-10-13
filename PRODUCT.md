@@ -80,10 +80,10 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 
 ### 3.4. Compatibility presentation
 
-1. Show a compact compatibility table for thinking efforts or image settings only when at least one selected combination is known to be unsupported.
-2. Its rows and columns match the selected grid dimensions and orientation, including prompt-variable axes and fixed model or effort settings. Image compatibility checks the complete settings for each cell against individual provider endpoints, including reference-group counts.
+1. Show a compact thinking-effort compatibility table only when at least one selected combination is known to be unsupported. For images, show a separate compatibility grid for each parameter type with a known incompatibility, such as Size, Aspect ratio, Quality, Background, or Input references. Hide grids containing only supported or unknown results.
+2. The thinking-effort table follows the selected grid dimensions and orientation, including prompt-variable axes and fixed model or effort settings. Each image compatibility grid has models as rows and that parameter's selected values as columns, including shared settings and reference groups. Swapping generation axes preserves this compatibility layout. Check complete image settings against individual provider endpoints, including reference counts, and attribute combination conflicts only to the involved parameter types.
 3. Use SVG checkmarks for supported combinations and yellow warning icons for unsupported combinations. Unknown support must not be presented as confirmed support.
-4. Do not show a tooltip on a supported checkmark. Explanatory hints may identify unsupported or unknown combinations.
+4. Do not show a tooltip on a supported checkmark. Image warning tooltips identify the incompatible parameter values or conflicting settings; unknown results identify which support information is unavailable.
 5. Compatibility warnings are advisory and must not block generation. Send the selected settings and show an upstream rejection as a cell error if the provider rejects them.
 
 ### 3.5. Budget and requested parallelism
