@@ -1633,13 +1633,22 @@ header {
 }
 
 .custom-image-size {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   margin-top: 10px;
+  flex: 1;
+}
+.custom-image-size label {
+  min-width: 0;
 }
 .custom-image-size input {
-  width: 150px;
+  width: 100%;
+}
+.custom-size-entry {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
 }
 .reference-groups {
   display: grid;

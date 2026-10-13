@@ -68,13 +68,55 @@ test("image warnings follow axis orientation and remain advisory, while custom s
   await rows.selectOption("size");
   await columns.selectOption("aspect_ratio");
   await page.getByRole("checkbox", { name: "2K", exact: true }).check();
-  await page.getByLabel("Custom rows size").fill("1536x1024");
-  await page.getByRole("button", { name: "Add size", exact: true }).click();
+  await page.getByRole("checkbox", { name: "Custom", exact: true }).check();
+  await page
+    .getByLabel("Custom rows size 1 width", { exact: true })
+    .fill("1536");
+  await page
+    .getByLabel("Custom rows size 1 height", { exact: true })
+    .fill("1024");
+  await page
+    .getByRole("button", { name: "Add custom rows size", exact: true })
+    .click();
+  await page
+    .getByLabel("Custom rows size 2 width", { exact: true })
+    .fill("768");
+  await page
+    .getByLabel("Custom rows size 2 height", { exact: true })
+    .fill("512");
   await page.getByRole("checkbox", { name: "3:2", exact: true }).check();
-  await expect(table).toHaveCount(0);
-  await page.reload();
+  await page
+    .getByRole("button", { name: "Add custom rows size", exact: true })
+    .click();
+  await page
+    .getByLabel("Custom rows size 3 width", { exact: true })
+    .fill("256");
   await page.getByRole("button", { name: "Generate", exact: true }).click();
-  await expectProgress(page, 2, 2);
+  await expect(page.getByRole("alert")).toHaveText(
+    "Use a resolution or a size such as 1536x1024",
+  );
+  expect(
+    await (await request.get("/fixture/image-requests")).json(),
+  ).toHaveLength(2);
+  await page
+    .getByRole("button", { name: "Remove custom rows size 3", exact: true })
+    .click();
+  await expect(
+    table.getByRole("cell", {
+      name: "768x512 / 3:2: Unsupported",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Swap rows and columns" }).click();
+  await expect(
+    page.getByLabel("Custom columns size 2 width", { exact: true }),
+  ).toHaveValue("768");
+  await page.reload();
+  await expect(
+    page.getByLabel("Custom columns size 1 height", { exact: true }),
+  ).toHaveValue("1024");
+  await page.getByRole("button", { name: "Generate", exact: true }).click();
+  await expectProgress(page, 3, 3);
   sent = await (await request.get("/fixture/image-requests")).json();
   expect(
     sent
@@ -90,6 +132,7 @@ test("image warnings follow axis orientation and remain advisory, while custom s
   ).toEqual([
     ["1536x1024", "3:2", undefined, undefined, "Draw a landscape"],
     ["2K", "3:2", undefined, undefined, "Draw a landscape"],
+    ["768x512", "3:2", undefined, undefined, "Draw a landscape"],
   ]);
 });
 
@@ -397,14 +440,35 @@ test("shared image settings transfer to axes, reset on removal, and preserve def
   await expect(field("Background")).toHaveValue("auto");
   await page.getByRole("checkbox", { name: "Auto", exact: true }).check();
   await field("Aspect ratio").selectOption("3:2");
-  await page
-    .getByRole("textbox", { name: "Custom size", exact: true })
-    .fill("1536x1024");
-  await page.getByRole("button", { name: "Add size", exact: true }).click();
-  await expect(field("Size")).toHaveValue("1536x1024");
+  await expect(
+    page.getByLabel("Custom size width", { exact: true }),
+  ).toHaveCount(0);
+  await field("Size").selectOption("custom");
+  await page.getByLabel("Custom size width", { exact: true }).fill("1536");
+  await page.getByRole("button", { name: "Generate", exact: true }).click();
+  await expect(page.getByRole("alert")).toHaveText(
+    "Use a resolution or a size such as 1536x1024",
+  );
+  expect(
+    await (await request.get("/fixture/image-requests")).json(),
+  ).toHaveLength(0);
+  await page.getByLabel("Custom size height", { exact: true }).fill("1024");
+  await expect(field("Size")).toHaveValue("custom");
+  await expect(
+    page.getByLabel("Custom size width", { exact: true }),
+  ).toHaveValue("1536");
+  await expect(
+    page.getByLabel("Custom size height", { exact: true }),
+  ).toHaveValue("1024");
   await page.getByRole("button", { name: "Swap rows and columns" }).click();
   await page.reload();
-  await expect(field("Size")).toHaveValue("1536x1024");
+  await expect(field("Size")).toHaveValue("custom");
+  await expect(
+    page.getByLabel("Custom size width", { exact: true }),
+  ).toHaveValue("1536");
+  await expect(
+    page.getByLabel("Custom size height", { exact: true }),
+  ).toHaveValue("1024");
   await expect(field("Aspect ratio")).toHaveValue("3:2");
   await page.getByRole("button", { name: "Generate", exact: true }).click();
   await expectProgress(page, 1, 1);
@@ -415,7 +479,13 @@ test("shared image settings transfer to axes, reset on removal, and preserve def
   for (const key of ["quality", "background", "input_references"])
     expect(sent[0]).not.toHaveProperty(key);
   await page.getByRole("button", { name: "EDIT", exact: true }).click();
-  await expect(field("Size")).toHaveValue("1536x1024");
+  await expect(field("Size")).toHaveValue("custom");
+  await expect(
+    page.getByLabel("Custom size width", { exact: true }),
+  ).toHaveValue("1536");
+  await expect(
+    page.getByLabel("Custom size height", { exact: true }),
+  ).toHaveValue("1024");
   await field("Size").selectOption("auto");
   await field("Aspect ratio").selectOption("auto");
   await page.getByRole("button", { name: "Generate", exact: true }).click();

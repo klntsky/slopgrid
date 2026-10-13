@@ -5,7 +5,7 @@ import {
 } from "../../server/image-settings";
 import { ReferenceGroups } from "./reference-groups";
 import { ImageModelPrice } from "./image-model-price";
-import { CustomImageSize } from "./custom-image-size";
+import { CustomAxisSizes } from "./custom-image-size";
 import { useState, useRef, useEffect } from "react";
 import { Search, X } from "lucide-react";
 import { efforts, type GridInput } from "../../server/domain";
@@ -54,7 +54,7 @@ export function AxisEditor({
         : [
             ...new Set([
               ...(imageChoices[axis.kind as keyof typeof imageChoices] ?? []),
-              ...axis.values,
+              ...(axis.kind === "size" ? [] : axis.values),
             ]),
           ].map((value) => ({
             id: value,
@@ -196,14 +196,10 @@ export function AxisEditor({
             ))}
           </div>
           {axis.kind === "size" && (
-            <CustomImageSize
-              label={`Custom ${label.toLowerCase()} size`}
-              onSelect={(size) =>
-                onChange({
-                  ...axis,
-                  values: [...new Set([...axis.values, size])],
-                })
-              }
+            <CustomAxisSizes
+              label={label}
+              values={axis.values}
+              onChange={(values) => onChange({ ...axis, values })}
             />
           )}
 

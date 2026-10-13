@@ -30,27 +30,41 @@ export function ImageOptions({
           .filter((kind) => !dimensions.includes(kind))
           .map((kind) => {
             const value = input.imageSettings?.[kind] || "auto";
+            const custom =
+              kind === "size" && !imageChoices.size.includes(value);
             return (
               <div key={kind}>
                 <label>
                   {dimensionNames[kind]}
                   <select
-                    value={value}
-                    onChange={(event) => select(kind, event.target.value)}
+                    value={custom ? "custom" : value}
+                    onChange={(event) =>
+                      select(
+                        kind,
+                        event.target.value === "custom"
+                          ? "x"
+                          : event.target.value,
+                      )
+                    }
                   >
-                    {[...new Set([...imageChoices[kind], value])].map(
-                      (choice) => (
-                        <option key={choice} value={choice}>
-                          {choice === "auto" ? "Auto" : choice}
-                        </option>
-                      ),
-                    )}
+                    {[
+                      ...new Set([
+                        ...imageChoices[kind],
+                        ...(custom ? [] : [value]),
+                      ]),
+                    ].map((choice) => (
+                      <option key={choice} value={choice}>
+                        {choice === "auto" ? "Auto" : choice}
+                      </option>
+                    ))}
+                    {kind === "size" && <option value="custom">Custom</option>}
                   </select>
                 </label>
-                {kind === "size" && (
+                {custom && (
                   <CustomImageSize
                     label="Custom size"
-                    onSelect={(size) => select(kind, size)}
+                    value={value}
+                    onChange={(size) => select(kind, size)}
                   />
                 )}
               </div>
