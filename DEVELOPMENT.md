@@ -37,7 +37,7 @@ The Markdown renderer is included directly in the main browser bundle, so openin
 
 ### Running the suites
 
-Select tests that cover the features changed. Simple wording, styling, and documentation changes do not require tests. Run tests only on staging through SSH, and run the complete unit, mock browser, and real-provider browser suites on staging before production deployment.
+Select tests that cover the features changed. Simple wording, styling, and documentation changes do not require tests. Run manual tests only on staging through SSH. GitHub CI runs the default full suite on pushes to `master`; the complete unit, mock browser, and real-provider browser suites must also pass on staging before production deployment.
 
 ```sh
 pnpm test
@@ -48,6 +48,10 @@ pnpm test:e2e:real
 ```
 
 `pnpm test` runs unit tests, builds once, and runs the mock and real Playwright projects. `pnpm test:built` runs the same suites against the existing build, without rebuilding it. The E2E runner also accepts `--reuse-build` for focused runs against an existing build. The separate E2E commands build once and run their respective project.
+
+### GitHub CI
+
+The CI workflow runs `pnpm test` on every push to `master`, covering unit tests, the frontend build, mock browser tests, and real OpenRouter browser tests. It uses the `test` environment and its `OPENROUTER_API_KEY` secret. Missing credentials or provider failures fail the run. GitHub client values are non-secret test placeholders because these suites do not authenticate with GitHub; the separate GitHub login suite remains an explicit integration check.
 
 Mock E2E tests are grouped into setup, display, access, and generation files and run with three workers. Each worker has its own app, upstream fixture, unused ports, temporary SQLite database, outputs, and tmux window in session `bg`; state-changing tests remain sequential within each file. Shared helpers keep setup consistent, and interaction journeys reuse grids across state transitions and reloads. Real-provider and GitHub suites run serially in one isolated app server each. Temporary app data and test artifacts are removed after each worker or suite finishes.
 
