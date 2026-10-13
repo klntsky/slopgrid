@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import {
   imageKinds,
   imageChoices,
@@ -19,7 +20,9 @@ export function AxisEditor({
   onChange,
   referenceGroups = {},
   onUploading,
+  children,
 }: {
+  children?: ReactNode;
   label: "Rows" | "Columns";
   axis: GridInput["rows"];
   format: GridInput["format"];
@@ -146,6 +149,7 @@ export function AxisEditor({
           )}
         </fieldset>
       )}
+      {children}
     </div>
   );
 }

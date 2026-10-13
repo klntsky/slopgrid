@@ -271,6 +271,23 @@ section {
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   gap: 12px;
 }
+.image-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  margin-bottom: 22px;
+}
+.image-options > div {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+.image-options > .image-quality-option {
+  flex-basis: 100%;
+}
+.axis,
+.fixed-options > div {
+  min-width: 0;
+}
 .axis-swap {
   align-self: start;
   margin-top: 24px;

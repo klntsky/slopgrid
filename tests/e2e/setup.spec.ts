@@ -490,6 +490,12 @@ test("compatibility follows prompt-variable axes and fixed model or effort setti
     .getByRole("combobox", { name: "Thinking effort", exact: true })
     .selectOption("none");
   await expect(table.getByRole("rowheader")).toHaveText(["cat", "dog", "fox"]);
+  await expect(
+    page
+      .getByRole("combobox", { name: "Thinking effort", exact: true })
+      .locator("../..")
+      .getByRole("table", { name: "Thinking effort compatibility" }),
+  ).toBeVisible();
   await expect(table.getByRole("columnheader")).toHaveText([
     "Prompt variable",
     "Second model",
@@ -511,6 +517,12 @@ test("compatibility follows prompt-variable axes and fixed model or effort setti
   await expect(table).toHaveCount(0);
   await selectModel(page, "fixture/other");
   await expect(table.getByRole("rowheader")).toHaveText(["None", "high"]);
+  await expect(
+    page
+      .locator(".axis")
+      .filter({ has: rows })
+      .getByRole("table", { name: "Thinking effort compatibility" }),
+  ).toBeVisible();
   await expect(table.getByRole("columnheader")).toHaveText([
     "Thinking effort",
     "cat",

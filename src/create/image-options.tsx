@@ -1,3 +1,4 @@
+import type { CompatibilityTables } from "./compatibility-table";
 import type { GridInput } from "../../server/domain";
 import {
   imageChoices,
@@ -11,7 +12,9 @@ export function ImageOptions({
   input,
   onChange,
   onBusy,
+  compatibility,
 }: {
+  compatibility: CompatibilityTables;
   input: GridInput;
   onChange: (input: Partial<GridInput>) => void;
   onBusy: (busy: boolean) => void;
@@ -25,15 +28,20 @@ export function ImageOptions({
   }
   return (
     <>
-      <div className="fixed-options">
-        {(Object.keys(imageChoices) as ScalarImageKind[])
+      <div className="image-options">
+        {(["size", "aspect_ratio", "background", "quality"] as const)
           .filter((kind) => !dimensions.includes(kind))
           .map((kind) => {
             const value = input.imageSettings?.[kind] || "auto";
             const custom =
               kind === "size" && !imageChoices.size.includes(value);
             return (
-              <div key={kind}>
+              <div
+                key={kind}
+                className={
+                  kind === "quality" ? "image-quality-option" : undefined
+                }
+              >
                 <label>
                   {dimensionNames[kind]}
                   <select
@@ -67,6 +75,7 @@ export function ImageOptions({
                     onChange={(size) => select(kind, size)}
                   />
                 )}
+                {compatibility[kind]}
               </div>
             );
           })}
@@ -83,6 +92,7 @@ export function ImageOptions({
               onChange({ inputReferences: groups?.["Input references"] ?? [] })
             }
           />
+          {compatibility.input_references}
         </div>
       )}
     </>

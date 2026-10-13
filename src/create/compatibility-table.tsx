@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useQueries } from "@tanstack/react-query";
 import { imageEndpointQuery } from "../queries";
 import { tooltipRef } from "../components/use-tooltip";
@@ -15,15 +16,14 @@ import type { Model } from "../../server/provider";
 import { dimensionNames, displayValue } from "../format";
 
 type Props = { input: GridInput; models: readonly Model[] };
-export function CompatibilityTable(props: Props) {
-  return props.input.format === "image" ? (
-    <ImageCompatibilityTables {...props} />
-  ) : (
-    <ThinkingCompatibilityTable {...props} />
-  );
-}
+export type CompatibilityTables = Partial<
+  Record<GridInput["rows"]["kind"], ReactNode>
+>;
 
-function ImageCompatibilityTables({ input, models }: Props) {
+export function useCompatibilityTables({
+  input,
+  models,
+}: Props): CompatibilityTables {
   const modelAxis = [input.rows, input.columns].find(
     (axis) => axis.kind === "model",
   );
@@ -31,8 +31,13 @@ function ImageCompatibilityTables({ input, models }: Props) {
     ...new Set(modelAxis ? modelAxis.values : [input.model].filter(Boolean)),
   ];
   const capabilities = useQueries({
-    queries: imageModels.map(imageEndpointQuery),
+    queries:
+      input.format === "image" ? imageModels.map(imageEndpointQuery) : [],
   });
+  if (input.format !== "image")
+    return {
+      effort: <ThinkingCompatibilityTable input={input} models={models} />,
+    };
   // Unfilled unrelated axes do not hide compatibility for settings already chosen.
   const expanded = expandGrid({
     ...input,
@@ -53,70 +58,67 @@ function ImageCompatibilityTables({ input, models }: Props) {
       cell.imageSettings ?? {},
     ),
   }));
-  return (
-    <>
-      {imageKinds.map((kind) => {
-        const side =
-          input.rows.kind === kind
-            ? "rows"
-            : input.columns.kind === kind
-              ? "columns"
-              : undefined;
-        const values = side
-          ? input[side].values
-          : [
-              kind === "input_references"
-                ? `${input.inputReferences?.length ?? 0} images`
-                : input.imageSettings?.[kind] || "auto",
-            ];
-        const cells = imageModels.map((model) =>
-          values.map((value) => {
-            const matches = expanded
-              .filter(
-                (cell) =>
-                  cell.model === model &&
-                  (!side ||
-                    input[side].values[
-                      side === "rows" ? cell.row : cell.column
-                    ] === value),
-              )
-              .map((cell) => cell.compatibility.parameters[kind]);
-            const support = matches.some(
-              (cell) => cell.support === "unsupported",
+  return Object.fromEntries(
+    imageKinds.map((kind) => {
+      const side =
+        input.rows.kind === kind
+          ? "rows"
+          : input.columns.kind === kind
+            ? "columns"
+            : undefined;
+      const values = side
+        ? input[side].values
+        : [
+            kind === "input_references"
+              ? `${input.inputReferences?.length ?? 0} images`
+              : input.imageSettings?.[kind] || "auto",
+          ];
+      const cells = imageModels.map((model) =>
+        values.map((value) => {
+          const matches = expanded
+            .filter(
+              (cell) =>
+                cell.model === model &&
+                (!side ||
+                  input[side].values[
+                    side === "rows" ? cell.row : cell.column
+                  ] === value),
             )
-              ? "unsupported"
-              : !matches.length ||
-                  matches.some((cell) => cell.support === "unknown")
-                ? "unknown"
-                : "supported";
-            return {
-              support,
-              reason:
-                [
-                  ...new Set(
-                    matches
-                      .filter((cell) => cell.support === support)
-                      .map((cell) => cell.reason)
-                      .filter(Boolean),
-                  ),
-                ].join("\n") || undefined,
-            } as Compatibility;
-          }),
-        );
-        return (
-          <CompatibilityGrid
-            key={kind}
-            caption={`${imageParameterNames[kind]} compatibility`}
-            corner="Model"
-            rows={imageModels.map(
-              (id) => models.find((model) => model.id === id)?.name ?? id,
-            )}
-            columns={values.map((value) => (value === "auto" ? "Auto" : value))}
-            cells={cells}
-          />
-        );
-      })}
-    </>
+            .map((cell) => cell.compatibility.parameters[kind]);
+          const support = matches.some((cell) => cell.support === "unsupported")
+            ? "unsupported"
+            : !matches.length ||
+                matches.some((cell) => cell.support === "unknown")
+              ? "unknown"
+              : "supported";
+          return {
+            support,
+            reason:
+              [
+                ...new Set(
+                  matches
+                    .filter((cell) => cell.support === support)
+                    .map((cell) => cell.reason)
+                    .filter(Boolean),
+                ),
+              ].join("\n") || undefined,
+          } as Compatibility;
+        }),
+      );
+      return [
+        kind,
+        <CompatibilityGrid
+          key={kind}
+          caption={`${imageParameterNames[kind]} compatibility`}
+          corner="Model"
+          rows={imageModels.map(
+            (id) => models.find((model) => model.id === id)?.name ?? id,
+          )}
+          columns={values.map((value) => (value === "auto" ? "Auto" : value))}
+          cells={cells}
+        />,
+      ];
+    }),
   );
 }
 

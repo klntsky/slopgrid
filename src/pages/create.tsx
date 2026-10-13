@@ -25,7 +25,7 @@ import { queryClient, useConnection, useInferenceCapacity } from "../queries";
 import { formatNames } from "../format";
 import { useCreateDraft, clearDraft } from "../create/draft";
 import { AxisEditor } from "../create/axis-editor";
-import { CompatibilityTable } from "../create/compatibility-table";
+import { useCompatibilityTables } from "../create/compatibility-table";
 import { Connection } from "../components/connection";
 import { ErrorMessage } from "../components/error-message";
 import { LowBalanceDialog } from "../components/inference-dialogs";
@@ -115,6 +115,7 @@ export function Create() {
         a.name.localeCompare(b.name, "en", { sensitivity: "base" }) ||
         a.id.localeCompare(b.id, "en"),
     );
+  const compatibility = useCompatibilityTables({ input, models });
   function selectFormat(format: GridInput["format"]) {
     inference.reset();
     setDraft((d) => ({
@@ -269,6 +270,7 @@ export function Create() {
               <div className="axes" key={input.format}>
                 <AxisEditor
                   label="Rows"
+                  children={compatibility[input.rows.kind]}
                   axis={input.rows}
                   format={input.format}
                   models={models}
@@ -302,6 +304,7 @@ export function Create() {
                 </button>
                 <AxisEditor
                   label="Columns"
+                  children={compatibility[input.columns.kind]}
                   axis={input.columns}
                   format={input.format}
                   models={models}
@@ -321,7 +324,6 @@ export function Create() {
                 columns ·{" "}
                 {input.rows.values.length * input.columns.values.length} outputs
               </p>
-              <CompatibilityTable input={input} models={catalog.data} />
             </>
           )}
         </section>
@@ -345,6 +347,7 @@ export function Create() {
           )}
           {input.format === "image" && (
             <ImageOptions
+              compatibility={compatibility}
               input={input}
               onChange={update}
               onBusy={(busy) => setUploads((count) => count + (busy ? 1 : -1))}
@@ -353,24 +356,27 @@ export function Create() {
           {input.format !== "image" && (
             <div className="fixed-options">
               {![input.rows.kind, input.columns.kind].includes("effort") && (
-                <label>
-                  Thinking effort
-                  <select
-                    ref={defaultHint}
-                    value={input.effort}
-                    onChange={(e) =>
-                      update({
-                        effort: e.target.value as GridInput["effort"],
-                      })
-                    }
-                  >
-                    {efforts.map((e) => (
-                      <option key={e} value={e}>
-                        {effortLabel(e)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <div>
+                  <label>
+                    Thinking effort
+                    <select
+                      ref={defaultHint}
+                      value={input.effort}
+                      onChange={(e) =>
+                        update({
+                          effort: e.target.value as GridInput["effort"],
+                        })
+                      }
+                    >
+                      {efforts.map((e) => (
+                        <option key={e} value={e}>
+                          {effortLabel(e)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {compatibility.effort}
+                </div>
               )}
             </div>
           )}

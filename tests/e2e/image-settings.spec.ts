@@ -699,6 +699,17 @@ test("parameter compatibility grids isolate simultaneous warnings, unknown model
     }),
   ).toBeVisible();
   await expect(page.getByRole("table")).toHaveCount(2);
+  await expect(
+    page
+      .locator(".axis")
+      .filter({ has: select("Rows") })
+      .getByRole("table", { name: "Quality compatibility" }),
+  ).toBeVisible();
+  await expect(
+    select("Background")
+      .locator("../..")
+      .getByRole("table", { name: "Background compatibility" }),
+  ).toBeVisible();
   await select("Aspect ratio").selectOption("16:9");
   await expect(table("Aspect ratio").getByRole("columnheader")).toHaveText([
     "Model",
@@ -715,6 +726,12 @@ test("parameter compatibility grids isolate simultaneous warnings, unknown model
     "Fixture image",
     "Fixture megapixels",
   ]);
+  await expect(
+    page
+      .locator(".axis")
+      .filter({ has: select("Columns") })
+      .getByRole("table", { name: "Quality compatibility" }),
+  ).toBeVisible();
   await select("Background").selectOption("opaque");
   await expect(table("Background")).toHaveCount(0);
   await select("Aspect ratio").selectOption("auto");
