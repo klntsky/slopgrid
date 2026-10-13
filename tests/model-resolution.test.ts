@@ -83,7 +83,10 @@ test("saved model IDs survive alias retargeting through retries, Edit, publishin
         this.failOnce = false;
         throw new Error("Fixture failure");
       }
-      return { files: { "index.md": "Generated output" } };
+      return {
+        signature: "fixture-signature",
+        files: { "index.md": "Generated output" },
+      };
     }
   }
   const provider = new FixtureProvider();

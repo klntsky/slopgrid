@@ -169,3 +169,5 @@ Creation accepts `sourceGridId` and `reuseArtifacts` separately from `GridInput`
 The creation draft stores the source identifier and checkbox state outside generation parameters in session storage, preserving both through reloads and provider redirects. Edit and Fork initialize reuse as checked.
 
 Reuse returns immediately when the source has no signed completed cells. Pricing and budget preparation failures use `PreparationError`; reuse treats these as misses so Jobs records them through its ordinary per-cell failure path. Unexpected preparation errors still propagate.
+
+Prepared inference is a discriminated union: image requests contain image options, while text requests contain text options and the pricing needed for streaming estimates. Text construction requires a calculated budget. The estimator pricing stays outside the signature, preserving the existing effective-request identity. Every successful provider result carries a signature; optional provenance is limited to stored historical cells.

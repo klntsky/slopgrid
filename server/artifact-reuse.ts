@@ -25,11 +25,11 @@ export async function reuseArtifacts(
   for (const cell of cells) {
     let prepared;
     try {
-      ({ prepared } = await provider.prepare(
+      prepared = await provider.prepare(
         format,
         cell,
         store.references.dataURLs(cell.imageSettings?.input_references ?? []),
-      ));
+      );
     } catch (error) {
       if (error instanceof PreparationError) continue;
       throw error;

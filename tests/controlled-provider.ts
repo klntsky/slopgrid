@@ -52,7 +52,7 @@ export class ControlledProvider extends Provider {
   finish(id: string) {
     const held = this.pending.get(id)!;
     this.pending.delete(id);
-    held.resolve({ files: { "index.md": id } });
+    held.resolve({ signature: "fixture-signature", files: { "index.md": id } });
   }
   fail(id: string, statusCode: number, extra: Record<string, unknown> = {}) {
     const held = this.pending.get(id)!;

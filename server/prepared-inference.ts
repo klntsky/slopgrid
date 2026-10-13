@@ -10,58 +10,62 @@ const dependencies = JSON.parse(
 ).dependencies;
 // Bump the local revision when adapter semantics change without an SDK update.
 const adapterVersion = `1/ai:${dependencies.ai}/openrouter:${dependencies["@openrouter/ai-sdk-provider"]}`;
-export function prepareInference(
-  format: GridInput["format"],
-  cell: Cell,
-  budget?: TextBudget,
-  structured = false,
-  references: string[] = [],
-) {
-  const { input_references: _ids, ...imageSettings } = cell.imageSettings ?? {};
+function common(cell: Cell) {
   return {
     adapterVersion,
-    format,
     model: cell.model,
     prompt: cell.prompt,
     budgetUsd: cell.budgetUsd,
-    image:
-      format === "image"
-        ? {
-            ...imageSettings,
-            input_references: references.length
-              ? references.map((url) => ({
-                  type: "image_url" as const,
-                  image_url: { url },
-                }))
-              : undefined,
-          }
-        : undefined,
-    text:
-      format !== "image"
-        ? {
-            system: instruction(format),
-            maxOutputTokens: budget!.maxOutputTokens,
-            schema: structured ? z.toJSONSchema(websiteSchema) : undefined,
-            options: {
-              extraBody:
-                cell.effort !== "default"
-                  ? {
-                      reasoning:
-                        cell.effort === "none"
-                          ? { enabled: false }
-                          : { effort: cell.effort },
-                    }
-                  : {},
-              provider: {
-                require_parameters: true,
-                max_price: budget!.maxPrice,
-              },
-            },
-          }
-        : undefined,
   };
 }
-export type PreparedInference = ReturnType<typeof prepareInference>;
+export function prepareImageInference(cell: Cell, references: string[]) {
+  const { input_references: _ids, ...imageSettings } = cell.imageSettings ?? {};
+  return {
+    ...common(cell),
+    format: "image" as const,
+    image: {
+      ...imageSettings,
+      input_references: references.length
+        ? references.map((url) => ({
+            type: "image_url" as const,
+            image_url: { url },
+          }))
+        : undefined,
+    },
+  };
+}
+export function prepareTextInference(
+  format: Exclude<GridInput["format"], "image">,
+  cell: Cell,
+  budget: TextBudget,
+  structured: boolean,
+) {
+  return {
+    ...common(cell),
+    format,
+    pricing: budget.pricing,
+    text: {
+      system: instruction(format),
+      maxOutputTokens: budget.maxOutputTokens,
+      schema: structured ? z.toJSONSchema(websiteSchema) : undefined,
+      options: {
+        extraBody:
+          cell.effort !== "default"
+            ? {
+                reasoning:
+                  cell.effort === "none"
+                    ? { enabled: false }
+                    : { effort: cell.effort },
+              }
+            : {},
+        provider: { require_parameters: true, max_price: budget.maxPrice },
+      },
+    },
+  };
+}
+export type PreparedInference =
+  | ReturnType<typeof prepareTextInference>
+  | ReturnType<typeof prepareImageInference>;
 function canonical(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonical);
   if (value && typeof value === "object")
@@ -74,7 +78,16 @@ function canonical(value: unknown): unknown {
   return value;
 }
 export function inferenceSignature(prepared: PreparedInference): string {
-  const references = prepared.image?.input_references?.map(
+  function digest(request: unknown) {
+    return createHash("sha256")
+      .update(JSON.stringify(canonical(request)))
+      .digest("hex");
+  }
+  if (prepared.format !== "image") {
+    const { pricing: _estimation, ...request } = prepared;
+    return digest(request);
+  }
+  const references = prepared.image.input_references?.map(
     ({ image_url: { url } }) => {
       const [header, data] = url.split(",", 2);
       return {
@@ -85,17 +98,8 @@ export function inferenceSignature(prepared: PreparedInference): string {
       };
     },
   );
-  return createHash("sha256")
-    .update(
-      JSON.stringify(
-        canonical({
-          ...prepared,
-          image: prepared.image && {
-            ...prepared.image,
-            input_references: references,
-          },
-        }),
-      ),
-    )
-    .digest("hex");
+  return digest({
+    ...prepared,
+    image: { ...prepared.image, input_references: references },
+  });
 }

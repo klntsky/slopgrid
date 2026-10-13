@@ -19,7 +19,7 @@ test("large prompts, variables, and model IDs reach inference through grid creat
       cell: Cell,
     ) {
       received.push({ ...cell });
-      return { files: { "index.md": "done" } };
+      return { signature: "fixture-signature", files: { "index.md": "done" } };
     }
   }
   const { origin, store } = await appFixture(t, {

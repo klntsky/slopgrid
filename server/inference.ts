@@ -4,7 +4,6 @@ import { parseOutput } from "./output-format.js";
 import { generateImage, streamText, Output, jsonSchema } from "ai";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { z } from "zod";
-import type { TextBudget } from "./generation-budget.js";
 import type { CallObserver, CallRecorder } from "./billing.js";
 import { upstreamFetch } from "./http.js";
 import {
@@ -64,7 +63,6 @@ export async function generateInference(
   baseURL: string,
   key: string,
   prepared: PreparedInference,
-  budget: TextBudget | undefined,
   onChunk: (progress: InferenceProgress) => void,
   signal?: AbortSignal,
   observe?: CallObserver,
@@ -126,7 +124,7 @@ export async function generateInference(
       const result = await generateImage({
         model: provider.imageModel(prepared.model),
         prompt: prepared.prompt,
-        providerOptions: { openrouter: prepared.image! },
+        providerOptions: { openrouter: prepared.image },
         maxRetries: 0,
         abortSignal: signal,
       });
@@ -151,9 +149,7 @@ export async function generateInference(
         usage,
       };
     }
-    if (!budget)
-      throw new Error("A priced token budget is required for text generation.");
-    const { maxOutputTokens, system, schema, options } = prepared.text!;
+    const { maxOutputTokens, system, schema, options } = prepared.text;
     const model = provider.chat(prepared.model, options);
     let failure: unknown;
     const result = streamText({
@@ -175,7 +171,7 @@ export async function generateInference(
     const inputTokens =
       Math.ceil(Buffer.byteLength(prepared.prompt + system, "utf8") / 4) + 8;
     const inputCost =
-      inputTokens * budget.pricing.prompt + (budget.pricing.request ?? 0);
+      inputTokens * prepared.pricing.prompt + (prepared.pricing.request ?? 0);
     let text = "",
       thinking = "",
       outputBytes = 0;
@@ -198,7 +194,7 @@ export async function generateInference(
         estimatedUsage: {
           inputTokens,
           outputTokens,
-          costUsd: inputCost + outputTokens * budget.pricing.completion,
+          costUsd: inputCost + outputTokens * prepared.pricing.completion,
         },
       });
     }

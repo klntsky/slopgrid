@@ -92,7 +92,11 @@ test("a restart preserves finished outputs and pauses interrupted work until an 
       ) {
         assert.equal(key, "private-openrouter-key");
         requests.push(cell.id);
-        return { files: { "index.md": "Recovered output" }, usage: undefined };
+        return {
+          signature: "fixture-signature",
+          files: { "index.md": "Recovered output" },
+          usage: undefined,
+        };
       }
     }
     const completed = new Promise<void>((resolve) => {

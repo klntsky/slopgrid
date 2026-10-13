@@ -10,9 +10,9 @@ if (process.env.FIXTURE_PREPARATION) {
     const change = JSON.parse(
       readFileSync(process.env.FIXTURE_PREPARATION!, "utf8"),
     );
-    const request = result.prepared;
+    const request = result;
     if (change.adapterVersion) request.adapterVersion = change.adapterVersion;
-    if (request.text) {
+    if (request.format !== "image") {
       if (change.system) request.text.system = change.system;
       if (change.schema)
         request.text.schema = {

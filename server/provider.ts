@@ -1,4 +1,8 @@
-import { prepareInference, inferenceSignature } from "./prepared-inference.js";
+import {
+  prepareTextInference,
+  prepareImageInference,
+  inferenceSignature,
+} from "./prepared-inference.js";
 import { imageEndpointSchema, type ImageEndpoint } from "./image-settings.js";
 import { instruction } from "./output-format.js";
 import { z } from "zod";
@@ -236,17 +240,16 @@ export class Provider {
     observe?: CallObserver,
     references?: string[],
   ): Promise<{
-    signature?: string;
+    signature: string;
     files: Record<string, string | Uint8Array>;
     mediaType?: string;
     usage?: Cell["usage"];
   }> {
-    const { prepared, budget } = await this.prepare(format, cell, references);
+    const prepared = await this.prepare(format, cell, references);
     const result = await generateInference(
       this.baseURL,
       key,
       prepared,
-      budget,
       onChunk,
       signal,
       observe,
@@ -258,25 +261,23 @@ export class Provider {
     cell: Cell,
     references: string[] = [],
   ) {
-    const pricedModel =
-      format !== "image"
-        ? (await this.models()).find((model) => model.id === cell.model)
-        : undefined;
-    if (format !== "image" && !pricedModel)
+    if (format === "image") return prepareImageInference(cell, references);
+    const pricedModel = (await this.models()).find(
+      (model) => model.id === cell.model,
+    );
+    if (!pricedModel)
       throw new PreparationError(`Pricing is unavailable for ${cell.model}.`);
-    const structured =
-      format === "html" && pricedModel?.structuredOutputs === true;
-    const budget = pricedModel
-      ? generationBudget(
-          pricedModel,
-          cell.prompt,
-          instruction(format),
-          cell.budgetUsd,
-        )
-      : undefined;
-    return {
-      prepared: prepareInference(format, cell, budget, structured, references),
+    const budget = generationBudget(
+      pricedModel,
+      cell.prompt,
+      instruction(format),
+      cell.budgetUsd,
+    );
+    return prepareTextInference(
+      format,
+      cell,
       budget,
-    };
+      format === "html" && pricedModel.structuredOutputs === true,
+    );
   }
 }

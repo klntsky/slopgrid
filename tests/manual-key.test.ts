@@ -51,7 +51,10 @@ test("manual keys stay out of SQLite, serve queued cells, and require resending 
           { once: true },
         );
       });
-      return { files: { "index.md": `# ${cell.prompt}` } };
+      return {
+        signature: "fixture-signature",
+        files: { "index.md": `# ${cell.prompt}` },
+      };
     }
   }
   const provider = new ControlledProvider(`http://127.0.0.1:${upstreamPort}`);
