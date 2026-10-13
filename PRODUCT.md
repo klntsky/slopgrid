@@ -40,7 +40,7 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 
 ### 2.3. Tooltips
 
-1. Tooltips have consistent behavior and a pitch-black background with white text in both themes.
+1. Tooltips have consistent behavior and a pitch-black background with white text in both themes. Showing or hiding a tooltip must not shift the surrounding layout, including the cost and spent values.
 2. Use hints only to explain a non-obvious action, icon, or value, consistently across the frontend.
 3. Explain Model default as "Uses the model's default thinking settings." Explain the budget as "Used to calculate each output's token limit." Use the cost and spent hints specified in section 7.1.
 4. Give token-arrow indicators "Input tokens" and "Output tokens" hints. Supported compatibility checkmarks do not get tooltips.
