@@ -43,6 +43,7 @@ export function Create() {
     connection = useConnection();
   const capacity = useInferenceCapacity(
     formatSelected && connection.data?.connected === true,
+    input.format,
   );
   const cellCount = input.rows.values.length * input.columns.values.length;
   const promptVariables = (["rows", "columns"] as const)

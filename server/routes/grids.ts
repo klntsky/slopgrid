@@ -82,7 +82,14 @@ export function createGridRoutes({
         .status(429)
         .json({ error: "Too many balance checks. Try again shortly." });
     try {
-      res.json(await inferenceCapacity(provider, key, supplied !== undefined));
+      res.json(
+        await inferenceCapacity(
+          provider,
+          key,
+          supplied !== undefined,
+          req.query.format === "image" ? "image" : "svg",
+        ),
+      );
     } catch {
       res
         .status(502)
@@ -155,7 +162,10 @@ export function createGridRoutes({
       return res
         .status(400)
         .json({ error: "A reference image is unavailable." });
-    if (!(await allowInference(req, res, s, input.parallelWorkers))) return;
+    if (
+      !(await allowInference(req, res, s, input.parallelWorkers, input.format))
+    )
+      return;
     const cells = expandGrid(input).map((c) => ({ ...c, id: token() }));
     if (!rate(`create:${s.id}`, 10) || !rate(`create-ip:${req.ip}`, 30))
       return res
@@ -224,7 +234,13 @@ export function createGridRoutes({
     if (current.status === "running") return res.json(snapshot(current, s));
     if (
       g.cells.some((c) => c.status !== "complete") &&
-      !(await allowInference(req, res, s, g.input.parallelWorkers))
+      !(await allowInference(
+        req,
+        res,
+        s,
+        g.input.parallelWorkers,
+        g.input.format,
+      ))
     )
       return;
     if (!rate(`retry:${s.id}`, 30))

@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import type { inferenceCapacity } from "../server/inference-policy";
 import { useOpenRouterKey } from "./openrouter-key";
 import { QueryClient, useQuery } from "@tanstack/react-query";
-import type { GridSummary } from "../server/domain";
+import type { GridSummary, GridInput } from "../server/domain";
 import { api, type ViewGrid, type SessionInfo } from "./api";
 import type { ImageEndpoint } from "../server/image-settings";
 export function imageEndpointQuery(model: string) {
@@ -56,13 +56,16 @@ export function usePublicGrids() {
   });
 }
 
-export function useInferenceCapacity(enabled: boolean) {
+export function useInferenceCapacity(
+  enabled: boolean,
+  format: GridInput["format"],
+) {
   const key = useOpenRouterKey();
   const query = useQuery({
-    queryKey: ["inference-capacity"],
+    queryKey: ["inference-capacity", format],
     queryFn: () =>
       api<Awaited<ReturnType<typeof inferenceCapacity>>>(
-        "/inference-capacity",
+        `/inference-capacity?format=${format}`,
         "GET",
         undefined,
         key,

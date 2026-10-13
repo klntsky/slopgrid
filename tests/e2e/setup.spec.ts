@@ -884,3 +884,38 @@ for (const format of ["SVG", "Static website"]) {
     await expect(page.getByLabel("Column values")).toHaveValue("landscape");
   });
 }
+
+test("image worker recommendation uses image cost and follows output changes", async ({
+  page,
+  request,
+}) => {
+  await request.post("/fixture/reset", { data: { balanceUsd: 6 } });
+  await page.goto("/");
+  const workers = page.getByLabel("# of parallel workers:", { exact: true });
+  async function layout(format: string) {
+    await page.getByRole("button", { name: format, exact: true }).click();
+    await page
+      .getByRole("combobox", { name: "Rows", exact: true })
+      .selectOption("variable");
+    await page
+      .getByRole("combobox", { name: "Columns", exact: true })
+      .selectOption("variable");
+    await page.getByLabel("Row values").fill("a\nb\nc\nd\ne");
+    await page.getByLabel("Column values").fill("a\nb\nc\nd");
+  }
+  await layout("Image");
+  await page.getByRole("link", { name: "Connect OpenRouter" }).click();
+  await expect(page.getByText("Connected", { exact: true })).toBeVisible();
+  await expect(workers).toHaveValue("15");
+  await page.getByLabel("Row values").fill("a");
+  await expect(workers).toHaveValue("4");
+  await layout("SVG");
+  await expect(workers).toHaveValue("2");
+  await layout("Image");
+  await expect(workers).toHaveValue("15");
+  await workers.fill("7");
+  await layout("Static website");
+  await expect(workers).toHaveValue("7");
+  await page.reload();
+  await expect(workers).toHaveValue("7");
+});

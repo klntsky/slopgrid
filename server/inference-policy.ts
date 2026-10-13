@@ -1,3 +1,4 @@
+import type { GridInput } from "./domain.js";
 import { manualKey } from "./manual-keys.js";
 import type { Request, Response } from "express";
 import type { Store, Session } from "./store.js";
@@ -7,6 +8,7 @@ export async function inferenceCapacity(
   provider: Provider,
   key: string,
   supplied: boolean,
+  format: GridInput["format"] = "svg",
 ) {
   const balanceUsd = supplied
     ? await provider.manualCredits(key)
@@ -14,7 +16,12 @@ export async function inferenceCapacity(
   return {
     balanceUsd,
     parallelWorkers:
-      balanceUsd === null ? 1 : Math.max(1, Math.floor(balanceUsd / 3)),
+      balanceUsd === null
+        ? 1
+        : Math.max(
+            1,
+            Math.floor((balanceUsd * 100) / (format === "image" ? 40 : 300)),
+          ),
   };
 }
 
@@ -23,7 +30,8 @@ export function createInferenceGuard(store: Store, provider: Provider) {
     req: Request,
     res: Response,
     s: Session,
-    parallelWorkers?: number,
+    parallelWorkers: number | undefined,
+    format: GridInput["format"],
   ) {
     const supplied = manualKey(req);
     let capacity: Awaited<ReturnType<typeof inferenceCapacity>>;
@@ -32,6 +40,7 @@ export function createInferenceGuard(store: Store, provider: Provider) {
         provider,
         supplied ?? s.key!,
         supplied !== undefined,
+        format,
       );
     } catch {
       res
