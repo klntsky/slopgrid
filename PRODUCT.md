@@ -32,7 +32,7 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 3. On mobile, move navigation into a hamburger menu anchored close to its button. Keep compact grid action buttons on the first navbar row where they fit.
 4. Give "Your grids" and "Public grids" matching large heading styles. Keep separators only between grid entries in the lists.
 5. Billing and Settings use the same wider page-layout approach as `/grids`.
-6. Publication state is conveyed through the available grid actions and placement in the public list.
+6. Convey publication state through the available grid actions, placement in the public list, and a lowercase "published" label in the owner's grid list. Unpublished entries show their lowercase generation status.
 7. A missing grid should show its 404 promptly without retrying. Keep the error message focused on the missing grid.
 8. Connection loss appears as a small bottom-right label with a rotating preloader and must not shift page layout. Generation preloaders must visibly spin.
 

@@ -43,7 +43,7 @@ export function GridListing({
             </Link>
             {publicListing && <Author identity={g.author} />}
             {!publicListing && (
-              <small>{g.published ? "Published" : g.status}</small>
+              <small>{g.published ? "published" : g.status}</small>
             )}
           </div>
         ))
