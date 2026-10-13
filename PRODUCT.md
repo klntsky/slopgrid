@@ -14,6 +14,7 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 4. Generate outputs on the server, stream progress to the browser, retain completed results, and let owners publish their grids afterward.
 5. A cell attempt makes one inference call.
 6. Apply sensible request and generation rate limits without imposing deadlines on accepted inference.
+7. When a user action receives HTTP 429, show the rate-limit message, preserve their inputs and completed results, and leave the action available for an explicit retry. A rejected grid-creation request must not navigate away from the form or create duplicate grids.
 
 ## 2. Interface, navigation, and presentation
 

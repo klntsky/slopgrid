@@ -72,7 +72,7 @@ for (const project of suite === "all"
   const results = mkdtempSync(join(tmpdir(), "slopgrid-e2e-results-"));
   let server: Awaited<ReturnType<typeof startTestServer>> | undefined;
   try {
-    // Mock workers create their own servers; real suites share one serial server.
+    // Mock tests create their own servers; real suites share one serial server.
     if (project !== "mock") {
       const port = Number(
         process.env.E2E_PORT ?? (project === "github" ? 4391 : 4317),
