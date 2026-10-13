@@ -55,7 +55,7 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 2. Before an output type is selected, show public grids below the output-type selection. Selecting an output type hides this list and reveals all remaining form sections immediately, while keeping the output choice visible. A restored draft with an output type already selected also hides the list.
 3. Preserve the in-progress setup through provider authorization and restore the applicable setup when editing or forking.
 4. Put an icon-only swap button between the row and column selectors. It has no border and swaps axis types, selected values, and corresponding prompt-variable references together.
-5. Checkbox lists start unselected. Every generation must use an explicitly selected model, including when model is a fixed setting rather than an axis.
+5. New image grids start with Model rows and Quality columns, with Auto as the only selected quality and no models selected. Other output types start with unselected thinking-effort rows and model columns. Restored drafts, Edit, and Fork preserve their saved layout and selections. Every generation must use an explicitly selected model, including when model is a fixed setting rather than an axis.
 6. Grid creation has no application limit on prompt length, axis-value length, model-ID length, JSON request size, number of axis values, cells, or requested parallel workers. Forward these inputs subject to OpenRouter's limits. Actual concurrency follows the shared worker allocation policy.
 7. Arrange short axis choices, including aspect ratios, size presets, quality, background, and thinking efforts, as inline checkboxes that wrap onto additional rows as needed. Keep each checkbox and its label together.
 

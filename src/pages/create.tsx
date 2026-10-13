@@ -129,12 +129,12 @@ export function Create() {
         effort: "default",
         rows:
           format === "image"
-            ? { kind: "variable", values: [] }
+            ? { kind: "model", values: [] }
             : { kind: "effort", values: [] },
-        columns: {
-          kind: "model",
-          values: [],
-        },
+        columns:
+          format === "image"
+            ? { kind: "quality", values: ["auto"] }
+            : { kind: "model", values: [] },
       },
     }));
     setError("");

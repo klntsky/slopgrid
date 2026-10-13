@@ -4,6 +4,12 @@ import { finishPublishing, expectProgress, selectModel } from "./helpers";
 async function setup(page: import("@playwright/test").Page, connect = true) {
   await page.goto("/");
   await page.getByRole("button", { name: "Image", exact: true }).click();
+  await page
+    .getByRole("combobox", { name: "Rows", exact: true })
+    .selectOption("variable");
+  await page
+    .getByRole("combobox", { name: "Columns", exact: true })
+    .selectOption("model");
   if (connect) {
     await page.getByRole("link", { name: "Connect OpenRouter" }).click();
     await expect(page.getByText("Connected", { exact: true })).toBeVisible();

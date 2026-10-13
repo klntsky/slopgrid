@@ -208,6 +208,9 @@ test("unused prompt variables block generation and the API rejects bypasses", as
   await page.goto("/");
   await page.getByRole("button", { name: "Image", exact: true }).click();
   await page
+    .getByRole("combobox", { name: "Rows", exact: true })
+    .selectOption("variable");
+  await page
     .getByRole("combobox", { name: "Columns", exact: true })
     .selectOption("variable");
   await expect(
@@ -283,6 +286,12 @@ test("selecting an output type reveals the entire form and preserves it on reloa
       page.getByRole("link", { name: "Connect OpenRouter" }),
     ).toBeVisible();
   }
+  await page
+    .getByRole("combobox", { name: "Rows", exact: true })
+    .selectOption("variable");
+  await page
+    .getByRole("combobox", { name: "Columns", exact: true })
+    .selectOption("model");
   await prompt.fill("Draw $ROW");
   await page.reload();
   await expect(prompt).toHaveValue("Draw $ROW");
@@ -741,3 +750,60 @@ for (const format of ["SVG", "Image"]) {
     await expect(selector.locator("input:checked")).toHaveValue(second);
   });
 }
+
+test("default image layout generates with automatic quality and preserves edits", async ({
+  page,
+  request,
+}) => {
+  await request.post("/fixture/reset", { data: {} });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Image", exact: true }).click();
+  const rows = page.getByRole("combobox", { name: "Rows", exact: true });
+  const columns = page.getByRole("combobox", { name: "Columns", exact: true });
+  await expect(rows).toHaveValue("model");
+  await expect(columns).toHaveValue("quality");
+  await expect(
+    page.getByRole("group", { name: "Row values" }).locator("input:checked"),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("group", { name: "Column values" }).locator("input:checked"),
+  ).toHaveCount(1);
+  await expect(
+    page.getByRole("checkbox", { name: "Auto", exact: true }),
+  ).toBeChecked();
+  await expect(
+    page.getByRole("searchbox", { name: "Search models" }),
+  ).toHaveValue("");
+  await page.getByLabel("Prompt", { exact: true }).fill("Draw a landscape");
+  await page.getByRole("link", { name: "Connect OpenRouter" }).click();
+  await expect(page.getByText("Connected", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Generate", exact: true }),
+  ).toBeDisabled();
+  await page
+    .getByRole("checkbox", { name: "Fixture image", exact: true })
+    .check();
+  await page.getByRole("button", { name: "Generate", exact: true }).click();
+  await expectProgress(page, 1, 1);
+  const sent = await (await request.get("/fixture/image-requests")).json();
+  expect(sent).toHaveLength(1);
+  expect(sent[0]).not.toHaveProperty("quality");
+  await page.getByRole("button", { name: "EDIT", exact: true }).click();
+  await expect(rows).toHaveValue("model");
+  await expect(columns).toHaveValue("quality");
+  await expect(
+    page.getByRole("checkbox", { name: "Auto", exact: true }),
+  ).toBeChecked();
+  await columns.selectOption("background");
+  await page
+    .getByRole("checkbox", { name: "transparent", exact: true })
+    .check();
+  await page.reload();
+  await expect(columns).toHaveValue("background");
+  await expect(
+    page.getByRole("checkbox", { name: "transparent", exact: true }),
+  ).toBeChecked();
+  await expect(
+    page.getByRole("checkbox", { name: "Fixture image", exact: true }),
+  ).toBeChecked();
+});
