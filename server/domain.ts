@@ -20,20 +20,20 @@ export const kinds = ["model", "effort", "variable", ...imageKinds] as const;
 const axis = z.object({
   kind: z.enum(kinds),
   values: z
-    .array(z.string().trim().min(1).max(500))
+    .array(z.string().trim().min(1))
     .min(1)
     .refine((v) => new Set(v).size === v.length, "Values must be distinct"),
 });
 export const gridSchema = z
   .object({
     format: z.enum(["svg", "markdown", "html", "image"]),
-    prompt: z.string().trim().min(1).max(20000),
+    prompt: z.string().trim().min(1),
     rows: axis,
     columns: axis,
     referenceGroups: z
       .record(z.string(), z.array(referenceImageSchema))
       .optional(),
-    model: z.string().trim().max(200),
+    model: z.string().trim(),
     effort: z.enum(efforts),
     budgetUsd: z.number().finite().positive(),
     parallelWorkers: z.number().int().min(1).optional(),

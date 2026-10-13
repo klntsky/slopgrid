@@ -72,7 +72,7 @@ export function createApp(config: Config) {
   );
   app.use(createOutputRoutes(store, origin, rate, session));
   app.get("/outputs/:id/website", outputAccess.open);
-  app.use(express.json({ limit: "100kb" }));
+  app.use(express.json({ limit: Infinity }));
   app.use("/api", createApiSecurity(config.origin, rate));
   app.use(
     createAuthRoutes({
