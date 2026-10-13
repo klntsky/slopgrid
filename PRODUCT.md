@@ -111,6 +111,7 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 6. Save reference images with the grid and format the corresponding row or column headers as "references: <title>" followed by tiny inline image previews in group order. Clicking a preview opens that reference in the full-page image view, with the same collapse and Escape behavior as generated images.
 7. In Select grid layout, show each reference group's heading as a pencil icon, editable group title, centered dot, and "reference image group". Its file-selection button shows a paperclip icon and "Add images".
 8. Right-align OpenRouter's published output rates in the image-model checkbox list, preserving per-image and per-megapixel units and displaying token rates per million tokens. Show a range when published rates differ within the same unit, and keep different units separate. A tooltip lists provider names, additional charges, and pricing tiers. Missing prices display "Price unavailable". Rates are independent of the selected generation settings.
+9. Reference uploads accept PNG, JPEG, and WebP images, with a maximum of 20 MiB per file. Reject other formats and oversized uploads with a visible error.
 
 ## 4. Grid layout and metadata
 
