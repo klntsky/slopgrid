@@ -23,7 +23,7 @@ jobs:
       - name: Install browser and test tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y tmux openssl
+          sudo apt-get install -y openssl
           pnpm exec playwright install --with-deps chromium
       - name: Run full test suite
         env:

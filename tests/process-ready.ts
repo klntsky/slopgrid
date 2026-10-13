@@ -1,12 +1,9 @@
 import type { ChildProcess } from "node:child_process";
-import { writeFileSync } from "node:fs";
 
 type ReadyMessage = { type: "ready"; origin?: string };
 export function signalReady(origin?: string) {
   const message: ReadyMessage = { type: "ready", origin };
   process.send?.(message);
-  if (process.env.FIXTURE_READY_PATH)
-    writeFileSync(process.env.FIXTURE_READY_PATH, JSON.stringify(message));
 }
 export function startupFailed(error: unknown) {
   const message =

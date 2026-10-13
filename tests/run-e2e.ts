@@ -1,4 +1,4 @@
-import { execFileSync, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
 import { join } from "node:path";
@@ -43,11 +43,6 @@ if (
     "E2E requires GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET in private runtime configuration.",
   );
 const key = suite === "mock" ? undefined : realKey();
-try {
-  execFileSync("tmux", ["has-session", "-t", "bg"], { stdio: "ignore" });
-} catch {
-  execFileSync("tmux", ["new-session", "-d", "-s", "bg"]);
-}
 async function command(
   arguments_: string[],
   env = process.env,
@@ -104,7 +99,7 @@ for (const project of suite === "all"
     process.exitCode = code;
     if (code) break;
   } finally {
-    server?.close();
+    await server?.close();
     rmSync(results, { recursive: true, force: true });
   }
 }

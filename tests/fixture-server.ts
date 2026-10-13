@@ -491,6 +491,7 @@ app.get("/svg-probe", (req, res) => {
 });
 app.get("/fixture/svg-probes", (_req, res) => res.json(svgProbes));
 app.use(createFrontendRoutes("dist"));
+export const close = () => generation.close();
 app.listen(port, () => {
   console.log("Fixture ready");
   signalReady();

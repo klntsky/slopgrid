@@ -177,3 +177,7 @@ Reference loaders cache reads and content hashes by identifier for one reuse ope
 ## Markdown fonts
 
 Markdown code blocks and source views use the bundled DejaVu Sans Mono WOFF2 font so spaces and full-block characters share one font and advance width. Grid previews load the static font asset; direct Markdown pages embed it as a data URL and allow only data fonts in their existing sandbox CSP. The font license ships beside the asset.
+
+## Browser test process ownership
+
+`tests/test-server.ts` forks the browser fixture through `tests/e2e-process.ts`, passes configuration through the child environment, and waits for IPC readiness. The fixture runs its own inference child. Closing the parent IPC channel shuts down the fixture and its inference process, including when the test worker exits unexpectedly. Normal teardown waits for process exit before deleting fixture data. The shared suite runner and per-test Playwright fixtures await this teardown.

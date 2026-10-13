@@ -8,7 +8,7 @@ export const test = base.extend<{ mockServer: string }>({
       try {
         await use(server.origin);
       } finally {
-        server.close();
+        await server.close();
       }
     },
     { timeout: 45000 },

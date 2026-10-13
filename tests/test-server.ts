@@ -1,16 +1,9 @@
-import { execFileSync } from "node:child_process";
-import {
-  mkdtempSync,
-  rmSync,
-  readFileSync,
-  writeFileSync,
-  existsSync,
-} from "node:fs";
+import { fork, type ChildProcess } from "node:child_process";
+import { mkdtempSync, rmSync, openSync, closeSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "node:net";
-
-const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
+import { waitForReady } from "./process-ready.js";
 
 export async function startTestServer(
   project: "mock" | "real" | "github",
@@ -34,52 +27,43 @@ export async function startTestServer(
   });
   const origin = `http://localhost:${port}`;
   const data = mkdtempSync(join(tmpdir(), "slopgrid-e2e-"));
-  const credentials = join(data, "github.env");
-  const ready = join(data, "ready"),
-    exited = join(data, "exit");
-  writeFileSync(
-    credentials,
-    `GITHUB_CLIENT_ID=${JSON.stringify(process.env.GITHUB_CLIENT_ID)}\nGITHUB_CLIENT_SECRET=${JSON.stringify(process.env.GITHUB_CLIENT_SECRET)}\n`,
-    { mode: 0o600 },
-  );
-  const window = `slopgrid-e2e-${process.pid}-${project}-${port}`;
-  function close() {
-    try {
-      execFileSync("tmux", ["kill-window", "-t", `bg:${window}`], {
-        stdio: "ignore",
-      });
-    } catch {}
+  const log = openSync(join(data, "server.log"), "w", 0o600);
+  let child: ChildProcess;
+  try {
+    child = fork(join(process.cwd(), "tests/e2e-process.ts"), [project], {
+      execArgv: ["--import", "tsx"],
+      stdio: ["ignore", log, log, "ipc"],
+      env: {
+        ...process.env,
+        OPENROUTER_API_KEY: undefined,
+        E2E_PORT: String(port),
+        FIXTURE_DATA: data,
+        NODE_ENV: "production",
+      },
+    });
+  } catch (error) {
     rmSync(data, { recursive: true, force: true });
+    throw error;
+  } finally {
+    closeSync(log);
+  }
+  const exited = new Promise<void>((resolve) => {
+    child.once("exit", () => resolve());
+    child.once("error", () => resolve());
+  });
+  let closing: Promise<void> | undefined;
+  function close() {
+    return (closing ??= (async () => {
+      if (child.connected) child.disconnect();
+      await exited;
+      rmSync(data, { recursive: true, force: true });
+    })());
   }
   try {
-    try {
-      execFileSync("tmux", ["has-session", "-t", "bg"], { stdio: "ignore" });
-    } catch {
-      execFileSync("tmux", ["new-session", "-d", "-s", "bg"]);
-    }
-    execFileSync("tmux", [
-      "new-window",
-      "-d",
-      "-t",
-      "bg",
-      "-n",
-      window,
-      `cd ${quote(process.cwd())} && env -u OPENROUTER_API_KEY E2E_PORT=${port} FIXTURE_DATA=${quote(data)} FIXTURE_READY_PATH=${quote(ready)} NODE_ENV=production ${quote(process.execPath)} --env-file=${quote(credentials)} --import tsx tests/${project === "mock" ? "fixture" : "real"}-server.ts > ${quote(join(data, "server.log"))} 2>&1; printf '%s\\n' $? > ${quote(exited)}`,
-    ]);
-    const deadline = Date.now() + 35000;
-    while (Date.now() < deadline) {
-      if (existsSync(ready)) return { origin, data, close };
-      if (existsSync(exited))
-        throw new Error(
-          `Test app exited with ${readFileSync(exited, "utf8").trim()}: ${readFileSync(join(data, "server.log"), "utf8")}`,
-        );
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
-    throw new Error(
-      `Test app did not start: ${readFileSync(join(data, "server.log"), "utf8")}`,
-    );
+    await waitForReady(child, "Browser fixture");
+    return { origin, data, close };
   } catch (error) {
-    close();
+    await close();
     throw error;
   }
 }

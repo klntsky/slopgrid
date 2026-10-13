@@ -3,7 +3,6 @@ import { fork } from "node:child_process";
 import { join } from "node:path";
 import { generationClient } from "../server/generation-client.js";
 
-/** Child processes inherit the test runner's bg tmux session. */
 export async function startGenerationFixture(config: {
   database: string;
   preparation?: string;
@@ -19,7 +18,6 @@ export async function startGenerationFixture(config: {
     env: {
       ...process.env,
       FIXTURE_PREPARATION: config.preparation,
-      FIXTURE_READY_PATH: undefined,
       DATABASE_PATH: config.database,
       OUTPUTS_PATH: config.outputsPath,
       KEY_ENCRYPTION_SECRET: config.secret.toString("hex"),

@@ -20,6 +20,7 @@ const { app } = createApp({
   generation: generation.api,
 });
 app.use(createFrontendRoutes("dist"));
+export const close = () => generation.close();
 app.listen(port, () => {
   console.log("Real-provider app ready");
   signalReady();
