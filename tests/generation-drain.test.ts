@@ -96,7 +96,11 @@ test("drain remains busy after Pause until an abort-ignoring provider settles", 
     assert.equal(draining.runningCalls, 1);
     provider.pending
       .get("cancelled-cell")!
-      .write("Late discarded output", 0.9, "Late discarded thinking");
+      .write(
+        "Late discarded output",
+        { costUsd: 0.9 },
+        "Late discarded thinking",
+      );
     provider.finish("cancelled-cell");
     await until(
       () => f.generation.status(),

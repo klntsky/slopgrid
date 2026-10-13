@@ -11,7 +11,7 @@ export class ControlledProvider extends Provider {
       reject: (e: unknown) => void;
       write: (
         text: string,
-        estimatedCostUsd?: number,
+        estimatedUsage?: Cell["usage"],
         thinking?: string,
       ) => void;
     }
@@ -40,8 +40,8 @@ export class ControlledProvider extends Provider {
           cleanup();
           reject(error);
         },
-        write: (text, estimatedCostUsd, thinking = "") =>
-          onChunk({ text, thinking, estimatedCostUsd }),
+        write: (text, estimatedUsage, thinking = "") =>
+          onChunk({ text, thinking, estimatedUsage }),
       });
       if (!this.ignoreAbort) {
         if (signal?.aborted) abort();

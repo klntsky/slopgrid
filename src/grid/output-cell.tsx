@@ -56,6 +56,8 @@ export function OutputCell({
       ? `${cell.outputURL}?theme=${resolvedTheme}`
       : cell.outputURL;
   const complete = cell.status === "complete";
+  const usage = complete ? cell.usage : cell.estimatedUsage;
+  const approximate = complete ? "" : "≈";
   const markdown =
     format === "markdown" && (complete || cell.status === "running");
   const hasThinking = !!(cell.thinking || cell.thinkingURL);
@@ -185,7 +187,7 @@ export function OutputCell({
       {!expanded &&
         (complete ||
           (cell.status === "running" &&
-            (markdown || cell.estimatedCostUsd !== undefined))) && (
+            (markdown || cell.estimatedUsage?.costUsd !== undefined))) && (
           <div className="cell-footer">
             <div className="cell-actions">
               {complete && (
@@ -218,23 +220,25 @@ export function OutputCell({
               )}
             </div>
             <small className="cell-usage">
-              {complete && cell.usage && (
+              {usage && (
                 <span
                   className="cell-tokens"
                   role="img"
-                  aria-label={`${cell.usage.inputTokens ?? 0} input tokens, ${cell.usage.outputTokens ?? 0} output tokens`}
+                  aria-label={`${complete ? "" : "Estimated: "}${usage.inputTokens ?? 0} input tokens, ${usage.outputTokens ?? 0} output tokens`}
                 >
                   <span className="token-count" ref={inputHint} tabIndex={0}>
-                    {cell.usage.inputTokens ?? 0}
+                    {approximate}
+                    {usage.inputTokens ?? 0}
                     <ArrowUp aria-hidden="true" />
                   </span>
                   <span className="token-count" ref={outputHint} tabIndex={0}>
-                    {cell.usage.outputTokens ?? 0}
+                    {approximate}
+                    {usage.outputTokens ?? 0}
                     <ArrowDown aria-hidden="true" />
                   </span>
                 </span>
               )}
-              {(complete || cell.estimatedCostUsd !== undefined) && (
+              {(complete || cell.estimatedUsage?.costUsd !== undefined) && (
                 <span
                   ref={tooltipRef}
                   tabIndex={0}
@@ -244,7 +248,7 @@ export function OutputCell({
                 >
                   {complete
                     ? formatCost(cell.usage?.costUsd)
-                    : `≈${formatCost(cell.estimatedCostUsd)}`}
+                    : `≈${formatCost(cell.estimatedUsage?.costUsd)}`}
                 </span>
               )}
             </small>

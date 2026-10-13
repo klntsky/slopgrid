@@ -227,7 +227,7 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 ### 7.1. Per-cell and grid prices
 
 1. Show cost information per generation. Display input tokens with an upward arrow and output tokens with a downward arrow, using `$` without a redundant USD suffix.
-2. Estimate each text cell's price while its response streams, accounting for input, visible output, and available thinking. Replace the estimate with the reported price when the call completes.
+2. Show running input and output token counts alongside each text cell's running price, using the same layout and arrows as final counts. Estimate usage from input, visible output, and available thinking while streaming, mark estimates as approximate, and replace them with provider-reported usage when the call completes. Use a monospace font for the per-cell counts and price to reduce text movement.
 3. The cost total is the sum of successful outputs currently shown on the grid plus running inference estimates.
 4. The spent total is the sum of all reported billing charges for this grid plus running inference estimates, including failed, cancelled, and retried calls. Replace each running estimate with its reported charge without counting the attempt twice; discard its estimate when work stops. Show spent only to the grid owner and omit it from responses to other viewers.
 5. Keep both totals' two-decimal UI truncation separate from stored billing precision.

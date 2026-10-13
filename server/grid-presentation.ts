@@ -41,8 +41,7 @@ export function createGridPresenter(store: Store, origin: URL) {
         retrying: c.retrying,
         mediaType: c.mediaType,
         usage: c.usage,
-        estimatedCostUsd:
-          c.status === "running" ? c.estimatedCostUsd : undefined,
+        estimatedUsage: c.status === "running" ? c.estimatedUsage : undefined,
         thinking: c.thinking,
         thinkingURL: c.thinkingId
           ? `/outputs/${c.id}/thinking/${c.thinkingId}`

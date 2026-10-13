@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import { once } from "node:events";
 import { Provider } from "../server/provider.js";
 import { failureDetails } from "../server/failures.js";
-import type { Cell } from "../server/domain.js";
+import type { Cell, InferenceProgress } from "../server/domain.js";
 
 async function upstream(streamError?: Record<string, unknown>) {
   const requests: Record<string, unknown>[] = [];
@@ -384,21 +384,38 @@ test("live cost includes reasoning and request fees without changing output or i
   try {
     const estimates = new Map<string, { text: string; cost: number }[]>();
     for (const model of ["router", "free", "request-fee"]) {
-      const updates: { text: string; cost: number; thinking: string }[] = [];
+      const updates: (InferenceProgress & { cost: number })[] = [];
       estimates.set(model, updates);
       const result = await h.provider.generate(
         "fixture-key",
         "markdown",
         cell(model, "default"),
-        ({ text, thinking, estimatedCostUsd }) =>
-          updates.push({ text, thinking, cost: estimatedCostUsd! }),
+        (progress) =>
+          updates.push({
+            ...progress,
+            cost: progress.estimatedUsage?.costUsd!,
+          }),
       );
       assert.equal(result.files["index.md"], "# Output");
       assert.equal(
         updates.at(-1)!.thinking,
         "Private reasoning before the answer.More thinking after the answer.",
       );
-      assert.equal(result.usage?.costUsd, undefined);
+      const initial = updates[0].estimatedUsage!;
+      const reasoning = updates.find(
+        (update) => update.thinking && !update.text,
+      )!.estimatedUsage!;
+      const final = updates.at(-1)!.estimatedUsage!;
+      assert.ok(initial.inputTokens! > 0);
+      assert.equal(initial.outputTokens, 0);
+      assert.ok(reasoning.outputTokens! > 0);
+      assert.ok(final.outputTokens! > reasoning.outputTokens!);
+      assert.equal(final.inputTokens, initial.inputTokens);
+      assert.deepEqual(result.usage, {
+        inputTokens: 1,
+        outputTokens: 1,
+        costUsd: undefined,
+      });
     }
     const paid = estimates.get("router")!;
     const reasoning = paid.filter((update) => update.text === "");

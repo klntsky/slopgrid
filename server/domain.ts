@@ -120,7 +120,7 @@ export type Completion = {
 export type InferenceProgress = {
   text: string;
   thinking: string;
-  estimatedCostUsd?: number;
+  estimatedUsage?: Cell["usage"];
 };
 export type Cell = {
   id: string;
@@ -139,7 +139,7 @@ export type Cell = {
   draft?: string;
   thinking?: string;
   thinkingId?: string;
-  estimatedCostUsd?: number;
+  estimatedUsage?: Cell["usage"];
   preview?: { attempt: string; revision: number };
   usage?: { inputTokens?: number; outputTokens?: number; costUsd?: number };
 };

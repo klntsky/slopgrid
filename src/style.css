@@ -871,6 +871,8 @@ button.editable-title > .lucide {
   height: 16px;
 }
 .cell-usage {
+  font-family: ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
   display: flex;
   align-items: center;
   gap: 10px;

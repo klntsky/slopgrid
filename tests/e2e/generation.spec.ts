@@ -733,11 +733,19 @@ test("cost excludes failed attempts while owner spending retains them through st
     const spent = page.locator(".grid-spent");
     const price = async (index: number) =>
       Number(
-        (await cells.nth(index).locator(".cell-usage").innerText()).replace(
-          /[^0-9.]/g,
-          "",
-        ),
+        (
+          await cells
+            .nth(index)
+            .locator(".cell-usage > [data-tooltip]")
+            .innerText()
+        ).replace(/[^0-9.]/g, ""),
       );
+    const tokenCounts = (index: number) =>
+      cells.nth(index).locator(".cell-tokens");
+    const tokens = async (index: number) => {
+      const label = await tokenCounts(index).getAttribute("aria-label");
+      return label!.match(/\d+/g)!.map(Number);
+    };
     const release = (animal: string) =>
       request.post("/fixture/release", {
         data: { prompt: `Draw ${animal} wearing a hat` },
@@ -763,6 +771,11 @@ test("cost excludes failed attempts while owner spending retains them through st
     ).toBeVisible();
     const reasoning = await price(0);
     expect(reasoning).toBeGreaterThan(0);
+    await expect(tokenCounts(0)).toHaveAttribute("aria-label", /^Estimated:/);
+    const [inputTokens, reasoningTokens] = await tokens(0);
+    expect(inputTokens).toBeGreaterThan(0);
+    expect(reasoningTokens).toBeGreaterThan(0);
+
     const expectTotal = async (formatted: string, estimated = true) => {
       await expect(total).toHaveAttribute(
         "aria-label",
@@ -770,9 +783,17 @@ test("cost excludes failed attempts while owner spending retains them through st
       );
     };
     await expectTotal("$0.00");
-    await expect(spent).toHaveAttribute("aria-label", "Total spent: \u2248$0.00");
+    await expect(spent).toHaveAttribute(
+      "aria-label",
+      "Total spent: \u2248$0.00",
+    );
     await release("cat");
     await expect.poll(() => price(0)).toBeGreaterThan(reasoning);
+    await expect
+      .poll(async () => (await tokens(0))[1])
+      .toBeGreaterThan(reasoningTokens);
+    expect((await tokens(0))[0]).toBe(inputTokens);
+
     await expectTotal("$0.01");
     await expect(thinkingView(0)).toBeHidden();
     await cells.nth(0).getByRole("button", { name: "Show thinking" }).click();
@@ -791,6 +812,11 @@ test("cost excludes failed attempts while owner spending retains them through st
     await expect(
       cells.nth(0).locator('[data-tooltip="OpenRouter reported cost"]'),
     ).toHaveText("$0.019876");
+    await expect(tokenCounts(0)).toHaveAttribute(
+      "aria-label",
+      "10 input tokens, 20 output tokens",
+    );
+
     await expectTotal("$0.02");
     await expect(thinkingView(0)).toContainText(
       "**Literal thinking** <b>not HTML</b>",
@@ -804,11 +830,16 @@ test("cost excludes failed attempts while owner spending retains them through st
       cells.nth(1).locator('[data-tooltip="Estimated cost"]'),
     ).toBeVisible();
     await expectTotal("$0.02");
+    await expect(tokenCounts(1)).toHaveAttribute(
+      "aria-label",
+      `Estimated: ${inputTokens} input tokens, ${reasoningTokens} output tokens`,
+    );
     const before = await price(1);
     await release("dog");
     await expect.poll(() => price(1)).toBeGreaterThan(before);
     await release("dog");
     await expect(cells.nth(1).locator(".cell-error")).toBeVisible();
+    await expect(tokenCounts(1)).toHaveCount(0);
     await expectTotal("$0.01", false);
     await expect(spent).toHaveAttribute("aria-label", "Total spent: $0.03");
     await page.reload();
@@ -821,17 +852,27 @@ test("cost excludes failed attempts while owner spending retains them through st
     await cells.nth(1).getByRole("button", { name: "Show output" }).click();
     await page.getByRole("button", { name: "Resume generation" }).click();
     await expect
-      .poll(async () =>
-        (await (await request.get("/fixture/workers")).json()).held.length,
+      .poll(
+        async () =>
+          (await (await request.get("/fixture/workers")).json()).held.length,
       )
       .toBe(1);
     await release("dog");
     await expectTotal("$0.02");
-    await expect(spent).toHaveAttribute("aria-label", "Total spent: \u2248$0.04");
+    await expect(spent).toHaveAttribute(
+      "aria-label",
+      "Total spent: \u2248$0.04",
+    );
+    await expect(tokenCounts(1)).toHaveAttribute(
+      "aria-label",
+      `Estimated: ${inputTokens} input tokens, ${reasoningTokens} output tokens`,
+    );
+
     await release("dog");
     await expect.poll(() => price(1)).toBeGreaterThan(before);
     await release("dog");
     await expect(cells.nth(1).locator(".cell-error")).toBeVisible();
+    await expect(tokenCounts(1)).toHaveCount(0);
     await expectTotal("$0.01", false);
     await expect(spent).toHaveAttribute("aria-label", "Total spent: $0.05");
     const history = await (await page.request.get("/api/billing")).json();
@@ -843,7 +884,8 @@ test("cost excludes failed attempts while owner spending retains them through st
       const publicPage = await viewer.newPage();
       await publicPage.goto(page.url());
       await expect(publicPage.locator(".grid-cost")).toHaveAttribute(
-        "aria-label", "Total cost: $0.01",
+        "aria-label",
+        "Total cost: $0.01",
       );
       await expect(publicPage.locator(".grid-spent")).toHaveCount(0);
     } finally {

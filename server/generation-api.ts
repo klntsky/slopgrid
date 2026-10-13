@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { Grid } from "./domain.js";
 
 // Version this contract when a web release cannot talk to the running engine.
-export const generationProtocol = 2;
+export const generationProtocol = 3;
 const id = z.string().min(1).max(200);
 export const startGridRequest = z.strictObject({
   gridId: id,

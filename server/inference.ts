@@ -216,11 +216,15 @@ export async function generateInference(
         thinking += delta;
         outputBytes += Buffer.byteLength(delta, "utf8");
       } else if (chunk.type !== "start-step") continue;
+      const outputTokens = Math.ceil(outputBytes / 4);
       onChunk({
         text,
         thinking,
-        estimatedCostUsd:
-          inputCost + Math.ceil(outputBytes / 4) * budget.pricing.completion,
+        estimatedUsage: {
+          inputTokens,
+          outputTokens,
+          costUsd: inputCost + outputTokens * budget.pricing.completion,
+        },
       });
     }
     const [streamUsage, metadata, finishReason, rawFinishReason] =

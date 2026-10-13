@@ -95,7 +95,7 @@ export class Jobs {
         this.retries.delete(cell.id);
         delete cell.draft;
         delete cell.thinking;
-        delete cell.estimatedCostUsd;
+        delete cell.estimatedUsage;
       }
     g.status = "running";
     delete g.interruption;
@@ -125,7 +125,7 @@ export class Jobs {
         cell.status = "pending";
         delete cell.draft;
         delete cell.thinking;
-        delete cell.estimatedCostUsd;
+        delete cell.estimatedUsage;
         delete cell.error;
         delete cell.errorCode;
         controller.abort();
@@ -196,7 +196,7 @@ export class Jobs {
       delete cell.retrying;
       delete cell.draft;
       delete cell.thinking;
-      delete cell.estimatedCostUsd;
+      delete cell.estimatedUsage;
       this.emit(grid);
       void this.runCell(grid, cell, key, controller, owner);
     }
@@ -265,7 +265,7 @@ export class Jobs {
         key,
         grid.input.format,
         cell,
-        ({ text, thinking, estimatedCostUsd }) => {
+        ({ text, thinking, estimatedUsage }) => {
           if (!current()) return;
           // Drafts can be read between throttled SSE emissions. Give each update
           // its own revision so a late HTTP snapshot cannot regress live text.
@@ -282,7 +282,7 @@ export class Jobs {
           cell.thinking = thinking;
           const changed = cell.draft !== text;
           cell.draft = text;
-          cell.estimatedCostUsd = estimatedCostUsd;
+          cell.estimatedUsage = estimatedUsage;
           if (changed && grid.input.format === "html") {
             this.previews.update(cell, text, () => this.previewUpdated(grid));
           }
@@ -340,7 +340,7 @@ export class Jobs {
       if (billing) Object.assign(cell, billing);
       delete cell.draft;
       delete cell.thinking;
-      delete cell.estimatedCostUsd;
+      delete cell.estimatedUsage;
       this.running.delete(cell.id);
       this.settle(grid);
       this.emit(grid);

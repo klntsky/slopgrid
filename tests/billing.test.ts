@@ -32,7 +32,7 @@ test("cell cost follows the latest call while billing preserves earlier attempts
     });
     const grid = store.get("grid")!;
     grid.cells[0].status = "running";
-    grid.cells[0].estimatedCostUsd = 0.2;
+    grid.cells[0].estimatedUsage = { costUsd: 0.2 };
     const recordCall = store.billing.observe("cell");
     const first = recordCall("direct");
     first.complete(

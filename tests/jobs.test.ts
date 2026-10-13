@@ -248,16 +248,24 @@ test("a late result from a paused request cannot restore its discarded preview o
     h.jobs.start(g);
     await flush();
     const held = h.provider.pending.get("alice/grid/0")!;
-    held.write("Before pause", 0.1, "Saved partial thinking");
+    held.write(
+      "Before pause",
+      { costUsd: 0.1, inputTokens: 10, outputTokens: 20 },
+      "Saved partial thinking",
+    );
     const oldThinking = g.cells[0].thinkingId!;
-    assert.equal(g.cells[0].estimatedCostUsd, 0.1);
+    assert.deepEqual(g.cells[0].estimatedUsage, {
+      costUsd: 0.1,
+      inputTokens: 10,
+      outputTokens: 20,
+    });
     h.jobs.pause(g);
     held.write(
       "Late partial result",
-      0.2,
+      { costUsd: 0.2, inputTokens: 10, outputTokens: 50 },
       "Saved partial thinking plus late text",
     );
-    assert.equal(g.cells[0].estimatedCostUsd, undefined);
+    assert.equal(g.cells[0].estimatedUsage, undefined);
     h.provider.finish("alice/grid/0");
     await flush();
     const paused = h.store.get(g.id)!;
@@ -268,8 +276,21 @@ test("a late result from a paused request cannot restore its discarded preview o
     await flush();
     assert.equal(h.provider.started.length, 2);
     const replacement = h.provider.pending.get("alice/grid/0")!;
-    replacement.write("", 0.3, "New attempt thinking");
-    held.write("Stale response", 9, "Stale thinking");
+    replacement.write(
+      "",
+      { costUsd: 0.3, inputTokens: 10, outputTokens: 2 },
+      "New attempt thinking",
+    );
+    held.write(
+      "Stale response",
+      { costUsd: 9, inputTokens: 10, outputTokens: 999 },
+      "Stale thinking",
+    );
+    assert.deepEqual(resumed.cells[0].estimatedUsage, {
+      costUsd: 0.3,
+      inputTokens: 10,
+      outputTokens: 2,
+    });
     assert.equal(resumed.cells[0].thinking, "New attempt thinking");
     assert.equal(
       readFileSync(
@@ -284,10 +305,11 @@ test("a late result from a paused request cannot restore its discarded preview o
     await flush();
     replacement.write(
       "After completion",
-      10,
+      { costUsd: 10, inputTokens: 10, outputTokens: 1000 },
       "New attempt thinking plus late text",
     );
     assert.equal(resumed.cells[0].thinking, undefined);
+    assert.equal(resumed.cells[0].estimatedUsage, undefined);
     assert.equal(h.store.get(g.id)!.cells[0].thinkingId, newThinking);
     assert.equal(
       readFileSync(
@@ -335,7 +357,13 @@ test("backoff releases workers to other users, honors Retry-After, and retries w
     await flush();
     h.provider.finish("alice/grid/0");
     await flush();
-    h.provider.pending.get("alice/grid/1")!.write("Partial output", 0.1);
+    h.provider.pending
+      .get("alice/grid/1")!
+      .write("Partial output", {
+        costUsd: 0.1,
+        inputTokens: 10,
+        outputTokens: 20,
+      });
     h.jobs.start(h.grid("bob", "grid", 1));
     h.provider.fail("alice/grid/1", 429, {
       message: "Too many requests",
@@ -345,7 +373,7 @@ test("backoff releases workers to other users, honors Retry-After, and retries w
     assert.equal(alice.status, "running");
     assert.equal(alice.cells[1].status, "pending");
     assert.equal(alice.cells[1].draft, undefined);
-    assert.equal(alice.cells[1].estimatedCostUsd, undefined);
+    assert.equal(alice.cells[1].estimatedUsage, undefined);
     assert.equal(alice.cells[1].error, "Too many requests");
     assert.equal(alice.cells[1].errorCode, 429);
     assert.ok(h.provider.pending.has("bob/grid/0"));

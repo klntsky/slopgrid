@@ -34,12 +34,13 @@ export function GridHeader({
       cell.status === "complete"
         ? cell.usage?.costUsd
         : cell.status === "running"
-          ? cell.estimatedCostUsd
+          ? cell.estimatedUsage?.costUsd
           : undefined;
     return cost === undefined ? [] : [cost];
   });
   const estimated = g.cells.some(
-    (cell) => cell.status === "running" && cell.estimatedCostUsd !== undefined,
+    (cell) =>
+      cell.status === "running" && cell.estimatedUsage?.costUsd !== undefined,
   );
   const totalCost =
     costs.length || complete === 0
