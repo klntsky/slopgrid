@@ -86,3 +86,59 @@ test("outputs are real files and SQLite stores only configuration and cell state
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("artifact copies preserve every file and thinking independently, while incomplete sources are misses", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "slopgrid-copy-"));
+  const store = new Store(join(dir, "app.sqlite"), Buffer.alloc(32, 1));
+  try {
+    const expected = {
+      "index.html": Buffer.from("<h1>Independent</h1>"),
+      "nested/image.bin": Buffer.from([0, 255, 128, 1]),
+    };
+    const thinkingId = token();
+    store.files.write("source", expected);
+    store.files.appendThinking("source", thinkingId, "Thinking\n\u263a");
+    const inventory = Object.keys(expected);
+    assert.equal(
+      await store.files.readArtifact(
+        "source",
+        [...inventory, "missing.css"],
+        thinkingId,
+      ),
+      undefined,
+    );
+    assert.equal(
+      await store.files.readArtifact("source", inventory, token()),
+      undefined,
+    );
+    assert.equal(
+      await store.files.readArtifact("source", ["../app.sqlite"]),
+      undefined,
+    );
+    const bundle = await store.files.readArtifact(
+      "source",
+      inventory,
+      thinkingId,
+    );
+    assert.ok(bundle);
+    const copiedThinking = await store.files.writeArtifact(
+      "destination",
+      bundle,
+    );
+    assert.ok(copiedThinking);
+    assert.notEqual(copiedThinking, thinkingId);
+    rmSync(join(store.files.root, "source"), { recursive: true });
+    rmSync(store.files.thinkingPath("source", thinkingId)!);
+    assert.deepEqual(
+      { ...(await store.files.bundle("destination")) },
+      expected,
+    );
+    assert.deepEqual(
+      readFileSync(store.files.thinkingPath("destination", copiedThinking)!),
+      Buffer.from("Thinking\n\u263a"),
+    );
+  } finally {
+    store.db.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

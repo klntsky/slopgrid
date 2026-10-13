@@ -1,10 +1,8 @@
 import { PreparationError } from "./generation-budget.js";
-import { readFileSync } from "node:fs";
 import type { Cell, Grid } from "./domain.js";
 import type { Store } from "./store.js";
 import type { Provider } from "./provider.js";
 import { inferenceSignature } from "./prepared-inference.js";
-import { token } from "./ids.js";
 
 export async function reuseArtifacts(
   store: Store,
@@ -22,6 +20,7 @@ export async function reuseArtifacts(
     )
       candidates.set(cell.provenance.signature, cell);
   if (!candidates.size) return;
+  const matches = new Map<Cell, Cell[]>();
   for (const cell of cells) {
     let prepared;
     try {
@@ -35,33 +34,26 @@ export async function reuseArtifacts(
       throw error;
     }
     const match = candidates.get(inferenceSignature(prepared));
-    if (!match) continue;
-    const files: Record<string, Uint8Array> = Object.create(null);
-    let thinking: string | undefined;
-    // Read the entire recorded inventory before writing anything. Only source
-    // read failures are misses; destination and persistence errors propagate.
-    try {
-      for (const path of match.provenance!.files) {
-        const file = store.files.path(match.id, path);
-        if (!file) throw new Error("Missing artifact");
-        files[path] = readFileSync(file);
-      }
-      if (match.thinkingId) {
-        const file = store.files.thinkingPath(match.id, match.thinkingId);
-        if (!file) throw new Error("Missing thinking");
-        thinking = readFileSync(file, "utf8");
-      }
-    } catch {
-      continue;
+    if (match) {
+      const destinations = matches.get(match) ?? [];
+      destinations.push(cell);
+      matches.set(match, destinations);
     }
-    store.files.write(cell.id, files);
-    if (thinking !== undefined) {
-      cell.thinkingId = token();
-      store.files.appendThinking(cell.id, cell.thinkingId, thinking);
+  }
+  for (const [source, destinations] of matches) {
+    const bundle = await store.files.readArtifact(
+      source.id,
+      source.provenance!.files,
+      source.thinkingId,
+    );
+    if (!bundle) continue;
+    // Keep at most one source bundle in memory and read it once for all matches.
+    for (const cell of destinations) {
+      cell.thinkingId = await store.files.writeArtifact(cell.id, bundle);
+      cell.status = "complete";
+      cell.mediaType = source.mediaType;
+      cell.usage = source.usage;
+      cell.provenance = source.provenance;
     }
-    cell.status = "complete";
-    cell.mediaType = match.mediaType;
-    cell.usage = match.usage;
-    cell.provenance = match.provenance;
   }
 }
