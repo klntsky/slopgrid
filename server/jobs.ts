@@ -298,6 +298,12 @@ export class Jobs {
       this.store.files.write(cell.id, result.files);
       cell.mediaType = result.mediaType;
       cell.usage = result.usage;
+      cell.provenance = result.signature
+        ? {
+            signature: result.signature,
+            files: Object.keys(result.files).sort(),
+          }
+        : undefined;
       cell.status = "complete";
       this.retries.delete(cell.id);
     } catch (error) {

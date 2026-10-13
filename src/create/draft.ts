@@ -4,6 +4,8 @@ export type Draft = {
   formatSelected: boolean;
   input: GridInput;
   workerInput?: string;
+  sourceGridId?: string;
+  reuseArtifacts?: boolean;
 };
 const storageKey = "slopgrid-draft";
 const initial: Draft = {

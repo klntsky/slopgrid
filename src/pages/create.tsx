@@ -71,6 +71,9 @@ export function Create() {
   const budgetHint = useTooltip<HTMLLabelElement>(
     "Used to calculate each output’s token limit.",
   );
+  const reuseHint = useTooltip<HTMLLabelElement>(
+    "When checked, existing artifacts will be copied to the new grid if their parameters match exactly",
+  );
   const swapHint = useTooltip<HTMLButtonElement>("Swap rows and columns");
   const catalog = useQuery({
     queryKey: ["models"],
@@ -182,7 +185,12 @@ export function Create() {
       if (!controller.signal.aborted)
         inference.mutate({
           path: "/grids",
-          body: { ...prepared, parallelWorkers },
+          body: {
+            ...prepared,
+            parallelWorkers,
+            sourceGridId: draft.sourceGridId,
+            reuseArtifacts: draft.reuseArtifacts !== false,
+          },
           continueWithLowBalance,
         });
     } catch (error) {
@@ -433,6 +441,21 @@ export function Create() {
                 Check balance again
               </button>
             </>
+          )}
+          {draft.sourceGridId && (
+            <label className="checkbox" ref={reuseHint}>
+              <input
+                type="checkbox"
+                checked={draft.reuseArtifacts !== false}
+                onChange={(event) =>
+                  setDraft((d) => ({
+                    ...d,
+                    reuseArtifacts: event.target.checked,
+                  }))
+                }
+              />
+              Reuse existing artifacts from the previous version
+            </label>
           )}
           <button
             className="primary generate"

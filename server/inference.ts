@@ -1,6 +1,7 @@
+import type { PreparedInference } from "./prepared-inference.js";
 import { completionFailure } from "./failures.js";
-import { instruction, parseOutput, websiteSchema } from "./output-format.js";
-import { generateImage, streamText, Output } from "ai";
+import { parseOutput } from "./output-format.js";
+import { generateImage, streamText, Output, jsonSchema } from "ai";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { z } from "zod";
 import type { TextBudget } from "./generation-budget.js";
@@ -9,7 +10,6 @@ import { upstreamFetch } from "./http.js";
 import {
   type Cell,
   type Completion,
-  type GridInput,
   type InferenceProgress,
 } from "./domain.js";
 const costUsage = z.object({
@@ -63,19 +63,17 @@ function thinkingText(value: unknown): string {
 export async function generateInference(
   baseURL: string,
   key: string,
-  format: GridInput["format"],
-  cell: Cell,
+  prepared: PreparedInference,
+  budget: TextBudget | undefined,
   onChunk: (progress: InferenceProgress) => void,
   signal?: AbortSignal,
   observe?: CallObserver,
-  budget?: TextBudget,
-  structured = false,
-  references: string[] = [],
 ): Promise<{
   files: Record<string, string | Uint8Array>;
   mediaType?: string;
   usage?: Cell["usage"];
 }> {
+  const { format } = prepared;
   const phase: Completion["phase"] = format === "image" ? "image" : "direct";
   let call: CallRecorder | undefined;
   let imageFinishReason: string | undefined;
@@ -126,19 +124,9 @@ export async function generateInference(
     });
     if (format === "image") {
       const result = await generateImage({
-        model: provider.imageModel(cell.model),
-        prompt: cell.prompt,
-        providerOptions: {
-          openrouter: {
-            ...cell.imageSettings,
-            input_references: references.length
-              ? references.map((url) => ({
-                  type: "image_url",
-                  image_url: { url },
-                }))
-              : undefined,
-          },
-        },
+        model: provider.imageModel(prepared.model),
+        prompt: prepared.prompt,
+        providerOptions: { openrouter: prepared.image! },
         maxRetries: 0,
         abortSignal: signal,
       });
@@ -165,28 +153,17 @@ export async function generateInference(
     }
     if (!budget)
       throw new Error("A priced token budget is required for text generation.");
-    const { maxOutputTokens, maxPrice } = budget;
-    const model = provider.chat(cell.model, {
-      extraBody:
-        cell.effort !== "default"
-          ? {
-              reasoning:
-                cell.effort === "none"
-                  ? { enabled: false }
-                  : { effort: cell.effort },
-            }
-          : {},
-      provider: { require_parameters: true, max_price: maxPrice },
-    });
+    const { maxOutputTokens, system, schema, options } = prepared.text!;
+    const model = provider.chat(prepared.model, options);
     let failure: unknown;
     const result = streamText({
       model,
       includeRawChunks: true,
-      system: instruction(format),
-      ...(structured && {
-        output: Output.object({ schema: websiteSchema, name: "website" }),
+      system,
+      ...(schema && {
+        output: Output.object({ schema: jsonSchema(schema), name: "website" }),
       }),
-      prompt: cell.prompt,
+      prompt: prepared.prompt,
       maxOutputTokens,
       maxRetries: 0,
       abortSignal: signal,
@@ -196,9 +173,7 @@ export async function generateInference(
     });
     // Approximate tokens from UTF-8 bytes; final provider usage replaces this.
     const inputTokens =
-      Math.ceil(
-        Buffer.byteLength(cell.prompt + instruction(format), "utf8") / 4,
-      ) + 8;
+      Math.ceil(Buffer.byteLength(prepared.prompt + system, "utf8") / 4) + 8;
     const inputCost =
       inputTokens * budget.pricing.prompt + (budget.pricing.request ?? 0);
     let text = "",

@@ -1,3 +1,4 @@
+import { reuseArtifacts } from "../artifact-reuse.js";
 import { canViewGrid, ownsGrid } from "../grid-policy.js";
 import { z } from "zod";
 import { manualKey } from "../manual-keys.js";
@@ -116,6 +117,19 @@ export function createGridRoutes({
       return res
         .status(401)
         .json({ error: "Connect OpenRouter before generating." });
+    const reuse = z
+      .object({
+        sourceGridId: z.string().min(1).optional(),
+        reuseArtifacts: z.boolean().default(false),
+      })
+      .safeParse(req.body);
+    if (!reuse.success)
+      return res.status(400).json({ error: "Invalid artifact reuse request." });
+    const source = reuse.data.sourceGridId
+      ? store.get(reuse.data.sourceGridId)
+      : undefined;
+    if (reuse.data.sourceGridId && (!source || !canViewGrid(source, s)))
+      return res.status(404).json({ error: "Grid not found" });
     const parsed = gridSchema.safeParse(req.body);
     if (!parsed.success)
       return res.status(400).json({ error: parsed.error.issues[0].message });
@@ -158,6 +172,10 @@ export function createGridRoutes({
       cells,
       createdAt: new Date().toISOString(),
     };
+    if (source && reuse.data.reuseArtifacts)
+      await reuseArtifacts(store, provider, source, input.format, cells);
+    if (cells.every((cell) => cell.status === "complete"))
+      g.status = "complete";
     store.insert(g);
     const started = await generation.startGrid({
       gridId: g.id,

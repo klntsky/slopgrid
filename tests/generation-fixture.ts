@@ -5,6 +5,7 @@ import { generationClient } from "../server/generation-client.js";
 /** Child processes inherit the test runner's bg tmux session. */
 export async function startGenerationFixture(config: {
   database: string;
+  preparation?: string;
   secret: Buffer;
   outputsPath?: string;
   providerURL?: string;
@@ -16,6 +17,7 @@ export async function startGenerationFixture(config: {
     stdio: ["ignore", "inherit", "inherit", "ipc"],
     env: {
       ...process.env,
+      FIXTURE_PREPARATION: config.preparation,
       DATABASE_PATH: config.database,
       OUTPUTS_PATH: config.outputsPath,
       KEY_ENCRYPTION_SECRET: config.secret.toString("hex"),

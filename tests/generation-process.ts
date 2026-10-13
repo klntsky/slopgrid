@@ -1,3 +1,4 @@
+import "./request-preparation-fixture.js";
 // A fixture engine must not outlive the tmux-owned fixture that launched it.
 process.on("disconnect", () => process.exit(0));
 // Only fixture children expose an inspector, and only when a crash test asks.

@@ -1,3 +1,4 @@
+import "./request-preparation-fixture.js";
 import { createServer } from "node:http";
 import { createServer as createSecureServer } from "node:https";
 import { readFileSync } from "node:fs";

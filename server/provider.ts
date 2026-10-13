@@ -1,3 +1,4 @@
+import { prepareInference, inferenceSignature } from "./prepared-inference.js";
 import { imageEndpointSchema, type ImageEndpoint } from "./image-settings.js";
 import { instruction } from "./output-format.js";
 import { z } from "zod";
@@ -235,10 +236,28 @@ export class Provider {
     observe?: CallObserver,
     references?: string[],
   ): Promise<{
+    signature?: string;
     files: Record<string, string | Uint8Array>;
     mediaType?: string;
     usage?: Cell["usage"];
   }> {
+    const { prepared, budget } = await this.prepare(format, cell, references);
+    const result = await generateInference(
+      this.baseURL,
+      key,
+      prepared,
+      budget,
+      onChunk,
+      signal,
+      observe,
+    );
+    return { ...result, signature: inferenceSignature(prepared) };
+  }
+  async prepare(
+    format: GridInput["format"],
+    cell: Cell,
+    references: string[] = [],
+  ) {
     const pricedModel =
       format !== "image"
         ? (await this.models()).find((model) => model.id === cell.model)
@@ -247,24 +266,17 @@ export class Provider {
       throw new Error(`Pricing is unavailable for ${cell.model}.`);
     const structured =
       format === "html" && pricedModel?.structuredOutputs === true;
-    return generateInference(
-      this.baseURL,
-      key,
-      format,
-      cell,
-      onChunk,
-      signal,
-      observe,
-      pricedModel
-        ? generationBudget(
-            pricedModel,
-            cell.prompt,
-            instruction(format),
-            cell.budgetUsd,
-          )
-        : undefined,
-      structured,
-      references,
-    );
+    const budget = pricedModel
+      ? generationBudget(
+          pricedModel,
+          cell.prompt,
+          instruction(format),
+          cell.budgetUsd,
+        )
+      : undefined;
+    return {
+      prepared: prepareInference(format, cell, budget, structured, references),
+      budget,
+    };
   }
 }

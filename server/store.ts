@@ -116,7 +116,15 @@ export class Store {
         "SELECT 1 FROM inference_calls WHERE cell_id=? LIMIT 1",
       );
       for (const cell of grid.cells) {
-        const { status, error, errorCode, usage, mediaType, thinkingId } = cell;
+        const {
+          status,
+          error,
+          errorCode,
+          usage,
+          mediaType,
+          thinkingId,
+          provenance,
+        } = cell;
         saveCell.run(
           JSON.stringify({
             status,
@@ -125,6 +133,7 @@ export class Store {
             usage: hasCalls.get(cell.id) ? undefined : usage,
             mediaType,
             thinkingId,
+            provenance,
           }),
           cell.id,
           grid.id,

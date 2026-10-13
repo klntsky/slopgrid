@@ -1,6 +1,6 @@
 import { fork, type ChildProcess, execFileSync } from "node:child_process";
 import { once } from "node:events";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import express from "express";
@@ -32,6 +32,8 @@ export async function runtimeFixture(
   options: { tls?: boolean; workers?: number } = {},
 ) {
   const directory = mkdtempSync(join(tmpdir(), "slopgrid-runtime-"));
+  const preparation = join(directory, "preparation.json");
+  writeFileSync(preparation, "{}");
   const database = join(directory, "app.sqlite"),
     secret = Buffer.alloc(32, 9);
   const store = new Store(database, secret);
@@ -39,32 +41,31 @@ export async function runtimeFixture(
   store.saveSession({ id: owner, key: "manual-test-key", created: Date.now() });
   const upstream = express();
   upstream.use(express.json());
-  upstream.get("/models", (_req, res) =>
-    res.json({
-      data: [
-        {
-          id: "fixture/text",
-          name: "Fixture",
-          pricing: { prompt: "0.000001", completion: "0.000001" },
-          context_length: 100000,
-          top_provider: { max_completion_tokens: 1000 },
-          architecture: {
-            input_modalities: ["text"],
-            output_modalities: ["text"],
-          },
-          supported_parameters: ["reasoning", "structured_outputs"],
+  const catalog = {
+    data: [
+      {
+        id: "fixture/text",
+        name: "Fixture",
+        pricing: { prompt: "0.000001", completion: "0.000001" },
+        context_length: 100000,
+        top_provider: { max_completion_tokens: 1000 },
+        architecture: {
+          input_modalities: ["text"],
+          output_modalities: ["text"],
         },
-      ],
-    }),
-  );
+        supported_parameters: ["reasoning", "structured_outputs"],
+      },
+    ],
+  };
+  const credits = { total_credits: 100, total_usage: 0 };
+  upstream.get("/models", (_req, res) => res.json(catalog));
   upstream.get("/images/models", (_req, res) => res.json({ data: [] }));
-  upstream.get("/credits", (_req, res) =>
-    res.json({ data: { total_credits: 100, total_usage: 0 } }),
-  );
+  upstream.get("/credits", (_req, res) => res.json({ data: credits }));
   upstream.get("/key", (_req, res) =>
     res.json({ data: { limit_remaining: 100 } }),
   );
   const calls: {
+    request: Record<string, any>;
     prompt: string;
     aborted: boolean;
     write: (delta: object) => void;
@@ -91,6 +92,7 @@ export async function runtimeFixture(
     res.type("text/event-stream");
     res.flushHeaders();
     const call = {
+      request: req.body,
       prompt: JSON.stringify(
         req.body.messages.filter((m: { role: string }) => m.role === "user"),
       ),
@@ -141,6 +143,7 @@ export async function runtimeFixture(
     engine = await startGenerationFixture({
       database,
       secret,
+      preparation,
       providerURL,
       workersMax: options.workers ?? 1,
     });
@@ -155,6 +158,7 @@ export async function runtimeFixture(
         GENERATION_SOCKET: socket,
         KEY_ENCRYPTION_SECRET: secret.toString("hex"),
         OPENROUTER_BASE_URL: providerURL,
+        FIXTURE_PREPARATION: preparation,
         FIXTURE_PORT: String(port),
         FIXTURE_TLS: options.tls ? directory : undefined,
       },
@@ -207,6 +211,11 @@ export async function runtimeFixture(
     throw error;
   }
   return {
+    prepare(change: object) {
+      writeFileSync(preparation, JSON.stringify(change));
+    },
+    catalog,
+    credits,
     directory,
     database,
     store,

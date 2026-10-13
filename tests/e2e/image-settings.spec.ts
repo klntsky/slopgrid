@@ -315,7 +315,6 @@ test("renamed reference groups survive reload, Edit and Fork without mixing thei
   expect(uploads).toBe(6);
   expect(
     (await (await request.get("/fixture/image-requests")).json())
-      .slice(2)
       .map((r: any) => r.input_references)
       .sort((a: any[], b: any[]) => a.length - b.length),
   ).toEqual(expected);

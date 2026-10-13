@@ -145,7 +145,7 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 1. Place the progress bar as a thin line under the navbar. Completed and failed cells both count as finished; failed segments are red and successful segments retain the accent color.
 2. Show a pulsing spark moving left to right during generation.
 3. Put the pause/resume action to the left of the title/prompt. Edit and Publish are compact icon-only controls to its right, using the same visual treatment.
-4. Before publication, Edit immediately cancels active inference and returns to parameter selection with the existing setup restored. Generating the edited setup creates a new generation rather than altering published outputs.
+4. Before publication, Edit immediately cancels active inference and returns to parameter selection with the existing setup restored. Generating the edited setup creates a new grid and can reuse matching completed artifacts as specified in section 10.
 5. After publication, offer Fork to restore the setup for modification and generation using the forking user's own connection. Its icon depicts a branch splitting from a continuing main branch.
 6. Show model names in row or column labels. Clicking a model name copies its ID without a hover hint, while preserving copy-result feedback; a chain icon to the right of its copy icon opens the model's OpenRouter page in a new tab. Copy and link icons follow the same orientation as the label text, including in rotated row titles.
 
@@ -286,3 +286,10 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 1. Web and interface updates must preserve accepted inference, including queued work, output, thinking, and charges. Browsers reconnect automatically after a brief connection interruption.
 2. An inference-machinery update stops accepting new work and lets accepted grids and unsettled calls finish without a cancellation timeout. Cancelling maintenance restores admission.
 3. Open browser tabs retain access to their frontend assets across updates. Routine deployments preserve grids, outputs, credentials, and sessions.
+
+## 10. Reusing completed artifacts
+
+1. Edit and Fork retain the source grid through draft reloads and provider authorization. Above Generate, show "Reuse existing artifacts from the previous version", checked by default, with the tooltip "When checked, existing artifacts will be copied to the new grid if their parameters match exactly". Hide this checkbox for creation without a source, and regenerate every cell when it is unchecked. Connection and balance requirements apply even when all cells can be copied.
+2. Search only the selected accessible source grid, including owned private grids and other users' published grids. Reuse only completed outputs whose recorded effective inference request matches exactly, choosing the first matching cell in grid order and allowing it to satisfy multiple destination cells. Missing provenance, incomplete bundles, unreadable files, or missing recorded thinking require generation.
+3. Matching includes output format, resolved model, substituted prompt, instructions, thinking settings, budget and token ceiling, provider routing, structured-output schema, image settings, ordered reference content, and provider adapter version. Positions, titles, reference filenames and identifiers, worker counts, and object-key order do not affect matching; labels that change the substituted prompt do.
+4. Copies have fresh cell identifiers, independent files and thinking, and the destination's ownership and publication rules. Copied cells appear complete immediately, while only unmatched cells generate. An entirely copied grid completes without inference calls. Preserve reported usage and original artifact costs in Cost; copies add no billing entries or Spent.
