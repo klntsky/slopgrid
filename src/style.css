@@ -291,7 +291,7 @@ label {
 }
 select,
 textarea,
-input:not([type="checkbox"]) {
+input:not([type="checkbox"]):not([type="radio"]) {
   width: 100%;
   padding: 11px 12px;
   border: 1px solid var(--line);

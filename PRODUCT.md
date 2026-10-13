@@ -63,11 +63,11 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 
 1. Model lists are filterable and alphabetically ordered, with a tall selection area that makes multiple options visible at once.
 2. The filter has a magnifying-glass icon, the placeholder "Search models," and an always-visible clear cross.
-3. Initialize the model search to an empty string for Image and to `latest` for every other output type. This filter must not select a model automatically.
+3. Initialize model-axis searches to an empty string for Image and to `latest` for every other output type. Initialize the fixed-model search to `latest` for every output type. This filter must not select a model automatically.
 4. Show selected models as removable badges under the model list, including selections currently hidden by the filter. Neither the badge's model name nor its remove button has a tooltip.
 5. Shift-click selects or clears a range of visible model checkboxes according to the clicked checkbox's new state.
 6. Use the term "thinking effort." Order efforts by their semantic levels rather than alphabetically or by selection order, and let the effort selector expand to its full content height without an inner scrollbar.
-7. A model or effort that is not an axis applies as a fixed selection to the grid. Keep "Model default" thinking distinct from automatic model selection: the former leaves the model's thinking configuration unspecified.
+7. A model or effort that is not an axis applies as a fixed selection to the grid. Use the same searchable model selector for the fixed model, with radio buttons allowing one selection and a selected-model badge. Keep "Model default" thinking distinct from automatic model selection: the former leaves the model's thinking configuration unspecified.
 
 ### 3.3. Prompt variables
 

@@ -1,5 +1,10 @@
 import { test, expect } from "./fixtures";
-import { create, expectProgress, finishPublishing } from "./helpers";
+import {
+  create,
+  expectProgress,
+  finishPublishing,
+  selectModel,
+} from "./helpers";
 
 test("drafts, mutation endpoints, and generated hosts enforce ownership and origin boundaries", async ({
   page,
@@ -251,8 +256,8 @@ test("EDIT cancels inference and restores settings, while a public FORK creates 
     await expect(page.getByLabel("Row values")).toHaveValue("cat\ndog");
     await expect(page.getByLabel("Column values")).toHaveValue("hat");
     await expect(
-      page.getByRole("combobox", { name: "Model", exact: true }),
-    ).toHaveValue("fixture/image");
+      page.getByRole("list", { name: "Selected model", exact: true }),
+    ).toHaveText("Fixture image");
     await expect
       .poll(
         async () =>
@@ -500,7 +505,9 @@ test("owners can list a link-only published grid publicly without regenerating o
     await discoveryLink.click();
     await expect(visitor).toHaveURL(url);
     await visitor.goto("/");
-    await visitor.getByRole("button", { name: "Markdown", exact: true }).click();
+    await visitor
+      .getByRole("button", { name: "Markdown", exact: true })
+      .click();
     await expect(publicGrids).toHaveCount(0);
     await visitor.reload();
     await expect(
@@ -612,9 +619,7 @@ test("manual key entry persists in the browser, rejects invalid replacements, an
       .getByRole("combobox", { name: "Columns", exact: true })
       .selectOption("variable");
     await page.getByLabel("Column values").fill("hat");
-    await page
-      .getByRole("combobox", { name: "Model", exact: true })
-      .selectOption("fixture/text");
+    await selectModel(page, "fixture/text");
     await page
       .getByLabel("Prompt", { exact: true })
       .fill("Draw $ROW with $COLUMN");

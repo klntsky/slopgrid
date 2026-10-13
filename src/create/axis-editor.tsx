@@ -4,19 +4,13 @@ import {
   type ReferenceGroups as Groups,
 } from "../../server/image-settings";
 import { ReferenceGroups } from "./reference-groups";
-import { ImageModelPrice } from "./image-model-price";
+import { ModelSelector } from "./model-selector";
 import { CustomAxisSizes } from "./custom-image-size";
-import { useState, useRef, useEffect } from "react";
-import { Search, X } from "lucide-react";
 import { efforts, type GridInput } from "../../server/domain";
 import { effortLabel } from "../../server/compatibility";
 import type { Model } from "../../server/provider";
 import { dimensionNames } from "../format";
-import {
-  modelDefaultHint,
-  useTooltip,
-  tooltipRef,
-} from "../components/use-tooltip";
+import { modelDefaultHint, useTooltip } from "../components/use-tooltip";
 export function AxisEditor({
   label,
   axis,
@@ -34,37 +28,23 @@ export function AxisEditor({
   referenceGroups?: Groups;
   onUploading: (busy: boolean) => void;
 }) {
-  const defaultFilter = format === "image" ? "" : "latest";
-  const [filter, setFilter] = useState(defaultFilter);
-  const filterInput = useRef<HTMLInputElement>(null);
-  const rangeAnchor = useRef<string | undefined>(undefined);
-  useEffect(() => {
-    rangeAnchor.current = undefined;
-  }, [axis.kind]);
   const defaultHint = useTooltip<HTMLLabelElement>(modelDefaultHint);
   const kinds =
     format === "image"
       ? (["model", "variable", ...imageKinds] as const)
       : (["model", "effort", "variable"] as const);
   const choices =
-    axis.kind === "model"
-      ? models.map((m) => ({ id: m.id, name: m.name }))
-      : axis.kind === "effort"
-        ? efforts.map((e) => ({ id: e, name: effortLabel(e) }))
-        : [
-            ...new Set([
-              ...(imageChoices[axis.kind as keyof typeof imageChoices] ?? []),
-              ...(axis.kind === "size" ? [] : axis.values),
-            ]),
-          ].map((value) => ({
-            id: value,
-            name: value === "auto" ? "Auto" : value,
-          }));
-  const visibleChoices = choices.filter(
-    (c) =>
-      axis.kind !== "model" ||
-      `${c.name} ${c.id}`.toLowerCase().includes(filter.trim().toLowerCase()),
-  );
+    axis.kind === "effort"
+      ? efforts.map((e) => ({ id: e, name: effortLabel(e) }))
+      : [
+          ...new Set([
+            ...(imageChoices[axis.kind as keyof typeof imageChoices] ?? []),
+            ...(axis.kind === "size" ? [] : axis.values),
+          ]),
+        ].map((value) => ({
+          id: value,
+          name: value === "auto" ? "Auto" : value,
+        }));
   return (
     <div className="axis">
       <label>
@@ -73,7 +53,6 @@ export function AxisEditor({
           value={axis.kind}
           onChange={(e) => {
             const kind = e.target.value as GridInput["rows"]["kind"];
-            setFilter(defaultFilter);
             onChange({
               kind,
               values: [],
@@ -114,123 +93,56 @@ export function AxisEditor({
         <fieldset
           aria-label={label === "Rows" ? "Row values" : "Column values"}
         >
-          {axis.kind === "model" && (
-            <div className="model-search">
-              <Search aria-hidden="true" />
-              <input
-                ref={filterInput}
-                type="search"
-                aria-label="Search models"
-                placeholder="Search models"
-                value={filter}
-                onChange={(e) => setFilter(e.target.value)}
-              />
-              <button
-                type="button"
-                className="model-search-clear"
-                aria-label={`Clear ${label === "Rows" ? "row" : "column"} model filter`}
-                data-tooltip="Clear filter"
-                ref={tooltipRef}
-                onClick={() => {
-                  setFilter("");
-                  filterInput.current?.focus();
-                }}
-              >
-                <X aria-hidden="true" />
-              </button>
+          {axis.kind === "model" ? (
+            <ModelSelector
+              multiple
+              label={label}
+              models={models}
+              format={format}
+              values={axis.values}
+              onChange={(values) => onChange({ ...axis, values })}
+            />
+          ) : (
+            <div className="value-list">
+              {choices.map((c) => (
+                <label
+                  className="checkbox"
+                  key={c.id}
+                  ref={
+                    axis.kind === "effort" && c.id === "default"
+                      ? defaultHint
+                      : undefined
+                  }
+                >
+                  <input
+                    type="checkbox"
+                    aria-label={c.name}
+                    checked={axis.values.includes(c.id)}
+                    onChange={(e) => {
+                      const selected = new Set(axis.values);
+                      for (const choice of [c])
+                        if (e.target.checked) selected.add(choice.id);
+                        else selected.delete(choice.id);
+                      onChange({
+                        ...axis,
+                        values:
+                          axis.kind === "effort"
+                            ? efforts.filter((effort) => selected.has(effort))
+                            : [...selected],
+                      });
+                    }}
+                  />
+                  <span>{c.name}</span>
+                </label>
+              ))}
             </div>
           )}
-          <div
-            className={`value-list${axis.kind === "model" ? " model-list" : ""}`}
-          >
-            {axis.kind === "model" && !visibleChoices.length && (
-              <p className="hint">No models match your filter.</p>
-            )}
-            {visibleChoices.map((c) => (
-              <label
-                className="checkbox"
-                key={c.id}
-                ref={
-                  axis.kind === "effort" && c.id === "default"
-                    ? defaultHint
-                    : undefined
-                }
-              >
-                <input
-                  type="checkbox"
-                  aria-label={c.name}
-                  checked={axis.values.includes(c.id)}
-                  onChange={(e) => {
-                    const anchor = visibleChoices.findIndex(
-                      (choice) => choice.id === rangeAnchor.current,
-                    );
-                    const target = visibleChoices.indexOf(c);
-                    const range =
-                      axis.kind === "model" &&
-                      (e.nativeEvent as MouseEvent).shiftKey &&
-                      anchor >= 0
-                        ? visibleChoices.slice(
-                            Math.min(anchor, target),
-                            Math.max(anchor, target) + 1,
-                          )
-                        : [c];
-                    const selected = new Set(axis.values);
-                    for (const choice of range)
-                      if (e.target.checked) selected.add(choice.id);
-                      else selected.delete(choice.id);
-                    rangeAnchor.current = c.id;
-                    onChange({
-                      ...axis,
-                      values:
-                        axis.kind === "effort"
-                          ? efforts.filter((effort) => selected.has(effort))
-                          : [...selected],
-                    });
-                  }}
-                />
-                <span>{c.name}</span>
-                {axis.kind === "model" && format === "image" && (
-                  <ImageModelPrice model={c.id} />
-                )}
-              </label>
-            ))}
-          </div>
           {axis.kind === "size" && (
             <CustomAxisSizes
               label={label}
               values={axis.values}
               onChange={(values) => onChange({ ...axis, values })}
             />
-          )}
-
-          {axis.kind === "model" && axis.values.length > 0 && (
-            <ul
-              className="selected-models"
-              aria-label={`Selected ${label === "Rows" ? "row" : "column"} models`}
-            >
-              {axis.values.map((id) => {
-                const name =
-                  models.find((model) => model.id === id)?.name ?? id;
-                return (
-                  <li className="model-badge" key={id}>
-                    <span>{name}</span>
-                    <button
-                      type="button"
-                      aria-label={`Remove ${name} from ${label.toLowerCase()}`}
-                      onClick={() => {
-                        onChange({
-                          ...axis,
-                          values: axis.values.filter((value) => value !== id),
-                        });
-                        filterInput.current?.focus();
-                      }}
-                    >
-                      <X aria-hidden="true" />
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
           )}
         </fieldset>
       )}

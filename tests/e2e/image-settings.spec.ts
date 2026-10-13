@@ -1,5 +1,5 @@
 import { test, expect } from "./fixtures";
-import { finishPublishing, expectProgress } from "./helpers";
+import { finishPublishing, expectProgress, selectModel } from "./helpers";
 
 async function setup(page: import("@playwright/test").Page, connect = true) {
   await page.goto("/");
@@ -49,9 +49,7 @@ test("image warning grids compare models with parameter values and remain adviso
     }),
   ).toBeVisible();
   await rows.selectOption("background");
-  await page
-    .getByRole("combobox", { name: "Model", exact: true })
-    .selectOption("fixture/image");
+  await selectModel(page, "fixture/image");
   await page
     .getByRole("checkbox", { name: "transparent", exact: true })
     .check();
@@ -159,9 +157,7 @@ test("renamed reference groups survive reload, Edit and Fork without mixing thei
   await page
     .getByRole("combobox", { name: "Columns", exact: true })
     .selectOption("size");
-  await page
-    .getByRole("combobox", { name: "Model", exact: true })
-    .selectOption("fixture/image");
+  await selectModel(page, "fixture/image");
   await page.getByRole("checkbox", { name: "1K", exact: true }).check();
   const png = Buffer.from(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",

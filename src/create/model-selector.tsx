@@ -1,0 +1,133 @@
+import { useId, useRef, useState } from "react";
+import { Search, X } from "lucide-react";
+import type { Model } from "../../server/provider";
+import type { GridInput } from "../../server/domain";
+import { tooltipRef } from "../components/use-tooltip";
+import { ImageModelPrice } from "./image-model-price";
+
+export function ModelSelector({
+  models,
+  format,
+  values,
+  onChange,
+  label = "Model",
+  multiple = false,
+}: {
+  models: Model[];
+  format: GridInput["format"];
+  values: string[];
+  onChange: (values: string[]) => void;
+  label?: "Rows" | "Columns" | "Model";
+  multiple?: boolean;
+}) {
+  const name = useId();
+  const [filter, setFilter] = useState(
+    multiple && format === "image" ? "" : "latest",
+  );
+  const filterInput = useRef<HTMLInputElement>(null);
+  const rangeAnchor = useRef<string | undefined>(undefined);
+  const clearLabel = multiple
+    ? `Clear ${label === "Rows" ? "row" : "column"} model filter`
+    : "Clear model filter";
+  const selectedLabel = multiple
+    ? `Selected ${label === "Rows" ? "row" : "column"} models`
+    : "Selected model";
+  const visibleChoices = models.filter((c) =>
+    `${c.name} ${c.id}`.toLowerCase().includes(filter.trim().toLowerCase()),
+  );
+  return (
+    <>
+      <div className="model-search">
+        <Search aria-hidden="true" />
+        <input
+          ref={filterInput}
+          type="search"
+          aria-label="Search models"
+          placeholder="Search models"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+        />
+        <button
+          type="button"
+          className="model-search-clear"
+          aria-label={clearLabel}
+          data-tooltip="Clear filter"
+          ref={tooltipRef}
+          onClick={() => {
+            setFilter("");
+            filterInput.current?.focus();
+          }}
+        >
+          <X aria-hidden="true" />
+        </button>
+      </div>
+      <div className="value-list model-list">
+        {!visibleChoices.length && (
+          <p className="hint">No models match your filter.</p>
+        )}
+        {visibleChoices.map((c) => (
+          <label className="checkbox" key={c.id}>
+            <input
+              type={multiple ? "checkbox" : "radio"}
+              name={name}
+              value={c.id}
+              aria-label={c.name}
+              checked={values.includes(c.id)}
+              onChange={(e) => {
+                if (!multiple) {
+                  onChange([c.id]);
+                  return;
+                }
+                const anchor = visibleChoices.findIndex(
+                  (choice) => choice.id === rangeAnchor.current,
+                );
+                const target = visibleChoices.indexOf(c);
+                const range =
+                  (e.nativeEvent as MouseEvent).shiftKey && anchor >= 0
+                    ? visibleChoices.slice(
+                        Math.min(anchor, target),
+                        Math.max(anchor, target) + 1,
+                      )
+                    : [c];
+                const selected = new Set(values);
+                for (const choice of range)
+                  if (e.target.checked) selected.add(choice.id);
+                  else selected.delete(choice.id);
+                rangeAnchor.current = c.id;
+                onChange([...selected]);
+              }}
+            />
+            <span>{c.name}</span>
+            {format === "image" && <ImageModelPrice model={c.id} />}
+          </label>
+        ))}
+      </div>
+      {values.length > 0 && (
+        <ul className="selected-models" aria-label={selectedLabel}>
+          {values.map((id) => {
+            const name = models.find((model) => model.id === id)?.name ?? id;
+            return (
+              <li className="model-badge" key={id}>
+                <span>{name}</span>
+                <button
+                  type="button"
+                  aria-label={
+                    multiple
+                      ? `Remove ${name} from ${label.toLowerCase()}`
+                      : `Remove ${name}`
+                  }
+                  onClick={() => {
+                    onChange(values.filter((value) => value !== id));
+                    filterInput.current?.focus();
+                  }}
+                >
+                  <X aria-hidden="true" />
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </>
+  );
+}

@@ -1,3 +1,4 @@
+import { ModelSelector } from "../create/model-selector";
 import { ImageOptions } from "../create/image-options";
 import { changeAxis } from "../create/change-axis";
 import { PublicGrids } from "../components/grid-listing";
@@ -313,26 +314,15 @@ export function Create() {
                 />
               </div>
               {![input.rows.kind, input.columns.kind].includes("model") && (
-                <label>
-                  Model
-                  <select
-                    value={input.model}
-                    onChange={(e) => {
-                      update({
-                        model: e.target.value,
-                      });
-                    }}
-                  >
-                    <option value="" disabled>
-                      Select a model
-                    </option>
-                    {models.map((m) => (
-                      <option value={m.id} key={m.id}>
-                        {m.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <fieldset role="radiogroup" aria-label="Model">
+                  <legend>Model</legend>
+                  <ModelSelector
+                    models={models}
+                    format={input.format}
+                    values={input.model ? [input.model] : []}
+                    onChange={(values) => update({ model: values[0] ?? "" })}
+                  />
+                </fieldset>
               )}
               {input.format === "image" && (
                 <ImageOptions

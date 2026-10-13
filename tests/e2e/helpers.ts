@@ -37,13 +37,23 @@ export async function create(
     .getByRole("combobox", { name: "Columns", exact: true })
     .selectOption("variable");
   await page.getByLabel("Column values").fill(columns);
-  await page
-    .getByRole("combobox", { name: "Model", exact: true })
-    .selectOption(
-      model ?? (format === "Image" ? "fixture/image" : "fixture/text"),
-    );
+  await selectModel(
+    page,
+    model ?? (format === "Image" ? "fixture/image" : "fixture/text"),
+  );
   await page.getByLabel("Prompt", { exact: true }).fill(prompt);
   await page.getByRole("link", { name: "Connect OpenRouter" }).click();
   await expect(page.getByText("Connected", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Generate", exact: true }).click();
+}
+
+export async function selectModel(
+  page: import("@playwright/test").Page,
+  model: string,
+) {
+  const selector = page.getByRole("radiogroup", { name: "Model", exact: true });
+  await selector.getByRole("searchbox").fill(model);
+  await selector
+    .locator(`input[type="radio"][value=${JSON.stringify(model)}]`)
+    .check();
 }

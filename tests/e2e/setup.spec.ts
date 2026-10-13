@@ -1,5 +1,10 @@
 import { test, expect } from "./fixtures";
-import { create, expectProgress, finishPublishing } from "./helpers";
+import {
+  create,
+  expectProgress,
+  finishPublishing,
+  selectModel,
+} from "./helpers";
 
 test("axis swap preserves selections and substitutes the corresponding prompt variables", async ({
   page,
@@ -206,8 +211,10 @@ test("unused prompt variables block generation and the API rejects bypasses", as
     .getByRole("combobox", { name: "Columns", exact: true })
     .selectOption("variable");
   await expect(
-    page.getByRole("combobox", { name: "Model", exact: true }),
-  ).toHaveValue("");
+    page
+      .getByRole("radiogroup", { name: "Model", exact: true })
+      .locator("input:checked"),
+  ).toHaveCount(0);
   await expect(page.getByLabel("Row values")).toHaveValue("");
   await expect(page.getByLabel("Column values")).toHaveValue("");
   await page.getByLabel("Row values").fill("cat\ndog");
@@ -222,9 +229,7 @@ test("unused prompt variables block generation and the API rejects bypasses", as
   await expect(
     page.getByRole("button", { name: "Generate", exact: true }),
   ).toBeDisabled();
-  await page
-    .getByRole("combobox", { name: "Model", exact: true })
-    .selectOption("fixture/image");
+  await selectModel(page, "fixture/image");
   await expect(
     page.getByRole("button", { name: "Generate", exact: true }),
   ).toBeEnabled();
@@ -477,9 +482,7 @@ test("compatibility follows prompt-variable axes and fixed model or effort setti
   await page.getByRole("checkbox", { name: "None", exact: true }).check();
   await page.getByRole("checkbox", { name: "high", exact: true }).check();
   await expect(table).toHaveCount(0);
-  await page
-    .getByRole("combobox", { name: "Model", exact: true })
-    .selectOption("fixture/other");
+  await selectModel(page, "fixture/other");
   await expect(table.getByRole("rowheader")).toHaveText(["None", "high"]);
   await expect(table.getByRole("columnheader")).toHaveText([
     "Thinking effort",
@@ -500,9 +503,7 @@ test("compatibility follows prompt-variable axes and fixed model or effort setti
     "None",
     "high",
   ]);
-  await page
-    .getByRole("combobox", { name: "Model", exact: true })
-    .selectOption("fixture/text");
+  await selectModel(page, "fixture/text");
   await expect(table).toHaveCount(0);
 });
 
@@ -623,9 +624,7 @@ test("worker recommendation follows grid size, overrides persist, and low-balanc
       .getByRole("combobox", { name: "Columns", exact: true })
       .selectOption("variable");
     await page.getByLabel("Column values").fill("hat\ncape");
-    await page
-      .getByRole("combobox", { name: "Model", exact: true })
-      .selectOption("fixture/text");
+    await selectModel(page, "fixture/text");
     await page
       .getByLabel("Prompt", { exact: true })
       .fill("Draw $ROW wearing a $COLUMN");
@@ -700,3 +699,45 @@ test("worker recommendation follows grid size, overrides persist, and low-balanc
     await request.post("/fixture/release", { data: { all: true } });
   }
 });
+
+for (const format of ["SVG", "Image"]) {
+  test(`fixed model radio selector defaults to latest for ${format}`, async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await page.getByRole("button", { name: format, exact: true }).click();
+    await page
+      .getByRole("combobox", { name: "Rows", exact: true })
+      .selectOption("variable");
+    await page
+      .getByRole("combobox", { name: "Columns", exact: true })
+      .selectOption("variable");
+    const selector = page.getByRole("radiogroup", {
+      name: "Model",
+      exact: true,
+    });
+    const search = selector.getByRole("searchbox");
+    await expect(search).toHaveValue("latest");
+    await expect(selector.locator("input:checked")).toHaveCount(0);
+    await selector
+      .getByRole("button", { name: "Clear model filter", exact: true })
+      .click();
+    const radios = selector.getByRole("radio");
+    await radios.nth(0).check();
+    const first = await radios.nth(0).inputValue();
+    await radios.nth(1).check();
+    const second = await radios.nth(1).inputValue();
+    expect(second).not.toBe(first);
+    await expect(selector.locator("input:checked")).toHaveCount(1);
+    await search.fill("no-such-model");
+    await expect(
+      selector
+        .getByRole("list", { name: "Selected model", exact: true })
+        .getByRole("listitem"),
+    ).toHaveCount(1);
+    await page.reload();
+    await expect(search).toHaveValue("latest");
+    await search.fill(second);
+    await expect(selector.locator("input:checked")).toHaveValue(second);
+  });
+}
