@@ -20,6 +20,20 @@ Open http://localhost:3000. Chromium resolves HTML output hosts ending in `.loca
 
 The test creates and generates an anonymous grid, signs in through GitHub, verifies claiming and publication attribution, signs in through GitHub in a separate browser context, checks account access and billing, and signs out. It uses no mocked OAuth or inference endpoints. Missing credentials, authorization failure, and provider errors fail verification rather than silently skipping it. Unit identity tests exercise the real app and database with mocked GitHub token and profile responses, including claiming active grids, session rotation, and callback replay rejection. They do not authenticate with GitHub.
 
+### Creating a GitHub browser session locally
+
+With Node.js installed on your computer, open a terminal in a private directory outside the repository and run:
+
+```sh
+umask 077
+npx playwright install chromium
+npx playwright codegen https://github.com/login --save-storage=github-state.json
+```
+
+Sign in to GitHub in the browser that opens and complete any two-factor authentication. This browser uses a separate session from your usual browser. After signing in, close the browser so Playwright saves the authenticated session to `github-state.json` in the current directory.
+
+Set `GITHUB_BROWSER_STATE` to the absolute path of this file when running the GitHub integration suite. Keep the file private and outside Git because it contains authentication cookies, and recreate it when the session expires. See [Playwright's authentication-state documentation](https://playwright.dev/docs/codegen#preserve-authenticated-state).
+
 ## Frontend builds
 
 The Markdown renderer is included directly in the main browser bundle, so opening a Markdown preview does not request a separate renderer chunk. Vite retains previous files in `dist` during rebuilds so open pages can still fetch assets from their original build. The frontend router serves HTML with `Cache-Control: no-store`, hashed assets with immutable caching, and missing assets with `no-store` to avoid caching a temporary 404.
