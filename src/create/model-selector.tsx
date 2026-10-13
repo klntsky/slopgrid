@@ -118,10 +118,9 @@ export function ModelSelector({
                       ? `Remove ${name} from ${label.toLowerCase()}`
                       : `Remove ${name}`
                   }
-                  onClick={() => {
-                    onChange(values.filter((value) => value !== id));
-                    filterInput.current?.focus();
-                  }}
+                  onClick={() =>
+                    onChange(values.filter((value) => value !== id))
+                  }
                 >
                   <X aria-hidden="true" />
                 </button>
