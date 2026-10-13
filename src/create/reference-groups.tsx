@@ -119,12 +119,7 @@ export function ReferenceGroups({
                     const remaining = groups[name].filter(
                       (_, position) => position !== index,
                     );
-                    onChange(
-                      remaining.length
-                        ? values
-                        : values.filter((value) => value !== name),
-                      { [name]: remaining },
-                    );
+                    onChange(values, { [name]: remaining });
                   }}
                 >
                   <X aria-hidden="true" />

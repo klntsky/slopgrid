@@ -146,6 +146,28 @@ test("renamed reference groups survive reload, Edit and Fork without mixing thei
   const titleField = page.getByRole("textbox", {
     name: "Reference group title",
   });
+  // Removing all files preserves the group and its title until it is refilled.
+  for (const image of first)
+    await page
+      .getByRole("button", {
+        name: `Remove ${image.name} from Group 1`,
+        exact: true,
+      })
+      .click();
+  await expect(titles.nth(0)).toHaveText("Group 1");
+  await page.reload();
+  await expect(titles.nth(0)).toHaveText("Group 1");
+  await page.getByRole("link", { name: "Connect OpenRouter" }).click();
+  await expect(page.getByText("Connected", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Generate", exact: true }).click();
+  await expect(page.getByRole("alert")).toHaveText(
+    "Add images to every reference group",
+  );
+  expect(uploads).toBe(0);
+  await page
+    .getByLabel("Add images to Group 1", { exact: true })
+    .setInputFiles(first);
+  await expect(page.getByRole("img", { name: "two.png" })).toBeVisible();
   await titles.nth(0).click();
   await titleField.fill("Landscape");
   await titleField.press("Enter");
@@ -167,8 +189,6 @@ test("renamed reference groups survive reload, Edit and Fork without mixing thei
     )
     .toBe(1);
   expect(uploads).toBe(0);
-  await page.getByRole("link", { name: "Connect OpenRouter" }).click();
-  await expect(page.getByText("Connected", { exact: true })).toBeVisible();
   await expect(page.getByRole("img", { name: /\.png$/ })).toHaveCount(5);
   expect(uploads).toBe(0);
   await expect(titles.nth(0)).toHaveText("Landscape");

@@ -112,6 +112,7 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 7. In Select grid layout, show each reference group's heading as a pencil icon, editable group title, centered dot, and "reference image group". Its file-selection button shows a paperclip icon and "Add images".
 8. Right-align OpenRouter's published output rates in the image-model checkbox list, preserving per-image and per-megapixel units and displaying token rates per million tokens. Show a range when published rates differ within the same unit, and keep different units separate. A tooltip lists provider names, additional charges, and pricing tiers. Missing prices display "Price unavailable". Rates are independent of the selected generation settings.
 9. Reference uploads accept PNG, JPEG, and WebP images, with a maximum of 20 MiB per file. Reject other formats and oversized uploads with a visible error.
+10. Removing a group's last image preserves the empty group and its title, including after reload. Generate validates that every selected group contains at least one image and shows an error for an empty group. Users may refill or explicitly remove the group.
 
 ## 4. Grid layout and metadata
 
