@@ -153,6 +153,7 @@ export function createOutputRoutes(
         body{font:16px/1.6 system-ui;margin:24px;overflow-wrap:anywhere}
         a{color:light-dark(#67583f,#b5a181)}
         pre{overflow:auto;padding:12px;background:light-dark(#f1ece3,#282623);line-height:normal}
+        pre,pre>code{font-family:ui-monospace,monospace}
         code{background:light-dark(#f1ece3,#282623)}
         blockquote{margin-left:0;padding-left:16px;border-left:3px solid light-dark(#d1cabd,#45423e)}
         hr,th,td{border-color:light-dark(#d1cabd,#45423e)}
