@@ -204,6 +204,7 @@ function CompatibilityGrid({
                     tabIndex={support === "supported" ? undefined : 0}
                   >
                     {support === "supported" && <Check aria-hidden="true" />}
+                    {support === "unknown" && <span aria-hidden="true">❓</span>}
                     {support === "unsupported" && (
                       <TriangleAlert
                         className="compatibility-warning"
