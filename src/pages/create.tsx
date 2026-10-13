@@ -116,7 +116,7 @@ export function Create() {
         effort: "default",
         rows:
           format === "image"
-            ? { kind: "variable", values: ["cat", "dog"] }
+            ? { kind: "variable", values: [] }
             : { kind: "effort", values: [] },
         columns: {
           kind: "model",

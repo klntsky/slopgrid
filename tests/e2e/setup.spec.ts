@@ -12,6 +12,7 @@ test("axis swap preserves selections and substitutes the corresponding prompt va
     exact: true,
   });
   await rows.selectOption("variable");
+  await expect(page.getByLabel("Row values")).toHaveValue("");
   await page.getByLabel("Row values").fill("cat\ndog");
   await columns.selectOption("effort");
   const columnValues = page.getByRole("group", { name: "Column values" });
@@ -207,6 +208,10 @@ test("unused prompt variables block generation and the API rejects bypasses", as
   await expect(
     page.getByRole("combobox", { name: "Model", exact: true }),
   ).toHaveValue("");
+  await expect(page.getByLabel("Row values")).toHaveValue("");
+  await expect(page.getByLabel("Column values")).toHaveValue("");
+  await page.getByLabel("Row values").fill("cat\ndog");
+  await page.getByLabel("Column values").fill("hat\ncape");
   for (const prompt of ["Draw a cat", "$ROW", "$COLUMN"]) {
     await page.getByLabel("Prompt", { exact: true }).fill(prompt);
     await expect(page.getByRole("alert")).toBeVisible();
@@ -288,6 +293,8 @@ test("selecting an output type reveals the entire form and preserves it on reloa
     exact: true,
   });
   await model.check();
+  await expect(generate).toBeDisabled();
+  await page.getByLabel("Row values").fill("cat\ndog");
   await expect(generate).toBeEnabled();
   await model.uncheck();
   await expect(generate).toBeDisabled();

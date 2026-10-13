@@ -76,7 +76,7 @@ export function AxisEditor({
             setFilter(defaultFilter);
             onChange({
               kind,
-              values: kind === "variable" ? ["cat", "dog"] : [],
+              values: [],
             });
           }}
         >
@@ -99,6 +99,7 @@ export function AxisEditor({
           <textarea
             aria-label={label === "Rows" ? "Row values" : "Column values"}
             rows={4}
+            placeholder={"cat\ndog"}
             value={axis.values.join("\n")}
             onChange={(e) =>
               onChange({ ...axis, values: e.target.value.split("\n") })

@@ -73,6 +73,7 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 3. Each enabled prompt variable must occur in the prompt before generation can start. A prompt containing `$ROW` or `$COLUMN` also requires the corresponding axis to be a prompt variable; these tokens are reserved for substitution.
 4. Show variable guidance only when a prompt-variable dimension is selected, and only for the usable variable or variables. Use "$ROW will be replaced with the values you specify above" and the corresponding `$COLUMN` wording.
 5. Beneath each prompt-variable values field, show "One value per line. Use $ROW to reference this value in the prompt." for rows and the corresponding `$COLUMN` wording for columns.
+6. New prompt-variable axes start empty. Show `cat` and `dog` on separate lines as a placeholder, without adding them to the selected values.
 
 ### 3.4. Compatibility presentation
 
