@@ -7,6 +7,81 @@ import {
   mockModels,
 } from "./helpers";
 
+test("disabled Generate explains blockers on hover and keyboard focus", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "SVG", exact: true }).click();
+  const generate = page.getByRole("button", { name: "Generate", exact: true });
+  const wrapper = generate.locator("..");
+  const tooltip = page.getByRole("tooltip");
+  await expect(generate).toBeDisabled();
+  await wrapper.hover();
+  for (const reason of [
+    "Select row values.",
+    "Select column values.",
+    "Connect OpenRouter.",
+    "Enter a prompt.",
+  ])
+    await expect(tooltip).toContainText(reason);
+  await page
+    .getByRole("combobox", { name: "Rows", exact: true })
+    .selectOption("variable");
+  await page
+    .getByRole("combobox", { name: "Columns", exact: true })
+    .selectOption("variable");
+  await page.getByLabel("Row values").fill("cat");
+  await page.getByLabel("Column values").fill("hat");
+  await page.getByLabel("Prompt", { exact: true }).fill("$ROW");
+  await wrapper.focus();
+  await expect(tooltip).toContainText("Select a model.");
+  await expect(tooltip).toContainText(
+    "Include $COLUMN in the prompt for column variables.",
+  );
+  await expect(tooltip).not.toContainText("Select row values.");
+  await selectModel(page, "fixture/text");
+  await page.getByLabel("Prompt", { exact: true }).fill("$ROW $COLUMN");
+  let releaseCapacity!: () => void;
+  const capacityResponse = new Promise<void>((resolve) => {
+    releaseCapacity = resolve;
+  });
+  await page.route("**/api/inference-capacity?*", async (route) => {
+    await capacityResponse;
+    await route.fulfill({
+      status: 503,
+      json: { error: "Balance unavailable" },
+    });
+  });
+  await page.getByRole("link", { name: "Connect OpenRouter" }).click();
+  await expect(page.getByText("Connected", { exact: true })).toBeVisible();
+  await wrapper.hover();
+  await expect(tooltip).toHaveText("Checking the automatic worker count.");
+  releaseCapacity();
+  await expect(
+    page.getByRole("button", { name: "Check balance again" }),
+  ).toBeVisible();
+  await page.mouse.move(0, 0);
+  await wrapper.hover();
+  await expect(tooltip).toHaveText(
+    "Could not determine the automatic worker count.",
+  );
+  await page.getByLabel("# of parallel workers:", { exact: true }).fill("2");
+  await expect(generate).toBeEnabled();
+  await expect(wrapper).not.toHaveAttribute("tabindex", "0");
+  await generate.focus();
+  await wrapper.hover();
+  await expect(tooltip).toHaveCount(0);
+  await page.getByLabel("Budget limit per cell").fill("0");
+  await expect(generate).toBeDisabled();
+  await wrapper.focus();
+  await expect(
+    page.getByRole("tooltip", {
+      name: "Enter a positive per-cell budget.",
+      exact: true,
+    }),
+  ).toBeVisible();
+});
+
 test("axis swap preserves selections and substitutes the corresponding prompt variables", async ({
   page,
 }) => {

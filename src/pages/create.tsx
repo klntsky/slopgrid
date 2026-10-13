@@ -136,6 +136,26 @@ export function Create() {
   }
   const modelMissing =
     ![input.rows.kind, input.columns.kind].includes("model") && !input.model;
+  const generateReasons = [
+    busy && "Starting generation.",
+    uploading && "Uploading reference images.",
+    workersPending &&
+      connection.data?.connected &&
+      (capacity.isError
+        ? "Could not determine the automatic worker count."
+        : "Checking the automatic worker count."),
+    modelMissing && "Select a model.",
+    !input.rows.values.length && "Select row values.",
+    !input.columns.values.length && "Select column values.",
+    !connection.data?.connected && "Connect OpenRouter.",
+    !input.prompt.trim() && "Enter a prompt.",
+    unusedVariableIssue(input),
+    (!Number.isFinite(input.budgetUsd) || input.budgetUsd <= 0) &&
+      "Enter a positive per-cell budget.",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const generateHint = useTooltip<HTMLDivElement>(generateReasons || undefined);
   async function generate(continueWithLowBalance = false) {
     if (
       modelMissing ||
@@ -466,26 +486,22 @@ export function Create() {
               Reuse existing artifacts from the previous version
             </label>
           )}
-          <button
-            className="primary generate"
-            disabled={
-              busy ||
-              uploading ||
-              workersPending ||
-              modelMissing ||
-              !input.rows.values.length ||
-              !input.columns.values.length ||
-              !connection.data?.connected ||
-              !input.prompt.trim() ||
-              !!unusedVariableIssue(input) ||
-              !Number.isFinite(input.budgetUsd) ||
-              input.budgetUsd <= 0
-            }
-            onClick={() => generate()}
+          <div
+            className="generate-hint"
+            ref={generateHint}
+            tabIndex={generateReasons ? 0 : undefined}
+            role={generateReasons ? "group" : undefined}
+            aria-label={generateReasons ? "Generate" : undefined}
           >
-            {busy ? "Starting generation…" : "Generate"}
-            <ArrowUpRight aria-hidden="true" />
-          </button>
+            <button
+              className="primary generate"
+              disabled={!!generateReasons}
+              onClick={() => generate()}
+            >
+              {busy ? "Starting generation…" : "Generate"}
+              <ArrowUpRight aria-hidden="true" />
+            </button>
+          </div>
         </section>
       )}
       <ErrorMessage error={error} />

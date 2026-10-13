@@ -492,6 +492,9 @@ legend {
   justify-content: space-between;
   padding: 13px 16px;
 }
+.generate-hint .generate:disabled {
+  pointer-events: none;
+}
 .error {
   border-left: 3px solid var(--error-border);
   padding: 12px 14px;

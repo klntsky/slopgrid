@@ -46,6 +46,7 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 4. Give token-arrow indicators "Input tokens" and "Output tokens" hints. Supported compatibility checkmarks do not get tooltips.
 5. Budget and parallel-worker hints use the same field-level interaction.
 6. Use the current pause hint and parallel-worker hint specified in sections 3.5 and 6.3.
+7. When Generate is disabled, its tooltip explains the current blocking reasons. Attach the tooltip to a focusable wrapper so it works on hover and keyboard focus while the button is disabled, and omit it when Generate is enabled.
 
 ## 3. Grid creation
 
