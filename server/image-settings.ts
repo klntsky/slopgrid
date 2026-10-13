@@ -62,16 +62,14 @@ export type ImageCapabilities = z.infer<typeof imageCapabilitiesSchema>;
 export const imageEndpointSchema = z.object({
   provider_name: z.string().trim().min(1),
   supported_parameters: imageCapabilitiesSchema,
-  pricing: z
-    .array(
-      z.object({
-        billable: z.string(),
-        unit: z.string(),
-        cost_usd: z.number().finite().nonnegative(),
-        variant: z.string().optional(),
-      }),
-    )
-    .default([]),
+  pricing: z.array(
+    z.object({
+      billable: z.string(),
+      unit: z.string(),
+      cost_usd: z.number().finite().nonnegative(),
+      variant: z.string().optional(),
+    }),
+  ),
 });
 export type ImageEndpoint = z.infer<typeof imageEndpointSchema>;
 export function validImageSize(value: string) {

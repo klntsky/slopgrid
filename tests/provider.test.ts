@@ -434,3 +434,21 @@ test("image endpoint metadata rejects missing provider attribution and recovers 
     await h.close();
   }
 });
+
+test("image endpoint pricing distinguishes malformed metadata from explicitly unavailable prices", async () => {
+  const h = await upstream();
+  try {
+    const endpoint: Record<string, unknown> = {
+      provider_name: "Actual provider",
+      supported_parameters: {},
+    };
+    h.imageEndpoints.push(endpoint);
+    await assert.rejects(h.provider.imageEndpoints("image"), /pricing/);
+    endpoint.pricing = [];
+    assert.deepEqual(await h.provider.imageEndpoints("image"), [endpoint]);
+    assert.deepEqual(await h.provider.imageEndpoints("image"), [endpoint]);
+    assert.equal(h.imageEndpointRequests, 2);
+  } finally {
+    await h.close();
+  }
+});
