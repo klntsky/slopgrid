@@ -943,6 +943,9 @@ button.editable-title > .lucide {
   margin-top: 25px;
 }
 @media (max-width: 700px) {
+  .wordmark > span {
+    display: none;
+  }
   header {
     padding: 0 20px;
   }
