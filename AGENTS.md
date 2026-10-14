@@ -13,3 +13,5 @@
 6. When the agent starts a background task, run its top-level command in tmux session `bg` so the user can inspect it. Application code, test runners, and CI manage their own child processes without requiring tmux.
 
 7. Use the LLM patch tools for text edits, and never use Python for string replacement.
+
+8. Keep ARCHITECTURE.md focused on architectural responsibilities and boundaries; leave granular styling details such as individual breakpoints in the code.

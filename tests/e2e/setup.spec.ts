@@ -140,10 +140,9 @@ test("model choices start empty and filtering preserves deliberate selections", 
   const filter = page.getByLabel("Search models");
   const clear = page.getByRole("button", { name: "Clear column model filter" });
   await clear.click();
-  await expect(columns.locator("label.checkbox")).toHaveText([
-    "Fixture text",
-    "Second model",
-  ]);
+  await expect(
+    columns.locator("label.checkbox > span:first-of-type"),
+  ).toHaveText(["Fixture text", "Second model"]);
   await expect(filter).toBeFocused();
   await expect(filter).toHaveValue("");
   await columns
@@ -244,7 +243,9 @@ test("Shift-click selects and clears visible model ranges while preserving hidde
   const columns = page.getByRole("group", { name: "Column values" });
   const box = (index: number) =>
     columns.getByRole("checkbox", { name: names[index], exact: true });
-  const selected = columns.locator("label.checkbox:has(input:checked)");
+  const selected = columns.locator(
+    "label.checkbox:has(input:checked) > span:first-of-type",
+  );
   await box(1).click();
   await columns
     .getByText(names[4], { exact: true })
@@ -278,9 +279,9 @@ test("Shift-click selects and clears visible model ranges while preserving hidde
   await rows
     .getByRole("checkbox", { name: names[2], exact: true })
     .click({ modifiers: ["Shift"] });
-  await expect(rows.locator("label.checkbox:has(input:checked)")).toHaveText(
-    names.slice(0, 3),
-  );
+  await expect(
+    rows.locator("label.checkbox:has(input:checked) > span:first-of-type"),
+  ).toHaveText(names.slice(0, 3));
   await expect(selected).toHaveText([names[0], names[5]]);
 });
 
@@ -435,8 +436,8 @@ test("the compatibility table shows selected model support without blocking gene
   });
   await expect(table.getByRole("columnheader")).toHaveText([
     "Thinking effort",
-    "Second model",
     "Fixture text",
+    "Second model",
   ]);
   await expect(table.getByRole("rowheader")).toHaveText([
     "None",
@@ -444,12 +445,12 @@ test("the compatibility table shows selected model support without blocking gene
     "max",
   ]);
   const expectedSupport = [
-    "None: Unsupported",
     "None: Supported",
+    "None: Unsupported",
     "high: Supported",
     "high: Supported",
-    "max: Unsupported",
     "max: Supported",
+    "max: Unsupported",
   ];
   for (const [index, status] of expectedSupport.entries())
     await expect(table.getByRole("cell").nth(index)).toHaveAccessibleName(
@@ -469,16 +470,16 @@ test("the compatibility table shows selected model support without blocking gene
     "max",
   ]);
   await expect(table.getByRole("rowheader")).toHaveText([
-    "Second model",
     "Fixture text",
+    "Second model",
   ]);
   for (const [index, status] of [
-    "None: Unsupported",
-    "high: Supported",
-    "max: Unsupported",
     "None: Supported",
     "high: Supported",
     "max: Supported",
+    "None: Unsupported",
+    "high: Supported",
+    "max: Unsupported",
   ].entries())
     await expect(table.getByRole("cell").nth(index)).toHaveAccessibleName(
       status,

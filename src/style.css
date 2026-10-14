@@ -1302,6 +1302,17 @@ header {
   nav {
     font-size: 13px;
   }
+  .grid-layout > header > .navigation-controls[data-touch="false"] {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
+@media (max-width: 479px) {
+  .grid-layout
+    > header:has(.navigation-controls[data-touch="false"])
+    .grid-title {
+    grid-row: 3;
+  }
 }
 
 .compatibility-table-scroll {

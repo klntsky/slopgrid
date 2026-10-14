@@ -1,6 +1,6 @@
 # Development
 
-Model-order browser coverage checks insertion against the unfiltered catalog after manual reordering, tie resolution, mouse and touch dragging, keyboard movement, removal, reload persistence, and axis swaps. Assertions inspect the computed selection order rather than static interface copy.
+Model-order browser coverage checks insertion against the unfiltered catalog after manual reordering, tie resolution, mouse and touch dragging, keyboard movement, removal, reload persistence, and axis swaps. Assertions inspect the computed selection order rather than static interface copy. Selection checks isolate model names from pricing, and compatibility expectations follow the selected catalog order. The Edit/Fork journey exercises grid actions in a narrow non-touch viewport so desktop navigation cannot block their pointer targets.
 
 ## Requirements and setup
 
