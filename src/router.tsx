@@ -36,6 +36,7 @@ const gridRoute = createRoute({
   component: GridPage,
 });
 export const router = createRouter({
+  scrollRestoration: true,
   routeTree: rootRoute.addChildren([
     createRoutePage,
     gridsRoute,
