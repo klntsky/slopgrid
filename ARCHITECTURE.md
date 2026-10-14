@@ -1,193 +1,556 @@
 # Architecture
 
-Model selectors keep badge order in the existing axis values array, so reordering follows the normal draft, axis-swap, and grid-input paths. Pointer capture handles mouse and touch badge moves within one selector; arrow keys move a focused badge one position. New selections use distance in the unfiltered selector catalog to find their insertion neighbour, with earlier catalog entries winning ties. Range selection applies the same insertion rule to each added model in catalog order.
-
-## Architecture constraints
-
-These constraints define the implementation boundaries for the behavior in [PRODUCT.md](PRODUCT.md).
-
-### Stack and rendering
-
-1. Use TypeScript and React, TanStack Router and Query, and SSE for browser updates. Use the AI SDK for inference and SQLite for persistent application data.
-2. Use Lucide for interface icons and Tippy for tooltips. Render Markdown through shared React components without unsafe DOM insertion, and render images and SVG through image elements.
-3. Keep identity-provider and inference-provider boundaries separate. GitHub and OpenRouter are the current integrations; provider-specific logic belongs behind those boundaries so additional providers can be added without spreading their logic through the application.
-4. Website generation uses one JSON shape for all models: an object whose `files` value is a list of `{path, content}` entries. Share the schema between generation and final validation, including safe relative paths, duplicate-path rejection, and the required `index.html`. Accept any file extension and extensionless assets; files are stored and served statically without server-side execution.
-5. Require strict structured output and compatible routing for models advertising that capability. Other models receive the same shape through prompting and ordinary JSON parsing. Both paths stream through the same decoder and parse the final JSON directly from the unmodified response; a failed strict request must not silently downgrade.
-6. Website previews use at most two iframes: retain the visible frame while the next loads, transfer document and panel scroll positions before swapping, and coalesce intermediate updates. Apply this handoff to saved output as well as streaming snapshots.
-7. Include the Markdown renderer in the main frontend bundle, retain hashed assets needed by open tabs, and make missing-asset responses uncacheable.
-8. Translate the per-cell monetary budget into an output-token ceiling using model pricing, estimated input cost, and model/context limits.
-9. Use this SVG instruction: "Fulfill user's SVG generation request. Your response will be saved directly as an image/svg+xml file. Start immediately with <svg and end immediately with </svg>. Include no introduction, explanation, Markdown fences, or other text outside the SVG element."
-
-### Responsibility and shared contracts
-
-1. Persistence, encryption, and presentation have separate owners; encryption and author/grid response construction live outside the data store.
-2. Keep identity claiming and notification/throttling mechanics out of generation orchestration where their actual owner can handle them directly. Use one consistent preview-notification policy rather than duplicated throttle implementations.
-3. Provider modules handle provider logic, including catalog, credit interpretation, and SDK adaptation. Keep HTTP request handling and application balance/concurrency policy outside those modules, and share credit lookup rather than duplicating it in manual-key routes.
-4. Separate grid input/expansion logic from output protocols, generation instructions, and parsing. Reuse one relative-path validator for output parsing and storage.
-5. Share completion-success policy between inference and billing instead of interpreting finish reasons twice.
-6. Centralize grid access, publication policy, and author presentation. Use a separate React publishing component with TanStack queries/mutations; let its mutation own request errors instead of duplicating error state in the dialog.
-7. Share creation/resume inference-request handling, balance dialogs, and draft persistence instead of maintaining parallel implementations.
-8. Deduplicate equivalent UI widgets and behaviors, including modal lifecycle, clipboard feedback, format icons, and tooltip setup.
-9. Derive or share API snapshot types so client/server contract drift is impossible. Avoid manually maintaining the same response shape twice.
-10. Give table sizing one owner, with explicit cooperation between resizing and zooming.
-11. Consolidate output metadata/authorization lookup and filename/MIME selection, while distinguishing running previews from completed saved outputs.
-12. Group scheduler state by lifetime in plain per-grid and per-owner records instead of parallel maps with duplicated cleanup.
-13. Separate worker allocation policy from execution mechanics. The shared worker limit is configured through `WORKERS_MAX`, with a default of 100.
-
-### Persistence and authorization
-
-1. Use an explicitly, monotonically versioned SQLite schema and support the current version. Store generated bodies as filesystem files, keep configuration once, and derive per-cell settings and call usage without duplicate persistent representations.
-2. Keep temporary previews and in-memory drafts separate from committed outputs. Metadata edits and publication must not rewrite output files.
-3. Recovery and preview cleanup run explicitly at inference startup; constructing a store or starting the web process must not mutate generation state.
-4. Identify GitHub users by stable provider/user-ID pairs. Require configured GitHub credentials at startup, rotate sessions on sign-in and sign-out, and use session-bound single-use OAuth state, expiry, PKCE, and validated local return paths. Discard GitHub tokens after identification and keep provider authorization attempts separate.
-5. Form isolated HTML hostnames from an environment-configured suffix within one wildcard-covered DNS label. Host dispatch must isolate generated bundles from application routes and cookies.
-6. Private HTML authorization uses a narrowly scoped host-only output cookie bound to a live application session. Every private asset request rechecks session validity and ownership; bootstrap permissions do not extend to generated documents.
-
-### Generation process and update boundaries
-
-1. The inference process owns the complete generation lifecycle: admission, queued/running work, worker allocation, provider calls and execution credentials, retries, cancellation, budget enforcement, output/thinking streams, previews, usage/charges, generation state, and recovery.
-2. The web process owns authentication, sessions, account/settings UI, model discovery for creation, grid metadata, authorized output delivery, billing presentation, HTTP routes, and browser event connections.
-3. Keep the process API explicit and small, with defined commands and snapshots/subscriptions over local transport.
-4. Give generation state and editable metadata separate write ownership. Coordinate publication, ownership changes, and generation admission so stale whole-grid writes cannot overwrite newer state or publish a running grid.
-5. Reconnecting browsers receive current ordered snapshots, including partial output, thinking, estimates, and preview identifiers. Subscription registration and initial snapshot delivery must not leave an update gap.
-6. Lost command acknowledgements or simultaneous starts must not duplicate inference. Slow or abandoned viewers must not block generation or leak subscription capacity.
-7. Use standard HTTP/stream utilities for transport and only the connection monitoring needed to detect disconnection.
-8. A soft update replaces web code without touching the running engine's immutable release or dependencies. Engine, shared-contract, schema, and incompatible dependency changes require a machinery update.
-9. Machinery updates close admission inside the engine, continue accepted queues and retries, and wait for accepted grids and unsettled calls with no cancellation timeout. Admission can reopen when maintenance is cancelled.
-
-## Implementation
-
-`src/create/model-price.tsx` shares the price display and tooltip between text and image model selectors. Text prices come from the embedded model's per-token prompt and completion rates, converted to USD per million tokens, with any request charge included in the tooltip. Image prices retain their endpoint units and provider details.
-
-TanStack Router manages scroll restoration by history entry through `scrollRestoration: true`. Creation drafts initialize synchronously from sessionStorage, so the saved form layout is present when the router restores the page position after rendering.
-
-`server/model-catalog.ts` loads model listings and all image endpoint details into one shared in-memory snapshot before the frontend starts serving pages. Concurrent reads share the same load. Five minutes after each refresh completes, a background timer loads the next snapshot; failed refreshes retain the previous data, and unavailable image details retain their previous values when available. Closing the catalog stops the timer. `server/frontend.ts` bakes a script assigning `window.__SLOPGRID_MODELS__` into cached entry HTML and rebuilds it when the snapshot changes. The script uses serialized JSON and its content hash is allowed by the page CSP. `src/model-catalog.ts` reads the embedded snapshot synchronously, so model selection, pricing, and compatibility have no browser catalog requests, loading state, or server-rendered components. Reloading the page picks up the latest snapshot. Model-list GET and HEAD requests read the same snapshot and bypass the API rate limiter.
-
-`src/main.tsx` mounts the application providers, `src/router.tsx` defines routes, and `src/layout.tsx` owns the navigation shell and grid header portal target. `src/components/grid-listing.tsx` shares grid-list rendering and the public-grid query section between Your grids and the creation page; creation mounts that section only before output-type selection. Pages live under `src/pages/`, creation controls and draft persistence under `src/create/`, and shared connection controls and inference dialogs under `src/components/`. The connection widget is mounted by creation and Settings only. Grid query/SSE state and edit mutations live in `src/grid/use-grid.ts`, while the header, output table, and individual output cells have separate components under `src/grid/`. The React client uses TanStack Router for creation, grid history, billing, settings, and grid routes, and TanStack Query for API state. Selecting an output type reveals the full creation form, which stores its in-progress state in sessionStorage across OAuth redirects. Grid pages use EventSource while generation is running or a paused grid still has active requests, receiving server snapshots and draft text while text generation streams. The client closes the connection once the grid is stable and reopens it when an action starts generation again. Stable grids do not open a connection when loaded. SVG drafts are completed locally for a disposable image preview: open elements and quoted attributes are closed, unfinished attribute names are omitted, and trailing partial entities are dropped. The browser decodes each candidate as an image before replacing the last valid preview. These changes never modify the stored final SVG; Markdown streams through the shared renderer and websites through bundle previews. Monotonic revision numbers prevent late HTTP responses from overwriting newer SSE state. Each accepted draft update allocates a revision in SQLite, including updates between throttled emissions, while its text stays in engine memory. Streaming output drafts stay in the active worker's memory without being written to SQLite. Provider-exposed thinking is streamed separately and appended to private files under a cell and attempt identifier. Cell metadata stores the latest thinking identifier; earlier attempt files remain separate. Partial thinking survives pauses, failures, and restarts, while a newly dispatched attempt clears the current identifier before receiving new text. SVG and Markdown draft text is included in live snapshots; website snapshots contain only a versioned preview URL rather than the bundle text. Website cells receive file snapshot URLs through the existing grid SSE connection. Each keeps its loaded iframe visible while a second, hidden iframe loads the next snapshot, then swaps the frames without remounting the new document. Before revealing a replacement, `src/grid/frame-scroll.ts` reads the visible document's current viewport and nested-panel scroll offsets through a MessageChannel, applies them to the hidden document, and waits for acknowledgement. Nested panels match by element ID or structural CSS path; missing elements are skipped and offsets clamp to the replacement's available content. If a document no longer responds to the bridge, a short timeout lets the swap proceed. Updates arriving during a load are coalesced to the latest URL for the next load, keeping at most two frames mounted. The same handoff applies when streaming finishes and the saved output replaces the preview. Private frames wait through both the authorization bootstrap and generated-document load events; published frames need only the document load. Pausing or failing a cell unmounts its frames. Images and SVG render directly as image elements; HTML previews use sandboxed iframes with scripts allowed. Markdown previews render streamed drafts and completed source with the same mounted `react-markdown` and `remark-gfm` component. Completion fetches the original Markdown file through the output route's raw mode while retaining the last streamed draft, so the document and scroll container remain mounted. The cell reserves its footer space during streaming and keeps raw-view and expansion controls available throughout. The parser is included in the main browser bundle, and unchanged Markdown content is memoized across grid updates. Markdown raw view preserves source line breaks without wrapping and uses the same width fitting as rendered Markdown. A ResizeObserver measures the document with full-width code blocks or raw text in unscaled CSS pixels and applies CSS zoom to fit the preview width; the preview allows only vertical scrolling and recalculates after resizing or image loads. The shared `shared/markdown.tsx` component also renders direct output pages through React server rendering, so both views use the same parser and URL policy. Raw HTML remains escaped text without HTML parsing plugins or DOM insertion. Links, images, and task lists use the renderer and plugin defaults. Vite selects the entity decoder's lookup-table implementation rather than its browser implementation that writes to innerHTML. Grid pages render their title, pause/resume control, accessible progress bar, and action buttons into a header slot through a React portal. The slot and heading wrappers use CSS display contents so the logo, title group, actions, and navigation occupy one header grid. The title group fills the center column at widths of 480px or more and spans a second row below that width. The progress bar spans the bottom of the header and counts complete and error cells as finished. Visual segments follow cell order, coloring successful outputs with the accent and failed outputs red, while the native progress element exposes the finished count and separate success/failure totals to assistive technology. A moving, pulsing spark appears during generation, with reduced-motion support. Live cost and owner spending text use the same CSS gradient animation while the grid or any cell is running; reduced-motion preferences show static text. The shell fills the viewport and gives the remaining space to the grid scroll container. Tables fill the available width and scroll with sticky column and row headers and an empty corner cell. `src/grid-resize.ts` owns table width and output-row height for both automatic layout and saved sizes. The zoom component calls its viewport-fit function before measuring the scale, and its viewport observer requests a fresh fit after viewport changes. For unresized tables, sizing distributes spare vertical space to output cells after subtracting the natural header height, with a 390-pixel minimum per output row. The table itself has automatic height, so viewport filling cannot stretch the header; saved output row heights take precedence. The row-label column sizes to its rotated contents and padding, while output columns initially retain a minimum width of 340 CSS pixels. Resize handles on column labels' left edges and row labels' top edges adjust the output column to the right or row below, switching to explicit table dimensions on the first resize. The heading row and label column have no resize handles. The heading row keeps its natural content height when saved output sizes are restored or changed, while the label column retains its measured automatic width. Only output dimensions are stored per grid in localStorage, with no server persistence. Pointer deltas account for table zoom, and the handles also accept arrow keys. Model IDs in row and column labels use clipboard buttons with a success icon and an accessible status message. `src/zoomable-grid.tsx` handles two-finger touch gestures inside the grid at any screen size, scales only the table with CSS zoom from the scale that fits the table within the viewport up to 3x, and adjusts scroll offsets around the fingers' midpoint. Touch-capable grids, detected through `navigator.maxTouchPoints` or an available coarse pointer, start at the scale that fits their full width, with their base table width fixed before applying zoom. One-finger scrolling stays native. Resizing the viewport reapplies the width fit on touch-capable devices and restores normal scale on devices without touch, and HTML frames retain native pointer input and scrolling; grid gestures can begin on table headings. Markdown previews use native nested scrolling for one-finger gestures, while two-finger touch events bubble to the grid zoom handler. `OutputGrid` can expand one running or completed Markdown, SVG, image, or website cell into an overlay constrained to the grid workspace, keeping the navigation header visible and the underlying table mounted but hidden and inert. Expansion shares the cached Markdown source and transfers its scroll position; images use the same contained-image component at the larger size, and SVG and website previews keep receiving current updates. Website expansion reuses the isolated `WebsitePreview` component. Collapsing restores focus to the original expand button on collapse; Escape also closes the overlay. The generated HTML bridge forwards unhandled Escape presses to the application origin; the overlay accepts them only from its own sandboxed iframe windows, so a background cell cannot close it. Table zoom, sizing, and scroll offsets remain intact. Theme colors use CSS variables for light and subtly warm dark palettes. A small external bootstrap script applies the saved browser preference before rendering, while a React provider follows system appearance changes, persists explicit overrides in localStorage, synchronizes open tabs, and updates the browser theme color. Generated output canvases retain their own appearance.
-
-`server/app.ts` composes the application dependencies and middleware in request order. `server/frontend.ts` serves the built client with uncached page entries and immutable hashed assets. Markdown previews import the shared renderer directly into the main bundle rather than loading a separate module chunk. Rebuilds retain existing assets for pages opened before an update, and missing asset responses are not cacheable. Host dispatch and generated HTML isolation live in `server/hosting.ts`; API origin and rate checks live in `server/security.ts`. Cookie/session handling, rate limiting, and grid snapshot presentation have dedicated modules. The private billing router pages inference attempts by session ownership, omits finish reasons from its response, and provides totals for reported charges and unavailable costs. Routers under `server/routes/` handle authentication, model listing, grids, SSE, and same-origin outputs; the inference guard owns the balance check and session concurrency policy. The server entry point serves the built client in production and Vite middleware in development. Grid creation and Resume query OpenRouter credits before starting work. Balances below $3 require explicit continuation, shown through a top-up dialog. The inference policy also supplies the authenticated `GET /api/inference-capacity` recommendation, `max(1, floor(balanceUsd / 3))`, through a TanStack query. Creation caps the automatic recommendation at the cell count. Manual worker input stays as a raw string in the creation draft, including empty or invalid text; Generate validates and converts it to a positive integer without clamping. MAX writes the cell count into that input. The form submits and saves `parallelWorkers` in the grid input, preserving the request through Resume and Edit/Fork. Each accepted start or resume sets the session limit to the saved request, falling back to the recommendation when no count was supplied. The scheduler applies this limit across the session's grids alongside fair allocation and the shared worker cap. `server/domain.ts` validates grid inputs, expands their Cartesian product, and substitutes prompt variables literally. Axis arrays must be nonempty and distinct. Grid input validation imposes no length ceilings on prompts, axis values, or model IDs, and the public JSON body parser has no byte ceiling. Grid size and requested parallelism have no fixed numeric ceilings. `server/output-format.ts` owns generation instructions, the website schema, and completed-output parsing, reusing the storage path validator for generated static bundles. For website models advertising `structured_outputs`, inference requests a strict JSON schema through the AI SDK and requires supporting provider endpoints. The schema uses a list of `{path, content}` entries so arbitrary filenames work with providers that require closed object schemas. Other models receive the same prompted file-list shape without provider schema enforcement. Both paths stream through the same incremental preview decoder and undergo final path, extension, index-file, and duplicate-path validation. Schema failures do not trigger an unconstrained fallback. `server/provider.ts` owns the model catalogs and credit checks, and delegates generation to `server/inference.ts`, which makes one streamed text call through the AI SDK OpenRouter provider or generates images through the provider's image API. `server/billing.ts` owns durable inference-call recording and session-filtered history queries. It reads per-model reasoning metadata, distinguishing explicit effort lists, unrestricted effort selection, unavailable selection, mandatory reasoning, and unpublished router capabilities. `server/http.ts` supplies the shared upstream HTTP transport with connection, header, and body timeouts disabled. Catalog discovery, credit balance checks, OAuth exchange, and inference use this transport, and inference abort signals carry user cancellation without deadlines or application output-byte limits. `server/generation-budget.ts` converts the per-cell dollar allowance into an explicit text output-token ceiling using catalog pricing, a conservative input estimate, and model/context ceilings. Budget configuration lives once in the grid input and is derived into cells when expanding a grid. Inference applies matching provider-price routing constraints and gives the cell call its full allowance; retries start a fresh allowance. Images retain their dedicated API path without a text-token budget. `server/partial-website.ts` decodes file names and JSON string contents incrementally, including unfinished values and escapes split across chunks. `server/website-previews.ts` writes changed files atomically into temporary attempt directories, refreshes each bundle at most once per 750 ms, and clears temporary files on cancellation, retries, and completion. The entry point explicitly clears leftover previews at startup. Preview metadata remains in memory, and preview notifications are coalesced per grid through the scheduler's 300 ms draft throttle. HTML hosts serve both relative preview assets and completed bundles, while the application host serves no generated HTML. `server/failures.ts` extracts provider error messages, codes, retry delays, and transient-limit classification from HTTP and streamed errors. Cell state persists the message and code; a waiting-to-retry flag stays in memory. `server/model-resolution.ts` resolves catalog `alias_target.slug` chains before a grid is expanded or saved. Published targets are pinned in the saved configuration, with duplicate model-axis targets collapsed. Catalog aliases without a published target retain their selected IDs through inference, retries, and Edit/Fork. Cycles and unknown latest aliases are rejected. The catalog retains `canonical_slug` for the selected moving-alias warning; a differing canonical slug alone is not an alias marker. `server/compatibility.ts` classifies thinking effort and image-setting support as supported, unsupported, or unknown. `src/create/compatibility-table.tsx` renders model-by-effort matrices for thinking and separate model-by-value matrices for image parameters, including fixed selections, with SVG checkmarks only for supported combinations. Model default omits reasoning configuration, None sends `reasoning.enabled: false`, and explicit levels send `reasoning.effort` with required-parameter routing. The compatibility table does not block creation, retries, or provider calls; selected settings are sent to OpenRouter, and upstream rejections become cell errors. The inference fetch wrapper creates a durable billing entry before each actual upstream request. Completion metadata stays exclusively in the billing ledger and is omitted from grid snapshots. Each cell's usage is read directly from its latest inference call without attempt grouping or summation. Entries retain the call phase, status, timestamps, available generation ID and HTTP status, normalized and raw finish reasons, reasoning-token counts, token usage, cost, and failure message/code. Retries create new entries. Cancellation is recorded even when the scheduler discards the partial result. No prompts, outputs, credentials, or headers are stored in the ledger. Startup marks unfinished entries interrupted without sending replacement requests. Non-successful text finish reasons fail the cell while preserving its reported usage, without exposing finish metadata in the interface. Reported USD costs are stored in the inference ledger with token usage. Text costs come from provider metadata; a scoped fetch wrapper preserves image response costs because the installed image adapter drops that field. The ledger retains reported charges even for failed calls. Separately, inference estimates streaming text costs from catalog input/output rates and the request fee, approximating one token per four UTF-8 bytes with eight input framing tokens. Provider-exposed thinking text counts toward the estimate without entering the output draft; hidden reasoning, cached input rates, and provider tokenization can differ from this approximation. The scheduler keeps estimated token counts and cost together in `estimatedUsage` only in memory, emits them through grid snapshots, and clears them on completion, failure, pause, and retry. The grid header derives cost from successful completed cells' reported prices plus running cells' estimates. Separately, Billing sums reported charges across all calls belonging to the grid and adds estimates only for running cells whose latest call has no reported cost. This includes failed, cancelled, and retried calls while treating a reported zero as a final price. The engine computes `spentUsd` synchronously with each generation snapshot, so the web process cannot combine an older stream snapshot with newer ledger state. The versioned private API carries this derived field without persisting it in grid metadata; the web presenter removes it for non-owners. Both displayed totals truncate to two decimals. Final reported usage replaces estimates, which never enter the billing ledger.
-
-`server/image-settings.ts` owns image dimension choices and reference metadata types. Grid inputs store optional shared scalar `imageSettings` and ordered `inputReferences` metadata alongside reference-axis groups. Validation removes shared settings controlled by axes, empty shared references, and unselected reference groups. Grid expansion starts with shared settings and then applies the selected axes. One normalization function removes unspecified and `auto` values before compatibility checks and inference preparation, so newly prepared default requests have identical artifact signatures regardless of whether Auto was selected as an axis value. Existing inputs remain readable without migration. The form transfers configured fixed values into new axes, resets fields when their parameter leaves an axis, and shares custom-size and reference-file controls between fixed fields and axes. Custom size controls encode separate Width and Height fields as the existing pixel-size string; incomplete pairs remain in the draft and fail grid validation. A shared field holds one pair, while size axes retain an ordered list of custom pairs alongside presets. `Provider.imageEndpoints` caches per-endpoint capabilities, provider names, and published pricing for five minutes, sharing in-flight requests and dropping failed cache entries. Endpoint metadata must contain a nonempty provider name and an explicit pricing array. Pricing tooltips identify the provider returned by the catalog; an empty array represents unpublished prices, while omitted pricing fails validation and can be fetched again. The model-price display and compatibility table read image metadata directly from the embedded model snapshot. Model prices summarize published output rates by unit, with all provider rates and tiers in the tooltip. Image compatibility evaluates each parameter per endpoint and isolates minimal incompatible parameter subsets, so unrelated settings do not inherit another parameter's warning. A combination still requires a single endpoint to accept its settings; conflicts between individually supported values are attributed to each involved type. Missing metadata remains unknown. Explicit pixel sizes with conflicting aspect ratios mark both parameter types incompatible. Image matrices use models as rows and selected parameter values or reference groups as columns, aggregating the affected generation cells and naming their specific conflicts. Only matrices containing an unsupported result are shown. The creation form computes compatibility grids once and passes each grid to its corresponding axis or common-parameter input. These checks remain advisory, and inference forwards the selected settings to the dedicated image API.
-
-`src/components/editable-title.tsx` is shared by grid titles and reference-group titles. It owns edit mode, keyboard and blur handling, pending saves, and error display; callers own validation and persistence.
-
-`src/grid/output-grid.tsx` owns a single expanded selection for either an output cell or a saved reference image. Header thumbnails use the authorized reference-file route. Both kinds of expansion share the workspace overlay, Escape handling, focus restoration, `ContainedImage` sizing, and `ExpandButton` control; reference images are not represented as generated cells.
-
-`src/create/reference-files.ts` keeps selected files in browser IndexedDB while the draft stores only local identifiers and filenames. Previews use local blob URLs, which are revoked on unmount. Generate validates the draft, uploads selected local files individually, replaces their local identifiers with server reference identifiers, and then creates the grid. Uploads stop when creation unmounts, and submission stays disabled while file selection or upload is pending. Successfully uploaded references are reused if submission needs to be retried. The upload helper consumes schema-validated input, which guarantees a nonempty image list for every selected reference group. `server/routes/references.ts` accepts PNG, JPEG, and WebP bytes with a 20 MiB per-file request limit and checks file signatures; browser MIME declarations and filenames do not determine the stored media type. Invalid signatures return HTTP 400, while persistence failures are logged server-side and return HTTP 500 without storage details. The browser gives format advice only for rejected input and retains selected files when an upload fails so Generate can retry. `server/image-references.ts` owns reference-file persistence and access checks. SQLite keeps ownership and media metadata in `reference_images`, while binary files use separate reference directories under the shared output root. Anonymous reference ownership is claimed with grids during account login. Grid creation checks access to every selected reference and discards unselected groups. Reference reads require ownership, an owned grid using the file, or a published grid using it, so unused uploads stay private. The scheduler loads stored references as bytes, media type and a content hash; the inference adapter constructs data URLs only at SDK dispatch. File bodies stay out of grid metadata and SSE. Editing and forking reuse these stored identifiers and the grid's access policy.
-
-Shared reference files use the same local browser storage, deferred uploads, ordered inference bytes, and attachment checks as axis references. Upload retries replace local identifiers in both shared collections and axis groups. The reference access query examines only saved axis groups and shared references, so publication and fork ownership grant access to the files actually used by the grid. Empty shared collections are valid and omitted from inference.
-
-`server/encryption.ts` provides the authenticated encryption used for stored keys, while `server/grid-presentation.ts` constructs author identities and grid responses. `server/store.ts` stores grid configuration, sessions, and cell state in SQLite with WAL enabled and foreign keys enforced. Grid configuration is stored once, and cell rows contain status, error, and image media type; usage for recorded calls is derived from the latest ledger entry, and finish metadata stays in the ledger; per-cell prompts and model settings are reconstructed from that configuration. The cell ID and position live in relational columns rather than duplicated JSON. Output-host lookups join a cell primary key to its grid rather than scanning grids or maintaining a second output index. `server/routes/outputs.ts` serves completed output downloads on the application origin with attachment filenames built from the saved grid prompt, grid ID, and axis values. Website downloads use `fflate` to generate ZIP archives asynchronously from stored files, preserving relative paths. SVG, Markdown, and image downloads return their original files. Cell clipboard controls copy text source or PNG image data, converting other image formats to PNG for clipboard compatibility. `server/files.ts` stores each output in a directory keyed by its cell ID: text files keep their relative paths, and images are raw binary files. A complete bundle is staged in a temporary directory and renamed into place before the cell is marked complete; interrupted writes cannot expose a partial bundle. A retry replaces any files left by a crash before completion was saved. Generated file bodies are never stored in SQLite or grid snapshots. Completed files are not rewritten when grid state changes.
-
-`server/database.ts` creates the current schema in one immediate transaction for an empty database and checks SQLite's `user_version` on startup. Other schema versions are rejected; there are no historical migrations or legacy data conversions. Each session owns grids through an opaque cookie token. OpenRouter PKCE verifiers and state are server-side; the callback checks state and a ten-minute deadline before exchanging the code. The resulting key is encrypted using AES-256-GCM. Neither keys nor ownership tokens appear in API grid responses.
-
-`server/jobs.ts` manages generation across all active grids, including cell selection, retries, cancellation, previews, persistence, and notifications. `server/worker-allocation.ts` is a pure selection function that applies the shared worker cap, per-owner concurrency limits, and fairness ordering. It derives active counts from the running calls, so there are no separate worker counters to synchronize. Jobs excludes grids already running their requested number of cells before owner selection, counting unsettled canceled calls toward that cap. Jobs records each call's execution owner and keeps concurrency limits and allocation history together in one owner registry, removing idle owners when their grids finish or pause. The configured maximum defaults to 100. Each available slot goes to a browser-session owner with the fewest active cells, with ties resolved by allocation history. Capacity is never reserved, and fair allocation never cancels active calls. Completed cells are skipped on every resume or retry. A manual pause aborts that grid's active requests, discards partial drafts, and stops queued cells. Canceled attempts keep their slots until they settle, and late chunks or results are ignored; resuming cannot start the same cell twice. Billing failures pause queued work across the owner's active grids without aborting its other in-flight calls. Other permanent failures mark only the affected cell as failed and leave queued work eligible to run. Parallel cells mutate one canonical grid object, so retries during in-flight work preserve completed results. The generation service supplies Jobs with a save-and-notify callback. State updates are persisted before notifications, while all temporary draft notifications share one per-grid throttle. Only the inference entry point calls `recoverInterruptedGrids` at startup to mark running grids paused and interrupted cells pending; opening a `Store` or restarting the web process does not change generation state. Generation resumes only through an owner-authorized retry. Publishing requires every cell to be complete or failed and freezes further retries.
-
-Each cell receives a random 192-bit output identifier. HTML bundles use a separate hostname formed from that identifier and an environment-configured suffix beginning with a hyphen. Host matching accepts only the configured single-label pattern and exact cell identifier. The iframe CSP uses a whole-label wildcard for the HTML hosts' parent domain, since CSP does not support partial-label wildcards. Host dispatch runs before JSON parsing, session cookies, API routes, or frontend serving. HTML hosts serve only that bundle's validated files, and `/api` cannot reach application handlers there. Their CSP sandbox omits `allow-same-origin` while allowing scripts and static assets; connections, forms, and cookie access are blocked, including when opened in a separate tab.
-
-Images, SVG, and Markdown use `/outputs/:id` on the application host. Images are served as image bytes rather than HTML wrappers. SVG is served as `image/svg+xml` and previewed through an image element, which disables scripts and external resources. Direct visits to the SVG output URL retain the restrictive response CSP. Markdown is rendered with raw HTML escaped. These responses read the existing session without creating one, enforce the grid ownership policy before reading output files, set no cookies, and have a CSP sandbox without script permission. Downloads use the same authorization check before exposing files or filename metadata. The application cookie remains host-only and uses the `__Host-` prefix under HTTPS. HTML bundles cannot be fetched through the application output route, and the HTML host handler serves no other output formats. Completed image and SVG responses use `public, max-age=31536000, immutable` after publication. Private responses use `private, max-age=31536000, immutable, must-revalidate` with `Vary: Cookie`, independently of session age. Changing the cookie selects a different cache entry, and stale entries must revalidate through authorization. Previously cached bytes can remain usable with an unchanged cookie until their expiry without a server check. Other output routes and unsuccessful responses retain `no-store`.
-
-Unpublished grids require their owning account or anonymous browser session for API access. Private outputs and previews require the same ownership as their grid: `server/grid-policy.ts` compares `ownerUserId` with the authenticated session's `userId`, or uses the anonymous browser identity before a grid is claimed. Each browser signed into the owning account can establish its own output authorization through the application entry route; the creating session is not required. Revoking one session invalidates its output cookies without revoking other sessions for the same user. Knowing a cell URL grants no access. Published outputs remain readable without a session.
-
-`server/output-access.ts` bridges application-session authorization to isolated HTML hosts without sharing the application cookie. The application-host entry route checks ownership and the requested file path, then issues an in-memory grant bound to the cell, path, and current session ID. Grants expire after thirty seconds and are capped globally and per owner. Published outputs bypass this handshake.
-
-Private iframe authorization has two phases. Navigation to the isolated host's `/__session/<grant>` endpoint rechecks ownership and the live session, sets an encrypted output cookie, and serves a trusted sandboxed bootstrap. After its load event, its credentialed fetch to the same endpoint sets the cookie in the sandbox's subresource partition, consumes the grant, and receives a 204 response before the bootstrap navigates to the generated document. Navigation deliberately leaves the grant available for this second request. Both phases enforce its expiry and cell binding. Non-navigation clients without the sandbox's null origin receive a redirect after redemption instead.
-
-This bootstrap is needed because navigation and opaque sandbox subresources can use different cookie partitions even with same-site hosts: Chromium includes the cross-site ancestor state in its partition key. Only trusted authorization code can connect to its own host; generated scripts run under `connect-src 'none'` and never receive the application session cookie. The output cookie is host-only, Secure, HttpOnly, SameSite=None, and partitioned. Its encrypted payload contains the cell ID and application session ID, rather than a permanent authorization decision. Every private asset request checks the cell scope, live session, and current grid ownership before reading files or enabling CORS. Session deletion and rotation on sign-out or account switching therefore revoke access even if the output cookie remains in the browser.
-
-`server/website-html.ts` uses parse5 to add credentialed loading to scripts, links, and elements already specifying CORS in private HTML. This carries the output cookie into stylesheet and module requests, including relative imports, while preserving the opaque-origin sandbox. The rewrite affects served HTML only; stored generated files remain unchanged. After authorization, private resource CORS permits credentialed requests from the sandbox's null origin. A null origin alone grants no access, and partitioning separates cookie access across top-level sites. Public files retain credential-free CORS. Served HTML also receives a small scroll bridge before generated scripts. It accepts coordinate read/restore requests only from its immediate parent at the application origin, replies through the supplied MessagePort, and is inactive in direct tabs. Public and private documents use the same bridge without changing their sandbox permissions or authorization; stored files and downloaded bundles do not contain it.
-
-Private top-level HTML navigation without an output cookie redirects through the application entry route, which checks the live session before issuing a grant. The isolated redemption endpoint sets the navigation cookie and redirects to the requested output URL. At that final URL, `server/output-access.ts` issues a fresh grant and serves trusted bootstrap code that fetches the grant endpoint to establish the current document's subresource cookie. It then writes the generated HTML into the same document, preserving its opaque cookie partition and URL. Served HTML places a `connect-src 'none'` CSP meta policy before generated scripts, so the temporary bootstrap connection permission does not extend to them; removing the meta element does not undo the policy. The serialized HTML escapes less-than characters before embedding it in the bootstrap script. Reloading and following another HTML file repeats authorization in that document's partition. Embedded frames retain the application's top-level site and use the two-phase navigation handshake described above. Generated files and downloads remain unchanged.
-
-Publishing requires every cell to be complete or failed; pending and running cells prevent publication. Published grids are readable by anyone with the grid link, including failed cells, and retain the original owner for display controls. Visibility distinguishes private grids, unlisted published grids, and publicly listed grids. Only publicly listed grids appear in the public summary endpoint, which omits owner and cell data. Publishing permanently locks generation inputs and outputs and prevents a return to private visibility; owners can still change the title. Owners can promote unlisted grids to public visibility through the publishing endpoint; publicly listed grids cannot return to unlisted visibility. All mutations check ownership and reject cross-origin browser requests. The server limits API traffic, creation, retries, active workers, and SSE connections. Rate limits and in-flight spending limits with a valid Retry-After header return cells to the pending queue and impose a session-wide cooldown, releasing worker slots while other users continue. Retry-After is read from HTTP response headers or error metadata headers. Billing errors without valid retry guidance pause queued work for user intervention. One scheduler timer wakes expired cooldowns, and each cell can retry up to five times with exponential backoff, jitter, and Retry-After handling. Permanent billing failures pause the session's queued grids while active calls finish. All other permanent inference failures, including missing credentials and provider age-verification requirements, stay on the affected cell and release its worker for queued work. Worker registries, generation subscriptions, retry counts, cooldowns, and execution credentials live in the inference process; browser connections and HTTP rate counters live in the web process. Each process has its own provider catalog cache; SQLite retains configuration, state, and credentials across process restarts, while the filesystem retains generated outputs.
-
-Manual keys use a separate path alongside OAuth. `src/openrouter-key.ts` stores the key in localStorage and synchronizes connection state across tabs. The shared connector validates it through `POST /api/auth/key`, which checks OpenRouter's key endpoint without persisting the credential. Validation, worker recommendation, Generate, and Resume send the key in an Authorization header; reads and SSE use the existing owner cookie. Worker recommendations use $0.40 per image and $3 per other output, with format-specific frontend query caching. Creation and Resume pass the saved output type to the same recommendation calculation when no worker count is specified. Manual keys take precedence over an OAuth credential. Selecting OAuth clears the local manual key before the existing redirect, and Disconnect clears it before using the existing session-key removal route.
-
-`server/provider.ts` checks manual-key credits using the account balance and key's remaining limit, choosing the lower available value. When account credits are inaccessible, a finite remaining key limit supplies the concurrency estimate; when neither is available, the recommendation is one. The scheduler retains the supplied key in a private per-grid memory map while work is queued or running, including automatic retries, and drops it when the grid pauses or finishes. Current request closures keep it only until their calls settle. Closing a tab does not stop queued work, while resuming after Pause or a process restart requires the browser to resend it. Manual keys are never written to SQLite, files, billing entries, or grid snapshots. `server/manual-keys.ts` handles bearer-key extraction and connection HTTP responses; it delegates key verification to the provider.
-
-## Accounts and attribution
-
-Users begin with an anonymous session. GitHub authorization uses a provider adapter, S256 PKCE, a session-bound single-use state, and a ten-minute expiry. The callback retrieves the authenticated profile and identifies users by the provider and immutable GitHub numeric ID, refreshing their display username at sign-in. GitHub tokens are discarded after profile retrieval. GitHub client credentials are required at startup. Pending identity authorization is separate from OpenRouter authorization.
-
-Successful sign-in atomically claims the anonymous session's grids and rotates its cookie. Grids retain their anonymous origin and may also have an account owner; account ownership takes precedence for access, mutation, listings, and billing. Signing out rotates the cookie again and removes account access while retaining browser-local OpenRouter state. The stable anonymous identifier survives rotation, and running work retains its initiating browser connection; resuming from another browser uses that browser's connection. Stored sessions have no age-based expiry. `server/session.ts` renews the application cookie whenever a route uses the session reader, while side-effect-free session reads on output routes do not set cookies. Application and isolated output cookies use a rolling 400-day maximum age to match browser retention limits; output authorization renews the isolated cookie on each grant redemption. Rotation replaces any renewal cookie already set on that response. SSE rechecks session validity and grid access before sending snapshots and closes invalidated sessions on its heartbeat.
-
-Draft attribution resolves the current account profile. First publication stores a public identity snapshot or Anonymous, and subsequent account changes cannot modify it. Historical published grids without a snapshot remain Anonymous. Public grid snapshots and summaries contain author display data but omit both anonymous and account ownership identifiers. Profile links and grid links are separate anchors in listing rows.
-
-OAuth attempts share return-path, state, and expiry policy. `oauth4webapi` generates PKCE values. GitHub's official `@octokit/oauth-methods` SDK builds authorization URLs and exchanges codes, and `@octokit/request` fetches the authenticated profile through the shared upstream transport. The adapter supplies the S256 challenge and exchange verifier because the SDK does not expose PKCE options. OpenRouter's custom key exchange stays in the provider adapter. Signing in claims persisted anonymous-grid metadata before rotating the browser session. Engine snapshots read current ownership without changing the initiating execution owner.
-
-Grid ownership and publication rules live in `server/grid-policy.ts`. Grid routes share access lookup and apply publication only after policy validation. The client publishing widget owns its TanStack mutation and updates grid and list queries.
-
-Creation and grid retry/pause actions share a TanStack inference mutation hook for request credentials, pending state, failures, and low-balance confirmation. Creation, editing, and successful generation use the same draft-storage helpers.
-
-New grids never select a model from catalog order. Generation requires a deliberate fixed model or model-axis selection; the unused fixed-model field is empty for model-axis grids.
-
-Shared modal, clipboard-button, and format-icon components own their UI lifecycles. Tooltips use one shared hook across creation, grid headers, output cells, and grid lists.
-
-The browser's grid response type is inferred directly from the server presenter, so response fields have one TypeScript definition. Ownership tokens are excluded before constructing the presented object.
-
-Both mock and real-provider browser fixtures mount the application's frontend router, including its HTML and asset caching policy.
-
-`Grid.title` is optional metadata separate from generation input. The owner-authorized `PATCH /api/grids/:id/title` trims titles, accepts at most 40 characters, and clears an empty title. It updates only title metadata and its revision, obtains a fresh engine snapshot, and notifies browser subscribers, and also permits published-grid titles to change without modifying generation inputs or outputs. Grid summaries expose the title, and listings fall back to the prompt. `src/grid/grid-title.tsx` owns inline title editing through TanStack Query, prompt copying, and an interactive Tippy overlay shown only when the prompt is truncated. Titles wrap when space is limited instead of being ellipsized, both in the header and grid listings. The title editor enforces the same 40-character limit as the API. Title colors follow the theme; prompt text shares the wordmark color.
-
-## Thinking traces
-
-`server/inference.ts` reads exposed reasoning text and summaries from raw OpenRouter stream events. This preserves thinking interleaved after answer text, which the installed adapter omits from normalized reasoning deltas. Readable `reasoning_details` take precedence over the duplicate legacy `reasoning` field, and encrypted blocks are omitted. Image responses also retain exposed thinking when present. Capture preserves the selected effort setting and does not request hidden reasoning that the provider does not return. When a text stream ends at its length limit with no non-whitespace output and reported reasoning tokens reaching the requested token limit, the inference adapter raises a specific thinking-exhaustion error after recording completion usage. The normal failure path preserves the trace, records the charge, and presents the error on the cell. Other incomplete responses retain the generic error.
-
-`server/jobs.ts` accepts progress only from the current, non-aborted controller for a cell. It appends thinking to attempt-specific files before publishing the corresponding snapshot. Cancellation blocks late chunks and results, settled callbacks cannot mutate completed or retried cells, and throttled notifications check that their runtime still belongs to the grid. Output drafts and usage estimates remain transient; terminal snapshots keep the thinking URL instead of retransmitting its body. Each streaming cell carries input/output token counts and cost together in `estimatedUsage`, derived from the same UTF-8 byte estimate used for pricing. Output counts include visible thinking. Ordered snapshots carry this object to the shared cell-usage footer and grid totals; pause, failure, and completion clear it, while successful completion displays reported usage. The footer uses the same token arrows and monospace styling for estimated and reported usage.
-
-`/outputs/:id/thinking/:attempt` checks the same ownership and publication policy as other output routes and serves plain text only when the attempt matches the cell's current thinking identifier. Attempt-specific query keys prevent an older fetch from replacing newer thinking. Trace files sit outside generated bundles, are absent from downloads, and cannot be served by isolated HTML hosts.
-
-The thinking control uses a brain icon to open raw thinking and a palette icon to return to output. While generation runs, thinking appears automatically until output content is available unless the user explicitly selects a view. Output and thinking previews remain mounted when toggled, preserving frame state and scroll positions. Thinking uses the shared text preview in its wrapped raw mode, which bypasses width measurement and scaling and displays 14px monospace text with preserved newlines, word wrapping, and vertical scrolling. Long unbroken strings wrap within the available width. This mode supports expansion across output formats, streams through grid snapshots, and keeps its last draft visible while the saved trace loads. Completed and failed traces remain available after reload. Wrapped thinking previews follow appended text and resize changes while pinned to the bottom. The preview records its scroll position after automatic scrolling, so queued scroll events and content growth do not suspend following. Upward wheel input or upward movement away from the bottom suspends following; returning within two pixels of the bottom resumes it, including the handoff to the saved trace.
-
-## Independent web and inference lifetimes
-
-`server/index.ts` starts the web process and connects to the separate `server/engine.ts` process. `createApp` requires a `GenerationAPI`; it never creates a scheduler, recovers work, or clears previews. The engine owns provider calls, queued work, fairness, retry timers, cancellation, execution credentials, streaming output and thinking, preview production, and generation billing. Web code owns authentication, account and grid metadata changes, model discovery for forms, presentation, and authorized output delivery.
-
-`server/generation-api.ts` defines the explicit versioned contract. Its operations accept identifiers and named parameters rather than mutable grids or arbitrary method names. `server/generation-server.ts` exposes HTTP over a local Unix socket with owner-only permissions; it has no TCP listener or browser-facing route. `server/generation-client.ts` implements the same typed interface and checks the protocol response header. It uses Node's JSON stream consumer and line reader for response decoding, with an AbortSignal controlling subscription cancellation. The local subscription has no idle timeout or heartbeat; the browser-facing SSE route retains its heartbeat and session checks. Commands validate strict payload schemas. Operational commands are available only through this private socket.
-
-| Operation                  | Contract                                                                                                                                                                                                    |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `POST /v1/grids/start`     | `{ gridId, sessionId, manualKey? }`; rechecks session, ownership, publication, credentials, and admission, then returns the current grid. Starting an already running grid does not create another attempt. |
-| `POST /v1/grids/pause`     | `{ gridId, sessionId }`; rechecks ownership, cancels that grid, and returns its state.                                                                                                                      |
-| `GET /v1/grids/:id`        | Current metadata combined with canonical live generation state.                                                                                                                                             |
-| `GET /v1/grids/:id/events` | Newline-delimited full grid snapshots, beginning with the current snapshot.                                                                                                                                 |
-| `POST /v1/previews/path`   | `{ cellId, path }`; resolves only files belonging to that cell's active preview attempt. Web code checks output authorization before calling it.                                                            |
-| `GET /v1/status`           | Protocol version, process instance identifier, admission state, running-call count, and active-grid count.                                                                                                  |
-| `POST /v1/drain`           | Closes admission for new starts and resumes while accepted grids continue through their queues and retries.                                                                                                 |
-| `POST /v1/accept`          | Reopens admission.                                                                                                                                                                                          |
-
-Errors have `{ code, error }` bodies. `DRAINING` and `UNAVAILABLE` use 503, `NOT_FOUND` uses 404, `PUBLISHED` uses 409, `AUTH_REQUIRED` uses 401, and `INVALID_REQUEST` uses 400. Transport failures do not automatically replay commands: a lost start response may represent accepted work. A later snapshot or an explicit Resume reconciles that state without starting duplicate running cells.
-
-Creation inserts immutable configuration and initial cell rows together. After creation, `Store.saveGeneration` writes only status, interruption, and cell state; metadata operations update only title, publication, or ownership. Each mutation allocates a revision in SQLite, including live draft changes, so revisions remain ordered across both processes. Snapshots combine freshly read metadata with live cells. Publication checks and generation admission use immediate transactions to serialize publication against retries. The engine records billing calls; the web process reads them for billing presentation.
-
-Subscriptions register before sending their initial snapshot in the same engine event-loop turn. The web process forwards snapshots through the browser SSE route, discards older revisions, and rechecks current session and persisted ownership before delivery. A web restart disconnects browser streams without cancelling provider calls. EventSource reconnects and receives a fresh snapshot, including drafts, thinking, estimates, and preview identifiers. Slow subscribers are disconnected instead of accumulating unbounded snapshots. Preview files and their in-memory attempt registry survive web replacement.
-
-A soft update replaces web code and frontend assets while leaving the engine and its release files intact. A machinery update drains first and waits for both active-grid and running-call counts to reach zero. Running calls include cancelled requests whose promises have not yet settled. Draining entire accepted grids preserves memory-only manual credentials until their work finishes or pauses. Termination signals also request this drain; a forced process kill still interrupts work. Recovery and preview cleanup run only when starting the engine. Protocol, shared storage, or execution changes require a compatible machinery update.
-
-Runtime validation and crash-boundary coverage are described in [DEVELOPMENT.md](DEVELOPMENT.md#validation).
-
-`src/grid-pan.ts` handles primary mouse drags on the grid scroll container, excluding output content, controls, and resize handles. Pointer capture keeps a drag active across cells and releases it on pointer-up, cancellation, or capture loss. Touch gestures remain in `ZoomableGrid`. `src/contained-image.tsx` centers an image inside a size container and uses its natural aspect ratio with container-relative width and height limits to size the image element itself. Both completed images and streamed SVG previews share this layout, so letterbox padding is outside the image hit area and can start grid panning.
-
-## Artifact provenance and reuse
-
-`Provider.prepare` and `server/prepared-inference.ts` construct the serializable request consumed by the provider SDK and the reuse signature. Text preparation resolves pricing, instructions, token ceilings, reasoning, routing and the JSON schema; image preparation retains ordered reference values containing bytes, media type and a content hash. The SHA-256 signature canonicalizes object keys while preserving arrays and uses the reference media types and precomputed content hashes. It also includes the output format, monetary budget, and adapter revision derived from the SDK dependency versions and a local revision. Adapter semantic changes require updating that local revision.
-
-After successful inference and file storage, Jobs records `provenance` with the signature and complete relative file inventory in cell metadata. Store persists it alongside the thinking identifier without a schema reset or fabricated historical signatures. Historical cells without provenance remain readable and generate afresh when used as a source.
-
-Creation accepts `sourceGridId` and `reuseArtifacts` separately from `GridInput`, checks source visibility server-side, and retains the existing connection, balance, reference-access and rate checks. `server/artifact-reuse.ts` indexes completed source cells in grid order, compares prepared requests, and groups destinations by their matched source. `OutputFiles.readArtifact` validates and asynchronously reads the complete recorded inventory and thinking before `writeArtifact` writes independent copies under fresh identifiers. Each matched source is read once, and at most one source bundle is retained in memory while its destinations are written. Source read failures are cache misses; destination writes and database errors follow ordinary error handling. Copied cells retain provenance, media type and reported usage in their metadata and have no inference ledger entries. Destination ownership controls output access independently of the source. Creation marks an all-copy grid complete, while Jobs schedules only unfinished cells in a mixed grid.
-
-The creation draft stores the source identifier and checkbox state outside generation parameters in session storage, preserving both through reloads and provider redirects. Edit and Fork initialize reuse as checked.
-
-Reuse returns immediately when the source has no signed completed cells. Pricing and budget preparation failures use `PreparationError`; reuse treats these as misses so Jobs records them through its ordinary per-cell failure path. Unexpected preparation errors still propagate.
-
-Prepared inference is a discriminated union: image requests contain image options, while text requests contain text options and the pricing needed for streaming estimates. Text construction requires a calculated budget. The estimator pricing stays outside the signature, preserving the existing effective-request identity. Every successful provider result carries a signature; optional provenance is limited to stored historical cells.
-
-Reference loaders cache reads and content hashes by identifier for one reuse operation or one grid execution. Concurrent cells share pending reads, array order and repeated references are preserved, and failed reads are evicted so they can be retried. Web reuse and engine execution have independent lifetimes and loaders; reference bytes remain out of persistence and the internal API. The signature retains its existing reference encoding so previously signed artifacts remain reusable.
-
-## Markdown fonts
-
-Markdown code blocks and source views use the bundled DejaVu Sans Mono WOFF2 font so spaces and full-block characters share one font and advance width. Grid previews load the static font asset; direct Markdown pages embed it as a data URL and allow only data fonts in their existing sandbox CSP. The font license ships beside the asset.
+Slopgrid separates its web application from a long-lived inference engine. Both
+processes use SQLite and the output filesystem, with explicit ownership of writes
+and a private API for generation commands and snapshots.
+
+Product behavior belongs in [PRODUCT.md](PRODUCT.md), and setup, testing, and
+validation guidance belongs in [DEVELOPMENT.md](DEVELOPMENT.md). This document
+describes component responsibilities, data flow, and security boundaries.
+
+## System boundaries
+
+| Component | Owns |
+| --- | --- |
+| React client | Creation drafts, model selection, grid views, and browser interactions |
+| Web process | Authentication, sessions, grid metadata, model discovery for forms, HTTP/SSE connections, and authorized output delivery |
+| Inference engine | Admission, scheduling, provider calls, execution credentials, cancellation, retries, streams, previews, billing writes, and recovery |
+| SQLite | Sessions, identities, grid configuration, cell state, revisions, reference metadata, and inference ledger |
+| Output filesystem | Completed bundles, image references, thinking traces, and temporary website previews |
+| OpenRouter adapter | Catalog interpretation, credit lookup, request preparation, and inference SDK integration |
+
+### Shared design rules
+
+- TypeScript is shared across the React client and server. TanStack Router owns
+  navigation, TanStack Query owns browser API state, SSE carries live snapshots,
+  and the AI SDK adapts inference requests.
+- Identity providers and inference providers have separate adapters. Provider
+  logic stays outside HTTP handlers and application concurrency policy.
+- Persistence, encryption, access policy, and response presentation have separate
+  owners. Browser snapshot types derive from the server presenter.
+- Grid expansion is separate from output instructions and parsing. Website
+  parsing and storage share one relative-path validator.
+- Worker allocation is a pure policy separate from execution. Scheduler state is
+  grouped by grid or owner lifetime, and one notification policy handles drafts.
+- Shared widgets own modal, clipboard, tooltip, and editing lifecycles. Tippy
+  handles tooltips, Lucide supplies icons, and React components render Markdown
+  without unsafe DOM insertion.
+
+## Web and inference processes
+
+### Entrypoints and request handling
+
+- `server/index.ts` starts the web process; `server/engine.ts` starts inference.
+  `createApp` requires a `GenerationAPI` and never constructs a scheduler,
+  recovers generation, or clears previews.
+- `server/app.ts` composes dependencies and middleware. Host dispatch in
+  `server/hosting.ts` runs before application parsing, sessions, and routes.
+  `server/security.ts` owns browser origin checks and API rate policy.
+- Routers under `server/routes/` own authentication, catalog reads, grids,
+  billing, references, SSE, and application-host outputs.
+- `server/frontend.ts` serves built assets in production; development uses Vite
+  middleware. HTML entries are uncached, hashed assets are immutable, and missing
+  assets are uncacheable. Releases retain old assets needed by open tabs.
+
+### Private generation API
+
+`server/generation-api.ts` defines the versioned contract. The server exposes HTTP
+over an owner-only Unix socket, with no TCP listener or browser-facing route.
+Commands use strict payload schemas and named parameters rather than mutable grids.
+
+| Operation | Contract |
+| --- | --- |
+| `POST /v1/grids/start` | Accepts `{ gridId, sessionId, manualKey? }`; checks access, publication, credentials, and admission. An already running grid is not started twice. |
+| `POST /v1/grids/pause` | Accepts `{ gridId, sessionId }`; checks ownership, cancels that grid, and returns its state. |
+| `GET /v1/grids/:id` | Combines current metadata with canonical live generation state. |
+| `GET /v1/grids/:id/events` | Streams newline-delimited full snapshots, beginning with current state. |
+| `POST /v1/previews/path` | Resolves `{ cellId, path }` within the active preview attempt; the web process checks output access first. |
+| `GET /v1/status` | Reports protocol version, instance identifier, admission state, running calls, and active grids. |
+| `POST /v1/drain` | Closes admission while accepted grids continue their queues and retries. |
+| `POST /v1/accept` | Reopens admission. |
+
+- `server/generation-client.ts` checks the protocol response header and uses
+  Node's JSON consumer and line reader. An AbortSignal cancels subscriptions;
+  the local stream has no idle timeout or heartbeat.
+- Errors have `{ code, error }` bodies. Draining and unavailable services return
+  503; missing grids return 404; published-grid conflicts return 409;
+  authentication failures return 401; invalid commands return 400.
+- Transport failures do not automatically replay commands. A lost acknowledgement
+  may represent accepted work, so a snapshot or explicit Resume reconciles it.
+
+### Write ownership and ordered snapshots
+
+- Creation inserts immutable grid configuration and initial cells together.
+  `Store.saveGeneration` changes only generation status, interruption, and cell
+  state; metadata methods change only titles, publication, or ownership.
+- Every mutation allocates a monotonic SQLite revision, including live draft
+  changes whose text stays in memory. Snapshots combine fresh persisted metadata
+  with live cells, and clients discard older revisions.
+- Publication and admission use immediate transactions so publication cannot race
+  a retry. The engine writes inference calls; the web process reads the ledger.
+- Engine subscriptions register before their initial snapshot in the same
+  event-loop turn. Slow subscribers disconnect instead of accumulating unbounded
+  snapshots.
+- Browser SSE rechecks session validity and ownership, including on heartbeats.
+  EventSource reconnects after a web restart and receives current drafts,
+  thinking, estimates, and preview identifiers without restarting inference.
+  Stable grids close their streams and reopen them when work starts again.
+
+### Updates and recovery
+
+- A soft update replaces web code and frontend assets without changing the running
+  engine's immutable release or dependencies.
+- A machinery update closes admission and waits for accepted grids and all
+  unsettled calls, including cancelled calls, without a cancellation timeout.
+  Queued work and retries continue, preserving memory-only credentials until
+  completion or pause.
+- Termination signals request the same drain. A forced kill can interrupt work.
+  Only engine startup performs interrupted-grid recovery and preview cleanup;
+  opening a store or restarting the web process does not.
+- Recovery marks running grids paused and interrupted cells pending. It does not
+  launch replacement requests. Resume requires an owner-authorized command.
+- Protocol, storage, engine, and incompatible dependency changes require a
+  compatible machinery update. Admission can reopen if maintenance is cancelled.
+
+## Creation, catalogs, and request preparation
+
+### Browser drafts and model discovery
+
+- Creation initializes sessionStorage drafts synchronously. The saved form layout
+  is present when TanStack Router restores history-entry scroll positions.
+- `server/model-catalog.ts` loads model listings and image endpoint details into
+  a shared snapshot before serving frontend pages. Concurrent reads share loading;
+  refresh runs five minutes after the previous refresh finishes.
+- Failed refreshes retain the previous snapshot. Failed image-detail lookups keep
+  previous details when available, and catalog shutdown stops the timer.
+- The frontend bakes `window.__SLOPGRID_MODELS__` into cached HTML using serialized
+  JSON and a CSP-authorized content hash. `src/model-catalog.ts` reads it
+  synchronously; a page reload picks up newer metadata.
+- Model-list GET and HEAD requests use the same snapshot and bypass API rate
+  limiting. The web and inference processes have separate provider caches.
+- Selection requires an explicit model choice. Badge order lives in axis values,
+  so drafts, swaps, and saved inputs preserve it. Pointer capture and keyboard
+  movement reorder badges; insertion finds the nearest selected model in the
+  unfiltered catalog, resolving ties toward the earlier entry.
+- Shared pricing components show text rates per million tokens and image rates
+  in their published units, with provider and request-charge details in tooltips.
+
+### Input expansion and aliases
+
+- `server/domain.ts` validates inputs, expands their Cartesian product, and
+  substitutes prompt variables literally. Axis values are nonempty and distinct.
+  Prompts, axis values, model IDs, grid size, and requested parallelism have no
+  application size ceiling; the public JSON parser has no byte ceiling.
+- `server/model-resolution.ts` follows published `alias_target.slug` chains
+  before saving or expanding inputs and collapses duplicate resolved selections.
+- Catalog aliases without a published target retain their IDs through inference,
+  retry, and Edit/Fork. Cycles and unknown latest aliases are rejected.
+  `canonical_slug` supports moving-alias warnings; a differing canonical slug
+  alone does not establish an alias.
+
+### Provider calls and token budgets
+
+- `server/provider.ts` owns catalog and credit interpretation.
+  `server/inference.ts` makes one streamed text request or one dedicated image
+  request per cell attempt.
+- `server/http.ts` supplies the shared transport for discovery, credits, OAuth
+  exchange, and inference. Connection, header, and body timeouts are disabled;
+  abort signals carry cancellation without application inference deadlines.
+- `server/generation-budget.ts` converts a cell's monetary allowance into an
+  explicit output-token ceiling using catalog prices, conservative input cost,
+  the completion limit, and remaining context. Matching provider-price
+  constraints accompany the request. Retries receive a fresh allowance.
+- Budget configuration is stored once in grid input and derived into cells.
+  Images use their dedicated API without the text-token budget.
+- Reasoning metadata distinguishes explicit efforts, unrestricted selection,
+  mandatory reasoning, unavailable selection, and unpublished capabilities.
+  Model default omits configuration; None sends `reasoning.enabled: false`;
+  explicit efforts use `reasoning.effort` with required-parameter routing.
+
+### Compatibility and image settings
+
+- `server/compatibility.ts` classifies combinations as supported, unsupported,
+  or unknown. Compatibility is advisory and does not gate generation or retry.
+- Thinking tables use selected models as rows and efforts as columns, independent
+  of generation axes. Image tables use models and the selected values of each
+  parameter. The creation form attaches each table to its corresponding input.
+- `server/image-settings.ts` owns image dimension choices and reference metadata types.
+- Grid input stores shared `imageSettings`, ordered `inputReferences`, and
+  reference-axis groups. Validation removes overridden shared settings, empty
+  shared references, and unselected groups; expansion applies axes over defaults.
+- One normalization function removes unspecified and Auto values before
+  compatibility and request preparation, giving equivalent requests identical
+  signatures. Custom dimensions serialize as pixel-size strings; incomplete
+  pairs remain drafts and fail input validation.
+- `Provider.imageEndpoints` caches capabilities, provider names, and prices for
+  five minutes, shares pending reads, and evicts failures. Provider names must be
+  nonempty and pricing arrays explicit; an empty array means unpublished prices.
+- Image compatibility requires one endpoint to support the complete combination.
+  Minimal conflicting parameter subsets receive warnings, while unrelated
+  settings do not. Missing metadata remains unknown, and size/aspect conflicts
+  affect both parameters.
+
+## Scheduling and credentials
+
+### Admission and concurrency
+
+- `server/inference-policy.ts` checks credits before creation and Resume.
+  A balance below $3 requires explicit continuation through the shared dialog.
+- `GET /api/inference-capacity` recommends at least one worker using balance
+  divided by $0.40 for images or $3 for text. Creation caps this at cell count.
+  Unavailable manual-key balance and key-limit data yield one worker.
+- The draft preserves raw worker input until Generate validates a positive
+  integer. Saved `parallelWorkers` survives Resume and Edit/Fork.
+  Each accepted start sets the session limit from that value or the recommendation.
+- `server/worker-allocation.ts` selects the eligible owner with the fewest active
+  cells, breaking ties by allocation history. It applies owner limits and the
+  shared `WORKERS_MAX` cap, which defaults to 100.
+- Jobs also enforces each grid's own worker limit. Active counts derive from
+  running calls, including unsettled cancellations. Capacity is not reserved,
+  and fairness never cancels existing work.
+
+### Execution, pause, and failure handling
+
+- `server/jobs.ts` owns cell selection, execution state, retries, cancellation,
+  previews, persistence, and notifications around one canonical grid object.
+  Completed cells are skipped on Resume.
+- Manual pause stops queued cells, aborts active requests, and discards drafts.
+  Slots remain occupied until cancelled calls settle; late chunks and results
+  cannot change retried or completed cells.
+- `server/failures.ts` extracts messages, codes, retry guidance, and transient
+  classification from HTTP and streamed errors. Messages and codes persist;
+  retry flags and cooldowns remain in memory.
+- HTTP 429 responses and in-flight-budget 402 responses carrying valid
+  Retry-After guidance return cells to pending and impose a session-wide cooldown. A single
+  timer wakes expired cooldowns; up to five retries use backoff, jitter, and the
+  longer server-requested delay.
+- Permanent billing failures pause queued grids for that owner while active
+  calls finish. Other permanent failures affect only their cell and release its
+  worker for remaining work.
+- State persists before notification. Draft notifications share a per-grid
+  throttle, and idle owner state is removed after grids pause or finish.
+
+### OpenRouter credentials
+
+- OAuth state and PKCE verifiers stay server-side with a ten-minute exchange
+  deadline. Returned keys are encrypted with AES-256-GCM through
+  `server/encryption.ts`.
+- Manual keys live in browser localStorage and synchronize across tabs.
+  `server/manual-keys.ts` extracts bearer credentials and delegates validation
+  to the provider; reads and SSE continue to use the ownership cookie.
+- Manual credentials take precedence over OAuth. Selecting OAuth or disconnecting
+  clears the local manual key. Credit lookup uses the lower available account
+  balance and key limit, falling back to either available value.
+- The engine retains manual keys only in per-grid memory while work is queued or
+  running. It drops them on pause or completion; request closures retain them
+  until settlement. Resume after pause or restart requires resubmission.
+- Closing a tab does not cancel queued work. Manual keys never enter SQLite,
+  output files, billing entries, or grid snapshots.
+
+## Persistence, billing, and reuse
+
+### Storage ownership
+
+- `server/store.ts` uses SQLite with WAL and foreign keys. Configuration is
+  stored once; per-cell prompts and settings are reconstructed from it.
+  Cell IDs and positions are relational columns rather than duplicated JSON.
+- `server/database.ts` creates an empty database in an immediate transaction and
+  checks `user_version`. Only the current schema is supported; there are no
+  historical migrations or legacy conversions.
+- `server/files.ts` stores bundles under cell IDs and images as binary files.
+  Complete bundles are staged and renamed into place before completion is saved.
+  Retries replace interrupted writes; metadata changes never rewrite artifacts.
+- Output lookup joins the cell primary key to its grid. Generated bodies remain
+  outside SQLite and snapshots. Encryption and response presentation are separate
+  from storage.
+
+### Inference ledger and live estimates
+
+- `server/billing.ts` records each actual upstream attempt before dispatch,
+  retaining status, timestamps, provider identifiers, token usage, charges,
+  finish metadata, and errors. Retries create new entries; cancelled and failed
+  calls retain reported charges. Startup marks unfinished entries interrupted.
+- The ledger excludes prompts, outputs, credentials, and headers. Cell usage
+  derives from the latest call. Finish metadata stays in the ledger and is
+  omitted from grid and billing presentation.
+- Text completion policy accepts successful stops and records usage before
+  reporting incomplete responses. A scoped fetch wrapper preserves image costs
+  omitted by the installed adapter.
+- Streaming estimates use catalog rates and request fees, approximating one
+  token per four UTF-8 bytes plus eight framing tokens. Exposed thinking counts
+  toward output estimates; hidden reasoning and provider tokenization can differ.
+- `estimatedUsage` exists only in engine memory and snapshots, and is cleared
+  on terminal transitions or a new attempt. Final reported usage replaces it.
+- Grid cost combines successful outputs with running estimates. Owner spending
+  includes all ledger calls and estimates only for running calls without reported
+  cost; a reported zero is authoritative.
+- The engine computes `spentUsd` with each snapshot. It is not persisted as grid
+  metadata, and the presenter removes it for non-owners. Billing reads are
+  ownership-filtered and paginated.
+
+### Artifact provenance and reuse
+
+- `Provider.prepare` and `server/prepared-inference.ts` build the serializable
+  effective request used by inference and reuse. Text preparation includes
+  resolved pricing, instructions, token limits, reasoning, routing, and schemas.
+- Signatures hash canonical object keys while preserving array order, and include
+  format, budget, adapter version, and ordered image content hashes and media
+  types. Estimator-only pricing stays outside the signature. Adapter semantic
+  changes require a revision bump.
+- Successful cells persist a signature and complete file inventory after storage.
+  Historical cells without provenance remain readable but generate afresh.
+- Creation validates source visibility and normal access/admission checks.
+  `server/artifact-reuse.ts` matches completed source cells in grid order and
+  copies complete artifacts and thinking under fresh identifiers.
+- Each source bundle is read once, with at most one held in memory. Source-read
+  failures and preparation errors are cache misses; destination writes, database
+  failures, and unexpected preparation errors propagate.
+- Copies retain provenance, media type, and usage but create no inference ledger
+  entries. Destination ownership controls access independently. All-copy grids
+  complete immediately; mixed grids schedule only unfinished cells.
+- Source identifiers and reuse selection live outside generation input in the
+  browser draft. Edit/Fork initializes reuse as selected.
+- Reference loaders share pending reads and hashes within one reuse operation or
+  engine execution, preserve order and duplicates, and evict failures. Web and
+  engine loaders have independent lifetimes.
+
+## Output protocols and previews
+
+### Text and website outputs
+
+- `server/output-format.ts` owns generation instructions and completed-output
+  parsing. SVG is stored verbatim; Markdown uses its original source.
+- Websites use `{ files: [{ path, content }] }` with safe relative paths, unique
+  entries, and a required `index.html`. Any file extension and extensionless
+  assets are allowed, and all files are served statically.
+- Models advertising structured output receive the shared strict schema with
+  compatible routing. Others receive the same shape through prompting. Both use
+  the same stream decoder and direct final JSON parsing, with no silent downgrade.
+- `server/partial-website.ts` handles incomplete strings and split escapes.
+  `server/website-previews.ts` atomically updates temporary attempt directories,
+  coalesces bundle refreshes, and clears them on cancellation, retry, completion,
+  or engine startup.
+- Preview identity stays in memory. Snapshots carry versioned website URLs rather
+  than bundle text; isolated HTML hosts serve relative preview assets.
+
+### Browser rendering and state preservation
+
+- SVG drafts are locally completed for image decoding, and only valid decoded
+  candidates replace the last preview. Repairs never alter stored SVG.
+- Markdown drafts and saved source share a mounted React renderer
+  (`react-markdown` and `remark-gfm`). Completion fetches raw source without
+  remounting the document or losing scroll state.
+- `shared/markdown.tsx` also renders direct output pages. Raw HTML stays escaped;
+  Vite uses the entity decoder's lookup-table implementation rather than DOM
+  insertion. The renderer ships in the main bundle.
+- Website previews keep the visible iframe while a second loads, coalescing
+  intermediate updates. `src/grid/frame-scroll.ts` transfers viewport and panel
+  offsets through a MessageChannel before swapping, with a timeout if the old
+  document stops responding.
+- Scroll restoration matches element IDs or structural paths and clamps offsets.
+  The same handoff replaces streaming previews with saved outputs. Private
+  frames wait for both authorization bootstrap and document loads.
+- Output and thinking views stay mounted across toggles. The workspace overlay
+  expands either an output or reference image while preserving the hidden table.
+  Collapse restores focus, zoom, sizes, and scroll offsets.
+- Generated HTML forwards unhandled Escape to its application parent; only the
+  expanded view's own iframe windows can close that overlay.
+- Markdown code and source views use bundled DejaVu Sans Mono. Direct output
+  pages embed the font as data under their sandbox CSP; the license accompanies
+  the asset.
+
+### Thinking traces
+
+- The inference adapter reads exposed thinking from raw OpenRouter events,
+  including reasoning interleaved after output. Readable `reasoning_details`
+  supersede duplicate legacy text, and encrypted blocks are omitted.
+- Image responses retain exposed thinking when present. Capture does not request
+  hidden reasoning or change the selected effort.
+- Jobs writes attempt-specific private trace files before emitting snapshots.
+  New attempts clear the current identifier; prior files remain separate.
+  Partial traces survive failure, pause, and restart.
+- A length-limited text response with no output and a fully consumed reported
+  reasoning budget raises the specific thinking-exhaustion error after recording
+  usage. Other incomplete responses use the normal failure path.
+- `/outputs/:id/thinking/:attempt` checks ownership and the current attempt ID.
+  Trace files are excluded from bundles, downloads, and isolated HTML hosts.
+- Attempt-specific query keys prevent stale fetch replacement. Wrapped trace
+  previews retain their draft while saved traces load and follow appended text
+  only while the user remains at the bottom.
+
+## Image references
+
+- `src/create/reference-files.ts` keeps selected bytes in IndexedDB while drafts
+  store identifiers and filenames. Blob previews are revoked on unmount.
+- Generate validates the draft, uploads selected local files, replaces local IDs,
+  and then creates the grid. Successful uploads are reused on submission retry;
+  unmount aborts uploads, and failures retain selected files.
+- `server/routes/references.ts` accepts PNG, JPEG, and WebP with a 20 MiB per-file
+  limit and verifies signatures rather than trusting filenames or browser MIME.
+  Invalid input returns 400; storage failures return 500 without storage details.
+- `server/image-references.ts` owns persistence and access. SQLite stores metadata
+  and ownership; separate reference directories store bytes. Login claims
+  anonymous references along with grids.
+- Creation checks every selected reference and discards unused groups. Reads
+  require ownership or an accessible owned/published grid using the reference;
+  unused uploads remain private.
+- The engine loads ordered bytes, media types, and hashes. Data URLs are created
+  only at SDK dispatch; bytes never enter grid metadata or SSE.
+- Shared references and reference axes use the same upload, access, and inference
+  paths. Edit/Fork retains stored IDs, while reference images remain distinct from
+  generated cells.
+
+## Identity, ownership, and publication
+
+### Authentication and sessions
+
+- Users start with an anonymous browser session. GitHub adapters identify accounts
+  by provider and immutable numeric user ID, refreshing display names on sign-in.
+  GitHub tokens are discarded after profile retrieval.
+- GitHub credentials are required at startup. Identity and OpenRouter OAuth
+  attempts remain separate, with session-bound single-use state, ten-minute
+  expiry, PKCE, and validated local return paths.
+- `oauth4webapi` generates PKCE values. Octokit's OAuth and request SDKs perform
+  GitHub authorization and profile lookup through the shared transport;
+  OpenRouter's custom exchange stays in its provider adapter.
+- Sign-in atomically claims anonymous grids and rotates the cookie. Sign-out
+  rotates it again, removing account access while retaining browser-local
+  OpenRouter state.
+- Stable anonymous identity survives rotation. Running work retains the initiating
+  execution owner; Resume from another browser uses that browser's credentials.
+- Sessions have no age-based expiry. Application and output cookies use rolling
+  400-day maximum ages. Session readers renew application cookies, while
+  side-effect-free output reads do not create sessions or set cookies.
+
+### Access and metadata
+
+- `server/grid-policy.ts` centralizes ownership and publication checks.
+  Account ownership takes precedence over anonymous origin after claiming.
+  Response presentation omits ownership identifiers.
+- Draft author data uses the current account profile. First publication freezes
+  public attribution; historical publications without attribution remain
+  Anonymous.
+- Publication requires every cell to be complete or failed and permanently locks
+  generation inputs and outputs. Owners may edit titles and promote unlisted
+  grids to public, but cannot reverse publication.
+- Public listings include only publicly listed grids. Unlisted grids remain
+  readable by link. Mutations require ownership and reject cross-origin browser
+  requests.
+- Titles are separate optional metadata. The title route validates length,
+  updates only title and revision, obtains a fresh engine snapshot, and notifies
+  subscribers without changing generated files.
+
+## Output isolation and authorization
+
+### Application-host outputs
+
+- Images, SVG, and Markdown use `/outputs/:id`, with authorization before file
+  or download metadata access. Published outputs need no session.
+- Images are binary responses. SVG uses image rendering and a restrictive CSP;
+  Markdown escapes raw HTML. Direct output pages have a sandbox without script
+  permission and set no cookies.
+- The HTTPS application cookie is host-only and uses the `__Host-` prefix.
+  Generated HTML cannot be fetched through application-host output routes.
+- Published images and SVG use immutable public caching. Private versions use
+  immutable private caching with `Vary: Cookie` and mandatory revalidation once
+  stale. An unchanged cookie can still reuse fresh cached bytes without a server
+  check; other output routes and errors use `no-store`.
+- Downloads share access checks. Websites stream ZIP archives through `fflate`;
+  other formats return original files. Clipboard image copying converts to PNG.
+
+### Isolated HTML hosts
+
+- Each cell has a random 192-bit identifier. Its HTML host combines that ID and
+  an environment-configured hyphen-prefixed suffix in one wildcard-covered
+  DNS label. Matching requires the exact configured pattern and cell ID.
+- Host dispatch precedes application middleware. HTML hosts expose only validated
+  files from their bundle or active preview; application APIs and other output
+  formats are inaccessible there.
+- CSP uses a whole-label hostname wildcard. Generated pages run in an opaque
+  sandbox without `allow-same-origin`, allowing scripts and static assets but
+  blocking connections, forms, and cookie access, including in direct tabs.
+- `server/website-html.ts` rewrites served private HTML for credentialed loading
+  of scripts, stylesheets, and module imports using parse5. Stored files and
+  downloads remain unchanged.
+- Authorized private resources permit credentialed CORS from the sandbox's null
+  origin; a null origin alone grants no access. Public resources use
+  credential-free CORS.
+
+### Private iframe handshake
+
+`server/output-access.ts` bridges authorization without exposing the application
+cookie to generated hosts.
+
+1. The application entry route checks the live session, ownership, and requested
+   path, then issues an in-memory grant bound to that session, cell, and path.
+   Grants expire after thirty seconds and have global and per-owner caps.
+2. Navigation to `/__session/<grant>` on the output host rechecks access, sets
+   an encrypted host-only output cookie, and serves trusted bootstrap code.
+   Navigation leaves the grant available for the second phase.
+3. The bootstrap performs a credentialed fetch to the same endpoint. This sets
+   the cookie in the sandbox's subresource partition, consumes the grant, and
+   returns 204 before navigation to the generated document.
+
+- Both phases enforce grant expiry and cell binding. Non-navigation clients
+  without the sandbox's null origin receive a redirect after redemption.
+- Navigation and opaque sandbox resources can use different cookie partitions;
+  Chromium includes cross-site ancestor state in its partition key. The second
+  phase establishes the correct partition.
+- The output cookie is Secure, HttpOnly, SameSite=None, host-only, and partitioned.
+  It contains encrypted cell and application-session IDs, not a permanent grant.
+- Every private asset request rechecks cell scope, session validity, and current
+  ownership before reading files or enabling CORS. Session rotation or deletion
+  revokes access even if the output cookie remains.
+- Each signed-in owner session can establish its own authorization. Revoking one
+  session does not revoke another, and knowing the output URL grants no access.
+  Published outputs bypass the handshake.
+
+### Direct HTML navigation and trusted bridges
+
+- Private top-level navigation without an output cookie redirects through the
+  application entry route. Redemption sets the navigation cookie and redirects
+  back to the requested output URL.
+- At that URL, a fresh grant and bootstrap establish the current document's
+  subresource cookie. The bootstrap writes generated HTML into the same document
+  to retain its opaque partition and URL.
+- A `connect-src 'none'` CSP meta policy precedes generated scripts, so bootstrap
+  connection permission never extends to generated code. Removing the meta
+  element does not undo the policy. Embedded serialized HTML escapes less-than
+  characters.
+- Reloading or following another HTML file repeats authorization. Embedded frames
+  use the two-phase flow above, and stored files and downloads stay unchanged.
+- The served scroll bridge runs before generated scripts, accepts requests only
+  from its immediate parent at the application origin, and replies through a
+  MessagePort. It is inactive in direct tabs and adds no authorization privileges.
+
+## Frontend ownership
+
+- `src/main.tsx` mounts providers, `src/router.tsx` defines routes, and
+  `src/layout.tsx` owns navigation and the grid-header portal.
+- Pages live in `src/pages/`, creation controls and drafts in `src/create/`,
+  and shared dialogs and connection controls in `src/components/`.
+- `src/grid/use-grid.ts` owns grid queries, SSE state, and editing mutations.
+  Grid headers, output tables, and cells have separate components.
+- Shared inference mutations own credentials, pending state, failures, and
+  low-balance confirmation for creation and Resume. Publishing owns its own
+  mutation rather than duplicating errors inside the dialog.
+- `src/components/editable-title.tsx` owns editing interaction, pending state,
+  and errors; callers own validation and persistence.
+- `src/grid-resize.ts` owns table dimensions, persisted locally per grid.
+  `src/zoomable-grid.tsx` coordinates viewport fitting, touch scaling, and scroll
+  anchors; `src/grid-pan.ts` owns mouse panning outside content and controls.
+- `src/contained-image.tsx` sizes the image element to its natural aspect ratio
+  so surrounding space remains available for panning.
+- Theme bootstrap applies stored preference before rendering. The React provider
+  follows system changes, persists overrides, synchronizes tabs, and updates
+  browser theme metadata; generated canvases retain their own appearance.
 
 ## Browser test process ownership
 
-`tests/test-server.ts` forks the browser fixture through `tests/e2e-process.ts`, passes configuration through the child environment, and waits for IPC readiness. The fixture runs its own inference child. Closing the parent IPC channel shuts down the fixture and its inference process, including when the test worker exits unexpectedly. Normal teardown waits for process exit before deleting fixture data. The shared suite runner and per-test Playwright fixtures await this teardown.
+- `tests/test-server.ts` forks `tests/e2e-process.ts`, passes configuration via
+  the environment, and waits for IPC readiness. The fixture owns its inference
+  child, and both mock and real fixtures mount the application frontend router.
+- Closing parent IPC shuts down the fixture and engine, including after unexpected
+  worker exits. Teardown awaits process exit before removing fixture data.
+- Test scenarios and runtime validation belong in
+  [DEVELOPMENT.md](DEVELOPMENT.md#validation).
