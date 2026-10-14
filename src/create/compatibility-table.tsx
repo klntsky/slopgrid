@@ -120,8 +120,9 @@ function ThinkingCompatibilityTable({ input, models }: Props) {
   const selectedModels =
     axes.find((axis) => axis.kind === "model")?.values ??
     [input.model].filter(Boolean);
-  const selectedEfforts = axes.find((axis) => axis.kind === "effort")
-    ?.values ?? [input.effort];
+  const selectedEfforts = (
+    axes.find((axis) => axis.kind === "effort")?.values ?? [input.effort]
+  ).filter((effort) => effort !== "default");
   return (
     <CompatibilityGrid
       caption="Thinking effort compatibility"

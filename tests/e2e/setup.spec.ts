@@ -577,6 +577,7 @@ test("compatibility keeps model rows and effort columns with variable axes and f
   await expect(table.getByRole("rowheader")).toHaveText(["Second model"]);
   await expect(table.getByRole("columnheader")).toHaveText(["Model", "None"]);
   await rows.selectOption("effort");
+  await page.getByRole("checkbox", { name: "Model default", exact: true }).check();
   await page.getByRole("checkbox", { name: "None", exact: true }).check();
   await page.getByRole("checkbox", { name: "high", exact: true }).check();
   await expect(table).toHaveCount(0);
