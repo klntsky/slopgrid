@@ -108,7 +108,8 @@ Commands use strict payload schemas and named parameters rather than mutable gri
 - Individual call transitions save only their affected cell; grid-wide transitions save the
   cells they change. Draft, estimate, and preview notifications do not write to
   SQLite. The first thinking chunk checkpoints its trace identifier once, while
-  subsequent chunks append to the trace file.
+  subsequent chunks replace the trace file through a temporary file and rename.
+  Retrying a trace write cannot append duplicate text.
 - The generation service allocates an engine epoch atomically in SQLite once
   per initialization. Opening a store or replacing the web process does not
   advance it. Recovery finishes before the engine serves requests.
@@ -136,6 +137,23 @@ Commands use strict payload schemas and named parameters rather than mutable gri
 
 ### Updates and recovery
 
+- Admission and dispatch persist prepared state before installing runtime state
+  or starting provider work. Admission notifications follow the outer transaction
+  commit. Pause and Edit cancel immediately; their persistence follows cancellation.
+- The engine's persistence queue serializes deferred storage operations. SQLite
+  busy, locked, I/O and open errors, and transient filesystem I/O, busy and
+  descriptor errors suspend admission and dispatch. Retries back off from one
+  second to thirty seconds without replaying provider requests. Disk exhaustion
+  and other errors are outside this recovery policy.
+- Active calls continue while writes are pending. Results remain in memory and
+  retain their worker slots until files and cell state commit; billing writes use
+  stable call IDs and ordered upserts. Status reports persistence health and the
+  pending-operation count. Authorized snapshots remain live without announcing
+  uncommitted completion, while unavailable database reads fail closed.
+- Recovered writes restore dispatch subject to Pause and maintenance state.
+  Graceful shutdown waits for pending persistence as well as accepted calls.
+  A forced process exit can lose uncommitted results and traces; startup recovery
+  uses committed state and never adopts orphaned output files as completed cells.
 - A soft update replaces web code and frontend assets without changing the running
   engine's immutable release or dependencies.
 - A machinery update closes admission and waits for accepted grids and all
@@ -155,6 +173,24 @@ Commands use strict payload schemas and named parameters rather than mutable gri
   compatible machinery update. Admission can reopen if maintenance is cancelled.
 
 ## Creation, catalogs, and request preparation
+
+### Creation request identity
+
+- Before submission, the browser saves a random creation request ID and the
+  submitted payload in sessionStorage. Unchanged submissions reuse both across
+  reloads, credential changes and low-balance confirmation; automatic capacity
+  refreshes do not replace an outstanding request. Successful creation clears
+  the saved submission with the draft.
+- SQLite creation receipts bind the request ID to the initiating browser identity,
+  a canonical payload hash and the grid. Receipt, grid and cells commit together.
+  Replays recheck ownership and reject different inputs with 409. A concurrent
+  losing insertion returns the existing grid and removes its own copied artifacts.
+- The first insertion attempts to start inference; replays only read current
+  state. Successful responses retain the grid snapshot and add `startOutcome`.
+  If startup cannot be confirmed, the response contains the saved grid ID and
+  `not_started` or `unknown`, and the browser opens the grid to reconcile state.
+  Creation replays never issue Resume. Clients without request IDs retain the
+  original creation interface for compatibility with already-open tabs.
 
 ### Browser drafts and model discovery
 
@@ -338,9 +374,10 @@ Commands use strict payload schemas and named parameters rather than mutable gri
   stored once; per-cell prompts and settings are reconstructed from it.
   Cell IDs and positions are relational columns rather than duplicated JSON.
 - `server/database.ts` creates an empty database in an immediate transaction and
-  checks `user_version`. Schema version 10 is current. Versions 8 and 9 upgrade
+  checks `user_version`. Schema version 11 is current. Versions 8, 9 and 10 upgrade
   atomically, adding reference-image storage when needed and a singleton
-  generation clock, and removing obsolete ordering fields from grid JSON.
+  generation clock, removing obsolete ordering fields from grid JSON, and adding
+  creation receipts without changing existing grid or session identifiers.
   Existing sessions, cells, references, and charges are preserved. Other nonempty
   schema versions are rejected.
 - `server/files.ts` stores bundles under cell IDs and images as binary files.

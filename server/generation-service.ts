@@ -51,26 +51,29 @@ export function createGenerationService(
   };
   const api: GenerationAPI = {
     async startGrid({ gridId, sessionId, manualKey }) {
-      // The admission gate and initial state transition are synchronous with draining.
-      // The immediate transaction also serializes starts against web publication.
-      return store.db
-        .transaction(() => {
-          const { grid, session } = authorized(gridId, sessionId);
-          if (jobs.isRunning(gridId) || grid.status === "complete") return grid;
-          if (jobs.draining)
-            throw generationFailure(
-              "DRAINING",
-              "Generation is temporarily unavailable during an update.",
-            );
-          if (!(manualKey ?? session.key))
-            throw generationFailure(
-              "AUTH_REQUIRED",
-              "Reconnect OpenRouter to continue.",
-            );
-          jobs.start(grid, manualKey, session);
-          return getGrid(gridId);
-        })
-        .immediate();
+      const { grid, session } = authorized(gridId, sessionId);
+      if (jobs.isRunning(gridId) || grid.status === "complete") return grid;
+      // Persist admission under the publication lock; install runtime state and
+      // notify only after the outer transaction has committed successfully.
+      jobs.start(grid, manualKey, session, (write) =>
+        store.db
+          .transaction(() => {
+            authorized(gridId, sessionId);
+            if (jobs.draining)
+              throw generationFailure(
+                "DRAINING",
+                "Generation is temporarily unavailable during an update.",
+              );
+            if (!(manualKey ?? session.key))
+              throw generationFailure(
+                "AUTH_REQUIRED",
+                "Reconnect OpenRouter to continue.",
+              );
+            write();
+          })
+          .immediate(),
+      );
+      return getGrid(gridId);
     },
     async pauseGrid({ gridId, sessionId }) {
       const { grid } = authorized(gridId, sessionId);

@@ -3,11 +3,39 @@ import assert from "node:assert/strict";
 import Database from "better-sqlite3";
 import { initializeDatabase } from "../server/database.js";
 
+test("creation receipts migrate additively from the current schema", () => {
+  const db = new Database(":memory:");
+  try {
+    initializeDatabase(db);
+    db.exec("DROP TABLE creation_requests; PRAGMA user_version = 10");
+    db.prepare("INSERT INTO grids VALUES (?,?)").run(
+      "saved",
+      '{"status":"paused"}',
+    );
+    db.prepare("INSERT INTO sessions VALUES (?,?)").run(
+      "browser",
+      '{"key":"encrypted"}',
+    );
+    const before = db.prepare("SELECT * FROM grids").all();
+    initializeDatabase(db);
+    initializeDatabase(db);
+    assert.deepEqual(db.prepare("SELECT * FROM grids").all(), before);
+    assert.deepEqual(db.prepare("SELECT * FROM sessions").all(), [
+      { id: "browser", data: '{"key":"encrypted"}' },
+    ]);
+    assert.deepEqual(db.prepare("SELECT * FROM creation_requests").all(), []);
+  } finally {
+    db.close();
+  }
+});
+
 test("adding the engine clock preserves existing metadata, sessions, cells, references and charges", () => {
   const db = new Database(":memory:");
   try {
     initializeDatabase(db);
-    db.exec("DROP TABLE generation_clock; PRAGMA user_version = 9");
+    db.exec(
+      "DROP TABLE creation_requests; DROP TABLE generation_clock; PRAGMA user_version = 9",
+    );
     const grid = {
       title: "Saved",
       owner: "owner",
@@ -82,7 +110,7 @@ test("unsupported database versions are rejected without changing stored data", 
       '{"key":"encrypted"}',
     );
     initializeDatabase(db);
-    for (const version of [7, 11]) {
+    for (const version of [7, 12]) {
       db.pragma(`user_version = ${version}`);
       assert.throws(
         () => initializeDatabase(db),
@@ -103,7 +131,7 @@ test("adding reference storage preserves existing sessions and grids atomically"
   try {
     initializeDatabase(db);
     db.exec(
-      "DROP TABLE reference_images; DROP TABLE generation_clock; PRAGMA user_version = 8",
+      "DROP TABLE creation_requests; DROP TABLE reference_images; DROP TABLE generation_clock; PRAGMA user_version = 8",
     );
     db.prepare("INSERT INTO sessions VALUES (?, ?)").run(
       "browser",

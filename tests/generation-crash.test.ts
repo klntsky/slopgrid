@@ -114,7 +114,7 @@ for (const checkpoint of [
   {
     name: "after output files before cell persistence",
     file: "jobs.ts",
-    statement: "cell.mediaType=result.mediaType",
+    statement: "installed=true",
     persisted: false,
     billed: true,
   },

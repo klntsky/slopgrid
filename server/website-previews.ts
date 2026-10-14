@@ -15,7 +15,10 @@ type Preview = {
 export class WebsitePreviews {
   private entries = new Map<string, Preview>();
   private files: OutputFiles;
-  constructor(readonly root: string) {
+  constructor(
+    readonly root: string,
+    private persist: (write: () => void) => void = (write) => write(),
+  ) {
     this.files = new OutputFiles(root);
   }
   update(cell: Cell, source: string, notify: () => void) {
@@ -32,23 +35,27 @@ export class WebsitePreviews {
     if (!entry.parser.update(source) || !entry.parser.files["index.html"])
       return;
     const current = entry;
-    const flush = () => {
-      current.timer = undefined;
-      if (this.entries.get(cell.id) !== current || cell.status !== "running")
-        return;
-      for (const path of current.parser.changed) {
-        const content = current.parser.files[path];
-        const file = join(this.root, current.attempt, path);
-        mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
-        const temporary = file + ".pending";
-        writeFileSync(temporary, content, { mode: 0o600 });
-        renameSync(temporary, file);
-      }
-      current.parser.changed.clear();
-      current.at = Date.now();
-      cell.preview = { attempt: current.attempt, revision: ++current.revision };
-      notify();
-    };
+    const flush = () =>
+      this.persist(() => {
+        current.timer = undefined;
+        if (this.entries.get(cell.id) !== current || cell.status !== "running")
+          return;
+        for (const path of current.parser.changed) {
+          const content = current.parser.files[path];
+          const file = join(this.root, current.attempt, path);
+          mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
+          const temporary = file + ".pending";
+          writeFileSync(temporary, content, { mode: 0o600 });
+          renameSync(temporary, file);
+        }
+        current.parser.changed.clear();
+        current.at = Date.now();
+        cell.preview = {
+          attempt: current.attempt,
+          revision: ++current.revision,
+        };
+        notify();
+      });
     const delay = Math.max(0, 750 - (Date.now() - current.at));
     if (!delay && !current.timer) flush();
     else if (!current.timer) current.timer = setTimeout(flush, delay);
@@ -68,7 +75,12 @@ export class WebsitePreviews {
     if (entry) {
       if (entry.timer) clearTimeout(entry.timer);
       this.entries.delete(cell.id);
-      rmSync(join(this.root, entry.attempt), { recursive: true, force: true });
+      this.persist(() =>
+        rmSync(join(this.root, entry.attempt), {
+          recursive: true,
+          force: true,
+        }),
+      );
     }
     delete cell.preview;
   }

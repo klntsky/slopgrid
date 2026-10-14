@@ -3,6 +3,7 @@ import type { Cell, Completion } from "./domain.js";
 import { expandGrid } from "./domain.js";
 import { token } from "./ids.js";
 import { completionFailure, failureDetails } from "./failures.js";
+import type { Persistence } from "./persistence.js";
 
 export type CallDetails = {
   phase: Completion["phase"];
@@ -38,21 +39,27 @@ export type BillingPage = {
 };
 
 export class Billing {
+  persistence?: Persistence;
   constructor(private db: Database.Database) {}
   observe(cellId: string): CallObserver {
     return (phase) => {
       const id = token(),
         started = Date.now();
       let data: CallDetails = { phase, status: "running" };
-      const save = () =>
-        this.db
-          .prepare("UPDATE inference_calls SET data=? WHERE id=?")
-          .run(JSON.stringify(data), id);
-      this.db
-        .prepare(
-          "INSERT INTO inference_calls (id, cell_id, started_at, data) VALUES (?,?,?,?)",
-        )
-        .run(id, cellId, started, JSON.stringify(data));
+      const save = () => {
+        const json = JSON.stringify(data);
+        const write = () => {
+          this.db
+            .prepare(
+              `INSERT INTO inference_calls (id, cell_id, started_at, data)
+            VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data`,
+            )
+            .run(id, cellId, started, json);
+        };
+        if (this.persistence) this.persistence.submit(write);
+        else write();
+      };
+      save();
       return {
         update: (details) => {
           data = { ...data, ...details };
@@ -119,9 +126,10 @@ export class Billing {
     );
     return rows.reduce(
       (sum, row) =>
-        sum + row.costUsd +
+        sum +
+        row.costUsd +
         // A reported charge can arrive before the running cell settles.
-        (row.latestCostUsd === null ? estimates.get(row.id) ?? 0 : 0),
+        (row.latestCostUsd === null ? (estimates.get(row.id) ?? 0) : 0),
       0,
     );
   }

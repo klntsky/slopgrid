@@ -4,7 +4,7 @@ import { gridSchema } from "../../server/domain";
 import type { ReferenceImage } from "../../server/image-settings";
 import { queryClient } from "../queries";
 import { useInferenceMutation } from "../use-inference-mutation";
-import { clearDraft, type Draft } from "./draft";
+import { clearDraft, creationSubmission, type Draft } from "./draft";
 import { removeReferenceFile, uploadReferences } from "./reference-files";
 
 export function useCreateSubmission({
@@ -24,7 +24,10 @@ export function useCreateSubmission({
   const uploadController = useRef<AbortController | undefined>(undefined);
   useEffect(() => () => uploadController.current?.abort(), []);
   const navigate = useNavigate();
-  const inference = useInferenceMutation(async (grid) => {
+  const inference = useInferenceMutation<{
+    id: string;
+    startOutcome: "started" | "not_started" | "unknown";
+  }>(async (grid) => {
     await queryClient.invalidateQueries({ queryKey: ["grids"] });
     clearDraft();
     await navigate({ to: "/grid/$id", params: { id: grid.id } });
@@ -64,12 +67,12 @@ export function useCreateSubmission({
       if (!controller.signal.aborted)
         inference.mutate({
           path: "/grids",
-          body: {
+          body: creationSubmission({
             ...prepared,
             parallelWorkers,
             sourceGridId: draft.sourceGridId,
             reuseArtifacts: draft.reuseArtifacts !== false,
-          },
+          }),
           continueWithLowBalance,
         });
     } catch (error) {

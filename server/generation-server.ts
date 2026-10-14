@@ -2,6 +2,7 @@ import express from "express";
 import { createServer } from "node:http";
 import { chmodSync } from "node:fs";
 import { once } from "node:events";
+import { recoverableStorageError } from "./persistence.js";
 import {
   generationProtocol,
   generationErrorStatus,
@@ -77,12 +78,36 @@ export async function serveGeneration(api: GenerationAPI, socket: string) {
         error:
           error instanceof Error ? error.message : "Invalid generation request",
       });
-      const body = parsed.success
-        ? parsed.data
-        : {
-            code: "INVALID_REQUEST" as const,
-            error: "Invalid generation request",
-          };
+      if (
+        !parsed.success &&
+        !recoverableStorageError(error) &&
+        !(error instanceof Error && error.name === "ZodError") &&
+        !(error as { status?: number })?.status
+      ) {
+        console.error(
+          "Generation request failed",
+          error instanceof Error ? error.name : "unknown",
+          (error as { code?: string })?.code,
+        );
+        res
+          .status(500)
+          .json({
+            code: "UNAVAILABLE",
+            error: "Generation service is unavailable.",
+          });
+        return;
+      }
+      const body = recoverableStorageError(error)
+        ? {
+            code: "PERSISTENCE_UNAVAILABLE" as const,
+            error: "Generation storage is temporarily unavailable.",
+          }
+        : parsed.success
+          ? parsed.data
+          : {
+              code: "INVALID_REQUEST" as const,
+              error: "Invalid generation request",
+            };
       res.status(generationErrorStatus[body.code]).json(body);
     },
   );

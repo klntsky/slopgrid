@@ -83,6 +83,14 @@ export class OutputFiles {
     mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
     appendFileSync(file, text, { mode: 0o600 });
   }
+  writeThinking(cellId: string, id: string, text: string) {
+    const file = this.thinkingFile(cellId, id);
+    if (!file) throw new Error("Invalid thinking ID");
+    mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
+    const temporary = file + ".pending";
+    writeFileSync(temporary, text, { mode: 0o600 });
+    renameSync(temporary, file);
+  }
   thinkingPath(cellId: string, id: string): string | undefined {
     const file = this.thinkingFile(cellId, id);
     return file && existsSync(file) ? file : undefined;

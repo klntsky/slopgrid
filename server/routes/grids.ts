@@ -28,6 +28,7 @@ import {
   inferenceCapacity,
 } from "../inference-policy.js";
 import { token } from "../ids.js";
+import { creationRequest } from "../creation-request.js";
 
 export function createGridRoutes({
   store,
@@ -120,6 +121,58 @@ export function createGridRoutes({
   });
   app.post("/api/grids", async (req, res) => {
     const s = session(req, res);
+    const requestId = z
+      .string()
+      .min(16)
+      .max(200)
+      .optional()
+      .safeParse(req.body?.creationRequestId);
+    if (!requestId.success)
+      return res.status(400).json({ error: "Invalid creation request ID." });
+    const creation = requestId.data
+      ? creationRequest(store, s, requestId.data, req.body)
+      : undefined;
+    async function saved(grid: Grid, start: boolean) {
+      try {
+        const current = start
+          ? await generation.startGrid({
+              gridId: grid.id,
+              sessionId: s.id,
+              manualKey: manualKey(req),
+            })
+          : await generation.getGrid(grid.id);
+        return res
+          .status(start ? 201 : 200)
+          .json({
+            ...snapshot(current, s),
+            startOutcome:
+              current.status === "paused" ? "not_started" : "started",
+          });
+      } catch (error) {
+        const code = (error as { code?: string })?.code;
+        if (
+          ![
+            "UNAVAILABLE",
+            "DRAINING",
+            "PERSISTENCE_UNAVAILABLE",
+            "AUTH_REQUIRED",
+          ].includes(code ?? "")
+        )
+          throw error;
+        return res
+          .status(start ? 201 : 200)
+          .json({
+            id: grid.id,
+            startOutcome: ["UNAVAILABLE", "PERSISTENCE_UNAVAILABLE"].includes(
+              code!,
+            )
+              ? "unknown"
+              : "not_started",
+          });
+      }
+    }
+    const previous = creation?.existing();
+    if (previous) return saved(previous, false);
     const suppliedKey = manualKey(req);
     if (!(suppliedKey ?? s.key))
       return res
@@ -179,6 +232,7 @@ export function createGridRoutes({
       createdAt: new Date().toISOString(),
     };
     let inserted = false;
+    let savedGrid = g;
     try {
       if (source && reuse.data.reuseArtifacts)
         await reuseArtifacts(store, provider, source, input.format, cells);
@@ -196,8 +250,9 @@ export function createGridRoutes({
         return;
       if (cells.every((cell) => cell.status === "complete"))
         g.status = "complete";
-      store.insert(g);
-      inserted = true;
+      if (creation) savedGrid = creation.insert(g);
+      else store.insert(g);
+      inserted = savedGrid.id === g.id;
     } finally {
       // Reuse precedes admission so only unfinished calls affect concurrency.
       // Rejected creation must not retain copied outputs or thinking traces.
@@ -206,12 +261,7 @@ export function createGridRoutes({
           cells.map((cell) => store.files.removeArtifact(cell.id)),
         );
     }
-    const started = await generation.startGrid({
-      gridId: g.id,
-      sessionId: s.id,
-      manualKey: suppliedKey,
-    });
-    res.status(201).json(snapshot(started, s));
+    return saved(savedGrid, inserted);
   });
   app.get("/api/grids/:id", async (req, res) => {
     const found = readGrid(req, res, canViewGrid);

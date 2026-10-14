@@ -51,7 +51,8 @@ async function stop() {
   await api.drain();
   while (true) {
     const state = await api.status();
-    if (!state.runningCalls && !state.activeGrids) break;
+    if (!state.runningCalls && !state.activeGrids && state.persistence.healthy)
+      break;
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
   server.closeAllConnections();

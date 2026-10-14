@@ -3,7 +3,7 @@ import type { Grid } from "./domain.js";
 import type { GridVersion } from "../shared/grid-version.js";
 
 // Version this contract when a web release cannot talk to the running engine.
-export const generationProtocol = 6;
+export const generationProtocol = 7;
 const id = z.string().min(1).max(200);
 export const startGridRequest = z.strictObject({
   gridId: id,
@@ -21,6 +21,7 @@ export type GenerationStatus = {
   draining: boolean;
   runningCalls: number;
   activeGrids: number;
+  persistence: { healthy: boolean; pendingOperations: number };
 };
 export const generationError = z.strictObject({
   code: z.enum([
@@ -30,6 +31,7 @@ export const generationError = z.strictObject({
     "AUTH_REQUIRED",
     "INVALID_REQUEST",
     "UNAVAILABLE",
+    "PERSISTENCE_UNAVAILABLE",
   ]),
   error: z.string(),
 });
@@ -47,6 +49,7 @@ export const generationErrorStatus: Record<GenerationError["code"], number> = {
   AUTH_REQUIRED: 401,
   INVALID_REQUEST: 400,
   UNAVAILABLE: 503,
+  PERSISTENCE_UNAVAILABLE: 503,
 };
 
 export type GenerationSnapshot = Grid & {

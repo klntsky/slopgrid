@@ -10,7 +10,12 @@ else if (command === "drain") {
   for (;;) {
     const status = await api.status();
     console.log(JSON.stringify(status));
-    if (!status.runningCalls && !status.activeGrids) break;
+    if (
+      !status.runningCalls &&
+      !status.activeGrids &&
+      status.persistence.healthy
+    )
+      break;
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }
 } else throw new Error("Use status, drain, or accept");

@@ -3,8 +3,8 @@ import { useMutation } from "@tanstack/react-query";
 import { api, ApiError, type ViewGrid } from "./api";
 import { getOpenRouterKey } from "./openrouter-key";
 
-export function useInferenceMutation(
-  onSuccess: (grid: ViewGrid) => void | Promise<void>,
+export function useInferenceMutation<T extends { id: string } = ViewGrid>(
+  onSuccess: (grid: T) => void | Promise<void>,
 ) {
   const [lowBalance, setLowBalance] = useState<number | null>(null);
   const mutation = useMutation({
@@ -17,7 +17,7 @@ export function useInferenceMutation(
       body?: object;
       continueWithLowBalance?: boolean;
     }) =>
-      api<ViewGrid>(
+      api<T>(
         path,
         "POST",
         { ...body, continueWithLowBalance },

@@ -70,6 +70,23 @@ pnpm test:e2e:real
 
 `pnpm test` builds once, then runs unit tests and the mock and real Playwright projects against that build. Unit tests that start web or browser fixtures require `dist/index.html`, so run `pnpm build` before invoking `pnpm test:unit` on a clean checkout. `pnpm test:built` runs the same suites against the existing build, without rebuilding it. The E2E runner also accepts `--reuse-build` for focused runs against an existing build. The separate E2E commands build once and run their respective project. Verify test-runner changes from a clean checkout without retained frontend assets.
 
+### Creation and persistence recovery coverage
+
+Creation recovery tests use concurrent HTTP submissions, an unavailable engine,
+web replacement and a failed receipt transaction to verify one saved grid,
+ownership checks and explicit Resume after an uncertain start. Browser coverage
+drops a successful creation response, reloads the draft and verifies that the
+same request ID recovers the existing grid.
+
+Scheduler fault tests cover admission rollback, dispatch waiting for persistence,
+immediate cancellation and completion retained through a failed save. A runtime
+test holds a real SQLite writer lock while the provider streams and completes,
+then verifies retained output, thinking and exactly one charge per call after
+recovery. Existing crash checkpoints retain the distinction between installed
+files and committed completion; a restart never replays inference automatically.
+Disk-full recovery is outside this validation scope. Run these checks on staging
+with the affected billing, publication, migration, reuse and live-update tests.
+
 ### GitHub CI
 
 The CI workflow runs `pnpm test` on every push to `master`, covering unit tests, the frontend build, mock browser tests, and real OpenRouter browser tests. It uses the `test` environment and its `OPENROUTER_API_KEY` secret. Missing credentials or provider failures fail the run. GitHub client values are non-secret test placeholders because these suites do not authenticate with GitHub; the separate GitHub login suite remains an explicit integration check.

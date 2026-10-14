@@ -11,6 +11,8 @@ import { compareGridVersions } from "../shared/grid-version.js";
 import { recoverInterruptedGrids } from "../server/recovery.js";
 
 const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
+const recovered = () =>
+  new Promise<void>((resolve) => setTimeout(resolve, 1200));
 function harness(limit?: number) {
   const dir = mkdtempSync(join(tmpdir(), "slopgrid-workers-"));
   const store = new Store(":memory:", Buffer.alloc(32, 3), dir),
@@ -61,6 +63,150 @@ function harness(limit?: number) {
   }
   return { store, provider, jobs, api, grid, close };
 }
+
+test("failed admission leaves memory unchanged and does not start work", async () => {
+  const h = harness(1);
+  const save = h.store.saveGeneration.bind(h.store);
+  try {
+    const grid = h.grid("alice", "admission-fault", 1);
+    grid.status = "paused";
+    save(grid);
+    h.store.saveGeneration = () => {
+      throw Object.assign(new Error("locked"), { code: "SQLITE_BUSY" });
+    };
+    await assert.rejects(
+      h.api.startGrid({ gridId: grid.id, sessionId: "alice" }),
+    );
+    assert.equal(h.jobs.isRunning(grid.id), false);
+    assert.equal(h.store.get(grid.id)!.status, "paused");
+    await flush();
+    assert.equal(h.provider.started.length, 0);
+    h.store.saveGeneration = save;
+    await recovered();
+    await h.api.startGrid({ gridId: grid.id, sessionId: "alice" });
+    await flush();
+    assert.equal(h.provider.started.length, 1);
+  } finally {
+    h.store.saveGeneration = save;
+    await h.close();
+  }
+});
+
+test("completion waits for storage recovery without replaying inference or stopping live progress", async () => {
+  const h = harness(2);
+  const save = h.store.saveGeneration.bind(h.store);
+  try {
+    const grid = h.grid("alice", "completion-fault", 4);
+    h.jobs.start(grid);
+    await flush();
+    h.store.saveGeneration = () => {
+      throw Object.assign(new Error("locked"), { code: "SQLITE_BUSY" });
+    };
+    h.provider.finish(grid.cells[0].id);
+    await flush();
+    assert.equal(h.jobs.snapshot(grid.id)!.cells[0].status, "running");
+    assert.equal(h.provider.started.length, 2);
+    assert.equal(h.jobs.status().persistence.healthy, false);
+    h.provider.pending.get(grid.cells[1].id)!.write("Still streaming");
+    assert.equal(h.jobs.snapshot(grid.id)!.cells[1].draft, "Still streaming");
+    h.store.saveGeneration = save;
+    await recovered();
+    assert.equal(h.store.get(grid.id)!.cells[0].status, "complete");
+    assert.equal(
+      h.provider.started.filter((call) => call.id === grid.cells[0].id).length,
+      1,
+    );
+    assert.equal(h.jobs.status().persistence.healthy, true);
+  } finally {
+    h.store.saveGeneration = save;
+    await h.close();
+  }
+});
+
+test("Pause cancels immediately during a persistence fault and stays paused after recovery", async () => {
+  const h = harness(1);
+  const save = h.store.saveGeneration.bind(h.store);
+  try {
+    const grid = h.grid("alice", "pause-fault", 2);
+    h.jobs.start(grid);
+    await flush();
+    h.store.saveGeneration = () => {
+      throw Object.assign(new Error("locked"), { code: "SQLITE_BUSY" });
+    };
+    h.jobs.pause(grid);
+    assert.equal(h.provider.pending.size, 0);
+    assert.equal(h.jobs.snapshot(grid.id)!.status, "paused");
+    await flush();
+    assert.equal(h.provider.started.length, 1);
+    h.store.saveGeneration = save;
+    await recovered();
+    assert.equal(h.store.get(grid.id)!.status, "paused");
+    assert.equal(h.jobs.snapshot(grid.id)!.live, false);
+    assert.equal(h.provider.started.length, 1);
+  } finally {
+    h.store.saveGeneration = save;
+    await h.close();
+  }
+});
+
+test("an outer admission rollback emits no running snapshot and installs no runtime", async () => {
+  const h = harness(1);
+  try {
+    const grid = h.grid("alice", "outer-rollback", 1);
+    grid.status = "paused";
+    h.store.saveGeneration(grid);
+    const snapshots: string[] = [];
+    const unsubscribe = h.api.subscribeGrid(
+      grid.id,
+      (g) => snapshots.push(g.status),
+      () => {},
+    );
+    assert.throws(
+      () =>
+        h.jobs.start(grid, undefined, undefined, (write) => {
+          h.store.db.transaction(() => {
+            write();
+            throw Object.assign(new Error("commit failed"), {
+              code: "SQLITE_BUSY",
+            });
+          })();
+        }),
+      /storage/,
+    );
+    assert.equal(h.jobs.isRunning(grid.id), false);
+    assert.equal(h.store.get(grid.id)!.status, "paused");
+    assert.deepEqual(snapshots, ["paused"]);
+    unsubscribe();
+    await recovered();
+    assert.equal(h.provider.started.length, 0);
+  } finally {
+    await h.close();
+  }
+});
+
+test("a queued dispatch is discarded when Pause arrives before its write recovers", async () => {
+  const h = harness(1);
+  const save = h.store.saveGeneration.bind(h.store);
+  try {
+    const grid = h.grid("alice", "dispatch-fault", 1);
+    h.jobs.start(grid);
+    h.store.saveGeneration = () => {
+      throw Object.assign(new Error("locked"), { code: "SQLITE_BUSY" });
+    };
+    await flush();
+    assert.equal(h.provider.started.length, 0);
+    assert.equal(h.jobs.status().runningCalls, 0);
+    h.jobs.pause(grid);
+    h.store.saveGeneration = save;
+    await recovered();
+    assert.equal(h.provider.started.length, 0);
+    assert.equal(h.store.get(grid.id)!.status, "paused");
+    assert.equal(h.jobs.snapshot(grid.id)!.live, false);
+  } finally {
+    h.store.saveGeneration = save;
+    await h.close();
+  }
+});
 
 test("streaming bursts and preview notifications do not write to SQLite", async () => {
   const h = harness(1);
@@ -497,6 +643,7 @@ test("Resume waits for a cancelled call to settle and ignores its late failure b
     await flush();
     assert.deepEqual(h.jobs.status(), {
       draining: false,
+      persistence: { healthy: true, pendingOperations: 0 },
       runningCalls: 1,
       activeGrids: 1,
     });

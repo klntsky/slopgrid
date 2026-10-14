@@ -121,7 +121,22 @@ export function createApp(config: Config) {
         res
           .status(generationErrorStatus[code])
           .json({ code, error: (error as Error).message });
-      else res.status(400).json({ error: "Invalid request" });
+      else if (
+        [400, 404, 409, 413].includes(
+          (error as { status?: number })?.status ?? 0,
+        )
+      )
+        res
+          .status((error as { status: number }).status)
+          .json({ error: (error as Error).message });
+      else {
+        console.error(
+          "Request failed",
+          error instanceof Error ? error.name : "unknown",
+          (error as { code?: string })?.code,
+        );
+        res.status(500).json({ error: "Request failed. Try again." });
+      }
     },
   );
   return { app, store, modelCatalog };

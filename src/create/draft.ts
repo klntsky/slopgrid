@@ -8,6 +8,21 @@ export type Draft = {
   reuseArtifacts?: boolean;
 };
 const storageKey = "slopgrid-draft";
+const submissionKey = "slopgrid-creation";
+export function creationSubmission(body: Record<string, unknown>) {
+  // Automatic capacity can change between retries; the submitted request cannot.
+  const { parallelWorkers: _workers, ...intent } = body;
+  const fingerprint = JSON.stringify(intent);
+  const previous = JSON.parse(sessionStorage.getItem(submissionKey) ?? "null");
+  if (previous?.fingerprint === fingerprint)
+    return previous.body as Record<string, unknown>;
+  const request = { ...body, creationRequestId: crypto.randomUUID() };
+  sessionStorage.setItem(
+    submissionKey,
+    JSON.stringify({ fingerprint, body: request }),
+  );
+  return request;
+}
 const initial: Draft = {
   formatSelected: false,
   input: {
@@ -32,6 +47,7 @@ export function saveDraft(draft: Draft) {
 }
 export function clearDraft() {
   sessionStorage.removeItem(storageKey);
+  sessionStorage.removeItem(submissionKey);
 }
 export function useCreateDraft() {
   const [draft, setDraft] = useState(readDraft);
