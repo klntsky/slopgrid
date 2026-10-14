@@ -162,6 +162,9 @@ Commands use strict payload schemas and named parameters rather than mutable gri
   constraints accompany the request. Retries receive a fresh allowance.
 - Budget configuration is stored once in grid input and derived into cells.
   Images use their dedicated API without the text-token budget.
+  Input validation requires a positive finite budget for text formats. Image
+  inputs preserve valid budgets and normalize missing or invalid budgets to $3
+  for numeric storage metadata; that value does not limit image inference.
 - `server/model-pricing.ts` parses catalog prices and resolves conditional prompt
   and UTC schedule overrides. Preparation evaluates rates at call time.
   `server/generation-instructions.ts` shares format instructions with the browser

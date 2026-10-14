@@ -101,7 +101,7 @@ Status: high level product goal that is not a requirement (not achieved yet).
 
 ### 3.5. Budget and automatic parallelism
 
-1. Text generation requires a per-cell monetary budget, defaulting to $3 per attempt. Preserve saved budgets. It covers estimated total cost, including input, output, and thinking.
+1. Text generation requires a per-cell monetary budget, defaulting to $3 per attempt. Preserve saved budgets. It covers estimated total cost, including input, output, and thinking. Image generation does not require a text budget; a missing or invalid text budget must not block image generation after a format change or draft restoration.
 2. Label the compact field "Budget limit per cell," prepend a dollar icon, and reserve enough input padding to keep the value clear of the icon. It must not stretch across the form's full width.
 3. Respect provider/model limits when translating the budget, without adding an unrelated fixed output-size ceiling. A retry gets a new attempt allowance.
 4. The creation form uses automatic parallelism. For text, estimate each cell from its expanded prompt, applicable token prices, request fees, and budget-capped output allowance within model and context limits. Use $3 per cell when a complete estimate is unavailable. Sum cells in dispatch order until the next would exceed available balance, with at least one worker and at most the cell count. Unknown balance recommends one worker. Image recommendations use available balance divided by $0.40, rounded down with the same bounds.

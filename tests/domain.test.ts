@@ -75,6 +75,31 @@ test("every enabled variable must be used before a grid can generate", () => {
     assert.equal(gridSchema.safeParse({ ...input, prompt }).success, false);
 });
 
+test("only text grids require a valid budget, while image grids normalize an unused invalid budget", () => {
+  const input = {
+    prompt: "$ROW $COLUMN",
+    rows: { kind: "variable", values: ["cat"] },
+    columns: { kind: "variable", values: ["hat"] },
+    model: "fixture/image",
+    effort: "default",
+  };
+  for (const budgetUsd of [undefined, null, 0, -1, NaN, Infinity, "invalid"]) {
+    const image = gridSchema.parse({ ...input, format: "image", budgetUsd });
+    assert.equal(image.budgetUsd, 3);
+    assert.equal(expandGrid(image)[0].prompt, "cat hat");
+    for (const format of ["markdown", "svg", "html"])
+      assert.equal(
+        gridSchema.safeParse({ ...input, format, budgetUsd }).success,
+        false,
+      );
+  }
+  for (const format of ["image", "markdown", "svg", "html"])
+    assert.equal(
+      gridSchema.parse({ ...input, format, budgetUsd: 1.25 }).budgetUsd,
+      1.25,
+    );
+});
+
 test("generation requires an explicit fixed model or selected model axis", () => {
   const input = {
     format: "markdown",

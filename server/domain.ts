@@ -26,22 +26,34 @@ const axis = z.object({
     .min(1)
     .refine((v) => new Set(v).size === v.length, "Values must be distinct"),
 });
+const budgetSchema = z.number().finite().positive();
+const gridFields = {
+  prompt: z.string().trim().min(1),
+  rows: axis,
+  columns: axis,
+  imageSettings: sharedImageSettingsSchema.optional(),
+  inputReferences: z.array(referenceImageSchema).optional(),
+  referenceGroups: z
+    .record(z.string(), z.array(referenceImageSchema))
+    .optional(),
+  model: z.string().trim(),
+  effort: z.enum(efforts),
+  parallelWorkers: z.number().int().min(1).optional(),
+};
 export const gridSchema = z
-  .object({
-    format: z.enum(["svg", "markdown", "html", "image"]),
-    prompt: z.string().trim().min(1),
-    rows: axis,
-    columns: axis,
-    imageSettings: sharedImageSettingsSchema.optional(),
-    inputReferences: z.array(referenceImageSchema).optional(),
-    referenceGroups: z
-      .record(z.string(), z.array(referenceImageSchema))
-      .optional(),
-    model: z.string().trim(),
-    effort: z.enum(efforts),
-    budgetUsd: z.number().finite().positive(),
-    parallelWorkers: z.number().int().min(1).optional(),
-  })
+  .discriminatedUnion("format", [
+    z.object({
+      ...gridFields,
+      format: z.enum(["svg", "markdown", "html"]),
+      budgetUsd: budgetSchema,
+    }),
+    z.object({
+      ...gridFields,
+      format: z.literal("image"),
+      // Keep numeric metadata for saved grids; image inference ignores it.
+      budgetUsd: budgetSchema.catch(3),
+    }),
+  ])
   .superRefine((g, c) => {
     const issue = (message: string) => c.addIssue({ code: "custom", message });
     if (![g.rows.kind, g.columns.kind].includes("model") && !g.model)

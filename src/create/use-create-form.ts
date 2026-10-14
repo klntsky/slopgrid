@@ -80,7 +80,8 @@ export function useCreateForm() {
     !connection.data?.connected && "Connect OpenRouter.",
     !input.prompt.trim() && "Enter a prompt.",
     unusedVariableIssue(input),
-    (!Number.isFinite(input.budgetUsd) || input.budgetUsd <= 0) &&
+    input.format !== "image" &&
+      (!Number.isFinite(input.budgetUsd) || input.budgetUsd <= 0) &&
       "Enter a positive per-cell budget.",
   ]
     .filter(Boolean)
