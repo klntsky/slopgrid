@@ -5,7 +5,9 @@ import { Link, Outlet, useLocation } from "@tanstack/react-router";
 import { Menu, X, Sun, Moon } from "lucide-react";
 export const GridHeaderTarget = createContext<HTMLDivElement | null>(null);
 export function Layout() {
-  const hasTouchscreen = navigator.maxTouchPoints > 0;
+  // Firefox privacy settings can spoof touch points on mouse-only desktops.
+  const hasTouchscreen =
+    navigator.maxTouchPoints > 0 && matchMedia("(any-pointer: coarse)").matches;
   const { resolvedTheme, setTheme } = useTheme();
   const pathname = useLocation().pathname,
     isGrid = pathname.startsWith("/grid/");

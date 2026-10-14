@@ -8,7 +8,7 @@ Use Node.js 22.12 or newer and pnpm 12.4.2. The same-site HTTPS browser test use
 
 ```sh
 pnpm install
-pnpm exec playwright install chromium
+pnpm exec playwright install chromium firefox
 pnpm dev:engine
 # In another terminal:
 pnpm dev
@@ -93,7 +93,7 @@ Grid-price coverage distinguishes visible successful-output cost from owner-only
 
 ### Required runtime coverage
 
-Navigation browser coverage combines touchscreen and non-touchscreen contexts with narrow and wide viewports, checking menu selection, route navigation, Escape, outside presses, and focus restoration. Non-touchscreen checks require the hamburger button to be absent from the DOM.
+Navigation browser coverage combines touchscreen and non-touchscreen contexts with narrow and wide viewports, checking menu selection, route navigation, Escape, outside presses, and focus restoration. Non-touchscreen checks require the hamburger button to be absent from the DOM. Firefox desktop coverage runs with fingerprinting resistance both enabled and disabled, including navigation and reload, to catch spoofed touch-point counts selecting the hamburger menu on mouse-only devices.
 
 Text-model pricing browser coverage checks per-million conversion, request charges, zero and missing prices, keyboard and hover tooltips, and consistent pricing through axis swaps and fixed-model selection. Image pricing coverage also runs when the shared price display changes.
 
