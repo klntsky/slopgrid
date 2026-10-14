@@ -545,6 +545,15 @@ cookie to generated hosts.
   `src/layout.tsx` owns navigation and the grid-header portal.
 - Pages live in `src/pages/`, creation controls and drafts in `src/create/`,
   and shared dialogs and connection controls in `src/components/`.
+- The creation page owns rendering and tooltips. `src/create/draft.ts` owns
+  draft persistence and edits, including format defaults and uploaded-reference
+  replacement. `use-create-form.ts` combines draft edits with model choices,
+  budget estimates, capacity checks, and generation readiness.
+- `src/create/use-create-submission.ts` owns submission validation, upload
+  activity and cancellation, inference errors and low-balance confirmation,
+  and navigation after creation. Successful uploads replace local references
+  in the draft and remove the corresponding local files so submission retries
+  can reuse the uploaded references.
 - `src/grid/use-grid.ts` owns grid queries, SSE state, and editing mutations.
   Grid headers, output tables, and cells have separate components.
 - Shared inference mutations own credentials, pending state, failures, and

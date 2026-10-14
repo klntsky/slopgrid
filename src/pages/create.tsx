@@ -3,80 +3,46 @@ import { ImageOptions } from "../create/image-options";
 import { changeAxis } from "../create/change-axis";
 import { PublicGrids } from "../components/grid-listing";
 import { FormatIcon } from "../components/grid-format-icon";
-import { useInferenceMutation } from "../use-inference-mutation";
-import {
-  uploadReferences,
-  removeReferenceFile,
-} from "../create/reference-files";
-import { useState, useRef, useEffect, useMemo } from "react";
-import { useNavigate } from "@tanstack/react-router";
 import { ArrowUpRight, DollarSign, ArrowLeftRight } from "lucide-react";
 import {
   efforts,
-  gridSchema,
   unusedVariableIssue,
   type GridInput,
 } from "../../server/domain";
 import { effortLabel } from "../../server/compatibility";
-import { queryClient, useConnection, useInferenceCapacity } from "../queries";
-import { modelCatalog } from "../model-catalog";
 import { formatNames } from "../format";
-import { useCreateDraft, clearDraft } from "../create/draft";
+import { useCreateForm } from "../create/use-create-form";
 import { AxisEditor } from "../create/axis-editor";
 import { compatibilityTables } from "../create/compatibility-table";
 import { BudgetWarnings } from "../create/budget-warnings";
-import { estimateGrid } from "../../server/cost-estimates";
 import { Connection } from "../components/connection";
 import { ErrorMessage } from "../components/error-message";
 import { LowBalanceDialog } from "../components/inference-dialogs";
 import { useTooltip } from "../components/use-tooltip";
 export function Create() {
-  const [draft, setDraft] = useCreateDraft(),
-    [validationError, setError] = useState(""),
-    [uploads, setUploads] = useState(0);
-  const uploading = uploads > 0;
-  const uploadController = useRef<AbortController | undefined>(undefined);
-  useEffect(() => () => uploadController.current?.abort(), []);
-  const { formatSelected, input } = draft,
-    navigate = useNavigate(),
-    connection = useConnection();
-  const capacity = useInferenceCapacity(
-    formatSelected && connection.data?.connected === true,
-    input.format,
-  );
-  const cellCount = input.rows.values.length * input.columns.values.length;
-  const [estimateMinute, setEstimateMinute] = useState(() =>
-    Math.floor(Date.now() / 60000),
-  );
-  useEffect(() => {
-    const timer = setInterval(
-      () => setEstimateMinute(Math.floor(Date.now() / 60000)),
-      1000,
-    );
-    return () => clearInterval(timer);
-  }, []);
-  const estimated = useMemo(
-    () =>
-      input.format === "image"
-        ? undefined
-        : estimateGrid(input, modelCatalog, new Date(estimateMinute * 60000)),
-    [input, estimateMinute],
-  );
-  const parallelWorkers =
-    input.format === "image"
-      ? Math.max(1, Math.min(cellCount, capacity.data?.parallelWorkers ?? 1))
-      : undefined;
+  const {
+    draft,
+    update,
+    selectFormat,
+    setReuseArtifacts,
+    connection,
+    capacity,
+    estimated,
+    models,
+    commonModel,
+    commonEffort,
+    generateReasons,
+    submission,
+  } = useCreateForm();
+  const { formatSelected, input } = draft;
+  const { generate, onUploading, lowBalance, setLowBalance, busy, error } =
+    submission;
+  const compatibility = compatibilityTables({ input, models });
+  const commonParameters =
+    input.format === "image" || commonModel || commonEffort;
   const promptVariables = (["rows", "columns"] as const)
     .filter((axis) => input[axis].kind === "variable")
     .map((axis) => (axis === "rows" ? "$ROW" : "$COLUMN"));
-  const workersPending = !capacity.isSuccess || capacity.isFetching;
-  const inference = useInferenceMutation(async (grid) => {
-    await queryClient.invalidateQueries({ queryKey: ["grids"] });
-    clearDraft();
-    await navigate({ to: "/grid/$id", params: { id: grid.id } });
-  });
-  const { lowBalance, setLowBalance, isPending: busy } = inference;
-  const error = validationError || inference.message;
   const budgetHint = useTooltip<HTMLLabelElement>(
     "Used to calculate each output’s token limit.",
   );
@@ -84,152 +50,7 @@ export function Create() {
     "When checked, existing artifacts will be copied to the new grid if their parameters match exactly",
   );
   const swapHint = useTooltip<HTMLButtonElement>("Swap rows and columns");
-  function update(
-    change: Partial<GridInput> | ((input: GridInput) => Partial<GridInput>),
-  ) {
-    setDraft((d) => {
-      const partial = typeof change === "function" ? change(d.input) : change;
-      return {
-        ...d,
-        input: {
-          ...d.input,
-          ...partial,
-          referenceGroups: partial.referenceGroups
-            ? { ...d.input.referenceGroups, ...partial.referenceGroups }
-            : d.input.referenceGroups,
-        },
-      };
-    });
-    setError("");
-    inference.reset();
-  }
-  const models = modelCatalog
-    .filter((m) => (input.format === "image" ? m.image : m.text))
-    .sort(
-      (a, b) =>
-        a.name.localeCompare(b.name, "en", { sensitivity: "base" }) ||
-        a.id.localeCompare(b.id, "en"),
-    );
-  const compatibility = compatibilityTables({ input, models });
-  function selectFormat(format: GridInput["format"]) {
-    inference.reset();
-    setDraft((d) => ({
-      ...d,
-      formatSelected: true,
-      input: {
-        ...d.input,
-        format,
-        imageSettings: undefined,
-        inputReferences: undefined,
-        model: "",
-        effort: "default",
-        rows:
-          format === "markdown"
-            ? { kind: "effort", values: ["default"] }
-            : { kind: "model", values: [] },
-        columns:
-          format === "image"
-            ? { kind: "quality", values: ["auto"] }
-            : format === "markdown"
-              ? { kind: "model", values: [] }
-              : { kind: "effort", values: ["default"] },
-      },
-    }));
-    setError("");
-  }
-  const commonModel = ![input.rows.kind, input.columns.kind].includes("model");
-  const commonEffort =
-    input.format !== "image" &&
-    ![input.rows.kind, input.columns.kind].includes("effort");
-  const commonParameters =
-    input.format === "image" || commonModel || commonEffort;
-  const modelMissing = commonModel && !input.model;
-  const generateReasons = [
-    busy && "Starting generation.",
-    uploading && "Uploading reference images.",
-    workersPending &&
-      connection.data?.connected &&
-      (capacity.isError
-        ? "Could not determine the automatic worker count."
-        : "Checking the automatic worker count."),
-    modelMissing && "Select a model.",
-    !input.rows.values.length && "Select row values.",
-    !input.columns.values.length && "Select column values.",
-    !connection.data?.connected && "Connect OpenRouter.",
-    !input.prompt.trim() && "Enter a prompt.",
-    unusedVariableIssue(input),
-    (!Number.isFinite(input.budgetUsd) || input.budgetUsd <= 0) &&
-      "Enter a positive per-cell budget.",
-  ]
-    .filter(Boolean)
-    .join(" ");
   const generateHint = useTooltip<HTMLDivElement>(generateReasons || undefined);
-  async function generate(continueWithLowBalance = false) {
-    if (
-      modelMissing ||
-      workersPending ||
-      uploading ||
-      busy ||
-      uploadController.current
-    )
-      return;
-    const parsed = gridSchema.safeParse({
-      ...input,
-      parallelWorkers,
-    });
-    if (!parsed.success) {
-      setError(parsed.error.issues[0].message);
-      return;
-    }
-    setError("");
-    const controller = new AbortController();
-    uploadController.current = controller;
-    setUploads((count) => count + 1);
-    try {
-      const prepared = await uploadReferences(
-        parsed.data,
-        (localId, image) => {
-          setDraft((d) => ({
-            ...d,
-            input: {
-              ...d.input,
-              inputReferences: d.input.inputReferences?.map((candidate) =>
-                candidate.id === localId ? image : candidate,
-              ),
-              referenceGroups: Object.fromEntries(
-                Object.entries(d.input.referenceGroups ?? {}).map(
-                  ([name, images]) => [
-                    name,
-                    images.map((candidate) =>
-                      candidate.id === localId ? image : candidate,
-                    ),
-                  ],
-                ),
-              ),
-            },
-          }));
-          void removeReferenceFile(localId).catch(() => {});
-        },
-        controller.signal,
-      );
-      if (!controller.signal.aborted)
-        inference.mutate({
-          path: "/grids",
-          body: {
-            ...prepared,
-            parallelWorkers,
-            sourceGridId: draft.sourceGridId,
-            reuseArtifacts: draft.reuseArtifacts !== false,
-          },
-          continueWithLowBalance,
-        });
-    } catch (error) {
-      if (!controller.signal.aborted) setError((error as Error).message);
-    } finally {
-      uploadController.current = undefined;
-      setUploads((count) => count - 1);
-    }
-  }
 
   return (
     <main className="create-page">
@@ -282,9 +103,7 @@ export function Create() {
               format={input.format}
               models={models}
               referenceGroups={input.referenceGroups}
-              onUploading={(busy) =>
-                setUploads((count) => count + (busy ? 1 : -1))
-              }
+              onUploading={onUploading}
               onChange={(rows, referenceGroups) =>
                 update((current) =>
                   changeAxis(current, "rows", rows, referenceGroups),
@@ -315,9 +134,7 @@ export function Create() {
               format={input.format}
               models={models}
               referenceGroups={input.referenceGroups}
-              onUploading={(busy) =>
-                setUploads((count) => count + (busy ? 1 : -1))
-              }
+              onUploading={onUploading}
               onChange={(columns, referenceGroups) =>
                 update((current) =>
                   changeAxis(current, "columns", columns, referenceGroups),
@@ -354,7 +171,7 @@ export function Create() {
               compatibility={compatibility}
               input={input}
               onChange={update}
-              onBusy={(busy) => setUploads((count) => count + (busy ? 1 : -1))}
+              onBusy={onUploading}
             />
           )}
           {commonEffort && (
@@ -462,12 +279,7 @@ export function Create() {
               <input
                 type="checkbox"
                 checked={draft.reuseArtifacts !== false}
-                onChange={(event) =>
-                  setDraft((d) => ({
-                    ...d,
-                    reuseArtifacts: event.target.checked,
-                  }))
-                }
+                onChange={(event) => setReuseArtifacts(event.target.checked)}
               />
               Reuse existing artifacts from the previous version
             </label>
