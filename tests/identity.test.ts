@@ -70,7 +70,6 @@ test("account ownership, frozen authors, browser credentials, and OAuth callback
       id,
       owner: anonymous,
       input,
-      revision: 0,
       status: "complete",
       published,
       visibility: published ? "public" : "private",

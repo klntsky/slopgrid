@@ -27,7 +27,6 @@ test("publishing is permanent, link grids are unlisted, and public summaries omi
       id,
       owner,
       input,
-      revision: 0,
       status: "complete",
       published: false,
       visibility: "private",
@@ -139,7 +138,7 @@ test("publishing is permanent, link grids are unlisted, and public summaries omi
       ? ["private"]
       : ["private", "unlisted"])
       assert.equal((await publish(id, { visibility })).status, 409);
-    assert.equal(store.get(id)!.revision, previous.revision);
+    assert.deepEqual(store.get(id), previous);
     for (const action of ["edit", "retry", "pause"]) {
       const response = await fetch(`${origin}/api/grids/${id}/${action}`, {
         method: "POST",
@@ -164,7 +163,6 @@ test("publishing is permanent, link grids are unlisted, and public summaries omi
   assert.deepEqual(store.get("link"), {
     ...beforePromotion,
     visibility: "public",
-    revision: beforePromotion.revision + 1,
   });
   assert.deepEqual(
     (await publicGrids()).map((g: Grid) => g.id),

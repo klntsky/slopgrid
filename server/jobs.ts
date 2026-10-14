@@ -34,7 +34,6 @@ type RunningCall = {
 export class Jobs {
   readonly previews: WebsitePreviews;
   private grids = new Map<string, GridRuntime>();
-  private snapshotSequence = 0;
   // Calls retain their dispatch owner and worker slot until settlement, even
   // when Pause/Resume replaces the grid's credentials and execution owner.
   private running = new Map<string, RunningCall>();
@@ -58,9 +57,6 @@ export class Jobs {
     const state = this.grids.get(grid.id);
     clearTimeout(state?.timer);
     if (state) delete state.timer;
-    // Cell and billing statuses can finish before the scheduler releases a call.
-    // Checkpoint that distinction with the transition's revision for recovery.
-    grid.hasUnsettledCalls = this.hasUnsettledCalls(grid.id);
     this.store.saveGeneration(grid, cells);
     this.notify(grid);
   }
@@ -89,11 +85,8 @@ export class Jobs {
       ...(state && {
         status: state.grid.status,
         interruption: state.grid.interruption,
-        cells: state.grid.cells,
+        cells: state.grid.cells.map((cell) => ({ ...cell })),
       }),
-      // Order reads at their single owner; durable transitions and recovery
-      // supersede the sequence when the runtime is removed or the engine restarts.
-      draftRevision: state ? ++this.snapshotSequence : 0,
       live: !!state,
     };
   }

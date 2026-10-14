@@ -21,7 +21,6 @@ test("a restart preserves finished outputs and pauses interrupted work until an 
       created: Date.now(),
     });
     const g: Grid = {
-      revision: 0,
       id: "grid",
       owner: "owner",
       published: false,

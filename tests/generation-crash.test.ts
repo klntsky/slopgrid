@@ -27,7 +27,6 @@ for (const billed of [false, true])
         });
         assert.equal(paused.live, true);
         assert.equal(paused.cells[0].status, "pending");
-        assert.equal(f.store.get(grid.id)!.hasUnsettledCalls, true);
         if (billed) {
           // Stop after the provider recorded its charge, before Jobs releases
           // the call. Recovery cannot infer this state from the billing ledger.
@@ -48,11 +47,10 @@ for (const billed of [false, true])
         assert.equal(recovered.live, false);
         assert.equal(recovered.status, "paused");
         assert.equal(recovered.interruption, "manual");
-        assert.equal(f.store.get(grid.id)!.hasUnsettledCalls, false);
         assert.equal(recovered.cells[0].status, "pending");
         assert.ok(
-          recovered.revision > paused.revision,
-          "clearing unsettled calls must supersede the pre-crash snapshot",
+          recovered.version.epoch > paused.version.epoch,
+          "the replacement engine must supersede the pre-crash snapshot",
         );
         queryClient.setQueryData(["grid", grid.id], recovered);
         queryClient.setQueryData(["grid", grid.id], paused);
@@ -80,10 +78,13 @@ for (const billed of [false, true])
         await f.engine.close();
         await f.startEngine();
         const stable = await f.engine.api.getGrid(grid.id);
-        assert.equal(
-          stable.revision,
-          recovered.revision,
-          "a second restart must leave settled grids alone",
+        assert.ok(stable.version.epoch > recovered.version.epoch);
+        const { version: _stableVersion, ...stableState } = stable;
+        const { version: _recoveredVersion, ...recoveredState } = recovered;
+        assert.deepEqual(
+          stableState,
+          recoveredState,
+          "a second restart changes ordering but preserves settled state",
         );
         assert.equal(stable.live, false);
         assert.equal(f.calls.length, 1);

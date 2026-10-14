@@ -59,6 +59,15 @@ export class Store {
       this.db.prepare("SELECT id FROM grids").all() as { id: string }[]
     ).map((row) => this.get(row.id)!);
   }
+  nextGenerationEpoch(): number {
+    return (
+      this.db
+        .prepare(
+          "UPDATE generation_clock SET epoch=epoch+1 WHERE id=1 RETURNING epoch",
+        )
+        .get() as { epoch: number }
+    ).epoch;
+  }
   get(id: string): Grid | undefined {
     const row = this.db.prepare("SELECT data FROM grids WHERE id=?").get(id) as
       { data: string } | undefined;
@@ -95,17 +104,11 @@ export class Store {
   }
   saveGeneration(grid: Grid, cells: readonly Cell[] = grid.cells) {
     this.db.transaction(() => {
-      const row = this.db
+      this.db
         .prepare(
-          `UPDATE grids SET data=json_set(data, '$.status', ?, '$.interruption', json(?), '$.hasUnsettledCalls', json(?), '$.revision', COALESCE(json_extract(data,'$.revision'),0)+1) WHERE id=? RETURNING json_extract(data,'$.revision') AS revision`,
+          `UPDATE grids SET data=json_set(data, '$.status', ?, '$.interruption', json(?)) WHERE id=?`,
         )
-        .get(
-          grid.status,
-          JSON.stringify(grid.interruption ?? null),
-          JSON.stringify(grid.hasUnsettledCalls ?? false),
-          grid.id,
-        ) as { revision: number };
-      grid.revision = row.revision;
+        .run(grid.status, JSON.stringify(grid.interruption ?? null), grid.id);
       const saveCell = this.db.prepare(
         "UPDATE cells SET data=? WHERE id=? AND grid_id=?",
       );
@@ -141,7 +144,7 @@ export class Store {
   setTitle(id: string, title: string) {
     this.db
       .prepare(
-        `UPDATE grids SET data=json_set(data, '$.title', json(?), '$.revision', COALESCE(json_extract(data,'$.revision'),0)+1) WHERE id=?`,
+        `UPDATE grids SET data=json_set(data, '$.title', json(?)) WHERE id=?`,
       )
       .run(JSON.stringify(title || null), id);
   }
@@ -154,7 +157,7 @@ export class Store {
         if (error || visibility === grid.visibility) return error;
         this.db
           .prepare(
-            `UPDATE grids SET data=json_set(data, '$.published', json('true'), '$.visibility', ?, '$.author', json(?), '$.revision', COALESCE(json_extract(data,'$.revision'),0)+1) WHERE id=?`,
+            `UPDATE grids SET data=json_set(data, '$.published', json('true'), '$.visibility', ?, '$.author', json(?)) WHERE id=?`,
           )
           .run(
             visibility,
@@ -273,7 +276,7 @@ export class Store {
       .run(userId, anonymousId);
     this.db
       .prepare(
-        `UPDATE grids SET data=json_set(data, '$.ownerUserId', ?, '$.revision', COALESCE(json_extract(data,'$.revision'),0)+1)
+        `UPDATE grids SET data=json_set(data, '$.ownerUserId', ?)
       WHERE json_extract(data,'$.owner')=? AND json_extract(data,'$.ownerUserId') IS NULL`,
       )
       .run(userId, anonymousId);

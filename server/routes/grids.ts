@@ -168,7 +168,6 @@ export function createGridRoutes({
         .status(429)
         .json({ error: "Grid limit reached. Try again in an hour." });
     const g: Grid = {
-      revision: 0,
       id: token(),
       owner: anonymousOwner(s),
       ownerUserId: s.userId,

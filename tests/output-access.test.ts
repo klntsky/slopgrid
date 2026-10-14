@@ -25,7 +25,6 @@ test("private outputs require ownership, isolated grants are scoped and revoked 
     const g: Grid = {
       id: token(),
       owner,
-      revision: 0,
       input,
       status: running ? "running" : "complete",
       published: false,

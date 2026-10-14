@@ -39,10 +39,10 @@ const { api, jobs } = createGenerationService(
   new Provider(process.env.OPENROUTER_BASE_URL),
   Number(process.env.WORKERS_MAX ?? 100),
 );
-const server = await serveGeneration(api, config.socket);
 jobs.previews.clearAll();
 recoverInterruptedGrids(store);
 if (process.env.GENERATION_DRAINING === "1") await api.drain();
+const server = await serveGeneration(api, config.socket);
 console.log("Generation engine ready");
 let stopping = false;
 async function stop() {

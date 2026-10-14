@@ -93,7 +93,7 @@ Streaming usage coverage checks token growth during thinking and output, stable 
 Streaming persistence coverage measures SQLite changes across chunk bursts and
 throttled notifications, checks that a trace identifier is checkpointed once,
 and records updated cell rows to ensure completion and dispatch leave unrelated
-cells untouched. Ordering coverage includes drafts within one durable revision,
+cells untouched. Ordering coverage includes drafts within one engine epoch,
 concurrent metadata edits, and recovery of paused grids with interrupted calls.
 The browser delays a real HTTP response while newer drafts arrive and verifies
 that the delayed response cannot replace the newer output or thinking.
@@ -111,17 +111,22 @@ A fixture-only adapter
 wrapper withholds the AbortSignal from the real provider, allowing the controlled
 upstream to finish after cancellation while retaining the SDK, parser, billing,
 engine, web process, and browser. Late output remains discarded. Engine coverage
-checks that the stable snapshot has a newer revision than the paused live snapshot.
+checks that the stable snapshot has a newer ordering token than the paused live snapshot.
 
 Recovery coverage kills the engine after manual Pause, both while billing is
 running and after the charge is recorded but before the scheduler releases the
-call. The recovered snapshot must have a newer durable revision and reject the
+call. The recovered snapshot must have a newer engine epoch and reject the
 delayed pre-crash snapshot through the browser cache. Preserve recorded charges,
 partial thinking, pending cells, and the manual pause reason without starting
-replacement calls. A second restart must leave the recovered revision unchanged.
-Multi-call pause coverage checks that the persisted unsettled-call marker stays
-set until the last call settles; streaming coverage still requires zero SQLite
-writes for draft bursts.
+replacement calls. A second restart must advance the epoch while preserving
+settled state. Multi-call pause coverage checks that live updates continue until
+the last call settles; streaming coverage still requires zero SQLite writes for
+draft bursts. Snapshot-read coverage checks strictly increasing sequences without
+database writes, fresh ordering after settled metadata edits, and a stable epoch
+across web replacement. Browser coverage delays a paused HTTP snapshot across an
+engine restart and checks that its later arrival cannot reopen streaming.
+Migration coverage preserves existing grid metadata, sessions, cells, references,
+and charges, and checks that reopening storage does not reset the engine clock.
 
 The runtime behavior tests share `tests/runtime-fixture.ts`: a controlled OpenRouter HTTP service, a real inference child, a replaceable web child, and a temporary SQLite database and output directory. The actual provider SDK, stream parser, billing recorder, and Unix-socket API remain in use. Fixture children, including browser app processes, report readiness over IPC after their listeners are available. Startup waits report the child error or exit status, with a bounded timeout for a hung process, instead of treating a delayed startup as an application transition failure. Tests explicitly release streaming chunks or failures instead of relying on provider response timing. Sessions are seeded directly; authentication flows have separate coverage.
 

@@ -78,7 +78,6 @@ test("private websites load in frames and direct tabs for the owning user across
     const grid: Grid = {
       id: token(),
       owner,
-      revision: 0,
       input,
       status: "complete",
       published: false,

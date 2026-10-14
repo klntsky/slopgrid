@@ -8,7 +8,7 @@ import { api, type ViewGrid, type SessionInfo } from "./api";
 function newestGrid(previous: unknown, incoming: unknown) {
   const old = previous as ViewGrid | undefined,
     next = incoming as ViewGrid;
-  return old && compareGridVersions(old, next) > 0 ? old : next;
+  return old && compareGridVersions(old.version, next.version) > 0 ? old : next;
 }
 export const queryClient = new QueryClient();
 queryClient.setQueryDefaults(["grid"], { structuralSharing: newestGrid });

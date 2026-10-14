@@ -15,7 +15,7 @@ describes component responsibilities, data flow, and security boundaries.
 | React client | Creation drafts, model selection, grid views, and browser interactions |
 | Web process | Authentication, sessions, grid metadata, model discovery for forms, HTTP/SSE connections, and authorized output delivery |
 | Inference engine | Admission, scheduling, provider calls, execution credentials, cancellation, retries, streams, previews, billing writes, and recovery |
-| SQLite | Sessions, identities, grid configuration, cell state, revisions, reference metadata, and inference ledger |
+| SQLite | Sessions, identities, grid configuration, cell state, engine epoch, reference metadata, and inference ledger |
 | Output filesystem | Completed bundles, image references, thinking traces, and temporary website previews |
 | OpenRouter adapter | Catalog interpretation, credit lookup, request preparation, and inference SDK integration |
 
@@ -102,22 +102,23 @@ Commands use strict payload schemas and named parameters rather than mutable gri
 ### Write ownership and ordered snapshots
 
 - Creation inserts immutable grid configuration and initial cells together.
-  `Store.saveGeneration` changes only generation status, interruption, the
-  unsettled-call marker, revision, and affected cell state; metadata methods
-  change only titles, publication, or ownership and advance the revision.
-- Durable mutations allocate a monotonic SQLite revision. Individual call
-  transitions save only their affected cell; grid-wide transitions save the
+  `Store.saveGeneration` changes only generation status, interruption, and
+  affected cell state; metadata methods change only titles, publication, or
+  ownership.
+- Individual call transitions save only their affected cell; grid-wide transitions save the
   cells they change. Draft, estimate, and preview notifications do not write to
   SQLite. The first thinking chunk checkpoints its trace identifier once, while
   subsequent chunks append to the trace file.
-- Snapshots combine fresh persisted metadata with live cells. Each live snapshot
-  read receives the next number from one engine-wide in-memory sequence, carried
-  in `draftRevision`; settled snapshots use zero. The web stream and browser
-  compare the durable revision first, then this read sequence, so delayed
-  snapshots cannot replace newer reads. Chunk processing and state transitions
-  do not maintain or reset sequence counters. Durable transitions supersede
-  earlier drafts, and engine recovery advances the durable revision for
-  interrupted calls, including those in paused grids.
+- The generation service allocates an engine epoch atomically in SQLite once
+  per initialization. Opening a store or replacing the web process does not
+  advance it. Recovery finishes before the engine serves requests.
+- Each snapshot combines fresh persisted metadata with copies of live cells,
+  then receives `version: { epoch, sequence }` from the generation service.
+  Every read advances its in-memory sequence, including reads of settled grids.
+  The web stream and browser compare epochs first, then sequences. A new engine's
+  snapshots supersede every predecessor snapshot, regardless of cell status or
+  whether billing finished before a crash. Ordering tokens describe reads;
+  identical content can have different tokens. Snapshot reads do not write to SQLite.
 - Publication and admission use immediate transactions so publication cannot race
   a retry. The engine writes inference calls; the web process reads the ledger.
 - Engine subscriptions register before their initial snapshot in the same
@@ -128,14 +129,10 @@ Commands use strict payload schemas and named parameters rather than mutable gri
   thinking, estimates, and preview identifiers without restarting inference.
   Engine snapshots derive `live` from the presence of their runtime, which is
   retained while work is running or calls remain unsettled. Manual Pause marks
-  cells pending immediately but keeps the stream live until cancelled calls settle. Settlement
-  persists billing and cell state, advances the revision, and emits the final
+  cells pending immediately but keeps the stream live until cancelled calls settle.
+  Settlement persists billing and cell state and emits the final
   snapshot before the browser closes its stream. Reloads and reconnects receive
   the same engine-derived flag, and streams reopen when work starts again.
-- The engine checkpoints `hasUnsettledCalls` with each state transition, based on
-  calls still held by the scheduler. Manual Pause retains it until the final call
-  settles, even when billing has already finished. This recovery marker stays
-  private to storage and the engine API; browser snapshots retain `live`.
 
 ### Updates and recovery
 
@@ -149,13 +146,11 @@ Commands use strict payload schemas and named parameters rather than mutable gri
   Only engine startup performs interrupted-grid recovery and preview cleanup;
   opening a store or restarting the web process does not.
 - Recovery marks running grids paused and interrupted cells pending, including
-  calls that were still running in a billing-paused grid. It advances the durable
-  revision without launching replacement requests. Resume requires an
-  owner-authorized command.
-- Recovery also clears surviving unsettled-call markers and advances their grid
-  revisions in the same transaction. Manually paused grids retain their pause
-  reason, and delayed pre-crash snapshots cannot restore their live state.
-  Repeating recovery leaves settled grids unchanged.
+  calls that were still running in a billing-paused grid. Manually paused grids
+  retain their pause reason. Recovery preserves settled grid data and recorded
+  charges without launching replacement requests; Resume requires an
+  owner-authorized command. Every engine initialization advances the epoch even
+  when all grids are settled.
 - Protocol, storage, engine, and incompatible dependency changes require a
   compatible machinery update. Admission can reopen if maintenance is cancelled.
 
@@ -343,9 +338,11 @@ Commands use strict payload schemas and named parameters rather than mutable gri
   stored once; per-cell prompts and settings are reconstructed from it.
   Cell IDs and positions are relational columns rather than duplicated JSON.
 - `server/database.ts` creates an empty database in an immediate transaction and
-  checks `user_version`. Schema version 9 is current; version 8 upgrades by
-  adding reference-image metadata without changing existing records. Other
-  nonempty schema versions are rejected.
+  checks `user_version`. Schema version 10 is current. Versions 8 and 9 upgrade
+  atomically, adding reference-image storage when needed and a singleton
+  generation clock, and removing obsolete ordering fields from grid JSON.
+  Existing sessions, cells, references, and charges are preserved. Other nonempty
+  schema versions are rejected.
 - `server/files.ts` stores bundles under cell IDs and images as binary files.
   Complete bundles are staged and renamed into place before completion is saved.
   Retries replace interrupted writes; metadata changes never rewrite artifacts.
@@ -540,7 +537,7 @@ Commands use strict payload schemas and named parameters rather than mutable gri
   The publish dialog saves successful confirmation suppression under
   `slopgrid-skip-publish-confirmation` in localStorage.
 - Titles are separate optional metadata. The title route validates length,
-  updates only title and revision, obtains a fresh engine snapshot, and notifies
+  updates only title, obtains a fresh engine snapshot, and notifies
   subscribers without changing generated files.
 
 ## Output isolation and authorization

@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "../server/store.js";
-import { Jobs } from "../server/jobs.js";
+import { createGenerationService } from "../server/generation-service.js";
 import { ControlledProvider } from "./controlled-provider.js";
 import { expandGrid, type Grid } from "../server/domain.js";
 import { compareGridVersions } from "../shared/grid-version.js";
@@ -15,7 +15,7 @@ function harness(limit?: number) {
   const dir = mkdtempSync(join(tmpdir(), "slopgrid-workers-"));
   const store = new Store(":memory:", Buffer.alloc(32, 3), dir),
     provider = new ControlledProvider(),
-    jobs = new Jobs(store, provider, limit);
+    { jobs, api } = createGenerationService(store, provider, limit);
   function grid(owner: string, name: string, count: number): Grid {
     store.saveSession({ id: owner, key: "fixture-key", created: Date.now() });
     const rows = Math.min(count, 8);
@@ -36,7 +36,6 @@ function harness(limit?: number) {
     };
     const g: Grid = {
       id: `${owner}/${name}`,
-      revision: 0,
       owner,
       input,
       published: false,
@@ -60,7 +59,7 @@ function harness(limit?: number) {
     store.db.close();
     rmSync(dir, { recursive: true, force: true });
   }
-  return { store, provider, jobs, grid, close };
+  return { store, provider, jobs, api, grid, close };
 }
 
 test("streaming bursts and preview notifications do not write to SQLite", async () => {
@@ -152,38 +151,44 @@ test("draft ordering survives metadata changes, pause, and recovery of a billing
     await flush();
     const call = h.provider.pending.get(grid.cells[0].id)!;
     call.write("First");
-    const first = h.jobs.snapshot(grid.id)!;
+    const first = await h.api.getGrid(grid.id);
     call.write("Second");
-    const second = h.jobs.snapshot(grid.id)!;
-    assert.equal(second.revision, first.revision);
-    assert.ok(compareGridVersions(second, first) > 0);
+    const second = await h.api.getGrid(grid.id);
+    assert.equal(second.version.epoch, first.version.epoch);
+    assert.ok(compareGridVersions(second.version, first.version) > 0);
+    assert.equal(
+      first.cells[0].draft,
+      "First",
+      "captured snapshots must not share mutable live cells",
+    );
     h.store.setTitle(grid.id, "Changed during streaming");
-    const edited = h.jobs.snapshot(grid.id)!;
+    const edited = await h.api.getGrid(grid.id);
     assert.equal(edited.title, "Changed during streaming");
-    assert.ok(compareGridVersions(edited, second) > 0);
+    assert.ok(compareGridVersions(edited.version, second.version) > 0);
     call.write("Third");
-    const third = h.jobs.snapshot(grid.id)!;
-    assert.equal(third.revision, edited.revision);
-    assert.ok(compareGridVersions(third, edited) > 0);
+    const third = await h.api.getGrid(grid.id);
+    assert.equal(third.version.epoch, edited.version.epoch);
+    assert.ok(compareGridVersions(third.version, edited.version) > 0);
 
     h.provider.fail(grid.cells[1].id, 402);
     await flush();
     call.write("Continued after billing pause");
-    const paused = h.jobs.snapshot(grid.id)!;
+    const paused = await h.api.getGrid(grid.id);
     assert.equal(paused.status, "paused");
     assert.equal(paused.cells[0].status, "running");
-    assert.ok(compareGridVersions(paused, third) > 0);
+    assert.ok(compareGridVersions(paused.version, third.version) > 0);
     // Recover the persisted state just as a replacement engine would. The
     // paused grid still has an interrupted call and must supersede live drafts.
     recoverInterruptedGrids(h.store);
-    const recovered = new Jobs(h.store, h.provider).snapshot(grid.id)!;
+    const replacement = createGenerationService(h.store, h.provider);
+    const recovered = await replacement.api.getGrid(grid.id);
     assert.equal(recovered.cells[0].status, "pending");
-    assert.ok(compareGridVersions(recovered, paused) > 0);
+    assert.ok(compareGridVersions(recovered.version, paused.version) > 0);
     h.jobs.pause(grid);
     await flush();
-    const stable = h.jobs.snapshot(grid.id)!;
-    assert.equal(stable.draftRevision, 0);
-    assert.ok(compareGridVersions(stable, recovered) > 0);
+    const stable = await replacement.api.getGrid(grid.id);
+    assert.equal(stable.live, false);
+    assert.ok(compareGridVersions(stable.version, recovered.version) > 0);
   } finally {
     await h.close();
   }

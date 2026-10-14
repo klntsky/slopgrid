@@ -3,6 +3,76 @@ import assert from "node:assert/strict";
 import Database from "better-sqlite3";
 import { initializeDatabase } from "../server/database.js";
 
+test("adding the engine clock preserves existing metadata, sessions, cells, references and charges", () => {
+  const db = new Database(":memory:");
+  try {
+    initializeDatabase(db);
+    db.exec("DROP TABLE generation_clock; PRAGMA user_version = 9");
+    const grid = {
+      title: "Saved",
+      owner: "owner",
+      status: "paused",
+      interruption: "manual",
+      published: false,
+    };
+    db.prepare("INSERT INTO grids VALUES (?, ?)").run(
+      "grid",
+      JSON.stringify({ ...grid, revision: 500, hasUnsettledCalls: true }),
+    );
+    db.prepare("INSERT INTO sessions VALUES (?, ?)").run(
+      "browser",
+      '{"key":"encrypted"}',
+    );
+    db.prepare("INSERT INTO cells VALUES (?, ?, ?, ?)").run(
+      "cell",
+      "grid",
+      0,
+      '{"status":"pending","thinkingId":"trace"}',
+    );
+    db.prepare("INSERT INTO inference_calls VALUES (?, ?, ?, ?)").run(
+      "call",
+      "cell",
+      1,
+      '{"status":"succeeded","usage":{"costUsd":0.25}}',
+    );
+    db.prepare("INSERT INTO reference_images VALUES (?, ?, ?, ?, ?)").run(
+      "reference",
+      "owner",
+      null,
+      "image.png",
+      "image/png",
+    );
+    const tables = ["sessions", "cells", "inference_calls", "reference_images"];
+    const before = tables.map((table) =>
+      db.prepare(`SELECT * FROM ${table}`).all(),
+    );
+    initializeDatabase(db);
+    assert.deepEqual(
+      JSON.parse(
+        (db.prepare("SELECT data FROM grids").get() as { data: string }).data,
+      ),
+      grid,
+    );
+    assert.deepEqual(
+      tables.map((table) => db.prepare(`SELECT * FROM ${table}`).all()),
+      before,
+    );
+    db.prepare("UPDATE generation_clock SET epoch=epoch+1 WHERE id=1").run();
+    initializeDatabase(db);
+    assert.equal(
+      (
+        db.prepare("SELECT epoch FROM generation_clock").get() as {
+          epoch: number;
+        }
+      ).epoch,
+      1,
+      "opening a store must not reset the clock",
+    );
+  } finally {
+    db.close();
+  }
+});
+
 test("unsupported database versions are rejected without changing stored data", () => {
   const db = new Database(":memory:");
   try {
@@ -12,7 +82,7 @@ test("unsupported database versions are rejected without changing stored data", 
       '{"key":"encrypted"}',
     );
     initializeDatabase(db);
-    for (const version of [7, 10]) {
+    for (const version of [7, 11]) {
       db.pragma(`user_version = ${version}`);
       assert.throws(
         () => initializeDatabase(db),
@@ -32,7 +102,9 @@ test("adding reference storage preserves existing sessions and grids atomically"
   const db = new Database(":memory:");
   try {
     initializeDatabase(db);
-    db.exec("DROP TABLE reference_images; PRAGMA user_version = 8");
+    db.exec(
+      "DROP TABLE reference_images; DROP TABLE generation_clock; PRAGMA user_version = 8",
+    );
     db.prepare("INSERT INTO sessions VALUES (?, ?)").run(
       "browser",
       '{"key":"encrypted"}',

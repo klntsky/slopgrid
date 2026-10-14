@@ -40,7 +40,7 @@ export function createEventRoutes({
       Connection: "keep-alive",
     });
     res.flushHeaders();
-    let version = { revision: -1, draftRevision: 0 };
+    let version = { epoch: 0, sequence: 0 };
     const send = (grid: GenerationSnapshot) => {
       const current = store.session(s.id),
         stored = store.get(id);
@@ -48,8 +48,8 @@ export function createEventRoutes({
         res.end();
         return;
       }
-      if (compareGridVersions(grid, version) < 0) return;
-      version = { revision: grid.revision, draftRevision: grid.draftRevision };
+      if (compareGridVersions(grid.version, version) < 0) return;
+      version = grid.version;
       if (res.writableNeedDrain) {
         res.destroy();
         return;

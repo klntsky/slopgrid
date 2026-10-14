@@ -16,9 +16,13 @@ test(
     const directory = mkdtempSync(join(tmpdir(), "slopgrid-transport-"));
     const socket = join(directory, "engine.sock");
     const title = "Thinking 🧠 ქართულად";
-    const first = JSON.stringify({ revision: 1, title }) + "\n";
+    const first =
+      JSON.stringify({ version: { epoch: 1, sequence: 1 }, title }) + "\n";
     const second =
-      JSON.stringify({ revision: 2, title: title + " continued" }) + "\n";
+      JSON.stringify({
+        version: { epoch: 1, sequence: 2 },
+        title: title + " continued",
+      }) + "\n";
     let cancelled!: () => void;
     const cancellation = new Promise<void>((resolve) => {
       cancelled = resolve;
@@ -32,7 +36,7 @@ test(
           res.write(Buffer.from([byte]));
           await setImmediate();
         }
-        res.write('{"revision":3,"title":"unfinished');
+        res.write('{"version":{"epoch":1,"sequence":3},"title":"unfinished');
         await setImmediate();
         res.destroy();
       } else if (req.url === "/v1/grids/cancel/events") {
@@ -45,7 +49,7 @@ test(
         res.setHeader("X-Generation-Protocol", String(generationProtocol + 1));
         res.end("{}");
       } else {
-        res.write('{"revision":1');
+        res.write('{"version":');
         await setImmediate();
         res.destroy();
       }

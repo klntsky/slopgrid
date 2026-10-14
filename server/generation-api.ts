@@ -1,8 +1,9 @@
 import { z } from "zod";
 import type { Grid } from "./domain.js";
+import type { GridVersion } from "../shared/grid-version.js";
 
 // Version this contract when a web release cannot talk to the running engine.
-export const generationProtocol = 5;
+export const generationProtocol = 6;
 const id = z.string().min(1).max(200);
 export const startGridRequest = z.strictObject({
   gridId: id,
@@ -49,7 +50,7 @@ export const generationErrorStatus: Record<GenerationError["code"], number> = {
 };
 
 export type GenerationSnapshot = Grid & {
-  draftRevision: number;
+  version: GridVersion;
   spentUsd: number;
   live: boolean;
 };

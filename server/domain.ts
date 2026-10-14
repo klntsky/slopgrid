@@ -183,7 +183,6 @@ export type GridSummary = Pick<
   author: Identity | null;
 };
 export type Grid = {
-  revision: number;
   id: string;
   title?: string;
   owner: string;
@@ -191,7 +190,6 @@ export type Grid = {
   author?: Identity | null;
   input: GridInput;
   status: "running" | "paused" | "complete";
-  hasUnsettledCalls?: boolean;
   published: boolean;
   visibility: GridVisibility;
   interruption?: "billing" | "restart" | "manual";

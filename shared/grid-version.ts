@@ -1,8 +1,6 @@
-type GridVersion = { revision: number; draftRevision?: number };
+export type GridVersion = { epoch: number; sequence: number };
 
-// Durable mutations supersede all drafts from the preceding revision.
+// Every snapshot from a replacement engine supersedes its predecessor's reads.
 export function compareGridVersions(a: GridVersion, b: GridVersion): number {
-  return (
-    a.revision - b.revision || (a.draftRevision ?? 0) - (b.draftRevision ?? 0)
-  );
+  return a.epoch - b.epoch || a.sequence - b.sequence;
 }

@@ -24,7 +24,6 @@ test("outputs are real files and SQLite stores only configuration and cell state
       id: "grid",
       owner: "owner",
       input,
-      revision: 0,
       status: "running",
       published: false,
       visibility: "private",

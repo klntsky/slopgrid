@@ -238,7 +238,7 @@ Status: high level product goal that is not a requirement (not achieved yet).
 2. Resume restarts unfinished cells, including retries, while preserving completed outputs. It must remain possible after dismissing an interruption popup.
 3. Use a red stop-square icon for the stop/pause action and the hint "Work can be resumed later, unfinished responses will be lost".
 4. Keep live updates connected while a grid can still change from queued or active generation, including unsettled requests after a pause. After manual Pause, keep receiving updates until every cancelled call has settled and the final status and billing snapshot has reached the page. Reloading or reconnecting during settlement must recover the current state and continue receiving updates. Close the SSE connection only after receiving the stable snapshot, and reconnect when an action starts work again.
-5. Delayed updates must not move title, output, thinking, status, or price backward. After an engine restart, delayed pre-restart snapshots must not reopen live updates for a settled grid. Retries must show content from the current attempt.
+5. Delayed updates must not move title, output, thinking, status, or price backward. After an engine restart, delayed pre-restart snapshots must not reopen live updates for a settled grid. Snapshot ordering tokens may change when settled state is read again or the engine restarts. Retries must show content from the current attempt.
 6. Interrupted unfinished work requires an explicit Resume, preserving completed outputs.
 
 ## 7. Costs and billing

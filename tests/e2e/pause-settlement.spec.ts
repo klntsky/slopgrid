@@ -1,6 +1,95 @@
 import { test, expect, type Request } from "@playwright/test";
 import { runtimeFixture, kill } from "../runtime-fixture";
 
+test("a delayed paused response cannot reopen streaming after the engine restarts", async ({
+  page,
+}) => {
+  const f = await runtimeFixture({ ignoreAbort: true });
+  const streams = new Set<Request>();
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname.endsWith("/events"))
+      streams.add(request);
+  });
+  page.on("requestfailed", (request) => streams.delete(request));
+  page.on("requestfinished", (request) => streams.delete(request));
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  try {
+    await page
+      .context()
+      .addCookies([{ name: "slopgrid", value: f.owner, url: f.origin }]);
+    const grid = f.grid({ rows: { kind: "variable", values: ["cat"] } });
+    await f.engine.api.startGrid({ gridId: grid.id, sessionId: f.owner });
+    await f.call(0);
+    await f.engine.api.pauseGrid({ gridId: grid.id, sessionId: f.owner });
+    await page.goto(`${f.origin}/grid/${grid.id}`);
+    await expect(
+      page.getByRole("button", { name: "Resume generation" }),
+    ).toBeVisible();
+    await expect.poll(() => streams.size).toBe(1);
+    const endpoint = `${f.origin}/api/grids/${grid.id}`;
+    let captured!: () => void;
+    const held = new Promise<void>((resolve) => {
+      captured = resolve;
+    });
+    let delivered!: () => void;
+    const delivery = new Promise<void>((resolve) => {
+      delivered = resolve;
+    });
+    await page.route(
+      endpoint,
+      async (route) => {
+        const response = await route.fetch();
+        expect((await response.json()).live).toBe(true);
+        captured();
+        await gate;
+        await route.fulfill({ response });
+        delivered();
+      },
+      { times: 1 },
+    );
+    await page.evaluate(() =>
+      window.dispatchEvent(new Event("visibilitychange")),
+    );
+    await held;
+    await f.engine.close();
+    f.store.setTitle(grid.id, "Recovered engine");
+    await f.startEngine();
+    // The title proves the replacement snapshot reached the browser cache.
+    const title = page.getByRole("button", { name: "Edit title", exact: true });
+    await expect(title).toHaveText("Recovered engine");
+    await expect.poll(() => streams.size).toBe(0);
+    let newStreams = 0;
+    page.on("request", (request) => {
+      if (request.url() === endpoint + "/events") newStreams++;
+    });
+    release();
+    await delivery;
+    await page.evaluate(
+      () =>
+        new Promise((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(resolve)),
+        ),
+    );
+    expect(newStreams).toBe(0);
+    await expect(title).toHaveText("Recovered engine");
+    await expect(
+      page.getByRole("button", { name: "Resume generation" }),
+    ).toBeVisible();
+    expect(f.calls).toHaveLength(1);
+  } finally {
+    release();
+    try {
+      await page.unrouteAll({ behavior: "ignoreErrors" });
+      await page.close();
+    } finally {
+      await f.close();
+    }
+  }
+});
+
 test("Pause keeps live updates through reload and reconnect until every cancelled call settles", async ({
   page,
 }) => {
@@ -40,7 +129,7 @@ test("Pause keeps live updates through reload and reconnect until every cancelle
       activeGrids: 0,
       runningCalls: 2,
     });
-    expect(f.store.get(grid.id)!.hasUnsettledCalls).toBe(true);
+    expect((await f.engine.api.getGrid(grid.id)).live).toBe(true);
     await expect.poll(() => streams.size).toBe(1);
 
     // Reopening a paused grid must discover its outstanding calls from the engine.
@@ -66,7 +155,7 @@ test("Pause keeps live updates through reload and reconnect until every cancelle
     ).toBeVisible();
     expect(streams.size).toBe(1);
     expect(await f.engine.api.status()).toMatchObject({ runningCalls: 1 });
-    expect(f.store.get(grid.id)!.hasUnsettledCalls).toBe(true);
+    expect((await f.engine.api.getGrid(grid.id)).live).toBe(true);
     second.write({ content: "Another discarded output" });
     second.finish(0.5);
     await expect(
@@ -74,7 +163,7 @@ test("Pause keeps live updates through reload and reconnect until every cancelle
     ).toBeVisible();
     await expect.poll(() => streams.size).toBe(0);
     const settled = await f.engine.api.getGrid(grid.id);
-    expect(f.store.get(grid.id)!.hasUnsettledCalls).toBe(false);
+    expect(settled.live).toBe(false);
     expect(settled).toMatchObject({ status: "paused", spentUsd: 0.75 });
     expect(settled.cells.map((cell) => cell.status)).toEqual([
       "pending",

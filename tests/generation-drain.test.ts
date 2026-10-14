@@ -74,7 +74,6 @@ test("drain remains busy after Pause until an abort-ignoring provider settles", 
   };
   const grid: Grid = {
     id: "cancelled-grid",
-    revision: 0,
     owner,
     input,
     status: "paused",
@@ -114,7 +113,8 @@ test("drain remains busy after Pause until an abort-ignoring provider settles", 
     );
     const paused = await f.generation.getGrid(grid.id);
     assert.equal(paused.live, false);
-    assert.ok(paused.revision > stopping.revision);
+    assert.equal(paused.version.epoch, stopping.version.epoch);
+    assert.ok(paused.version.sequence > stopping.version.sequence);
     assert.equal(paused.status, "paused");
     assert.equal(paused.cells[0].status, "pending");
     assert.equal(paused.cells[0].thinkingId, undefined);

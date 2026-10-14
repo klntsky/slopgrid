@@ -21,7 +21,6 @@ test("cell cost follows the latest call while billing preserves earlier attempts
     };
     store.insert({
       id: "grid",
-      revision: 0,
       owner: "owner",
       input,
       status: "running",

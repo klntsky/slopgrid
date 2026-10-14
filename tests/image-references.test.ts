@@ -97,7 +97,6 @@ for (const shared of [false, true])
       id: "reference-grid",
       owner,
       input,
-      revision: 0,
       status: "complete",
       published: false,
       visibility: "private",

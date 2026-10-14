@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { runtimeFixture, kill } from "../runtime-fixture";
 
-test("delayed HTTP snapshots cannot replace newer drafts within the same durable revision", async ({
+test("delayed HTTP snapshots cannot replace newer drafts within the same engine epoch", async ({
   page,
   context,
 }) => {
@@ -54,8 +54,8 @@ test("delayed HTTP snapshots cannot replace newer drafts within the same durable
       "Newer output.",
     );
     const after = await f.engine.api.getGrid(grid.id);
-    expect(after.revision).toBe(before.revision);
-    expect(after.draftRevision).toBeGreaterThan(before.draftRevision);
+    expect(after.version.epoch).toBe(before.version.epoch);
+    expect(after.version.sequence).toBeGreaterThan(before.version.sequence);
     // No further chunks can repair a rollback after the delayed query arrives.
     release();
     await delivery;

@@ -16,6 +16,8 @@ export function createGenerationService(
   provider: Provider,
   workersMax = 100,
 ) {
+  const epoch = store.nextGenerationEpoch();
+  let sequence = 0;
   const updates = new EventEmitter().setMaxListeners(0);
   const jobs = new Jobs(store, provider, workersMax, (grid) => {
     updates.emit(grid.id);
@@ -32,6 +34,7 @@ export function createGenerationService(
     return {
       ...grid,
       spentUsd: store.billing.gridSpent(grid.id, grid.cells),
+      version: { epoch, sequence: ++sequence },
     };
   };
   const authorized = (gridId: string, sessionId: string) => {

@@ -289,7 +289,6 @@ export async function runtimeFixture(
       };
       const grid: Grid = {
         id: token(),
-        revision: 0,
         owner,
         input,
         status: "paused",
