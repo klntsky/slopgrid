@@ -114,7 +114,7 @@ Status: high level product goal that is not a requirement (not achieved yet).
 
 1. Provider connection controls belong in the creation form and Settings. Label the section "Inference provider setup" and use a compact OpenRouter status row with the provider identified once.
 2. Show Connect when disconnected. In creation, a connected row links to Settings; in Settings, offer Disconnect and a less prominent Change connection action.
-3. Show the connection-checking state while it is pending. On a failed check, offer retry without falsely asserting that the user is disconnected or their credentials are invalid.
+3. The connection row shows the connection-checking state while a check is pending and offers retry when a check fails. Generate's blocking tooltip says "Connect OpenRouter." whenever no connection is confirmed, including while the initial check is pending or after it fails.
 4. Offer both manual API-key entry and OpenRouter OAuth.
 5. Use this Settings note: "More providers coming in the future. For now, use bring-your-own-key feature on OpenRouter to get inference without paying OpenRouter's markup".
 

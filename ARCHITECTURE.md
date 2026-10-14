@@ -51,6 +51,27 @@ describes component responsibilities, data flow, and security boundaries.
 - `server/frontend.ts` serves built assets in production; development uses Vite
   middleware. HTML entries are uncached, hashed assets are immutable, and missing
   assets are uncacheable. Releases retain old assets needed by open tabs.
+  Vite also retains existing `dist` files during rebuilds.
+
+### Request and viewer limits
+
+`server/rate-limit.ts` keeps process-local counters that reset on restart.
+Routes apply separate limits for their operations, while model-list GET and HEAD
+requests bypass the general API limiter.
+
+| Operation | Limit |
+| --- | --- |
+| Grid creation | 10 per session and 30 per client IP per hour |
+| Resume | 30 per session per hour |
+| General API traffic | 600 per client IP per minute |
+| Capacity checks | 60 per session per minute |
+| Generated outputs | 2,000 per client IP per minute |
+| Website preview paths | 20,000 per client IP per minute |
+| Downloads | 100 per client IP per minute |
+| Browser SSE viewers | 5 connections per session and 100 globally |
+
+Capacity responses are uncached. The browser keeps an SSE connection while a
+grid can change through active or queued generation and closes it when stable.
 
 ### Private generation API
 
@@ -160,6 +181,11 @@ Commands use strict payload schemas and named parameters rather than mutable gri
   explicit output-token ceiling using catalog prices, conservative input cost,
   the completion limit, and remaining context. Matching provider-price
   constraints accompany the request. Retries receive a fresh allowance.
+  The input estimate uses UTF-8 prompt and system bytes plus 256 framing tokens;
+  the remaining budget divided by output-token price is rounded down. Free
+  output uses the model ceiling, and missing pricing or context fails the cell
+  before dispatch. The SDK receives `maxOutputTokens`, serialized as
+  `max_tokens`, and `provider.max_price` in USD per million tokens.
 - Budget configuration is stored once in grid input and derived into cells.
   Images use their dedicated API without the text-token budget.
   Input validation requires a positive finite budget for text formats. Image
@@ -167,6 +193,8 @@ Commands use strict payload schemas and named parameters rather than mutable gri
   for numeric storage metadata; that value does not limit image inference.
 - `server/model-pricing.ts` parses catalog prices and resolves conditional prompt
   and UTC schedule overrides. Preparation evaluates rates at call time.
+  Overrides use strict prompt thresholds, UTC windows including midnight
+  wrapping, weekday restrictions, and later-entry precedence per price field.
   `server/generation-instructions.ts` shares format instructions with the browser
   without importing server-only output storage code.
 - `server/cost-estimates.ts` shares per-cell estimates between the form and
@@ -210,6 +238,8 @@ Commands use strict payload schemas and named parameters rather than mutable gri
 
 - `server/inference-policy.ts` checks credits before creation and Resume.
   Image generation below $3 requires explicit continuation through the shared dialog.
+  Fully reused grids skip the inference balance check. Lookup failures block new
+  inference while existing calls continue.
 - `GET /api/inference-capacity` recommends at least one worker using balance
   divided by $0.40 for images or the $3 text fallback when cell data is absent.
   The form uses automatic selection, submitting the recommended image count and
@@ -242,12 +272,17 @@ Commands use strict payload schemas and named parameters rather than mutable gri
   Retry-After guidance return cells to pending and impose a session-wide cooldown. A single
   timer wakes expired cooldowns; up to five retries use backoff, jitter, and the
   longer server-requested delay.
+  Backoff starts at one second and doubles with up to 50% jitter, capped at thirty
+  seconds. Retry-After accepts seconds or an HTTP date. Waiting cells release
+  slots, and Resume honors an unexpired cooldown. SDK automatic
+  retries are disabled so the scheduler owns whole-cell retry attempts.
 - Permanent billing failures pause queued grids for that owner while active
   calls finish, including 403 errors identifying exhausted key, workspace, or
   guardrail budgets. Other permanent failures affect only their cell and release its
   worker for remaining work.
 - State persists before notification. Draft notifications share a per-grid
-  throttle, and idle owner state is removed after grids pause or finish.
+  300 ms throttle, while cell transitions emit immediately. Idle owner state is
+  removed after grids pause or finish.
 
 ### OpenRouter credentials
 
@@ -274,14 +309,19 @@ Commands use strict payload schemas and named parameters rather than mutable gri
   stored once; per-cell prompts and settings are reconstructed from it.
   Cell IDs and positions are relational columns rather than duplicated JSON.
 - `server/database.ts` creates an empty database in an immediate transaction and
-  checks `user_version`. Only the current schema is supported; there are no
-  historical migrations or legacy conversions.
+  checks `user_version`. Schema version 9 is current; version 8 upgrades by
+  adding reference-image metadata without changing existing records. Other
+  nonempty schema versions are rejected.
 - `server/files.ts` stores bundles under cell IDs and images as binary files.
   Complete bundles are staged and renamed into place before completion is saved.
   Retries replace interrupted writes; metadata changes never rewrite artifacts.
 - Output lookup joins the cell primary key to its grid. Generated bodies remain
   outside SQLite and snapshots. Encryption and response presentation are separate
   from storage.
+- SQLite also stores encrypted OAuth credentials, users, and identities keyed
+  by provider and subject. There is no automatic database or completed-output
+  retention cleanup. Temporary website previews are cleared at engine startup
+  and when an attempt ends.
 
 ### Inference ledger and live estimates
 
@@ -295,6 +335,10 @@ Commands use strict payload schemas and named parameters rather than mutable gri
 - Text completion policy accepts successful stops and records usage before
   reporting incomplete responses. A scoped fetch wrapper preserves image costs
   omitted by the installed adapter.
+  Only `stop` is a successful text finish reason. Images retain reported finish
+  metadata when available; otherwise a successful image response establishes
+  completion. Billing returns 50 calls per page and totals all reported charges,
+  including failed and retried calls, while missing charges remain unknown.
 - Streaming estimates use catalog rates and request fees, approximating one
   token per four UTF-8 bytes plus eight framing tokens. Exposed thinking counts
   toward output estimates; hidden reasoning and provider tokenization can differ.
@@ -341,7 +385,8 @@ Commands use strict payload schemas and named parameters rather than mutable gri
   parsing. SVG is stored verbatim; Markdown uses its original source.
 - Websites use `{ files: [{ path, content }] }` with safe relative paths, unique
   entries, and a required `index.html`. Any file extension and extensionless
-  assets are allowed, and all files are served statically.
+  assets are allowed, and all files are served statically. Generation has no
+  application output-byte or bundle-file-count limit.
 - Models advertising structured output receive the shared strict schema with
   compatible routing. Others receive the same shape through prompting. Both use
   the same stream decoder and direct final JSON parsing, with no silent downgrade.
@@ -455,6 +500,11 @@ Commands use strict payload schemas and named parameters rather than mutable gri
 - Public listings include only publicly listed grids. Unlisted grids remain
   readable by link. Mutations require ownership and reject cross-origin browser
   requests.
+- `POST /api/grids/:id/publish` accepts `{ visibility }`, and
+  `GET /api/grids/public` returns public summaries newest first without ownership
+  identifiers or cell data. Summary APIs include output format and visibility.
+  The publish dialog saves successful confirmation suppression under
+  `slopgrid-skip-publish-confirmation` in localStorage.
 - Titles are separate optional metadata. The title route validates length,
   updates only title and revision, obtains a fresh engine snapshot, and notifies
   subscribers without changing generated files.
@@ -572,6 +622,21 @@ cookie to generated hosts.
 - Theme bootstrap applies stored preference before rendering. The React provider
   follows system changes, persists overrides, synchronizes tabs, and updates
   browser theme metadata; generated canvases retain their own appearance.
+
+### Bundled assets and dependencies
+
+- Markdown uses DejaVu Sans Mono in WOFF2 format, including full-block and
+  box-drawing glyphs. Its Bitstream Vera license ships as
+  `public/fonts/DejaVu-LICENSE.txt`. Direct Markdown pages render on the server;
+  `?raw=1` returns the original source.
+- Lucide interface icons use the ISC license with MIT notices for icons derived
+  from Feather; `public/lucide-LICENSE.txt` is copied into the build. The custom
+  5x5-cell project SVG is shared by the wordmark and favicon. OpenRouter uses its
+  official brand asset, and GitHub sign-in uses the unmodified white Invertocat
+  SVG from [GitHub's logo assets](https://brand.github.com/foundations/logo).
+- SDK definitions use direct ES module imports for Vite tree-shaking. The
+  optional OpenRouter SDK postinstall catalog check is disabled in
+  `pnpm-workspace.yaml`; published enum definitions need no install-time generation.
 
 ## Browser test process ownership
 
