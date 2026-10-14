@@ -133,6 +133,7 @@ button:disabled {
   background: color-mix(in srgb, var(--accent) 76%, var(--text));
 }
 .secondary {
+  border: 0;
   background: transparent;
 }
 .text-button {
