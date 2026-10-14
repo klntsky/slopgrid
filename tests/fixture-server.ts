@@ -1,14 +1,13 @@
 import { signalReady } from "./process-ready.js";
 import { startGenerationFixture } from "./generation-fixture.js";
-import { createFrontendRoutes } from "../server/frontend.js";
+import { webFixture } from "./web-fixture.js";
 // Only the upstream service is faked: the browser uses the real app, SQLite,
 // OAuth callback, AI SDK, worker and SSE endpoint.
 import express from "express";
 import { randomBytes, createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { once } from "node:events";
-import { createApp } from "../server/app.js";
-import { Provider } from "../server/provider.js";
+import { Store } from "../server/store.js";
 let balanceUsd = 100;
 let tokenLimits: { model: string; max_tokens: number }[] = [];
 let imageRequests: Record<string, unknown>[] = [];
@@ -278,7 +277,7 @@ upstream.post("/api/v1/chat/completions", async (req, res) => {
     });
   const text = system.includes("image/svg+xml")
     ? unsafe
-      ? '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><script>window.unsafeOutput=true;parent.unsafeOutput=true;document.cookie="svg_escape=1;path=/";fetch("http://localhost:4317/svg-probe?script")</script><image href="http://localhost:4317/svg-probe?image" width="10" height="10"/><circle cx="100" cy="100" r="70"/></svg>'
+      ? `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><script>window.unsafeOutput=true;parent.unsafeOutput=true;document.cookie="svg_escape=1;path=/";fetch("${web.origin}/svg-probe?script")</script><image href="${web.origin}/svg-probe?image" width="10" height="10"/><circle cx="100" cy="100" r="70"/></svg>`
       : '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><circle cx="100" cy="100" r="70" fill="tan"/></svg>'
     : system.includes("JSON object")
       ? bundle({
@@ -361,7 +360,7 @@ upstream.post("/api/v1/chat/completions", async (req, res) => {
   }
   if (svgStreaming && system.includes("image/svg+xml")) {
     const chunks = [
-      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><g><script>window.unsafeOutput=true;document.cookie="svg_escape=1;path=/";fetch("http://localhost:4317/svg-probe?script")</script><image href="http://localhost:4317/svg-probe?image" width="1" height="1"/><rect width="200" height="200" fill="red',
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><g><script>window.unsafeOutput=true;document.cookie="svg_escape=1;path=/";fetch("${web.origin}/svg-probe?script")</script><image href="${web.origin}/svg-probe?image" width="1" height="1"/><rect width="200" height="200" fill="red`,
       '"/><circle cx="100" cy="100" r="70" fill="blue',
       '"/></g></svg>',
     ];
@@ -416,19 +415,13 @@ const generation = await startGenerationFixture({
   providerURL: `${upstreamOrigin}/api/v1`,
   workersMax: 2,
 });
-const { app, store, modelCatalog } = createApp({
-  origin: `http://localhost:${port}`,
-  outputDomain: `-slopgrid.localhost:${port}`,
-  database: `${data}/.data/db.sqlite`,
-  secret: Buffer.alloc(32, 1),
-  provider: new Provider(`${upstreamOrigin}/api/v1`),
-  authURL: `${upstreamOrigin}/auth`,
-  generation: generation.api,
-});
+const store = new Store(`${data}/.data/db.sqlite`, Buffer.alloc(32, 1));
+const app = express();
+app.use(express.json());
 app.post("/fixture/reset", (req, res) => {
   store.db.exec("DROP TRIGGER IF EXISTS fail_reference_upload");
   if (req.body.referenceStorageFailure)
-    store.db.exec(`CREATE TEMP TRIGGER fail_reference_upload
+    store.db.exec(`CREATE TRIGGER fail_reference_upload
       BEFORE INSERT ON reference_images BEGIN
         SELECT RAISE(FAIL, 'Injected reference storage failure');
       END`);
@@ -490,12 +483,21 @@ app.get("/svg-probe", (req, res) => {
   res.sendStatus(204);
 });
 app.get("/fixture/svg-probes", (_req, res) => res.json(svgProbes));
-app.use(await createFrontendRoutes("dist", modelCatalog));
-export const close = () => {
-  modelCatalog.close();
-  return generation.close();
-};
-app.listen(port, () => {
-  console.log("Fixture ready");
-  signalReady();
+const web = await webFixture({
+  directory: data,
+  database: `${data}/.data/db.sqlite`,
+  secret: Buffer.alloc(32, 1),
+  socket: `${data}/.data/db.sqlite.sock`,
+  port,
+  providerURL: `${upstreamOrigin}/api/v1`,
+  authURL: `${upstreamOrigin}/auth`,
+  controls: app,
 });
+export const close = async () => {
+  await web.close();
+  await generation.close();
+  upstreamServer.closeAllConnections();
+  await new Promise<void>((resolve) => upstreamServer.close(() => resolve()));
+  store.db.close();
+};
+signalReady(web.origin);

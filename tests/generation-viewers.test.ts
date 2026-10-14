@@ -1,17 +1,21 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { request, type IncomingMessage, type RequestOptions } from "node:http";
+import { request as secureRequest } from "node:https";
 import { readFileSync } from "node:fs";
 import type { Grid } from "../server/domain.js";
 import { runtimeFixture, until } from "./runtime-fixture.js";
 
 async function stalled(options: RequestOptions) {
   return new Promise<IncomingMessage>((resolve, reject) => {
-    const req = request(options, (res) => {
-      res.on("error", () => {});
-      res.pause();
-      resolve(res);
-    });
+    const req = (options.socketPath ? request : secureRequest)(
+      { ...options, rejectUnauthorized: false },
+      (res) => {
+        res.on("error", () => {});
+        res.pause();
+        resolve(res);
+      },
+    );
     req.on("error", reject);
     req.end();
   });
@@ -57,7 +61,7 @@ test(
             hostname: url.hostname,
             port: url.port,
             path: endpoint,
-            headers: { cookie: `slopgrid=${f.owner}` },
+            headers: { cookie: f.cookie },
           }),
         );
       assert.equal((await f.request(endpoint)).status, 429);
@@ -134,8 +138,8 @@ test(
             try {
               const responses = await Promise.all(
                 controllers.map((controller) =>
-                  fetch(endpoint, {
-                    headers: { cookie: `slopgrid=${f.owner}` },
+                  f.fetch(endpoint, {
+                    headers: { cookie: f.cookie },
                     signal: controller.signal,
                   }),
                 ),

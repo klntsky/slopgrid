@@ -11,7 +11,10 @@ for (const resistFingerprinting of [false, true]) {
       },
     });
     try {
-      const page = await browser.newPage({ baseURL: mockServer });
+      const page = await browser.newPage({
+        baseURL: mockServer,
+        ignoreHTTPSErrors: true,
+      });
       for (const width of [390, 1280]) {
         await page.setViewportSize({ width, height: 844 });
         await page.goto("/");

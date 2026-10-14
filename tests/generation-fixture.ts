@@ -1,24 +1,18 @@
-import { waitForReady } from "./process-ready.js";
-import { fork } from "node:child_process";
-import { join } from "node:path";
+import { serviceFixture, stopService } from "./service-fixture.js";
 import { generationClient } from "../server/generation-client.js";
 
 export async function startGenerationFixture(config: {
   database: string;
-  preparation?: string;
   secret: Buffer;
   outputsPath?: string;
   providerURL?: string;
   workersMax?: number;
-  ignoreAbort?: boolean;
 }) {
   const socket = config.database + ".sock";
-  const child = fork(join(process.cwd(), "tests/generation-process.ts"), [], {
-    execArgv: ["--import", "tsx"],
-    stdio: ["ignore", "inherit", "inherit", "ipc"],
-    env: {
-      ...process.env,
-      FIXTURE_PREPARATION: config.preparation,
+  const { child, started } = serviceFixture(
+    "server/engine.ts",
+    "Generation engine ready",
+    {
       DATABASE_PATH: config.database,
       OUTPUTS_PATH: config.outputsPath,
       KEY_ENCRYPTION_SECRET: config.secret.toString("hex"),
@@ -26,20 +20,12 @@ export async function startGenerationFixture(config: {
       OPENROUTER_BASE_URL: config.providerURL,
       WORKERS_MAX: String(config.workersMax ?? 100),
       GENERATION_DRAINING: "0",
-      FIXTURE_IGNORE_ABORT: config.ignoreAbort ? "1" : "0",
     },
-  });
+  );
   const api = generationClient(socket);
-  const close = async () => {
-    if (child.exitCode !== null || child.signalCode !== null) return;
-    const exited = new Promise<void>((resolve) =>
-      child.once("exit", () => resolve()),
-    );
-    child.kill("SIGKILL");
-    await exited;
-  };
+  const close = () => stopService(child);
   try {
-    await waitForReady(child, "Generation fixture");
+    await started;
     return { api, child, close };
   } catch (error) {
     await close();

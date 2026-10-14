@@ -1,7 +1,6 @@
-import { waitForReady } from "./process-ready.js";
-import { fork, type ChildProcess, execFileSync } from "node:child_process";
+import { type ChildProcess } from "node:child_process";
 import { once } from "node:events";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import express from "express";
@@ -9,6 +8,7 @@ import { startGenerationFixture } from "./generation-fixture.js";
 import { Store } from "../server/store.js";
 import { expandGrid, type GridInput, type Grid } from "../server/domain.js";
 import { token } from "../server/ids.js";
+import { webFixture } from "./web-fixture.js";
 
 export type CapturedRequest = {
   model: string;
@@ -47,13 +47,9 @@ export async function kill(child: ChildProcess) {
   await exited;
 }
 
-/** The deployment mock is controlled by the test, including each streaming delta. */
-export async function runtimeFixture(
-  options: { tls?: boolean; workers?: number; ignoreAbort?: boolean } = {},
-) {
+/** Real service processes with a controllable external HTTP provider. */
+export async function runtimeFixture(options: { workers?: number } = {}) {
   const directory = mkdtempSync(join(tmpdir(), "slopgrid-runtime-"));
-  const preparation = join(directory, "preparation.json");
-  writeFileSync(preparation, "{}");
   const database = join(directory, "app.sqlite"),
     secret = Buffer.alloc(32, 9);
   const store = new Store(database, secret);
@@ -168,41 +164,32 @@ export async function runtimeFixture(
   await once(upstreamServer, "listening");
   const providerURL = `http://127.0.0.1:${(upstreamServer.address() as { port: number }).port}`;
   let engine: Awaited<ReturnType<typeof startGenerationFixture>>;
-  let web: ChildProcess | undefined,
+  let web: Awaited<ReturnType<typeof webFixture>> | undefined,
     origin = "",
     port = 0;
   async function startEngine() {
     engine = await startGenerationFixture({
       database,
       secret,
-      preparation,
       providerURL,
       workersMax: options.workers ?? 1,
-      ignoreAbort: options.ignoreAbort,
     });
   }
   async function startWeb(socket = database + ".sock") {
-    web = fork(join(process.cwd(), "tests/web-process.ts"), [], {
-      execArgv: ["--import", "tsx"],
-      stdio: ["ignore", "inherit", "inherit", "ipc"],
-      env: {
-        ...process.env,
-        DATABASE_PATH: database,
-        GENERATION_SOCKET: socket,
-        KEY_ENCRYPTION_SECRET: secret.toString("hex"),
-        OPENROUTER_BASE_URL: providerURL,
-        FIXTURE_PREPARATION: preparation,
-        FIXTURE_PORT: String(port),
-        FIXTURE_TLS: options.tls ? directory : undefined,
-      },
+    await web?.close();
+    web = await webFixture({
+      directory,
+      database,
+      socket,
+      secret,
+      providerURL,
+      port,
     });
-    const ready = await waitForReady(web, "Web fixture");
-    if (!ready.origin) throw new Error("Web fixture reported no origin");
-    origin = ready.origin;
+    origin = web.origin;
     port = Number(new URL(origin).port);
   }
   async function close() {
-    if (web) await kill(web);
+    await web?.close();
     if (engine!) await engine.close();
     upstreamServer.closeAllConnections();
     await new Promise<void>((resolve) => upstreamServer.close(() => resolve()));
@@ -210,26 +197,6 @@ export async function runtimeFixture(
     rmSync(directory, { recursive: true, force: true });
   }
   try {
-    if (options.tls)
-      execFileSync(
-        "openssl",
-        [
-          "req",
-          "-x509",
-          "-newkey",
-          "rsa:2048",
-          "-nodes",
-          "-keyout",
-          join(directory, "key.pem"),
-          "-out",
-          join(directory, "cert.pem"),
-          "-days",
-          "1",
-          "-subj",
-          "/CN=slopgrid.test",
-        ],
-        { stdio: "ignore" },
-      );
     await startEngine();
     await startWeb();
   } catch (error) {
@@ -242,10 +209,8 @@ export async function runtimeFixture(
       const index = nextCallIndex++;
       return until(() => calls[index], Boolean);
     },
-    prepare(change: object) {
-      writeFileSync(preparation, JSON.stringify(change));
-    },
     catalog,
+    providerURL,
     credits,
     directory,
     database,
@@ -259,16 +224,19 @@ export async function runtimeFixture(
       return engine;
     },
     get web() {
-      return web!;
+      return web!.child;
     },
     get origin() {
       return origin;
     },
+    cookie: `__Host-slopgrid=${owner}`,
+    cookieName: "__Host-slopgrid",
+    fetch: (url: string, init?: RequestInit) => web!.fetch(url, init),
     request: (path: string, body?: unknown, method = "POST") =>
-      fetch(origin + path, {
+      web!.fetch(origin + path, {
         method: body === undefined ? "GET" : method,
         headers: {
-          cookie: `slopgrid=${owner}`,
+          cookie: `__Host-slopgrid=${owner}`,
           origin,
           authorization: "Bearer manual-test-key",
           "content-type": "application/json",

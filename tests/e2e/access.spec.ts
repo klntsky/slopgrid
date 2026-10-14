@@ -17,7 +17,7 @@ test("drafts, mutation endpoints, and generated hosts enforce ownership and orig
   const id = page.url().split("/").pop();
   const anonymous = await (
     await import("@playwright/test")
-  ).request.newContext({ baseURL });
+  ).request.newContext({ baseURL, ignoreHTTPSErrors: true });
   expect((await anonymous.get(`/api/grids/${id}`)).status()).toBe(404);
   expect((await anonymous.post(`/api/grids/${id}/publish`)).status()).toBe(404);
   expect(
@@ -37,7 +37,7 @@ test("drafts, mutation endpoints, and generated hosts enforce ownership and orig
   const isolated = new URL(
     (await (await frame.elementHandle())!.contentFrame())!.url(),
   );
-  expect(isolated.hostname).toMatch(/^[a-f0-9]{48}-slopgrid\.localhost$/);
+  expect(isolated.hostname).toMatch(/^[a-f0-9]{48}-output\.localhost$/);
   const response = await page.request.get(output!);
   expect(response.status()).toBe(200);
   expect(response.headers()["set-cookie"]).toBeUndefined();

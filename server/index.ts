@@ -24,6 +24,7 @@ const generation = generationClient(config.socket);
 await generation.status();
 const { app, modelCatalog } = createApp({
   github,
+  authURL: process.env.OPENROUTER_AUTH_URL,
   origin,
   outputDomain,
   ...config,

@@ -126,8 +126,10 @@ Commands use strict payload schemas and named parameters rather than mutable gri
   event-loop turn. Slow subscribers disconnect instead of accumulating unbounded
   snapshots.
 - Browser SSE rechecks session validity and ownership, including on heartbeats.
-  EventSource reconnects after a web restart and receives current drafts,
+  The grid hook closes failed EventSource connections and retries after one
+  second, including HTTP errors during a web restart. Reconnection receives current drafts,
   thinking, estimates, and preview identifiers without restarting inference.
+  Settling the grid or leaving its page cancels pending reconnection timers.
   Engine snapshots derive `live` from the presence of their runtime, which is
   retained while work is running or calls remain unsettled. Manual Pause marks
   cells pending immediately but keeps the stream live until cancelled calls settle.
@@ -706,12 +708,19 @@ cookie to generated hosts.
   optional OpenRouter SDK postinstall catalog check is disabled in
   `pnpm-workspace.yaml`; published enum definitions need no install-time generation.
 
-## Browser test process ownership
+## Test process ownership
 
-- `tests/test-server.ts` forks `tests/e2e-process.ts`, passes configuration via
-  the environment, and waits for IPC readiness. The fixture owns its inference
-  child, and both mock and real fixtures mount the application frontend router.
-- Closing parent IPC shuts down the fixture and engine, including after unexpected
-  worker exits. Teardown awaits process exit before removing fixture data.
+- Browser and runtime fixtures launch `server/index.ts` and `server/engine.ts`
+  in separate child processes, configured through their normal environment
+  variables. A supervision wrapper provides parent-disconnect cleanup and
+  optional inspector access without replacing application methods.
+- The web process runs in production mode behind a loopback HTTPS proxy with a
+  temporary certificate. The proxy forwards application and output requests to
+  the web process; browser fault controls are handled separately by the fixture.
+  Each fixture owns its ports, SQLite database, output files and private socket.
+- `tests/test-server.ts` owns the browser fixture through `tests/e2e-process.ts`
+  and IPC readiness. Service readiness follows the production listener messages.
+  Teardown waits for child processes and listeners before removing fixture data;
+  parent IPC disconnection also stops children after unexpected worker exits.
 - Test scenarios and runtime validation belong in
   [DEVELOPMENT.md](DEVELOPMENT.md#validation).

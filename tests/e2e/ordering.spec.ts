@@ -16,7 +16,7 @@ test("delayed HTTP snapshots cannot replace newer drafts within the same engine 
   });
   try {
     await context.addCookies([
-      { name: "slopgrid", value: f.owner, url: f.origin },
+      { name: f.cookieName, value: f.owner, url: f.origin },
     ]);
     const grid = f.grid({ rows: { kind: "variable", values: ["cat"] } });
     await f.engine.api.startGrid({ gridId: grid.id, sessionId: f.owner });
@@ -93,7 +93,7 @@ test("late HTTP and reconnected stream snapshots cannot roll back content, think
   });
   try {
     await context.addCookies([
-      { name: "slopgrid", value: f.owner, url: f.origin },
+      { name: f.cookieName, value: f.owner, url: f.origin },
     ]);
     const grid = f.grid({ rows: { kind: "variable", values: ["cat"] } });
     const endpoint = `${f.origin}/api/grids/${grid.id}`;

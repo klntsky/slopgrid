@@ -1,9 +1,8 @@
 import { signalReady } from "./process-ready.js";
 import { startGenerationFixture } from "./generation-fixture.js";
-import { createFrontendRoutes } from "../server/frontend.js";
+import { webFixture } from "./web-fixture.js";
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
-import { createApp } from "../server/app.js";
 const port = Number(process.env.E2E_PORT ?? 4317);
 const data = process.env.FIXTURE_DATA!;
 const secret = randomBytes(32);
@@ -11,20 +10,15 @@ const generation = await startGenerationFixture({
   database: join(data, "app.sqlite"),
   secret,
 });
-const { app, modelCatalog } = createApp({
-  origin: `http://localhost:${port}`,
-  outputDomain: `-slopgrid.localhost:${port}`,
+const web = await webFixture({
+  directory: data,
+  port,
   database: join(data, "app.sqlite"),
-  outputsPath: join(data, "outputs"),
   secret,
-  generation: generation.api,
+  socket: join(data, "app.sqlite.sock"),
 });
-app.use(await createFrontendRoutes("dist", modelCatalog));
-export const close = () => {
-  modelCatalog.close();
-  return generation.close();
+export const close = async () => {
+  await web.close();
+  await generation.close();
 };
-app.listen(port, () => {
-  console.log("Real-provider app ready");
-  signalReady();
-});
+signalReady(web.origin);

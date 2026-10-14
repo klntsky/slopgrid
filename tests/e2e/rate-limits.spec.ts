@@ -27,6 +27,7 @@ for (const limit of ["grid creation", "API traffic"] as const) {
       for (let user = 0; user < (limit === "grid creation" ? 3 : 1); user++) {
         const client = await playwright.request.newContext({
           baseURL,
+          ignoreHTTPSErrors: true,
           extraHTTPHeaders: {
             "x-forwarded-for": limitedIP,
             authorization: "Bearer fixture-manual-key",

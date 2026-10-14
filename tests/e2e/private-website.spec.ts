@@ -1,13 +1,10 @@
 import { test, expect } from "@playwright/test";
-import { createServer } from "node:https";
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { once } from "node:events";
 import { startGenerationFixture } from "../generation-fixture";
-import { createApp } from "../../server/app";
-import { createFrontendRoutes } from "../../server/frontend";
+import { webFixture } from "../web-fixture";
+import { Store } from "../../server/store";
 import { expandGrid, type GridInput, type Grid } from "../../server/domain";
 import { token } from "../../server/ids";
 
@@ -15,49 +12,20 @@ test("private websites load in frames and direct tabs for the owning user across
   playwright,
 }) => {
   const directory = mkdtempSync(join(tmpdir(), "slopgrid-private-website-"));
-  const key = join(directory, "key.pem"),
-    cert = join(directory, "cert.pem");
-  execFileSync(
-    "openssl",
-    [
-      "req",
-      "-x509",
-      "-newkey",
-      "rsa:2048",
-      "-nodes",
-      "-keyout",
-      key,
-      "-out",
-      cert,
-      "-days",
-      "1",
-      "-subj",
-      "/CN=slopgrid.test",
-    ],
-    { stdio: "ignore" },
-  );
-  const server = createServer({
-    key: readFileSync(key),
-    cert: readFileSync(cert),
-  });
-  server.listen(0, "127.0.0.1");
-  await once(server, "listening");
-  const port = (server.address() as { port: number }).port;
-  const origin = `https://slopgrid.test:${port}`;
   const generation = await startGenerationFixture({
     database: join(directory, "db.sqlite"),
     secret: Buffer.alloc(32, 7),
   });
-  const { app, store } = createApp({
-    origin,
-    generation: generation.api,
-    outputDomain: `-output.slopgrid.test:${port}`,
+  const store = new Store(join(directory, "db.sqlite"), Buffer.alloc(32, 7));
+  const web = await webFixture({
+    directory,
+    hostname: "slopgrid.test",
+    socket: join(directory, "db.sqlite.sock"),
     database: join(directory, "db.sqlite"),
     secret: Buffer.alloc(32, 7),
-    github: { clientId: "test-client", clientSecret: "test-secret" },
   });
-  app.use(await createFrontendRoutes("dist"));
-  server.on("request", app);
+  const origin = web.origin;
+  const port = new URL(origin).port;
   const browser = await playwright.chromium.launch({
     args: [
       "--host-resolver-rules=MAP *.slopgrid.test 127.0.0.1, MAP slopgrid.test 127.0.0.1",
@@ -252,8 +220,7 @@ test("private websites load in frames and direct tabs for the owning user across
     expect((await outsidePage.goto(output))!.status()).toBe(404);
   } finally {
     await browser.close();
-    server.closeAllConnections();
-    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await web.close();
     await generation.close();
     store.db.close();
     rmSync(directory, { recursive: true, force: true });

@@ -82,6 +82,7 @@ export async function crashCheckpoint(
     });
     return {
       paused,
+      resume: () => send("Debugger.resume"),
       close: () => {
         clearTimeout(timeout);
         socket.close();

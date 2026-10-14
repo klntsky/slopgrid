@@ -10,7 +10,7 @@ test("thinking follows streaming text until scrolled up and resumes at the botto
   });
   try {
     await context.addCookies([
-      { name: "slopgrid", value: fixture.owner, url: fixture.origin },
+      { name: fixture.cookieName, value: fixture.owner, url: fixture.origin },
     ]);
     const grid = fixture.grid({
       rows: { kind: "variable", values: ["thinking"] },
@@ -82,7 +82,7 @@ test("thinking-only token exhaustion explains the failure, retains charges and c
   const context = await browser.newContext();
   try {
     await context.addCookies([
-      { name: "slopgrid", value: fixture.owner, url: fixture.origin },
+      { name: fixture.cookieName, value: fixture.owner, url: fixture.origin },
     ]);
     const grid = fixture.grid({
       rows: { kind: "variable", values: ["exhausted", "partial", "early"] },
@@ -163,7 +163,7 @@ test("SVG streaming advances behind thinking and survives view switches through 
   const context = await browser.newContext();
   try {
     await context.addCookies([
-      { name: "slopgrid", value: fixture.owner, url: fixture.origin },
+      { name: fixture.cookieName, value: fixture.owner, url: fixture.origin },
     ]);
     const grid = fixture.grid({
       format: "svg",

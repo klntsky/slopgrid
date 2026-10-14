@@ -25,7 +25,6 @@ export async function startTestServer(
       probe.close(() => resolve(selected));
     });
   });
-  const origin = `http://localhost:${port}`;
   const data = mkdtempSync(join(tmpdir(), "slopgrid-e2e-"));
   const log = openSync(join(data, "server.log"), "w", 0o600);
   let child: ChildProcess;
@@ -60,8 +59,10 @@ export async function startTestServer(
     })());
   }
   try {
-    await waitForReady(child, "Browser fixture");
-    return { origin, data, close };
+    const ready = await waitForReady(child, "Browser fixture");
+    if (!ready.origin)
+      throw new Error("Browser fixture did not report its origin");
+    return { origin: ready.origin, data, close };
   } catch (error) {
     await close();
     throw error;

@@ -24,18 +24,28 @@ export function useGrid(id: string) {
   useEffect(() => {
     setStreamLost(false);
     if (!live) return;
-    const events = new EventSource(`/api/grids/${id}/events`);
-    let closed = false;
-    events.onmessage = (e) => {
-      if (closed) return;
-      setStreamLost(false);
-      cache.setQueryData(["grid", id], JSON.parse(e.data));
-    };
-    events.onerror = () => {
-      if (!closed) setStreamLost(true);
-    };
+    let closed = false,
+      retry: number | undefined,
+      events: EventSource;
+    function connect() {
+      events = new EventSource(`/api/grids/${id}/events`);
+      events.onmessage = (e) => {
+        if (closed) return;
+        setStreamLost(false);
+        cache.setQueryData(["grid", id], JSON.parse(e.data));
+      };
+      events.onerror = () => {
+        events.close();
+        if (closed) return;
+        setStreamLost(true);
+        // HTTP failures can permanently close native EventSource retries.
+        retry = window.setTimeout(connect, 1000);
+      };
+    }
+    connect();
     return () => {
       closed = true;
+      window.clearTimeout(retry);
       events.close();
     };
   }, [id, cache, live]);

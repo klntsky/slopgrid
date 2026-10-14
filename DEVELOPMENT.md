@@ -5,7 +5,7 @@ responsibilities and runtime behavior are described in [ARCHITECTURE.md](ARCHITE
 
 ## Requirements and setup
 
-Use Node.js 22.12 or newer and pnpm 12.4.2. The same-site HTTPS browser test uses OpenSSL to generate a temporary test certificate. Supply `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` through private runtime configuration before starting the app; either missing or empty variable prevents startup. SQLite uses `better-sqlite3`; environments without a matching prebuilt binary need Python and a C/C++ build toolchain. Native build permissions are in `pnpm-workspace.yaml`.
+Use Node.js 22.12 or newer and pnpm 12.4.2. Browser and runtime fixtures use OpenSSL to generate temporary HTTPS certificates. Supply `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` through private runtime configuration before starting the app; either missing or empty variable prevents startup. SQLite uses `better-sqlite3`; environments without a matching prebuilt binary need Python and a C/C++ build toolchain. Native build permissions are in `pnpm-workspace.yaml`.
 
 ```sh
 pnpm install
@@ -78,12 +78,14 @@ ownership checks and explicit Resume after an uncertain start. Browser coverage
 drops a successful creation response, reloads the draft and verifies that the
 same request ID recovers the existing grid.
 
-Scheduler fault tests cover admission rollback, dispatch waiting for persistence,
-immediate cancellation and completion retained through a failed save. A runtime
-test holds a real SQLite writer lock while the provider streams and completes,
-then verifies retained output, thinking and exactly one charge per call after
-recovery. Existing crash checkpoints retain the distinction between installed
-files and committed completion; a restart never replays inference automatically.
+Runtime fault tests use real SQLite writer locks and a deferred foreign-key
+constraint to cover admission rollback, dispatch waiting for persistence,
+immediate HTTP cancellation and completion retained through a failed save.
+They verify retained output, thinking and exactly one charge per call after
+recovery. Inspector checkpoints place locks or kill the engine at specific
+persistence boundaries without changing its methods. Crash coverage retains the
+distinction between installed files and committed completion; a restart never
+replays inference automatically.
 Disk-full recovery is outside this validation scope. Run these checks on staging
 with the affected billing, publication, migration, reuse and live-update tests.
 
@@ -175,7 +177,9 @@ Text-model pricing browser coverage checks per-million conversion, request charg
 6. **Reordered browser updates:** release older HTTP or SSE snapshots after newer state, including across reconnection, and ensure output, thinking, title, status, and prices never regress even transiently. See `tests/e2e/ordering.spec.ts`.
 7. **Slow and disconnected viewers:** stall one subscriber while another remains healthy, repeatedly disconnect/reconnect, and verify generation continues, abandoned capacity is released, and a reconnect sees current state. See `tests/generation-viewers.test.ts`.
 
-Crash tests use `tests/crash-checkpoint.ts` to attach Node's inspector to the fixture engine and stop at a specific statement before killing the process. Checkpoints are located in the executed script and must identify a unique statement. Inspector activation exists only in the test child entry point. The abort-ignoring cancellation case reuses the scheduler's `ControlledProvider` because an HTTP client settles locally when its request is aborted, even if the remote server keeps working.
+Crash tests use `tests/crash-checkpoint.ts` to attach Node's inspector to the fixture engine and stop at a specific statement before killing the process. Checkpoints are located in the executed script and must identify a unique statement. Inspector activation exists only in the test supervision wrapper. Cancellation and drain tests observe the real SDK closing the upstream HTTP connection, while a SQLite writer lock keeps settlement pending. Browser tests retain the same pending state across reload, web replacement and engine death, and verify that late writes from the external provider cannot install cancelled output.
+
+The shared browser and runtime fixtures run the production web and engine entrypoints with their real frontend router, SDK, private API, database and file storage. Deterministic scenarios control an external HTTP provider; the real-provider suite connects to OpenRouter. The paused-settlement browser test waits for a real HTTP 502 from the proxy while the web process is stopped, then verifies automatic stream recovery after replacement. Isolated scheduler policy tests still use a controlled provider and clock, and identity unit tests control external OAuth responses.
 
 ## Runtime configuration
 
@@ -194,6 +198,7 @@ Crash tests use `tests/crash-checkpoint.ts` to attach Node's inspector to the fi
 | `GENERATION_DRAINING`   | Set to `1` to start the inference process with admission closed.                                                                                                  |
 | `FRONTEND_PATH`         | Frontend build directory served by the web process; defaults to `dist`.                                                                                           |
 | `OPENROUTER_BASE_URL`   | Provider API base URL for both processes; defaults to the OpenRouter API.                                                                                         |
+| `OPENROUTER_AUTH_URL`   | OpenRouter authorization page URL for the web process; defaults to the OpenRouter authorization page. Browser fixtures point it at their external OAuth service.  |
 | `WORKERS_MAX`           | Maximum concurrent cell generations across the inference process; defaults to 100 and must be a positive safe integer.                                            |
 
 Preserve the automatically created development encryption key, since changing it makes existing stored credentials unreadable. Run exactly one inference process per database, and configure both web and inference processes with the same database, output directory, encryption key, and generation socket.
@@ -232,7 +237,7 @@ Choose the deployment mode using the [update boundaries](ARCHITECTURE.md#updates
 
 `tests/artifact-reuse.test.ts` uses the runtime fixture's real web and engine processes, SQLite, output files, provider SDK and controlled upstream streams. It extends a partially completed grid through axis changes, failures and cancellation, replaces the web process during streaming, and restarts the engine before reusing copied provenance. It checks bundle and thinking independence, missing nested assets, unreadable files and unsigned historical outputs. Cross-account forks cover private-source rejection, publication, inherited costs, new failed and retried charges, private output access, connection requirements, and creation of fully reused grids without an inference balance check.
 
-Request-matching scenarios observe actual upstream calls for changes to model, substituted prompt, effort, budget, token ceiling and output format. A test-only preparation fixture changes instructions, schema, routing and adapter revision at the shared preparation boundary in both child processes, without replacing inference, routes, scheduling, storage, billing or reuse decisions. Reordering request object keys preserves reuse. Browser coverage in `tests/e2e/artifact-reuse.spec.ts` follows the checkbox through Edit, draft reload, OAuth and Fork, verifies immediate copied outputs beside fresh work, and regenerates all cells when reuse is unchecked. Image coverage uses the existing image fixture and captured SDK requests to check reference bytes, order, renamed uploads and image settings.
+Request-matching scenarios observe actual upstream calls for changes to model, substituted prompt, effort, budget, token ceiling and output format. Signature coverage prepares a request with the real provider adapter, compares it with persisted generation provenance and captured SDK parameters, then calls the actual signature function with changed instructions, schema, routing and adapter revision. Reordering request object keys preserves the signature. Browser coverage in `tests/e2e/artifact-reuse.spec.ts` follows the checkbox through Edit, draft reload, OAuth and Fork, verifies immediate copied outputs beside fresh work, and regenerates all cells when reuse is unchecked. Image coverage uses the existing image fixture and captured SDK requests to check reference bytes, order, renamed uploads and image settings.
 
 Reuse preparation coverage combines a valid copy with an unpriced model, checks insufficient budgets with signed and unsigned sources, and verifies that these errors remain per-cell failures without upstream calls.
 
@@ -246,6 +251,6 @@ Reference loader tests use real files to verify byte/hash consistency, ordered d
 
 Reuse scenarios use typed grid snapshots and captured requests, consume new upstream calls sequentially, and name parameter cases with assertions on the effective request. Monetary assertions compare expected dollar amounts with a small floating-point tolerance rather than encoding binary rounding artifacts. The readiness regression starts real inference processes with invalid and valid configuration to check useful startup errors and an immediately usable API.
 
-Browser-fixture lifecycle coverage starts servers with an empty executable search path, exercises their HTTP API, and verifies cleanup and reuse of the listening port.
+Browser-fixture lifecycle coverage starts the production entrypoints behind HTTPS, exercises their API, and verifies process cleanup, temporary data removal and reuse of the listening port.
 
 Budget estimation coverage includes mixed calculated and $3 fallback costs, dispatch-order prefixes, zero output prices, exact input-cost budgets, unknown metadata, prompt expansion, pricing schedules, and automatic versus explicit worker selection. Browser coverage verifies automatic form submissions despite stale draft overrides for text and images, per-model warning grouping, highest calculated amounts across expanded prompts, and simultaneous known and unknown estimates without asserting static tooltip wording, plus saved budgets and automatic submission. Admission tests cover unfinished-cell counts on Resume, artifact reuse, and budget-specific 403 pauses while active calls finish.

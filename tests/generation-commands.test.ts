@@ -45,15 +45,18 @@ test(
       await fixture.startWeb(fixture.database + ".proxy");
       const grid = fixture.grid();
       const lost = fixture.request(`/api/grids/${grid.id}/retry`, {}).then(
-        () => "response",
-        () => "disconnected",
+        (response) => response.status,
+        () => 0,
       );
       await accepted;
       (await fixture.call(0)).write({
         content: "Accepted before the reply was lost.",
       });
       await kill(fixture.web);
-      assert.equal(await lost, "disconnected");
+      assert.ok(
+        [0, 502].includes(await lost),
+        "the client must not receive the accepted command's acknowledgement",
+      );
       await fixture.startWeb();
       const retries = await Promise.all([
         fixture.request(`/api/grids/${grid.id}/retry`, {}),

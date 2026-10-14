@@ -2,9 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { once } from "node:events";
 import { runtimeFixture, until } from "./runtime-fixture.js";
-import { appFixture } from "./app-fixture.js";
-import { ControlledProvider } from "./controlled-provider.js";
-import { expandGrid, type Grid } from "../server/domain.js";
+import { holdDatabaseWrites } from "./database-lock.js";
 
 test(
   "draining and SIGTERM finish retry backoff and queued cells; accept reopens admission",
@@ -57,89 +55,60 @@ test(
   },
 );
 
-test("drain remains busy after Pause until an abort-ignoring provider settles", async (t) => {
-  const provider = new ControlledProvider();
-  provider.ignoreAbort = true;
-  const f = await appFixture(t, { provider, workersMax: 1 });
-  const owner = "owner";
-  f.store.saveSession({ id: owner, key: "key", created: Date.now() });
-  const input: Grid["input"] = {
-    format: "markdown",
-    prompt: "$ROW",
-    rows: { kind: "variable", values: ["cat"] },
-    columns: { kind: "model", values: ["fixture/text"] },
-    model: "",
-    effort: "none",
-    budgetUsd: 1,
-  };
-  const grid: Grid = {
-    id: "cancelled-grid",
-    owner,
-    input,
-    status: "paused",
-    published: false,
-    visibility: "private",
-    createdAt: new Date().toISOString(),
-    cells: expandGrid(input).map((c) => ({ ...c, id: "cancelled-cell" })),
-  };
-  f.store.insert(grid);
-  try {
-    await f.generation.startGrid({ gridId: grid.id, sessionId: owner });
-    await until(
-      () => provider.pending.size,
-      (n) => n === 1,
-    );
-    const stopping = await f.generation.pauseGrid({
-      gridId: grid.id,
-      sessionId: owner,
-    });
-    assert.equal(stopping.live, true);
-    assert.equal(stopping.status, "paused");
-    assert.equal(stopping.cells[0].status, "pending");
-    const draining = await f.generation.drain();
-    assert.equal(draining.activeGrids, 0);
-    assert.equal(draining.runningCalls, 1);
-    provider.pending
-      .get("cancelled-cell")!
-      .write(
-        "Late discarded output",
-        { costUsd: 0.9 },
-        "Late discarded thinking",
+test(
+  "drain waits for cancelled calls to persist and Resume starts a fresh real request",
+  { timeout: 40000 },
+  async () => {
+    const f = await runtimeFixture();
+    let unlock = () => {};
+    try {
+      const grid = f.grid({ rows: { kind: "variable", values: ["one"] } });
+      await f.engine.api.startGrid({ gridId: grid.id, sessionId: f.owner });
+      const first = await f.nextCall();
+      first.write({ content: "Discarded output", reasoning: "Saved thinking" });
+      await until(
+        () => f.engine.api.getGrid(grid.id),
+        (g) => !!g.cells[0].thinkingId,
       );
-    provider.finish("cancelled-cell");
-    await until(
-      () => f.generation.status(),
-      (s) => s.runningCalls === 0,
-    );
-    const paused = await f.generation.getGrid(grid.id);
-    assert.equal(paused.live, false);
-    assert.equal(paused.version.epoch, stopping.version.epoch);
-    assert.ok(paused.version.sequence > stopping.version.sequence);
-    assert.equal(paused.status, "paused");
-    assert.equal(paused.cells[0].status, "pending");
-    assert.equal(paused.cells[0].thinkingId, undefined);
-    assert.equal(f.store.files.path("cancelled-cell", "index.md"), undefined);
-    await assert.rejects(
-      f.generation.startGrid({ gridId: grid.id, sessionId: owner }),
-      { code: "DRAINING" },
-    );
-    await f.generation.accept();
-    await f.generation.startGrid({ gridId: grid.id, sessionId: owner });
-    await until(
-      () => provider.pending.size,
-      (n) => n === 1,
-    );
-    provider.finish("cancelled-cell");
-    await until(
-      () => f.generation.getGrid(grid.id),
-      (g) => g.status === "complete",
-    );
-    assert.equal(provider.started.length, 2);
-  } finally {
-    for (const id of [...provider.pending.keys()]) provider.finish(id);
-    await until(
-      () => f.generation.status(),
-      (s) => s.runningCalls === 0,
-    );
-  }
-});
+      const thinkingId = f.store.get(grid.id)!.cells[0].thinkingId;
+      unlock = holdDatabaseWrites(f.store);
+      const stopping = await f.engine.api.pauseGrid({
+        gridId: grid.id,
+        sessionId: f.owner,
+      });
+      assert.equal(stopping.live, true);
+      await until(() => first.aborted, Boolean);
+      const draining = await f.engine.api.drain();
+      assert.equal(draining.persistence.healthy, false);
+      assert.equal(draining.runningCalls, 1);
+      first.write({ content: "Late output", reasoning: "Late thinking" });
+      first.finish();
+      unlock();
+      const paused = await until(
+        () => f.engine.api.getGrid(grid.id),
+        (g) => !g.live,
+      );
+      assert.equal(paused.status, "paused");
+      assert.equal(paused.cells[0].thinkingId, thinkingId);
+      assert.equal(f.store.files.path(grid.cells[0].id, "index.md"), undefined);
+      await assert.rejects(
+        f.engine.api.startGrid({ gridId: grid.id, sessionId: f.owner }),
+        { code: "DRAINING" },
+      );
+      await f.engine.api.accept();
+      await f.engine.api.startGrid({ gridId: grid.id, sessionId: f.owner });
+      const next = await f.nextCall();
+      next.write({ content: "Fresh output", reasoning: "Fresh thinking" });
+      next.finish();
+      const complete = await until(
+        () => f.engine.api.getGrid(grid.id),
+        (g) => g.status === "complete",
+      );
+      assert.notEqual(complete.cells[0].thinkingId, thinkingId);
+      assert.equal(f.calls.length, 2);
+    } finally {
+      unlock();
+      await f.close();
+    }
+  },
+);

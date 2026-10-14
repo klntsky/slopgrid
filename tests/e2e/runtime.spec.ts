@@ -4,7 +4,7 @@ import { runtimeFixture, kill } from "../runtime-fixture";
 test("open browsers reconnect to a replaced web process while markdown, thinking and website assets continue streaming", async ({
   playwright,
 }) => {
-  const fixture = await runtimeFixture({ tls: true, workers: 2 });
+  const fixture = await runtimeFixture({ workers: 2 });
   const browser = await playwright.chromium.launch({
     args: [
       "--host-resolver-rules=MAP *.slopgrid.test 127.0.0.1, MAP slopgrid.test 127.0.0.1",

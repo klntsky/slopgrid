@@ -4,13 +4,15 @@ import { readFileSync } from "node:fs";
 import { runtimeFixture, until } from "./runtime-fixture.js";
 import { crashCheckpoint } from "./crash-checkpoint.js";
 import { queryClient } from "../src/queries.js";
+import { holdDatabaseWrites } from "./database-lock.js";
 
 for (const billed of [false, true])
   test(
     `recovery supersedes paused live snapshots ${billed ? "after billing finishes" : "while billing is running"}`,
-    { timeout: 20000 },
+    { timeout: 40000 },
     async () => {
-      const f = await runtimeFixture({ ignoreAbort: true });
+      const f = await runtimeFixture();
+      let unlock = () => {};
       let debug: Awaited<ReturnType<typeof crashCheckpoint>> | undefined;
       try {
         const grid = f.grid({ rows: { kind: "variable", values: ["cat"] } });
@@ -21,12 +23,6 @@ for (const billed of [false, true])
           () => f.engine.api.getGrid(grid.id),
           (g) => !!g.cells[0].thinkingId,
         );
-        const paused = await f.engine.api.pauseGrid({
-          gridId: grid.id,
-          sessionId: f.owner,
-        });
-        assert.equal(paused.live, true);
-        assert.equal(paused.cells[0].status, "pending");
         if (billed) {
           // Stop after the provider recorded its charge, before Jobs releases
           // the call. Recovery cannot infer this state from the billing ledger.
@@ -40,13 +36,22 @@ for (const billed of [false, true])
           assert.equal(f.store.billing.page(f.owner, 0).running, 0);
           assert.equal(f.store.billing.page(f.owner, 0).costUsd, 0.0123);
         }
+        unlock = holdDatabaseWrites(f.store);
+        if (billed) await debug!.resume();
+        const paused = await f.engine.api.pauseGrid({
+          gridId: grid.id,
+          sessionId: f.owner,
+        });
+        assert.equal(paused.live, true);
+        assert.equal(paused.cells[0].status, "pending");
         await f.engine.close();
+        unlock();
         debug?.close();
         await f.startEngine();
         const recovered = await f.engine.api.getGrid(grid.id);
         assert.equal(recovered.live, false);
         assert.equal(recovered.status, "paused");
-        assert.equal(recovered.interruption, "manual");
+        assert.equal(recovered.interruption, "restart");
         assert.equal(recovered.cells[0].status, "pending");
         assert.ok(
           recovered.version.epoch > paused.version.epoch,
@@ -90,6 +95,7 @@ for (const billed of [false, true])
         assert.equal(f.calls.length, 1);
       } finally {
         debug?.close();
+        unlock();
         queryClient.clear();
         await f.close();
       }

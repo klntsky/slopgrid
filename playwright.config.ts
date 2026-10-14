@@ -5,6 +5,7 @@ export default defineConfig({
   use: {
     baseURL: process.env.E2E_ORIGIN ?? "http://localhost:4317",
     browserName: "chromium",
+    ignoreHTTPSErrors: true,
   },
   reporter: "list",
   timeout: 30000,

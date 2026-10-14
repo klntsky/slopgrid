@@ -1,10 +1,14 @@
 import { test, expect, type Request } from "@playwright/test";
 import { runtimeFixture, kill } from "../runtime-fixture";
+import { holdDatabaseWrites } from "../database-lock";
+
+test.setTimeout(60000);
 
 test("a delayed paused response cannot reopen streaming after the engine restarts", async ({
   page,
 }) => {
-  const f = await runtimeFixture({ ignoreAbort: true });
+  const f = await runtimeFixture();
+  let unlock = () => {};
   const streams = new Set<Request>();
   page.on("request", (request) => {
     if (new URL(request.url()).pathname.endsWith("/events"))
@@ -19,10 +23,11 @@ test("a delayed paused response cannot reopen streaming after the engine restart
   try {
     await page
       .context()
-      .addCookies([{ name: "slopgrid", value: f.owner, url: f.origin }]);
+      .addCookies([{ name: f.cookieName, value: f.owner, url: f.origin }]);
     const grid = f.grid({ rows: { kind: "variable", values: ["cat"] } });
     await f.engine.api.startGrid({ gridId: grid.id, sessionId: f.owner });
     await f.call(0);
+    unlock = holdDatabaseWrites(f.store);
     await f.engine.api.pauseGrid({ gridId: grid.id, sessionId: f.owner });
     await page.goto(`${f.origin}/grid/${grid.id}`);
     await expect(
@@ -55,6 +60,7 @@ test("a delayed paused response cannot reopen streaming after the engine restart
     );
     await held;
     await f.engine.close();
+    unlock();
     f.store.setTitle(grid.id, "Recovered engine");
     await f.startEngine();
     // The title proves the replacement snapshot reached the browser cache.
@@ -80,6 +86,7 @@ test("a delayed paused response cannot reopen streaming after the engine restart
     ).toBeVisible();
     expect(f.calls).toHaveLength(1);
   } finally {
+    unlock();
     release();
     try {
       await page.unrouteAll({ behavior: "ignoreErrors" });
@@ -93,7 +100,8 @@ test("a delayed paused response cannot reopen streaming after the engine restart
 test("Pause keeps live updates through reload and reconnect until every cancelled call settles", async ({
   page,
 }) => {
-  const f = await runtimeFixture({ workers: 2, ignoreAbort: true });
+  const f = await runtimeFixture({ workers: 2 });
+  let unlock = () => {};
   const streams = new Set<Request>();
   page.on("request", (request) => {
     if (new URL(request.url()).pathname.endsWith("/events"))
@@ -104,7 +112,7 @@ test("Pause keeps live updates through reload and reconnect until every cancelle
   try {
     await page
       .context()
-      .addCookies([{ name: "slopgrid", value: f.owner, url: f.origin }]);
+      .addCookies([{ name: f.cookieName, value: f.owner, url: f.origin }]);
     const grid = f.grid({ parallelWorkers: 2 });
     await f.engine.api.startGrid({ gridId: grid.id, sessionId: f.owner });
     const first = await f.call(0);
@@ -118,10 +126,13 @@ test("Pause keeps live updates through reload and reconnect until every cancelle
       page.getByText("Discarded stream content", { exact: true }),
     ).toBeVisible();
     await expect.poll(() => streams.size).toBe(1);
+    unlock = holdDatabaseWrites(f.store);
     await page.getByRole("button", { name: "Pause generation" }).click();
+    // The real SQLite connection waits for its busy timeout before reporting
+    // the failed write and returning the paused snapshot.
     await expect(
       page.getByRole("button", { name: "Resume generation" }),
-    ).toBeVisible();
+    ).toBeVisible({ timeout: 15000 });
     await expect(
       page.getByText("Discarded stream content", { exact: true }),
     ).toHaveCount(0);
@@ -139,32 +150,31 @@ test("Pause keeps live updates through reload and reconnect until every cancelle
       page.getByRole("button", { name: "Resume generation" }),
     ).toBeVisible();
     await expect.poll(() => streams.size).toBe(1);
+    const unavailable = page.waitForResponse(
+      (response) =>
+        response.url().endsWith("/events") && response.status() === 502,
+    );
     await kill(f.web);
+    await unavailable;
     await expect.poll(() => streams.size).toBe(0);
 
-    // Settlement during disconnection must appear in the reconnect snapshot.
+    // Real HTTP cancellation closes both provider sockets; pending persistence
+    // keeps the grid live until the external database lock is released.
+    await expect.poll(() => first.aborted && second.aborted).toBe(true);
     first.write({
       content: "Late cancelled output",
       reasoning: "Late thinking",
     });
-    first.finish(0.25);
     await f.startWeb();
-    await expect.poll(() => streams.size).toBe(1);
-    await expect(
-      page.getByLabel("Total spent: $0.25", { exact: true }),
-    ).toBeVisible();
-    expect(streams.size).toBe(1);
-    expect(await f.engine.api.status()).toMatchObject({ runningCalls: 1 });
+    await expect.poll(() => streams.size, { timeout: 15000 }).toBe(1);
+    expect(await f.engine.api.status()).toMatchObject({ runningCalls: 2 });
     expect((await f.engine.api.getGrid(grid.id)).live).toBe(true);
     second.write({ content: "Another discarded output" });
-    second.finish(0.5);
-    await expect(
-      page.getByLabel("Total spent: $0.75", { exact: true }),
-    ).toBeVisible();
+    unlock();
     await expect.poll(() => streams.size).toBe(0);
     const settled = await f.engine.api.getGrid(grid.id);
     expect(settled.live).toBe(false);
-    expect(settled).toMatchObject({ status: "paused", spentUsd: 0.75 });
+    expect(settled).toMatchObject({ status: "paused", spentUsd: 0 });
     expect(settled.cells.map((cell) => cell.status)).toEqual([
       "pending",
       "pending",
@@ -177,11 +187,12 @@ test("Pause keeps live updates through reload and reconnect until every cancelle
     ).toHaveCount(0);
     expect((await f.request(`/outputs/${grid.cells[0].id}`)).status).toBe(404);
     expect(f.store.billing.page(f.owner, 0)).toMatchObject({
-      costUsd: 0.75,
+      costUsd: 0,
       running: 0,
       total: 2,
     });
   } finally {
+    unlock();
     await page.close();
     await f.close();
   }

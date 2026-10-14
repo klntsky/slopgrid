@@ -2,17 +2,19 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { startTestServer } from "./test-server.js";
+import { Agent } from "undici";
 
-test("browser fixtures run without external process tools and release their resources", async () => {
+test("production browser fixtures release processes, TLS listeners and temporary data", async () => {
   const previous = { ...process.env };
-  process.env.PATH = "";
+  const dispatcher = new Agent({ connect: { rejectUnauthorized: false } });
+  const request = (url: string) => fetch(url, { dispatcher } as RequestInit);
   process.env.GITHUB_CLIENT_ID = "fixture-client";
   process.env.GITHUB_CLIENT_SECRET = "fixture-secret";
   try {
     const server = await startTestServer("mock");
     const port = Number(new URL(server.origin).port);
     try {
-      assert.equal((await fetch(`${server.origin}/api/session`)).status, 200);
+      assert.equal((await request(`${server.origin}/api/session`)).status, 200);
       assert.ok(existsSync(server.data));
     } finally {
       await server.close();
@@ -21,7 +23,7 @@ test("browser fixtures run without external process tools and release their reso
     const replacement = await startTestServer("real", port);
     try {
       assert.equal(
-        (await fetch(`${replacement.origin}/api/session`)).status,
+        (await request(`${replacement.origin}/api/session`)).status,
         200,
       );
     } finally {
@@ -29,6 +31,7 @@ test("browser fixtures run without external process tools and release their reso
     }
     assert.equal(existsSync(replacement.data), false);
   } finally {
+    await dispatcher.destroy();
     process.env = previous;
   }
 });

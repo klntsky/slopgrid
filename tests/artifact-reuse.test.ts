@@ -1,3 +1,5 @@
+import { Provider } from "../server/provider.js";
+import { inferenceSignature } from "../server/prepared-inference.js";
 import type { ViewGrid } from "../src/api.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -266,7 +268,7 @@ test("forks isolate access and billing while preserving artifact costs and admis
       `/outputs/${cell.id}`,
       `/outputs/${cell.id}/thinking/${cell.thinkingId}`,
     ])
-      assert.equal((await fetch(f.origin + path)).status, 404);
+      assert.equal((await f.fetch(f.origin + path)).status, 404);
     const all = await create(f, {
       ...config,
       sourceGridId: source.id,
@@ -279,10 +281,10 @@ test("forks isolate access and billing while preserving artifact costs and admis
     f.store.saveSession({ ...session, key: undefined });
     assert.equal(
       (
-        await fetch(f.origin + "/api/grids", {
+        await f.fetch(f.origin + "/api/grids", {
           method: "POST",
           headers: {
-            cookie: `slopgrid=${f.owner}`,
+            cookie: f.cookie,
             origin: f.origin,
             "content-type": "application/json",
           },
@@ -310,10 +312,10 @@ test("forks isolate access and billing while preserving artifact costs and admis
     await f.request(`/api/grids/${destination.id}/publish`, {
       visibility: "public",
     });
-    assert.equal((await fetch(f.origin + `/outputs/${cell.id}`)).status, 200);
+    assert.equal((await f.fetch(f.origin + `/outputs/${cell.id}`)).status, 200);
     assert.equal(
       (
-        await fetch(
+        await f.fetch(
           f.origin + `/outputs/${cell.id}/thinking/${cell.thinkingId}`,
         )
       ).status,
@@ -338,7 +340,8 @@ test("forks isolate access and billing while preserving artifact costs and admis
         artifacts: readdirSync(f.store.files.root).sort(),
         traces: readdirSync(join(f.store.files.root, ".thinking")).sort(),
       }),
-      (current) => JSON.stringify(current) === JSON.stringify({ artifacts, traces }),
+      (current) =>
+        JSON.stringify(current) === JSON.stringify({ artifacts, traces }),
     );
   } finally {
     await f.close();
@@ -439,75 +442,76 @@ test("effective model, prompt, effort, budget, token ceiling and format determin
   }
 });
 
-test("shared preparation changes invalidate reuse and reordered request keys preserve it", async () => {
+test("actual prepared requests and artifact signatures cover adapter policy and ignore key order", async () => {
   const f = await runtimeFixture();
   try {
-    const config = {
+    const source = await create(f, {
       ...input,
       format: "html",
       rows: { kind: "variable", values: ["cat"] },
-    };
-    const artifact = '{"files":[{"path":"index.html","content":"Prepared"}]}';
-    const source = await create(f, config);
-    finish(await f.nextCall(), artifact);
-    await settled(f, source.id);
-    f.prepare({ reorder: true });
-    const identical = await create(f, {
-      ...config,
-      sourceGridId: source.id,
-      reuseArtifacts: true,
     });
-    assert.equal(identical.status, "complete");
-    assert.equal(f.calls.length, 1);
-    const cases: {
-      name: string;
-      change: object;
-      verify: (call: RuntimeCall) => void;
-    }[] = [
+    const call = await f.nextCall();
+    finish(
+      call,
+      JSON.stringify({
+        files: [{ path: "index.html", content: "<h1>Saved</h1>" }],
+      }),
+    );
+    await settled(f, source.id);
+    const cell = f.store.get(source.id)!.cells[0];
+    const provider = new Provider(f.providerURL);
+    const prepared = await provider.prepare("html", cell, []);
+    assert.equal(inferenceSignature(prepared), cell.provenance!.signature);
+    assert.notEqual(prepared.format, "image");
+    if (prepared.format === "image") throw new Error("Expected text request");
+    assert.equal(call.request.max_tokens, prepared.text.maxOutputTokens);
+    const signature = inferenceSignature(prepared);
+    const reordered = {
+      ...prepared,
+      text: {
+        ...prepared.text,
+        options: {
+          ...prepared.text.options,
+          provider: {
+            max_price: prepared.text.options.provider.max_price,
+            require_parameters:
+              prepared.text.options.provider.require_parameters,
+          },
+        },
+      },
+    };
+    assert.equal(inferenceSignature(reordered), signature);
+    for (const changed of [
+      { ...prepared, adapterVersion: prepared.adapterVersion + "-changed" },
       {
-        name: "instructions",
-        change: { system: "New instructions" },
-        verify: (call) =>
-          assert.equal(
-            messageText(call.request.messages[0].content),
-            "New instructions",
-          ),
+        ...prepared,
+        text: { ...prepared.text, system: prepared.text.system + " changed" },
       },
       {
-        name: "schema",
-        change: { schema: "New schema" },
-        verify: (call) =>
-          assert.equal(
-            call.request.response_format?.json_schema.schema.description,
-            "New schema",
-          ),
+        ...prepared,
+        text: {
+          ...prepared.text,
+          schema: { ...prepared.text.schema!, description: "Changed schema" },
+        },
       },
       {
-        name: "routing",
-        change: { routing: 2 },
-        verify: (call) =>
-          assert.equal(call.request.provider?.max_price?.prompt, 2),
+        ...prepared,
+        text: {
+          ...prepared.text,
+          options: {
+            ...prepared.text.options,
+            provider: {
+              ...prepared.text.options.provider,
+              max_price: {
+                ...prepared.text.options.provider.max_price,
+                prompt: 2,
+              },
+            },
+          },
+        },
       },
-      {
-        name: "adapter",
-        change: { adapterVersion: "next" },
-        verify: (call) => assert.deepEqual(call.request, f.calls[0].request),
-      },
-    ];
-    for (const scenario of cases) {
-      f.prepare(scenario.change);
-      const next = await create(f, {
-        ...config,
-        sourceGridId: source.id,
-        reuseArtifacts: true,
-      });
-      assert.notEqual(next.cells[0].status, "complete", scenario.name);
-      const call = await f.nextCall();
-      scenario.verify(call);
-      finish(call, artifact);
-      await settled(f, next.id);
-    }
-    assert.equal(f.calls.length, 1 + cases.length);
+    ])
+      assert.notEqual(inferenceSignature(changed), signature);
   } finally {
     await f.close();
   }

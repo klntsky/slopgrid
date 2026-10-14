@@ -13,7 +13,7 @@ test(
     const { store, calls } = fixture;
     const instance = (await engine.api.status()).instance;
     try {
-      const cookie = `slopgrid=${fixture.owner}`;
+      const owner = fixture.owner;
       const request = fixture.request;
       const input = {
         format: "markdown",
@@ -74,10 +74,7 @@ test(
         409,
       );
       // Claiming metadata from the web connection must survive the engine's stale object.
-      store.claim(
-        grid.owner ?? cookie.slice("slopgrid=".length),
-        "claimed-account",
-      );
+      store.claim(grid.owner ?? owner, "claimed-account");
       calls[0].write({
         reasoning: "More thinking.",
         content: "After deployment.",
@@ -101,7 +98,7 @@ test(
       await assert.rejects(
         engine.api.startGrid({
           gridId: blocked.id,
-          sessionId: cookie.slice("slopgrid=".length),
+          sessionId: owner,
           manualKey: "manual-test-key",
         }),
         { code: "DRAINING" },

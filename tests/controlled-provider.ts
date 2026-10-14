@@ -16,7 +16,6 @@ export class ControlledProvider extends Provider {
       ) => void;
     }
   >();
-  ignoreAbort = false;
   override generate(
     _key: string,
     _format: Grid["input"]["format"],
@@ -43,10 +42,8 @@ export class ControlledProvider extends Provider {
         write: (text, estimatedUsage, thinking = "") =>
           onChunk({ text, thinking, estimatedUsage }),
       });
-      if (!this.ignoreAbort) {
-        if (signal?.aborted) abort();
-        else signal?.addEventListener("abort", abort, { once: true });
-      }
+      if (signal?.aborted) abort();
+      else signal?.addEventListener("abort", abort, { once: true });
     });
   }
   finish(id: string) {

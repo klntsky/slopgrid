@@ -11,7 +11,7 @@ test("engine readiness reports startup causes and resolves only when its API is 
     const database = join(directory, "app.sqlite");
     await assert.rejects(
       startGenerationFixture({ database, secret: Buffer.alloc(1) }),
-      /Generation fixture startup failed:.*KEY_ENCRYPTION_SECRET/s,
+      /Service startup failed:.*KEY_ENCRYPTION_SECRET/s,
     );
     const engine = await startGenerationFixture({
       database,
