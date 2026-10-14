@@ -32,7 +32,6 @@ export function createGenerationService(
     return {
       ...grid,
       spentUsd: store.billing.gridSpent(grid.id, grid.cells),
-      live: jobs.isLive(id),
     };
   };
   const authorized = (gridId: string, sessionId: string) => {

@@ -110,11 +110,14 @@ Commands use strict payload schemas and named parameters rather than mutable gri
   cells they change. Draft, estimate, and preview notifications do not write to
   SQLite. The first thinking chunk checkpoints its trace identifier once, while
   subsequent chunks append to the trace file.
-- Snapshots combine fresh persisted metadata with live cells and an in-memory
-  draft revision. The web stream and browser compare the durable revision first,
-  then the draft revision, so delayed snapshots cannot replace newer chunks.
-  Durable transitions supersede earlier drafts, and engine recovery advances the
-  durable revision for interrupted calls, including those in paused grids.
+- Snapshots combine fresh persisted metadata with live cells. Each live snapshot
+  read receives the next number from one engine-wide in-memory sequence, carried
+  in `draftRevision`; settled snapshots use zero. The web stream and browser
+  compare the durable revision first, then this read sequence, so delayed
+  snapshots cannot replace newer reads. Chunk processing and state transitions
+  do not maintain or reset sequence counters. Durable transitions supersede
+  earlier drafts, and engine recovery advances the durable revision for
+  interrupted calls, including those in paused grids.
 - Publication and admission use immediate transactions so publication cannot race
   a retry. The engine writes inference calls; the web process reads the ledger.
 - Engine subscriptions register before their initial snapshot in the same
@@ -123,9 +126,9 @@ Commands use strict payload schemas and named parameters rather than mutable gri
 - Browser SSE rechecks session validity and ownership, including on heartbeats.
   EventSource reconnects after a web restart and receives current drafts,
   thinking, estimates, and preview identifiers without restarting inference.
-  Engine snapshots carry a `live` flag derived from queued work and unsettled
-  calls, independently of visible cell statuses. Manual Pause marks cells pending
-  immediately but keeps the stream live until cancelled calls settle. Settlement
+  Engine snapshots derive `live` from the presence of their runtime, which is
+  retained while work is running or calls remain unsettled. Manual Pause marks
+  cells pending immediately but keeps the stream live until cancelled calls settle. Settlement
   persists billing and cell state, advances the revision, and emits the final
   snapshot before the browser closes its stream. Reloads and reconnects receive
   the same engine-derived flag, and streams reopen when work starts again.

@@ -16,7 +16,6 @@ import {
 
 type GridRuntime = {
   grid: Grid;
-  draftRevision: number;
   references: ReturnType<Store["references"]["loader"]>;
   retries: Map<string, number>;
   owner: string;
@@ -35,6 +34,7 @@ type RunningCall = {
 export class Jobs {
   readonly previews: WebsitePreviews;
   private grids = new Map<string, GridRuntime>();
+  private snapshotSequence = 0;
   // Calls retain their dispatch owner and worker slot until settlement, even
   // when Pause/Resume replaces the grid's credentials and execution owner.
   private running = new Map<string, RunningCall>();
@@ -62,15 +62,11 @@ export class Jobs {
     // Checkpoint that distinction with the transition's revision for recovery.
     grid.hasUnsettledCalls = this.hasUnsettledCalls(grid.id);
     this.store.saveGeneration(grid, cells);
-    if (state) state.draftRevision = 0;
     this.notify(grid);
   }
   draining = false;
   isRunning(id: string) {
     return this.grids.get(id)?.grid.status === "running";
-  }
-  isLive(id: string) {
-    return this.isRunning(id) || this.hasUnsettledCalls(id);
   }
   private hasUnsettledCalls(id: string) {
     return [...this.running.values()].some(({ grid }) => grid.id === id);
@@ -84,20 +80,22 @@ export class Jobs {
       ).length,
     };
   }
-  snapshot(id: string): (Grid & { draftRevision: number }) | undefined {
+  snapshot(id: string) {
     const stored = this.store.get(id);
     if (!stored) return;
     const state = this.grids.get(id);
-    const active = state?.grid;
-    return active
-      ? {
-          ...stored,
-          draftRevision: state!.draftRevision,
-          status: active.status,
-          interruption: active.interruption,
-          cells: active.cells,
-        }
-      : { ...stored, draftRevision: 0 };
+    return {
+      ...stored,
+      ...(state && {
+        status: state.grid.status,
+        interruption: state.grid.interruption,
+        cells: state.grid.cells,
+      }),
+      // Order reads at their single owner; durable transitions and recovery
+      // supersede the sequence when the runtime is removed or the engine restarts.
+      draftRevision: state ? ++this.snapshotSequence : 0,
+      live: !!state,
+    };
   }
   start(grid: Grid, key?: string, session?: Session): Grid {
     const current = this.grids.get(grid.id);
@@ -110,7 +108,6 @@ export class Jobs {
     const retries = current?.retries ?? new Map<string, number>();
     this.grids.set(g.id, {
       grid: g,
-      draftRevision: 0,
       owner,
       key: key || undefined,
       references: this.store.references.loader(),
@@ -251,9 +248,6 @@ export class Jobs {
   }
   private previewUpdated(grid: Grid) {
     const state = this.grids.get(grid.id)!;
-    // HTTP reads can observe chunks between notifications. Order those snapshots
-    // in memory; SQLite revisions are reserved for durable state transitions.
-    state.draftRevision++;
     const delay = Math.max(0, 300 - (Date.now() - (state.emittedAt ?? 0)));
     const flush = () => {
       if (this.grids.get(grid.id) !== state) return;
