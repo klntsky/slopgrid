@@ -51,11 +51,7 @@ export function createGenerationService(
       return store.db
         .transaction(() => {
           const { grid, session } = authorized(gridId, sessionId);
-          if (
-            jobs.active.get(gridId)?.status === "running" ||
-            grid.status === "complete"
-          )
-            return grid;
+          if (jobs.isRunning(gridId) || grid.status === "complete") return grid;
           if (jobs.draining)
             throw generationFailure(
               "DRAINING",

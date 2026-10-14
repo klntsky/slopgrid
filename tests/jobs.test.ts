@@ -349,6 +349,51 @@ test("a late result from a paused request cannot restore its discarded preview o
   }
 });
 
+test("Resume waits for a cancelled call to settle and ignores its late failure before dispatching a fresh attempt", async () => {
+  const h = harness(1);
+  h.provider.ignoreAbort = true;
+  try {
+    const grid = h.grid("alice", "grid", 2);
+    h.jobs.start(grid);
+    await flush();
+    const cancelled = h.provider.pending.get("alice/grid/0")!;
+    cancelled.write("Discarded", { costUsd: 0.1 }, "First attempt");
+    const thinkingId = grid.cells[0].thinkingId;
+    h.jobs.pause(grid);
+    const resumed = h.jobs.start(h.store.get(grid.id)!);
+    await flush();
+    assert.deepEqual(h.jobs.status(), {
+      draining: false,
+      runningCalls: 1,
+      activeGrids: 1,
+    });
+    assert.equal(h.provider.started.length, 1);
+    assert.equal(resumed.cells[0].thinkingId, thinkingId);
+    cancelled.write("Late output", { costUsd: 9 }, "Late thinking");
+    h.provider.fail("alice/grid/0", 402);
+    await flush();
+    assert.equal(resumed.status, "running");
+    assert.equal(resumed.interruption, undefined);
+    assert.equal(resumed.cells[0].error, undefined);
+    assert.equal(resumed.cells[0].thinkingId, undefined);
+    assert.equal(resumed.cells[0].estimatedUsage, undefined);
+    assert.deepEqual(
+      h.provider.started.map((call) => call.id),
+      ["alice/grid/0", "alice/grid/0"],
+    );
+    h.provider.pending.get("alice/grid/0")!.write("Fresh output");
+    cancelled.write("Stale output", { costUsd: 10 }, "Stale thinking");
+    assert.equal(resumed.cells[0].draft, "Fresh output");
+    h.provider.finish("alice/grid/0");
+    await flush();
+    h.provider.finish("alice/grid/1");
+    await flush();
+    assert.equal(h.store.get(grid.id)!.status, "complete");
+  } finally {
+    await h.close();
+  }
+});
+
 test("a failed cell releases its slot without automatic retries and other cells can finish", async () => {
   const h = harness(1);
   try {

@@ -34,7 +34,10 @@ export async function appFixture(
     await new Promise<void>((resolve) => server.close(() => resolve()));
     if (application) {
       application.modelCatalog.close();
-      for (const grid of jobs.active.values()) jobs.pause(grid);
+      const grids = engineStore.db.prepare("SELECT id FROM grids").all() as {
+        id: string;
+      }[];
+      for (const { id } of grids) jobs.pause(engineStore.get(id)!);
       await new Promise((resolve) => setImmediate(resolve));
       jobs.previews.clearAll();
       engineServer.closeAllConnections();

@@ -4,6 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { expandGrid, type Grid } from "../server/domain.js";
 import { githubCredentials, oauthReturnTo } from "../server/oauth.js";
+import { ControlledProvider } from "./controlled-provider.js";
 
 test("GitHub credentials are mandatory and OAuth return paths stay local", () => {
   for (const [id, secret] of [
@@ -32,7 +33,8 @@ test("GitHub credentials are mandatory and OAuth return paths stay local", () =>
 });
 
 test("account ownership, frozen authors, browser credentials, and OAuth callbacks claim active grids and rotate sessions", async (t) => {
-  const { origin, store, jobs } = await appFixture(t);
+  const provider = new ControlledProvider();
+  const { origin, store, jobs } = await appFixture(t, { provider });
   const alice = store.identify("github", "123", {
     provider: "github",
     username: "alice",
@@ -103,7 +105,10 @@ test("account ownership, frozen authors, browser credentials, and OAuth callback
       body: body ? JSON.stringify(body) : undefined,
     });
   assert.equal((await request("/api/grids/draft", second)).status, 404);
-  jobs.active.set(draft.id, draft);
+  draft.cells[0].status = "pending";
+  jobs.start(draft);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.ok(provider.pending.has(draft.cells[0].id));
   const realFetch = globalThis.fetch;
   let exchanges = 0;
   t.mock.method(
@@ -147,7 +152,9 @@ test("account ownership, frozen authors, browser credentials, and OAuth callback
   assert.equal(store.session(originalOwner), undefined);
   assert.equal(jobs.snapshot(draft.id)!.ownerUserId, alice.id);
   assert.equal(store.get(draft.id)!.ownerUserId, alice.id);
-  jobs.active.delete(draft.id);
+  provider.finish(draft.cells[0].id);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(store.get(draft.id)!.status, "complete");
   assert.equal((await request(callback)).status, 400);
   assert.equal(exchanges, 1);
   assert.equal((await request("/api/grids/draft", second)).status, 200);

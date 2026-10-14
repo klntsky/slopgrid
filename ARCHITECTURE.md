@@ -259,9 +259,17 @@ Commands use strict payload schemas and named parameters rather than mutable gri
 
 ### Execution, pause, and failure handling
 
-- `server/jobs.ts` owns cell selection, execution state, retries, cancellation,
-  previews, persistence, and notifications around one canonical grid object.
-  Completed cells are skipped on Resume.
+- `server/jobs.ts` coordinates scheduling and execution. Each live grid has one
+  private runtime record containing its canonical grid, execution owner,
+  credentials, reference loader, retry counts, and notification timer. Admission
+  queries running state without accessing mutable scheduler collections.
+- `server/cell-lifecycle.ts` owns the cell-field transitions for queuing, starting
+  an attempt, clearing retries, and discarding streamed progress. Completed cells
+  are skipped on Resume, and saved thinking remains available until a replacement
+  attempt starts.
+- Running calls retain their dispatch owner and cancellation controller separately
+  from grid runtime, which Resume can replace. Owner allocation history is removed
+  when idle, while cooldowns remain until expiry so Resume cannot bypass backoff.
 - Manual pause stops queued cells, aborts active requests, and discards drafts.
   Slots remain occupied until cancelled calls settle; late chunks and results
   cannot change retried or completed cells.
