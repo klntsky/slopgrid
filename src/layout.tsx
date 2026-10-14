@@ -5,6 +5,7 @@ import { Link, Outlet, useLocation } from "@tanstack/react-router";
 import { Menu, X, Sun, Moon } from "lucide-react";
 export const GridHeaderTarget = createContext<HTMLDivElement | null>(null);
 export function Layout() {
+  const hasTouchscreen = navigator.maxTouchPoints > 0;
   const { resolvedTheme, setTheme } = useTheme();
   const pathname = useLocation().pathname,
     isGrid = pathname.startsWith("/grid/");
@@ -48,25 +49,24 @@ export function Layout() {
             </span>
           </Link>
           {isGrid && <div className="grid-header-slot" ref={setHeaderTarget} />}
-          <div
-            className="navigation-controls"
-            data-touch={navigator.maxTouchPoints > 0}
-          >
-            <button
-              ref={menuButton}
-              type="button"
-              className="navigation-menu-toggle secondary"
-              aria-label="Navigation menu"
-              aria-expanded={menuOpen}
-              aria-controls="main-navigation"
-              onClick={() => setMenuOpen(!menuOpen)}
-            >
-              {menuOpen ? (
-                <X aria-hidden="true" />
-              ) : (
-                <Menu aria-hidden="true" />
-              )}
-            </button>
+          <div className="navigation-controls" data-touch={hasTouchscreen}>
+            {hasTouchscreen && (
+              <button
+                ref={menuButton}
+                type="button"
+                className="navigation-menu-toggle secondary"
+                aria-label="Navigation menu"
+                aria-expanded={menuOpen}
+                aria-controls="main-navigation"
+                onClick={() => setMenuOpen(!menuOpen)}
+              >
+                {menuOpen ? (
+                  <X aria-hidden="true" />
+                ) : (
+                  <Menu aria-hidden="true" />
+                )}
+              </button>
+            )}
             <nav
               id="main-navigation"
               ref={navigation}

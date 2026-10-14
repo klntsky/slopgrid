@@ -93,7 +93,7 @@ Grid-price coverage distinguishes visible successful-output cost from owner-only
 
 ### Required runtime coverage
 
-Navigation browser coverage combines touchscreen and non-touchscreen contexts with narrow and wide viewports, checking menu selection, route navigation, Escape, outside presses, and focus restoration.
+Navigation browser coverage combines touchscreen and non-touchscreen contexts with narrow and wide viewports, checking menu selection, route navigation, Escape, outside presses, and focus restoration. Non-touchscreen checks require the hamburger button to be absent from the DOM.
 
 Text-model pricing browser coverage checks per-million conversion, request charges, zero and missing prices, keyboard and hover tooltips, and consistent pricing through axis swaps and fixed-model selection. Image pricing coverage also runs when the shared price display changes.
 

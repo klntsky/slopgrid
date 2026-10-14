@@ -312,7 +312,7 @@ for (const { width, hasTouch } of [
       });
       const nav = page.getByRole("navigation");
       if (!hasTouch) {
-        await expect(menu).toBeHidden();
+        await expect(page.locator(".navigation-menu-toggle")).toHaveCount(0);
         await expect(nav).toBeVisible();
         await expect(
           page.getByRole("button", { name: /Switch to .* theme/ }),
@@ -337,7 +337,9 @@ for (const { width, hasTouch } of [
       await expect(nav).toBeHidden();
       await expect(menu).toBeFocused();
       await menu.click();
-      await page.getByRole("heading", { name: "Inference", exact: true }).click();
+      await page
+        .getByRole("heading", { name: "Inference", exact: true })
+        .click();
       await expect(nav).toBeHidden();
       await menu.click();
       await nav.getByRole("link", { name: "SETTINGS", exact: true }).click();
