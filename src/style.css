@@ -1425,6 +1425,7 @@ header {
   padding: 0;
 }
 .model-badge {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -1447,8 +1448,21 @@ header {
 .model-badge-drag:active {
   cursor: grabbing;
 }
-.model-badge[data-drop-target="true"] {
-  outline: 2px solid var(--selected-border);
+.model-badge[data-insertion]::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--selected-border);
+  pointer-events: none;
+}
+.model-badge[data-insertion="before"]::before {
+  left: -6px;
+}
+.model-badge[data-insertion="after"]::before {
+  right: -6px;
 }
 .model-badge button {
   flex-shrink: 0;

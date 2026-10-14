@@ -210,8 +210,11 @@ Commands use strict payload schemas and named parameters rather than mutable gri
   limiting. The web and inference processes have separate provider caches.
 - Selection requires an explicit model choice. Badge order lives in axis values,
   so drafts, swaps, and saved inputs preserve it. Pointer capture and keyboard
-  movement reorder badges; insertion finds the nearest selected model in the
-  unfiltered catalog, resolving ties toward the earlier entry.
+  movement reorder badges. Pointer dragging selects an insertion boundary from
+  badge positions across wrapped rows, and a marker in the gap shows the release
+  position without changing the layout. Newly selected models are inserted beside
+  the nearest selected model in the unfiltered catalog, resolving ties toward the
+  earlier entry.
 - Shared pricing components show text rates per million tokens and image rates
   in their published units, with provider and request-charge details in tooltips.
 
