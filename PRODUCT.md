@@ -74,7 +74,7 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 
 9. Show right-aligned input and output prices per million tokens beside text models in both axis and fixed-model selectors. Tooltips show the full input and output rates and any published per-request charge. Use the embedded catalog without additional requests, preserve published zero prices, and show "Price unavailable" when pricing is missing.
 
-10. Resolve published model alias targets before saving a grid. For catalog aliases without a published target, retain and submit the selected alias. When such a selected alias has a canonical slug, show: "The model alias <alias> is a reference to <canonical slug here>, which is not an established model snapshot. In the future, the alias may move its target without the ability to refer to the old snapshot". Substitute the catalog values in both fixed-model and model-axis selectors.
+10. Resolve published model alias targets before saving a grid. For catalog aliases without a published target, retain and submit the selected alias. When such a selected alias has a canonical slug, show: "The model alias <alias> is a reference to <canonical slug here>, which is not an established model snapshot. In the future, the alias may move its target without the ability to refer to the old snapshot". Substitute the catalog values in both fixed-model and model-axis selectors. Prefix the warning with a warning emoji and use the normal text color.
 
 ### 3.3. Prompt variables
 

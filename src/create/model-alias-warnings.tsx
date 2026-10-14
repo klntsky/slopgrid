@@ -11,7 +11,13 @@ export function ModelAliasWarnings({
   return values.map((id) => {
     const model = models.find((model) => model.id === id);
     return model?.canonicalSlug && isMovingModelAlias(model) ? (
-      <p className="hint" role="status" data-model-alias-warning={id} key={id}>
+      <p
+        className="hint model-alias-warning"
+        role="status"
+        data-model-alias-warning={id}
+        key={id}
+      >
+        <span aria-hidden="true">⚠️</span>{" "}
         {`The model alias ${id} is a reference to ${model.canonicalSlug}, which is not an established model snapshot. In the future, the alias may move its target without the ability to refer to the old snapshot`}
       </p>
     ) : null;
