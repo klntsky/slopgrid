@@ -169,7 +169,9 @@ Commands use strict payload schemas and named parameters rather than mutable gri
 - `server/cost-estimates.ts` shares per-cell estimates and dispatch-order worker
   recommendations between the form and admission. Complete estimates use the
   generation budget calculation; incomplete estimates use $3 for scheduling and
-  remain unknown in the advisory budget table. Estimation metadata stays outside
+  remain unknown in the per-model budget warnings. The form groups expanded cells
+  by model and displays the highest calculated maximum for reduced allowances,
+  retaining unknown estimates alongside calculated warnings. Estimation metadata stays outside
   effective-request signatures.
 - Reasoning metadata distinguishes explicit efforts, unrestricted selection,
   mandatory reasoning, unavailable selection, and unpublished capabilities.

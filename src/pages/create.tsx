@@ -23,10 +23,8 @@ import { modelCatalog } from "../model-catalog";
 import { formatNames } from "../format";
 import { useCreateDraft, clearDraft } from "../create/draft";
 import { AxisEditor } from "../create/axis-editor";
-import {
-  compatibilityTables,
-  BudgetCompatibilityTable,
-} from "../create/compatibility-table";
+import { compatibilityTables } from "../create/compatibility-table";
+import { BudgetWarnings } from "../create/budget-warnings";
 import { estimateGrid, recommendWorkers } from "../../server/cost-estimates";
 import { Connection } from "../components/connection";
 import { ErrorMessage } from "../components/error-message";
@@ -493,7 +491,7 @@ export function Create() {
             </div>
           </div>
           {estimated && (
-            <BudgetCompatibilityTable
+            <BudgetWarnings
               input={estimated.input}
               models={models}
               estimates={estimated.estimates}

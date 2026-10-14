@@ -1353,6 +1353,13 @@ header {
   }
 }
 
+.budget-warnings {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.budget-warnings [data-tooltip] {
+  cursor: help;
+}
 .compatibility-table-scroll {
   max-width: 100%;
   overflow-x: auto;
