@@ -25,6 +25,7 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 3. Use permissively licensed stock interface icons alongside official OpenRouter and GitHub brand assets. Brand icons must remain recognizable and uncropped.
 4. Keep buttons consistent throughout the interface, with restrained borders, padding, and corner rounding. Secondary buttons, including the hamburger and theme controls, have no borders. Output-type cards should have larger icons and labels without excessively rounded corners.
 5. Use concise, distinct headings and labels without repeating information already visible in the section.
+6. Explicit theme changes use the polygon reveal from https://theme-toggle.rdsx.dev/, reversing direction for light and dark. Switch immediately when reduced motion is requested or view transitions are unavailable.
 
 ### 2.2. Navigation and page layout
 

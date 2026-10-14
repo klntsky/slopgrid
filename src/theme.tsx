@@ -3,8 +3,10 @@ import {
   useContext,
   useEffect,
   useState,
+  useRef,
   type ReactNode,
 } from "react";
+import { flushSync } from "react-dom";
 
 type ResolvedTheme = "light" | "dark";
 type Theme = "system" | ResolvedTheme;
@@ -28,6 +30,7 @@ const ThemeContext = createContext<{
   setTheme: () => {},
 });
 export function ThemeProvider({ children }: { children: ReactNode }) {
+  const transition = useRef<ViewTransition | null>(null);
   const [theme, setTheme] = useState(savedTheme);
   const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() =>
     document.documentElement.dataset.theme === "dark" ? "dark" : "light",
@@ -59,7 +62,33 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("storage", sync);
   }, []);
   function chooseTheme(next: Theme) {
-    setTheme(next);
+    const resolved =
+      next === "system"
+        ? matchMedia("(prefers-color-scheme: dark)").matches
+          ? "dark"
+          : "light"
+        : next;
+    transition.current?.skipTransition();
+    if (
+      document.startViewTransition &&
+      !matchMedia("(prefers-reduced-motion: reduce)").matches &&
+      resolved !== resolvedTheme
+    ) {
+      document.documentElement.dataset.themeTransition = "polygon";
+      const active = document.startViewTransition(() => {
+        flushSync(() => setTheme(next));
+      });
+      transition.current = active;
+      const cleanup = () => {
+        if (transition.current !== active) return;
+        transition.current = null;
+        delete document.documentElement.dataset.themeTransition;
+      };
+      void active.ready.catch(() => {});
+      void active.finished.then(cleanup, cleanup);
+    } else {
+      setTheme(next);
+    }
     try {
       if (next === "system") localStorage.removeItem("slopgrid-theme");
       else localStorage.setItem("slopgrid-theme", next);

@@ -132,6 +132,40 @@ button:disabled {
 .button.primary:active {
   background: color-mix(in srgb, var(--accent) 76%, var(--text));
 }
+/* Polygon reveal inspired by https://theme-toggle.rdsx.dev/animations.txt. */
+html[data-theme-transition="polygon"]::view-transition-group(root) {
+  animation-duration: 700ms;
+  animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+}
+html[data-theme-transition="polygon"]::view-transition-old(root) {
+  animation: none;
+  z-index: -1;
+}
+html[data-theme-transition="polygon"]::view-transition-new(root) {
+  animation: theme-reveal-light 700ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  mix-blend-mode: normal;
+}
+html[data-theme-transition="polygon"][data-theme="dark"]::view-transition-new(
+    root
+  ) {
+  animation-name: theme-reveal-dark;
+}
+@keyframes theme-reveal-dark {
+  from {
+    clip-path: polygon(50% -71%, -50% 71%, -50% 71%, 50% -71%);
+  }
+  to {
+    clip-path: polygon(50% -71%, -50% 71%, 50% 171%, 171% 50%);
+  }
+}
+@keyframes theme-reveal-light {
+  from {
+    clip-path: polygon(171% 50%, 50% 171%, 50% 171%, 171% 50%);
+  }
+  to {
+    clip-path: polygon(171% 50%, 50% 171%, -50% 71%, 50% -71%);
+  }
+}
 .secondary {
   border: 0;
   background: transparent;
