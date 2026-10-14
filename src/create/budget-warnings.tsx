@@ -1,3 +1,4 @@
+import { TriangleAlert } from "lucide-react";
 import { expandGrid, type GridInput } from "../../server/domain";
 import type { CostEstimate } from "../../server/cost-estimates";
 import type { ModelInfo } from "../../server/model-catalog";
@@ -44,6 +45,7 @@ export function BudgetWarnings({
         ];
         return (
           <p key={id}>
+            <TriangleAlert className="compatibility-warning" aria-hidden="true" />{" "}
             <strong>
               {models.find((model) => model.id === id)?.name ?? id}
             </strong>
