@@ -176,13 +176,16 @@ function cell(model: string, effort: string): Cell {
   };
 }
 test("unknown pricing and token limits allow inference without invented cost caps", async () => {
-  for (const metadata of ["pricing", "limits", "both"]) {
+  for (const metadata of ["auto-router", "pricing", "limits", "both"]) {
     const h = await upstream();
     try {
       const model = h.catalog.find((model) => model.id === "router")!;
       if (metadata !== "limits")
         model.pricing = { prompt: "-1", completion: "-1" };
-      if (metadata !== "pricing") {
+      if (metadata === "auto-router") {
+        model.context_length = 2000000;
+        Object.assign(model.top_provider, { max_completion_tokens: null });
+      } else if (metadata !== "pricing") {
         model.context_length = 0;
         model.top_provider.max_completion_tokens = 0;
       }
@@ -195,10 +198,7 @@ test("unknown pricing and token limits allow inference without invented cost cap
       );
       assert.equal(result.files["index.md"], "# Output");
       const request = h.requests[0];
-      assert.equal(
-        request.max_tokens,
-        metadata === "pricing" ? 128000 : undefined,
-      );
+      assert.equal(request.max_tokens, undefined);
       assert.equal(
         (request.provider as Record<string, unknown>).max_price,
         undefined,

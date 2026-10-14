@@ -118,7 +118,9 @@ Streaming usage coverage checks token growth during thinking and output, stable 
 
 Provider budget coverage exercises unknown pricing and token limits through the
 real adapter and controlled HTTP responses, checking successful generation,
-available token ceilings, omitted price caps, and absent unknown cost estimates.
+omitted output token limits and price caps, and absent unknown cost estimates.
+Include Auto Router metadata with a catalog context size and no completion limit
+to verify that routing can use the selected model's output allowance.
 Artifact reuse coverage includes generation and copying with missing pricing.
 
 Streaming persistence coverage measures SQLite changes across chunk bursts and

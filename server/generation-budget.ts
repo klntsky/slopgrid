@@ -16,14 +16,8 @@ export function generationBudget(
 ) {
   const inputTokens = new TextEncoder().encode(prompt + system).length + 256;
   if (!model.pricing || !model.contextLength) {
-    const limits = [
-      model.maxCompletionTokens,
-      model.contextLength ? model.contextLength - inputTokens : undefined,
-    ].filter((limit): limit is number => limit !== undefined && limit !== 0);
     return {
-      maxOutputTokens: limits.length
-        ? Math.max(1, Math.min(...limits))
-        : undefined,
+      maxOutputTokens: undefined,
       inputTokens,
       pricing: model.pricing
         ? effectivePricing(model.pricing, inputTokens, now)
