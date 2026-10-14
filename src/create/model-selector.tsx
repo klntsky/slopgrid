@@ -7,6 +7,34 @@ import { ImageModelPrice } from "./image-model-price";
 import { TextModelPrice } from "./model-price";
 import { ModelAliasWarnings } from "./model-alias-warnings";
 
+type InsertionTarget = { id: string; side: "before" | "after" };
+
+function insertionTarget(list: HTMLElement, x: number, y: number) {
+  const bounds = list.getBoundingClientRect();
+  if (x < bounds.left || x > bounds.right || y < bounds.top || y > bounds.bottom)
+    return;
+  let target: InsertionTarget | undefined;
+  let nearestRow = Infinity;
+  let nearestEdge = Infinity;
+  for (const badge of list.querySelectorAll<HTMLElement>(".model-badge")) {
+    const rect = badge.getBoundingClientRect();
+    const rowDistance = Math.max(rect.top - y, y - rect.bottom, 0);
+    for (const side of ["before", "after"] as const) {
+      const edge = side === "before" ? rect.left : rect.right;
+      const edgeDistance = Math.abs(x - edge);
+      if (
+        rowDistance < nearestRow ||
+        (rowDistance === nearestRow && edgeDistance < nearestEdge)
+      ) {
+        target = { id: badge.dataset.modelId!, side };
+        nearestRow = rowDistance;
+        nearestEdge = edgeDistance;
+      }
+    }
+  }
+  return target;
+}
+
 export function ModelSelector({
   models,
   format,
@@ -28,11 +56,12 @@ export function ModelSelector({
   );
   const filterInput = useRef<HTMLInputElement>(null);
   const rangeAnchor = useRef<string | undefined>(undefined);
-  const drag = useRef<{ id: string; x: number; y: number } | null>(null);
-  const [dragTarget, setDragTarget] = useState<string>();
-  function moveModel(id: string, target: string) {
+  const drag = useRef<{ x: number; y: number; active: boolean } | null>(null);
+  const [dragTarget, setDragTarget] = useState<InsertionTarget>();
+  function moveModel(id: string, index: number) {
+    if (index === values.indexOf(id)) return;
     const next = values.filter((value) => value !== id);
-    next.splice(values.indexOf(target), 0, id);
+    next.splice(index, 0, id);
     onChange(next);
   }
   const clearLabel = multiple
@@ -142,7 +171,9 @@ export function ModelSelector({
                 className="model-badge"
                 key={id}
                 data-model-id={id}
-                data-drop-target={dragTarget === id}
+                data-insertion={
+                  dragTarget?.id === id ? dragTarget.side : undefined
+                }
               >
                 <span
                   className="model-badge-drag"
@@ -157,34 +188,44 @@ export function ModelSelector({
                         : 0;
                     if (!direction) return;
                     e.preventDefault();
-                    const target = values[values.indexOf(id) + direction];
-                    if (target) moveModel(id, target);
+                    const index = values.indexOf(id) + direction;
+                    if (index >= 0 && index < values.length) moveModel(id, index);
                   }}
                   onPointerDown={(e) => {
                     if (e.button !== 0) return;
-                    drag.current = { id, x: e.clientX, y: e.clientY };
+                    drag.current = { x: e.clientX, y: e.clientY, active: false };
                     e.currentTarget.setPointerCapture(e.pointerId);
                   }}
                   onPointerMove={(e) => {
                     const start = drag.current;
                     if (
                       !start ||
-                      Math.hypot(e.clientX - start.x, e.clientY - start.y) < 5
+                      (!start.active &&
+                        Math.hypot(e.clientX - start.x, e.clientY - start.y) < 5)
                     )
                       return;
-                    const badge = document
-                      .elementFromPoint(e.clientX, e.clientY)
-                      ?.closest<HTMLElement>(".model-badge");
-                    const list = e.currentTarget.closest(".selected-models");
+                    start.active = true;
+                    const list =
+                      e.currentTarget.closest<HTMLElement>(".selected-models")!;
                     setDragTarget(
-                      badge && badge.parentElement === list
-                        ? badge.dataset.modelId
-                        : undefined,
+                      insertionTarget(list, e.clientX, e.clientY),
                     );
                   }}
-                  onPointerUp={() => {
-                    if (drag.current && dragTarget && dragTarget !== id)
-                      moveModel(id, dragTarget);
+                  onPointerUp={(e) => {
+                    if (drag.current?.active) {
+                      const list =
+                        e.currentTarget.closest<HTMLElement>(".selected-models")!;
+                      const target = insertionTarget(list, e.clientX, e.clientY);
+                      if (target) {
+                        const boundary =
+                          values.indexOf(target.id) +
+                          (target.side === "after" ? 1 : 0);
+                        moveModel(
+                          id,
+                          boundary - (values.indexOf(id) < boundary ? 1 : 0),
+                        );
+                      }
+                    }
                     drag.current = null;
                     setDragTarget(undefined);
                   }}
