@@ -20,6 +20,7 @@ import {
 export type Model = {
   id: string;
   aliasTarget?: string;
+  canonicalSlug?: string;
   name: string;
   image: boolean;
   text: boolean;
@@ -110,6 +111,7 @@ export class Provider {
     type RemoteModel = {
       id: string;
       alias_target?: { slug?: string };
+      canonical_slug?: string;
       name: string;
       pricing?: { prompt?: string; completion?: string; request?: string };
       context_length?: number;
@@ -167,6 +169,7 @@ export class Provider {
       byId.set(m.id, {
         id: m.id,
         aliasTarget: previous?.aliasTarget ?? m.alias_target?.slug,
+        canonicalSlug: previous?.canonicalSlug ?? m.canonical_slug,
         name: m.name,
         pricing:
           previous?.pricing ??

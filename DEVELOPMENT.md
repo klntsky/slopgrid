@@ -1,5 +1,7 @@
 # Development
 
+Model-alias coverage checks published target resolution, catalog aliases without targets, unknown aliases, and cycles. Moving aliases retain their IDs through inference, retry, Edit, publication, and Fork. Selector rendering checks warning presence only for selected moving aliases and verifies interpolated catalog identifiers in both fixed and multiple selection modes without asserting static warning copy.
+
 Model-order browser coverage checks insertion against the unfiltered catalog after manual reordering, tie resolution, mouse and touch dragging, keyboard movement, removal, reload persistence, and axis swaps. Assertions inspect the computed selection order rather than static interface copy. Selection checks isolate model names from pricing, and compatibility expectations follow the selected catalog order. The Edit/Fork journey exercises grid actions in a narrow non-touch viewport so desktop navigation cannot block their pointer targets.
 
 ## Requirements and setup

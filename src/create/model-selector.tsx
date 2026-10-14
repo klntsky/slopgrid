@@ -5,6 +5,7 @@ import type { GridInput } from "../../server/domain";
 import { tooltipRef } from "../components/use-tooltip";
 import { ImageModelPrice } from "./image-model-price";
 import { TextModelPrice } from "./model-price";
+import { ModelAliasWarnings } from "./model-alias-warnings";
 
 export function ModelSelector({
   models,
@@ -215,6 +216,7 @@ export function ModelSelector({
           })}
         </ul>
       )}
+      <ModelAliasWarnings models={models} values={values} />
     </>
   );
 }

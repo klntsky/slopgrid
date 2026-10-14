@@ -3,6 +3,13 @@ import type { Model } from "./provider.js";
 
 export class ModelResolutionError extends Error {}
 
+export function isMovingModelAlias(model: Pick<Model, "id" | "aliasTarget">) {
+  return (
+    !model.aliasTarget &&
+    (model.id.startsWith("~") || /[-:]latest(?:$|:)/i.test(model.id))
+  );
+}
+
 export function resolveGridModels(
   input: GridInput,
   models: readonly Model[],
@@ -21,7 +28,7 @@ export function resolveGridModels(
         id = target;
         continue;
       }
-      if (id.startsWith("~") || /[-:]latest(?:$|:)/i.test(id))
+      if (!catalog.has(id) && isMovingModelAlias({ id }))
         throw new ModelResolutionError(
           `Cannot resolve ${id} to a concrete model. Choose a versioned model.`,
         );
