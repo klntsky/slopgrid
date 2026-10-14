@@ -29,7 +29,7 @@ import { estimateGrid } from "../../server/cost-estimates";
 import { Connection } from "../components/connection";
 import { ErrorMessage } from "../components/error-message";
 import { LowBalanceDialog } from "../components/inference-dialogs";
-import { modelDefaultHint, useTooltip } from "../components/use-tooltip";
+import { useTooltip } from "../components/use-tooltip";
 export function Create() {
   const [draft, setDraft] = useCreateDraft(),
     [validationError, setError] = useState(""),
@@ -77,9 +77,6 @@ export function Create() {
   });
   const { lowBalance, setLowBalance, isPending: busy } = inference;
   const error = validationError || inference.message;
-  const defaultHint = useTooltip<HTMLSelectElement>(
-    input.effort === "default" ? modelDefaultHint : undefined,
-  );
   const budgetHint = useTooltip<HTMLLabelElement>(
     "Used to calculate each output’s token limit.",
   );
@@ -128,12 +125,14 @@ export function Create() {
         effort: "default",
         rows:
           format === "markdown"
-            ? { kind: "effort", values: [] }
+            ? { kind: "effort", values: ["default"] }
             : { kind: "model", values: [] },
         columns:
           format === "image"
             ? { kind: "quality", values: ["auto"] }
-            : { kind: format === "markdown" ? "model" : "effort", values: [] },
+            : format === "markdown"
+              ? { kind: "model", values: [] }
+              : { kind: "effort", values: ["default"] },
       },
     }));
     setError("");
@@ -364,7 +363,6 @@ export function Create() {
                 <label>
                   Thinking effort
                   <select
-                    ref={defaultHint}
                     value={input.effort}
                     onChange={(e) =>
                       update({

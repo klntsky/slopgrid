@@ -38,9 +38,7 @@ export function ModelSelector({
   const clearLabel = multiple
     ? `Clear ${label === "Rows" ? "row" : "column"} model filter`
     : "Clear model filter";
-  const selectedLabel = multiple
-    ? `Selected ${label === "Rows" ? "row" : "column"} models`
-    : "Selected model";
+  const selectedLabel = `Selected ${label === "Rows" ? "row" : "column"} models`;
   const visibleChoices = models.filter((c) =>
     `${c.name} ${c.id}`.toLowerCase().includes(filter.trim().toLowerCase()),
   );
@@ -135,7 +133,7 @@ export function ModelSelector({
           </label>
         ))}
       </div>
-      {values.length > 0 && (
+      {multiple && values.length > 0 && (
         <ul className="selected-models" aria-label={selectedLabel}>
           {values.map((id) => {
             const name = models.find((model) => model.id === id)?.name ?? id;
@@ -147,12 +145,11 @@ export function ModelSelector({
                 data-drop-target={dragTarget === id}
               >
                 <span
-                  className={multiple ? "model-badge-drag" : undefined}
-                  role={multiple ? "button" : undefined}
-                  tabIndex={multiple ? 0 : undefined}
-                  aria-label={multiple ? `Move ${name}` : undefined}
+                  className="model-badge-drag"
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Move ${name}`}
                   onKeyDown={(e) => {
-                    if (!multiple) return;
                     const direction = ["ArrowLeft", "ArrowUp"].includes(e.key)
                       ? -1
                       : ["ArrowRight", "ArrowDown"].includes(e.key)
@@ -164,7 +161,7 @@ export function ModelSelector({
                     if (target) moveModel(id, target);
                   }}
                   onPointerDown={(e) => {
-                    if (!multiple || e.button !== 0) return;
+                    if (e.button !== 0) return;
                     drag.current = { id, x: e.clientX, y: e.clientY };
                     e.currentTarget.setPointerCapture(e.pointerId);
                   }}
@@ -200,11 +197,7 @@ export function ModelSelector({
                 </span>
                 <button
                   type="button"
-                  aria-label={
-                    multiple
-                      ? `Remove ${name} from ${label.toLowerCase()}`
-                      : `Remove ${name}`
-                  }
+                  aria-label={`Remove ${name} from ${label.toLowerCase()}`}
                   onClick={() =>
                     onChange(values.filter((value) => value !== id))
                   }

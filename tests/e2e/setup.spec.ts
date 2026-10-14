@@ -19,7 +19,6 @@ test("disabled Generate explains blockers on hover and keyboard focus", async ({
   await wrapper.hover();
   for (const reason of [
     "Select row values.",
-    "Select column values.",
     "Connect OpenRouter.",
     "Enter a prompt.",
   ])
@@ -781,11 +780,7 @@ for (const format of ["SVG", "Image"]) {
     expect(second).not.toBe(first);
     await expect(selector.locator("input:checked")).toHaveCount(1);
     await search.fill("no-such-model");
-    await expect(
-      selector
-        .getByRole("list", { name: "Selected model", exact: true })
-        .getByRole("listitem"),
-    ).toHaveCount(1);
+    await expect(selector.locator(".selected-models")).toHaveCount(0);
     await page.reload();
     await expect(search).toHaveValue("latest");
     await search.fill(second);
@@ -850,7 +845,7 @@ test("default image layout generates with automatic quality and preserves edits"
   ).toBeChecked();
 });
 
-for (const format of ["SVG", "Static website"]) {
+for (const format of ["SVG", "Static website", "Markdown"]) {
   test(`default ${format} layout compares models by thinking effort and preserves edits`, async ({
     page,
     request,
@@ -863,13 +858,22 @@ for (const format of ["SVG", "Static website"]) {
       name: "Columns",
       exact: true,
     });
-    await expect(rows).toHaveValue("model");
-    await expect(columns).toHaveValue("effort");
-    await expect(page.locator('input[type="checkbox"]:checked')).toHaveCount(0);
+    const modelAxis = format === "Markdown" ? "column" : "row";
+    const modelKind = format === "Markdown" ? columns : rows;
+    const effortKind = format === "Markdown" ? rows : columns;
+    await expect(modelKind).toHaveValue("model");
+    await expect(effortKind).toHaveValue("effort");
+    const defaultEffort = page.getByRole("checkbox", {
+      name: "Model default",
+      exact: true,
+    });
+    await expect(defaultEffort).toBeChecked();
     await expect(
       page.getByRole("searchbox", { name: "Search models" }),
     ).toHaveValue("latest");
-    await page.getByRole("button", { name: "Clear row model filter" }).click();
+    await page
+      .getByRole("button", { name: `Clear ${modelAxis} model filter` })
+      .click();
     await page
       .getByRole("checkbox", { name: "Fixture text", exact: true })
       .check();
@@ -878,21 +882,28 @@ for (const format of ["SVG", "Static website"]) {
     await expect(page.getByText("Connected", { exact: true })).toBeVisible();
     await expect(
       page.getByRole("button", { name: "Generate", exact: true }),
-    ).toBeDisabled();
+    ).toBeEnabled();
+    await defaultEffort.uncheck();
     await page.getByRole("checkbox", { name: "None", exact: true }).check();
+    await page.reload();
+    await expect(defaultEffort).not.toBeChecked();
     await page.getByRole("button", { name: "Generate", exact: true }).click();
     await expectProgress(page, 1, 1);
     await page.getByRole("button", { name: "EDIT", exact: true }).click();
-    await expect(rows).toHaveValue("model");
-    await expect(columns).toHaveValue("effort");
+    await expect(modelKind).toHaveValue("model");
+    await expect(effortKind).toHaveValue("effort");
+    await expect(defaultEffort).not.toBeChecked();
     await expect(
       page.getByRole("checkbox", { name: "None", exact: true }),
     ).toBeChecked();
-    await columns.selectOption("variable");
-    await page.getByLabel("Column values").fill("landscape");
+    await effortKind.selectOption("variable");
+    const variableValues = page.getByLabel(
+      format === "Markdown" ? "Row values" : "Column values",
+    );
+    await variableValues.fill("landscape");
     await page.reload();
-    await expect(rows).toHaveValue("model");
-    await expect(columns).toHaveValue("variable");
-    await expect(page.getByLabel("Column values")).toHaveValue("landscape");
+    await expect(modelKind).toHaveValue("model");
+    await expect(effortKind).toHaveValue("variable");
+    await expect(variableValues).toHaveValue("landscape");
   });
 }

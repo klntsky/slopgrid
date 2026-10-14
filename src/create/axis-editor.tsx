@@ -11,7 +11,6 @@ import { efforts, type GridInput } from "../../server/domain";
 import { effortLabel } from "../../server/compatibility";
 import type { Model } from "../../server/provider";
 import { dimensionNames } from "../format";
-import { modelDefaultHint, useTooltip } from "../components/use-tooltip";
 export function AxisEditor({
   label,
   axis,
@@ -31,7 +30,6 @@ export function AxisEditor({
   referenceGroups?: Groups;
   onUploading: (busy: boolean) => void;
 }) {
-  const defaultHint = useTooltip<HTMLLabelElement>(modelDefaultHint);
   const kinds =
     format === "image"
       ? (["model", "variable", ...imageKinds] as const)
@@ -108,15 +106,7 @@ export function AxisEditor({
           ) : (
             <div className="value-list">
               {choices.map((c) => (
-                <label
-                  className="checkbox"
-                  key={c.id}
-                  ref={
-                    axis.kind === "effort" && c.id === "default"
-                      ? defaultHint
-                      : undefined
-                  }
-                >
+                <label className="checkbox" key={c.id}>
                   <input
                     type="checkbox"
                     aria-label={c.name}

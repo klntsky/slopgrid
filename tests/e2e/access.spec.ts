@@ -257,9 +257,14 @@ test("EDIT cancels inference and restores settings, while a public FORK creates 
     ).toBeVisible();
     await expect(page.getByLabel("Row values")).toHaveValue("cat\ndog");
     await expect(page.getByLabel("Column values")).toHaveValue("hat");
-    await expect(
-      page.getByRole("list", { name: "Selected model", exact: true }),
-    ).toHaveText("Fixture image");
+    const modelSelector = page.getByRole("radiogroup", {
+      name: "Model",
+      exact: true,
+    });
+    await modelSelector.getByRole("searchbox").fill("fixture/image");
+    await expect(modelSelector.locator("input:checked")).toHaveValue(
+      "fixture/image",
+    );
     await expect
       .poll(
         async () =>

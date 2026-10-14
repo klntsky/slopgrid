@@ -13,7 +13,7 @@ const initial: Draft = {
     format: "svg",
     prompt: "",
     rows: { kind: "model", values: [] },
-    columns: { kind: "effort", values: [] },
+    columns: { kind: "effort", values: ["default"] },
     model: "",
     effort: "default",
     budgetUsd: 3,

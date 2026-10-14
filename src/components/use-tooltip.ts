@@ -2,8 +2,6 @@ import { useCallback } from "react";
 import tippy from "tippy.js";
 import "tippy.js/dist/tippy.css";
 
-export const modelDefaultHint = "Uses the model’s default thinking settings.";
-
 function attachTooltip(element: Element, content: () => string | undefined) {
   const tooltip = tippy(element, {
     content: content() ?? "",
