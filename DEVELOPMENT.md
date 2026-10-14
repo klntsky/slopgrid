@@ -95,6 +95,8 @@ Text-model pricing browser coverage checks per-million conversion, request charg
 
 `tests/e2e/scroll-restoration.spec.ts` covers creation drafts for SVG and Image through refresh, Back, and Forward, checking saved input values and actual scroll offsets while new route visits start at the top.
 
+1. **Web replacement during generation:** keep a real browser open while Markdown, thinking, and website assets stream; replace the web process and verify reconnection, continued previews, correct final content and prices, and no extra provider calls. See `tests/e2e/runtime.spec.ts`.
+2. **Lost acknowledgements and competing starts:** lose the response after the engine accepts Start, retry through a replacement web process, and race multiple starts; each cell must run only once. See `tests/generation-commands.test.ts`.
 3. **Concurrent writes:** interleave title edits, ownership claims, generation completion, publication, and retries across processes; preserve both metadata and generation changes and prevent publication while work is active. See `tests/generation-metadata.test.ts`.
 4. **Complete draining:** cover queued cells, retry timers, and cancelled calls whose provider work has not settled. Accepted work finishes, new work is rejected, drained status waits correctly, and cancelling maintenance restores admission. See `tests/generation-drain.test.ts`.
 5. **Engine death at persistence boundaries:** kill the real process midstream and around billing, file, and cell-state persistence. Preserve committed outputs, retain recorded charges, settle interrupted ledger entries, and require explicit Resume without duplicating completed work. See `tests/generation-crash.test.ts`.
