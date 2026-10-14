@@ -1,6 +1,6 @@
 import type { ImageEndpoint } from "../../server/image-settings";
 import { formatCost } from "../format";
-import { useTooltip } from "../components/use-tooltip";
+import { ModelPrice } from "./model-price";
 
 function rate(cost: number, unit: string) {
   return `${formatCost(unit === "token" ? cost * 1000000 : cost)}/${
@@ -38,10 +38,5 @@ export function ImageModelPrice({
       return `${endpoint.provider_name}: ${lines.join("; ")}.`;
     })
     .join(" ");
-  const hint = useTooltip<HTMLSpanElement>(details || undefined);
-  return (
-    <span className="model-price" ref={hint} tabIndex={details ? 0 : undefined}>
-      {summary || "Price unavailable"}
-    </span>
-  );
+  return <ModelPrice summary={summary} details={details} />;
 }

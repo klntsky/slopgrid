@@ -71,6 +71,8 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 7. A model or effort that is not an axis applies as a fixed selection to the grid. Use the same searchable model selector for the fixed model, with radio buttons allowing one selection and a selected-model badge. Keep "Model default" thinking distinct from automatic model selection: the former leaves the model's thinking configuration unspecified.
 8. Make the complete model catalog, image pricing, and image capabilities available on the first client render through a JSON data script baked into the page HTML. The browser uses that snapshot without model refetches or server-side component rendering. The server loads the data together, refreshes its in-memory snapshot periodically, and serves model-list reads without rate limits.
 
+9. Show right-aligned input and output prices per million tokens beside text models in both axis and fixed-model selectors. Tooltips show the full input and output rates and any published per-request charge. Use the embedded catalog without additional requests, preserve published zero prices, and show "Price unavailable" when pricing is missing.
+
 ### 3.3. Prompt variables
 
 1. Use `$ROW` and `$COLUMN` for literal substitution of the corresponding prompt-variable values.

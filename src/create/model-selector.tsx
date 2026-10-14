@@ -4,6 +4,7 @@ import type { ModelInfo } from "../../server/model-catalog";
 import type { GridInput } from "../../server/domain";
 import { tooltipRef } from "../components/use-tooltip";
 import { ImageModelPrice } from "./image-model-price";
+import { TextModelPrice } from "./model-price";
 
 export function ModelSelector({
   models,
@@ -98,8 +99,10 @@ export function ModelSelector({
               }}
             />
             <span>{c.name}</span>
-            {format === "image" && (
+            {format === "image" ? (
               <ImageModelPrice endpoints={c.imageEndpoints} />
+            ) : (
+              <TextModelPrice pricing={c.pricing} />
             )}
           </label>
         ))}

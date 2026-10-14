@@ -55,6 +55,8 @@ These constraints define the implementation boundaries for the behavior in [PROD
 
 ## Implementation
 
+`src/create/model-price.tsx` shares the price display and tooltip between text and image model selectors. Text prices come from the embedded model's per-token prompt and completion rates, converted to USD per million tokens, with any request charge included in the tooltip. Image prices retain their endpoint units and provider details.
+
 TanStack Router manages scroll restoration by history entry through `scrollRestoration: true`. Creation drafts initialize synchronously from sessionStorage, so the saved form layout is present when the router restores the page position after rendering.
 
 `server/model-catalog.ts` loads model listings and all image endpoint details into one shared in-memory snapshot before the frontend starts serving pages. Concurrent reads share the same load. Five minutes after each refresh completes, a background timer loads the next snapshot; failed refreshes retain the previous data, and unavailable image details retain their previous values when available. Closing the catalog stops the timer. `server/frontend.ts` bakes a script assigning `window.__SLOPGRID_MODELS__` into cached entry HTML and rebuilds it when the snapshot changes. The script uses serialized JSON and its content hash is allowed by the page CSP. `src/model-catalog.ts` reads the embedded snapshot synchronously, so model selection, pricing, and compatibility have no browser catalog requests, loading state, or server-rendered components. Reloading the page picks up the latest snapshot. Model-list GET and HEAD requests read the same snapshot and bypass the API rate limiter.
