@@ -19,7 +19,7 @@ export function LowBalanceDialog({
       <h2 id="low-balance-title">Top up your OpenRouter credits</h2>
       <p>
         Your balance is {formatCost(balanceUsd)}, below $3. Top up before
-        starting inference, or continue with the selected parallelism.
+        starting inference, or continue anyway.
       </p>
       <div className="modal-actions">
         <a

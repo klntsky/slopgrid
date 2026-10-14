@@ -65,7 +65,8 @@ test("disabled Generate explains blockers on hover and keyboard focus", async ({
   await expect(tooltip).toHaveText(
     "Could not determine the automatic worker count.",
   );
-  await page.getByLabel("# of parallel workers:", { exact: true }).fill("2");
+  await page.unroute("**/api/inference-capacity?*");
+  await page.getByRole("button", { name: "Check balance again" }).click();
   await expect(generate).toBeEnabled();
   await expect(wrapper).not.toHaveAttribute("tabindex", "0");
   await generate.focus();
@@ -699,81 +700,45 @@ test("changing the per-cell budget changes the model token limit and survives Ed
   }
 });
 
-test("worker recommendation follows grid size and explicit overrides persist at low balance", async ({
-  page,
-  request,
-}) => {
-  let submissions = 0;
-  await page.route("**/api/grids", (route) => {
-    if (route.request().method() === "POST") submissions++;
-    return route.continue({
-      headers: {
-        ...route.request().headers(),
-        "X-Forwarded-For": "192.0.2.63",
-      },
+for (const format of ["SVG", "Image"]) {
+  test(`automatic workers survive stale draft overrides for ${format}`, async ({
+    page,
+    request,
+  }) => {
+    await request.post("/fixture/reset", {
+      data: { balanceUsd: 6, holdGenerations: true },
     });
-  });
-  await request.post("/fixture/reset", {
-    data: { balanceUsd: 6, holdGenerations: true },
-  });
-  try {
     await page.goto("/");
-    await page.getByRole("button", { name: "SVG", exact: true }).click();
+    await page.getByRole("button", { name: format, exact: true }).click();
     await page
       .getByRole("combobox", { name: "Rows", exact: true })
       .selectOption("variable");
-    await page.getByLabel("Row values").fill("cat\ndog");
     await page
       .getByRole("combobox", { name: "Columns", exact: true })
       .selectOption("variable");
+    await page.getByLabel("Row values").fill("cat\ndog");
     await page.getByLabel("Column values").fill("hat\ncape");
-    await selectModel(page, "fixture/text");
-    await page
-      .getByLabel("Prompt", { exact: true })
-      .fill("Draw $ROW wearing a $COLUMN");
+    await selectModel(
+      page,
+      format === "Image" ? "fixture/image" : "fixture/text",
+    );
+    await page.getByLabel("Prompt", { exact: true }).fill("$ROW $COLUMN");
     await page.getByRole("link", { name: "Connect OpenRouter" }).click();
-    const workers = page.getByLabel("# of parallel workers:", { exact: true });
-    await expect(workers).toHaveValue("2");
-    const max = page.getByRole("button", { name: "MAX", exact: true });
-    await page.getByLabel("Row values").fill("cat");
-    await page.getByLabel("Column values").fill("hat");
-    await expect(workers).toHaveValue("1");
-    await page.getByLabel("Row values").fill("cat\ndog");
-    await page.getByLabel("Column values").fill("hat\ncape");
-    await expect(workers).toHaveValue("2");
-    await max.click();
-    await expect(workers).toHaveValue("4");
-    await workers.fill("1");
-    await page.reload();
-    await expect(workers).toHaveValue("1");
-    await workers.fill("12");
-    await expect(workers).toHaveValue("12");
-    await workers.press("End");
-    await workers.press("Backspace");
-    await expect(workers).toHaveValue("1");
-    await workers.press("Backspace");
-    await expect(workers).toHaveValue("");
-    await page.reload();
-    await expect(workers).toHaveValue("");
-    const generate = page.getByRole("button", {
-      name: "Generate",
-      exact: true,
+    await page.evaluate(() => {
+      const draft = JSON.parse(sessionStorage.getItem("slopgrid-draft")!);
+      draft.workerInput = "invalid";
+      draft.input.parallelWorkers = 1;
+      sessionStorage.setItem("slopgrid-draft", JSON.stringify(draft));
     });
-    for (const value of ["", "0", "-2", "1.5", "abc"]) {
-      await workers.fill(value);
-      await expect(workers).not.toHaveAttribute("aria-invalid", "true");
-      await generate.click();
-      await expect(workers).toHaveAttribute("aria-invalid", "true");
-      await expect(workers).toHaveValue(value);
-    }
-    expect(submissions).toBe(0);
-    await workers.fill("12");
-    await page.getByLabel("Row values").fill("cat");
-    await expect(workers).toHaveValue("12");
-    await page.getByLabel("Row values").fill("cat\ndog");
-    await expect(workers).not.toHaveAttribute("aria-invalid", "true");
-    await request.post("/fixture/credits", { data: { balanceUsd: 1 } });
+    await page.reload();
+    const sent = page.waitForRequest(
+      (r) =>
+        r.method() === "POST" && new URL(r.url()).pathname === "/api/grids",
+    );
     await page.getByRole("button", { name: "Generate", exact: true }).click();
+    expect((await sent).postDataJSON().parallelWorkers).toBe(
+      format === "Image" ? 4 : undefined,
+    );
     await expectProgress(page, 0, 4);
     await expect
       .poll(
@@ -781,23 +746,10 @@ test("worker recommendation follows grid size and explicit overrides persist at 
           (await (await request.get("/fixture/workers")).json()).held.length,
       )
       .toBe(2);
-    const grid = await (
-      await page.request.get(`/api/grids/${page.url().split("/").pop()}`)
-    ).json();
-    expect(grid.input.parallelWorkers).toBe(12);
-    expect(
-      grid.cells.filter(
-        (cell: { status: string }) => cell.status === "pending",
-      ),
-    ).toHaveLength(2);
     await request.post("/fixture/release", { data: { all: true } });
     await expectProgress(page, 4, 4);
-    await page.getByRole("button", { name: "EDIT", exact: true }).click();
-    await expect(workers).toHaveValue("12");
-  } finally {
-    await request.post("/fixture/release", { data: { all: true } });
-  }
-});
+  });
+}
 
 for (const format of ["SVG", "Image"]) {
   test(`fixed model radio selector defaults to latest for ${format}`, async ({
@@ -944,38 +896,3 @@ for (const format of ["SVG", "Static website"]) {
     await expect(page.getByLabel("Column values")).toHaveValue("landscape");
   });
 }
-
-test("image worker recommendation uses image cost and follows output changes", async ({
-  page,
-  request,
-}) => {
-  await request.post("/fixture/reset", { data: { balanceUsd: 6 } });
-  await page.goto("/");
-  const workers = page.getByLabel("# of parallel workers:", { exact: true });
-  async function layout(format: string) {
-    await page.getByRole("button", { name: format, exact: true }).click();
-    await page
-      .getByRole("combobox", { name: "Rows", exact: true })
-      .selectOption("variable");
-    await page
-      .getByRole("combobox", { name: "Columns", exact: true })
-      .selectOption("variable");
-    await page.getByLabel("Row values").fill("a\nb\nc\nd\ne");
-    await page.getByLabel("Column values").fill("a\nb\nc\nd");
-  }
-  await layout("Image");
-  await page.getByRole("link", { name: "Connect OpenRouter" }).click();
-  await expect(page.getByText("Connected", { exact: true })).toBeVisible();
-  await expect(workers).toHaveValue("15");
-  await page.getByLabel("Row values").fill("a");
-  await expect(workers).toHaveValue("4");
-  await layout("SVG");
-  await expect(workers).toHaveValue("2");
-  await layout("Image");
-  await expect(workers).toHaveValue("15");
-  await workers.fill("7");
-  await layout("Static website");
-  await expect(workers).toHaveValue("7");
-  await page.reload();
-  await expect(workers).toHaveValue("7");
-});

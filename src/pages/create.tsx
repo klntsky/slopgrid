@@ -25,7 +25,7 @@ import { useCreateDraft, clearDraft } from "../create/draft";
 import { AxisEditor } from "../create/axis-editor";
 import { compatibilityTables } from "../create/compatibility-table";
 import { BudgetWarnings } from "../create/budget-warnings";
-import { estimateGrid, recommendWorkers } from "../../server/cost-estimates";
+import { estimateGrid } from "../../server/cost-estimates";
 import { Connection } from "../components/connection";
 import { ErrorMessage } from "../components/error-message";
 import { LowBalanceDialog } from "../components/inference-dialogs";
@@ -33,7 +33,6 @@ import { modelDefaultHint, useTooltip } from "../components/use-tooltip";
 export function Create() {
   const [draft, setDraft] = useCreateDraft(),
     [validationError, setError] = useState(""),
-    [workersInvalid, setWorkersInvalid] = useState(false),
     [uploads, setUploads] = useState(0);
   const uploading = uploads > 0;
   const uploadController = useRef<AbortController | undefined>(undefined);
@@ -63,27 +62,14 @@ export function Create() {
         : estimateGrid(input, modelCatalog, new Date(estimateMinute * 60000)),
     [input, estimateMinute],
   );
-  const automaticWorkers = estimated
-    ? recommendWorkers(
-        capacity.data?.balanceUsd ?? null,
-        estimated.estimates.map((cell) => cell.costUsd),
-      )
-    : Math.max(1, Math.min(cellCount, capacity.data?.parallelWorkers ?? 1));
-  const automatic =
-    input.format !== "image" &&
-    draft.workerInput === undefined && input.parallelWorkers === undefined;
+  const parallelWorkers =
+    input.format === "image"
+      ? Math.max(1, Math.min(cellCount, capacity.data?.parallelWorkers ?? 1))
+      : undefined;
   const promptVariables = (["rows", "columns"] as const)
     .filter((axis) => input[axis].kind === "variable")
     .map((axis) => (axis === "rows" ? "$ROW" : "$COLUMN"));
-  const workerInput =
-    draft.workerInput ?? String(input.parallelWorkers ?? automaticWorkers);
-  const workersPending =
-    draft.workerInput === undefined &&
-    input.parallelWorkers === undefined &&
-    (!capacity.isSuccess || capacity.isFetching);
-  const workersHint = useTooltip<HTMLDivElement>(
-    "How many parallel inferences to run (can be throttled by the backend under load). If your inference budget is low, spawning too many will lead to a lot of overhead due to failures; OpenRouter still charges you for unsuccessful calls",
-  );
+  const workersPending = !capacity.isSuccess || capacity.isFetching;
   const inference = useInferenceMutation(async (grid) => {
     await queryClient.invalidateQueries({ queryKey: ["grids"] });
     clearDraft();
@@ -117,12 +103,6 @@ export function Create() {
         },
       };
     });
-    setError("");
-    inference.reset();
-  }
-  function editWorkers(value: string) {
-    setDraft((d) => ({ ...d, workerInput: value }));
-    setWorkersInvalid(false);
     setError("");
     inference.reset();
   }
@@ -194,17 +174,9 @@ export function Create() {
       uploadController.current
     )
       return;
-    const parallelWorkers = Number(workerInput);
-    const invalid =
-      !Number.isSafeInteger(parallelWorkers) || parallelWorkers < 1;
-    setWorkersInvalid(invalid);
-    if (invalid) {
-      setError("Enter a positive whole number of parallel workers.");
-      return;
-    }
     const parsed = gridSchema.safeParse({
       ...input,
-      parallelWorkers: automatic ? undefined : parallelWorkers,
+      parallelWorkers,
     });
     if (!parsed.success) {
       setError(parsed.error.issues[0].message);
@@ -246,7 +218,7 @@ export function Create() {
           path: "/grids",
           body: {
             ...prepared,
-            parallelWorkers: automatic ? undefined : parallelWorkers,
+            parallelWorkers,
             sourceGridId: draft.sourceGridId,
             reuseArtifacts: draft.reuseArtifacts !== false,
           },
@@ -468,27 +440,6 @@ export function Create() {
                 </span>
               </label>
             )}
-            <div className="workers-field" ref={workersHint}>
-              <label htmlFor="parallel-workers"># of parallel workers:</label>
-              <span className="workers-input">
-                <input
-                  id="parallel-workers"
-                  type="text"
-                  inputMode="numeric"
-                  value={workerInput}
-                  aria-invalid={workersInvalid}
-                  onChange={(event) => editWorkers(event.target.value)}
-                />
-                <button
-                  type="button"
-                  className="secondary"
-                  disabled={!cellCount}
-                  onClick={() => editWorkers(String(cellCount))}
-                >
-                  MAX
-                </button>
-              </span>
-            </div>
           </div>
           {estimated && (
             <BudgetWarnings

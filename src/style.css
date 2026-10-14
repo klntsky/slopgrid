@@ -357,42 +357,13 @@ textarea {
 }
 .generation-limits {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 180px));
+  grid-template-columns: minmax(0, 180px);
   align-items: end;
   gap: 16px;
   margin-bottom: 16px;
 }
 .generation-limits .budget-field {
   margin-bottom: 0;
-}
-.workers-field {
-  min-width: 0;
-}
-.workers-field label {
-  margin-bottom: 9px;
-}
-.workers-input {
-  display: block;
-  position: relative;
-}
-.workers-input input {
-  padding-right: 64px;
-}
-.workers-input input[aria-invalid="true"] {
-  border-color: var(--progress-error);
-  outline-color: var(--progress-error);
-}
-.workers-input button {
-  position: absolute;
-  right: 6px;
-  top: 50%;
-  transform: translateY(-50%);
-  padding: 5px 8px;
-  font-size: 11px;
-  border-color: transparent;
-  border-radius: 4px;
-  background: var(--panel);
-  color: var(--muted);
 }
 .budget-field {
   width: 180px;

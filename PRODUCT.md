@@ -51,8 +51,8 @@ Status: high level product goal that is not a requirement (not achieved yet).
 2. Use hints only to explain a non-obvious action, icon, or value, consistently across the frontend.
 3. Explain Model default as "Uses the model's default thinking settings." Explain the budget as "Used to calculate each output's token limit." Use the cost and spent hints specified in section 7.1.
 4. Give token-arrow indicators "Input tokens" and "Output tokens" hints. Supported compatibility checkmarks do not get tooltips.
-5. Budget and parallel-worker hints use the same field-level interaction.
-6. Use the current pause hint and parallel-worker hint specified in sections 3.5 and 6.3.
+5. Budget hints use field-level interaction.
+6. Use the current pause hint specified in section 6.3.
 7. When Generate is disabled, its tooltip explains the current blocking reasons. Attach the tooltip to a focusable wrapper so it works on hover and keyboard focus while the button is disabled, and omit it when Generate is enabled.
 
 ## 3. Grid creation
@@ -99,18 +99,16 @@ Status: high level product goal that is not a requirement (not achieved yet).
 4. Do not show a tooltip on a supported checkmark. Image warning tooltips identify the incompatible parameter values or conflicting settings; unknown results identify which support information is unavailable.
 5. Compatibility warnings are advisory and must not block generation. Send the selected settings and show an upstream rejection as a cell error if the provider rejects them.
 
-### 3.5. Budget and requested parallelism
+### 3.5. Budget and automatic parallelism
 
 1. Text generation requires a per-cell monetary budget, defaulting to $3 per attempt. Preserve saved budgets. It covers estimated total cost, including input, output, and thinking.
 2. Label the compact field "Budget limit per cell," prepend a dollar icon, and reserve enough input padding to keep the value clear of the icon. It must not stretch across the form's full width.
 3. Respect provider/model limits when translating the budget, without adding an unrelated fixed output-size ceiling. A retry gets a new attempt allowance.
-4. Show "# of parallel workers" to the right of the budget before generation starts. For text, estimate each cell from its expanded prompt, applicable token prices, request fees, and budget-capped output allowance within model and context limits. Use $3 per cell when a complete estimate is unavailable. Sum cells in dispatch order until the next would exceed available balance, with at least one worker and at most the cell count. Unknown balance recommends one worker. Image recommendations use available balance divided by $0.40, rounded down with the same bounds.
-5. Allow manual override as freely editable text, including an empty value. Preserve typed values without clamping or replacing them, and validate a positive whole number only when Generate is clicked. Highlight invalid input in red while allowing further editing. Put MAX inside the field; it requests rows x columns workers. Preserve the request with the grid so Resume and restored setup use it.
-6. Use this worker tooltip: "How many parallel inferences to run (can be throttled by the backend under load). If your inference budget is low, spawning too many will lead to a lot of overhead due to failures; OpenRouter still charges you for unsuccessful calls".
-7. The request is a concurrency ceiling, subject to backend capacity and fair allocation, rather than a reservation of workers.
-8. Keep automatic text worker selection distinct from manual overrides. Recalculate automatic concurrency from unfinished cells after artifact reuse and on Resume; retain saved explicit counts. Initial recommendations do not guarantee sufficient balance for later calls.
-9. Show advisory text warnings near the budget, listing affected models and their highest estimated maximum call costs across expanded prompts. Prefix each model warning with the same warning icon used in compatibility tables. Group repeated models across thinking efforts and other axes into one warning per model. Show unknown estimates explicitly, including when the same model also has calculated warnings. The $3 fallback is not a calculated model maximum.
-10. Use this tooltip for a calculated reduction, filling only the placeholders: "The max cost you specified ($<insert here>) is lower than the cost of this model's available max_output_tokens at the current price ($<calculate here>). This causes slopgrid to set max_output_tokens for an inference call to a lower value than what the model supports, effectively increasing the chance of a failure due to insufficient tokens to produce a response. Consider increasing your inference cost limit: model providers charge for failed requests anyway."
+4. The creation form uses automatic parallelism. For text, estimate each cell from its expanded prompt, applicable token prices, request fees, and budget-capped output allowance within model and context limits. Use $3 per cell when a complete estimate is unavailable. Sum cells in dispatch order until the next would exceed available balance, with at least one worker and at most the cell count. Unknown balance recommends one worker. Image recommendations use available balance divided by $0.40, rounded down with the same bounds.
+5. The request is a concurrency ceiling, subject to backend capacity and fair allocation, rather than a reservation of workers.
+6. Recalculate automatic text concurrency from unfinished cells after artifact reuse and on Resume; retain existing grids' saved explicit counts on Resume. New form submissions use automatic selection, including Edit and Fork. Initial recommendations do not guarantee sufficient balance for later calls.
+7. Show advisory text warnings near the budget, listing affected models and their highest estimated maximum call costs across expanded prompts. Prefix each model warning with the same warning icon used in compatibility tables. Group repeated models across thinking efforts and other axes into one warning per model. Show unknown estimates explicitly, including when the same model also has calculated warnings. The $3 fallback is not a calculated model maximum.
+8. Use this tooltip for a calculated reduction, filling only the placeholders: "The max cost you specified ($<insert here>) is lower than the cost of this model's available max_output_tokens at the current price ($<calculate here>). This causes slopgrid to set max_output_tokens for an inference call to a lower value than what the model supports, effectively increasing the chance of a failure due to insufficient tokens to produce a response. Consider increasing your inference cost limit: model providers charge for failed requests anyway."
 
 ### 3.6. Inference-provider setup
 
@@ -226,7 +224,7 @@ Status: high level product goal that is not a requirement (not achieved yet).
 
 ### 6.2. Balance, errors, and retries
 
-1. Check available OpenRouter balance before starting or resuming inference. Image generation below $3 shows a top-up popup with an explicit Continue anyway option; that option uses the selected parallelism. Text generation uses the selected or calculated parallelism and OpenRouter's admission decisions. Fully reused grids require no inference balance check.
+1. Check available OpenRouter balance before starting or resuming inference. Image generation below $3 shows a top-up popup with an explicit Continue anyway option; that option uses automatic parallelism for new grids. Text generation uses calculated parallelism for new grids and OpenRouter's admission decisions. Existing grids retain their saved explicit counts on Resume. Fully reused grids require no inference balance check.
 2. Billing interruptions must let users fix the problem and retry repeatedly without breaking the flow. Preserve completed cells and regenerate only unfinished work.
 3. Apply exponential backoff to provider rate limits, honoring provider retry guidance and releasing worker capacity while waiting so other users can continue. Automatically retry in-flight spending-limit billing errors only when OpenRouter supplies a valid Retry-After delay or another documented backoff mechanism; otherwise pause for user intervention rather than automatically retrying the billing failure.
 4. Only pricing or billing errors may automatically pause queued batch work. Other failures, including age verification, model access restrictions, and invalid or missing credentials, fail only their affected cells while other cells and grids continue. Preserve the provider explanation on each failed cell.

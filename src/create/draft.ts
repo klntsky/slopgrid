@@ -3,7 +3,6 @@ import type { GridInput } from "../../server/domain";
 export type Draft = {
   formatSelected: boolean;
   input: GridInput;
-  workerInput?: string;
   sourceGridId?: string;
   reuseArtifacts?: boolean;
 };

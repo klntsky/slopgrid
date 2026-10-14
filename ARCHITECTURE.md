@@ -166,8 +166,8 @@ Commands use strict payload schemas and named parameters rather than mutable gri
   and UTC schedule overrides. Preparation evaluates rates at call time.
   `server/generation-instructions.ts` shares format instructions with the browser
   without importing server-only output storage code.
-- `server/cost-estimates.ts` shares per-cell estimates and dispatch-order worker
-  recommendations between the form and admission. Complete estimates use the
+- `server/cost-estimates.ts` shares per-cell estimates between the form and
+  admission and computes dispatch-order worker recommendations for admission. Complete estimates use the
   generation budget calculation; incomplete estimates use $3 for scheduling and
   remain unknown in the per-model budget warnings. The form groups expanded cells
   by model and displays the highest calculated maximum for reduced allowances,
@@ -209,14 +209,13 @@ Commands use strict payload schemas and named parameters rather than mutable gri
   Image generation below $3 requires explicit continuation through the shared dialog.
 - `GET /api/inference-capacity` recommends at least one worker using balance
   divided by $0.40 for images or the $3 text fallback when cell data is absent.
-  The text form computes its recommendation from the returned balance and its
-  catalog snapshot. Admission computes automatic counts from resolved unfinished
+  The form uses automatic selection, submitting the recommended image count and
+  omitting the text count. Admission computes automatic counts from resolved unfinished
   cells after artifact reuse and on Resume, summing individual costs in order.
   Rejected creation removes newly copied artifacts and thinking traces.
   Unavailable manual-key balance and key-limit data yield one worker.
-- The draft preserves raw worker input until Generate validates a positive
-  integer. Automatic text selection omits `parallelWorkers`; saved explicit values
-  survive Resume and Edit/Fork.
+- Automatic text selection omits `parallelWorkers`; existing saved explicit values
+  survive Resume. Edit/Fork submissions use automatic selection.
   Each accepted start sets the session limit from that value or the recommendation.
 - `server/worker-allocation.ts` selects the eligible owner with the fewest active
   cells, breaking ties by allocation history. It applies owner limits and the

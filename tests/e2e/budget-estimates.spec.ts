@@ -94,14 +94,11 @@ test("budget estimates follow expanded prompts, warn without blocking, and prese
   await page.getByLabel("Column values").fill("d");
   await selectModel(page, "fixture/text");
   await page.getByLabel("Prompt", { exact: true }).fill("$ROW $COLUMN");
-  const workers = page.getByLabel("# of parallel workers:", { exact: true });
   const budget = page.getByLabel("Budget limit per cell", { exact: true });
   const warnings = page.locator(".budget-warnings");
   await expect(budget).toHaveValue("3");
-  await expect(workers).toHaveValue("2");
   await expect(warnings).toHaveCount(0);
   await budget.fill("0.1");
-  await expect(workers).toHaveValue("3");
   await expect(warnings.locator("p")).toHaveCount(1);
   const warning = warnings.locator("[data-tooltip]").first();
   await expect(warning).toContainText("$0.1275");
@@ -116,7 +113,6 @@ test("budget estimates follow expanded prompts, warn without blocking, and prese
   await page.getByLabel("Row values").fill(`a\n${"b".repeat(100)}\nc`);
   await expect(warning).toContainText("$0.1374");
   await page.getByLabel("Row values").fill(`a\n${"b".repeat(1000)}\nc`);
-  await expect(workers).toHaveValue("1");
   await expect(warnings.locator('[data-estimate="unknown"]')).toHaveCount(1);
   await expect(warning).toContainText("$0.1275");
   await page.getByLabel("Row values").fill("a\nb\nc");
