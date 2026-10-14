@@ -304,7 +304,7 @@ test("forks isolate access and billing while preserving artifact costs and admis
           reuseArtifacts: true,
         })
       ).status,
-      409,
+      201,
     );
     assert.equal(f.calls.length, 3);
     await f.request(`/api/grids/${destination.id}/publish`, {
@@ -318,6 +318,27 @@ test("forks isolate access and billing while preserving artifact costs and admis
         )
       ).status,
       200,
+    );
+    const artifacts = readdirSync(f.store.files.root).sort();
+    const traces = readdirSync(join(f.store.files.root, ".thinking")).sort();
+    f.credits.total_credits = Number.NaN;
+    assert.equal(
+      (
+        await f.request("/api/grids", {
+          ...config,
+          rows: { kind: "variable", values: ["cat", "new"] },
+          sourceGridId: source.id,
+          reuseArtifacts: true,
+        })
+      ).status,
+      502,
+    );
+    await until(
+      () => ({
+        artifacts: readdirSync(f.store.files.root).sort(),
+        traces: readdirSync(join(f.store.files.root, ".thinking")).sort(),
+      }),
+      (current) => JSON.stringify(current) === JSON.stringify({ artifacts, traces }),
     );
   } finally {
     await f.close();

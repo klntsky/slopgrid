@@ -153,4 +153,12 @@ export class OutputFiles {
     await collect("");
     return files;
   }
+
+  async removeArtifact(id: string) {
+    await rm(this.directory(id), { recursive: true, force: true });
+    await rm(join(this.root, ".thinking", encodeURIComponent(id)), {
+      recursive: true,
+      force: true,
+    });
+  }
 }

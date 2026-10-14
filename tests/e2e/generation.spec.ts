@@ -641,7 +641,9 @@ for (const model of ["fixture/text", "fixture/other"])
     await request.post("/fixture/website-next");
     await request.post("/fixture/website-next");
     await expect(
-      expanded.frameLocator("iframe:visible").getByText("Streaming module loaded"),
+      expanded
+        .frameLocator("iframe:visible")
+        .getByText("Streaming module loaded"),
     ).toBeVisible();
     await expanded
       .getByRole("button", { name: "Collapse Static website", exact: true })
@@ -679,7 +681,7 @@ for (const model of ["fixture/text", "fixture/other"])
     expect((await page.request.get(original)).status()).toBe(404);
   });
 
-test("OpenRouter balance sets initial parallel capacity and Resume preserves the requested count", async ({
+test("OpenRouter balance sets automatic parallel capacity and Resume recalculates unfinished work", async ({
   page,
   request,
 }) => {
@@ -710,7 +712,7 @@ test("OpenRouter balance sets initial parallel capacity and Resume preserves the
     await page.getByRole("button", { name: "Pause generation" }).click();
     await request.post("/fixture/credits", { data: { balanceUsd: 6 } });
     await page.getByRole("button", { name: "Resume generation" }).click();
-    await expect(page.getByText("Generating…", { exact: true })).toHaveCount(1);
+    await expect(page.getByText("Generating…", { exact: true })).toHaveCount(2);
     await request.post("/fixture/release", { data: { all: true } });
     await expectProgress(page, 3, 3);
   } finally {

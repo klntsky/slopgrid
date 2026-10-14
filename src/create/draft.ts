@@ -17,7 +17,7 @@ const initial: Draft = {
     columns: { kind: "effort", values: [] },
     model: "",
     effort: "default",
-    budgetUsd: 5,
+    budgetUsd: 3,
   },
 };
 function readDraft(): Draft {

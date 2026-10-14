@@ -128,7 +128,7 @@ for (const format of ["markdown", "image"] as const) {
       gridId = (await response.json()).id;
       assert.equal(
         store.session(store.get(gridId!)!.owner)!.inferenceConcurrency,
-        format === "image" ? 30 : 4,
+        format === "image" ? 30 : 2,
       );
       const cookie = response.headers.get("set-cookie")!.split(";")[0];
       assert.deepEqual(provider.calls, ["test-manual-key"]);
@@ -164,7 +164,7 @@ for (const format of ["markdown", "image"] as const) {
       assert.equal(resumed.status, 200);
       assert.equal(
         store.session(store.get(gridId!)!.owner)!.inferenceConcurrency,
-        format === "image" ? 15 : 2,
+        format === "image" ? 15 : 1,
       );
     } finally {
       if (gridId) jobs.pause(store.get(gridId)!);

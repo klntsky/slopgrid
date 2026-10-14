@@ -51,7 +51,16 @@ export function failureDetails(error: unknown) {
       retryAfterMs !== undefined &&
       (metadata.limit_source === "openrouter_in_flight_budget" ||
         metadata.reason === "in_flight_budget_exhausted"));
-  return { message, code, status, temporary, retryAfterMs };
+  const billing =
+    !temporary &&
+    (status === 402 ||
+      (status === 403 &&
+        [
+          "openrouter_key_limit",
+          "openrouter_workspace_budget",
+          "openrouter_guardrail_budget",
+        ].includes(String(metadata.limit_source))));
+  return { message, code, status, temporary, retryAfterMs, billing };
 }
 
 export function completionFailure(finishReason: string | undefined) {

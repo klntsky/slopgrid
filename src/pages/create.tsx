@@ -8,7 +8,7 @@ import {
   uploadReferences,
   removeReferenceFile,
 } from "../create/reference-files";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { ArrowUpRight, DollarSign, ArrowLeftRight } from "lucide-react";
 import {
@@ -23,7 +23,11 @@ import { modelCatalog } from "../model-catalog";
 import { formatNames } from "../format";
 import { useCreateDraft, clearDraft } from "../create/draft";
 import { AxisEditor } from "../create/axis-editor";
-import { compatibilityTables } from "../create/compatibility-table";
+import {
+  compatibilityTables,
+  BudgetCompatibilityTable,
+} from "../create/compatibility-table";
+import { estimateGrid, recommendWorkers } from "../../server/cost-estimates";
 import { Connection } from "../components/connection";
 import { ErrorMessage } from "../components/error-message";
 import { LowBalanceDialog } from "../components/inference-dialogs";
@@ -44,15 +48,37 @@ export function Create() {
     input.format,
   );
   const cellCount = input.rows.values.length * input.columns.values.length;
+  const [estimateMinute, setEstimateMinute] = useState(() =>
+    Math.floor(Date.now() / 60000),
+  );
+  useEffect(() => {
+    const timer = setInterval(
+      () => setEstimateMinute(Math.floor(Date.now() / 60000)),
+      1000,
+    );
+    return () => clearInterval(timer);
+  }, []);
+  const estimated = useMemo(
+    () =>
+      input.format === "image"
+        ? undefined
+        : estimateGrid(input, modelCatalog, new Date(estimateMinute * 60000)),
+    [input, estimateMinute],
+  );
+  const automaticWorkers = estimated
+    ? recommendWorkers(
+        capacity.data?.balanceUsd ?? null,
+        estimated.estimates.map((cell) => cell.costUsd),
+      )
+    : Math.max(1, Math.min(cellCount, capacity.data?.parallelWorkers ?? 1));
+  const automatic =
+    input.format !== "image" &&
+    draft.workerInput === undefined && input.parallelWorkers === undefined;
   const promptVariables = (["rows", "columns"] as const)
     .filter((axis) => input[axis].kind === "variable")
     .map((axis) => (axis === "rows" ? "$ROW" : "$COLUMN"));
   const workerInput =
-    draft.workerInput ??
-    String(
-      input.parallelWorkers ??
-        Math.min(cellCount, capacity.data?.parallelWorkers ?? 1),
-    );
+    draft.workerInput ?? String(input.parallelWorkers ?? automaticWorkers);
   const workersPending =
     draft.workerInput === undefined &&
     input.parallelWorkers === undefined &&
@@ -178,7 +204,10 @@ export function Create() {
       setError("Enter a positive whole number of parallel workers.");
       return;
     }
-    const parsed = gridSchema.safeParse({ ...input, parallelWorkers });
+    const parsed = gridSchema.safeParse({
+      ...input,
+      parallelWorkers: automatic ? undefined : parallelWorkers,
+    });
     if (!parsed.success) {
       setError(parsed.error.issues[0].message);
       return;
@@ -219,7 +248,7 @@ export function Create() {
           path: "/grids",
           body: {
             ...prepared,
-            parallelWorkers,
+            parallelWorkers: automatic ? undefined : parallelWorkers,
             sourceGridId: draft.sourceGridId,
             reuseArtifacts: draft.reuseArtifacts !== false,
           },
@@ -463,6 +492,13 @@ export function Create() {
               </span>
             </div>
           </div>
+          {estimated && (
+            <BudgetCompatibilityTable
+              input={estimated.input}
+              models={models}
+              estimates={estimated.estimates}
+            />
+          )}
           {capacity.isError && connection.data?.connected && (
             <>
               <ErrorMessage error={capacity.error.message} />

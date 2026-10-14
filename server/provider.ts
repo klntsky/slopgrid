@@ -9,6 +9,7 @@ import { instruction } from "./output-format.js";
 import { z } from "zod";
 import { generationBudget, PreparationError } from "./generation-budget.js";
 import { generateInference } from "./inference.js";
+import { parsePricing, type ModelPricing } from "./model-pricing.js";
 import type { CallObserver } from "./billing.js";
 import { upstreamFetch } from "./http.js";
 import {
@@ -28,7 +29,7 @@ export type Model = {
   reasoningMandatory: boolean;
   structuredOutputs?: boolean;
   reasoningEfforts?: GridInput["effort"][];
-  pricing?: { prompt: number; completion: number; request?: number };
+  pricing?: ModelPricing;
   contextLength?: number;
   maxCompletionTokens?: number;
 };
@@ -113,7 +114,7 @@ export class Provider {
       alias_target?: { slug?: string };
       canonical_slug?: string;
       name: string;
-      pricing?: { prompt?: string; completion?: string; request?: string };
+      pricing?: unknown;
       context_length?: number;
       top_provider?: { max_completion_tokens?: number | null };
       architecture?: {
@@ -159,27 +160,19 @@ export class Provider {
             (e === "none" ? !mandatory : supported.includes(e)),
         );
       }
-      const price = (value: string | undefined) => {
-        if (value === undefined || value.trim() === "") return undefined;
-        const parsed = Number(value);
-        return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
-      };
-      const promptPrice = price(m.pricing?.prompt),
-        completionPrice = price(m.pricing?.completion);
       byId.set(m.id, {
         id: m.id,
         aliasTarget: previous?.aliasTarget ?? m.alias_target?.slug,
         canonicalSlug: previous?.canonicalSlug ?? m.canonical_slug,
         name: m.name,
+        // Native Sonar search and the online variant incur search charges without
+        // an explicit search plugin. Optional search pricing alone does not.
         pricing:
           previous?.pricing ??
-          (promptPrice !== undefined && completionPrice !== undefined
-            ? {
-                prompt: promptPrice,
-                completion: completionPrice,
-                request: price(m.pricing?.request),
-              }
-            : undefined),
+          parsePricing(
+            m.pricing,
+            m.id.startsWith("perplexity/sonar") || m.id.endsWith(":online"),
+          ),
         contextLength: previous?.contextLength ?? m.context_length,
         maxCompletionTokens:
           previous?.maxCompletionTokens ??

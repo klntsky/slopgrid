@@ -97,3 +97,24 @@ test("streamed errors and local failures preserve their message and code without
     ),
   );
 });
+
+test("only documented budget 403 failures pause billing", () => {
+  for (const limit_source of [
+    "openrouter_key_limit",
+    "openrouter_workspace_budget",
+    "openrouter_guardrail_budget",
+  ])
+    assert.equal(failureDetails(response(403, { limit_source })).billing, true);
+  assert.equal(failureDetails(response(403)).billing, false);
+  assert.equal(
+    failureDetails(response(403, { limit_source: "content_policy" })).billing,
+    false,
+  );
+  assert.equal(failureDetails(response(402)).billing, true);
+  assert.equal(
+    failureDetails(
+      response(402, { limit_source: "openrouter_in_flight_budget" }, "1"),
+    ).billing,
+    false,
+  );
+});

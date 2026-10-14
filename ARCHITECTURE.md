@@ -162,6 +162,15 @@ Commands use strict payload schemas and named parameters rather than mutable gri
   constraints accompany the request. Retries receive a fresh allowance.
 - Budget configuration is stored once in grid input and derived into cells.
   Images use their dedicated API without the text-token budget.
+- `server/model-pricing.ts` parses catalog prices and resolves conditional prompt
+  and UTC schedule overrides. Preparation evaluates rates at call time.
+  `server/generation-instructions.ts` shares format instructions with the browser
+  without importing server-only output storage code.
+- `server/cost-estimates.ts` shares per-cell estimates and dispatch-order worker
+  recommendations between the form and admission. Complete estimates use the
+  generation budget calculation; incomplete estimates use $3 for scheduling and
+  remain unknown in the advisory budget table. Estimation metadata stays outside
+  effective-request signatures.
 - Reasoning metadata distinguishes explicit efforts, unrestricted selection,
   mandatory reasoning, unavailable selection, and unpublished capabilities.
   Model default omits configuration; None sends `reasoning.enabled: false`;
@@ -195,12 +204,17 @@ Commands use strict payload schemas and named parameters rather than mutable gri
 ### Admission and concurrency
 
 - `server/inference-policy.ts` checks credits before creation and Resume.
-  A balance below $3 requires explicit continuation through the shared dialog.
+  Image generation below $3 requires explicit continuation through the shared dialog.
 - `GET /api/inference-capacity` recommends at least one worker using balance
-  divided by $0.40 for images or $3 for text. Creation caps this at cell count.
+  divided by $0.40 for images or the $3 text fallback when cell data is absent.
+  The text form computes its recommendation from the returned balance and its
+  catalog snapshot. Admission computes automatic counts from resolved unfinished
+  cells after artifact reuse and on Resume, summing individual costs in order.
+  Rejected creation removes newly copied artifacts and thinking traces.
   Unavailable manual-key balance and key-limit data yield one worker.
 - The draft preserves raw worker input until Generate validates a positive
-  integer. Saved `parallelWorkers` survives Resume and Edit/Fork.
+  integer. Automatic text selection omits `parallelWorkers`; saved explicit values
+  survive Resume and Edit/Fork.
   Each accepted start sets the session limit from that value or the recommendation.
 - `server/worker-allocation.ts` selects the eligible owner with the fewest active
   cells, breaking ties by allocation history. It applies owner limits and the
@@ -225,7 +239,8 @@ Commands use strict payload schemas and named parameters rather than mutable gri
   timer wakes expired cooldowns; up to five retries use backoff, jitter, and the
   longer server-requested delay.
 - Permanent billing failures pause queued grids for that owner while active
-  calls finish. Other permanent failures affect only their cell and release its
+  calls finish, including 403 errors identifying exhausted key, workspace, or
+  guardrail budgets. Other permanent failures affect only their cell and release its
   worker for remaining work.
 - State persists before notification. Draft notifications share a per-grid
   throttle, and idle owner state is removed after grids pause or finish.

@@ -61,6 +61,32 @@ function harness(limit?: number) {
   return { store, provider, jobs, grid, close };
 }
 
+test("budget-specific 403 pauses queued work while active calls finish", async () => {
+  const h = harness(2);
+  try {
+    const g = h.grid("alice", "budget", 3);
+    h.jobs.start(g);
+    await flush();
+    const [first, second] = [...h.provider.pending.keys()];
+    h.provider.fail(first, 403, {
+      metadata: { limit_source: "openrouter_workspace_budget" },
+    });
+    await flush();
+    assert.equal(g.status, "paused");
+    assert.equal(g.interruption, "billing");
+    assert.deepEqual([...h.provider.pending.keys()], [second]);
+    h.provider.finish(second);
+    await flush();
+    assert.equal(
+      g.cells.filter((cell) => cell.status === "complete").length,
+      1,
+    );
+    assert.equal(h.provider.started.length, 2);
+  } finally {
+    await h.close();
+  }
+});
+
 test("grid requests cap their own workers when another grid raises the owner's limit", async () => {
   const h = harness(4);
   try {
@@ -357,13 +383,11 @@ test("backoff releases workers to other users, honors Retry-After, and retries w
     await flush();
     h.provider.finish("alice/grid/0");
     await flush();
-    h.provider.pending
-      .get("alice/grid/1")!
-      .write("Partial output", {
-        costUsd: 0.1,
-        inputTokens: 10,
-        outputTokens: 20,
-      });
+    h.provider.pending.get("alice/grid/1")!.write("Partial output", {
+      costUsd: 0.1,
+      inputTokens: 10,
+      outputTokens: 20,
+    });
     h.jobs.start(h.grid("bob", "grid", 1));
     h.provider.fail("alice/grid/1", 429, {
       message: "Too many requests",

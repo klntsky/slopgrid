@@ -1,4 +1,5 @@
-import type { GridInput } from "./domain.js";
+import type { Cell, GridInput } from "./domain.js";
+import { estimateCell, recommendWorkers } from "./cost-estimates.js";
 import { manualKey } from "./manual-keys.js";
 import type { Request, Response } from "express";
 import type { Store, Session } from "./store.js";
@@ -32,6 +33,7 @@ export function createInferenceGuard(store: Store, provider: Provider) {
     s: Session,
     parallelWorkers: number | undefined,
     format: GridInput["format"],
+    cells: readonly Cell[] = [],
   ) {
     const supplied = manualKey(req);
     let capacity: Awaited<ReturnType<typeof inferenceCapacity>>;
@@ -51,6 +53,7 @@ export function createInferenceGuard(store: Store, provider: Provider) {
     const { balanceUsd } = capacity;
     if (
       balanceUsd !== null &&
+      format === "image" &&
       balanceUsd < 3 &&
       req.body?.continueWithLowBalance !== true
     ) {
@@ -61,6 +64,25 @@ export function createInferenceGuard(store: Store, provider: Provider) {
           "Your OpenRouter balance is below $3. Top up or continue with the selected parallelism.",
       });
       return false;
+    }
+    let automatic = capacity.parallelWorkers;
+    if (parallelWorkers === undefined && format !== "image") {
+      const models = await provider.models();
+      const now = new Date();
+      automatic = recommendWorkers(
+        balanceUsd,
+        cells
+          .filter((cell) => cell.status !== "complete")
+          .map(
+            (cell) =>
+              estimateCell(
+                models.find((model) => model.id === cell.model),
+                cell,
+                format,
+                now,
+              ).costUsd,
+          ),
+      );
     }
     // Re-read the session so a concurrent OAuth or disconnect request is preserved.
     const current = store.session(s.id);
@@ -73,7 +95,7 @@ export function createInferenceGuard(store: Store, provider: Provider) {
         .json({ error: "Reconnect OpenRouter before generating." });
       return false;
     }
-    current.inferenceConcurrency = parallelWorkers ?? capacity.parallelWorkers;
+    current.inferenceConcurrency = parallelWorkers ?? automatic;
     store.saveSession(current);
     return true;
   }

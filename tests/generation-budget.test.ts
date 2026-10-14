@@ -26,7 +26,7 @@ test("dollar budgets reserve input costs, price reasoning as output, and respect
   );
 });
 
-test("a cell request uses the full dollar budget and constrains provider pricing", async () => {
+test("a cell request uses the full dollar budget and constrains effective conditional provider pricing", async () => {
   const { createServer } = await import("node:http");
   const { once } = await import("node:events");
   const { Provider } = await import("../server/provider.js");
@@ -50,7 +50,11 @@ test("a cell request uses the full dollar budget and constrains provider pricing
                 input_modalities: ["text"],
                 output_modalities: ["text"],
               },
-              pricing: { prompt: "0.000003", completion: "0.00002" },
+              pricing: {
+                prompt: "0.000003",
+                completion: "0.00002",
+                overrides: [{ min_prompt_tokens: 0, completion: "0.00004" }],
+              },
               context_length: 1000000,
               top_provider: { max_completion_tokens: 128000 },
             },
@@ -98,10 +102,10 @@ test("a cell request uses the full dollar budget and constrains provider pricing
       () => {},
     );
     assert.equal(requests.length, 1);
-    assert.ok(requests[0].max_tokens > 49000 && requests[0].max_tokens < 50000);
+    assert.ok(requests[0].max_tokens > 24000 && requests[0].max_tokens < 25000);
     assert.deepEqual(requests[0].provider.max_price, {
       prompt: 3,
-      completion: 20,
+      completion: 40,
     });
     assert.equal(requests[0].provider.require_parameters, true);
   } finally {

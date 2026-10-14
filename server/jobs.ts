@@ -331,7 +331,7 @@ export class Jobs {
             Math.max(this.cooldowns.get(owner) ?? 0, Date.now() + delay),
           );
         }
-      } else if (!failure.temporary && failure.status === 402) {
+      } else if (failure.billing) {
         cell.status = "pending";
         this.retries.delete(cell.id);
         this.pauseOwner(owner);

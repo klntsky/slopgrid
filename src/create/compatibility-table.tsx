@@ -11,6 +11,8 @@ import {
   type Compatibility,
 } from "../../server/compatibility";
 import type { ModelInfo } from "../../server/model-catalog";
+import type { CostEstimate } from "../../server/cost-estimates";
+import { dimensionNames, displayValue } from "../format";
 
 type Props = { input: GridInput; models: readonly ModelInfo[] };
 export type CompatibilityTables = Partial<
@@ -120,9 +122,8 @@ function ThinkingCompatibilityTable({ input, models }: Props) {
   const selectedModels =
     axes.find((axis) => axis.kind === "model")?.values ??
     [input.model].filter(Boolean);
-  const selectedEfforts =
-    axes.find((axis) => axis.kind === "effort")?.values ??
-    [input.effort];
+  const selectedEfforts = axes.find((axis) => axis.kind === "effort")
+    ?.values ?? [input.effort];
   return (
     <CompatibilityGrid
       caption="Thinking effort compatibility"
@@ -144,6 +145,35 @@ function ThinkingCompatibilityTable({ input, models }: Props) {
   );
 }
 
+export function BudgetCompatibilityTable({
+  input,
+  models,
+  estimates,
+}: Props & { estimates: CostEstimate[] }) {
+  if (![input.rows.kind, input.columns.kind].includes("model") && !input.model)
+    return null;
+  const label = (value: string, kind: GridInput["rows"]["kind"]) =>
+    kind === "model"
+      ? (models.find((model) => model.id === value)?.name ?? value)
+      : displayValue(value, kind);
+  return (
+    <CompatibilityGrid
+      caption="Budget compatibility"
+      corner={dimensionNames[input.rows.kind]}
+      rows={input.rows.values.map((value) => label(value, input.rows.kind))}
+      columns={input.columns.values.map((value) =>
+        label(value, input.columns.kind),
+      )}
+      cells={input.rows.values.map((_, row) =>
+        input.columns.values.map(
+          (_, column) => estimates[row * input.columns.values.length + column],
+        ),
+      )}
+      showUnknown
+    />
+  );
+}
+
 function CompatibilityGrid({
   caption,
   corner,
@@ -151,6 +181,7 @@ function CompatibilityGrid({
   columns,
   cells,
   cellLabel,
+  showUnknown = false,
 }: {
   caption: string;
   corner: string;
@@ -158,8 +189,17 @@ function CompatibilityGrid({
   columns: string[];
   cells: Compatibility[][];
   cellLabel?: (row: number, column: number) => string;
+  showUnknown?: boolean;
 }) {
-  if (!cells.some((row) => row.some((cell) => cell.support === "unsupported")))
+  if (
+    !cells.some((row) =>
+      row.some(
+        (cell) =>
+          cell.support === "unsupported" ||
+          (showUnknown && cell.support === "unknown"),
+      ),
+    )
+  )
     return null;
   return (
     <div className="compatibility-table-scroll">
@@ -190,6 +230,7 @@ function CompatibilityGrid({
                 return (
                   <td
                     key={column}
+                    data-support={support}
                     aria-label={`${cellLabel ? cellLabel(row, column) : `${label} / ${value}`}: ${status}`}
                     data-tooltip={
                       support === "supported" ? undefined : (reason ?? status)
@@ -198,7 +239,9 @@ function CompatibilityGrid({
                     tabIndex={support === "supported" ? undefined : 0}
                   >
                     {support === "supported" && <Check aria-hidden="true" />}
-                    {support === "unknown" && <span aria-hidden="true">❓</span>}
+                    {support === "unknown" && (
+                      <span aria-hidden="true">❓</span>
+                    )}
                     {support === "unsupported" && (
                       <TriangleAlert
                         className="compatibility-warning"

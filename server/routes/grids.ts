@@ -162,10 +162,6 @@ export function createGridRoutes({
       return res
         .status(400)
         .json({ error: "A reference image is unavailable." });
-    if (
-      !(await allowInference(req, res, s, input.parallelWorkers, input.format))
-    )
-      return;
     const cells = expandGrid(input).map((c) => ({ ...c, id: token() }));
     if (!rate(`create:${s.id}`, 10) || !rate(`create-ip:${req.ip}`, 30))
       return res
@@ -183,11 +179,34 @@ export function createGridRoutes({
       cells,
       createdAt: new Date().toISOString(),
     };
-    if (source && reuse.data.reuseArtifacts)
-      await reuseArtifacts(store, provider, source, input.format, cells);
-    if (cells.every((cell) => cell.status === "complete"))
-      g.status = "complete";
-    store.insert(g);
+    let inserted = false;
+    try {
+      if (source && reuse.data.reuseArtifacts)
+        await reuseArtifacts(store, provider, source, input.format, cells);
+      if (
+        cells.some((cell) => cell.status !== "complete") &&
+        !(await allowInference(
+          req,
+          res,
+          s,
+          input.parallelWorkers,
+          input.format,
+          cells,
+        ))
+      )
+        return;
+      if (cells.every((cell) => cell.status === "complete"))
+        g.status = "complete";
+      store.insert(g);
+      inserted = true;
+    } finally {
+      // Reuse precedes admission so only unfinished calls affect concurrency.
+      // Rejected creation must not retain copied outputs or thinking traces.
+      if (!inserted)
+        await Promise.all(
+          cells.map((cell) => store.files.removeArtifact(cell.id)),
+        );
+    }
     const started = await generation.startGrid({
       gridId: g.id,
       sessionId: s.id,
@@ -240,6 +259,7 @@ export function createGridRoutes({
         s,
         g.input.parallelWorkers,
         g.input.format,
+        current.cells,
       ))
     )
       return;

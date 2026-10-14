@@ -569,19 +569,13 @@ test("compatibility keeps model rows and effort columns with variable axes and f
       .locator("../..")
       .getByRole("table", { name: "Thinking effort compatibility" }),
   ).toBeVisible();
-  await expect(table.getByRole("columnheader")).toHaveText([
-    "Model",
-    "None",
-  ]);
+  await expect(table.getByRole("columnheader")).toHaveText(["Model", "None"]);
   await expect(
     table.getByRole("cell", { name: "None: Unsupported", exact: true }),
   ).toHaveCount(1);
   await swap.click();
   await expect(table.getByRole("rowheader")).toHaveText(["Second model"]);
-  await expect(table.getByRole("columnheader")).toHaveText([
-    "Model",
-    "None",
-  ]);
+  await expect(table.getByRole("columnheader")).toHaveText(["Model", "None"]);
   await rows.selectOption("effort");
   await page.getByRole("checkbox", { name: "None", exact: true }).check();
   await page.getByRole("checkbox", { name: "high", exact: true }).check();
@@ -705,7 +699,7 @@ test("changing the per-cell budget changes the model token limit and survives Ed
   }
 });
 
-test("worker recommendation follows grid size, overrides persist, and low-balance continuation honors the request", async ({
+test("worker recommendation follows grid size and explicit overrides persist at low balance", async ({
   page,
   request,
 }) => {
@@ -780,10 +774,6 @@ test("worker recommendation follows grid size, overrides persist, and low-balanc
     await expect(workers).not.toHaveAttribute("aria-invalid", "true");
     await request.post("/fixture/credits", { data: { balanceUsd: 1 } });
     await page.getByRole("button", { name: "Generate", exact: true }).click();
-    await page
-      .getByRole("dialog")
-      .getByRole("button", { name: "Continue anyway" })
-      .click();
     await expectProgress(page, 0, 4);
     await expect
       .poll(
