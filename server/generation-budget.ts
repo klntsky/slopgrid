@@ -14,11 +14,25 @@ export function generationBudget(
   dollars: number,
   now = new Date(),
 ) {
-  if (!model.pricing || !model.contextLength)
-    throw new PreparationError(
-      `Pricing or token limits are unavailable for ${model.name}.`,
-    );
   const inputTokens = new TextEncoder().encode(prompt + system).length + 256;
+  if (!model.pricing || !model.contextLength) {
+    const limits = [
+      model.maxCompletionTokens,
+      model.contextLength ? model.contextLength - inputTokens : undefined,
+    ].filter((limit): limit is number => limit !== undefined && limit !== 0);
+    return {
+      maxOutputTokens: limits.length
+        ? Math.max(1, Math.min(...limits))
+        : undefined,
+      inputTokens,
+      pricing: model.pricing
+        ? effectivePricing(model.pricing, inputTokens, now)
+        : undefined,
+      inputCost: undefined,
+      ceiling: undefined,
+      maxPrice: undefined,
+    };
+  }
   const pricing = effectivePricing(model.pricing, inputTokens, now);
   const inputCost = inputTokens * pricing.prompt + (pricing.request ?? 0);
   const ceiling = Math.min(

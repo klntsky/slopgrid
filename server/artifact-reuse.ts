@@ -38,6 +38,7 @@ export async function reuseArtifacts(
       .get(inferenceSignature(prepared))
       ?.find((candidate) => {
         if (prepared.format === "image") return true;
+        if (prepared.text.maxOutputTokens === undefined) return true;
         // Reported completion tokens include reasoning. If usage is absent, only
         // the original request ceiling can establish that the output fits.
         const tokens =

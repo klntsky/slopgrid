@@ -637,7 +637,7 @@ test("actual prepared requests and artifact signatures cover adapter policy and 
             provider: {
               ...prepared.text.options.provider,
               max_price: {
-                ...prepared.text.options.provider.max_price,
+                ...prepared.text.options.provider.max_price!,
                 prompt: 2,
               },
             },
@@ -712,7 +712,10 @@ test("reuse leaves preparation failures on individual cells and skips unsigned s
       ...f.catalog.data[0],
       id: "fixture/unpriced",
       pricing: { prompt: "", completion: "" },
+      context_length: 0,
+      top_provider: { max_completion_tokens: 0 },
     });
+    await f.startWeb();
     const config: GridInput = {
       ...input,
       prompt: "$ROW",
@@ -728,13 +731,21 @@ test("reuse leaves preparation failures on individual cells and skips unsigned s
       sourceGridId: source.id,
       reuseArtifacts: true,
     });
+    finish(await f.nextCall());
     const result = await settled(f, mixed.id);
     assert.deepEqual(
       result.cells.map((cell) => cell.status),
-      ["complete", "error"],
+      ["complete", "complete"],
     );
-    assert.match(result.cells[1].error!, /Pricing/);
-    assert.equal(f.calls.length, 1);
+    assert.equal(f.calls.length, 2);
+    const copied = await create(f, {
+      ...config,
+      columns: { kind: "model", values: ["fixture/unpriced"] },
+      sourceGridId: mixed.id,
+      reuseArtifacts: true,
+    });
+    assert.equal(copied.cells[0].status, "complete");
+    assert.equal(f.calls.length, 2);
     const small = await create(f, {
       ...config,
       budgetUsd: 0.000001,
@@ -760,7 +771,7 @@ test("reuse leaves preparation failures on individual cells and skips unsigned s
       (await settled(f, unsigned.id)).cells[0].error!,
       /budget is too small/,
     );
-    assert.equal(f.calls.length, 1);
+    assert.equal(f.calls.length, 2);
   } finally {
     await f.close();
   }

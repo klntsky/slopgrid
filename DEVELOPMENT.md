@@ -116,6 +116,11 @@ Mouse-drag browser scenarios cover two-axis panning from image padding and cell 
 
 Streaming usage coverage checks token growth during thinking and output, stable input counts, replacement by reported usage, reconnect snapshots, and reset after failure or retry. Scheduler coverage checks that paused or superseded calls cannot restore discarded token and cost estimates.
 
+Provider budget coverage exercises unknown pricing and token limits through the
+real adapter and controlled HTTP responses, checking successful generation,
+available token ceilings, omitted price caps, and absent unknown cost estimates.
+Artifact reuse coverage includes generation and copying with missing pricing.
+
 Streaming persistence coverage measures SQLite changes across chunk bursts and
 throttled notifications, checks that a trace identifier is checkpointed once,
 and records updated cell rows to ensure completion and dispatch leave unrelated

@@ -154,6 +154,7 @@ async function upstream(streamError?: Record<string, unknown>) {
   );
   return {
     provider,
+    catalog,
     requests,
     imageEndpoints,
     get imageEndpointRequests() {
@@ -174,6 +175,46 @@ function cell(model: string, effort: string): Cell {
     status: "running",
   };
 }
+test("unknown pricing and token limits allow inference without invented cost caps", async () => {
+  for (const metadata of ["pricing", "limits", "both"]) {
+    const h = await upstream();
+    try {
+      const model = h.catalog.find((model) => model.id === "router")!;
+      if (metadata !== "limits")
+        model.pricing = { prompt: "-1", completion: "-1" };
+      if (metadata !== "pricing") {
+        model.context_length = 0;
+        model.top_provider.max_completion_tokens = 0;
+      }
+      const updates: InferenceProgress[] = [];
+      const result = await h.provider.generate(
+        "fixture-key",
+        "markdown",
+        cell("router", "default"),
+        (progress) => updates.push(progress),
+      );
+      assert.equal(result.files["index.md"], "# Output");
+      const request = h.requests[0];
+      assert.equal(
+        request.max_tokens,
+        metadata === "pricing" ? 128000 : undefined,
+      );
+      assert.equal(
+        (request.provider as Record<string, unknown>).max_price,
+        undefined,
+      );
+      assert.ok(updates.at(-1)!.estimatedUsage!.outputTokens! > 0);
+      if (metadata !== "limits")
+        assert.ok(
+          updates.every(
+            (update) => update.estimatedUsage?.costUsd === undefined,
+          ),
+        );
+    } finally {
+      await h.close();
+    }
+  }
+});
 test("catalog discovery distinguishes explicit, unrestricted, fixed, and unknown reasoning capabilities", async () => {
   const h = await upstream();
   try {

@@ -106,7 +106,7 @@ test("generation and estimates share effective pricing, UTF-8 input, and free ou
   })!;
   const budget = generationBudget({ ...model, pricing }, "é", "", 0.1);
   assert.equal(budget.maxOutputTokens, 50);
-  assert.equal(budget.maxPrice.completion, 2000);
+  assert.equal(budget.maxPrice?.completion, 2000);
   assert.equal(budget.inputTokens, 258);
   const freeOutput = generationBudget(
     { ...model, pricing: { prompt: 0.001, completion: 0 } },

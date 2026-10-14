@@ -37,6 +37,8 @@ export function estimateCell(
       cell.budgetUsd,
       now,
     );
+    if (budget.inputCost === undefined)
+      return unknown("Token limits unavailable.");
     const maximumCostUsd =
       budget.inputCost + budget.ceiling * budget.pricing.completion;
     const reduced = budget.maxOutputTokens < budget.ceiling;

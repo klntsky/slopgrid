@@ -183,6 +183,7 @@ export async function generateInference(
     const inputTokens =
       Math.ceil(Buffer.byteLength(prepared.prompt + system, "utf8") / 4) + 8;
     const inputCost =
+      prepared.pricing &&
       inputTokens * prepared.pricing.prompt + (prepared.pricing.request ?? 0);
     let text = "",
       thinking = "",
@@ -206,7 +207,10 @@ export async function generateInference(
         estimatedUsage: {
           inputTokens,
           outputTokens,
-          costUsd: inputCost + outputTokens * prepared.pricing.completion,
+          costUsd:
+            inputCost !== undefined && prepared.pricing
+              ? inputCost + outputTokens * prepared.pricing.completion
+              : undefined,
         },
       });
     }
@@ -244,6 +248,7 @@ export async function generateInference(
     }
     if (
       finishReason === "length" &&
+      maxOutputTokens !== undefined &&
       !text.trim() &&
       (streamUsage?.outputTokenDetails.reasoningTokens ?? 0) >= maxOutputTokens
     ) {

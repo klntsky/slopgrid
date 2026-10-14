@@ -86,6 +86,10 @@ starting inference twice.
   token limits, and routing. Text calls stream through the AI SDK; image calls
   use its dedicated image path. The engine budgets and schedules individual
   cell attempts.
+  When pricing or context limits are unavailable, preparation retains available
+  token limits without calculating a budget or provider price cap. Streaming
+  still estimates token counts, while unknown prices leave estimated costs
+  absent; reported usage and charges remain authoritative.
 - Scheduling allocates workers across owners and grids. A pause cancels active
   requests and stops queued cells; cancelled calls retain their worker slots
   until they settle. Retry and cooldown state live in the engine, while cell
