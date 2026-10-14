@@ -1,5 +1,7 @@
 # Development
 
+Model-order browser coverage checks insertion against the unfiltered catalog after manual reordering, tie resolution, mouse and touch dragging, keyboard movement, removal, reload persistence, and axis swaps. Assertions inspect the computed selection order rather than static interface copy.
+
 ## Requirements and setup
 
 Use Node.js 22.12 or newer and pnpm 12.4.2. The same-site HTTPS browser test uses OpenSSL to generate a temporary test certificate. Supply `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` through private runtime configuration before starting the app; either missing or empty variable prevents startup. SQLite uses `better-sqlite3`; environments without a matching prebuilt binary need Python and a C/C++ build toolchain. Native build permissions are in `pnpm-workspace.yaml`.

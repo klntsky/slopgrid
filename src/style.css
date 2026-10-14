@@ -1410,6 +1410,17 @@ header {
   min-width: 0;
   overflow-wrap: anywhere;
 }
+.model-badge-drag {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.model-badge-drag:active {
+  cursor: grabbing;
+}
+.model-badge[data-drop-target="true"] {
+  outline: 2px solid var(--selected-border);
+}
 .model-badge button {
   flex-shrink: 0;
   width: 22px;

@@ -1,5 +1,7 @@
 # Architecture
 
+Model selectors keep badge order in the existing axis values array, so reordering follows the normal draft, axis-swap, and grid-input paths. Pointer capture handles mouse and touch badge moves within one selector; arrow keys move a focused badge one position. New selections use distance in the unfiltered selector catalog to find their insertion neighbour, with earlier catalog entries winning ties. Range selection applies the same insertion rule to each added model in catalog order.
+
 ## Architecture constraints
 
 These constraints define the implementation boundaries for the behavior in [PRODUCT.md](PRODUCT.md).

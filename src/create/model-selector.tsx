@@ -27,6 +27,13 @@ export function ModelSelector({
   );
   const filterInput = useRef<HTMLInputElement>(null);
   const rangeAnchor = useRef<string | undefined>(undefined);
+  const drag = useRef<{ id: string; x: number; y: number } | null>(null);
+  const [dragTarget, setDragTarget] = useState<string>();
+  function moveModel(id: string, target: string) {
+    const next = values.filter((value) => value !== id);
+    next.splice(values.indexOf(target), 0, id);
+    onChange(next);
+  }
   const clearLabel = multiple
     ? `Clear ${label === "Rows" ? "row" : "column"} model filter`
     : "Clear model filter";
@@ -90,12 +97,32 @@ export function ModelSelector({
                         Math.max(anchor, target) + 1,
                       )
                     : [c];
-                const selected = new Set(values);
-                for (const choice of range)
-                  if (e.target.checked) selected.add(choice.id);
-                  else selected.delete(choice.id);
+                let selected = [...values];
+                for (const choice of range) {
+                  if (!e.target.checked) {
+                    selected = selected.filter((id) => id !== choice.id);
+                  } else if (!selected.includes(choice.id)) {
+                    const index = models.indexOf(choice);
+                    // Search catalog order so equal distances favour the earlier model.
+                    let nearest = -1;
+                    for (let i = 0; i < models.length; i++) {
+                      if (
+                        selected.includes(models[i].id) &&
+                        (nearest < 0 ||
+                          Math.abs(i - index) < Math.abs(nearest - index))
+                      )
+                        nearest = i;
+                    }
+                    const position =
+                      nearest < 0
+                        ? selected.length
+                        : selected.indexOf(models[nearest].id) +
+                          (index > nearest ? 1 : 0);
+                    selected.splice(position, 0, choice.id);
+                  }
+                }
                 rangeAnchor.current = c.id;
-                onChange([...selected]);
+                onChange(selected);
               }}
             />
             <span>{c.name}</span>
@@ -112,8 +139,64 @@ export function ModelSelector({
           {values.map((id) => {
             const name = models.find((model) => model.id === id)?.name ?? id;
             return (
-              <li className="model-badge" key={id}>
-                <span>{name}</span>
+              <li
+                className="model-badge"
+                key={id}
+                data-model-id={id}
+                data-drop-target={dragTarget === id}
+              >
+                <span
+                  className={multiple ? "model-badge-drag" : undefined}
+                  role={multiple ? "button" : undefined}
+                  tabIndex={multiple ? 0 : undefined}
+                  aria-label={multiple ? `Move ${name}` : undefined}
+                  onKeyDown={(e) => {
+                    if (!multiple) return;
+                    const direction = ["ArrowLeft", "ArrowUp"].includes(e.key)
+                      ? -1
+                      : ["ArrowRight", "ArrowDown"].includes(e.key)
+                        ? 1
+                        : 0;
+                    if (!direction) return;
+                    e.preventDefault();
+                    const target = values[values.indexOf(id) + direction];
+                    if (target) moveModel(id, target);
+                  }}
+                  onPointerDown={(e) => {
+                    if (!multiple || e.button !== 0) return;
+                    drag.current = { id, x: e.clientX, y: e.clientY };
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                  }}
+                  onPointerMove={(e) => {
+                    const start = drag.current;
+                    if (
+                      !start ||
+                      Math.hypot(e.clientX - start.x, e.clientY - start.y) < 5
+                    )
+                      return;
+                    const badge = document
+                      .elementFromPoint(e.clientX, e.clientY)
+                      ?.closest<HTMLElement>(".model-badge");
+                    const list = e.currentTarget.closest(".selected-models");
+                    setDragTarget(
+                      badge && badge.parentElement === list
+                        ? badge.dataset.modelId
+                        : undefined,
+                    );
+                  }}
+                  onPointerUp={() => {
+                    if (drag.current && dragTarget && dragTarget !== id)
+                      moveModel(id, dragTarget);
+                    drag.current = null;
+                    setDragTarget(undefined);
+                  }}
+                  onLostPointerCapture={() => {
+                    drag.current = null;
+                    setDragTarget(undefined);
+                  }}
+                >
+                  {name}
+                </span>
                 <button
                   type="button"
                   aria-label={
