@@ -48,7 +48,10 @@ export function Layout() {
             </span>
           </Link>
           {isGrid && <div className="grid-header-slot" ref={setHeaderTarget} />}
-          <div className="navigation-controls">
+          <div
+            className="navigation-controls"
+            data-touch={navigator.maxTouchPoints > 0}
+          >
             <button
               ref={menuButton}
               type="button"

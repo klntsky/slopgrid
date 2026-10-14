@@ -293,49 +293,57 @@ test("theme follows system changes unless a saved choice overrides them", async 
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
 });
 
-for (const width of [390, 700, 701, 1280]) {
-  test(`navigation adapts to desktop and mobile interactions (${width}px)`, async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width, height: 844 });
-    await page.goto("/");
-    const menu = page.getByRole("button", {
-      name: "Navigation menu",
-      exact: true,
-    });
-    const nav = page.getByRole("navigation");
-    if (width > 700) {
-      await expect(menu).toBeHidden();
-      await expect(nav).toBeVisible();
+for (const { width, hasTouch } of [
+  { width: 390, hasTouch: false },
+  { width: 1280, hasTouch: false },
+  { width: 390, hasTouch: true },
+  { width: 1280, hasTouch: true },
+]) {
+  test.describe(`navigation at ${width}px with touchscreen ${hasTouch}`, () => {
+    test.use({ hasTouch });
+    test("navigation uses touchscreen capability and preserves menu interactions", async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 844 });
+      await page.goto("/");
+      const menu = page.getByRole("button", {
+        name: "Navigation menu",
+        exact: true,
+      });
+      const nav = page.getByRole("navigation");
+      if (!hasTouch) {
+        await expect(menu).toBeHidden();
+        await expect(nav).toBeVisible();
+        await expect(
+          page.getByRole("button", { name: /Switch to .* theme/ }),
+        ).toBeVisible();
+        await nav.getByRole("link", { name: "SETTINGS", exact: true }).click();
+        await expect(page).toHaveURL("/settings");
+        await expect(nav).toBeVisible();
+        return;
+      }
       await expect(
         page.getByRole("button", { name: /Switch to .* theme/ }),
-      ).toBeVisible();
+      ).toBeHidden();
+      await expect(menu).toHaveAttribute("aria-expanded", "false");
+      await expect(nav).toBeHidden();
+      await menu.click();
+      await expect(menu).toHaveAttribute("aria-expanded", "true");
       await nav.getByRole("link", { name: "SETTINGS", exact: true }).click();
       await expect(page).toHaveURL("/settings");
-      await expect(nav).toBeVisible();
-      return;
-    }
-    await expect(
-      page.getByRole("button", { name: /Switch to .* theme/ }),
-    ).toBeHidden();
-    await expect(menu).toHaveAttribute("aria-expanded", "false");
-    await expect(nav).toBeHidden();
-    await menu.click();
-    await expect(menu).toHaveAttribute("aria-expanded", "true");
-    await nav.getByRole("link", { name: "SETTINGS", exact: true }).click();
-    await expect(page).toHaveURL("/settings");
-    await expect(nav).toBeHidden();
-    await menu.click();
-    await page.keyboard.press("Escape");
-    await expect(nav).toBeHidden();
-    await expect(menu).toBeFocused();
-    await menu.click();
-    await page.getByRole("heading", { name: "Inference", exact: true }).click();
-    await expect(nav).toBeHidden();
-    await menu.click();
-    await nav.getByRole("link", { name: "SETTINGS", exact: true }).click();
-    await expect(page).toHaveURL("/settings");
-    await expect(nav).toBeHidden();
+      await expect(nav).toBeHidden();
+      await menu.click();
+      await page.keyboard.press("Escape");
+      await expect(nav).toBeHidden();
+      await expect(menu).toBeFocused();
+      await menu.click();
+      await page.getByRole("heading", { name: "Inference", exact: true }).click();
+      await expect(nav).toBeHidden();
+      await menu.click();
+      await nav.getByRole("link", { name: "SETTINGS", exact: true }).click();
+      await expect(page).toHaveURL("/settings");
+      await expect(nav).toBeHidden();
+    });
   });
 }
 

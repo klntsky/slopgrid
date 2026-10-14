@@ -91,6 +91,8 @@ Grid-price coverage distinguishes visible successful-output cost from owner-only
 
 ### Required runtime coverage
 
+Navigation browser coverage combines touchscreen and non-touchscreen contexts with narrow and wide viewports, checking menu selection, route navigation, Escape, outside presses, and focus restoration.
+
 Text-model pricing browser coverage checks per-million conversion, request charges, zero and missing prices, keyboard and hover tooltips, and consistent pricing through axis swaps and fixed-model selection. Image pricing coverage also runs when the shared price display changes.
 
 `tests/e2e/scroll-restoration.spec.ts` covers creation drafts for SVG and Image through refresh, Back, and Forward, checking saved input values and actual scroll offsets while new route visits start at the top.

@@ -1274,31 +1274,29 @@ header {
 .navigation-controls > nav > a:not(.button) {
   padding: 14px 12px;
 }
-@media (min-width: 701px) {
-  .navigation-controls {
-    gap: 16px;
-  }
-  .navigation-menu-toggle {
-    display: none;
-  }
-  .desktop-theme-toggle {
-    display: inline-flex;
-  }
-  .navigation-controls > nav {
-    display: flex;
-    position: static;
-    width: auto;
-    flex-direction: row;
-    align-items: center;
-    gap: 16px;
-    padding: 0;
-    background: none;
-    border: 0;
-    box-shadow: none;
-  }
-  .navigation-controls > nav > a:not(.button) {
-    padding: 0;
-  }
+.navigation-controls[data-touch="false"] {
+  gap: 16px;
+}
+.navigation-controls[data-touch="false"] .navigation-menu-toggle {
+  display: none;
+}
+.navigation-controls[data-touch="false"] .desktop-theme-toggle {
+  display: inline-flex;
+}
+.navigation-controls[data-touch="false"] > nav {
+  display: flex;
+  position: static;
+  width: auto;
+  flex-direction: row;
+  align-items: center;
+  gap: 16px;
+  padding: 0;
+  background: none;
+  border: 0;
+  box-shadow: none;
+}
+.navigation-controls[data-touch="false"] > nav > a:not(.button) {
+  padding: 0;
 }
 @media (max-width: 700px) {
   nav {
