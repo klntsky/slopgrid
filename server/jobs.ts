@@ -356,6 +356,7 @@ export class Jobs {
       completed.usage = result.usage;
       completed.provenance = {
         signature: result.signature,
+        maxOutputTokens: result.maxOutputTokens,
         files: Object.keys(result.files).sort(),
       };
       completed.status = "complete";

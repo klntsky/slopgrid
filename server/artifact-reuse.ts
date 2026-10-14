@@ -11,14 +11,14 @@ export async function reuseArtifacts(
   format: Grid["input"]["format"],
   cells: Cell[],
 ) {
-  const candidates = new Map<string, Cell>();
-  for (const cell of source.cells)
-    if (
-      cell.status === "complete" &&
-      cell.provenance?.files.length &&
-      !candidates.has(cell.provenance.signature)
-    )
-      candidates.set(cell.provenance.signature, cell);
+  const candidates = new Map<string, Cell[]>();
+  for (const cell of source.cells) {
+    if (cell.status !== "complete" || !cell.provenance?.files.length) continue;
+    const key = cell.provenance.signature;
+    const group = candidates.get(key) ?? [];
+    group.push(cell);
+    candidates.set(key, group);
+  }
   if (!candidates.size) return;
   const matches = new Map<Cell, Cell[]>();
   const readReferences = store.references.loader();
@@ -34,7 +34,22 @@ export async function reuseArtifacts(
       if (error instanceof PreparationError) continue;
       throw error;
     }
-    const match = candidates.get(inferenceSignature(prepared));
+    const match = candidates
+      .get(inferenceSignature(prepared))
+      ?.find((candidate) => {
+        if (prepared.format === "image") return true;
+        // Reported completion tokens include reasoning. If usage is absent, only
+        // the original request ceiling can establish that the output fits.
+        const tokens =
+          candidate.usage?.outputTokens ??
+          candidate.provenance?.maxOutputTokens;
+        return (
+          tokens !== undefined &&
+          Number.isFinite(tokens) &&
+          tokens >= 0 &&
+          tokens <= prepared.text.maxOutputTokens
+        );
+      });
     if (match) {
       const destinations = matches.get(match) ?? [];
       destinations.push(cell);

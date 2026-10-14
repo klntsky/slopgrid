@@ -430,14 +430,19 @@ Commands use strict payload schemas and named parameters rather than mutable gri
   effective request used by inference and reuse. Text preparation includes
   resolved pricing, instructions, token limits, reasoning, routing, and schemas.
 - Signatures hash canonical object keys while preserving array order, and include
-  format, budget, adapter version, and ordered image content hashes and media
-  types. Estimator-only pricing stays outside the signature. Adapter semantic
-  changes require a revision bump.
-- Successful cells persist a signature and complete file inventory after storage.
-  Historical cells without provenance remain readable but generate afresh.
+  format, adapter version, routing and price caps, and ordered image content
+  hashes and media types. Dollar budgets, token ceilings, and estimator-only
+  pricing stay outside the signature. Adapter semantic changes require a
+  revision bump.
+- Successful cells persist a signature, the original text token ceiling, and a
+  complete file inventory after storage. Cells without matching provenance
+  remain readable but generate afresh; signatures are not migrated.
 - Creation validates source visibility and normal access/admission checks.
-  `server/artifact-reuse.ts` matches completed source cells in grid order and
-  copies complete artifacts and thinking under fresh identifiers.
+  `server/artifact-reuse.ts` groups completed source cells by signature and
+  chooses the first whose reported output usage, including reasoning, fits the
+  new computed token ceiling. Missing usage falls back to the recorded original
+  ceiling. Image requests have no token-ceiling check. Complete artifacts and
+  thinking are copied under fresh identifiers.
 - Each source bundle is read once, with at most one held in memory. Source-read
   failures and preparation errors are cache misses; destination writes, database
   failures, and unexpected preparation errors propagate.

@@ -238,6 +238,7 @@ export class Provider {
     references?: ReferenceContent[],
   ): Promise<{
     signature: string;
+    maxOutputTokens?: number;
     files: Record<string, string | Uint8Array>;
     mediaType?: string;
     usage?: Cell["usage"];
@@ -251,7 +252,12 @@ export class Provider {
       signal,
       observe,
     );
-    return { ...result, signature: inferenceSignature(prepared) };
+    return {
+      ...result,
+      signature: inferenceSignature(prepared),
+      maxOutputTokens:
+        prepared.format === "image" ? undefined : prepared.text.maxOutputTokens,
+    };
   }
   async prepare(
     format: GridInput["format"],

@@ -47,7 +47,7 @@ export function Create() {
     "Used to calculate each output’s token limit.",
   );
   const reuseHint = useTooltip<HTMLLabelElement>(
-    "When checked, existing artifacts will be copied to the new grid if their parameters match exactly",
+    "Copy existing artifacts with matching generation settings that fit the token limit",
   );
   const swapHint = useTooltip<HTMLButtonElement>("Swap rows and columns");
   const generateHint = useTooltip<HTMLDivElement>(generateReasons || undefined);

@@ -162,7 +162,11 @@ export type Cell = {
   draft?: string;
   thinking?: string;
   thinkingId?: string;
-  provenance?: { signature: string; files: string[] };
+  provenance?: {
+    signature: string;
+    maxOutputTokens?: number;
+    files: string[];
+  };
   estimatedUsage?: Cell["usage"];
   preview?: { attempt: string; revision: number };
   usage?: { inputTokens?: number; outputTokens?: number; costUsd?: number };

@@ -43,6 +43,7 @@ test("reuse selection survives Edit, reload, OAuth and Fork, and unchecked draft
   await page.getByRole("link", { name: "Connect OpenRouter" }).click();
   await expect(reuse).not.toBeChecked();
   await reuse.check();
+  await page.getByLabel("Budget limit per cell", { exact: true }).fill("0.5");
   await page.getByLabel("Row values").fill("dog\ncat");
   await request.post("/fixture/reset", {
     data: { holdGenerations: true, textCost: 0.25 },
@@ -135,6 +136,8 @@ test("image reuse follows ordered reference bytes and effective image settings t
   let count = 2;
   const copied = await createGrid(page, {
     ...input,
+    budgetUsd: 1,
+    effort: "high",
     sourceGridId: source.id,
     reuseArtifacts: true,
     rows: { kind: "input_references", values: ["Renamed", "Again"] },

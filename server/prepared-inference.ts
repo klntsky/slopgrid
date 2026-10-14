@@ -17,7 +17,6 @@ function common(cell: Cell) {
     adapterVersion,
     model: cell.model,
     prompt: cell.prompt,
-    budgetUsd: cell.budgetUsd,
   };
 }
 export function prepareImageInference(
@@ -87,7 +86,8 @@ export function inferenceSignature(prepared: PreparedInference): string {
   }
   if (prepared.format !== "image") {
     const { pricing: _estimation, ...request } = prepared;
-    return digest(request);
+    const { maxOutputTokens: _limit, ...text } = request.text;
+    return digest({ ...request, text });
   }
   const references = prepared.image.input_references?.map(
     ({ mediaType, sha256 }) => ({

@@ -348,7 +348,7 @@ test("forks isolate access and billing while preserving artifact costs and admis
   }
 });
 
-test("effective model, prompt, effort, budget, token ceiling and format determine actual reuse", async () => {
+test("effective model, prompt, effort and format determine actual reuse", async () => {
   const f = await runtimeFixture();
   try {
     f.catalog.data.push({ ...f.catalog.data[0], id: "fixture/other" });
@@ -378,11 +378,6 @@ test("effective model, prompt, effort, budget, token ceiling and format determin
         name: "effort",
         input: { effort: "high" },
         verify: (call) => assert.equal(call.request.reasoning?.effort, "high"),
-      },
-      {
-        name: "budget",
-        input: { budgetUsd: 0.2 },
-        verify: (call) => assert.equal(call.request.max_tokens, 1000),
       },
       {
         name: "format",
@@ -425,10 +420,7 @@ test("effective model, prompt, effort, budget, token ceiling and format determin
       sourceGridId: source.id,
       reuseArtifacts: true,
     });
-    const ceilingCall = await f.nextCall();
-    assert.equal(ceilingCall.request.max_tokens, 500);
-    finish(ceilingCall);
-    await settled(f, ceiling.id);
+    assert.equal(ceiling.status, "complete");
     const disabled = await create(f, {
       ...config,
       sourceGridId: ceiling.id,
@@ -436,7 +428,149 @@ test("effective model, prompt, effort, budget, token ceiling and format determin
     });
     finish(await f.nextCall());
     await settled(f, disabled.id);
-    assert.equal(f.calls.length, 3 + cases.length);
+    assert.equal(f.calls.length, 2 + cases.length);
+  } finally {
+    await f.close();
+  }
+});
+
+test("budget and token ceiling changes reuse outputs that fit through copies and restarts", async () => {
+  const f = await runtimeFixture();
+  try {
+    f.catalog.data[0].pricing = { prompt: "0", completion: "0.001" };
+    await kill(f.web);
+    await f.startWeb();
+    const config: GridInput = {
+      ...input,
+      budgetUsd: 2,
+      rows: { kind: "variable", values: ["cat"] },
+    };
+    const source = await create(f, config);
+    const call = await f.nextCall();
+    assert.equal(call.request.max_tokens, 1000);
+    call.write({ content: "Saved", reasoning: "Thinking" });
+    call.finish(0.6, {
+      reason: "stop",
+      outputTokens: 600,
+      reasoningTokens: 580,
+    });
+    await settled(f, source.id);
+    let previous = source;
+    for (const budgetUsd of [1.5, 3, 0.8, 0.6, 2]) {
+      previous = await create(f, {
+        ...config,
+        budgetUsd,
+        sourceGridId: previous.id,
+        reuseArtifacts: true,
+      });
+      assert.equal(previous.status, "complete", `budget ${budgetUsd}`);
+      assert.equal(previous.cells[0].usage?.outputTokens, 600);
+      assert.equal(previous.spentUsd, 0);
+      assert.equal(f.calls.length, 1);
+    }
+    await f.engine.close();
+    await f.startEngine();
+    await kill(f.web);
+    await f.startWeb();
+    const tooSmall = await create(f, {
+      ...config,
+      budgetUsd: 0.599,
+      sourceGridId: previous.id,
+      reuseArtifacts: true,
+    });
+    const fresh = await f.nextCall();
+    assert.equal(fresh.request.max_tokens, 599);
+    finish(fresh);
+    await settled(f, tooSmall.id);
+    assert.equal(f.calls.length, 2);
+  } finally {
+    await f.close();
+  }
+});
+
+test("reuse selects the first matching source whose actual usage fits the new limit", async () => {
+  const f = await runtimeFixture();
+  try {
+    f.catalog.data[0].pricing = { prompt: "0", completion: "0.001" };
+    await kill(f.web);
+    await f.startWeb();
+    const config: GridInput = {
+      ...input,
+      budgetUsd: 1,
+      prompt: "$ROW$COLUMN",
+      rows: { kind: "variable", values: ["a", "ab"] },
+      columns: { kind: "variable", values: ["bc", "c"] },
+    };
+    const source = await create(f, config);
+    const first = await f.nextCall();
+    first.write({ content: "Large" });
+    first.finish(0.6, { reason: "stop", outputTokens: 600 });
+    for (let i = 0; i < 3; i++) finish(await f.nextCall(), "Small");
+    await settled(f, source.id);
+    const copied = await create(f, {
+      ...config,
+      budgetUsd: 0.5,
+      sourceGridId: source.id,
+      reuseArtifacts: true,
+    });
+    assert.equal(copied.status, "complete");
+    assert.deepEqual(
+      copied.cells.map((cell) => cell.usage?.outputTokens),
+      [20, 20, 20, 20],
+    );
+    for (const cell of copied.cells)
+      assert.equal(
+        readFileSync(f.store.files.path(cell.id, "index.md")!, "utf8"),
+        "Small",
+      );
+    assert.equal(f.calls.length, 4);
+  } finally {
+    await f.close();
+  }
+});
+
+test("missing token usage reuses only when the original ceiling fits, including copies", async () => {
+  const f = await runtimeFixture();
+  try {
+    f.catalog.data[0].pricing = { prompt: "0", completion: "0.001" };
+    await kill(f.web);
+    await f.startWeb();
+    const config: GridInput = {
+      ...input,
+      budgetUsd: 0.5,
+      rows: { kind: "variable", values: ["cat"] },
+    };
+    const source = await create(f, config);
+    finish(await f.nextCall());
+    await settled(f, source.id);
+    f.store.db
+      .prepare(
+        "UPDATE inference_calls SET data=json_remove(data,'$.usage.outputTokens') WHERE cell_id=?",
+      )
+      .run(source.cells[0].id);
+    let previous = source;
+    for (const budgetUsd of [0.5, 1, 0.75]) {
+      previous = await create(f, {
+        ...config,
+        budgetUsd,
+        sourceGridId: previous.id,
+        reuseArtifacts: true,
+      });
+      assert.equal(previous.status, "complete");
+      assert.equal(previous.cells[0].usage?.outputTokens, undefined);
+      assert.equal(f.calls.length, 1);
+    }
+    const smaller = await create(f, {
+      ...config,
+      budgetUsd: 0.49,
+      sourceGridId: previous.id,
+      reuseArtifacts: true,
+    });
+    const call = await f.nextCall();
+    assert.equal(call.request.max_tokens, 490);
+    finish(call);
+    await settled(f, smaller.id);
+    assert.equal(f.calls.length, 2);
   } finally {
     await f.close();
   }
