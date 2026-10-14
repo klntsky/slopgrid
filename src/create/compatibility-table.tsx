@@ -11,7 +11,6 @@ import {
   type Compatibility,
 } from "../../server/compatibility";
 import type { ModelInfo } from "../../server/model-catalog";
-import { dimensionNames, displayValue } from "../format";
 
 type Props = { input: GridInput; models: readonly ModelInfo[] };
 export type CompatibilityTables = Partial<
@@ -117,35 +116,30 @@ export function compatibilityTables({
 }
 
 function ThinkingCompatibilityTable({ input, models }: Props) {
-  if (![input.rows.kind, input.columns.kind].includes("model") && !input.model)
-    return null;
-  const expanded = expandGrid(input);
-  const label = (value: string, kind: GridInput["rows"]["kind"]) =>
-    kind === "model"
-      ? (models.find((model) => model.id === value)?.name ?? value)
-      : displayValue(value, kind);
+  const axes = [input.rows, input.columns];
+  const selectedModels =
+    axes.find((axis) => axis.kind === "model")?.values ??
+    [input.model].filter(Boolean);
+  const selectedEfforts =
+    axes.find((axis) => axis.kind === "effort")?.values ??
+    [input.effort];
   return (
     <CompatibilityGrid
       caption="Thinking effort compatibility"
-      corner={dimensionNames[input.rows.kind]}
-      rows={input.rows.values.map((value) => label(value, input.rows.kind))}
-      columns={input.columns.values.map((value) =>
-        label(value, input.columns.kind),
+      corner="Model"
+      rows={selectedModels.map(
+        (id) => models.find((model) => model.id === id)?.name ?? id,
       )}
-      cells={input.rows.values.map((_, row) =>
-        input.columns.values.map((_, column) => {
-          const cell = expanded[row * input.columns.values.length + column];
-          return {
-            support: thinkingEffortSupport(
-              models.find((model) => model.id === cell.model),
-              cell.effort,
-            ),
-          };
-        }),
+      columns={selectedEfforts.map(effortLabel)}
+      cells={selectedModels.map((id) =>
+        selectedEfforts.map((effort) => ({
+          support: thinkingEffortSupport(
+            models.find((model) => model.id === id),
+            effort,
+          ),
+        })),
       )}
-      cellLabel={(row, column) =>
-        effortLabel(expanded[row * input.columns.values.length + column].effort)
-      }
+      cellLabel={(_, column) => effortLabel(selectedEfforts[column])}
     />
   );
 }

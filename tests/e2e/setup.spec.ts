@@ -435,21 +435,21 @@ test("the compatibility table shows selected model support without blocking gene
     name: "Thinking effort compatibility",
   });
   await expect(table.getByRole("columnheader")).toHaveText([
-    "Thinking effort",
-    "Fixture text",
-    "Second model",
-  ]);
-  await expect(table.getByRole("rowheader")).toHaveText([
+    "Model",
     "None",
     "high",
     "max",
   ]);
+  await expect(table.getByRole("rowheader")).toHaveText([
+    "Fixture text",
+    "Second model",
+  ]);
   const expectedSupport = [
     "None: Supported",
-    "None: Unsupported",
-    "high: Supported",
     "high: Supported",
     "max: Supported",
+    "None: Unsupported",
+    "high: Supported",
     "max: Unsupported",
   ];
   for (const [index, status] of expectedSupport.entries())
@@ -542,7 +542,7 @@ test("the compatibility table shows selected model support without blocking gene
   }
 });
 
-test("compatibility follows prompt-variable axes and fixed model or effort settings", async ({
+test("compatibility keeps model rows and effort columns with variable axes and fixed selections", async ({
   page,
 }) => {
   await page.goto("/");
@@ -562,7 +562,7 @@ test("compatibility follows prompt-variable axes and fixed model or effort setti
   await page
     .getByRole("combobox", { name: "Thinking effort", exact: true })
     .selectOption("none");
-  await expect(table.getByRole("rowheader")).toHaveText(["cat", "dog", "fox"]);
+  await expect(table.getByRole("rowheader")).toHaveText(["Second model"]);
   await expect(
     page
       .getByRole("combobox", { name: "Thinking effort", exact: true })
@@ -570,26 +570,24 @@ test("compatibility follows prompt-variable axes and fixed model or effort setti
       .getByRole("table", { name: "Thinking effort compatibility" }),
   ).toBeVisible();
   await expect(table.getByRole("columnheader")).toHaveText([
-    "Prompt variable",
-    "Second model",
+    "Model",
+    "None",
   ]);
   await expect(
     table.getByRole("cell", { name: "None: Unsupported", exact: true }),
-  ).toHaveCount(3);
+  ).toHaveCount(1);
   await swap.click();
   await expect(table.getByRole("rowheader")).toHaveText(["Second model"]);
   await expect(table.getByRole("columnheader")).toHaveText([
     "Model",
-    "cat",
-    "dog",
-    "fox",
+    "None",
   ]);
   await rows.selectOption("effort");
   await page.getByRole("checkbox", { name: "None", exact: true }).check();
   await page.getByRole("checkbox", { name: "high", exact: true }).check();
   await expect(table).toHaveCount(0);
   await selectModel(page, "fixture/other");
-  await expect(table.getByRole("rowheader")).toHaveText(["None", "high"]);
+  await expect(table.getByRole("rowheader")).toHaveText(["Second model"]);
   await expect(
     page
       .locator(".axis")
@@ -597,21 +595,20 @@ test("compatibility follows prompt-variable axes and fixed model or effort setti
       .getByRole("table", { name: "Thinking effort compatibility" }),
   ).toBeVisible();
   await expect(table.getByRole("columnheader")).toHaveText([
-    "Thinking effort",
-    "cat",
-    "dog",
-    "fox",
+    "Model",
+    "None",
+    "high",
   ]);
   await expect(
     table.getByRole("cell", { name: "None: Unsupported", exact: true }),
-  ).toHaveCount(3);
+  ).toHaveCount(1);
   await expect(
     table.getByRole("cell", { name: "high: Supported", exact: true }),
-  ).toHaveCount(3);
+  ).toHaveCount(1);
   await swap.click();
-  await expect(table.getByRole("rowheader")).toHaveText(["cat", "dog", "fox"]);
+  await expect(table.getByRole("rowheader")).toHaveText(["Second model"]);
   await expect(table.getByRole("columnheader")).toHaveText([
-    "Prompt variable",
+    "Model",
     "None",
     "high",
   ]);
