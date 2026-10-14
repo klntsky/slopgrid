@@ -20,7 +20,8 @@ Status: high level product goal that is not a requirement (not achieved yet).
 4. Generate outputs on the server, stream progress to the browser, retain completed results, and let owners publish their grids afterward.
 5. A cell attempt makes one inference call.
 6. Apply sensible request and generation rate limits without imposing deadlines on accepted inference.
-7. When a user action receives HTTP 429, show the rate-limit message, preserve their inputs and completed results, and leave the action available for an explicit retry. A rejected grid-creation request must not navigate away from the form or create duplicate grids.
+7. When a user action receives HTTP 429, show the rate-limit message, preserve their inputs and completed results, and leave the action available for an explicit retry. Validation, admission, and rate-limit rejection before a grid is saved must leave the user on the form without creating a grid.
+8. Retrying the same grid-creation submission after a lost response or reload must recover the existing grid rather than create a duplicate. Once a grid is saved, open that grid even if generation cannot start or its startup acknowledgement is lost. Recover its current generation state before offering Resume, and do not restart inference merely by replaying creation.
 
 ## 2. Interface, navigation, and presentation
 
@@ -211,7 +212,7 @@ Status: high level product goal that is not a requirement (not achieved yet).
 3. While output is empty, show arriving thinking automatically; also stream it whenever the cell is explicitly in thinking mode.
    Automatically follow new thinking at the bottom until the user scrolls up. Preserve that reading position as more text arrives, and resume following when the user scrolls back to the bottom. Appended content and layout changes must not stop following.
 4. Keep trace state associated with the correct cell and attempt. Late events or fetch responses must not replace the thinking for a newer attempt.
-5. Preserve captured thinking across completion, failure, pause, and restart, with the same access policy as the corresponding grid. Do not mix trace files into generated website bundles or downloads.
+5. Preserve captured thinking across completion, failure, pause, normal restarts, and routine deployments, with the same access policy as the corresponding grid. Emergency shutdowns or process crashes may lose thinking that has not yet been persisted; already persisted thinking must remain available. Do not mix trace files into generated website bundles or downloads.
 
 ## 6. Inference, scheduling, and recovery
 
@@ -227,17 +228,17 @@ Status: high level product goal that is not a requirement (not achieved yet).
 1. Check available OpenRouter balance before starting or resuming inference. Image generation below $3 shows a top-up popup with an explicit Continue anyway option; that option uses automatic parallelism for new grids. Text generation uses calculated parallelism for new grids and OpenRouter's admission decisions. Existing grids retain their saved explicit counts on Resume. Fully reused grids require no inference balance check.
 2. Billing interruptions must let users fix the problem and retry repeatedly without breaking the flow. Preserve completed cells and regenerate only unfinished work.
 3. Apply exponential backoff to provider rate limits, honoring provider retry guidance and releasing worker capacity while waiting so other users can continue. Automatically retry in-flight spending-limit billing errors only when OpenRouter supplies a valid Retry-After delay or another documented backoff mechanism; otherwise pause for user intervention rather than automatically retrying the billing failure.
-4. Only pricing or billing errors may automatically pause queued batch work. Other failures, including age verification, model access restrictions, and invalid or missing credentials, fail only their affected cells while other cells and grids continue. Preserve the provider explanation on each failed cell.
+4. Among provider errors, only pricing or billing errors may automatically pause queued batch work. Other provider failures, including age verification, model access restrictions, and invalid or missing credentials, fail only their affected cells while other cells and grids continue. Preserve the provider explanation on each failed cell. Recoverable infrastructure persistence failures suspend new dispatch as specified in section 9.
 5. Propagate provider error messages and codes to the client and retain them with failed cells, including after reload and publication.
 6. Ongoing generation continues regardless of elapsed time until it finishes, fails, or the user cancels it.
 7. Recognize exhausted OpenRouter key, workspace, and guardrail budgets reported as HTTP 403 as billing interruptions, while other permission errors affect only their cells.
 
 ### 6.3. Pause, resume, and updates
 
-1. Pause immediately aborts active requests for that grid, removes queued work, and discards unfinished output previews. Completed outputs remain intact.
+1. Pause immediately aborts active requests for that grid, removes queued work, and discards unfinished output previews. Completed outputs remain intact. Pause and Edit must not wait for persistence before cancelling inference. If saving cancellation fails, the running engine must retain the cancellation and prevent further dispatch for that grid. After an engine restart, interrupted unfinished work remains available for explicit Resume.
 2. Resume restarts unfinished cells, including retries, while preserving completed outputs. It must remain possible after dismissing an interruption popup.
 3. Use a red stop-square icon for the stop/pause action and the hint "Work can be resumed later, unfinished responses will be lost".
-4. Keep live updates connected while a grid can still change from queued or active generation, including unsettled requests after a pause. After manual Pause, keep receiving updates until every cancelled call has settled and the final status and billing snapshot has reached the page. Reloading or reconnecting during settlement must recover the current state and continue receiving updates. Close the SSE connection only after receiving the stable snapshot, and reconnect when an action starts work again.
+4. Keep live updates connected while a grid can still change from queued or active generation, including unsettled requests after a pause. After manual Pause, keep receiving updates until every cancelled call has settled and the final status and billing snapshot has reached the page. Reloading or reconnecting during settlement must recover the current state and continue receiving updates. A persistence failure must not unnecessarily stop authorized live progress updates or present uncommitted completion as durable. Keep the grid live until outstanding calls and pending persistence settle; deny access when authorization cannot be checked. Close the SSE connection only after receiving the stable snapshot, and reconnect when an action starts work again.
 5. Delayed updates must not move title, output, thinking, status, or price backward. After an engine restart, delayed pre-restart snapshots must not reopen live updates for a settled grid. Snapshot ordering tokens may change when settled state is read again or the engine restarts. Retries must show content from the current attempt.
 6. Interrupted unfinished work requires an explicit Resume, preserving completed outputs.
 
@@ -306,6 +307,8 @@ Status: high level product goal that is not a requirement (not achieved yet).
 1. Web and interface updates must preserve accepted inference, including queued work, output, thinking, and charges. Browsers reconnect automatically after a brief connection interruption.
 2. An inference-machinery update stops accepting new work and lets accepted grids and unsettled calls finish without a cancellation timeout. Cancelling maintenance restores admission.
 3. Open browser tabs retain access to their frontend assets across updates. Routine deployments preserve grids, outputs, credentials, and sessions.
+4. Recoverable infrastructure persistence failures suspend admission and new inference dispatch while preserving accepted calls and retaining their results for persistence recovery. Resume dispatch automatically after recovery, subject to manual Pause and maintenance restrictions, without requiring users to Resume grids solely because of the storage interruption. Do not replay provider calls to recover a failed persistence operation.
+5. Recovery from disk-full errors is outside the supported failure-recovery scope.
 
 ## 10. Reusing completed artifacts
 
