@@ -11,6 +11,17 @@ process.on("message", async (message) => {
 });
 try {
   await import("./request-preparation-fixture.js");
+  if (process.env.FIXTURE_IGNORE_ABORT === "1") {
+    // Model a provider call that outlives cancellation while retaining the real
+    // adapter, SDK, stream parser, and billing recorder. The upstream test owns
+    // settlement; production never imports this fixture entrypoint.
+    const { Provider } = await import("../server/provider.js");
+    const generate = Provider.prototype.generate;
+    Provider.prototype.generate = function (...args) {
+      args[4] = undefined;
+      return generate.apply(this, args);
+    };
+  }
   await import("../server/engine.js");
   signalReady();
 } catch (error) {

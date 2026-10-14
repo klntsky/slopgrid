@@ -49,7 +49,7 @@ export async function kill(child: ChildProcess) {
 
 /** The deployment mock is controlled by the test, including each streaming delta. */
 export async function runtimeFixture(
-  options: { tls?: boolean; workers?: number } = {},
+  options: { tls?: boolean; workers?: number; ignoreAbort?: boolean } = {},
 ) {
   const directory = mkdtempSync(join(tmpdir(), "slopgrid-runtime-"));
   const preparation = join(directory, "preparation.json");
@@ -178,6 +178,7 @@ export async function runtimeFixture(
       preparation,
       providerURL,
       workersMax: options.workers ?? 1,
+      ignoreAbort: options.ignoreAbort,
     });
   }
   async function startWeb(socket = database + ".sock") {

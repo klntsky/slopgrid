@@ -115,7 +115,12 @@ Commands use strict payload schemas and named parameters rather than mutable gri
 - Browser SSE rechecks session validity and ownership, including on heartbeats.
   EventSource reconnects after a web restart and receives current drafts,
   thinking, estimates, and preview identifiers without restarting inference.
-  Stable grids close their streams and reopen them when work starts again.
+  Engine snapshots carry a `live` flag derived from queued work and unsettled
+  calls, independently of visible cell statuses. Manual Pause marks cells pending
+  immediately but keeps the stream live until cancelled calls settle. Settlement
+  persists billing and cell state, advances the revision, and emits the final
+  snapshot before the browser closes its stream. Reloads and reconnects receive
+  the same engine-derived flag, and streams reopen when work starts again.
 
 ### Updates and recovery
 

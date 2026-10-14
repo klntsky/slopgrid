@@ -30,7 +30,11 @@ export function createGenerationService(
   const getGrid = (id: string) => {
     const grid = jobs.snapshot(id);
     if (!grid) throw generationFailure("NOT_FOUND", "Grid not found");
-    return { ...grid, spentUsd: store.billing.gridSpent(grid.id, grid.cells) };
+    return {
+      ...grid,
+      spentUsd: store.billing.gridSpent(grid.id, grid.cells),
+      live: jobs.isLive(id),
+    };
   };
   const authorized = (gridId: string, sessionId: string) => {
     const grid = getGrid(gridId),

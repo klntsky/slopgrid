@@ -63,6 +63,12 @@ export class Jobs {
   isRunning(id: string) {
     return this.grids.get(id)?.grid.status === "running";
   }
+  isLive(id: string) {
+    return (
+      this.isRunning(id) ||
+      [...this.running.values()].some(({ grid }) => grid.id === id)
+    );
+  }
   status() {
     return {
       draining: this.draining,

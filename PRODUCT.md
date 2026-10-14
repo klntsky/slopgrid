@@ -237,7 +237,7 @@ Status: high level product goal that is not a requirement (not achieved yet).
 1. Pause immediately aborts active requests for that grid, removes queued work, and discards unfinished output previews. Completed outputs remain intact.
 2. Resume restarts unfinished cells, including retries, while preserving completed outputs. It must remain possible after dismissing an interruption popup.
 3. Use a red stop-square icon for the stop/pause action and the hint "Work can be resumed later, unfinished responses will be lost".
-4. Keep live updates connected while a grid can still change from queued or active generation, including unsettled requests after a pause. Close the SSE connection once inference finishes and the grid is stable, and reconnect when an action starts work again.
+4. Keep live updates connected while a grid can still change from queued or active generation, including unsettled requests after a pause. After manual Pause, keep receiving updates until every cancelled call has settled and the final status and billing snapshot has reached the page. Reloading or reconnecting during settlement must recover the current state and continue receiving updates. Close the SSE connection only after receiving the stable snapshot, and reconnect when an action starts work again.
 5. Delayed updates must not move title, output, thinking, status, or price backward. Retries must show content from the current attempt.
 6. Interrupted unfinished work requires an explicit Resume, preserving completed outputs.
 

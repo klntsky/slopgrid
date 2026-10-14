@@ -20,11 +20,7 @@ export function useGrid(id: string) {
   });
   const [dismissed, setDismissed] = useState(false),
     [streamLost, setStreamLost] = useState(false);
-  const live =
-    query.isSuccess &&
-    !query.data.published &&
-    (query.data.status === "running" ||
-      query.data.cells.some((cell) => cell.status === "running"));
+  const live = query.isSuccess && !query.data.published && query.data.live;
   useEffect(() => {
     setStreamLost(false);
     if (!live) return;

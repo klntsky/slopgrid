@@ -10,6 +10,7 @@ export async function startGenerationFixture(config: {
   outputsPath?: string;
   providerURL?: string;
   workersMax?: number;
+  ignoreAbort?: boolean;
 }) {
   const socket = config.database + ".sock";
   const child = fork(join(process.cwd(), "tests/generation-process.ts"), [], {
@@ -25,6 +26,7 @@ export async function startGenerationFixture(config: {
       OPENROUTER_BASE_URL: config.providerURL,
       WORKERS_MAX: String(config.workersMax ?? 100),
       GENERATION_DRAINING: "0",
+      FIXTURE_IGNORE_ABORT: config.ignoreAbort ? "1" : "0",
     },
   });
   const api = generationClient(socket);

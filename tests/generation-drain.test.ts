@@ -90,7 +90,13 @@ test("drain remains busy after Pause until an abort-ignoring provider settles", 
       () => provider.pending.size,
       (n) => n === 1,
     );
-    await f.generation.pauseGrid({ gridId: grid.id, sessionId: owner });
+    const stopping = await f.generation.pauseGrid({
+      gridId: grid.id,
+      sessionId: owner,
+    });
+    assert.equal(stopping.live, true);
+    assert.equal(stopping.status, "paused");
+    assert.equal(stopping.cells[0].status, "pending");
     const draining = await f.generation.drain();
     assert.equal(draining.activeGrids, 0);
     assert.equal(draining.runningCalls, 1);
@@ -107,6 +113,8 @@ test("drain remains busy after Pause until an abort-ignoring provider settles", 
       (s) => s.runningCalls === 0,
     );
     const paused = await f.generation.getGrid(grid.id);
+    assert.equal(paused.live, false);
+    assert.ok(paused.revision > stopping.revision);
     assert.equal(paused.status, "paused");
     assert.equal(paused.cells[0].status, "pending");
     assert.equal(paused.cells[0].thinkingId, undefined);
