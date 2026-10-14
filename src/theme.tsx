@@ -69,11 +69,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
           : "light"
         : next;
     transition.current?.skipTransition();
-    if (
-      document.startViewTransition &&
-      !matchMedia("(prefers-reduced-motion: reduce)").matches &&
-      resolved !== resolvedTheme
-    ) {
+    if (document.startViewTransition && resolved !== resolvedTheme) {
       document.documentElement.dataset.themeTransition = "polygon";
       const active = document.startViewTransition(() => {
         flushSync(() => setTheme(next));

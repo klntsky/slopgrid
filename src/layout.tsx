@@ -5,9 +5,9 @@ import { Link, Outlet, useLocation } from "@tanstack/react-router";
 import { Menu, X, Sun, Moon } from "lucide-react";
 export const GridHeaderTarget = createContext<HTMLDivElement | null>(null);
 export function Layout() {
-  // Firefox privacy settings can spoof touch points on mouse-only desktops.
+  // Secondary touch devices and spoofed touch counts do not change mouse navigation.
   const hasTouchscreen =
-    navigator.maxTouchPoints > 0 && matchMedia("(any-pointer: coarse)").matches;
+    navigator.maxTouchPoints > 0 && matchMedia("(pointer: coarse)").matches;
   const { resolvedTheme, setTheme } = useTheme();
   const pathname = useLocation().pathname,
     isGrid = pathname.startsWith("/grid/");

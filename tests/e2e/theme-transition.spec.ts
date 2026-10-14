@@ -30,7 +30,7 @@ for (const mode of ["animated", "reduced", "unsupported"]) {
       );
     await page.getByRole("button", { name: "Switch to dark theme" }).click();
     await expect(root).toHaveAttribute("data-theme", "dark");
-    if (mode === "animated")
+    if (mode !== "unsupported")
       await expect.poll(animations).toContain("theme-reveal-dark");
     else expect(await animations()).toEqual([]);
     await expect.poll(animations).toEqual([]);
@@ -38,7 +38,7 @@ for (const mode of ["animated", "reduced", "unsupported"]) {
       .getByRole("combobox", { name: "Theme", exact: true })
       .selectOption("light");
     await expect(root).toHaveAttribute("data-theme", "light");
-    if (mode === "animated")
+    if (mode !== "unsupported")
       await expect.poll(animations).toContain("theme-reveal-light");
     else expect(await animations()).toEqual([]);
     await expect.poll(animations).toEqual([]);

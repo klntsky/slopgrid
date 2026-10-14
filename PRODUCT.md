@@ -25,13 +25,13 @@ See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.m
 3. Use permissively licensed stock interface icons alongside official OpenRouter and GitHub brand assets. Brand icons must remain recognizable and uncropped.
 4. Keep buttons consistent throughout the interface, with restrained borders, padding, and corner rounding. Secondary buttons, including the hamburger and theme controls, have no borders. Output-type cards should have larger icons and labels without excessively rounded corners.
 5. Use concise, distinct headings and labels without repeating information already visible in the section.
-6. Explicit theme changes use the polygon reveal from https://theme-toggle.rdsx.dev/, reversing direction for light and dark. Switch immediately when reduced motion is requested or view transitions are unavailable.
+6. Explicit theme changes use the polygon reveal from https://theme-toggle.rdsx.dev/, reversing direction for light and dark, regardless of motion preferences. Switch immediately when view transitions are unavailable.
 
 ### 2.2. Navigation and page layout
 
 1. The logo opens `/grids` and serves as the navbar's grid-list link. Put the prominent NEW GRID action, with a plus icon, on the grid-list page.
 2. Keep navbar link labels uppercase, with readable desktop text and enough space for grid information. Use matching gaps between the brand, action buttons, and title/prompt group.
-3. For navigation, distinguish mobile from desktop by touchscreen availability. Touchscreen devices always use a hamburger menu anchored close to its button and keep theme selection in Settings, regardless of viewport width or orientation. Devices without a touchscreen show navigation links directly alongside the theme toggle. Keep compact grid action buttons on the first navbar row where they fit. At widths of 480px or more, place the grid title, prompt, and byline in the center of that row between the logo and actions; below 480px, give that information a full-width second row.
+3. For navigation, use the primary input capability independently of viewport width or orientation. Touch-primary devices use a hamburger menu anchored close to its button and keep theme selection in Settings. Mouse-primary devices show navigation links directly alongside the theme toggle, including when secondary touch support is reported. Keep compact grid action buttons on the first navbar row where they fit. At widths of 480px or more, place the grid title, prompt, and byline in the center of that row between the logo and actions; below 480px, give that information a full-width second row.
 4. Give "Your grids" and "Public grids" matching large heading styles. Keep separators only between grid entries in the lists.
 5. Billing and Settings use the same wider page-layout approach as `/grids`.
 6. Convey publication state through the available grid actions, placement in the public list, and a lowercase "published" label in the owner's grid list. Unpublished entries show their lowercase generation status.
