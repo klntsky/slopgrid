@@ -6,7 +6,7 @@
     "dev": "tsx server/index.ts",
     "build": "tsc --noEmit && vite build",
     "start": "NODE_ENV=production tsx server/index.ts",
-    "test": "pnpm test:unit && pnpm test:e2e",
+    "test": "pnpm build && pnpm test:built",
     "test:e2e": "tsx tests/run-e2e.ts --suite all",
     "check": "tsc --noEmit",
     "format": "prettier --write src server tests *.ts *.json *.md pnpm-workspace.yaml",

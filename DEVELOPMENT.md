@@ -71,7 +71,7 @@ pnpm test:e2e:mock
 pnpm test:e2e:real
 ```
 
-`pnpm test` runs unit tests, builds once, and runs the mock and real Playwright projects. `pnpm test:built` runs the same suites against the existing build, without rebuilding it. The E2E runner also accepts `--reuse-build` for focused runs against an existing build. The separate E2E commands build once and run their respective project.
+`pnpm test` builds once, then runs unit tests and the mock and real Playwright projects against that build. Unit tests that start web or browser fixtures require `dist/index.html`, so run `pnpm build` before invoking `pnpm test:unit` on a clean checkout. `pnpm test:built` runs the same suites against the existing build, without rebuilding it. The E2E runner also accepts `--reuse-build` for focused runs against an existing build. The separate E2E commands build once and run their respective project. Verify test-runner changes from a clean checkout without retained frontend assets.
 
 ### GitHub CI
 
