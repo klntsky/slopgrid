@@ -105,7 +105,6 @@ test("a restart preserves finished outputs and pauses interrupted work until an 
         new RecoveryProvider(),
         undefined,
         (grid) => {
-          store.saveGeneration(grid);
           if (grid.status === "complete") resolve();
         },
       );

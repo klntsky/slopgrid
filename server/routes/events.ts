@@ -5,6 +5,7 @@ import type { GenerationAPI, GenerationSnapshot } from "../generation-api.js";
 import type { SessionReader } from "../session.js";
 import type { GridPresenter } from "../grid-presentation.js";
 import { canViewGrid } from "../grid-policy.js";
+import { compareGridVersions } from "../../shared/grid-version.js";
 
 export function createEventRoutes({
   store,
@@ -39,7 +40,7 @@ export function createEventRoutes({
       Connection: "keep-alive",
     });
     res.flushHeaders();
-    let revision = -1;
+    let version = { revision: -1, draftRevision: 0 };
     const send = (grid: GenerationSnapshot) => {
       const current = store.session(s.id),
         stored = store.get(id);
@@ -47,8 +48,8 @@ export function createEventRoutes({
         res.end();
         return;
       }
-      if (grid.revision < revision) return;
-      revision = grid.revision;
+      if (compareGridVersions(grid, version) < 0) return;
+      version = { revision: grid.revision, draftRevision: grid.draftRevision };
       if (res.writableNeedDrain) {
         res.destroy();
         return;

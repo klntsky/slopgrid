@@ -16,6 +16,7 @@ import {
 
 type GridRuntime = {
   grid: Grid;
+  draftRevision: number;
   references: ReturnType<Store["references"]["loader"]>;
   retries: Map<string, number>;
   owner: string;
@@ -47,17 +48,19 @@ export class Jobs {
     private store: Store,
     private provider: Provider,
     readonly workersMax = 100,
-    private save: (grid: Grid) => void = (grid) => store.saveGeneration(grid),
+    private notify: (grid: Grid) => void = () => {},
   ) {
     if (!Number.isSafeInteger(workersMax) || workersMax < 1)
       throw new Error("WORKERS_MAX must be a positive safe integer");
     this.previews = new WebsitePreviews(join(store.files.root, ".previews"));
   }
-  private emit(grid: Grid) {
+  private emit(grid: Grid, cells: readonly Cell[]) {
     const state = this.grids.get(grid.id);
     clearTimeout(state?.timer);
     if (state) delete state.timer;
-    this.save(grid);
+    this.store.saveGeneration(grid, cells);
+    if (state) state.draftRevision = 0;
+    this.notify(grid);
   }
   draining = false;
   isRunning(id: string) {
@@ -78,18 +81,20 @@ export class Jobs {
       ).length,
     };
   }
-  snapshot(id: string): Grid | undefined {
+  snapshot(id: string): (Grid & { draftRevision: number }) | undefined {
     const stored = this.store.get(id);
     if (!stored) return;
-    const active = this.grids.get(id)?.grid;
+    const state = this.grids.get(id);
+    const active = state?.grid;
     return active
       ? {
           ...stored,
+          draftRevision: state!.draftRevision,
           status: active.status,
           interruption: active.interruption,
           cells: active.cells,
         }
-      : stored;
+      : { ...stored, draftRevision: 0 };
   }
   start(grid: Grid, key?: string, session?: Session): Grid {
     const current = this.grids.get(grid.id);
@@ -102,6 +107,7 @@ export class Jobs {
     const retries = current?.retries ?? new Map<string, number>();
     this.grids.set(g.id, {
       grid: g,
+      draftRevision: 0,
       owner,
       key: key || undefined,
       references: this.store.references.loader(),
@@ -113,14 +119,16 @@ export class Jobs {
         this.workersMax,
       last: this.owners.get(owner)?.last ?? 0,
     });
-    for (const cell of g.cells)
-      if (cell.status !== "complete" && cell.status !== "running") {
-        queueCell(cell);
-        retries.delete(cell.id);
-      }
+    const queued = g.cells.filter(
+      (cell) => cell.status !== "complete" && cell.status !== "running",
+    );
+    for (const cell of queued) {
+      queueCell(cell);
+      retries.delete(cell.id);
+    }
     g.status = "running";
     delete g.interruption;
-    this.emit(g);
+    this.emit(g, queued);
     this.schedule();
     return g;
   }
@@ -131,18 +139,21 @@ export class Jobs {
     g.status = "paused";
     if (state) delete state.key;
     g.interruption = "manual";
+    const changed = new Set<Cell>();
     for (const cell of g.cells) {
       this.previews.clear(cell);
       state?.retries.delete(cell.id);
+      if (cell.retrying) changed.add(cell);
       clearCellRetry(cell);
     }
     for (const { grid: runningGrid, cell, controller } of this.running.values())
       if (runningGrid.id === g.id) {
         queueCell(cell);
+        changed.add(cell);
         controller.abort();
       }
     this.settle(g);
-    this.emit(g);
+    this.emit(g, [...changed]);
     this.schedule();
     return g;
   }
@@ -199,7 +210,7 @@ export class Jobs {
       this.running.set(cell.id, call);
       this.owners.get(owner)!.last = ++this.allocation;
       beginCellAttempt(cell);
-      this.emit(grid);
+      this.emit(grid, [cell]);
       void this.runCell(call, key);
     }
   }
@@ -212,7 +223,7 @@ export class Jobs {
         grid.interruption = "billing";
         for (const cell of grid.cells) delete cell.retrying;
         this.settle(grid);
-        this.emit(grid);
+        this.emit(grid, []);
       }
     }
   }
@@ -240,11 +251,15 @@ export class Jobs {
   }
   private previewUpdated(grid: Grid) {
     const state = this.grids.get(grid.id)!;
+    // HTTP reads can observe chunks between notifications. Order those snapshots
+    // in memory; SQLite revisions are reserved for durable state transitions.
+    state.draftRevision++;
     const delay = Math.max(0, 300 - (Date.now() - (state.emittedAt ?? 0)));
     const flush = () => {
       if (this.grids.get(grid.id) !== state) return;
       state.emittedAt = Date.now();
-      this.emit(grid);
+      delete state.timer;
+      this.notify(grid);
     };
     if (!delay) flush();
     else if (!state.timer) state.timer = setTimeout(flush, delay);
@@ -266,9 +281,6 @@ export class Jobs {
         cell,
         ({ text, thinking, estimatedUsage }) => {
           if (!current()) return;
-          // Drafts can be read between throttled SSE emissions. Give each update
-          // its own revision so a late HTTP snapshot cannot regress live text.
-          this.store.nextRevision(grid);
           const previousLength = cell.thinking?.length ?? 0;
           if (thinking.length > previousLength) {
             this.store.files.appendThinking(
@@ -276,7 +288,11 @@ export class Jobs {
               thinkingId,
               thinking.slice(previousLength),
             );
-            cell.thinkingId = thinkingId;
+            if (cell.thinkingId !== thinkingId) {
+              cell.thinkingId = thinkingId;
+              // Persist the trace locator once so a crash retains partial thinking.
+              this.store.saveGeneration(grid, [cell]);
+            }
           }
           cell.thinking = thinking;
           const changed = cell.draft !== text;
@@ -343,7 +359,7 @@ export class Jobs {
       clearCellProgress(cell);
       this.running.delete(cell.id);
       this.settle(grid);
-      this.emit(grid);
+      this.emit(grid, [cell]);
       this.schedule();
     }
   }

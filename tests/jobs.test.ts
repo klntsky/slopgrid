@@ -7,6 +7,8 @@ import { Store } from "../server/store.js";
 import { Jobs } from "../server/jobs.js";
 import { ControlledProvider } from "./controlled-provider.js";
 import { expandGrid, type Grid } from "../server/domain.js";
+import { compareGridVersions } from "../shared/grid-version.js";
+import { recoverInterruptedGrids } from "../server/recovery.js";
 
 const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
 function harness(limit?: number) {
@@ -60,6 +62,132 @@ function harness(limit?: number) {
   }
   return { store, provider, jobs, grid, close };
 }
+
+test("streaming bursts and preview notifications do not write to SQLite", async () => {
+  const h = harness(1);
+  try {
+    const grid = h.grid("alice", "streaming", 8);
+    h.jobs.start(grid);
+    await flush();
+    const call = h.provider.pending.get(grid.cells[0].id)!;
+    const changes = () =>
+      (
+        h.store.db.prepare("SELECT total_changes() AS count").get() as {
+          count: number;
+        }
+      ).count;
+    const before = changes();
+    for (let index = 1; index <= 100; index++)
+      call.write("Output ".repeat(index), { costUsd: index / 1000 });
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    assert.equal(
+      changes(),
+      before,
+      "drafts, estimates and their notifications stay in memory",
+    );
+    assert.equal(
+      h.jobs.snapshot(grid.id)!.cells[0].draft,
+      "Output ".repeat(100),
+    );
+
+    call.write("Output", undefined, "First thinking");
+    const thinkingId = h.store.get(grid.id)!.cells[0].thinkingId;
+    assert.ok(
+      thinkingId,
+      "the trace identifier is durable as soon as thinking arrives",
+    );
+    const checkpointed = changes();
+    for (let index = 1; index <= 100; index++)
+      call.write("Output", undefined, "First thinking" + ".".repeat(index));
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    assert.equal(
+      changes(),
+      checkpointed,
+      "appending to the same trace needs no SQLite writes",
+    );
+    assert.equal(
+      readFileSync(
+        h.store.files.thinkingPath(grid.cells[0].id, thinkingId)!,
+        "utf8",
+      ),
+      "First thinking" + ".".repeat(100),
+    );
+  } finally {
+    await h.close();
+  }
+});
+
+test("cell completion and subsequent dispatch leave unrelated cell rows untouched", async () => {
+  const h = harness(1);
+  try {
+    const grid = h.grid("alice", "writes", 8);
+    h.jobs.start(grid);
+    await flush();
+    h.store.db.exec(`
+      CREATE TEMP TABLE cell_writes (id TEXT);
+      CREATE TEMP TRIGGER record_cell_write AFTER UPDATE ON cells
+      BEGIN INSERT INTO cell_writes VALUES (NEW.id); END;
+    `);
+    h.provider.finish(grid.cells[0].id);
+    await flush();
+    const writes = h.store.db
+      .prepare("SELECT id FROM cell_writes ORDER BY rowid")
+      .all();
+    assert.deepEqual(writes, [
+      { id: grid.cells[0].id },
+      { id: grid.cells[1].id },
+    ]);
+    assert.equal(h.store.get(grid.id)!.cells[0].status, "complete");
+    assert.equal(h.store.get(grid.id)!.cells[1].status, "running");
+  } finally {
+    await h.close();
+  }
+});
+
+test("draft ordering survives metadata changes, pause, and recovery of a billing-paused grid", async () => {
+  const h = harness(2);
+  try {
+    const grid = h.grid("alice", "ordering", 3);
+    h.jobs.start(grid);
+    await flush();
+    const call = h.provider.pending.get(grid.cells[0].id)!;
+    call.write("First");
+    const first = h.jobs.snapshot(grid.id)!;
+    call.write("Second");
+    const second = h.jobs.snapshot(grid.id)!;
+    assert.equal(second.revision, first.revision);
+    assert.ok(compareGridVersions(second, first) > 0);
+    h.store.setTitle(grid.id, "Changed during streaming");
+    const edited = h.jobs.snapshot(grid.id)!;
+    assert.equal(edited.title, "Changed during streaming");
+    assert.ok(compareGridVersions(edited, second) > 0);
+    call.write("Third");
+    const third = h.jobs.snapshot(grid.id)!;
+    assert.equal(third.revision, edited.revision);
+    assert.ok(compareGridVersions(third, edited) > 0);
+
+    h.provider.fail(grid.cells[1].id, 402);
+    await flush();
+    call.write("Continued after billing pause");
+    const paused = h.jobs.snapshot(grid.id)!;
+    assert.equal(paused.status, "paused");
+    assert.equal(paused.cells[0].status, "running");
+    assert.ok(compareGridVersions(paused, third) > 0);
+    // Recover the persisted state just as a replacement engine would. The
+    // paused grid still has an interrupted call and must supersede live drafts.
+    recoverInterruptedGrids(h.store);
+    const recovered = new Jobs(h.store, h.provider).snapshot(grid.id)!;
+    assert.equal(recovered.cells[0].status, "pending");
+    assert.ok(compareGridVersions(recovered, paused) > 0);
+    h.jobs.pause(grid);
+    await flush();
+    const stable = h.jobs.snapshot(grid.id)!;
+    assert.equal(stable.draftRevision, 0);
+    assert.ok(compareGridVersions(stable, recovered) > 0);
+  } finally {
+    await h.close();
+  }
+});
 
 test("budget-specific 403 pauses queued work while active calls finish", async () => {
   const h = harness(2);

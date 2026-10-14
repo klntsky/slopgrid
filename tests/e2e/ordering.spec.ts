@@ -1,6 +1,87 @@
 import { test, expect } from "@playwright/test";
 import { runtimeFixture, kill } from "../runtime-fixture";
 
+test("delayed HTTP snapshots cannot replace newer drafts within the same durable revision", async ({
+  page,
+  context,
+}) => {
+  const f = await runtimeFixture();
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let delivered!: () => void;
+  const delivery = new Promise<void>((resolve) => {
+    delivered = resolve;
+  });
+  try {
+    await context.addCookies([
+      { name: "slopgrid", value: f.owner, url: f.origin },
+    ]);
+    const grid = f.grid({ rows: { kind: "variable", values: ["cat"] } });
+    await f.engine.api.startGrid({ gridId: grid.id, sessionId: f.owner });
+    const call = await f.call(0);
+    call.write({
+      content: "Earlier output. ",
+      reasoning: "Earlier thinking. ",
+    });
+    await page.goto(`${f.origin}/grid/${grid.id}`);
+    await expect(page.locator(".markdown-preview:visible")).toContainText(
+      "Earlier output.",
+    );
+    let captured!: () => void;
+    const held = new Promise<void>((resolve) => {
+      captured = resolve;
+    });
+    await page.route(
+      `${f.origin}/api/grids/${grid.id}`,
+      async (route) => {
+        const response = await route.fetch();
+        captured();
+        await gate;
+        await route.fulfill({ response });
+        delivered();
+      },
+      { times: 1 },
+    );
+    await page.evaluate(() =>
+      window.dispatchEvent(new Event("visibilitychange")),
+    );
+    await held;
+    const before = await f.engine.api.getGrid(grid.id);
+    call.write({ content: "Newer output.", reasoning: "Newer thinking." });
+    await expect(page.locator(".markdown-preview:visible")).toContainText(
+      "Newer output.",
+    );
+    const after = await f.engine.api.getGrid(grid.id);
+    expect(after.revision).toBe(before.revision);
+    expect(after.draftRevision).toBeGreaterThan(before.draftRevision);
+    // No further chunks can repair a rollback after the delayed query arrives.
+    release();
+    await delivery;
+    await page.evaluate(
+      () =>
+        new Promise((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(resolve)),
+        ),
+    );
+    await expect(page.locator(".markdown-preview:visible")).toContainText(
+      "Newer output.",
+    );
+    await page
+      .getByRole("button", { name: "Show thinking", exact: true })
+      .click();
+    await expect(
+      page.getByRole("region", { name: /^Thinking:/ }),
+    ).toContainText("Newer thinking.");
+    call.finish();
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+    await f.close();
+  }
+});
+
 test("late HTTP and reconnected stream snapshots cannot roll back content, thinking, title, cost or completion", async ({
   page,
   context,
@@ -70,7 +151,10 @@ test("late HTTP and reconnected stream snapshots cannot roll back content, think
     // Observe every DOM commit, so a transient rollback followed by recovery fails too.
     const observations = await page.evaluateHandle(() => {
       const states: {
-        title: string; content: string; price: string; spent: string;
+        title: string;
+        content: string;
+        price: string;
+        spent: string;
       }[] = [];
       const observer = new MutationObserver(() =>
         states.push({

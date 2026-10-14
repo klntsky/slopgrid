@@ -18,7 +18,6 @@ export function createGenerationService(
 ) {
   const updates = new EventEmitter().setMaxListeners(0);
   const jobs = new Jobs(store, provider, workersMax, (grid) => {
-    store.saveGeneration(grid);
     updates.emit(grid.id);
   });
   const instance = token();

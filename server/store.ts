@@ -93,29 +93,25 @@ export class Store {
       this.saveGeneration(grid);
     })();
   }
-  nextRevision(grid: Grid) {
-    const row = this.db
-      .prepare(
-        `UPDATE grids SET data=json_set(data, '$.revision', COALESCE(json_extract(data,'$.revision'),0)+1) WHERE id=? RETURNING json_extract(data,'$.revision') AS revision`,
-      )
-      .get(grid.id) as { revision: number };
-    grid.revision = row.revision;
-  }
-  saveGeneration(grid: Grid) {
+  saveGeneration(grid: Grid, cells: readonly Cell[] = grid.cells) {
     this.db.transaction(() => {
-      this.nextRevision(grid);
-      this.db
+      const row = this.db
         .prepare(
-          `UPDATE grids SET data=json_set(data, '$.status', ?, '$.interruption', json(?)) WHERE id=?`,
+          `UPDATE grids SET data=json_set(data, '$.status', ?, '$.interruption', json(?), '$.revision', COALESCE(json_extract(data,'$.revision'),0)+1) WHERE id=? RETURNING json_extract(data,'$.revision') AS revision`,
         )
-        .run(grid.status, JSON.stringify(grid.interruption ?? null), grid.id);
+        .get(
+          grid.status,
+          JSON.stringify(grid.interruption ?? null),
+          grid.id,
+        ) as { revision: number };
+      grid.revision = row.revision;
       const saveCell = this.db.prepare(
         "UPDATE cells SET data=? WHERE id=? AND grid_id=?",
       );
       const hasCalls = this.db.prepare(
         "SELECT 1 FROM inference_calls WHERE cell_id=? LIMIT 1",
       );
-      for (const cell of grid.cells) {
+      for (const cell of cells) {
         const {
           status,
           error,

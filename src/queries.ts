@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { compareGridVersions } from "../shared/grid-version";
 import type { inferenceCapacity } from "../server/inference-policy";
 import { useOpenRouterKey } from "./openrouter-key";
 import { QueryClient, useQuery } from "@tanstack/react-query";
@@ -7,7 +8,7 @@ import { api, type ViewGrid, type SessionInfo } from "./api";
 function newestGrid(previous: unknown, incoming: unknown) {
   const old = previous as ViewGrid | undefined,
     next = incoming as ViewGrid;
-  return old && old.revision > next.revision ? old : next;
+  return old && compareGridVersions(old, next) > 0 ? old : next;
 }
 export const queryClient = new QueryClient();
 queryClient.setQueryDefaults(["grid"], { structuralSharing: newestGrid });

@@ -90,6 +90,14 @@ Mouse-drag browser scenarios cover two-axis panning from image padding and cell 
 
 Streaming usage coverage checks token growth during thinking and output, stable input counts, replacement by reported usage, reconnect snapshots, and reset after failure or retry. Scheduler coverage checks that paused or superseded calls cannot restore discarded token and cost estimates.
 
+Streaming persistence coverage measures SQLite changes across chunk bursts and
+throttled notifications, checks that a trace identifier is checkpointed once,
+and records updated cell rows to ensure completion and dispatch leave unrelated
+cells untouched. Ordering coverage includes drafts within one durable revision,
+concurrent metadata edits, and recovery of paused grids with interrupted calls.
+The browser delays a real HTTP response while newer drafts arrive and verifies
+that the delayed response cannot replace the newer output or thinking.
+
 Scheduler lifecycle coverage also resumes a grid before its cancelled call has
 settled. The old call must retain its worker slot, its late billing failure must
 not pause the resumed grid, and its late chunks must not overwrite the replacement

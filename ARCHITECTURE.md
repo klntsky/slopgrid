@@ -104,9 +104,16 @@ Commands use strict payload schemas and named parameters rather than mutable gri
 - Creation inserts immutable grid configuration and initial cells together.
   `Store.saveGeneration` changes only generation status, interruption, and cell
   state; metadata methods change only titles, publication, or ownership.
-- Every mutation allocates a monotonic SQLite revision, including live draft
-  changes whose text stays in memory. Snapshots combine fresh persisted metadata
-  with live cells, and clients discard older revisions.
+- Durable mutations allocate a monotonic SQLite revision. Individual call
+  transitions save only their affected cell; grid-wide transitions save the
+  cells they change. Draft, estimate, and preview notifications do not write to
+  SQLite. The first thinking chunk checkpoints its trace identifier once, while
+  subsequent chunks append to the trace file.
+- Snapshots combine fresh persisted metadata with live cells and an in-memory
+  draft revision. The web stream and browser compare the durable revision first,
+  then the draft revision, so delayed snapshots cannot replace newer chunks.
+  Durable transitions supersede earlier drafts, and engine recovery advances the
+  durable revision for interrupted calls, including those in paused grids.
 - Publication and admission use immediate transactions so publication cannot race
   a retry. The engine writes inference calls; the web process reads the ledger.
 - Engine subscriptions register before their initial snapshot in the same
@@ -133,8 +140,10 @@ Commands use strict payload schemas and named parameters rather than mutable gri
 - Termination signals request the same drain. A forced kill can interrupt work.
   Only engine startup performs interrupted-grid recovery and preview cleanup;
   opening a store or restarting the web process does not.
-- Recovery marks running grids paused and interrupted cells pending. It does not
-  launch replacement requests. Resume requires an owner-authorized command.
+- Recovery marks running grids paused and interrupted cells pending, including
+  calls that were still running in a billing-paused grid. It advances the durable
+  revision without launching replacement requests. Resume requires an
+  owner-authorized command.
 - Protocol, storage, engine, and incompatible dependency changes require a
   compatible machinery update. Admission can reopen if maintenance is cancelled.
 

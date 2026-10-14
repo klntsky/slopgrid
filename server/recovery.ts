@@ -4,7 +4,11 @@ import type { Store } from "./store.js";
 export function recoverInterruptedGrids(store: Store) {
   store.billing.recover();
   for (const grid of store.all()) {
-    if (grid.status !== "running") continue;
+    if (
+      grid.status !== "running" &&
+      !grid.cells.some((cell) => cell.status === "running")
+    )
+      continue;
     grid.status = "paused";
     grid.interruption = "restart";
     for (const cell of grid.cells)
