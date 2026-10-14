@@ -102,8 +102,9 @@ Commands use strict payload schemas and named parameters rather than mutable gri
 ### Write ownership and ordered snapshots
 
 - Creation inserts immutable grid configuration and initial cells together.
-  `Store.saveGeneration` changes only generation status, interruption, and cell
-  state; metadata methods change only titles, publication, or ownership.
+  `Store.saveGeneration` changes only generation status, interruption, the
+  unsettled-call marker, revision, and affected cell state; metadata methods
+  change only titles, publication, or ownership and advance the revision.
 - Durable mutations allocate a monotonic SQLite revision. Individual call
   transitions save only their affected cell; grid-wide transitions save the
   cells they change. Draft, estimate, and preview notifications do not write to
@@ -128,6 +129,10 @@ Commands use strict payload schemas and named parameters rather than mutable gri
   persists billing and cell state, advances the revision, and emits the final
   snapshot before the browser closes its stream. Reloads and reconnects receive
   the same engine-derived flag, and streams reopen when work starts again.
+- The engine checkpoints `hasUnsettledCalls` with each state transition, based on
+  calls still held by the scheduler. Manual Pause retains it until the final call
+  settles, even when billing has already finished. This recovery marker stays
+  private to storage and the engine API; browser snapshots retain `live`.
 
 ### Updates and recovery
 
@@ -144,6 +149,10 @@ Commands use strict payload schemas and named parameters rather than mutable gri
   calls that were still running in a billing-paused grid. It advances the durable
   revision without launching replacement requests. Resume requires an
   owner-authorized command.
+- Recovery also clears surviving unsettled-call markers and advances their grid
+  revisions in the same transaction. Manually paused grids retain their pause
+  reason, and delayed pre-crash snapshots cannot restore their live state.
+  Repeating recovery leaves settled grids unchanged.
 - Protocol, storage, engine, and incompatible dependency changes require a
   compatible machinery update. Admission can reopen if maintenance is cancelled.
 

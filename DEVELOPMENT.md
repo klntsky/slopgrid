@@ -113,6 +113,16 @@ upstream to finish after cancellation while retaining the SDK, parser, billing,
 engine, web process, and browser. Late output remains discarded. Engine coverage
 checks that the stable snapshot has a newer revision than the paused live snapshot.
 
+Recovery coverage kills the engine after manual Pause, both while billing is
+running and after the charge is recorded but before the scheduler releases the
+call. The recovered snapshot must have a newer durable revision and reject the
+delayed pre-crash snapshot through the browser cache. Preserve recorded charges,
+partial thinking, pending cells, and the manual pause reason without starting
+replacement calls. A second restart must leave the recovered revision unchanged.
+Multi-call pause coverage checks that the persisted unsettled-call marker stays
+set until the last call settles; streaming coverage still requires zero SQLite
+writes for draft bursts.
+
 The runtime behavior tests share `tests/runtime-fixture.ts`: a controlled OpenRouter HTTP service, a real inference child, a replaceable web child, and a temporary SQLite database and output directory. The actual provider SDK, stream parser, billing recorder, and Unix-socket API remain in use. Fixture children, including browser app processes, report readiness over IPC after their listeners are available. Startup waits report the child error or exit status, with a bounded timeout for a hung process, instead of treating a delayed startup as an application transition failure. Tests explicitly release streaming chunks or failures instead of relying on provider response timing. Sessions are seeded directly; authentication flows have separate coverage.
 
 Grid-price coverage distinguishes visible successful-output cost from owner-only lifetime spending. Billing tests cover reported usage arriving before cell settlement, reported zero charges, cancellation, retries, and isolation between grids. Browser coverage follows both totals through streaming, failure, retry, reload, and publication; HTTP and SSE coverage ensures non-owners never receive `spentUsd`. Reordered-snapshot coverage checks both displayed totals. A controlled-stream browser scenario checks thinking scroll-following through successive chunks and viewport resizing, wheel-scrolling up to preserve a reading position, returning to the bottom, and completion through the saved-trace fetch. Thinking-exhaustion coverage distinguishes a fully consumed reasoning budget from partial output and early termination, verifies durable errors and traces, separates charges from successful-output costs, and observes SSE closure. SVG view-switch coverage checks decoded image content while hidden behind thinking, preserves the mounted preview across toggles, and verifies completion while thinking remains selected. Expansion coverage follows SVG updates through completion and website updates in the overlay, verifies generated JavaScript execution, and checks image/SVG/website collapse via Escape, restored focus, retained table elements, and saved dimensions. Website coverage presses Escape while focus is inside the isolated frame.

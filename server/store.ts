@@ -97,11 +97,12 @@ export class Store {
     this.db.transaction(() => {
       const row = this.db
         .prepare(
-          `UPDATE grids SET data=json_set(data, '$.status', ?, '$.interruption', json(?), '$.revision', COALESCE(json_extract(data,'$.revision'),0)+1) WHERE id=? RETURNING json_extract(data,'$.revision') AS revision`,
+          `UPDATE grids SET data=json_set(data, '$.status', ?, '$.interruption', json(?), '$.hasUnsettledCalls', json(?), '$.revision', COALESCE(json_extract(data,'$.revision'),0)+1) WHERE id=? RETURNING json_extract(data,'$.revision') AS revision`,
         )
         .get(
           grid.status,
           JSON.stringify(grid.interruption ?? null),
+          JSON.stringify(grid.hasUnsettledCalls ?? false),
           grid.id,
         ) as { revision: number };
       grid.revision = row.revision;

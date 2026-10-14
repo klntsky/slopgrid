@@ -58,6 +58,9 @@ export class Jobs {
     const state = this.grids.get(grid.id);
     clearTimeout(state?.timer);
     if (state) delete state.timer;
+    // Cell and billing statuses can finish before the scheduler releases a call.
+    // Checkpoint that distinction with the transition's revision for recovery.
+    grid.hasUnsettledCalls = this.hasUnsettledCalls(grid.id);
     this.store.saveGeneration(grid, cells);
     if (state) state.draftRevision = 0;
     this.notify(grid);
@@ -67,10 +70,10 @@ export class Jobs {
     return this.grids.get(id)?.grid.status === "running";
   }
   isLive(id: string) {
-    return (
-      this.isRunning(id) ||
-      [...this.running.values()].some(({ grid }) => grid.id === id)
-    );
+    return this.isRunning(id) || this.hasUnsettledCalls(id);
+  }
+  private hasUnsettledCalls(id: string) {
+    return [...this.running.values()].some(({ grid }) => grid.id === id);
   }
   status() {
     return {
@@ -228,10 +231,7 @@ export class Jobs {
     }
   }
   private settle(grid: Grid) {
-    const inFlight = [...this.running.values()].some(
-      (work) => work.grid.id === grid.id,
-    );
-    if (inFlight) return;
+    if (this.hasUnsettledCalls(grid.id)) return;
     if (grid.cells.every((cell) => cell.status === "complete")) {
       grid.status = "complete";
       delete grid.interruption;

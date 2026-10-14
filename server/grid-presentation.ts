@@ -21,7 +21,13 @@ export function gridAuthor(grid: Grid, store: Store): Identity | null {
 }
 export function createGridPresenter(store: Store, origin: URL) {
   const snapshot = (g: GenerationSnapshot, s: Session) => {
-    const { owner: _owner, ownerUserId: _ownerUserId, spentUsd, ...grid } = g;
+    const {
+      owner: _owner,
+      ownerUserId: _ownerUserId,
+      hasUnsettledCalls: _hasUnsettledCalls,
+      spentUsd,
+      ...grid
+    } = g;
     const canEdit = ownsGrid(g, s);
     return {
       ...grid,

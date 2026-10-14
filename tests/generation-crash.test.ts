@@ -3,6 +3,97 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { runtimeFixture, until } from "./runtime-fixture.js";
 import { crashCheckpoint } from "./crash-checkpoint.js";
+import { queryClient } from "../src/queries.js";
+
+for (const billed of [false, true])
+  test(
+    `recovery supersedes paused live snapshots ${billed ? "after billing finishes" : "while billing is running"}`,
+    { timeout: 20000 },
+    async () => {
+      const f = await runtimeFixture({ ignoreAbort: true });
+      let debug: Awaited<ReturnType<typeof crashCheckpoint>> | undefined;
+      try {
+        const grid = f.grid({ rows: { kind: "variable", values: ["cat"] } });
+        await f.engine.api.startGrid({ gridId: grid.id, sessionId: f.owner });
+        const call = await f.call(0);
+        call.write({ content: "Discarded output", reasoning: "Saved trace" });
+        await until(
+          () => f.engine.api.getGrid(grid.id),
+          (g) => !!g.cells[0].thinkingId,
+        );
+        const paused = await f.engine.api.pauseGrid({
+          gridId: grid.id,
+          sessionId: f.owner,
+        });
+        assert.equal(paused.live, true);
+        assert.equal(paused.cells[0].status, "pending");
+        assert.equal(f.store.get(grid.id)!.hasUnsettledCalls, true);
+        if (billed) {
+          // Stop after the provider recorded its charge, before Jobs releases
+          // the call. Recovery cannot infer this state from the billing ledger.
+          debug = await crashCheckpoint(
+            f.engine.child,
+            "jobs.ts",
+            "const billing=this.store.billing.cell(cell.id)",
+          );
+          call.finish();
+          await debug.paused;
+          assert.equal(f.store.billing.page(f.owner, 0).running, 0);
+          assert.equal(f.store.billing.page(f.owner, 0).costUsd, 0.0123);
+        }
+        await f.engine.close();
+        debug?.close();
+        await f.startEngine();
+        const recovered = await f.engine.api.getGrid(grid.id);
+        assert.equal(recovered.live, false);
+        assert.equal(recovered.status, "paused");
+        assert.equal(recovered.interruption, "manual");
+        assert.equal(f.store.get(grid.id)!.hasUnsettledCalls, false);
+        assert.equal(recovered.cells[0].status, "pending");
+        assert.ok(
+          recovered.revision > paused.revision,
+          "clearing unsettled calls must supersede the pre-crash snapshot",
+        );
+        queryClient.setQueryData(["grid", grid.id], recovered);
+        queryClient.setQueryData(["grid", grid.id], paused);
+        assert.equal(queryClient.getQueryData(["grid", grid.id]), recovered);
+        assert.equal(f.store.billing.page(f.owner, 0).running, 0);
+        assert.equal(
+          f.store.billing.page(f.owner, 0).costUsd,
+          billed ? 0.0123 : 0,
+        );
+        assert.equal(f.calls.length, 1);
+        assert.equal(
+          (await f.request(`/outputs/${grid.cells[0].id}`)).status,
+          404,
+        );
+        assert.equal(
+          readFileSync(
+            f.store.files.thinkingPath(
+              grid.cells[0].id,
+              paused.cells[0].thinkingId!,
+            )!,
+            "utf8",
+          ),
+          "Saved trace",
+        );
+        await f.engine.close();
+        await f.startEngine();
+        const stable = await f.engine.api.getGrid(grid.id);
+        assert.equal(
+          stable.revision,
+          recovered.revision,
+          "a second restart must leave settled grids alone",
+        );
+        assert.equal(stable.live, false);
+        assert.equal(f.calls.length, 1);
+      } finally {
+        debug?.close();
+        queryClient.clear();
+        await f.close();
+      }
+    },
+  );
 
 for (const checkpoint of [
   {

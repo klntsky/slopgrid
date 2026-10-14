@@ -40,6 +40,7 @@ test("Pause keeps live updates through reload and reconnect until every cancelle
       activeGrids: 0,
       runningCalls: 2,
     });
+    expect(f.store.get(grid.id)!.hasUnsettledCalls).toBe(true);
     await expect.poll(() => streams.size).toBe(1);
 
     // Reopening a paused grid must discover its outstanding calls from the engine.
@@ -65,6 +66,7 @@ test("Pause keeps live updates through reload and reconnect until every cancelle
     ).toBeVisible();
     expect(streams.size).toBe(1);
     expect(await f.engine.api.status()).toMatchObject({ runningCalls: 1 });
+    expect(f.store.get(grid.id)!.hasUnsettledCalls).toBe(true);
     second.write({ content: "Another discarded output" });
     second.finish(0.5);
     await expect(
@@ -72,6 +74,7 @@ test("Pause keeps live updates through reload and reconnect until every cancelle
     ).toBeVisible();
     await expect.poll(() => streams.size).toBe(0);
     const settled = await f.engine.api.getGrid(grid.id);
+    expect(f.store.get(grid.id)!.hasUnsettledCalls).toBe(false);
     expect(settled).toMatchObject({ status: "paused", spentUsd: 0.75 });
     expect(settled.cells.map((cell) => cell.status)).toEqual([
       "pending",

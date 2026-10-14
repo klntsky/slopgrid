@@ -4,15 +4,17 @@ import type { Store } from "./store.js";
 export function recoverInterruptedGrids(store: Store) {
   store.billing.recover();
   for (const grid of store.all()) {
-    if (
-      grid.status !== "running" &&
-      !grid.cells.some((cell) => cell.status === "running")
-    )
-      continue;
-    grid.status = "paused";
-    grid.interruption = "restart";
-    for (const cell of grid.cells)
-      if (cell.status === "running") cell.status = "pending";
-    store.saveGeneration(grid);
+    const running = grid.cells.filter((cell) => cell.status === "running");
+    const interrupted = grid.status === "running" || running.length > 0;
+    if (!interrupted && !grid.hasUnsettledCalls) continue;
+    if (interrupted) {
+      grid.status = "paused";
+      grid.interruption = "restart";
+      for (const cell of running) cell.status = "pending";
+    }
+    // Clearing the durable marker and advancing the revision share one commit,
+    // even when Pause already made every cell pending and billing has finished.
+    grid.hasUnsettledCalls = false;
+    store.saveGeneration(grid, running);
   }
 }
