@@ -15,3 +15,5 @@
 7. Use the LLM patch tools for text edits, and never use Python for string replacement.
 
 8. Keep ARCHITECTURE.md focused on architectural responsibilities and boundaries; leave granular styling details such as individual breakpoints in the code. Organize it with descriptive headings, short paragraphs, and bullet points grouped by responsibility instead of dense implementation inventories.
+
+9. remember to never editorialize anything I say anywhere - not in the docs, not in the UI, not in your responses when citing
