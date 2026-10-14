@@ -43,7 +43,7 @@ Catalog checks cover combined model and image-detail loading, periodic server re
 
 When changing SDK imports or upgrading the SDK, compare production JavaScript sizes and retained modules on staging to catch accidental inclusion of unused client code.
 
-Frontend serving, retained assets, and bundling are described in [ARCHITECTURE.md](ARCHITECTURE.md#entrypoints-and-request-handling).
+Frontend serving and retained assets are described under [process boundaries](ARCHITECTURE.md#process-boundaries).
 
 ## Validation
 
@@ -212,7 +212,7 @@ Preserve the automatically created development encryption key, since changing it
 
 ## Storage maintenance and validation
 
-Keep SQLite and output-directory backups, including uploaded references, together with the encryption key needed to read stored credentials. See [storage ownership](ARCHITECTURE.md#storage-ownership) for schema handling and output lifecycle.
+Keep SQLite and output-directory backups, including uploaded references, together with the encryption key needed to read stored credentials. See [state and persistence](ARCHITECTURE.md#state-and-persistence) for storage responsibilities and output lifecycle.
 
 Storage and route tests exercise persistence and reopening. Upgrade and unsupported-version tests check that existing data is preserved. Session tests reopen storage with an old session and verify retained account identity, encrypted credentials, persistent cookie renewal, and logout revocation.
 
@@ -228,7 +228,7 @@ Image/SVG cache coverage checks reuse without transferring bytes across page vis
 
 ## Asset licenses
 
-When replacing bundled fonts or icons, retain their distribution notices and verify that the build includes them. Asset formats, sources, and licenses are listed in [ARCHITECTURE.md](ARCHITECTURE.md#bundled-assets-and-dependencies).
+When replacing bundled fonts or icons, retain their distribution notices and verify that the build includes them. The included notices are `public/fonts/DejaVu-LICENSE.txt` and `public/lucide-LICENSE.txt`.
 
 ## Publishing validation
 
@@ -238,7 +238,7 @@ Publishing tests cover access, immutable visibility, summary filtering, and pers
 
 `pnpm generation status` reads the engine instance and workload counts. `pnpm generation drain` closes admission and waits for accepted grids and unsettled requests to finish. `pnpm generation accept` reopens admission, including when cancelling a planned machinery update. These commands require the same runtime configuration as the application and connect only through its private socket. A drain has no inference timeout and does not cancel user work.
 
-Choose the deployment mode using the [update boundaries](ARCHITECTURE.md#updates-and-recovery). Both mocked and real-provider browser suites use a separate inference child process. The process-lifetime regression replaces the web child during an active streamed call and verifies queue draining and recorded costs.
+Choose the deployment mode using the [process boundaries](ARCHITECTURE.md#process-boundaries). Both mocked and real-provider browser suites use a separate inference child process. The process-lifetime regression replaces the web child during an active streamed call and verifies queue draining and recorded costs.
 
 ## Artifact reuse validation
 
