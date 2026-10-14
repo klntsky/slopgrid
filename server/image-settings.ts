@@ -1,37 +1,20 @@
 import { z } from "zod";
 
+import {
+  ImageGenerationRequestAspectRatio,
+  ImageGenerationRequestBackground,
+  ImageGenerationRequestQuality,
+  ImageGenerationRequestResolution,
+} from "@openrouter/sdk/models/imagegenerationrequest.js";
+
+function withAuto(values: Record<string, string>): string[] {
+  return ["auto", ...Object.values(values).filter((value) => value !== "auto")];
+}
 export const imageChoices = {
-  size: ["auto", "512", "768", "1K", "1.5K", "2K", "4K"],
-  aspect_ratio: [
-    "auto",
-    "1:1",
-    "1:2",
-    "1:4",
-    "1:8",
-    "2:1",
-    "2:3",
-    "2.35:1",
-    "3:2",
-    "3:4",
-    "4:1",
-    "4:3",
-    "4:5",
-    "5:2",
-    "5:4",
-    "5:7",
-    "7:5",
-    "8:1",
-    "9:16",
-    "16:9",
-    "9:19.5",
-    "19.5:9",
-    "9:20",
-    "20:9",
-    "9:21",
-    "21:9",
-  ],
-  quality: ["auto", "low", "medium", "high", "xhigh", "max"],
-  background: ["auto", "transparent", "opaque"],
+  size: withAuto(ImageGenerationRequestResolution),
+  aspect_ratio: withAuto(ImageGenerationRequestAspectRatio),
+  quality: withAuto(ImageGenerationRequestQuality),
+  background: withAuto(ImageGenerationRequestBackground),
 };
 export const imageKinds = [
   "size",

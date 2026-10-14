@@ -175,6 +175,9 @@ importers:
       '@openrouter/ai-sdk-provider':
         specifier: 3.1.0
         version: 3.1.0(ai@7.0.136(zod@4.6.5))(zod@4.6.5)
+      '@openrouter/sdk':
+        specifier: 1.4.25
+        version: 1.4.25
       '@tanstack/react-query':
         specifier: 5.104.1
         version: 5.104.1(react@19.3.0)
@@ -467,6 +470,9 @@ packages:
     peerDependencies:
       ai: ^7.0.0
       zod: ^3.25.76 || ^4.1.8
+
+  '@openrouter/sdk@1.4.25':
+    resolution: {integrity: sha512-H218lYMy9WhU5cMigUvW/k+e1BimCqTTP+9PqssdDXnQ0gFCeEME0HTsFGPbR6UgJgyYh2hTct43/9pMcBem5A==}
 
   '@oxc-project/types@0.153.0':
     resolution: {integrity: sha512-jSNrRIyvPVLL5E1z/tS5zLAprosGz/FuI1PWwEOz59j3E4TTTzSpqKb/RDGqJhhW0QHYISGXxq582wGx6T11Tw==}
@@ -1791,6 +1797,10 @@ snapshots:
   '@openrouter/ai-sdk-provider@3.1.0(ai@7.0.136(zod@4.6.5))(zod@4.6.5)':
     dependencies:
       ai: 7.0.136(zod@4.6.5)
+      zod: 4.6.5
+
+  '@openrouter/sdk@1.4.25':
+    dependencies:
       zod: 4.6.5
 
   '@oxc-project/types@0.153.0': {}

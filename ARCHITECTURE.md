@@ -174,7 +174,7 @@ Commands use strict payload schemas and named parameters rather than mutable gri
 - Thinking tables use selected models as rows and efforts as columns, independent
   of generation axes. Image tables use models and the selected values of each
   parameter. The creation form attaches each table to its corresponding input.
-- `server/image-settings.ts` owns image dimension choices and reference metadata types.
+- `server/image-settings.ts` derives aspect-ratio, quality, background, and resolution choices from the public image-request enum exports in `@openrouter/sdk`, while keeping Auto ordering and custom pixel-size validation local. It also owns reference metadata types. Direct ES module imports let Vite tree-shake unused SDK code from the frontend; the shared enum module also contains schema initializers, so some schema helpers remain in the bundle.
 - Grid input stores shared `imageSettings`, ordered `inputReferences`, and
   reference-axis groups. Validation removes overridden shared settings, empty
   shared references, and unselected groups; expansion applies axes over defaults.

@@ -44,6 +44,8 @@ Set `GITHUB_BROWSER_STATE` to the absolute path of this file when running the Gi
 
 Catalog checks cover combined model and image-detail loading, periodic server refreshes with retained snapshots after upstream failures, unrestricted cached model-list reads, and HTML bootstrap execution under the page CSP. Browser coverage checks model selection, pricing, and compatibility without model API requests, including after navigation and reload.
 
+Use direct ES module imports for SDK definitions and Vite production tree-shaking. When changing SDK imports or upgrading the SDK, compare production JavaScript sizes and retained modules on staging to catch accidental inclusion of unused client code. The OpenRouter SDK's optional postinstall model-catalog freshness check is disabled in `pnpm-workspace.yaml`; its published enum definitions need no install-time generation.
+
 The Markdown renderer is included directly in the main browser bundle, so opening a Markdown preview does not request a separate renderer chunk. Vite retains previous files in `dist` during rebuilds so open pages can still fetch assets from their original build. The frontend router serves HTML with `Cache-Control: no-store`, hashed assets with immutable caching, and missing assets with `no-store` to avoid caching a temporary 404.
 
 ## Validation
