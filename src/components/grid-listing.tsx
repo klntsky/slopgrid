@@ -38,7 +38,7 @@ export function GridListing({
               <span
                 className={`history-prompt${g.title ? " history-title" : ""}`}
               >
-                {g.title || g.prompt}
+                {g.title || g.expanded_prompt_for_title}
               </span>
             </Link>
             {publicListing && <Author identity={g.author} />}

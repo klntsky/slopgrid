@@ -7,6 +7,117 @@ import { token } from "../server/ids.js";
 import { Store } from "../server/store.js";
 import { expandGrid, type Grid } from "../server/domain.js";
 
+test("list prompts are expanded and truncated once, then persist independently of title and generation updates", () => {
+  const dir = mkdtempSync(join(tmpdir(), "slopgrid-list-title-"));
+  const database = join(dir, "app.sqlite");
+  const secret = Buffer.alloc(32, 1);
+  let store = new Store(database, secret);
+  try {
+    const cases = [
+      {
+        prompt: "Draw $ROW wearing $COLUMN; repeat $ROW.",
+        rows: ["cat", "dog"],
+        columns: ["hat", "cape"],
+        expected: "Draw (cat|dog) wearing (hat|cape); repeat (cat|dog).",
+      },
+      {
+        prompt: "$ROW $COLUMN",
+        rows: ["$COLUMN", "$&"],
+        columns: ["$ROW"],
+        expected: "($COLUMN|$&) ($ROW)",
+      },
+      {
+        prompt: "x".repeat(160),
+        rows: ["cat"],
+        columns: ["hat"],
+        expected: "x".repeat(160),
+      },
+      {
+        prompt: "x".repeat(161),
+        rows: ["cat"],
+        columns: ["hat"],
+        expected: "x".repeat(157) + "...",
+      },
+      {
+        prompt: "$ROW",
+        rows: ["\u{1f431}".repeat(160)],
+        columns: ["hat"],
+        expected: "(" + "\u{1f431}".repeat(156) + "...",
+      },
+    ];
+    for (const [index, scenario] of cases.entries()) {
+      const input: Grid["input"] = {
+        format: "markdown",
+        prompt: scenario.prompt,
+        rows: { kind: "variable", values: scenario.rows },
+        columns: { kind: "variable", values: scenario.columns },
+        model: "fixture/text",
+        effort: "none",
+        budgetUsd: 1,
+      };
+      const grid: Grid = {
+        id: `grid-${index}`,
+        owner: "owner",
+        input,
+        status: "paused",
+        published: false,
+        visibility: "private",
+        createdAt: new Date().toISOString(),
+        cells: expandGrid(input).map((cell) => ({ ...cell, id: token() })),
+      };
+      store.insert(grid);
+      const data = JSON.parse(
+        (
+          store.db
+            .prepare("SELECT data FROM grids WHERE id=?")
+            .get(grid.id) as { data: string }
+        ).data,
+      );
+      assert.equal(data.expanded_prompt_for_title, scenario.expected);
+      assert.equal(data.input.prompt, scenario.prompt);
+      store.setTitle(grid.id, "Custom title");
+      store.saveGeneration(grid);
+      assert.equal(
+        store.get(grid.id)!.expanded_prompt_for_title,
+        scenario.expected,
+      );
+      store.setTitle(grid.id, "");
+    }
+    store.db
+      .prepare(
+        "UPDATE grids SET data=json_remove(data, '$.expanded_prompt_for_title') WHERE id=?",
+      )
+      .run("grid-0");
+    store.db.close();
+    store = new Store(database, secret);
+    for (const [index, scenario] of cases.entries())
+      assert.equal(
+        store.get(`grid-${index}`)!.expanded_prompt_for_title,
+        index === 0 ? scenario.prompt : scenario.expected,
+      );
+    const legacy = JSON.parse(
+      (
+        store.db.prepare("SELECT data FROM grids WHERE id='grid-0'").get() as {
+          data: string;
+        }
+      ).data,
+    );
+    assert.equal(legacy.expanded_prompt_for_title, cases[0].prompt);
+    store.db.exec(
+      "CREATE TRIGGER no_recompute BEFORE UPDATE ON grids BEGIN SELECT RAISE(ABORT, 'must not recompute'); END",
+    );
+    store.db.close();
+    store = new Store(database, secret);
+    assert.equal(
+      store.get("grid-0")!.expanded_prompt_for_title,
+      cases[0].prompt,
+    );
+  } finally {
+    store.db.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("outputs are real files and SQLite stores only configuration and cell state once", () => {
   const dir = mkdtempSync(join(tmpdir(), "slopgrid-storage-"));
   const store = new Store(join(dir, "app.sqlite"), Buffer.alloc(32, 1));

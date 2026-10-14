@@ -72,6 +72,13 @@ pnpm test:e2e:real
 
 ### Creation and persistence recovery coverage
 
+List-title coverage checks persisted axis expansion, repeated variables, literal
+dollar signs in values, Unicode-safe truncation, and preservation across title
+edits, generation updates, and reopening storage. Older-grid coverage verifies
+that the original prompt is copied into a missing field once. The title browser
+journey checks custom title precedence and truncated expanded prompts in owned
+and public lists after clearing the title and reloading.
+
 Creation recovery tests use concurrent HTTP submissions, an unavailable engine,
 web replacement and a failed receipt transaction to verify one saved grid,
 ownership checks and explicit Resume after an uncertain start. Browser coverage

@@ -793,8 +793,15 @@ test("titles are independent owner-editable metadata and collapsed prompts expan
       prompt,
     );
     await page.getByRole("link", { name: "slopgrid", exact: true }).click();
+    const listPrompt =
+      ("Draw (cat) wearing a (hat).\n" + prompt.split("\n")[1]).slice(0, 157) +
+      "...";
     await expect(
-      page.locator(".history-prompt").filter({ hasText: prompt }),
+      page.locator(".history-prompt").filter({ hasText: listPrompt }),
+    ).toHaveCount(2);
+    await page.reload();
+    await expect(
+      page.locator(".history-prompt").filter({ hasText: listPrompt }),
     ).toHaveCount(2);
     const short = await page.request.post("/api/grids", {
       data: { ...snapshot.input, prompt: "$ROW $COLUMN" },

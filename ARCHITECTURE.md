@@ -586,6 +586,13 @@ Commands use strict payload schemas and named parameters rather than mutable gri
 - Titles are separate optional metadata. The title route validates length,
   updates only title, obtains a fresh engine snapshot, and notifies
   subscribers without changing generated files.
+- `server/grid-title.ts` expands prompt variables into ordered axis alternatives
+  and truncates the result to 160 Unicode code points, including a trailing
+  `...` when needed. Store insertion saves `expanded_prompt_for_title` in grid
+  metadata. On opening storage, a conditional SQL update copies the original
+  prompt into missing fields on older grids. List summaries carry this stored
+  value instead of the full prompt; the shared list component
+  uses it when a custom title is absent. Title and generation updates preserve it.
 
 ## Output isolation and authorization
 

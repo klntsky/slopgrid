@@ -150,7 +150,7 @@ Status: high level product goal that is not a requirement (not achieved yet).
 
 ### 4.2. Title, prompt, author, and price
 
-1. Title and prompt are separate values. A new title is empty; use the prompt as the grid's display name when no title is set.
+1. Title and prompt are separate values. A new title is empty. Grid lists use a custom title when set; otherwise, use a stored expanded prompt that replaces every $ROW and $COLUMN with the corresponding axis values in order, formatted as (value1|value2|...). Limit the expanded prompt to 160 characters, including a trailing "..." when truncated, without splitting Unicode characters. Compute and store expanded_prompt_for_title once at creation. For older grids without that field, copy the original prompt into it. Keep the original prompt for generation and the grid navbar.
 2. In the navbar, show "Set Title" when the title is empty or the title when set, followed by a centered dot and the prompt. Owners can set or change the title independently of the prompt, including after publication.
 3. Limit titles to 40 characters. Neither the title nor "Set Title" may be ellipsized.
 4. Title text is dark in light mode and white in dark mode. Prompt text uses the same accent color as "grid" in the wordmark.

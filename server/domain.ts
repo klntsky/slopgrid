@@ -182,7 +182,7 @@ export type GridSummary = Pick<
   Grid,
   "id" | "title" | "status" | "published" | "visibility"
 > & {
-  prompt: string;
+  expanded_prompt_for_title: string;
   format: GridInput["format"];
   author: Identity | null;
 };
@@ -200,6 +200,7 @@ export type Grid = {
   cells: Cell[];
   createdAt: string;
 };
+export type StoredGrid = Grid & { expanded_prompt_for_title: string };
 export function expandGrid(input: GridInput): Omit<Cell, "id">[] {
   return input.rows.values.flatMap((r, row) =>
     input.columns.values.map((c, column) => {

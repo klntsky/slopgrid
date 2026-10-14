@@ -7,6 +7,7 @@ import { encrypt, decrypt } from "./encryption.js";
 import {
   expandGrid,
   type Grid,
+  type StoredGrid,
   type Cell,
   type User,
   type Identity,
@@ -15,6 +16,7 @@ import { dirname, join, resolve } from "node:path";
 import { OutputFiles } from "./files.js";
 import { token } from "./ids.js";
 import { initializeDatabase } from "./database.js";
+import { expandPromptForTitle } from "./grid-title.js";
 export type Session = {
   id: string;
   anonymousId?: string;
@@ -44,6 +46,9 @@ export class Store {
       this.db.pragma("journal_mode = WAL");
       this.db.pragma("foreign_keys = ON");
       initializeDatabase(this.db);
+      this.db.exec(`UPDATE grids SET data=json_set(data,
+        '$.expanded_prompt_for_title', json_extract(data, '$.input.prompt'))
+        WHERE json_type(data, '$.expanded_prompt_for_title') IS NULL`);
       this.billing = new Billing(this.db);
       this.files = new OutputFiles(
         resolve(outputsPath ?? join(dirname(path), "outputs")),
@@ -54,7 +59,7 @@ export class Store {
       throw error;
     }
   }
-  all(): Grid[] {
+  all(): StoredGrid[] {
     return (
       this.db.prepare("SELECT id FROM grids").all() as { id: string }[]
     ).map((row) => this.get(row.id)!);
@@ -68,11 +73,11 @@ export class Store {
         .get() as { epoch: number }
     ).epoch;
   }
-  get(id: string): Grid | undefined {
+  get(id: string): StoredGrid | undefined {
     const row = this.db.prepare("SELECT data FROM grids WHERE id=?").get(id) as
       { data: string } | undefined;
     if (!row) return;
-    const grid = { ...JSON.parse(row.data), id } as Grid;
+    const grid = { ...JSON.parse(row.data), id } as StoredGrid;
     if (!grid.title) delete grid.title;
     if (!grid.interruption) delete grid.interruption;
     const cells = this.db
@@ -90,9 +95,13 @@ export class Store {
   insert(grid: Grid) {
     const { id, cells, ...data } = grid;
     this.db.transaction(() => {
-      this.db
-        .prepare("INSERT INTO grids (id, data) VALUES (?,?)")
-        .run(id, JSON.stringify(data));
+      this.db.prepare("INSERT INTO grids (id, data) VALUES (?,?)").run(
+        id,
+        JSON.stringify({
+          ...data,
+          expanded_prompt_for_title: expandPromptForTitle(grid.input),
+        }),
+      );
       const insert = this.db.prepare(
         "INSERT INTO cells (id, grid_id, position, data) VALUES (?,?,?,?)",
       );

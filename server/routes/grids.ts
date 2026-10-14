@@ -17,6 +17,7 @@ import {
   gridSchema,
   expandGrid,
   type Grid,
+  type StoredGrid,
   type GridSummary,
 } from "../domain.js";
 import {
@@ -49,10 +50,10 @@ export function createGridRoutes({
 }) {
   const app = Router(),
     allowInference = createInferenceGuard(store, provider);
-  const summary = (g: Grid): GridSummary => ({
+  const summary = (g: StoredGrid): GridSummary => ({
     id: g.id,
     title: g.title,
-    prompt: g.input.prompt,
+    expanded_prompt_for_title: g.expanded_prompt_for_title,
     format: g.input.format,
     status: g.status,
     published: g.published,
