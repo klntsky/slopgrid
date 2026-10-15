@@ -102,6 +102,11 @@ starting inference twice.
   requests and stops queued cells; cancelled calls retain their worker slots
   until they settle. Retry and cooldown state live in the engine, while cell
   transitions and actual calls are persisted.
+- Attempt execution returns an output or error separately from live cell state.
+  The coordinator decides retries once, then settlement combines the outcome
+  with the current cell and billing state. Each persistence retry checks for
+  cancellation again, so Pause can discard an outcome waiting for storage.
+  Only a committed settlement publishes the result and releases its worker.
 - OAuth credentials are encrypted at rest. Manual OpenRouter keys stay in the
   browser and, during accepted work, in engine memory. They are excluded from
   grids, snapshots, output files, and billing records; Resume after an engine

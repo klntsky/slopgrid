@@ -33,6 +33,10 @@ type RunningCall = {
   owner: string;
 };
 
+type AttemptOutcome =
+  | { status: "complete"; output: Awaited<ReturnType<Provider["generate"]>> }
+  | { status: "error"; error: unknown };
+
 export class Jobs {
   readonly previews: WebsitePreviews;
   readonly persistence = new Persistence(() => this.schedule());
@@ -263,7 +267,9 @@ export class Jobs {
           this.running.set(cell.id, call);
           this.owners.get(owner)!.last = ++this.allocation;
           this.notify(grid);
-          void this.runCell(call, key);
+          void this.runCell(call, key).then((outcome) =>
+            this.settleCall(call, outcome),
+          );
         },
       );
       if (this.persistence.blocked) return;
@@ -309,25 +315,25 @@ export class Jobs {
     if (!delay) flush();
     else if (!state.timer) state.timer = setTimeout(flush, delay);
   }
-  private async runCell(call: RunningCall, key: string | undefined) {
-    const { grid, cell, controller, owner } = call;
+  private async runCell(
+    call: RunningCall,
+    key: string | undefined,
+  ): Promise<AttemptOutcome | undefined> {
+    const { grid, cell, controller } = call;
     const thinkingId = token();
-    const current = () =>
-      !controller.signal.aborted && this.running.get(cell.id) === call;
-    const completed = { ...cell };
-    let output: Awaited<ReturnType<Provider["generate"]>> | undefined;
     try {
       if (!key) throw new Error("Reconnect OpenRouter to continue.");
       const references = await this.grids
         .get(grid.id)!
         .references(cell.imageSettings?.input_references ?? []);
-      if (!current()) return;
-      const result = await this.provider.generate(
+      if (controller.signal.aborted) return;
+      const output = await this.provider.generate(
         key,
         grid.input.format,
         cell,
         ({ text, thinking, estimatedUsage }) => {
-          if (!current()) return;
+          if (controller.signal.aborted || this.running.get(cell.id) !== call)
+            return;
           const previousLength = cell.thinking?.length ?? 0;
           if (thinking.length > previousLength) {
             const first = cell.thinkingId !== thinkingId;
@@ -350,92 +356,104 @@ export class Jobs {
         this.store.billing.observe(cell.id),
         references,
       );
-      if (!current()) return;
-      output = result;
-      completed.mediaType = result.mediaType;
-      completed.usage = result.usage;
-      completed.provenance = {
-        signature: result.signature,
-        maxOutputTokens: result.maxOutputTokens,
-        files: Object.keys(result.files).sort(),
-      };
-      completed.status = "complete";
-      this.grids.get(grid.id)!.retries.delete(cell.id);
+      return { status: "complete", output };
     } catch (error) {
-      if (!current()) return;
-      const failure = failureDetails(error);
-      completed.error = failure.message;
-      completed.errorCode = failure.code;
-      const retries = this.grids.get(grid.id)!.retries;
-      const attempt = retries.get(cell.id) ?? 0;
-      if (failure.temporary && attempt < 5) {
-        completed.status = "pending";
-        if (grid.status === "running") {
-          completed.retrying = true;
-          retries.set(cell.id, attempt + 1);
-          const delay = Math.max(
-            failure.retryAfterMs ?? 0,
-            Math.min(30_000, 1000 * 2 ** attempt * (1 + Math.random() * 0.5)),
-          );
-          this.cooldowns.set(
-            owner,
-            Math.max(this.cooldowns.get(owner) ?? 0, Date.now() + delay),
-          );
-        }
-      } else if (failure.billing) {
-        completed.status = "pending";
-        retries.delete(cell.id);
-        this.pauseOwner(owner);
-      } else {
-        completed.status = "error";
-        retries.delete(cell.id);
-        console.error(
-          "Generation failed",
-          grid.id,
-          cell.id,
-          failure.code ?? (error instanceof Error ? error.name : "unknown"),
+      return { status: "error", error };
+    }
+  }
+
+  private failedCall(
+    { grid, cell, owner }: RunningCall,
+    error: unknown,
+  ): Pick<Cell, "status" | "error" | "errorCode" | "retrying"> {
+    const failure = failureDetails(error);
+    const retries = this.grids.get(grid.id)!.retries;
+    const attempt = retries.get(cell.id) ?? 0;
+    const result = { error: failure.message, errorCode: failure.code };
+    if (failure.temporary && attempt < 5) {
+      const retrying = grid.status === "running";
+      if (retrying) {
+        retries.set(cell.id, attempt + 1);
+        const delay = Math.max(
+          failure.retryAfterMs ?? 0,
+          Math.min(30_000, 1000 * 2 ** attempt * (1 + Math.random() * 0.5)),
+        );
+        this.cooldowns.set(
+          owner,
+          Math.max(this.cooldowns.get(owner) ?? 0, Date.now() + delay),
         );
       }
-    } finally {
-      let installed = false;
-      let nextCell: Cell;
-      let nextGrid: Grid;
-      this.persistence.submit(
-        () => {
-          nextCell = current()
-            ? { ...completed, thinkingId: cell.thinkingId }
-            : { ...cell };
-          if (output && current() && !installed) {
-            this.store.files.write(cell.id, output.files);
-            installed = true;
-          }
-          const billing = this.store.billing.cell(cell.id);
-          if (billing) Object.assign(nextCell, billing);
-          clearCellProgress(nextCell);
-          nextGrid = {
-            ...grid,
-            cells: grid.cells.map((c) => (c.id === cell.id ? nextCell : c)),
-          };
-          const others = [...this.running.values()].some(
-            (work) => work.grid.id === grid.id && work !== call,
-          );
-          if (!others) this.settleState(nextGrid);
-          this.store.saveGeneration(nextGrid, [nextCell]);
-        },
-        () => {
-          for (const key of Object.keys(cell))
-            delete (cell as unknown as Record<string, unknown>)[key];
-          Object.assign(cell, nextCell);
-          grid.status = nextGrid.status;
-          grid.interruption = nextGrid.interruption;
-          this.running.delete(cell.id);
-          this.persistence.submit(() => this.previews.clear(cell));
-          this.release(grid);
-          this.notify(grid);
-          this.schedule();
-        },
-      );
+      return { ...result, status: "pending", ...(retrying && { retrying }) };
     }
+    retries.delete(cell.id);
+    if (failure.billing) this.pauseOwner(owner);
+    else
+      console.error(
+        "Generation failed",
+        grid.id,
+        cell.id,
+        failure.code ?? (error instanceof Error ? error.name : "unknown"),
+      );
+    return { ...result, status: failure.billing ? "pending" : "error" };
+  }
+
+  private settleCall(call: RunningCall, outcome: AttemptOutcome | undefined) {
+    const { grid, cell, controller } = call;
+    let change: Partial<Cell> = {};
+    if (!controller.signal.aborted && outcome) {
+      if (outcome.status === "complete") {
+        const { output } = outcome;
+        change = {
+          status: "complete",
+          mediaType: output.mediaType,
+          usage: output.usage,
+          provenance: {
+            signature: output.signature,
+            maxOutputTokens: output.maxOutputTokens,
+            files: Object.keys(output.files).sort(),
+          },
+        };
+        this.grids.get(grid.id)!.retries.delete(cell.id);
+      } else change = this.failedCall(call, outcome.error);
+    }
+    let installed = false;
+    let nextCell: Cell;
+    let nextGrid: Grid;
+    this.persistence.submit(
+      () => {
+        // Pause can supersede a result while its write waits for storage.
+        // Keep the call's slot until this commit; no newer attempt can own it.
+        const accepted = !controller.signal.aborted;
+        nextCell = { ...cell, ...(accepted ? change : {}) };
+        if (accepted && outcome?.status === "complete" && !installed) {
+          this.store.files.write(cell.id, outcome.output.files);
+          installed = true;
+        }
+        const billing = this.store.billing.cell(cell.id);
+        if (billing) Object.assign(nextCell, billing);
+        clearCellProgress(nextCell);
+        nextGrid = {
+          ...grid,
+          cells: grid.cells.map((c) => (c.id === cell.id ? nextCell : c)),
+        };
+        const others = [...this.running.values()].some(
+          (work) => work.grid.id === grid.id && work !== call,
+        );
+        if (!others) this.settleState(nextGrid);
+        this.store.saveGeneration(nextGrid, [nextCell]);
+      },
+      () => {
+        Object.assign(cell, nextCell);
+        clearCellProgress(cell);
+        grid.status = nextGrid.status;
+        grid.interruption = nextGrid.interruption;
+        this.running.delete(cell.id);
+        this.persistence.submit(() => this.previews.clear(cell));
+        this.release(grid);
+        this.notify(grid);
+        this.schedule();
+      },
+    );
   }
   private settleState(grid: Grid) {
     if (grid.cells.every((cell) => cell.status === "complete")) {

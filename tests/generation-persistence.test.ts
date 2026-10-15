@@ -6,6 +6,88 @@ import { holdDatabaseWrites, rejectAdmissionCommit } from "./database-lock.js";
 import { crashCheckpoint } from "./crash-checkpoint.js";
 
 test(
+  "Pause supersedes a completed result waiting for persistence and Resume starts a fresh attempt",
+  { timeout: 40000 },
+  async () => {
+    const f = await runtimeFixture();
+    let unlock = () => {};
+    let debug: Awaited<ReturnType<typeof crashCheckpoint>> | undefined;
+    try {
+      const grid = f.grid({ rows: { kind: "variable", values: ["one"] } });
+      const cellId = grid.cells[0].id;
+      await f.engine.api.startGrid({ gridId: grid.id, sessionId: f.owner });
+      const first = await f.nextCall();
+      first.write({
+        content: "Discarded completion",
+        reasoning: "First trace",
+      });
+      const streamed = await until(
+        () => f.engine.api.getGrid(grid.id),
+        (g) => !!g.cells[0].thinkingId,
+      );
+      debug = await crashCheckpoint(
+        f.engine.child,
+        "jobs.ts",
+        "const billing=this.store.billing.cell(cell.id)",
+      );
+      first.finish();
+      await debug.paused;
+      assert.equal(
+        readFileSync(f.store.files.path(cellId, "index.md")!, "utf8"),
+        "Discarded completion",
+      );
+      unlock = holdDatabaseWrites(f.store);
+      await debug.resume();
+      const paused = await f.engine.api.pauseGrid({
+        gridId: grid.id,
+        sessionId: f.owner,
+      });
+      assert.equal(paused.cells[0].status, "pending");
+      assert.equal(paused.live, true);
+      assert.equal((await f.engine.api.status()).runningCalls, 1);
+      debug.close();
+      unlock();
+      const settled = await until(
+        () => f.engine.api.getGrid(grid.id),
+        (g) => !g.live,
+      );
+      assert.equal(settled.status, "paused");
+      assert.equal(settled.cells[0].status, "pending");
+      assert.equal(settled.cells[0].draft, undefined);
+      assert.equal(settled.cells[0].thinkingId, streamed.cells[0].thinkingId);
+      assert.equal((await f.request(`/outputs/${cellId}`)).status, 404);
+      assert.equal(f.store.billing.page(f.owner, 0).costUsd, 0.0123);
+      assert.equal(f.calls.length, 1);
+
+      await f.engine.api.startGrid({ gridId: grid.id, sessionId: f.owner });
+      const next = await f.nextCall();
+      next.write({ content: "Fresh completion", reasoning: "Fresh trace" });
+      next.finish();
+      const complete = await until(
+        () => f.engine.api.getGrid(grid.id),
+        (g) => !g.live,
+      );
+      assert.equal(complete.status, "complete");
+      assert.notEqual(
+        complete.cells[0].thinkingId,
+        streamed.cells[0].thinkingId,
+      );
+      assert.equal(
+        readFileSync(f.store.files.path(cellId, "index.md")!, "utf8"),
+        "Fresh completion",
+      );
+      assert.equal(f.store.billing.page(f.owner, 0).total, 2);
+      assert.equal(f.store.billing.page(f.owner, 0).costUsd, 0.0246);
+      assert.equal(f.calls.length, 2);
+    } finally {
+      debug?.close();
+      unlock();
+      await f.close();
+    }
+  },
+);
+
+test(
   "a real admission lock leaves no runtime or provider request and explicit retry starts once",
   { timeout: 40000 },
   async () => {
