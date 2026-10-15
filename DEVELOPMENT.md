@@ -43,6 +43,8 @@ Catalog checks cover combined model and image-detail loading, periodic server re
 
 When changing SDK imports or upgrading the SDK, compare production JavaScript sizes and retained modules on staging to catch accidental inclusion of unused client code.
 
+When browser tests load a runtime environment file, set `FRONTEND_PATH` explicitly to the candidate's `dist` directory so they exercise the candidate build.
+
 Frontend serving and retained assets are described under [process boundaries](ARCHITECTURE.md#process-boundaries).
 
 ## Validation
@@ -167,7 +169,7 @@ Grid-price coverage distinguishes visible successful-output cost from owner-only
 
 ### Required runtime coverage
 
-Thinking compatibility browser coverage checks model rows and effort columns across axis swaps and fixed selections, without duplicating entries for prompt variables. Assertions verify selected header order and support results while generation and resume remain advisory.
+Thinking compatibility browser coverage checks model rows and effort columns across axis swaps and fixed selections, without duplicating entries for prompt variables. Assertions verify selected header order and model/value/status accessible names while generation and resume remain advisory.
 
 Model-alias coverage checks published target resolution, catalog aliases without targets, unknown aliases, and cycles. Moving aliases retain their IDs through inference, retry, Edit, publication, and Fork. Selector rendering checks warning presence only for selected moving aliases and verifies interpolated catalog identifiers in both fixed and multiple selection modes without asserting static warning copy.
 

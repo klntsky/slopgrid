@@ -44,7 +44,6 @@ export function compatibilityTables({
               support: thinkingEffortSupport(info, effort),
             })),
           )}
-          cellLabel={(_, column) => effortLabel(efforts[column])}
         />
       ),
     };
@@ -130,18 +129,28 @@ export function compatibilityTables({
   );
 }
 
+const supportPresentation: Record<
+  Compatibility["support"],
+  [string, ReactNode]
+> = {
+  supported: ["Supported", <Check aria-hidden="true" />],
+  unknown: ["Support unknown", <span aria-hidden="true">❓</span>],
+  unsupported: [
+    "Unsupported",
+    <TriangleAlert className="compatibility-warning" aria-hidden="true" />,
+  ],
+};
+
 function CompatibilityGrid({
   caption,
   rows,
   columns,
   cells,
-  cellLabel,
 }: {
   caption: string;
   rows: string[];
   columns: string[];
   cells: Compatibility[][];
-  cellLabel?: (row: number, column: number) => string;
 }) {
   if (!cells.some((row) => row.some((cell) => cell.support === "unsupported")))
     return null;
@@ -165,33 +174,19 @@ function CompatibilityGrid({
               <th scope="row">{label}</th>
               {columns.map((value, column) => {
                 const { support, reason } = cells[row][column];
-                const status =
-                  support === "supported"
-                    ? "Supported"
-                    : support === "unknown"
-                      ? "Support unknown"
-                      : "Unsupported";
+                const [status, icon] = supportPresentation[support];
                 return (
                   <td
                     key={column}
                     data-support={support}
-                    aria-label={`${cellLabel ? cellLabel(row, column) : `${label} / ${value}`}: ${status}`}
+                    aria-label={`${label} / ${value}: ${status}`}
                     data-tooltip={
                       support === "supported" ? undefined : (reason ?? status)
                     }
                     ref={support === "supported" ? undefined : tooltipRef}
                     tabIndex={support === "supported" ? undefined : 0}
                   >
-                    {support === "supported" && <Check aria-hidden="true" />}
-                    {support === "unknown" && (
-                      <span aria-hidden="true">❓</span>
-                    )}
-                    {support === "unsupported" && (
-                      <TriangleAlert
-                        className="compatibility-warning"
-                        aria-hidden="true"
-                      />
-                    )}
+                    {icon}
                   </td>
                 );
               })}

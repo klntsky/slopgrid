@@ -445,12 +445,12 @@ test("the compatibility table shows selected model support without blocking gene
     "Second model",
   ]);
   const expectedSupport = [
-    "None: Supported",
-    "high: Supported",
-    "max: Supported",
-    "None: Unsupported",
-    "high: Supported",
-    "max: Unsupported",
+    "Fixture text / None: Supported",
+    "Fixture text / high: Supported",
+    "Fixture text / max: Supported",
+    "Second model / None: Unsupported",
+    "Second model / high: Supported",
+    "Second model / max: Unsupported",
   ];
   for (const [index, status] of expectedSupport.entries())
     await expect(table.getByRole("cell").nth(index)).toHaveAccessibleName(
@@ -473,14 +473,7 @@ test("the compatibility table shows selected model support without blocking gene
     "Fixture text",
     "Second model",
   ]);
-  for (const [index, status] of [
-    "None: Supported",
-    "high: Supported",
-    "max: Supported",
-    "None: Unsupported",
-    "high: Supported",
-    "max: Unsupported",
-  ].entries())
+  for (const [index, status] of expectedSupport.entries())
     await expect(table.getByRole("cell").nth(index)).toHaveAccessibleName(
       status,
     );
@@ -571,13 +564,18 @@ test("compatibility keeps model rows and effort columns with variable axes and f
   ).toBeVisible();
   await expect(table.getByRole("columnheader")).toHaveText(["Model", "None"]);
   await expect(
-    table.getByRole("cell", { name: "None: Unsupported", exact: true }),
+    table.getByRole("cell", {
+      name: "Second model / None: Unsupported",
+      exact: true,
+    }),
   ).toHaveCount(1);
   await swap.click();
   await expect(table.getByRole("rowheader")).toHaveText(["Second model"]);
   await expect(table.getByRole("columnheader")).toHaveText(["Model", "None"]);
   await rows.selectOption("effort");
-  await page.getByRole("checkbox", { name: "Model default", exact: true }).check();
+  await page
+    .getByRole("checkbox", { name: "Model default", exact: true })
+    .check();
   await page.getByRole("checkbox", { name: "None", exact: true }).check();
   await page.getByRole("checkbox", { name: "high", exact: true }).check();
   await expect(table).toHaveCount(0);
@@ -595,10 +593,16 @@ test("compatibility keeps model rows and effort columns with variable axes and f
     "high",
   ]);
   await expect(
-    table.getByRole("cell", { name: "None: Unsupported", exact: true }),
+    table.getByRole("cell", {
+      name: "Second model / None: Unsupported",
+      exact: true,
+    }),
   ).toHaveCount(1);
   await expect(
-    table.getByRole("cell", { name: "high: Supported", exact: true }),
+    table.getByRole("cell", {
+      name: "Second model / high: Supported",
+      exact: true,
+    }),
   ).toHaveCount(1);
   await swap.click();
   await expect(table.getByRole("rowheader")).toHaveText(["Second model"]);

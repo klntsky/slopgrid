@@ -72,6 +72,8 @@ usage when it arrives.
 Compatibility tables share model selection and name resolution, with model names
 as rows and parameter values as columns. Their renderer keeps this orientation
 independent of generation axes, while each table stays beside its parameter input.
+The renderer shares status labels and icons across table types and names each
+cell using its model, parameter value, and support status.
 
 The browser persists a creation draft and a request identity across reloads.
 The web process validates the input and commits a creation receipt, grid, and
