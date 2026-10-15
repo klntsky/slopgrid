@@ -16,7 +16,7 @@ import { GridListing, formatNames } from "../pages";
 import { useDraft, emptyDraft, changeAxis, swapAxes } from "./draft";
 import { ModelSelector, catalog, modelName } from "./models";
 import { AxisEditor, Compatibility, kindNames } from "./parameters";
-import { References, uploadReferences } from "./references";
+import { References, uploadReferences, replaceReference } from "./references";
 import { CommonSize } from "./size";
 import { FormatIcon } from "../components/format-icon";
 
@@ -84,9 +84,12 @@ export function CreatePage() {
       setBusy(false);
       return;
     }
-    let prepared;
+    let prepared = draft;
     try {
-      prepared = await uploadReferences(draft);
+      prepared = await uploadReferences(draft, (id, image) => {
+        prepared = replaceReference(prepared, id, image);
+        update(prepared);
+      });
       update(prepared);
     } catch (e) {
       setError(e);

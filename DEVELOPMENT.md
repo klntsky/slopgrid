@@ -55,6 +55,9 @@ Catalog checks cover combined model and image-detail loading, periodic server re
 When changing SDK imports or upgrading the SDK, compare production JavaScript sizes and retained modules on staging to catch accidental inclusion of unused client code.
 
 When browser tests load a runtime environment file, set `FRONTEND_PATH` explicitly to the candidate's `dist` directory so they exercise the candidate build.
+Prefer a credentials-only environment file for browser fixtures. Do not inherit
+deployed database, output-directory, or engine-socket settings into fixtures;
+their web and engine processes must share the fixture's temporary storage.
 
 Frontend serving and retained assets are described under [process boundaries](ARCHITECTURE.md#process-boundaries).
 
@@ -275,6 +278,10 @@ Image reuse matrices vary one value within the same axis kind, compare complete 
 Storage copy coverage reads and writes real bundles asynchronously, preserves binary artifact and thinking bytes, rejects incomplete source inventories, and checks that copies survive source removal. Runtime reuse coverage also exercises one source serving multiple destination cells.
 
 Reference loader tests use real files to verify byte/hash consistency, ordered duplicates, reuse within one loader after a source file becomes unavailable, and fresh reads for a new loader. Browser reference scenarios continue checking the actual SDK data URLs and copied image bytes.
+
+Reference-upload recovery coverage fails a later upload after an earlier file
+succeeds, reloads the draft, and verifies that retry does not upload the earlier
+file again.
 
 Reuse scenarios use typed grid snapshots and captured requests, consume new upstream calls sequentially, and name parameter cases with assertions on the effective request. Monetary assertions compare expected dollar amounts with a small floating-point tolerance rather than encoding binary rounding artifacts. The readiness regression starts real inference processes with invalid and valid configuration to check useful startup errors and an immediately usable API.
 

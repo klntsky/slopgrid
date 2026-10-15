@@ -18,7 +18,28 @@ function readFile(file: File): Promise<LocalReference> {
     reader.readAsDataURL(file);
   });
 }
-export async function uploadReferences(draft: Draft): Promise<Draft> {
+export function replaceReference(
+  draft: Draft,
+  id: string,
+  saved: ReferenceImage,
+): Draft {
+  const replace = (images: ReferenceImage[] = []) =>
+    images.map((image) => (image.id === id ? saved : image));
+  return {
+    ...draft,
+    inputReferences: replace(draft.inputReferences),
+    referenceGroups: Object.fromEntries(
+      Object.entries(draft.referenceGroups ?? {}).map(([name, images]) => [
+        name,
+        replace(images),
+      ]),
+    ),
+  };
+}
+export async function uploadReferences(
+  draft: Draft,
+  onUploaded: (id: string, image: ReferenceImage) => void,
+): Promise<Draft> {
   const uploaded = new Map<string, ReferenceImage>();
   async function upload(images: LocalReference[] = []) {
     const result: ReferenceImage[] = [];
@@ -44,6 +65,7 @@ export async function uploadReferences(draft: Draft): Promise<Draft> {
         const data = await response.json();
         if (!response.ok) throw new Error(`Could not upload ${image.name}.`);
         uploaded.set(image.id, data);
+        onUploaded(image.id, data);
       }
       result.push(uploaded.get(image.id)!);
     }

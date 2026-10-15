@@ -46,7 +46,9 @@ they do not own provider execution or persist generation results.
 - Creation drafts belong to the browser tab. Axis changes and swaps are pure
   record transformations, while parameter controls share model selection,
   custom-size editing, and reference collections. References remain in the
-  draft until submission uploads them. Validation and compatibility reuse the
+  draft until submission uploads them. Each successful upload replaces its local
+  reference throughout the draft before the next upload, so failures retain
+  completed work. Validation and compatibility reuse the
   server's pure domain functions.
 - Creation submissions retain a request identity for response-loss recovery.
   One grid query cache orders snapshots from HTTP reads, commands, and live
