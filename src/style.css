@@ -1064,6 +1064,13 @@ button.editable-title > .lucide {
   color-scheme: inherit;
 }
 
+:is(.cell-expanded, .expanded-markdown) .generated-image {
+  width: 100cqw;
+  height: 100cqh;
+  object-fit: contain;
+  object-position: center;
+}
+
 .model-list {
   height: 264px;
   overflow: auto;
