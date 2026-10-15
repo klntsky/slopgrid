@@ -389,6 +389,21 @@ h2 small {
 .billing small {
   display: block;
 }
+.billing-scroll {
+  overflow-x: auto;
+}
+.billing-grid-link {
+  display: block;
+  max-width: 24rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+nav[aria-label="Billing pages"] {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
 .billing th,
 .billing td {
   padding: 10px;

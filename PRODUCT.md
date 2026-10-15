@@ -264,7 +264,7 @@ Status: high level product goal that is not a requirement (not achieved yet).
 3. Retain reported charges for unsuccessful calls. Do not turn missing provider cost information into an invented zero charge.
 4. Billing follows ownership: anonymous users see their session's history, and signed-in users see their account-owned grids' history, including grids claimed on sign-in.
 5. Keep finish reasons in durable call records but out of the current UI. Avoid duplicating completion records or usage across multiple persistent representations.
-6. Show an aggregate reported-charge total and call count, including the count of calls with unavailable charges. Provide a manual Refresh billing control and a Call column showing each call's `direct` or `image` phase. Present 50 calls per page with Previous and Next controls, and refresh automatically while calls are running.
+6. Show an aggregate reported-charge total and call count, including the count of calls with unavailable charges. Provide a manual Refresh billing control and a Call column showing each call's `direct` or `image` phase. Present 50 calls per page with Previous and Next controls and the visible range and total, showing pagination only when there is more than one page. Refresh automatically while calls are running and disable manual refresh while fetching. Show loading and empty states. Keep the table horizontally scrollable on narrow screens and truncate long grid links within it.
 
 ## 8. Identity, publication, and access
 

@@ -129,7 +129,10 @@ export function BillingPage() {
         Each inference attempt appears here, including retries, failures, and
         cancellations. OpenRouter bills your account directly.
       </p>
-      <button onClick={() => query.refetch()}>Refresh billing</button>
+      <button disabled={query.isFetching} onClick={() => query.refetch()}>
+        Refresh billing
+      </button>
+      {query.isPending && <p role="status">Loading billing...</p>}
       <ErrorMessage error={query.error} />
       {data && (
         <>
@@ -137,72 +140,94 @@ export function BillingPage() {
             ${money(data.costUsd)} · {data.total} calls · {data.unavailable}{" "}
             charges unavailable
           </p>
-          <table className="billing">
-            <thead>
-              <tr>
-                {[
-                  "Started",
-                  "Grid",
-                  "Model",
-                  "Call",
-                  "Status",
-                  "Input tokens",
-                  "Output tokens",
-                  "Cost",
-                ].map((h) => (
-                  <th key={h}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {data.calls.map((c) => (
-                <tr key={c.id}>
-                  <td>
-                    <time dateTime={new Date(c.startedAt).toISOString()}>
-                      {new Date(c.startedAt).toLocaleString()}
-                    </time>
-                  </td>
-                  <td>
-                    <Link to="/grid/$id" params={{ id: c.gridId }}>
-                      {c.gridPrompt}
-                    </Link>
-                  </td>
-                  <td>
-                    {c.model}
-                    <small>{c.effort}</small>
-                  </td>
-                  <td>{c.phase}</td>
-                  <td>
-                    {c.status}
-                    {c.error && (
-                      <p>
-                        {c.errorCode !== undefined
-                          ? `Error ${c.errorCode}: `
-                          : ""}
-                        {c.error}
-                      </p>
-                    )}
-                  </td>
-                  <td>{c.usage?.inputTokens ?? "-"}</td>
-                  <td>{c.usage?.outputTokens ?? "-"}</td>
-                  <td>
-                    {c.usage?.costUsd === undefined
-                      ? "Unavailable"
-                      : `$${c.usage.costUsd}`}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <button disabled={!offset} onClick={() => setOffset(offset - 50)}>
-            Previous
-          </button>
-          <button
-            disabled={offset + 50 >= data.total}
-            onClick={() => setOffset(offset + 50)}
-          >
-            Next
-          </button>
+          {data.total === 0 ? (
+            <p>No inference calls yet.</p>
+          ) : (
+            <div
+              className="billing-scroll"
+              role="region"
+              aria-label="Inference calls"
+              tabIndex={0}
+            >
+              <table className="billing">
+                <thead>
+                  <tr>
+                    {[
+                      "Started",
+                      "Grid",
+                      "Model",
+                      "Call",
+                      "Status",
+                      "Input tokens",
+                      "Output tokens",
+                      "Cost",
+                    ].map((h) => (
+                      <th key={h}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.calls.map((c) => (
+                    <tr key={c.id}>
+                      <td>
+                        <time dateTime={new Date(c.startedAt).toISOString()}>
+                          {new Date(c.startedAt).toLocaleString()}
+                        </time>
+                      </td>
+                      <td>
+                        <Link
+                          className="billing-grid-link"
+                          to="/grid/$id"
+                          params={{ id: c.gridId }}
+                        >
+                          {c.gridPrompt}
+                        </Link>
+                      </td>
+                      <td>
+                        {c.model}
+                        <small>{c.effort}</small>
+                      </td>
+                      <td>{c.phase}</td>
+                      <td>
+                        {c.status}
+                        {c.error && (
+                          <p>
+                            {c.errorCode !== undefined
+                              ? `Error ${c.errorCode}: `
+                              : ""}
+                            {c.error}
+                          </p>
+                        )}
+                      </td>
+                      <td>{c.usage?.inputTokens ?? "-"}</td>
+                      <td>{c.usage?.outputTokens ?? "-"}</td>
+                      <td>
+                        {c.usage?.costUsd === undefined
+                          ? "Unavailable"
+                          : `$${c.usage.costUsd}`}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {data.total > 50 && (
+            <nav aria-label="Billing pages">
+              <button disabled={!offset} onClick={() => setOffset(offset - 50)}>
+                Previous
+              </button>
+              <span>
+                {offset + 1}-{Math.min(offset + 50, data.total)} of {data.total}
+              </span>
+              <button
+                disabled={offset + 50 >= data.total}
+                onClick={() => setOffset(offset + 50)}
+              >
+                Next
+              </button>
+            </nav>
+          )}
         </>
       )}
     </main>
