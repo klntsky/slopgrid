@@ -20,6 +20,18 @@ const homeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
   component: Home,
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { yourPage?: number; publicPage?: number } => {
+    const page = (value: unknown) => {
+      const number = Number(value);
+      return Number.isSafeInteger(number) && number > 1 ? number : undefined;
+    };
+    return {
+      yourPage: page(search.yourPage),
+      publicPage: page(search.publicPage),
+    };
+  },
 });
 const gridsRoute = createRoute({
   getParentRoute: () => rootRoute,

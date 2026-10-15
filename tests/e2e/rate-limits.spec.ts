@@ -104,6 +104,8 @@ for (const limit of ["grid creation", "API traffic"] as const) {
     await generate.click();
     await expectProgress(page, 1, 1);
     await expect(page.getByRole("alert")).toHaveCount(0);
-    expect(await (await page.request.get("/api/grids")).json()).toHaveLength(1);
+    expect(
+      (await (await page.request.get("/api/grids")).json()).grids,
+    ).toHaveLength(1);
   });
 }

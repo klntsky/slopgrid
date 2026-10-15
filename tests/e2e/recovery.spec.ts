@@ -3,7 +3,7 @@ import { test, expect } from "./fixtures";
 test("failed grid lists retry independently and OAuth failures retain their retry actions", async ({
   page,
 }) => {
-  await page.route("**/api/grids/public", (route) =>
+  await page.route("**/api/grids/public?*", (route) =>
     route.fulfill({ status: 503, json: { error: "Discovery unavailable" } }),
   );
   await page.goto("/grids");
@@ -20,7 +20,7 @@ test("failed grid lists retry independently and OAuth failures retain their retr
       .getByRole("region", { name: "Your grids", exact: true })
       .getByRole("alert"),
   ).toHaveCount(0);
-  await page.unroute("**/api/grids/public");
+  await page.unroute("**/api/grids/public?*");
   await publicList.getByRole("button", { name: "Reload grids" }).click();
   await expect(publicList.getByRole("alert")).toHaveCount(0);
   await expect(publicList.getByText("No public grids yet.")).toBeVisible();

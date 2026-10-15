@@ -8,6 +8,8 @@ import { randomBytes, createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { once } from "node:events";
 import { Store } from "../server/store.js";
+import { seedGridLists } from "./grid-list-fixture.js";
+import { createSessionReader } from "../server/session.js";
 let balanceUsd = 100;
 let tokenLimits: { model: string; max_tokens: number }[] = [];
 let imageRequests: Record<string, unknown>[] = [];
@@ -419,6 +421,13 @@ const generation = await startGenerationFixture({
 const store = new Store(`${data}/.data/db.sqlite`, Buffer.alloc(32, 1));
 const app = express();
 app.use(express.json());
+app.post("/fixture/grids", (req, res) => {
+  const session = createSessionReader(store, new URL("https://localhost")).read(
+    req,
+  );
+  if (!session) return res.sendStatus(401);
+  res.json(seedGridLists(store, session.anonymousId ?? session.id));
+});
 app.post("/fixture/reset", (req, res) => {
   store.db.exec("DROP TRIGGER IF EXISTS fail_reference_upload");
   if (req.body.referenceStorageFailure)

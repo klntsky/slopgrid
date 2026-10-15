@@ -1,12 +1,20 @@
 import { useGrids } from "../queries";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import { FormatPicker } from "../components/format-picker";
 import { startDraft } from "../create/draft";
 import { GridListing, PublicGrids } from "../components/grid-listing";
 
 export function Home() {
-  const history = useGrids();
+  const search = useSearch({ from: "/" });
+  const history = useGrids(search.yourPage);
   const navigate = useNavigate();
+  const changePage = (key: "yourPage" | "publicPage", page: number) => {
+    void navigate({
+      to: "/",
+      search: { ...search, [key]: page > 1 ? page : undefined },
+      resetScroll: false,
+    });
+  };
   return (
     <main className="home-page">
       <div className="page-heading">
@@ -18,15 +26,21 @@ export function Home() {
           void navigate({ to: "/create" });
         }}
       />
-      {(history.isError || !!history.data?.length) && (
+      {(history.isError || !!history.data?.total) && (
         <section className="owned-grids" aria-labelledby="your-grids-title">
           <h2 id="your-grids-title" className="grid-list-title">
             Your grids
           </h2>
-          <GridListing query={history} />
+          <GridListing
+            query={history}
+            onPageChange={(page) => changePage("yourPage", page)}
+          />
         </section>
       )}
-      <PublicGrids />
+      <PublicGrids
+        page={search.publicPage}
+        onPageChange={(page) => changePage("publicPage", page)}
+      />
     </main>
   );
 }

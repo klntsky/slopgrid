@@ -2,13 +2,16 @@ import { useEffect } from "react";
 import type { inferenceCapacity } from "../server/inference-policy";
 import { useOpenRouterKey } from "./openrouter-key";
 import { useQuery } from "@tanstack/react-query";
-import type { GridSummary, GridInput } from "../server/domain";
+import type { GridInput } from "../server/domain";
+import type { GridListPage } from "../server/grid-listing";
+import { keepPreviousData } from "@tanstack/react-query";
 import { api, type SessionInfo } from "./api";
 export { queryClient } from "./query-client";
-export function useGrids() {
+export function useGrids(page = 1) {
   return useQuery({
-    queryKey: ["grids"],
-    queryFn: () => api<GridSummary[]>("/grids"),
+    queryKey: ["grids", page],
+    queryFn: () => api<GridListPage>(`/grids?page=${page}`),
+    placeholderData: keepPreviousData,
   });
 }
 export function useSession() {
@@ -31,10 +34,11 @@ export function useConnection() {
   };
 }
 
-export function usePublicGrids() {
+export function usePublicGrids(page = 1) {
   return useQuery({
-    queryKey: ["public-grids"],
-    queryFn: () => api<GridSummary[]>("/grids/public"),
+    queryKey: ["public-grids", page],
+    queryFn: () => api<GridListPage>(`/grids/public?page=${page}`),
+    placeholderData: keepPreviousData,
   });
 }
 

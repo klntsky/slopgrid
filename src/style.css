@@ -1631,6 +1631,13 @@ header {
 .owned-grids {
   margin-top: 40px;
 }
+.grid-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+}
 .content-layout > main {
   width: 100%;
 }

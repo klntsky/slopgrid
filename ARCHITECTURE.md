@@ -219,3 +219,9 @@ that cache without maintaining separate ordering state.
   draft. Home saves the selected format before navigating; Edit, Fork, and
   provider authorization return to `/create`. Both pages share the format picker.
   The owned section appears only for populated results or a retryable failure.
+- Grid listing queries filter ownership or public visibility in SQLite before
+  counting and selecting a page. Only that page's grids are loaded for summary
+  presentation, with counts and rows read in one transaction. The list APIs
+  return grids, total, page, and pageSize, and validate the requested page.
+  Independent query keys and home search parameters retain each list's page;
+  previous results remain visible while the next page loads.

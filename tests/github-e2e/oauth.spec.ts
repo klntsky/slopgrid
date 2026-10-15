@@ -135,9 +135,9 @@ test("real GitHub sign-in claims an anonymous grid, shares account access, and f
     ).json();
     expect(publicGrid.canEdit).toBe(false);
     expect(publicGrid.author.username).toBe(user.username);
-    expect(await (await otherPage.request.get("/api/grids")).json()).toEqual(
-      [],
-    );
+    expect(
+      (await (await otherPage.request.get("/api/grids")).json()).grids,
+    ).toEqual([]);
   } finally {
     await second.close();
   }

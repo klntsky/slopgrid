@@ -26,5 +26,7 @@ test("a lost creation response followed by reload recovers one grid", async ({
   await expectProgress(page, 1, 1);
   expect(requests).toHaveLength(2);
   expect(requests[1]).toBe(requests[0]);
-  expect(await (await page.request.get("/api/grids")).json()).toHaveLength(1);
+  expect(
+    (await (await page.request.get("/api/grids")).json()).grids,
+  ).toHaveLength(1);
 });

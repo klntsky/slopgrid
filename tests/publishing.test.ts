@@ -51,7 +51,7 @@ test("publishing is permanent, link grids are unlisted, and public summaries omi
     });
   }
   async function publicGrids() {
-    return (await fetch(`${origin}/api/grids/public`)).json();
+    return (await (await fetch(`${origin}/api/grids/public`)).json()).grids;
   }
   grid("private");
   grid("link");
@@ -75,7 +75,10 @@ test("publishing is permanent, link grids are unlisted, and public summaries omi
     assert.equal((await publish(id, { visibility: "public" })).status, 409);
   assert.equal((await publish("link", { visibility: "unlisted" })).status, 200);
   const billed = store.billing.observe("link-cell")("direct");
-  billed.complete({ phase: "direct", finishReason: "stop" }, { costUsd: 0.125 });
+  billed.complete(
+    { phase: "direct", finishReason: "stop" },
+    { costUsd: 0.125 },
+  );
   for (const asOwner of [true, false]) {
     const headers: HeadersInit = asOwner ? { cookie: `slopgrid=${owner}` } : {};
     const view = await (
@@ -93,11 +96,15 @@ test("publishing is permanent, link grids are unlisted, and public summaries omi
       let event = "";
       while (!event.includes("\n\n")) {
         const chunk = await reader.read();
-        if (chunk.done) throw new Error("Grid stream ended before its snapshot");
+        if (chunk.done)
+          throw new Error("Grid stream ended before its snapshot");
         event += new TextDecoder().decode(chunk.value);
       }
       const snapshot = JSON.parse(
-        event.split("\n").find((line) => line.startsWith("data: "))!.slice(6),
+        event
+          .split("\n")
+          .find((line) => line.startsWith("data: "))!
+          .slice(6),
       );
       assert.equal(Object.hasOwn(snapshot, "spentUsd"), asOwner);
       if (asOwner) assert.equal(snapshot.spentUsd, 0.125);
@@ -123,8 +130,8 @@ test("publishing is permanent, link grids are unlisted, and public summaries omi
       headers: { cookie: `slopgrid=${owner}` },
     })
   ).json();
-  assert.equal(mine.length, 5);
-  assert.ok(mine.every((g: Grid) => g.visibility));
+  assert.equal(mine.total, 5);
+  assert.ok(mine.grids.every((g: Grid) => g.visibility));
   for (const id of ["link", "listed"]) {
     const previous = store.get(id)!;
     const anonymous = await fetch(`${origin}/api/grids/${id}`);

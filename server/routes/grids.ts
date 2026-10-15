@@ -12,14 +12,9 @@ import type { SessionReader } from "../session.js";
 import type { RateLimiter } from "../rate-limit.js";
 import type { GridPresenter } from "../grid-presentation.js";
 import { anonymousOwner } from "../session.js";
-import { gridAuthor, presentIdentity } from "../grid-presentation.js";
-import {
-  gridSchema,
-  expandGrid,
-  type Grid,
-  type StoredGrid,
-  type GridSummary,
-} from "../domain.js";
+import { presentIdentity } from "../grid-presentation.js";
+import { gridListPage } from "../grid-listing.js";
+import { gridSchema, expandGrid, type Grid } from "../domain.js";
 import {
   ModelResolutionError,
   resolveGridModels,
@@ -50,16 +45,6 @@ export function createGridRoutes({
 }) {
   const app = Router(),
     allowInference = createInferenceGuard(store, provider);
-  const summary = (g: StoredGrid): GridSummary => ({
-    id: g.id,
-    title: g.title,
-    expanded_prompt_for_title: g.expanded_prompt_for_title,
-    format: g.input.format,
-    status: g.status,
-    published: g.published,
-    visibility: g.visibility,
-    author: gridAuthor(g, store),
-  });
   function readGrid(
     req: Request,
     res: Response,
@@ -98,26 +83,21 @@ export function createGridRoutes({
         .json({ error: "Could not check your OpenRouter balance. Try again." });
     }
   });
-  app.get("/api/grids/public", (_req, res) => {
+  app.get(["/api/grids", "/api/grids/public"], (req, res) => {
+    const value = req.query.page ?? "1";
+    const page =
+      typeof value === "string" && /^[1-9]\d*$/.test(value)
+        ? Number(value)
+        : NaN;
+    if (!Number.isSafeInteger(page))
+      return res.status(400).json({ error: "Invalid page" });
+    res.set("Cache-Control", "no-store");
     res.json(
-      store
-        .all()
-        .filter((g) => g.visibility === "public")
-        .sort(
-          (a, b) =>
-            b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id),
-        )
-        .map(summary),
-    );
-  });
-  app.get("/api/grids", (req, res) => {
-    const s = session(req, res);
-    res.json(
-      store
-        .all()
-        .filter((g) => ownsGrid(g, s))
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-        .map(summary),
+      gridListPage(
+        store,
+        page,
+        req.path === "/api/grids" ? session(req, res) : undefined,
+      ),
     );
   });
   app.post("/api/grids", async (req, res) => {
@@ -142,13 +122,10 @@ export function createGridRoutes({
               manualKey: manualKey(req),
             })
           : await generation.getGrid(grid.id);
-        return res
-          .status(start ? 201 : 200)
-          .json({
-            ...snapshot(current, s),
-            startOutcome:
-              current.status === "paused" ? "not_started" : "started",
-          });
+        return res.status(start ? 201 : 200).json({
+          ...snapshot(current, s),
+          startOutcome: current.status === "paused" ? "not_started" : "started",
+        });
       } catch (error) {
         const code = (error as { code?: string })?.code;
         if (
@@ -160,16 +137,14 @@ export function createGridRoutes({
           ].includes(code ?? "")
         )
           throw error;
-        return res
-          .status(start ? 201 : 200)
-          .json({
-            id: grid.id,
-            startOutcome: ["UNAVAILABLE", "PERSISTENCE_UNAVAILABLE"].includes(
-              code!,
-            )
-              ? "unknown"
-              : "not_started",
-          });
+        return res.status(start ? 201 : 200).json({
+          id: grid.id,
+          startOutcome: ["UNAVAILABLE", "PERSISTENCE_UNAVAILABLE"].includes(
+            code!,
+          )
+            ? "unknown"
+            : "not_started",
+        });
       }
     }
     const previous = creation?.existing();

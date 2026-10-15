@@ -21,6 +21,9 @@ test("home separates discovery from the saved creation form and redirects grids"
   await expect(
     page.getByRole("region", { name: "Your grids", exact: true }),
   ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Next", exact: true }),
+  ).toHaveCount(0);
   for (const format of ["Markdown", "Image", "SVG", "Static website"]) {
     await page.getByRole("button", { name: format, exact: true }).click();
     await expect(page).toHaveURL("/create");
@@ -49,7 +52,7 @@ test("home separates discovery from the saved creation form and redirects grids"
 test("failed owned grids can be retried without hiding public discovery", async ({
   page,
 }) => {
-  await page.route("**/api/grids", (route) =>
+  await page.route("**/api/grids?*", (route) =>
     route.fulfill({ status: 503, json: { error: "History unavailable" } }),
   );
   await page.goto("/");
@@ -60,7 +63,7 @@ test("failed owned grids can be retried without hiding public discovery", async 
   await expect(
     page.getByRole("region", { name: "Public grids", exact: true }),
   ).toBeVisible();
-  await page.unroute("**/api/grids");
+  await page.unroute("**/api/grids?*");
   await owned.getByRole("button", { name: "Reload grids" }).click();
   await expect(owned).toHaveCount(0);
 });

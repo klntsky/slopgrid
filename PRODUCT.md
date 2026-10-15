@@ -102,6 +102,7 @@ Status: high level product goal that is not a requirement (not achieved yet).
 8. Connection loss appears as a small bottom-right label with a rotating preloader and must not shift page layout. Generation preloaders must visibly spin.
 9. Beneath Public grids, show "See what others have created". Introduce the billing history with "Each inference attempt appears here, including retries, failures, and cancellations. OpenRouter bills your account directly."
 10. Failed grid-list requests offer a retry for the affected list without reloading the page. Failed GitHub sign-in and OpenRouter authorization show visible failure feedback and retain the corresponding sign-in or connection action for retry.
+11. Paginate Your grids and Public grids independently with 20 entries per page, newest first and grid ID ascending for equal creation times. Show Previous, Next, and the visible range and total only when a list has more than one page. Disable unavailable directions and pagination while fetching. Preserve each list's page in the home URL through refresh and browser history navigation. Clamp pages beyond the available results to the last page, and omit Your grids when its total is zero.
 
 ### 2.3. Tooltips
 

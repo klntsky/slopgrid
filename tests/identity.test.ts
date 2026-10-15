@@ -197,7 +197,7 @@ test("account ownership, frozen authors, browser credentials, and OAuth callback
   assert.equal(store.get("draft")!.ownerUserId, alice.id);
   assert.equal(gridAuthor(store.get("draft")!, store)?.username, "alice");
   assert.equal(
-    (await (await request("/api/grids/public")).json()).find(
+    (await (await request("/api/grids/public")).json()).grids.find(
       (g: Grid) => g.id === "draft",
     ).author.username,
     "alice",
@@ -253,7 +253,10 @@ test("account ownership, frozen authors, browser credentials, and OAuth callback
     (await (await request("/api/session", nextId)).json()).user,
     null,
   );
-  assert.deepEqual(await (await request("/api/grids", nextId)).json(), []);
+  assert.deepEqual(
+    (await (await request("/api/grids", nextId)).json()).grids,
+    [],
+  );
   assert.equal((await (await request("/api/billing", nextId)).json()).total, 0);
   assert.equal(store.sessionForOwner(originalOwner)!.id, nextId);
 });
