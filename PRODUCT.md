@@ -185,7 +185,7 @@ Status: high level product goal that is not a requirement (not achieved yet).
 
 ### 5.2. Markdown
 
-1. Render Markdown formatting while displaying embedded raw HTML as text.
+1. Render Markdown formatting while displaying embedded raw HTML as text. Use consistent heading hierarchy, paragraph spacing, code backgrounds, blockquote styling, and theme-aware table borders. Reserve space for controls so they do not obscure content, and keep scrollbar space stable.
 2. Render Markdown incrementally into the same rendered layout used for completion, retaining the preview and scroll position throughout.
 3. Let code blocks take their full natural content width, then scale the whole Markdown document to fit the cell width. Scrolling is vertical only. Use a bundled monospace font with equal advance widths for spaces and full-block characters, and `line-height: normal` for rendered code blocks in grid previews and direct output pages. Use the same bundled font for Markdown source views.
 4. Add an icon-only raw-view toggle to the left of Expand. Raw mode shows the original Markdown as unformatted text in a monospace font, preserves line breaks, disables wrapping, and scales to the cell width.

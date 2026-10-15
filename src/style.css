@@ -661,11 +661,45 @@ dialog button {
   height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 20px;
+  padding: 48px 24px 24px;
+  scrollbar-gutter: stable;
+  font: 16px/1.6 system-ui;
 }
 .markdown-document {
   transform-origin: top left;
   overflow-wrap: break-word;
+}
+.markdown-document > :first-child {
+  margin-top: 0;
+}
+.markdown-document h1 {
+  font-size: 1.8em;
+}
+.markdown-document h2 {
+  font-size: 1.5em;
+}
+.markdown-document h3 {
+  font-size: 1.25em;
+}
+.markdown-document :is(h4, h5, h6) {
+  font-size: 1em;
+}
+.markdown-document :is(h1, h2, h3, h4, h5, h6) {
+  line-height: 1.3;
+}
+.markdown-document p {
+  margin: 1em 0;
+}
+.markdown-document a {
+  color: var(--accent);
+}
+.markdown-document blockquote {
+  margin-left: 0;
+  padding-left: 16px;
+  border-left: 3px solid var(--line);
+}
+.markdown-document :is(hr, th, td) {
+  border-color: var(--line);
 }
 .markdown-document pre {
   width: max-content;
@@ -673,10 +707,13 @@ dialog button {
   white-space: pre;
   font-family: GridMono, monospace;
   line-height: normal;
+  padding: 12px;
+  background: var(--panel);
 }
 .markdown-document code {
   font-family: GridMono, monospace;
   line-height: normal;
+  background: var(--panel);
 }
 .markdown-document img {
   max-width: 100%;
