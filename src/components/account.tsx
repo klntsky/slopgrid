@@ -45,6 +45,7 @@ export function Account({ settings = false }: { settings?: boolean }) {
         </>
       ) : (
         <a
+          className="button account-signin"
           aria-label="Sign in with GitHub"
           href={`/api/auth/github/start?returnTo=${encodeURIComponent(location.pathname)}`}
         >
@@ -53,7 +54,7 @@ export function Account({ settings = false }: { settings?: boolean }) {
             src="/github-invertocat-white.svg"
             alt=""
           />
-          {settings && "Sign in with GitHub"}
+          Sign in with GitHub
         </a>
       )}
       <ErrorMessage error={error} />

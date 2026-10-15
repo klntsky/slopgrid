@@ -11,7 +11,7 @@ import {
   lazyRouteComponent,
 } from "@tanstack/react-router";
 import { useState, useEffect, useRef, useSyncExternalStore } from "react";
-import { Menu } from "lucide-react";
+import { Menu, X } from "lucide-react";
 import { queries } from "./api";
 import { Account } from "./components/account";
 import { ThemeToggle } from "./theme";
@@ -74,6 +74,7 @@ function Layout() {
         <div id="grid-navigation" />
         {!touch ? (
           <nav className="desktop-navigation">
+            <Account />
             <Link to="/billing">BILLING</Link>
             <Link to="/settings">SETTINGS</Link>
             <ThemeToggle />
@@ -86,19 +87,17 @@ function Layout() {
               aria-expanded={menu}
               onClick={() => setMenu(!menu)}
             >
-              <Menu />
+              {menu ? <X /> : <Menu />}
             </IconButton>
             {menu && (
               <nav className="menu" onClick={() => setMenu(false)}>
+                <Account />
                 <Link to="/billing">BILLING</Link>
                 <Link to="/settings">SETTINGS</Link>
               </nav>
             )}
           </div>
         )}
-        <div className="account">
-          <Account />
-        </div>
       </header>
       {new URLSearchParams(location.search).get("signin") === "failed" && (
         <ErrorMessage error="GitHub sign-in failed. Sign in again." />
