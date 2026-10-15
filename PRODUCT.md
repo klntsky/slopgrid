@@ -53,8 +53,8 @@ The following numbered requirements define the visible layout and interaction co
 45. Place each grid-list format icon before its title, retain status at the right, and use unadorned dark titles with the established row spacing.
 46. Place the icon-only billing refresh action beside its heading and combine input/output counts in one Tokens column with following arrows.
 47. Use the small muted billing introduction and omit the unavailable-charge notice when its count is zero.
-48. Keep navigation, theme, and dialog-close controls free of tooltips. Preserve contextual tooltips on output, grid, and axis actions that had them in the original interface.
-49. Keep the navigation popup above grid headers, resize handles, output controls, and expanded previews. Grid layers must remain below navigation while their internal ordering is preserved.
+48. Keep navigation, theme, and dialog-close controls free of tooltips. Preserve contextual tooltips on output, grid, and axis actions that had them in the original interface. Copy actions retain their existing tooltip while pending and show success or failure feedback afterward, without an additional pending tooltip.
+49. Keep the entire navigation popup above the generation progress bar, grid headers, resize handles, output controls, and expanded previews, including its padding and spaces between links. The progress bar occupies the navbar's bottom edge and must not paint across an open menu. Grid layers must remain below navigation while their internal ordering is preserved.
 50. Preserve phone page spacing, including the vertical spacing between grid-list sections and stacked axis controls. Truncate untitled grid prompts to one line with an ellipsis, while explicitly saved titles wrap. Keep the public-grid introduction at ordinary paragraph size and spacing.
 51. Keep the grid navbar's bottom border, 36px action buttons with 4px gaps, and a non-shrinking prompt-copy control. Stacked phone axes use 10px gaps.
 

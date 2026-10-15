@@ -1036,8 +1036,8 @@ dialog > button:not(.primary) {
   width: 100%;
 }
 .progress-hint {
-  margin-top: -3px;
-  z-index: 6;
+  position: absolute;
+  inset: auto 0 -1px;
 }
 #grid-navigation {
   display: contents;

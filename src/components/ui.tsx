@@ -158,7 +158,9 @@ export function CopyButton({
     failure: "Copy failed",
   }[state];
   return (
-    <Hint text={feedback || (children ? undefined : label)}>
+    <Hint
+      text={(state !== "pending" && feedback) || (children ? undefined : label)}
+    >
       <button
         type="button"
         className={children ? undefined : "icon-button"}

@@ -355,27 +355,33 @@ export function GridPage() {
           </>,
           target,
         )}
-      <div className="progress-hint">
-        <Hint text={progressText}>
-          <div className="progress" tabIndex={0}>
-            <progress
-              aria-valuetext={progressText}
-              aria-label="Grid generation"
-              value={finished}
-              max={grid.cells.length}
-            />
-            {grid.cells.map((c) => (
-              <span
-                key={c.id}
-                className="progress-segment"
-                data-status={c.status}
-                style={{ flex: 1 }}
-              />
-            ))}
-            {grid.status === "running" && <span className="progress-spark" />}
-          </div>
-        </Hint>
-      </div>
+      {target &&
+        createPortal(
+          <div className="progress-hint">
+            <Hint text={progressText}>
+              <div className="progress" tabIndex={0}>
+                <progress
+                  aria-valuetext={progressText}
+                  aria-label="Grid generation"
+                  value={finished}
+                  max={grid.cells.length}
+                />
+                {grid.cells.map((c) => (
+                  <span
+                    key={c.id}
+                    className="progress-segment"
+                    data-status={c.status}
+                    style={{ flex: 1 }}
+                  />
+                ))}
+                {grid.status === "running" && (
+                  <span className="progress-spark" />
+                )}
+              </div>
+            </Hint>
+          </div>,
+          target,
+        )}
       <Workspace key={id} grid={grid} />
       {disconnected && (
         <div className="connection-lost" role="status">
