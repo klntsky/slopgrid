@@ -228,6 +228,12 @@ main {
   padding: 56px 28px 100px;
   margin: auto;
 }
+.site-footer {
+  padding: 24px 20px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
 h1,
 .grid-list-title {
   font-size: 48px;

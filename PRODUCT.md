@@ -94,6 +94,8 @@ Status: high level product goal that is not a requirement (not achieved yet).
 
 ### 2.2. Navigation and page layout
 
+Show a small-text footer on every page except the grid page, with "source code" linking to https://github.com/klntsky/slopgrid and "follow @klntsky for updates" linking to https://twitter.com/klntsky, separated by a centered dot.
+
 1. The logo opens `/`, which combines output-format selection, Your grids when populated, and Public grids. Redirect `/grids` to `/`. Selecting a format opens `/create` with that format selected.
 2. Keep navbar link labels uppercase, with readable desktop text and enough space for grid information. Use matching gaps between the brand, action buttons, and title/prompt group.
 3. For navigation, use the primary input capability independently of viewport width or orientation. Touch-primary devices use a hamburger menu anchored close to its button and keep theme selection in Settings. Mouse-primary devices show navigation links directly alongside the theme toggle, including when secondary touch support is reported. Keep compact grid action buttons on the first navbar row where they fit. At widths of 480px or more, place the grid title, prompt, and byline in the center of that row between the logo and actions; below 480px, give that information a full-width second row.

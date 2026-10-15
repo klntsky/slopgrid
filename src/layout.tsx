@@ -100,6 +100,13 @@ export function Layout() {
           </div>
         </header>
         <Outlet />
+        {!isGrid && (
+          <footer className="site-footer">
+            <a href="https://github.com/klntsky/slopgrid">source code</a>
+            {" · "}
+            <a href="https://twitter.com/klntsky">follow @klntsky for updates</a>
+          </footer>
+        )}
       </div>
     </GridHeaderTarget.Provider>
   );
