@@ -43,7 +43,7 @@ export function createHostDispatcher(
     }
     res.set(
       "Content-Security-Policy",
-      "sandbox allow-scripts; default-src 'self' data: blob:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'",
+      "sandbox allow-scripts; default-src 'self' data: blob:; script-src 'self' 'unsafe-inline' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'",
     );
     res.set("Cache-Control", "no-store");
     res.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");

@@ -163,6 +163,9 @@ before application middleware, so those hosts cannot
 reach application routes. Only validated bundle or preview paths are served.
 The HTML sandbox has an opaque origin and a restrictive content security policy;
 generated code cannot read application cookies or use the authorization bridge.
+The live output script policy permits blob scripts so generated audio worklets
+can load in the sandbox. The response-level `connect-src 'none'` restriction
+continues to block network connections from generated code.
 
 Private HTML needs a short handshake because navigation and sandboxed resource
 requests can use different cookie partitions:
