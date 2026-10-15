@@ -3,6 +3,7 @@ import { useLayoutEffect, useRef } from "react";
 import { ErrorMessage } from "../components/error-message";
 import { MarkdownContent } from "../../shared/markdown";
 import "./markdown-preview.css";
+import { textOutput } from "./text-output";
 
 export function MarkdownPreview({
   url,
@@ -26,17 +27,8 @@ export function MarkdownPreview({
     if (streaming) lastDraft.current = draft ?? "";
   }, [draft, streaming]);
   const query = useQuery({
-    queryKey: ["text-output", url],
-    staleTime: Infinity,
+    ...textOutput(url),
     enabled: !streaming,
-    retry: false,
-    queryFn: async ({ signal }) => {
-      const source = new URL(url, location.origin);
-      source.searchParams.set("raw", "1");
-      const response = await fetch(source, { signal });
-      if (!response.ok) throw new Error("Could not load the preview.");
-      return response.text();
-    },
   });
   const markdown = streaming
     ? (draft ?? "")

@@ -1,11 +1,10 @@
-async function loadOutput(url: string) {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error("Could not load output.");
-  return response.blob();
-}
+import { queryClient } from "../query-client";
+import { textOutput } from "./text-output";
 
 async function clipboardImage(url: string): Promise<Blob> {
-  const blob = await loadOutput(url);
+  const response = await fetch(url);
+  if (!response.ok) throw new Error("Could not load output.");
+  const blob = await response.blob();
   if (blob.type === "image/png") return blob;
   const image = await createImageBitmap(blob);
   try {
@@ -30,24 +29,23 @@ export async function copyOutput(
   url: string,
   format: "image" | "svg" | "markdown",
 ) {
-  const source = new URL(url, location.origin);
-  if (format === "markdown") source.searchParams.set("raw", "1");
   if (format === "image") {
-    await navigator.clipboard.write([
-      new ClipboardItem({ "image/png": clipboardImage(source.href) }),
+    return navigator.clipboard.write([
+      new ClipboardItem({ "image/png": clipboardImage(url) }),
     ]);
-  } else if (
-    typeof ClipboardItem !== "undefined" &&
-    navigator.clipboard.write
-  ) {
-    const content = loadOutput(source.href).then(
-      async (blob) => new Blob([await blob.text()], { type: "text/plain" }),
-    );
+  }
+  const content = queryClient.fetchQuery(
+    textOutput(url, format === "markdown"),
+  );
+  if (typeof ClipboardItem !== "undefined" && navigator.clipboard.write) {
     await navigator.clipboard.write([
-      new ClipboardItem({ "text/plain": content }),
+      new ClipboardItem({
+        "text/plain": content.then(
+          (text) => new Blob([text], { type: "text/plain" }),
+        ),
+      }),
     ]);
   } else {
-    const blob = await loadOutput(source.href);
-    await navigator.clipboard.writeText(await blob.text());
+    await navigator.clipboard.writeText(await content);
   }
 }

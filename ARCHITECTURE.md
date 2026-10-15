@@ -175,6 +175,11 @@ parent and grants no additional access.
 
 ## Code ownership
 
+Markdown previews, thinking traces, and text clipboard actions share an output
+query keyed by the canonical source URL. Completed text is cached once, while
+preview components retain streaming drafts until the saved output arrives.
+Image clipboard conversion remains separate from text loading.
+
 The grid viewport owns measured and saved dimensions, zoom, and pointer
 gestures in one lifecycle. Resizing and pinch anchoring use its shared
 coordinate space, and gesture handlers share capture and cleanup. The output

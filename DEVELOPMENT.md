@@ -231,6 +231,9 @@ Preview retention coverage checks the same iframe and its interactive document
 state across expansion and collapse on desktop and touch devices. Overlay
 coverage checks the complete navigation popup and expanded output surface,
 including the progress-bar crossing and spaces between controls.
+Text-output coverage blocks subsequent output requests after the preview loads
+and verifies that copying still returns the exact Markdown source from the
+shared cache. Streaming-thinking tests cover the transition to saved text.
 
 Grid input coverage sends a request exceeding 100 KB through HTTP creation, persistence, and inference, preserving long prompts, variable values, and model IDs. Budget tests cover pricing and context limits, text-token ceilings, saved budgets, and format-specific validation.
 
