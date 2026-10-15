@@ -353,18 +353,17 @@ h2 small {
   align-items: center;
   min-width: 0;
 }
-.hint > [role="tooltip"] {
-  position: absolute;
+.tooltip {
+  position: fixed;
   z-index: 100;
-  bottom: calc(100% + 8px);
-  left: 50%;
-  transform: translateX(-50%);
   background: #000;
   color: #fff;
   padding: 8px 10px;
   border-radius: 4px;
   width: max-content;
   max-width: min(420px, 80vw);
+  max-height: calc(100vh - 16px);
+  overflow: auto;
   font-size: 13px;
   font-weight: 400;
   white-space: pre-line;

@@ -62,6 +62,10 @@ they do not own provider execution or persist generation results.
   storage holds appearance, manual keys, publication preferences, and grid sizes.
   Creation and grid routes load their implementation on demand.
 
+Tooltips render through a portal outside clipping containers, using the active
+dialog when present. The shared control positions them against their anchor and
+viewport and updates placement on scrolling and resizing.
+
 ### Durable state
 
 SQLite stores identities, sessions, grid configuration, cell state, reference

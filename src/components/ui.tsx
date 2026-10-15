@@ -1,5 +1,7 @@
 import {
   useEffect,
+  useLayoutEffect,
+  useId,
   useRef,
   useState,
   type ReactNode,
@@ -22,6 +24,50 @@ export function Hint({
   overflowOnly?: boolean;
 }) {
   const [show, setShow] = useState(false);
+  const anchor = useRef<HTMLSpanElement>(null);
+  const tooltip = useRef<HTMLSpanElement>(null);
+  const id = useId();
+  const [focusable, setFocusable] = useState(false);
+  useLayoutEffect(() => {
+    setFocusable(
+      !!text &&
+        !anchor.current?.querySelector(
+          "button, a, input, select, textarea, [tabindex]",
+        ),
+    );
+  }, [children, text]);
+  useLayoutEffect(() => {
+    if (!show || !text) return;
+    const place = () => {
+      const tip = tooltip.current!,
+        target = anchor.current!;
+      const a = target.getBoundingClientRect(),
+        t = tip.getBoundingClientRect();
+      const left = Math.max(
+        8,
+        Math.min(innerWidth - t.width - 8, a.left + (a.width - t.width) / 2),
+      );
+      const top = Math.max(
+        8,
+        Math.min(
+          innerHeight - t.height - 8,
+          a.top >= t.height + 16 ? a.top - t.height - 8 : a.bottom + 8,
+        ),
+      );
+      Object.assign(tip.style, { left: `${left}px`, top: `${top}px` });
+    };
+    place();
+    const observer = new ResizeObserver(place);
+    observer.observe(tooltip.current!);
+    observer.observe(anchor.current!);
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [show, text]);
   const owner = useRef({});
   useEffect(() => {
     const hide = (e: Event) => {
@@ -39,6 +85,9 @@ export function Hint({
   return (
     <span
       className="hint"
+      ref={anchor}
+      tabIndex={focusable ? 0 : undefined}
+      aria-describedby={show && text ? id : undefined}
       data-tooltip={attribute ? text : undefined}
       onMouseEnter={reveal}
       onMouseLeave={() => setShow(false)}
@@ -49,11 +98,21 @@ export function Hint({
       }}
     >
       {children}
-      {text && show && (
-        <span role="tooltip" data-theme={theme} data-state="visible">
-          {text}
-        </span>
-      )}
+      {text &&
+        show &&
+        createPortal(
+          <span
+            ref={tooltip}
+            id={id}
+            className="tooltip"
+            role="tooltip"
+            data-theme={theme}
+            data-state="visible"
+          >
+            {text}
+          </span>,
+          anchor.current?.closest("dialog") ?? document.body,
+        )}
     </span>
   );
 }
