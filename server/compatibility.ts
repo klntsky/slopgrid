@@ -48,7 +48,7 @@ function providerSupport(states: Support[]): Support {
       ? "unknown"
       : "unsupported";
 }
-function combinationSupport(states: Support[]): Support {
+export function combinationSupport(states: Support[]): Support {
   return states.includes("unsupported")
     ? "unsupported"
     : states.includes("unknown")

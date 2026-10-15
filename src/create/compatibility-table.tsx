@@ -8,6 +8,7 @@ import {
   thinkingEffortSupport,
   imageSettingsSupport,
   imageParameterNames,
+  combinationSupport,
   type Compatibility,
 } from "../../server/compatibility";
 import type { ModelInfo } from "../../server/model-catalog";
@@ -95,12 +96,9 @@ export function compatibilityTables({
                   ] === value),
             )
             .map((cell) => cell.compatibility.parameters[kind]);
-          const support = matches.some((cell) => cell.support === "unsupported")
-            ? "unsupported"
-            : !matches.length ||
-                matches.some((cell) => cell.support === "unknown")
-              ? "unknown"
-              : "supported";
+          const support = matches.length
+            ? combinationSupport(matches.map((cell) => cell.support))
+            : "unknown";
           return {
             support,
             reason:
