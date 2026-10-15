@@ -45,6 +45,7 @@ Status: high level product goal that is not a requirement (not achieved yet).
 7. A missing grid should show its 404 promptly without retrying. Keep the error message focused on the missing grid.
 8. Connection loss appears as a small bottom-right label with a rotating preloader and must not shift page layout. Generation preloaders must visibly spin.
 9. Beneath Public grids, show "See what others have created". Introduce the billing history with "Each inference attempt appears here, including retries, failures, and cancellations. OpenRouter bills your account directly."
+10. Failed grid-list requests offer a retry for the affected list without reloading the page. Failed GitHub sign-in and OpenRouter authorization show visible failure feedback and retain the corresponding sign-in or connection action for retry.
 
 ### 2.3. Tooltips
 

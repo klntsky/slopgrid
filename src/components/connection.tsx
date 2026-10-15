@@ -88,6 +88,9 @@ export function Connection({ settings = false }: { settings?: boolean }) {
         )}
       </div>
       <ErrorMessage error={checkError} />
+      {new URLSearchParams(location.search).get("connection") === "failed" && (
+        <ErrorMessage error="OpenRouter connection failed. Connect again." />
+      )}
       {manual && (
         <Modal
           title="OpenRouter API key"

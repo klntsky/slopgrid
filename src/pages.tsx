@@ -33,7 +33,7 @@ export function Author({ author }: { author?: Identity | null }) {
   );
 }
 export function GridListing({ publicList = false }: { publicList?: boolean }) {
-  const { data, error, isPending } = useQuery({
+  const { data, error, isPending, isFetching, refetch } = useQuery({
     queryKey: ["grids", publicList],
     queryFn: () =>
       api<GridSummary[]>(`/api/grids${publicList ? "/public" : ""}`),
@@ -43,6 +43,11 @@ export function GridListing({ publicList = false }: { publicList?: boolean }) {
       <h1>{publicList ? "Public grids" : "Your grids"}</h1>
       {publicList && <p>See what others have created</p>}
       <ErrorMessage error={error} />
+      {error && (
+        <button disabled={isFetching} onClick={() => refetch()}>
+          Reload grids
+        </button>
+      )}
       {isPending && <p>Loading grids...</p>}
       {data?.length === 0 && (
         <p>

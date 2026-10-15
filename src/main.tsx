@@ -14,7 +14,7 @@ import { useState, useEffect, useRef, useSyncExternalStore } from "react";
 import { Menu } from "lucide-react";
 import { queries, api, useSession } from "./api";
 import { ThemeToggle } from "./theme";
-import { IconButton } from "./components/ui";
+import { IconButton, ErrorMessage } from "./components/ui";
 import { GridsPage, BillingPage, SettingsPage } from "./pages";
 import "./style.css";
 
@@ -119,6 +119,9 @@ function Layout() {
           )}
         </div>
       </header>
+      {new URLSearchParams(location.search).get("signin") === "failed" && (
+        <ErrorMessage error="GitHub sign-in failed. Sign in again." />
+      )}
       <Outlet />
     </div>
   );
