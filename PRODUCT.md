@@ -58,6 +58,7 @@ The following numbered requirements define the visible layout and interaction co
 50. Preserve phone page spacing, including the vertical spacing between grid-list sections and stacked axis controls. Truncate untitled grid prompts to one line with an ellipsis, while explicitly saved titles wrap. Keep the public-grid introduction at ordinary paragraph size and spacing.
 51. Keep the grid navbar's bottom border, 36px action buttons with 4px gaps, and a non-shrinking prompt-copy control. Stacked phone axes use 10px gaps.
 52. Show a left chevron before Previous and a right chevron after Next in grid-list and billing pagination, retaining the text labels.
+53. Opening a grid from a scrolled list must show the grid header at the top of the viewport, including on mobile browsers in desktop mode. Returning to the list through browser history restores its previous scroll position.
 
 See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.md) for architecture constraints and implementation, and [DEVELOPMENT.md](DEVELOPMENT.md) for development and validation guidance.
 

@@ -522,6 +522,8 @@ legend {
   color: var(--muted);
 }
 .app-shell.grid-layout {
+  position: fixed;
+  inset: 0;
   height: 100dvh;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);

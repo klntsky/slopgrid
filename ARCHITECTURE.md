@@ -184,6 +184,11 @@ The navbar owns its navigation popup above the grid workspace. The workspace
 contains grid stacking layers and expanded previews, keeping their ordering
 independent of navigation.
 
+The grid page occupies a fixed viewport shell, keeping its header independent
+of document scrolling on the previous route. The grid viewport owns scrolling
+within that shell, while the router restores ordinary-page scroll positions
+through browser history.
+
 Markdown previews, thinking traces, and text clipboard actions share an output
 query keyed by the canonical source URL. Completed text is cached once, while
 preview components retain streaming drafts until the saved output arrives.

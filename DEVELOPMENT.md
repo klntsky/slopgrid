@@ -188,6 +188,10 @@ Text-model pricing browser coverage checks per-million conversion, request charg
 
 `tests/e2e/scroll-restoration.spec.ts` covers creation drafts for SVG and Image through refresh, Back, and Forward, checking saved input values and actual scroll offsets while new route visits start at the top.
 
+The same suite opens a grid from a scrolled list with touch input at a desktop
+viewport width, checks that its header stays at the viewport top, and verifies
+the list scroll position after Back.
+
 1. **Web replacement during generation:** keep a real browser open while Markdown, thinking, and website assets stream; replace the web process and verify reconnection, continued previews, correct final content and prices, and no extra provider calls. See `tests/e2e/runtime.spec.ts`.
 2. **Lost acknowledgements and competing starts:** lose the response after the engine accepts Start, retry through a replacement web process, and race multiple starts; each cell must run only once. See `tests/generation-commands.test.ts`.
 3. **Concurrent writes:** interleave title edits, ownership claims, generation completion, publication, and retries across processes; preserve both metadata and generation changes and prevent publication while work is active. See `tests/generation-metadata.test.ts`.
