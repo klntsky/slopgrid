@@ -152,8 +152,8 @@ only listed grids, while unlisted grids remain readable by link. Mutations
 require ownership. Output routes check access before reading files or download
 metadata; public outputs can be served without a session.
 
-Generated HTML runs on isolated per-cell hosts rather than the application
-host. Host dispatch happens before application middleware, so those hosts cannot
+Live generated HTML runs on isolated per-cell hosts. Host dispatch happens
+before application middleware, so those hosts cannot
 reach application routes. Only validated bundle or preview paths are served.
 The HTML sandbox has an opaque origin and a restrictive content security policy;
 generated code cannot read application cookies or use the authorization bridge.
@@ -172,6 +172,42 @@ requests can use different cookie partitions:
 Direct private HTML navigation uses the same access checks and bootstrap. The
 bridge that preserves frame scroll state communicates only with its application
 parent and grants no additional access.
+
+## Progressive web app and offline storage
+
+The build emits a web manifest, PNG app icons, a service worker with the release's
+asset inventory, and a generic offline shell. Installation caches the shell and
+frontend assets. Hashed assets remain available for cached pages across releases;
+worker activation follows the browser lifecycle without replacing a worker used
+by open tabs. Registration runs alongside rendering and does not gate startup.
+
+The worker fetches pages and read-only API data from the network first, retaining
+successful responses and the list pages embedded in HTML. Network failures use
+cached responses, while HTTP denials remain authoritative. Cached grid snapshots
+exclude streamed drafts, temporary previews, and live thinking. Visiting a grid
+or receiving completed cells triggers caching of ready outputs and downloads.
+Reconnection refreshes active queries before live streams resume. Mutations and
+OAuth exchanges remain network-only.
+
+Session responses carry a one-way hash of the session identifier as a cache
+partition key, which grants no server access. Sign-out and observed session
+changes remove cached data; an epoch check rejects writes from obsolete requests.
+Offline copies remain readable in their last known session until the browser can
+observe revocation online. Cache writes are serialized, quota errors evict older
+data entries, and storage failures do not prevent online requests from succeeding.
+Draft storage and the application shell are separate from replaceable cached data.
+
+Completed website bundles also have a self-contained offline representation.
+HTML, CSS imports, static resource references, and module imports are rewritten
+to embedded data URLs. The original bundle remains available as a cached ZIP.
+Offline HTML documents are served at application paths under `/offline/outputs/`
+with a response-level opaque sandbox and a policy that prohibits network access,
+forms, and nested frames. These documents cannot read application cookies,
+storage, or the parent DOM. The iframe permits worker interception of the initial
+navigation; the response policy imposes isolation before generated code runs.
+Its navigation bridge accepts only the current frame and paths within its own
+output. Generated scripts that construct resource URLs at runtime are not
+rewritten; reconnecting restores the original website preview.
 
 ## Code ownership
 
@@ -237,8 +273,9 @@ that cache without maintaining separate ordering state.
   available pages of both lists, and the creation page uses the same list hooks
   to prefetch them during client navigation without displaying the lists.
   Production and development use the same
-  session-filtered bootstrap. Request-specific HTML is not cached, varies by
-  cookie, escapes script content, and permits its inline script with a CSP hash.
+  session-filtered bootstrap. Request-specific HTML uses HTTP no-store and varies
+  by cookie, while the service worker retains session-scoped offline copies. It
+  escapes script content and permits its inline script with a CSP hash.
   Before React renders, these pages seed the existing query cache. List queries
   share a 30-second freshness period and prefetch only the next two available
   pages; existing mutation invalidation refreshes affected cached lists.

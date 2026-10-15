@@ -9,6 +9,7 @@ import { zip } from "fflate";
 import { downloadFilename } from "../download-filename.js";
 import { canViewGrid } from "../grid-policy.js";
 import type { SessionReader } from "../session.js";
+import { offlineWebsite, offlineWebsitePolicy } from "../offline-website.js";
 
 const markdownFont = readFileSync(
   new URL("../../public/fonts/DejaVuSansMono.woff2", import.meta.url),
@@ -54,7 +55,7 @@ export function createOutputRoutes(
   session: SessionReader,
 ) {
   const app = Router();
-  app.use("/outputs/:id", (req, res, next) => {
+  app.use(["/outputs/:id", "/offline/outputs/:id"], (req, res, next) => {
     res.set("Cache-Control", "no-store");
     const id = String(req.params.id);
     const output = /^[a-f0-9]{48}$/.test(id)
@@ -63,8 +64,36 @@ export function createOutputRoutes(
     const viewer = session.read(req);
     if (!output || !canViewGrid(output, viewer)) return res.sendStatus(404);
     res.locals.output = output;
+    if (output.status === "complete") res.set("X-Slopgrid-Output-Ready", "1");
     res.locals.file = outputFile(output);
     next();
+  });
+  app.get("/outputs/:id/offline", async (req, res) => {
+    const output = res.locals.output;
+    if (output.status !== "complete" || output.format !== "html")
+      return res.sendStatus(404);
+    const id = String(req.params.id);
+    const pages = await offlineWebsite(
+      await store.files.bundle(id),
+      id,
+      origin.origin,
+    );
+    res.json({ pages });
+  });
+  app.get("/offline/outputs/:id/*path", async (req, res) => {
+    res.set("Content-Security-Policy", offlineWebsitePolicy);
+    const output = res.locals.output;
+    if (output.status !== "complete" || output.format !== "html")
+      return res.sendStatus(404);
+    const id = String(req.params.id);
+    const path = (req.params.path as string[]).join("/");
+    const pages = await offlineWebsite(
+      await store.files.bundle(id),
+      id,
+      origin.origin,
+    );
+    if (!Object.hasOwn(pages, path)) return res.sendStatus(404);
+    res.type("html").send(pages[path]);
   });
   app.get("/outputs/:id/thinking/:attempt", (req, res) => {
     // A versioned URL cannot return a newer attempt under an older query key.

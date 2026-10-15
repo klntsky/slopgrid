@@ -367,8 +367,8 @@ Status: high level product goal that is not a requirement (not achieved yet).
 ### 8.4. Output isolation and private access
 
 1. Private output belongs to the owning user account and is accessible from any live session signed into that account, including direct output links in another browser. Anonymous grids remain accessible through their anonymous browser identity until claimed on sign-in. Knowing a grid, output, preview, download, or thinking URL does not grant access to another user or an unauthenticated visitor.
-2. Apply ownership and session checks to network requests for every output format, website asset, preview, download, and thinking trace. Completed private SVGs and images may reuse a browser cache entry for the same session cookie until the cache entry expires. Cookie changes after logout or account switching must prevent reuse of that private entry; stale entries require authorization again.
-3. Serve arbitrary HTML bundles from separate per-output hosts. Images, SVG, and Markdown use the application host.
+2. Apply ownership and session checks to network requests for every output format, website asset, preview, download, and thinking trace. Completed private SVGs and images may reuse their HTTP browser cache entry for the same session cookie until it expires. The PWA also retains session-partitioned offline copies of visited ready outputs and fetched pages. Sign-out and observed session changes clear those offline copies. Offline access cannot observe remote session revocation until reconnection.
+3. Serve live HTML bundles from separate per-output hosts. Offline website copies use self-contained documents with an opaque sandbox and no network access. Images, SVG, and Markdown use the application host.
 4. Generated HTML must not receive application session cookies, access other outputs' cookies, or reach application API handlers through its output host. Retain isolation while allowing its static scripts and assets to render.
 5. Generated websites can access only their own bundle's files.
 
@@ -376,18 +376,19 @@ Status: high level product goal that is not a requirement (not achieved yet).
 
 1. Web and interface updates must preserve accepted inference, including queued work, output, thinking, and charges. Browsers reconnect automatically after a brief connection interruption.
 2. An inference-machinery update stops accepting new work and lets accepted grids and unsettled calls finish without a cancellation timeout. Cancelling maintenance restores admission.
+3. Open browser tabs retain access to their frontend assets across updates. Routine deployments preserve grids, outputs, credentials, and sessions.
+4. Recoverable infrastructure persistence failures suspend admission and new inference dispatch while preserving accepted calls and retaining their results for persistence recovery. Resume dispatch automatically after recovery, subject to manual Pause and maintenance restrictions, without requiring users to Resume grids solely because of the storage interruption. Do not replay provider calls to recover a failed persistence operation.
+5. Recovery from disk-full errors is outside the supported failure-recovery scope.
 
 ### 9.1. Progressive web app and offline navigation
-
-These requirements describe the requested PWA behavior, which is not yet implemented.
 
 1. Make Slopgrid installable as a progressive web app.
 2. Cache every ready output the user visits, across Markdown, Image, SVG, and Static website formats. Cache the supporting files needed to view a ready website output.
 3. Exclude outputs still being generated from the offline output cache. A visited output becomes eligible when generation completes.
 4. Cache fetched pages and their fetched data so the user can navigate those pages offline, including fetched grid-list pages and visited grids.
-3. Open browser tabs retain access to their frontend assets across updates. Routine deployments preserve grids, outputs, credentials, and sessions.
-4. Recoverable infrastructure persistence failures suspend admission and new inference dispatch while preserving accepted calls and retaining their results for persistence recovery. Resume dispatch automatically after recovery, subject to manual Pause and maintenance restrictions, without requiring users to Resume grids solely because of the storage interruption. Do not replay provider calls to recover a failed persistence operation.
-5. Recovery from disk-full errors is outside the supported failure-recovery scope.
+5. Refresh data and resume live progress after reconnection. Keep authentication exchanges and inference mutations out of the offline cache, and do not queue mutations for automatic submission after reconnecting.
+6. Use `slopgrid` as the installed app name and `Generate and compare AI outputs in a grid.` as its description. Use `This page isn't available offline.` and `This output isn't available offline.` when the respective cached content is unavailable, with `Retry` for retry controls.
+7. Keep cached content replaceable: evict older cached data when a quota error prevents a write, and preserve online operation when storage is unavailable. The server retains the original grids and outputs.
 
 ## 10. Reusing completed artifacts
 

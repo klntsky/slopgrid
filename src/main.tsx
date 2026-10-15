@@ -7,6 +7,7 @@ import { queryClient } from "./queries";
 import { ThemeProvider } from "./theme";
 import "./style.css";
 import type { GridListsBootstrap } from "../server/grid-bootstrap";
+import { registerPwa, cacheGrid } from "./pwa";
 
 declare global {
   interface Window {
@@ -22,6 +23,11 @@ for (const [kind, pages] of [
     queryClient.setQueryData([kind, key], data);
 delete window.__SLOPGRID_GRIDS__;
 
+void registerPwa().then(() => {
+  for (const query of queryClient.getQueryCache().getAll())
+    if (query.queryKey[0] === "grid" && typeof query.queryKey[1] === "string")
+      cacheGrid(query.queryKey[1]);
+});
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>

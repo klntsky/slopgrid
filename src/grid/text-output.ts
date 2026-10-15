@@ -9,7 +9,12 @@ export function textOutput(url: string, raw = true) {
     retry: false,
     queryFn: async ({ signal }) => {
       const response = await fetch(source, { signal });
-      if (!response.ok) throw new Error("Could not load the preview.");
+      if (!response.ok)
+        throw new Error(
+          response.headers.get("X-Slopgrid-Offline") === "1"
+            ? "This output isn't available offline."
+            : "Could not load the preview.",
+        );
       return response.text();
     },
   });

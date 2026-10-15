@@ -7,11 +7,13 @@ import { useGrid } from "../grid/use-grid";
 import { GridHeader } from "../grid/grid-header";
 import { OutputGrid } from "../grid/output-grid";
 import { ErrorMessage } from "../components/error-message";
+import { useOffline } from "../pwa";
 import {
   LowBalanceDialog,
   BillingDialog,
 } from "../components/inference-dialogs";
 export function GridPage() {
+  const offline = useOffline();
   const { id } = useParams({ from: "/grid/$id" });
   const headerTarget = useContext(GridHeaderTarget);
   const {
@@ -37,6 +39,11 @@ export function GridPage() {
     return (
       <main>
         <ErrorMessage error={query.error.message} />
+        {offline && (
+          <button className="secondary" onClick={() => void query.refetch()}>
+            Retry
+          </button>
+        )}
       </main>
     );
   const g = query.data;

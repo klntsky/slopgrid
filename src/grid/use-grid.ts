@@ -4,6 +4,7 @@ import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { api, ApiError, type ViewGrid } from "../api";
 import { saveDraft } from "../create/draft";
+import { cacheGrid, useOffline } from "../pwa";
 export function useGrid(id: string) {
   const cache = useQueryClient(),
     navigate = useNavigate();
@@ -11,7 +12,9 @@ export function useGrid(id: string) {
     queryKey: ["grid", id],
     queryFn: () => api<ViewGrid>(`/grids/${id}`),
     retry: (attempt, error) =>
-      !(error instanceof ApiError && error.status === 404) && attempt < 3,
+      navigator.onLine &&
+      !(error instanceof ApiError && [404, 503].includes(error.status)) &&
+      attempt < 3,
     refetchOnWindowFocus: (query) =>
       !(
         query.state.error instanceof ApiError &&
@@ -20,7 +23,16 @@ export function useGrid(id: string) {
   });
   const [dismissed, setDismissed] = useState(false),
     [streamLost, setStreamLost] = useState(false);
-  const live = query.isSuccess && !query.data.published && query.data.live;
+  const offline = useOffline();
+  const completed = query.data?.cells
+    .filter((cell) => cell.status === "complete")
+    .map((cell) => cell.id)
+    .join(",");
+  useEffect(() => {
+    if (completed && !offline) cacheGrid(id);
+  }, [id, completed, offline]);
+  const live =
+    !offline && query.isSuccess && !query.data.published && query.data.live;
   useEffect(() => {
     setStreamLost(false);
     if (!live) return;

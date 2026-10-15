@@ -1,10 +1,11 @@
 import { createRequire } from "node:module";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { pwaBuild } from "./pwa-build";
 
 const require = createRequire(import.meta.url);
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), pwaBuild()],
   build: {
     // Open pages may still request lazy chunks from an earlier build.
     emptyOutDir: false,

@@ -1,9 +1,17 @@
 import type { Request, Response } from "express";
 import { token } from "./ids.js";
+import { createHash } from "node:crypto";
 import type { Store, Session } from "./store.js";
 
 // Browsers cap persistent cookies at 400 days; renew them during use.
 export const cookieMaxAge = 400 * 86400000;
+
+// A cache partition identifier is not an authentication credential.
+export function cacheScope(session?: Pick<Session, "id">) {
+  return session
+    ? createHash("sha256").update(`offline:${session.id}`).digest("hex")
+    : "public";
+}
 
 export function anonymousOwner(s: Session) {
   return s.anonymousId ?? s.id;
@@ -13,6 +21,7 @@ export function createSessionReader(store: Store, origin: URL) {
   const secure = origin.protocol === "https:",
     cookieName = secure ? "__Host-slopgrid" : "slopgrid";
   function cookie(res: Response, id: string) {
+    res.set("X-Slopgrid-Cache-Scope", cacheScope({ id }));
     // Rotation replaces any renewal already added to this response.
     const existing = res.getHeader("Set-Cookie");
     if (existing)

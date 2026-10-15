@@ -16,7 +16,7 @@ import { createHtmlHosts } from "./hosts.js";
 import { createHostDispatcher } from "./hosting.js";
 import { createApiSecurity } from "./security.js";
 import { createRateLimiter } from "./rate-limit.js";
-import { createSessionReader } from "./session.js";
+import { createSessionReader, cacheScope } from "./session.js";
 import { createGridPresenter } from "./grid-presentation.js";
 import { createOutputRoutes } from "./routes/outputs.js";
 import { createManualKeyRoutes } from "./manual-keys.js";
@@ -72,6 +72,10 @@ export function createApp(config: Config) {
       outputAccess,
     ),
   );
+  app.use((req, res, next) => {
+    res.set("X-Slopgrid-Cache-Scope", cacheScope(session.read(req)));
+    next();
+  });
   app.use(createOutputRoutes(store, origin, rate, session));
   app.get("/outputs/:id/website", outputAccess.open);
   app.use(express.json({ limit: Infinity }));

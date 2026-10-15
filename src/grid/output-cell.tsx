@@ -20,6 +20,7 @@ import { SvgPreview } from "../svg-preview-image";
 import { ContainedImage } from "../contained-image";
 import { useTooltip, tooltipRef } from "../components/use-tooltip";
 import { copyOutput } from "./copy-output";
+import { useOffline } from "../pwa";
 export function OutputCell({
   cell,
   format,
@@ -46,15 +47,18 @@ export function OutputCell({
   onToggleExpand?: (button: HTMLButtonElement) => void;
 }) {
   const { resolvedTheme } = useTheme();
+  const offline = useOffline();
   const rawLabel = rawMarkdown ? "View Markdown" : "View raw";
   const rawHint = useTooltip<HTMLButtonElement>(rawLabel);
   const downloadHint = useTooltip<HTMLAnchorElement>("Download output");
   const inputHint = useTooltip<HTMLSpanElement>("Input tokens");
   const outputHint = useTooltip<HTMLSpanElement>("Output tokens");
   const outputURL =
-    format === "markdown" && cell.outputURL
-      ? `${cell.outputURL}?theme=${resolvedTheme}`
-      : cell.outputURL;
+    offline && format === "html" && cell.status === "complete"
+      ? `/offline/outputs/${cell.id}/index.html`
+      : format === "markdown" && cell.outputURL
+        ? `${cell.outputURL}?theme=${resolvedTheme}`
+        : cell.outputURL;
   const complete = cell.status === "complete";
   const usage = complete ? cell.usage : cell.estimatedUsage;
   const approximate = complete ? "" : "≈";
@@ -76,7 +80,9 @@ export function OutputCell({
       aria-label={expanded ? `Expanded output: ${title}` : undefined}
     >
       <div className="cell-view" aria-hidden={thinking} inert={thinking}>
-        {markdown ? (
+        {offline && !complete ? (
+          <p>This output isn't available offline.</p>
+        ) : markdown ? (
           <MarkdownPreview
             key={cell.id}
             url={cell.outputURL ?? `/outputs/${cell.id}`}
@@ -88,10 +94,11 @@ export function OutputCell({
         ) : format === "html" && (complete || cell.status === "running") ? (
           <WebsitePreview
             key={cell.id}
-            url={complete ? cell.outputURL : cell.previewURL}
+            url={complete ? outputURL : cell.previewURL}
             title={title}
             streaming={!complete}
             published={published}
+            offline={offline}
           />
         ) : complete ? (
           <ContainedImage

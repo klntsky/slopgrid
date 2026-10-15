@@ -1,5 +1,6 @@
 import type { User } from "../server/domain";
 import type { GridPresenter } from "../server/grid-presentation";
+import { setOffline } from "./pwa";
 export type SessionInfo = { connected: boolean; user: User | null };
 export type ViewGrid = ReturnType<GridPresenter>;
 export class ApiError extends Error {
@@ -28,6 +29,9 @@ export async function api<T>(
     body: body ? JSON.stringify(body) : undefined,
   });
   const data = await response.json();
+  setOffline(
+    response.headers.get("X-Slopgrid-Offline") === "1" || !navigator.onLine,
+  );
   if (!response.ok)
     throw new ApiError(
       data.error ?? "Request failed. Try again.",

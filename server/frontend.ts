@@ -82,7 +82,9 @@ export async function createFrontendRoutes(
   routes.use(
     express.static(root, {
       setHeaders(res, path) {
-        if (path.endsWith(".html")) res.setHeader("Cache-Control", "no-store");
+        if (path.endsWith("/sw.js")) res.setHeader("Cache-Control", "no-cache");
+        else if (path.endsWith(".html"))
+          res.setHeader("Cache-Control", "no-store");
         else if (path.startsWith(assets)) {
           res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
         }
