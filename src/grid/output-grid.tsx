@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 import "./grid-workspace.css";
 import type { ViewGrid } from "../api";
 import { ModelName } from "../model-name";
-import { ZoomableGrid } from "../zoomable-grid";
+import { GridViewport } from "./viewport";
 import { displayValue } from "../format";
 import { ExpandButton } from "../components/expand-button";
 import { ContainedImage } from "../contained-image";
@@ -148,7 +148,7 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
   return (
     <div className="grid-workspace" ref={workspace}>
       <div className="grid-table-view" data-expanded={!!expandedId}>
-        <ZoomableGrid
+        <GridViewport
           key={g.id}
           gridId={g.id}
           columns={g.input.columns.values.length}
@@ -216,7 +216,7 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
               ))}
             </tbody>
           </table>
-        </ZoomableGrid>
+        </GridViewport>
       </div>
       {reference && (
         <section

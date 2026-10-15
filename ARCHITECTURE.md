@@ -175,6 +175,11 @@ parent and grants no additional access.
 
 ## Code ownership
 
+The grid viewport owns measured and saved dimensions, zoom, and pointer
+gestures in one lifecycle. Resizing and pinch anchoring use its shared
+coordinate space, and gesture handlers share capture and cleanup. The output
+grid supplies labels and cells without maintaining a second geometry model.
+
 The grid workspace owns the expanded selection and focus restoration. Output
 cells stay mounted while their presentation expands within the workspace;
 website browsing contexts and preview state are retained without a second
