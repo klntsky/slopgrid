@@ -3,6 +3,10 @@ import tippy from "tippy.js";
 import "tippy.js/dist/tippy.css";
 
 function attachTooltip(element: Element, content: () => string | undefined) {
+  const dismiss = (event: KeyboardEvent) => {
+    if (event.key === "Escape") tooltip.hide();
+  };
+  const stopListening = () => document.removeEventListener("keydown", dismiss);
   const tooltip = tippy(element, {
     content: content() ?? "",
     trigger: "mouseenter focusin",
@@ -11,7 +15,10 @@ function attachTooltip(element: Element, content: () => string | undefined) {
       const text = content();
       if (!text) return false;
       instance.setContent(text);
+      document.addEventListener("keydown", dismiss);
     },
+    onHide: stopListening,
+    onDestroy: stopListening,
   });
   return () => tooltip.destroy();
 }

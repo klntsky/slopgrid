@@ -105,7 +105,7 @@ Status: high level product goal that is not a requirement (not achieved yet).
 
 ### 2.3. Tooltips
 
-1. Tooltips have consistent behavior and a pitch-black background with white text in both themes. Showing or hiding a tooltip must not shift the surrounding layout, including the cost and spent values. Keep tooltips within the viewport, outside clipping containers, repositioning as needed during scrolling and resizing. Support hover, keyboard focus, and dismissal with Escape.
+1. Tooltips have consistent behavior and a pitch-black background with white text in both themes. Show them only on controls and indicators specified to have a contextual hint. Showing or hiding a tooltip must not shift the surrounding layout, including the cost and spent values. Keep tooltips within the viewport, outside clipping containers, repositioning as needed during scrolling and resizing. Support hover and keyboard focus. Escape dismisses either kind of tooltip without moving keyboard focus.
 2. Use hints only to explain a non-obvious action, icon, or value, consistently across the frontend.
 3. Explain the budget as "Used to calculate each output's token limit." Use the cost and spent hints specified in section 7.1.
 4. Give token-arrow indicators "Input tokens" and "Output tokens" hints. Supported compatibility checkmarks do not get tooltips.

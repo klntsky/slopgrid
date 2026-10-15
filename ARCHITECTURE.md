@@ -175,6 +175,15 @@ parent and grants no additional access.
 
 ## Code ownership
 
+Controls explicitly attach contextual hints through the shared tooltip helper.
+Tippy handles positioning outside clipping containers, while the helper owns
+content updates and Escape dismissal. Its document key listener exists only
+while the tooltip is visible and is removed on hiding or destruction.
+
+The navbar owns its navigation popup above the grid workspace. The workspace
+contains grid stacking layers and expanded previews, keeping their ordering
+independent of navigation.
+
 Markdown previews, thinking traces, and text clipboard actions share an output
 query keyed by the canonical source URL. Completed text is cached once, while
 preview components retain streaming drafts until the saved output arrives.

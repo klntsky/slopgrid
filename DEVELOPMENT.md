@@ -240,6 +240,8 @@ Preview retention coverage checks the same iframe and its interactive document
 state across expansion and collapse on desktop and touch devices. Overlay
 coverage checks the complete navigation popup and expanded output surface,
 including the progress-bar crossing and spaces between controls.
+Tooltip coverage checks viewport containment outside clipped cells, keyboard
+and hover activation, and Escape dismissal while retaining keyboard focus.
 Text-output coverage blocks subsequent output requests after the preview loads
 and verifies that copying still returns the exact Markdown source from the
 shared cache. Streaming-thinking tests cover the transition to saved text.
