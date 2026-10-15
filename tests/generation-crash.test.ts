@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { runtimeFixture, until } from "./runtime-fixture.js";
 import { crashCheckpoint } from "./crash-checkpoint.js";
-import { queryClient } from "../src/queries.js";
+import { queryClient } from "../src/query-client.js";
 import { holdDatabaseWrites } from "./database-lock.js";
 
 for (const billed of [false, true])

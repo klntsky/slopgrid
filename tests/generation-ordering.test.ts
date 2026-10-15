@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { runtimeFixture, kill } from "./runtime-fixture.js";
-import { queryClient } from "../src/queries.js";
+import { queryClient } from "../src/query-client.js";
 
 test("snapshot reads are ordered without writes, and replacement engines supersede even settled snapshots", async () => {
   const f = await runtimeFixture();

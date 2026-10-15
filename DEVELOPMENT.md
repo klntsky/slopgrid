@@ -65,6 +65,8 @@ identity so behavioral checks survive changes to layout wrappers.
 
 Select tests that cover the features changed. Simple wording, styling, and documentation changes do not require tests. Run manual tests only on staging through SSH. GitHub CI runs the default full suite on pushes to `master`; the complete unit, mock browser, and real-provider browser suites must also pass on staging before production deployment.
 
+Runtime tests of snapshot ordering import the query client directly, keeping browser hooks and PWA initialization out of the Node test process. On shared staging hosts, limit unit-test file concurrency to avoid saturating the host with runtime fixtures.
+
 ```sh
 pnpm test
 pnpm test:built
