@@ -952,7 +952,7 @@ test("Markdown streams into its preview and preserves content and scroll while c
       .click();
     await expect(
       page
-        .locator(".expanded-markdown")
+        .getByRole("region", { name: /^Expanded output:/ })
         .getByRole("heading", { name: "Streaming Markdown" }),
     ).toBeVisible();
     await page
