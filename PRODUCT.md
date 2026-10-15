@@ -2,6 +2,62 @@
 
 This document defines Slopgrid's product behavior and user experience.
 
+## Presentation and interaction requirements
+
+The following numbered requirements define the visible layout and interaction contract.
+
+1. Center ordinary pages in a 950px maximum-width column, including 28px horizontal padding and 56px top padding. At phone widths, use 20px horizontal and 36px top padding.
+2. Use 48px medium-weight page headings, reducing to 38px on phones, and 19px medium-weight section headings.
+3. Use the warm beige and olive light palette and warm charcoal dark palette, including all panel, border, selection, link, and icon colors.
+4. Use an 88px ordinary-page navbar with 5vw horizontal margins on desktop and a compact 64px minimum-height grid navbar. Phone navigation wraps with 20px ordinary-page and 10px grid-page horizontal padding.
+5. Show the labeled GitHub sign-in button before Billing and Settings on desktop.
+6. Underline the active Billing or Settings navigation link.
+7. Anchor the touch navigation trigger at the right edge, with a 300px popup constrained to the viewport and separated from its trigger by 4px.
+8. Include GitHub account controls, Billing, and Settings in the touch popup, and change the open menu trigger to a close icon.
+9. Use the established filled primary buttons and borderless secondary actions, with matching padding, dimensions, hover states, and rounding.
+10. Use a 2px themed keyboard focus outline with a 3px offset on interactive controls.
+11. Present output formats as four equal vertical cards, with icons above labels, changing to two equal columns on phones.
+12. Use file-text, image, code-file, and browser-window format icons at 44px with a 1.5px stroke in the format cards.
+13. Mark the selected format with a tinted fill and reinforced outline.
+14. Separate creation sections with horizontal rules and small muted two-digit numbers, beginning with What do you want to generate? and numbering provider setup consecutively.
+15. Keep the layout heading and its explanatory subtitle at the same size and weight, wrapping together.
+16. Show the selected row count, column count, and total output count below the axes.
+17. Place the model-search magnifier and clear control inside its input boundary, retaining the established results-panel typography, fill, border, and spacing.
+18. Show selected models as filled removable chips.
+19. Enclose preset checkboxes in a bordered panel and use the theme accent for checked states.
+20. Align the axis swap control with desktop selectors and rotate its arrows vertically when axes stack on phones.
+21. Stretch common image options across equal desktop columns and stack full-width controls on phones.
+22. Show reference uploads in a bordered group with a shared Input references label, thumbnails, visible filenames, compact remove icons, and a paperclip Add images action.
+23. Use a six-row prompt textarea with the placeholder Describe what you want to generate and the section heading Enter your prompt, without a redundant visible Prompt label.
+24. Place the budget below the provider connection and keep its dollar icon inside the input boundary.
+25. Show the provider logo, OpenRouter name, and stacked connection status in a bordered identity card, with actions beside them and a visible logo in both themes.
+26. Expand API-key entry inline within the provider card, use its available width, and disable Connect until a nonempty key is supplied.
+27. Make Generate full-width with a 24px diagonal arrow at the right, 13px vertical padding, and 16px horizontal padding.
+28. Separate Settings sections with 28px vertical padding, use a 320px theme selector constrained to the available width, and show the filled account sign-in button, Inference heading, and small muted provider explanation.
+29. Use the established medium-weight grid title, muted prompt, starting position, and spacing.
+30. Place Pause or Resume after the title/prompt and before Edit.
+31. Display model IDs in grid axes with copy feedback and a chain link icon, rotating icons together with row text.
+32. Left-align column labels on a tinted background, using 8px vertical and 16px horizontal header padding and a narrow row-label strip of approximately 35px at normal scale.
+33. Dragging a column boundary must resize that column by the pointer displacement, including when the initial grid fits the viewport, on desktop and touch devices.
+34. Begin with columns at least 340px wide and rows at least 390px high, distributing additional desktop workspace across cells. Fit the whole table width on touch devices by scaling it uniformly, leaving unused workspace below a short grid.
+35. Put output controls in a bordered group 8px from the top and right, with 10px rounding, 2px padding and gaps, and 36px buttons. Use diagonal expand arrows and a slash-containing code icon.
+36. Use a 52px output footer with a top border, 9px vertical and 12px horizontal padding, muted 32px actions, a diagonal open-output icon, and token arrows following their counts.
+37. Hide output footers while a cell is expanded and give the released space to the preview. Expanded content fills the workspace below the complete navbar, with controls at normal scale even when the underlying grid is zoomed.
+38. Use medium-weight Markdown headings, 24px preview padding, and clearance beside the first heading for the toolbar. Within grid cells, tables stretch across the preview with rows matching the grid's row height; in expanded views, tables use their natural content size. Scale the document to fit its natural width, including code and table content.
+39. Center the generation spinner and Generating label together inside the cell.
+40. Center Queued and Paused labels inside cells and omit an active spinner while paused.
+41. Edit titles in an inline input occupying 40 percent of the title line, committing with Enter or blur and cancelling with Escape, without separate Save title or Cancel controls. Restore focus to the title action after cancellation.
+42. Show the visible progress-count breakdown when hovering or focusing the progress bar.
+43. Use a 490px publication dialog constrained to the viewport, with 32px desktop or 24px phone padding, a translucent backdrop, a 23px medium-weight heading, a filled primary Save action, and a borderless Cancel action, without a separate close icon.
+44. Place New grid at the right of the Your grids heading row.
+45. Place each grid-list format icon before its title, retain status at the right, and use unadorned dark titles with the established row spacing.
+46. Place the icon-only billing refresh action beside its heading and combine input/output counts in one Tokens column with following arrows.
+47. Use the small muted billing introduction and omit the unavailable-charge notice when its count is zero.
+48. Keep navigation, theme, and dialog-close controls free of tooltips. Preserve contextual tooltips on output, grid, and axis actions that had them in the original interface. Copy actions retain their existing tooltip while pending and show success or failure feedback afterward, without an additional pending tooltip.
+49. Keep the entire navigation popup above the generation progress bar, grid headers, resize handles, output controls, and expanded previews, including its padding and spaces between links. The progress bar occupies the navbar's bottom edge and must not paint across an open menu. Grid layers must remain below navigation while their internal ordering is preserved.
+50. Preserve phone page spacing, including the vertical spacing between grid-list sections and stacked axis controls. Truncate untitled grid prompts to one line with an ellipsis, while explicitly saved titles wrap. Keep the public-grid introduction at ordinary paragraph size and spacing.
+51. Keep the grid navbar's bottom border, 36px action buttons with 4px gaps, and a non-shrinking prompt-copy control. Stacked phone axes use 10px gaps.
+
 See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.md) for architecture constraints and implementation, and [DEVELOPMENT.md](DEVELOPMENT.md) for development and validation guidance.
 
 ## 1. Product
@@ -40,21 +96,26 @@ Status: high level product goal that is not a requirement (not achieved yet).
 2. Keep navbar link labels uppercase, with readable desktop text and enough space for grid information. Use matching gaps between the brand, action buttons, and title/prompt group.
 3. For navigation, use the primary input capability independently of viewport width or orientation. Touch-primary devices use a hamburger menu anchored close to its button and keep theme selection in Settings. Mouse-primary devices show navigation links directly alongside the theme toggle, including when secondary touch support is reported. Keep compact grid action buttons on the first navbar row where they fit. At widths of 480px or more, place the grid title, prompt, and byline in the center of that row between the logo and actions; below 480px, give that information a full-width second row.
 4. Give "Your grids" and "Public grids" matching large heading styles. Keep separators only between grid entries in the lists.
-5. Billing and Settings use the same wider page-layout approach as `/grids`.
+5. Billing and Settings use the same centered content-column layout as `/grids`.
 6. Convey publication state through the available grid actions, placement in the public list, and a lowercase "published" label in the owner's grid list. Unpublished entries show their lowercase generation status.
 7. A missing grid should show its 404 promptly without retrying. Keep the error message focused on the missing grid.
 8. Connection loss appears as a small bottom-right label with a rotating preloader and must not shift page layout. Generation preloaders must visibly spin.
 9. Beneath Public grids, show "See what others have created". Introduce the billing history with "Each inference attempt appears here, including retries, failures, and cancellations. OpenRouter bills your account directly."
+10. Failed grid-list requests offer a retry for the affected list without reloading the page. Failed GitHub sign-in and OpenRouter authorization show visible failure feedback and retain the corresponding sign-in or connection action for retry.
 
 ### 2.3. Tooltips
 
-1. Tooltips have consistent behavior and a pitch-black background with white text in both themes. Showing or hiding a tooltip must not shift the surrounding layout, including the cost and spent values.
+1. Tooltips have consistent behavior and a pitch-black background with white text in both themes. Showing or hiding a tooltip must not shift the surrounding layout, including the cost and spent values. Keep tooltips within the viewport, outside clipping containers, repositioning as needed during scrolling and resizing. Support hover, keyboard focus, and dismissal with Escape.
 2. Use hints only to explain a non-obvious action, icon, or value, consistently across the frontend.
 3. Explain the budget as "Used to calculate each output's token limit." Use the cost and spent hints specified in section 7.1.
 4. Give token-arrow indicators "Input tokens" and "Output tokens" hints. Supported compatibility checkmarks do not get tooltips.
 5. Budget hints use field-level interaction.
 6. Use the current pause hint specified in section 6.3.
 7. When Generate is disabled, its tooltip explains the current blocking reasons. Attach the tooltip to a focusable wrapper so it works on hover and keyboard focus while the button is disabled, and omit it when Generate is enabled.
+
+### 2.4. Clipboard actions
+
+1. Copy actions show pending, success, and failure feedback, announce their state to assistive technology, and retain a stable accessible action name. Prevent duplicate writes while a copy is pending and allow retry after failure. Apply this behavior to prompt, output, link, and model-ID copying.
 
 ## 3. Grid creation
 
@@ -67,6 +128,7 @@ Status: high level product goal that is not a requirement (not achieved yet).
 5. New image grids start with Model rows and Quality columns, with Auto as the only selected quality and no models selected. SVG and Website grids start with unselected model rows and thinking-effort columns with Model default checked. Markdown grids start with thinking-effort rows with Model default checked and unselected model columns. Restored drafts, Edit, and Fork preserve their saved layout and selections. Every generation must use an explicitly selected model, including when model is a fixed setting rather than an axis.
 6. Grid creation has no application limit on prompt length, axis-value length, model-ID length, JSON request size, number of axis values, cells, or requested parallel workers. Forward these inputs subject to OpenRouter's limits. Actual concurrency follows the shared worker allocation policy.
 7. Arrange short axis choices, including aspect ratios, size presets, quality, background, and thinking efforts, as inline checkboxes that wrap onto additional rows as needed. Keep each checkbox and its label together.
+8. Clear the creation draft after successful grid creation so NEW GRID starts with output-type selection. Preserve drafts through failed or unacknowledged creation attempts. Edit and Fork explicitly restore the selected grid's setup.
 
 ### 3.2. Model and thinking-effort selection
 
@@ -124,7 +186,7 @@ Status: high level product goal that is not a requirement (not achieved yet).
 1. Either image axis can compare Size, Aspect ratio, Quality, Background, or Input references, alongside models and prompt variables. Keep the selected model explicit when neither axis contains models.
 2. Size offers resolution presets and a Custom option that reveals separate Width and Height fields for pixel dimensions. A shared Size field has one pair; size axes support multiple pairs with controls to add or remove each pair alongside the selected presets. Both dimensions must be positive whole numbers before generation. Aspect ratio, quality, and background provide selectable values; capability warnings do not remove those choices.
 3. Each Input references axis value is a group of user-selected image files sent together to each corresponding cell. Allow adding groups, editing their titles, adding files to a group, and removing individual files or groups, with image previews. Title editing uses the same interaction as grid titles: click to edit, Enter or blur to save, and Escape to cancel. Titles must be nonempty and distinct within the axis; renaming preserves the group's files, and titles persist through reloads, generation, editing, and forking.
-4. Keep newly selected files in the browser until Generate is clicked. Retain the local selection across reloads and provider authorization, and start uploading only on submission. Upload files separately and reuse stored references when editing or forking saved grids.
+4. Keep newly selected files in the browser until Generate is clicked. Retain the local selection across reloads and provider authorization for supported file sizes, without requiring image bytes to fit in browser string-storage quotas, and start uploading only on submission. Report local file-storage failures. Upload files separately and reuse stored references when editing or forking saved grids. Save each successful upload in the draft immediately; if a later upload fails, retry only the remaining files, including after reload.
 5. Preserve image settings and selected reference groups with the grid. Settings affect inference parameters without being inserted into the prompt. A private reference is accessible to its owner or through an owned grid that uses it; publishing a grid shares only its selected references with viewers and forks.
 6. Save reference images with the grid and format the corresponding row or column headers as "references: <title>" followed by tiny inline image previews in group order. Clicking a preview opens that reference in the full-page image view, with the same collapse and Escape behavior as generated images.
 7. In the layout and common-parameter sections, show each reference group's heading as a pencil icon, editable group title, centered dot, and "reference image group". Its file-selection button shows a paperclip icon and "Add images".
@@ -163,10 +225,11 @@ Status: high level product goal that is not a requirement (not achieved yet).
 
 1. Place the progress bar as a thin line under the navbar. Completed and failed cells both count as finished; failed segments are red and successful segments retain the accent color.
 2. Show a pulsing spark moving left to right during generation.
-3. Put the pause/resume action to the left of the title/prompt. Edit and Publish are compact icon-only controls to its right, using the same visual treatment.
+   Pending cells in a paused grid display "Paused" without an active generation spinner; pending cells in an active grid display "Queued".
+3. Put the pause/resume action after the title/prompt and before Edit. Edit and Publish are compact icon-only controls using the same visual treatment.
 4. Before publication, Edit immediately cancels active inference and returns to parameter selection with the existing setup restored. Generating the edited setup creates a new grid and can reuse matching completed artifacts as specified in section 10.
 5. After publication, offer Fork to restore the setup for modification and generation using the forking user's own connection. Its icon depicts a branch splitting from a continuing main branch.
-6. Show model names in row or column labels. Clicking a model name copies its ID without a hover hint, while preserving copy-result feedback; a chain icon to the right of its copy icon opens the model's OpenRouter page in a new tab. Copy and link icons follow the same orientation as the label text, including in rotated row titles.
+6. Show model IDs in row or column labels. Clicking a model ID copies it without a hover hint, while preserving copy-result feedback; a chain icon to the right of its copy icon opens the model's OpenRouter page in a new tab. Copy and link icons follow the same orientation as the label text, including in rotated row titles.
 
 ## 5. Outputs and streaming
 
@@ -177,16 +240,18 @@ Status: high level product goal that is not a requirement (not achieved yet).
 3. Download filenames follow `<prompt>.slopgrid.com.<grid-id>.<row_parameter>.<column_parameter>.<extension>`. Normalize filename components, replacing spaces and characters unsuitable for filenames with underscores. The domain in this pattern is product-facing filename text.
 4. Store generated SVG and Markdown source verbatim, preserving whitespace and code fences.
 5. Preserve generated output independently of metadata edits and publication, without an application output-byte limit.
+   Show Expand and view controls when a cell has output or thinking content to inspect, is generating, or is already expanded. Omit them from empty queued, paused, and failed cells. Keep output links, copying, and downloading conditional on available output.
 6. Store provider finish reasons without displaying them in the interface. Treat an unsuccessful completion reason as a generation failure rather than silently accepting incomplete output. When reported thinking tokens exhaust the requested output-token limit without producing output, show "The model spent all of its <limit> output token limit on thinking without producing output - this is a common failure mode of some models indicating that the thinking level is too high for the task", substituting the actual limit (for example, 234K). Preserve its thinking trace and charges.
 
 ### 5.2. Markdown
 
-1. Render Markdown formatting while displaying embedded raw HTML as text.
+1. Render Markdown formatting while displaying embedded raw HTML as text. Use consistent heading hierarchy, paragraph spacing, code backgrounds, blockquote styling, and theme-aware table borders. Reserve space for controls so they do not obscure content, and keep scrollbar space stable.
 2. Render Markdown incrementally into the same rendered layout used for completion, retaining the preview and scroll position throughout.
 3. Let code blocks take their full natural content width, then scale the whole Markdown document to fit the cell width. Scrolling is vertical only. Use a bundled monospace font with equal advance widths for spaces and full-block characters, and `line-height: normal` for rendered code blocks in grid previews and direct output pages. Use the same bundled font for Markdown source views.
 4. Add an icon-only raw-view toggle to the left of Expand. Raw mode shows the original Markdown as unformatted text in a monospace font, preserves line breaks, disables wrapping, and scales to the cell width.
 5. In raw mode, the button becomes a Markdown icon that returns to rendered Markdown. Keep raw view available during streaming.
 6. Put Expand in the top-right corner. Expansion occupies the grid workspace while keeping the navbar visible; collapsing restores the grid's layout and viewing state.
+7. Open output carries the app's currently resolved light or dark theme into the standalone Markdown page, including when the app follows the system theme.
 
 ### 5.3. Images and SVG
 
@@ -250,23 +315,23 @@ Status: high level product goal that is not a requirement (not achieved yet).
 2. Show running input and output token counts alongside each text cell's running price, using the same layout and arrows as final counts. Estimate usage from input, visible output, and available thinking while streaming, mark estimates as approximate, and replace them with provider-reported usage when the call completes. Use a monospace font for the per-cell counts and price to reduce text movement.
 3. The cost total is the sum of successful outputs currently shown on the grid plus running inference estimates.
 4. The spent total is the sum of all reported billing charges for this grid plus running inference estimates, including failed, cancelled, and retried calls. Replace each running estimate with its reported charge without counting the attempt twice; discard its estimate when work stops. Show spent only to the grid owner and omit it from responses to other viewers.
-5. Keep both totals' two-decimal UI truncation separate from stored billing precision.
+5. Keep both totals' two-decimal UI truncation separate from stored billing precision. Cell charges and billing amounts use two to eight fractional digits, distinguishing unavailable costs from zero. Display a positive charge below the precision limit as "<$0.00000001" so it is never shown as zero.
 6. The cost tooltip is "Inference costs for this grid, not including failed attempts". The spent tooltip is "Inference costs for this grid, including failed attempts - how much you have actually spent on this page".
 
 ### 7.2. Billing history
 
 1. Provide a separate billing page that records every actual inference call, including retries, failures, and cancellations. Do not include unbilled catalog, balance, or OAuth calls as inference charges.
-2. Attribute each call to its grid and provide a link to that grid.
+2. Attribute each call to its grid and provide a link to that grid. Show the call's local start timestamp, model, thinking effort, and provider error code alongside its error message when available.
 3. Retain reported charges for unsuccessful calls. Do not turn missing provider cost information into an invented zero charge.
 4. Billing follows ownership: anonymous users see their session's history, and signed-in users see their account-owned grids' history, including grids claimed on sign-in.
 5. Keep finish reasons in durable call records but out of the current UI. Avoid duplicating completion records or usage across multiple persistent representations.
-6. Show an aggregate reported-charge total and call count, including the count of calls with unavailable charges. Provide a manual Refresh billing control and a Call column showing each call's `direct` or `image` phase. Present 50 calls per page with Previous and Next controls, and refresh automatically while calls are running.
+6. Show an aggregate reported-charge total and call count, including the count of calls with unavailable charges. Provide a manual Refresh billing control and a Call column showing each call's `direct` or `image` phase. Present 50 calls per page with Previous and Next controls and the visible range and total, showing pagination only when there is more than one page. Refresh automatically while calls are running and disable manual refresh while fetching. Show loading and empty states. Keep the table horizontally scrollable on narrow screens and truncate long grid links within it.
 
 ## 8. Identity, publication, and access
 
 ### 8.1. Anonymous and GitHub accounts
 
-1. Users are anonymous by default. Offer recognizable GitHub sign-in in the interface.
+1. Users are anonymous by default. Offer recognizable GitHub sign-in in the interface. Settings contains an Account section with sign-in when anonymous, or linked GitHub identity and sign-out when signed in, accessible on both touch and mouse devices. Show account-loading and retry states when session lookup is pending or fails.
 2. A GitHub identity displays as the GitHub icon followed by a username linked to the profile. Otherwise display "by Anonymous". Show authors near grid titles and in public grid listings; omit authors from the owner's own grid list.
 3. Account ownership persists when a GitHub username changes. Refresh display identity on sign-in.
 4. On sign-in, atomically claim the current anonymous session's grids for the account, including their billing history. Never claim another account's grids.
