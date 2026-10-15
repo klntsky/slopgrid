@@ -13,7 +13,13 @@ import { api, storage, useSession, RequestError } from "../api";
 import { ErrorMessage, Hint, IconButton, Modal } from "../components/ui";
 import { Connection } from "../components/connection";
 import { GridListing, formatNames } from "../pages";
-import { useDraft, emptyDraft, changeAxis, swapAxes } from "./draft";
+import {
+  useDraft,
+  emptyDraft,
+  changeAxis,
+  swapAxes,
+  clearDraft,
+} from "./draft";
 import { ModelSelector, catalog, modelName } from "./models";
 import { AxisEditor, Compatibility, kindNames } from "./parameters";
 import { References, uploadReferences, replaceReference } from "./references";
@@ -130,7 +136,7 @@ export function CreatePage() {
         creationRequestId: receipt.id,
         continueWithLowBalance,
       });
-      storage.remove("slopgrid-creation");
+      clearDraft();
       await navigate({ to: "/grid/$id", params: { id: result.id } });
     } catch (e) {
       if (e instanceof RequestError && e.code === "LOW_BALANCE")

@@ -27,4 +27,14 @@ test("a lost creation response followed by reload recovers one grid", async ({
   expect(requests).toHaveLength(2);
   expect(requests[1]).toBe(requests[0]);
   expect(await (await page.request.get("/api/grids")).json()).toHaveLength(1);
+  const gridURL = page.url();
+  await page.goto("/");
+  await expect(page.getByLabel("Prompt", { exact: true })).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByLabel("Prompt", { exact: true })).toHaveCount(0);
+  await page.goto(gridURL);
+  await page.getByRole("button", { name: "EDIT", exact: true }).click();
+  await expect(page.getByLabel("Prompt", { exact: true })).toHaveValue(
+    "Draw $ROW wearing a $COLUMN",
+  );
 });

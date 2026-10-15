@@ -51,6 +51,7 @@ they do not own provider execution or persist generation results.
   completed work. Validation and compatibility reuse the
   server's pure domain functions.
 - Creation submissions retain a request identity for response-loss recovery.
+  A successful acknowledgement clears the tab draft and creation receipt.
   One grid query cache orders snapshots from HTTP reads, commands, and live
   events. The live subscription stays connected until the engine reports a
   stable snapshot, and reconnection reads state without replaying a generation

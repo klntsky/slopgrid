@@ -9,6 +9,12 @@ export type Draft = Omit<GridInput, "format"> & {
   budgetText?: string;
 };
 export const draftKey = "slopgrid-draft";
+export function clearDraft() {
+  try {
+    sessionStorage.removeItem(draftKey);
+  } catch {}
+  storage.remove("slopgrid-creation");
+}
 export function saveDraft(draft: Draft) {
   try {
     sessionStorage.setItem(draftKey, JSON.stringify({ input: draft }));

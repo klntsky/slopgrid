@@ -72,6 +72,7 @@ Status: high level product goal that is not a requirement (not achieved yet).
 5. New image grids start with Model rows and Quality columns, with Auto as the only selected quality and no models selected. SVG and Website grids start with unselected model rows and thinking-effort columns with Model default checked. Markdown grids start with thinking-effort rows with Model default checked and unselected model columns. Restored drafts, Edit, and Fork preserve their saved layout and selections. Every generation must use an explicitly selected model, including when model is a fixed setting rather than an axis.
 6. Grid creation has no application limit on prompt length, axis-value length, model-ID length, JSON request size, number of axis values, cells, or requested parallel workers. Forward these inputs subject to OpenRouter's limits. Actual concurrency follows the shared worker allocation policy.
 7. Arrange short axis choices, including aspect ratios, size presets, quality, background, and thinking efforts, as inline checkboxes that wrap onto additional rows as needed. Keep each checkbox and its label together.
+8. Clear the creation draft after successful grid creation so NEW GRID starts with output-type selection. Preserve drafts through failed or unacknowledged creation attempts. Edit and Fork explicitly restore the selected grid's setup.
 
 ### 3.2. Model and thinking-effort selection
 
