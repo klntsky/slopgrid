@@ -168,6 +168,7 @@ Status: high level product goal that is not a requirement (not achieved yet).
 
 1. Place the progress bar as a thin line under the navbar. Completed and failed cells both count as finished; failed segments are red and successful segments retain the accent color.
 2. Show a pulsing spark moving left to right during generation.
+   Pending cells in a paused grid display "Paused" without an active generation spinner; pending cells in an active grid display "Queued".
 3. Put the pause/resume action to the left of the title/prompt. Edit and Publish are compact icon-only controls to its right, using the same visual treatment.
 4. Before publication, Edit immediately cancels active inference and returns to parameter selection with the existing setup restored. Generating the edited setup creates a new grid and can reuse matching completed artifacts as specified in section 10.
 5. After publication, offer Fork to restore the setup for modification and generation using the forking user's own connection. Its icon depicts a branch splitting from a continuing main branch.

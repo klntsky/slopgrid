@@ -116,9 +116,11 @@ function Thinking({ text, label }: { text: string; label: string }) {
 export function OutputCell({
   cell,
   format,
+  paused = false,
 }: {
   cell: CellView;
   format: GridInput["format"];
+  paused?: boolean;
 }) {
   const [view, setView] = useState<"output" | "thinking" | "auto">("auto"),
     [raw, setRaw] = useState(false),
@@ -266,13 +268,16 @@ export function OutputCell({
           {!text &&
             !cell.outputURL &&
             !cell.previewURL &&
+            !(paused && cell.status === "pending") &&
             cell.status !== "error" && (
               <span className="spinner" aria-label={cell.status} />
             )}
         </div>
       </div>
       <footer className="cell-footer">
-        {cell.status === "pending" && <span>Queued</span>}
+        {cell.status === "pending" && (
+          <span>{paused ? "Paused" : "Queued"}</span>
+        )}
         {cell.retrying && <span>Waiting to retry…</span>}
         {cell.status === "running" && !cell.retrying && (
           <span>Generating…</span>

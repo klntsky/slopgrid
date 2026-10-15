@@ -265,6 +265,7 @@ export function Workspace({ grid }: { grid: GridView }) {
                       ]
                     }
                     format={grid.input.format}
+                    paused={grid.status === "paused"}
                   />
                 </td>
               ))}
