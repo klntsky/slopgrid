@@ -21,16 +21,34 @@ export function compatibilityTables({
   input,
   models,
 }: Props): CompatibilityTables {
-  const modelAxis = [input.rows, input.columns].find(
-    (axis) => axis.kind === "model",
-  );
-  const imageModels = [
-    ...new Set(modelAxis ? modelAxis.values : [input.model].filter(Boolean)),
-  ];
-  if (input.format !== "image")
+  const axes = [input.rows, input.columns];
+  const selectedModels = [
+    ...new Set(
+      axes.find((axis) => axis.kind === "model")?.values ??
+        [input.model].filter(Boolean),
+    ),
+  ].map((id) => ({ id, info: models.find((model) => model.id === id) }));
+  const modelNames = selectedModels.map(({ id, info }) => info?.name ?? id);
+  if (input.format !== "image") {
+    const efforts = (
+      axes.find((axis) => axis.kind === "effort")?.values ?? [input.effort]
+    ).filter((effort) => effort !== "default");
     return {
-      effort: <ThinkingCompatibilityTable input={input} models={models} />,
+      effort: (
+        <CompatibilityGrid
+          caption="Thinking effort compatibility"
+          rows={modelNames}
+          columns={efforts.map(effortLabel)}
+          cells={selectedModels.map(({ info }) =>
+            efforts.map((effort) => ({
+              support: thinkingEffortSupport(info, effort),
+            })),
+          )}
+          cellLabel={(_, column) => effortLabel(efforts[column])}
+        />
+      ),
     };
+  }
   // Unfilled unrelated axes do not hide compatibility for settings already chosen.
   const expanded = expandGrid({
     ...input,
@@ -66,12 +84,12 @@ export function compatibilityTables({
               ? `${input.inputReferences?.length ?? 0} images`
               : input.imageSettings?.[kind] || "auto",
           ];
-      const cells = imageModels.map((model) =>
+      const cells = selectedModels.map(({ id }) =>
         values.map((value) => {
           const matches = expanded
             .filter(
               (cell) =>
-                cell.model === model &&
+                cell.model === id &&
                 (!side ||
                   input[side].values[
                     side === "rows" ? cell.row : cell.column
@@ -103,10 +121,7 @@ export function compatibilityTables({
         <CompatibilityGrid
           key={kind}
           caption={`${imageParameterNames[kind]} compatibility`}
-          corner="Model"
-          rows={imageModels.map(
-            (id) => models.find((model) => model.id === id)?.name ?? id,
-          )}
+          rows={modelNames}
           columns={values.map((value) => (value === "auto" ? "Auto" : value))}
           cells={cells}
         />,
@@ -115,45 +130,14 @@ export function compatibilityTables({
   );
 }
 
-function ThinkingCompatibilityTable({ input, models }: Props) {
-  const axes = [input.rows, input.columns];
-  const selectedModels =
-    axes.find((axis) => axis.kind === "model")?.values ??
-    [input.model].filter(Boolean);
-  const selectedEfforts = (
-    axes.find((axis) => axis.kind === "effort")?.values ?? [input.effort]
-  ).filter((effort) => effort !== "default");
-  return (
-    <CompatibilityGrid
-      caption="Thinking effort compatibility"
-      corner="Model"
-      rows={selectedModels.map(
-        (id) => models.find((model) => model.id === id)?.name ?? id,
-      )}
-      columns={selectedEfforts.map(effortLabel)}
-      cells={selectedModels.map((id) =>
-        selectedEfforts.map((effort) => ({
-          support: thinkingEffortSupport(
-            models.find((model) => model.id === id),
-            effort,
-          ),
-        })),
-      )}
-      cellLabel={(_, column) => effortLabel(selectedEfforts[column])}
-    />
-  );
-}
-
 function CompatibilityGrid({
   caption,
-  corner,
   rows,
   columns,
   cells,
   cellLabel,
 }: {
   caption: string;
-  corner: string;
   rows: string[];
   columns: string[];
   cells: Compatibility[][];
@@ -167,7 +151,7 @@ function CompatibilityGrid({
         <caption>{caption}</caption>
         <thead>
           <tr>
-            <th scope="col">{corner}</th>
+            <th scope="col">Model</th>
             {columns.map((label, index) => (
               <th scope="col" key={index}>
                 {label}

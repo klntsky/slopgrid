@@ -69,6 +69,10 @@ usage when it arrives.
 
 ## Creation and inference
 
+Compatibility tables share model selection and name resolution, with model names
+as rows and parameter values as columns. Their renderer keeps this orientation
+independent of generation axes, while each table stays beside its parameter input.
+
 The browser persists a creation draft and a request identity across reloads.
 The web process validates the input and commits a creation receipt, grid, and
 initial cells together. Replaying the same request resolves to the existing
