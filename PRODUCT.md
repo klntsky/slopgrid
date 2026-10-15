@@ -385,6 +385,7 @@ Show a small-text footer on every page except the grid page, with "source code" 
 ### 9.1. Progressive web app and offline navigation
 
 1. Make Slopgrid installable as a progressive web app.
+   Use the dark-theme background and logo colors for its SVG app icon.
 2. Cache every ready output the user visits, across Markdown, Image, SVG, and Static website formats. Cache the supporting files needed to view a ready website output.
 3. Exclude outputs still being generated from the offline output cache. A visited output becomes eligible when generation completes.
 4. Cache fetched pages and their fetched data so the user can navigate those pages offline, including fetched grid-list pages and visited grids.
