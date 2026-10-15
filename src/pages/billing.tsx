@@ -5,6 +5,7 @@ import { ArrowUp, ArrowDown, RefreshCw } from "lucide-react";
 import type { BillingPage } from "../../server/billing";
 import { api } from "../api";
 import { ErrorMessage } from "../components/error-message";
+import { PaginationButton } from "../components/pagination-button";
 import { formatCost } from "../format";
 import "./billing.css";
 
@@ -119,23 +120,19 @@ export function Billing() {
           )}
           {data.total > 50 && (
             <div className="billing-pagination">
-              <button
-                className="secondary"
+              <PaginationButton
+                direction="previous"
                 disabled={offset === 0}
                 onClick={() => setOffset(Math.max(0, offset - 50))}
-              >
-                Previous
-              </button>
+              />
               <span>
                 {offset + 1}–{Math.min(offset + 50, data.total)} of {data.total}
               </span>
-              <button
-                className="secondary"
+              <PaginationButton
+                direction="next"
                 disabled={offset + 50 >= data.total}
                 onClick={() => setOffset(offset + 50)}
-              >
-                Next
-              </button>
+              />
             </div>
           )}
         </>

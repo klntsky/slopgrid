@@ -57,6 +57,7 @@ The following numbered requirements define the visible layout and interaction co
 49. Keep the entire navigation popup above the generation progress bar, grid headers, resize handles, output controls, and expanded previews, including its padding and spaces between links. The progress bar occupies the navbar's bottom edge and must not paint across an open menu. Grid layers must remain below navigation while their internal ordering is preserved.
 50. Preserve phone page spacing, including the vertical spacing between grid-list sections and stacked axis controls. Truncate untitled grid prompts to one line with an ellipsis, while explicitly saved titles wrap. Keep the public-grid introduction at ordinary paragraph size and spacing.
 51. Keep the grid navbar's bottom border, 36px action buttons with 4px gaps, and a non-shrinking prompt-copy control. Stacked phone axes use 10px gaps.
+52. Show a left chevron before Previous and a right chevron after Next in grid-list and billing pagination, retaining the text labels.
 
 See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.md) for architecture constraints and implementation, and [DEVELOPMENT.md](DEVELOPMENT.md) for development and validation guidance.
 

@@ -5,6 +5,7 @@ import { usePublicGrids } from "../queries";
 import { Author } from "./identity";
 import { ErrorMessage } from "./error-message";
 import { GridFormatIcon } from "./grid-format-icon";
+import { PaginationButton } from "./pagination-button";
 
 export function GridListing({
   query,
@@ -60,28 +61,24 @@ export function GridListing({
       </div>
       {query.data.total > query.data.pageSize && (
         <div className="grid-pagination">
-          <button
-            className="secondary"
+          <PaginationButton
+            direction="previous"
             disabled={query.isFetching || query.data.page === 1}
             onClick={() => onPageChange(query.data.page - 1)}
-          >
-            Previous
-          </button>
+          />
           <span>
             {(query.data.page - 1) * query.data.pageSize + 1}-
             {Math.min(query.data.page * query.data.pageSize, query.data.total)}{" "}
             of {query.data.total}
           </span>
-          <button
-            className="secondary"
+          <PaginationButton
+            direction="next"
             disabled={
               query.isFetching ||
               query.data.page * query.data.pageSize >= query.data.total
             }
             onClick={() => onPageChange(query.data.page + 1)}
-          >
-            Next
-          </button>
+          />
         </div>
       )}
     </>
