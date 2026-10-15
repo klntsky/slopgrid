@@ -46,9 +46,17 @@ export class Store {
       this.db.pragma("journal_mode = WAL");
       this.db.pragma("foreign_keys = ON");
       initializeDatabase(this.db);
-      this.db.exec(`UPDATE grids SET data=json_set(data,
-        '$.expanded_prompt_for_title', json_extract(data, '$.input.prompt'))
-        WHERE json_type(data, '$.expanded_prompt_for_title') IS NULL`);
+      const missingTitle =
+        "json_type(data, '$.expanded_prompt_for_title') IS NULL";
+      // Avoid taking the writer lock when an existing database needs no backfill.
+      if (
+        this.db
+          .prepare(`SELECT 1 FROM grids WHERE ${missingTitle} LIMIT 1`)
+          .get()
+      )
+        this.db.exec(`UPDATE grids SET data=json_set(data,
+          '$.expanded_prompt_for_title', json_extract(data, '$.input.prompt'))
+          WHERE ${missingTitle}`);
       this.billing = new Billing(this.db);
       this.files = new OutputFiles(
         resolve(outputsPath ?? join(dirname(path), "outputs")),

@@ -7,6 +7,25 @@ import { token } from "../server/ids.js";
 import { Store } from "../server/store.js";
 import { expandGrid, type Grid } from "../server/domain.js";
 
+test("an initialized store opens for reads while another connection holds the write lock", () => {
+  const dir = mkdtempSync(join(tmpdir(), "slopgrid-store-lock-"));
+  const database = join(dir, "app.sqlite");
+  const secret = Buffer.alloc(32, 1);
+  const writer = new Store(database, secret);
+  let reader: Store | undefined;
+  try {
+    writer.saveSession({ id: "browser", created: 1 });
+    writer.db.exec("BEGIN IMMEDIATE");
+    reader = new Store(database, secret);
+    assert.deepEqual(reader.session("browser"), { id: "browser", created: 1 });
+  } finally {
+    reader?.db.close();
+    if (writer.db.inTransaction) writer.db.exec("ROLLBACK");
+    writer.db.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("list prompts are expanded and truncated once, then persist independently of title and generation updates", () => {
   const dir = mkdtempSync(join(tmpdir(), "slopgrid-list-title-"));
   const database = join(dir, "app.sqlite");

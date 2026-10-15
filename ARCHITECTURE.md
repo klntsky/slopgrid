@@ -43,6 +43,9 @@ reference bytes, and thinking traces live in the output filesystem. Storage
 paths are resolved from cell and reference records rather than accepted directly
 from browser input.
 
+Store startup checks for missing listing titles before running their backfill,
+so opening an up-to-date database does not require that write lock.
+
 - Grid configuration is stored once. The engine owns generation and billing
   writes; the web process owns metadata and identity changes. Publication and
   admission use transactions so a grid cannot become public during a retry.
