@@ -214,6 +214,7 @@ export function CreatePage() {
                 changeKind={(kind) => update(changeAxis(draft, "rows", kind))}
               />
               <IconButton
+                tooltip
                 className="icon-button axis-swap"
                 label="Swap rows and columns"
                 onClick={() => update(swapAxes(draft))}

@@ -330,6 +330,7 @@ export function GridPage() {
             <div className="grid-actions">
               {(grid.canEdit || grid.published) && (
                 <IconButton
+                  tooltip
                   label={grid.published ? "FORK" : "EDIT"}
                   disabled={busy}
                   onClick={edit}
@@ -339,6 +340,7 @@ export function GridPage() {
               )}
               {grid.canEdit && grid.visibility !== "public" && (
                 <IconButton
+                  tooltip
                   label={grid.published ? "Change visibility" : "PUBLISH"}
                   disabled={finished !== grid.cells.length || busy}
                   onClick={() => setPublish(true)}

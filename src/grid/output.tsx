@@ -218,6 +218,7 @@ export function OutputCell({
         <div className="cell-toolbar">
           {thinking && (
             <IconButton
+              tooltip
               label={showThinking ? "Show output" : "Show thinking"}
               onClick={() => setView(showThinking ? "output" : "thinking")}
             >
@@ -226,6 +227,7 @@ export function OutputCell({
           )}
           {format === "markdown" && !showThinking && (
             <IconButton
+              tooltip
               label={raw ? "View Markdown" : "View raw"}
               onClick={() => setRaw(!raw)}
             >

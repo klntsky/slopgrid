@@ -45,7 +45,7 @@ export function GridListing({ publicList = false }: { publicList?: boolean }) {
       className={publicList ? "public-grids" : undefined}
       aria-label={publicList ? "Public grids" : "Your grids"}
     >
-      <div className="page-title">
+      <div className={publicList ? "public-title" : "page-title"}>
         <h1>{publicList ? "Public grids" : "Your grids"}</h1>
         {!publicList && (
           <Link className="button primary" to="/">
@@ -55,7 +55,7 @@ export function GridListing({ publicList = false }: { publicList?: boolean }) {
         )}
       </div>
       {publicList && (
-        <p className="description">See what others have created</p>
+        <p>See what others have created</p>
       )}
       <ErrorMessage error={error} />
       {error && (
@@ -80,7 +80,7 @@ export function GridListing({ publicList = false }: { publicList?: boolean }) {
               params={{ id: g.id }}
             >
               <FormatIcon format={g.format} />
-              <span>{g.title || g.expanded_prompt_for_title}</span>
+              <span className={g.title ? "history-title" : undefined}>{g.title || g.expanded_prompt_for_title}</span>
             </Link>
             {publicList ? (
               <Author author={g.author} />
@@ -95,7 +95,7 @@ export function GridListing({ publicList = false }: { publicList?: boolean }) {
 }
 export function GridsPage() {
   return (
-    <main className="page">
+    <main className="page grids-page">
       <GridListing />
       <GridListing publicList />
     </main>

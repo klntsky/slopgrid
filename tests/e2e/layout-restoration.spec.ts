@@ -14,6 +14,15 @@ test.describe("touch expansion", () => {
     await request.post("/fixture/reset", { data: { billing: false } });
     await create(page, "SVG", "cat\ndog", "hat\ncape");
     await expectProgress(page, 4, 4);
+    const menu = page.getByRole("button", { name: "Navigation menu" });
+    await menu.tap();
+    await expect(
+      page.getByRole("tooltip").filter({ hasText: "Navigation menu" }),
+    ).toHaveCount(0);
+    await page.getByRole("link", { name: "SETTINGS", exact: true }).tap();
+    await expect(page).toHaveURL(/\/settings$/);
+    await page.goBack();
+    await expectProgress(page, 4, 4);
     const before = (await page.locator("article.cell").first().boundingBox())!;
     const header = (await page.getByRole("banner").boundingBox())!;
     await page
@@ -30,6 +39,11 @@ test.describe("touch expansion", () => {
     });
     expect((await collapse.boundingBox())!.width).toBeCloseTo(36, 0);
     await expect(expanded.locator(".cell-footer")).toHaveCount(0);
+    await menu.tap();
+    await page
+      .getByRole("link", { name: "SETTINGS", exact: true })
+      .tap({ trial: true });
+    await menu.tap();
     await collapse.click();
     expect(
       (await page.locator("article.cell").first().boundingBox())!.width,

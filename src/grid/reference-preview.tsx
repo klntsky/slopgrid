@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Minimize } from "lucide-react";
+import { Minimize2 } from "lucide-react";
 import type { ReferenceImage } from "../../server/image-settings";
 import { IconButton } from "../components/ui";
 
@@ -43,8 +43,8 @@ export function ReferencePreview({ image }: { image: ReferenceImage }) {
             className="cell-expanded reference-expanded"
           >
             <div className="cell-toolbar">
-              <IconButton label="Collapse Image" onClick={close}>
-                <Minimize />
+              <IconButton tooltip label="Collapse Image" onClick={close}>
+                <Minimize2 />
               </IconButton>
             </div>
             <div className="image-preview">

@@ -119,20 +119,18 @@ export function Hint({
 export function IconButton({
   label,
   children,
+  tooltip = false,
   ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & { label: string }) {
-  return (
-    <Hint text={label}>
-      <button
-        type="button"
-        className="icon-button"
-        aria-label={label}
-        {...props}
-      >
-        {children}
-      </button>
-    </Hint>
+}: ButtonHTMLAttributes<HTMLButtonElement> & {
+  label: string;
+  tooltip?: boolean;
+}) {
+  const button = (
+    <button type="button" className="icon-button" aria-label={label} {...props}>
+      {children}
+    </button>
   );
+  return tooltip ? <Hint text={label}>{button}</Hint> : button;
 }
 export function CopyButton({
   value,

@@ -319,13 +319,13 @@ nav a[aria-current="page"] {
   margin-left: auto;
 }
 .navigation-menu-toggle,
-.desktop-navigation > .hint > button {
+.desktop-navigation > button {
   width: 44px;
   height: 44px;
   padding: 10px;
 }
 .navigation-menu-toggle svg,
-.desktop-navigation > .hint > button svg {
+.desktop-navigation > button svg {
   width: 22px;
   height: 22px;
 }
@@ -811,6 +811,12 @@ nav a[aria-current="page"] {
 .public-grids {
   margin-top: 40px;
 }
+.grids-page > section {
+  padding: 28px 0;
+}
+.grids-page > section:first-child {
+  padding-top: 0;
+}
 .settings-page section {
   padding: 28px 0;
 }
@@ -841,8 +847,15 @@ nav a[aria-current="page"] {
   text-decoration: none;
 }
 .grid-list article > a > span {
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   min-width: 0;
+}
+.grid-list article > a > .history-title {
+  overflow: visible;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .grid-list article > a > svg {
   width: 20px;
@@ -960,6 +973,7 @@ dialog > button:not(.primary) {
   flex-direction: column;
 }
 .grid-page .navbar {
+  border-bottom: 1px solid var(--line);
   flex-shrink: 0;
   height: auto;
   min-height: 64px;
@@ -968,6 +982,19 @@ dialog > button:not(.primary) {
 }
 .grid-page .title-prompt > .hint:last-child button {
   color: var(--logo-color);
+}
+.grid-page .title-prompt > .hint:last-child {
+  flex-shrink: 0;
+}
+.grid-actions button {
+  width: 36px;
+  height: 36px;
+  padding: 8px;
+}
+.grid-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 .grid-page .title-prompt > .hint:last-child svg {
   width: 16px;
@@ -1020,8 +1047,7 @@ dialog > button:not(.primary) {
   min-width: 0;
 }
 .title-prompt,
-.grid-byline,
-.grid-actions {
+.grid-byline {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1096,6 +1122,7 @@ dialog > button:not(.primary) {
   animation: spark 2s linear infinite;
 }
 .grid-workspace {
+  isolation: isolate;
   background: var(--paper);
   overflow: auto;
   flex: 1;
@@ -1447,6 +1474,7 @@ dialog > button:not(.primary) {
 .reference-expanded {
   background: var(--surface);
   position: fixed;
+  z-index: 4;
 }
 .reference-thumbnail {
   border: 0;
@@ -1552,9 +1580,12 @@ html[data-theme="dark"]::view-transition-new(root) {
   }
   .axes {
     grid-template-columns: 1fr;
+    gap: 10px;
   }
   .axes > .hint {
     justify-self: center;
+    display: flex;
+    align-self: start;
   }
   .grid-page .brand > span {
     display: none;
