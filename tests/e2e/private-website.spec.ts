@@ -65,8 +65,8 @@ test("private websites load in frames and direct tabs for the owning user across
       "style.css": '@import "./theme.css"; h1 { color: navy; }',
       "theme.css": "body { background: ivory; }",
       "app.js":
-        'import { message } from "./message.js"; document.querySelector("p").textContent = message;',
-      "message.js": 'export const message = "Private module loaded";',
+        'import { message } from "./message.mjs"; document.querySelector("p").textContent = message;',
+      "message.mjs": 'export const message = "Private module loaded";',
     });
     const context = await browser.newContext({ ignoreHTTPSErrors: true });
     await context.addCookies([
@@ -130,19 +130,69 @@ test("private websites load in frames and direct tabs for the owning user across
       .toBe(true);
     await expect(tab).toHaveURL(output);
     await expect(tab.locator("iframe")).toHaveCount(0);
+    expect(await tab.evaluate(async () => (await fetch("/style.css")).ok)).toBe(
+      true,
+    );
+    const outputFrame = page
+      .frames()
+      .find((frame) => frame !== page.mainFrame())!;
     expect(
-      await tab.evaluate(async () => {
-        document
-          .querySelectorAll('meta[http-equiv="Content-Security-Policy"]')
-          .forEach((node) => node.remove());
+      await outputFrame.evaluate(() => {
+        localStorage.setItem("output-storage", "available");
         try {
-          await fetch("/style.css", { credentials: "include" });
-          return true;
-        } catch {
+          void parent.document.cookie;
           return false;
+        } catch {
+          return localStorage.getItem("output-storage") === "available";
         }
       }),
-    ).toBe(false);
+    ).toBe(true);
+    // A sibling host cannot shadow a __Host- cookie or issue authenticated
+    // mutations, including the GET endpoints that begin OAuth exchanges.
+    await outputFrame.evaluate(async (appOrigin) => {
+      document.cookie =
+        "__Host-slopgrid=forged; Domain=slopgrid.test; Path=/; Secure";
+      for (const [path, method] of [
+        ["/api/auth/logout", "POST"],
+        ["/api/session/key", "DELETE"],
+        ["/api/auth/start", "GET"],
+        ["/api/auth/github/start", "GET"],
+      ]) {
+        await fetch(appOrigin + path, { method, credentials: "include" }).catch(
+          () => {},
+        );
+      }
+    }, origin);
+    expect(
+      (await context.cookies(origin)).find(
+        (cookie) => cookie.name === "__Host-slopgrid",
+      )?.value,
+    ).toBe(owner);
+    expect(store.session(owner)).toMatchObject({ id: owner });
+    expect(store.session(owner)?.keyOAuth).toBeUndefined();
+    expect(store.session(owner)?.identityOAuth).toBeUndefined();
+    expect(
+      await outputFrame.evaluate(async () => {
+        const audio = new OfflineAudioContext(1, 128, 48000);
+        const url = URL.createObjectURL(
+          new Blob(
+            [
+              `class Tone extends AudioWorkletProcessor {
+          process(inputs, outputs) { outputs[0][0].fill(0.25); return true; }
+        } registerProcessor('tone', Tone);`,
+            ],
+            { type: "text/javascript" },
+          ),
+        );
+        try {
+          await audio.audioWorklet.addModule(url);
+          new AudioWorkletNode(audio, "tone").connect(audio.destination);
+          return (await audio.startRendering()).getChannelData(0)[0];
+        } finally {
+          URL.revokeObjectURL(url);
+        }
+      }),
+    ).toBe(0.25);
     await tab.reload();
     await expect(tab.getByText("Private module loaded")).toBeVisible();
     await tab.goto(output);
@@ -150,9 +200,6 @@ test("private websites load in frames and direct tabs for the owning user across
     const outsider = await browser.newContext({ ignoreHTTPSErrors: true });
     const outsidePage = await outsider.newPage();
     expect((await outsidePage.goto(output))!.status()).toBe(404);
-    const outputFrame = page
-      .frames()
-      .find((frame) => frame !== page.mainFrame())!;
     await page.evaluate(() => fetch("/api/auth/logout", { method: "POST" }));
     expect((await tab.goto(new URL("app.js", output).href))!.status()).toBe(
       404,

@@ -155,7 +155,7 @@ export async function offlineWebsite(
   for (const path of Object.keys(files).filter((path) =>
     path.endsWith(".html"),
   )) {
-    const document = parse(websiteHtml(text(path), false, appOrigin));
+    const document = parse(websiteHtml(text(path), appOrigin));
     let head: Tree["element"] | undefined;
     function visit(node: Tree["node"]) {
       if ("tagName" in node) {

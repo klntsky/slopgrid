@@ -3,21 +3,58 @@ import { LoaderCircle } from "lucide-react";
 import { syncFrameScroll } from "./frame-scroll";
 import "./website-preview.css";
 
+// Delegate every feature the browser exposes; the fallback covers browsers
+// without policy introspection. Browser permissions and user activation still apply.
+const outputPermissions = (
+  (
+    document as Document & { featurePolicy?: { features(): string[] } }
+  ).featurePolicy?.features() ?? [
+    "accelerometer",
+    "autoplay",
+    "camera",
+    "clipboard-read",
+    "clipboard-write",
+    "display-capture",
+    "encrypted-media",
+    "fullscreen",
+    "gamepad",
+    "geolocation",
+    "gyroscope",
+    "hid",
+    "idle-detection",
+    "local-fonts",
+    "magnetometer",
+    "microphone",
+    "midi",
+    "payment",
+    "picture-in-picture",
+    "publickey-credentials-create",
+    "publickey-credentials-get",
+    "screen-wake-lock",
+    "serial",
+    "speaker-selection",
+    "storage-access",
+    "usb",
+    "web-share",
+    "window-management",
+    "xr-spatial-tracking",
+  ]
+)
+  .map((feature) => `${feature} *`)
+  .join("; ");
+
 export function WebsitePreview({
   url,
   title,
   streaming,
-  published,
   offline = false,
 }: {
   url?: string;
   title: string;
   streaming: boolean;
-  published: boolean;
   offline?: boolean;
 }) {
   const [frames, setFrames] = useState<{ url: string; ready: boolean }[]>([]);
-  const loads = useRef(new WeakMap<HTMLIFrameElement, number>());
   const container = useRef<HTMLDivElement>(null);
   const [offlinePath, setOfflinePath] = useState<string>();
   useEffect(() => {
@@ -69,17 +106,14 @@ export function WebsitePreview({
             inert={!frame.ready}
             // Offline navigation must reach the worker. Its response CSP applies
             // the opaque sandbox before generated code executes.
-            sandbox={
-              offline ? "allow-scripts allow-same-origin" : "allow-scripts"
-            }
+            sandbox={offline ? "allow-scripts allow-same-origin" : undefined}
+            allow={offline ? undefined : outputPermissions}
+            allowFullScreen={!offline}
             src={frame.url}
             style={{ visibility: frame.ready ? "visible" : "hidden" }}
             onLoad={async (event) => {
               const element = event.currentTarget;
-              const count = (loads.current.get(element) ?? 0) + 1;
-              loads.current.set(element, count);
-              // Private navigation loads the trusted bootstrap first, then HTML.
-              if (!frame.ready && count >= (offline || published ? 1 : 2)) {
+              if (!frame.ready) {
                 const previous =
                   element.parentElement?.querySelector<HTMLIFrameElement>(
                     'iframe[aria-hidden="false"]',

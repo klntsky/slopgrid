@@ -192,7 +192,6 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
                           cell={cell}
                           format={g.input.format}
                           gridStatus={g.status}
-                          published={g.published}
                           title={title(cell)}
                           expanded={expanded?.id === cell.id}
                           rawMarkdown={views[cell.id]?.raw}

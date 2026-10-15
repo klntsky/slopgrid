@@ -41,12 +41,7 @@ export function createHostDispatcher(
       res.set("Retry-After", "60");
       return res.status(429).send("Too many requests. Try again in a minute.");
     }
-    res.set(
-      "Content-Security-Policy",
-      "sandbox allow-scripts; default-src 'self' data: blob:; script-src 'self' 'unsafe-inline' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'",
-    );
     res.set("Cache-Control", "no-store");
-    res.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
     if (req.method !== "GET" && req.method !== "HEAD")
       return res.sendStatus(405);
     if (req.path.startsWith("/__session/")) return access.redeem(req, res, id);
@@ -63,14 +58,7 @@ export function createHostDispatcher(
         );
       return res.sendStatus(404);
     }
-    // A null origin identifies an opaque sandbox, not its owner; authorize first.
-    const privateOutput = !output.published;
-    if (!privateOutput) res.set("Access-Control-Allow-Origin", "*");
-    else if (req.get("origin") === "null") {
-      res.set("Access-Control-Allow-Origin", "null");
-      res.set("Access-Control-Allow-Credentials", "true");
-      res.vary("Origin");
-    }
+    if (output.published) res.set("Access-Control-Allow-Origin", "*");
     let path: string;
     try {
       path = decodeURIComponent(req.path).slice(1) || "index.html";
@@ -84,27 +72,10 @@ export function createHostDispatcher(
         : await generation.previewPath({ cellId: id, path });
     if (!file) return res.sendStatus(404);
     if (path.endsWith(".html")) {
-      const html = websiteHtml(
-        readFileSync(file, "utf8"),
-        privateOutput,
-        origin.origin,
-      );
-      if (privateOutput && req.get("sec-fetch-dest") === "document")
-        return access.document(req, res, id, html);
+      const html = websiteHtml(readFileSync(file, "utf8"), origin.origin);
       return res.type("html").send(html);
     }
-    const mime: Record<string, string> = {
-      html: "text/html",
-      css: "text/css",
-      js: "text/javascript",
-      json: "application/json",
-      svg: "image/svg+xml",
-      md: "text/plain",
-      txt: "text/plain",
-    };
     // OutputFiles confines this path to generated files, including hidden storage roots.
-    return res
-      .type(mime[path.split(".").pop()!] ?? "text/plain")
-      .sendFile(file, { dotfiles: "allow" });
+    return res.sendFile(file, { dotfiles: "allow" });
   };
 }

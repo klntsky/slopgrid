@@ -161,24 +161,30 @@ settling canceled calls cannot restore a resumable public cell.
 Live generated HTML runs on isolated per-cell hosts. Host dispatch happens
 before application middleware, so those hosts cannot
 reach application routes. Only validated bundle or preview paths are served.
-The HTML sandbox has an opaque origin and a restrictive content security policy;
-generated code cannot read application cookies or use the authorization bridge.
-The live output script policy permits blob scripts so generated audio worklets
-can load in the sandbox. The response-level `connect-src 'none'` restriction
-continues to block network connections from generated code.
+Live output documents use their own origins and normal browser capabilities.
+Frames delegate the browser's exposed permission-policy features, with an
+explicit fallback list when policy introspection is unavailable. Browser
+permission prompts, user activation, and cross-origin rules still apply.
+Assets use the static server's MIME database for their content types.
 
-Private HTML needs a short handshake because navigation and sandboxed resource
-requests can use different cookie partitions:
+The application session remains in a host-only, Secure, HttpOnly `__Host-`
+cookie on HTTPS. Output origins cannot read or replace that cookie. Application
+API requests from other origins, including same-site sibling hosts, are rejected
+before session handlers run. Top-level OAuth callback GET navigations remain
+available and require the session's pending state and verifier. The application
+page's own CSP prevents other pages from framing it.
+
+Private HTML uses a scoped authorization redirect:
 
 1. The application host checks the live session, cell ownership, and requested
    path, then issues a short-lived grant bound to that request.
-2. Trusted bootstrap code on the output host redeems the grant for a host-only
-   encrypted cookie and establishes the sandbox's resource cookie partition.
+2. The output host consumes the grant, sets a host-only, encrypted, HttpOnly
+   cookie referencing the live session, and redirects to the requested file.
 3. Every private asset request rechecks cell scope, session validity, and current
    ownership. Session rotation or deletion revokes access even if the output
    cookie remains.
 
-Direct private HTML navigation uses the same access checks and bootstrap. The
+Direct private HTML navigation uses the same access checks and redirect. The
 bridge that preserves frame scroll state communicates only with its application
 parent and grants no additional access.
 

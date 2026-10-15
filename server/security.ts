@@ -15,10 +15,18 @@ export function createApiSecurity(
         .status(429)
         .json({ error: "Too many requests. Try again in a minute." });
     }
+    // OAuth providers return through top-level GET navigation. Other foreign
+    // requests must not mutate sessions, including GET-based OAuth starts.
+    const callback =
+      req.method === "GET" &&
+      /^\/auth\/(?:github\/)?callback$/.test(req.path) &&
+      (!req.get("sec-fetch-mode") ||
+        req.get("sec-fetch-mode") === "navigate") &&
+      (!req.get("sec-fetch-dest") || req.get("sec-fetch-dest") === "document");
     if (
-      !["GET", "HEAD"].includes(req.method) &&
+      !callback &&
       ((req.get("origin") && req.get("origin") !== origin) ||
-        req.get("sec-fetch-site") === "cross-site")
+        ["same-site", "cross-site"].includes(req.get("sec-fetch-site") ?? ""))
     )
       return res.status(403).json({ error: "Request origin is not allowed" });
     next();

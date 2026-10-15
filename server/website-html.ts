@@ -1,33 +1,8 @@
-import {
-  parse,
-  parseFragment,
-  serialize,
-  type DefaultTreeAdapterMap,
-} from "parse5";
+import { parse, parseFragment, serialize } from "parse5";
 
 // Rewrite served HTML only; downloads and stored generated files remain untouched.
-export function websiteHtml(
-  source: string,
-  privateOutput: boolean,
-  appOrigin: string,
-) {
+export function websiteHtml(source: string, appOrigin: string) {
   const document = parse(source);
-  function visit(node: DefaultTreeAdapterMap["node"]) {
-    if (
-      // Opaque sandbox origins need explicit credentials to send the output cookie.
-      privateOutput &&
-      "attrs" in node &&
-      (node.tagName === "script" ||
-        node.tagName === "link" ||
-        node.attrs.some((attr) => attr.name === "crossorigin"))
-    ) {
-      node.attrs = node.attrs.filter((attr) => attr.name !== "crossorigin");
-      node.attrs.push({ name: "crossorigin", value: "use-credentials" });
-    }
-    if ("childNodes" in node) node.childNodes.forEach(visit);
-    if ("content" in node) visit(node.content);
-  }
-  visit(document);
   const root = document.childNodes.find(
     (node) => "tagName" in node && node.tagName === "html",
   );
@@ -37,8 +12,7 @@ export function websiteHtml(
     );
     if (head && "childNodes" in head) {
       // The port carries only scroll coordinates; it grants no parent DOM or cookie access.
-      const bridge =
-        parseFragment(`<meta http-equiv="Content-Security-Policy" content="connect-src 'none'"><script>
+      const bridge = parseFragment(`<script>
         addEventListener("keydown", event => {
           if (event.key === "Escape" && !event.defaultPrevented && parent !== window)
             parent.postMessage({ type: "slopgrid:escape" }, ${JSON.stringify(appOrigin)});

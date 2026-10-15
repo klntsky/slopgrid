@@ -25,7 +25,6 @@ export function OutputCell({
   cell,
   format,
   gridStatus,
-  published,
   title,
   expanded = false,
   rawMarkdown = false,
@@ -37,7 +36,6 @@ export function OutputCell({
   cell: ViewGrid["cells"][number];
   format: GridInput["format"];
   gridStatus: ViewGrid["status"];
-  published: boolean;
   title: string;
   expanded?: boolean;
   rawMarkdown?: boolean;
@@ -97,7 +95,6 @@ export function OutputCell({
             url={complete ? outputURL : cell.previewURL}
             title={title}
             streaming={!complete}
-            published={published}
             offline={offline}
           />
         ) : complete ? (

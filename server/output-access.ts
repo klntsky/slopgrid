@@ -116,53 +116,10 @@ export function createOutputAccess(
           maxAge: cookieMaxAge,
         },
       );
-      if (req.get("sec-fetch-dest") === "document") {
-        grants.delete(id);
-        return res.redirect(303, "/" + grant.path);
-      }
-      if (req.get("sec-fetch-mode") === "navigate") {
-        // Navigation and opaque sandbox subresources use different cookie partitions.
-        // Keep the grant until the bootstrap fetch sets the subresource cookie;
-        // only this trusted document gets the connect-src exception. Starting the
-        // fetch after load lets the parent distinguish bootstrap and output loads.
-        res.set(
-          "Content-Security-Policy",
-          "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'",
-        );
-        return res
-          .type("html")
-          .send(
-            `<script>addEventListener("load",()=>{fetch(location.href,{credentials:"include"}).then(response=>{if(response.ok)location.replace(${JSON.stringify("/" + grant.path)})})})</script>`,
-          );
-      }
+      // The frame and its assets share the output origin and cookie partition.
+      // Consume the grant once, then navigate without exposing it to generated code.
       grants.delete(id);
-      if (req.get("origin") === "null") {
-        res.set("Access-Control-Allow-Origin", "null");
-        res.set("Access-Control-Allow-Credentials", "true");
-        res.vary("Origin");
-        return res.sendStatus(204);
-      }
       res.redirect(303, "/" + grant.path);
-    },
-    document(req: Request, res: Response, cellId: string, html: string) {
-      const current = viewer(req, cellId);
-      if (!current) return res.sendStatus(404);
-      const id = grant(current, cellId, req.path.slice(1));
-      if (!id) return res.sendStatus(429);
-      // Authorize in this document's opaque partition without navigating away.
-      // Generated HTML adds connect-src 'none' before any generated scripts run.
-      res.set(
-        "Content-Security-Policy",
-        String(res.get("Content-Security-Policy")).replace(
-          "connect-src 'none'",
-          "connect-src 'self'",
-        ),
-      );
-      return res
-        .type("html")
-        .send(
-          `<script>fetch("/__session/${id}",{credentials:"include"}).then(response=>{if(response.ok){document.open();document.write(${JSON.stringify(html).replaceAll("<", "\\u003c")});document.close()}})</script>`,
-        );
     },
     read(req: Request, cellId: string) {
       const output = store.outputMetadata(cellId);

@@ -27,7 +27,6 @@ test("drafts, mutation endpoints, and generated hosts enforce ownership and orig
       })
     ).status(),
   ).toBe(403);
-  // Generation can finish before the private bootstrap has navigated to HTML.
   // Capture the loaded output, not a consumed one-time authorization grant.
   const frame = page.locator("iframe:visible").first();
   await expect(
@@ -41,7 +40,6 @@ test("drafts, mutation endpoints, and generated hosts enforce ownership and orig
   const response = await page.request.get(output!);
   expect(response.status()).toBe(200);
   expect(response.headers()["set-cookie"]).toBeUndefined();
-  expect(response.headers()["content-security-policy"]).toContain("sandbox");
   expect(
     (
       await request.get(`${baseURL}/api/session`, {
@@ -59,18 +57,17 @@ test("drafts, mutation endpoints, and generated hosts enforce ownership and orig
   ])
     expect((await anonymous.get(url)).status(), url).toBe(404);
   expect((await request.get(`/outputs/${cellId}`)).status()).toBe(404);
-  // A direct output tab must be isolated too, without relying on the iframe sandbox.
+  // The output host has its own storage, but cannot read the app's session cookie.
   const outputTab = await page.context().newPage();
   await outputTab.goto(output!);
   await outputTab.waitForURL((url) => url.pathname === "/index.html");
   expect(
     await outputTab.evaluate(() => {
-      try {
-        document.cookie = "sibling-cookie=secret;domain=localhost";
-        return false;
-      } catch {
-        return true;
-      }
+      localStorage.setItem("output-storage", "available");
+      return (
+        localStorage.getItem("output-storage") === "available" &&
+        !document.cookie.includes("__Host-slopgrid=")
+      );
     }),
   ).toBe(true);
   await outputTab.close();
