@@ -6,7 +6,7 @@ import {
   type ButtonHTMLAttributes,
 } from "react";
 import { createPortal } from "react-dom";
-import { Copy, Check, X } from "lucide-react";
+import { Copy, Check, X, LoaderCircle, TriangleAlert } from "lucide-react";
 
 export function Hint({
   text,
@@ -80,25 +80,66 @@ export function CopyButton({
   label = "Copy output",
   load,
   copy,
+  children,
 }: {
   value: string;
   label?: string;
   load?: () => Promise<string>;
   copy?: () => Promise<void>;
+  children?: ReactNode;
 }) {
-  const [copied, setCopied] = useState(false);
+  const [state, setState] = useState<
+    "idle" | "pending" | "success" | "failure"
+  >("idle");
+  const pending = useRef(false);
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  const feedback = {
+    idle: "",
+    pending: "Copying",
+    success: "Copied",
+    failure: "Copy failed",
+  }[state];
   return (
-    <IconButton
-      label={copied ? "Copied" : label}
-      onClick={async () => {
-        if (copy) await copy();
-        else await navigator.clipboard.writeText(load ? await load() : value);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1500);
-      }}
-    >
-      {copied ? <Check /> : <Copy />}
-    </IconButton>
+    <Hint text={feedback || (children ? undefined : label)}>
+      <button
+        type="button"
+        className={children ? undefined : "icon-button"}
+        aria-label={label}
+        disabled={state === "pending"}
+        onClick={async () => {
+          if (pending.current) return;
+          pending.current = true;
+          clearTimeout(timer.current);
+          setState("pending");
+          try {
+            if (copy) await copy();
+            else
+              await navigator.clipboard.writeText(load ? await load() : value);
+            setState("success");
+          } catch {
+            setState("failure");
+          } finally {
+            pending.current = false;
+            timer.current = setTimeout(() => setState("idle"), 2500);
+          }
+        }}
+      >
+        {children}
+        {state === "pending" ? (
+          <LoaderCircle className="spinner" />
+        ) : state === "success" ? (
+          <Check />
+        ) : state === "failure" ? (
+          <TriangleAlert />
+        ) : (
+          <Copy />
+        )}
+      </button>
+      <span role="status" className="sr-only">
+        {feedback}
+      </span>
+    </Hint>
   );
 }
 export function ErrorMessage({ error }: { error: unknown }) {

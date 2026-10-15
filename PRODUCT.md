@@ -56,6 +56,10 @@ Status: high level product goal that is not a requirement (not achieved yet).
 6. Use the current pause hint specified in section 6.3.
 7. When Generate is disabled, its tooltip explains the current blocking reasons. Attach the tooltip to a focusable wrapper so it works on hover and keyboard focus while the button is disabled, and omit it when Generate is enabled.
 
+### 2.4. Clipboard actions
+
+1. Copy actions show pending, success, and failure feedback, announce their state to assistive technology, and retain a stable accessible action name. Prevent duplicate writes while a copy is pending and allow retry after failure. Apply this behavior to prompt, output, link, and model-ID copying.
+
 ## 3. Grid creation
 
 ### 3.1. Form and output selection

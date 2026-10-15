@@ -44,6 +44,9 @@ Frontend line-count comparisons cover `src/`, `index.html`, and
 Dependencies, build output, retained assets, and test artifacts are excluded.
 Frontend validation covers the browser suites and frontend-related unit tests.
 
+Clipboard coverage controls browser clipboard completion and rejection, checking
+pending controls, accessible result feedback, and recovery after failure.
+
 Connection coverage holds the session response, fails it, and retries through
 the interface before verifying authorization and navigation to Settings.
 

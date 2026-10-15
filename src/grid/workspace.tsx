@@ -1,5 +1,6 @@
 import { useRef, useState, useLayoutEffect } from "react";
-import { ExternalLink, Copy, Check } from "lucide-react";
+import { ExternalLink } from "lucide-react";
+import { CopyButton } from "../components/ui";
 import type { GridView } from "../api";
 import { storage } from "../api";
 import { effortLabel } from "../../server/compatibility";
@@ -8,19 +9,11 @@ import { OutputCell } from "./output";
 import { ReferencePreview } from "./reference-preview";
 
 function ModelLabel({ id }: { id: string }) {
-  const [copied, setCopied] = useState(false);
   return (
     <span className="model-label">
-      <button
-        onClick={async () => {
-          await navigator.clipboard.writeText(id);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
-        }}
-      >
+      <CopyButton value={id} label={modelName(id)}>
         {modelName(id)}
-        {copied ? <Check aria-label="Copied" /> : <Copy />}
-      </button>
+      </CopyButton>
       <a
         aria-label={`Open ${modelName(id)} on OpenRouter`}
         href={`https://openrouter.ai/${id}`}
