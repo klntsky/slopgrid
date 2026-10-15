@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useParams, useNavigate } from "@tanstack/react-router";
-import { Square, Play, Pencil, Share, GitFork } from "lucide-react";
+import { Square, Play, Pencil, Share, GitBranch } from "lucide-react";
 import { api, type GridView, storage, money, queries } from "../api";
 import {
   CopyButton,
@@ -48,7 +48,7 @@ function Publish({
   return (
     <Modal
       title={confirm ? "Confirm publishing" : "Control who can see this grid"}
-      close={() => confirm ? setConfirm(false) : close()}
+      close={() => (confirm ? setConfirm(false) : close())}
       closeButton={false}
       busy={busy}
     >
@@ -168,7 +168,13 @@ export function GridPage() {
     if (titleCancelled.current || titleSaving.current) return;
     titleSaving.current = true;
     try {
-      accept(await api<GridView>(`/api/grids/${id}/title`, { title: value }, "PATCH"));
+      accept(
+        await api<GridView>(
+          `/api/grids/${id}/title`,
+          { title: value },
+          "PATCH",
+        ),
+      );
       setEditingTitle(false);
     } catch (e) {
       setActionError(e);
@@ -186,6 +192,10 @@ export function GridPage() {
   const finished = grid.cells.filter(
     (c) => c.status === "complete" || c.status === "error",
   ).length;
+  const failed = grid.cells.filter((c) => c.status === "error").length;
+  const progressText = failed
+    ? `${finished} of ${grid.cells.length} outputs finished: ${finished - failed} complete, ${failed} failed`
+    : `${finished} of ${grid.cells.length} outputs complete`;
   const cost = grid.cells.reduce(
     (sum, c) =>
       sum +
@@ -242,26 +252,28 @@ export function GridPage() {
             <div className="grid-information">
               <div className="title-prompt">
                 {editingTitle ? (
-                    <input
-                      aria-label="Grid title"
-                      maxLength={40}
-                      defaultValue={title}
-                      onFocus={(e) => e.currentTarget.select()}
-                      onBlur={(e) => void saveTitle(e.currentTarget.value)}
-                      autoFocus
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          e.currentTarget.blur();
-                        }
-                        if (e.key === "Escape") {
-                          e.preventDefault();
-                          titleCancelled.current = true;
-                          setEditingTitle(false);
-                          requestAnimationFrame(() => titleButton.current?.focus());
-                        }
-                      }}
-                    />
+                  <input
+                    aria-label="Grid title"
+                    maxLength={40}
+                    defaultValue={title}
+                    onFocus={(e) => e.currentTarget.select()}
+                    onBlur={(e) => void saveTitle(e.currentTarget.value)}
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        e.currentTarget.blur();
+                      }
+                      if (e.key === "Escape") {
+                        e.preventDefault();
+                        titleCancelled.current = true;
+                        setEditingTitle(false);
+                        requestAnimationFrame(() =>
+                          titleButton.current?.focus(),
+                        );
+                      }
+                    }}
+                  />
                 ) : grid.canEdit ? (
                   <button
                     ref={titleButton}
@@ -322,7 +334,7 @@ export function GridPage() {
                   disabled={busy}
                   onClick={edit}
                 >
-                  {grid.published ? <GitFork /> : <Pencil />}
+                  {grid.published ? <GitBranch /> : <Pencil />}
                 </IconButton>
               )}
               {grid.canEdit && grid.visibility !== "public" && (
@@ -342,29 +354,25 @@ export function GridPage() {
           target,
         )}
       <div className="progress-hint">
-      <Hint text={`${finished} of ${grid.cells.length} outputs finished: ${grid.cells.filter((c) => c.status === "complete").length} complete, ${grid.cells.filter((c) => c.status === "error").length} failed`}>
-      <div className="progress" tabIndex={0}>
-        <progress
-          aria-valuetext={
-            grid.cells.some((c) => c.status === "error")
-              ? `${finished} of ${grid.cells.length} outputs finished: ${grid.cells.filter((c) => c.status === "complete").length} complete, ${grid.cells.filter((c) => c.status === "error").length} failed`
-              : `${finished} of ${grid.cells.length} outputs complete`
-          }
-          aria-label="Grid generation"
-          value={finished}
-          max={grid.cells.length}
-        />
-        {grid.cells.map((c) => (
-          <span
-            key={c.id}
-            className="progress-segment"
-            data-status={c.status}
-            style={{ flex: 1 }}
-          />
-        ))}
-        {grid.status === "running" && <span className="progress-spark" />}
-      </div>
-      </Hint>
+        <Hint text={progressText}>
+          <div className="progress" tabIndex={0}>
+            <progress
+              aria-valuetext={progressText}
+              aria-label="Grid generation"
+              value={finished}
+              max={grid.cells.length}
+            />
+            {grid.cells.map((c) => (
+              <span
+                key={c.id}
+                className="progress-segment"
+                data-status={c.status}
+                style={{ flex: 1 }}
+              />
+            ))}
+            {grid.status === "running" && <span className="progress-spark" />}
+          </div>
+        </Hint>
       </div>
       <Workspace key={id} grid={grid} />
       {disconnected && (

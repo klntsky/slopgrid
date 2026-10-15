@@ -55,43 +55,54 @@ export function References({
 }) {
   const [error, setError] = useState<unknown>();
   return (
-    <div className="reference-group">
-      {!group && <label>Input references</label>}
-      <div className="reference-images">
-      {values.map((image, i) => (
-        <div className="reference-image" key={`${image.id}-${i}`}>
-          <ReferenceThumbnail image={image} />
-          <span>{image.name}</span>
-          <button type="button"
-            aria-label={`Remove ${image.name}${group ? ` from ${group}` : ""}`}
-            onClick={() => onChange(values.filter((_, j) => j !== i))}>
-            <X />
-          </button>
+    <div>
+      {label === "Add input references" && <span>Input references</span>}
+      <div
+        className={
+          label === "Add input references" ? "reference-group" : undefined
+        }
+      >
+        <div className="reference-images">
+          {values.map((image, i) => (
+            <div className="reference-image" key={`${image.id}-${i}`}>
+              <ReferenceThumbnail image={image} />
+              <span>{image.name}</span>
+              <button
+                type="button"
+                aria-label={`Remove ${image.name}${group ? ` from ${group}` : ""}`}
+                onClick={() => onChange(values.filter((_, j) => j !== i))}
+              >
+                <X />
+              </button>
+            </div>
+          ))}
         </div>
-      ))}
+        <label className="button secondary reference-upload">
+          {label !== "Add reference group" && <Paperclip />}{" "}
+          {label === "Add reference group"
+            ? "Add reference group"
+            : "Add images"}
+          <input
+            aria-label={label}
+            type="file"
+            multiple
+            accept="image/png,image/jpeg,image/webp"
+            onChange={async (e) => {
+              const files = Array.from(e.target.files ?? []);
+              e.target.value = "";
+              try {
+                onChange([
+                  ...values,
+                  ...(await Promise.all(files.map(saveReferenceFile))),
+                ]);
+              } catch (e) {
+                setError(e);
+              }
+            }}
+          />
+        </label>
+        <ErrorMessage error={error} />
       </div>
-      <label className="button secondary reference-upload">
-        <Paperclip /> Add images
-        <input
-          aria-label={label}
-          type="file"
-          multiple
-          accept="image/png,image/jpeg,image/webp"
-          onChange={async (e) => {
-            const files = Array.from(e.target.files ?? []);
-            e.target.value = "";
-            try {
-              onChange([
-                ...values,
-                ...(await Promise.all(files.map(saveReferenceFile))),
-              ]);
-            } catch (e) {
-              setError(e);
-            }
-          }}
-        />
-      </label>
-      <ErrorMessage error={error} />
     </div>
   );
 }
@@ -178,45 +189,47 @@ export function ReferenceGroups({
   const axis = draft[side],
     groups = draft.referenceGroups ?? {};
   return (
-    <>
+    <div className="reference-groups">
       {axis.values.map((name, i) => (
-        <div key={i}>
-          <GroupTitle
-            name={name}
-            names={axis.values}
-            rename={(next) => {
-              if (next === name) return;
-              const renamed = { ...groups, [next]: groups[name] };
-              delete renamed[name];
-              update({
-                ...draft,
-                referenceGroups: renamed,
-                [side]: {
-                  ...axis,
-                  values: axis.values.map((v) => (v === name ? next : v)),
-                },
-              });
-            }}
-          />
-          <span> · reference image group</span>
-          <button
-            type="button"
-            aria-label={`Remove reference group: ${name}`}
-            onClick={() => {
-              const remaining = { ...groups };
-              delete remaining[name];
-              update({
-                ...draft,
-                referenceGroups: remaining,
-                [side]: {
-                  ...axis,
-                  values: axis.values.filter((v) => v !== name),
-                },
-              });
-            }}
-          >
-            Remove group
-          </button>
+        <div className="reference-group" key={i}>
+          <div className="reference-heading">
+            <GroupTitle
+              name={name}
+              names={axis.values}
+              rename={(next) => {
+                if (next === name) return;
+                const renamed = { ...groups, [next]: groups[name] };
+                delete renamed[name];
+                update({
+                  ...draft,
+                  referenceGroups: renamed,
+                  [side]: {
+                    ...axis,
+                    values: axis.values.map((v) => (v === name ? next : v)),
+                  },
+                });
+              }}
+            />
+            <span> · reference image group</span>
+            <button
+              type="button"
+              aria-label={`Remove reference group: ${name}`}
+              onClick={() => {
+                const remaining = { ...groups };
+                delete remaining[name];
+                update({
+                  ...draft,
+                  referenceGroups: remaining,
+                  [side]: {
+                    ...axis,
+                    values: axis.values.filter((v) => v !== name),
+                  },
+                });
+              }}
+            >
+              <X />
+            </button>
+          </div>
           <References
             label={`Add images to ${name}`}
             group={name}
@@ -244,6 +257,6 @@ export function ReferenceGroups({
           });
         }}
       />
-    </>
+    </div>
   );
 }

@@ -65,6 +65,9 @@ they do not own provider execution or persist generation results.
   The workspace owns measured column and row dimensions, their saved sizes,
   and pointer and touch gestures. Resizing changes dimensions in unscaled
   coordinates, while pinch zoom preserves the gesture's content anchor.
+  Expanded cells counteract workspace zoom without remounting their content,
+  keeping website frames and preview state intact. Markdown measures its
+  natural width and uses browser layout scaling to fit the available space.
 - Shared controls own tooltip visibility, modal focus, clipboard actions, and
   connection management. Query caching handles ordinary API reads; local
   storage holds appearance, manual keys, publication preferences, and grid sizes.

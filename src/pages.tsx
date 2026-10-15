@@ -41,12 +41,22 @@ export function GridListing({ publicList = false }: { publicList?: boolean }) {
       api<GridSummary[]>(`/api/grids${publicList ? "/public" : ""}`),
   });
   return (
-    <section className={publicList ? "public-grids" : undefined} aria-label={publicList ? "Public grids" : "Your grids"}>
+    <section
+      className={publicList ? "public-grids" : undefined}
+      aria-label={publicList ? "Public grids" : "Your grids"}
+    >
       <div className="page-title">
-      <h1>{publicList ? "Public grids" : "Your grids"}</h1>
-      {!publicList && <Link className="button primary" to="/"><Plus />NEW GRID</Link>}
+        <h1>{publicList ? "Public grids" : "Your grids"}</h1>
+        {!publicList && (
+          <Link className="button primary" to="/">
+            <Plus />
+            NEW GRID
+          </Link>
+        )}
       </div>
-      {publicList && <p className="description">See what others have created</p>}
+      {publicList && (
+        <p className="description">See what others have created</p>
+      )}
       <ErrorMessage error={error} />
       {error && (
         <button disabled={isFetching} onClick={() => refetch()}>
@@ -70,9 +80,7 @@ export function GridListing({ publicList = false }: { publicList?: boolean }) {
               params={{ id: g.id }}
             >
               <FormatIcon format={g.format} />
-              <span>
-              {g.title || g.expanded_prompt_for_title}
-              </span>
+              <span>{g.title || g.expanded_prompt_for_title}</span>
             </Link>
             {publicList ? (
               <Author author={g.author} />
@@ -97,32 +105,34 @@ export function SettingsPage() {
   const theme = useTheme();
   return (
     <main className="page settings-page">
-      <div className="page-title"><h1>Settings</h1></div>
+      <div className="page-title">
+        <h1>Settings</h1>
+      </div>
       <section aria-label="Account">
         <h2>Account</h2>
         <Account settings />
       </section>
       <section>
-      <h2>Appearance</h2>
-      <label className="theme-control">
-        Theme
-        <select
-          value={theme}
-          onChange={(e) => setTheme(e.target.value as typeof theme)}
-        >
-          <option value="system">System</option>
-          <option value="light">Light</option>
-          <option value="dark">Dark</option>
-        </select>
-      </label>
+        <h2>Appearance</h2>
+        <label className="theme-control">
+          Theme
+          <select
+            value={theme}
+            onChange={(e) => setTheme(e.target.value as typeof theme)}
+          >
+            <option value="system">System</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </label>
       </section>
       <section>
-      <Connection settings />
-      <p className="description">
-        More providers coming in the future. For now, use the bring-your-own-key
-        feature on OpenRouter to get inference without paying OpenRouter's
-        markup
-      </p>
+        <Connection settings />
+        <p className="description">
+          More providers coming in the future. For now, use the
+          bring-your-own-key feature on OpenRouter to get inference without
+          paying OpenRouter's markup
+        </p>
       </section>
     </main>
   );
@@ -138,8 +148,14 @@ export function BillingPage() {
   return (
     <main className="page">
       <div className="page-title">
-      <h1>Billing</h1>
-      <button aria-label="Refresh billing" disabled={query.isFetching} onClick={() => query.refetch()}><RefreshCw /></button>
+        <h1>Billing</h1>
+        <button
+          aria-label="Refresh billing"
+          disabled={query.isFetching}
+          onClick={() => query.refetch()}
+        >
+          <RefreshCw />
+        </button>
       </div>
       <p className="description">
         Each inference attempt appears here, including retries, failures, and
@@ -151,7 +167,9 @@ export function BillingPage() {
         <>
           <p>
             {formatCost(data.costUsd)} reported across {data.total} calls
-            {data.unavailable > 0 && `; charges unavailable for ${data.unavailable}`}.
+            {data.unavailable > 0 &&
+              `; charges unavailable for ${data.unavailable}`}
+            .
           </p>
           {data.total === 0 ? (
             <p>No inference calls yet.</p>
@@ -201,7 +219,13 @@ export function BillingPage() {
                       </td>
                       <td>{c.phase}</td>
                       <td>
-                        <span className={c.status === "failed" ? "billing-failed" : undefined}>{c.status}</span>
+                        <span
+                          className={
+                            c.status === "failed" ? "billing-failed" : undefined
+                          }
+                        >
+                          {c.status}
+                        </span>
                         {c.error && (
                           <small>
                             {c.errorCode !== undefined
@@ -211,7 +235,18 @@ export function BillingPage() {
                           </small>
                         )}
                       </td>
-                      <td className="billing-tokens">{c.usage ? <>{c.usage.inputTokens ?? "-"} <ArrowUp aria-label="input tokens" /> {c.usage.outputTokens ?? "-"} <ArrowDown aria-label="output tokens" /></> : "Unavailable"}</td>
+                      <td className="billing-tokens">
+                        {c.usage ? (
+                          <>
+                            {c.usage.inputTokens ?? "-"}{" "}
+                            <ArrowUp aria-label="input tokens" />{" "}
+                            {c.usage.outputTokens ?? "-"}{" "}
+                            <ArrowDown aria-label="output tokens" />
+                          </>
+                        ) : (
+                          "Unavailable"
+                        )}
+                      </td>
                       <td>{formatCost(c.usage?.costUsd)}</td>
                     </tr>
                   ))}

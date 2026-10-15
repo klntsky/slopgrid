@@ -241,9 +241,11 @@ export function Modal({
     >
       <header>
         <h2>{title}</h2>
-        {closeButton && <IconButton label="Close" disabled={busy} onClick={close}>
-          <X />
-        </IconButton>}
+        {closeButton && (
+          <IconButton label="Close" disabled={busy} onClick={close}>
+            <X />
+          </IconButton>
+        )}
       </header>
       {children}
     </dialog>,

@@ -1,4 +1,4 @@
-import { useRef, useState, useLayoutEffect } from "react";
+import { useRef, useState, useLayoutEffect, type CSSProperties } from "react";
 import { Link as Chain } from "lucide-react";
 import { CopyButton } from "../components/ui";
 import type { GridView } from "../api";
@@ -40,14 +40,28 @@ export function Workspace({ grid }: { grid: GridView }) {
     const node = ref.current!;
     if (!storage.get(key, null)) {
       const fit = {
-        columns: sizes.columns.map(() => Math.max(340, (node.clientWidth - 35) / sizes.columns.length)),
-        rows: sizes.rows.map(() => Math.max(390, (node.clientHeight - 35) / sizes.rows.length)),
+        columns: sizes.columns.map(() =>
+          Math.max(340, (node.clientWidth - 35) / sizes.columns.length),
+        ),
+        rows: sizes.rows.map(() =>
+          Math.max(390, (node.clientHeight - 35) / sizes.rows.length),
+        ),
       };
       setSizes(fit);
       if (navigator.maxTouchPoints)
-        setZoom(Math.min(1, node.clientWidth / fit.columns.reduce((a, b) => a + b, 35)));
+        setZoom(
+          Math.min(
+            1,
+            node.clientWidth / fit.columns.reduce((a, b) => a + b, 35),
+          ),
+        );
     } else if (navigator.maxTouchPoints) {
-      setZoom(Math.min(1, node.clientWidth / sizes.columns.reduce((a, b) => a + b, 35)));
+      setZoom(
+        Math.min(
+          1,
+          node.clientWidth / sizes.columns.reduce((a, b) => a + b, 35),
+        ),
+      );
     }
   }, []);
   const drag = useRef<{
@@ -58,32 +72,54 @@ export function Workspace({ grid }: { grid: GridView }) {
   } | null>(null);
   useLayoutEffect(() => {
     const node = ref.current!;
-    let gesture: { distance: number; scale: number; x: number; y: number } | undefined;
+    let gesture:
+      { distance: number; scale: number; x: number; y: number } | undefined;
     const measure = (touches: TouchList) => ({
-      distance: Math.hypot(touches[0].clientX - touches[1].clientX, touches[0].clientY - touches[1].clientY),
-      x: (touches[0].clientX + touches[1].clientX) / 2 - node.getBoundingClientRect().left,
-      y: (touches[0].clientY + touches[1].clientY) / 2 - node.getBoundingClientRect().top,
+      distance: Math.hypot(
+        touches[0].clientX - touches[1].clientX,
+        touches[0].clientY - touches[1].clientY,
+      ),
+      x:
+        (touches[0].clientX + touches[1].clientX) / 2 -
+        node.getBoundingClientRect().left,
+      y:
+        (touches[0].clientY + touches[1].clientY) / 2 -
+        node.getBoundingClientRect().top,
     });
     const start = (event: TouchEvent) => {
       if (event.touches.length !== 2) return;
       event.preventDefault();
       const point = measure(event.touches);
       const scale = Number(node.querySelector("table")!.style.zoom) || 1;
-      gesture = { distance: point.distance, scale, x: (node.scrollLeft + point.x) / scale, y: (node.scrollTop + point.y) / scale };
+      gesture = {
+        distance: point.distance,
+        scale,
+        x: (node.scrollLeft + point.x) / scale,
+        y: (node.scrollTop + point.y) / scale,
+      };
       drag.current = null;
     };
     const move = (event: TouchEvent) => {
       if (!gesture || event.touches.length !== 2) return;
       event.preventDefault();
       const point = measure(event.touches);
-      const minimum = Math.min(1, node.clientWidth / sizes.columns.reduce((sum, value) => sum + value, 35));
-      const scale = Math.max(minimum, Math.min(3, gesture.scale * point.distance / gesture.distance));
+      const minimum = Math.min(
+        1,
+        node.clientWidth /
+          sizes.columns.reduce((sum, value) => sum + value, 35),
+      );
+      const scale = Math.max(
+        minimum,
+        Math.min(3, (gesture.scale * point.distance) / gesture.distance),
+      );
       node.querySelector("table")!.style.zoom = String(scale);
       node.scrollLeft = gesture.x * scale - point.x;
       node.scrollTop = gesture.y * scale - point.y;
       setZoom(scale);
     };
-    const end = () => { gesture = undefined; };
+    const end = () => {
+      gesture = undefined;
+    };
     node.addEventListener("touchstart", start, { passive: false });
     node.addEventListener("touchmove", move, { passive: false });
     node.addEventListener("touchend", end);
@@ -221,7 +257,14 @@ export function Workspace({ grid }: { grid: GridView }) {
     >
       <table
         className="output-grid"
-        style={{ zoom, width: sizes.columns.reduce((a, b) => a + b, 35) }}
+        style={
+          {
+            zoom,
+            width: sizes.columns.reduce((a, b) => a + b, 35),
+            "--grid-zoom": zoom,
+            "--grid-row-height": `${sizes.rows[0]}px`,
+          } as CSSProperties
+        }
       >
         <colgroup>
           <col style={{ width: 35 }} />

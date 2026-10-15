@@ -27,8 +27,19 @@ import { uploadReferences, replaceReference } from "./reference-files";
 import { CommonSize } from "./size";
 import { FormatIcon } from "../components/format-icon";
 
-function SectionHeading({ number, children }: { number: number; children: React.ReactNode }) {
-  return <div className="section-heading"><span className="number">{String(number).padStart(2, "0")}</span><h2>{children}</h2></div>;
+function SectionHeading({
+  number,
+  children,
+}: {
+  number: number;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="section-heading">
+      <span className="number">{String(number).padStart(2, "0")}</span>
+      <h2>{children}</h2>
+    </div>
+  );
 }
 
 export function CreatePage() {
@@ -155,29 +166,31 @@ export function CreatePage() {
     <main className="page create-page">
       <h1>Create your own AI model benchmark</h1>
       <section>
-      <SectionHeading number={1}>What do you want to generate?</SectionHeading>
-      <div className="formats">
-        {Object.entries(formatNames).map(([format, name]) => (
-          <button
-            key={format}
-            className="format"
-            type="button"
-            aria-pressed={draft.format === format}
-            onClick={() =>
-              update({
-                ...emptyDraft(format as GridInput["format"]),
-                prompt: draft.prompt,
-                budgetUsd: draft.budgetUsd,
-                budgetText: draft.budgetText,
-                sourceGridId: draft.sourceGridId,
-              })
-            }
-          >
-            <FormatIcon format={format as GridInput["format"]} />
-            {name}
-          </button>
-        ))}
-      </div>
+        <SectionHeading number={1}>
+          What do you want to generate?
+        </SectionHeading>
+        <div className="formats">
+          {Object.entries(formatNames).map(([format, name]) => (
+            <button
+              key={format}
+              className="format"
+              type="button"
+              aria-pressed={draft.format === format}
+              onClick={() =>
+                update({
+                  ...emptyDraft(format as GridInput["format"]),
+                  prompt: draft.prompt,
+                  budgetUsd: draft.budgetUsd,
+                  budgetText: draft.budgetText,
+                  sourceGridId: draft.sourceGridId,
+                })
+              }
+            >
+              <FormatIcon format={format as GridInput["format"]} />
+              {name}
+            </button>
+          ))}
+        </div>
       </section>
       {!draft.format ? (
         <GridListing publicList />
@@ -189,35 +202,44 @@ export function CreatePage() {
           }}
         >
           <section>
-          <SectionHeading number={2}>
-            Specify grid layout · what should be the rows and the columns of the grid?
-          </SectionHeading>
-          <div className="axes">
-            <AxisEditor
-              side="rows"
-              draft={draft}
-              update={update}
-              changeKind={(kind) => update(changeAxis(draft, "rows", kind))}
-            />
-            <IconButton
-              className="icon-button axis-swap"
-              label="Swap rows and columns"
-              onClick={() => update(swapAxes(draft))}
-            >
-              <ArrowLeftRight />
-            </IconButton>
-            <AxisEditor
-              side="columns"
-              draft={draft}
-              update={update}
-              changeKind={(kind) => update(changeAxis(draft, "columns", kind))}
-            />
-          </div>
-          <p className="description">{draft.rows.values.length} rows × {draft.columns.values.length} columns · {draft.rows.values.length * draft.columns.values.length} outputs</p>
+            <SectionHeading number={2}>
+              Specify grid layout · what should be the rows and the columns of
+              the grid?
+            </SectionHeading>
+            <div className="axes">
+              <AxisEditor
+                side="rows"
+                draft={draft}
+                update={update}
+                changeKind={(kind) => update(changeAxis(draft, "rows", kind))}
+              />
+              <IconButton
+                className="icon-button axis-swap"
+                label="Swap rows and columns"
+                onClick={() => update(swapAxes(draft))}
+              >
+                <ArrowLeftRight />
+              </IconButton>
+              <AxisEditor
+                side="columns"
+                draft={draft}
+                update={update}
+                changeKind={(kind) =>
+                  update(changeAxis(draft, "columns", kind))
+                }
+              />
+            </div>
+            <p className="description">
+              {draft.rows.values.length} rows × {draft.columns.values.length}{" "}
+              columns · {draft.rows.values.length * draft.columns.values.length}{" "}
+              outputs
+            </p>
           </section>
           {common && (
             <section>
-              <SectionHeading number={3}>Specify common parameters</SectionHeading>
+              <SectionHeading number={3}>
+                Specify common parameters
+              </SectionHeading>
               {!kinds.includes("model") && (
                 <ModelSelector
                   values={draft.model ? [draft.model] : []}
@@ -251,7 +273,14 @@ export function CreatePage() {
                     {(Object.keys(imageChoices) as ScalarImageKind[])
                       .filter((kind) => !kinds.includes(kind))
                       .map((kind) => (
-                        <div key={kind} className={kind === "quality" ? "image-quality-option" : undefined}>
+                        <div
+                          key={kind}
+                          className={
+                            kind === "quality"
+                              ? "image-quality-option"
+                              : undefined
+                          }
+                        >
                           {kind === "size" ? (
                             <CommonSize
                               value={draft.imageSettings?.size ?? "auto"}
@@ -303,7 +332,9 @@ export function CreatePage() {
             </section>
           )}
           <section>
-          <SectionHeading number={common ? 4 : 3}>Enter your prompt</SectionHeading>
+            <SectionHeading number={common ? 4 : 3}>
+              Enter your prompt
+            </SectionHeading>
             <textarea
               rows={6}
               placeholder="Describe what you want to generate"
@@ -311,79 +342,86 @@ export function CreatePage() {
               value={draft.prompt}
               onChange={(e) => patch({ prompt: e.target.value })}
             />
-          {(["rows", "columns"] as const)
-            .filter((side) => draft[side].kind === "variable")
-            .map((side) => (
-              <p className="description" key={side}>
-                ${side === "rows" ? "ROW" : "COLUMN"} will be replaced with the
-                values you specify above
-              </p>
-            ))}
-          {variableErrors.length > 0 && (
-            <ErrorMessage error={variableErrors.join(" ")} />
-          )}
+            {(["rows", "columns"] as const)
+              .filter((side) => draft[side].kind === "variable")
+              .map((side) => (
+                <p className="description" key={side}>
+                  ${side === "rows" ? "ROW" : "COLUMN"} will be replaced with
+                  the values you specify above
+                </p>
+              ))}
+            {variableErrors.length > 0 && (
+              <ErrorMessage error={variableErrors.join(" ")} />
+            )}
           </section>
           <section>
-          <SectionHeading number={common ? 5 : 4}>Inference provider setup</SectionHeading>
-          <Connection />
-          {draft.format !== "image" && (
-            <>
-              <Hint text="Used to calculate each output's token limit.">
-                <label className="budget">
-                  Budget limit per cell
-                  <span>
-                    <DollarSign />
-                    <input
-                      aria-label="Budget limit per cell"
-                      type="number"
-                      step="any"
-                      value={draft.budgetText ?? draft.budgetUsd}
-                      onChange={(e) =>
-                        patch({
-                          budgetUsd: Number(e.target.value),
-                          budgetText: e.target.value,
-                        })
-                      }
-                    />
-                  </span>
+            <SectionHeading number={common ? 5 : 4}>
+              Inference provider setup
+            </SectionHeading>
+            <Connection />
+            <div className="generation-limits">
+              {draft.format !== "image" && (
+                <Hint text="Used to calculate each output's token limit.">
+                  <label className="budget">
+                    Budget limit per cell
+                    <span>
+                      <DollarSign />
+                      <input
+                        aria-label="Budget limit per cell"
+                        type="number"
+                        step="any"
+                        value={draft.budgetText ?? draft.budgetUsd}
+                        onChange={(e) =>
+                          patch({
+                            budgetUsd: Number(e.target.value),
+                            budgetText: e.target.value,
+                          })
+                        }
+                      />
+                    </span>
+                  </label>
+                </Hint>
+              )}
+            </div>
+            {draft.format !== "image" && draft.budgetUsd > 0 && (
+              <BudgetWarnings input={draft as GridInput} />
+            )}
+            {capacity.error && (
+              <>
+                <ErrorMessage error={capacity.error} />
+                <button type="button" onClick={() => capacity.refetch()}>
+                  Check balance again
+                </button>
+              </>
+            )}
+            {draft.sourceGridId && (
+              <Hint text="Copy existing artifacts with matching generation settings that fit the token limit">
+                <label className="checkbox">
+                  <input
+                    type="checkbox"
+                    checked={draft.reuseArtifacts}
+                    onChange={(e) =>
+                      patch({ reuseArtifacts: e.target.checked })
+                    }
+                  />
+                  Reuse existing artifacts from the previous version
                 </label>
               </Hint>
-              {draft.budgetUsd > 0 && (
-                <BudgetWarnings input={draft as GridInput} />
-              )}
-            </>
-          )}
-          {capacity.error && (
-            <>
-              <ErrorMessage error={capacity.error} />
-              <button type="button" onClick={() => capacity.refetch()}>
-                Check balance again
-              </button>
-            </>
-          )}
-          {draft.sourceGridId && (
-            <Hint text="Copy existing artifacts with matching generation settings that fit the token limit">
-              <label className="checkbox">
-                <input
-                  type="checkbox"
-                  checked={draft.reuseArtifacts}
-                  onChange={(e) => patch({ reuseArtifacts: e.target.checked })}
-                />
-                Reuse existing artifacts from the previous version
-              </label>
-            </Hint>
-          )}
-          <ErrorMessage error={error} />
-          <div className="generate-hint">
-          <Hint text={blockers.length ? blockers.join(" ") : undefined}>
-            <span tabIndex={blockers.length ? 0 : undefined}>
-              <button className="primary generate" disabled={busy || !!blockers.length}>
-                Generate
-                <ArrowUpRight />
-              </button>
-            </span>
-          </Hint>
-          </div>
+            )}
+            <ErrorMessage error={error} />
+            <div className="generate-hint">
+              <Hint text={blockers.length ? blockers.join(" ") : undefined}>
+                <span tabIndex={blockers.length ? 0 : undefined}>
+                  <button
+                    className="primary generate"
+                    disabled={busy || !!blockers.length}
+                  >
+                    Generate
+                    <ArrowUpRight />
+                  </button>
+                </span>
+              </Hint>
+            </div>
           </section>
         </form>
       )}

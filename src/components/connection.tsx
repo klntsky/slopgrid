@@ -34,66 +34,74 @@ export function Connection({ settings = false }: { settings?: boolean }) {
       {settings && <h2>Inference</h2>}
       <div className="connection">
         <div className="connection-identity">
-        <img className="openrouter-icon" src="/openrouter.svg" alt="" width="24" />
-        <div><strong>OpenRouter</strong>
-        <span className="connection-state">
-          {isPending
-            ? "Checking connection"
-            : session?.connected
-              ? "Connected"
-              : "Not connected"}
-        </span>
-        </div></div>
+          <img
+            className="openrouter-icon"
+            src="/openrouter.svg"
+            alt=""
+            width="24"
+          />
+          <div>
+            <strong>OpenRouter</strong>
+            <span className="connection-state">
+              {isPending
+                ? "Checking connection"
+                : session?.connected
+                  ? "Connected"
+                  : "Not connected"}
+            </span>
+          </div>
+        </div>
         <div className="connection-actions">
-        {session?.connected && !settings ? (
-          <Link to="/settings">Settings</Link>
-        ) : session?.connected ? (
-          <button
-            type="button"
-            aria-label="Disconnect OpenRouter"
-            onClick={async () => {
-              try {
-                await api("/api/session/key", undefined, "DELETE");
-                storage.remove("slopgrid-openrouter-key");
-                await queries.invalidateQueries({ queryKey: ["session"] });
-              } catch (e) {
-                setError(e);
-              }
-            }}
-          >
-            Disconnect
-          </button>
-        ) : (
-          <a
-            className="button secondary"
-            aria-label="Connect OpenRouter"
-            href={`/api/auth/start?returnTo=${encodeURIComponent(location.pathname)}`}
-          >
-            Connect
-          </a>
-        )}
-        {session?.connected && settings && (
-          <a href="/api/auth/start?returnTo=%2Fsettings">Change connection</a>
-        )}
-        {!manual && (
-          <button
-            type="button"
-            onClick={() => {
-              setError(undefined);
-              setManual(true);
-            }}
-          >
-            Use API key
-          </button>
-        )}
+          {session?.connected && !settings ? (
+            <Link to="/settings">Settings</Link>
+          ) : session?.connected ? (
+            <button
+              type="button"
+              aria-label="Disconnect OpenRouter"
+              onClick={async () => {
+                try {
+                  await api("/api/session/key", undefined, "DELETE");
+                  storage.remove("slopgrid-openrouter-key");
+                  await queries.invalidateQueries({ queryKey: ["session"] });
+                } catch (e) {
+                  setError(e);
+                }
+              }}
+            >
+              Disconnect
+            </button>
+          ) : (
+            <a
+              className="button secondary"
+              aria-label="Connect OpenRouter"
+              href={`/api/auth/start?returnTo=${encodeURIComponent(location.pathname)}`}
+            >
+              Connect
+            </a>
+          )}
+          {session?.connected && settings && (
+            <a href="/api/auth/start?returnTo=%2Fsettings">Change connection</a>
+          )}
+          {!manual && (
+            <button
+              type="button"
+              onClick={() => {
+                setError(undefined);
+                setManual(true);
+              }}
+            >
+              Use API key
+            </button>
+          )}
         </div>
         {checkError && (
           <button type="button" onClick={() => refetch()}>
             Retry connection check
           </button>
         )}
-      {manual && (
-          <div className="connection-key-form"
+        {manual && (
+          <div
+            className="connection-key-form"
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
@@ -101,30 +109,40 @@ export function Connection({ settings = false }: { settings?: boolean }) {
               }
             }}
           >
-            <label>
-              API key
-              <input
-                aria-label="API key"
-                type="password"
-                autoFocus
-                autoComplete="off"
-                value={key}
-                onChange={(e) => setKey(e.target.value)}
-              />
-            </label>
+            <label htmlFor="openrouter-api-key">API key</label>
+            <input
+              id="openrouter-api-key"
+              aria-label="API key"
+              type="password"
+              autoFocus
+              autoComplete="off"
+              value={key}
+              onChange={(e) => setKey(e.target.value)}
+            />
             <div className="connection-actions">
-            <button type="button" aria-label="Connect API key" disabled={busy || !key.trim()} onClick={() => void connect()}>Connect</button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => { setManual(false); setKey(""); setError(undefined); }}
-            >
-              Cancel
-            </button>
+              <button
+                type="button"
+                aria-label="Connect API key"
+                disabled={busy || !key.trim()}
+                onClick={() => void connect()}
+              >
+                Connect
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  setManual(false);
+                  setKey("");
+                  setError(undefined);
+                }}
+              >
+                Cancel
+              </button>
             </div>
             <ErrorMessage error={error} />
           </div>
-      )}
+        )}
       </div>
       <ErrorMessage error={checkError} />
       {new URLSearchParams(location.search).get("connection") === "failed" && (

@@ -6,18 +6,18 @@ This document defines Slopgrid's product behavior and user experience.
 
 The following numbered requirements define the visible layout and interaction contract. Their numbering corresponds to the accepted 47-point layout review. They are requirements, independent of implementation completion.
 
-1. Center ordinary pages in the narrow content column, retaining the established desktop and phone margins and vertical starting positions.
-2. Use the established large medium-weight page headings and smaller medium-weight section headings, preserving their wrapping and spacing.
+1. Center ordinary pages in a 950px maximum-width column, including 28px horizontal padding and 56px top padding. At phone widths, use 20px horizontal and 36px top padding.
+2. Use 48px medium-weight page headings, reducing to 38px on phones, and 19px medium-weight section headings.
 3. Use the warm beige and olive light palette and warm charcoal dark palette, including all panel, border, selection, link, and icon colors.
-4. Retain the ordinary-page navbar height and outer margins and the compact grid navbar dimensions.
+4. Use an 88px ordinary-page navbar with 5vw horizontal margins on desktop and a compact 64px minimum-height grid navbar. Phone navigation wraps with 20px ordinary-page and 10px grid-page horizontal padding.
 5. Show the labeled GitHub sign-in button before Billing and Settings on desktop.
 6. Underline the active Billing or Settings navigation link.
-7. Anchor the touch navigation trigger at the right edge and retain the wide popup beside it.
+7. Anchor the touch navigation trigger at the right edge, with a 300px popup constrained to the viewport and separated from its trigger by 4px.
 8. Include GitHub account controls, Billing, and Settings in the touch popup, and change the open menu trigger to a close icon.
 9. Use the established filled primary buttons and borderless secondary actions, with matching padding, dimensions, hover states, and rounding.
-10. Use the themed keyboard focus outline and offset on interactive controls.
+10. Use a 2px themed keyboard focus outline with a 3px offset on interactive controls.
 11. Present output formats as four equal vertical cards, with icons above labels, changing to two equal columns on phones.
-12. Use file-text, image, code-file, and browser-window format icons, retaining their established size and stroke weight.
+12. Use file-text, image, code-file, and browser-window format icons at 44px with a 1.5px stroke in the format cards.
 13. Mark the selected format with a tinted fill and reinforced outline.
 14. Separate creation sections with horizontal rules and small muted two-digit numbers, beginning with What do you want to generate? and numbering provider setup consecutively.
 15. Keep the layout heading and its explanatory subtitle at the same size and weight, wrapping together.
@@ -28,27 +28,27 @@ The following numbered requirements define the visible layout and interaction co
 20. Align the axis swap control with desktop selectors and rotate its arrows vertically when axes stack on phones.
 21. Stretch common image options across equal desktop columns and stack full-width controls on phones.
 22. Show reference uploads in a bordered group with a shared Input references label, thumbnails, visible filenames, compact remove icons, and a paperclip Add images action.
-23. Use the established tall prompt textarea with the placeholder Describe what you want to generate and the section heading Enter your prompt, without a redundant visible Prompt label.
+23. Use a six-row prompt textarea with the placeholder Describe what you want to generate and the section heading Enter your prompt, without a redundant visible Prompt label.
 24. Place the budget below the provider connection and keep its dollar icon inside the input boundary.
 25. Show the provider logo, OpenRouter name, and stacked connection status in a bordered identity card, with actions beside them and a visible logo in both themes.
 26. Expand API-key entry inline within the provider card, use its available width, and disable Connect until a nonempty key is supplied.
-27. Make Generate full-width with its diagonal arrow at the right and retain the established button height.
-28. Retain the spaced Settings sections, wide theme selector, filled account sign-in button, Inference heading, and small muted provider explanation.
+27. Make Generate full-width with a 24px diagonal arrow at the right, 13px vertical padding, and 16px horizontal padding.
+28. Separate Settings sections with 28px vertical padding, use a 320px theme selector constrained to the available width, and show the filled account sign-in button, Inference heading, and small muted provider explanation.
 29. Use the established medium-weight grid title, muted prompt, starting position, and spacing.
 30. Place Pause or Resume after the title/prompt and before Edit.
 31. Display model IDs in grid axes with copy feedback and a chain link icon, rotating icons together with row text.
-32. Left-align column labels, retain their tinted background, and preserve the narrow row-label strip and header spacing.
+32. Left-align column labels on a tinted background, using 8px vertical and 16px horizontal header padding and a narrow row-label strip of approximately 35px at normal scale.
 33. Dragging a column boundary must resize that column by the pointer displacement, including when the initial grid fits the viewport, on desktop and touch devices.
-34. Retain the established initial cell proportions and grid height on phones, including unused workspace below a short grid.
-35. Use the established rounded bordered output-toolbar group, control dimensions, diagonal expand arrows, and slash-containing code icon.
-36. Retain the separated output footer, established height and spacing, muted actions, diagonal open-output icon, and token arrows following their counts.
-37. Hide output footers while a cell is expanded and give the released space to the preview.
-38. Retain Markdown heading weights, toolbar clearance, paragraph spacing, and the established full-width table layout and row sizing.
+34. Begin with columns at least 340px wide and rows at least 390px high, distributing additional desktop workspace across cells. Fit the whole table width on touch devices by scaling it uniformly, leaving unused workspace below a short grid.
+35. Put output controls in a bordered group 8px from the top and right, with 10px rounding, 2px padding and gaps, and 36px buttons. Use diagonal expand arrows and a slash-containing code icon.
+36. Use a 52px output footer with a top border, 9px vertical and 12px horizontal padding, muted 32px actions, a diagonal open-output icon, and token arrows following their counts.
+37. Hide output footers while a cell is expanded and give the released space to the preview. Expanded content fills the workspace below the complete navbar, with controls at normal scale even when the underlying grid is zoomed.
+38. Use medium-weight Markdown headings, 24px preview padding, and clearance beside the first heading for the toolbar. Within grid cells, tables stretch across the preview with rows matching the grid's row height; in expanded views, tables use their natural content size. Scale the document to fit its natural width, including code and table content.
 39. Center the generation spinner and Generating label together inside the cell.
 40. Center Queued and Paused labels inside cells and omit an active spinner while paused.
-41. Edit titles in the established wide inline input, committing with Enter or blur and cancelling with Escape, without separate Save title or Cancel controls.
+41. Edit titles in an inline input occupying 40 percent of the title line, committing with Enter or blur and cancelling with Escape, without separate Save title or Cancel controls. Restore focus to the title action after cancellation.
 42. Show the visible progress-count breakdown when hovering or focusing the progress bar.
-43. Retain the publication dialog width, padding, backdrop, medium-weight heading, filled primary Save action, and borderless Cancel action, without a separate close icon.
+43. Use a 490px publication dialog constrained to the viewport, with 32px desktop or 24px phone padding, a translucent backdrop, a 23px medium-weight heading, a filled primary Save action, and a borderless Cancel action, without a separate close icon.
 44. Place New grid at the right of the Your grids heading row.
 45. Place each grid-list format icon before its title, retain status at the right, and use unadorned dark titles with the established row spacing.
 46. Place the icon-only billing refresh action beside its heading and combine input/output counts in one Tokens column with following arrows.

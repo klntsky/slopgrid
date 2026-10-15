@@ -46,35 +46,40 @@ function MarkdownPreview({
 }) {
   const container = useRef<HTMLDivElement>(null),
     document = useRef<HTMLDivElement>(null);
-  const [scale, setScale] = useState(1),
-    [height, setHeight] = useState<number>();
   useLayoutEffect(() => {
     const outer = container.current!,
       inner = document.current!;
     const resize = () => {
-      const next = Math.min(
-        1,
-        outer.clientWidth / Math.max(1, inner.scrollWidth),
-      );
-      setScale(next);
-      setHeight(inner.scrollHeight * next);
+      const styles = getComputedStyle(outer);
+      const available =
+        outer.clientWidth -
+        parseFloat(styles.paddingLeft) -
+        parseFloat(styles.paddingRight);
+      if (available <= 0) return;
+      inner.style.zoom = "1";
+      inner.style.width = `${available}px`;
+      const width = Math.max(available, inner.scrollWidth);
+      inner.style.width = `${width}px`;
+      inner.style.zoom = String(available / width);
     };
     resize();
     const observer = new ResizeObserver(resize);
     observer.observe(outer);
     observer.observe(inner);
-    return () => observer.disconnect();
+    outer.addEventListener("load", resize, true);
+    return () => {
+      observer.disconnect();
+      outer.removeEventListener("load", resize, true);
+    };
   }, [text, raw]);
   return (
     <div ref={container} className="markdown-preview" aria-busy={busy}>
-      <div style={{ height }}>
-        <div
-          ref={document}
-          className="markdown-document"
-          style={{ transform: `scale(${scale})`, width: `${100 / scale}%` }}
-        >
-          {raw ? <pre>{text}</pre> : <MarkdownContent markdown={text} />}
-        </div>
+      <div ref={document} className="markdown-document">
+        {raw ? (
+          <pre className="markdown-raw">{text}</pre>
+        ) : (
+          <MarkdownContent markdown={text} />
+        )}
       </div>
     </div>
   );
@@ -246,13 +251,14 @@ export function OutputCell({
           </div>
         )}
         <div className="output-layer" hidden={showThinking}>
-          {format === "markdown" && (text || cell.status === "running" || cell.outputURL) && (
-            <MarkdownPreview
-              text={text}
-              raw={raw}
-              busy={cell.status === "running"}
-            />
-          )}
+          {format === "markdown" &&
+            (text || cell.status === "running" || cell.outputURL) && (
+              <MarkdownPreview
+                text={text}
+                raw={raw}
+                busy={cell.status === "running"}
+              />
+            )}
           {(format === "image" || format === "svg") &&
             (cell.outputURL || partial) && (
               <div className="image-preview">
@@ -285,81 +291,98 @@ export function OutputCell({
             cell.status !== "error" && (
               <div className="pending" role="status">
                 {cell.status === "running" && <span className="spinner" />}
-                {cell.retrying ? "Waiting to retry…" : cell.status === "running" ? "Generating…" : paused ? "Paused" : "Queued"}
+                {cell.retrying
+                  ? "Waiting to retry…"
+                  : cell.status === "running"
+                    ? "Generating…"
+                    : paused
+                      ? "Paused"
+                      : "Queued"}
               </div>
             )}
         </div>
       </div>
-      {!expanded && (cell.status === "complete" || (cell.status === "running" && (format === "markdown" || usage?.costUsd !== undefined))) && <footer className="cell-footer">
-        <div className="output-actions">
-          {cell.outputURL && (
-            <>
-              <Hint text="Open output">
-                <a
-                  aria-label="Open output"
-                  href={
-                    format === "markdown"
-                      ? `${cell.outputURL}?theme=${theme}`
-                      : cell.outputURL
-                  }
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  <ArrowUpRight />
-                </a>
-              </Hint>
-              {format !== "html" && (
-                <CopyButton
-                  copy={
-                    format === "image"
-                      ? () => copyImage(cell.outputURL!)
-                      : undefined
-                  }
-                  value={text || cell.outputURL}
-                  load={
-                    format === "svg"
-                      ? async () => (await fetch(cell.outputURL!)).text()
-                      : undefined
-                  }
-                />
+      {!expanded &&
+        (cell.status === "complete" ||
+          (cell.status === "running" &&
+            (format === "markdown" || usage?.costUsd !== undefined))) && (
+          <footer className="cell-footer">
+            <div className="output-actions">
+              {cell.outputURL && (
+                <>
+                  <Hint text="Open output">
+                    <a
+                      aria-label="Open output"
+                      href={
+                        format === "markdown"
+                          ? `${cell.outputURL}?theme=${theme}`
+                          : cell.outputURL
+                      }
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      <ArrowUpRight />
+                    </a>
+                  </Hint>
+                  {format !== "html" && (
+                    <CopyButton
+                      copy={
+                        format === "image"
+                          ? () => copyImage(cell.outputURL!)
+                          : undefined
+                      }
+                      value={text || cell.outputURL}
+                      load={
+                        format === "svg"
+                          ? async () => (await fetch(cell.outputURL!)).text()
+                          : undefined
+                      }
+                    />
+                  )}
+                  <Hint text="Download output">
+                    <a
+                      aria-label="Download output"
+                      href={`/outputs/${cell.id}/download`}
+                      download
+                    >
+                      <Download />
+                    </a>
+                  </Hint>
+                </>
               )}
-              <Hint text="Download output">
-                <a
-                  aria-label="Download output"
-                  href={`/outputs/${cell.id}/download`}
-                  download
+            </div>
+            {usage && (
+              <div className="cell-usage">
+                <span
+                  className="cell-tokens"
+                  aria-label={`${cell.status === "running" ? "Estimated: " : ""}${usage.inputTokens ?? 0} input tokens, ${usage.outputTokens ?? 0} output tokens`}
                 >
-                  <Download />
-                </a>
-              </Hint>
-            </>
-          )}
-        </div>
-        {usage && (
-          <div className="cell-usage">
-            <span
-              className="cell-tokens"
-              aria-label={`${cell.status === "running" ? "Estimated: " : ""}${usage.inputTokens ?? 0} input tokens, ${usage.outputTokens ?? 0} output tokens`}
-            >
-              <Hint text="Input tokens">{usage.inputTokens ?? "-"}<ArrowUp /></Hint>{" "}
-              <Hint text="Output tokens">{usage.outputTokens ?? "-"}<ArrowDown /></Hint>
-            </span>
-            <Hint
-              attribute
-              text={
-                cell.status === "running"
-                  ? "Estimated cost"
-                  : "OpenRouter reported cost"
-              }
-            >
-              <span>
-                {cell.status === "running" ? "~" : ""}
-                {formatCost(usage.costUsd)}
-              </span>
-            </Hint>
-          </div>
+                  <Hint text="Input tokens">
+                    {usage.inputTokens ?? "-"}
+                    <ArrowUp />
+                  </Hint>{" "}
+                  <Hint text="Output tokens">
+                    {usage.outputTokens ?? "-"}
+                    <ArrowDown />
+                  </Hint>
+                </span>
+                <Hint
+                  attribute
+                  text={
+                    cell.status === "running"
+                      ? "Estimated cost"
+                      : "OpenRouter reported cost"
+                  }
+                >
+                  <span>
+                    {cell.status === "running" ? "~" : ""}
+                    {formatCost(usage.costUsd)}
+                  </span>
+                </Hint>
+              </div>
+            )}
+          </footer>
         )}
-      </footer>}
     </article>
   );
 }
