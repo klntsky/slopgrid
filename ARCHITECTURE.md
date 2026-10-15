@@ -218,6 +218,8 @@ that cache without maintaining separate ordering state.
   `/grids` redirects there. `/create` owns the form and restores its session
   draft. Home saves the selected format before navigating; Edit, Fork, and
   provider authorization return to `/create`. Both pages share the format picker.
+  Clicking the active format saves the draft with its selection cleared before
+  navigating home, while choosing another format updates the form in place.
   The owned section appears only for populated results or a retryable failure.
 - Grid listing queries filter ownership or public visibility in SQLite before
   counting and selecting a page. Only that page's grids are loaded for summary

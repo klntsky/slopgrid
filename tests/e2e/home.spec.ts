@@ -1,5 +1,43 @@
 import { test, expect } from "./fixtures";
 
+test("selecting the active output type returns home and preserves the draft", async ({
+  page,
+}) => {
+  const formats = ["Markdown", "Image", "SVG", "Static website"];
+  await page.goto("/");
+  for (const format of formats) {
+    await page.getByRole("button", { name: format, exact: true }).click();
+    await expect(page).toHaveURL("/create");
+    await page.getByLabel("Prompt", { exact: true }).fill(`Draft ${format}`);
+    await page
+      .getByRole("button", { name: format, exact: true })
+      .press("Enter");
+    await expect(page).toHaveURL("/");
+    await expect(page.getByLabel("Prompt", { exact: true })).toHaveCount(0);
+    await expect(
+      page.getByRole("region", { name: "Public grids", exact: true }),
+    ).toBeVisible();
+    for (const option of formats)
+      await expect(
+        page.getByRole("button", { name: option, exact: true }),
+      ).toHaveAttribute("aria-pressed", "false");
+    await page.reload();
+    await expect(page).toHaveURL("/");
+    await page.getByRole("button", { name: format, exact: true }).click();
+    await expect(page.getByLabel("Prompt", { exact: true })).toHaveValue(
+      `Draft ${format}`,
+    );
+    const other = formats[(formats.indexOf(format) + 1) % formats.length];
+    await page.getByRole("button", { name: other, exact: true }).click();
+    await expect(page).toHaveURL("/create");
+    await expect(
+      page.getByRole("button", { name: other, exact: true }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await page.getByRole("button", { name: other, exact: true }).click();
+    await expect(page).toHaveURL("/");
+  }
+});
+
 test("direct creation opens the form without a saved draft", async ({
   page,
 }) => {

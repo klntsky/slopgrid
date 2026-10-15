@@ -2,6 +2,8 @@ import { ModelSelector } from "../create/model-selector";
 import { ImageOptions } from "../create/image-options";
 import { changeAxis } from "../create/change-axis";
 import { FormatPicker } from "../components/format-picker";
+import { useNavigate } from "@tanstack/react-router";
+import { saveDraft } from "../create/draft";
 import { ArrowUpRight, DollarSign, ArrowLeftRight } from "lucide-react";
 import {
   efforts,
@@ -18,6 +20,7 @@ import { ErrorMessage } from "../components/error-message";
 import { LowBalanceDialog } from "../components/inference-dialogs";
 import { useTooltip } from "../components/use-tooltip";
 export function Create() {
+  const navigate = useNavigate();
   const {
     draft,
     update,
@@ -55,7 +58,15 @@ export function Create() {
       <div className="page-heading">
         <h1>Create your own AI model benchmark</h1>
       </div>
-      <FormatPicker selected={input.format} onSelect={selectFormat} />
+      <FormatPicker
+        selected={input.format}
+        onSelect={(format) => {
+          if (format === input.format) {
+            saveDraft({ ...draft, formatSelected: false });
+            void navigate({ to: "/" });
+          } else selectFormat(format);
+        }}
+      />
       {formatSelected && (
         <section>
           <div className="section-heading">
