@@ -1004,11 +1004,6 @@ button.editable-title > .lucide {
   flex-wrap: wrap;
   margin-top: 25px;
 }
-@media (max-width: 700px), (any-pointer: coarse) {
-  .grid-layout .wordmark > span {
-    display: none;
-  }
-}
 @media (max-width: 700px) {
   header {
     padding: 0 20px;
