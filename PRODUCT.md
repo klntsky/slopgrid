@@ -2,6 +2,58 @@
 
 This document defines Slopgrid's product behavior and user experience.
 
+## Presentation and interaction requirements
+
+The following numbered requirements define the visible layout and interaction contract. Their numbering corresponds to the accepted 47-point layout review. They are requirements, independent of implementation completion.
+
+1. Center ordinary pages in the narrow content column, retaining the established desktop and phone margins and vertical starting positions.
+2. Use the established large medium-weight page headings and smaller medium-weight section headings, preserving their wrapping and spacing.
+3. Use the warm beige and olive light palette and warm charcoal dark palette, including all panel, border, selection, link, and icon colors.
+4. Retain the ordinary-page navbar height and outer margins and the compact grid navbar dimensions.
+5. Show the labeled GitHub sign-in button before Billing and Settings on desktop.
+6. Underline the active Billing or Settings navigation link.
+7. Anchor the touch navigation trigger at the right edge and retain the wide popup beside it.
+8. Include GitHub account controls, Billing, and Settings in the touch popup, and change the open menu trigger to a close icon.
+9. Use the established filled primary buttons and borderless secondary actions, with matching padding, dimensions, hover states, and rounding.
+10. Use the themed keyboard focus outline and offset on interactive controls.
+11. Present output formats as four equal vertical cards, with icons above labels, changing to two equal columns on phones.
+12. Use file-text, image, code-file, and browser-window format icons, retaining their established size and stroke weight.
+13. Mark the selected format with a tinted fill and reinforced outline.
+14. Separate creation sections with horizontal rules and small muted two-digit numbers, beginning with What do you want to generate? and numbering provider setup consecutively.
+15. Keep the layout heading and its explanatory subtitle at the same size and weight, wrapping together.
+16. Show the selected row count, column count, and total output count below the axes.
+17. Place the model-search magnifier and clear control inside its input boundary, retaining the established results-panel typography, fill, border, and spacing.
+18. Show selected models as filled removable chips.
+19. Enclose preset checkboxes in a bordered panel and use the theme accent for checked states.
+20. Align the axis swap control with desktop selectors and rotate its arrows vertically when axes stack on phones.
+21. Stretch common image options across equal desktop columns and stack full-width controls on phones.
+22. Show reference uploads in a bordered group with a shared Input references label, thumbnails, visible filenames, compact remove icons, and a paperclip Add images action.
+23. Use the established tall prompt textarea with the placeholder Describe what you want to generate and the section heading Enter your prompt, without a redundant visible Prompt label.
+24. Place the budget below the provider connection and keep its dollar icon inside the input boundary.
+25. Show the provider logo, OpenRouter name, and stacked connection status in a bordered identity card, with actions beside them and a visible logo in both themes.
+26. Expand API-key entry inline within the provider card, use its available width, and disable Connect until a nonempty key is supplied.
+27. Make Generate full-width with its diagonal arrow at the right and retain the established button height.
+28. Retain the spaced Settings sections, wide theme selector, filled account sign-in button, Inference heading, and small muted provider explanation.
+29. Use the established medium-weight grid title, muted prompt, starting position, and spacing.
+30. Place Pause or Resume after the title/prompt and before Edit.
+31. Display model IDs in grid axes with copy feedback and a chain link icon, rotating icons together with row text.
+32. Left-align column labels, retain their tinted background, and preserve the narrow row-label strip and header spacing.
+33. Dragging a column boundary must resize that column by the pointer displacement, including when the initial grid fits the viewport, on desktop and touch devices.
+34. Retain the established initial cell proportions and grid height on phones, including unused workspace below a short grid.
+35. Use the established rounded bordered output-toolbar group, control dimensions, diagonal expand arrows, and slash-containing code icon.
+36. Retain the separated output footer, established height and spacing, muted actions, diagonal open-output icon, and token arrows following their counts.
+37. Hide output footers while a cell is expanded and give the released space to the preview.
+38. Retain Markdown heading weights, toolbar clearance, paragraph spacing, and the established full-width table layout and row sizing.
+39. Center the generation spinner and Generating label together inside the cell.
+40. Center Queued and Paused labels inside cells and omit an active spinner while paused.
+41. Edit titles in the established wide inline input, committing with Enter or blur and cancelling with Escape, without separate Save title or Cancel controls.
+42. Show the visible progress-count breakdown when hovering or focusing the progress bar.
+43. Retain the publication dialog width, padding, backdrop, medium-weight heading, filled primary Save action, and borderless Cancel action, without a separate close icon.
+44. Place New grid at the right of the Your grids heading row.
+45. Place each grid-list format icon before its title, retain status at the right, and use unadorned dark titles with the established row spacing.
+46. Place the icon-only billing refresh action beside its heading and combine input/output counts in one Tokens column with following arrows.
+47. Use the small muted billing introduction and omit the unavailable-charge notice when its count is zero.
+
 See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.md) for architecture constraints and implementation, and [DEVELOPMENT.md](DEVELOPMENT.md) for development and validation guidance.
 
 ## 1. Product
@@ -170,10 +222,10 @@ Status: high level product goal that is not a requirement (not achieved yet).
 1. Place the progress bar as a thin line under the navbar. Completed and failed cells both count as finished; failed segments are red and successful segments retain the accent color.
 2. Show a pulsing spark moving left to right during generation.
    Pending cells in a paused grid display "Paused" without an active generation spinner; pending cells in an active grid display "Queued".
-3. Put the pause/resume action to the left of the title/prompt. Edit and Publish are compact icon-only controls to its right, using the same visual treatment.
+3. Put the pause/resume action after the title/prompt and before Edit. Edit and Publish are compact icon-only controls using the same visual treatment.
 4. Before publication, Edit immediately cancels active inference and returns to parameter selection with the existing setup restored. Generating the edited setup creates a new grid and can reuse matching completed artifacts as specified in section 10.
 5. After publication, offer Fork to restore the setup for modification and generation using the forking user's own connection. Its icon depicts a branch splitting from a continuing main branch.
-6. Show model names in row or column labels. Clicking a model name copies its ID without a hover hint, while preserving copy-result feedback; a chain icon to the right of its copy icon opens the model's OpenRouter page in a new tab. Copy and link icons follow the same orientation as the label text, including in rotated row titles.
+6. Show model IDs in row or column labels. Clicking a model ID copies it without a hover hint, while preserving copy-result feedback; a chain icon to the right of its copy icon opens the model's OpenRouter page in a new tab. Copy and link icons follow the same orientation as the label text, including in rotated row titles.
 
 ## 5. Outputs and streaming
 
