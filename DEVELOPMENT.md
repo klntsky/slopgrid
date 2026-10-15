@@ -39,6 +39,14 @@ Set `GITHUB_BROWSER_STATE` to the absolute path of this file when running the Gi
 
 ## Frontend builds
 
+Frontend line-count comparisons cover `src/`, `index.html`, and
+`public/theme.js`, formatted with the repository's Prettier configuration.
+Dependencies, build output, retained assets, and test artifacts are excluded.
+Frontend validation covers the browser suites and frontend-related unit tests.
+
+Connection coverage holds the session response, fails it, and retries through
+the interface before verifying authorization and navigation to Settings.
+
 Catalog checks cover combined model and image-detail loading, periodic server refreshes with retained snapshots after upstream failures, unrestricted cached model-list reads, and HTML bootstrap execution under the page CSP. Browser coverage checks model selection, pricing, and compatibility without model API requests, including after navigation and reload.
 
 When changing SDK imports or upgrading the SDK, compare production JavaScript sizes and retained modules on staging to catch accidental inclusion of unused client code.

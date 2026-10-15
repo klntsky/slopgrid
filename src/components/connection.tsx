@@ -1,173 +1,127 @@
 import { useState } from "react";
-import { setOpenRouterKey } from "../openrouter-key";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { LoaderCircle } from "lucide-react";
-import { api } from "../api";
-import { useConnection } from "../queries";
-import { ErrorMessage } from "./error-message";
+import { api, queries, storage, useSession } from "../api";
+import { ErrorMessage, Modal } from "./ui";
 
-export function Connection({
-  returnTo,
-  settings = false,
-}: {
-  returnTo: string;
-  settings?: boolean;
-}) {
-  const session = useConnection(),
-    cache = useQueryClient();
-  const [editing, setEditing] = useState(false),
-    [enteredKey, setEnteredKey] = useState("");
-  const connectKey = useMutation({
-    mutationFn: async () => {
-      const key = enteredKey.trim();
-      await api("/auth/key", "POST", undefined, key);
-      setOpenRouterKey(key);
-      setEnteredKey("");
-      setEditing(false);
-    },
-  });
-  const disconnect = useMutation({
-    mutationFn: () => {
-      setOpenRouterKey("");
-      return api("/session/key", "DELETE");
-    },
-    onSuccess: () => cache.invalidateQueries({ queryKey: ["session"] }),
-  });
-  const checking = session.isPending || (session.isError && session.isFetching),
-    connected = session.data?.connected === true,
-    status = disconnect.isPending
-      ? "Disconnecting…"
-      : checking
-        ? "Checking connection…"
-        : session.isError
-          ? "Could not check connection"
-          : connected
-            ? "Connected"
-            : "Not connected";
-  const authURL = `/api/auth/start?returnTo=${encodeURIComponent(returnTo)}`;
+export function Connection({ settings = false }: { settings?: boolean }) {
+  const { data: session, isPending, error: checkError, refetch } = useSession();
+  const [key, setKey] = useState(""),
+    [manual, setManual] = useState(false),
+    [error, setError] = useState<unknown>(),
+    [busy, setBusy] = useState(false);
+  async function connect() {
+    setBusy(true);
+    setError(undefined);
+    try {
+      const response = await fetch("/api/auth/key", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${key.trim()}` },
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+      storage.set("slopgrid-openrouter-key", key.trim());
+      setKey("");
+      setManual(false);
+      await queries.invalidateQueries({ queryKey: ["session"] });
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
   return (
-    <>
+    <section aria-label="Inference provider setup">
+      <h2>Inference provider setup</h2>
       <div className="connection">
-        <div className="connection-identity">
-          <img className="openrouter-icon" src="/openrouter.svg" alt="" />
-          <div>
-            <strong>OpenRouter</strong>
-            <span role="status" className="connection-state">
-              {(checking || disconnect.isPending) && (
-                <LoaderCircle className="spinner" aria-hidden="true" />
-              )}
-              {status}
-            </span>
-          </div>
-        </div>
-        <div className="connection-actions">
-          {session.isError ? (
-            <button
-              className="secondary"
-              disabled={session.isFetching}
-              onClick={() => void session.refetch()}
-            >
-              Check again
-            </button>
-          ) : (
-            !checking &&
-            (!connected ? (
-              <a
-                className="button secondary"
-                href={authURL}
-                aria-label="Connect OpenRouter"
-                onClick={() => setOpenRouterKey("")}
-              >
-                Connect
-              </a>
-            ) : settings ? (
-              <>
-                <button
-                  className="secondary"
-                  aria-label="Disconnect OpenRouter"
-                  disabled={disconnect.isPending}
-                  onClick={() => disconnect.mutate()}
-                >
-                  Disconnect
-                </button>
-                <a
-                  className="connection-change"
-                  href={authURL}
-                  aria-label="Change OpenRouter connection"
-                  aria-disabled={disconnect.isPending}
-                  onClick={(event) => {
-                    if (disconnect.isPending) event.preventDefault();
-                    else setOpenRouterKey("");
-                  }}
-                >
-                  Change connection
-                </a>
-              </>
-            ) : (
-              <Link to="/settings">Settings</Link>
-            ))
-          )}
-          {!checking && !editing && (
-            <button
-              className="secondary"
-              disabled={disconnect.isPending}
-              onClick={() => {
-                connectKey.reset();
-                setEditing(true);
-              }}
-            >
-              Use API key
-            </button>
-          )}
-        </div>
-        {editing && (
-          <form
-            className="connection-key-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              connectKey.mutate();
+        <img src="/openrouter.svg" alt="OpenRouter" width="24" />
+        <span>
+          {isPending
+            ? "Checking connection"
+            : session?.connected
+              ? "Connected"
+              : "Not connected"}
+        </span>
+        {session?.connected && !settings ? (
+          <Link to="/settings">Settings</Link>
+        ) : session?.connected ? (
+          <button
+            type="button"
+            aria-label="Disconnect OpenRouter"
+            onClick={async () => {
+              try {
+                await api("/api/session/key", undefined, "DELETE");
+                storage.remove("slopgrid-openrouter-key");
+                await queries.invalidateQueries({ queryKey: ["session"] });
+              } catch (e) {
+                setError(e);
+              }
             }}
           >
-            <label htmlFor="openrouter-api-key">API key</label>
-            <input
-              id="openrouter-api-key"
-              type="password"
-              autoComplete="off"
-              value={enteredKey}
-              onChange={(event) => setEnteredKey(event.target.value)}
-              autoFocus
-            />
-            <div className="connection-actions">
-              <button
-                className="secondary"
-                type="submit"
-                aria-label="Connect API key"
-                disabled={!enteredKey.trim() || connectKey.isPending}
-              >
-                {connectKey.isPending ? "Connecting…" : "Connect"}
-              </button>
-              <button
-                className="secondary"
-                type="button"
-                disabled={connectKey.isPending}
-                onClick={() => {
-                  setEnteredKey("");
-                  setEditing(false);
-                  connectKey.reset();
-                }}
-              >
-                Cancel
-              </button>
-            </div>
-            <ErrorMessage error={connectKey.error?.message} />
-          </form>
+            Disconnect
+          </button>
+        ) : (
+          <a
+            aria-label="Connect OpenRouter"
+            href={`/api/auth/start?returnTo=${encodeURIComponent(location.pathname)}`}
+          >
+            Connect
+          </a>
+        )}
+        {session?.connected && settings && (
+          <a href="/api/auth/start?returnTo=%2Fsettings">Change connection</a>
+        )}
+        {(!session?.connected || settings) && (
+          <button
+            type="button"
+            onClick={() => {
+              setError(undefined);
+              setManual(true);
+            }}
+          >
+            Use API key
+          </button>
+        )}
+        {checkError && (
+          <button type="button" onClick={() => refetch()}>
+            Retry connection check
+          </button>
         )}
       </div>
-      <ErrorMessage error={disconnect.error?.message} />
-      {new URLSearchParams(location.search).get("connection") === "failed" && (
-        <ErrorMessage error="OpenRouter connection failed. Connect again." />
+      <ErrorMessage error={checkError} />
+      {manual && (
+        <Modal
+          title="OpenRouter API key"
+          busy={busy}
+          close={() => setManual(false)}
+        >
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void connect();
+            }}
+          >
+            <label>
+              API key
+              <input
+                aria-label="API key"
+                type="password"
+                value={key}
+                onChange={(e) => setKey(e.target.value)}
+              />
+            </label>
+            <button disabled={busy}>Connect API key</button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => setManual(false)}
+            >
+              Cancel
+            </button>
+            <ErrorMessage error={error} />
+          </form>
+        </Modal>
       )}
-    </>
+      {!manual && <ErrorMessage error={error} />}
+    </section>
   );
 }

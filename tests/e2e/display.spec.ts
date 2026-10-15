@@ -338,7 +338,7 @@ for (const { width, hasTouch } of [
       await expect(menu).toBeFocused();
       await menu.click();
       await page
-        .getByRole("heading", { name: "Inference", exact: true })
+        .getByRole("heading", { name: "Inference provider setup", exact: true })
         .click();
       await expect(nav).toBeHidden();
       await menu.click();

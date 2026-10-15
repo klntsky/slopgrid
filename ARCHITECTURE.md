@@ -37,6 +37,33 @@ lifetime.
 
 ## State and persistence
 
+### Browser responsibilities
+
+The frontend separates creation parameters, live grid state, output rendering,
+and shared browser controls. Route components compose these responsibilities;
+they do not own provider execution or persist generation results.
+
+- Creation drafts belong to the browser tab. Axis changes and swaps are pure
+  record transformations, while parameter controls share model selection,
+  custom-size editing, and reference collections. References remain in the
+  draft until submission uploads them. Validation and compatibility reuse the
+  server's pure domain functions.
+- Creation submissions retain a request identity for response-loss recovery.
+  One grid query cache orders snapshots from HTTP reads, commands, and live
+  events. The live subscription stays connected until the engine reports a
+  stable snapshot, and reconnection reads state without replaying a generation
+  command.
+- Output cells retain their view state independently of the server snapshot.
+  Markdown source, thinking traces, image previews, and isolated website frames
+  have separate rendering responsibilities. Website swaps transfer scroll
+  coordinates through the trusted bootstrap before replacing the visible frame.
+- Shared controls own tooltip visibility, modal focus, clipboard actions, and
+  connection management. Query caching handles ordinary API reads; local
+  storage holds appearance, manual keys, publication preferences, and grid sizes.
+  Creation and grid routes load their implementation on demand.
+
+### Durable state
+
 SQLite stores identities, sessions, grid configuration, cell state, reference
 metadata, creation receipts, and the inference ledger. Generated bodies,
 reference bytes, and thinking traces live in the output filesystem. Storage
@@ -132,7 +159,7 @@ The engine sends snapshots containing cell state, drafts, estimates, and preview
 identifiers. The web process checks the viewer's session and access before
 forwarding live updates. The browser reconnects to current engine state after
 a dropped stream; reconnecting does not restart inference. The client renders
-Markdown from escaped source, validates SVG drafts before display, and keeps
+Markdown from escaped source, recovers disposable SVG drafts for image display, and keeps
 visible website frames stable while previews change.
 
 Thinking traces are private, attempt-specific files. Snapshots refer to a trace

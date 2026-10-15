@@ -1,6 +1,5 @@
 import type { ModelInfo } from "../../server/model-catalog";
 import { isMovingModelAlias } from "../../server/model-resolution";
-
 export function ModelAliasWarnings({
   models,
   values,
@@ -8,18 +7,20 @@ export function ModelAliasWarnings({
   models: readonly ModelInfo[];
   values: readonly string[];
 }) {
-  return values.map((id) => {
-    const model = models.find((model) => model.id === id);
-    return model?.canonicalSlug && isMovingModelAlias(model) ? (
-      <p
-        className="hint model-alias-warning"
-        role="status"
-        data-model-alias-warning={id}
-        key={id}
-      >
-        <span aria-hidden="true">⚠️</span>{" "}
-        {`The model alias ${id} is a reference to ${model.canonicalSlug}, which is not an established model snapshot. In the future, the alias may move its target without the ability to refer to the old snapshot`}
-      </p>
-    ) : null;
-  });
+  return (
+    <>
+      {models
+        .filter(
+          (m) =>
+            values.includes(m.id) && isMovingModelAlias(m) && m.canonicalSlug,
+        )
+        .map((m) => (
+          <p key={m.id} data-model-alias-warning={m.id}>
+            ⚠️ The model alias {m.id} is a reference to {m.canonicalSlug}, which
+            is not an established model snapshot. In the future, the alias may
+            move its target without the ability to refer to the old snapshot
+          </p>
+        ))}
+    </>
+  );
 }

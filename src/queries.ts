@@ -1,70 +1,17 @@
-import { useEffect } from "react";
-import { compareGridVersions } from "../shared/grid-version";
-import type { inferenceCapacity } from "../server/inference-policy";
-import { useOpenRouterKey } from "./openrouter-key";
-import { QueryClient, useQuery } from "@tanstack/react-query";
-import type { GridSummary, GridInput } from "../server/domain";
-import { api, type ViewGrid, type SessionInfo } from "./api";
-function newestGrid(previous: unknown, incoming: unknown) {
-  const old = previous as ViewGrid | undefined,
-    next = incoming as ViewGrid;
-  return old && compareGridVersions(old.version, next.version) > 0 ? old : next;
-}
-export const queryClient = new QueryClient();
-queryClient.setQueryDefaults(["grid"], { structuralSharing: newestGrid });
-export function useGrids() {
-  return useQuery({
-    queryKey: ["grids"],
-    queryFn: () => api<GridSummary[]>("/grids"),
-  });
-}
-export function useSession() {
-  return useQuery({
-    queryKey: ["session"],
-    queryFn: () => api<SessionInfo>("/session"),
-  });
-}
-export function useConnection() {
-  const key = useOpenRouterKey();
-  const session = useSession();
-  return {
-    ...session,
-    data:
-      session.data || key
-        ? { connected: !!key || session.data?.connected === true }
-        : undefined,
-    isPending: session.isPending && !key,
-    isError: session.isError && !key,
-  };
-}
+import { QueryClient } from "@tanstack/react-query";
+import { compareGridVersions, type GridVersion } from "../shared/grid-version";
 
-export function usePublicGrids() {
-  return useQuery({
-    queryKey: ["public-grids"],
-    queryFn: () => api<GridSummary[]>("/grids/public"),
-  });
-}
-
-export function useInferenceCapacity(
-  enabled: boolean,
-  format: GridInput["format"],
-) {
-  const key = useOpenRouterKey();
-  const query = useQuery({
-    queryKey: ["inference-capacity", format],
-    queryFn: () =>
-      api<Awaited<ReturnType<typeof inferenceCapacity>>>(
-        `/inference-capacity?format=${format}`,
-        "GET",
-        undefined,
-        key,
-      ),
-    enabled,
-    retry: false,
-    staleTime: 30000,
-  });
-  useEffect(() => {
-    if (enabled) void query.refetch();
-  }, [key, enabled, query.refetch]);
-  return query;
-}
+export const queryClient = new QueryClient({
+  defaultOptions: { queries: { retry: false, staleTime: 15000 } },
+});
+queryClient.setQueryDefaults(["grid"], {
+  structuralSharing: (previous, next) => {
+    const a = previous as { version?: GridVersion } | undefined;
+    const b = next as { version?: GridVersion } | undefined;
+    return a?.version &&
+      b?.version &&
+      compareGridVersions(a.version, b.version) > 0
+      ? previous
+      : next;
+  },
+});

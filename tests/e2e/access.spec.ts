@@ -218,7 +218,7 @@ test("navigation returns to a saved grid after creation", async ({
   await page.reload();
   await page
     .getByRole("link", {
-      name: "Draw $ROW wearing a $COLUMN",
+      name: "Draw (cat) wearing a (hat)",
     })
     .click();
   await expect(page).toHaveURL(gridURL);

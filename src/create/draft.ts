@@ -1,123 +1,91 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import type { GridInput } from "../../server/domain";
-import type { ReferenceImage } from "../../server/image-settings";
-export type Draft = {
-  formatSelected: boolean;
-  input: GridInput;
+import { storage } from "../api";
+
+export type Draft = Omit<GridInput, "format"> & {
+  format?: GridInput["format"];
   sourceGridId?: string;
-  reuseArtifacts?: boolean;
+  reuseArtifacts: boolean;
+  budgetText?: string;
 };
-const storageKey = "slopgrid-draft";
-const submissionKey = "slopgrid-creation";
-export function creationSubmission(body: Record<string, unknown>) {
-  // Automatic capacity can change between retries; the submitted request cannot.
-  const { parallelWorkers: _workers, ...intent } = body;
-  const fingerprint = JSON.stringify(intent);
-  const previous = JSON.parse(sessionStorage.getItem(submissionKey) ?? "null");
-  if (previous?.fingerprint === fingerprint)
-    return previous.body as Record<string, unknown>;
-  const request = { ...body, creationRequestId: crypto.randomUUID() };
-  sessionStorage.setItem(
-    submissionKey,
-    JSON.stringify({ fingerprint, body: request }),
-  );
-  return request;
+export const draftKey = "slopgrid-draft";
+export function saveDraft(draft: Draft) {
+  try {
+    sessionStorage.setItem(draftKey, JSON.stringify({ input: draft }));
+  } catch {}
 }
-const initial: Draft = {
-  formatSelected: false,
-  input: {
-    format: "svg",
+export function emptyDraft(format?: GridInput["format"]): Draft {
+  return {
+    format,
     prompt: "",
-    rows: { kind: "model", values: [] },
-    columns: { kind: "effort", values: ["default"] },
+    rows:
+      format === "markdown"
+        ? { kind: "effort", values: ["default"] }
+        : { kind: "model", values: [] },
+    columns:
+      format === "image"
+        ? { kind: "quality", values: ["auto"] }
+        : format === "markdown"
+          ? { kind: "model", values: [] }
+          : { kind: "effort", values: ["default"] },
     model: "",
     effort: "default",
     budgetUsd: 3,
-  },
-};
-function readDraft(): Draft {
-  try {
-    return JSON.parse(sessionStorage.getItem(storageKey) ?? "null") ?? initial;
-  } catch {
-    return initial;
-  }
+    reuseArtifacts: true,
+  };
 }
-export function saveDraft(draft: Draft) {
-  sessionStorage.setItem(storageKey, JSON.stringify(draft));
+export function useDraft() {
+  const [draft, setDraft] = useState(() => {
+    try {
+      return (
+        (JSON.parse(sessionStorage.getItem(draftKey) ?? "null")
+          ?.input as Draft) ?? emptyDraft()
+      );
+    } catch {
+      return emptyDraft();
+    }
+  });
+  const update = (next: Draft) => {
+    saveDraft(next);
+    setDraft(next);
+  };
+  return [draft, update] as const;
 }
-export function clearDraft() {
-  sessionStorage.removeItem(storageKey);
-  sessionStorage.removeItem(submissionKey);
-}
-export function useCreateDraft() {
-  const [draft, setDraft] = useState(readDraft);
-  useEffect(() => {
-    saveDraft(draft);
-  }, [draft]);
-  function update(
-    change: Partial<GridInput> | ((input: GridInput) => Partial<GridInput>),
-  ) {
-    setDraft((d) => {
-      const partial = typeof change === "function" ? change(d.input) : change;
-      return {
-        ...d,
-        input: {
-          ...d.input,
-          ...partial,
-          referenceGroups: partial.referenceGroups
-            ? { ...d.input.referenceGroups, ...partial.referenceGroups }
-            : d.input.referenceGroups,
-        },
-      };
-    });
-  }
-  function selectFormat(format: GridInput["format"]) {
-    setDraft((d) => ({
-      ...d,
-      formatSelected: true,
-      input: {
-        ...d.input,
-        format,
-        imageSettings: undefined,
-        inputReferences: undefined,
-        model: "",
-        effort: "default",
-        rows:
-          format === "markdown"
-            ? { kind: "effort", values: ["default"] }
-            : { kind: "model", values: [] },
-        columns:
-          format === "image"
-            ? { kind: "quality", values: ["auto"] }
-            : format === "markdown"
-              ? { kind: "model", values: [] }
-              : { kind: "effort", values: ["default"] },
+export function changeAxis(
+  draft: Draft,
+  side: "rows" | "columns",
+  kind: GridInput["rows"]["kind"],
+): Draft {
+  const other = side === "rows" ? "columns" : "rows";
+  let next = { ...draft, [side]: { kind, values: [] as string[] } };
+  if (kind in (draft.imageSettings ?? {}))
+    next[side].values = [
+      draft.imageSettings![kind as keyof typeof draft.imageSettings]!,
+    ];
+  const settings = { ...draft.imageSettings };
+  delete settings[kind as keyof typeof settings];
+  delete settings[draft[side].kind as keyof typeof settings];
+  next.imageSettings = settings;
+  if (kind === "input_references" && draft.inputReferences?.length) {
+    next = {
+      ...next,
+      inputReferences: [],
+      referenceGroups: {
+        ...draft.referenceGroups,
+        "Group 1": draft.inputReferences,
       },
-    }));
+    };
+    next[side].values = ["Group 1"];
   }
-  function replaceReference(localId: string, image: ReferenceImage) {
-    setDraft((d) => ({
-      ...d,
-      input: {
-        ...d.input,
-        inputReferences: d.input.inputReferences?.map((candidate) =>
-          candidate.id === localId ? image : candidate,
-        ),
-        referenceGroups: Object.fromEntries(
-          Object.entries(d.input.referenceGroups ?? {}).map(
-            ([name, images]) => [
-              name,
-              images.map((candidate) =>
-                candidate.id === localId ? image : candidate,
-              ),
-            ],
-          ),
-        ),
-      },
-    }));
-  }
-  function setReuseArtifacts(reuseArtifacts: boolean) {
-    setDraft((d) => ({ ...d, reuseArtifacts }));
-  }
-  return { draft, update, selectFormat, replaceReference, setReuseArtifacts };
+  return next;
+}
+export function swapAxes(draft: Draft): Draft {
+  return {
+    ...draft,
+    rows: draft.columns,
+    columns: draft.rows,
+    prompt: draft.prompt.replace(/\$ROW|\$COLUMN/g, (token) =>
+      token === "$ROW" ? "$COLUMN" : "$ROW",
+    ),
+  };
 }

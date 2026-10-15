@@ -1,103 +1,63 @@
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useState,
-  useRef,
-  type ReactNode,
-} from "react";
-import { flushSync } from "react-dom";
+import { useSyncExternalStore } from "react";
+import { Sun, Moon } from "lucide-react";
+import { IconButton } from "./components/ui";
 
-type ResolvedTheme = "light" | "dark";
-type Theme = "system" | ResolvedTheme;
-function preference(value: string | null): Theme {
-  return value === "light" || value === "dark" ? value : "system";
-}
-function savedTheme(): Theme {
+type Theme = "system" | "light" | "dark";
+const media = matchMedia("(prefers-color-scheme: dark)");
+function preference(): Theme {
   try {
-    return preference(localStorage.getItem("slopgrid-theme"));
+    return (localStorage.getItem("slopgrid-theme") as Theme) || "system";
   } catch {
     return "system";
   }
 }
-const ThemeContext = createContext<{
-  theme: Theme;
-  resolvedTheme: ResolvedTheme;
-  setTheme: (theme: Theme) => void;
-}>({
-  theme: "system",
-  resolvedTheme: "light",
-  setTheme: () => {},
-});
-export function ThemeProvider({ children }: { children: ReactNode }) {
-  const transition = useRef<ViewTransition | null>(null);
-  const [theme, setTheme] = useState(savedTheme);
-  const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() =>
-    document.documentElement.dataset.theme === "dark" ? "dark" : "light",
-  );
-  useEffect(() => {
-    const system = matchMedia("(prefers-color-scheme: dark)");
-    const apply = () => {
-      const resolved =
-        theme === "system" ? (system.matches ? "dark" : "light") : theme;
-      document.documentElement.dataset.theme = resolved;
-      setResolvedTheme(resolved);
-      const background = getComputedStyle(document.documentElement)
-        .getPropertyValue("--background")
-        .trim();
-      document
-        .querySelector('meta[name="theme-color"]')
-        ?.setAttribute("content", background);
-    };
-    apply();
-    system.addEventListener("change", apply);
-    return () => system.removeEventListener("change", apply);
-  }, [theme]);
-  useEffect(() => {
-    const sync = (event: StorageEvent) => {
-      if (event.key === "slopgrid-theme" || event.key === null)
-        setTheme(preference(event.newValue));
-    };
-    window.addEventListener("storage", sync);
-    return () => window.removeEventListener("storage", sync);
-  }, []);
-  function chooseTheme(next: Theme) {
-    const resolved =
-      next === "system"
-        ? matchMedia("(prefers-color-scheme: dark)").matches
-          ? "dark"
-          : "light"
-        : next;
-    transition.current?.skipTransition();
-    if (document.startViewTransition && resolved !== resolvedTheme) {
-      document.documentElement.dataset.themeTransition = "polygon";
-      const active = document.startViewTransition(() => {
-        flushSync(() => setTheme(next));
-      });
-      transition.current = active;
-      const cleanup = () => {
-        if (transition.current !== active) return;
-        transition.current = null;
-        delete document.documentElement.dataset.themeTransition;
-      };
-      void active.ready.catch(() => {});
-      void active.finished.then(cleanup, cleanup);
-    } else {
-      setTheme(next);
-    }
-    try {
-      if (next === "system") localStorage.removeItem("slopgrid-theme");
-      else localStorage.setItem("slopgrid-theme", next);
-    } catch {}
+function apply(value: Theme) {
+  document.documentElement.dataset.theme =
+    value === "system" ? (media.matches ? "dark" : "light") : value;
+}
+media.addEventListener("change", () => {
+  if (preference() === "system") {
+    apply("system");
+    window.dispatchEvent(new Event("theme"));
   }
-  return (
-    <ThemeContext.Provider
-      value={{ theme, resolvedTheme, setTheme: chooseTheme }}
-    >
-      {children}
-    </ThemeContext.Provider>
-  );
+});
+window.addEventListener("storage", (event) => {
+  if (event.key === "slopgrid-theme" || event.key === null) {
+    apply(preference());
+    window.dispatchEvent(new Event("theme"));
+  }
+});
+export function setTheme(value: Theme) {
+  try {
+    localStorage.setItem("slopgrid-theme", value);
+  } catch {}
+  const change = () => {
+    apply(value);
+    window.dispatchEvent(new Event("theme"));
+  };
+  if (document.startViewTransition) document.startViewTransition(change);
+  else change();
 }
 export function useTheme() {
-  return useContext(ThemeContext);
+  return useSyncExternalStore((callback) => {
+    window.addEventListener("theme", callback);
+    return () => window.removeEventListener("theme", callback);
+  }, preference);
+}
+export function ThemeToggle() {
+  const dark = useSyncExternalStore(
+    (callback) => {
+      window.addEventListener("theme", callback);
+      return () => window.removeEventListener("theme", callback);
+    },
+    () => document.documentElement.dataset.theme === "dark",
+  );
+  return (
+    <IconButton
+      label={`Switch to ${dark ? "light" : "dark"} theme`}
+      onClick={() => setTheme(dark ? "light" : "dark")}
+    >
+      {dark ? <Sun /> : <Moon />}
+    </IconButton>
+  );
 }
