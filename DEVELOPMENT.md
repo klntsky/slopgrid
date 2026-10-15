@@ -274,6 +274,11 @@ When replacing bundled fonts or icons, retain their distribution notices and ver
 
 ## Publishing validation
 
+Paused-publication coverage checks mixed completed, failed, and pending cells,
+unchanged private state, public error presentation, visibility promotion,
+reloads, and rejection of generation after publication. Running cells continue
+to block publication.
+
 Grid pagination tests cover filtering before counting, stable ordering across equal timestamps, page boundaries, invalid and out-of-range requests, and anonymous versus account ownership. Browser coverage checks independent owned and public pages, reload and history restoration, final-page controls, and omission of pagination for a single page.
 
 Grid bootstrap tests verify three embedded pages per list on home and creation, URL-selected and final-page windows, session isolation, script escaping, and CSP authorization. Browser tests block requests for embedded pages while checking initial rendering, cached navigation, and the advancing two-page prefetch window. Creation coverage checks direct loads and Edit navigation, then returns home and pages through the cached results. List-failure tests enter home through client navigation to exercise the API without an HTML bootstrap.

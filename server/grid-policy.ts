@@ -22,9 +22,11 @@ export function publicationError(
       return "Published grid visibility cannot be changed.";
   } else if (
     grid.cells.some(
-      (cell) => cell.status !== "complete" && cell.status !== "error",
+      (cell) =>
+        cell.status === "running" ||
+        (cell.status === "pending" && grid.status !== "paused"),
     )
   ) {
-    return "Wait for every cell to finish before publishing.";
+    return "Pause or finish generation before publishing.";
   }
 }

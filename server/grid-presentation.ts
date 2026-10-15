@@ -1,4 +1,4 @@
-import { ownsGrid } from "./grid-policy.js";
+import { ownsGrid, publicationError } from "./grid-policy.js";
 import type { Grid, Identity } from "./domain.js";
 import type { Store, Session } from "./store.js";
 import type { GenerationSnapshot } from "./generation-api.js";
@@ -27,6 +27,7 @@ export function createGridPresenter(store: Store, origin: URL) {
       ...grid,
       author: gridAuthor(g, store),
       canEdit,
+      canPublish: canEdit && !publicationError(g, "public"),
       spentUsd: canEdit ? spentUsd : undefined,
       cells: g.cells.map((c) => ({
         id: c.id,
@@ -38,6 +39,12 @@ export function createGridPresenter(store: Store, origin: URL) {
         status: c.status,
         error: c.error,
         errorCode: c.errorCode,
+        ...(g.published &&
+          c.status === "pending" && {
+            status: "error" as const,
+            error: "Not generated",
+            errorCode: undefined,
+          }),
         retrying: c.retrying,
         mediaType: c.mediaType,
         usage: c.usage,

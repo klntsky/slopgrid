@@ -187,3 +187,81 @@ test("publishing is permanent, link grids are unlisted, and public summaries omi
     reopened.db.close();
   }
 });
+
+test("publishing a paused grid exposes unfinished cells as Not generated and locks generation", async (t) => {
+  const { origin, store, database, secret } = await appFixture(t);
+  const owner = "b".repeat(48);
+  store.saveSession({ id: owner, created: Date.now() });
+  const input: Grid["input"] = {
+    format: "markdown",
+    prompt: "Draw $ROW",
+    rows: { kind: "variable", values: ["cat", "dog", "owl"] },
+    columns: { kind: "effort", values: ["none"] },
+    model: "fixture/text",
+    effort: "none",
+    budgetUsd: 5,
+  };
+  const grid: Grid = {
+    id: "paused-publication",
+    owner,
+    input,
+    status: "paused",
+    interruption: "manual",
+    published: false,
+    visibility: "private",
+    createdAt: new Date().toISOString(),
+    cells: expandGrid(input).map((cell, index) => ({
+      ...cell,
+      id: `paused-cell-${index}`,
+      status: index === 0 ? "complete" : index === 1 ? "error" : "pending",
+      ...(index === 1 ? { error: "Provider failure", errorCode: 500 } : {}),
+      ...(index === 2 ? { error: "Insufficient credits", errorCode: 402 } : {}),
+    })),
+  };
+  store.insert(grid);
+  const publish = (visibility: string) =>
+    fetch(`${origin}/api/grids/${grid.id}/publish`, {
+      method: "POST",
+      headers: {
+        origin,
+        cookie: `slopgrid=${owner}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ visibility }),
+    });
+  assert.equal((await publish("private")).status, 200);
+  assert.deepEqual(store.get(grid.id)!.cells, grid.cells);
+  for (const visibility of ["unlisted", "public"]) {
+    const response = await publish(visibility);
+    assert.equal(response.status, 200);
+    const view = await response.json();
+    assert.deepEqual(
+      view.cells.map((cell: { status: string }) => cell.status),
+      ["complete", "error", "error"],
+    );
+    assert.equal(view.cells[1].error, "Provider failure");
+    assert.equal(view.cells[1].errorCode, 500);
+    assert.equal(view.cells[2].error, "Not generated");
+    assert.equal(view.cells[2].errorCode, undefined);
+  }
+  const publicView = await (
+    await fetch(`${origin}/api/grids/${grid.id}`)
+  ).json();
+  assert.equal(publicView.cells[2].error, "Not generated");
+  assert.equal(
+    (
+      await fetch(`${origin}/api/grids/${grid.id}/retry`, {
+        method: "POST",
+        headers: { origin, cookie: `slopgrid=${owner}` },
+      })
+    ).status,
+    409,
+  );
+  const reopened = new Store(database, secret);
+  try {
+    assert.equal(reopened.get(grid.id)!.published, true);
+    assert.equal(reopened.get(grid.id)!.visibility, "public");
+  } finally {
+    reopened.db.close();
+  }
+});

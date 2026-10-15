@@ -1,6 +1,51 @@
 import { test, expect } from "./fixtures";
 import { create, expectProgress, finishPublishing } from "./helpers";
 
+test("publishing a paused grid labels unfinished outputs Not generated across reloads", async ({
+  page,
+  request,
+}) => {
+  await request.post("/fixture/reset", { data: { holdGenerations: true } });
+  await create(page, "Image", "cat\ndog\nowl", "hat");
+  await expect
+    .poll(
+      async () =>
+        (await (await request.get("/fixture/workers")).json()).held.length,
+    )
+    .toBe(2);
+  await request.post("/fixture/release", {
+    data: { prompt: "Draw cat wearing a hat" },
+  });
+  await expectProgress(page, 1, 3);
+  await page
+    .getByRole("button", { name: "Pause generation", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Resume generation", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "PUBLISH", exact: true }),
+  ).toBeEnabled();
+  await page.getByRole("button", { name: "PUBLISH", exact: true }).click();
+  await finishPublishing(page);
+  await expect(page.getByText("Not generated", { exact: true })).toHaveCount(2);
+  await expectProgress(page, 3, 3);
+  await page.reload();
+  await expect(page.getByText("Not generated", { exact: true })).toHaveCount(2);
+  await expect(
+    page.getByRole("button", { name: "Resume generation", exact: true }),
+  ).toHaveCount(0);
+  const publicGrid = await request.get(
+    new URL(page.url()).pathname.replace("/grid/", "/api/grids/"),
+  );
+  expect(publicGrid.status()).toBe(200);
+  expect(
+    (await publicGrid.json()).cells.map(
+      (cell: { status: string }) => cell.status,
+    ),
+  ).toEqual(["complete", "error", "error"]);
+});
+
 test("billing can be dismissed and retried repeatedly without regenerating completed cells; publishing survives reload", async ({
   page,
   request,

@@ -166,7 +166,7 @@ export class Store {
       .run(JSON.stringify(title || null), id);
   }
   publish(id: string, visibility: Grid["visibility"], author: Grid["author"]) {
-    // Serialize the terminal-state check with engine writes and retry admission.
+    // Serialize publication eligibility with engine writes and retry admission.
     return this.db
       .transaction(() => {
         const grid = this.get(id)!;

@@ -152,6 +152,12 @@ only listed grids, while unlisted grids remain readable by link. Mutations
 require ownership. Output routes check access before reading files or download
 metadata; public outputs can be served without a session.
 
+The publication policy allows terminal cells and paused pending cells. Grid
+responses expose that policy as `canPublish` for the interface, and publication
+serializes with retry admission. Published pending cells retain their stored generation
+state and are presented as errors with "Not generated" and no error code, so
+settling canceled calls cannot restore a resumable public cell.
+
 Live generated HTML runs on isolated per-cell hosts. Host dispatch happens
 before application middleware, so those hosts cannot
 reach application routes. Only validated bundle or preview paths are served.

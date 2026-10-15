@@ -29,13 +29,7 @@ export function PublishGrid({
   return (
     <>
       <button
-        disabled={
-          disabled ||
-          publish.isPending ||
-          grid.cells.some(
-            (cell) => cell.status !== "complete" && cell.status !== "error",
-          )
-        }
+        disabled={disabled || publish.isPending || !grid.canPublish}
         className="secondary inference-toggle"
         onClick={() => {
           publish.reset();
