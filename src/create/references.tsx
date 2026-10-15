@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Pencil, Paperclip } from "lucide-react";
+import { Pencil, Paperclip, X } from "lucide-react";
 import type { ReferenceImage } from "../../server/image-settings";
 import type { Draft } from "./draft";
 import { ErrorMessage } from "../components/ui";
@@ -55,8 +55,22 @@ export function References({
 }) {
   const [error, setError] = useState<unknown>();
   return (
-    <div>
-      <label>
+    <div className="reference-group">
+      {!group && <label>Input references</label>}
+      <div className="reference-images">
+      {values.map((image, i) => (
+        <div className="reference-image" key={`${image.id}-${i}`}>
+          <ReferenceThumbnail image={image} />
+          <span>{image.name}</span>
+          <button type="button"
+            aria-label={`Remove ${image.name}${group ? ` from ${group}` : ""}`}
+            onClick={() => onChange(values.filter((_, j) => j !== i))}>
+            <X />
+          </button>
+        </div>
+      ))}
+      </div>
+      <label className="button secondary reference-upload">
         <Paperclip /> Add images
         <input
           aria-label={label}
@@ -77,18 +91,6 @@ export function References({
           }}
         />
       </label>
-      {values.map((image, i) => (
-        <span key={`${image.id}-${i}`}>
-          <ReferenceThumbnail image={image} />
-          <button
-            type="button"
-            aria-label={`Remove ${image.name}${group ? ` from ${group}` : ""}`}
-            onClick={() => onChange(values.filter((_, j) => j !== i))}
-          >
-            Remove
-          </button>
-        </span>
-      ))}
       <ErrorMessage error={error} />
     </div>
   );
