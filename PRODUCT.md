@@ -184,6 +184,7 @@ Status: high level product goal that is not a requirement (not achieved yet).
 3. Download filenames follow `<prompt>.slopgrid.com.<grid-id>.<row_parameter>.<column_parameter>.<extension>`. Normalize filename components, replacing spaces and characters unsuitable for filenames with underscores. The domain in this pattern is product-facing filename text.
 4. Store generated SVG and Markdown source verbatim, preserving whitespace and code fences.
 5. Preserve generated output independently of metadata edits and publication, without an application output-byte limit.
+   Show Expand and view controls when a cell has output or thinking content to inspect, is generating, or is already expanded. Omit them from empty queued, paused, and failed cells. Keep output links, copying, and downloading conditional on available output.
 6. Store provider finish reasons without displaying them in the interface. Treat an unsuccessful completion reason as a generation failure rather than silently accepting incomplete output. When reported thinking tokens exhaust the requested output-token limit without producing output, show "The model spent all of its <limit> output token limit on thinking without producing output - this is a common failure mode of some models indicating that the thinking level is too high for the task", substituting the actual limit (for example, 234K). Preserve its thinking trace and charges.
 
 ### 5.2. Markdown

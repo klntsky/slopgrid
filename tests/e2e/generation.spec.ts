@@ -136,6 +136,9 @@ test("Pause aborts active inference and releases slots; Resume preserves complet
     const calls = async (): Promise<string[]> =>
       (await request.get("/fixture/calls")).json();
     await expect.poll(async () => (await calls()).length).toBe(2);
+    await expect(
+      page.getByRole("button", { name: "Expand Image", exact: true }),
+    ).toHaveCount(2);
     await request.post("/fixture/release", {
       data: { prompt: (await calls()).find((p) => p.includes("cat")) },
     });
@@ -163,6 +166,9 @@ test("Pause aborts active inference and releases slots; Resume preserves complet
       .toBe(2);
     const snapshot = await (await page.request.get(`/api/grids/${id}`)).json();
     expect(snapshot.interruption).toBe("manual");
+    await expect(
+      page.getByRole("button", { name: "Expand Image", exact: true }),
+    ).toHaveCount(1);
     await expect(
       page.locator(".cell-footer").getByText("Paused", { exact: true }),
     ).toHaveCount(2);

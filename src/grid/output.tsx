@@ -161,6 +161,13 @@ export function OutputCell({
       !cell.outputURL &&
       !cell.previewURL);
   const name = showThinking ? "thinking" : formatNames[format];
+  const expandable =
+    expanded ||
+    cell.status === "complete" ||
+    cell.status === "running" ||
+    !!thinking ||
+    !!text ||
+    !!cell.previewURL;
   function collapse() {
     setExpanded(false);
     requestAnimationFrame(() => expandButton.current?.focus());
@@ -200,34 +207,36 @@ export function OutputCell({
       aria-label={expanded ? `Expanded output: ${cell.prompt}` : undefined}
       className={`cell${expanded ? ` cell-expanded expanded-${showThinking ? "thinking" : format}` : ""}`}
     >
-      <div className="cell-toolbar">
-        {thinking && (
-          <IconButton
-            label={showThinking ? "Show output" : "Show thinking"}
-            onClick={() => setView(showThinking ? "output" : "thinking")}
-          >
-            {showThinking ? <Palette /> : <Brain />}
-          </IconButton>
-        )}
-        {format === "markdown" && !showThinking && (
-          <IconButton
-            label={raw ? "View Markdown" : "View raw"}
-            onClick={() => setRaw(!raw)}
-          >
-            {raw ? <FileText /> : <Code />}
-          </IconButton>
-        )}
-        <Hint text={`${expanded ? "Collapse" : "Expand"} ${name}`}>
-          <button
-            className="icon-button"
-            ref={expandButton}
-            aria-label={`${expanded ? "Collapse" : "Expand"} ${name}`}
-            onClick={() => (expanded ? collapse() : setExpanded(true))}
-          >
-            {expanded ? <Minimize /> : <Maximize />}
-          </button>
-        </Hint>
-      </div>
+      {expandable && (
+        <div className="cell-toolbar">
+          {thinking && (
+            <IconButton
+              label={showThinking ? "Show output" : "Show thinking"}
+              onClick={() => setView(showThinking ? "output" : "thinking")}
+            >
+              {showThinking ? <Palette /> : <Brain />}
+            </IconButton>
+          )}
+          {format === "markdown" && !showThinking && (
+            <IconButton
+              label={raw ? "View Markdown" : "View raw"}
+              onClick={() => setRaw(!raw)}
+            >
+              {raw ? <FileText /> : <Code />}
+            </IconButton>
+          )}
+          <Hint text={`${expanded ? "Collapse" : "Expand"} ${name}`}>
+            <button
+              className="icon-button"
+              ref={expandButton}
+              aria-label={`${expanded ? "Collapse" : "Expand"} ${name}`}
+              onClick={() => (expanded ? collapse() : setExpanded(true))}
+            >
+              {expanded ? <Minimize /> : <Maximize />}
+            </button>
+          </Hint>
+        </div>
+      )}
       <div className="cell-content">
         {thinking && (
           <div className="output-layer" hidden={!showThinking}>
