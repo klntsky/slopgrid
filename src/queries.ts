@@ -1,17 +1,10 @@
 import { useEffect } from "react";
-import { compareGridVersions } from "../shared/grid-version";
 import type { inferenceCapacity } from "../server/inference-policy";
 import { useOpenRouterKey } from "./openrouter-key";
-import { QueryClient, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import type { GridSummary, GridInput } from "../server/domain";
-import { api, type ViewGrid, type SessionInfo } from "./api";
-function newestGrid(previous: unknown, incoming: unknown) {
-  const old = previous as ViewGrid | undefined,
-    next = incoming as ViewGrid;
-  return old && compareGridVersions(old.version, next.version) > 0 ? old : next;
-}
-export const queryClient = new QueryClient();
-queryClient.setQueryDefaults(["grid"], { structuralSharing: newestGrid });
+import { api, type SessionInfo } from "./api";
+export { queryClient } from "./query-client";
 export function useGrids() {
   return useQuery({
     queryKey: ["grids"],

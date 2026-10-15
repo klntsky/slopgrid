@@ -175,6 +175,11 @@ parent and grants no additional access.
 
 ## Code ownership
 
+The browser query client owns grid snapshot ordering for HTTP reads, command
+responses, and live events. Its grid cache rule compares engine epochs and
+sequences before accepting replacements; individual update paths write through
+that cache without maintaining separate ordering state.
+
 - `server/app.ts` composes web dependencies and middleware; `server/routes/`
   contains browser-facing routes. `server/generation-api.ts` and
   `server/generation-client.ts` define the private process contract.
