@@ -38,7 +38,8 @@ const contentText = (content: string | { type: string; text?: string }[]) =>
     ? content
     : content.map((p) => p.text ?? "").join("");
 const upstream = express();
-upstream.use(express.json());
+// Reference images reach the provider as base64 in the JSON request.
+upstream.use(express.json({ limit: "64mb" }));
 upstream.get("/auth", (req, res) => {
   const code = randomBytes(12).toString("hex");
   codes.set(code, String(req.query.code_challenge));

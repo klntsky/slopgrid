@@ -282,6 +282,9 @@ Reference loader tests use real files to verify byte/hash consistency, ordered d
 Reference-upload recovery coverage fails a later upload after an earlier file
 succeeds, reloads the draft, and verifies that retry does not upload the earlier
 file again.
+Large-reference coverage reloads a supported image larger than the usual
+sessionStorage quota, follows provider authorization, and verifies the exact
+image bytes received by the controlled provider.
 
 Reuse scenarios use typed grid snapshots and captured requests, consume new upstream calls sequentially, and name parameter cases with assertions on the effective request. Monetary assertions compare expected dollar amounts with a small floating-point tolerance rather than encoding binary rounding artifacts. The readiness regression starts real inference processes with invalid and valid configuration to check useful startup errors and an immediately usable API.
 

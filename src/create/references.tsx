@@ -1,84 +1,46 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Pencil, Paperclip } from "lucide-react";
 import type { ReferenceImage } from "../../server/image-settings";
 import type { Draft } from "./draft";
 import { ErrorMessage } from "../components/ui";
-type LocalReference = ReferenceImage & { data?: string };
+import {
+  type LocalReference,
+  readReferenceFile,
+  saveReferenceFile,
+} from "./reference-files";
 
-function readFile(file: File): Promise<LocalReference> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(reader.error);
-    reader.onload = () =>
-      resolve({
-        id: `local-${crypto.randomUUID()}`,
-        name: file.name,
-        data: String(reader.result),
+function ReferenceThumbnail({ image }: { image: LocalReference }) {
+  const [source, setSource] = useState<string>();
+  const [error, setError] = useState<unknown>();
+  useEffect(() => {
+    if (!image.id.startsWith("local-")) return;
+    let cancelled = false,
+      url: string | undefined;
+    readReferenceFile(image)
+      .then((file) => {
+        if (!cancelled) setSource((url = URL.createObjectURL(file)));
+      })
+      .catch((error) => {
+        if (!cancelled) setError(error);
       });
-    reader.readAsDataURL(file);
-  });
-}
-export function replaceReference(
-  draft: Draft,
-  id: string,
-  saved: ReferenceImage,
-): Draft {
-  const replace = (images: ReferenceImage[] = []) =>
-    images.map((image) => (image.id === id ? saved : image));
-  return {
-    ...draft,
-    inputReferences: replace(draft.inputReferences),
-    referenceGroups: Object.fromEntries(
-      Object.entries(draft.referenceGroups ?? {}).map(([name, images]) => [
-        name,
-        replace(images),
-      ]),
-    ),
-  };
-}
-export async function uploadReferences(
-  draft: Draft,
-  onUploaded: (id: string, image: ReferenceImage) => void,
-): Promise<Draft> {
-  const uploaded = new Map<string, ReferenceImage>();
-  async function upload(images: LocalReference[] = []) {
-    const result: ReferenceImage[] = [];
-    for (const image of images) {
-      if (!image.data) {
-        result.push(image);
-        continue;
-      }
-      if (!uploaded.has(image.id)) {
-        const [header, encoded] = image.data.split(",");
-        const blob = new Blob(
-          [Uint8Array.from(atob(encoded), (c) => c.charCodeAt(0))],
-          { type: header.slice(5).split(";")[0] },
-        );
-        const response = await fetch(
-          `/api/references?name=${encodeURIComponent(image.name)}`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/octet-stream" },
-            body: blob,
-          },
-        );
-        const data = await response.json();
-        if (!response.ok) throw new Error(`Could not upload ${image.name}.`);
-        uploaded.set(image.id, data);
-        onUploaded(image.id, data);
-      }
-      result.push(uploaded.get(image.id)!);
-    }
-    return result;
-  }
-  const groups: Record<string, ReferenceImage[]> = {};
-  for (const [name, images] of Object.entries(draft.referenceGroups ?? {}))
-    groups[name] = await upload(images);
-  return {
-    ...draft,
-    referenceGroups: groups,
-    inputReferences: await upload(draft.inputReferences),
-  };
+    return () => {
+      cancelled = true;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [image.id, image.data]);
+  return (
+    <>
+      <img
+        width="50"
+        height="50"
+        src={
+          image.id.startsWith("local-") ? source : `/api/references/${image.id}`
+        }
+        alt={image.name}
+      />
+      <ErrorMessage error={error} />
+    </>
+  );
 }
 export function References({
   label,
@@ -107,7 +69,7 @@ export function References({
             try {
               onChange([
                 ...values,
-                ...(await Promise.all(files.map(readFile))),
+                ...(await Promise.all(files.map(saveReferenceFile))),
               ]);
             } catch (e) {
               setError(e);
@@ -117,12 +79,7 @@ export function References({
       </label>
       {values.map((image, i) => (
         <span key={`${image.id}-${i}`}>
-          <img
-            width="50"
-            height="50"
-            src={image.data ?? `/api/references/${image.id}`}
-            alt={image.name}
-          />
+          <ReferenceThumbnail image={image} />
           <button
             type="button"
             aria-label={`Remove ${image.name}${group ? ` from ${group}` : ""}`}

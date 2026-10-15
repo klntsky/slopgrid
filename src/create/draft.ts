@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { GridInput } from "../../server/domain";
 import { storage } from "../api";
+import { referenceFiles, removeReferenceFile } from "./reference-files";
 
 export type Draft = Omit<GridInput, "format"> & {
   format?: GridInput["format"];
@@ -54,6 +55,10 @@ export function useDraft() {
   const update = (next: Draft) => {
     saveDraft(next);
     setDraft(next);
+    const retained = new Set(referenceFiles(next).map((image) => image.id));
+    for (const image of referenceFiles(draft))
+      if (image.id.startsWith("local-") && !retained.has(image.id))
+        void removeReferenceFile(image.id).catch(() => {});
   };
   return [draft, update] as const;
 }

@@ -22,7 +22,8 @@ import {
 } from "./draft";
 import { ModelSelector, catalog, modelName } from "./models";
 import { AxisEditor, Compatibility, kindNames } from "./parameters";
-import { References, uploadReferences, replaceReference } from "./references";
+import { References } from "./references";
+import { uploadReferences, replaceReference } from "./reference-files";
 import { CommonSize } from "./size";
 import { FormatIcon } from "../components/format-icon";
 

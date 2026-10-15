@@ -45,10 +45,12 @@ they do not own provider execution or persist generation results.
 
 - Creation drafts belong to the browser tab. Axis changes and swaps are pure
   record transformations, while parameter controls share model selection,
-  custom-size editing, and reference collections. References remain in the
-  draft until submission uploads them. Each successful upload replaces its local
+  custom-size editing, and reference collections. IndexedDB holds local reference
+  files, while the tab's sessionStorage draft holds their identifiers and names.
+  Preview components own disposable object URLs. Each successful upload replaces its local
   reference throughout the draft before the next upload, so failures retain
-  completed work. Validation and compatibility reuse the
+  completed work. Removed or uploaded local files are released when no longer
+  referenced by the draft. Validation and compatibility reuse the
   server's pure domain functions.
 - Creation submissions retain a request identity for response-loss recovery.
   A successful acknowledgement clears the tab draft and creation receipt.
