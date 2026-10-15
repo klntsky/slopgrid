@@ -1057,8 +1057,10 @@ button.editable-title > .lucide {
 }
 .image-preview .generated-image {
   display: block;
-  width: 100cqw;
+  width: auto;
   height: auto;
+  max-width: 100cqw;
+  max-height: 100cqh;
   color-scheme: inherit;
 }
 

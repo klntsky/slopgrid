@@ -262,6 +262,7 @@ Status: high level product goal that is not a requirement (not achieved yet).
 2. During SVG streaming, make a disposable partial-image preview by closing unfinished tags where possible. This preview recovery must not modify stored final source. Continue updating the preview while thinking is shown, and reveal the latest preview when switching back to output.
 3. Do not reject SVG merely because markup validation considers it malformed or unconventional; browsers may still recover it.
 4. Cache completed SVG and image files as immutable. Published files may use a one-year cache. Private files use a one-year browser-only cache, separated by session cookie, so revisiting or expanding them does not refetch their content.
+5. Center images horizontally and vertically in ordinary cells and expanded views. Shrink images to fit while retaining their aspect ratio, and leave smaller images at their natural size. Apply sizing through CSS without waiting for the image load event, and keep the empty space around the image available for dragging the grid.
 
 ### 5.4. Static websites
 
