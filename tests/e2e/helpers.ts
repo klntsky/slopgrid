@@ -14,10 +14,14 @@ export async function mockModels(
       return route.fallback();
     const response = await route.fetch();
     const body = await response.text();
-    let hash = "";
+    let hash = "",
+      oldHash = "";
     const updated = body.replace(
       /(<script id="slopgrid-models">)window\.__SLOPGRID_MODELS__ = ([\s\S]*?);(<\/script>)/,
       (_, start, data, end) => {
+        oldHash = createHash("sha256")
+          .update(`window.__SLOPGRID_MODELS__ = ${data};`)
+          .digest("base64");
         const script = `window.__SLOPGRID_MODELS__ = ${JSON.stringify(change(JSON.parse(data))).replaceAll("<", "\\u003c")};`;
         hash = createHash("sha256").update(script).digest("base64");
         return start + script + end;
@@ -27,7 +31,7 @@ export async function mockModels(
     if (hash && headers["content-security-policy"])
       headers["content-security-policy"] = headers[
         "content-security-policy"
-      ].replace(/'sha256-[^']*'/g, `'sha256-${hash}'`);
+      ].replace(`'sha256-${oldHash}'`, `'sha256-${hash}'`);
     await route.fulfill({ response, headers, body: updated });
   });
 }

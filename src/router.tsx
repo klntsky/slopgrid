@@ -10,6 +10,7 @@ import { Create } from "./pages/create";
 import { Home } from "./pages/grids";
 import { Settings } from "./pages/settings";
 import { GridPage } from "./pages/grid";
+import { gridPageNumber } from "../shared/grid-page";
 const rootRoute = createRootRoute({ component: Layout });
 const createRoutePage = createRoute({
   getParentRoute: () => rootRoute,
@@ -23,13 +24,11 @@ const homeRoute = createRoute({
   validateSearch: (
     search: Record<string, unknown>,
   ): { yourPage?: number; publicPage?: number } => {
-    const page = (value: unknown) => {
-      const number = Number(value);
-      return Number.isSafeInteger(number) && number > 1 ? number : undefined;
-    };
+    const yourPage = gridPageNumber(search.yourPage);
+    const publicPage = gridPageNumber(search.publicPage);
     return {
-      yourPage: page(search.yourPage),
-      publicPage: page(search.publicPage),
+      yourPage: yourPage === 1 ? undefined : yourPage,
+      publicPage: publicPage === 1 ? undefined : publicPage,
     };
   },
 });

@@ -103,6 +103,7 @@ Status: high level product goal that is not a requirement (not achieved yet).
 9. Beneath Public grids, show "See what others have created". Introduce the billing history with "Each inference attempt appears here, including retries, failures, and cancellations. OpenRouter bills your account directly."
 10. Failed grid-list requests offer a retry for the affected list without reloading the page. Failed GitHub sign-in and OpenRouter authorization show visible failure feedback and retain the corresponding sign-in or connection action for retry.
 11. Paginate Your grids and Public grids independently with 20 entries per page, newest first and grid ID ascending for equal creation times. Show Previous, Next, and the visible range and total only when a list has more than one page. Disable unavailable directions and pagination while fetching. Preserve each list's page in the home URL through refresh and browser history navigation. Clamp pages beyond the available results to the last page, and omit Your grids when its total is zero.
+12. Embed the current page and the next two available pages of each grid list in the initial home HTML. The first render uses this server-provided data, as with the model catalog, and paging reuses the embedded pages. As either list advances, prefetch enough pages to keep its next two available pages ready. Respect each list's end and keep owned data scoped to the requesting user.
 
 ### 2.3. Tooltips
 

@@ -1,17 +1,22 @@
 import { expandGrid, type Grid } from "../server/domain.js";
 import type { Store } from "../server/store.js";
 
-export function seedGridLists(store: Store, owner: string) {
+export function seedGridLists(
+  store: Store,
+  owner: string,
+  counts = { owned: 43, public: 23 },
+) {
   const owned: string[] = [],
     publicIds: string[] = [];
-  for (let i = 0; i < 68; i++) {
+  const listed = counts.owned + counts.public;
+  for (let i = 0; i < listed + 2; i++) {
     const id = i.toString(16).padStart(48, "0");
     const visibility =
-      i < 43
+      i < counts.owned
         ? "private"
-        : i < 66
+        : i < listed
           ? "public"
-          : i === 66
+          : i === listed
             ? "unlisted"
             : "private";
     const input: Grid["input"] = {
@@ -25,7 +30,7 @@ export function seedGridLists(store: Store, owner: string) {
     };
     store.insert({
       id,
-      owner: i < 43 ? owner : "other-owner",
+      owner: i < counts.owned ? owner : "other-owner",
       input,
       createdAt: new Date(
         Date.UTC(2026, 0, 1 + Math.floor(i / 3)),
@@ -40,7 +45,7 @@ export function seedGridLists(store: Store, owner: string) {
         error: "Fixture output",
       })),
     });
-    if (i < 43) owned.push(id);
+    if (i < counts.owned) owned.push(id);
     if (visibility === "public") publicIds.push(id);
   }
   const order = (ids: string[]) =>

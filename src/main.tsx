@@ -6,6 +6,22 @@ import { router } from "./router";
 import { queryClient } from "./queries";
 import { ThemeProvider } from "./theme";
 import "./style.css";
+import type { GridListsBootstrap } from "../server/grid-bootstrap";
+
+declare global {
+  interface Window {
+    __SLOPGRID_GRIDS__?: GridListsBootstrap;
+  }
+}
+
+for (const [kind, pages] of [
+  ["grids", window.__SLOPGRID_GRIDS__?.owned],
+  ["public-grids", window.__SLOPGRID_GRIDS__?.public],
+] as const)
+  for (const { key, data } of pages ?? [])
+    queryClient.setQueryData([kind, key], data);
+delete window.__SLOPGRID_GRIDS__;
+
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>

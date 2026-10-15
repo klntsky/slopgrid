@@ -1,18 +1,44 @@
 import { useEffect } from "react";
 import type { inferenceCapacity } from "../server/inference-policy";
 import { useOpenRouterKey } from "./openrouter-key";
-import { useQuery } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import type { GridInput } from "../server/domain";
 import type { GridListPage } from "../server/grid-listing";
-import { keepPreviousData } from "@tanstack/react-query";
 import { api, type SessionInfo } from "./api";
 export { queryClient } from "./query-client";
-export function useGrids(page = 1) {
-  return useQuery({
-    queryKey: ["grids", page],
-    queryFn: () => api<GridListPage>(`/grids?page=${page}`),
+function gridListOptions(kind: "grids" | "public-grids", page: number) {
+  return {
+    queryKey: [kind, page],
+    queryFn: () =>
+      api<GridListPage>(
+        `${kind === "grids" ? "/grids" : "/grids/public"}?page=${page}`,
+      ),
+    staleTime: 30000,
+  };
+}
+function useGridList(kind: "grids" | "public-grids", page: number) {
+  const cache = useQueryClient();
+  const query = useQuery({
+    ...gridListOptions(kind, page),
     placeholderData: keepPreviousData,
   });
+  useEffect(() => {
+    if (!query.data || query.isPlaceholderData || query.isError) return;
+    const last = Math.min(
+      query.data.page + 2,
+      Math.ceil(query.data.total / query.data.pageSize),
+    );
+    for (let next = query.data.page + 1; next <= last; next++)
+      void cache.prefetchQuery(gridListOptions(kind, next));
+  }, [cache, kind, query.data, query.isPlaceholderData, query.isError]);
+  return query;
+}
+export function useGrids(page = 1) {
+  return useGridList("grids", page);
 }
 export function useSession() {
   return useQuery({
@@ -35,11 +61,7 @@ export function useConnection() {
 }
 
 export function usePublicGrids(page = 1) {
-  return useQuery({
-    queryKey: ["public-grids", page],
-    queryFn: () => api<GridListPage>(`/grids/public?page=${page}`),
-    placeholderData: keepPreviousData,
-  });
+  return useGridList("public-grids", page);
 }
 
 export function useInferenceCapacity(

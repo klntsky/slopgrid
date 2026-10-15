@@ -227,3 +227,10 @@ that cache without maintaining separate ordering state.
   return grids, total, page, and pageSize, and validate the requested page.
   Independent query keys and home search parameters retain each list's page;
   previous results remain visible while the next page loads.
+- Home HTML embeds the requested page and its next two available pages for
+  each list from one database snapshot. Production and development use the same
+  session-filtered bootstrap. Request-specific HTML is not cached, varies by
+  cookie, escapes script content, and permits its inline script with a CSP hash.
+  Before React renders, these pages seed the existing query cache. List queries
+  share a 30-second freshness period and prefetch only the next two available
+  pages; existing mutation invalidation refreshes affected cached lists.

@@ -426,7 +426,9 @@ app.post("/fixture/grids", (req, res) => {
     req,
   );
   if (!session) return res.sendStatus(401);
-  res.json(seedGridLists(store, session.anonymousId ?? session.id));
+  res.json(
+    seedGridLists(store, session.anonymousId ?? session.id, req.body?.counts),
+  );
 });
 app.post("/fixture/reset", (req, res) => {
   store.db.exec("DROP TRIGGER IF EXISTS fail_reference_upload");

@@ -1,5 +1,12 @@
 import { githubCredentials } from "./oauth.js";
-import { createFrontendRoutes, modelDataScript } from "./frontend.js";
+import {
+  createFrontendRoutes,
+  modelDataScript,
+  embedGridData,
+  frontendPaths,
+} from "./frontend.js";
+import { createGridBootstrap } from "./grid-bootstrap.js";
+import { readFile } from "node:fs/promises";
 import { createApp } from "./app.js";
 import { generationClient } from "./generation-client.js";
 import { runtimeConfig } from "./runtime-config.js";
@@ -22,7 +29,7 @@ if (
 const config = runtimeConfig();
 const generation = generationClient(config.socket);
 await generation.status();
-const { app, modelCatalog } = createApp({
+const { app, modelCatalog, store, session } = createApp({
   github,
   authURL: process.env.OPENROUTER_AUTH_URL,
   origin,
@@ -30,11 +37,13 @@ const { app, modelCatalog } = createApp({
   ...config,
   generation,
 });
+const gridBootstrap = createGridBootstrap(store, session);
 if (production)
   app.use(
     await createFrontendRoutes(
       process.env.FRONTEND_PATH ?? "dist",
       modelCatalog,
+      gridBootstrap,
     ),
   );
 else {
@@ -60,9 +69,24 @@ else {
       },
     ],
     server: { middlewareMode: true },
-    appType: "spa",
+    appType: "custom",
   });
   app.use(vite.middlewares);
+  app.get(frontendPaths, async (req, res, next) => {
+    try {
+      const html = embedGridData(
+        await readFile("index.html", "utf8"),
+        gridBootstrap(req, res),
+        res,
+      );
+      res.set("Cache-Control", "no-store");
+      res
+        .type("html")
+        .send(await vite.transformIndexHtml(req.originalUrl, html));
+    } catch (error) {
+      next(error);
+    }
+  });
 }
 const server = app.listen(port, process.env.BIND_ADDRESS ?? "127.0.0.1", () =>
   console.log(`slopgrid: ${origin}`),

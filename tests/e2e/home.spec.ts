@@ -93,7 +93,8 @@ test("failed owned grids can be retried without hiding public discovery", async 
   await page.route("**/api/grids?*", (route) =>
     route.fulfill({ status: 503, json: { error: "History unavailable" } }),
   );
-  await page.goto("/");
+  await page.goto("/settings");
+  await page.getByRole("link", { name: "slopgrid", exact: true }).click();
   const owned = page.getByRole("region", { name: "Your grids", exact: true });
   await expect(owned.getByRole("alert")).toHaveText("History unavailable", {
     timeout: 15000,

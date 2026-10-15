@@ -6,7 +6,8 @@ test("failed grid lists retry independently and OAuth failures retain their retr
   await page.route("**/api/grids/public?*", (route) =>
     route.fulfill({ status: 503, json: { error: "Discovery unavailable" } }),
   );
-  await page.goto("/grids");
+  await page.goto("/settings");
+  await page.getByRole("link", { name: "slopgrid", exact: true }).click();
   const publicList = page.getByRole("region", {
     name: "Public grids",
     exact: true,

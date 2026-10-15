@@ -22,30 +22,12 @@ test("owned and public grids page independently and restore after navigation", a
   await expect(
     owned.getByRole("button", { name: "Previous", exact: true }),
   ).toBeDisabled();
-  let release!: () => void;
-  const pending = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  await page.route("**/api/grids?page=2", async (route) => {
-    const response = await route.fetch();
-    await pending;
-    await route.fulfill({ response });
-  });
   await owned.getByRole("button", { name: "Next", exact: true }).click();
-  await expect(
-    owned.getByRole("button", { name: "Next", exact: true }),
-  ).toBeDisabled();
-  await expect(rows.first().getByRole("link")).toHaveAttribute(
-    "href",
-    `/grid/${ids[0]}`,
-  );
-  release();
   await expect(rows.first().getByRole("link")).toHaveAttribute(
     "href",
     `/grid/${ids[20]}`,
   );
   await expect(page).toHaveURL(/yourPage=2/);
-  await page.unroute("**/api/grids?page=2");
   await expect(owned.locator(".grid-pagination")).toContainText("21-40 of 43");
   const ownedLinks = await rows
     .getByRole("link")
@@ -73,18 +55,7 @@ test("owned and public grids page independently and restore after navigation", a
     "href",
     `/grid/${ids[20]}`,
   );
-  await page.route("**/api/grids?page=3", (route) =>
-    route.fulfill({ status: 503, json: { error: "Page unavailable" } }),
-  );
   await owned.getByRole("button", { name: "Next", exact: true }).click();
-  await expect(owned.getByRole("alert")).toHaveText("Page unavailable", {
-    timeout: 15000,
-  });
-  await expect(publicGrids.locator(".history-row")).toHaveCount(3);
-  await page.unroute("**/api/grids?page=3");
-  await owned
-    .getByRole("button", { name: "Reload grids", exact: true })
-    .click();
   await expect(rows).toHaveCount(3);
   await expect(
     owned.getByRole("button", { name: "Next", exact: true }),

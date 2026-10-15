@@ -139,5 +139,5 @@ export function createApp(config: Config) {
       }
     },
   );
-  return { app, store, modelCatalog };
+  return { app, store, modelCatalog, session };
 }
