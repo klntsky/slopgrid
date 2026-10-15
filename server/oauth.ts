@@ -117,7 +117,7 @@ export function githubProvider(credentials: OAuthCredentials): OAuthProvider {
 }
 export function oauthReturnTo(value: unknown) {
   return typeof value === "string" &&
-    /^\/(?:grids|settings|billing|grid\/[a-f0-9]{48})?$/.test(value)
+    /^\/(?:create|grids|settings|billing|grid\/[a-f0-9]{48})?$/.test(value)
     ? value
     : "/settings";
 }

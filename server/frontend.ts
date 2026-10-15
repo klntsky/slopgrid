@@ -33,6 +33,7 @@ export async function createFrontendRoutes(
   routes.get(
     [
       "/",
+      "/create",
       "/index.html",
       "/grids",
       "/settings",

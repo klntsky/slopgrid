@@ -266,7 +266,7 @@ test("theme follows system changes unless a saved choice overrides them", async 
   await page.getByRole("button", { name: "Switch to dark theme" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await page.getByRole("link", { name: "slopgrid", exact: true }).click();
-  await page.getByRole("link", { name: "NEW GRID", exact: true }).click();
+  await page.getByRole("button", { name: "SVG", exact: true }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");

@@ -41,10 +41,10 @@ export function Layout() {
   return (
     <GridHeaderTarget.Provider value={headerTarget}>
       <div
-        className={`app-shell${isGrid ? " grid-layout" : ["/grids", "/billing", "/settings"].includes(pathname) ? " content-layout" : ""}`}
+        className={`app-shell${isGrid ? " grid-layout" : ["/billing", "/settings"].includes(pathname) ? " content-layout" : ""}`}
       >
         <header>
-          <Link to="/grids" className="wordmark" aria-label="slopgrid">
+          <Link to="/" className="wordmark" aria-label="slopgrid">
             <img className="logo-grid" src="/slopgrid.svg" alt="" />
             <span>
               slop<span className="wordmark-grid">grid</span>

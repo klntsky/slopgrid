@@ -23,9 +23,11 @@ test("GitHub credentials are mandatory and OAuth return paths stay local", () =>
     "//evil.example",
     "/settings?next=evil",
     "/grids/../evil",
+    "/create?next=evil",
     undefined,
   ])
     assert.equal(oauthReturnTo(value), "/settings");
+  assert.equal(oauthReturnTo("/create"), "/create");
   assert.equal(
     oauthReturnTo("/grid/" + "a".repeat(48)),
     "/grid/" + "a".repeat(48),

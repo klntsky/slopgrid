@@ -260,7 +260,7 @@ When replacing bundled fonts or icons, retain their distribution notices and ver
 
 ## Publishing validation
 
-Publishing tests cover access, immutable visibility, summary filtering, and persistence. Browser tests cover dialogs and saved preferences, navigation from public discovery on the creation page, and hiding discovery after output-type selection and draft restoration.
+Publishing tests cover access, immutable visibility, summary filtering, and persistence. Browser tests cover dialogs and saved preferences, navigation from home discovery, and form isolation on `/create`. Home coverage checks the `/grids` redirect, omission of empty owned grids, independent list recovery, format selection, and draft persistence across navigation and reloads. Edit, Fork, and provider authorization coverage verifies restoration on `/create`.
 
 ## Generation process control
 

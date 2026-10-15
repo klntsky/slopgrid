@@ -35,6 +35,7 @@ test("page entries avoid stale caching while previous hashed chunks remain downl
   try {
     for (const path of [
       "/",
+      "/create",
       "/index.html",
       "/grids",
       "/settings",

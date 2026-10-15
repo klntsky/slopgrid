@@ -203,18 +203,18 @@ test("navigation returns to a saved grid after creation", async ({
   await request.post("/fixture/reset", { data: { billing: false } });
   await page.goto("/settings");
   await page.getByRole("link", { name: "slopgrid", exact: true }).click();
-  await expect(page).toHaveURL("/grids");
-  await expect(page.getByRole("heading", { name: "Your grids" })).toBeVisible();
-  await expect(
-    page.getByText("You haven't created any grids yet."),
-  ).toBeVisible();
-  await page.getByRole("link", { name: "NEW GRID", exact: true }).click();
   await expect(page).toHaveURL("/");
+  await expect(
+    page.getByRole("region", { name: "Your grids", exact: true }),
+  ).toHaveCount(0);
   await create(page, "Image", "cat", "hat");
   await expectProgress(page, 1, 1);
   const gridURL = page.url();
   await page.getByRole("link", { name: "slopgrid", exact: true }).click();
-  await expect(page).toHaveURL("/grids");
+  await expect(page).toHaveURL("/");
+  await expect(
+    page.getByRole("region", { name: "Your grids", exact: true }),
+  ).toBeVisible();
   await page.reload();
   await page
     .getByRole("link", {
@@ -250,6 +250,7 @@ test("EDIT cancels inference and restores settings, while a public FORK creates 
       ).status(),
     ).toBe(403);
     await page.getByRole("button", { name: "EDIT", exact: true }).click();
+    await expect(page).toHaveURL("/create");
     await expect(
       page.getByRole("heading", {
         name: "Specify grid layout · what should be the rows and the columns of the grid?",

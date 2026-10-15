@@ -2,23 +2,31 @@ import {
   createRootRoute,
   createRoute,
   createRouter,
+  redirect,
 } from "@tanstack/react-router";
 import { Billing } from "./pages/billing";
 import { Layout } from "./layout";
 import { Create } from "./pages/create";
-import { YourGrids } from "./pages/grids";
+import { Home } from "./pages/grids";
 import { Settings } from "./pages/settings";
 import { GridPage } from "./pages/grid";
 const rootRoute = createRootRoute({ component: Layout });
 const createRoutePage = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/",
+  path: "/create",
   component: Create,
+});
+const homeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/",
+  component: Home,
 });
 const gridsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/grids",
-  component: YourGrids,
+  beforeLoad: () => {
+    throw redirect({ to: "/", replace: true });
+  },
 });
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -39,6 +47,7 @@ export const router = createRouter({
   scrollRestoration: true,
   routeTree: rootRoute.addChildren([
     createRoutePage,
+    homeRoute,
     gridsRoute,
     settingsRoute,
     billingRoute,

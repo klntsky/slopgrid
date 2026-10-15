@@ -49,7 +49,7 @@ The following numbered requirements define the visible layout and interaction co
 41. Edit titles in an inline input occupying 40 percent of the title line, committing with Enter or blur and cancelling with Escape, without separate Save title or Cancel controls. Restore focus to the title action after cancellation.
 42. Show the visible progress-count breakdown when hovering or focusing the progress bar.
 43. Use a 490px publication dialog constrained to the viewport, with 32px desktop or 24px phone padding, a translucent backdrop, a 23px medium-weight heading, a filled primary Save action, and a borderless Cancel action, without a separate close icon.
-44. Place New grid at the right of the Your grids heading row.
+44. Place output-format cards above Your grids on the home page, followed by Public grids. Omit the entire Your grids section when the user has no grids.
 45. Place each grid-list format icon before its title, retain status at the right, and use unadorned dark titles with the established row spacing.
 46. Place the icon-only billing refresh action beside its heading and combine input/output counts in one Tokens column with following arrows.
 47. Use the small muted billing introduction and omit the unavailable-charge notice when its count is zero.
@@ -92,11 +92,11 @@ Status: high level product goal that is not a requirement (not achieved yet).
 
 ### 2.2. Navigation and page layout
 
-1. The logo opens `/grids` and serves as the navbar's grid-list link. Put the prominent NEW GRID action, with a plus icon, on the grid-list page.
+1. The logo opens `/`, which combines output-format selection, Your grids when populated, and Public grids. Redirect `/grids` to `/`. Selecting a format opens `/create` with that format selected.
 2. Keep navbar link labels uppercase, with readable desktop text and enough space for grid information. Use matching gaps between the brand, action buttons, and title/prompt group.
 3. For navigation, use the primary input capability independently of viewport width or orientation. Touch-primary devices use a hamburger menu anchored close to its button and keep theme selection in Settings. Mouse-primary devices show navigation links directly alongside the theme toggle, including when secondary touch support is reported. Keep compact grid action buttons on the first navbar row where they fit. At widths of 480px or more, place the grid title, prompt, and byline in the center of that row between the logo and actions; below 480px, give that information a full-width second row.
 4. Give "Your grids" and "Public grids" matching large heading styles. Keep separators only between grid entries in the lists.
-5. Billing and Settings use the same centered content-column layout as `/grids`.
+5. Billing and Settings use the ordinary centered content-column layout.
 6. Convey publication state through the available grid actions, placement in the public list, and a lowercase "published" label in the owner's grid list. Unpublished entries show their lowercase generation status.
 7. A missing grid should show its 404 promptly without retrying. Keep the error message focused on the missing grid.
 8. Connection loss appears as a small bottom-right label with a rotating preloader and must not shift page layout. Generation preloaders must visibly spin.
@@ -122,13 +122,13 @@ Status: high level product goal that is not a requirement (not achieved yet).
 ### 3.1. Form and output selection
 
 1. The creation-page call to action is "Create your own AI model benchmark". The layout heading is "Specify grid layout", followed by a centered dot and "what should be the rows and the columns of the grid?". Put fixed model, thinking effort, and image settings outside the row and column axes in a separate "Specify common parameters" section between the layout and prompt sections. Omit this section when it has no parameters, keeping subsequent section numbers consecutive. Arrange common Size, Aspect ratio, and Background inputs in a single flex row that wraps on smaller screens, with Quality and Input references below when present.
-2. Before an output type is selected, show public grids below the output-type selection. Selecting an output type hides this list and reveals all remaining form sections immediately, while keeping the output choice visible. A restored draft with an output type already selected also hides the list. Preserve the creation page's scroll position on refresh and browser history navigation, while new route visits start at the top.
-3. Preserve the in-progress setup through provider authorization and restore the applicable setup when editing or forking.
+2. `/create` owns the complete creation form, including output-format selection. Opening it directly restores the saved draft or starts with SVG selected. Home always shows discovery independently of the saved draft. Preserve the creation page's scroll position on refresh and browser history navigation, while new route visits start at the top.
+3. Preserve the in-progress setup through provider authorization and restore the applicable setup when editing or forking. These flows return to `/create`.
 4. Put an icon-only swap button between the row and column selectors. It has no border and swaps axis types, selected values, and corresponding prompt-variable references together.
 5. New image grids start with Model rows and Quality columns, with Auto as the only selected quality and no models selected. SVG and Website grids start with unselected model rows and thinking-effort columns with Model default checked. Markdown grids start with thinking-effort rows with Model default checked and unselected model columns. Restored drafts, Edit, and Fork preserve their saved layout and selections. Every generation must use an explicitly selected model, including when model is a fixed setting rather than an axis.
 6. Grid creation has no application limit on prompt length, axis-value length, model-ID length, JSON request size, number of axis values, cells, or requested parallel workers. Forward these inputs subject to OpenRouter's limits. Actual concurrency follows the shared worker allocation policy.
 7. Arrange short axis choices, including aspect ratios, size presets, quality, background, and thinking efforts, as inline checkboxes that wrap onto additional rows as needed. Keep each checkbox and its label together.
-8. Clear the creation draft after successful grid creation so NEW GRID starts with output-type selection. Preserve drafts through failed or unacknowledged creation attempts. Edit and Fork explicitly restore the selected grid's setup.
+8. Clear the creation draft after successful grid creation so the next format selection starts a fresh setup. Preserve drafts through failed or unacknowledged creation attempts. Edit and Fork explicitly restore the selected grid's setup.
 
 ### 3.2. Model and thinking-effort selection
 
@@ -355,7 +355,7 @@ Status: high level product goal that is not a requirement (not achieved yet).
 4. Publication is allowed when every cell is complete or failed. Errors do not prevent publication; pending or running cells do.
 5. Publishing permanently locks generation inputs and outputs and prevents returning to private visibility. Public grids cannot be deleted so that benchmark data remains available. Title editing remains allowed independently.
 6. Provide an owner-visible route and control to promote an already link-accessible grid to public listing. A publicly listed grid cannot be demoted to link-only or private visibility.
-7. Link-accessible grids are readable by anyone with the link but excluded from public discovery. Public grids appear newest first beneath Your grids and below the creation page's output-type selection until a type is selected, including the owner's own public grids.
+7. Link-accessible grids are readable by anyone with the link but excluded from public discovery. Public grids appear newest first on the home page beneath Your grids when present, or directly below output-format selection otherwise, including the owner's own public grids.
 8. Give public discovery its own loading, empty, and failure states, and refresh relevant lists after publication. Show format icons and authors without exposing ownership/session identifiers or nesting profile links inside grid links.
 9. Retain copy-link and fork controls for published grids. Dialogs must support keyboard operation, focus restoration, disabled controls while saving, and visible request errors.
 

@@ -1,8 +1,7 @@
 import { ModelSelector } from "../create/model-selector";
 import { ImageOptions } from "../create/image-options";
 import { changeAxis } from "../create/change-axis";
-import { PublicGrids } from "../components/grid-listing";
-import { FormatIcon } from "../components/grid-format-icon";
+import { FormatPicker } from "../components/format-picker";
 import { ArrowUpRight, DollarSign, ArrowLeftRight } from "lucide-react";
 import {
   efforts,
@@ -10,7 +9,6 @@ import {
   type GridInput,
 } from "../../server/domain";
 import { effortLabel } from "../../server/compatibility";
-import { formatNames } from "../format";
 import { useCreateForm } from "../create/use-create-form";
 import { AxisEditor } from "../create/axis-editor";
 import { compatibilityTables } from "../create/compatibility-table";
@@ -57,35 +55,7 @@ export function Create() {
       <div className="page-heading">
         <h1>Create your own AI model benchmark</h1>
       </div>
-      <section>
-        <div className="section-heading">
-          <span className="number">01</span>
-          <h2>What do you want to generate?</h2>
-        </div>
-        <div className="formats">
-          {Object.entries(formatNames).map(([f, name]) => {
-            return (
-              <button
-                key={f}
-                aria-pressed={formatSelected && input.format === f}
-                className={
-                  formatSelected && input.format === f
-                    ? "format selected"
-                    : "format"
-                }
-                onClick={() => selectFormat(f as GridInput["format"])}
-              >
-                <FormatIcon
-                  format={f as GridInput["format"]}
-                  className="format-symbol"
-                />
-                <span>{name}</span>
-              </button>
-            );
-          })}
-        </div>
-      </section>
-      {!formatSelected && <PublicGrids />}
+      <FormatPicker selected={input.format} onSelect={selectFormat} />
       {formatSelected && (
         <section>
           <div className="section-heading">
@@ -231,7 +201,7 @@ export function Create() {
             <span className="number">{commonParameters ? "05" : "04"}</span>
             <h2>Inference provider setup</h2>
           </div>
-          <Connection returnTo="/" />
+          <Connection returnTo="/create" />
           <div className="generation-limits">
             {input.format !== "image" && (
               <label

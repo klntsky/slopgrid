@@ -74,7 +74,7 @@ export function useGrid(id: string) {
         reuseArtifacts: true,
       });
       await cache.invalidateQueries({ queryKey: ["grids"] });
-      await navigate({ to: "/" });
+      await navigate({ to: "/create" });
     },
   });
   return {

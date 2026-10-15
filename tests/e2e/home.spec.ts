@@ -1,0 +1,66 @@
+import { test, expect } from "./fixtures";
+
+test("direct creation opens the form without a saved draft", async ({
+  page,
+}) => {
+  await page.goto("/create");
+  await expect(page.getByLabel("Prompt", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "SVG", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+});
+
+test("home separates discovery from the saved creation form and redirects grids", async ({
+  page,
+}) => {
+  await page.goto("/grids");
+  await expect(page).toHaveURL("/");
+  await expect(
+    page.getByRole("region", { name: "Public grids", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Your grids", exact: true }),
+  ).toHaveCount(0);
+  for (const format of ["Markdown", "Image", "SVG", "Static website"]) {
+    await page.getByRole("button", { name: format, exact: true }).click();
+    await expect(page).toHaveURL("/create");
+    await expect(
+      page.getByRole("button", { name: format, exact: true }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await expect(
+      page.getByRole("region", { name: "Public grids", exact: true }),
+    ).toHaveCount(0);
+    await page.getByLabel("Prompt", { exact: true }).fill(`Saved ${format}`);
+    await page.getByRole("link", { name: "slopgrid", exact: true }).click();
+    await expect(page).toHaveURL("/");
+    await expect(page.getByLabel("Prompt", { exact: true })).toHaveCount(0);
+    await page.goto("/create");
+    await expect(page.getByLabel("Prompt", { exact: true })).toHaveValue(
+      `Saved ${format}`,
+    );
+    await page.reload();
+    await expect(page.getByLabel("Prompt", { exact: true })).toHaveValue(
+      `Saved ${format}`,
+    );
+    await page.getByRole("link", { name: "slopgrid", exact: true }).click();
+  }
+});
+
+test("failed owned grids can be retried without hiding public discovery", async ({
+  page,
+}) => {
+  await page.route("**/api/grids", (route) =>
+    route.fulfill({ status: 503, json: { error: "History unavailable" } }),
+  );
+  await page.goto("/");
+  const owned = page.getByRole("region", { name: "Your grids", exact: true });
+  await expect(owned.getByRole("alert")).toHaveText("History unavailable", {
+    timeout: 15000,
+  });
+  await expect(
+    page.getByRole("region", { name: "Public grids", exact: true }),
+  ).toBeVisible();
+  await page.unroute("**/api/grids");
+  await owned.getByRole("button", { name: "Reload grids" }).click();
+  await expect(owned).toHaveCount(0);
+});

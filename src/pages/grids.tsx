@@ -1,20 +1,31 @@
 import { useGrids } from "../queries";
-import { CreateGridButton } from "../components/create-grid-button";
+import { useNavigate } from "@tanstack/react-router";
+import { FormatPicker } from "../components/format-picker";
+import { startDraft } from "../create/draft";
 import { GridListing, PublicGrids } from "../components/grid-listing";
 
-export function YourGrids() {
+export function Home() {
   const history = useGrids();
+  const navigate = useNavigate();
   return (
-    <main className="grid-list-page">
-      <section aria-labelledby="your-grids-title">
-        <div className="page-title">
-          <h1 id="your-grids-title" className="grid-list-title">
+    <main className="home-page">
+      <div className="page-heading">
+        <h1>Create your own AI model benchmark</h1>
+      </div>
+      <FormatPicker
+        onSelect={(format) => {
+          startDraft(format);
+          void navigate({ to: "/create" });
+        }}
+      />
+      {(history.isError || !!history.data?.length) && (
+        <section className="owned-grids" aria-labelledby="your-grids-title">
+          <h2 id="your-grids-title" className="grid-list-title">
             Your grids
-          </h1>
-          <CreateGridButton />
-        </div>
-        <GridListing query={history} />
-      </section>
+          </h2>
+          <GridListing query={history} />
+        </section>
+      )}
       <PublicGrids />
     </main>
   );

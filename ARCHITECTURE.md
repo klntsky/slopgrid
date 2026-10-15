@@ -214,3 +214,8 @@ that cache without maintaining separate ordering state.
 - `src/create/` owns form state, drafts, and submission. `src/grid/` owns live
   grid state and views. Shared components and Markdown rendering live outside
   those feature directories.
+- `/` combines format selection with owned and public grid discovery, while
+  `/grids` redirects there. `/create` owns the form and restores its session
+  draft. Home saves the selected format before navigating; Edit, Fork, and
+  provider authorization return to `/create`. Both pages share the format picker.
+  The owned section appears only for populated results or a retryable failure.

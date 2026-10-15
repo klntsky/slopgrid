@@ -1088,10 +1088,6 @@ button.editable-title > .lucide {
 nav {
   align-items: center;
 }
-.create-grid-button .lucide {
-  width: 20px;
-  height: 20px;
-}
 .model-search {
   position: relative;
   margin-bottom: 12px;
@@ -1627,6 +1623,12 @@ header {
   margin: 0;
 }
 .public-grids {
+  margin-top: 40px;
+}
+.home-page > section[aria-labelledby] {
+  border: 0;
+}
+.owned-grids {
   margin-top: 40px;
 }
 .content-layout > main {

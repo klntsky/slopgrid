@@ -49,8 +49,38 @@ export function clearDraft() {
   sessionStorage.removeItem(storageKey);
   sessionStorage.removeItem(submissionKey);
 }
+export function startDraft(format: GridInput["format"]) {
+  saveDraft(selectDraftFormat(readDraft(), format));
+}
+function selectDraftFormat(d: Draft, format: GridInput["format"]): Draft {
+  return {
+    ...d,
+    formatSelected: true,
+    input: {
+      ...d.input,
+      format,
+      imageSettings: undefined,
+      inputReferences: undefined,
+      model: "",
+      effort: "default",
+      rows:
+        format === "markdown"
+          ? { kind: "effort", values: ["default"] }
+          : { kind: "model", values: [] },
+      columns:
+        format === "image"
+          ? { kind: "quality", values: ["auto"] }
+          : format === "markdown"
+            ? { kind: "model", values: [] }
+            : { kind: "effort", values: ["default"] },
+    },
+  };
+}
 export function useCreateDraft() {
-  const [draft, setDraft] = useState(readDraft);
+  const [draft, setDraft] = useState(() => ({
+    ...readDraft(),
+    formatSelected: true,
+  }));
   useEffect(() => {
     saveDraft(draft);
   }, [draft]);
@@ -72,28 +102,7 @@ export function useCreateDraft() {
     });
   }
   function selectFormat(format: GridInput["format"]) {
-    setDraft((d) => ({
-      ...d,
-      formatSelected: true,
-      input: {
-        ...d.input,
-        format,
-        imageSettings: undefined,
-        inputReferences: undefined,
-        model: "",
-        effort: "default",
-        rows:
-          format === "markdown"
-            ? { kind: "effort", values: ["default"] }
-            : { kind: "model", values: [] },
-        columns:
-          format === "image"
-            ? { kind: "quality", values: ["auto"] }
-            : format === "markdown"
-              ? { kind: "model", values: [] }
-              : { kind: "effort", values: ["default"] },
-      },
-    }));
+    setDraft((d) => selectDraftFormat(d, format));
   }
   function replaceReference(localId: string, image: ReferenceImage) {
     setDraft((d) => ({
