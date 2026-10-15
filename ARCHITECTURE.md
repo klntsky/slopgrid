@@ -175,6 +175,12 @@ parent and grants no additional access.
 
 ## Code ownership
 
+The grid workspace owns the expanded selection and focus restoration. Output
+cells stay mounted while their presentation expands within the workspace;
+website browsing contexts and preview state are retained without a second
+output tree or scroll transfer between copies. Background grid controls become
+inert during expansion, while navbar navigation remains available.
+
 The browser query client owns grid snapshot ordering for HTTP reads, command
 responses, and live events. Its grid cache rule compares engine epochs and
 sequences before accepting replacements; individual update paths write through

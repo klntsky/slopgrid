@@ -7,9 +7,17 @@
 }
 .grid-workspace {
   position: relative;
+  contain: layout;
 }
-.grid-table-view[inert] {
+.grid-table-view[data-expanded="true"] {
   visibility: hidden;
+}
+.cell.cell-expanded {
+  visibility: visible;
+  position: fixed;
+  inset: 0;
+  z-index: 6;
+  zoom: calc(1 / var(--grid-zoom, 1));
 }
 .expanded-markdown {
   position: absolute;

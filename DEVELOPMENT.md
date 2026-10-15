@@ -227,6 +227,11 @@ Storage and route tests exercise persistence and reopening. Upgrade and unsuppor
 
 ## Generation and output validation
 
+Preview retention coverage checks the same iframe and its interactive document
+state across expansion and collapse on desktop and touch devices. Overlay
+coverage checks the complete navigation popup and expanded output surface,
+including the progress-bar crossing and spaces between controls.
+
 Grid input coverage sends a request exceeding 100 KB through HTTP creation, persistence, and inference, preserving long prompts, variable values, and model IDs. Budget tests cover pricing and context limits, text-token ceilings, saved budgets, and format-specific validation.
 
 Retry tests cover missing and malformed guidance, HTTP and streamed metadata headers, elapsed cooldowns, and explicit Resume. Provider tests cover structured-output capability routing and rejection without downgrade, while browser tests check streamed website content, JavaScript execution, and pause/resume for both schema and prompt-based requests. The real-provider suite uses an explicit free schema-capable model. Output parsing tests preserve arbitrary file extensions and extensionless assets while rejecting traversal.

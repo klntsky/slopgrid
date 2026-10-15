@@ -794,7 +794,7 @@ button.editable-title > .lucide {
   width: 100%;
   min-width: calc(var(--grid-columns) * 340px);
 }
-.output-grid th {
+.output-grid th:not(.cell-expanded *) {
   background: var(--grid-header);
   padding: 16px;
   font-size: 15px;
@@ -804,10 +804,10 @@ button.editable-title > .lucide {
   border-right: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
 }
-.output-grid thead tr {
+.output-grid thead tr:not(.cell-expanded *) {
   height: 1px;
 }
-.output-grid thead th {
+.output-grid thead th:not(.cell-expanded *) {
   padding-block: 8px;
   position: sticky;
   top: 0;
@@ -815,7 +815,7 @@ button.editable-title > .lucide {
   min-width: 340px;
 }
 
-.output-grid tbody th {
+.output-grid tbody th:not(.cell-expanded *) {
   padding-inline: 8px;
   position: sticky;
   left: 0;
@@ -832,14 +832,14 @@ button.editable-title > .lucide {
   max-height: 330px;
   text-align: center;
 }
-.output-grid thead .corner {
+.output-grid thead .corner:not(.cell-expanded *) {
   padding-inline: 8px;
   left: 0;
   z-index: 4;
   min-width: 0;
   width: 1px;
 }
-.output-grid td {
+.output-grid td:not(.cell-expanded *) {
   position: relative;
   padding: 0;
   border-right: 1px solid var(--line);
@@ -1040,7 +1040,7 @@ button.editable-title > .lucide {
   .actions {
     flex-wrap: wrap;
   }
-  .output-grid tbody th {
+  .output-grid tbody th:not(.cell-expanded *) {
     padding-block: 12px;
   }
   .modal {
@@ -1492,12 +1492,12 @@ header {
   table-layout: fixed;
   min-width: 0;
 }
-.output-grid[data-resized] th,
-.output-grid[data-resized] td {
+.output-grid[data-resized] th:not(.cell-expanded *),
+.output-grid[data-resized] td:not(.cell-expanded *) {
   min-width: 0;
   overflow: hidden;
 }
-.output-grid[data-resized] td {
+.output-grid[data-resized] td:not(.cell-expanded *) {
   height: auto;
 }
 .output-grid[data-resized] .row-label {

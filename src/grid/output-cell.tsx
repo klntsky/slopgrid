@@ -70,7 +70,11 @@ export function OutputCell({
     complete || cell.status === "running" || thinking || expanded;
   const expandLabel = `${expanded ? "Collapse" : "Expand"} ${thinking ? "thinking" : formatNames[format]}`;
   return (
-    <article className="cell">
+    <article
+      className={`cell${expanded ? " cell-expanded" : ""}`}
+      role={expanded ? "region" : undefined}
+      aria-label={expanded ? `Expanded output: ${title}` : undefined}
+    >
       <div className="cell-view" aria-hidden={thinking} inert={thinking}>
         {markdown ? (
           <MarkdownPreview

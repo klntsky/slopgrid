@@ -54,41 +54,23 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
   const expandedId = expanded?.id ?? reference?.id;
   const expandedView = useRef<HTMLElement>(null);
   const returnButton = useRef<HTMLButtonElement>(null);
-  const position = useRef({ top: 0, left: 0 });
-  function rememberScroll(button: HTMLButtonElement) {
-    const preview = button
-      .closest(".cell")
-      ?.querySelector('.cell-view[aria-hidden="false"] .markdown-preview');
-    position.current = {
-      top: preview?.scrollTop ?? 0,
-      left: preview?.scrollLeft ?? 0,
-    };
-  }
+  const workspace = useRef<HTMLDivElement>(null);
   function expand(
     kind: "output" | "reference",
     id: string,
     button: HTMLButtonElement,
   ) {
-    rememberScroll(button);
     returnButton.current = button;
     setSelection({ kind, id });
   }
   function collapse() {
-    const button =
-      expandedView.current?.querySelector<HTMLButtonElement>(
-        ".markdown-expand",
-      );
-    if (button) rememberScroll(button);
     setSelection(null);
   }
   useLayoutEffect(() => {
-    const preview = (
-      expandedView.current ?? returnButton.current?.closest(".cell")
-    )?.querySelector('.cell-view[aria-hidden="false"] .markdown-preview');
-    if (preview) {
-      preview.scrollTop = position.current.top;
-      preview.scrollLeft = position.current.left;
-    }
+    expandedView.current =
+      workspace.current?.querySelector<HTMLElement>(
+        ".expanded-markdown, .cell-expanded",
+      ) ?? null;
     if (!expandedId) {
       returnButton.current?.focus({ preventScroll: true });
       return;
@@ -164,16 +146,13 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
     );
   }
   return (
-    <div className="grid-workspace">
-      <div
-        className="grid-table-view"
-        aria-hidden={expandedId ? true : undefined}
-        inert={!!expandedId}
-      >
+    <div className="grid-workspace" ref={workspace}>
+      <div className="grid-table-view" data-expanded={!!expandedId}>
         <ZoomableGrid
           key={g.id}
           gridId={g.id}
           columns={g.input.columns.values.length}
+          expanded={!!expandedId}
         >
           <table className="output-grid">
             <colgroup>
@@ -182,7 +161,7 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
                 <col key={c} />
               ))}
             </colgroup>
-            <thead>
+            <thead inert={!!expandedId}>
               <tr>
                 <th className="corner" />
                 {g.input.columns.values.map((c, column) => (
@@ -196,7 +175,7 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
             <tbody>
               {g.input.rows.values.map((r, row) => (
                 <tr key={r}>
-                  <th scope="row">
+                  <th scope="row" inert={!!expandedId}>
                     {axisLabel(r, "rows")}
                     <ResizeHandle axis="rows" index={row} />
                   </th>
@@ -205,13 +184,17 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
                       (c) => c.row === row && c.column === column,
                     )!;
                     return (
-                      <td key={column}>
+                      <td
+                        key={column}
+                        inert={!!expandedId && expanded?.id !== cell.id}
+                      >
                         <OutputCell
                           cell={cell}
                           format={g.input.format}
                           gridStatus={g.status}
                           published={g.published}
                           title={title(cell)}
+                          expanded={expanded?.id === cell.id}
                           rawMarkdown={views[cell.id]?.raw}
                           showThinking={views[cell.id]?.thinking}
                           onShowThinking={(thinking) =>
@@ -221,7 +204,9 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
                             setView(cell.id, { raw: !views[cell.id]?.raw })
                           }
                           onToggleExpand={(button) =>
-                            expand("output", cell.id, button)
+                            expanded?.id === cell.id
+                              ? collapse()
+                              : expand("output", cell.id, button)
                           }
                         />
                       </td>
@@ -233,53 +218,26 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
           </table>
         </ZoomableGrid>
       </div>
-      {expandedId && (
+      {reference && (
         <section
-          ref={expandedView}
           className="expanded-markdown"
-          aria-label={
-            reference
-              ? `Expanded reference: ${reference.name}`
-              : `Expanded output: ${title(expanded!)}`
-          }
+          aria-label={`Expanded reference: ${reference.name}`}
         >
-          {reference ? (
-            <article className="cell">
-              <div className="cell-view" aria-hidden={false}>
-                <ContainedImage
-                  src={`/api/references/${reference.id}`}
-                  alt={reference.name}
-                />
-              </div>
-              <div className="markdown-actions">
-                <ExpandButton
-                  expanded
-                  label="Collapse Image"
-                  onClick={collapse}
-                />
-              </div>
-            </article>
-          ) : (
-            expanded && (
-              <OutputCell
-                cell={expanded}
-                format={g.input.format}
-                gridStatus={g.status}
-                published={g.published}
-                title={title(expanded)}
-                rawMarkdown={views[expanded.id]?.raw}
-                showThinking={views[expanded.id]?.thinking}
-                onShowThinking={(thinking) =>
-                  setView(expanded.id, { thinking })
-                }
-                onToggleRawMarkdown={() =>
-                  setView(expanded.id, { raw: !views[expanded.id]?.raw })
-                }
-                expanded
-                onToggleExpand={collapse}
+          <article className="cell">
+            <div className="cell-view" aria-hidden={false}>
+              <ContainedImage
+                src={`/api/references/${reference.id}`}
+                alt={reference.name}
               />
-            )
-          )}
+            </div>
+            <div className="markdown-actions">
+              <ExpandButton
+                expanded
+                label="Collapse Image"
+                onClick={collapse}
+              />
+            </div>
+          </article>
         </section>
       )}
     </div>

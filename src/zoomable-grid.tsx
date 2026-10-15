@@ -21,10 +21,12 @@ export function ZoomableGrid({
   gridId,
   columns,
   children,
+  expanded = false,
 }: {
   gridId: string;
   columns: number;
   children: ReactNode;
+  expanded?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const fitViewport = useGridResize(ref, gridId);
@@ -75,6 +77,7 @@ export function ZoomableGrid({
         ),
       );
       table.style.zoom = String(scale);
+      table.style.setProperty("--grid-zoom", String(scale));
       viewport.scrollLeft = gesture.anchor.x * scale - (center.x - bounds.left);
       viewport.scrollTop = gesture.anchor.y * scale - (center.y - bounds.top);
     }
@@ -98,6 +101,7 @@ export function ZoomableGrid({
         );
         table.style.zoom = String(scale);
       }
+      table.style.setProperty("--grid-zoom", String(scale));
       viewport.scrollLeft = 0;
       viewport.scrollTop = 0;
     }
@@ -122,7 +126,7 @@ export function ZoomableGrid({
     <div
       ref={ref}
       className="grid-scroll"
-      tabIndex={0}
+      tabIndex={expanded ? -1 : 0}
       aria-label="Generated output grid"
       style={{ "--grid-columns": columns } as CSSProperties}
     >
