@@ -275,7 +275,7 @@ Status: high level product goal that is not a requirement (not achieved yet).
 
 ### 8.1. Anonymous and GitHub accounts
 
-1. Users are anonymous by default. Offer recognizable GitHub sign-in in the interface.
+1. Users are anonymous by default. Offer recognizable GitHub sign-in in the interface. Settings contains an Account section with sign-in when anonymous, or linked GitHub identity and sign-out when signed in, accessible on both touch and mouse devices. Show account-loading and retry states when session lookup is pending or fails.
 2. A GitHub identity displays as the GitHub icon followed by a username linked to the profile. Otherwise display "by Anonymous". Show authors near grid titles and in public grid listings; omit authors from the owner's own grid list.
 3. Account ownership persists when a GitHub username changes. Refresh display identity on sign-in.
 4. On sign-in, atomically claim the current anonymous session's grids for the account, including their billing history. Never claim another account's grids.

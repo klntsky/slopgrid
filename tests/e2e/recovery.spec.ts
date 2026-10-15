@@ -26,7 +26,9 @@ test("failed grid lists retry independently and OAuth failures retain their retr
     page.getByRole("alert").filter({ hasText: "OpenRouter connection failed" }),
   ).toBeVisible();
   await expect(
-    page.getByRole("link", { name: "Sign in with GitHub" }),
+    page
+      .getByRole("region", { name: "Account", exact: true })
+      .getByRole("link", { name: "Sign in with GitHub" }),
   ).toBeVisible();
   await page.getByRole("link", { name: "Connect OpenRouter" }).click();
   await expect(page.getByText("Connected", { exact: true })).toBeVisible();

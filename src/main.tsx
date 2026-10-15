@@ -12,7 +12,8 @@ import {
 } from "@tanstack/react-router";
 import { useState, useEffect, useRef, useSyncExternalStore } from "react";
 import { Menu } from "lucide-react";
-import { queries, api, useSession } from "./api";
+import { queries } from "./api";
+import { Account } from "./components/account";
 import { ThemeToggle } from "./theme";
 import { IconButton, ErrorMessage } from "./components/ui";
 import { GridsPage, BillingPage, SettingsPage } from "./pages";
@@ -61,7 +62,6 @@ function Layout() {
       window.removeEventListener("keydown", key);
     };
   }, [menu]);
-  const { data: session } = useSession();
   return (
     <div className={pathname.startsWith("/grid/") ? "app grid-page" : "app"}>
       <header className="navbar" ref={headerRef}>
@@ -97,26 +97,7 @@ function Layout() {
           </div>
         )}
         <div className="account">
-          {session?.user ? (
-            <>
-              <a href={session.user.profileURL}>{session.user.username}</a>
-              <button
-                onClick={async () => {
-                  await api("/api/auth/logout", {});
-                  await queries.invalidateQueries();
-                }}
-              >
-                Sign out
-              </button>
-            </>
-          ) : (
-            <a
-              aria-label="Sign in with GitHub"
-              href={`/api/auth/github/start?returnTo=${encodeURIComponent(pathname)}`}
-            >
-              <img src="/github-invertocat-white.svg" alt="GitHub" />
-            </a>
-          )}
+          <Account />
         </div>
       </header>
       {new URLSearchParams(location.search).get("signin") === "failed" && (

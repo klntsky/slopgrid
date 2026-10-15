@@ -152,6 +152,16 @@ h2 small {
   display: flex;
   align-items: center;
 }
+.account-control {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.account-control a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
 .account img,
 .github-icon {
   width: 22px;

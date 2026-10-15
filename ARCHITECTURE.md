@@ -69,6 +69,9 @@ Tooltips render through a portal outside clipping containers, using the active
 dialog when present. The shared control positions them against their anchor and
 viewport and updates placement on scrolling and resizing.
 
+The navbar and Settings share account controls. Successful sign-out reloads
+Settings to discard private query caches and live subscriptions.
+
 ### Durable state
 
 SQLite stores identities, sessions, grid configuration, cell state, reference

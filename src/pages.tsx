@@ -6,6 +6,7 @@ import type { GridSummary, Identity } from "../server/domain";
 import type { BillingPage as BillingData } from "../server/billing";
 import { api } from "./api";
 import { Connection } from "./components/connection";
+import { Account } from "./components/account";
 import { FormatIcon } from "./components/format-icon";
 import { ErrorMessage } from "./components/ui";
 import { useTheme, setTheme } from "./theme";
@@ -99,6 +100,10 @@ export function SettingsPage() {
   return (
     <main className="page">
       <h1>Settings</h1>
+      <section aria-label="Account">
+        <h2>Account</h2>
+        <Account settings />
+      </section>
       <h2>Appearance</h2>
       <label>
         Theme
