@@ -280,76 +280,38 @@ nav a[aria-current="page"] { text-decoration: underline; text-underline-offset: 
   white-space: pre-line;
   pointer-events: none;
 }
-.grid-list article {
-  display: flex;
-  gap: 20px;
-  align-items: center;
-  padding: 20px 0;
-}
-.grid-list article + article {
-  border-top: 1px solid var(--line);
-}
-.grid-list article > a:first-child {
-  flex: 1;
-}
-.billing {
-  width: 100%;
-  border-collapse: collapse;
-  margin: 24px 0;
-}
-.billing small {
-  display: block;
-}
-.billing-scroll {
-  overflow-x: auto;
-}
-.billing-grid-link {
-  display: block;
-  max-width: 24rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-nav[aria-label="Billing pages"] {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-.billing th,
-.billing td {
-  padding: 10px;
-  text-align: left;
-  border-bottom: 1px solid var(--line);
-}
-dialog {
-  color: inherit;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  width: min(540px, 90vw);
-  padding: 24px;
-}
-dialog::backdrop {
-  background: #0008;
-}
-dialog header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
-dialog h2 {
-  margin: 0 0 16px;
-}
-dialog label {
-  margin: 12px 0;
-}
-dialog button {
-  margin: 8px 8px 0 0;
-}
-[role="alert"] {
-  color: #d45443;
-}
+.page-title { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 28px; }
+.page-title h1 { margin: 0; }
+.public-grids { margin-top: 40px; }
+.settings-page section { padding: 28px 0; }
+.settings-page section:first-of-type { padding-top: 0; }
+.settings-page h2 { margin-bottom: 20px; }
+.theme-control { max-width: 320px; }
+.grid-list article { display: flex; gap: 20px; align-items: center; padding: 15px 0; }
+.grid-list article + article { border-top: 1px solid var(--line); }
+.grid-list article > a:first-child { flex: 1; min-width: 0; display: flex; align-items: center; gap: 20px; text-decoration: none; }
+.grid-list article > a > span { overflow-wrap: anywhere; min-width: 0; }
+.grid-list article > a > svg { width: 20px; height: 20px; flex-shrink: 0; }
+.grid-list article > span { font-size: 13px; color: var(--muted); flex-shrink: 0; }
+.billing { width: 100%; border-collapse: collapse; text-align: left; }
+.billing small { display: block; margin-top: .3rem; max-width: 26rem; overflow-wrap: anywhere; }
+.billing-scroll { overflow-x: auto; }
+.billing-grid-link { display: block; max-width: 18rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.billing-tokens { white-space: nowrap; }
+.billing-tokens svg { width: .85rem; height: .85rem; vertical-align: middle; }
+.billing-failed { color: var(--error-text); }
+nav[aria-label="Billing pages"] { display: flex; align-items: center; gap: 1rem; margin-top: 1rem; }
+.billing th, .billing td { padding: .8rem; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
+dialog { color: inherit; background: var(--paper); border: 1px solid var(--line); border-radius: 8px; width: 100%; max-width: min(490px, calc(100vw - 48px)); max-height: calc(100vh - 48px); overflow: auto; padding: 32px; box-shadow: 0 15px 80px var(--shadow); }
+dialog::backdrop { background: var(--backdrop); }
+dialog header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+dialog h2 { margin: 0; font-size: 23px; }
+dialog p { font-size: 14px; line-height: 1.6; color: var(--muted); }
+dialog label { display: flex; flex-direction: row; align-items: center; gap: 10px; margin: 12px 0; font-size: 15px; font-weight: 400; }
+dialog label:first-of-type { margin-top: 20px; }
+dialog label input { margin: 0; accent-color: var(--accent); }
+dialog > button { margin: 13px 10px 0 0; }
+[role="alert"] { color: var(--error-text); }
 .grid-page {
   height: 100dvh;
   display: flex;
@@ -859,8 +821,12 @@ html[data-theme="dark"]::view-transition-new(root) {
     flex-wrap: wrap;
   }
   .billing {
-    font-size: 12px;
+    font-size: 15px;
   }
+  dialog { padding: 24px; }
+  .grid-list article { flex-wrap: wrap; gap: 8px 16px; }
+  .grid-list article > a:first-child { flex-basis: 100%; }
+  .grid-page .desktop-navigation { flex-basis: 100%; justify-content: flex-end; }
 }
 @media (max-width: 479px) {
   .grid-page .navbar {

@@ -48,7 +48,8 @@ function Publish({
   return (
     <Modal
       title={confirm ? "Confirm publishing" : "Control who can see this grid"}
-      close={close}
+      close={() => confirm ? setConfirm(false) : close()}
+      closeButton={false}
       busy={busy}
     >
       {confirm ? (
@@ -67,7 +68,7 @@ function Publish({
             />
             Don’t ask again
           </label>
-          <button disabled={busy} onClick={save}>
+          <button autoFocus className="primary" disabled={busy} onClick={save}>
             Confirm
           </button>
         </>
@@ -94,6 +95,7 @@ function Publish({
             ),
           )}
           <button
+            className="primary"
             disabled={busy}
             onClick={() => {
               if (visibility === "private") close();

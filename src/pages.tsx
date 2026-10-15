@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Plus } from "lucide-react";
+import { Plus, RefreshCw, ArrowUp, ArrowDown } from "lucide-react";
 import type { GridSummary, Identity } from "../server/domain";
 import type { BillingPage as BillingData } from "../server/billing";
 import { api } from "./api";
@@ -41,9 +41,12 @@ export function GridListing({ publicList = false }: { publicList?: boolean }) {
       api<GridSummary[]>(`/api/grids${publicList ? "/public" : ""}`),
   });
   return (
-    <section aria-label={publicList ? "Public grids" : "Your grids"}>
+    <section className={publicList ? "public-grids" : undefined} aria-label={publicList ? "Public grids" : "Your grids"}>
+      <div className="page-title">
       <h1>{publicList ? "Public grids" : "Your grids"}</h1>
-      {publicList && <p>See what others have created</p>}
+      {!publicList && <Link className="button primary" to="/"><Plus />NEW GRID</Link>}
+      </div>
+      {publicList && <p className="description">See what others have created</p>}
       <ErrorMessage error={error} />
       {error && (
         <button disabled={isFetching} onClick={() => refetch()}>
@@ -66,12 +69,11 @@ export function GridListing({ publicList = false }: { publicList?: boolean }) {
               to="/grid/$id"
               params={{ id: g.id }}
             >
-              {g.title || g.expanded_prompt_for_title}
-            </Link>
-            <span>
               <FormatIcon format={g.format} />
-              {formatNames[g.format]}
-            </span>
+              <span>
+              {g.title || g.expanded_prompt_for_title}
+              </span>
+            </Link>
             {publicList ? (
               <Author author={g.author} />
             ) : (
@@ -86,10 +88,6 @@ export function GridListing({ publicList = false }: { publicList?: boolean }) {
 export function GridsPage() {
   return (
     <main className="page">
-      <Link className="button primary" to="/">
-        <Plus />
-        NEW GRID
-      </Link>
       <GridListing />
       <GridListing publicList />
     </main>
@@ -98,14 +96,15 @@ export function GridsPage() {
 export function SettingsPage() {
   const theme = useTheme();
   return (
-    <main className="page">
-      <h1>Settings</h1>
+    <main className="page settings-page">
+      <div className="page-title"><h1>Settings</h1></div>
       <section aria-label="Account">
         <h2>Account</h2>
         <Account settings />
       </section>
+      <section>
       <h2>Appearance</h2>
-      <label>
+      <label className="theme-control">
         Theme
         <select
           value={theme}
@@ -116,12 +115,15 @@ export function SettingsPage() {
           <option value="dark">Dark</option>
         </select>
       </label>
+      </section>
+      <section>
       <Connection settings />
-      <p>
-        More providers coming in the future. For now, use bring-your-own-key
+      <p className="description">
+        More providers coming in the future. For now, use the bring-your-own-key
         feature on OpenRouter to get inference without paying OpenRouter's
         markup
       </p>
+      </section>
     </main>
   );
 }
@@ -135,21 +137,21 @@ export function BillingPage() {
   const data = query.data;
   return (
     <main className="page">
+      <div className="page-title">
       <h1>Billing</h1>
-      <p>
+      <button aria-label="Refresh billing" disabled={query.isFetching} onClick={() => query.refetch()}><RefreshCw /></button>
+      </div>
+      <p className="description">
         Each inference attempt appears here, including retries, failures, and
         cancellations. OpenRouter bills your account directly.
       </p>
-      <button disabled={query.isFetching} onClick={() => query.refetch()}>
-        Refresh billing
-      </button>
       {query.isPending && <p role="status">Loading billing...</p>}
       <ErrorMessage error={query.error} />
       {data && (
         <>
           <p>
-            {formatCost(data.costUsd)} · {data.total} calls · {data.unavailable}{" "}
-            charges unavailable
+            {formatCost(data.costUsd)} reported across {data.total} calls
+            {data.unavailable > 0 && `; charges unavailable for ${data.unavailable}`}.
           </p>
           {data.total === 0 ? (
             <p>No inference calls yet.</p>
@@ -169,8 +171,7 @@ export function BillingPage() {
                       "Model",
                       "Call",
                       "Status",
-                      "Input tokens",
-                      "Output tokens",
+                      "Tokens",
                       "Cost",
                     ].map((h) => (
                       <th key={h}>{h}</th>
@@ -200,18 +201,17 @@ export function BillingPage() {
                       </td>
                       <td>{c.phase}</td>
                       <td>
-                        {c.status}
+                        <span className={c.status === "failed" ? "billing-failed" : undefined}>{c.status}</span>
                         {c.error && (
-                          <p>
+                          <small>
                             {c.errorCode !== undefined
                               ? `Error ${c.errorCode}: `
                               : ""}
                             {c.error}
-                          </p>
+                          </small>
                         )}
                       </td>
-                      <td>{c.usage?.inputTokens ?? "-"}</td>
-                      <td>{c.usage?.outputTokens ?? "-"}</td>
+                      <td className="billing-tokens">{c.usage ? <>{c.usage.inputTokens ?? "-"} <ArrowUp aria-label="input tokens" /> {c.usage.outputTokens ?? "-"} <ArrowDown aria-label="output tokens" /></> : "Unavailable"}</td>
                       <td>{formatCost(c.usage?.costUsd)}</td>
                     </tr>
                   ))}

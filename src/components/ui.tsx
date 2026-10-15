@@ -211,11 +211,13 @@ export function Modal({
   close,
   children,
   busy = false,
+  closeButton = true,
 }: {
   title: string;
   close: () => void;
   children: ReactNode;
   busy?: boolean;
+  closeButton?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -239,9 +241,9 @@ export function Modal({
     >
       <header>
         <h2>{title}</h2>
-        <IconButton label="Close" disabled={busy} onClick={close}>
+        {closeButton && <IconButton label="Close" disabled={busy} onClick={close}>
           <X />
-        </IconButton>
+        </IconButton>}
       </header>
       {children}
     </dialog>,

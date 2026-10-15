@@ -92,7 +92,7 @@ Status: high level product goal that is not a requirement (not achieved yet).
 2. Keep navbar link labels uppercase, with readable desktop text and enough space for grid information. Use matching gaps between the brand, action buttons, and title/prompt group.
 3. For navigation, use the primary input capability independently of viewport width or orientation. Touch-primary devices use a hamburger menu anchored close to its button and keep theme selection in Settings. Mouse-primary devices show navigation links directly alongside the theme toggle, including when secondary touch support is reported. Keep compact grid action buttons on the first navbar row where they fit. At widths of 480px or more, place the grid title, prompt, and byline in the center of that row between the logo and actions; below 480px, give that information a full-width second row.
 4. Give "Your grids" and "Public grids" matching large heading styles. Keep separators only between grid entries in the lists.
-5. Billing and Settings use the same wider page-layout approach as `/grids`.
+5. Billing and Settings use the same centered content-column layout as `/grids`.
 6. Convey publication state through the available grid actions, placement in the public list, and a lowercase "published" label in the owner's grid list. Unpublished entries show their lowercase generation status.
 7. A missing grid should show its 404 promptly without retrying. Keep the error message focused on the missing grid.
 8. Connection loss appears as a small bottom-right label with a rotating preloader and must not shift page layout. Generation preloaders must visibly spin.
