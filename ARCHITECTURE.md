@@ -228,7 +228,10 @@ that cache without maintaining separate ordering state.
   Independent query keys and home search parameters retain each list's page;
   previous results remain visible while the next page loads.
 - Home HTML embeds the requested page and its next two available pages for
-  each list from one database snapshot. Production and development use the same
+  each list from one database snapshot. Creation HTML embeds the first three
+  available pages of both lists, and the creation page uses the same list hooks
+  to prefetch them during client navigation without displaying the lists.
+  Production and development use the same
   session-filtered bootstrap. Request-specific HTML is not cached, varies by
   cookie, escapes script content, and permits its inline script with a CSP hash.
   Before React renders, these pages seed the existing query cache. List queries

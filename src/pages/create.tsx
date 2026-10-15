@@ -4,6 +4,7 @@ import { changeAxis } from "../create/change-axis";
 import { FormatPicker } from "../components/format-picker";
 import { useNavigate } from "@tanstack/react-router";
 import { saveDraft } from "../create/draft";
+import { useGrids, usePublicGrids } from "../queries";
 import { ArrowUpRight, DollarSign, ArrowLeftRight } from "lucide-react";
 import {
   efforts,
@@ -20,6 +21,8 @@ import { ErrorMessage } from "../components/error-message";
 import { LowBalanceDialog } from "../components/inference-dialogs";
 import { useTooltip } from "../components/use-tooltip";
 export function Create() {
+  useGrids();
+  usePublicGrids();
   const navigate = useNavigate();
   const {
     draft,

@@ -70,6 +70,11 @@ test("HTML embeds three session-filtered pages with safe scripts and per-respons
   assert.equal(first.owned.length, 3);
   assert.equal(first.public.length, 3);
   assert.equal(first.owned[0].data.grids[0].title, title);
+  const creation = await read("/create", owner);
+  assert.equal(JSON.stringify(creation), JSON.stringify(first));
+  const anonymousCreation = await read("/create");
+  assert.equal(anonymousCreation.owned[0].data.total, 0);
+  assert.equal(anonymousCreation.public.length, 3);
   assert.equal(
     JSON.stringify(
       first.owned.flatMap((page) => page.data.grids.map((grid) => grid.id)),

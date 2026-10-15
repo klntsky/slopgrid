@@ -1,5 +1,72 @@
 import { test, expect } from "./fixtures";
 
+for (const entry of ["direct", "edit"] as const) {
+  test(`create preloads both lists through ${entry} entry before returning home`, async ({
+    page,
+  }) => {
+    await page.goto("/");
+    const seed = await page.request.post("/fixture/grids", {
+      data: { counts: { owned: 83, public: 83 } },
+    });
+    expect(seed.status()).toBe(200);
+    const { owned: ids } = await seed.json();
+    const requests: string[] = [];
+    page.on("request", (request) => {
+      const url = new URL(request.url());
+      if (/^\/api\/grids(?:\/public)?$/.test(url.pathname))
+        requests.push(url.pathname + url.search);
+    });
+    if (entry === "direct") {
+      await page.route(/\/api\/grids(?:\/public)?\?page=[123]$/, (route) =>
+        route.abort(),
+      );
+      await page.goto("/create");
+    } else {
+      await page.goto(`/grid/${ids[0]}`);
+      await page.getByRole("button", { name: "EDIT", exact: true }).click();
+      await expect
+        .poll(() => requests.slice().sort())
+        .toEqual(
+          [
+            "/api/grids?page=1",
+            "/api/grids?page=2",
+            "/api/grids?page=3",
+            "/api/grids/public?page=1",
+            "/api/grids/public?page=2",
+            "/api/grids/public?page=3",
+          ].sort(),
+        );
+    }
+    await expect(page).toHaveURL("/create");
+    await expect(page.getByLabel("Prompt", { exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("region", { name: "Public grids", exact: true }),
+    ).toHaveCount(0);
+    await page
+      .getByRole("button", {
+        name: entry === "direct" ? "SVG" : "Markdown",
+        exact: true,
+      })
+      .click();
+    await expect(page).toHaveURL("/");
+    const owned = page.getByRole("region", { name: "Your grids", exact: true });
+    await expect(owned.locator(".history-row")).toHaveCount(20);
+    await expect(
+      page
+        .getByRole("region", { name: "Public grids", exact: true })
+        .locator(".history-row"),
+    ).toHaveCount(20);
+    await owned.getByRole("button", { name: "Next", exact: true }).click();
+    await expect(owned.locator(".history-row a").first()).toHaveAttribute(
+      "href",
+      `/grid/${ids[20]}`,
+    );
+    expect(requests.filter((url) => /page=[123]$/.test(url))).toHaveLength(
+      entry === "direct" ? 0 : 6,
+    );
+  });
+}
+
 test("failed prefetch leaves the current lists usable and retries on the requested page", async ({
   page,
 }) => {

@@ -11,8 +11,9 @@ export type GridListsBootstrap = {
 
 export function createGridBootstrap(store: Store, session: SessionReader) {
   return (req: Request, res: Response): GridListsBootstrap | undefined => {
-    if (!["/", "/index.html", "/grids"].includes(req.path)) return;
+    if (!["/", "/index.html", "/grids", "/create"].includes(req.path)) return;
     const owner = session(req, res);
+    const firstPage = req.path === "/grids" || req.path === "/create";
     const window = (requested: number, owned: boolean) => {
       const read = (page: number) =>
         gridListPage(store, page, owned ? owner : undefined);
@@ -28,11 +29,11 @@ export function createGridBootstrap(store: Store, session: SessionReader) {
     };
     return store.db.transaction(() => ({
       owned: window(
-        req.path === "/grids" ? 1 : gridPageNumber(req.query.yourPage),
+        firstPage ? 1 : gridPageNumber(req.query.yourPage),
         true,
       ),
       public: window(
-        req.path === "/grids" ? 1 : gridPageNumber(req.query.publicPage),
+        firstPage ? 1 : gridPageNumber(req.query.publicPage),
         false,
       ),
     }))();
