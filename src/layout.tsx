@@ -104,7 +104,7 @@ export function Layout() {
           <footer className="site-footer">
             <a href="https://github.com/klntsky/slopgrid">source code</a>
             {" · "}
-            <a href="https://twitter.com/klntsky">follow @klntsky for updates</a>
+            follow <a href="https://twitter.com/klntsky">@klntsky</a> for updates
           </footer>
         )}
       </div>

@@ -94,7 +94,7 @@ Status: high level product goal that is not a requirement (not achieved yet).
 
 ### 2.2. Navigation and page layout
 
-Show a small-text footer on every page except the grid page, with "source code" linking to https://github.com/klntsky/slopgrid and "follow @klntsky for updates" linking to https://twitter.com/klntsky, separated by a centered dot.
+Show a small-text footer on every page except the grid page, with "source code" linking to https://github.com/klntsky/slopgrid and "follow @klntsky for updates", separated by a centered dot. Only "@klntsky" in the updates text links to https://twitter.com/klntsky.
 
 1. The logo opens `/`, which combines output-format selection, Your grids when populated, and Public grids. Redirect `/grids` to `/`. Selecting a format opens `/create` with that format selected.
 2. Keep navbar link labels uppercase, with readable desktop text and enough space for grid information. Use matching gaps between the brand, action buttons, and title/prompt group.
