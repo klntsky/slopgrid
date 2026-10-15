@@ -44,14 +44,18 @@ export function useTheme() {
     return () => window.removeEventListener("theme", callback);
   }, preference);
 }
-export function ThemeToggle() {
-  const dark = useSyncExternalStore(
+export function useResolvedTheme() {
+  return useSyncExternalStore(
     (callback) => {
       window.addEventListener("theme", callback);
       return () => window.removeEventListener("theme", callback);
     },
-    () => document.documentElement.dataset.theme === "dark",
+    () =>
+      document.documentElement.dataset.theme === "dark" ? "dark" : "light",
   );
+}
+export function ThemeToggle() {
+  const dark = useResolvedTheme() === "dark";
   return (
     <IconButton
       label={`Switch to ${dark ? "light" : "dark"} theme`}

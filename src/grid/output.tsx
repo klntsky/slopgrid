@@ -19,6 +19,7 @@ import { formatNames } from "../pages";
 import { Website } from "./website";
 import { copyImage } from "./clipboard";
 import { formatCost } from "../format-cost";
+import { useResolvedTheme } from "../theme";
 
 function useText(url: string | undefined, revision = "") {
   return useQuery({
@@ -127,6 +128,7 @@ export function OutputCell({
     [raw, setRaw] = useState(false),
     [expanded, setExpanded] = useState(false);
   const expandButton = useRef<HTMLButtonElement>(null);
+  const theme = useResolvedTheme();
   const output = useText(
       format === "markdown" && cell.outputURL
         ? `${cell.outputURL}?raw=1`
@@ -289,7 +291,11 @@ export function OutputCell({
               <Hint text="Open output">
                 <a
                   aria-label="Open output"
-                  href={cell.outputURL}
+                  href={
+                    format === "markdown"
+                      ? `${cell.outputURL}?theme=${theme}`
+                      : cell.outputURL
+                  }
                   target="_blank"
                   rel="noreferrer"
                 >

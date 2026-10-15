@@ -193,6 +193,7 @@ Status: high level product goal that is not a requirement (not achieved yet).
 4. Add an icon-only raw-view toggle to the left of Expand. Raw mode shows the original Markdown as unformatted text in a monospace font, preserves line breaks, disables wrapping, and scales to the cell width.
 5. In raw mode, the button becomes a Markdown icon that returns to rendered Markdown. Keep raw view available during streaming.
 6. Put Expand in the top-right corner. Expansion occupies the grid workspace while keeping the navbar visible; collapsing restores the grid's layout and viewing state.
+7. Open output carries the app's currently resolved light or dark theme into the standalone Markdown page, including when the app follows the system theme.
 
 ### 5.3. Images and SVG
 
