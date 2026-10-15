@@ -141,6 +141,7 @@ export function BillingPage() {
             <thead>
               <tr>
                 {[
+                  "Started",
                   "Grid",
                   "Model",
                   "Call",
@@ -157,15 +158,30 @@ export function BillingPage() {
               {data.calls.map((c) => (
                 <tr key={c.id}>
                   <td>
+                    <time dateTime={new Date(c.startedAt).toISOString()}>
+                      {new Date(c.startedAt).toLocaleString()}
+                    </time>
+                  </td>
+                  <td>
                     <Link to="/grid/$id" params={{ id: c.gridId }}>
                       {c.gridPrompt}
                     </Link>
                   </td>
-                  <td>{c.model}</td>
+                  <td>
+                    {c.model}
+                    <small>{c.effort}</small>
+                  </td>
                   <td>{c.phase}</td>
                   <td>
                     {c.status}
-                    {c.error && <p>{c.error}</p>}
+                    {c.error && (
+                      <p>
+                        {c.errorCode !== undefined
+                          ? `Error ${c.errorCode}: `
+                          : ""}
+                        {c.error}
+                      </p>
+                    )}
                   </td>
                   <td>{c.usage?.inputTokens ?? "-"}</td>
                   <td>{c.usage?.outputTokens ?? "-"}</td>

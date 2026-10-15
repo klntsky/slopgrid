@@ -260,7 +260,7 @@ Status: high level product goal that is not a requirement (not achieved yet).
 ### 7.2. Billing history
 
 1. Provide a separate billing page that records every actual inference call, including retries, failures, and cancellations. Do not include unbilled catalog, balance, or OAuth calls as inference charges.
-2. Attribute each call to its grid and provide a link to that grid.
+2. Attribute each call to its grid and provide a link to that grid. Show the call's local start timestamp, model, thinking effort, and provider error code alongside its error message when available.
 3. Retain reported charges for unsuccessful calls. Do not turn missing provider cost information into an invented zero charge.
 4. Billing follows ownership: anonymous users see their session's history, and signed-in users see their account-owned grids' history, including grids claimed on sign-in.
 5. Keep finish reasons in durable call records but out of the current UI. Avoid duplicating completion records or usage across multiple persistent representations.

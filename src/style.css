@@ -386,6 +386,9 @@ h2 small {
   border-collapse: collapse;
   margin: 24px 0;
 }
+.billing small {
+  display: block;
+}
 .billing th,
 .billing td {
   padding: 10px;
