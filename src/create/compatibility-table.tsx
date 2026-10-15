@@ -127,18 +127,6 @@ export function compatibilityTables({
   );
 }
 
-const supportPresentation: Record<
-  Compatibility["support"],
-  [string, ReactNode]
-> = {
-  supported: ["Supported", <Check aria-hidden="true" />],
-  unknown: ["Support unknown", <span aria-hidden="true">❓</span>],
-  unsupported: [
-    "Unsupported",
-    <TriangleAlert className="compatibility-warning" aria-hidden="true" />,
-  ],
-};
-
 function CompatibilityGrid({
   caption,
   rows,
@@ -172,7 +160,12 @@ function CompatibilityGrid({
               <th scope="row">{label}</th>
               {columns.map((value, column) => {
                 const { support, reason } = cells[row][column];
-                const [status, icon] = supportPresentation[support];
+                const status =
+                  support === "supported"
+                    ? "Supported"
+                    : support === "unknown"
+                      ? "Support unknown"
+                      : "Unsupported";
                 return (
                   <td
                     key={column}
@@ -184,7 +177,16 @@ function CompatibilityGrid({
                     ref={support === "supported" ? undefined : tooltipRef}
                     tabIndex={support === "supported" ? undefined : 0}
                   >
-                    {icon}
+                    {support === "supported" && <Check aria-hidden="true" />}
+                    {support === "unknown" && (
+                      <span aria-hidden="true">❓</span>
+                    )}
+                    {support === "unsupported" && (
+                      <TriangleAlert
+                        className="compatibility-warning"
+                        aria-hidden="true"
+                      />
+                    )}
                   </td>
                 );
               })}
