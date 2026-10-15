@@ -18,6 +18,7 @@ import { CopyButton, Hint, IconButton } from "../components/ui";
 import { formatNames } from "../pages";
 import { Website } from "./website";
 import { copyImage } from "./clipboard";
+import { formatCost } from "../format-cost";
 
 function useText(url: string | undefined, revision = "") {
   return useQuery({
@@ -341,9 +342,7 @@ export function OutputCell({
             >
               <span>
                 {cell.status === "running" ? "~" : ""}
-                {usage.costUsd === undefined
-                  ? "Cost unavailable"
-                  : `$${Number(usage.costUsd.toFixed(6))}`}
+                {formatCost(usage.costUsd)}
               </span>
             </Hint>
           </div>

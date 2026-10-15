@@ -4,11 +4,12 @@ import { useQuery } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import type { GridSummary, Identity } from "../server/domain";
 import type { BillingPage as BillingData } from "../server/billing";
-import { api, money } from "./api";
+import { api } from "./api";
 import { Connection } from "./components/connection";
 import { FormatIcon } from "./components/format-icon";
 import { ErrorMessage } from "./components/ui";
 import { useTheme, setTheme } from "./theme";
+import { formatCost } from "./format-cost";
 export const formatNames = {
   markdown: "Markdown",
   image: "Image",
@@ -142,7 +143,7 @@ export function BillingPage() {
       {data && (
         <>
           <p>
-            ${money(data.costUsd)} · {data.total} calls · {data.unavailable}{" "}
+            {formatCost(data.costUsd)} · {data.total} calls · {data.unavailable}{" "}
             charges unavailable
           </p>
           {data.total === 0 ? (
@@ -206,11 +207,7 @@ export function BillingPage() {
                       </td>
                       <td>{c.usage?.inputTokens ?? "-"}</td>
                       <td>{c.usage?.outputTokens ?? "-"}</td>
-                      <td>
-                        {c.usage?.costUsd === undefined
-                          ? "Unavailable"
-                          : `$${c.usage.costUsd}`}
-                      </td>
+                      <td>{formatCost(c.usage?.costUsd)}</td>
                     </tr>
                   ))}
                 </tbody>

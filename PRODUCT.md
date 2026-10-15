@@ -256,7 +256,7 @@ Status: high level product goal that is not a requirement (not achieved yet).
 2. Show running input and output token counts alongside each text cell's running price, using the same layout and arrows as final counts. Estimate usage from input, visible output, and available thinking while streaming, mark estimates as approximate, and replace them with provider-reported usage when the call completes. Use a monospace font for the per-cell counts and price to reduce text movement.
 3. The cost total is the sum of successful outputs currently shown on the grid plus running inference estimates.
 4. The spent total is the sum of all reported billing charges for this grid plus running inference estimates, including failed, cancelled, and retried calls. Replace each running estimate with its reported charge without counting the attempt twice; discard its estimate when work stops. Show spent only to the grid owner and omit it from responses to other viewers.
-5. Keep both totals' two-decimal UI truncation separate from stored billing precision.
+5. Keep both totals' two-decimal UI truncation separate from stored billing precision. Cell charges and billing amounts use two to eight fractional digits, distinguishing unavailable costs from zero. Display a positive charge below the precision limit as "<$0.00000001" so it is never shown as zero.
 6. The cost tooltip is "Inference costs for this grid, not including failed attempts". The spent tooltip is "Inference costs for this grid, including failed attempts - how much you have actually spent on this page".
 
 ### 7.2. Billing history
