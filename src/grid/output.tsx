@@ -3,11 +3,13 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Brain,
   Palette,
-  Maximize,
-  Minimize,
-  Code,
+  Maximize2,
+  Minimize2,
+  CodeXml,
   FileText,
-  ExternalLink,
+  ArrowUpRight,
+  ArrowUp,
+  ArrowDown,
   Download,
 } from "lucide-react";
 import type { GridInput } from "../../server/domain";
@@ -222,7 +224,7 @@ export function OutputCell({
               label={raw ? "View Markdown" : "View raw"}
               onClick={() => setRaw(!raw)}
             >
-              {raw ? <FileText /> : <Code />}
+              {raw ? <FileText /> : <CodeXml />}
             </IconButton>
           )}
           <Hint text={`${expanded ? "Collapse" : "Expand"} ${name}`}>
@@ -232,7 +234,7 @@ export function OutputCell({
               aria-label={`${expanded ? "Collapse" : "Expand"} ${name}`}
               onClick={() => (expanded ? collapse() : setExpanded(true))}
             >
-              {expanded ? <Minimize /> : <Maximize />}
+              {expanded ? <Minimize2 /> : <Maximize2 />}
             </button>
           </Hint>
         </div>
@@ -244,7 +246,7 @@ export function OutputCell({
           </div>
         )}
         <div className="output-layer" hidden={showThinking}>
-          {format === "markdown" && (
+          {format === "markdown" && (text || cell.status === "running" || cell.outputURL) && (
             <MarkdownPreview
               text={text}
               raw={raw}
@@ -280,20 +282,15 @@ export function OutputCell({
           {!text &&
             !cell.outputURL &&
             !cell.previewURL &&
-            !(paused && cell.status === "pending") &&
             cell.status !== "error" && (
-              <span className="spinner" aria-label={cell.status} />
+              <div className="pending" role="status">
+                {cell.status === "running" && <span className="spinner" />}
+                {cell.retrying ? "Waiting to retry…" : cell.status === "running" ? "Generating…" : paused ? "Paused" : "Queued"}
+              </div>
             )}
         </div>
       </div>
-      <footer className="cell-footer">
-        {cell.status === "pending" && (
-          <span>{paused ? "Paused" : "Queued"}</span>
-        )}
-        {cell.retrying && <span>Waiting to retry…</span>}
-        {cell.status === "running" && !cell.retrying && (
-          <span>Generating…</span>
-        )}
+      {!expanded && (cell.status === "complete" || (cell.status === "running" && (format === "markdown" || usage?.costUsd !== undefined))) && <footer className="cell-footer">
         <div className="output-actions">
           {cell.outputURL && (
             <>
@@ -308,7 +305,7 @@ export function OutputCell({
                   target="_blank"
                   rel="noreferrer"
                 >
-                  <ExternalLink />
+                  <ArrowUpRight />
                 </a>
               </Hint>
               {format !== "html" && (
@@ -344,8 +341,8 @@ export function OutputCell({
               className="cell-tokens"
               aria-label={`${cell.status === "running" ? "Estimated: " : ""}${usage.inputTokens ?? 0} input tokens, ${usage.outputTokens ?? 0} output tokens`}
             >
-              <Hint text="Input tokens">↑{usage.inputTokens ?? "-"}</Hint>{" "}
-              <Hint text="Output tokens">↓{usage.outputTokens ?? "-"}</Hint>
+              <Hint text="Input tokens">{usage.inputTokens ?? "-"}<ArrowUp /></Hint>{" "}
+              <Hint text="Output tokens">{usage.outputTokens ?? "-"}<ArrowDown /></Hint>
             </span>
             <Hint
               attribute
@@ -362,7 +359,7 @@ export function OutputCell({
             </Hint>
           </div>
         )}
-      </footer>
+      </footer>}
     </article>
   );
 }

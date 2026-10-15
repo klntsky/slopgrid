@@ -754,6 +754,7 @@ test("titles are independent owner-editable metadata and collapsed prompts expan
       .click();
     const publishedTitle = "Flight study comparing autumn landscapes";
     await titleField.fill(publishedTitle);
+    await expect(titleField).toHaveValue(publishedTitle);
     await heading.click();
     await expect(
       header.getByRole("button", { name: "Edit title", exact: true }),

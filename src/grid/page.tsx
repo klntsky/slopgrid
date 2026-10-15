@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useParams, useNavigate } from "@tanstack/react-router";
 import { Square, Play, Pencil, Share, GitFork } from "lucide-react";
@@ -120,6 +120,9 @@ function Publish({
   );
 }
 export function GridPage() {
+  const titleButton = useRef<HTMLButtonElement>(null);
+  const titleCancelled = useRef(false);
+  const titleSaving = useRef(false);
   const { id } = useParams({ strict: false }) as { id: string };
   const { grid, error, disconnected, accept } = useGrid(id);
   const [actionError, setActionError] = useState<unknown>(),
@@ -158,6 +161,18 @@ export function GridPage() {
       reuseArtifacts: true,
     });
     await navigate({ to: "/" });
+  }
+  async function saveTitle(value: string) {
+    if (titleCancelled.current || titleSaving.current) return;
+    titleSaving.current = true;
+    try {
+      accept(await api<GridView>(`/api/grids/${id}/title`, { title: value }, "PATCH"));
+      setEditingTitle(false);
+    } catch (e) {
+      setActionError(e);
+    } finally {
+      titleSaving.current = false;
+    }
   }
   if (error && !grid)
     return (
@@ -225,62 +240,34 @@ export function GridPage() {
             <div className="grid-information">
               <div className="title-prompt">
                 {editingTitle ? (
-                  <form
-                    onSubmit={async (e) => {
-                      e.preventDefault();
-                      try {
-                        accept(
-                          await api<GridView>(
-                            `/api/grids/${id}/title`,
-                            { title },
-                            "PATCH",
-                          ),
-                        );
-                        setEditingTitle(false);
-                      } catch (e) {
-                        setActionError(e);
-                      }
-                    }}
-                  >
                     <input
                       aria-label="Grid title"
                       maxLength={40}
-                      value={title}
-                      onChange={(e) => setTitle(e.target.value)}
-                      onBlur={async (e) => {
-                        if (e.relatedTarget?.closest("form")) return;
-                        try {
-                          accept(
-                            await api<GridView>(
-                              `/api/grids/${id}/title`,
-                              { title },
-                              "PATCH",
-                            ),
-                          );
-                          setEditingTitle(false);
-                        } catch (e) {
-                          setActionError(e);
-                        }
-                      }}
+                      defaultValue={title}
+                      onFocus={(e) => e.currentTarget.select()}
+                      onBlur={(e) => void saveTitle(e.currentTarget.value)}
                       autoFocus
                       onKeyDown={(e) => {
-                        if (e.key === "Escape") setEditingTitle(false);
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          e.currentTarget.blur();
+                        }
+                        if (e.key === "Escape") {
+                          e.preventDefault();
+                          titleCancelled.current = true;
+                          setEditingTitle(false);
+                          requestAnimationFrame(() => titleButton.current?.focus());
+                        }
                       }}
                     />
-                    <button>Save title</button>
-                    <button
-                      type="button"
-                      onClick={() => setEditingTitle(false)}
-                    >
-                      Cancel
-                    </button>
-                  </form>
                 ) : grid.canEdit ? (
                   <button
+                    ref={titleButton}
                     className="grid-title"
                     aria-label={grid.title ? "Edit title" : "Set Title"}
                     disabled={!grid.canEdit}
                     onClick={() => {
+                      titleCancelled.current = false;
                       setTitle(grid.title ?? "");
                       setEditingTitle(true);
                     }}
@@ -352,7 +339,9 @@ export function GridPage() {
           </>,
           target,
         )}
-      <div className="progress">
+      <div className="progress-hint">
+      <Hint text={`${finished} of ${grid.cells.length} outputs finished: ${grid.cells.filter((c) => c.status === "complete").length} complete, ${grid.cells.filter((c) => c.status === "error").length} failed`}>
+      <div className="progress" tabIndex={0}>
         <progress
           aria-valuetext={
             grid.cells.some((c) => c.status === "error")
@@ -372,6 +361,8 @@ export function GridPage() {
           />
         ))}
         {grid.status === "running" && <span className="progress-spark" />}
+      </div>
+      </Hint>
       </div>
       <Workspace key={id} grid={grid} />
       {disconnected && (

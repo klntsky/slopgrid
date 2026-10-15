@@ -355,9 +355,15 @@ dialog button {
   display: flex;
   flex-direction: column;
 }
-.grid-page .navbar {
-  flex-shrink: 0;
-}
+.grid-page .navbar { flex-shrink: 0; height: auto; min-height: 64px; padding: 8px 12px; gap: 12px; }
+.grid-information { order: 1; }
+.grid-run-action { order: 2; }
+.grid-actions { order: 3; }
+.grid-page .desktop-navigation, .grid-page .touch-navigation { order: 4; margin-left: 0; }
+.grid-run-action button { width: 36px; height: 36px; padding: 8px; }
+.title-prompt input { width: 40%; min-width: 0; padding: 3px 6px; font-size: 17px; line-height: 1.4; }
+.grid-title-dot { color: var(--muted); }
+.progress-hint, .progress-hint > .hint { display: block; flex-shrink: 0; width: 100%; }
 #grid-navigation {
   display: contents;
 }
@@ -377,7 +383,11 @@ dialog button {
   border: 0;
   padding: 0;
   background: transparent;
-  font-weight: 600;
+  font-size: 17px;
+  font-weight: 500;
+  line-height: 1.4;
+  padding: 3px 4px;
+  margin-left: -4px;
 }
 .grid-title:disabled {
   opacity: 1;
@@ -389,11 +399,15 @@ dialog button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--accent);
+  color: var(--logo-color);
+  font-size: 17px;
+  font-weight: 500;
+  letter-spacing: -.3px;
+  line-height: 1.4;
 }
 .grid-byline {
-  font-size: 12px;
-  margin-top: 4px;
+  font-size: 13px;
+  margin-top: 0;
   color: var(--muted);
 }
 .grid-byline img {
@@ -442,8 +456,8 @@ dialog button {
   table-layout: fixed;
   border-collapse: separate;
   border-spacing: 0;
-  min-width: 100%;
-  height: 100%;
+  min-width: 0;
+  height: auto;
 }
 .output-grid th,
 .output-grid td {
@@ -462,16 +476,18 @@ dialog button {
   position: sticky;
   top: 0;
   z-index: 5;
-  background: var(--surface);
-  padding: 7px 12px;
+  background: var(--grid-header);
+  padding: 8px 16px;
+  text-align: left;
+  font-size: 15px;
   font-weight: 500;
 }
 .output-grid tbody th {
   position: sticky;
   left: 0;
   z-index: 4;
-  background: var(--surface);
-  width: 48px;
+  background: var(--grid-header);
+  width: 35px;
 }
 .output-grid thead th:first-child {
   left: 0;
@@ -482,13 +498,13 @@ dialog button {
   transform: rotate(180deg);
   margin: auto;
   max-height: 100%;
-  padding: 12px 8px;
+  padding: 16px 8px;
   font-weight: 500;
 }
 .model-label {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 7px;
 }
 .model-label button {
   border: 0;
@@ -500,7 +516,9 @@ dialog button {
 .model-label svg {
   width: 13px;
   height: 13px;
+  color: var(--muted);
 }
+.row-label .model-label svg { rotate: 90deg; }
 .resize-columns {
   position: absolute;
   left: -4px;
@@ -521,7 +539,7 @@ dialog button {
 }
 .cell {
   height: 100%;
-  min-height: 160px;
+  min-height: 0;
   position: absolute;
   inset: 0;
   display: flex;
@@ -530,13 +548,17 @@ dialog button {
 }
 .cell-toolbar {
   position: absolute;
-  right: 5px;
-  top: 5px;
+  right: 8px;
+  top: 8px;
   display: flex;
   z-index: 3;
   background: var(--surface);
-  border-radius: 4px;
+  border-radius: 10px;
+  padding: 2px;
+  gap: 2px;
+  border: 1px solid var(--line);
 }
+.cell-toolbar button { width: 36px; height: 36px; padding: 8px; }
 .cell-content {
   flex: 1;
   min-height: 0;
@@ -553,7 +575,7 @@ dialog button {
 .image-preview {
   width: 100%;
   height: 100%;
-  padding: 16px;
+  padding: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -567,20 +589,31 @@ dialog button {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 6px 10px;
-  min-height: 36px;
+  gap: 10px;
+  padding: 9px 12px;
+  height: 52px;
+  flex-shrink: 0;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  color: var(--muted);
 }
 .output-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 2px;
 }
+.output-actions :is(button,a) { width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 6px; color: inherit; }
+.output-actions svg { width: 16px; height: 16px; }
+.cell-tokens, .cell-tokens .hint { display: inline-flex; align-items: center; gap: 4px; }
+.cell-tokens svg { width: 12px; height: 12px; }
+.cell-tokens .lucide-arrow-up { margin-right: 4px; }
+.pending { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 15px; padding: 20px; font-size: 15px; color: var(--muted); }
+.cell { background: var(--cell); }
 .cell-usage {
   display: flex;
   gap: 10px;
   font:
-    11px GridMono,
+    12px ui-monospace,
     monospace;
 }
 .cell-error {
@@ -590,7 +623,7 @@ dialog button {
   height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 48px 24px 24px;
+  padding: 24px;
   scrollbar-gutter: stable;
   font: 16px/1.6 system-ui;
 }
@@ -647,6 +680,13 @@ dialog button {
 .markdown-document img {
   max-width: 100%;
 }
+.cell:has(.cell-toolbar) .markdown-document > :first-child:not(pre):not(table) { margin-right: 74px; }
+.cell:has(.cell-toolbar > :nth-child(3)) .markdown-document > :first-child:not(pre):not(table) { margin-right: 112px; }
+.markdown-document table { width: 100%; }
+.markdown-document th { background: var(--grid-header); padding: 8px 16px; font-size: 15px; font-weight: 500; text-align: left; }
+.markdown-document th, .markdown-document td { border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.markdown-document td { height: 390px; vertical-align: top; padding: 0; }
+.markdown-document > pre { padding: 28px 0 0; margin: 0; background: none; }
 .thinking-preview {
   height: 100%;
   overflow-y: auto;
@@ -678,7 +718,7 @@ dialog button {
 .cell-expanded {
   height: auto;
   position: fixed;
-  inset: var(--navbar-height, 67px) 0 0;
+  inset: calc(var(--navbar-height, 64px) + 3px) 0 0;
   z-index: 20;
   background: var(--surface);
 }
@@ -693,8 +733,8 @@ dialog button {
 }
 .spinner {
   display: inline-block;
-  width: 18px;
-  height: 18px;
+  width: 22px;
+  height: 22px;
   border: 2px solid var(--line);
   border-top-color: var(--accent);
   border-radius: 50%;
@@ -795,6 +835,8 @@ html[data-theme="dark"]::view-transition-new(root) {
   .grid-page .brand > span {
     display: none;
   }
+  .grid-page .navbar { padding: 8px 10px; gap: 8px; }
+  .grid-page .brand img { width: 24px; height: 24px; }
   .navbar {
     height: auto;
     min-height: 72px;

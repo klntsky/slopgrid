@@ -1,5 +1,17 @@
 # Development
 
+## Presentation validation
+
+The numbered presentation requirements in PRODUCT.md cover visible geometry,
+icons, control placement, and interaction. Compare matching content and states
+at desktop, tablet, and phone sizes, with mouse and touch input, in both themes.
+Use viewport captures for responsive navigation because full-page captures can
+change mobile viewport behavior. Keep screenshots and comparison reports
+outside the repository. Layout-only changes do not require new automated tests.
+Behavior changes use scoped browser coverage, including persistent resizing,
+title commit and cancellation, provider connection, publication, and billing
+navigation.
+
 This guide covers setup, configuration, operations, and validation. Architectural
 responsibilities and runtime behavior are described in [ARCHITECTURE.md](ARCHITECTURE.md).
 
