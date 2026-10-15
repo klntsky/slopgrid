@@ -736,12 +736,12 @@ dialog button {
   font-family: GridMono, monospace;
   line-height: normal;
   padding: 12px;
-  background: var(--panel);
+  background: var(--surface);
 }
 .markdown-document code {
   font-family: GridMono, monospace;
   line-height: normal;
-  background: var(--panel);
+  background: var(--surface);
 }
 .markdown-document img {
   max-width: 100%;
