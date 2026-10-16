@@ -2,6 +2,39 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { expandGrid, gridSchema } from "../server/domain.js";
 
+test("chat histories preserve roles and whitespace while expanding variables", () => {
+  const source = {
+    format: "chat",
+    messages: [
+      { role: "system", content: "Use $ROW" },
+      { role: "user", content: "Ask $COLUMN" },
+      { role: "assistant", content: "  My answer: " },
+    ],
+    rows: { kind: "variable", values: ["Markdown"] },
+    columns: { kind: "variable", values: ["why"] },
+    model: "test/model",
+    effort: "default",
+    budgetUsd: 3,
+  };
+  const input = gridSchema.parse(source);
+  assert.deepEqual(expandGrid(input)[0].messages, [
+    { role: "system", content: "Use Markdown" },
+    { role: "user", content: "Ask why" },
+    { role: "assistant", content: "  My answer: " },
+  ]);
+  for (const messages of [
+    [],
+    [{ role: "tool", content: "x" }],
+    [{ role: "user", content: " " }],
+  ])
+    assert.equal(gridSchema.safeParse({ ...source, messages }).success, false);
+  assert.equal(
+    gridSchema.safeParse({ ...source, messages: undefined, prompt: "ignored" })
+      .success,
+    false,
+  );
+});
+
 test("two prompt variables are replaced literally, including dollar signs in values", () => {
   const cells = expandGrid({
     format: "markdown",

@@ -167,11 +167,12 @@ export async function generateInference(
     const result = streamText({
       model,
       includeRawChunks: true,
-      system,
+      ...(prepared.text.messages
+        ? { messages: prepared.text.messages }
+        : { system, prompt: prepared.prompt }),
       ...(schema && {
         output: Output.object({ schema: jsonSchema(schema), name: "website" }),
       }),
-      prompt: prepared.prompt,
       maxOutputTokens,
       maxRetries: 0,
       abortSignal: signal,

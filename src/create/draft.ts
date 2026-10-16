@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import type { GridInput } from "../../server/domain";
+import { chatText, type GridInput } from "../../server/domain";
 import type { ReferenceImage } from "../../server/image-settings";
 export type Draft = {
   formatSelected: boolean;
@@ -53,24 +53,29 @@ export function startDraft(format: GridInput["format"]) {
   saveDraft(selectDraftFormat(readDraft(), format));
 }
 function selectDraftFormat(d: Draft, format: GridInput["format"]): Draft {
+  const messages = d.input.messages ?? [
+    { role: "user" as const, content: d.input.prompt },
+  ];
   return {
     ...d,
     formatSelected: true,
     input: {
       ...d.input,
       format,
+      messages: format === "chat" ? messages : undefined,
+      prompt: format === "chat" ? chatText(messages) : d.input.prompt,
       imageSettings: undefined,
       inputReferences: undefined,
       model: "",
       effort: "default",
       rows:
-        format === "markdown"
+        format === "markdown" || format === "chat"
           ? { kind: "effort", values: ["default"] }
           : { kind: "model", values: [] },
       columns:
         format === "image"
           ? { kind: "quality", values: ["auto"] }
-          : format === "markdown"
+          : format === "markdown" || format === "chat"
             ? { kind: "model", values: [] }
             : { kind: "effort", values: ["default"] },
     },
@@ -89,6 +94,7 @@ export function useCreateDraft() {
   ) {
     setDraft((d) => {
       const partial = typeof change === "function" ? change(d.input) : change;
+      if (partial.messages) partial.prompt = chatText(partial.messages);
       return {
         ...d,
         input: {

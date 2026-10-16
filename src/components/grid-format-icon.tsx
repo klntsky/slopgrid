@@ -1,4 +1,10 @@
-import { FileCode, FileText, PanelsTopLeft, Image } from "lucide-react";
+import {
+  FileCode,
+  FileText,
+  PanelsTopLeft,
+  Image,
+  MessagesSquare,
+} from "lucide-react";
 import { useTooltip } from "./use-tooltip";
 import type { GridInput } from "../../server/domain";
 import { formatNames } from "../format";
@@ -15,6 +21,7 @@ export function FormatIcon({
     markdown: FileText,
     html: PanelsTopLeft,
     image: Image,
+    chat: MessagesSquare,
   }[format];
   return <Icon className={className} aria-hidden="true" />;
 }

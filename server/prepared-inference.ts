@@ -46,7 +46,8 @@ export function prepareTextInference(
     format,
     pricing: budget.pricing,
     text: {
-      system: instruction(format),
+      messages: cell.messages,
+      system: cell.messages ? "" : instruction(format),
       maxOutputTokens: budget.maxOutputTokens,
       schema: structured ? z.toJSONSchema(websiteSchema) : undefined,
       options: {

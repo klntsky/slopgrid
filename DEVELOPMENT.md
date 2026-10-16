@@ -266,6 +266,11 @@ Storage and route tests exercise persistence and reopening. Upgrade and unsuppor
 
 ## Generation and output validation
 
+Chat coverage validates roles and message bodies, variable expansion, exact
+provider history and prefix preservation, and reuse signatures. Browser coverage
+exercises insertion, deletion, pointer and keyboard reordering, draft and Edit
+restoration, provider connection, and Markdown rendering and copying.
+
 Recovery coverage exercises a failed later reference upload followed by reload
 and retry, large reference retention through reload and authorization, clipboard
 failure and retry without duplicate writes, independent grid-list failures, and

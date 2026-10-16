@@ -16,6 +16,7 @@ import { useTheme } from "../theme";
 import { formatCost, cellError, formatNames } from "../format";
 import { WebsitePreview } from "./website-preview";
 import { MarkdownPreview } from "./markdown-preview";
+import { isMarkdownFormat } from "../../server/domain";
 import { SvgPreview } from "../svg-preview-image";
 import { ContainedImage } from "../contained-image";
 import { useTooltip, tooltipRef } from "../components/use-tooltip";
@@ -54,14 +55,14 @@ export function OutputCell({
   const outputURL =
     offline && format === "html" && cell.status === "complete"
       ? `/offline/outputs/${cell.id}/index.html`
-      : format === "markdown" && cell.outputURL
+      : isMarkdownFormat(format) && cell.outputURL
         ? `${cell.outputURL}?theme=${resolvedTheme}`
         : cell.outputURL;
   const complete = cell.status === "complete";
   const usage = complete ? cell.usage : cell.estimatedUsage;
   const approximate = complete ? "" : "≈";
   const markdown =
-    format === "markdown" && (complete || cell.status === "running");
+    isMarkdownFormat(format) && (complete || cell.status === "running");
   const hasThinking = !!(cell.thinking || cell.thinkingURL);
   const hasOutput =
     complete || !!(format === "html" ? cell.previewURL : cell.draft?.trim());

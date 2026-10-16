@@ -155,6 +155,13 @@ alter later chunks. After successful generation the same repairs are saved.
 Existing namespace declarations and complete markup remain unchanged.
 Markdown output passes through unchanged.
 
+Chat completion is a distinct domain format that shares Markdown output parsing,
+storage, previews, downloads, and copying. Its input and cells retain ordered
+messages with system, user, or assistant roles. Grid expansion substitutes
+variables in each message body. A derived transcript supplies existing titles,
+prompt display, and input-cost estimates; inference sends the structured messages
+without an additional system instruction. Request signatures include the history.
+
 The engine sends snapshots containing cell state, drafts, estimates, and preview
 identifiers. The web process checks the viewer's session and access before
 forwarding live updates. The browser reconnects to current engine state after

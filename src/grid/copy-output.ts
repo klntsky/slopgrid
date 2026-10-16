@@ -1,5 +1,6 @@
 import { queryClient } from "../query-client";
 import { textOutput } from "./text-output";
+import { isMarkdownFormat } from "../../server/domain";
 
 async function clipboardImage(url: string): Promise<Blob> {
   const response = await fetch(url);
@@ -27,7 +28,7 @@ async function clipboardImage(url: string): Promise<Blob> {
 
 export async function copyOutput(
   url: string,
-  format: "image" | "svg" | "markdown",
+  format: "image" | "svg" | "markdown" | "chat",
 ) {
   if (format === "image") {
     return navigator.clipboard.write([
@@ -35,7 +36,7 @@ export async function copyOutput(
     ]);
   }
   const content = queryClient.fetchQuery(
-    textOutput(url, format === "markdown"),
+    textOutput(url, isMarkdownFormat(format)),
   );
   if (typeof ClipboardItem !== "undefined" && navigator.clipboard.write) {
     await navigator.clipboard.write([

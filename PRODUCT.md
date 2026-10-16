@@ -16,8 +16,8 @@ The following numbered requirements define the visible layout and interaction co
 8. Include GitHub account controls, Billing, and Settings in the touch popup, and change the open menu trigger to a close icon.
 9. Use the established filled primary buttons and borderless secondary actions, with matching padding, dimensions, hover states, and rounding.
 10. Use a 2px themed keyboard focus outline with a 3px offset on interactive controls.
-11. Present output formats as four equal vertical cards, with icons above labels, changing to two equal columns on phones.
-12. Use file-text, image, code-file, and browser-window format icons at 44px with a 1.5px stroke in the format cards.
+11. Present output formats as five equal vertical cards, with icons above labels, changing to two equal columns on phones.
+12. Use file-text, image, code-file, browser-window, and chat-message format icons at 44px with a 1.5px stroke in the format cards.
 13. Mark the selected format with a tinted fill and reinforced outline.
 14. Separate creation sections with horizontal rules and small muted two-digit numbers, beginning with What do you want to generate? and numbering provider setup consecutively.
 15. Keep the layout heading and its explanatory subtitle at the same size and weight, wrapping together.
@@ -28,7 +28,7 @@ The following numbered requirements define the visible layout and interaction co
 20. Align the axis swap control with desktop selectors and rotate its arrows vertically when axes stack on phones.
 21. Stretch common image options across equal desktop columns and stack full-width controls on phones.
 22. Show reference uploads in a bordered group with a shared Input references label, thumbnails, visible filenames, compact remove icons, and a paperclip Add images action.
-23. Use a six-row prompt textarea with the placeholder Describe what you want to generate and the section heading Enter your prompt, without a redundant visible Prompt label.
+23. Use a six-row prompt textarea with the placeholder Describe what you want to generate and the section heading Enter your prompt, without a redundant visible Prompt label. Chat completion replaces this widget with a Chat history editor.
 24. Place the budget below the provider connection and keep its dollar icon inside the input boundary.
 25. Show the provider logo, OpenRouter name, and stacked connection status in a bordered identity card, with actions beside them and a visible logo in both themes.
 26. Expand API-key entry inline within the provider card, use its available width, and disable Connect until a nonempty key is supplied.
@@ -74,7 +74,7 @@ Status: high level product goal that is not a requirement (not achieved yet).
 
 1. Slopgrid lets people submit a prompt and compare generated outputs in a two-dimensional grid whose row and column meanings they choose.
 2. Support model and prompt-variable axes for every output type, thinking-effort axes for text outputs, and size, aspect ratio, quality, background, and input-reference axes for images.
-3. Offer four output types in this order: Markdown, Image, SVG, and Static website. Image generation uses image-capable models; static websites may contain multiple files, which are served without server-side execution.
+3. Offer five output types in this order: Markdown, Image, SVG, Static website, and Chat completion. Image generation uses image-capable models; static websites may contain multiple files, which are served without server-side execution. Chat completion accepts an ordered chat history prefix and displays its response as Markdown, using the same text grid dimensions and output controls. Each message has an editable body and a clickable role badge cycling through system (red), user (blue), and assistant (grey). Allow insertion at any position, deletion, and drag reordering, with keyboard reordering available on the drag handle. Preserve message roles, order, and body whitespace through saving, Edit, and Fork, and expand grid variables within each message.
 4. Generate outputs on the server, stream progress to the browser, retain completed results, and let owners publish their grids afterward.
 5. A cell attempt makes one inference call.
 6. Apply sensible request and generation rate limits without imposing deadlines on accepted inference.

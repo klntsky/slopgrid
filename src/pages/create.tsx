@@ -1,4 +1,5 @@
 import { ModelSelector } from "../create/model-selector";
+import { ChatEditor } from "../create/chat-editor";
 import { ImageOptions } from "../create/image-options";
 import { changeAxis } from "../create/change-axis";
 import { FormatPicker } from "../components/format-picker";
@@ -106,6 +107,13 @@ export function Create() {
                   prompt: input.prompt.replace(/\$(ROW|COLUMN)/g, (_, axis) =>
                     axis === "ROW" ? "$COLUMN" : "$ROW",
                   ),
+                  messages: input.messages?.map((message) => ({
+                    ...message,
+                    content: message.content.replace(
+                      /\$(ROW|COLUMN)/g,
+                      (_, axis) => (axis === "ROW" ? "$COLUMN" : "$ROW"),
+                    ),
+                  })),
                 })
               }
             >
@@ -188,17 +196,26 @@ export function Create() {
         <section>
           <div className="section-heading">
             <span className="number">{commonParameters ? "04" : "03"}</span>
-            <h2>Enter your prompt</h2>
+            <h2>
+              {input.format === "chat" ? "Chat history" : "Enter your prompt"}
+            </h2>
           </div>
 
-          <textarea
-            id="grid-prompt"
-            aria-label="Prompt"
-            rows={6}
-            value={input.prompt}
-            onChange={(e) => update({ prompt: e.target.value })}
-            placeholder="Describe what you want to generate"
-          />
+          {input.format === "chat" ? (
+            <ChatEditor
+              messages={input.messages ?? []}
+              onChange={(messages) => update({ messages })}
+            />
+          ) : (
+            <textarea
+              id="grid-prompt"
+              aria-label="Prompt"
+              rows={6}
+              value={input.prompt}
+              onChange={(e) => update({ prompt: e.target.value })}
+              placeholder="Describe what you want to generate"
+            />
+          )}
           <ErrorMessage
             error={input.prompt.trim() ? unusedVariableIssue(input) : undefined}
           />

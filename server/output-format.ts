@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { GridInput } from "./domain.js";
+import { isMarkdownFormat, type GridInput } from "./domain.js";
 import { safePath } from "./files.js";
 import { prepareSvg } from "../shared/svg.js";
 export const websiteSchema = z.strictObject({
@@ -10,7 +10,7 @@ export function parseOutput(
   format: GridInput["format"],
   raw: string,
 ): Record<string, string> {
-  if (format === "markdown") return { "index.md": raw };
+  if (isMarkdownFormat(format)) return { "index.md": raw };
   if (format === "svg") return { "index.svg": prepareSvg(raw) };
   if (format === "html") {
     const entries = websiteSchema

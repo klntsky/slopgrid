@@ -78,7 +78,11 @@ export function useCreateForm() {
     !input.rows.values.length && "Select row values.",
     !input.columns.values.length && "Select column values.",
     !connection.data?.connected && "Connect OpenRouter.",
-    !input.prompt.trim() && "Enter a prompt.",
+    input.format === "chat"
+      ? (!input.messages?.length ||
+          input.messages.some((message) => !message.content.trim())) &&
+        "Enter a message."
+      : !input.prompt.trim() && "Enter a prompt.",
     unusedVariableIssue(input),
     input.format !== "image" &&
       (!Number.isFinite(input.budgetUsd) || input.budgetUsd <= 0) &&

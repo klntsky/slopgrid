@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { isMarkdownFormat } from "../domain.js";
 import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -33,7 +34,7 @@ function outputFile(output: NonNullable<ReturnType<Store["outputMetadata"]>>) {
         mediaType: "text/markdown",
         extension: "md",
       },
-    }[output.format];
+    }[output.format === "chat" ? "markdown" : output.format];
   const extensions: Record<string, string> = {
     "image/png": "png",
     "image/jpeg": "jpg",
@@ -171,9 +172,9 @@ export function createOutputRoutes(
           );
       }
     }
-    if (output.format !== "markdown" || req.query.raw === "1")
+    if (!isMarkdownFormat(output.format) || req.query.raw === "1")
       return res
-        .type(output.format === "markdown" ? "text/plain" : mediaType)
+        .type(isMarkdownFormat(output.format) ? "text/plain" : mediaType)
         .sendFile(file, { dotfiles: "allow" });
     const colorScheme =
       req.query.theme === "dark"

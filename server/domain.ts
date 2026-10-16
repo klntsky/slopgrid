@@ -27,8 +27,24 @@ const axis = z.object({
     .refine((v) => new Set(v).size === v.length, "Values must be distinct"),
 });
 const budgetSchema = z.number().finite().positive();
+const chatMessageSchema = z.object({
+  role: z.enum(["system", "user", "assistant"]),
+  content: z
+    .string()
+    .refine((text) => text.trim().length > 0, "Enter a message."),
+});
+export type ChatMessage = z.infer<typeof chatMessageSchema>;
+export function isMarkdownFormat(format: GridInput["format"]): boolean {
+  return format === "markdown" || format === "chat";
+}
+export function chatText(messages: ChatMessage[]): string {
+  return messages
+    .map(({ role, content }) => `${role}: ${content}`)
+    .join("\n\n");
+}
 const gridFields = {
-  prompt: z.string().trim().min(1),
+  prompt: z.string().trim().default(""),
+  messages: z.array(chatMessageSchema).min(1).optional(),
   rows: axis,
   columns: axis,
   imageSettings: sharedImageSettingsSchema.optional(),
@@ -44,7 +60,7 @@ export const gridSchema = z
   .discriminatedUnion("format", [
     z.object({
       ...gridFields,
-      format: z.enum(["svg", "markdown", "html"]),
+      format: z.enum(["svg", "markdown", "html", "chat"]),
       budgetUsd: budgetSchema,
     }),
     z.object({
@@ -54,8 +70,15 @@ export const gridSchema = z
       budgetUsd: budgetSchema.catch(3),
     }),
   ])
+  .transform((g) => {
+    if (g.format === "chat") g.prompt = chatText(g.messages ?? []);
+    else delete g.messages;
+    return g;
+  })
   .superRefine((g, c) => {
     const issue = (message: string) => c.addIssue({ code: "custom", message });
+    if (g.format === "chat" && !g.messages?.length) issue("Add a message.");
+    if (!g.prompt.trim()) issue("Enter a prompt.");
     if (![g.rows.kind, g.columns.kind].includes("model") && !g.model)
       issue("Select a model.");
     if (g.rows.kind === g.columns.kind && g.rows.kind !== "variable")
@@ -152,6 +175,7 @@ export type Cell = {
   model: string;
   effort: string;
   prompt: string;
+  messages?: ChatMessage[];
   budgetUsd: number;
   imageSettings?: ImageSettings;
   status: "pending" | "running" | "complete" | "error";
@@ -232,6 +256,16 @@ export function expandGrid(input: GridInput): Omit<Cell, "id">[] {
         prompt: input.prompt
           .replaceAll("$ROW", () => r)
           .replaceAll("$COLUMN", () => c),
+        ...(input.messages
+          ? {
+              messages: input.messages?.map((message) => ({
+                ...message,
+                content: message.content
+                  .replaceAll("$ROW", () => r)
+                  .replaceAll("$COLUMN", () => c),
+              })),
+            }
+          : {}),
         budgetUsd: input.budgetUsd,
         ...(input.format === "image"
           ? { imageSettings: normalizeImageSettings(imageSettings) }

@@ -175,6 +175,39 @@ function cell(model: string, effort: string): Cell {
     status: "running",
   };
 }
+test("chat completion sends the exact history and saves Markdown", async () => {
+  const h = await upstream();
+  try {
+    const messages = [
+      { role: "system" as const, content: "Keep the style." },
+      { role: "user" as const, content: "Tell me a story." },
+      { role: "assistant" as const, content: "Once upon a time " },
+    ];
+    const result = await h.provider.generate(
+      "key",
+      "chat",
+      { ...cell("required", "default"), messages },
+      () => {},
+    );
+    assert.deepEqual(h.requests[0].messages, messages);
+    assert.equal(typeof result.files["index.md"], "string");
+    const prepared = await h.provider.prepare("chat", {
+      ...cell("required", "default"),
+      messages,
+    });
+    const changed = await h.provider.prepare("chat", {
+      ...cell("required", "default"),
+      messages: messages.map((m, i) =>
+        i === 2 ? { ...m, content: "Different prefix" } : m,
+      ),
+    });
+    const { inferenceSignature } =
+      await import("../server/prepared-inference.js");
+    assert.notEqual(inferenceSignature(prepared), inferenceSignature(changed));
+  } finally {
+    await h.close();
+  }
+});
 test("unknown pricing and token limits allow inference without invented cost caps", async () => {
   for (const metadata of ["auto-router", "pricing", "limits", "both"]) {
     const h = await upstream();
