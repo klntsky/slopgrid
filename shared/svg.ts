@@ -86,7 +86,16 @@ function completePartialSvg(draft: string): string | undefined {
     if (source[cursor] !== "<") {
       const next = source.indexOf("<", cursor);
       const end = next < 0 ? source.length : next;
-      parts.push(source.slice(cursor, end));
+      const text = source.slice(cursor, end);
+      // CSS is XML character data here; literal regions are handled separately.
+      parts.push(
+        stack.at(-1) === "style"
+          ? text.replace(
+              /&(?!(?:#\d+|#x[\da-fA-F]+|[A-Za-z_:][\w.:-]*);)/g,
+              "&amp;",
+            )
+          : text,
+      );
       cursor = end;
       continue;
     }

@@ -53,6 +53,11 @@ Frontend serving and retained assets are described under [process boundaries](AR
 
 SVG output regression tests use minimal fixtures reduced from observed provider
 failures, with one unit test per failure mode instead of one per sampled output.
+CSS ampersand coverage checks the observed comment failures in both previews and
+saved SVG, with byte-for-byte preservation of valid entities, CDATA, XML comments,
+processing instructions, attributes, and custom entity declarations. It covers
+stream boundaries and unchanged unsupported markup. The SVG thinking-view browser
+scenario verifies rendered CSS colors during streaming and escaped saved output.
 SVG fixup tests cover code-fence removal, first-code-block extraction with surrounding
 prose and subsequent blocks, missing root namespaces, saved repairs
 to unclosed roots and unfinished attributes, preservation of existing

@@ -184,7 +184,7 @@ test("SVG streaming advances behind thinking and survives view switches through 
       .click();
     call.write({
       content:
-        'Here is the SVG:\n```svg\n<svg viewBox="0 0 200 200"><rect width="200" height="200" fill="red"/>',
+        'Here is the SVG:\n```svg\n<svg viewBox="0 0 200 200"><style>/* Horse Body & Global Bobbing */ rect { fill: red; }</style><rect width="200" height="200"/>',
     });
     const preview = page.getByRole("img", {
       name: "SVG preview",
@@ -237,7 +237,7 @@ test("SVG streaming advances behind thinking and survives view switches through 
       .toBeGreaterThan(0);
     const saved = await page.request.get((await final.getAttribute("src"))!);
     expect(await saved.text()).toBe(
-      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><rect width="200" height="200" fill="red"/><circle cx="100" cy="100" r="70" fill="blue"/></svg>',
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><style>/* Horse Body &amp; Global Bobbing */ rect { fill: red; }</style><rect width="200" height="200"/><circle cx="100" cy="100" r="70" fill="blue"/></svg>',
     );
     expect(fixture.calls).toHaveLength(1);
   } finally {
