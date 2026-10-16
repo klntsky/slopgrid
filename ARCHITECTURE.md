@@ -298,6 +298,8 @@ cells stay mounted while their presentation expands within the workspace;
 website browsing contexts and preview state are retained without a second
 output tree or scroll transfer between copies. Background grid controls become
 inert during expansion, while navbar navigation remains available.
+Escape messages from website content are accepted only from a frame in the
+expanded cell, including live output origins and opaque offline frames.
 
 The browser query client owns grid snapshot ordering for HTTP reads, command
 responses, and live events. Its grid cache rule compares engine epochs and

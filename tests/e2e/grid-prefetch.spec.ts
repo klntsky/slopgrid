@@ -40,7 +40,7 @@ for (const entry of ["direct", "edit"] as const) {
     await expect(page).toHaveURL("/create");
     await expect(page.getByLabel("Prompt", { exact: true })).toBeVisible();
     await expect(
-      page.getByRole("region", { name: "Public grids", exact: true }),
+      page.getByRole("region", { name: /^Public grids\b/, exact: true }),
     ).toHaveCount(0);
     await page
       .getByRole("button", {
@@ -53,7 +53,7 @@ for (const entry of ["direct", "edit"] as const) {
     await expect(owned.locator(".history-row")).toHaveCount(20);
     await expect(
       page
-        .getByRole("region", { name: "Public grids", exact: true })
+        .getByRole("region", { name: /^Public grids\b/, exact: true })
         .locator(".history-row"),
     ).toHaveCount(20);
     await owned.getByRole("button", { name: "Next", exact: true }).click();
@@ -84,7 +84,7 @@ test("failed prefetch leaves the current lists usable and retries on the request
   await page.reload();
   const owned = page.getByRole("region", { name: "Your grids", exact: true });
   const publicGrids = page.getByRole("region", {
-    name: "Public grids",
+    name: /^Public grids\b/,
     exact: true,
   });
   for (const range of ["21-40 of 83", "41-60 of 83"]) {
@@ -123,7 +123,7 @@ test("home embeds three pages per list and advances its prefetch window", async 
   await page.reload();
   const owned = page.getByRole("region", { name: "Your grids", exact: true });
   const publicGrids = page.getByRole("region", {
-    name: "Public grids",
+    name: /^Public grids\b/,
     exact: true,
   });
   await expect(owned.locator(".history-row")).toHaveCount(20);

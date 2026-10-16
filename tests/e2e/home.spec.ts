@@ -15,7 +15,7 @@ test("selecting the active output type returns home and preserves the draft", as
     await expect(page).toHaveURL("/");
     await expect(page.getByLabel("Prompt", { exact: true })).toHaveCount(0);
     await expect(
-      page.getByRole("region", { name: "Public grids", exact: true }),
+      page.getByRole("region", { name: /^Public grids\b/, exact: true }),
     ).toBeVisible();
     for (const option of formats)
       await expect(
@@ -54,7 +54,7 @@ test("home separates discovery from the saved creation form and redirects grids"
   await page.goto("/grids");
   await expect(page).toHaveURL("/");
   await expect(
-    page.getByRole("region", { name: "Public grids", exact: true }),
+    page.getByRole("region", { name: /^Public grids\b/, exact: true }),
   ).toBeVisible();
   await expect(
     page.getByRole("region", { name: "Your grids", exact: true }),
@@ -69,7 +69,7 @@ test("home separates discovery from the saved creation form and redirects grids"
       page.getByRole("button", { name: format, exact: true }),
     ).toHaveAttribute("aria-pressed", "true");
     await expect(
-      page.getByRole("region", { name: "Public grids", exact: true }),
+      page.getByRole("region", { name: /^Public grids\b/, exact: true }),
     ).toHaveCount(0);
     await page.getByLabel("Prompt", { exact: true }).fill(`Saved ${format}`);
     await page.getByRole("link", { name: "slopgrid", exact: true }).click();
@@ -100,7 +100,7 @@ test("failed owned grids can be retried without hiding public discovery", async 
     timeout: 15000,
   });
   await expect(
-    page.getByRole("region", { name: "Public grids", exact: true }),
+    page.getByRole("region", { name: /^Public grids\b/, exact: true }),
   ).toBeVisible();
   await page.unroute("**/api/grids?*");
   await owned.getByRole("button", { name: "Reload grids" }).click();

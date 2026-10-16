@@ -612,7 +612,9 @@ for (const model of ["fixture/text", "fixture/other"])
     });
     let previewBlocked = false;
     await page.route(
-      "**/__preview/**/index.html",
+      (url) =>
+        url.pathname.endsWith("/website") &&
+        (url.searchParams.get("path")?.startsWith("__preview/") ?? false),
       async (route) => {
         previewBlocked = true;
         await previewGate;
@@ -623,8 +625,8 @@ for (const model of ["fixture/text", "fixture/other"])
     try {
       await request.post("/fixture/website-next");
       await expect.poll(() => previewBlocked).toBe(true);
-      // The hidden frame has already loaded its authorization bootstrap here.
-      // The old document must remain visible until the generated HTML loads too.
+      // Hold the authorization request before its redirects to the output host.
+      // The old document must remain visible until the generated HTML loads.
       await expect(page.locator("iframe")).toHaveCount(2);
       expect(await originalFrame.isVisible()).toBe(true);
       await expect(iframe).toHaveAttribute("src", original);

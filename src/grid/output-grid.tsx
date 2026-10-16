@@ -90,7 +90,6 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
     }
     function frameEscape(event: MessageEvent) {
       if (
-        event.origin === "null" &&
         event.data?.type === "slopgrid:escape" &&
         !document.querySelector("dialog[open]") &&
         [...(expandedView.current?.querySelectorAll("iframe") ?? [])].some(

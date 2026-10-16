@@ -474,7 +474,7 @@ test("owners can list a link-only published grid publicly without regenerating o
     ).toBe(404);
     await visitor.goto("/grids");
     const publicGrids = visitor.getByRole("region", {
-      name: "Public grids",
+      name: /^Public grids\b/,
       exact: true,
     });
     await expect(
@@ -519,7 +519,7 @@ test("owners can list a link-only published grid publicly without regenerating o
     await page.goto("/grids");
     await expect(
       page
-        .getByRole("region", { name: "Public grids", exact: true })
+        .getByRole("region", { name: /^Public grids\b/, exact: true })
         .getByRole("link", { name: new RegExp("Promoted grid") }),
     ).toBeVisible();
   } finally {

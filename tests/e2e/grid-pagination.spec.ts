@@ -5,7 +5,7 @@ test("owned and public grids page independently and restore after navigation", a
 }) => {
   await page.goto("/");
   await expect(
-    page.getByRole("region", { name: "Public grids", exact: true }),
+    page.getByRole("region", { name: /^Public grids\b/, exact: true }),
   ).toBeVisible();
   const seed = await page.request.post("/fixture/grids");
   expect(seed.status()).toBe(200);
@@ -13,7 +13,7 @@ test("owned and public grids page independently and restore after navigation", a
   await page.reload();
   const owned = page.getByRole("region", { name: "Your grids", exact: true });
   const publicGrids = page.getByRole("region", {
-    name: "Public grids",
+    name: /^Public grids\b/,
     exact: true,
   });
   const rows = owned.locator(".history-row");

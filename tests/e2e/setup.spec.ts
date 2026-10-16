@@ -656,9 +656,17 @@ for (const axis of ["Rows", "Columns"] as const) {
       axis === "Rows"
         ? page.getByRole("rowheader")
         : page.getByRole("columnheader").filter({ hasText: /\S/ });
-    await expect(labels).toHaveText(["low", "high", "max"]);
+    await expect(labels).toHaveText([
+      "thinking: low",
+      "thinking: high",
+      "thinking: max",
+    ]);
     await page.reload();
-    await expect(labels).toHaveText(["low", "high", "max"]);
+    await expect(labels).toHaveText([
+      "thinking: low",
+      "thinking: high",
+      "thinking: max",
+    ]);
   });
 }
 

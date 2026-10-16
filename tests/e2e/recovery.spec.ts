@@ -9,7 +9,7 @@ test("failed grid lists retry independently and OAuth failures retain their retr
   await page.goto("/settings");
   await page.getByRole("link", { name: "slopgrid", exact: true }).click();
   const publicList = page.getByRole("region", {
-    name: "Public grids",
+    name: /^Public grids\b/,
     exact: true,
   });
   await expect(publicList.getByRole("alert")).toHaveText(
