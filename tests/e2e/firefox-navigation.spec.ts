@@ -20,7 +20,7 @@ const test = base.extend<{ resistFingerprinting: boolean }>({
         await browser.close();
       }
     },
-    { timeout: 60000 },
+    { scope: "test", timeout: 60000 },
   ],
 });
 
