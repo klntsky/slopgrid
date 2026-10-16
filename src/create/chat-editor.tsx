@@ -20,6 +20,11 @@ export function ChatEditor({
   }, [messages]);
   const [dragTarget, setDragTarget] = useState<number>();
   const [dragging, setDragging] = useState<number>();
+  const [deleting, setDeleting] = useState<number>();
+  function remove(index: number) {
+    setDeleting(undefined);
+    onChange(messages.filter((_, i) => i !== index));
+  }
   function endDrag() {
     setDragging(undefined);
     setDragTarget(undefined);
@@ -45,6 +50,7 @@ export function ChatEditor({
     if (target !== from && target !== from + 1) return target;
   }
   function update(index: number, change: Partial<ChatMessage>) {
+    setDeleting(undefined);
     onChange(
       messages.map((message, i) =>
         i === index ? { ...message, ...change } : message,
@@ -53,11 +59,13 @@ export function ChatEditor({
   }
   function move(from: number, to: number) {
     if (to < 0 || to >= messages.length || from === to) return;
+    setDeleting(undefined);
     const next = [...messages];
     next.splice(to, 0, ...next.splice(from, 1));
     onChange(next);
   }
   function insert(index: number) {
+    setDeleting(undefined);
     const next = [...messages];
     next.splice(index, 0, {
       role: messages[index - 1]?.role === "user" ? "assistant" : "user",
@@ -141,7 +149,16 @@ export function ChatEditor({
               {message.role}
             </button>
           </div>
-          <div className="chat-message-input">
+          <div
+            className="chat-message-input"
+            onBlur={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget))
+                setDeleting(undefined);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") setDeleting(undefined);
+            }}
+          >
             <textarea
               aria-label={`Message ${index + 1}`}
               rows={1}
@@ -150,11 +167,24 @@ export function ChatEditor({
                 update(index, { content: event.target.value })
               }
             />
+            {deleting === index && (
+              <button
+                type="button"
+                className="chat-confirm-delete"
+                onClick={() => remove(index)}
+              >
+                Delete
+              </button>
+            )}
             <button
               type="button"
               className="text-button chat-remove"
               aria-label={`Remove message ${index + 1}`}
-              onClick={() => onChange(messages.filter((_, i) => i !== index))}
+              onClick={() => {
+                if (message.content.trim().split(/\s+/).length > 5)
+                  setDeleting(deleting === index ? undefined : index);
+                else remove(index);
+              }}
             >
               <X aria-hidden="true" />
             </button>

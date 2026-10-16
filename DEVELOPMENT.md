@@ -282,6 +282,9 @@ insertion, deletion, reorder boundaries and focus, and rebuilding an empty saved
 draft. Touch coverage uses native browser touch events for insertion, deletion,
 drag cancellation, outside and unchanged-position drops, and successful reordering.
 It checks immediate drag-start feedback and deletion from a focused message.
+Deletion coverage checks the five/six-word boundary with mixed whitespace,
+inline confirmation, dismissal on editing or leaving the message, Escape, and
+confirmed deletion on touch devices.
 
 Recovery coverage exercises a failed later reference upload followed by reload
 and retry, large reference retention through reload and authorization, clipboard

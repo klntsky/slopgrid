@@ -296,6 +296,50 @@ test.describe("chat history on touch devices", () => {
     actionTimeout: 5000,
   });
 
+  test("long-message deletion requires the inline confirmation button", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await page
+      .getByRole("button", { name: "Chat completion", exact: true })
+      .tap();
+    const input = page.getByLabel("Message 1", { exact: true });
+    const cross = page.getByRole("button", {
+      name: "Remove message 1",
+      exact: true,
+    });
+    const confirm = page.getByRole("button", { name: "Delete", exact: true });
+    const long = "  one two\nthree four\tfive six  ";
+    await input.fill(long);
+    await cross.tap();
+    await expect(input).toHaveValue(long);
+    await expect(confirm).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    const crossBox = (await cross.boundingBox())!;
+    const confirmBox = (await confirm.boundingBox())!;
+    expect(confirmBox.x + confirmBox.width).toBeLessThanOrEqual(crossBox.x);
+    await input.tap({ position: { x: 5, y: 5 } });
+    await page.keyboard.press("Escape");
+    await expect(confirm).toHaveCount(0);
+    await cross.tap();
+    await input.fill("Edited message has more than five words");
+    await expect(confirm).toHaveCount(0);
+    await cross.tap();
+    await page
+      .getByRole("heading", { name: "Chat history", exact: true })
+      .tap();
+    await expect(confirm).toHaveCount(0);
+    await input.tap({ position: { x: 5, y: 5 } });
+    await cross.tap();
+    await confirm.tap();
+    await expect(page.locator(".chat-message")).toHaveCount(0);
+    await page.getByRole("button", { name: "Add message", exact: true }).tap();
+    await input.fill("  one two\nthree four five  ");
+    await cross.tap();
+    await expect(page.locator(".chat-message")).toHaveCount(0);
+    await expect(confirm).toHaveCount(0);
+  });
+
   test("insertion, cancelled and outside drags, no-op drops and reordering", async ({
     page,
   }) => {

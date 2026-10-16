@@ -335,6 +335,20 @@ section {
   opacity: 1;
   pointer-events: auto;
 }
+.chat-confirm-delete,
+.chat-confirm-delete:enabled:hover,
+.chat-confirm-delete:enabled:active {
+  position: absolute;
+  top: 0;
+  right: 40px;
+  height: calc(1.6rem + 24px);
+  min-width: 100px;
+  padding: 8px 20px;
+  font-size: 16px;
+  color: white;
+  background: #a92f36;
+  border-color: #a92f36;
+}
 .chat-remove,
 .chat-drag {
   color: var(--muted);
