@@ -85,14 +85,43 @@ test("SVG fixup preserves backticks attached directly to markup", () => {
 
 test("SVG fixup preserves malformed attribute quotes", () => {
   // Reduced from Llama's animation response with nested unescaped quotes.
-  const raw = '<svg xmlns="http://www.w3.org/2000/svg" style="opacity="1;"/>';
-  assert.deepEqual(parseOutput("svg", raw), { "index.svg": raw });
+  for (const raw of [
+    '<svg xmlns="http://www.w3.org/2000/svg" style="opacity="1;"/>',
+    '<svg xmlns="http://www.w3.org/2000/svg"><g style="opacity="1;"/><circle r="1"/></svg>',
+  ])
+    assert.deepEqual(parseOutput("svg", raw), { "index.svg": raw });
+});
+
+test("SVG fixup distinguishes shorter content fences from the outer fence", () => {
+  const svg =
+    '<svg xmlns="http://www.w3.org/2000/svg"><text><![CDATA[\n```\n]]></text></svg>';
+  assert.deepEqual(parseOutput("svg", `\`\`\`\`svg\n${svg}\n\`\`\`\``), {
+    "index.svg": svg,
+  });
+});
+
+test("SVG fixup retains text in an unfinished CDATA section", () => {
+  const raw = '<svg xmlns="http://www.w3.org/2000/svg"><text><![CDATA[horse';
+  assert.deepEqual(parseOutput("svg", raw), {
+    "index.svg": raw + "]]></text></svg>",
+  });
 });
 
 test("SVG fixup saves closing tags for an unclosed root", () => {
   // Reduced from a provider response that ended normally without </svg>.
   const raw = '<svg xmlns="http://www.w3.org/2000/svg"><rect width="1"/>';
   assert.deepEqual(parseOutput("svg", raw), { "index.svg": raw + "</svg>" });
+});
+
+test("SVG fixup does not replace an incompatible partial closing tag", () => {
+  const raw = '<svg xmlns="http://www.w3.org/2000/svg"><g></path';
+  assert.deepEqual(parseOutput("svg", raw), { "index.svg": raw });
+});
+
+test("SVG fixup preserves unsupported declarations instead of discarding later content", () => {
+  const raw =
+    '<svg xmlns="http://www.w3.org/2000/svg"><!unexpected><circle r="1"/></svg>';
+  assert.deepEqual(parseOutput("svg", raw), { "index.svg": raw });
 });
 
 test("SVG fixup saves incomplete attribute and fence repairs", () => {

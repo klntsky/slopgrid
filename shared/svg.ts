@@ -20,15 +20,19 @@ function unwrapSvg(raw: string): string {
   const opening = raw.match(/^\s*(`{3,}|~{3,})[^\r\n`~]*\r?\n/);
   if (!opening) return raw;
   const content = raw.slice(opening[0].length);
-  const closing = /\r?\n[ \t]*(`+|~+)[ \t]*(?:\r?\n|$)/.exec(content);
-  if (!closing) return content;
-  // A closing fence can itself be incomplete, but cannot contain more blocks.
-  if (
-    closing[1][0] !== opening[1][0] ||
-    content.slice(closing.index + closing[0].length).trim()
-  )
-    return raw;
-  return content.slice(0, closing.index);
+  for (const closing of content.matchAll(
+    /\r?\n[ \t]*(`+|~+)[ \t]*(?=\r?\n|$)/g,
+  )) {
+    const remaining = content.slice(closing.index + closing[0].length).trim();
+    const sameMarker = closing[1][0] === opening[1][0];
+    // Shorter or different markers inside the body belong to its content.
+    if (remaining && (!sameMarker || closing[1].length < opening[1].length))
+      continue;
+    // A closing fence can itself be incomplete, but cannot contain more blocks.
+    if (!sameMarker || remaining) return raw;
+    return content.slice(0, closing.index);
+  }
+  return content;
 }
 
 function withoutPartialEntity(text: string): string {
@@ -59,7 +63,7 @@ function finishOpeningTag(raw: string): string | undefined {
     const end = raw.indexOf(attribute[2], start);
     if (end < 0 && attribute[1].startsWith("xmlns")) break;
     const value = raw.slice(start, end < 0 ? undefined : end);
-    if (value.includes("<")) break;
+    if (value.includes("<")) return undefined;
     result +=
       attribute[0] +
       (end < 0 ? withoutPartialEntity(value) : value) +
@@ -100,12 +104,19 @@ function completePartialSvg(draft: string): string | undefined {
           : undefined;
     if (special) {
       const end = source.indexOf(special[0], cursor + special[1]);
-      if (end < 0) break;
+      if (end < 0) {
+        if (special[0] === "]]>") parts.push(tail + "]]>");
+        break;
+      }
       parts.push(source.slice(cursor, end + special[0].length));
       cursor = end + special[0].length;
       continue;
     }
-    if (tail.startsWith("<!")) break;
+    if (tail.startsWith("<!")) {
+      if (["<!--", "<![CDATA["].some((opening) => opening.startsWith(tail)))
+        break;
+      return undefined;
+    }
     let end = cursor + 1,
       quote = "";
     for (; end < source.length; end++) {
@@ -117,10 +128,17 @@ function completePartialSvg(draft: string): string | undefined {
     }
     let tag: string | undefined;
     if (end === source.length) {
-      if (tail.startsWith("</")) break;
+      if (tail.startsWith("</")) {
+        if (!stack.at(-1)?.startsWith(tail.slice(2).trimEnd()))
+          return undefined;
+        break;
+      }
       tag = finishOpeningTag(tail);
     } else tag = source.slice(cursor, end + 1);
-    if (!tag) break;
+    if (!tag) {
+      if (tail === "<") break;
+      return undefined;
+    }
     const closing = tag.match(/^<\/([A-Za-z_][\w.:-]*)\s*>$/);
     if (closing) {
       if (stack.pop() !== closing[1]) return undefined;

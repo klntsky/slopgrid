@@ -57,7 +57,11 @@ SVG fixup tests cover code-fence removal, missing root namespaces, saved repairs
 to unclosed roots and unfinished attributes, preservation of existing
 declarations, and their composition. Reduced fixtures also cover unescaped
 ampersands, malformed attribute quotes, and backticks attached directly to
-markup; those cases preserve the affected source. Keep provider sampling
+markup; those cases preserve the affected source. Nested malformed attributes
+and incompatible partial closing tags or unsupported declarations must not
+discard the remaining source.
+Fence tests distinguish content markers from longer outer fences, and unfinished
+CDATA tests preserve its text when completing the delimiter. Keep provider sampling
 prompts simple and retain raw samples outside the repository.
 Streaming preview tests split a fenced response at every character boundary,
 including within the namespace declaration, to verify a complete, single
