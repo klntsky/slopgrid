@@ -286,46 +286,98 @@ section {
   text-align: center;
 }
 
-.chat-editor,
-.chat-message {
-  display: grid;
-  gap: 12px;
-}
 .chat-editor {
-  gap: 20px;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  column-gap: 12px;
+  padding-top: 20px;
+}
+.chat-message {
+  position: relative;
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  margin-bottom: 20px;
+  align-items: start;
 }
 .chat-message-controls {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 4px;
+  padding-top: 5px;
 }
-.chat-message-controls > :last-child {
-  margin-left: auto;
+.chat-message-input {
+  position: relative;
+  min-width: 0;
+}
+.chat-message-input textarea {
+  display: block;
+  field-sizing: content;
+  min-height: 0;
+  padding-right: 34px;
+  resize: none;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.chat-remove {
+  position: absolute;
+  right: 3px;
+  top: 3px;
+  opacity: 0;
+  pointer-events: none;
+}
+.chat-message-input:hover .chat-remove,
+.chat-remove:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+.chat-remove,
+.chat-drag {
+  padding: 5px;
 }
 .chat-drag {
   touch-action: none;
   cursor: grab;
 }
+.chat-insert,
+.chat-append {
+  height: 20px;
+  padding: 0;
+  opacity: 0;
+}
 .chat-insert {
-  justify-self: center;
+  position: absolute;
+  top: -20px;
+  width: 100%;
+}
+.chat-append {
+  grid-column: 1 / -1;
+  margin-top: -20px;
+}
+:is(.chat-insert, .chat-append):hover,
+:is(.chat-insert, .chat-append):focus-visible,
+.chat-append:only-child {
+  opacity: 1;
 }
 .chat-message[data-drag-target="true"] {
   outline: 2px solid var(--muted);
 }
-.chat-role {
-  border-radius: 999px;
-  padding: 5px 12px;
-  font-size: 14px;
-  color: white;
+.model-badge.chat-role,
+.chat-role:enabled:hover,
+.chat-role:enabled:active {
+  background: color-mix(in srgb, var(--role-color) 12%, var(--paper));
+  border-color: color-mix(in srgb, var(--role-color) 45%, var(--paper));
+  color: color-mix(in srgb, var(--role-color) 75%, var(--text));
+  font-weight: 400;
 }
 .chat-role-system {
-  background: #a92f36;
+  --role-color: #b64249;
 }
 .chat-role-user {
-  background: #245fa9;
+  --role-color: #3678c6;
 }
 .chat-role-assistant {
-  background: #626262;
+  --role-color: var(--muted);
 }
 .format-symbol {
   width: 44px;

@@ -91,7 +91,7 @@ export function ChatEditor({
             </button>
             <button
               type="button"
-              className={`chat-role chat-role-${message.role}`}
+              className={`model-badge chat-role chat-role-${message.role}`}
               aria-label={`Message ${index + 1} role: ${message.role}`}
               onClick={() =>
                 update(index, {
@@ -101,29 +101,34 @@ export function ChatEditor({
             >
               {message.role}
             </button>
+          </div>
+          <div className="chat-message-input">
+            <textarea
+              aria-label={`Message ${index + 1}`}
+              rows={1}
+              value={message.content}
+              onChange={(event) =>
+                update(index, { content: event.target.value })
+              }
+            />
             <button
               type="button"
-              className="text-button"
+              className="text-button chat-remove"
               aria-label={`Remove message ${index + 1}`}
               onClick={() => onChange(messages.filter((_, i) => i !== index))}
             >
               <X aria-hidden="true" />
             </button>
           </div>
-          <textarea
-            aria-label={`Message ${index + 1}`}
-            rows={3}
-            value={message.content}
-            onChange={(event) => update(index, { content: event.target.value })}
-          />
         </div>
       ))}
       <button
         type="button"
-        className="secondary"
+        className="text-button chat-append"
+        aria-label="Add message"
         onClick={() => insert(messages.length)}
       >
-        Add message
+        <Plus aria-hidden="true" />
       </button>
     </div>
   );

@@ -15,11 +15,38 @@ test("chat editing, ordering, persistence and Markdown output", async ({
     .getByRole("button", { name: "Chat completion", exact: true })
     .click();
   await expect(page.getByLabel("Prompt", { exact: true })).toHaveCount(0);
+  const input = page.getByLabel("Message 1", { exact: true });
+  const singleLineHeight = (await input.boundingBox())!.height;
+  await input.fill(
+    "A long message that wraps across the available width. ".repeat(30),
+  );
+  await expect
+    .poll(async () => (await input.boundingBox())!.height)
+    .toBeGreaterThan(singleLineHeight);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect
+    .poll(() =>
+      input.evaluate((element) => element.scrollHeight <= element.clientHeight),
+    )
+    .toBe(true);
+  await input.fill("One line");
+  await expect
+    .poll(async () => (await input.boundingBox())!.height)
+    .toBe(singleLineHeight);
+  await input.fill("First line\nSecond line\nThird line");
+  await expect
+    .poll(() =>
+      input.evaluate((element) => element.scrollHeight <= element.clientHeight),
+    )
+    .toBe(true);
+  await page.setViewportSize({ width: 1280, height: 720 });
   await page
     .getByLabel("Message 1", { exact: true })
     .fill("Question $ROW $COLUMN");
+  await page.locator(".chat-append").hover();
   await page.getByRole("button", { name: "Add message", exact: true }).click();
   await page.getByLabel("Message 2", { exact: true }).fill("Answer prefix ");
+  await page.locator(".chat-insert").nth(1).hover();
   await page
     .getByRole("button", { name: "Insert message before 2", exact: true })
     .click();
@@ -46,9 +73,11 @@ test("chat editing, ordering, persistence and Markdown output", async ({
   await expect(page.getByLabel("Message 1", { exact: true })).toHaveValue(
     "Use Markdown",
   );
+  await page.locator(".chat-insert").nth(1).hover();
   await page
     .getByRole("button", { name: "Insert message before 2", exact: true })
     .click();
+  await page.getByLabel("Message 2", { exact: true }).hover();
   await page
     .getByRole("button", { name: "Remove message 2", exact: true })
     .click();
