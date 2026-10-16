@@ -184,7 +184,7 @@ test("SVG streaming advances behind thinking and survives view switches through 
       .click();
     call.write({
       content:
-        '```svg\n<svg viewBox="0 0 200 200"><rect width="200" height="200" fill="red"/>',
+        'Here is the SVG:\n```svg\n<svg viewBox="0 0 200 200"><rect width="200" height="200" fill="red"/>',
     });
     const preview = page.getByRole("img", {
       name: "SVG preview",

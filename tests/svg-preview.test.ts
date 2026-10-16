@@ -8,7 +8,7 @@ const root = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">';
 
 test("streaming across namespace and fence boundaries keeps one complete namespace", () => {
   const svg = '<svg xmlns="http://www.w3.org/2000/svg"><circle r="1"/></svg>';
-  const response = `\`\`\`svg\n${svg}\n\`\`\``;
+  const response = `Here is the SVG:\n\`\`\`svg\n${svg}\n\`\`\`\nExplanation`;
   for (let end = 0; end <= response.length; end++) {
     const draft = response.slice(0, end);
     const preview = completeSvgPreview(draft);

@@ -22,13 +22,23 @@ test("SVG output unwraps one enclosing Markdown code block", () => {
   }
 });
 
-test("SVG fixup preserves source outside a single complete wrapper", () => {
+test("SVG output extracts the first code block surrounded by prose", () => {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg"/>';
+  for (const raw of [
+    `Here is the SVG:\n\`\`\`svg\n${svg}\n\`\`\``,
+    `\`\`\`svg\n${svg}\n\`\`\`\nExplanation`,
+    `Introduction\n\`\`\`svg\n${svg}\n\`\`\`\nExplanation\n\`\`\`svg\n<svg/>\n\`\`\``,
+  ]) {
+    assert.deepEqual(parseOutput("svg", raw), { "index.svg": svg });
+    assert.deepEqual(parseOutput("markdown", raw), { "index.md": raw });
+  }
+});
+
+test("SVG fixup preserves markup and mismatched wrappers", () => {
   for (const raw of [
     ' \n<svg xmlns="http://www.w3.org/2000/svg"><text>```svg</text></svg>\n ',
     "```svg\n<svg/>\n~~~",
-    "Here is the SVG:\n```svg\n<svg/>\n```",
-    "```svg\n<svg/>\n```\nExplanation",
-    "```svg\n<svg/>\n```\n```svg\n<svg/>\n```",
+    '<svg xmlns="http://www.w3.org/2000/svg"><text><![CDATA[\n```\nexample\n```\n]]></text></svg>',
   ])
     assert.deepEqual(parseOutput("svg", raw), { "index.svg": raw });
 });

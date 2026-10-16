@@ -134,11 +134,14 @@ temporary previews. Website output is a bundle of validated relative paths with
 an entry page. One path validator protects both stored bundles and preview
 serving. Temporary previews belong to the active attempt and are cleared when
 that attempt ends or the engine starts. One shared SVG text preparation function
-removes an enclosing Markdown fence, supplies a missing root namespace, and
+extracts the first Markdown code block from a response with optional surrounding
+prose, supplies a missing root namespace, and
 completes missing closing tags or a trailing incomplete tag or quoted attribute.
 The text scanner tracks open elements and quoted values, preserves complete
 opaque constructs, and abandons completion at unsupported or inconsistent
-markup. Fence and namespace repairs remain independent of tag completion.
+markup. Code-block extraction and namespace repairs remain independent of tag completion.
+Responses starting with markup retain any internal fence text. While a code
+block is still streaming, its available content is used until its closing fence arrives.
 Both browser previews and final storage use it without parsing or reserializing XML. Every
 preview starts from raw accumulated stream text so inferred repairs cannot
 alter later chunks. After successful generation the same repairs are saved.

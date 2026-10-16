@@ -17,18 +17,22 @@ export function prepareSvg(source: string): string {
 }
 
 function unwrapSvg(raw: string): string {
-  const opening = raw.match(/^\s*(`{3,}|~{3,})[^\r\n`~]*\r?\n/);
+  // Fences inside an existing markup document are content, not wrappers.
+  if (raw.trimStart().startsWith("<")) return raw;
+  const opening = raw.match(/^[ \t]*(`{3,}|~{3,})[^\r\n`~]*\r?\n/m);
   if (!opening) return raw;
-  const content = raw.slice(opening[0].length);
+  const content = raw.slice(opening.index! + opening[0].length);
   for (const closing of content.matchAll(
     /\r?\n[ \t]*(`+|~+)[ \t]*(?=\r?\n|$)/g,
   )) {
     const remaining = content.slice(closing.index + closing[0].length).trim();
     const sameMarker = closing[1][0] === opening[1][0];
+    if (sameMarker && closing[1].length >= opening[1].length)
+      return content.slice(0, closing.index);
     // Shorter or different markers inside the body belong to its content.
     if (remaining && (!sameMarker || closing[1].length < opening[1].length))
       continue;
-    // A closing fence can itself be incomplete, but cannot contain more blocks.
+    // At the stream boundary, the closing fence can itself be incomplete.
     if (!sameMarker || remaining) return raw;
     return content.slice(0, closing.index);
   }
