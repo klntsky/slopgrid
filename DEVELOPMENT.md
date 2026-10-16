@@ -51,6 +51,13 @@ Frontend serving and retained assets are described under [process boundaries](AR
 
 ### Test design
 
+SVG output regression tests use minimal fixtures reduced from observed provider
+failures, with one unit test per failure mode instead of one per sampled output.
+The code-fence fixup tests cover wrapper removal and source preservation,
+including missing namespaces, unclosed roots, and unescaped ampersands. These
+other structural failures remain unchanged by the fixup. Keep provider sampling
+prompts simple and retain raw samples outside the repository.
+
 Select interactive controls and output regions by their accessible role and
 identity so behavioral checks survive changes to layout wrappers.
 

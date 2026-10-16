@@ -2,6 +2,59 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseOutput } from "../server/output-format.js";
 
+test("SVG output unwraps one enclosing Markdown code block", () => {
+  // DeepSeek, Gemini, and Ministral shared this wrapper failure.
+  const svg =
+    '<svg xmlns="http://www.w3.org/2000/svg">\n  <circle r="1"/>\n</svg>';
+  for (const [opening, closing] of [
+    ["```svg", "```"],
+    ["```xml", "```"],
+    ["```", "```"],
+    ["~~~~svg", "~~~~~"],
+    ["````SVG", "`````"],
+  ]) {
+    for (const newline of ["\n", "\r\n"]) {
+      const content = svg.replaceAll("\n", newline);
+      const raw = ` \n${opening}${newline}${content}${newline}${closing}\n `;
+      assert.deepEqual(parseOutput("svg", raw), { "index.svg": content });
+      assert.deepEqual(parseOutput("markdown", raw), { "index.md": raw });
+    }
+  }
+});
+
+test("SVG fixup preserves source outside a single complete wrapper", () => {
+  for (const raw of [
+    " \n<svg><text>```svg</text></svg>\n ",
+    "```svg\n<svg/>",
+    "```svg\n<svg/>\n~~~",
+    "````svg\n<svg/>\n```",
+    "Here is the SVG:\n```svg\n<svg/>\n```",
+    "```svg\n<svg/>\n```\nExplanation",
+    "```svg\n<svg/>\n```\n```svg\n<svg/>\n```",
+  ])
+    assert.deepEqual(parseOutput("svg", raw), { "index.svg": raw });
+});
+
+test("SVG fixup preserves a missing namespace instead of repairing markup", () => {
+  // Reduced from the small-model probe; fence removal does not fix namespaces.
+  const raw = '<svg><circle r="1"/></svg>';
+  assert.deepEqual(parseOutput("svg", raw), { "index.svg": raw });
+});
+
+test("SVG fixup preserves an unclosed root instead of completing markup", () => {
+  // Reduced from a provider response that ended normally without </svg>.
+  const raw = '<svg xmlns="http://www.w3.org/2000/svg"><rect width="1"/>';
+  assert.deepEqual(parseOutput("svg", raw), { "index.svg": raw });
+});
+
+test("SVG fixup preserves an unescaped ampersand inside a fenced document", () => {
+  // Reduced from Ministral: removing the fence must not rewrite text nodes.
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg"><text>&</text></svg>';
+  assert.deepEqual(parseOutput("svg", `\`\`\`xml\n${svg}\n\`\`\``), {
+    "index.svg": svg,
+  });
+});
+
 test("static bundles keep relative assets and reject unsafe files", () => {
   const bundle = (files: Record<string, string>) =>
     JSON.stringify({

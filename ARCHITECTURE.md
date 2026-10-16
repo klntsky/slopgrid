@@ -133,7 +133,9 @@ The output layer owns format instructions, parsing, completed files, and
 temporary previews. Website output is a bundle of validated relative paths with
 an entry page. One path validator protects both stored bundles and preview
 serving. Temporary previews belong to the active attempt and are cleared when
-that attempt ends or the engine starts.
+that attempt ends or the engine starts. Completed SVG parsing removes a single
+enclosing Markdown code fence before storage while preserving the enclosed
+source. Other SVG source and Markdown output pass through unchanged.
 
 The engine sends snapshots containing cell state, drafts, estimates, and preview
 identifiers. The web process checks the viewer's session and access before
