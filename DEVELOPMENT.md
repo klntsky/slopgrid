@@ -69,10 +69,9 @@ saved output from a response with introductory prose, an opening fence, no names
 SVG tag or fence, exercising persisted repairs through the shared text path.
 
 Select interactive controls and output regions by their accessible role and
-identity so behavioral checks survive changes to layout wrappers.
-Match list regions by their title prefix when their heading also contains a
-subtitle. Preview loading tests gate the application authorization request before
-its redirects, because browser request routing intercepts the initial request.
+identity so behavioral checks survive changes to layout wrappers. Product
+requirements are maintained in [PRODUCT.md](PRODUCT.md); the coverage below
+describes how they are validated.
 
 1. Use pnpm and Playwright, with real-provider browser suites separate but enabled in the default full run. Exercise the normal manual-key flow with a cheap or free model and cover structured website streaming with an explicitly selected capable model.
 2. Assertions enforce complex behavioral properties: state transitions, persistence, ownership, recovery, and component interactions. Assert on UI text only when it depends on application logic, such as a computed value or state-dependent message. Exclude static copy assertions, trivial assertions, constant checks, CSS appearance tests, and checks that merely mirror implementation.
@@ -164,10 +163,8 @@ The browser delays a real HTTP response while newer drafts arrive and verifies
 that the delayed response cannot replace the newer output or thinking.
 
 Scheduler lifecycle coverage also resumes a grid before its cancelled call has
-settled. The old call must retain its worker slot, its late billing failure must
-not pause the resumed grid, and its late chunks must not overwrite the replacement
-attempt. The replacement clears the prior attempt's thinking identifier only when
-it dispatches.
+settled, checking worker-slot retention, isolation from late billing failures and
+chunks, and clearing of the prior thinking identifier at replacement dispatch.
 
 Pause settlement browser coverage keeps two cancelled calls outstanding, reloads
 the paused grid, replaces the web process while a call settles, and checks that
@@ -180,11 +177,11 @@ checks that the stable snapshot has a newer ordering token than the paused live 
 
 Recovery coverage kills the engine after manual Pause, both while billing is
 running and after the charge is recorded but before the scheduler releases the
-call. The recovered snapshot must have a newer engine epoch and reject the
-delayed pre-crash snapshot through the browser cache. Preserve recorded charges,
-partial thinking, pending cells, and the manual pause reason without starting
-replacement calls. A second restart must advance the epoch while preserving
-settled state. Multi-call pause coverage checks that live updates continue until
+call. Assertions compare engine epochs, replay the delayed pre-crash snapshot
+through the browser cache, and inspect recorded charges, partial thinking,
+pending cells, pause reason, and upstream call counts. A second restart checks
+epoch advancement and settled-state preservation. Multi-call pause coverage
+checks that live updates continue until
 the last call settles; streaming coverage still requires zero SQLite writes for
 draft bursts. Snapshot-read coverage checks strictly increasing sequences without
 database writes, fresh ordering after settled metadata edits, and a stable epoch
@@ -327,8 +324,8 @@ confirmation cancellation, copied URLs, anonymous listing navigation, direct
 loads and reloads, original grid links, missing slugs, and application routes.
 Live-validation coverage checks invalid, valid, and empty values before saving,
 disabled submission, error placement below the field, and stable field and
-button positions while typing on desktop and phone viewports. The URL prefix
-remains outside the editable value and the submitted slug.
+button positions while typing on desktop and phone viewports, including exclusion
+of the URL prefix from the editable value and submitted slug.
 Focus coverage clicks the URL prefix and field padding on desktop and phone
 viewports and verifies that typing targets the slug input.
 OAuth return-path tests accept slug paths while rejecting external, nested,
@@ -336,8 +333,8 @@ and query-bearing redirects.
 
 Paused-publication coverage checks mixed completed, failed, and pending cells,
 unchanged private state, public error presentation, visibility promotion,
-reloads, and rejection of generation after publication. Running cells continue
-to block publication.
+reloads, rejection of generation after publication, and rejection of publication
+while cells are running.
 
 Grid pagination tests cover filtering before counting, stable ordering across equal timestamps, page boundaries, invalid and out-of-range requests, and anonymous versus account ownership. Browser coverage checks independent owned and public pages, reload and history restoration, final-page controls, and omission of pagination for a single page.
 

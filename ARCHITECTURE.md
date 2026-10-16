@@ -79,13 +79,9 @@ usage when it arrives.
 
 ## Creation and inference
 
-Compatibility tables share model selection and name resolution, with model names
-as rows and parameter values as columns. Their renderer keeps this orientation
-independent of generation axes, while each table stays beside its parameter input.
-The renderer selects status labels and icons with inline conditionals and names
-each cell using its model, parameter value, and support status.
-Image tables and provider-combination checks share support-state aggregation;
-tables treat missing combinations as unknown.
+Compatibility tables share model selection, name resolution, and support-state
+aggregation with provider-combination checks. Their presentation requirements
+are defined in [PRODUCT.md](PRODUCT.md#34-compatibility-presentation).
 
 The browser persists a creation draft and a request identity across reloads.
 The web process validates the input and commits a creation receipt, grid, and
@@ -98,8 +94,8 @@ starting inference twice.
   separate from HTTP routes and scheduling policy.
 - Input expansion turns axes into cells. Model aliases are resolved before
   saving inputs, and shared normalization gives equivalent image settings the
-  same prepared request. Compatibility information advises selection but does
-  not gate inference.
+  same prepared request. Compatibility rendering and inference admission use
+  separate policy paths.
 - Request preparation applies format instructions, model capabilities, pricing,
   token limits, and routing. Text calls stream through the AI SDK; image calls
   use its dedicated image path. The engine budgets and schedules individual
@@ -129,31 +125,22 @@ inference ledger entry. Any unfinished cells enter the ordinary scheduler.
 
 ## Outputs and live views
 
-The image-grid title line owns the Parameters button and its interactive Tippy
-panel. React renders the panel through a portal into Tippy's content container,
+The grid parameters component renders through a React portal into Tippy's content container,
 which is attached to the document body. Common parameters come from saved grid
 input, filtered by the selected axis kinds. Reference thumbnails use the existing
-authorized reference route. The panel owns no generation state and displays
-requested settings, retaining Auto for unspecified values.
+authorized reference route. The component owns no generation state.
 
 The output layer owns format instructions, parsing, completed files, and
 temporary previews. Website output is a bundle of validated relative paths with
 an entry page. One path validator protects both stored bundles and preview
 serving. Temporary previews belong to the active attempt and are cleared when
-that attempt ends or the engine starts. One shared SVG text preparation function
-extracts the first Markdown code block from a response with optional surrounding
-prose, supplies a missing root namespace, and
-completes missing closing tags or a trailing incomplete tag or quoted attribute.
-The text scanner tracks open elements and quoted values, preserves complete
-opaque constructs, and abandons completion at unsupported or inconsistent
-markup. Code-block extraction and namespace repairs remain independent of tag completion.
-Responses starting with markup retain any internal fence text. While a code
-block is still streaming, its available content is used until its closing fence arrives.
-Both browser previews and final storage use it without parsing or reserializing XML. Every
-preview starts from raw accumulated stream text so inferred repairs cannot
-alter later chunks. After successful generation the same repairs are saved.
-Existing namespace declarations and complete markup remain unchanged.
-Markdown output passes through unchanged.
+that attempt ends or the engine starts. Browser previews and final storage share
+the SVG text preparation function in `shared/svg.ts`. Its scanner tracks open
+elements and quoted values without parsing or reserializing XML; code-block
+extraction and namespace repair are independent of tag completion. Each preview
+is derived from raw accumulated text rather than a previous repaired preview.
+Output-preservation rules are defined in
+[PRODUCT.md](PRODUCT.md#51-shared-controls-and-output-preservation).
 
 Chat completion is a distinct domain format that shares Markdown output parsing,
 storage, previews, downloads, and copying. Its input and cells retain ordered
@@ -181,16 +168,16 @@ identity and OpenRouter inference authorization are separate flows. Grid policy
 centralizes ownership and publication checks; account ownership takes precedence
 after a claim.
 
-Published grids have fixed generation inputs and outputs. Public listings expose
-only listed grids, while unlisted grids remain readable by link. Mutations
-require ownership. Output routes check access before reading files or download
-metadata; public outputs can be served without a session.
+Grid policy centralizes mutation authorization and publication visibility.
+Listing queries apply that visibility policy before selecting rows. Output
+routes check access before reading files or download metadata.
 
 The publication policy allows terminal cells and paused pending cells. Grid
 responses expose that policy as `canPublish` for the interface, and publication
 serializes with retry admission. Published pending cells retain their stored generation
-state and are presented as errors with "Not generated" and no error code, so
-settling canceled calls cannot restore a resumable public cell.
+state; the presenter maps them to the published response independently of
+generation persistence, so settling canceled calls cannot restore a resumable
+public cell.
 
 Public grid slugs live in grid metadata under a unique SQLite expression index.
 Publication claims a slug inside the same immediate transaction as visibility
@@ -198,7 +185,6 @@ and attribution, checking uniqueness and preserving permanent claims. Slug
 resolution exposes only public grid IDs; the client then uses the existing
 ID-based grid queries and actions. Root-level paths containing a hyphen and
 only lowercase ASCII letters, digits, and hyphens load the grid frontend.
-Listing and sharing links prefer the slug while ID-based links remain valid.
 OAuth return-path validation also accepts valid local slug paths.
 
 Live generated HTML runs on isolated per-cell hosts. Host dispatch happens
@@ -296,10 +282,8 @@ grid supplies labels and cells without maintaining a second geometry model.
 The grid workspace owns the expanded selection and focus restoration. Output
 cells stay mounted while their presentation expands within the workspace;
 website browsing contexts and preview state are retained without a second
-output tree or scroll transfer between copies. Background grid controls become
-inert during expansion, while navbar navigation remains available.
-Escape messages from website content are accepted only from a frame in the
-expanded cell, including live output origins and opaque offline frames.
+output tree or scroll transfer between copies. The workspace owns background
+inertness independently of the navbar.
 
 The browser query client owns grid snapshot ordering for HTTP reads, command
 responses, and live events. Its grid cache rule compares engine epochs and
@@ -315,19 +299,14 @@ that cache without maintaining separate ordering state.
 - `src/create/` owns form state, drafts, and submission. `src/grid/` owns live
   grid state and views. Shared components and Markdown rendering live outside
   those feature directories.
-- `/` combines format selection with owned and public grid discovery, while
-  `/grids` redirects there. `/create` owns the form and restores its session
-  draft. Home saves the selected format before navigating; Edit, Fork, and
-  provider authorization return to `/create`. Both pages share the format picker.
-  Clicking the active format saves the draft with its selection cleared before
-  navigating home, while choosing another format updates the form in place.
-  The owned section appears only for populated results or a retryable failure.
+- The home and creation routes share the format picker and persisted draft.
+  Route components compose listing queries and form state; navigation behavior
+  is defined in [PRODUCT.md](PRODUCT.md#31-form-and-output-selection).
 - Grid listing queries filter ownership or public visibility in SQLite before
   counting and selecting a page. Only that page's grids are loaded for summary
   presentation, with counts and rows read in one transaction. The list APIs
   return grids, total, page, and pageSize, and validate the requested page.
-  Independent query keys and home search parameters retain each list's page;
-  previous results remain visible while the next page loads.
+  Independent query keys and home search parameters retain each list's page.
 - Home HTML embeds the requested page and its next two available pages for
   each list from one database snapshot. Creation HTML embeds the first three
   available pages of both lists, and the creation page uses the same list hooks
