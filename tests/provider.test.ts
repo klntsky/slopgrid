@@ -189,7 +189,16 @@ test("chat completion sends the exact history and saves Markdown", async () => {
       { ...cell("required", "default"), messages },
       () => {},
     );
-    assert.deepEqual(h.requests[0].messages, messages);
+    assert.deepEqual(
+      h.requests[0].messages,
+      messages.map((message) => ({
+        ...message,
+        content:
+          message.role === "system"
+            ? [{ type: "text", text: message.content }]
+            : message.content,
+      })),
+    );
     assert.equal(typeof result.files["index.md"], "string");
     const prepared = await h.provider.prepare("chat", {
       ...cell("required", "default"),
