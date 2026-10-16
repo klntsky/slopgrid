@@ -16,7 +16,10 @@ test("owners claim permanent public slugs and visitors follow and reload slug li
   const slug = `my-cool-grid-${new URL(original).pathname.split("/").pop()}`;
   await page.getByRole("button", { name: "PUBLISH", exact: true }).click();
   const dialog = page.getByRole("dialog");
-  await dialog.getByRole("radio", { name: "Listed publicly" }).check();
+  await dialog.getByText("slopgrid.com/", { exact: true }).click();
+  await expect(
+    dialog.getByRole("radio", { name: "Listed publicly" }),
+  ).toBeChecked();
   const field = dialog.getByLabel("Slug (optional)");
   await expect(
     dialog.getByText("slopgrid.com/", { exact: true }),
@@ -24,6 +27,14 @@ test("owners claim permanent public slugs and visitors follow and reload slug li
   const save = dialog.getByRole("button", { name: "Save", exact: true });
   for (const width of [1280, 390]) {
     await page.setViewportSize({ width, height: 900 });
+    await dialog.getByText("slopgrid.com/", { exact: true }).click();
+    await expect(field).toBeFocused();
+    await expect(field).toHaveAttribute("placeholder", "Optional slug");
+    await save.focus();
+    await dialog
+      .locator(".publish-slug-input")
+      .click({ position: { x: 2, y: 2 } });
+    await expect(field).toBeFocused();
     await field.fill("");
     const bounds = await field.boundingBox();
     const actions = await save.boundingBox();

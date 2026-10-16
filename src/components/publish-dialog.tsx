@@ -120,56 +120,65 @@ export function PublishDialog({
                 : !published || value !== "private",
             )
             .map(([value, label]) => (
-              <label className="publish-choice" key={value}>
-                <input
-                  type="radio"
-                  name="grid-visibility"
-                  value={value}
-                  checked={visibility === value}
-                  onChange={() => {
-                    setVisibility(value);
-                    reset();
-                  }}
-                />
-                {label}
-              </label>
+              <div className="publish-choice-row" key={value}>
+                {value === "public" && (
+                  <div className="publish-slug-error">
+                    <p aria-hidden="true">{slugNamingError}</p>
+                    {(validation || error?.message) && (
+                      <p role="alert" id="publish-slug-error">
+                        {validation || error?.message}
+                      </p>
+                    )}
+                  </div>
+                )}
+                <label className="publish-choice">
+                  <input
+                    type="radio"
+                    name="grid-visibility"
+                    value={value}
+                    checked={visibility === value}
+                    onChange={() => {
+                      setVisibility(value);
+                      reset();
+                    }}
+                  />
+                  {value === "public" ? `${label}:` : label}
+                </label>
+                {value === "public" && (
+                  <label className="publish-slug-input" htmlFor="publish-slug">
+                    <span aria-hidden="true">slopgrid.com/</span>
+                    <input
+                      id="publish-slug"
+                      aria-label="Slug (optional)"
+                      placeholder="Optional slug"
+                      type="text"
+                      value={slug}
+                      disabled={busy || !!initialSlug}
+                      onFocus={() => {
+                        if (visibility !== "public") {
+                          setVisibility("public");
+                          reset();
+                        }
+                      }}
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      aria-invalid={!!validation}
+                      aria-describedby={
+                        validation || error?.message
+                          ? "publish-slug-error"
+                          : undefined
+                      }
+                      onChange={(event) => {
+                        setSlug(event.target.value);
+                        reset();
+                      }}
+                    />
+                  </label>
+                )}
+              </div>
             ))}
         </fieldset>
-      )}
-      {!confirming && visibility === "public" && (
-        <div className="publish-slug">
-          <label htmlFor="publish-slug">Slug (optional)</label>
-          <div className="publish-slug-error">
-            <p className="error" aria-hidden="true">
-              {slugNamingError}
-            </p>
-            {(validation || error?.message) && (
-              <p className="error" role="alert" id="publish-slug-error">
-                {validation || error?.message}
-              </p>
-            )}
-          </div>
-          <div className="publish-slug-input">
-            <span aria-hidden="true">slopgrid.com/</span>
-            <input
-              id="publish-slug"
-              type="text"
-              value={slug}
-              disabled={busy || !!initialSlug}
-              autoCapitalize="none"
-              autoCorrect="off"
-              spellCheck={false}
-              aria-invalid={!!validation}
-              aria-describedby={
-                validation || error?.message ? "publish-slug-error" : undefined
-              }
-              onChange={(event) => {
-                setSlug(event.target.value);
-                reset();
-              }}
-            />
-          </div>
-        </div>
       )}
       <div className="modal-actions">
         <button

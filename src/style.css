@@ -1640,16 +1640,27 @@ header {
 }
 .publish-slug-error {
   display: grid;
+  flex-basis: 100%;
 }
-.publish-slug-error .error {
+.publish-slug-error p {
   grid-area: 1 / 1;
-  margin: 8px 0;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--error-text);
 }
 .publish-slug-error [aria-hidden="true"] {
   visibility: hidden;
 }
 .publish-slug-input {
   display: flex;
+  flex-direction: row;
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 400;
+  cursor: text;
   align-items: center;
   gap: 0;
   border: 1px solid var(--line);
@@ -1665,6 +1676,29 @@ header {
   min-width: 0;
   border: 0;
   padding-left: 0;
+  background: transparent;
+  font: inherit;
+  outline: none;
+}
+.publish-slug-input:focus-within {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+}
+.publish-choice-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0;
+}
+.publish-choice-row > .publish-choice {
+  margin: 0;
+  flex: none;
+}
+@media (max-width: 480px) {
+  .publish-choice-row > .publish-slug-input {
+    flex-basis: 100%;
+  }
 }
 .public-grids {
   margin-top: 40px;

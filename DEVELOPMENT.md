@@ -306,6 +306,8 @@ Live-validation coverage checks invalid, valid, and empty values before saving,
 disabled submission, error placement above the field, and stable field and
 button positions while typing on desktop and phone viewports. The URL prefix
 remains outside the editable value and the submitted slug.
+Focus coverage clicks the URL prefix and field padding on desktop and phone
+viewports and verifies that typing targets the slug input.
 OAuth return-path tests accept slug paths while rejecting external, nested,
 and query-bearing redirects.
 
