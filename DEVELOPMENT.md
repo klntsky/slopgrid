@@ -303,7 +303,7 @@ adding uniqueness. Browser coverage exercises the optional field, validation,
 confirmation cancellation, copied URLs, anonymous listing navigation, direct
 loads and reloads, original grid links, missing slugs, and application routes.
 Live-validation coverage checks invalid, valid, and empty values before saving,
-disabled submission, error placement above the field, and stable field and
+disabled submission, error placement below the field, and stable field and
 button positions while typing on desktop and phone viewports. The URL prefix
 remains outside the editable value and the submitted slug.
 Focus coverage clicks the URL prefix and field padding on desktop and phone

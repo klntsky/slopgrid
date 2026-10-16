@@ -121,16 +121,6 @@ export function PublishDialog({
             )
             .map(([value, label]) => (
               <div className="publish-choice-row" key={value}>
-                {value === "public" && (
-                  <div className="publish-slug-error">
-                    <p aria-hidden="true">{slugNamingError}</p>
-                    {(validation || error?.message) && (
-                      <p role="alert" id="publish-slug-error">
-                        {validation || error?.message}
-                      </p>
-                    )}
-                  </div>
-                )}
                 <label className="publish-choice">
                   <input
                     type="radio"
@@ -175,6 +165,16 @@ export function PublishDialog({
                       }}
                     />
                   </label>
+                )}
+                {value === "public" && (
+                  <div className="publish-slug-error">
+                    <p aria-hidden="true">{slugNamingError}</p>
+                    {(validation || error?.message) && (
+                      <p role="alert" id="publish-slug-error">
+                        {validation || error?.message}
+                      </p>
+                    )}
+                  </div>
                 )}
               </div>
             ))}

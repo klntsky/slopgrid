@@ -43,7 +43,7 @@ test("owners claim permanent public slugs and visitors follow and reload slug li
     await expect(field).toHaveAttribute("aria-invalid", "true");
     await expect(save).toBeDisabled();
     const error = await dialog.getByRole("alert").boundingBox();
-    expect(error!.y + error!.height).toBeLessThanOrEqual(bounds!.y);
+    expect(error!.y).toBeGreaterThanOrEqual(bounds!.y + bounds!.height);
     expect(await field.boundingBox()).toEqual(bounds);
     expect(await save.boundingBox()).toEqual(actions);
     await field.fill("my-grid1");
