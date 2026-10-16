@@ -3,7 +3,7 @@ import "./grid-workspace.css";
 import type { ViewGrid } from "../api";
 import { ModelName } from "../model-name";
 import { GridViewport } from "./viewport";
-import { displayValue } from "../format";
+import { dimensionNames, displayValue } from "../format";
 import { ExpandButton } from "../components/expand-button";
 import { ContainedImage } from "../contained-image";
 import { OutputCell } from "./output-cell";
@@ -117,6 +117,10 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
             <ModelName model={value} />
           ) : kind === "input_references" ? (
             `references: ${value}`
+          ) : kind === "effort" ? (
+            `thinking: ${displayValue(value, kind)}`
+          ) : kind !== "variable" ? (
+            `${dimensionNames[kind].toLowerCase()}: ${value}`
           ) : (
             displayValue(value, kind)
           )}

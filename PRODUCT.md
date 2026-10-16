@@ -237,7 +237,7 @@ Image grids have a "Parameters" button with a 14px Info circle icon immediately 
 3. Put the pause/resume action after the title/prompt and before Edit. Edit and Publish are compact icon-only controls using the same visual treatment.
 4. Before publication, Edit immediately cancels active inference and returns to parameter selection with the existing setup restored. Generating the edited setup creates a new grid and can reuse matching completed artifacts as specified in section 10.
 5. After publication, offer Fork to restore the setup for modification and generation using the forking user's own connection. Its icon depicts a branch splitting from a continuing main branch.
-6. Show model IDs in row or column labels. Clicking a model ID copies it without a hover hint, while preserving copy-result feedback; a chain icon to the right of its copy icon opens the model's OpenRouter page in a new tab. Copy and link icons follow the same orientation as the label text, including in rotated row titles.
+6. Show model IDs in row or column labels. Clicking a model ID copies it without a hover hint, while preserving copy-result feedback; a chain icon to the right of its copy icon opens the model's OpenRouter page in a new tab. Copy and link icons follow the same orientation as the label text, including in rotated row titles. Prefix thinking values with "thinking: " and image parameter values with their lowercase display name and ": ", such as "size: 1K" or "aspect ratio: 16:9". Reference headers use "references: <title>". Keep model IDs and prompt variable values unprefixed.
 
 ## 5. Outputs and streaming
 
