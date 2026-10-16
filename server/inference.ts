@@ -168,7 +168,7 @@ export async function generateInference(
       model,
       includeRawChunks: true,
       ...(prepared.text.messages
-        ? { messages: prepared.text.messages }
+        ? { messages: prepared.text.messages, allowSystemInMessages: true }
         : { system, prompt: prepared.prompt }),
       ...(schema && {
         output: Output.object({ schema: jsonSchema(schema), name: "website" }),
