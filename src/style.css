@@ -392,6 +392,7 @@ section {
 .model-badge.chat-role,
 .chat-role:enabled:hover,
 .chat-role:enabled:active {
+  padding-inline: 8px;
   background: color-mix(in srgb, var(--role-color) 12%, var(--paper));
   border-color: color-mix(in srgb, var(--role-color) 45%, var(--paper));
   color: color-mix(in srgb, var(--role-color) 75%, var(--text));
