@@ -304,7 +304,10 @@ section {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding-top: 5px;
+}
+.chat-message-controls,
+.chat-remove {
+  height: calc(1.6rem + 24px);
 }
 .chat-message-input {
   position: relative;
@@ -322,7 +325,7 @@ section {
 .chat-remove {
   position: absolute;
   right: 3px;
-  top: 3px;
+  top: 0;
   opacity: 0;
   pointer-events: none;
 }
