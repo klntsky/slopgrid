@@ -1,9 +1,9 @@
 const xmlName = /^[A-Za-z_][\w.:-]*/;
 
 /** Prepare accumulated stream text without parsing or reserializing XML. */
-export function prepareSvg(source: string, streaming = false): string {
+export function prepareSvg(source: string): string {
   source = unwrapSvg(source);
-  if (streaming) source = completePartialSvg(source) ?? "";
+  source = completePartialSvg(source) ?? source;
   return source.replace(
     /^(\s*(?:(?:<\?[\s\S]*?\?>|<!--[\s\S]*?-->)\s*)*)<svg(?=[\s/>])((?:[^<>"']|"[^"]*"|'[^']*')*)>/,
     (root, prefix: string, attributes: string) => {
@@ -17,18 +17,18 @@ export function prepareSvg(source: string, streaming = false): string {
 }
 
 function unwrapSvg(raw: string): string {
-  const block = raw.match(
-    /^\s*(`{3,}|~{3,})[^\r\n`~]*\r?\n([\s\S]*?)\r?\n[ \t]*(`{3,}|~{3,})\s*$/,
-  );
-  if (!block) return raw;
-  const [, opening, content, closing] = block;
-  if (closing[0] !== opening[0] || closing.length < opening.length) return raw;
-  // An earlier closing fence means this is more than one enclosing block.
-  const earlierClose = new RegExp(
-    `^[ \\t]*${opening[0]}{${opening.length},}[ \\t]*\\r?$`,
-    "m",
-  );
-  return earlierClose.test(content) ? raw : content;
+  const opening = raw.match(/^\s*(`{3,}|~{3,})[^\r\n`~]*\r?\n/);
+  if (!opening) return raw;
+  const content = raw.slice(opening[0].length);
+  const closing = /\r?\n[ \t]*(`+|~+)[ \t]*(?:\r?\n|$)/.exec(content);
+  if (!closing) return content;
+  // A closing fence can itself be incomplete, but cannot contain more blocks.
+  if (
+    closing[1][0] !== opening[1][0] ||
+    content.slice(closing.index + closing[0].length).trim()
+  )
+    return raw;
+  return content.slice(0, closing.index);
 }
 
 function withoutPartialEntity(text: string): string {
@@ -50,7 +50,11 @@ function finishOpeningTag(raw: string): string | undefined {
       break;
     }
     const attribute = rest.match(/^\s+([A-Za-z_][\w.:-]*)\s*=\s*(["'])/);
-    if (!attribute) break;
+    if (!attribute) {
+      if (!/^\s*(?:[A-Za-z_][\w.:-]*(?:\s*=\s*)?)?$/.test(rest))
+        return undefined;
+      break;
+    }
     const start = cursor + attribute[0].length;
     const end = raw.indexOf(attribute[2], start);
     if (end < 0 && attribute[1].startsWith("xmlns")) break;
@@ -66,11 +70,14 @@ function finishOpeningTag(raw: string): string | undefined {
   return result + (selfClosing ? "/>" : ">");
 }
 
-/** Complete a disposable SVG image preview; never modify the generated output. */
+/** Complete unfinished text without rewriting already complete tags. */
 function completePartialSvg(draft: string): string | undefined {
-  const start = draft.search(/<svg(?=[\s/>]|$)/);
-  if (start < 0) return undefined;
-  const source = draft.slice(start),
+  const root = draft.match(
+    /^(\s*(?:(?:<\?[\s\S]*?\?>|<!--[\s\S]*?-->)\s*)*)<svg(?=[\s/>]|$)/,
+  );
+  if (!root) return undefined;
+  const prefix = root[1];
+  const source = draft.slice(prefix.length),
     parts: string[] = [],
     stack: string[] = [];
   let cursor = 0;
@@ -78,7 +85,8 @@ function completePartialSvg(draft: string): string | undefined {
     if (source[cursor] !== "<") {
       const next = source.indexOf("<", cursor);
       const end = next < 0 ? source.length : next;
-      parts.push(withoutPartialEntity(source.slice(cursor, end)));
+      const text = source.slice(cursor, end);
+      parts.push(next < 0 ? withoutPartialEntity(text) : text);
       cursor = end;
       continue;
     }
@@ -117,18 +125,25 @@ function completePartialSvg(draft: string): string | undefined {
     if (closing) {
       if (stack.pop() !== closing[1]) return undefined;
       parts.push(tag);
-      if (!stack.length) return parts.join("");
+      if (!stack.length) {
+        const tail = source.slice(end + 1);
+        return tail.trim() ? undefined : prefix + parts.join("") + tail;
+      }
     } else {
       const name = tag.slice(1).match(xmlName)?.[0];
       if (!name) return undefined;
       parts.push(tag);
       if (!/\/\s*>$/.test(tag)) stack.push(name);
-      else if (!stack.length) return parts.join("");
+      else if (!stack.length) {
+        const tail = source.slice(end + 1);
+        return tail.trim() ? undefined : prefix + parts.join("") + tail;
+      }
     }
     cursor = end + 1;
   }
   return parts.length
-    ? parts.join("") +
+    ? prefix +
+        parts.join("") +
         stack
           .reverse()
           .map((name) => `</${name}>`)

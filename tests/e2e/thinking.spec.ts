@@ -221,7 +221,6 @@ test("SVG streaming advances behind thinking and survives view switches through 
     await page
       .getByRole("button", { name: "Show thinking", exact: true })
       .click();
-    call.write({ content: "</svg>\n```" });
     call.finish();
     await expect(page.locator(".grid-cost")).toHaveAttribute(
       "aria-label",

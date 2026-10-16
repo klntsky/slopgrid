@@ -25,9 +25,7 @@ test("SVG output unwraps one enclosing Markdown code block", () => {
 test("SVG fixup preserves source outside a single complete wrapper", () => {
   for (const raw of [
     ' \n<svg xmlns="http://www.w3.org/2000/svg"><text>```svg</text></svg>\n ',
-    "```svg\n<svg/>",
     "```svg\n<svg/>\n~~~",
-    "````svg\n<svg/>\n```",
     "Here is the SVG:\n```svg\n<svg/>\n```",
     "```svg\n<svg/>\n```\nExplanation",
     "```svg\n<svg/>\n```\n```svg\n<svg/>\n```",
@@ -75,7 +73,6 @@ test("SVG namespace fixup preserves existing declarations and non-root text", ()
     "<!-- <svg/> -->",
     "<html><svg/></html>",
     "<svgish/>",
-    '<svg data-note="unfinished',
   ])
     assert.deepEqual(parseOutput("svg", raw), { "index.svg": raw });
 });
@@ -92,10 +89,18 @@ test("SVG fixup preserves malformed attribute quotes", () => {
   assert.deepEqual(parseOutput("svg", raw), { "index.svg": raw });
 });
 
-test("SVG fixup preserves an unclosed root instead of completing markup", () => {
+test("SVG fixup saves closing tags for an unclosed root", () => {
   // Reduced from a provider response that ended normally without </svg>.
   const raw = '<svg xmlns="http://www.w3.org/2000/svg"><rect width="1"/>';
-  assert.deepEqual(parseOutput("svg", raw), { "index.svg": raw });
+  assert.deepEqual(parseOutput("svg", raw), { "index.svg": raw + "</svg>" });
+});
+
+test("SVG fixup saves incomplete attribute and fence repairs", () => {
+  const raw = '```svg\n<svg><path d="M0 0';
+  assert.deepEqual(parseOutput("svg", raw), {
+    "index.svg":
+      '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0"></path></svg>',
+  });
 });
 
 test("SVG fixup preserves an unescaped ampersand inside a fenced document", () => {

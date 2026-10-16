@@ -133,14 +133,13 @@ The output layer owns format instructions, parsing, completed files, and
 temporary previews. Website output is a bundle of validated relative paths with
 an entry page. One path validator protects both stored bundles and preview
 serving. Temporary previews belong to the active attempt and are cleared when
-that attempt ends or the engine starts. Completed SVG parsing removes a single
-enclosing Markdown code fence and adds the SVG namespace when the root element
-has no default namespace declaration. A shared text preparation function applies
-these fixups to accumulated streaming text and final output without parsing or
-reserializing XML. Its streaming mode also completes unfinished tags for a
-disposable image preview. Raw streaming text remains unchanged; final storage
-uses the same function without preview completion and preserves the remaining
-source, including existing namespace declarations.
+that attempt ends or the engine starts. One shared SVG text preparation function
+removes an enclosing Markdown fence, completes unfinished tags and quoted
+attributes where possible, and supplies a missing root namespace. Both browser
+previews and final storage use it without parsing or reserializing XML. Every
+preview starts from raw accumulated stream text so inferred repairs cannot
+alter later chunks. After successful generation the same repairs are saved.
+Existing namespace declarations and complete markup remain unchanged.
 Markdown output passes through unchanged.
 
 The engine sends snapshots containing cell state, drafts, estimates, and preview

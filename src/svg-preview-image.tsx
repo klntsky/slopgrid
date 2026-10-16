@@ -6,7 +6,7 @@ import { ContainedImage } from "./contained-image";
 export function SvgPreview({ draft }: { draft: string }) {
   const [source, setSource] = useState("");
   useEffect(() => {
-    const svg = prepareSvg(draft, true);
+    const svg = prepareSvg(draft);
     if (!svg) return;
     let next: string;
     try {
