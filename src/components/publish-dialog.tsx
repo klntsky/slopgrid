@@ -140,7 +140,7 @@ export function PublishDialog({
                     <input
                       id="publish-slug"
                       aria-label="Slug (optional)"
-                      placeholder="Optional slug"
+                      placeholder="your-chosen-slug"
                       type="text"
                       value={slug}
                       disabled={busy || !!initialSlug}

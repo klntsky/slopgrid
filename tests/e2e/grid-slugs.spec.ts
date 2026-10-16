@@ -29,7 +29,7 @@ test("owners claim permanent public slugs and visitors follow and reload slug li
     await page.setViewportSize({ width, height: 900 });
     await dialog.getByText("slopgrid.com/", { exact: true }).click();
     await expect(field).toBeFocused();
-    await expect(field).toHaveAttribute("placeholder", "Optional slug");
+    await expect(field).toHaveAttribute("placeholder", "your-chosen-slug");
     await save.focus();
     await dialog
       .locator(".publish-slug-input")
