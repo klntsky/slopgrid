@@ -276,6 +276,11 @@ Insertion coverage verifies immediate input focus when appending a message or
 inserting between existing messages.
 Drag coverage checks gap markers and resulting order before and after multiline
 rows, at both ends of the history, and when moving in either direction.
+Cover each chat editor control with focused interaction scenarios rather than
+exhaustive combinations. Keyboard coverage includes the full role cycle, editing,
+insertion, deletion, reorder boundaries and focus, and rebuilding an empty saved
+draft. Touch coverage uses native browser touch events for insertion, deletion,
+drag cancellation, outside and unchanged-position drops, and successful reordering.
 
 Recovery coverage exercises a failed later reference upload followed by reload
 and retry, large reference retention through reload and authorization, clipboard

@@ -1,6 +1,14 @@
 import { test, expect } from "./fixtures";
 import { expectProgress, selectModel } from "./helpers";
 
+async function history(page: import("@playwright/test").Page) {
+  return page
+    .locator(".chat-message textarea")
+    .evaluateAll((inputs) =>
+      inputs.map((input) => (input as HTMLTextAreaElement).value),
+    );
+}
+
 test("chat editing, ordering, persistence and Markdown output", async ({
   page,
   request,
@@ -204,4 +212,157 @@ test("chat drag markers select gaps before and after rows", async ({
   await drag(1, 2, "after", ["A", "B", "D", "C"]);
   await drag(0, 3, "after", ["B", "D", "C", "A"]);
   await drag(3, 0, "before", ["A", "B", "D", "C"]);
+});
+
+test("every chat control works from the keyboard, including an empty history", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "Chat completion", exact: true })
+    .click();
+  await page.getByLabel("Message 1", { exact: true }).focus();
+  await page.keyboard.insertText("First\nline");
+  await page.keyboard.press("Shift+Tab");
+  const role = page.locator(".chat-role").first();
+  await expect(role).toBeFocused();
+  for (const next of ["assistant", "system", "user"]) {
+    await page.keyboard.press("Space");
+    await expect(role).toHaveAttribute("aria-label", `Message 1 role: ${next}`);
+    await expect(page.getByLabel("Message 1", { exact: true })).toHaveValue(
+      "First\nline",
+    );
+  }
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Tab");
+  await expect(
+    page.getByRole("button", { name: "Remove message 1", exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(page.locator(".chat-append")).toBeFocused();
+  await expect(page.locator(".chat-append")).toHaveCSS("opacity", "1");
+  await page.keyboard.press("Enter");
+  await expect(page.getByLabel("Message 2", { exact: true })).toBeFocused();
+  await page.keyboard.insertText("Last");
+  await page.keyboard.press("Shift+Tab");
+  await page.keyboard.press("Shift+Tab");
+  await expect(
+    page.getByRole("button", { name: "Move message 2", exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("ArrowUp");
+  await expect(
+    page.getByRole("button", { name: "Move message 1", exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("ArrowUp");
+  await expect.poll(() => history(page)).toEqual(["Last", "First\nline"]);
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowDown");
+  await expect.poll(() => history(page)).toEqual(["First\nline", "Last"]);
+  await page.keyboard.press("Shift+Tab");
+  await expect(page.locator(".chat-insert").nth(1)).toBeFocused();
+  await expect(page.locator(".chat-insert").nth(1)).toHaveCSS("opacity", "1");
+  await page.keyboard.press("Enter");
+  await expect(page.getByLabel("Message 2", { exact: true })).toBeFocused();
+  await page.keyboard.insertText("Middle");
+  await expect
+    .poll(() => history(page))
+    .toEqual(["First\nline", "Middle", "Last"]);
+  for (let remaining = 3; remaining > 0; remaining--) {
+    await page.getByLabel("Message 1", { exact: true }).focus();
+    await page.keyboard.press("Tab");
+    const remove = page.getByRole("button", {
+      name: "Remove message 1",
+      exact: true,
+    });
+    await expect(remove).toBeFocused();
+    await expect(remove).toHaveCSS("opacity", "1");
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".chat-message")).toHaveCount(remaining - 1);
+  }
+  await page.reload();
+  await expect(page.locator(".chat-message")).toHaveCount(0);
+  await expect(page.locator(".chat-append")).toHaveCSS("opacity", "1");
+  await page.locator(".chat-append").focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByLabel("Message 1", { exact: true })).toBeFocused();
+  await page.keyboard.insertText("Restarted");
+  await expect.poll(() => history(page)).toEqual(["Restarted"]);
+});
+
+test.describe("chat history on touch devices", () => {
+  test.use({ hasTouch: true, viewport: { width: 390, height: 844 } });
+
+  test("insertion, cancelled and outside drags, no-op drops and reordering", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await page
+      .getByRole("button", { name: "Chat completion", exact: true })
+      .tap();
+    await page.getByLabel("Message 1", { exact: true }).fill("First");
+    await expect(page.locator(".chat-append")).toHaveCSS("opacity", "1");
+    await page.getByRole("button", { name: "Add message", exact: true }).tap();
+    await expect(page.getByLabel("Message 2", { exact: true })).toBeFocused();
+    await page.getByLabel("Message 2", { exact: true }).fill("Second");
+    await expect(page.locator(".chat-insert").first()).toHaveCSS(
+      "opacity",
+      "1",
+    );
+    await page.locator(".chat-insert").first().tap();
+    await expect(page.getByLabel("Message 1", { exact: true })).toBeFocused();
+    await page.getByLabel("Message 1", { exact: true }).fill("Inserted");
+    await page.getByLabel("Message 1", { exact: true }).tap();
+    await page
+      .getByRole("button", { name: "Remove message 1", exact: true })
+      .tap();
+    await expect.poll(() => history(page)).toEqual(["First", "Second"]);
+
+    const session = await page.context().newCDPSession(page);
+    for (const ending of ["cancel", "outside", "same", "drop"] as const) {
+      await page.locator(".chat-editor").scrollIntoViewIfNeeded();
+      const handle = (await page
+        .getByRole("button", { name: "Move message 2", exact: true })
+        .boundingBox())!;
+      const target = (await page
+        .getByLabel("Message 1", { exact: true })
+        .boundingBox())!;
+      const start = {
+        x: handle.x + handle.width / 2,
+        y: handle.y + handle.height / 2,
+        id: 1,
+      };
+      await session.send("Input.dispatchTouchEvent", {
+        type: "touchStart",
+        touchPoints: [start],
+      });
+      await session.send("Input.dispatchTouchEvent", {
+        type: "touchMove",
+        touchPoints: [{ x: target.x + 10, y: target.y + 5, id: 1 }],
+      });
+      await expect(page.locator(".chat-insert").first()).toHaveAttribute(
+        "data-chat-insertion",
+        "true",
+      );
+      if (ending === "outside" || ending === "same") {
+        await session.send("Input.dispatchTouchEvent", {
+          type: "touchMove",
+          touchPoints: [
+            ending === "same" ? start : { x: 1, y: target.y, id: 1 },
+          ],
+        });
+        await expect(page.locator('[data-chat-insertion="true"]')).toHaveCount(
+          0,
+        );
+      }
+      await session.send("Input.dispatchTouchEvent", {
+        type: ending === "cancel" ? "touchCancel" : "touchEnd",
+        touchPoints: [],
+      });
+      await expect(page.locator('[data-chat-insertion="true"]')).toHaveCount(0);
+      await expect
+        .poll(() => history(page))
+        .toEqual(ending === "drop" ? ["Second", "First"] : ["First", "Second"]);
+    }
+    await session.detach();
+  });
 });
