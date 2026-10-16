@@ -665,6 +665,10 @@ button.editable-title > .lucide {
   width: 16px;
   height: 16px;
 }
+.parameters-info .lucide {
+  width: 14px;
+  height: 14px;
+}
 /* Keep mounting tooltips out of flow before Popper measures their anchors. */
 [data-tippy-root] {
   position: absolute;

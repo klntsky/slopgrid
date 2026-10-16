@@ -4,6 +4,7 @@ import tippy from "tippy.js";
 import { api, type ViewGrid } from "../api";
 import { CopyButton } from "../components/copy-button";
 import { EditableTitle } from "../components/editable-title";
+import { GridParameters } from "./grid-parameters";
 
 export function GridTitle({ grid }: { grid: ViewGrid }) {
   const cache = useQueryClient();
@@ -70,6 +71,9 @@ export function GridTitle({ grid }: { grid: ViewGrid }) {
         label="Copy prompt"
         copy={() => navigator.clipboard.writeText(grid.input.prompt)}
       />
+      {grid.input.format === "image" && (
+        <GridParameters key={grid.id} grid={grid} />
+      )}
     </div>
   );
 }

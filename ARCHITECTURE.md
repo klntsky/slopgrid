@@ -122,7 +122,7 @@ inference ledger entry. Any unfinished cells enter the ordinary scheduler.
 
 ## Outputs and live views
 
-The image-grid header owns the Parameters button and its interactive Tippy
+The image-grid title line owns the Parameters button and its interactive Tippy
 panel. React renders the panel through a portal into Tippy's content container,
 which is attached to the document body. Common parameters come from saved grid
 input, filtered by the selected axis kinds. Reference thumbnails use the existing

@@ -1,7 +1,6 @@
 import { CopyButton } from "../components/copy-button";
 import { PublishGrid } from "./publish-grid";
 import { GridTitle } from "./grid-title";
-import { GridParameters } from "./grid-parameters";
 import { Author } from "../components/identity";
 import { Square, Play, Pencil, GitBranch, Link2 } from "lucide-react";
 import type { ViewGrid } from "../api";
@@ -89,9 +88,6 @@ export function GridHeader({
             </button>
           )}
           <div className="actions">
-            {g.input.format === "image" && (
-              <GridParameters key={g.id} grid={g} />
-            )}
             {(g.canEdit || g.published) && (
               <button
                 className="secondary inference-toggle"

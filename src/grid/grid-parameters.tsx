@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import tippy, { type Instance } from "tippy.js";
-import { SlidersHorizontal, X } from "lucide-react";
+import { Info, X } from "lucide-react";
 import type { ViewGrid } from "../api";
 import type { ReferenceImage } from "../../server/image-settings";
 import { dimensionNames } from "../format";
@@ -101,13 +101,13 @@ export function GridParameters({ grid }: { grid: ViewGrid }) {
       <button
         ref={button}
         type="button"
-        className="secondary inference-toggle"
+        className="text-button prompt-copy parameters-info"
         aria-label="Parameters"
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls={open ? panelId : undefined}
       >
-        <SlidersHorizontal aria-hidden="true" />
+        <Info aria-hidden="true" />
       </button>
       {container &&
         createPortal(
