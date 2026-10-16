@@ -17,10 +17,33 @@ test("owners claim permanent public slugs and visitors follow and reload slug li
   await page.getByRole("button", { name: "PUBLISH", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await dialog.getByRole("radio", { name: "Listed publicly" }).check();
-  await dialog.getByLabel("Slug (optional)").fill("invalid");
-  await dialog.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(dialog.getByRole("alert")).toBeVisible();
-  await expect(dialog.getByLabel("Slug (optional)")).toBeVisible();
+  const field = dialog.getByLabel("Slug (optional)");
+  await expect(
+    dialog.getByText("slopgrid.com/", { exact: true }),
+  ).toBeVisible();
+  const save = dialog.getByRole("button", { name: "Save", exact: true });
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await field.fill("");
+    const bounds = await field.boundingBox();
+    const actions = await save.boundingBox();
+    await field.pressSequentially("invalid");
+    await expect(dialog.getByRole("alert")).toBeVisible();
+    await expect(field).toHaveAttribute("aria-invalid", "true");
+    await expect(save).toBeDisabled();
+    const error = await dialog.getByRole("alert").boundingBox();
+    expect(error!.y + error!.height).toBeLessThanOrEqual(bounds!.y);
+    expect(await field.boundingBox()).toEqual(bounds);
+    expect(await save.boundingBox()).toEqual(actions);
+    await field.fill("my-grid1");
+    await expect(field).toHaveValue("my-grid1");
+    await expect(dialog.getByRole("alert")).toHaveCount(0);
+    await expect(save).toBeEnabled();
+    expect(await field.boundingBox()).toEqual(bounds);
+    expect(await save.boundingBox()).toEqual(actions);
+    await field.fill("");
+    await expect(save).toBeEnabled();
+  }
   await dialog.getByLabel("Slug (optional)").fill(slug);
   await dialog.getByRole("button", { name: "Save", exact: true }).click();
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();

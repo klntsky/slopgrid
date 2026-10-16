@@ -31,7 +31,8 @@ export function PublishDialog({
   const ref = useRef<HTMLDialogElement>(null);
   const [visibility, setVisibility] = useState(initialVisibility);
   const [slug, setSlug] = useState(initialSlug ?? "");
-  const [validation, setValidation] = useState("");
+  const validation =
+    visibility === "public" && slug && !isGridSlug(slug) ? slugNamingError : "";
   const published = initialVisibility !== "private";
   const [confirming, setConfirming] = useState(false);
   const [remember, setRemember] = useState(false);
@@ -127,7 +128,6 @@ export function PublishDialog({
                   checked={visibility === value}
                   onChange={() => {
                     setVisibility(value);
-                    setValidation("");
                     reset();
                   }}
                 />
@@ -137,33 +137,46 @@ export function PublishDialog({
         </fieldset>
       )}
       {!confirming && visibility === "public" && (
-        <label>
-          Slug (optional)
-          <input
-            type="text"
-            value={slug}
-            disabled={busy || !!initialSlug}
-            autoCapitalize="none"
-            autoCorrect="off"
-            spellCheck={false}
-            onChange={(event) => {
-              setSlug(event.target.value);
-              setValidation("");
-              reset();
-            }}
-          />
-        </label>
+        <div className="publish-slug">
+          <label htmlFor="publish-slug">Slug (optional)</label>
+          <div className="publish-slug-error">
+            <p className="error" aria-hidden="true">
+              {slugNamingError}
+            </p>
+            {(validation || error?.message) && (
+              <p className="error" role="alert" id="publish-slug-error">
+                {validation || error?.message}
+              </p>
+            )}
+          </div>
+          <div className="publish-slug-input">
+            <span aria-hidden="true">slopgrid.com/</span>
+            <input
+              id="publish-slug"
+              type="text"
+              value={slug}
+              disabled={busy || !!initialSlug}
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              aria-invalid={!!validation}
+              aria-describedby={
+                validation || error?.message ? "publish-slug-error" : undefined
+              }
+              onChange={(event) => {
+                setSlug(event.target.value);
+                reset();
+              }}
+            />
+          </div>
+        </div>
       )}
       <div className="modal-actions">
         <button
           className="primary"
           data-confirm
-          disabled={busy}
+          disabled={busy || !!validation}
           onClick={() => {
-            if (visibility === "public" && slug && !isGridSlug(slug)) {
-              setValidation(slugNamingError);
-              return;
-            }
             if (visibility === "private") onClose();
             else if (published || confirming || skipConfirmation()) void save();
             else setConfirming(true);
@@ -175,7 +188,9 @@ export function PublishDialog({
           Cancel
         </button>
       </div>
-      <ErrorMessage error={validation || error?.message} />
+      {(confirming || visibility !== "public") && (
+        <ErrorMessage error={error?.message} />
+      )}
     </Modal>
   );
 }

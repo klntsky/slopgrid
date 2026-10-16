@@ -1638,6 +1638,34 @@ header {
   width: auto;
   margin: 0;
 }
+.publish-slug-error {
+  display: grid;
+}
+.publish-slug-error .error {
+  grid-area: 1 / 1;
+  margin: 8px 0;
+}
+.publish-slug-error [aria-hidden="true"] {
+  visibility: hidden;
+}
+.publish-slug-input {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--paper);
+}
+.publish-slug-input > span {
+  flex: none;
+  color: var(--muted);
+  padding-left: 12px;
+}
+.publish-slug-input input[type="text"] {
+  min-width: 0;
+  border: 0;
+  padding-left: 0;
+}
 .public-grids {
   margin-top: 40px;
 }

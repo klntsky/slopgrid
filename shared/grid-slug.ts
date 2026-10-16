@@ -3,7 +3,7 @@ export function isGridSlug(value: string) {
 }
 
 export const slugNamingError =
-  "Use only lowercase Latin letters, numbers, and hyphens, with at least one hyphen.";
+  'Use latin characters, numbers, and at least one hyphen. Example: "my-grid1"';
 
 export function gridPath(grid: { id: string; slug?: string }) {
   return grid.slug ? `/${grid.slug}` : `/grid/${grid.id}`;

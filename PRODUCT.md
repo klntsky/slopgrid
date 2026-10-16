@@ -369,6 +369,7 @@ Image grids have a "Parameters" button with a 14px Info circle icon immediately 
 8. Give public discovery its own loading, empty, and failure states, and refresh relevant lists after publication. Show format icons and authors without exposing ownership/session identifiers or nesting profile links inside grid links.
 9. Retain copy-link and fork controls for published grids. Dialogs must support keyboard operation, focus restoration, disabled controls while saving, and visible request errors.
 10. Public grids may have an optional, globally unique slug claimed by the owner when publishing or afterward if no slug has been claimed. Slugs contain only lowercase Latin letters, digits, and hyphens, with at least one hyphen. A claimed slug is permanent and cannot be changed or removed. Slug links use the root path, such as `/my-cool-grid-1`; the hyphen distinguishes them from application routes. Existing grid links remain accessible, while listing links and Copy link use the slug when present. Keep claims and publication atomic so a failed claim does not publish the grid.
+11. Validate slug naming as the user types, display errors above the field, and reserve error space so typing does not shift the layout. Leave an empty optional slug valid and disable Save while naming is invalid. Use this naming error text exactly: `Use latin characters, numbers, and at least one hyphen. Example: "my-grid1"`. Prepend a fixed `slopgrid.com/` prefix to the editable slug field.
 
 ### 8.4. Output isolation and private access
 

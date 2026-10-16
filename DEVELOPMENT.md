@@ -302,6 +302,10 @@ reopening. Migration coverage preserves existing grids and sessions while
 adding uniqueness. Browser coverage exercises the optional field, validation,
 confirmation cancellation, copied URLs, anonymous listing navigation, direct
 loads and reloads, original grid links, missing slugs, and application routes.
+Live-validation coverage checks invalid, valid, and empty values before saving,
+disabled submission, error placement above the field, and stable field and
+button positions while typing on desktop and phone viewports. The URL prefix
+remains outside the editable value and the submitted slug.
 OAuth return-path tests accept slug paths while rejecting external, nested,
 and query-bearing redirects.
 
