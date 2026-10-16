@@ -300,21 +300,6 @@ test.describe("chat history on touch devices", () => {
     page,
   }) => {
     await page.goto("/");
-    await page.evaluate(() => {
-      const events: string[] = [];
-      Object.assign(window, { chatEvents: events });
-      for (const type of ["pointerdown", "click", "focusin", "focusout"])
-        document.addEventListener(
-          type,
-          (event) => {
-            const target = event.target as Element;
-            events.push(
-              `${type}: ${target.getAttribute("aria-label") ?? target.tagName} active=${document.activeElement?.getAttribute("aria-label")} confirm=${!!document.querySelector(".chat-confirm-delete")}`,
-            );
-          },
-          true,
-        );
-    });
     await page
       .getByRole("button", { name: "Chat completion", exact: true })
       .tap();
@@ -333,7 +318,7 @@ test.describe("chat history on touch devices", () => {
     const crossBox = (await cross.boundingBox())!;
     const confirmBox = (await confirm.boundingBox())!;
     expect(confirmBox.x + confirmBox.width).toBeLessThanOrEqual(crossBox.x);
-    await input.tap({ position: { x: 5, y: 5 } });
+    await input.tap({ position: { x: 20, y: 24 } });
     await page.keyboard.press("Escape");
     await expect(confirm).toHaveCount(0);
     await cross.tap();
@@ -344,15 +329,11 @@ test.describe("chat history on touch devices", () => {
       .getByRole("heading", { name: "Chat history", exact: true })
       .tap();
     await expect(confirm).toHaveCount(0);
-    await input.tap({ position: { x: 5, y: 5 } });
+    await input.tap({ position: { x: 20, y: 24 } });
     await cross.tap();
     await expect(input).toHaveValue("Edited message has more than five words");
-    await expect(
-      confirm,
-      JSON.stringify(
-          await page.evaluate(() => Reflect.get(window, "chatEvents")),
-      ),
-    ).toBeVisible();
+    await expect(confirm).toBeVisible();
+    await expect(page.locator(".chat-message")).toHaveCount(1);
     await confirm.tap();
     await expect(page.locator(".chat-message")).toHaveCount(0);
     await page.getByRole("button", { name: "Add message", exact: true }).tap();

@@ -1,6 +1,6 @@
 import type { ChatMessage } from "../../server/domain";
 import { GripVertical, Plus, X } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 
 const roles = ["system", "user", "assistant"] as const;
 
@@ -21,17 +21,6 @@ export function ChatEditor({
   const [dragTarget, setDragTarget] = useState<number>();
   const [dragging, setDragging] = useState<number>();
   const [deleting, setDeleting] = useState<number>();
-  useEffect(() => {
-    if (deleting === undefined) return;
-    function dismiss(event: PointerEvent) {
-      const field = root.current?.querySelectorAll(".chat-message-input")[
-        deleting!
-      ];
-      if (!field?.contains(event.target as Node)) setDeleting(undefined);
-    }
-    document.addEventListener("pointerdown", dismiss);
-    return () => document.removeEventListener("pointerdown", dismiss);
-  }, [deleting]);
   function remove(index: number) {
     setDeleting(undefined);
     onChange(messages.filter((_, i) => i !== index));
@@ -163,10 +152,7 @@ export function ChatEditor({
           <div
             className="chat-message-input"
             onBlur={(event) => {
-              if (
-                event.relatedTarget &&
-                !event.currentTarget.contains(event.relatedTarget)
-              )
+              if (!event.currentTarget.contains(event.relatedTarget))
                 setDeleting(undefined);
             }}
             onKeyDown={(event) => {
