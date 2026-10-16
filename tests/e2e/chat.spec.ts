@@ -290,7 +290,11 @@ test("every chat control works from the keyboard, including an empty history", a
 });
 
 test.describe("chat history on touch devices", () => {
-  test.use({ hasTouch: true, viewport: { width: 390, height: 844 } });
+  test.use({
+    hasTouch: true,
+    viewport: { width: 390, height: 844 },
+    actionTimeout: 5000,
+  });
 
   test("insertion, cancelled and outside drags, no-op drops and reordering", async ({
     page,
