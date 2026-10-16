@@ -19,6 +19,11 @@ export function ChatEditor({
     inserted.current = undefined;
   }, [messages]);
   const [dragTarget, setDragTarget] = useState<number>();
+  const [dragging, setDragging] = useState<number>();
+  function endDrag() {
+    setDragging(undefined);
+    setDragTarget(undefined);
+  }
   function insertionTarget(x: number, y: number, from: number) {
     const list = root.current!;
     const bounds = list.getBoundingClientRect();
@@ -64,7 +69,12 @@ export function ChatEditor({
   return (
     <div className="chat-editor" ref={root}>
       {messages.map((message, index) => (
-        <div className="chat-message" data-message-index={index} key={index}>
+        <div
+          className="chat-message"
+          data-message-index={index}
+          data-dragging={dragging === index}
+          key={index}
+        >
           <button
             type="button"
             className="text-button chat-insert"
@@ -81,6 +91,7 @@ export function ChatEditor({
               aria-label={`Move message ${index + 1}`}
               onPointerDown={(event) => {
                 event.currentTarget.setPointerCapture(event.pointerId);
+                setDragging(index);
                 setDragTarget(undefined);
               }}
               onPointerMove={(event) => {
@@ -98,10 +109,10 @@ export function ChatEditor({
                 );
                 if (target !== undefined)
                   move(index, target > index ? target - 1 : target);
-                setDragTarget(undefined);
+                endDrag();
               }}
-              onPointerCancel={() => setDragTarget(undefined)}
-              onLostPointerCapture={() => setDragTarget(undefined)}
+              onPointerCancel={endDrag}
+              onLostPointerCapture={endDrag}
               onKeyDown={(event) => {
                 if (event.key !== "ArrowUp" && event.key !== "ArrowDown")
                   return;

@@ -281,6 +281,7 @@ exhaustive combinations. Keyboard coverage includes the full role cycle, editing
 insertion, deletion, reorder boundaries and focus, and rebuilding an empty saved
 draft. Touch coverage uses native browser touch events for insertion, deletion,
 drag cancellation, outside and unchanged-position drops, and successful reordering.
+It checks immediate drag-start feedback and deletion from a focused message.
 
 Recovery coverage exercises a failed later reference upload followed by reload
 and retry, large reference retention through reload and authorization, clipboard

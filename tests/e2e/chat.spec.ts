@@ -316,6 +316,9 @@ test.describe("chat history on touch devices", () => {
     await expect(page.getByLabel("Message 1", { exact: true })).toBeFocused();
     await page.getByLabel("Message 1", { exact: true }).fill("Inserted");
     await page.getByLabel("Message 1", { exact: true }).tap();
+    await expect(
+      page.getByRole("button", { name: "Remove message 1", exact: true }),
+    ).toHaveCSS("opacity", "1");
     await page
       .getByRole("button", { name: "Remove message 1", exact: true })
       .tap();
@@ -345,6 +348,10 @@ test.describe("chat history on touch devices", () => {
         id: 1,
       };
       await touch("touchStart", [start]);
+      await expect(page.locator(".chat-message").nth(1)).toHaveCSS(
+        "opacity",
+        "0.6",
+      );
       await touch("touchMove", [{ x: target.x + 10, y: target.y + 5, id: 1 }]);
       await expect(page.locator(".chat-insert").first()).toHaveAttribute(
         "data-chat-insertion",
@@ -359,6 +366,7 @@ test.describe("chat history on touch devices", () => {
         );
       }
       await touch(ending === "cancel" ? "touchCancel" : "touchEnd", []);
+      await expect(page.locator('[data-dragging="true"]')).toHaveCount(0);
       await expect(page.locator('[data-chat-insertion="true"]')).toHaveCount(0);
       await expect
         .poll(() => history(page))

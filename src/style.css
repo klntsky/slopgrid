@@ -390,6 +390,13 @@ section {
   .chat-append {
     opacity: 1;
   }
+  .chat-message-input:focus-within .chat-remove {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+.chat-message[data-dragging="true"] {
+  opacity: 0.6;
 }
 [data-chat-insertion="true"] {
   opacity: 1;
