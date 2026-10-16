@@ -1,5 +1,36 @@
 const xmlName = /^[A-Za-z_][\w.:-]*/;
 
+/** Prepare accumulated stream text without parsing or reserializing XML. */
+export function prepareSvg(source: string, streaming = false): string {
+  source = unwrapSvg(source);
+  if (streaming) source = completePartialSvg(source) ?? "";
+  return source.replace(
+    /^(\s*(?:(?:<\?[\s\S]*?\?>|<!--[\s\S]*?-->)\s*)*)<svg(?=[\s/>])((?:[^<>"']|"[^"]*"|'[^']*')*)>/,
+    (root, prefix: string, attributes: string) => {
+      // Ignore namespace-like text inside quoted attribute values.
+      const names = attributes.replace(/"[^"]*"|'[^']*'/g, "");
+      return /(?:^|\s)xmlns\s*=/.test(names)
+        ? root
+        : `${prefix}<svg xmlns="http://www.w3.org/2000/svg"${attributes}>`;
+    },
+  );
+}
+
+function unwrapSvg(raw: string): string {
+  const block = raw.match(
+    /^\s*(`{3,}|~{3,})[^\r\n`~]*\r?\n([\s\S]*?)\r?\n[ \t]*(`{3,}|~{3,})\s*$/,
+  );
+  if (!block) return raw;
+  const [, opening, content, closing] = block;
+  if (closing[0] !== opening[0] || closing.length < opening.length) return raw;
+  // An earlier closing fence means this is more than one enclosing block.
+  const earlierClose = new RegExp(
+    `^[ \\t]*${opening[0]}{${opening.length},}[ \\t]*\\r?$`,
+    "m",
+  );
+  return earlierClose.test(content) ? raw : content;
+}
+
 function withoutPartialEntity(text: string): string {
   return text.replace(/&(?:#(?:x[\da-fA-F]*|\d*)?|[A-Za-z][\w.-]*)?$/, "");
 }
@@ -36,7 +67,7 @@ function finishOpeningTag(raw: string): string | undefined {
 }
 
 /** Complete a disposable SVG image preview; never modify the generated output. */
-export function completeSvgPreview(draft: string): string | undefined {
+function completePartialSvg(draft: string): string | undefined {
   const start = draft.search(/<svg(?=[\s/>]|$)/);
   if (start < 0) return undefined;
   const source = draft.slice(start),
@@ -90,11 +121,6 @@ export function completeSvgPreview(draft: string): string | undefined {
     } else {
       const name = tag.slice(1).match(xmlName)?.[0];
       if (!name) return undefined;
-      if (!parts.length && name === "svg" && !/\sxmlns\s*=/.test(tag))
-        tag = tag.replace(
-          /\/?>$/,
-          (ending) => ` xmlns="http://www.w3.org/2000/svg"${ending}`,
-        );
       parts.push(tag);
       if (!/\/\s*>$/.test(tag)) stack.push(name);
       else if (!stack.length) return parts.join("");

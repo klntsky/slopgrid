@@ -134,8 +134,14 @@ temporary previews. Website output is a bundle of validated relative paths with
 an entry page. One path validator protects both stored bundles and preview
 serving. Temporary previews belong to the active attempt and are cleared when
 that attempt ends or the engine starts. Completed SVG parsing removes a single
-enclosing Markdown code fence before storage while preserving the enclosed
-source. Other SVG source and Markdown output pass through unchanged.
+enclosing Markdown code fence and adds the SVG namespace when the root element
+has no default namespace declaration. A shared text preparation function applies
+these fixups to accumulated streaming text and final output without parsing or
+reserializing XML. Its streaming mode also completes unfinished tags for a
+disposable image preview. Raw streaming text remains unchanged; final storage
+uses the same function without preview completion and preserves the remaining
+source, including existing namespace declarations.
+Markdown output passes through unchanged.
 
 The engine sends snapshots containing cell state, drafts, estimates, and preview
 identifiers. The web process checks the viewer's session and access before

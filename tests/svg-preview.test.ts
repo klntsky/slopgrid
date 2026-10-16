@@ -1,8 +1,29 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { completeSvgPreview } from "../src/svg-preview.js";
+import { prepareSvg } from "../shared/svg.js";
+
+const completeSvgPreview = (draft: string) => prepareSvg(draft, true);
 
 const root = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">';
+
+test("streaming across namespace and fence boundaries keeps one complete namespace", () => {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg"><circle r="1"/></svg>';
+  const response = `\`\`\`svg\n${svg}\n\`\`\``;
+  for (let end = 0; end <= response.length; end++) {
+    const draft = response.slice(0, end);
+    const preview = completeSvgPreview(draft);
+    if (!draft.includes("<svg")) {
+      assert.equal(preview, "");
+      continue;
+    }
+    assert.ok(preview, `No preview at character ${end}`);
+    assert.match(preview, /^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg">/);
+    assert.equal((preview.match(/xmlns=/g) ?? []).length, 1);
+    assert.ok(preview.endsWith("</svg>"));
+    assert.ok(!preview.includes("```"));
+  }
+  assert.equal(completeSvgPreview(response), svg);
+});
 
 test("streamed SVG previews close nested elements without changing complete markup", () => {
   const draft = `${root}<g><text x="10">hello`;
@@ -10,10 +31,7 @@ test("streamed SVG previews close nested elements without changing complete mark
   const complete = `${root}<g><path d="M0 0 L20 20" /></g></svg>`;
   assert.equal(completeSvgPreview(complete), complete);
   assert.equal(completeSvgPreview(`\`\`\`svg\n${complete}\n\`\`\``), complete);
-  assert.equal(
-    completeSvgPreview("Still thinking about the drawing"),
-    undefined,
-  );
+  assert.equal(completeSvgPreview("Still thinking about the drawing"), "");
 });
 
 test("unfinished paths and attributes render while split closing tags stay balanced", () => {
@@ -31,7 +49,7 @@ test("unfinished paths and attributes render while split closing tags stay balan
   );
   assert.equal(
     completeSvgPreview('<svg viewBox="0 0 200 200"><g'),
-    '<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"><g></g></svg>',
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><g></g></svg>',
   );
 });
 

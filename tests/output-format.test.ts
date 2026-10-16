@@ -24,7 +24,7 @@ test("SVG output unwraps one enclosing Markdown code block", () => {
 
 test("SVG fixup preserves source outside a single complete wrapper", () => {
   for (const raw of [
-    " \n<svg><text>```svg</text></svg>\n ",
+    ' \n<svg xmlns="http://www.w3.org/2000/svg"><text>```svg</text></svg>\n ',
     "```svg\n<svg/>",
     "```svg\n<svg/>\n~~~",
     "````svg\n<svg/>\n```",
@@ -35,9 +35,60 @@ test("SVG fixup preserves source outside a single complete wrapper", () => {
     assert.deepEqual(parseOutput("svg", raw), { "index.svg": raw });
 });
 
-test("SVG fixup preserves a missing namespace instead of repairing markup", () => {
-  // Reduced from the small-model probe; fence removal does not fix namespaces.
-  const raw = '<svg><circle r="1"/></svg>';
+test("SVG fixup adds a missing root namespace", () => {
+  // Reduced from Llama and Gemma responses; retain only namespace edge cases.
+  for (const [raw, expected] of [
+    [
+      '<svg><circle r="1"/></svg>',
+      '<svg xmlns="http://www.w3.org/2000/svg"><circle r="1"/></svg>',
+    ],
+    ["<svg/>", '<svg xmlns="http://www.w3.org/2000/svg"/>'],
+    ["```svg\n<svg/>\n```", '<svg xmlns="http://www.w3.org/2000/svg"/>'],
+    [
+      ' \n<?xml version="1.0"?>\n<!-- <svg xmlns="example"/> -->\n<svg/>',
+      ' \n<?xml version="1.0"?>\n<!-- <svg xmlns="example"/> -->\n<svg xmlns="http://www.w3.org/2000/svg"/>',
+    ],
+    [
+      "<svg data-note=\"xmlns='example' >\"/>",
+      '<svg xmlns="http://www.w3.org/2000/svg" data-note="xmlns=\'example\' >"/>',
+    ],
+    [
+      '<svg xmlns:xlink="http://www.w3.org/1999/xlink"/>',
+      '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"/>',
+    ],
+    [
+      '<svg><g xmlns="http://www.w3.org/2000/svg"/></svg>',
+      '<svg xmlns="http://www.w3.org/2000/svg"><g xmlns="http://www.w3.org/2000/svg"/></svg>',
+    ],
+  ]) {
+    assert.deepEqual(parseOutput("svg", raw), { "index.svg": expected });
+    assert.deepEqual(parseOutput("svg", expected), { "index.svg": expected });
+    assert.deepEqual(parseOutput("markdown", raw), { "index.md": raw });
+  }
+});
+
+test("SVG namespace fixup preserves existing declarations and non-root text", () => {
+  for (const raw of [
+    '<svg xmlns="http://www.w3.org/2000/svg"/>',
+    "<svg\n xmlns = 'http://www.w3.org/2000/svg' />",
+    '<svg xmlns="other"/>',
+    "<!-- <svg/> -->",
+    "<html><svg/></html>",
+    "<svgish/>",
+    '<svg data-note="unfinished',
+  ])
+    assert.deepEqual(parseOutput("svg", raw), { "index.svg": raw });
+});
+
+test("SVG fixup preserves backticks attached directly to markup", () => {
+  // Reduced from Mistral Small: these are not complete Markdown fence lines.
+  const raw = '```<svg xmlns="http://www.w3.org/2000/svg"/>```';
+  assert.deepEqual(parseOutput("svg", raw), { "index.svg": raw });
+});
+
+test("SVG fixup preserves malformed attribute quotes", () => {
+  // Reduced from Llama's animation response with nested unescaped quotes.
+  const raw = '<svg xmlns="http://www.w3.org/2000/svg" style="opacity="1;"/>';
   assert.deepEqual(parseOutput("svg", raw), { "index.svg": raw });
 });
 

@@ -184,7 +184,7 @@ test("SVG streaming advances behind thinking and survives view switches through 
       .click();
     call.write({
       content:
-        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><rect width="200" height="200" fill="red"/>',
+        '```svg\n<svg viewBox="0 0 200 200"><rect width="200" height="200" fill="red"/>',
     });
     const preview = page.getByRole("img", {
       name: "SVG preview",
@@ -221,7 +221,7 @@ test("SVG streaming advances behind thinking and survives view switches through 
     await page
       .getByRole("button", { name: "Show thinking", exact: true })
       .click();
-    call.write({ content: "</svg>" });
+    call.write({ content: "</svg>\n```" });
     call.finish();
     await expect(page.locator(".grid-cost")).toHaveAttribute(
       "aria-label",
@@ -236,6 +236,10 @@ test("SVG streaming advances behind thinking and survives view switches through 
     await expect
       .poll(() => final.evaluate((el) => (el as HTMLImageElement).naturalWidth))
       .toBeGreaterThan(0);
+    const saved = await page.request.get((await final.getAttribute("src"))!);
+    expect(await saved.text()).toBe(
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><rect width="200" height="200" fill="red"/><circle cx="100" cy="100" r="70" fill="blue"/></svg>',
+    );
     expect(fixture.calls).toHaveLength(1);
   } finally {
     await context.close();

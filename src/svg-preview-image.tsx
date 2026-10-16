@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { LoaderCircle } from "lucide-react";
-import { completeSvgPreview } from "./svg-preview";
+import { prepareSvg } from "../shared/svg";
 import { ContainedImage } from "./contained-image";
 
 export function SvgPreview({ draft }: { draft: string }) {
   const [source, setSource] = useState("");
   useEffect(() => {
-    const svg = completeSvgPreview(draft);
+    const svg = prepareSvg(draft, true);
     if (!svg) return;
     let next: string;
     try {

@@ -53,10 +53,17 @@ Frontend serving and retained assets are described under [process boundaries](AR
 
 SVG output regression tests use minimal fixtures reduced from observed provider
 failures, with one unit test per failure mode instead of one per sampled output.
-The code-fence fixup tests cover wrapper removal and source preservation,
-including missing namespaces, unclosed roots, and unescaped ampersands. These
-other structural failures remain unchanged by the fixup. Keep provider sampling
-prompts simple and retain raw samples outside the repository.
+SVG fixup tests cover code-fence removal, missing root namespaces, preservation
+of existing declarations, and their composition. Reduced fixtures also cover
+unclosed roots, unescaped ampersands, malformed attribute quotes, and backticks
+attached directly to markup; those cases preserve the affected source. Keep
+provider sampling prompts simple and retain raw samples outside the repository.
+Streaming preview tests split a fenced response at every character boundary,
+including within the namespace declaration, to verify a complete, single
+namespace in each available disposable preview.
+The SVG thinking-view browser scenario checks decoded streaming pixels and the
+saved output from a fenced response with no namespace, exercising the shared
+text preparation path through completion.
 
 Select interactive controls and output regions by their accessible role and
 identity so behavioral checks survive changes to layout wrappers.
