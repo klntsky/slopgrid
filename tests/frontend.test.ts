@@ -40,6 +40,7 @@ test("page entries avoid stale caching while previous hashed chunks remain downl
       "/grids",
       "/settings",
       "/billing",
+      "/my-cool-grid-1",
       `/grid/${"a".repeat(48)}`,
     ]) {
       const response = await fetch(origin + path);
@@ -47,6 +48,13 @@ test("page entries avoid stale caching while previous hashed chunks remain downl
       assert.equal(response.headers.get("cache-control"), "no-store");
       assert.match(await response.text(), /Current build/);
     }
+    for (const path of [
+      "/nohyphen",
+      "/Upper-case",
+      "/nested/slug-name",
+      "/slug_name-1",
+    ])
+      assert.equal((await fetch(origin + path)).status, 404);
     for (const name of ["previous", "current"]) {
       const response = await fetch(`${origin}/assets/markdown-${name}.js`);
       assert.equal(response.status, 200);

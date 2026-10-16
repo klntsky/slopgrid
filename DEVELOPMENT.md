@@ -296,6 +296,15 @@ When replacing bundled fonts or icons, retain their distribution notices and ver
 
 ## Publishing validation
 
+Slug coverage checks naming rules, ownership, public-only claims, competing
+claims, atomic failure, permanence, late claims, listing summaries, and storage
+reopening. Migration coverage preserves existing grids and sessions while
+adding uniqueness. Browser coverage exercises the optional field, validation,
+confirmation cancellation, copied URLs, anonymous listing navigation, direct
+loads and reloads, original grid links, missing slugs, and application routes.
+OAuth return-path tests accept slug paths while rejecting external, nested,
+and query-bearing redirects.
+
 Paused-publication coverage checks mixed completed, failed, and pending cells,
 unchanged private state, public error presentation, visibility promotion,
 reloads, and rejection of generation after publication. Running cells continue

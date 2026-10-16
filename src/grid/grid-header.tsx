@@ -1,4 +1,5 @@
 import { CopyButton } from "../components/copy-button";
+import { gridPath } from "../../shared/grid-slug";
 import { PublishGrid } from "./publish-grid";
 import { GridTitle } from "./grid-title";
 import { Author } from "../components/identity";
@@ -104,15 +105,20 @@ export function GridHeader({
                 )}
               </button>
             )}
-            {g.canEdit && (!g.published || g.visibility === "unlisted") && (
-              <PublishGrid grid={g} disabled={busy} />
-            )}
+            {g.canEdit &&
+              (!g.published || g.visibility === "unlisted" || !g.slug) && (
+                <PublishGrid grid={g} disabled={busy} />
+              )}
             {g.published && (
               <CopyButton
                 className="secondary inference-toggle"
                 label="Copy link"
                 icon={Link2}
-                copy={() => navigator.clipboard.writeText(location.href)}
+                copy={() =>
+                  navigator.clipboard.writeText(
+                    new URL(gridPath(g), location.origin).href,
+                  )
+                }
                 failure="Copy the address from your browser to share this grid."
               />
             )}

@@ -180,7 +180,7 @@ export type Identity = {
 export type User = Identity & { id: string };
 export type GridSummary = Pick<
   Grid,
-  "id" | "title" | "status" | "published" | "visibility"
+  "id" | "title" | "status" | "published" | "visibility" | "slug"
 > & {
   expanded_prompt_for_title: string;
   format: GridInput["format"];
@@ -188,6 +188,7 @@ export type GridSummary = Pick<
 };
 export type Grid = {
   id: string;
+  slug?: string;
   title?: string;
   owner: string;
   ownerUserId?: string;

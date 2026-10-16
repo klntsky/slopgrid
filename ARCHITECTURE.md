@@ -178,6 +178,15 @@ serializes with retry admission. Published pending cells retain their stored gen
 state and are presented as errors with "Not generated" and no error code, so
 settling canceled calls cannot restore a resumable public cell.
 
+Public grid slugs live in grid metadata under a unique SQLite expression index.
+Publication claims a slug inside the same immediate transaction as visibility
+and attribution, checking uniqueness and preserving permanent claims. Slug
+resolution exposes only public grid IDs; the client then uses the existing
+ID-based grid queries and actions. Root-level paths containing a hyphen and
+only lowercase ASCII letters, digits, and hyphens load the grid frontend.
+Listing and sharing links prefer the slug while ID-based links remain valid.
+OAuth return-path validation also accepts valid local slug paths.
+
 Live generated HTML runs on isolated per-cell hosts. Host dispatch happens
 before application middleware, so those hosts cannot
 reach application routes. Only validated bundle or preview paths are served.

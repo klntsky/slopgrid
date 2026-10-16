@@ -1,5 +1,4 @@
 import { useContext } from "react";
-import { useParams } from "@tanstack/react-router";
 import { createPortal } from "react-dom";
 import { LoaderCircle } from "lucide-react";
 import { GridHeaderTarget } from "../layout";
@@ -12,9 +11,8 @@ import {
   LowBalanceDialog,
   BillingDialog,
 } from "../components/inference-dialogs";
-export function GridPage() {
+export function GridPage({ id }: { id: string }) {
   const offline = useOffline();
-  const { id } = useParams({ from: "/grid/$id" });
   const headerTarget = useContext(GridHeaderTarget);
   const {
     query,

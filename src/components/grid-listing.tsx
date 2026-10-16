@@ -34,8 +34,8 @@ export function GridListing({
           query.data.grids.map((g) => (
             <div className="history-row" key={g.id}>
               <Link
-                to="/grid/$id"
-                params={{ id: g.id }}
+                to={g.slug ? "/$slug" : "/grid/$id"}
+                params={{ id: g.id, slug: g.slug ?? "" }}
                 className="history-grid-link"
               >
                 <GridFormatIcon format={g.format} />

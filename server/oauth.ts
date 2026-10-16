@@ -7,6 +7,7 @@ import { request } from "@octokit/request";
 import { z } from "zod";
 import { upstreamFetch } from "./http.js";
 import type { Identity } from "./domain.js";
+import { isGridSlug } from "../shared/grid-slug.js";
 
 export type OAuthCredentials = { clientId: string; clientSecret: string };
 export interface OAuthProvider {
@@ -117,7 +118,8 @@ export function githubProvider(credentials: OAuthCredentials): OAuthProvider {
 }
 export function oauthReturnTo(value: unknown) {
   return typeof value === "string" &&
-    /^\/(?:create|grids|settings|billing|grid\/[a-f0-9]{48})?$/.test(value)
+    (/^\/(?:create|grids|settings|billing|grid\/[a-f0-9]{48})?$/.test(value) ||
+      (value.startsWith("/") && isGridSlug(value.slice(1))))
     ? value
     : "/settings";
 }

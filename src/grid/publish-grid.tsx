@@ -3,8 +3,7 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Eye, Upload } from "lucide-react";
 import { api, type ViewGrid } from "../api";
-import type { GridVisibility } from "../../server/domain";
-import { PublishDialog } from "../components/publish-dialog";
+import { PublishDialog, type Publication } from "../components/publish-dialog";
 
 export function PublishGrid({
   grid,
@@ -16,8 +15,8 @@ export function PublishGrid({
   const [open, setOpen] = useState(false);
   const cache = useQueryClient();
   const publish = useMutation({
-    mutationFn: (visibility: GridVisibility) =>
-      api<ViewGrid>(`/grids/${grid.id}/publish`, "POST", { visibility }),
+    mutationFn: (publication: Publication) =>
+      api<ViewGrid>(`/grids/${grid.id}/publish`, "POST", publication),
     onSuccess: async (updated) => {
       cache.setQueryData(["grid", grid.id], updated);
       await Promise.all([
@@ -35,8 +34,20 @@ export function PublishGrid({
           publish.reset();
           setOpen(true);
         }}
-        aria-label={grid.published ? "Change visibility" : "PUBLISH"}
-        data-tooltip={grid.published ? "Change visibility" : "Publish grid"}
+        aria-label={
+          grid.visibility === "public"
+            ? "Claim slug"
+            : grid.published
+              ? "Change visibility"
+              : "PUBLISH"
+        }
+        data-tooltip={
+          grid.visibility === "public"
+            ? "Claim slug"
+            : grid.published
+              ? "Change visibility"
+              : "Publish grid"
+        }
         ref={tooltipRef}
       >
         {grid.published ? (
@@ -48,6 +59,7 @@ export function PublishGrid({
       {open && (
         <PublishDialog
           initialVisibility={grid.visibility}
+          initialSlug={grid.slug}
           publish={publish}
           onClose={() => setOpen(false)}
         />

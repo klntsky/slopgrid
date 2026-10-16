@@ -165,13 +165,41 @@ export class Store {
       )
       .run(JSON.stringify(title || null), id);
   }
-  publish(id: string, visibility: Grid["visibility"], author: Grid["author"]) {
+  gridIdBySlug(slug: string): string | undefined {
+    const row = this.db
+      .prepare(
+        "SELECT id FROM grids WHERE json_extract(data, '$.slug')=? AND json_extract(data, '$.visibility')='public'",
+      )
+      .get(slug) as { id: string } | undefined;
+    return row?.id;
+  }
+  publish(
+    id: string,
+    visibility: Grid["visibility"],
+    author: Grid["author"],
+    slug?: string,
+  ) {
     // Serialize publication eligibility with engine writes and retry admission.
     return this.db
       .transaction(() => {
         const grid = this.get(id)!;
         const error = publicationError(grid, visibility);
-        if (error || visibility === grid.visibility) return error;
+        if (error) return error;
+        if (slug && visibility !== "public")
+          return "Only public grids can claim a slug.";
+        if (grid.slug && slug !== undefined && slug !== grid.slug)
+          return "A claimed slug cannot be changed or removed.";
+        if (slug) {
+          const claimed = this.gridIdBySlug(slug);
+          if (claimed && claimed !== id) return "This slug is already claimed.";
+        }
+        if (slug && !grid.slug)
+          this.db
+            .prepare(
+              "UPDATE grids SET data=json_set(data, '$.slug', ?) WHERE id=?",
+            )
+            .run(slug, id);
+        if (visibility === grid.visibility) return;
         this.db
           .prepare(
             `UPDATE grids SET data=json_set(data, '$.published', json('true'), '$.visibility', ?, '$.author', json(?)) WHERE id=?`,

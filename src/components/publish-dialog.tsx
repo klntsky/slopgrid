@@ -4,6 +4,9 @@ import { Modal } from "./modal";
 import { useEffect, useRef, useState } from "react";
 import type { GridVisibility } from "../../server/domain";
 import { ErrorMessage } from "./error-message";
+import { isGridSlug, slugNamingError } from "../../shared/grid-slug";
+
+export type Publication = { visibility: GridVisibility; slug?: string };
 
 const confirmationPreference = "slopgrid-skip-publish-confirmation";
 function skipConfirmation() {
@@ -16,15 +19,19 @@ function skipConfirmation() {
 
 export function PublishDialog({
   initialVisibility,
+  initialSlug,
   publish,
   onClose,
 }: {
   initialVisibility: GridVisibility;
-  publish: UseMutationResult<ViewGrid, Error, GridVisibility>;
+  initialSlug?: string;
+  publish: UseMutationResult<ViewGrid, Error, Publication>;
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const [visibility, setVisibility] = useState(initialVisibility);
+  const [slug, setSlug] = useState(initialSlug ?? "");
+  const [validation, setValidation] = useState("");
   const published = initialVisibility !== "private";
   const [confirming, setConfirming] = useState(false);
   const [remember, setRemember] = useState(false);
@@ -39,7 +46,10 @@ export function PublishDialog({
 
   async function save() {
     try {
-      await publish.mutateAsync(visibility);
+      await publish.mutateAsync({
+        visibility,
+        ...(visibility === "public" ? { slug } : {}),
+      });
       if (confirming && remember) {
         try {
           localStorage.setItem(confirmationPreference, "true");
@@ -67,14 +77,18 @@ export function PublishDialog({
       onClose={cancel}
     >
       <h2 id="publish-title">
-        {confirming ? "Confirm publishing" : "Control who can see this grid"}
+        {confirming
+          ? "Confirm publishing"
+          : initialVisibility === "public"
+            ? "Claim slug"
+            : "Control who can see this grid"}
       </h2>
       {confirming ? (
         <>
           <p>
-            This project aims to facilitate model benchmarking and research,
-            and we don't want valuable data to disappear. For this reason,
-            making a published grid private is impossible.
+            This project aims to facilitate model benchmarking and research, and
+            we don't want valuable data to disappear. For this reason, making a
+            published grid private is impossible.
           </p>
           <label className="publish-choice">
             <input
@@ -99,7 +113,11 @@ export function PublishDialog({
               ["public", "Listed publicly"],
             ] as const
           )
-            .filter(([value]) => !published || value !== "private")
+            .filter(([value]) =>
+              initialVisibility === "public"
+                ? value === "public"
+                : !published || value !== "private",
+            )
             .map(([value, label]) => (
               <label className="publish-choice" key={value}>
                 <input
@@ -109,6 +127,7 @@ export function PublishDialog({
                   checked={visibility === value}
                   onChange={() => {
                     setVisibility(value);
+                    setValidation("");
                     reset();
                   }}
                 />
@@ -117,12 +136,34 @@ export function PublishDialog({
             ))}
         </fieldset>
       )}
+      {!confirming && visibility === "public" && (
+        <label>
+          Slug (optional)
+          <input
+            type="text"
+            value={slug}
+            disabled={busy || !!initialSlug}
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            onChange={(event) => {
+              setSlug(event.target.value);
+              setValidation("");
+              reset();
+            }}
+          />
+        </label>
+      )}
       <div className="modal-actions">
         <button
           className="primary"
           data-confirm
           disabled={busy}
           onClick={() => {
+            if (visibility === "public" && slug && !isGridSlug(slug)) {
+              setValidation(slugNamingError);
+              return;
+            }
             if (visibility === "private") onClose();
             else if (published || confirming || skipConfirmation()) void save();
             else setConfirming(true);
@@ -134,7 +175,7 @@ export function PublishDialog({
           Cancel
         </button>
       </div>
-      <ErrorMessage error={error?.message} />
+      <ErrorMessage error={validation || error?.message} />
     </Modal>
   );
 }

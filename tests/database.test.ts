@@ -7,7 +7,9 @@ test("creation receipts migrate additively from the current schema", () => {
   const db = new Database(":memory:");
   try {
     initializeDatabase(db);
-    db.exec("DROP TABLE creation_requests; PRAGMA user_version = 10");
+    db.exec(
+      "DROP INDEX grids_slug; DROP TABLE creation_requests; PRAGMA user_version = 10",
+    );
     db.prepare("INSERT INTO grids VALUES (?,?)").run(
       "saved",
       '{"status":"paused"}',
@@ -34,7 +36,7 @@ test("adding the engine clock preserves existing metadata, sessions, cells, refe
   try {
     initializeDatabase(db);
     db.exec(
-      "DROP TABLE creation_requests; DROP TABLE generation_clock; PRAGMA user_version = 9",
+      "DROP INDEX grids_slug; DROP TABLE creation_requests; DROP TABLE generation_clock; PRAGMA user_version = 9",
     );
     const grid = {
       title: "Saved",
@@ -110,7 +112,7 @@ test("unsupported database versions are rejected without changing stored data", 
       '{"key":"encrypted"}',
     );
     initializeDatabase(db);
-    for (const version of [7, 12]) {
+    for (const version of [7, 13]) {
       db.pragma(`user_version = ${version}`);
       assert.throws(
         () => initializeDatabase(db),
@@ -131,7 +133,7 @@ test("adding reference storage preserves existing sessions and grids atomically"
   try {
     initializeDatabase(db);
     db.exec(
-      "DROP TABLE creation_requests; DROP TABLE reference_images; DROP TABLE generation_clock; PRAGMA user_version = 8",
+      "DROP INDEX grids_slug; DROP TABLE creation_requests; DROP TABLE reference_images; DROP TABLE generation_clock; PRAGMA user_version = 8",
     );
     db.prepare("INSERT INTO sessions VALUES (?, ?)").run(
       "browser",
@@ -159,6 +161,40 @@ test("adding reference storage preserves existing sessions and grids atomically"
     assert.deepEqual(db.prepare("SELECT name FROM reference_images").all(), [
       { name: "photo.png" },
     ]);
+  } finally {
+    db.close();
+  }
+});
+
+test("slug migration preserves grids and sessions and enforces unique claims", () => {
+  const db = new Database(":memory:");
+  try {
+    initializeDatabase(db);
+    db.exec("DROP INDEX grids_slug; PRAGMA user_version = 11");
+    db.prepare("INSERT INTO grids VALUES (?,?)").run(
+      "first",
+      '{"published":true}',
+    );
+    db.prepare("INSERT INTO grids VALUES (?,?)").run(
+      "second",
+      '{"published":false}',
+    );
+    db.prepare("INSERT INTO sessions VALUES (?,?)").run(
+      "owner",
+      '{"key":"encrypted"}',
+    );
+    const before = db.prepare("SELECT * FROM grids").all();
+    initializeDatabase(db);
+    initializeDatabase(db);
+    assert.deepEqual(db.prepare("SELECT * FROM grids").all(), before);
+    assert.deepEqual(db.prepare("SELECT * FROM sessions").all(), [
+      { id: "owner", data: '{"key":"encrypted"}' },
+    ]);
+    const claim = db.prepare(
+      "UPDATE grids SET data=json_set(data, '$.slug', 'same-slug') WHERE id=?",
+    );
+    claim.run("first");
+    assert.throws(() => claim.run("second"), /UNIQUE constraint failed/);
   } finally {
     db.close();
   }

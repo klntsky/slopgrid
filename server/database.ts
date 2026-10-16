@@ -1,10 +1,10 @@
 import type Database from "better-sqlite3";
 
-const schemaVersion = 11;
+const schemaVersion = 12;
 export function initializeDatabase(db: Database.Database) {
   const version = db.pragma("user_version", { simple: true });
   if (version === schemaVersion) return;
-  if (typeof version !== "number" || ![0, 8, 9, 10].includes(version))
+  if (typeof version !== "number" || ![0, 8, 9, 10, 11].includes(version))
     throw new Error("Unsupported database version");
   db.transaction(() => {
     if (version === 0)
@@ -47,13 +47,17 @@ export function initializeDatabase(db: Database.Database) {
       INSERT INTO generation_clock VALUES (1, 0);
       UPDATE grids SET data=json_remove(data, '$.revision', '$.hasUnsettledCalls');
     `);
-    db.exec(`CREATE TABLE creation_requests (
+    if (version < 11)
+      db.exec(`CREATE TABLE creation_requests (
       owner TEXT NOT NULL,
       request_id TEXT NOT NULL,
       fingerprint TEXT NOT NULL,
       grid_id TEXT NOT NULL REFERENCES grids(id) ON DELETE CASCADE,
       PRIMARY KEY (owner, request_id)
     ) STRICT;`);
+    db.exec(
+      `CREATE UNIQUE INDEX grids_slug ON grids(json_extract(data, '$.slug'));`,
+    );
     db.pragma(`user_version = ${schemaVersion}`);
   }).immediate();
 }

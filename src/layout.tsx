@@ -3,6 +3,7 @@ import { Account } from "./components/account";
 import { useEffect, useState, useRef, createContext } from "react";
 import { Link, Outlet, useLocation } from "@tanstack/react-router";
 import { Menu, X, Sun, Moon } from "lucide-react";
+import { isGridSlug } from "../shared/grid-slug";
 export const GridHeaderTarget = createContext<HTMLDivElement | null>(null);
 export function Layout() {
   // Secondary touch devices and spoofed touch counts do not change mouse navigation.
@@ -10,7 +11,7 @@ export function Layout() {
     navigator.maxTouchPoints > 0 && matchMedia("(pointer: coarse)").matches;
   const { resolvedTheme, setTheme } = useTheme();
   const pathname = useLocation().pathname,
-    isGrid = pathname.startsWith("/grid/");
+    isGrid = pathname.startsWith("/grid/") || isGridSlug(pathname.slice(1));
   const [headerTarget, setHeaderTarget] = useState<HTMLDivElement | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuButton = useRef<HTMLButtonElement>(null),
@@ -104,7 +105,8 @@ export function Layout() {
           <footer className="site-footer">
             <a href="https://github.com/klntsky/slopgrid">source code</a>
             {" · "}
-            follow <a href="https://twitter.com/klntsky">@klntsky</a> for updates
+            follow <a href="https://twitter.com/klntsky">@klntsky</a> for
+            updates
           </footer>
         )}
       </div>

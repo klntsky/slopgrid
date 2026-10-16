@@ -40,6 +40,7 @@ export function gridListPage(
       const g = store.get(id)!;
       return {
         id: g.id,
+        slug: g.slug,
         title: g.title,
         expanded_prompt_for_title: g.expanded_prompt_for_title,
         format: g.input.format,

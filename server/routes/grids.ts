@@ -25,6 +25,7 @@ import {
 } from "../inference-policy.js";
 import { token } from "../ids.js";
 import { creationRequest } from "../creation-request.js";
+import { isGridSlug, slugNamingError } from "../../shared/grid-slug.js";
 
 export function createGridRoutes({
   store,
@@ -239,6 +240,13 @@ export function createGridRoutes({
     }
     return saved(savedGrid, inserted);
   });
+  app.get("/api/grid-slugs/:slug", (req, res) => {
+    const slug = String(req.params.slug);
+    const id = isGridSlug(slug) ? store.gridIdBySlug(slug) : undefined;
+    res.set("Cache-Control", "no-store");
+    if (!id) return res.status(404).json({ error: "Grid not found" });
+    res.json({ id });
+  });
   app.get("/api/grids/:id", async (req, res) => {
     const found = readGrid(req, res, canViewGrid);
     if (!found) return;
@@ -343,10 +351,17 @@ export function createGridRoutes({
     if (!parsed.success)
       return res.status(400).json({ error: "Choose a valid visibility." });
     const { visibility } = parsed.data;
+    const slug = z
+      .string()
+      .refine((value) => value === "" || isGridSlug(value))
+      .optional()
+      .safeParse(req.body?.slug);
+    if (!slug.success) return res.status(400).json({ error: slugNamingError });
     const error = store.publish(
       g.id,
       visibility,
       presentIdentity(s.userId ? store.user(s.userId) : undefined),
+      slug.data,
     );
     if (error) return res.status(409).json({ error });
     const current = await generation.getGrid(g.id);

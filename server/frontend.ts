@@ -13,6 +13,7 @@ export const frontendPaths = [
   "/settings",
   "/billing",
   /^\/grid\/[a-f0-9]{48}$/,
+  /^\/(?=[a-z0-9-]*-)[a-z0-9-]+$/,
 ];
 
 export function embedGridData(

@@ -3,6 +3,7 @@ import {
   createRoute,
   createRouter,
   redirect,
+  notFound,
 } from "@tanstack/react-router";
 import { Billing } from "./pages/billing";
 import { Layout } from "./layout";
@@ -11,6 +12,9 @@ import { Home } from "./pages/grids";
 import { Settings } from "./pages/settings";
 import { GridPage } from "./pages/grid";
 import { gridPageNumber } from "../shared/grid-page";
+import { isGridSlug } from "../shared/grid-slug";
+import { api } from "./api";
+import { ErrorMessage } from "./components/error-message";
 const rootRoute = createRootRoute({ component: Layout });
 const createRoutePage = createRoute({
   getParentRoute: () => rootRoute,
@@ -52,7 +56,23 @@ const billingRoute = createRoute({
 const gridRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/grid/$id",
-  component: GridPage,
+  component: () => <GridPage id={gridRoute.useParams().id} />,
+});
+const slugRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/$slug",
+  loader: ({ params }) => {
+    if (!isGridSlug(params.slug)) throw notFound();
+    return api<{ id: string }>(`/grid-slugs/${params.slug}`);
+  },
+  component: () => <GridPage id={slugRoute.useLoaderData().id} />,
+  errorComponent: ({ error }) => (
+    <main>
+      <ErrorMessage
+        error={error instanceof Error ? error.message : "Grid not found"}
+      />
+    </main>
+  ),
 });
 export const router = createRouter({
   scrollRestoration: true,
@@ -63,6 +83,7 @@ export const router = createRouter({
     settingsRoute,
     billingRoute,
     gridRoute,
+    slugRoute,
   ]),
 });
 declare module "@tanstack/react-router" {

@@ -368,6 +368,7 @@ Image grids have a "Parameters" button with a 14px Info circle icon immediately 
 7. Link-accessible grids are readable by anyone with the link but excluded from public discovery. Public grids appear newest first on the home page beneath Your grids when present, or directly below output-format selection otherwise, including the owner's own public grids.
 8. Give public discovery its own loading, empty, and failure states, and refresh relevant lists after publication. Show format icons and authors without exposing ownership/session identifiers or nesting profile links inside grid links.
 9. Retain copy-link and fork controls for published grids. Dialogs must support keyboard operation, focus restoration, disabled controls while saving, and visible request errors.
+10. Public grids may have an optional, globally unique slug claimed by the owner when publishing or afterward if no slug has been claimed. Slugs contain only lowercase Latin letters, digits, and hyphens, with at least one hyphen. A claimed slug is permanent and cannot be changed or removed. Slug links use the root path, such as `/my-cool-grid-1`; the hyphen distinguishes them from application routes. Existing grid links remain accessible, while listing links and Copy link use the slug when present. Keep claims and publication atomic so a failed claim does not publish the grid.
 
 ### 8.4. Output isolation and private access
 
