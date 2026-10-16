@@ -1,4 +1,4 @@
-# [slopgrid](https://slopgrid.com) [![CI](https://github.com/klntsky/slopgrid/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/klntsky/slopgrid/actions/workflows/ci.yml)
+# [slopgrid](https://slopgrid.com)
 
 [Slopgrid](https://slopgrid.com) lets you compare AI-generated outputs side by side. Build a grid of models, thinking efforts, or prompt variations, then watch them produce Markdown, images, SVG, or static websites using your OpenRouter account.
 

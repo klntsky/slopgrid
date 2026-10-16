@@ -80,7 +80,7 @@ identity so behavioral checks survive changes to layout wrappers.
 
 ### Running the suites
 
-Select tests that cover the features changed. Simple wording, styling, and documentation changes do not require tests. Run manual tests only on staging through SSH. GitHub CI runs the default full suite on pushes to `master`; the complete unit, mock browser, and real-provider browser suites must also pass on staging before production deployment.
+Select tests that cover the features changed. Simple wording, styling, and documentation changes do not require tests. Run manual tests only on staging through SSH. The complete unit, mock browser, and real-provider browser suites must pass on staging before production deployment.
 
 Runtime tests of snapshot ordering import the query client directly, keeping browser hooks and PWA initialization out of the Node test process. On shared staging hosts, limit unit-test file concurrency to avoid saturating the host with runtime fixtures.
 
@@ -127,7 +127,7 @@ with the affected billing, publication, migration, reuse and live-update tests.
 
 ### GitHub CI
 
-The CI workflow runs `pnpm test` on every push to `master`, covering unit tests, the frontend build, mock browser tests, and real OpenRouter browser tests. It uses the `test` environment and its `OPENROUTER_API_KEY` secret. Missing credentials or provider failures fail the run. GitHub client values are non-secret test placeholders because these suites do not authenticate with GitHub; the separate GitHub login suite remains an explicit integration check.
+GitHub CI is disabled in GitHub Actions, and `.github/workflows/ci.yml` is retained. The stored workflow defines `pnpm test`, covering unit tests, the frontend build, mock browser tests, and real OpenRouter browser tests, with the `test` environment and its `OPENROUTER_API_KEY` secret. GitHub client values are non-secret test placeholders because these suites do not authenticate with GitHub; the separate GitHub login suite remains an explicit integration check.
 
 Mock E2E tests are grouped into setup, display, access, and generation files and run with three workers. Each test has its own app, upstream fixture, unused ports, temporary SQLite database, outputs, and child process; state-changing tests remain sequential within each file. Test-scoped app instances keep production rate limits enabled while preventing earlier tests from consuming later tests' allowances. Shared helpers keep setup consistent, and interaction journeys reuse grids across state transitions and reloads within a test. Real-provider and GitHub suites run serially in one isolated app server each. Fixture cleanup waits for the app and its inference process to exit before removing temporary app data; test artifacts are removed after each test or suite finishes.
 
