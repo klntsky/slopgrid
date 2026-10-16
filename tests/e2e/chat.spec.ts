@@ -300,6 +300,21 @@ test.describe("chat history on touch devices", () => {
     page,
   }) => {
     await page.goto("/");
+    await page.evaluate(() => {
+      const events: string[] = [];
+      Object.assign(window, { chatEvents: events });
+      for (const type of ["pointerdown", "click", "focusin", "focusout"])
+        document.addEventListener(
+          type,
+          (event) => {
+            const target = event.target as Element;
+            events.push(
+              `${type}: ${target.getAttribute("aria-label") ?? target.tagName} active=${document.activeElement?.getAttribute("aria-label")} confirm=${!!document.querySelector(".chat-confirm-delete")}`,
+            );
+          },
+          true,
+        );
+    });
     await page
       .getByRole("button", { name: "Chat completion", exact: true })
       .tap();
@@ -332,7 +347,14 @@ test.describe("chat history on touch devices", () => {
     await input.tap({ position: { x: 5, y: 5 } });
     await cross.tap();
     await expect(input).toHaveValue("Edited message has more than five words");
-    await expect(confirm).toBeVisible();
+    await expect(
+      confirm,
+      JSON.stringify(
+        await page.evaluate(
+          () => (window as Window & { chatEvents: string[] }).chatEvents,
+        ),
+      ),
+    ).toBeVisible();
     await confirm.tap();
     await expect(page.locator(".chat-message")).toHaveCount(0);
     await page.getByRole("button", { name: "Add message", exact: true }).tap();
