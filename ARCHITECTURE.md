@@ -35,6 +35,13 @@ update: admission closes, accepted work and unsettled calls finish, and the
 engine is replaced. The release keeps its code and dependencies fixed for its
 lifetime.
 
+The separate slopgrid-ops repository owns deployment orchestration. Its command
+installs a committed pipeline implementation, builds and validates on staging,
+selects a compatible soft update or a draining machinery update, and promotes
+the same build when production is explicitly requested. Immutable releases,
+retained frontend assets, private runtime configuration, and per-run records
+are managed by that pipeline rather than application code.
+
 ## State and persistence
 
 SQLite stores identities, sessions, grid configuration, cell state, reference

@@ -19,3 +19,5 @@
 9. remember to never editorialize anything I say anywhere - not in the docs, not in the UI, not in your responses when citing
 
 10. Before deploying the PWA changes, present all proposed written descriptions and new visible text to the user and obtain approval.
+
+11. Keep deployment implementation in the private slopgrid-ops repository and use its single deploy.sh command for staging or explicitly requested production deployments. The command owns building, validation, mode selection, promotion, and final status for any committed revision. Do not create per-task deployment scripts, patch installed deployment code, or manually fabricate status files. Keep host configuration outside repositories and update the pipeline when infrastructure changes.

@@ -326,6 +326,16 @@ Publishing tests cover access, immutable visibility, summary filtering, and pers
 
 ## Generation process control
 
+Use the slopgrid-ops deployment command for the complete build, validation, and
+deployment workflow: `../slopgrid-ops/deploy.sh staging` or, when explicitly
+requested, `../slopgrid-ops/deploy.sh production`. It accepts a committed revision,
+defaults to HEAD, and chooses the update mode automatically. Select affected
+staging tests with repeated `--unit FILE` and `--browser FILE` arguments; use
+`--skip-tests` for simple staging changes or an explicit instruction to skip
+tests. Production otherwise runs the complete staging suite before promotion.
+The command waits for the final result and reports how to reconnect after an
+SSH disconnect. Pipeline setup and validation belong in slopgrid-ops.
+
 `pnpm generation status` reads the engine instance and workload counts. `pnpm generation drain` closes admission and waits for accepted grids and unsettled requests to finish. `pnpm generation accept` reopens admission, including when cancelling a planned machinery update. These commands require the same runtime configuration as the application and connect only through its private socket. A drain has no inference timeout and does not cancel user work.
 
 Choose the deployment mode using the [process boundaries](ARCHITECTURE.md#process-boundaries). Both mocked and real-provider browser suites use a separate inference child process. The process-lifetime regression replaces the web child during an active streamed call and verifies queue draining and recorded costs.
