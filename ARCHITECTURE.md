@@ -122,10 +122,12 @@ inference ledger entry. Any unfinished cells enter the ordinary scheduler.
 
 ## Outputs and live views
 
-The image-grid Parameters disclosure reads axis definitions, shared settings,
-and reference metadata from the saved grid input. Reference thumbnails use the
-existing authorized reference route. The disclosure owns no generation state
-and displays requested settings, retaining Auto for unspecified values.
+The image-grid header owns the Parameters button and its interactive Tippy
+panel. React renders the panel through a portal into Tippy's content container,
+which is attached to the document body. Common parameters come from saved grid
+input, filtered by the selected axis kinds. Reference thumbnails use the existing
+authorized reference route. The panel owns no generation state and displays
+requested settings, retaining Auto for unspecified values.
 
 The output layer owns format instructions, parsing, completed files, and
 temporary previews. Website output is a bundle of validated relative paths with

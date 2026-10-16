@@ -6,7 +6,6 @@ import { GridHeaderTarget } from "../layout";
 import { useGrid } from "../grid/use-grid";
 import { GridHeader } from "../grid/grid-header";
 import { OutputGrid } from "../grid/output-grid";
-import { GridParameters } from "../grid/grid-parameters";
 import { ErrorMessage } from "../components/error-message";
 import { useOffline } from "../pwa";
 import {
@@ -75,7 +74,6 @@ export function GridPage() {
           </div>
         )}
         <ErrorMessage error={error} />
-        {g.input.format === "image" && <GridParameters key={g.id} grid={g} />}
         <OutputGrid grid={g} />
         {lowBalance !== null && (
           <LowBalanceDialog
