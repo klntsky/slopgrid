@@ -98,6 +98,13 @@ pnpm test:e2e:real
 
 ### Creation and persistence recovery coverage
 
+Failure diagnostic coverage disconnects a controlled provider's HTTP stream
+after output begins, using the real SDK and engine. It checks persisted transport
+codes, restart retention, exclusion from billing responses, and unchanged attempt
+counts. Serializer coverage checks private payload exclusion and bounded, cyclic
+cause chains. Run `tests/failure-diagnostics.test.ts` with `tests/failures.test.ts`
+and `tests/billing.test.ts` when changing these diagnostics.
+
 Image-settings browser coverage checks the Parameters panel against saved common
 values, exclusion of axis parameters, keyboard opening and Escape focus return,
 button and outside-click dismissal, narrow-screen containment, published-grid

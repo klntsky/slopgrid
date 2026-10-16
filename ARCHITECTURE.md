@@ -77,6 +77,16 @@ credentials. The web process reads owner-filtered billing data; the engine alone
 records calls. Live cost estimates are derived in memory and give way to reported
 usage when it arrives.
 
+Failed inference-call records include a bounded chain of error names, machine
+codes, HTTP statuses, system calls, and SDK retryability flags. The serializer
+allows only these fields, limits identifiers to 80 characters and chains to
+eight entries, and stops on cycles. It excludes free-form cause messages,
+stacks, headers, URLs, and request/response payloads. These diagnostics remain
+in SQLite across restarts and are omitted from billing API responses. Terminal
+cell failures also log the same diagnostics beside the grid and cell identifiers,
+including failures before an upstream call begins. Existing provider explanations
+remain separate from these diagnostic fields, and retry policy is unchanged.
+
 ## Creation and inference
 
 Compatibility tables share model selection, name resolution, and support-state

@@ -5,7 +5,7 @@ import { WebsitePreviews } from "./website-previews.js";
 import type { Cell, Grid } from "./domain.js";
 import type { Store } from "./store.js";
 import { Provider } from "./provider.js";
-import { failureDetails } from "./failures.js";
+import { failureDetails, failureDiagnostics } from "./failures.js";
 import { selectWorker } from "./worker-allocation.js";
 import { Persistence } from "./persistence.js";
 import { generationFailure } from "./generation-api.js";
@@ -394,6 +394,7 @@ export class Jobs {
           grid.id,
           cell.id,
           failure.code ?? (error instanceof Error ? error.name : "unknown"),
+          JSON.stringify(failureDiagnostics(error)),
         );
       }
     } finally {

@@ -105,6 +105,7 @@ export async function runtimeFixture(options: { workers?: number } = {}) {
       },
     ) => void;
     fail: (status?: number) => void;
+    disconnect: () => void;
   }[] = [];
   upstream.post("/chat/completions", (req, res) => {
     const id = `call-${calls.length}`;
@@ -125,6 +126,7 @@ export async function runtimeFixture(options: { workers?: number } = {}) {
         .map((message) => messageText(message.content))
         .join(""),
       aborted: false,
+      disconnect: () => res.destroy(),
       write: (delta: object) => {
         event(delta);
       },

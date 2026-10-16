@@ -2,7 +2,12 @@ import type Database from "better-sqlite3";
 import type { Cell, Completion } from "./domain.js";
 import { expandGrid } from "./domain.js";
 import { token } from "./ids.js";
-import { completionFailure, failureDetails } from "./failures.js";
+import {
+  completionFailure,
+  failureDetails,
+  failureDiagnostics,
+  type FailureDiagnostic,
+} from "./failures.js";
 import type { Persistence } from "./persistence.js";
 
 export type CallDetails = {
@@ -15,6 +20,7 @@ export type CallDetails = {
   usage?: Cell["usage"];
   error?: string;
   errorCode?: string | number;
+  diagnostics?: FailureDiagnostic[];
 };
 export type CallRecorder = {
   update: (details: Partial<CallDetails>) => void;
@@ -22,7 +28,7 @@ export type CallRecorder = {
   fail: (error: unknown, cancelled: boolean) => void;
 };
 export type CallObserver = (phase: Completion["phase"]) => CallRecorder;
-export type BillingCall = Omit<CallDetails, "completion"> & {
+export type BillingCall = Omit<CallDetails, "completion" | "diagnostics"> & {
   id: string;
   startedAt: number;
   gridId: string;
@@ -86,6 +92,7 @@ export class Billing {
             status: cancelled ? "cancelled" : "failed",
             error: cancelled ? undefined : failure.message,
             errorCode: cancelled ? undefined : failure.code,
+            diagnostics: cancelled ? undefined : failureDiagnostics(error),
           };
           save();
         },
@@ -161,9 +168,11 @@ export class Billing {
       ...summary,
       running: summary.running ?? 0,
       calls: rows.map((row) => {
-        const { completion: _completion, ...details } = JSON.parse(
-          row.data,
-        ) as CallDetails;
+        const {
+          completion: _completion,
+          diagnostics: _diagnostics,
+          ...details
+        } = JSON.parse(row.data) as CallDetails;
         const grid = JSON.parse(row.grid_data);
         const cell = expandGrid(grid.input)[row.position];
         return {

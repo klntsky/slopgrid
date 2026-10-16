@@ -309,6 +309,7 @@ Image grids have a "Parameters" button with a 14px Info circle icon immediately 
 5. Propagate provider error messages and codes to the client and retain them with failed cells, including after reload and publication.
 6. Ongoing generation continues regardless of elapsed time until it finishes, fails, or the user cancels it.
 7. Recognize exhausted OpenRouter key, workspace, and guardrail budgets reported as HTTP 403 as billing interruptions, while other permission errors affect only their cells.
+8. Retain server-side failure diagnostics for inference attempts, including underlying error types and transport codes, so failures can be investigated after restart. Exclude request and response content and credentials from these diagnostics, and keep them out of browser responses.
 
 ### 6.3. Pause, resume, and updates
 

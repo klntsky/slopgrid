@@ -2,6 +2,54 @@ type RecordValue = Record<string, unknown>;
 const record = (value: unknown): RecordValue =>
   value !== null && typeof value === "object" ? (value as RecordValue) : {};
 
+export type FailureDiagnostic = {
+  name?: string;
+  code?: string | number;
+  statusCode?: number;
+  syscall?: string;
+  isRetryable?: boolean;
+};
+
+// Error messages, stacks and SDK payloads can contain request/response content.
+// Retain only bounded machine identifiers from the wrapper and its cause chain.
+export function failureDiagnostics(error: unknown): FailureDiagnostic[] {
+  const causes: FailureDiagnostic[] = [];
+  const seen = new Set<object>();
+  const identifier = (value: unknown) =>
+    typeof value === "string" && /^[a-zA-Z][a-zA-Z0-9_.-]{0,79}$/.test(value)
+      ? value
+      : undefined;
+  while (
+    error !== null &&
+    typeof error === "object" &&
+    causes.length < 8 &&
+    !seen.has(error)
+  ) {
+    seen.add(error);
+    const value = record(error);
+    const entry: FailureDiagnostic = {};
+    const name = identifier(value.name);
+    const code =
+      typeof value.code === "number" && Number.isFinite(value.code)
+        ? value.code
+        : identifier(value.code);
+    const syscall = identifier(value.syscall);
+    if (name) entry.name = name;
+    if (code !== undefined) entry.code = code;
+    if (syscall) entry.syscall = syscall;
+    if (
+      typeof value.statusCode === "number" &&
+      Number.isFinite(value.statusCode)
+    )
+      entry.statusCode = value.statusCode;
+    if (typeof value.isRetryable === "boolean")
+      entry.isRetryable = value.isRetryable;
+    causes.push(entry);
+    error = value.cause;
+  }
+  return causes;
+}
+
 export function failureDetails(error: unknown) {
   const details = record(error);
   let body = record(details.data);
