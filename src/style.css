@@ -302,10 +302,9 @@ section {
 }
 .chat-message-controls {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 4px;
 }
-.chat-message-controls,
 .chat-remove {
   height: calc(1.6rem + 24px);
 }
@@ -361,6 +360,12 @@ section {
 :is(.chat-insert, .chat-append):focus-visible,
 .chat-append:only-child {
   opacity: 1;
+}
+@media (hover: none), (pointer: coarse) {
+  .chat-insert,
+  .chat-append {
+    opacity: 1;
+  }
 }
 .chat-message[data-drag-target="true"] {
   outline: 2px solid var(--muted);
