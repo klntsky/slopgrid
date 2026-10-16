@@ -319,6 +319,15 @@ test.describe("chat history on touch devices", () => {
 
     const session = await page.context().newCDPSession(page);
     for (const ending of ["cancel", "outside", "same", "drop"] as const) {
+      const touch = (
+        type: "touchStart" | "touchMove" | "touchEnd" | "touchCancel",
+        touchPoints: { x: number; y: number; id: number }[],
+      ) =>
+        test.step(
+          `${ending}: ${type}`,
+          () => session.send("Input.dispatchTouchEvent", { type, touchPoints }),
+          { timeout: 5000 },
+        );
       await page.locator(".chat-editor").scrollIntoViewIfNeeded();
       const handle = (await page
         .getByRole("button", { name: "Move message 2", exact: true })
@@ -331,33 +340,21 @@ test.describe("chat history on touch devices", () => {
         y: handle.y + handle.height / 2,
         id: 1,
       };
-      await session.send("Input.dispatchTouchEvent", {
-        type: "touchStart",
-        touchPoints: [start],
-      });
-      await session.send("Input.dispatchTouchEvent", {
-        type: "touchMove",
-        touchPoints: [{ x: target.x + 10, y: target.y + 5, id: 1 }],
-      });
+      await touch("touchStart", [start]);
+      await touch("touchMove", [{ x: target.x + 10, y: target.y + 5, id: 1 }]);
       await expect(page.locator(".chat-insert").first()).toHaveAttribute(
         "data-chat-insertion",
         "true",
       );
       if (ending === "outside" || ending === "same") {
-        await session.send("Input.dispatchTouchEvent", {
-          type: "touchMove",
-          touchPoints: [
-            ending === "same" ? start : { x: 1, y: target.y, id: 1 },
-          ],
-        });
+        await touch("touchMove", [
+          ending === "same" ? start : { x: 1, y: target.y, id: 1 },
+        ]);
         await expect(page.locator('[data-chat-insertion="true"]')).toHaveCount(
           0,
         );
       }
-      await session.send("Input.dispatchTouchEvent", {
-        type: ending === "cancel" ? "touchCancel" : "touchEnd",
-        touchPoints: [],
-      });
+      await touch(ending === "cancel" ? "touchCancel" : "touchEnd", []);
       await expect(page.locator('[data-chat-insertion="true"]')).toHaveCount(0);
       await expect
         .poll(() => history(page))
