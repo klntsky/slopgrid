@@ -704,7 +704,8 @@ for (const model of ["fixture/text", "fixture/other"])
     });
     let savedBlocked = false;
     await page.route(
-      (url) => url.pathname === "/index.html",
+      (url) =>
+        url.pathname.endsWith("/website") && !url.searchParams.has("path"),
       async (route) => {
         savedBlocked = true;
         await savedGate;
