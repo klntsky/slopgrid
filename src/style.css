@@ -1752,6 +1752,10 @@ header {
 .public-grids {
   margin-top: 40px;
 }
+.grid-list-subtitle {
+  font-size: 0.75em;
+  font-weight: 400;
+}
 .home-page > section[aria-labelledby] {
   border: 0;
 }

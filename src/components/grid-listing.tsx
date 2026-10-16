@@ -96,9 +96,11 @@ export function PublicGrids({
   return (
     <section className="public-grids" aria-labelledby="public-grids-title">
       <h2 id="public-grids-title" className="grid-list-title">
-        Public grids
+        Public grids{" "}
+        <span className="grid-list-subtitle">
+          &middot; See what others have created
+        </span>
       </h2>
-      <p>See what others have created</p>
       <GridListing
         query={publicGrids}
         publicListing
