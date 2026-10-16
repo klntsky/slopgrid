@@ -379,8 +379,10 @@ section {
 .chat-role-user {
   --role-color: #3678c6;
 }
-.chat-role-assistant {
+.model-badge.chat-role-assistant {
   --role-color: var(--muted);
+  font-size: 11px;
+  line-height: 18.2px;
 }
 .format-symbol {
   width: 44px;

@@ -99,7 +99,7 @@ export function ChatEditor({
                 })
               }
             >
-              {message.role === "assistant" ? "ASNT" : message.role}
+              {message.role}
             </button>
           </div>
           <div className="chat-message-input">
