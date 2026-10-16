@@ -45,11 +45,13 @@ test("chat editing, ordering, persistence and Markdown output", async ({
     .fill("Question $ROW $COLUMN");
   await page.locator(".chat-append").hover();
   await page.getByRole("button", { name: "Add message", exact: true }).click();
+  await expect(page.getByLabel("Message 2", { exact: true })).toBeFocused();
   await page.getByLabel("Message 2", { exact: true }).fill("Answer prefix ");
   await page.locator(".chat-insert").nth(1).hover();
   await page
     .getByRole("button", { name: "Insert message before 2", exact: true })
     .click();
+  await expect(page.getByLabel("Message 2", { exact: true })).toBeFocused();
   await page.getByLabel("Message 2", { exact: true }).fill("Use Markdown");
   await page
     .getByRole("button", { name: "Message 2 role: assistant", exact: true })

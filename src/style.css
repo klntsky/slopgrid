@@ -290,14 +290,14 @@ section {
   display: grid;
   grid-template-columns: 104px minmax(0, 1fr);
   column-gap: 12px;
-  padding-top: 20px;
+  padding-top: 12px;
 }
 .chat-message {
   position: relative;
   display: grid;
   grid-column: 1 / -1;
   grid-template-columns: subgrid;
-  margin-bottom: 20px;
+  margin-bottom: 12px;
   align-items: start;
 }
 .chat-message-controls {
@@ -338,23 +338,40 @@ section {
   padding: 5px;
 }
 .chat-drag {
+  width: 24px;
+  padding: 0;
+  flex-shrink: 0;
   touch-action: none;
   cursor: grab;
 }
+.chat-drag,
+.model-badge.chat-role {
+  height: 28px;
+}
+.chat-drag .lucide {
+  width: 16px;
+  height: 16px;
+}
 .chat-insert,
 .chat-append {
-  height: 20px;
-  padding: 0;
+  height: 12px;
+  padding: 0 6px;
+  justify-content: flex-start;
   opacity: 0;
+}
+.chat-insert .lucide,
+.chat-append .lucide {
+  width: 12px;
+  height: 12px;
 }
 .chat-insert {
   position: absolute;
-  top: -20px;
+  top: -12px;
   width: 100%;
 }
 .chat-append {
   grid-column: 1 / -1;
-  margin-top: -20px;
+  margin-top: -12px;
 }
 :is(.chat-insert, .chat-append):hover,
 :is(.chat-insert, .chat-append):focus-visible,

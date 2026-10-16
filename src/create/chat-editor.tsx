@@ -1,6 +1,6 @@
 import type { ChatMessage } from "../../server/domain";
 import { GripVertical, Plus, X } from "lucide-react";
-import { useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 
 const roles = ["system", "user", "assistant"] as const;
 
@@ -12,6 +12,12 @@ export function ChatEditor({
   onChange: (messages: ChatMessage[]) => void;
 }) {
   const root = useRef<HTMLDivElement>(null);
+  const inserted = useRef<number | undefined>(undefined);
+  useLayoutEffect(() => {
+    if (inserted.current === undefined) return;
+    root.current?.querySelectorAll("textarea")[inserted.current]?.focus();
+    inserted.current = undefined;
+  }, [messages]);
   const [dragTarget, setDragTarget] = useState<number>();
   function update(index: number, change: Partial<ChatMessage>) {
     onChange(
@@ -32,6 +38,7 @@ export function ChatEditor({
       role: messages[index - 1]?.role === "user" ? "assistant" : "user",
       content: "",
     });
+    inserted.current = index;
     onChange(next);
   }
   return (
