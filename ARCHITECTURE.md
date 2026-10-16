@@ -122,6 +122,11 @@ inference ledger entry. Any unfinished cells enter the ordinary scheduler.
 
 ## Outputs and live views
 
+The image-grid Parameters disclosure reads axis definitions, shared settings,
+and reference metadata from the saved grid input. Reference thumbnails use the
+existing authorized reference route. The disclosure owns no generation state
+and displays requested settings, retaining Auto for unspecified values.
+
 The output layer owns format instructions, parsing, completed files, and
 temporary previews. Website output is a bundle of validated relative paths with
 an entry page. One path validator protects both stored bundles and preview

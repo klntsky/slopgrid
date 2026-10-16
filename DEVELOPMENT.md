@@ -79,6 +79,10 @@ pnpm test:e2e:real
 
 ### Creation and persistence recovery coverage
 
+Image-settings browser coverage checks the grid Parameters disclosure against
+saved shared values and axis definitions, keyboard collapse, and reference
+thumbnail loading after reload.
+
 List-title coverage checks persisted axis expansion, repeated variables, literal
 dollar signs in values, Unicode-safe truncation, and preservation across title
 edits, generation updates, and reopening storage. Older-grid coverage verifies

@@ -68,6 +68,19 @@ test("image warning grids compare models with parameter values and remain adviso
   await page.getByRole("checkbox", { name: "low", exact: true }).uncheck();
   await page.getByRole("button", { name: "Generate", exact: true }).click();
   await expectProgress(page, 2, 2);
+  const parameters = page.getByRole("group", {
+    name: "Parameters",
+    exact: true,
+  });
+  await parameters.getByText("Parameters", { exact: true }).click();
+  await expect(parameters.getByRole("definition")).toHaveText([
+    "Background: transparent, opaque",
+    "Quality: high",
+    "fixture/image",
+    "Auto",
+    "Auto",
+    "None",
+  ]);
   let sent = await (await request.get("/fixture/image-requests")).json();
   expect(sent.map((r: any) => [r.quality, r.background]).sort()).toEqual([
     ["high", "opaque"],
@@ -355,6 +368,18 @@ test("renamed reference groups survive reload, Edit and Fork without mixing thei
     const publicPage = await visitor.newPage();
     await publicPage.goto(url);
     await expandReference(publicPage, "columnheader", "five.png", false);
+    const parameters = publicPage.getByRole("group", {
+      name: "Parameters",
+      exact: true,
+    });
+    await parameters.getByText("Parameters", { exact: true }).click();
+    await expect(parameters.getByRole("img")).toHaveCount(5);
+    await expect(parameters.getByRole("definition").nth(1)).toContainText(
+      "Landscape",
+    );
+    await expect(parameters.getByRole("definition").nth(1)).toContainText(
+      "Details",
+    );
   } finally {
     await visitor.close();
   }
@@ -500,6 +525,23 @@ test("shared image settings transfer to axes, reset on removal, and preserve def
   expect(sent).toHaveLength(1);
   expect(sent[0].size).toBe("1536x1024");
   expect(sent[0].aspect_ratio).toBe("3:2");
+  const parameters = page.getByRole("group", {
+    name: "Parameters",
+    exact: true,
+  });
+  const parameterValues = parameters.getByRole("definition");
+  await expect(parameterValues.first()).not.toBeVisible();
+  await parameters.getByText("Parameters", { exact: true }).click();
+  await expect(parameterValues).toHaveText([
+    "Model: fixture/image",
+    "Quality: Auto",
+    "1536x1024",
+    "3:2",
+    "Auto",
+    "None",
+  ]);
+  await parameters.getByText("Parameters", { exact: true }).press("Enter");
+  await expect(parameterValues.first()).not.toBeVisible();
   for (const key of ["quality", "background", "input_references"])
     expect(sent[0]).not.toHaveProperty(key);
   await page.getByRole("button", { name: "EDIT", exact: true }).click();
@@ -599,6 +641,19 @@ test("shared references survive uploads, reload, publication and forks, and tran
     })),
   );
   const url = page.url();
+  await page.reload();
+  const parameters = page.getByRole("group", {
+    name: "Parameters",
+    exact: true,
+  });
+  await parameters.getByText("Parameters", { exact: true }).click();
+  for (const file of files) {
+    const image = parameters.getByRole("img", { name: file.name, exact: true });
+    await expect(image).toBeVisible();
+    await expect
+      .poll(() => image.evaluate((img: HTMLImageElement) => img.naturalWidth))
+      .toBe(1);
+  }
   await page.getByRole("button", { name: "EDIT", exact: true }).click();
   const source = await page
     .getByRole("img", { name: files[0].name, exact: true })
