@@ -59,6 +59,7 @@ The following numbered requirements define the visible layout and interaction co
 51. Keep the grid navbar's bottom border, 36px action buttons with 4px gaps, and a non-shrinking prompt-copy control. Stacked phone axes use 10px gaps.
 52. Show a left chevron before Previous and a right chevron after Next in grid-list and billing pagination, retaining the text labels.
 53. Opening a grid from a scrolled list must show the grid header at the top of the viewport, including on mobile browsers in desktop mode. Returning to the list through browser history restores its previous scroll position.
+54. Keep chat drag handles muted, with grip icons inset within their badge-height containers. During dragging, show an insertion line in the destination gap, using the upper or lower half of a row to select the gap before or after it. Dropping inserts the message at that gap, including at the start and end of the history; clear the marker when dragging ends or leaves the editor.
 
 See [README.md](README.md) for an introduction, [ARCHITECTURE.md](ARCHITECTURE.md) for architecture constraints and implementation, and [DEVELOPMENT.md](DEVELOPMENT.md) for development and validation guidance.
 

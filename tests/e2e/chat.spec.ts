@@ -71,7 +71,12 @@ test("chat editing, ordering, persistence and Markdown output", async ({
   await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
   await page.mouse.down();
   await page.mouse.move(to.x + 10, to.y + 10, { steps: 8 });
+  await expect(page.locator(".chat-insert").first()).toHaveAttribute(
+    "data-chat-insertion",
+    "true",
+  );
   await page.mouse.up();
+  await expect(page.locator('[data-chat-insertion="true"]')).toHaveCount(0);
   await expect(page.getByLabel("Message 1", { exact: true })).toHaveValue(
     "Use Markdown",
   );
@@ -131,4 +136,72 @@ test("chat editing, ordering, persistence and Markdown output", async ({
   await expect(page.getByLabel("Message 3", { exact: true })).toHaveValue(
     "Answer prefix ",
   );
+});
+
+test("chat drag markers select gaps before and after rows", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "Chat completion", exact: true })
+    .click();
+  for (let index = 0; index < 4; index++) {
+    if (index) {
+      await page.locator(".chat-append").hover();
+      await page
+        .getByRole("button", { name: "Add message", exact: true })
+        .click();
+    }
+    await page
+      .getByLabel(`Message ${index + 1}`, { exact: true })
+      .fill(["A", "B\nsecond line\nthird line", "C", "D"][index]);
+  }
+  async function drag(
+    from: number,
+    row: number,
+    side: "before" | "after",
+    expected: string[],
+  ) {
+    await page.locator(".chat-editor").scrollIntoViewIfNeeded();
+    const handle = (await page
+      .getByRole("button", { name: `Move message ${from + 1}`, exact: true })
+      .boundingBox())!;
+    const target = (await page
+      .locator(".chat-message")
+      .nth(row)
+      .boundingBox())!;
+    await page.mouse.move(
+      handle.x + handle.width / 2,
+      handle.y + handle.height / 2,
+    );
+    await page.mouse.down();
+    await page.mouse.move(
+      target.x + target.width / 2,
+      target.y + target.height * (side === "before" ? 0.25 : 0.75),
+      { steps: 8 },
+    );
+    const gap = row + (side === "after" ? 1 : 0);
+    const marker =
+      gap === 4
+        ? page.locator(".chat-append")
+        : page.locator(".chat-insert").nth(gap);
+    await expect(marker).toHaveAttribute("data-chat-insertion", "true");
+    await page.mouse.up();
+    await expect
+      .poll(() =>
+        page
+          .locator(".chat-message textarea")
+          .evaluateAll((inputs) =>
+            inputs.map(
+              (input) => (input as HTMLTextAreaElement).value.split("\n")[0],
+            ),
+          ),
+      )
+      .toEqual(expected);
+    await expect(page.locator('[data-chat-insertion="true"]')).toHaveCount(0);
+  }
+  await drag(3, 1, "before", ["A", "D", "B", "C"]);
+  await drag(1, 2, "after", ["A", "B", "D", "C"]);
+  await drag(0, 3, "after", ["B", "D", "C", "A"]);
+  await drag(3, 0, "before", ["A", "B", "D", "C"]);
 });

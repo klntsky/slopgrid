@@ -274,6 +274,8 @@ are checked for automatic growth and shrinkage, including wrapping at phone
 widths, and editing coverage uses the insertion gaps and input deletion controls.
 Insertion coverage verifies immediate input focus when appending a message or
 inserting between existing messages.
+Drag coverage checks gap markers and resulting order before and after multiline
+rows, at both ends of the history, and when moving in either direction.
 
 Recovery coverage exercises a failed later reference upload followed by reload
 and retry, large reference retention through reload and authorization, clipboard

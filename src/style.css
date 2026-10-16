@@ -337,6 +337,8 @@ section {
 }
 .chat-remove,
 .chat-drag {
+  color: var(--muted);
+  opacity: 0.5;
   padding: 5px;
 }
 .chat-drag {
@@ -351,8 +353,8 @@ section {
   height: 28px;
 }
 .chat-drag .lucide {
-  width: 16px;
-  height: 100%;
+  width: 14px;
+  height: 22px;
 }
 .chat-insert,
 .chat-append {
@@ -374,6 +376,7 @@ section {
   right: 0;
 }
 .chat-append {
+  position: relative;
   grid-column: 1 / -1;
   margin-top: -12px;
 }
@@ -388,8 +391,20 @@ section {
     opacity: 1;
   }
 }
-.chat-message[data-drag-target="true"] {
-  outline: 2px solid var(--muted);
+[data-chat-insertion="true"] {
+  opacity: 1;
+}
+[data-chat-insertion="true"]::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 5px;
+  border-top: 2px solid var(--selected-border);
+  pointer-events: none;
+}
+[data-chat-insertion="true"] .lucide {
+  visibility: hidden;
 }
 .model-badge.chat-role,
 .chat-role:enabled:hover,

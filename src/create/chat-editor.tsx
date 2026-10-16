@@ -19,6 +19,26 @@ export function ChatEditor({
     inserted.current = undefined;
   }, [messages]);
   const [dragTarget, setDragTarget] = useState<number>();
+  function insertionTarget(x: number, y: number, from: number) {
+    const list = root.current!;
+    const bounds = list.getBoundingClientRect();
+    if (
+      x < bounds.left ||
+      x > bounds.right ||
+      y < bounds.top ||
+      y > bounds.bottom
+    )
+      return;
+    const rows = Array.from(
+      list.querySelectorAll<HTMLElement>(".chat-message"),
+    );
+    const before = rows.findIndex((row) => {
+      const rect = row.getBoundingClientRect();
+      return y < rect.top + rect.height / 2;
+    });
+    const target = before < 0 ? rows.length : before;
+    if (target !== from && target !== from + 1) return target;
+  }
   function update(index: number, change: Partial<ChatMessage>) {
     onChange(
       messages.map((message, i) =>
@@ -44,15 +64,11 @@ export function ChatEditor({
   return (
     <div className="chat-editor" ref={root}>
       {messages.map((message, index) => (
-        <div
-          className="chat-message"
-          data-message-index={index}
-          data-drag-target={dragTarget === index}
-          key={index}
-        >
+        <div className="chat-message" data-message-index={index} key={index}>
           <button
             type="button"
             className="text-button chat-insert"
+            data-chat-insertion={dragTarget === index}
             aria-label={`Insert message before ${index + 1}`}
             onClick={() => insert(index)}
           >
@@ -65,22 +81,27 @@ export function ChatEditor({
               aria-label={`Move message ${index + 1}`}
               onPointerDown={(event) => {
                 event.currentTarget.setPointerCapture(event.pointerId);
-                setDragTarget(index);
+                setDragTarget(undefined);
               }}
               onPointerMove={(event) => {
                 if (!event.currentTarget.hasPointerCapture(event.pointerId))
                   return;
-                const target = document
-                  .elementFromPoint(event.clientX, event.clientY)
-                  ?.closest<HTMLElement>("[data-message-index]");
-                if (target && root.current?.contains(target))
-                  setDragTarget(Number(target.dataset.messageIndex));
+                setDragTarget(
+                  insertionTarget(event.clientX, event.clientY, index),
+                );
               }}
-              onPointerUp={() => {
-                if (dragTarget !== undefined) move(index, dragTarget);
+              onPointerUp={(event) => {
+                const target = insertionTarget(
+                  event.clientX,
+                  event.clientY,
+                  index,
+                );
+                if (target !== undefined)
+                  move(index, target > index ? target - 1 : target);
                 setDragTarget(undefined);
               }}
               onPointerCancel={() => setDragTarget(undefined)}
+              onLostPointerCapture={() => setDragTarget(undefined)}
               onKeyDown={(event) => {
                 if (event.key !== "ArrowUp" && event.key !== "ArrowDown")
                   return;
@@ -132,6 +153,7 @@ export function ChatEditor({
       <button
         type="button"
         className="text-button chat-append"
+        data-chat-insertion={dragTarget === messages.length}
         aria-label="Add message"
         onClick={() => insert(messages.length)}
       >
