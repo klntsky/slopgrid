@@ -1,20 +1,16 @@
 import { test, expect } from "./fixtures";
-import { firefox } from "@playwright/test";
 
 for (const resistFingerprinting of [false, true]) {
-  test(`Firefox desktop navigation with fingerprinting resistance ${resistFingerprinting}`, async ({
-    mockServer,
-  }) => {
-    const browser = await firefox.launch({
-      firefoxUserPrefs: {
-        "privacy.resistFingerprinting": resistFingerprinting,
+  test.describe(`Firefox desktop with fingerprinting resistance ${resistFingerprinting}`, () => {
+    test.use({
+      browserName: "firefox",
+      launchOptions: {
+        firefoxUserPrefs: {
+          "privacy.resistFingerprinting": resistFingerprinting,
+        },
       },
     });
-    try {
-      const page = await browser.newPage({
-        baseURL: mockServer,
-        ignoreHTTPSErrors: true,
-      });
+    test("navigation and reload preserve mouse controls", async ({ page }) => {
       for (const width of [390, 1280]) {
         await page.setViewportSize({ width, height: 844 });
         await page.goto("/");
@@ -27,8 +23,6 @@ for (const resistFingerprinting of [false, true]) {
         await expect(page.locator(".navigation-menu-toggle")).toHaveCount(0);
         await expect(nav).toBeVisible();
       }
-    } finally {
-      await browser.close();
-    }
+    });
   });
 }
