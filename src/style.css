@@ -288,8 +288,8 @@ section {
 
 .chat-editor {
   display: grid;
-  grid-template-columns: 104px minmax(0, 1fr);
-  column-gap: 12px;
+  grid-template-columns: 90px minmax(0, 1fr);
+  column-gap: 8px;
   padding-top: 12px;
 }
 .chat-message {
@@ -355,7 +355,7 @@ section {
 .chat-insert,
 .chat-append {
   height: 12px;
-  padding: 0 6px;
+  padding: 0;
   justify-content: flex-start;
   opacity: 0;
 }
@@ -366,11 +366,13 @@ section {
 }
 .chat-insert {
   position: absolute;
+  grid-column: 2;
   top: -12px;
-  width: 100%;
+  left: 0;
+  right: 0;
 }
 .chat-append {
-  grid-column: 1 / -1;
+  grid-column: 2;
   margin-top: -12px;
 }
 :is(.chat-insert, .chat-append):hover,
