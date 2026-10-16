@@ -352,7 +352,7 @@ section {
 }
 .chat-drag .lucide {
   width: 16px;
-  height: 16px;
+  height: 100%;
 }
 .chat-insert,
 .chat-append {

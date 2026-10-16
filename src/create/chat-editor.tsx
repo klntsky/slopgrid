@@ -94,7 +94,7 @@ export function ChatEditor({
                   ?.focus();
               }}
             >
-              <GripVertical aria-hidden="true" />
+              <GripVertical viewBox="7 3 10 18" aria-hidden="true" />
             </button>
             <button
               type="button"
