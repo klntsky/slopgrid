@@ -182,7 +182,7 @@ export function ChatEditor({
               aria-label={`Remove message ${index + 1}`}
               onClick={() => {
                 if (message.content.trim().split(/\s+/).length > 5)
-                  setDeleting(deleting === index ? undefined : index);
+                  setDeleting(index);
                 else remove(index);
               }}
             >

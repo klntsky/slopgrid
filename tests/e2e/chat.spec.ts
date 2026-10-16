@@ -331,6 +331,8 @@ test.describe("chat history on touch devices", () => {
     await expect(confirm).toHaveCount(0);
     await input.tap({ position: { x: 5, y: 5 } });
     await cross.tap();
+    await expect(input).toHaveValue("Edited message has more than five words");
+    await expect(confirm).toBeVisible();
     await confirm.tap();
     await expect(page.locator(".chat-message")).toHaveCount(0);
     await page.getByRole("button", { name: "Add message", exact: true }).tap();
