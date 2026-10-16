@@ -1625,7 +1625,7 @@ header {
 .publish-choices {
   border: 0;
   padding: 0;
-  margin: 20px 0;
+  margin: 20px 0 0;
 }
 .publish-choice {
   display: flex;
@@ -1659,6 +1659,7 @@ header {
   min-width: 0;
   margin: 0;
   font-size: 13px;
+  line-height: 1.4;
   font-weight: 400;
   cursor: text;
   align-items: center;
@@ -1670,12 +1671,12 @@ header {
 .publish-slug-input > span {
   flex: none;
   color: var(--muted);
-  padding-left: 12px;
+  padding-left: 8px;
 }
 .publish-slug-input input[type="text"] {
   min-width: 0;
   border: 0;
-  padding-left: 0;
+  padding: 0 8px 0 0;
   background: transparent;
   font: inherit;
   outline: none;
@@ -1694,6 +1695,12 @@ header {
 .publish-choice-row > .publish-choice {
   margin: 0;
   flex: none;
+}
+.publish-choice-row:last-child {
+  margin-bottom: 0;
+}
+.publish-modal .modal-actions {
+  margin-top: 8px;
 }
 @media (max-width: 480px) {
   .publish-choice-row > .publish-slug-input {
