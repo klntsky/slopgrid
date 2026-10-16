@@ -350,9 +350,7 @@ test.describe("chat history on touch devices", () => {
     await expect(
       confirm,
       JSON.stringify(
-        await page.evaluate(
-          () => (window as Window & { chatEvents: string[] }).chatEvents,
-        ),
+          await page.evaluate(() => Reflect.get(window, "chatEvents")),
       ),
     ).toBeVisible();
     await confirm.tap();
