@@ -288,7 +288,7 @@ section {
 
 .chat-editor {
   display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
+  grid-template-columns: 104px minmax(0, 1fr);
   column-gap: 12px;
   padding-top: 20px;
 }
