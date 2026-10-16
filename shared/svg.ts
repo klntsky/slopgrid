@@ -35,10 +35,6 @@ function unwrapSvg(raw: string): string {
   return content;
 }
 
-function withoutPartialEntity(text: string): string {
-  return text.replace(/&(?:#(?:x[\da-fA-F]*|\d*)?|[A-Za-z][\w.-]*)?$/, "");
-}
-
 // Keep completed attributes and finish a quoted value that is still streaming.
 // A partial attribute name or equals sign has no usable value yet, so omit it.
 function finishOpeningTag(raw: string): string | undefined {
@@ -64,17 +60,14 @@ function finishOpeningTag(raw: string): string | undefined {
     if (end < 0 && attribute[1].startsWith("xmlns")) break;
     const value = raw.slice(start, end < 0 ? undefined : end);
     if (value.includes("<")) return undefined;
-    result +=
-      attribute[0] +
-      (end < 0 ? withoutPartialEntity(value) : value) +
-      attribute[2];
+    result += attribute[0] + value + attribute[2];
     if (end < 0) break;
     cursor = end + 1;
   }
   return result + (selfClosing ? "/>" : ">");
 }
 
-/** Complete unfinished text without rewriting already complete tags. */
+/** Complete trailing tags; abandon completion at an unsupported boundary. */
 function completePartialSvg(draft: string): string | undefined {
   const root = draft.match(
     /^(\s*(?:(?:<\?[\s\S]*?\?>|<!--[\s\S]*?-->)\s*)*)<svg(?=[\s/>]|$)/,
@@ -89,8 +82,7 @@ function completePartialSvg(draft: string): string | undefined {
     if (source[cursor] !== "<") {
       const next = source.indexOf("<", cursor);
       const end = next < 0 ? source.length : next;
-      const text = source.slice(cursor, end);
-      parts.push(next < 0 ? withoutPartialEntity(text) : text);
+      parts.push(source.slice(cursor, end));
       cursor = end;
       continue;
     }
@@ -104,19 +96,12 @@ function completePartialSvg(draft: string): string | undefined {
           : undefined;
     if (special) {
       const end = source.indexOf(special[0], cursor + special[1]);
-      if (end < 0) {
-        if (special[0] === "]]>") parts.push(tail + "]]>");
-        break;
-      }
+      if (end < 0) return undefined;
       parts.push(source.slice(cursor, end + special[0].length));
       cursor = end + special[0].length;
       continue;
     }
-    if (tail.startsWith("<!")) {
-      if (["<!--", "<![CDATA["].some((opening) => opening.startsWith(tail)))
-        break;
-      return undefined;
-    }
+    if (tail.startsWith("<!")) return undefined;
     let end = cursor + 1,
       quote = "";
     for (; end < source.length; end++) {

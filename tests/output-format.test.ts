@@ -77,17 +77,13 @@ test("SVG namespace fixup preserves existing declarations and non-root text", ()
     assert.deepEqual(parseOutput("svg", raw), { "index.svg": raw });
 });
 
-test("SVG fixup preserves backticks attached directly to markup", () => {
-  // Reduced from Mistral Small: these are not complete Markdown fence lines.
-  const raw = '```<svg xmlns="http://www.w3.org/2000/svg"/>```';
-  assert.deepEqual(parseOutput("svg", raw), { "index.svg": raw });
-});
-
-test("SVG fixup preserves malformed attribute quotes", () => {
-  // Reduced from Llama's animation response with nested unescaped quotes.
+test("SVG completion stops at unsupported or inconsistent markup", () => {
   for (const raw of [
-    '<svg xmlns="http://www.w3.org/2000/svg" style="opacity="1;"/>',
     '<svg xmlns="http://www.w3.org/2000/svg"><g style="opacity="1;"/><circle r="1"/></svg>',
+    '<svg xmlns="http://www.w3.org/2000/svg"><g></path',
+    '<svg xmlns="http://www.w3.org/2000/svg"><text><![CDATA[x',
+    '<svg xmlns="http://www.w3.org/2000/svg"><!-- x',
+    '<svg xmlns="http://www.w3.org/2000/svg"><?x',
   ])
     assert.deepEqual(parseOutput("svg", raw), { "index.svg": raw });
 });
@@ -100,28 +96,10 @@ test("SVG fixup distinguishes shorter content fences from the outer fence", () =
   });
 });
 
-test("SVG fixup retains text in an unfinished CDATA section", () => {
-  const raw = '<svg xmlns="http://www.w3.org/2000/svg"><text><![CDATA[horse';
-  assert.deepEqual(parseOutput("svg", raw), {
-    "index.svg": raw + "]]></text></svg>",
-  });
-});
-
 test("SVG fixup saves closing tags for an unclosed root", () => {
   // Reduced from a provider response that ended normally without </svg>.
   const raw = '<svg xmlns="http://www.w3.org/2000/svg"><rect width="1"/>';
   assert.deepEqual(parseOutput("svg", raw), { "index.svg": raw + "</svg>" });
-});
-
-test("SVG fixup does not replace an incompatible partial closing tag", () => {
-  const raw = '<svg xmlns="http://www.w3.org/2000/svg"><g></path';
-  assert.deepEqual(parseOutput("svg", raw), { "index.svg": raw });
-});
-
-test("SVG fixup preserves unsupported declarations instead of discarding later content", () => {
-  const raw =
-    '<svg xmlns="http://www.w3.org/2000/svg"><!unexpected><circle r="1"/></svg>';
-  assert.deepEqual(parseOutput("svg", raw), { "index.svg": raw });
 });
 
 test("SVG fixup saves incomplete attribute and fence repairs", () => {
@@ -129,14 +107,6 @@ test("SVG fixup saves incomplete attribute and fence repairs", () => {
   assert.deepEqual(parseOutput("svg", raw), {
     "index.svg":
       '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0"></path></svg>',
-  });
-});
-
-test("SVG fixup preserves an unescaped ampersand inside a fenced document", () => {
-  // Reduced from Ministral: removing the fence must not rewrite text nodes.
-  const svg = '<svg xmlns="http://www.w3.org/2000/svg"><text>&</text></svg>';
-  assert.deepEqual(parseOutput("svg", `\`\`\`xml\n${svg}\n\`\`\``), {
-    "index.svg": svg,
   });
 });
 

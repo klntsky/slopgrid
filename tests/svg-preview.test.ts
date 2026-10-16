@@ -59,14 +59,10 @@ test("unfinished paths and attributes render while split closing tags stay balan
 test("quoted delimiters, entities, comments and CDATA do not corrupt the closing stack", () => {
   assert.equal(
     completeSvgPreview(`${root}<g data-label="a > b"><text>fish &am`),
-    `${root}<g data-label="a > b"><text>fish </text></g></svg>`,
+    `${root}<g data-label="a > b"><text>fish &am</text></g></svg>`,
   );
   assert.equal(
     completeSvgPreview(`${root}<text><![CDATA[a < b]]></text><!-- <g> -->`),
     `${root}<text><![CDATA[a < b]]></text><!-- <g> --></svg>`,
-  );
-  assert.equal(
-    completeSvgPreview(`${root}<g><!-- still writing <text>`),
-    `${root}<g></g></svg>`,
   );
 });
