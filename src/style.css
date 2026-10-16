@@ -287,9 +287,11 @@ section {
 }
 
 .chat-editor {
+  --chat-role-width: 90px;
+  --chat-column-gap: 8px;
   display: grid;
-  grid-template-columns: 90px minmax(0, 1fr);
-  column-gap: 8px;
+  grid-template-columns: var(--chat-role-width) minmax(0, 1fr);
+  column-gap: var(--chat-column-gap);
   padding-top: 12px;
 }
 .chat-message {
@@ -355,7 +357,7 @@ section {
 .chat-insert,
 .chat-append {
   height: 12px;
-  padding: 0;
+  padding: 0 0 0 calc(var(--chat-role-width) + var(--chat-column-gap) / 2 - 6px);
   justify-content: flex-start;
   opacity: 0;
 }
@@ -366,13 +368,13 @@ section {
 }
 .chat-insert {
   position: absolute;
-  grid-column: 2;
+  grid-column: 1 / -1;
   top: -12px;
   left: 0;
   right: 0;
 }
 .chat-append {
-  grid-column: 2;
+  grid-column: 1 / -1;
   margin-top: -12px;
 }
 :is(.chat-insert, .chat-append):hover,
@@ -392,6 +394,7 @@ section {
 .model-badge.chat-role,
 .chat-role:enabled:hover,
 .chat-role:enabled:active {
+  flex: 1;
   padding-inline: 8px;
   background: color-mix(in srgb, var(--role-color) 12%, var(--paper));
   border-color: color-mix(in srgb, var(--role-color) 45%, var(--paper));
