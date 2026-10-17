@@ -5,7 +5,15 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, rmSync, chmodSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import type { GridInput } from "../server/domain.js";
+import {
+  expandGrid,
+  hasCompletedOutput,
+  type Cell,
+  type Grid,
+  type GridInput,
+} from "../server/domain.js";
+import { assignGenerationSources } from "../server/generation-groups.js";
+import { reuseArtifacts } from "../server/artifact-reuse.js";
 import {
   runtimeFixture,
   until,
@@ -945,6 +953,207 @@ test("reuse leaves preparation failures on individual cells and skips unsigned s
       /budget is too small/,
     );
     assert.equal(f.calls.length, 2);
+  } finally {
+    await f.close();
+  }
+});
+
+test("judged generation groups use the first row-major source without grouping unjudged cells", () => {
+  const judged: GridInput = {
+    ...input,
+    prompt: "Same output",
+    rows: { kind: "judge_model", values: ["judge-a", "judge-b"] },
+    columns: { kind: "judge_effort", values: ["none", "low"] },
+    judge: {
+      criteria: [{ text: "Is this empty?", correctAnswer: false }],
+      model: "",
+      effort: "default",
+    },
+  };
+  const cells = expandGrid(judged).map((cell, index) => ({
+    ...cell,
+    id: `group-${index}`,
+  }));
+  assignGenerationSources(judged.format, [...cells].reverse());
+  assert.deepEqual(
+    cells.map((cell) => cell.generationSourceId),
+    cells.map(() => cells[0].id),
+  );
+  assert.deepEqual(
+    cells.map((cell) => cell.generationStatus),
+    ["pending", undefined, undefined, undefined],
+  );
+  const changed: Cell = { ...cells[0], id: "different", budgetUsd: 0.2 };
+  assignGenerationSources(judged.format, [...cells, changed]);
+  assert.equal(changed.generationSourceId, changed.id);
+  assert.equal(changed.generationStatus, "pending");
+  const unjudged = expandGrid({ ...judged, judge: undefined }).map(
+    (cell, index) => ({ ...cell, id: `unjudged-${index}` }),
+  );
+  assignGenerationSources(judged.format, unjudged);
+  assert.ok(unjudged.every((cell) => !("generationSourceId" in cell)));
+});
+
+test("committed judged output stays available independently of judgment status", () => {
+  assert.equal(hasCompletedOutput({ status: "complete" }), true);
+  for (const status of ["pending", "running", "error"] as const) {
+    assert.equal(
+      hasCompletedOutput({
+        status,
+        generationSourceId: "source",
+        provenance: { signature: "signature", files: ["index.md"] },
+      }),
+      true,
+    );
+    assert.equal(
+      hasCompletedOutput({ status, generationSourceId: "source" }),
+      false,
+    );
+    assert.equal(
+      hasCompletedOutput({
+        status,
+        provenance: { signature: "signature", files: ["index.md"] },
+      }),
+      false,
+    );
+    assert.equal(
+      hasCompletedOutput({
+        status,
+        generationSourceId: "source",
+        provenance: { signature: "signature", files: [] },
+      }),
+      false,
+    );
+  }
+});
+
+test("reuse copies one generation per judge group, retains failed-judge output, and persists fresh judgments", async () => {
+  const f = await runtimeFixture();
+  try {
+    const config: GridInput = {
+      ...input,
+      prompt: "Reusable output",
+      rows: { kind: "model", values: ["fixture/text"] },
+      columns: { kind: "effort", values: ["none"] },
+    };
+    const created = await create(f, config);
+    finish(await f.nextCall(), "Shared artifact");
+    await settled(f, created.id);
+    const source = f.store.get(created.id)!;
+    const original = source.cells[0];
+    original.status = "error";
+    original.generationSourceId = original.id;
+    original.generationStatus = "complete";
+    original.judge = {
+      model: "old-judge",
+      effort: "high",
+      status: "error",
+      attemptId: "old-judge-attempt",
+      error: "Judge failed",
+      errorCode: 400,
+      results: [{ verdict: false, explanation: "Do not reuse this verdict." }],
+    };
+    const judged: GridInput = {
+      ...config,
+      rows: { kind: "judge_model", values: ["judge-a", "judge-b"] },
+      columns: { kind: "judge_effort", values: ["none", "low"] },
+      judge: {
+        criteria: [{ text: "Is this empty?", correctAnswer: false }],
+        model: "",
+        effort: "default",
+      },
+    };
+    const destination: Grid = {
+      ...source,
+      id: "judged-reuse-destination",
+      input: judged,
+      status: "paused",
+      cells: expandGrid(judged).map((cell, index) => ({
+        ...cell,
+        id: `judged-reuse-${index}`,
+      })),
+    };
+    assignGenerationSources(judged.format, destination.cells);
+    let reads = 0;
+    const readArtifact = f.store.files.readArtifact.bind(f.store.files);
+    f.store.files.readArtifact = async (...args) => {
+      reads++;
+      return readArtifact(...args);
+    };
+    await reuseArtifacts(
+      f.store,
+      new Provider(f.providerURL),
+      source,
+      judged.format,
+      destination.cells,
+    );
+    assert.equal(reads, 1);
+    assert.equal(f.calls.length, 1);
+    for (const cell of destination.cells) {
+      assert.equal(cell.status, "pending");
+      assert.equal(hasCompletedOutput(cell), true);
+      assert.deepEqual(cell.judge, {
+        model: judged.rows.values[cell.row],
+        effort: judged.columns.values[cell.column],
+        status: "pending",
+      });
+      assert.equal(cell.attemptId, undefined);
+      assert.deepEqual(cell.usage, original.usage);
+      assert.deepEqual(cell.provenance, original.provenance);
+      assert.deepEqual(
+        await f.store.files.bundle(cell.id),
+        await f.store.files.bundle(original.id),
+      );
+    }
+    assert.deepEqual(
+      destination.cells.map((cell) => cell.generationStatus),
+      ["complete", undefined, undefined, undefined],
+    );
+    f.store.insert(destination);
+    assert.deepEqual(
+      f.store.get(destination.id)!.cells,
+      JSON.parse(JSON.stringify(destination.cells)),
+    );
+    destination.cells[0].judge = {
+      ...destination.cells[0].judge!,
+      status: "complete",
+      attemptId: "fresh-judge-attempt",
+      results: [{ verdict: false, explanation: "The output is not empty." }],
+    };
+    destination.cells[1].judge = {
+      ...destination.cells[1].judge!,
+      status: "error",
+      attemptId: "failed-judge-attempt",
+      error: "Temporary error",
+      errorCode: 503,
+      retrying: true,
+    };
+    f.store.saveGeneration(destination);
+    const restored = f.store.get(destination.id)!;
+    assert.deepEqual(
+      restored.cells,
+      JSON.parse(JSON.stringify(destination.cells)),
+    );
+    assert.equal(restored.input.judge!.criteria[0].correctAnswer, false);
+
+    await f.store.files.removeArtifact(original.id);
+    const missing = expandGrid(judged).map((cell, index) => ({
+      ...cell,
+      id: `missing-reuse-${index}`,
+    }));
+    assignGenerationSources(judged.format, missing);
+    await reuseArtifacts(
+      f.store,
+      new Provider(f.providerURL),
+      source,
+      judged.format,
+      missing,
+    );
+    assert.ok(
+      missing.every((cell) => !cell.provenance && cell.status === "pending"),
+    );
+    assert.equal(missing[0].generationStatus, "pending");
+    assert.equal(f.calls.length, 1);
   } finally {
     await f.close();
   }

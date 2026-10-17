@@ -1,5 +1,5 @@
 import { ownsGrid, publicationError } from "./grid-policy.js";
-import type { Grid, Identity } from "./domain.js";
+import { hasCompletedOutput, type Grid, type Identity } from "./domain.js";
 import type { Store, Session } from "./store.js";
 import type { GenerationSnapshot } from "./generation-api.js";
 
@@ -37,10 +37,15 @@ export function createGridPresenter(store: Store, origin: URL) {
         effort: c.effort,
         prompt: c.prompt,
         status: c.status,
+        outputReady: hasCompletedOutput(c),
+        judge: c.judge,
+        generationSourceId: c.generationSourceId,
+        generationStatus: c.generationStatus,
         error: c.error,
         errorCode: c.errorCode,
         ...(g.published &&
-          c.status === "pending" && {
+          c.status === "pending" &&
+          !hasCompletedOutput(c) && {
             status: "error" as const,
             error: "Not generated",
             errorCode: undefined,
@@ -58,12 +63,11 @@ export function createGridPresenter(store: Store, origin: URL) {
           g.input.format === "html" && c.status === "running" && c.preview
             ? `${origin.origin}/outputs/${c.id}/website?path=${encodeURIComponent(`__preview/${c.preview.attempt}/index.html`)}&revision=${c.preview.revision}`
             : undefined,
-        outputURL:
-          c.status === "complete"
-            ? g.input.format === "html"
-              ? `${origin.origin}/outputs/${c.id}/website`
-              : `${origin.origin}/outputs/${c.id}`
-            : undefined,
+        outputURL: hasCompletedOutput(c)
+          ? g.input.format === "html"
+            ? `${origin.origin}/outputs/${c.id}/website`
+            : `${origin.origin}/outputs/${c.id}`
+          : undefined,
       })),
     };
   };

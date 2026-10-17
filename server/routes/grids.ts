@@ -1,5 +1,6 @@
 import { selectedReferences } from "../image-settings.js";
 import { reuseArtifacts } from "../artifact-reuse.js";
+import { assignGenerationSources } from "../generation-groups.js";
 import { canViewGrid, ownsGrid } from "../grid-policy.js";
 import { z } from "zod";
 import { manualKey } from "../manual-keys.js";
@@ -193,6 +194,7 @@ export function createGridRoutes({
         .status(400)
         .json({ error: "A reference image is unavailable." });
     const cells = expandGrid(input).map((c) => ({ ...c, id: token() }));
+    assignGenerationSources(input.format, cells);
     if (!rate(`create:${s.id}`, 10) || !rate(`create-ip:${req.ip}`, 30))
       return res
         .status(429)

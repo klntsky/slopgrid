@@ -13,6 +13,8 @@ import {
   unusedVariableIssue,
   type GridInput,
 } from "../../server/domain";
+import { generationGroupKey } from "../../shared/generation-key";
+import { expandGrid, isMarkdownFormat } from "../../server/domain";
 import { effortLabel } from "../../server/compatibility";
 import { useCreateForm } from "../create/use-create-form";
 import { AxisEditor } from "../create/axis-editor";
@@ -37,6 +39,9 @@ export function Create() {
     models,
     commonModel,
     commonEffort,
+    judgeModels,
+    commonJudgeModel,
+    commonJudgeEffort,
     generateReasons,
     submission,
   } = useCreateForm();
@@ -45,7 +50,11 @@ export function Create() {
     submission;
   const compatibility = compatibilityTables({ input, models });
   const commonParameters =
-    input.format === "image" || commonModel || commonEffort;
+    input.format === "image" ||
+    commonModel ||
+    commonEffort ||
+    commonJudgeModel ||
+    commonJudgeEffort;
   const promptVariables = (["rows", "columns"] as const)
     .filter((axis) => input[axis].kind === "variable")
     .map((axis) => (axis === "rows" ? "$ROW" : "$COLUMN"));
@@ -57,6 +66,13 @@ export function Create() {
   );
   const swapHint = useTooltip<HTMLButtonElement>("Swap rows and columns");
   const generateHint = useTooltip<HTMLDivElement>(generateReasons || undefined);
+  const generatedOutputs = input.judge
+    ? new Set(
+        expandGrid(input).map((cell) =>
+          generationGroupKey(input.format, { ...cell, id: "" }),
+        ),
+      ).size
+    : input.rows.values.length * input.columns.values.length;
 
   return (
     <main className="create-page">
@@ -88,6 +104,8 @@ export function Create() {
               axis={input.rows}
               format={input.format}
               models={models}
+              judgeModels={judgeModels}
+              judgeEnabled={!!input.judge}
               referenceGroups={input.referenceGroups}
               onUploading={onUploading}
               onChange={(rows, referenceGroups) =>
@@ -126,6 +144,8 @@ export function Create() {
               axis={input.columns}
               format={input.format}
               models={models}
+              judgeModels={judgeModels}
+              judgeEnabled={!!input.judge}
               referenceGroups={input.referenceGroups}
               onUploading={onUploading}
               onChange={(columns, referenceGroups) =>
@@ -136,9 +156,14 @@ export function Create() {
             />
           </div>
           <p className="hint">
-            {input.rows.values.length} rows × {input.columns.values.length}{" "}
-            columns · {input.rows.values.length * input.columns.values.length}{" "}
-            outputs
+            {input.judge ? (
+              `${input.rows.values.length} rows x ${input.columns.values.length} columns - ${generatedOutputs} generated outputs, ${input.rows.values.length * input.columns.values.length} judgments`
+            ) : (
+              <>
+                {input.rows.values.length} rows × {input.columns.values.length}{" "}
+                columns · {generatedOutputs} outputs
+              </>
+            )}
           </p>
         </section>
       )}
@@ -173,6 +198,7 @@ export function Create() {
                 <label>
                   Thinking effort
                   <select
+                    aria-label="Thinking effort"
                     value={input.effort}
                     onChange={(e) =>
                       update({
@@ -191,6 +217,53 @@ export function Create() {
               </div>
             </div>
           )}
+          {commonJudgeModel && input.judge && (
+            <fieldset role="radiogroup" aria-label="Judge model">
+              <legend>Judge model</legend>
+              <ModelSelector
+                judge
+                models={judgeModels}
+                format={input.format}
+                values={input.judge.model ? [input.judge.model] : []}
+                onChange={(values) =>
+                  update({ judge: { ...input.judge!, model: values[0] ?? "" } })
+                }
+              />
+              {!judgeModels.length && (
+                <p className="hint">
+                  No compatible judge models are available for this output type.
+                </p>
+              )}
+            </fieldset>
+          )}
+          {commonJudgeEffort && input.judge && (
+            <div className="fixed-options">
+              <div>
+                <label>
+                  Judge thinking effort
+                  <select
+                    aria-label="Judge thinking effort"
+                    value={input.judge.effort}
+                    onChange={(event) =>
+                      update({
+                        judge: {
+                          ...input.judge!,
+                          effort: event.target.value as GridInput["effort"],
+                        },
+                      })
+                    }
+                  >
+                    {efforts.map((effort) => (
+                      <option key={effort} value={effort}>
+                        {effortLabel(effort)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {compatibility.judge_effort}
+              </div>
+            </div>
+          )}
         </section>
       )}
       {formatSelected && (
@@ -199,7 +272,7 @@ export function Create() {
             <span className="number">{commonParameters ? "04" : "03"}</span>
             <h2>
               {isChatFormat(input.format)
-                ? "Chat history"
+                ? "Enter chat history"
                 : "Enter your prompt"}
             </h2>
           </div>
@@ -233,6 +306,149 @@ export function Create() {
         <section>
           <div className="section-heading">
             <span className="number">{commonParameters ? "05" : "04"}</span>
+            <h2>Add a LLM judge · evaluates the output</h2>
+          </div>
+          {input.format === "html" ? (
+            <p className="hint">Websites do not support a judge yet.</p>
+          ) : !input.judge ? (
+            <button
+              type="button"
+              onClick={() =>
+                update({
+                  judge: {
+                    criteria: [{ text: "", correctAnswer: true }],
+                    model: "",
+                    effort: "default",
+                  },
+                })
+              }
+            >
+              Add judge
+            </button>
+          ) : (
+            <>
+              {input.judge.criteria.map((criterion, index) => (
+                <fieldset key={index}>
+                  <legend>Criterion {index + 1}</legend>
+                  <textarea
+                    aria-label={`Criterion ${index + 1}`}
+                    rows={2}
+                    value={criterion.text}
+                    onChange={(event) =>
+                      update((current) => ({
+                        judge: {
+                          ...current.judge!,
+                          criteria: current.judge!.criteria.map(
+                            (item, position) =>
+                              position === index
+                                ? { ...item, text: event.target.value }
+                                : item,
+                          ),
+                        },
+                      }))
+                    }
+                  />
+                  <label>
+                    Correct answer
+                    <select
+                      aria-label="Correct answer"
+                      value={String(criterion.correctAnswer)}
+                      onChange={(event) =>
+                        update((current) => ({
+                          judge: {
+                            ...current.judge!,
+                            criteria: current.judge!.criteria.map(
+                              (item, position) =>
+                                position === index
+                                  ? {
+                                      ...item,
+                                      correctAnswer:
+                                        event.target.value === "true",
+                                    }
+                                  : item,
+                            ),
+                          },
+                        }))
+                      }
+                    >
+                      <option value="true">Yes</option>
+                      <option value="false">No</option>
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    className="text-button"
+                    aria-label={`Remove criterion ${index + 1}`}
+                    onClick={() =>
+                      update((current) => ({
+                        judge: {
+                          ...current.judge!,
+                          criteria:
+                            current.judge!.criteria.length === 1
+                              ? [{ text: "", correctAnswer: true }]
+                              : current.judge!.criteria.filter(
+                                  (_, position) => position !== index,
+                                ),
+                        },
+                      }))
+                    }
+                  >
+                    Remove criterion {index + 1}
+                  </button>
+                </fieldset>
+              ))}
+              <button
+                type="button"
+                className="secondary"
+                onClick={() =>
+                  update((current) => ({
+                    judge: {
+                      ...current.judge!,
+                      criteria: [
+                        ...current.judge!.criteria,
+                        { text: "", correctAnswer: true },
+                      ],
+                    },
+                  }))
+                }
+              >
+                Add criterion
+              </button>
+              <button
+                type="button"
+                className="text-button"
+                onClick={() =>
+                  update((current) => ({
+                    judge: undefined,
+                    rows: current.rows.kind.startsWith("judge_")
+                      ? isMarkdownFormat(current.format)
+                        ? { kind: "effort", values: ["default"] }
+                        : { kind: "model", values: [] }
+                      : current.rows,
+                    columns: current.columns.kind.startsWith("judge_")
+                      ? current.format === "image"
+                        ? { kind: "quality", values: ["auto"] }
+                        : isMarkdownFormat(current.format)
+                          ? { kind: "model", values: [] }
+                          : { kind: "effort", values: ["default"] }
+                      : current.columns,
+                  }))
+                }
+              >
+                Remove judge
+              </button>
+              <p className="hint">
+                Judge budget: no limit. Judge calls are not limited by the
+                generation budget.
+              </p>
+            </>
+          )}
+        </section>
+      )}
+      {formatSelected && (
+        <section>
+          <div className="section-heading">
+            <span className="number">{commonParameters ? "06" : "05"}</span>
             <h2>Inference provider setup</h2>
           </div>
           <Connection returnTo="/create" />

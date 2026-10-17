@@ -2,7 +2,7 @@ import {
   generationBudgetForInput,
   PreparationError,
 } from "./generation-budget.js";
-import type { Cell, Grid } from "./domain.js";
+import { hasCompletedOutput, type Cell, type Grid } from "./domain.js";
 import type { Store } from "./store.js";
 import type { Provider } from "./provider.js";
 import { inferenceSignature, templateSignature } from "./prepared-inference.js";
@@ -17,16 +17,25 @@ export async function reuseArtifacts(
 ) {
   const candidates = new Map<string, Cell[]>();
   for (const cell of source.cells) {
-    if (cell.status !== "complete" || !cell.provenance?.files.length) continue;
+    if (!hasCompletedOutput(cell) || !cell.provenance?.files.length) continue;
     const key = cell.provenance.signature;
     const group = candidates.get(key) ?? [];
     group.push(cell);
     candidates.set(key, group);
   }
   if (!candidates.size) return;
+  const groups = new Map<string, Cell[]>();
+  for (const cell of cells) {
+    const key = cell.judge ? (cell.generationSourceId ?? cell.id) : cell.id;
+    const group = groups.get(key) ?? [];
+    group.push(cell);
+    groups.set(key, group);
+  }
   const matches = new Map<Cell, Cell[]>();
   const readReferences = store.references.loader();
-  for (const cell of cells) {
+  for (const group of groups.values()) {
+    const cell =
+      group.find((cell) => cell.id === cell.generationSourceId) ?? group[0];
     let match: Cell | undefined;
     try {
       if (format === "chat-template") {
@@ -84,7 +93,7 @@ export async function reuseArtifacts(
     }
     if (match) {
       const destinations = matches.get(match) ?? [];
-      destinations.push(cell);
+      destinations.push(...group);
       matches.set(match, destinations);
     }
   }
@@ -98,7 +107,9 @@ export async function reuseArtifacts(
     // Keep at most one source bundle in memory and read it once for all matches.
     for (const cell of destinations) {
       cell.thinkingId = await store.files.writeArtifact(cell.id, bundle);
-      cell.status = "complete";
+      cell.status = cell.judge ? "pending" : "complete";
+      if (cell.generationSourceId === cell.id)
+        cell.generationStatus = "complete";
       cell.mediaType = source.mediaType;
       cell.usage = source.usage;
       cell.provenance = source.provenance;

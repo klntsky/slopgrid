@@ -14,6 +14,8 @@ import { generateInference, type InferenceContext } from "./inference.js";
 import { parsePricing, type ModelPricing } from "./model-pricing.js";
 import type { CallObserver } from "./billing.js";
 import { upstreamFetch } from "./http.js";
+import { judgeInference, type PreparedJudgeInference } from "./judge.js";
+import { canJudge, judgeModelIssue } from "./compatibility.js";
 import {
   efforts,
   type Cell,
@@ -26,6 +28,7 @@ export type Model = {
   canonicalSlug?: string;
   name: string;
   image: boolean;
+  imageInput: boolean;
   text: boolean;
   reasoning: boolean;
   reasoningMandatory: boolean;
@@ -181,6 +184,10 @@ export class Provider {
           m.top_provider?.max_completion_tokens ??
           undefined,
         image: imageIds.has(m.id),
+        imageInput:
+          previous?.imageInput ||
+          m.architecture.input_modalities?.includes("image") ||
+          false,
         text:
           previous?.text ||
           m.architecture.output_modalities?.includes("text") ||
@@ -230,6 +237,21 @@ export class Provider {
     }
   }
 
+  async judge(
+    key: string,
+    prepared: PreparedJudgeInference,
+    context: InferenceContext = {},
+  ) {
+    const model = (await this.models()).find(
+      (candidate) => candidate.id === prepared.model,
+    );
+    if (!model || !canJudge(model, prepared.format))
+      throw new PreparationError(
+        judgeModelIssue(model, prepared.format) ??
+          "The judge model must support structured outputs.",
+      );
+    return judgeInference(this.baseURL, key, prepared, context);
+  }
   async generate(
     key: string,
     format: SingleOutputFormat,

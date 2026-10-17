@@ -95,6 +95,56 @@ test("visited pages and completed outputs survive offline reload without retaini
         return grid;
       },
     );
+    for (const status of ["pending", "error", "complete"] as const) {
+      const template = grids[0];
+      const cellId = token();
+      const filename = "index.md";
+      const grid: Grid = {
+        ...template,
+        id: token(),
+        input: {
+          ...template.input,
+          prompt: `Offline judgment ${status}`,
+          judge: {
+            criteria: [{ text: "Is this a website?", correctAnswer: false }],
+            model: "fixture/text",
+            effort: "default",
+          },
+        },
+        status: "paused",
+        cells: [
+          {
+            ...template.cells[0],
+            id: cellId,
+            status,
+            generationSourceId: cellId,
+            generationStatus: "complete",
+            provenance: { signature: "offline-output", files: [filename] },
+            judge: {
+              model: "fixture/text",
+              effort: "default",
+              status,
+              ...(status === "error" ? { error: "Judge unavailable" } : {}),
+              ...(status === "complete"
+                ? {
+                    results: [
+                      {
+                        verdict: false,
+                        explanation: "This is saved Markdown, not a website.",
+                      },
+                    ],
+                  }
+                : {}),
+            },
+          },
+        ],
+      };
+      store.insert(grid);
+      store.files.write(cellId, {
+        [filename]: "# Cached markdown\n\nSaved content",
+      });
+      grids.push(grid);
+    }
     const context = await browser.newContext({ ignoreHTTPSErrors: true });
     await context.addCookies([
       {
@@ -127,13 +177,26 @@ test("visited pages and completed outputs survive offline reload without retaini
         )
         .toBe(true);
     }
+    for (const grid of grids.filter((grid) => grid.input.judge)) {
+      const savedCell = await page.evaluate(async (id) => {
+        for (const name of await caches.keys()) {
+          const response = await (
+            await caches.open(name)
+          ).match(`/api/grids/${id}`);
+          if (response) return (await response.json()).cells[0];
+        }
+      }, grid.id);
+      expect(savedCell.outputReady).toBe(true);
+      expect(savedCell.outputURL).toContain(`/outputs/${grid.cells[0].id}`);
+      expect(savedCell.judge).toEqual(grid.cells[0].judge);
+    }
     await page.goto(web.origin);
     await context.setOffline(true);
     await page.reload();
     for (const grid of grids) {
       await page
         .getByRole("link", {
-          name: new RegExp(`Offline ${grid.input.format}$`),
+          name: new RegExp(`${grid.input.prompt}$`),
         })
         .click();
       if (grid.input.format === "markdown")
@@ -184,6 +247,15 @@ test("visited pages and completed outputs survive offline reload without retaini
       }
       await page.reload();
       await expect(page.locator("article.cell")).toHaveCount(1);
+      if (grid.input.judge) {
+        const snapshot = await page.evaluate(
+          async (id) => (await fetch(`/api/grids/${id}`)).json(),
+          grid.id,
+        );
+        expect(snapshot.live).toBe(false);
+        expect(snapshot.cells[0].outputReady).toBe(true);
+        expect(snapshot.cells[0].judge).toEqual(grid.cells[0].judge);
+      }
       await page.goto(web.origin);
     }
     await page.goto(`${web.origin}/grid/${token()}`);
@@ -270,7 +342,9 @@ test("streaming output is excluded until completion and remains available after 
     await page.request.post("/fixture/svg-next");
     await expect
       .poll(() =>
-        page.getByRole("img", { name: "SVG preview", exact: true }).getAttribute("src"),
+        page
+          .getByRole("img", { name: "SVG preview", exact: true })
+          .getAttribute("src"),
       )
       .toContain("fill%3D%22blue");
     await page.request.post("/fixture/svg-next");

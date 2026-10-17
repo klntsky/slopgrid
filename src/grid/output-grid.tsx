@@ -41,9 +41,7 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
     (cell) =>
       selection?.kind === "output" &&
       cell.id === selection.id &&
-      (cell.status === "complete" ||
-        cell.status === "running" ||
-        !!cell.thinkingURL),
+      (cell.outputReady || cell.status === "running" || !!cell.thinkingURL),
   );
   const reference =
     selection?.kind === "reference"
@@ -112,12 +110,15 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
     return (
       <>
         <span className={axis === "rows" ? "row-label" : undefined}>
-          {kind === "model" ? (
-            <ModelName model={value} />
+          {kind === "model" || kind === "judge_model" ? (
+            <>
+              {kind === "judge_model" && "judge model: "}
+              <ModelName model={value} />
+            </>
           ) : kind === "input_references" ? (
             `references: ${value}`
-          ) : kind === "effort" ? (
-            `thinking: ${displayValue(value, kind)}`
+          ) : kind === "effort" || kind === "judge_effort" ? (
+            `${kind === "judge_effort" ? "judge thinking" : "thinking"}: ${displayValue(value, kind)}`
           ) : kind !== "variable" ? (
             `${dimensionNames[kind].toLowerCase()}: ${value}`
           ) : (
@@ -195,6 +196,7 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
                           cell={cell}
                           format={g.input.format}
                           gridStatus={g.status}
+                          criteria={g.input.judge?.criteria}
                           title={title(cell)}
                           expanded={expanded?.id === cell.id}
                           rawMarkdown={views[cell.id]?.raw}

@@ -93,13 +93,15 @@ function json(value, headers, status = 200) {
     headers: { "Content-Type": "application/json", ...headers },
   });
 }
+const outputAvailable = (cell) =>
+  cell.outputReady || cell.status === "complete";
 function cleanGrid(grid) {
   return {
     ...grid,
     live: false,
     cells: grid.cells.map((cell) => {
       const { draft, thinking, previewURL, estimatedUsage, ...saved } = cell;
-      return cell.status === "complete"
+      return outputAvailable(cell)
         ? saved
         : { ...saved, outputURL: undefined, thinkingURL: undefined };
     }),
@@ -165,7 +167,7 @@ async function saveOutput(url, expected) {
 async function saveGridOutputs(grid, expected) {
   for (const cell of grid.cells) {
     if (expected !== epoch) return;
-    if (cell.status !== "complete") continue;
+    if (!outputAvailable(cell)) continue;
     const root = `/outputs/${cell.id}`;
     const urls =
       grid.input.format === "html"
@@ -216,7 +218,9 @@ async function network(request, event) {
       return saved;
     }
     if (pagePath(url.pathname))
-      return (await (await caches.open(STATIC)).match(SHELL)) ?? unavailable(false);
+      return (
+        (await (await caches.open(STATIC)).match(SHELL)) ?? unavailable(false)
+      );
     return url.pathname.startsWith("/api/")
       ? json(
           { error: "This page isn't available offline." },

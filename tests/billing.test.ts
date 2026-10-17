@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "../server/store.js";
-import { expandGrid, type GridInput } from "../server/domain.js";
+import { expandGrid, type Cell, type GridInput } from "../server/domain.js";
 
 test("cell cost follows the latest call while billing preserves earlier attempts and finish reasons", () => {
   const directory = mkdtempSync(join(tmpdir(), "slopgrid-billing-"));
@@ -91,6 +91,109 @@ test("cell cost follows the latest call while billing preserves earlier attempts
       .observe("other-cell")("direct")
       .complete({ phase: "direct", finishReason: "stop" }, { costUsd: 10 });
     assert.equal(store.billing.gridSpent(grid.id, grid.cells), 0.6);
+  } finally {
+    store.db.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("judge attempts retain actual selections and charges without entering generation usage or spent fallbacks", () => {
+  const directory = mkdtempSync(join(tmpdir(), "slopgrid-judge-billing-"));
+  const store = new Store(join(directory, "db.sqlite"), Buffer.alloc(32, 1));
+  try {
+    const input: GridInput = {
+      format: "markdown",
+      prompt: "An output",
+      model: "generator",
+      effort: "none",
+      budgetUsd: 1,
+      rows: { kind: "judge_model", values: ["judge-a", "judge-b"] },
+      columns: { kind: "judge_effort", values: ["high"] },
+      judge: {
+        criteria: [{ text: "Is it correct?", correctAnswer: false }],
+        model: "",
+        effort: "default",
+      },
+    };
+    const cells: Cell[] = expandGrid(input).map((cell, index) => ({
+      ...cell,
+      id: index ? "member" : "source",
+      generationSourceId: "source",
+      status: "running" as const,
+      generationStatus: index ? undefined : ("complete" as const),
+      usage: { costUsd: 0.1, inputTokens: 10, outputTokens: 20 },
+    }));
+    store.insert({
+      id: "grid",
+      owner: "owner",
+      input,
+      cells,
+      status: "running",
+      published: false,
+      visibility: "private",
+      createdAt: new Date().toISOString(),
+    });
+    store.billing
+      .observe(
+        "source",
+        "generation",
+      )("direct")
+      .complete(
+        { phase: "direct", finishReason: "stop" },
+        { costUsd: 0.1, inputTokens: 10, outputTokens: 20 },
+      );
+    const failed = store.billing.observe("source", "generation", {
+      model: "judge-a",
+      effort: "high",
+    })("judge");
+    failed.update({
+      usage: { costUsd: 0.2, inputTokens: 100, outputTokens: 200 },
+    });
+    failed.fail(new Error("Invalid judgment"), false);
+    store.billing
+      .observe("member", "judge-attempt", { model: "judge-b", effort: "high" })(
+        "judge",
+      )
+      .complete(
+        { phase: "judge", finishReason: "stop" },
+        { costUsd: 0.3, inputTokens: 300, outputTokens: 400 },
+      );
+    const pending = store.billing.observe("source", "judge-retry", {
+      model: "judge-a",
+      effort: "high",
+    })("judge");
+    cells[0].estimatedUsage = { costUsd: 0.8 };
+    assert.deepEqual(store.billing.cell("source")?.usage, {
+      costUsd: 0.1,
+      inputTokens: 10,
+      outputTokens: 20,
+    });
+    assert.deepEqual(store.billing.cell("source", "generation")?.usage, {
+      costUsd: 0.1,
+      inputTokens: 10,
+      outputTokens: 20,
+    });
+    assert.equal(store.billing.cell("member"), undefined);
+    assert.equal(store.billing.cell("member", "judge-attempt"), undefined);
+    assert.equal(store.billing.gridSpent("grid", cells), 0.1);
+    assert.equal(
+      store.billing.gridSpent("grid", store.get("grid")!.cells),
+      0.1,
+    );
+    const billing = store.billing.page("owner", 0);
+    assert.ok(Math.abs(billing.costUsd - 0.6) < 1e-9);
+    assert.equal(billing.running, 1);
+    assert.deepEqual(
+      billing.calls
+        .filter((call) => call.phase === "judge")
+        .map((call) => [call.model, call.effort]),
+      [
+        ["judge-a", "high"],
+        ["judge-b", "high"],
+        ["judge-a", "high"],
+      ],
+    );
+    pending.fail(new Error("Cancelled"), true);
   } finally {
     store.db.close();
     rmSync(directory, { recursive: true, force: true });

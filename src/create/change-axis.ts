@@ -16,6 +16,34 @@ export function changeAxis(
     [side]: axis,
     referenceGroups: { ...input.referenceGroups, ...groups },
   };
+  if (input[side].kind !== axis.kind) {
+    const previous = input[side];
+    if (previous.kind === "model") next.model = previous.values[0] ?? "";
+    if (previous.kind === "effort")
+      next.effort = (previous.values[0] ?? "default") as GridInput["effort"];
+    const other = side === "rows" ? "columns" : "rows";
+    if (input[other].kind !== axis.kind) {
+      if (axis.kind === "model")
+        next[side] = { ...axis, values: next.model ? [next.model] : [] };
+      if (axis.kind === "effort")
+        next[side] = { ...axis, values: [next.effort] };
+    }
+  }
+  if (input.judge && input[side].kind !== axis.kind) {
+    const judge = { ...input.judge };
+    const previous = input[side];
+    if (previous.kind === "judge_model") judge.model = previous.values[0] ?? "";
+    if (previous.kind === "judge_effort")
+      judge.effort = (previous.values[0] ?? "default") as typeof judge.effort;
+    const other = side === "rows" ? "columns" : "rows";
+    if (input[other].kind !== axis.kind) {
+      if (axis.kind === "judge_model")
+        next[side] = { ...axis, values: judge.model ? [judge.model] : [] };
+      if (axis.kind === "judge_effort")
+        next[side] = { ...axis, values: [judge.effort] };
+    }
+    next.judge = judge;
+  }
   if (input.format !== "image" || input[side].kind === axis.kind) return next;
   const settings = { ...input.imageSettings };
   delete settings[input[side].kind as ScalarImageKind];

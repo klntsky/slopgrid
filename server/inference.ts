@@ -20,9 +20,38 @@ export type InferenceContext = {
   observe?: CallObserver;
   beforeRequest?: () => Promise<void>;
 };
-function reportedCost(usage: unknown): number | undefined {
+export function reportedCost(usage: unknown): number | undefined {
   const result = costUsage.safeParse(usage);
   return result.success ? result.data.cost : undefined;
+}
+export async function optional<T>(
+  value: PromiseLike<T>,
+): Promise<T | undefined> {
+  try {
+    return await value;
+  } catch {
+    return undefined;
+  }
+}
+export function observedFetch(
+  phase: Completion["phase"],
+  context: InferenceContext,
+  onCall: (call: CallRecorder | undefined) => void,
+  onResponse?: (response: Response) => Promise<void>,
+): typeof upstreamFetch {
+  return async (input, init) => {
+    const call = context.observe?.(phase);
+    onCall(call);
+    await context.beforeRequest?.();
+    context.signal?.throwIfAborted();
+    const response = await upstreamFetch(input, init);
+    call?.update({
+      httpStatus: response.status,
+      generationId: response.headers.get("x-generation-id") ?? undefined,
+    });
+    await onResponse?.(response);
+    return response;
+  };
 }
 const thinkingMessage = z.object({
   reasoning: z.string().nullish(),
@@ -77,7 +106,7 @@ export async function generateInference(
   usage?: Cell["usage"];
 }> {
   const { format } = prepared;
-  const { signal, observe, beforeRequest } = context;
+  const { signal } = context;
   if (
     prepared.format !== "image" &&
     prepared.text.messages?.some((m) => m.role === "unfilled")
@@ -87,32 +116,29 @@ export async function generateInference(
   let call: CallRecorder | undefined;
   let imageFinishReason: string | undefined;
   let imageCost: number | undefined;
-  const inferenceFetch: typeof upstreamFetch = async (input, init) => {
-    call = observe?.(phase);
-    // A sequence may reach this boundary while earlier billing writes are queued.
-    // Persist the new call record before sending another chargeable request.
-    await beforeRequest?.();
-    signal?.throwIfAborted();
-    const response = await upstreamFetch(input, init);
-    call?.update({
-      httpStatus: response.status,
-      generationId: response.headers.get("x-generation-id") ?? undefined,
-    });
-    if (format === "image" && response.ok) {
-      const body = await response
-        .clone()
-        .json()
-        .catch(() => undefined);
-      if (typeof body?.id === "string") call?.update({ generationId: body.id });
-      // The image adapter currently omits response usage.cost from its result.
-      imageCost = reportedCost(body?.usage);
-      const thinking = thinkingText(body);
-      if (thinking) onChunk({ text: "", thinking });
-      imageFinishReason =
-        body?.choices?.[0]?.finish_reason ?? body?.finish_reason;
-    }
-    return response;
-  };
+  const inferenceFetch = observedFetch(
+    phase,
+    context,
+    (current) => {
+      call = current;
+    },
+    async (response) => {
+      if (format === "image" && response.ok) {
+        const body = await response
+          .clone()
+          .json()
+          .catch(() => undefined);
+        if (typeof body?.id === "string")
+          call?.update({ generationId: body.id });
+        // The image adapter currently omits response usage.cost from its result.
+        imageCost = reportedCost(body?.usage);
+        const thinking = thinkingText(body);
+        if (thinking) onChunk({ text: "", thinking });
+        imageFinishReason =
+          body?.choices?.[0]?.finish_reason ?? body?.finish_reason;
+      }
+    },
+  );
   try {
     let usage: Cell["usage"];
     function recordCompletion(completion: Completion, current: Cell["usage"]) {
@@ -122,13 +148,6 @@ export async function generateInference(
     function requireSuccess(finishReason: string | undefined) {
       const error = completionFailure(finishReason);
       if (error) throw new Error(error);
-    }
-    async function optional<T>(value: PromiseLike<T>): Promise<T | undefined> {
-      try {
-        return await value;
-      } catch {
-        return undefined;
-      }
     }
     const provider = createOpenRouter({
       apiKey: key,
