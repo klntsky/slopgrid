@@ -91,150 +91,6 @@ export function Create() {
       {formatSelected && (
         <section>
           <div className="section-heading">
-            <h2>Judged output</h2>
-          </div>
-          {input.format === "html" ? (
-            <p className="hint">Websites do not support a judge yet.</p>
-          ) : !input.judge ? (
-            <button
-              type="button"
-              className="secondary add-judge"
-              style={{ width: "100%", minHeight: "8rem" }}
-              onClick={() =>
-                update({
-                  judge: {
-                    criteria: [{ text: "", correctAnswer: true }],
-                    model: "",
-                    effort: "default",
-                  },
-                })
-              }
-            >
-              [ add a judge ]
-            </button>
-          ) : (
-            <>
-              {input.judge.criteria.map((criterion, index) => (
-                <fieldset key={index}>
-                  <legend>Criterion {index + 1}</legend>
-                  <textarea
-                    aria-label={`Criterion ${index + 1}`}
-                    rows={2}
-                    value={criterion.text}
-                    onChange={(event) =>
-                      update((current) => ({
-                        judge: {
-                          ...current.judge!,
-                          criteria: current.judge!.criteria.map(
-                            (item, position) =>
-                              position === index
-                                ? { ...item, text: event.target.value }
-                                : item,
-                          ),
-                        },
-                      }))
-                    }
-                  />
-                  <label>
-                    Correct answer
-                    <select
-                      aria-label="Correct answer"
-                      value={String(criterion.correctAnswer)}
-                      onChange={(event) =>
-                        update((current) => ({
-                          judge: {
-                            ...current.judge!,
-                            criteria: current.judge!.criteria.map(
-                              (item, position) =>
-                                position === index
-                                  ? {
-                                      ...item,
-                                      correctAnswer:
-                                        event.target.value === "true",
-                                    }
-                                  : item,
-                            ),
-                          },
-                        }))
-                      }
-                    >
-                      <option value="true">Yes</option>
-                      <option value="false">No</option>
-                    </select>
-                  </label>
-                  <button
-                    type="button"
-                    className="text-button"
-                    aria-label={`Remove criterion ${index + 1}`}
-                    onClick={() =>
-                      update((current) => ({
-                        judge: {
-                          ...current.judge!,
-                          criteria:
-                            current.judge!.criteria.length === 1
-                              ? [{ text: "", correctAnswer: true }]
-                              : current.judge!.criteria.filter(
-                                  (_, position) => position !== index,
-                                ),
-                        },
-                      }))
-                    }
-                  >
-                    Remove criterion {index + 1}
-                  </button>
-                </fieldset>
-              ))}
-              <button
-                type="button"
-                className="secondary"
-                onClick={() =>
-                  update((current) => ({
-                    judge: {
-                      ...current.judge!,
-                      criteria: [
-                        ...current.judge!.criteria,
-                        { text: "", correctAnswer: true },
-                      ],
-                    },
-                  }))
-                }
-              >
-                Add criterion
-              </button>
-              <button
-                type="button"
-                className="text-button"
-                onClick={() =>
-                  update((current) => ({
-                    judge: undefined,
-                    rows: current.rows.kind.startsWith("judge_")
-                      ? isMarkdownFormat(current.format)
-                        ? { kind: "effort", values: ["default"] }
-                        : { kind: "model", values: [] }
-                      : current.rows,
-                    columns: current.columns.kind.startsWith("judge_")
-                      ? current.format === "image"
-                        ? { kind: "quality", values: ["auto"] }
-                        : isMarkdownFormat(current.format)
-                          ? { kind: "model", values: [] }
-                          : { kind: "effort", values: ["default"] }
-                      : current.columns,
-                  }))
-                }
-              >
-                Remove judge
-              </button>
-              <p className="hint">
-                Judge budget: no limit. Judge calls are not limited by the
-                generation budget.
-              </p>
-            </>
-          )}
-        </section>
-      )}
-      {formatSelected && (
-        <section>
-          <div className="section-heading">
             <span className="number">02</span>
             <h2>
               Specify grid layout · what should be the rows and the columns of
@@ -444,6 +300,150 @@ export function Create() {
               {variable} will be replaced with the values you specify above.
             </p>
           ))}
+        </section>
+      )}
+      {formatSelected && (
+        <section>
+          <div className="section-heading">
+            <h2>Judged output</h2>
+          </div>
+          {input.format === "html" ? (
+            <p className="hint">Websites do not support a judge yet.</p>
+          ) : !input.judge ? (
+            <button
+              type="button"
+              className="secondary add-judge"
+              style={{ width: "100%", minHeight: "8rem" }}
+              onClick={() =>
+                update({
+                  judge: {
+                    criteria: [{ text: "", correctAnswer: true }],
+                    model: "",
+                    effort: "default",
+                  },
+                })
+              }
+            >
+              [ add a judge ]
+            </button>
+          ) : (
+            <>
+              {input.judge.criteria.map((criterion, index) => (
+                <fieldset key={index}>
+                  <legend>Criterion {index + 1}</legend>
+                  <textarea
+                    aria-label={`Criterion ${index + 1}`}
+                    rows={2}
+                    value={criterion.text}
+                    onChange={(event) =>
+                      update((current) => ({
+                        judge: {
+                          ...current.judge!,
+                          criteria: current.judge!.criteria.map(
+                            (item, position) =>
+                              position === index
+                                ? { ...item, text: event.target.value }
+                                : item,
+                          ),
+                        },
+                      }))
+                    }
+                  />
+                  <label>
+                    Correct answer
+                    <select
+                      aria-label="Correct answer"
+                      value={String(criterion.correctAnswer)}
+                      onChange={(event) =>
+                        update((current) => ({
+                          judge: {
+                            ...current.judge!,
+                            criteria: current.judge!.criteria.map(
+                              (item, position) =>
+                                position === index
+                                  ? {
+                                      ...item,
+                                      correctAnswer:
+                                        event.target.value === "true",
+                                    }
+                                  : item,
+                            ),
+                          },
+                        }))
+                      }
+                    >
+                      <option value="true">Yes</option>
+                      <option value="false">No</option>
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    className="text-button"
+                    aria-label={`Remove criterion ${index + 1}`}
+                    onClick={() =>
+                      update((current) => ({
+                        judge: {
+                          ...current.judge!,
+                          criteria:
+                            current.judge!.criteria.length === 1
+                              ? [{ text: "", correctAnswer: true }]
+                              : current.judge!.criteria.filter(
+                                  (_, position) => position !== index,
+                                ),
+                        },
+                      }))
+                    }
+                  >
+                    Remove criterion {index + 1}
+                  </button>
+                </fieldset>
+              ))}
+              <button
+                type="button"
+                className="secondary"
+                onClick={() =>
+                  update((current) => ({
+                    judge: {
+                      ...current.judge!,
+                      criteria: [
+                        ...current.judge!.criteria,
+                        { text: "", correctAnswer: true },
+                      ],
+                    },
+                  }))
+                }
+              >
+                Add criterion
+              </button>
+              <button
+                type="button"
+                className="text-button"
+                onClick={() =>
+                  update((current) => ({
+                    judge: undefined,
+                    rows: current.rows.kind.startsWith("judge_")
+                      ? isMarkdownFormat(current.format)
+                        ? { kind: "effort", values: ["default"] }
+                        : { kind: "model", values: [] }
+                      : current.rows,
+                    columns: current.columns.kind.startsWith("judge_")
+                      ? current.format === "image"
+                        ? { kind: "quality", values: ["auto"] }
+                        : isMarkdownFormat(current.format)
+                          ? { kind: "model", values: [] }
+                          : { kind: "effort", values: ["default"] }
+                      : current.columns,
+                  }))
+                }
+              >
+                Remove judge
+              </button>
+              <p className="hint">
+                Judge budget: no limit. Judge calls are not limited by the
+                generation budget.
+              </p>
+            </>
+          )}
         </section>
       )}
       {formatSelected && (
