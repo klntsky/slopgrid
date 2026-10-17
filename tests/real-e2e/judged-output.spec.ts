@@ -3,7 +3,8 @@ import type { Cell, GridInput } from "../../server/domain";
 import type { Model } from "../../server/provider";
 import type { BillingPage } from "../../server/billing";
 
-const judges = ["openai/gpt-4.1-mini", "openai/gpt-4.1-nano"];
+const judges = ["openai/gpt-5-mini", "openai/gpt-5-nano"];
+const textGenerator = "openai/gpt-4.1-mini";
 const imageGenerator = "google/gemini-2.5-flash-image";
 const criteria = [
   {
@@ -67,6 +68,7 @@ async function connect(page: Page, format: GridInput["format"]) {
     const model = models.find((entry) => entry.id === id);
     expect(model, `Required judge model is unavailable: ${id}`).toBeTruthy();
     expect(model!.text, `${id} must support text output.`).toBe(true);
+    expect(model!.reasoning, `${id} must support thinking effort.`).toBe(true);
     expect(
       model!.structuredOutputs,
       `${id} must support strict structured outputs.`,
@@ -201,8 +203,12 @@ async function billing(page: Page, grid: Snapshot, generationCount: number) {
       "Actual paid provider charges must be recorded.",
     ).toBeGreaterThan(0);
   }
-  expect(new Set(judgments.map((call) => call.model))).toEqual(
-    new Set(grid.cells.map((cell) => cell.judge!.model)),
+  expect(
+    new Set(judgments.map((call) => `${call.model}/${call.effort}`)),
+  ).toEqual(
+    new Set(
+      grid.cells.map((cell) => `${cell.judge!.model}/${cell.judge!.effort}`),
+    ),
   );
   const generationCost = generation.reduce(
     (sum, call) => sum + call.usage!.costUsd!,
@@ -231,15 +237,8 @@ async function billing(page: Page, grid: Snapshot, generationCount: number) {
   ).toHaveCount(bill.calls.filter((call) => call.phase === "judge").length);
 }
 
-for (const scenario of [
-  "markdown",
-  "markdown-default",
-  "chat-template",
-  "image",
-  "svg",
-] as const) {
-  const format = scenario === "markdown-default" ? "markdown" : scenario;
-  test(`real ${scenario} judgments use committed artifacts and isolated billing`, async ({
+for (const format of ["markdown", "chat-template", "image", "svg"] as const) {
+  test(`real ${format} judgments use committed artifacts and isolated billing`, async ({
     page,
   }) => {
     test.setTimeout(600_000);
@@ -253,7 +252,7 @@ for (const scenario of [
     const input: GridInput = {
       format,
       prompt,
-      model: format === "image" ? imageGenerator : judges[0],
+      model: format === "image" ? imageGenerator : textGenerator,
       effort: "default",
       budgetUsd: 0.03,
       ...(format === "chat-template"
@@ -266,7 +265,7 @@ for (const scenario of [
         : {}),
       rows:
         format === "svg" || format === "chat-template"
-          ? { kind: "model", values: [judges[0]] }
+          ? { kind: "model", values: [textGenerator] }
           : {
               kind: "judge_model",
               values: format === "markdown" ? judges : [judges[0]],
@@ -276,16 +275,18 @@ for (const scenario of [
           ? { kind: "effort", values: ["default"] }
           : {
               kind: "judge_effort",
-              values:
-                scenario === "markdown" ? ["default", "none"] : ["default"],
+              values: format === "markdown" ? ["low", "high"] : ["low"],
             },
       judge: {
         criteria,
         model: format === "svg" || format === "chat-template" ? judges[0] : "",
-        effort: "default",
+        effort: "low",
       },
     };
     const grid = await create(page, input, headers);
+    expect(new Set(grid.cells.map((cell) => cell.judge!.effort))).toEqual(
+      new Set(format === "markdown" ? ["low", "high"] : ["low"]),
+    );
     await inspect(page, grid);
     await billing(page, grid, 1);
     if (format === "markdown") {

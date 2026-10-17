@@ -450,14 +450,14 @@ and [judgment results](PRODUCT.md#56-judgment-results).
   access, page closure, and generation-only totals. The PWA browser suite covers
   ready-output caching independently of judgment completion.
 - `tests/real-e2e/judged-output.spec.ts` uses the existing private
-  `OPENROUTER_API_KEY`, the specified GPT-4.1 mini/nano judges, and Gemini 2.5 Flash
+  `OPENROUTER_API_KEY`, GPT-5 mini/nano judges, and Gemini 2.5 Flash
   Image generation. Missing credentials, model availability, and insufficient
   balance fail verification instead of switching models or skipping tests.
-  The two-effort case requires routes accepting both default effort and `none`;
-  an unavailable model/parameter combination remains a reported failure. Separate
-  default-effort cases exercise each format and fresh judging after reuse. Score
-  assertions follow actual verdicts rather than requiring a model to satisfy the
-  generation prompt or agree with an expected answer.
+  The Markdown comparison exercises low and high effort on both judges and fresh
+  judging after reuse; the other formats exercise low judge effort. Unavailable
+  model/parameter combinations remain reported failures. Score assertions follow
+  actual verdicts rather than requiring a model to satisfy the generation prompt
+  or agree with an expected answer.
 
 Run the focused suites through the slopgrid-ops staging command. For manual
 visual inspection, start an isolated `startTestServer("mock")` on staging in
