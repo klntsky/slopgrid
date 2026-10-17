@@ -48,7 +48,7 @@ export async function kill(child: ChildProcess) {
 }
 
 /** Real service processes with a controllable external HTTP provider. */
-export async function runtimeFixture(options: { workers?: number } = {}) {
+export async function runtimeFixture(options: { workers?: number; judges?: boolean } = {}) {
   const directory = mkdtempSync(join(tmpdir(), "slopgrid-runtime-"));
   const database = join(directory, "app.sqlite"),
     secret = Buffer.alloc(32, 9);
@@ -82,7 +82,7 @@ export async function runtimeFixture(options: { workers?: number } = {}) {
         },
         supported_parameters: ["reasoning", "structured_outputs"],
       },
-      {
+      ...(options.judges ? [{
         id: "fixture/judge-other",
         name: "Other judge",
         pricing: { prompt: "0.000001", completion: "0.000001" },
@@ -90,7 +90,7 @@ export async function runtimeFixture(options: { workers?: number } = {}) {
         top_provider: { max_completion_tokens: 1000 },
         architecture: { input_modalities: ["text", "image"], output_modalities: ["text"] },
         supported_parameters: ["reasoning", "structured_outputs"],
-      },
+      }] : []),
     ],
   };
   const credits = { total_credits: 100, total_usage: 0 };

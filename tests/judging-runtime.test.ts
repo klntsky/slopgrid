@@ -22,7 +22,7 @@ async function create(fixture: RuntimeFixture, body: unknown = input) {
 }
 
 test("two judge models by two efforts generate once, judge four times, and isolate all judge charges", async () => {
-  const fixture = await runtimeFixture({ workers: 4 });
+  const fixture = await runtimeFixture({ workers: 4, judges: true });
   try {
     const id = await create(fixture);
     const generation = await fixture.nextCall();
@@ -59,7 +59,7 @@ test("two judge models by two efforts generate once, judge four times, and isola
 });
 
 test("pause and engine restart preserve generation and settled judgments; reused grids judge afresh", async () => {
-  const fixture = await runtimeFixture();
+  const fixture = await runtimeFixture({ judges: true });
   try {
     const body = { ...input, rows: { kind: "judge_model", values: ["fixture/text", "fixture/judge-other"] }, columns: { kind: "judge_effort", values: ["none"] }, parallelWorkers: 1 };
     const id = await create(fixture, body);
@@ -91,7 +91,7 @@ test("pause and engine restart preserve generation and settled judgments; reused
 });
 
 test("invalid judgment keeps the committed generation and retry never regenerates", async () => {
-  const fixture = await runtimeFixture();
+  const fixture = await runtimeFixture({ judges: true });
   try {
     const id = await create(fixture, { ...input, rows: { kind: "judge_model", values: ["fixture/text"] }, columns: { kind: "judge_effort", values: ["none"] }, parallelWorkers: 1 });
     finish(await fixture.nextCall(), "# Kept artifact", 0.1);
