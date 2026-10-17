@@ -51,7 +51,9 @@ test("judge criteria preserve boolean answers and judge axes restore fixed setti
   await fixedJudge
     .getByRole("searchbox", { name: "Search judge models", exact: true })
     .fill("fixture/other");
-  await fixedJudge.locator('input[value="fixture/other"]').check();
+  await fixedJudge
+    .locator('input[type="radio"][value="fixture/other"]')
+    .check();
   await page
     .getByLabel("Judge thinking effort", { exact: true })
     .selectOption("high");
@@ -81,9 +83,11 @@ test("judge criteria preserve boolean answers and judge axes restore fixed setti
     .getByRole("searchbox", { name: "Search judge models", exact: true })
     .fill("fixture");
   await expect(
-    columnValues.locator('input[value="fixture/other"]'),
+    columnValues.locator('input[type="checkbox"][value="fixture/other"]'),
   ).toBeChecked();
-  await columnValues.locator('input[value="fixture/text"]').check();
+  await columnValues
+    .locator('input[type="checkbox"][value="fixture/text"]')
+    .check();
   await rowValues.getByRole("checkbox", { name: "None", exact: true }).check();
   await expect(
     page.getByRole("radiogroup", { name: "Judge model", exact: true }),
@@ -108,8 +112,12 @@ test("judge criteria preserve boolean answers and judge axes restore fixed setti
   await rowValues
     .getByRole("searchbox", { name: "Search judge models", exact: true })
     .fill("fixture");
-  await expect(rowValues.locator('input[value="fixture/other"]')).toBeChecked();
-  await expect(rowValues.locator('input[value="fixture/text"]')).toBeChecked();
+  await expect(
+    rowValues.locator('input[type="checkbox"][value="fixture/other"]'),
+  ).toBeChecked();
+  await expect(
+    rowValues.locator('input[type="checkbox"][value="fixture/text"]'),
+  ).toBeChecked();
   await expect(
     columnValues.getByRole("checkbox", { name: "None", exact: true }),
   ).toBeChecked();
@@ -123,7 +131,7 @@ test("judge criteria preserve boolean answers and judge axes restore fixed setti
     .getByRole("searchbox", { name: "Search judge models", exact: true })
     .fill("fixture");
   await expect(
-    fixedJudge.locator('input[value="fixture/other"]'),
+    fixedJudge.locator('input[type="radio"][value="fixture/other"]'),
   ).toBeChecked();
   await page
     .getByRole("combobox", { name: "Columns", exact: true })
@@ -184,7 +192,9 @@ test("removing a judge preserves ordinary axes and generation settings", async (
     "hat",
   );
   const models = page.getByRole("radiogroup", { name: "Model", exact: true });
-  await expect(models.locator('input[value="fixture/text"]')).toBeChecked();
+  await expect(
+    models.locator('input[type="radio"][value="fixture/text"]'),
+  ).toBeChecked();
   await expect(
     page
       .getByRole("group", { name: "Row values", exact: true })
@@ -232,7 +242,7 @@ test("format changes retain criteria and judge effort, clear incompatible models
   await judge
     .getByRole("searchbox", { name: "Search judge models", exact: true })
     .fill("fixture/other");
-  await judge.locator('input[value="fixture/other"]').check();
+  await judge.locator('input[type="radio"][value="fixture/other"]').check();
   await page
     .getByLabel("Judge thinking effort", { exact: true })
     .selectOption("high");
@@ -250,13 +260,17 @@ test("format changes retain criteria and judge effort, clear incompatible models
     .getByRole("button", { name: "Clear judge model filter", exact: true })
     .click();
   await expect(judge.getByRole("radio", { checked: true })).toHaveCount(0);
-  await expect(judge.locator('input[value="fixture/other"]')).toHaveCount(0);
-  await judge.locator('input[value="fixture/text"]').check();
+  await expect(
+    judge.locator('input[type="radio"][value="fixture/other"]'),
+  ).toHaveCount(0);
+  await judge.locator('input[type="radio"][value="fixture/text"]').check();
   await page.getByRole("button", { name: "Image", exact: true }).click();
   await judge
     .getByRole("searchbox", { name: "Search judge models", exact: true })
     .fill("fixture/text");
-  await expect(judge.locator('input[value="fixture/text"]')).toBeChecked();
+  await expect(
+    judge.locator('input[type="radio"][value="fixture/text"]'),
+  ).toBeChecked();
   await expect(page.getByLabel("Criterion 1", { exact: true })).toHaveValue(
     "Is there a blue circle?",
   );
@@ -614,8 +628,12 @@ test("judge answers and axes survive draft reload, OAuth, Edit, and Fork", async
   await rowModels
     .getByRole("searchbox", { name: "Search judge models", exact: true })
     .fill("fixture");
-  await rowModels.locator('input[value="fixture/text"]').check();
-  await rowModels.locator('input[value="fixture/other"]').check();
+  await rowModels
+    .locator('input[type="checkbox"][value="fixture/text"]')
+    .check();
+  await rowModels
+    .locator('input[type="checkbox"][value="fixture/other"]')
+    .check();
   await page
     .getByRole("combobox", { name: "Columns", exact: true })
     .selectOption("judge_effort");
@@ -662,10 +680,10 @@ test("judge answers and axes survive draft reload, OAuth, Edit, and Fork", async
       .fill("fixture");
     await expect(rowModels.locator("input:checked")).toHaveCount(2);
     await expect(
-      rowModels.locator('input[value="fixture/text"]'),
+      rowModels.locator('input[type="checkbox"][value="fixture/text"]'),
     ).toBeChecked();
     await expect(
-      rowModels.locator('input[value="fixture/other"]'),
+      rowModels.locator('input[type="checkbox"][value="fixture/other"]'),
     ).toBeChecked();
     await expect(
       columnEfforts.getByRole("checkbox", { checked: true }),

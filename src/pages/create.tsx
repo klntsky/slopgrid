@@ -342,6 +342,7 @@ export function Create() {
                 <label>
                   Thinking effort
                   <select
+                    aria-label="Thinking effort"
                     value={input.effort}
                     onChange={(e) =>
                       update({
@@ -385,6 +386,7 @@ export function Create() {
                 <label>
                   Judge thinking effort
                   <select
+                    aria-label="Judge thinking effort"
                     value={input.judge.effort}
                     onChange={(event) =>
                       update({
