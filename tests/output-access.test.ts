@@ -372,7 +372,12 @@ test("committed judged outputs stay readable and downloadable without weakening 
       assert.equal(view.cells[0].generationStatus, "complete");
       assert.deepEqual(view.cells[0].judge, cell.judge);
       assert.equal(view.input.judge.criteria[0].correctAnswer, false);
-      store.publish(grid.id, "unlisted", null);
+      const publicationError = store.publish(grid.id, "unlisted", null);
+      if (status !== "complete") {
+        assert.equal(typeof publicationError, "string");
+        continue;
+      }
+      assert.equal(publicationError, undefined);
       const publishedView = await (
         await fetch(`${origin}/api/grids/${grid.id}`)
       ).json();

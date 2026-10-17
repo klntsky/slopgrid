@@ -90,7 +90,7 @@ test("shared generation stays usable while judging; the scales popup scores expe
   await popup.getByRole("button", { name: "Close judgment", exact: true }).click();
   await expect(completed.first()).toBeFocused();
   await completed.first().click();
-  await page.getByRole("heading", { level: 1 }).click();
+  await page.getByRole("heading", { level: 1, name: judgedInput.prompt, exact: true }).click();
   await expect(popup).not.toBeVisible();
   await page.locator(".cell").first().getByRole("button", { name: "Expand Markdown", exact: true }).click();
   const expanded = page.getByRole("region", { name: /^Expanded output:/ });
