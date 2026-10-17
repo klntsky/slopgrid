@@ -12,6 +12,7 @@ import {
   type Compatibility,
 } from "../../server/compatibility";
 import type { ModelInfo } from "../../server/model-catalog";
+import { modelCatalog } from "../model-catalog";
 
 type Props = { input: GridInput; models: readonly ModelInfo[] };
 export type CompatibilityTables = Partial<
@@ -23,6 +24,26 @@ export function compatibilityTables({
   models,
 }: Props): CompatibilityTables {
   const axes = [input.rows, input.columns];
+  const judgeModels = (
+    axes.find((axis) => axis.kind === "judge_model")?.values ??
+    [input.judge?.model ?? ""]
+  ).filter(Boolean).map((id) => ({
+    id, info: modelCatalog.find((model) => model.id === id),
+  }));
+  const judgeEfforts = (
+    axes.find((axis) => axis.kind === "judge_effort")?.values ??
+    [input.judge?.effort ?? "default"]
+  ).filter((effort) => effort !== "default");
+  const judgeCompatibility = input.judge ? {
+    judge_effort: <CompatibilityGrid
+      caption="Judge thinking effort compatibility"
+      rows={judgeModels.map(({ id, info }) => info?.name ?? id)}
+      columns={judgeEfforts.map(effortLabel)}
+      cells={judgeModels.map(({ info }) => judgeEfforts.map((effort) => ({
+        support: thinkingEffortSupport(info, effort),
+      })))}
+    />,
+  } : {};
   const selectedModels = [
     ...new Set(
       axes.find((axis) => axis.kind === "model")?.values ??
@@ -35,6 +56,7 @@ export function compatibilityTables({
       axes.find((axis) => axis.kind === "effort")?.values ?? [input.effort]
     ).filter((effort) => effort !== "default");
     return {
+      ...judgeCompatibility,
       effort: (
         <CompatibilityGrid
           caption="Thinking effort compatibility"
@@ -69,7 +91,7 @@ export function compatibilityTables({
       cell.imageSettings ?? {},
     ),
   }));
-  return Object.fromEntries(
+  return { ...judgeCompatibility, ...Object.fromEntries(
     imageKinds.map((kind) => {
       const side =
         input.rows.kind === kind
@@ -124,7 +146,7 @@ export function compatibilityTables({
         />,
       ];
     }),
-  );
+  ) };
 }
 
 function CompatibilityGrid({

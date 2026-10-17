@@ -42,6 +42,7 @@ export function ModelSelector({
   onChange,
   label = "Model",
   multiple = false,
+  judge = false,
 }: {
   models: ModelInfo[];
   format: GridInput["format"];
@@ -49,6 +50,7 @@ export function ModelSelector({
   onChange: (values: string[]) => void;
   label?: "Rows" | "Columns" | "Model";
   multiple?: boolean;
+  judge?: boolean;
 }) {
   const name = useId();
   const [filter, setFilter] = useState(
@@ -64,7 +66,7 @@ export function ModelSelector({
     next.splice(index, 0, id);
     onChange(next);
   }
-  const clearLabel = multiple
+  const clearLabel = judge ? "Clear judge model filter" : multiple
     ? `Clear ${label === "Rows" ? "row" : "column"} model filter`
     : "Clear model filter";
   const selectedLabel = `Selected ${label === "Rows" ? "row" : "column"} models`;
@@ -78,8 +80,8 @@ export function ModelSelector({
         <input
           ref={filterInput}
           type="search"
-          aria-label="Search models"
-          placeholder="Search models"
+          aria-label={judge ? "Search judge models" : "Search models"}
+          placeholder={judge ? "Search judge models" : "Search models"}
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
         />
@@ -154,7 +156,7 @@ export function ModelSelector({
               }}
             />
             <span>{c.name}</span>
-            {format === "image" ? (
+            {format === "image" && !judge ? (
               <ImageModelPrice endpoints={c.imageEndpoints} />
             ) : (
               <TextModelPrice pricing={c.pricing} />
