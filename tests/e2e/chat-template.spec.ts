@@ -80,6 +80,13 @@ test("chat template editing, persistence, sequential output and exports", async 
   await page.getByRole("link", { name: "Connect OpenRouter" }).click();
   await page.getByRole("button", { name: "Generate", exact: true }).click();
   const preview = page.locator(".markdown-preview");
+  await expect
+    .poll(
+      async () =>
+        (await (await request.get("/fixture/workers")).json()).held.length,
+    )
+    .toBe(1);
+  await request.post("/fixture/release", { data: { prompt: "Question one" } });
   await expect(preview.locator(".chat-bubble")).toHaveCount(2);
   await expect(preview.locator('[data-role="assistant"] h1')).toHaveText(
     "Answer",
@@ -176,7 +183,7 @@ test("chat template editing, persistence, sequential output and exports", async 
     darkTint,
   );
   await standalone.screenshot({
-    path: test.info().outputPath("conversation.png"),
+    path: "test-results/chat-conversation.png",
     fullPage: true,
   });
   await standalone.close();
