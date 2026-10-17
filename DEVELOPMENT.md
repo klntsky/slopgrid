@@ -312,7 +312,12 @@ Template architecture regression coverage uses real engine processes to exercise
 storage locks between blanks, cancellation while waiting for durable billing,
 crashes between billing and cell settlement, graceful drain, and retries with
 fresh history. Reuse coverage changes pricing only for a later accumulated
-prefix to detect assumptions based on the first request alone.
+prefix to detect assumptions based on the first request alone. Shared-attempt
+changes also run the existing single-call scheduling, storage, recovery, and
+provider tests. Confirm that storage recovery continues the current sequence
+without replay, while a retry or engine restart starts a new attempt whose usage
+excludes earlier charges. Verify that template reuse metadata retains input-size
+estimates without duplicating generated message bodies.
 
 Recovery coverage exercises a failed later reference upload followed by reload
 and retry, large reference retention through reload and authorization, clipboard

@@ -12,6 +12,7 @@ const dependencies = JSON.parse(
 ).dependencies;
 // Bump the local revision when adapter semantics change without an SDK update.
 const adapterVersion = `1/ai:${dependencies.ai}/openrouter:${dependencies["@openrouter/ai-sdk-provider"]}`;
+export type SingleOutputFormat = Exclude<GridInput["format"], "chat-template">;
 function common(cell: Cell) {
   return {
     adapterVersion,
@@ -36,7 +37,7 @@ export function prepareImageInference(
   };
 }
 export function prepareTextInference(
-  format: Exclude<GridInput["format"], "image">,
+  format: Exclude<SingleOutputFormat, "image">,
   cell: Cell,
   budget: TextBudget,
   structured: boolean,
@@ -44,7 +45,6 @@ export function prepareTextInference(
   return {
     ...common(cell),
     format,
-    ...(format === "chat-template" && { templateVersion: 1 }),
     pricing: budget.pricing,
     text: {
       messages: cell.messages,
@@ -81,11 +81,6 @@ function canonical(value: unknown): unknown {
   return value;
 }
 export function inferenceSignature(prepared: PreparedInference): string {
-  function digest(request: unknown) {
-    return createHash("sha256")
-      .update(JSON.stringify(canonical(request)))
-      .digest("hex");
-  }
   if (prepared.format !== "image") {
     const { pricing: _estimation, ...request } = prepared;
     const { maxOutputTokens: _limit, ...text } = request.text;
@@ -100,5 +95,20 @@ export function inferenceSignature(prepared: PreparedInference): string {
   return digest({
     ...prepared,
     image: { ...prepared.image, input_references: references },
+  });
+}
+function digest(request: unknown) {
+  return createHash("sha256")
+    .update(JSON.stringify(canonical(request)))
+    .digest("hex");
+}
+
+export function templateSignature(cell: Cell): string {
+  return digest({
+    ...common(cell),
+    format: "chat-template",
+    templateVersion: 2,
+    effort: cell.effort,
+    messages: cell.messages,
   });
 }

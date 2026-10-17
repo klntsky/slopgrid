@@ -1,4 +1,5 @@
 import type { Cell } from "./domain.js";
+import { token } from "./ids.js";
 
 export function clearCellProgress(cell: Cell) {
   delete cell.draft;
@@ -25,8 +26,9 @@ export function queueCell(cell: Cell) {
   clearCellProgress(cell);
 }
 
-export function beginCellAttempt(cell: Cell) {
+export function beginCellAttempt(cell: Cell, attemptId = token()) {
   cell.status = "running";
+  cell.attemptId = attemptId;
   // A saved trace remains available while queued, until its replacement starts.
   delete cell.thinkingId;
   delete cell.usage;

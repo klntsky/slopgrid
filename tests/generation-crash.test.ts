@@ -29,7 +29,7 @@ for (const billed of [false, true])
           debug = await crashCheckpoint(
             f.engine.child,
             "jobs.ts",
-            "const billing=this.store.billing.cell(cell.id)",
+            "const billing=this.store.billing.cell(",
           );
           call.finish();
           await debug.paused;

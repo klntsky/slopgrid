@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { once } from "node:events";
 import { Provider } from "../server/provider.js";
+import { generateAttempt } from "../server/generation-attempt.js";
 import { failureDetails } from "../server/failures.js";
 import type { Cell, InferenceProgress } from "../server/domain.js";
 
@@ -187,11 +188,13 @@ test("chat templates fill only blanks sequentially and aggregate the transcript"
       { role: "user", content: "Trailing text" },
     ];
     const updates: InferenceProgress[] = [];
-    const result = await h.provider.generate(
+    const result = await generateAttempt(
+      h.provider,
       "key",
       "chat-template",
       { ...cell("required", "default"), messages },
       (p) => updates.push(p),
+      {},
     );
     assert.equal(h.requests.length, 3);
     assert.deepEqual(h.requests[0].messages, [messages[0]]);

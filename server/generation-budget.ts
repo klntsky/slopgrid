@@ -15,6 +15,18 @@ export function generationBudget(
   now = new Date(),
 ) {
   const inputTokens = new TextEncoder().encode(prompt + system).length + 256;
+  return generationBudgetForInput(model, inputTokens, dollars, now);
+}
+
+export function generationBudgetForInput(
+  model: Pick<
+    Model,
+    "name" | "pricing" | "contextLength" | "maxCompletionTokens"
+  >,
+  inputTokens: number,
+  dollars: number,
+  now = new Date(),
+) {
   if (!model.pricing || !model.contextLength) {
     return {
       maxOutputTokens: undefined,

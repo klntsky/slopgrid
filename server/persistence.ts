@@ -14,6 +14,7 @@ export class Persistence {
   private timer?: ReturnType<typeof setTimeout>;
   private delay = 1000;
   private flushing = false;
+  private waiters = new Set<() => void>();
   constructor(private recovered: () => void = () => {}) {}
   status() {
     return {
@@ -23,6 +24,26 @@ export class Persistence {
   }
   get blocked() {
     return this.pending.length > 0;
+  }
+  async waitForWrites(signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted();
+    if (!this.blocked) return;
+    await new Promise<void>((resolve, reject) => {
+      const cleanup = () => {
+        this.waiters.delete(done);
+        signal?.removeEventListener("abort", abort);
+      };
+      const done = () => {
+        cleanup();
+        resolve();
+      };
+      const abort = () => {
+        cleanup();
+        reject(signal!.reason);
+      };
+      this.waiters.add(done);
+      signal?.addEventListener("abort", abort, { once: true });
+    });
   }
   submit(write: () => void, committed: () => void = () => {}) {
     this.pending.push({ write, committed });
@@ -61,6 +82,7 @@ export class Persistence {
       }
       this.delay = 1000;
       this.recovered();
+      for (const done of this.waiters) done();
     } finally {
       this.flushing = false;
     }

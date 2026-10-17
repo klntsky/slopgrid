@@ -1,7 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { fillChatTemplate, templateFits } from "../server/chat-template.js";
-import { generationBudget } from "../server/generation-budget.js";
+import {
+  generationBudget,
+  generationBudgetForInput,
+} from "../server/generation-budget.js";
 import type { Cell, InferenceProgress } from "../server/domain.js";
 
 const model = {
@@ -12,6 +15,8 @@ const model = {
 };
 const budgetFor = (prompt: string, dollars: number) =>
   generationBudget(model, prompt, "", dollars);
+const reuseBudgetFor = (inputTokens: number, dollars: number) =>
+  generationBudgetForInput(model, inputTokens, dollars);
 const cell: Cell = {
   id: "test",
   row: 0,
@@ -64,14 +69,19 @@ test("template budgets use actual prefixes and remaining allowance, and reuse ch
     costUsd: 4,
   });
   assert.equal(progress.at(-1)!.thinking, "ThoughtThought");
-  assert.equal(templateFits(result.templateSteps, 10, budgetFor), true);
-  assert.equal(templateFits(result.templateSteps, 1, budgetFor), false);
+  assert.equal(templateFits(result.templateSteps, 10, reuseBudgetFor), true);
+  assert.equal(templateFits(result.templateSteps, 1, reuseBudgetFor), false);
   const unknown = result.templateSteps.map((step) => ({
     ...step,
     usage: undefined,
   }));
-  assert.equal(templateFits(unknown, 10, budgetFor), true);
-  assert.equal(templateFits(unknown, 5, budgetFor), false);
+  assert.equal(templateFits(unknown, 10, reuseBudgetFor), true);
+  assert.equal(templateFits(unknown, 5, reuseBudgetFor), false);
+  assert.equal(JSON.stringify(result.templateSteps).includes("Answer"), false);
+  assert.equal(
+    result.templateSteps[1].inputTokens,
+    budgetFor(prompts[1], 8).inputTokens,
+  );
 });
 
 test("later failures preserve the emitted prefix and retries start again", async () => {
@@ -149,16 +159,37 @@ test("missing reported cost uses token estimates and unknown metadata keeps prov
 });
 
 test("template reuse rejects changed pricing on later prefixes even when the first call is unchanged", async () => {
-  const tiered = { ...model, pricing: { ...model.pricing,
-    overrides: [{ min_prompt_tokens: 300, prompt: 0.002 }] } };
-  const result = await fillChatTemplate(cell,
+  const tiered = {
+    ...model,
+    pricing: {
+      ...model.pricing,
+      overrides: [{ min_prompt_tokens: 300, prompt: 0.002 }],
+    },
+  };
+  const result = await fillChatTemplate(
+    cell,
     (prompt, dollars) => generationBudget(tiered, prompt, "", dollars),
-    async () => ({ files: { "index.md": "Long answer ".repeat(30) }, usage: { inputTokens: 100, outputTokens: 10, costUsd: 0.2 } }),
-    () => {});
-  const changed = { ...tiered, pricing: { ...tiered.pricing,
-    overrides: [{ min_prompt_tokens: 300, prompt: 0.003 }] } };
-  assert.deepEqual(generationBudget(tiered, "user: First", "", 5).maxPrice,
-    generationBudget(changed, "user: First", "", 5).maxPrice);
-  assert.equal(templateFits(result.templateSteps, 10,
-    (prompt, dollars) => generationBudget(changed, prompt, "", dollars)), false);
+    async () => ({
+      files: { "index.md": "Long answer ".repeat(30) },
+      usage: { inputTokens: 100, outputTokens: 10, costUsd: 0.2 },
+    }),
+    () => {},
+  );
+  const changed = {
+    ...tiered,
+    pricing: {
+      ...tiered.pricing,
+      overrides: [{ min_prompt_tokens: 300, prompt: 0.003 }],
+    },
+  };
+  assert.deepEqual(
+    generationBudget(tiered, "user: First", "", 5).maxPrice,
+    generationBudget(changed, "user: First", "", 5).maxPrice,
+  );
+  assert.equal(
+    templateFits(result.templateSteps, 10, (inputTokens, dollars) =>
+      generationBudgetForInput(changed, inputTokens, dollars),
+    ),
+    false,
+  );
 });

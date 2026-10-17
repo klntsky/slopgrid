@@ -58,8 +58,9 @@ so opening an up-to-date database does not require that write lock.
   admission use transactions so a grid cannot become public during a retry.
 - Completed artifacts are written before their cell is marked complete. Live
   drafts and estimates remain in engine memory; snapshots combine that state
-  with persisted metadata. Large generated bodies are not copied into SQLite
-  or live snapshots.
+  with persisted metadata. Failed template transcripts are retained with their
+  cells. Completed output bodies stay in files, and reuse metadata stores input
+  size estimates rather than accumulated generated histories.
 - Each engine initialization advances a persisted epoch. Snapshots also carry
   an in-memory sequence, allowing the browser to reject older updates across
   reconnects and engine restarts. Snapshot reads do not write to SQLite.
@@ -71,8 +72,10 @@ so opening an up-to-date database does not require that write lock.
   launching replacement provider calls. Resume is an owner-authorized action.
   Restarting the web process does not perform generation recovery.
 
-The inference ledger records each upstream attempt, including failed, cancelled,
-and retried calls with any reported charge. It excludes prompts, outputs, and
+The inference ledger records each provider call, including failed, cancelled,
+and retried calls with any reported charge. Calls share the durable identifier
+of their cell's generation attempt, so usage can be reconstructed after a crash
+without including earlier attempts. It excludes prompts, outputs, and
 credentials. The web process reads owner-filtered billing data; the engine alone
 records calls. Live cost estimates are derived in memory and give way to reported
 usage when it arrives.
@@ -159,15 +162,24 @@ transcript supplies titles and prompt display. Inference sends structured
 messages without an additional system instruction, and request signatures
 include the history.
 
-The template orchestrator sits between provider preparation and individual
-inference calls. It resolves unfilled messages before they reach the provider,
-maintains the generated history, and aggregates progress and usage. Each call
-has its own billing record, while settled template cells persist aggregate
-attempt usage, including failed calls when usage is reported. Reuse provenance
-records per-call input, token allowance, usage, and cost
-for destination-budget validation. Failed templates retain their partial draft;
-the cell lifecycle clears it when a new attempt starts. Product behavior is
-defined in [PRODUCT.md](PRODUCT.md).
+Generation attempts are the shared execution boundary for every output format.
+Jobs schedules, cancels, and settles an attempt; the attempt layer coordinates
+its provider calls and progress. The provider adapter prepares and executes
+individual requests. Ordinary generation uses one request, while the template
+strategy resolves unfilled messages and maintains the generated history within
+the same attempt. The request context applies cancellation, billing, and the
+persistence barrier to every call. A request waits for its billing record and
+earlier queued writes before reaching the provider, and cancellation interrupts
+that wait.
+
+Usage comes from the attempt's durable billing records for every format,
+including failed calls when usage is reported. Copied artifacts retain their
+saved usage without acquiring another attempt's billing records. Reuse
+provenance records each template call's estimated input size, token allowance, provider price
+caps, usage, and cost; every prefix is checked against current settings.
+Failed templates retain their partial draft, while cancellation, restart, and
+a new attempt discard unfinished previews. Product behavior is defined in
+[PRODUCT.md](PRODUCT.md).
 
 The engine sends snapshots containing cell state, drafts, estimates, and preview
 identifiers. The web process checks the viewer's session and access before

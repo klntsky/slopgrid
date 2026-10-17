@@ -3,20 +3,19 @@ import {
   prepareTextInference,
   prepareImageInference,
   inferenceSignature,
+  type PreparedInference,
+  type SingleOutputFormat,
 } from "./prepared-inference.js";
 import { imageEndpointSchema, type ImageEndpoint } from "./image-settings.js";
 import { instruction } from "./output-format.js";
 import { z } from "zod";
 import { generationBudget, PreparationError } from "./generation-budget.js";
-import { generateInference } from "./inference.js";
-import { fillChatTemplate, templateFits } from "./chat-template.js";
+import { generateInference, type InferenceContext } from "./inference.js";
 import { parsePricing, type ModelPricing } from "./model-pricing.js";
 import type { CallObserver } from "./billing.js";
 import { upstreamFetch } from "./http.js";
 import {
   efforts,
-  chatText,
-  type TemplateStep,
   type Cell,
   type GridInput,
   type InferenceProgress,
@@ -233,53 +232,26 @@ export class Provider {
 
   async generate(
     key: string,
-    format: GridInput["format"],
+    format: SingleOutputFormat,
     cell: Cell,
     onChunk: (progress: InferenceProgress) => void,
     signal?: AbortSignal,
     observe?: CallObserver,
     references?: ReferenceContent[],
+    beforeRequest?: () => Promise<void>,
   ): Promise<{
     signature: string;
     maxOutputTokens?: number;
-    templateSteps?: TemplateStep[];
     files: Record<string, string | Uint8Array>;
     mediaType?: string;
     usage?: Cell["usage"];
   }> {
     const prepared = await this.prepare(format, cell, references);
-    if (format === "chat-template") {
-      const model = (await this.models()).find((m) => m.id === cell.model)!;
-      const result = await fillChatTemplate(
-        cell,
-        (prompt, dollars) => generationBudget(model, prompt, "", dollars),
-        (messages, budget, progress) =>
-          generateInference(
-            this.baseURL,
-            key,
-            prepareTextInference(
-              "chat",
-              { ...cell, prompt: chatText(messages), messages },
-              budget,
-              false,
-            ),
-            progress,
-            signal,
-            observe,
-          ),
-        onChunk,
-        signal,
-      );
-      return { ...result, signature: inferenceSignature(prepared) };
-    }
-    const result = await generateInference(
-      this.baseURL,
-      key,
-      prepared,
-      onChunk,
+    const result = await this.request(key, prepared, onChunk, {
       signal,
       observe,
-    );
+      beforeRequest,
+    });
     return {
       ...result,
       signature: inferenceSignature(prepared),
@@ -287,26 +259,16 @@ export class Provider {
         prepared.format === "image" ? undefined : prepared.text.maxOutputTokens,
     };
   }
-  async templateFits(cell: Cell, steps: TemplateStep[] | undefined) {
-    if (
-      !steps?.length ||
-      steps.length !==
-        cell.messages?.filter((m) => m.role === "unfilled").length
-    )
-      return false;
-    const model = (await this.models()).find((m) => m.id === cell.model);
-    if (!model) return false;
-    try {
-      return templateFits(steps, cell.budgetUsd, (prompt, dollars) =>
-        generationBudget(model, prompt, "", dollars),
-      );
-    } catch (error) {
-      if (error instanceof PreparationError) return false;
-      throw error;
-    }
+  request(
+    key: string,
+    prepared: PreparedInference,
+    onChunk: (progress: InferenceProgress) => void,
+    context: InferenceContext = {},
+  ) {
+    return generateInference(this.baseURL, key, prepared, onChunk, context);
   }
   async prepare(
-    format: GridInput["format"],
+    format: SingleOutputFormat,
     cell: Cell,
     references: ReferenceContent[] = [],
   ) {
@@ -316,22 +278,11 @@ export class Provider {
     );
     if (!pricedModel)
       throw new PreparationError(`Pricing is unavailable for ${cell.model}.`);
-    const blanks =
-      format === "chat-template"
-        ? (cell.messages?.filter((m) => m.role === "unfilled").length ?? 0)
-        : 0;
     const budget = generationBudget(
       pricedModel,
-      blanks
-        ? chatText(
-            cell.messages!.slice(
-              0,
-              cell.messages!.findIndex((m) => m.role === "unfilled"),
-            ),
-          )
-        : cell.prompt,
+      cell.prompt,
       instruction(format),
-      cell.budgetUsd / (blanks || 1),
+      cell.budgetUsd,
     );
     return prepareTextInference(
       format,

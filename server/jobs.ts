@@ -9,8 +9,7 @@ import { failureDetails, failureDiagnostics } from "./failures.js";
 import { selectWorker } from "./worker-allocation.js";
 import { Persistence } from "./persistence.js";
 import { generationFailure } from "./generation-api.js";
-import { sumUsage } from "./chat-template.js";
-import type { CallObserver } from "./billing.js";
+import { generateAttempt, type AttemptResult } from "./generation-attempt.js";
 import {
   beginCellAttempt,
   clearCellProgress,
@@ -261,7 +260,7 @@ export class Jobs {
         },
         () => {
           if (!dispatched) return;
-          beginCellAttempt(cell);
+          beginCellAttempt(cell, prepared.attemptId);
           this.running.set(cell.id, call);
           this.owners.get(owner)!.last = ++this.allocation;
           this.notify(grid);
@@ -317,27 +316,15 @@ export class Jobs {
     const current = () =>
       !controller.signal.aborted && this.running.get(cell.id) === call;
     const completed = { ...cell };
-    const callUsage: Cell["usage"][] = [];
-    const observe = this.store.billing.observe(cell.id);
-    const trackCalls: CallObserver = (phase) => {
-      const index = callUsage.push(undefined) - 1;
-      const recorder = observe(phase);
-      return {
-        ...recorder,
-        complete: (completion, usage) => {
-          callUsage[index] = usage;
-          recorder.complete(completion, usage);
-        },
-      };
-    };
-    let output: Awaited<ReturnType<Provider["generate"]>> | undefined;
+    let output: AttemptResult | undefined;
     try {
       if (!key) throw new Error("Reconnect OpenRouter to continue.");
       const references = await this.grids
         .get(grid.id)!
         .references(cell.imageSettings?.input_references ?? []);
       if (!current()) return;
-      const result = await this.provider.generate(
+      const result = await generateAttempt(
+        this.provider,
         key,
         grid.input.format,
         cell,
@@ -362,8 +349,12 @@ export class Jobs {
           }
           this.previewUpdated(grid);
         },
-        controller.signal,
-        trackCalls,
+        {
+          signal: controller.signal,
+          observe: this.store.billing.observe(cell.id, cell.attemptId),
+          beforeRequest: () =>
+            this.persistence.waitForWrites(controller.signal),
+        },
         references,
       );
       if (!current()) return;
@@ -427,10 +418,8 @@ export class Jobs {
             this.store.files.write(cell.id, output.files);
             installed = true;
           }
-          const billing = this.store.billing.cell(cell.id);
-          if (grid.input.format === "chat-template")
-            nextCell.usage = output?.usage ?? (callUsage.length ? sumUsage(callUsage) : undefined);
-          else if (billing) Object.assign(nextCell, billing);
+          const billing = this.store.billing.cell(cell.id, cell.attemptId);
+          if (billing) Object.assign(nextCell, billing);
           clearCellProgress(nextCell);
           if (!output && grid.input.format === "chat-template")
             nextCell.draft = cell.draft;

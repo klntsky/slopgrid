@@ -392,7 +392,7 @@ Image grids have a "Parameters" button with a 14px Info circle icon immediately 
 1. Web and interface updates must preserve accepted inference, including queued work, output, thinking, and charges. Browsers reconnect automatically after a brief connection interruption.
 2. An inference-machinery update stops accepting new work and lets accepted grids and unsettled calls finish without a cancellation timeout. Cancelling maintenance restores admission.
 3. Open browser tabs retain access to their frontend assets across updates. Routine deployments preserve grids, outputs, credentials, and sessions.
-4. Temporary storage failures pause new generation while preserving accepted work and its results. Continue automatically after recovery unless the user has paused or maintenance is underway. A storage interruption must not require manual Resume or cause duplicate provider charges.
+4. Temporary storage failures pause new generation while preserving accepted work and its results. This includes later provider calls within an active Chat template; wait for billing writes before issuing another request, and allow Pause to cancel the wait. Continue automatically after recovery unless the user has paused or maintenance is underway. A storage interruption must not require manual Resume or cause duplicate provider charges.
 5. Recovery from disk-full errors is outside the supported failure-recovery scope.
 
 ### 9.1. Progressive web app and offline navigation

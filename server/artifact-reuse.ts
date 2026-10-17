@@ -1,8 +1,12 @@
-import { PreparationError } from "./generation-budget.js";
+import {
+  generationBudgetForInput,
+  PreparationError,
+} from "./generation-budget.js";
 import type { Cell, Grid } from "./domain.js";
 import type { Store } from "./store.js";
 import type { Provider } from "./provider.js";
-import { inferenceSignature } from "./prepared-inference.js";
+import { inferenceSignature, templateSignature } from "./prepared-inference.js";
+import { templateFits } from "./chat-template.js";
 
 export async function reuseArtifacts(
   store: Store,
@@ -23,37 +27,46 @@ export async function reuseArtifacts(
   const matches = new Map<Cell, Cell[]>();
   const readReferences = store.references.loader();
   for (const cell of cells) {
-    let prepared;
+    let match: Cell | undefined;
     try {
-      prepared = await provider.prepare(
-        format,
-        cell,
-        await readReferences(cell.imageSettings?.input_references ?? []),
-      );
-    } catch (error) {
-      if (error instanceof PreparationError) continue;
-      throw error;
-    }
-    const matching = candidates.get(inferenceSignature(prepared));
-    let templateMatch: Cell | undefined;
-    if (format === "chat-template") {
-      for (const candidate of matching ?? []) {
-        if (
-          await provider.templateFits(cell, candidate.provenance?.templateSteps)
-        ) {
-          templateMatch = candidate;
-          break;
-        }
-      }
-    }
-    const match =
-      format === "chat-template"
-        ? templateMatch
-        : matching?.find((candidate) => {
-            if (prepared.format === "image") return true;
-            if (prepared.text.maxOutputTokens === undefined) return true;
-            // Reported completion tokens include reasoning. If usage is absent, only
-            // the original request ceiling can establish that the output fits.
+      if (format === "chat-template") {
+        const matching = candidates.get(templateSignature(cell));
+        if (!matching) continue;
+        const model = (await provider.models()).find(
+          (model) => model.id === cell.model,
+        );
+        if (!model) continue;
+        const blanks = cell.messages?.filter(
+          (m) => m.role === "unfilled",
+        ).length;
+        match = matching.find((candidate) => {
+          const steps = candidate.provenance?.templateSteps;
+          if (!steps?.length || steps.length !== blanks) return false;
+          try {
+            return templateFits(steps, cell.budgetUsd, (inputTokens, dollars) =>
+              generationBudgetForInput(model, inputTokens, dollars),
+            );
+          } catch (error) {
+            if (error instanceof PreparationError) return false;
+            throw error;
+          }
+        });
+      } else {
+        const prepared = await provider.prepare(
+          format,
+          cell,
+          await readReferences(cell.imageSettings?.input_references ?? []),
+        );
+        match = candidates
+          .get(inferenceSignature(prepared))
+          ?.find((candidate) => {
+            if (
+              prepared.format === "image" ||
+              prepared.text.maxOutputTokens === undefined
+            )
+              return true;
+            // Reported completion tokens include reasoning; otherwise the original
+            // ceiling must fit, since an unknown usage cannot prove compatibility.
             const tokens =
               candidate.usage?.outputTokens ??
               candidate.provenance?.maxOutputTokens;
@@ -64,6 +77,11 @@ export async function reuseArtifacts(
               tokens <= prepared.text.maxOutputTokens
             );
           });
+      }
+    } catch (error) {
+      if (error instanceof PreparationError) continue;
+      throw error;
+    }
     if (match) {
       const destinations = matches.get(match) ?? [];
       destinations.push(cell);

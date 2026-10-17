@@ -6,20 +6,12 @@ import {
   type TemplateStep,
 } from "./domain.js";
 import type { TextBudget } from "./generation-budget.js";
+import { sumUsage } from "./usage.js";
 
 export function chatTranscript(messages: FilledChatMessage[]): string {
   return messages
     .map(({ role, content }) => `## ${role}\n\n${content}`)
     .join("\n\n");
-}
-
-// Unknown totals remain unknown instead of displaying a partial sum as a total.
-export function sumUsage(usages: Cell["usage"][]): Cell["usage"] {
-  const total: NonNullable<Cell["usage"]> = {};
-  for (const key of ["inputTokens", "outputTokens", "costUsd"] as const)
-    if (usages.every((usage) => usage?.[key] !== undefined))
-      total[key] = usages.reduce((sum, usage) => sum + usage![key]!, 0);
-  return total;
 }
 
 export async function fillChatTemplate(
@@ -83,8 +75,9 @@ export async function fillChatTemplate(
     // still leaves the provider in control of token limits on subsequent calls.
     remaining = Math.max(0, remaining - (costUsd ?? allowance));
     templateSteps.push({
-      prompt,
+      inputTokens: budget.inputTokens,
       maxOutputTokens: budget.maxOutputTokens,
+      maxPrice: budget.maxPrice,
       usage,
       costUsd,
     });
@@ -101,12 +94,15 @@ export async function fillChatTemplate(
 export function templateFits(
   steps: TemplateStep[],
   dollars: number,
-  budgetFor: (prompt: string, dollars: number) => TextBudget,
+  budgetFor: (inputTokens: number, dollars: number) => TextBudget,
 ): boolean {
   let remaining = dollars;
   return steps.every((step, index) => {
     const allowance = remaining / (steps.length - index);
-    const budget = budgetFor(step.prompt, allowance);
+    const budget = budgetFor(step.inputTokens, allowance);
+    // Every prefix can select a different pricing tier or time-based override.
+    for (const key of ["prompt", "completion", "request"] as const)
+      if (step.maxPrice?.[key] !== budget.maxPrice?.[key]) return false;
     const tokens = step.usage?.outputTokens ?? step.maxOutputTokens;
     if (
       budget.maxOutputTokens !== undefined &&

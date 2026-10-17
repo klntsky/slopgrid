@@ -9,8 +9,10 @@ import {
   type FailureDiagnostic,
 } from "./failures.js";
 import type { Persistence } from "./persistence.js";
+import { sumUsage } from "./usage.js";
 
 export type CallDetails = {
+  attemptId?: string;
   phase: Completion["phase"];
   status: "running" | "succeeded" | "failed" | "cancelled" | "interrupted";
   finishedAt?: number;
@@ -28,7 +30,10 @@ export type CallRecorder = {
   fail: (error: unknown, cancelled: boolean) => void;
 };
 export type CallObserver = (phase: Completion["phase"]) => CallRecorder;
-export type BillingCall = Omit<CallDetails, "completion" | "diagnostics"> & {
+export type BillingCall = Omit<
+  CallDetails,
+  "completion" | "diagnostics" | "attemptId"
+> & {
   id: string;
   startedAt: number;
   gridId: string;
@@ -47,11 +52,11 @@ export type BillingPage = {
 export class Billing {
   persistence?: Persistence;
   constructor(private db: Database.Database) {}
-  observe(cellId: string): CallObserver {
+  observe(cellId: string, attemptId?: string): CallObserver {
     return (phase) => {
       const id = token(),
         started = Date.now();
-      let data: CallDetails = { phase, status: "running" };
+      let data: CallDetails = { phase, status: "running", attemptId };
       const save = () => {
         const json = JSON.stringify(data);
         const write = () => {
@@ -99,7 +104,24 @@ export class Billing {
       };
     };
   }
-  cell(cellId: string): { usage?: Cell["usage"] } | undefined {
+  cell(
+    cellId: string,
+    attemptId?: string,
+  ): { usage?: Cell["usage"] } | undefined {
+    if (attemptId) {
+      const rows = this.db
+        .prepare(
+          "SELECT data FROM inference_calls WHERE cell_id=? AND json_extract(data,'$.attemptId')=? ORDER BY started_at, rowid",
+        )
+        .all(cellId, attemptId) as { data: string }[];
+      return rows.length
+        ? {
+            usage: sumUsage(
+              rows.map((row) => (JSON.parse(row.data) as CallDetails).usage),
+            ),
+          }
+        : undefined;
+    }
     const row = this.db
       .prepare(
         `
@@ -174,6 +196,7 @@ export class Billing {
         const {
           completion: _completion,
           diagnostics: _diagnostics,
+          attemptId: _attemptId,
           ...details
         } = JSON.parse(row.data) as CallDetails;
         const grid = JSON.parse(row.grid_data);

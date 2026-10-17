@@ -15,6 +15,11 @@ import {
 const costUsage = z.object({
   cost: z.number().finite().nonnegative().optional(),
 });
+export type InferenceContext = {
+  signal?: AbortSignal;
+  observe?: CallObserver;
+  beforeRequest?: () => Promise<void>;
+};
 function reportedCost(usage: unknown): number | undefined {
   const result = costUsage.safeParse(usage);
   return result.success ? result.data.cost : undefined;
@@ -65,26 +70,29 @@ export async function generateInference(
   key: string,
   prepared: PreparedInference,
   onChunk: (progress: InferenceProgress) => void,
-  signal?: AbortSignal,
-  observe?: CallObserver,
+  context: InferenceContext = {},
 ): Promise<{
   files: Record<string, string | Uint8Array>;
   mediaType?: string;
   usage?: Cell["usage"];
 }> {
   const { format } = prepared;
+  const { signal, observe, beforeRequest } = context;
   if (
-    format === "chat-template" ||
-    (prepared.format !== "image" &&
-      prepared.text.messages?.some((m) => m.role === "unfilled"))
+    prepared.format !== "image" &&
+    prepared.text.messages?.some((m) => m.role === "unfilled")
   )
-    throw new Error("Chat templates must be expanded before inference.");
+    throw new Error("Unfilled messages must be expanded before inference.");
   const phase: Completion["phase"] = format === "image" ? "image" : "direct";
   let call: CallRecorder | undefined;
   let imageFinishReason: string | undefined;
   let imageCost: number | undefined;
   const inferenceFetch: typeof upstreamFetch = async (input, init) => {
     call = observe?.(phase);
+    // A sequence may reach this boundary while earlier billing writes are queued.
+    // Persist the new call record before sending another chargeable request.
+    await beforeRequest?.();
+    signal?.throwIfAborted();
     const response = await upstreamFetch(input, init);
     call?.update({
       httpStatus: response.status,

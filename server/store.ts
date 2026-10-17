@@ -91,14 +91,19 @@ export class Store {
     const cells = this.db
       .prepare("SELECT id, data FROM cells WHERE grid_id=? ORDER BY position")
       .all(id) as { id: string; data: string }[];
-    grid.cells = expandGrid(grid.input).map((cell, index) => ({
-      ...cell,
-      ...JSON.parse(cells[index].data),
-      id: cells[index].id,
-      ...(grid.input.format === "chat-template"
-        ? {}
-        : this.billing.cell(cells[index].id)),
-    }));
+    grid.cells = expandGrid(grid.input).map((cell, index) => {
+      const saved = JSON.parse(cells[index].data) as Cell;
+      return {
+        ...cell,
+        ...saved,
+        id: cells[index].id,
+        ...(saved.attemptId
+          ? this.billing.cell(cells[index].id, saved.attemptId)
+          : saved.usage
+            ? {}
+            : this.billing.cell(cells[index].id)),
+      };
+    });
     return grid;
   }
   // Creation is the only operation that writes both metadata and generation state.
@@ -143,21 +148,20 @@ export class Store {
           mediaType,
           thinkingId,
           provenance,
+          attemptId,
         } = cell;
         saveCell.run(
           JSON.stringify({
             status,
             error,
             errorCode,
-            usage:
-              grid.input.format === "chat-template" || !hasCalls.get(cell.id)
-                ? usage
-                : undefined,
+            usage: !attemptId || !hasCalls.get(cell.id) ? usage : undefined,
             ...(grid.input.format === "chat-template" &&
               cell.status !== "complete" && { draft: cell.draft }),
             mediaType,
             thinkingId,
             provenance,
+            attemptId,
           }),
           cell.id,
           grid.id,
