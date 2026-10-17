@@ -149,6 +149,9 @@ export class Store {
           thinkingId,
           provenance,
           attemptId,
+          judge,
+          generationSourceId,
+          generationStatus,
         } = cell;
         saveCell.run(
           JSON.stringify({
@@ -162,6 +165,9 @@ export class Store {
             thinkingId,
             provenance,
             attemptId,
+            judge,
+            generationSourceId,
+            generationStatus,
           }),
           cell.id,
           grid.id,

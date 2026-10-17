@@ -66,23 +66,44 @@ export function createInferenceGuard(store: Store, provider: Provider) {
       return false;
     }
     let automatic = capacity.parallelWorkers;
-    if (parallelWorkers === undefined && format !== "image") {
-      const models = await provider.models();
+    if (
+      parallelWorkers === undefined &&
+      (format !== "image" || cells.some((cell) => cell.judge))
+    ) {
+      const models = format === "image" ? [] : await provider.models();
       const now = new Date();
-      automatic = recommendWorkers(
-        balanceUsd,
-        cells
-          .filter((cell) => cell.status !== "complete")
-          .map(
-            (cell) =>
-              estimateCell(
-                models.find((model) => model.id === cell.model),
-                cell,
+      const costs: number[] = [];
+      const byId = new Map(cells.map((cell) => [cell.id, cell]));
+      const sources = new Set<string>();
+      for (const cell of cells) {
+        const sourceId = cell.judge
+          ? (cell.generationSourceId ?? cell.id)
+          : cell.id;
+        if (sources.has(sourceId)) continue;
+        sources.add(sourceId);
+        const source = byId.get(sourceId) ?? cell;
+        if (
+          source.status === "complete" ||
+          (source.judge &&
+            (source.generationStatus === "complete" ||
+              source.provenance?.files.length))
+        )
+          continue;
+        costs.push(
+          format === "image"
+            ? 3
+            : estimateCell(
+                models.find((model) => model.id === source.model),
+                source,
                 format,
                 now,
               ).costUsd,
-          ),
-      );
+        );
+      }
+      for (const cell of cells)
+        if (cell.judge && cell.judge.status !== "complete")
+          costs.push(3);
+      automatic = recommendWorkers(balanceUsd, costs);
     }
     // Re-read the session so a concurrent OAuth or disconnect request is preserved.
     const current = store.session(s.id);

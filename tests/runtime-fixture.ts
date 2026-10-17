@@ -14,12 +14,12 @@ export type CapturedRequest = {
   model: string;
   messages: {
     role: string;
-    content: string | { type: string; text?: string }[];
+    content: string | { type: string; text?: string; image_url?: { url: string } }[];
   }[];
   max_tokens?: number;
   reasoning?: { effort?: string };
   provider?: { max_price?: Record<string, number> };
-  response_format?: { json_schema: { schema: Record<string, unknown> } };
+  response_format?: { json_schema: { name: string; strict?: boolean; schema: Record<string, unknown> } };
 };
 export function messageText(
   content: CapturedRequest["messages"][number]["content"],
@@ -77,9 +77,18 @@ export async function runtimeFixture(options: { workers?: number } = {}) {
         context_length: 100000,
         top_provider: { max_completion_tokens: 1000 },
         architecture: {
-          input_modalities: ["text"],
+          input_modalities: ["text", "image"],
           output_modalities: ["text"],
         },
+        supported_parameters: ["reasoning", "structured_outputs"],
+      },
+      {
+        id: "fixture/judge-other",
+        name: "Other judge",
+        pricing: { prompt: "0.000001", completion: "0.000001" },
+        context_length: 100000,
+        top_provider: { max_completion_tokens: 1000 },
+        architecture: { input_modalities: ["text", "image"], output_modalities: ["text"] },
         supported_parameters: ["reasoning", "structured_outputs"],
       },
     ],

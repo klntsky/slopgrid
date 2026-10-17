@@ -14,6 +14,8 @@ import { sumUsage } from "./usage.js";
 export type CallDetails = {
   attemptId?: string;
   phase: Completion["phase"];
+  model?: string;
+  effort?: string;
   status: "running" | "succeeded" | "failed" | "cancelled" | "interrupted";
   finishedAt?: number;
   generationId?: string;
@@ -52,11 +54,15 @@ export type BillingPage = {
 export class Billing {
   persistence?: Persistence;
   constructor(private db: Database.Database) {}
-  observe(cellId: string, attemptId?: string): CallObserver {
+  observe(
+    cellId: string,
+    attemptId?: string,
+    selection?: { model: string; effort: string },
+  ): CallObserver {
     return (phase) => {
       const id = token(),
         started = Date.now();
-      let data: CallDetails = { phase, status: "running", attemptId };
+      let data: CallDetails = { phase, status: "running", attemptId, ...selection };
       const save = () => {
         const json = JSON.stringify(data);
         const write = () => {
@@ -111,7 +117,7 @@ export class Billing {
     if (attemptId) {
       const rows = this.db
         .prepare(
-          "SELECT data FROM inference_calls WHERE cell_id=? AND json_extract(data,'$.attemptId')=? ORDER BY started_at, rowid",
+          "SELECT data FROM inference_calls WHERE cell_id=? AND json_extract(data,'$.attemptId')=? AND COALESCE(json_extract(data,'$.phase'),'')!='judge' ORDER BY started_at, rowid",
         )
         .all(cellId, attemptId) as { data: string }[];
       return rows.length
@@ -125,7 +131,7 @@ export class Billing {
     const row = this.db
       .prepare(
         `
-      SELECT data FROM inference_calls WHERE cell_id=?
+      SELECT data FROM inference_calls WHERE cell_id=? AND COALESCE(json_extract(data,'$.phase'),'')!='judge'
       ORDER BY started_at DESC, rowid DESC LIMIT 1
     `,
       )
@@ -139,8 +145,10 @@ export class Billing {
       .prepare(
         `SELECT c.id, COALESCE(SUM(json_extract(b.data,'$.usage.costUsd')),0) costUsd,
         (SELECT json_extract(latest.data,'$.usage.costUsd') FROM inference_calls latest
-          WHERE latest.cell_id=c.id ORDER BY latest.started_at DESC,latest.rowid DESC LIMIT 1) latestCostUsd
+          WHERE latest.cell_id=c.id AND COALESCE(json_extract(latest.data,'$.phase'),'')!='judge'
+          ORDER BY latest.started_at DESC,latest.rowid DESC LIMIT 1) latestCostUsd
         FROM cells c LEFT JOIN inference_calls b ON b.cell_id=c.id
+          AND COALESCE(json_extract(b.data,'$.phase'),'')!='judge'
         WHERE c.grid_id=? GROUP BY c.id`,
       )
       .all(gridId) as {
@@ -150,7 +158,11 @@ export class Billing {
     }[];
     const estimates = new Map(
       cells
-        .filter((cell) => cell.status === "running")
+        .filter((cell) =>
+          cell.status === "running" &&
+          (!cell.generationSourceId ||
+            (cell.generationSourceId === cell.id && cell.generationStatus === "running")),
+        )
         .map((cell) => [
           cell.id,
           cell.currentCallCostUsd ?? cell.estimatedUsage?.costUsd ?? 0,
@@ -207,8 +219,8 @@ export class Billing {
           startedAt: row.started_at,
           gridId: row.grid_id,
           gridPrompt: grid.input.prompt,
-          model: cell.model,
-          effort: cell.effort,
+          model: details.model ?? cell.model,
+          effort: details.effort ?? cell.effort,
         };
       }),
     };

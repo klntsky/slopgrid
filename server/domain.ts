@@ -266,6 +266,14 @@ export type Cell = {
   preview?: { attempt: string; revision: number };
   usage?: { inputTokens?: number; outputTokens?: number; costUsd?: number };
 };
+export function hasCompletedOutput(
+  cell: Pick<Cell, "status" | "provenance" | "generationSourceId">,
+): boolean {
+  return (
+    cell.status === "complete" ||
+    Boolean(cell.generationSourceId && cell.provenance?.files.length)
+  );
+}
 export type TemplateStep = {
   maxOutputTokens?: number;
   usage?: Cell["usage"];
