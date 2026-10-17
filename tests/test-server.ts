@@ -20,7 +20,7 @@ export async function startTestServer(
   const port = await new Promise<number>((resolve, reject) => {
     const probe = createServer();
     probe.once("error", reject);
-    probe.listen(requestedPort, () => {
+    probe.listen(requestedPort, "127.0.0.1", () => {
       const selected = (probe.address() as { port: number }).port;
       probe.close(() => resolve(selected));
     });
