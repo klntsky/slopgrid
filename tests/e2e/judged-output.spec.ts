@@ -8,9 +8,7 @@ test("judge criteria preserve boolean answers and judge axes restore fixed setti
 }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Markdown", exact: true }).click();
-  await page
-    .getByRole("button", { name: "[ add a judge ]", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Add judge", exact: true }).click();
   const fixedJudge = page.getByRole("radiogroup", {
     name: "Judge model",
     exact: true,
@@ -153,7 +151,7 @@ test("judge criteria preserve boolean answers and judge axes restore fixed setti
     page.getByRole("combobox", { name: "Columns", exact: true }),
   ).toHaveValue("model");
   await expect(
-    page.getByRole("button", { name: "[ add a judge ]", exact: true }),
+    page.getByRole("button", { name: "Add judge", exact: true }),
   ).toBeVisible();
 });
 
@@ -175,9 +173,7 @@ test("removing a judge preserves ordinary axes and generation settings", async (
   await page
     .getByLabel("Prompt", { exact: true })
     .fill("Describe $ROW wearing a $COLUMN");
-  await page
-    .getByRole("button", { name: "[ add a judge ]", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Add judge", exact: true }).click();
   await page
     .getByRole("combobox", { name: "Rows", exact: true })
     .selectOption("judge_effort");
@@ -232,9 +228,7 @@ test("format changes retain criteria and judge effort, clear incompatible models
   );
   await page.goto("/");
   await page.getByRole("button", { name: "Markdown", exact: true }).click();
-  await page
-    .getByRole("button", { name: "[ add a judge ]", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Add judge", exact: true }).click();
   await page
     .getByLabel("Criterion 1", { exact: true })
     .fill("Is there a blue circle?");
@@ -312,15 +306,13 @@ test("format changes retain criteria and judge effort, clear incompatible models
     page.getByRole("radiogroup", { name: "Judge model", exact: true }),
   ).toHaveCount(0);
   await expect(
-    page.getByRole("button", { name: "[ add a judge ]", exact: true }),
+    page.getByRole("button", { name: "Add judge", exact: true }),
   ).toHaveCount(0);
   await page.getByRole("button", { name: "Markdown", exact: true }).click();
   await expect(
-    page.getByRole("button", { name: "[ add a judge ]", exact: true }),
+    page.getByRole("button", { name: "Add judge", exact: true }),
   ).toBeVisible();
-  await page
-    .getByRole("button", { name: "[ add a judge ]", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Add judge", exact: true }).click();
   await expect(page.getByLabel("Criterion 1", { exact: true })).toHaveValue("");
   await expect(page.getByLabel("Correct answer", { exact: true })).toHaveValue(
     "true",
@@ -611,9 +603,7 @@ test("judge answers and axes survive draft reload, OAuth, Edit, and Fork", async
 }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Markdown", exact: true }).click();
-  await page
-    .getByRole("button", { name: "[ add a judge ]", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Add judge", exact: true }).click();
   await page
     .getByLabel("Criterion 1", { exact: true })
     .fill(judgedInput.judge!.criteria[0].text);

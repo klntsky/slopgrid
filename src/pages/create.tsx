@@ -313,7 +313,6 @@ export function Create() {
           ) : !input.judge ? (
             <button
               type="button"
-              className="secondary"
               onClick={() =>
                 update({
                   judge: {
@@ -324,7 +323,7 @@ export function Create() {
                 })
               }
             >
-              [ add a judge ]
+              Add judge
             </button>
           ) : (
             <>
