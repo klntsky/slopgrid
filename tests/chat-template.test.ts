@@ -6,6 +6,7 @@ import {
   generationBudgetForInput,
 } from "../server/generation-budget.js";
 import type { Cell, InferenceProgress } from "../server/domain.js";
+import { readChatOutput } from "../shared/chat-output.js";
 
 const model = {
   name: "Test",
@@ -134,6 +135,46 @@ test("later failures preserve the emitted prefix and retries start again", async
   await assert.rejects(run, /Later failure/);
   assert.equal(calls, 4);
   assert.equal(cell.messages![1].role, "unfilled");
+});
+
+test("conversation output preserves message boundaries through streaming and storage", async () => {
+  const answer =
+    "## user\n\nA heading, not a message.\n\n```md\n## assistant\n\n```\n";
+  const progress: InferenceProgress[] = [];
+  const result = await fillChatTemplate(
+    cell,
+    budgetFor,
+    async (_messages, _budget, onChunk) => {
+      onChunk({ text: answer, thinking: "" });
+      return { files: { "index.md": answer }, usage: { costUsd: 1 } };
+    },
+    (p) => progress.push(p),
+  );
+  const messages = JSON.parse(result.files["messages.json"]);
+  assert.deepEqual(messages, [
+    cell.messages![0],
+    { role: "assistant", content: answer },
+    cell.messages![2],
+    { role: "assistant", content: answer },
+  ]);
+  assert.deepEqual(Object.keys(result.files), ["messages.json"]);
+  assert.deepEqual(readChatOutput(progress[0].text), messages.slice(0, 2));
+  assert.deepEqual(readChatOutput(progress.at(-1)!.text), messages);
+});
+
+test("existing Markdown conversations preserve fenced role headings and whitespace", () => {
+  const messages = [
+    { role: "system" as const, content: "  Instructions\n" },
+    {
+      role: "user" as const,
+      content: "Question\n\n```md\n## assistant\n\n```",
+    },
+    { role: "assistant" as const, content: "Answer\n" },
+  ];
+  const transcript = messages
+    .map(({ role, content }) => `## ${role}\n\n${content}`)
+    .join("\n\n");
+  assert.deepEqual(readChatOutput(transcript), messages);
 });
 
 test("cancellation and exhausted shared budget prevent subsequent calls", async () => {

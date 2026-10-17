@@ -207,11 +207,15 @@ test("chat templates fill only blanks sequentially and aggregate the transcript"
       ...(h.requests[1].messages as object[]),
       { role: "assistant", content: "# Output" },
     ]);
-    assert.equal(
-      result.files["index.md"],
-      "## user\n\nFirst question\n\n## assistant\n\n# Output\n\n## user\n\nSecond question\n\n## assistant\n\n# Output\n\n## assistant\n\n# Output\n\n## user\n\nTrailing text",
-    );
-    assert.equal(updates.at(-1)!.text, result.files["index.md"]);
+    assert.deepEqual(JSON.parse(result.files["messages.json"] as string), [
+      messages[0],
+      { role: "assistant", content: "# Output" },
+      messages[2],
+      { role: "assistant", content: "# Output" },
+      { role: "assistant", content: "# Output" },
+      messages[5],
+    ]);
+    assert.equal(updates.at(-1)!.text, result.files["messages.json"]);
     assert.equal(result.usage?.inputTokens, 3);
     assert.equal(result.usage?.outputTokens, 3);
     assert.ok(

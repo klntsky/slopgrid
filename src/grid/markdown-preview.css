@@ -118,3 +118,9 @@
   > :first-child:not(pre):not(table) {
   margin-right: 112px;
 }
+.cell .conversation-preview {
+  padding-top: 64px;
+}
+.cell:has(.markdown-actions) .markdown-document > .chat-conversation {
+  margin-right: 0;
+}

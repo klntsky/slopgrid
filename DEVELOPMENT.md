@@ -304,7 +304,11 @@ the exact prefix for each sequential call, including consecutive blanks and
 trailing supplied messages. Orchestrator tests cover shared budgets, unknown
 metadata, aggregate usage, cancellation, later-call failure, retry, and per-call
 reuse limits. Runtime tests verify persisted aggregate usage and artifact reuse;
-browser tests verify completed transcript rendering and copying. Run the focused
+browser tests verify streaming message bubbles, role-based alignment, system-message
+tint, raw JSON, expansion, standalone outputs, reload, copying, and downloads.
+Message-boundary coverage includes role headings and fenced code inside generated
+answers, while storage coverage checks JSON artifacts and existing transcript reads.
+Run the focused
 domain, chat-template, provider, cost-estimates, billing, artifact-reuse, and chat
 browser suites on staging for changes spanning these boundaries.
 

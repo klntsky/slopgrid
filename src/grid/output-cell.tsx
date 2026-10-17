@@ -7,6 +7,7 @@ import {
   CodeXml,
   Brain,
   Palette,
+  MessagesSquare,
 } from "lucide-react";
 import { ExpandButton } from "../components/expand-button";
 import { CopyButton } from "../components/copy-button";
@@ -47,7 +48,11 @@ export function OutputCell({
 }) {
   const { resolvedTheme } = useTheme();
   const offline = useOffline();
-  const rawLabel = rawMarkdown ? "View Markdown" : "View raw";
+  const rawLabel = rawMarkdown
+    ? format === "chat-template"
+      ? "View conversation"
+      : "View Markdown"
+    : "View raw";
   const rawHint = useTooltip<HTMLButtonElement>(rawLabel);
   const downloadHint = useTooltip<HTMLAnchorElement>("Download output");
   const inputHint = useTooltip<HTMLSpanElement>("Input tokens");
@@ -89,6 +94,7 @@ export function OutputCell({
             streaming={!complete}
             title={title}
             raw={rawMarkdown}
+            conversation={format === "chat-template"}
           />
         ) : format === "html" && (complete || cell.status === "running") ? (
           <WebsitePreview
@@ -149,7 +155,9 @@ export function OutputCell({
               onClick={onToggleRawMarkdown}
               ref={rawHint}
             >
-              {rawMarkdown ? (
+              {rawMarkdown && format === "chat-template" ? (
+                <MessagesSquare aria-hidden="true" />
+              ) : rawMarkdown ? (
                 <svg
                   width="18"
                   height="18"

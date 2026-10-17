@@ -8,12 +8,6 @@ import {
 import type { TextBudget } from "./generation-budget.js";
 import { sumUsage } from "./usage.js";
 
-export function chatTranscript(messages: FilledChatMessage[]): string {
-  return messages
-    .map(({ role, content }) => `## ${role}\n\n${content}`)
-    .join("\n\n");
-}
-
 export async function fillChatTemplate(
   cell: Cell,
   budgetFor: (prompt: string, dollars: number) => TextBudget,
@@ -45,11 +39,12 @@ export async function fillChatTemplate(
     let latest: InferenceProgress | undefined;
     const result = await run(history, budget, (progress) => {
       latest = progress;
+      const messages: FilledChatMessage[] = [
+        ...history,
+        { role: "assistant", content: progress.text },
+      ];
       onChunk({
-        text: chatTranscript([
-          ...history,
-          { role: "assistant", content: progress.text },
-        ]),
+        text: JSON.stringify(messages, null, 2),
         thinking: thinking + progress.thinking,
         estimatedUsage: sumUsage([
           ...templateSteps.map((step) => step.usage),
@@ -83,10 +78,10 @@ export async function fillChatTemplate(
     history.push({ role: "assistant", content });
     thinking += latest?.thinking ?? "";
   }
-  const text = chatTranscript(history);
+  const text = JSON.stringify(history, null, 2);
   const usage = sumUsage(templateSteps.map((step) => step.usage));
   onChunk({ text, thinking, estimatedUsage: usage, currentCallCostUsd: 0 });
-  return { files: { "index.md": text }, usage, templateSteps };
+  return { files: { "messages.json": text }, usage, templateSteps };
 }
 
 export function templateFits(

@@ -155,12 +155,16 @@ is derived from raw accumulated text rather than a previous repaired preview.
 Output-preservation rules are defined in
 [PRODUCT.md](PRODUCT.md#51-shared-controls-and-output-preservation).
 
-Chat completion and Chat template share Markdown output parsing, storage,
-previews, downloads, and copying. Their input and cells retain ordered messages,
-and grid expansion substitutes variables in each message body. A derived
-transcript supplies titles and prompt display. Inference sends structured
-messages without an additional system instruction, and request signatures
-include the history.
+Chat completion stores a Markdown response. Chat template stores the completed
+message array as a JSON output artifact and streams that same representation.
+The shared conversation renderer formats each message body separately, keeping
+message boundaries independent of Markdown content. Grid previews and standalone
+outputs use the same renderer and styles; raw views, copying, and downloads use
+the stored JSON. The output reader also supports existing Markdown transcripts.
+Both formats retain ordered input messages, and grid expansion substitutes
+variables in each message body. A derived transcript supplies titles and prompt
+display. Inference sends structured messages without an additional system
+instruction, and request signatures include the history.
 
 Generation attempts are the shared execution boundary for every output format.
 Jobs schedules, cancels, and settles an attempt; the attempt layer coordinates
@@ -302,8 +306,8 @@ of document scrolling on the previous route. The grid viewport owns scrolling
 within that shell, while the router restores ordinary-page scroll positions
 through browser history.
 
-Markdown previews, thinking traces, and text clipboard actions share an output
-query keyed by the canonical source URL. Completed text is cached once, while
+Markdown and conversation previews, thinking traces, and text clipboard actions
+share an output query keyed by the canonical source URL. Completed text is cached once, while
 preview components retain streaming drafts until the saved output arrives.
 Image clipboard conversion remains separate from text loading.
 

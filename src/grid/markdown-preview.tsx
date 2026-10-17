@@ -4,6 +4,9 @@ import { ErrorMessage } from "../components/error-message";
 import { MarkdownContent } from "../../shared/markdown";
 import "./markdown-preview.css";
 import { textOutput } from "./text-output";
+import { ChatConversation } from "../../shared/chat-conversation";
+import { readChatOutput } from "../../shared/chat-output";
+import "../../shared/chat-conversation.css";
 
 export function MarkdownPreview({
   url,
@@ -11,12 +14,14 @@ export function MarkdownPreview({
   raw = false,
   draft,
   streaming = false,
+  conversation = false,
 }: {
   url: string;
   title: string;
   raw?: boolean | "wrap";
   draft?: string;
   streaming?: boolean;
+  conversation?: boolean;
 }) {
   const previewRef = useRef<HTMLDivElement>(null);
   const documentRef = useRef<HTMLDivElement>(null);
@@ -79,7 +84,7 @@ export function MarkdownPreview({
   return (
     <div
       ref={previewRef}
-      className="markdown-preview"
+      className={`markdown-preview${conversation && !raw ? " conversation-preview" : ""}`}
       role="region"
       aria-label={title}
       aria-busy={streaming}
@@ -122,6 +127,8 @@ export function MarkdownPreview({
             >
               {markdown}
             </pre>
+          ) : conversation ? (
+            <ChatConversation messages={readChatOutput(markdown)} />
           ) : (
             <MarkdownContent markdown={markdown} />
           )}

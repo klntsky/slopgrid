@@ -87,6 +87,20 @@ test("template usage and per-call reuse survive storage reopening", async () => 
       await f.store.files.bundle(saved.cells[0].id),
     );
     assertCost(f.store.get(copy.id)!.cells[0].usage!.costUsd!, 0.0246);
+    const conversation = await f.request(`/outputs/${copy.cells[0].id}?raw=1`);
+    assert.match(
+      conversation.headers.get("content-type")!,
+      /application\/json/,
+    );
+    assert.deepEqual(await conversation.json(), [
+      { role: "user", content: "cat one" },
+      { role: "assistant", content: "First answer" },
+      { role: "assistant", content: "Second answer" },
+    ]);
+    assert.equal(
+      (await f.fetch(f.origin + `/outputs/${copy.cells[0].id}?raw=1`)).status,
+      404,
+    );
     f.store.db
       .prepare(
         "UPDATE cells SET data=json_remove(data,'$.provenance.templateSteps[1].usage.inputTokens') WHERE id=?",
@@ -102,6 +116,17 @@ test("template usage and per-call reuse survive storage reopening", async () => 
     finish(await f.nextCall(), "Fresh second answer");
     assert.equal((await settled(f, regenerated.id)).status, "complete");
     assert.equal(f.calls.length, calls + 2);
+    f.store.files.write(source.cells[0].id, {
+      "index.md":
+        "## user\n\ncat one\n\n## assistant\n\nFirst answer\n\n## assistant\n\nSecond answer",
+    });
+    const legacy = await f.request(`/outputs/${source.cells[0].id}/download`);
+    assert.match(legacy.headers.get("content-type")!, /application\/json/);
+    assert.deepEqual(await legacy.json(), [
+      { role: "user", content: "cat one" },
+      { role: "assistant", content: "First answer" },
+      { role: "assistant", content: "Second answer" },
+    ]);
   } finally {
     await f.close();
   }
