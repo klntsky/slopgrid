@@ -34,8 +34,17 @@ export async function reuseArtifacts(
       if (error instanceof PreparationError) continue;
       throw error;
     }
-    const match = candidates
-      .get(inferenceSignature(prepared))
+    const matching = candidates.get(inferenceSignature(prepared));
+    let templateMatch: Cell | undefined;
+    if (format === "chat-template") {
+      for (const candidate of matching ?? []) {
+        if (await provider.templateFits(cell, candidate.provenance?.templateSteps)) {
+          templateMatch = candidate;
+          break;
+        }
+      }
+    }
+    const match = format === "chat-template" ? templateMatch : matching
       ?.find((candidate) => {
         if (prepared.format === "image") return true;
         if (prepared.text.maxOutputTokens === undefined) return true;

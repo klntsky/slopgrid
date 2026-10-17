@@ -152,12 +152,21 @@ is derived from raw accumulated text rather than a previous repaired preview.
 Output-preservation rules are defined in
 [PRODUCT.md](PRODUCT.md#51-shared-controls-and-output-preservation).
 
-Chat completion is a distinct domain format that shares Markdown output parsing,
-storage, previews, downloads, and copying. Its input and cells retain ordered
-messages with system, user, or assistant roles. Grid expansion substitutes
-variables in each message body. A derived transcript supplies existing titles,
-prompt display, and input-cost estimates; inference sends the structured messages
-without an additional system instruction. Request signatures include the history.
+Chat completion and Chat template share Markdown output parsing, storage,
+previews, downloads, and copying. Their input and cells retain ordered messages,
+and grid expansion substitutes variables in each message body. A derived
+transcript supplies titles and prompt display. Inference sends structured
+messages without an additional system instruction, and request signatures
+include the history.
+
+The template orchestrator sits between provider preparation and individual
+inference calls. It resolves unfilled messages before they reach the provider,
+maintains the generated history, and aggregates progress and usage. Each call
+has its own billing record, while completed template cells persist aggregate
+usage. Reuse provenance records per-call input, token allowance, usage, and cost
+for destination-budget validation. Failed templates retain their partial draft;
+the cell lifecycle clears it when a new attempt starts. Product behavior is
+defined in [PRODUCT.md](PRODUCT.md).
 
 The engine sends snapshots containing cell state, drafts, estimates, and preview
 identifiers. The web process checks the viewer's session and access before

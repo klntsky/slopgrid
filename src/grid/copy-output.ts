@@ -28,7 +28,7 @@ async function clipboardImage(url: string): Promise<Blob> {
 
 export async function copyOutput(
   url: string,
-  format: "image" | "svg" | "markdown" | "chat",
+  format: "image" | "svg" | "markdown" | "chat" | "chat-template",
 ) {
   if (format === "image") {
     return navigator.clipboard.write([

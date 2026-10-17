@@ -4,6 +4,7 @@ import {
   PanelsTopLeft,
   Image,
   MessagesSquare,
+  ListChecks,
 } from "lucide-react";
 import { useTooltip } from "./use-tooltip";
 import type { GridInput } from "../../server/domain";
@@ -22,6 +23,7 @@ export function FormatIcon({
     html: PanelsTopLeft,
     image: Image,
     chat: MessagesSquare,
+    "chat-template": ListChecks,
   }[format];
   return <Icon className={className} aria-hidden="true" />;
 }

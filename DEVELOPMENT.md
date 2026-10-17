@@ -298,6 +298,16 @@ Deletion coverage checks the five/six-word boundary with mixed whitespace,
 inline confirmation, dismissal on editing or leaving the message, Escape, and
 confirmed deletion on touch devices.
 
+Chat template coverage checks role-specific validation, filler rendering, format
+switching, saved blanks, and insertion focus after a blank. Provider tests assert
+the exact prefix for each sequential call, including consecutive blanks and
+trailing supplied messages. Orchestrator tests cover shared budgets, unknown
+metadata, aggregate usage, cancellation, later-call failure, retry, and per-call
+reuse limits. Runtime tests verify persisted aggregate usage and artifact reuse;
+browser tests verify completed transcript rendering and copying. Run the focused
+domain, chat-template, provider, cost-estimates, billing, artifact-reuse, and chat
+browser suites on staging for changes spanning these boundaries.
+
 Recovery coverage exercises a failed later reference upload followed by reload
 and retry, large reference retention through reload and authorization, clipboard
 failure and retry without duplicate writes, independent grid-list failures, and

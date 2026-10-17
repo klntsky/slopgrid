@@ -47,6 +47,32 @@ function finish(call: RuntimeCall, text = "Artifact") {
   call.finish();
 }
 
+test("template usage and per-call reuse survive storage reopening", async () => {
+  const f = await runtimeFixture();
+  try {
+    const template = { ...input, format: "chat-template", budgetUsd: 1,
+      rows: { kind: "variable", values: ["cat"] },
+      messages: [{ role: "user", content: "$ROW $COLUMN" },
+        { role: "unfilled", content: "" }, { role: "unfilled", content: "" }] };
+    const source = await create(f, template);
+    finish(await f.nextCall(), "First answer");
+    const second = await f.nextCall();
+    assert.equal(second.request.messages.at(-1)!.role, "assistant");
+    assert.equal(messageText(second.request.messages.at(-1)!.content), "First answer");
+    finish(second, "Second answer");
+    await settled(f, source.id);
+    const saved = f.store.get(source.id)!;
+    assertCost(saved.cells[0].usage!.costUsd!, 0.0246);
+    assert.equal(saved.cells[0].provenance!.templateSteps!.length, 2);
+    const calls = f.calls.length;
+    const copy = await create(f, { ...template, sourceGridId: source.id, reuseArtifacts: true });
+    assert.equal(copy.cells[0].status, "complete");
+    assert.equal(f.calls.length, calls);
+    assert.deepEqual(await f.store.files.bundle(copy.cells[0].id), await f.store.files.bundle(saved.cells[0].id));
+    assertCost(f.store.get(copy.id)!.cells[0].usage!.costUsd!, 0.0246);
+  } finally { await f.close(); }
+});
+
 test("edit copies exact completed cells through reorder, cancellation, web replacement and engine restart", async () => {
   const f = await runtimeFixture();
   try {

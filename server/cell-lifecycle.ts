@@ -4,6 +4,7 @@ export function clearCellProgress(cell: Cell) {
   delete cell.draft;
   delete cell.thinking;
   delete cell.estimatedUsage;
+  delete cell.currentCallCostUsd;
 }
 
 function clearFailure(cell: Cell) {

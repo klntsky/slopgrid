@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { unusedVariableIssue, type GridInput } from "../../server/domain";
+import { unusedVariableIssue, isChatFormat, chatInputIssue, type GridInput } from "../../server/domain";
 import { estimateGrid } from "../../server/cost-estimates";
 import { modelCatalog } from "../model-catalog";
 import { useConnection, useInferenceCapacity } from "../queries";
@@ -78,10 +78,8 @@ export function useCreateForm() {
     !input.rows.values.length && "Select row values.",
     !input.columns.values.length && "Select column values.",
     !connection.data?.connected && "Connect OpenRouter.",
-    input.format === "chat"
-      ? (!input.messages?.length ||
-          input.messages.some((message) => !message.content.trim())) &&
-        "Enter a message."
+    isChatFormat(input.format)
+      ? chatInputIssue(input.format, input.messages)
       : !input.prompt.trim() && "Enter a prompt.",
     unusedVariableIssue(input),
     input.format !== "image" &&

@@ -20,7 +20,7 @@ export function estimateCell(
   now = new Date(),
 ): CostEstimate {
   const unknown = (reason: string): CostEstimate => ({
-    costUsd: 3,
+    costUsd: format === "chat-template" ? cell.budgetUsd : 3,
     support: "unknown",
     reason,
   });
@@ -29,6 +29,9 @@ export function estimateCell(
     return unknown("Token limits unavailable.");
   if (model.pricing.incomplete)
     return unknown("Total cost estimate unavailable.");
+  // Later requests contain answers whose lengths are not known before generation.
+  // Reserve the whole attempt budget for capacity instead of a single-call cost.
+  if (format === "chat-template") return unknown("Total cost estimate unavailable.");
   try {
     const budget = generationBudget(
       model,

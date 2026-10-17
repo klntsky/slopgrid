@@ -28,14 +28,26 @@ const axis = z.object({
 });
 const budgetSchema = z.number().finite().positive();
 const chatMessageSchema = z.object({
-  role: z.enum(["system", "user", "assistant"]),
-  content: z
-    .string()
-    .refine((text) => text.trim().length > 0, "Enter a message."),
-});
+  role: z.enum(["system", "user", "assistant", "unfilled"]),
+  content: z.string(),
+}).refine((message) => message.role === "unfilled"
+  ? message.content === "" : message.content.trim().length > 0,
+  "Enter a message, or leave an unfilled message empty.");
 export type ChatMessage = z.infer<typeof chatMessageSchema>;
+export type FilledChatMessage = ChatMessage & { role: "system" | "user" | "assistant" };
+export function isChatFormat(format: GridInput["format"]): boolean {
+  return format === "chat" || format === "chat-template";
+}
 export function isMarkdownFormat(format: GridInput["format"]): boolean {
-  return format === "markdown" || format === "chat";
+  return format === "markdown" || isChatFormat(format);
+}
+export function chatInputIssue(format: GridInput["format"], messages: ChatMessage[] = []): string | undefined {
+  if (!messages.length) return "Add a message.";
+  if (messages.some((m) => m.role !== "unfilled" && !m.content.trim())) return "Enter a message.";
+  if (format === "chat-template") {
+    if (!messages.some((m) => m.role === "unfilled")) return "Add an unfilled message.";
+    if (messages[0].role === "unfilled") return "Add a message before the first unfilled message.";
+  } else if (messages.some((m) => m.role === "unfilled")) return "Unfilled messages require Chat template.";
 }
 export function chatText(messages: ChatMessage[]): string {
   return messages
@@ -60,7 +72,7 @@ export const gridSchema = z
   .discriminatedUnion("format", [
     z.object({
       ...gridFields,
-      format: z.enum(["svg", "markdown", "html", "chat"]),
+      format: z.enum(["svg", "markdown", "html", "chat", "chat-template"]),
       budgetUsd: budgetSchema,
     }),
     z.object({
@@ -71,13 +83,16 @@ export const gridSchema = z
     }),
   ])
   .transform((g) => {
-    if (g.format === "chat") g.prompt = chatText(g.messages ?? []);
+    if (isChatFormat(g.format)) g.prompt = chatText(g.messages ?? []);
     else delete g.messages;
     return g;
   })
   .superRefine((g, c) => {
     const issue = (message: string) => c.addIssue({ code: "custom", message });
-    if (g.format === "chat" && !g.messages?.length) issue("Add a message.");
+    if (isChatFormat(g.format)) {
+      const message = chatInputIssue(g.format, g.messages);
+      if (message) issue(message);
+    }
     if (!g.prompt.trim()) issue("Enter a prompt.");
     if (![g.rows.kind, g.columns.kind].includes("model") && !g.model)
       issue("Select a model.");
@@ -167,6 +182,7 @@ export type InferenceProgress = {
   text: string;
   thinking: string;
   estimatedUsage?: Cell["usage"];
+  currentCallCostUsd?: number;
 };
 export type Cell = {
   id: string;
@@ -189,11 +205,19 @@ export type Cell = {
   provenance?: {
     signature: string;
     maxOutputTokens?: number;
+    templateSteps?: TemplateStep[];
     files: string[];
   };
   estimatedUsage?: Cell["usage"];
+  currentCallCostUsd?: number;
   preview?: { attempt: string; revision: number };
   usage?: { inputTokens?: number; outputTokens?: number; costUsd?: number };
+};
+export type TemplateStep = {
+  prompt: string;
+  maxOutputTokens?: number;
+  usage?: Cell["usage"];
+  costUsd?: number;
 };
 export type GridVisibility = "private" | "unlisted" | "public";
 export type Identity = {

@@ -44,6 +44,7 @@ export function prepareTextInference(
   return {
     ...common(cell),
     format,
+    ...(format === "chat-template" && { templateVersion: 1 }),
     pricing: budget.pricing,
     text: {
       messages: cell.messages,

@@ -1,6 +1,6 @@
 # [slopgrid](https://slopgrid.com)
 
-[Slopgrid](https://slopgrid.com) lets you compare AI-generated outputs side by side. Build a grid of models, thinking efforts, or prompt variations, then watch them produce Markdown, images, SVG, static websites, or chat completions using your OpenRouter account.
+[Slopgrid](https://slopgrid.com) lets you compare AI-generated outputs side by side. Build a grid of models, thinking efforts, or prompt variations, then watch them produce Markdown, images, SVG, static websites, chat completions, or filled chat templates using your OpenRouter account.
 
 [![A Slopgrid comparison of SVG outputs across models and thinking efforts](docs/images/grid.png)](https://slopgrid.com/grid/e32b0dba878a2681035fd200b02019eae717496414a35181)
 
@@ -24,7 +24,7 @@ The user defines what columns and rows of a grid mean;
 - Backgrounds: automatic, transparent, or opaque
 - Groups of input reference images
 
-### SVG, Markdown, Website, and Chat completion outputs
+### SVG, Markdown, Website, Chat completion, and Chat template outputs
 
 - Models
 - Thinking efforts

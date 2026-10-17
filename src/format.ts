@@ -7,6 +7,7 @@ export const formatNames = {
   svg: "SVG",
   html: "Static website",
   chat: "Chat completion",
+  "chat-template": "Chat template",
 };
 const usd = new Intl.NumberFormat("en-US", {
   style: "currency",

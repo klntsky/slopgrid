@@ -2,20 +2,23 @@ import type { ChatMessage } from "../../server/domain";
 import { GripVertical, Plus, X } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
 
-const roles = ["system", "user", "assistant"] as const;
-
 export function ChatEditor({
   messages,
   onChange,
+  template = false,
 }: {
   messages: ChatMessage[];
   onChange: (messages: ChatMessage[]) => void;
+  template?: boolean;
 }) {
+  const roles: ChatMessage["role"][] = template
+    ? ["system", "user", "assistant", "unfilled"]
+    : ["system", "user", "assistant"];
   const root = useRef<HTMLDivElement>(null);
   const inserted = useRef<number | undefined>(undefined);
   useLayoutEffect(() => {
     if (inserted.current === undefined) return;
-    root.current?.querySelectorAll("textarea")[inserted.current]?.focus();
+    root.current?.querySelector<HTMLTextAreaElement>(`[data-message-index="${inserted.current}"] textarea`)?.focus();
     inserted.current = undefined;
   }, [messages]);
   const [dragTarget, setDragTarget] = useState<number>();
@@ -140,11 +143,10 @@ export function ChatEditor({
               type="button"
               className={`model-badge chat-role chat-role-${message.role}`}
               aria-label={`Message ${index + 1} role: ${message.role}`}
-              onClick={() =>
-                update(index, {
-                  role: roles[(roles.indexOf(message.role) + 1) % roles.length],
-                })
-              }
+              onClick={() => {
+                const role = roles[(roles.indexOf(message.role) + 1) % roles.length];
+                update(index, { role, ...(role === "unfilled" && { content: "" }) });
+              }}
             >
               {message.role}
             </button>
@@ -159,14 +161,16 @@ export function ChatEditor({
               if (event.key === "Escape") setDeleting(undefined);
             }}
           >
-            <textarea
+            {message.role === "unfilled" ? (
+              <span className="chat-unfilled-text">The model will fill this message with an assistant response.</span>
+            ) : <textarea
               aria-label={`Message ${index + 1}`}
               rows={1}
               value={message.content}
               onChange={(event) =>
                 update(index, { content: event.target.value })
               }
-            />
+            />}
             {deleting === index && (
               <button
                 type="button"

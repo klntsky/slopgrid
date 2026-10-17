@@ -268,7 +268,7 @@ section {
 }
 .formats {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   grid-auto-rows: 1fr;
   gap: 12px;
 }
@@ -442,6 +442,13 @@ section {
 }
 .chat-role-user {
   --role-color: #3678c6;
+}
+.chat-role-unfilled {
+  --role-color: #8a55b5;
+}
+.chat-unfilled-text {
+  display: block;
+  padding: 6px 24px 6px 0;
 }
 .model-badge.chat-role-assistant {
   --role-color: var(--muted);

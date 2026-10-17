@@ -326,7 +326,7 @@ export class Jobs {
         key,
         grid.input.format,
         cell,
-        ({ text, thinking, estimatedUsage }) => {
+        ({ text, thinking, estimatedUsage, currentCallCostUsd }) => {
           if (!current()) return;
           const previousLength = cell.thinking?.length ?? 0;
           if (thinking.length > previousLength) {
@@ -341,6 +341,7 @@ export class Jobs {
           const changed = cell.draft !== text;
           cell.draft = text;
           cell.estimatedUsage = estimatedUsage;
+          cell.currentCallCostUsd = currentCallCostUsd;
           if (changed && grid.input.format === "html") {
             this.previews.update(cell, text, () => this.previewUpdated(grid));
           }
@@ -357,6 +358,7 @@ export class Jobs {
       completed.provenance = {
         signature: result.signature,
         maxOutputTokens: result.maxOutputTokens,
+        templateSteps: result.templateSteps,
         files: Object.keys(result.files).sort(),
       };
       completed.status = "complete";
@@ -411,8 +413,9 @@ export class Jobs {
             installed = true;
           }
           const billing = this.store.billing.cell(cell.id);
-          if (billing) Object.assign(nextCell, billing);
+          if (billing && !(output && grid.input.format === "chat-template")) Object.assign(nextCell, billing);
           clearCellProgress(nextCell);
+          if (!output && grid.input.format === "chat-template") nextCell.draft = cell.draft;
           nextGrid = {
             ...grid,
             cells: grid.cells.map((c) => (c.id === cell.id ? nextCell : c)),

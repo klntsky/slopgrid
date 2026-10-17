@@ -9,6 +9,7 @@ import { useGrids, usePublicGrids } from "../queries";
 import { ArrowUpRight, DollarSign, ArrowLeftRight } from "lucide-react";
 import {
   efforts,
+  isChatFormat,
   unusedVariableIssue,
   type GridInput,
 } from "../../server/domain";
@@ -197,12 +198,13 @@ export function Create() {
           <div className="section-heading">
             <span className="number">{commonParameters ? "04" : "03"}</span>
             <h2>
-              {input.format === "chat" ? "Chat history" : "Enter your prompt"}
+              {isChatFormat(input.format) ? "Chat history" : "Enter your prompt"}
             </h2>
           </div>
 
-          {input.format === "chat" ? (
+          {isChatFormat(input.format) ? (
             <ChatEditor
+              template={input.format === "chat-template"}
               messages={input.messages ?? []}
               onChange={(messages) => update({ messages })}
             />
