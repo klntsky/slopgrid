@@ -305,15 +305,14 @@ export function Create() {
       {formatSelected && (
         <section>
           <div className="section-heading">
-            <h2>Judged output</h2>
+            <h2>Output judge</h2>
           </div>
           {input.format === "html" ? (
             <p className="hint">Websites do not support a judge yet.</p>
           ) : !input.judge ? (
             <button
               type="button"
-              className="secondary add-judge"
-              style={{ width: "100%", minHeight: "8rem" }}
+              className="secondary"
               onClick={() =>
                 update({
                   judge: {
