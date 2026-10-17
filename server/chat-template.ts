@@ -75,9 +75,7 @@ export async function fillChatTemplate(
     // still leaves the provider in control of token limits on subsequent calls.
     remaining = Math.max(0, remaining - (costUsd ?? allowance));
     templateSteps.push({
-      inputTokens: budget.inputTokens,
       maxOutputTokens: budget.maxOutputTokens,
-      maxPrice: budget.maxPrice,
       usage,
       costUsd,
     });
@@ -98,11 +96,15 @@ export function templateFits(
 ): boolean {
   let remaining = dollars;
   return steps.every((step, index) => {
+    const inputTokens = step.usage?.inputTokens;
+    if (
+      inputTokens === undefined ||
+      !Number.isFinite(inputTokens) ||
+      inputTokens < 0
+    )
+      return false;
     const allowance = remaining / (steps.length - index);
-    const budget = budgetFor(step.inputTokens, allowance);
-    // Every prefix can select a different pricing tier or time-based override.
-    for (const key of ["prompt", "completion", "request"] as const)
-      if (step.maxPrice?.[key] !== budget.maxPrice?.[key]) return false;
+    const budget = budgetFor(inputTokens, allowance);
     const tokens = step.usage?.outputTokens ?? step.maxOutputTokens;
     if (
       budget.maxOutputTokens !== undefined &&

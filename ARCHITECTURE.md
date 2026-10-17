@@ -59,8 +59,8 @@ so opening an up-to-date database does not require that write lock.
 - Completed artifacts are written before their cell is marked complete. Live
   drafts and estimates remain in engine memory; snapshots combine that state
   with persisted metadata. Failed template transcripts are retained with their
-  cells. Completed output bodies stay in files, and reuse metadata stores input
-  size estimates rather than accumulated generated histories.
+  cells. Completed output bodies stay in files, while reuse metadata holds
+  per-call usage and allowances.
 - Each engine initialization advances a persisted epoch. Snapshots also carry
   an in-memory sequence, allowing the browser to reject older updates across
   reconnects and engine restarts. Snapshot reads do not write to SQLite.
@@ -175,8 +175,9 @@ that wait.
 Usage comes from the attempt's durable billing records for every format,
 including failed calls when usage is reported. Copied artifacts retain their
 saved usage without acquiring another attempt's billing records. Reuse
-provenance records each template call's estimated input size, token allowance, provider price
-caps, usage, and cost; every prefix is checked against current settings.
+provenance records each template call's output token allowance, usage, and cost.
+The reuse check uses reported input-token counts and current pricing to calculate
+each call's destination allowance.
 Failed templates retain their partial draft, while cancellation, restart, and
 a new attempt discard unfinished previews. Product behavior is defined in
 [PRODUCT.md](PRODUCT.md).

@@ -71,16 +71,46 @@ test("template budgets use actual prefixes and remaining allowance, and reuse ch
   assert.equal(progress.at(-1)!.thinking, "ThoughtThought");
   assert.equal(templateFits(result.templateSteps, 10, reuseBudgetFor), true);
   assert.equal(templateFits(result.templateSteps, 1, reuseBudgetFor), false);
-  const unknown = result.templateSteps.map((step) => ({
+  const unknownOutput = result.templateSteps.map((step) => ({
     ...step,
-    usage: undefined,
+    usage: { inputTokens: step.usage!.inputTokens },
   }));
-  assert.equal(templateFits(unknown, 10, reuseBudgetFor), true);
-  assert.equal(templateFits(unknown, 5, reuseBudgetFor), false);
+  assert.equal(templateFits(unknownOutput, 10, reuseBudgetFor), true);
+  assert.equal(templateFits(unknownOutput, 5, reuseBudgetFor), false);
   assert.equal(JSON.stringify(result.templateSteps).includes("Answer"), false);
+  for (const step of result.templateSteps) {
+    assert.equal(Object.hasOwn(step, "inputTokens"), false);
+    assert.equal(Object.hasOwn(step, "maxPrice"), false);
+  }
+});
+
+test("template reuse needs a valid reported input count for every call", () => {
+  const step = {
+    maxOutputTokens: 100,
+    usage: { inputTokens: 20, outputTokens: 30 },
+    costUsd: 0.5,
+  };
+  for (const inputTokens of [undefined, -1, NaN, Infinity]) {
+    assert.equal(
+      templateFits(
+        [step, { ...step, usage: { ...step.usage, inputTokens } }],
+        10,
+        reuseBudgetFor,
+      ),
+      false,
+    );
+  }
   assert.equal(
-    result.templateSteps[1].inputTokens,
-    budgetFor(prompts[1], 8).inputTokens,
+    templateFits([{ ...step, usage: undefined }], 10, reuseBudgetFor),
+    false,
+  );
+  assert.equal(
+    templateFits(
+      [{ ...step, usage: { ...step.usage, inputTokens: 0 } }],
+      10,
+      reuseBudgetFor,
+    ),
+    true,
   );
 });
 
@@ -158,7 +188,7 @@ test("missing reported cost uses token estimates and unknown metadata keeps prov
   assert.equal(calls, 2);
 });
 
-test("template reuse rejects changed pricing on later prefixes even when the first call is unchanged", async () => {
+test("template reuse uses reported input counts and current prices for each allowance", async () => {
   const tiered = {
     ...model,
     pricing: {
@@ -166,12 +196,17 @@ test("template reuse rejects changed pricing on later prefixes even when the fir
       overrides: [{ min_prompt_tokens: 300, prompt: 0.002 }],
     },
   };
+  let calls = 0;
   const result = await fillChatTemplate(
     cell,
     (prompt, dollars) => generationBudget(tiered, prompt, "", dollars),
     async () => ({
       files: { "index.md": "Long answer ".repeat(30) },
-      usage: { inputTokens: 100, outputTokens: 10, costUsd: 0.2 },
+      usage: {
+        inputTokens: ++calls === 1 ? 100 : 500,
+        outputTokens: 10,
+        costUsd: 0.2,
+      },
     }),
     () => {},
   );
@@ -189,6 +224,22 @@ test("template reuse rejects changed pricing on later prefixes even when the fir
   assert.equal(
     templateFits(result.templateSteps, 10, (inputTokens, dollars) =>
       generationBudgetForInput(changed, inputTokens, dollars),
+    ),
+    true,
+  );
+  assert.equal(
+    templateFits(result.templateSteps, 10, (inputTokens, dollars) =>
+      generationBudgetForInput(
+        {
+          ...changed,
+          pricing: {
+            ...changed.pricing,
+            overrides: [{ min_prompt_tokens: 300, prompt: 0.0195 }],
+          },
+        },
+        inputTokens,
+        dollars,
+      ),
     ),
     false,
   );

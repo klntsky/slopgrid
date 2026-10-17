@@ -87,6 +87,21 @@ test("template usage and per-call reuse survive storage reopening", async () => 
       await f.store.files.bundle(saved.cells[0].id),
     );
     assertCost(f.store.get(copy.id)!.cells[0].usage!.costUsd!, 0.0246);
+    f.store.db
+      .prepare(
+        "UPDATE cells SET data=json_remove(data,'$.provenance.templateSteps[1].usage.inputTokens') WHERE id=?",
+      )
+      .run(copy.cells[0].id);
+    const regenerated = await create(f, {
+      ...template,
+      sourceGridId: copy.id,
+      reuseArtifacts: true,
+    });
+    assert.notEqual(regenerated.cells[0].status, "complete");
+    finish(await f.nextCall(), "Fresh first answer");
+    finish(await f.nextCall(), "Fresh second answer");
+    assert.equal((await settled(f, regenerated.id)).status, "complete");
+    assert.equal(f.calls.length, calls + 2);
   } finally {
     await f.close();
   }

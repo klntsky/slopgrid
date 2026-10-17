@@ -1,5 +1,4 @@
 import { z } from "zod";
-import type { TokenPrices } from "./model-pricing.js";
 import {
   imageKinds,
   validImageSetting,
@@ -231,9 +230,7 @@ export type Cell = {
   usage?: { inputTokens?: number; outputTokens?: number; costUsd?: number };
 };
 export type TemplateStep = {
-  inputTokens: number;
   maxOutputTokens?: number;
-  maxPrice?: TokenPrices;
   usage?: Cell["usage"];
   costUsd?: number;
 };
