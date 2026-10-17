@@ -8,12 +8,19 @@ import type { GridInput } from "./domain.js";
 import type { Model } from "./provider.js";
 
 export function canJudge(model: Model, format: GridInput["format"]): boolean {
-  return (
-    format !== "html" &&
-    model.text &&
-    model.structuredOutputs === true &&
-    ((format !== "svg" && format !== "image") || model.imageInput === true)
-  );
+  return judgeModelIssue(model, format) === undefined;
+}
+
+export function judgeModelIssue(
+  model: Model | undefined,
+  format: GridInput["format"],
+): string | undefined {
+  if (format === "html") return "Websites do not support a judge yet.";
+  if (!model?.text || model.structuredOutputs !== true)
+    return "The judge model must support structured outputs.";
+  if ((format === "svg" || format === "image") && model.imageInput !== true)
+    return "The judge model must support image inputs for SVG and Image outputs.";
+  return undefined;
 }
 
 export function effortLabel(effort: string): string {

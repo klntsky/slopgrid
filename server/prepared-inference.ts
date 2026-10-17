@@ -6,6 +6,7 @@ import { z } from "zod";
 import type { Cell, GridInput } from "./domain.js";
 import type { TextBudget } from "./generation-budget.js";
 import { instruction, websiteSchema } from "./output-format.js";
+import { canonical } from "../shared/canonical.js";
 
 const dependencies = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf8"),
@@ -90,17 +91,6 @@ export function prepareTextInference(
 export type PreparedInference =
   | ReturnType<typeof prepareTextInference>
   | ReturnType<typeof prepareImageInference>;
-function canonical(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === "object")
-    return Object.fromEntries(
-      Object.entries(value)
-        .filter(([, v]) => v !== undefined)
-        .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-        .map(([k, v]) => [k, canonical(v)]),
-    );
-  return value;
-}
 export function inferenceSignature(prepared: PreparedInference): string {
   if (prepared.format !== "image") {
     const { pricing: _estimation, ...request } = prepared;

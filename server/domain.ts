@@ -212,7 +212,7 @@ export function unusedVariableIssue(
       return `Include ${token} in the prompt for ${label} variables.`;
 }
 export type Completion = {
-  phase: "direct" | "image";
+  phase: "direct" | "image" | "judge";
   finishReason?: string;
   rawFinishReason?: string;
   reasoningTokens?: number;

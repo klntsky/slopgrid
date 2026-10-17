@@ -14,6 +14,8 @@ import { generateInference, type InferenceContext } from "./inference.js";
 import { parsePricing, type ModelPricing } from "./model-pricing.js";
 import type { CallObserver } from "./billing.js";
 import { upstreamFetch } from "./http.js";
+import { judgeInference, type PreparedJudgeInference } from "./judge.js";
+import { canJudge, judgeModelIssue } from "./compatibility.js";
 import {
   efforts,
   type Cell,
@@ -235,6 +237,16 @@ export class Provider {
     }
   }
 
+  async judge(
+    key: string,
+    prepared: PreparedJudgeInference,
+    context: InferenceContext = {},
+  ) {
+    const model = (await this.models()).find((candidate) => candidate.id === prepared.model);
+    if (!model || !canJudge(model, prepared.format))
+      throw new PreparationError(judgeModelIssue(model, prepared.format) ?? "The judge model must support structured outputs.");
+    return judgeInference(this.baseURL, key, prepared, context);
+  }
   async generate(
     key: string,
     format: SingleOutputFormat,
