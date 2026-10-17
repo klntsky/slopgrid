@@ -305,6 +305,7 @@ export function Create() {
       {formatSelected && (
         <section>
           <div className="section-heading">
+            <span className="number">{commonParameters ? "05" : "04"}</span>
             <h2>Output judge</h2>
           </div>
           {input.format === "html" ? (
@@ -448,7 +449,7 @@ export function Create() {
       {formatSelected && (
         <section>
           <div className="section-heading">
-            <span className="number">{commonParameters ? "05" : "04"}</span>
+            <span className="number">{commonParameters ? "06" : "05"}</span>
             <h2>Inference provider setup</h2>
           </div>
           <Connection returnTo="/create" />
