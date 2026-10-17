@@ -18,6 +18,7 @@ const criteria = [
 type Snapshot = {
   id: string;
   status: string;
+  input: GridInput;
   spentUsd: number;
   cells: (Cell & { outputReady: boolean })[];
 };
@@ -127,31 +128,32 @@ async function create(
   return grid!;
 }
 
-async function inspect(page: Page, grid: Snapshot, expectedScore: number) {
+async function inspect(page: Page, grid: Snapshot) {
   expect(new Set(grid.cells.map((cell) => cell.generationSourceId)).size).toBe(
     1,
   );
   const outputs: Buffer[] = [];
-  for (const cell of grid.cells) {
+  const expected = grid.input.judge!.criteria;
+  const scores = page.locator(".judge-result-button");
+  await expect(scores).toHaveCount(grid.cells.length);
+  for (const [index, cell] of grid.cells.entries()) {
     expect(cell.outputReady).toBe(true);
     expect(cell.judge?.status).toBe("complete");
-    expect(cell.judge?.results).toHaveLength(criteria.length);
-    expect(
-      cell.judge!.results!.map((result) => result.verdict),
-      JSON.stringify(cell.judge!.results),
-    ).toEqual([false, true]);
+    expect(cell.judge?.results).toHaveLength(expected.length);
+    const correct = cell.judge!.results!.filter(
+      (result, criterion) =>
+        result.verdict === expected[criterion].correctAnswer,
+    ).length;
+    await expect(scores.nth(index)).toHaveText(`${correct}/${expected.length}`);
+    await expect(scores.nth(index)).toHaveAccessibleName(
+      `Judgment: ${correct} of ${expected.length} correct`,
+    );
     const download = await page.request.get(`/outputs/${cell.id}/download`);
     expect(download.ok()).toBe(true);
     outputs.push(await download.body());
   }
   for (const output of outputs.slice(1))
     expect(output.equals(outputs[0])).toBe(true);
-  const scores = page.getByRole("button", {
-    name: `Judgment: ${expectedScore} of 2 correct`,
-    exact: true,
-  });
-  await expect(scores).toHaveCount(grid.cells.length);
-  await expect(scores.first()).toHaveText(`${expectedScore}/2`);
   await expect(
     page.getByRole("dialog", { name: "Judged output", exact: true }),
   ).not.toBeVisible();
@@ -162,17 +164,13 @@ async function inspect(page: Page, grid: Snapshot, expectedScore: number) {
   });
   await expect(popup).toBeVisible();
   const items = popup.getByRole("listitem");
-  await expect(
-    items.nth(0).getByText("Correct", { exact: true }),
-  ).toBeVisible();
-  await expect(
-    items
-      .nth(1)
-      .getByText(expectedScore === 2 ? "Correct" : "Incorrect", {
-        exact: true,
-      }),
-  ).toBeVisible();
   for (const [index, result] of grid.cells[0].judge!.results!.entries()) {
+    const matched = result.verdict === expected[index].correctAnswer;
+    await expect(
+      items
+        .nth(index)
+        .getByText(matched ? "Correct" : "Incorrect", { exact: true }),
+    ).toBeVisible();
     await expect(
       items.nth(index).getByText(result.explanation, { exact: true }),
     ).toBeVisible();
@@ -233,8 +231,15 @@ async function billing(page: Page, grid: Snapshot, generationCount: number) {
   ).toHaveCount(bill.calls.filter((call) => call.phase === "judge").length);
 }
 
-for (const format of ["markdown", "chat-template", "image", "svg"] as const) {
-  test(`real ${format} judgments use committed artifacts and isolated billing`, async ({
+for (const scenario of [
+  "markdown",
+  "markdown-default",
+  "chat-template",
+  "image",
+  "svg",
+] as const) {
+  const format = scenario === "markdown-default" ? "markdown" : scenario;
+  test(`real ${scenario} judgments use committed artifacts and isolated billing`, async ({
     page,
   }) => {
     test.setTimeout(600_000);
@@ -271,7 +276,8 @@ for (const format of ["markdown", "chat-template", "image", "svg"] as const) {
           ? { kind: "effort", values: ["default"] }
           : {
               kind: "judge_effort",
-              values: format === "markdown" ? ["default", "none"] : ["default"],
+              values:
+                scenario === "markdown" ? ["default", "none"] : ["default"],
             },
       judge: {
         criteria,
@@ -280,7 +286,7 @@ for (const format of ["markdown", "chat-template", "image", "svg"] as const) {
       },
     };
     const grid = await create(page, input, headers);
-    await inspect(page, grid, 2);
+    await inspect(page, grid);
     await billing(page, grid, 1);
     if (format === "markdown") {
       const fresh = await create(
@@ -295,7 +301,7 @@ for (const format of ["markdown", "chat-template", "image", "svg"] as const) {
         headers,
         grid.id,
       );
-      await inspect(page, fresh, 1);
+      await inspect(page, fresh);
       const firstAttempts = new Set(
         grid.cells.map((cell) => cell.judge!.attemptId),
       );
