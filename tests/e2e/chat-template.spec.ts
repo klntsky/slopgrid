@@ -9,6 +9,17 @@ test("chat template editing, persistence, sequential output and exports", async 
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   const answer =
     "# Answer\n\n## user\n\nA heading inside the answer.\n\n```md\n## assistant\n```\n";
+  const expected = JSON.stringify(
+    [
+      { role: "user", content: "Question one" },
+      { role: "assistant", content: answer },
+      { role: "user", content: "Next question two" },
+      { role: "assistant", content: answer },
+      { role: "system", content: "Keep answers concise." },
+    ],
+    null,
+    2,
+  );
   await request.post("/fixture/reset", {
     data: { markdownOutput: answer, holdGenerations: true },
   });
@@ -94,6 +105,15 @@ test("chat template editing, persistence, sequential output and exports", async 
   await request.post("/fixture/release", { data: { all: true } });
   await expectProgress(page, 1, 1);
   await expect(preview.locator(".chat-bubble")).toHaveCount(5);
+  await page.screenshot({
+    path: "test-results/chat-conversation-grid.png",
+    fullPage: true,
+  });
+  const rawOutputURL = await page
+    .getByRole("link", { name: "Open output", exact: true })
+    .getAttribute("href");
+  const rawOutput = await page.request.get(rawOutputURL! + "&raw=1");
+  expect(await rawOutput.text()).toBe(expected);
   await expect(preview.locator('[data-role="assistant"] h2')).toHaveText([
     "user",
     "user",
@@ -129,17 +149,6 @@ test("chat template editing, persistence, sequential output and exports", async 
   await expect(assistant).toHaveCSS("align-self", "flex-start");
   await expect(user).toHaveCSS("align-self", "flex-end");
   await page.setViewportSize({ width: 1280, height: 720 });
-  const expected = JSON.stringify(
-    [
-      { role: "user", content: "Question one" },
-      { role: "assistant", content: answer },
-      { role: "user", content: "Next question two" },
-      { role: "assistant", content: answer },
-      { role: "system", content: "Keep answers concise." },
-    ],
-    null,
-    2,
-  );
   await page.getByRole("button", { name: "View raw", exact: true }).click();
   await expect(preview.locator(".markdown-raw")).toHaveText(expected);
   await page
