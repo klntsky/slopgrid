@@ -77,7 +77,7 @@ test("chat template editing, persistence, sequential output and exports", async 
   const downloadURL = await page
     .getByRole("link", { name: "Download output", exact: true })
     .getAttribute("href");
-  const download = await request.get(downloadURL!);
+  const download = await page.request.get(downloadURL!);
   expect(download.ok()).toBe(true);
   expect(download.headers()["content-type"]).toContain("text/markdown");
   expect(await download.text()).toBe(expected);

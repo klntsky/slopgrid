@@ -162,8 +162,9 @@ include the history.
 The template orchestrator sits between provider preparation and individual
 inference calls. It resolves unfilled messages before they reach the provider,
 maintains the generated history, and aggregates progress and usage. Each call
-has its own billing record, while completed template cells persist aggregate
-usage. Reuse provenance records per-call input, token allowance, usage, and cost
+has its own billing record, while settled template cells persist aggregate
+attempt usage, including failed calls when usage is reported. Reuse provenance
+records per-call input, token allowance, usage, and cost
 for destination-budget validation. Failed templates retain their partial draft;
 the cell lifecycle clears it when a new attempt starts. Product behavior is
 defined in [PRODUCT.md](PRODUCT.md).

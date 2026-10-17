@@ -95,8 +95,7 @@ export class Store {
       ...cell,
       ...JSON.parse(cells[index].data),
       id: cells[index].id,
-      ...(grid.input.format === "chat-template" &&
-      JSON.parse(cells[index].data).status === "complete"
+      ...(grid.input.format === "chat-template"
         ? {}
         : this.billing.cell(cells[index].id)),
     }));

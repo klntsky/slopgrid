@@ -92,6 +92,37 @@ test("template usage and per-call reuse survive storage reopening", async () => 
   }
 });
 
+test("failed templates retain the partial transcript and aggregate charged usage", async () => {
+  const f = await runtimeFixture();
+  try {
+    const source = await create(f, {
+      ...input,
+      format: "chat-template",
+      budgetUsd: 1,
+      rows: { kind: "variable", values: ["cat"] },
+      messages: [
+        { role: "user", content: "$ROW $COLUMN" },
+        { role: "unfilled", content: "" },
+        { role: "unfilled", content: "" },
+      ],
+    });
+    finish(await f.nextCall(), "First answer");
+    const second = await f.nextCall();
+    second.write({ content: "Partial answer" });
+    second.finish(0.01, { reason: "length", outputTokens: 10 });
+    await settled(f, source.id);
+    const saved = f.store.get(source.id)!.cells[0];
+    assert.equal(saved.status, "error");
+    assert.match(saved.draft!, /First answer/);
+    assert.match(saved.draft!, /Partial answer/);
+    assertCost(saved.usage!.costUsd!, 0.0223);
+    assert.equal(saved.usage!.outputTokens, 30);
+    assert.equal(saved.messages![1].role, "unfilled");
+  } finally {
+    await f.close();
+  }
+});
+
 test("edit copies exact completed cells through reorder, cancellation, web replacement and engine restart", async () => {
   const f = await runtimeFixture();
   try {

@@ -9,6 +9,8 @@ import { failureDetails, failureDiagnostics } from "./failures.js";
 import { selectWorker } from "./worker-allocation.js";
 import { Persistence } from "./persistence.js";
 import { generationFailure } from "./generation-api.js";
+import { sumUsage } from "./chat-template.js";
+import type { CallObserver } from "./billing.js";
 import {
   beginCellAttempt,
   clearCellProgress,
@@ -315,6 +317,19 @@ export class Jobs {
     const current = () =>
       !controller.signal.aborted && this.running.get(cell.id) === call;
     const completed = { ...cell };
+    const callUsage: Cell["usage"][] = [];
+    const observe = this.store.billing.observe(cell.id);
+    const trackCalls: CallObserver = (phase) => {
+      const index = callUsage.push(undefined) - 1;
+      const recorder = observe(phase);
+      return {
+        ...recorder,
+        complete: (completion, usage) => {
+          callUsage[index] = usage;
+          recorder.complete(completion, usage);
+        },
+      };
+    };
     let output: Awaited<ReturnType<Provider["generate"]>> | undefined;
     try {
       if (!key) throw new Error("Reconnect OpenRouter to continue.");
@@ -348,7 +363,7 @@ export class Jobs {
           this.previewUpdated(grid);
         },
         controller.signal,
-        this.store.billing.observe(cell.id),
+        trackCalls,
         references,
       );
       if (!current()) return;
@@ -413,8 +428,9 @@ export class Jobs {
             installed = true;
           }
           const billing = this.store.billing.cell(cell.id);
-          if (billing && !(output && grid.input.format === "chat-template"))
-            Object.assign(nextCell, billing);
+          if (grid.input.format === "chat-template")
+            nextCell.usage = output?.usage ?? (callUsage.length ? sumUsage(callUsage) : undefined);
+          else if (billing) Object.assign(nextCell, billing);
           clearCellProgress(nextCell);
           if (!output && grid.input.format === "chat-template")
             nextCell.draft = cell.draft;
