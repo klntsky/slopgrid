@@ -131,7 +131,7 @@ test("judge criteria preserve boolean answers and judge axes restore fixed setti
     .getByRole("searchbox", { name: "Search judge models", exact: true })
     .fill("fixture");
   await expect(
-    fixedJudge.locator('input[type="radio"][value="fixture/other"]'),
+    fixedJudge.locator('input[type="radio"][value="fixture/text"]'),
   ).toBeChecked();
   await page
     .getByRole("combobox", { name: "Columns", exact: true })
@@ -211,8 +211,14 @@ test("removing a judge preserves ordinary axes and generation settings", async (
   ).toHaveCount(0);
   for (const side of ["Rows", "Columns"]) {
     const axis = page.getByRole("combobox", { name: side, exact: true });
-    await expect(axis.locator('option[value="judge_model"]')).toBeDisabled();
-    await expect(axis.locator('option[value="judge_effort"]')).toBeDisabled();
+    await expect(axis.locator('option[value="judge_model"]')).toHaveJSProperty(
+      "disabled",
+      true,
+    );
+    await expect(axis.locator('option[value="judge_effort"]')).toHaveJSProperty(
+      "disabled",
+      true,
+    );
   }
 });
 
@@ -295,7 +301,9 @@ test("format changes retain criteria and judge effort, clear incompatible models
   await expect(
     page.getByLabel("Judge thinking effort", { exact: true }),
   ).toHaveValue("high");
-  await page.getByRole("button", { name: "Website", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Static website", exact: true })
+    .click();
   await expect(
     page.getByText("Websites do not support a judge yet.", { exact: true }),
   ).toBeVisible();
