@@ -25,25 +25,36 @@ export function compatibilityTables({
 }: Props): CompatibilityTables {
   const axes = [input.rows, input.columns];
   const judgeModels = (
-    axes.find((axis) => axis.kind === "judge_model")?.values ??
-    [input.judge?.model ?? ""]
-  ).filter(Boolean).map((id) => ({
-    id, info: modelCatalog.find((model) => model.id === id),
-  }));
+    axes.find((axis) => axis.kind === "judge_model")?.values ?? [
+      input.judge?.model ?? "",
+    ]
+  )
+    .filter(Boolean)
+    .map((id) => ({
+      id,
+      info: modelCatalog.find((model) => model.id === id),
+    }));
   const judgeEfforts = (
-    axes.find((axis) => axis.kind === "judge_effort")?.values ??
-    [input.judge?.effort ?? "default"]
+    axes.find((axis) => axis.kind === "judge_effort")?.values ?? [
+      input.judge?.effort ?? "default",
+    ]
   ).filter((effort) => effort !== "default");
-  const judgeCompatibility = input.judge ? {
-    judge_effort: <CompatibilityGrid
-      caption="Judge thinking effort compatibility"
-      rows={judgeModels.map(({ id, info }) => info?.name ?? id)}
-      columns={judgeEfforts.map(effortLabel)}
-      cells={judgeModels.map(({ info }) => judgeEfforts.map((effort) => ({
-        support: thinkingEffortSupport(info, effort),
-      })))}
-    />,
-  } : {};
+  const judgeCompatibility = input.judge
+    ? {
+        judge_effort: (
+          <CompatibilityGrid
+            caption="Judge thinking effort compatibility"
+            rows={judgeModels.map(({ id, info }) => info?.name ?? id)}
+            columns={judgeEfforts.map(effortLabel)}
+            cells={judgeModels.map(({ info }) =>
+              judgeEfforts.map((effort) => ({
+                support: thinkingEffortSupport(info, effort),
+              })),
+            )}
+          />
+        ),
+      }
+    : {};
   const selectedModels = [
     ...new Set(
       axes.find((axis) => axis.kind === "model")?.values ??
@@ -91,62 +102,65 @@ export function compatibilityTables({
       cell.imageSettings ?? {},
     ),
   }));
-  return { ...judgeCompatibility, ...Object.fromEntries(
-    imageKinds.map((kind) => {
-      const side =
-        input.rows.kind === kind
-          ? "rows"
-          : input.columns.kind === kind
-            ? "columns"
-            : undefined;
-      const values = side
-        ? input[side].values
-        : [
-            kind === "input_references"
-              ? `${input.inputReferences?.length ?? 0} images`
-              : input.imageSettings?.[kind] || "auto",
-          ];
-      const cells = selectedModels.map(({ id }) =>
-        values.map((value) => {
-          const matches = expanded
-            .filter(
-              (cell) =>
-                cell.model === id &&
-                (!side ||
-                  input[side].values[
-                    side === "rows" ? cell.row : cell.column
-                  ] === value),
-            )
-            .map((cell) => cell.compatibility.parameters[kind]);
-          const support = matches.length
-            ? combinationSupport(matches.map((cell) => cell.support))
-            : "unknown";
-          return {
-            support,
-            reason:
-              [
-                ...new Set(
-                  matches
-                    .filter((cell) => cell.support === support)
-                    .map((cell) => cell.reason)
-                    .filter(Boolean),
-                ),
-              ].join("\n") || undefined,
-          } as Compatibility;
-        }),
-      );
-      return [
-        kind,
-        <CompatibilityGrid
-          key={kind}
-          caption={`${imageParameterNames[kind]} compatibility`}
-          rows={modelNames}
-          columns={values.map((value) => (value === "auto" ? "Auto" : value))}
-          cells={cells}
-        />,
-      ];
-    }),
-  ) };
+  return {
+    ...judgeCompatibility,
+    ...Object.fromEntries(
+      imageKinds.map((kind) => {
+        const side =
+          input.rows.kind === kind
+            ? "rows"
+            : input.columns.kind === kind
+              ? "columns"
+              : undefined;
+        const values = side
+          ? input[side].values
+          : [
+              kind === "input_references"
+                ? `${input.inputReferences?.length ?? 0} images`
+                : input.imageSettings?.[kind] || "auto",
+            ];
+        const cells = selectedModels.map(({ id }) =>
+          values.map((value) => {
+            const matches = expanded
+              .filter(
+                (cell) =>
+                  cell.model === id &&
+                  (!side ||
+                    input[side].values[
+                      side === "rows" ? cell.row : cell.column
+                    ] === value),
+              )
+              .map((cell) => cell.compatibility.parameters[kind]);
+            const support = matches.length
+              ? combinationSupport(matches.map((cell) => cell.support))
+              : "unknown";
+            return {
+              support,
+              reason:
+                [
+                  ...new Set(
+                    matches
+                      .filter((cell) => cell.support === support)
+                      .map((cell) => cell.reason)
+                      .filter(Boolean),
+                  ),
+                ].join("\n") || undefined,
+            } as Compatibility;
+          }),
+        );
+        return [
+          kind,
+          <CompatibilityGrid
+            key={kind}
+            caption={`${imageParameterNames[kind]} compatibility`}
+            rows={modelNames}
+            columns={values.map((value) => (value === "auto" ? "Auto" : value))}
+            cells={cells}
+          />,
+        ];
+      }),
+    ),
+  };
 }
 
 function CompatibilityGrid({

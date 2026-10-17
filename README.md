@@ -6,9 +6,10 @@
 
 ## Useful features
 
-- Allows you to limit inference spending in USD per inference call;
+- Allows you to limit generation spending in USD per inference call; judge calls are uncapped;
 - Tries to prevent hitting inference budget limits by pre-checking your openrouter allowance and running as many parallel inferences as possible, with some safety margin
 - Easy sharing and collaboration via forking; your data is private by default; deletion of public grids is impossible on purpose - we don't want important benchmark data to disappear
+- Optional judged output with yes/no criteria, expected answers, and judge explanations
 
 ## Supported grid layouts
 
@@ -23,8 +24,16 @@ The user defines what columns and rows of a grid mean;
 - Quality levels
 - Backgrounds: automatic, transparent, or opaque
 - Groups of input reference images
+- Judge models and judge thinking efforts (optional)
 
-### SVG, Markdown, Website, and Chat completion outputs
+### SVG, Markdown, and Chat completion outputs
+
+- Models
+- Thinking efforts
+- Prompt variables
+- Judge models and judge thinking efforts (optional)
+
+### Website outputs
 
 - Models
 - Thinking efforts

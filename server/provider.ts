@@ -242,9 +242,14 @@ export class Provider {
     prepared: PreparedJudgeInference,
     context: InferenceContext = {},
   ) {
-    const model = (await this.models()).find((candidate) => candidate.id === prepared.model);
+    const model = (await this.models()).find(
+      (candidate) => candidate.id === prepared.model,
+    );
     if (!model || !canJudge(model, prepared.format))
-      throw new PreparationError(judgeModelIssue(model, prepared.format) ?? "The judge model must support structured outputs.");
+      throw new PreparationError(
+        judgeModelIssue(model, prepared.format) ??
+          "The judge model must support structured outputs.",
+      );
     return judgeInference(this.baseURL, key, prepared, context);
   }
   async generate(

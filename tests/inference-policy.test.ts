@@ -90,23 +90,29 @@ test("automatic judged admission reserves one generation per source and each unf
     }
     override async models(): Promise<Model[]> {
       this.modelReads++;
-      return [{
-        id: "cheap",
-        name: "Cheap",
-        text: true,
-        image: false,
-        imageInput: false,
-        reasoning: false,
-        reasoningMandatory: false,
-        pricing: { prompt: 0, completion: 0.001 },
-        contextLength: 10000,
-        maxCompletionTokens: 100,
-      }];
+      return [
+        {
+          id: "cheap",
+          name: "Cheap",
+          text: true,
+          image: false,
+          imageInput: false,
+          reasoning: false,
+          reasoningMandatory: false,
+          pricing: { prompt: 0, completion: 0.001 },
+          contextLength: 10000,
+          maxCompletionTokens: 100,
+        },
+      ];
     }
   }
   const provider = new Provider();
   const { store } = await appFixture(t, { provider });
-  const session = { id: "judged-admission-session", key: "fixture", created: Date.now() };
+  const session = {
+    id: "judged-admission-session",
+    key: "fixture",
+    created: Date.now(),
+  };
   store.saveSession(session);
   const allow = createInferenceGuard(store, provider);
   const req = { get: () => undefined, body: {} } as unknown as Request;
@@ -134,14 +140,27 @@ test("automatic judged admission reserves one generation per source and each unf
     id: `reservation-${index}`,
   }));
   assignGenerationSources(input.format, cells);
-  assert.equal(await allow(req, res, session, undefined, input.format, cells), true);
+  assert.equal(
+    await allow(req, res, session, undefined, input.format, cells),
+    true,
+  );
   // $0.10 generation and three $3 judge reservations fit; a fourth judge does not.
   assert.equal(store.session(session.id)!.inferenceConcurrency, 4);
 
   cells[0].generationStatus = "complete";
   cells[0].judge!.status = "complete";
   // Missing member copies are repaired, not reserved as more generation.
-  assert.equal(await allow(req, res, session, undefined, input.format, [...cells].reverse()), true);
+  assert.equal(
+    await allow(
+      req,
+      res,
+      session,
+      undefined,
+      input.format,
+      [...cells].reverse(),
+    ),
+    true,
+  );
   assert.equal(store.session(session.id)!.inferenceConcurrency, 3);
 
   const modelReads = provider.modelReads;
@@ -149,20 +168,31 @@ test("automatic judged admission reserves one generation per source and each unf
   assert.equal(store.session(session.id)!.inferenceConcurrency, 7);
   assert.equal(provider.modelReads, modelReads);
 
-  const images = expandGrid({ ...input, format: "image" }).map((cell, index) => ({
-    ...cell,
-    id: `image-reservation-${index}`,
-  }));
+  const images = expandGrid({ ...input, format: "image" }).map(
+    (cell, index) => ({
+      ...cell,
+      id: `image-reservation-${index}`,
+    }),
+  );
   assignGenerationSources("image", images);
-  assert.equal(await allow(req, res, session, undefined, "image", images), true);
+  assert.equal(
+    await allow(req, res, session, undefined, "image", images),
+    true,
+  );
   assert.equal(store.session(session.id)!.inferenceConcurrency, 3);
   assert.equal(provider.modelReads, modelReads);
   images[0].generationStatus = "complete";
   for (const cell of images.slice(0, 2)) cell.judge!.status = "complete";
-  assert.equal(await allow(req, res, session, undefined, "image", images), true);
+  assert.equal(
+    await allow(req, res, session, undefined, "image", images),
+    true,
+  );
   assert.equal(store.session(session.id)!.inferenceConcurrency, 2);
 
   const unjudgedImages = images.map((cell) => ({ ...cell, judge: undefined }));
-  assert.equal(await allow(req, res, session, undefined, "image", unjudgedImages), true);
+  assert.equal(
+    await allow(req, res, session, undefined, "image", unjudgedImages),
+    true,
+  );
   assert.equal(store.session(session.id)!.inferenceConcurrency, 23);
 });

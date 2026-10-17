@@ -8,7 +8,8 @@ export const svgRasterWorkerURL = new URL(import.meta.url);
 // Official DejaVu 2.37 archive SHA256:
 // fa9ca4d13871dd122f61258a80d01751d603b4d3ee14095d65453b4e846e17d7
 // https://dejavu-fonts.github.io/Download.html; license: public/fonts/DejaVu-LICENSE.txt.
-const fontSha256 = "b4a6c3e4faab8773f4ff761d56451646409f29abedd68f05d38c2df667d3c582";
+const fontSha256 =
+  "b4a6c3e4faab8773f4ff761d56451646409f29abedd68f05d38c2df667d3c582";
 
 async function render(svg) {
   const require = createRequire(import.meta.url);
@@ -23,9 +24,14 @@ async function render(svg) {
   const options = {
     dpi: 96,
     font: {
-      fontBuffers: [font], loadSystemFonts: false, defaultFontFamily: family,
-      serifFamily: family, sansSerifFamily: family, cursiveFamily: family,
-      fantasyFamily: family, monospaceFamily: family,
+      fontBuffers: [font],
+      loadSystemFonts: false,
+      defaultFontFamily: family,
+      serifFamily: family,
+      sansSerifFamily: family,
+      cursiveFamily: family,
+      fantasyFamily: family,
+      monospaceFamily: family,
     },
   };
   let renderer = new Resvg(svg, options);
@@ -53,6 +59,8 @@ if (!isMainThread) {
     const png = await render(workerData);
     parentPort.postMessage(png, [png.buffer]);
   } catch (error) {
-    parentPort.postMessage({ error: error instanceof Error ? error.message : String(error) });
+    parentPort.postMessage({
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 }

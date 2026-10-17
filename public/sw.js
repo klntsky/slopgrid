@@ -218,7 +218,9 @@ async function network(request, event) {
       return saved;
     }
     if (pagePath(url.pathname))
-      return (await (await caches.open(STATIC)).match(SHELL)) ?? unavailable(false);
+      return (
+        (await (await caches.open(STATIC)).match(SHELL)) ?? unavailable(false)
+      );
     return url.pathname.startsWith("/api/")
       ? json(
           { error: "This page isn't available offline." },

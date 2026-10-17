@@ -18,24 +18,41 @@ export async function loadJudgeArtifact(
   signal?: AbortSignal,
 ): Promise<string | ReferenceContent> {
   signal?.throwIfAborted();
-  if (format === "html") throw new Error("Websites do not support a judge yet.");
-  const bundle = await store.files.readArtifact(cell.id, cell.provenance?.files ?? []);
+  if (format === "html")
+    throw new Error("Websites do not support a judge yet.");
+  const bundle = await store.files.readArtifact(
+    cell.id,
+    cell.provenance?.files ?? [],
+  );
   signal?.throwIfAborted();
-  const filename = format === "image" ? "image" : format === "svg" ? "index.svg" :
-    format === "chat-template" ? (bundle?.files["messages.json"] ? "messages.json" : "index.md") : "index.md";
+  const filename =
+    format === "image"
+      ? "image"
+      : format === "svg"
+        ? "index.svg"
+        : format === "chat-template"
+          ? bundle?.files["messages.json"]
+            ? "messages.json"
+            : "index.md"
+          : "index.md";
   const data = bundle?.files[filename];
-  if (!data) throw new Error("The generated output is unavailable for judging.");
+  if (!data)
+    throw new Error("The generated output is unavailable for judging.");
   const bytes = Buffer.from(data.buffer, data.byteOffset, data.byteLength);
   if (format === "markdown") return bytes.toString("utf8");
-  if (format === "chat-template") return JSON.stringify(readChatOutput(bytes.toString("utf8")));
+  if (format === "chat-template")
+    return JSON.stringify(readChatOutput(bytes.toString("utf8")));
   const artifact = {
     bytes,
-    mediaType: format === "svg" ? "image/svg+xml" : (cell.mediaType ?? "application/octet-stream"),
+    mediaType:
+      format === "svg"
+        ? "image/svg+xml"
+        : (cell.mediaType ?? "application/octet-stream"),
     sha256: createHash("sha256").update(bytes).digest("hex"),
   };
   if (artifact.mediaType !== "image/svg+xml") return artifact;
   let cache = artifacts.get(store);
-  if (!cache) artifacts.set(store, cache = new Map());
+  if (!cache) artifacts.set(store, (cache = new Map()));
   const sourceId = cell.generationSourceId ?? cell.id;
   let prepared = cache.get(sourceId);
   if (!prepared) {

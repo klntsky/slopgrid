@@ -101,8 +101,7 @@ export function createInferenceGuard(store: Store, provider: Provider) {
         );
       }
       for (const cell of cells)
-        if (cell.judge && cell.judge.status !== "complete")
-          costs.push(3);
+        if (cell.judge && cell.judge.status !== "complete") costs.push(3);
       automatic = recommendWorkers(balanceUsd, costs);
     }
     // Re-read the session so a concurrent OAuth or disconnect request is preserved.

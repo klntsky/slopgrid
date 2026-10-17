@@ -24,7 +24,9 @@ export function reportedCost(usage: unknown): number | undefined {
   const result = costUsage.safeParse(usage);
   return result.success ? result.data.cost : undefined;
 }
-export async function optional<T>(value: PromiseLike<T>): Promise<T | undefined> {
+export async function optional<T>(
+  value: PromiseLike<T>,
+): Promise<T | undefined> {
   try {
     return await value;
   } catch {
@@ -114,23 +116,29 @@ export async function generateInference(
   let call: CallRecorder | undefined;
   let imageFinishReason: string | undefined;
   let imageCost: number | undefined;
-  const inferenceFetch = observedFetch(phase, context, (current) => {
-    call = current;
-  }, async (response) => {
-    if (format === "image" && response.ok) {
-      const body = await response
-        .clone()
-        .json()
-        .catch(() => undefined);
-      if (typeof body?.id === "string") call?.update({ generationId: body.id });
-      // The image adapter currently omits response usage.cost from its result.
-      imageCost = reportedCost(body?.usage);
-      const thinking = thinkingText(body);
-      if (thinking) onChunk({ text: "", thinking });
-      imageFinishReason =
-        body?.choices?.[0]?.finish_reason ?? body?.finish_reason;
-    }
-  });
+  const inferenceFetch = observedFetch(
+    phase,
+    context,
+    (current) => {
+      call = current;
+    },
+    async (response) => {
+      if (format === "image" && response.ok) {
+        const body = await response
+          .clone()
+          .json()
+          .catch(() => undefined);
+        if (typeof body?.id === "string")
+          call?.update({ generationId: body.id });
+        // The image adapter currently omits response usage.cost from its result.
+        imageCost = reportedCost(body?.usage);
+        const thinking = thinkingText(body);
+        if (thinking) onChunk({ text: "", thinking });
+        imageFinishReason =
+          body?.choices?.[0]?.finish_reason ?? body?.finish_reason;
+      }
+    },
+  );
   try {
     let usage: Cell["usage"];
     function recordCompletion(completion: Completion, current: Cell["usage"]) {

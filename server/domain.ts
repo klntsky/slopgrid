@@ -85,10 +85,15 @@ const gridFields = {
   judge: z
     .object({
       criteria: z
-        .array(z.object({
-          text: z.string().trim().min(1, "Enter at least one yes/no criterion."),
-          correctAnswer: z.boolean(),
-        }))
+        .array(
+          z.object({
+            text: z
+              .string()
+              .trim()
+              .min(1, "Enter at least one yes/no criterion."),
+            correctAnswer: z.boolean(),
+          }),
+        )
         .min(1, "Enter at least one yes/no criterion."),
       model: z.string().trim(),
       effort: z.enum(efforts),
@@ -129,7 +134,9 @@ export const gridSchema = z
     const dimensions = [g.rows.kind, g.columns.kind];
     if (
       !g.judge &&
-      dimensions.some((kind) => kind === "judge_model" || kind === "judge_effort")
+      dimensions.some(
+        (kind) => kind === "judge_model" || kind === "judge_effort",
+      )
     )
       issue("Add a judge to use judge dimensions.");
     if (g.judge) {

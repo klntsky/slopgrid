@@ -342,7 +342,9 @@ test("streaming output is excluded until completion and remains available after 
     await page.request.post("/fixture/svg-next");
     await expect
       .poll(() =>
-        page.getByRole("img", { name: "SVG preview", exact: true }).getAttribute("src"),
+        page
+          .getByRole("img", { name: "SVG preview", exact: true })
+          .getAttribute("src"),
       )
       .toContain("fill%3D%22blue");
     await page.request.post("/fixture/svg-next");

@@ -121,7 +121,9 @@ export function JudgeResultButton({
         aria-controls={open ? panelId : undefined}
       >
         <Scale aria-hidden="true" />
-        <span aria-hidden="true">{correct ?? "-"}/{criteria.length}</span>
+        <span aria-hidden="true">
+          {correct ?? "-"}/{criteria.length}
+        </span>
       </button>
       {container &&
         createPortal(
@@ -146,7 +148,11 @@ export function JudgeResultButton({
                 <X aria-hidden="true" />
               </button>
             </div>
-            {!results && <p className="judge-result-state" role="status">{state}</p>}
+            {!results && (
+              <p className="judge-result-state" role="status">
+                {state}
+              </p>
+            )}
             <ol className="judge-result-criteria">
               {criteria.map((criterion, index) => {
                 const result = results?.[index];

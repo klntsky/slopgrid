@@ -121,12 +121,13 @@ test("judge aliases resolve in fixed settings and both axes, collapsing duplicat
 
 test("judge validation checks resolved target capabilities, not alias metadata", () => {
   for (const side of ["fixed", "rows", "columns"] as const) {
-    const setup: GridInput = side === "fixed"
-      ? judgedInput
-      : {
-          ...judgedInput,
-          [side]: { kind: "judge_model", values: ["~fixture/latest"] },
-        };
+    const setup: GridInput =
+      side === "fixed"
+        ? judgedInput
+        : {
+            ...judgedInput,
+            [side]: { kind: "judge_model", values: ["~fixture/latest"] },
+          };
     const eligibleTarget = judgeModels().map((model) => ({
       ...model,
       structuredOutputs: model.id !== "~fixture/latest",
@@ -136,21 +137,21 @@ test("judge validation checks resolved target capabilities, not alias metadata",
       ...model,
       structuredOutputs: model.id !== "fixture/v1",
     }));
-    assert.throws(
-      () => resolveGridModels(setup, ineligibleTarget),
-      { message: "The judge model must support structured outputs." },
-    );
+    assert.throws(() => resolveGridModels(setup, ineligibleTarget), {
+      message: "The judge model must support structured outputs.",
+    });
   }
 });
 
 test("judge selections retain catalog moving aliases but reject missing and cyclic targets", () => {
   for (const side of ["fixed", "rows", "columns"] as const) {
-    const setup = (id: string): GridInput => side === "fixed"
-      ? { ...judgedInput, judge: { ...judgedInput.judge!, model: id } }
-      : {
-          ...judgedInput,
-          [side]: { kind: "judge_model", values: [id] },
-        };
+    const setup = (id: string): GridInput =>
+      side === "fixed"
+        ? { ...judgedInput, judge: { ...judgedInput.judge!, model: id } }
+        : {
+            ...judgedInput,
+            [side]: { kind: "judge_model", values: [id] },
+          };
     const catalog = judgeModels();
     const retained = resolveGridModels(setup("fixture/chat-latest"), catalog);
     assert.equal(
@@ -158,10 +159,14 @@ test("judge selections retain catalog moving aliases but reject missing and cycl
       "fixture/chat-latest",
     );
     for (const id of ["fixture/model:latest", "~fixture/unknown-latest"])
-      assert.throws(() => resolveGridModels(setup(id), catalog), /concrete model/i);
+      assert.throws(
+        () => resolveGridModels(setup(id), catalog),
+        /concrete model/i,
+      );
     const cyclic = catalog.map((model) => ({
       ...model,
-      aliasTarget: model.id === "fixture/v1" ? "~fixture/latest" : model.aliasTarget,
+      aliasTarget:
+        model.id === "fixture/v1" ? "~fixture/latest" : model.aliasTarget,
     }));
     assert.throws(
       () => resolveGridModels(setup("~fixture/latest"), cyclic),
@@ -171,14 +176,14 @@ test("judge selections retain catalog moving aliases but reject missing and cycl
       () => resolveGridModels(setup("fixture/unknown-version"), catalog),
       { message: "The judge model must support structured outputs." },
     );
-    assert.throws(
-      () => resolveGridModels(setup(""), catalog),
-      { message: "Select a judge model." },
-    );
+    assert.throws(() => resolveGridModels(setup(""), catalog), {
+      message: "Select a judge model.",
+    });
   }
   // Concrete generator IDs keep their existing permissive resolution.
   assert.equal(
-    resolveGridModels({ ...input, model: "fixture/unknown-version" }, models()).model,
+    resolveGridModels({ ...input, model: "fixture/unknown-version" }, models())
+      .model,
     "fixture/unknown-version",
   );
 });
@@ -189,25 +194,29 @@ test("judge validation requires explicit capabilities for each supported output 
     assert.doesNotThrow(() => resolveGridModels(setup, judgeModels()));
     for (const structuredOutputs of [undefined, false])
       assert.throws(
-        () => resolveGridModels(
-          setup,
-          judgeModels().map((model) => ({ ...model, structuredOutputs })),
-        ),
+        () =>
+          resolveGridModels(
+            setup,
+            judgeModels().map((model) => ({ ...model, structuredOutputs })),
+          ),
         { message: "The judge model must support structured outputs." },
       );
-    const noImageInput = judgeModels().map((model) => ({ ...model, imageInput: false }));
+    const noImageInput = judgeModels().map((model) => ({
+      ...model,
+      imageInput: false,
+    }));
     if (format === "svg" || format === "image")
-      assert.throws(
-        () => resolveGridModels(setup, noImageInput),
-        { message: "The judge model must support image inputs for SVG and Image outputs." },
-      );
-    else
-      assert.doesNotThrow(() => resolveGridModels(setup, noImageInput));
+      assert.throws(() => resolveGridModels(setup, noImageInput), {
+        message:
+          "The judge model must support image inputs for SVG and Image outputs.",
+      });
+    else assert.doesNotThrow(() => resolveGridModels(setup, noImageInput));
     assert.throws(
-      () => resolveGridModels(
-        setup,
-        judgeModels().map((model) => ({ ...model, text: false })),
-      ),
+      () =>
+        resolveGridModels(
+          setup,
+          judgeModels().map((model) => ({ ...model, text: false })),
+        ),
       { message: "The judge model must support structured outputs." },
     );
   }
@@ -216,10 +225,14 @@ test("judge validation requires explicit capabilities for each supported output 
     { message: "Websites do not support a judge yet." },
   );
   assert.throws(
-    () => resolveGridModels({
-      ...input,
-      rows: { kind: "judge_model", values: ["fixture/v1"] },
-    }, judgeModels()),
+    () =>
+      resolveGridModels(
+        {
+          ...input,
+          rows: { kind: "judge_model", values: ["fixture/v1"] },
+        },
+        judgeModels(),
+      ),
     { message: "Add a judge to use judge dimensions." },
   );
 });
@@ -227,11 +240,19 @@ test("judge validation requires explicit capabilities for each supported output 
 test("judge alias chains resolve fully and judge effort axes retain their values", () => {
   const catalog = [
     ...judgeModels(),
-    { ...judgeModels()[0], id: "fixture/judge-alias", aliasTarget: "~fixture/latest" },
+    {
+      ...judgeModels()[0],
+      id: "fixture/judge-alias",
+      aliasTarget: "~fixture/latest",
+    },
   ];
   const setup: GridInput = {
     ...judgedInput,
-    judge: { ...judgedInput.judge!, model: "fixture/judge-alias", effort: "high" },
+    judge: {
+      ...judgedInput.judge!,
+      model: "fixture/judge-alias",
+      effort: "high",
+    },
     rows: { kind: "judge_effort", values: ["low", "high"] },
   };
   const result = resolveGridModels(setup, catalog);
@@ -239,7 +260,11 @@ test("judge alias chains resolve fully and judge effort axes retain their values
   assert.equal(result.judge?.effort, "high");
   assert.deepEqual(result.rows, setup.rows);
   assert.throws(
-    () => resolveGridModels(setup, catalog.filter((model) => model.id !== "fixture/v1")),
+    () =>
+      resolveGridModels(
+        setup,
+        catalog.filter((model) => model.id !== "fixture/v1"),
+      ),
     { message: "The judge model must support structured outputs." },
   );
   assert.throws(

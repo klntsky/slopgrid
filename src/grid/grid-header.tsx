@@ -34,17 +34,17 @@ export function GridHeader({
     (cell) => !cell.generationSourceId || cell.generationSourceId === cell.id,
   );
   const costs = generationCells.flatMap((cell) => {
-    const cost =
-      cell.outputReady
-        ? cell.usage?.costUsd
-        : (cell.generationStatus ?? cell.status) === "running"
-          ? cell.estimatedUsage?.costUsd
-          : undefined;
+    const cost = cell.outputReady
+      ? cell.usage?.costUsd
+      : (cell.generationStatus ?? cell.status) === "running"
+        ? cell.estimatedUsage?.costUsd
+        : undefined;
     return cost === undefined ? [] : [cost];
   });
   const estimated = generationCells.some(
     (cell) =>
-      (cell.generationStatus ?? cell.status) === "running" && cell.estimatedUsage?.costUsd !== undefined,
+      (cell.generationStatus ?? cell.status) === "running" &&
+      cell.estimatedUsage?.costUsd !== undefined,
   );
   const totalCost =
     costs.length || !generationCells.some((cell) => cell.outputReady)
@@ -56,7 +56,8 @@ export function GridHeader({
       : `${estimated ? "≈" : ""}${totalUsd.format(totalCost)}`;
   const generationRunning = g.input.judge
     ? generationCells.some((cell) => cell.generationStatus === "running")
-    : g.status === "running" || g.cells.some((cell) => cell.status === "running");
+    : g.status === "running" ||
+      g.cells.some((cell) => cell.status === "running");
   const paused = g.status === "paused" && g.canEdit && !g.published;
   const pauseHint = useTooltip<HTMLButtonElement>(
     paused

@@ -429,3 +429,34 @@ Reuse scenarios use typed grid snapshots and captured requests, consume new upst
 Browser-fixture lifecycle coverage starts the production entrypoints behind HTTPS, exercises their API, and verifies process cleanup, temporary data removal and reuse of the listening port.
 
 Budget estimation coverage includes mixed calculated and $3 fallback costs, dispatch-order prefixes, zero output prices, exact input-cost budgets, unknown metadata, prompt expansion, pricing schedules, and automatic versus explicit worker selection. Browser coverage verifies automatic form submissions despite stale draft overrides for text and images, per-model warning grouping, highest calculated amounts across expanded prompts, and simultaneous known and unknown estimates without asserting static tooltip wording, plus saved budgets and automatic submission. Admission tests cover unfinished-cell counts on Resume, artifact reuse, and budget-specific 403 pauses while active calls finish.
+
+## Judged output validation
+
+The current behavior is defined in [PRODUCT.md](PRODUCT.md#38-judged-output)
+and [judgment results](PRODUCT.md#56-judgment-results).
+
+- `tests/judging.test.ts` drives the real SDK against controlled HTTP responses
+  and checks structured-result boundaries, unsuccessful completions, cancellation,
+  uncapped requests, and multimodal input. Its raster tests inspect PNG pixels,
+  font text, embedded images, size bounds, resource isolation, and worker shutdown
+  without opening a browser.
+- `tests/judging-runtime.test.ts` retains the engine, web process, SQLite, files,
+  SDK, and transport while controlling the external provider. It covers shared
+  generation, artifact inputs, independent stages, recovery, reuse, and accounting.
+  Run affected billing, artifact-reuse, output-access, persistence, and scheduling
+  coverage alongside it when those boundaries change.
+- `tests/e2e/judged-output.spec.ts` exercises form restoration, boolean answers,
+  fixed and axis selections, expected-answer scoring, popup interactions, output
+  access, page closure, and generation-only totals. The PWA browser suite covers
+  ready-output caching independently of judgment completion.
+- `tests/real-e2e/judged-output.spec.ts` uses the existing private
+  `OPENROUTER_API_KEY`, the specified GPT-4.1 mini/nano judges, and Gemini 2.5 Flash
+  Image generation. Missing credentials, model availability, and insufficient
+  balance fail verification instead of switching models or skipping tests.
+
+Run the focused suites through the slopgrid-ops staging command. For manual
+visual inspection, start an isolated `startTestServer("mock")` on staging in
+tmux `bg`, explicitly set the candidate `FRONTEND_PATH` and fixture GitHub
+credentials, and attach to remote Chromium through an SSH-forwarded CDP port.
+Inspect the actual cell controls and popup, and correlate them with the fixture's
+captured provider calls. Keep temporary inspection code outside the repository.

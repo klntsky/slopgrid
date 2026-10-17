@@ -56,11 +56,11 @@ so opening an up-to-date database does not require that write lock.
 - Grid configuration is stored once. The engine owns generation and billing
   writes; the web process owns metadata and identity changes. Publication and
   admission use transactions so a grid cannot become public during a retry.
-- Completed artifacts are written before their cell is marked complete. Live
-  drafts and estimates remain in engine memory; snapshots combine that state
-  with persisted metadata. Failed template transcripts are retained with their
-  cells. Completed output bodies stay in files, while reuse metadata holds
-  per-call usage and allowances.
+- Completed artifacts are written before their generation stage is marked
+  complete. Live drafts and estimates remain in engine memory; snapshots combine
+  that state with persisted metadata. Failed template transcripts are retained
+  with their cells. Completed output bodies stay in files, while reuse metadata
+  holds per-call usage and allowances.
 - Each engine initialization advances a persisted epoch. Snapshots also carry
   an in-memory sequence, allowing the browser to reject older updates across
   reconnects and engine restarts. Snapshot reads do not write to SQLite.
@@ -73,12 +73,12 @@ so opening an up-to-date database does not require that write lock.
   Restarting the web process does not perform generation recovery.
 
 The inference ledger records each provider call, including failed, cancelled,
-and retried calls with any reported charge. Calls share the durable identifier
-of their cell's generation attempt, so usage can be reconstructed after a crash
-without including earlier attempts. It excludes prompts, outputs, and
-credentials. The web process reads owner-filtered billing data; the engine alone
-records calls. Live cost estimates are derived in memory and give way to reported
-usage when it arrives.
+and retried calls with any reported charge. Calls carry their stage's durable
+attempt identifier and effective model selection. Generation usage is
+reconstructed independently of judge calls and earlier generation attempts.
+The ledger excludes prompts, outputs, and credentials. The web process reads
+owner-filtered billing data; the engine alone records calls. Live generation
+estimates remain in memory and give way to reported usage.
 
 Failed inference-call records include a bounded chain of error names, machine
 codes, HTTP statuses, system calls, and SDK retryability flags. The serializer
@@ -130,18 +130,42 @@ Image references are uploaded before grid creation. SQLite stores ownership and
 metadata, while separate files hold the bytes. The engine loads authorized
 references for dispatch, and reference bytes never enter grid snapshots.
 
-Completed cells can be reused by Edit/Fork when a source is accessible and its
-prepared request matches the new cell. A signature captures request semantics,
-including ordered reference content, while a token ceiling check protects text
-reuse. Reused artifacts are copied under new cell identifiers and create no new
-inference ledger entry. Any unfinished cells enter the ordinary scheduler.
+Committed generation can be reused by Edit/Fork when a source is accessible and
+its prepared request matches the destination. A signature captures request
+semantics, including ordered reference content, while a token ceiling check
+protects text reuse. Reused artifacts are copied under new cell identifiers;
+judgment state is not part of the reusable artifact.
+
+## Shared generation and judgment stages
+
+The shared generation key is browser-safe and separate from the provider request
+signature. Creation uses it to assign durable source membership after cell IDs
+exist; the scheduler owns producer selection and member-copy repair.
+
+- Generation and judging have separate attempt identities and state. The engine
+  commits generation files and provenance before dispatching judgments, and waits
+  for billing persistence before committing a judgment result.
+- Member artifacts use the ordinary output filesystem and access routes. Copy
+  repair is storage work rather than an inference worker or another provider
+  request.
+- The judge adapter owns its strict structured-result contract independently of
+  generation parsing. Artifact loading reads committed content rather than
+  browser previews.
+- SVG rasterization runs in cancellable Node workers with local WASM and verified
+  bundled font bytes. Workers have no browser or host-resource resolver; rendered
+  content is shared within its generation source and released by the scheduler.
+- The presenter exposes output readiness separately from overall cell completion.
+  Cell controls and offline caching consume that boundary. Billing owns all
+  actual stage charges; generation summaries exclude judge calls.
 
 ## Outputs and live views
 
-The grid parameters component renders through a React portal into Tippy's content container,
-which is attached to the document body. Common parameters come from saved grid
-input, filtered by the selected axis kinds. Reference thumbnails use the existing
-authorized reference route. The component owns no generation state.
+The grid parameters and judgment controls render through React portals into
+Tippy content containers attached to the document body. Each control owns its
+popup interaction and focus return, not engine state. Common parameters come
+from saved grid input, filtered by selected axis kinds. Judgment presentation
+combines criteria with persisted results, while reference thumbnails use the
+existing authorized reference route.
 
 The output layer owns format instructions, parsing, completed files, and
 temporary previews. Website output is a bundle of validated relative paths with
@@ -273,10 +297,10 @@ by open tabs. Registration runs alongside rendering and does not gate startup.
 The worker fetches pages and read-only API data from the network first, retaining
 successful responses and the list pages embedded in HTML. Network failures use
 cached responses, while HTTP denials remain authoritative. Cached grid snapshots
-exclude streamed drafts, temporary previews, and live thinking. Visiting a grid
-or receiving completed cells triggers caching of ready outputs and downloads.
-Reconnection refreshes active queries before live streams resume. Mutations and
-OAuth exchanges remain network-only.
+exclude streamed drafts, temporary previews, and live thinking. Output readiness,
+rather than judgment completion, triggers caching of saved outputs and downloads.
+Persisted verdicts remain snapshot data. Reconnection refreshes active queries
+before live streams resume. Mutations and OAuth exchanges remain network-only.
 
 Session responses carry a one-way hash of the session identifier as a cache
 partition key, which grants no server access. Sign-out and observed session

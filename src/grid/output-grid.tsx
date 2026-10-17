@@ -41,9 +41,7 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
     (cell) =>
       selection?.kind === "output" &&
       cell.id === selection.id &&
-      (cell.outputReady ||
-        cell.status === "running" ||
-        !!cell.thinkingURL),
+      (cell.outputReady || cell.status === "running" || !!cell.thinkingURL),
   );
   const reference =
     selection?.kind === "reference"

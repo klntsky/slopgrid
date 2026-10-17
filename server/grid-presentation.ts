@@ -63,12 +63,11 @@ export function createGridPresenter(store: Store, origin: URL) {
           g.input.format === "html" && c.status === "running" && c.preview
             ? `${origin.origin}/outputs/${c.id}/website?path=${encodeURIComponent(`__preview/${c.preview.attempt}/index.html`)}&revision=${c.preview.revision}`
             : undefined,
-        outputURL:
-          hasCompletedOutput(c)
-            ? g.input.format === "html"
-              ? `${origin.origin}/outputs/${c.id}/website`
-              : `${origin.origin}/outputs/${c.id}`
-            : undefined,
+        outputURL: hasCompletedOutput(c)
+          ? g.input.format === "html"
+            ? `${origin.origin}/outputs/${c.id}/website`
+            : `${origin.origin}/outputs/${c.id}`
+          : undefined,
       })),
     };
   };

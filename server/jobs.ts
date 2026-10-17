@@ -11,10 +11,7 @@ import { Persistence, recoverableStorageError } from "./persistence.js";
 import { generationFailure } from "./generation-api.js";
 import { generateAttempt, type AttemptResult } from "./generation-attempt.js";
 import { prepareJudgeInference } from "./judge.js";
-import {
-  loadJudgeArtifact,
-  releaseJudgeArtifact,
-} from "./judge-artifact.js";
+import { loadJudgeArtifact, releaseJudgeArtifact } from "./judge-artifact.js";
 import {
   beginCellAttempt,
   beginJudgeAttempt,
@@ -233,7 +230,10 @@ export class Jobs {
       }
     });
   }
-  private nextStage(state: GridRuntime, cell: Cell): RunningCall["stage"] | undefined {
+  private nextStage(
+    state: GridRuntime,
+    cell: Cell,
+  ): RunningCall["stage"] | undefined {
     if (cell.status !== "pending" || this.running.has(cell.id)) return;
     if (!cell.judge) return "generation";
     if (
@@ -299,20 +299,30 @@ export class Jobs {
       if (stage === "generation") beginCellAttempt(prepared);
       else beginJudgeAttempt(prepared);
       const call: RunningCall = {
-        grid, cell, controller, owner, stage,
-        attemptId: stage === "generation"
-          ? prepared.attemptId!
-          : prepared.judge!.attemptId!,
+        grid,
+        cell,
+        controller,
+        owner,
+        stage,
+        attemptId:
+          stage === "generation"
+            ? prepared.attemptId!
+            : prepared.judge!.attemptId!,
       };
-      const dependents = stage === "generation" && cell.judge
-        ? grid.cells.filter(
-            (member) => member.id !== cell.id && member.generationSourceId === cell.id,
-          ).map((member) => {
-            const next = { ...member };
-            queueCell(next);
-            return next;
-          })
-        : [];
+      const dependents =
+        stage === "generation" && cell.judge
+          ? grid.cells
+              .filter(
+                (member) =>
+                  member.id !== cell.id &&
+                  member.generationSourceId === cell.id,
+              )
+              .map((member) => {
+                const next = { ...member };
+                queueCell(next);
+                return next;
+              })
+          : [];
       let dispatched = false;
       this.persistence.submit(
         () => {
@@ -330,7 +340,10 @@ export class Jobs {
           if (stage === "generation") beginCellAttempt(cell, call.attemptId);
           else beginJudgeAttempt(cell, call.attemptId);
           for (const next of dependents)
-            this.installCell(grid.cells.find((member) => member.id === next.id)!, next);
+            this.installCell(
+              grid.cells.find((member) => member.id === next.id)!,
+              next,
+            );
           this.running.set(cell.id, call);
           this.owners.get(owner)!.last = ++this.allocation;
           this.notify(grid);
@@ -347,7 +360,8 @@ export class Jobs {
       for (const source of state.grid.cells) {
         if (
           source.generationSourceId !== source.id ||
-          (source.generationStatus !== "complete" && !source.provenance?.files.length) ||
+          (source.generationStatus !== "complete" &&
+            !source.provenance?.files.length) ||
           this.copying.has(source.id) ||
           !state.grid.cells.some(
             (cell) =>
@@ -402,7 +416,9 @@ export class Jobs {
         const provenance = source.provenance;
         const bundle = provenance?.files.length
           ? await this.store.files.readArtifact(
-              source.id, provenance.files, source.thinkingId,
+              source.id,
+              provenance.files,
+              source.thinkingId,
             )
           : undefined;
         if (!bundle || !provenance)
@@ -415,10 +431,14 @@ export class Jobs {
           const matching =
             member.provenance?.signature === provenance.signature &&
             member.provenance.files.length === provenance.files.length &&
-            member.provenance.files.every((file, index) => file === provenance.files[index]);
+            member.provenance.files.every(
+              (file, index) => file === provenance.files[index],
+            );
           const existing = matching
             ? await this.store.files.readArtifact(
-                member.id, provenance.files, member.thinkingId,
+                member.id,
+                provenance.files,
+                member.thinkingId,
               )
             : undefined;
           let thinkingId = member.thinkingId;
@@ -427,7 +447,10 @@ export class Jobs {
             // A crash may leave files without their corresponding SQLite commit.
             await this.store.files.removeArtifact(member.id);
             controller.signal.throwIfAborted();
-            thinkingId = await this.store.files.writeArtifact(member.id, bundle);
+            thinkingId = await this.store.files.writeArtifact(
+              member.id,
+              bundle,
+            );
           }
           const next = {
             ...member,
@@ -473,7 +496,10 @@ export class Jobs {
           () => {
             if (committed) {
               for (const patch of patches)
-                this.installCell(grid.cells.find((cell) => cell.id === patch.id)!, patch);
+                this.installCell(
+                  grid.cells.find((cell) => cell.id === patch.id)!,
+                  patch,
+                );
               if (ready)
                 for (const member of members) state.readyOutputs.add(member.id);
             }
@@ -511,10 +537,13 @@ export class Jobs {
     const sourceId = cell.generationSourceId;
     if (
       sourceId &&
-      grid.cells.filter((member) => member.generationSourceId === sourceId)
-        .every((member) =>
-          (member.judge?.status === "complete" || member.judge?.status === "error") &&
-          !member.judge.retrying,
+      grid.cells
+        .filter((member) => member.generationSourceId === sourceId)
+        .every(
+          (member) =>
+            (member.judge?.status === "complete" ||
+              member.judge?.status === "error") &&
+            !member.judge.retrying,
         )
     )
       releaseJudgeArtifact(this.store, sourceId);
@@ -610,9 +639,13 @@ export class Jobs {
     try {
       if (!key) throw new Error("Reconnect OpenRouter to continue.");
       const artifact = await this.retryStorage(
-        () => loadJudgeArtifact(
-          this.store, grid.input.format, cell, controller.signal,
-        ),
+        () =>
+          loadJudgeArtifact(
+            this.store,
+            grid.input.format,
+            cell,
+            controller.signal,
+          ),
         controller.signal,
       );
       if (!this.current(call)) return;
@@ -622,16 +655,19 @@ export class Jobs {
           format: grid.input.format,
           model: cell.judge!.model,
           effort: cell.judge!.effort as GridInput["effort"],
-          criteria: grid.input.judge!.criteria.map((criterion) => criterion.text),
+          criteria: grid.input.judge!.criteria.map(
+            (criterion) => criterion.text,
+          ),
           artifact,
         }),
         {
           signal: controller.signal,
-          observe: this.store.billing.observe(
-            cell.id, call.attemptId,
-            { model: cell.judge!.model, effort: cell.judge!.effort },
-          ),
-          beforeRequest: () => this.persistence.waitForWrites(controller.signal),
+          observe: this.store.billing.observe(cell.id, call.attemptId, {
+            model: cell.judge!.model,
+            effort: cell.judge!.effort,
+          }),
+          beforeRequest: () =>
+            this.persistence.waitForWrites(controller.signal),
         },
       );
       if (!this.current(call)) return;
@@ -652,13 +688,17 @@ export class Jobs {
           nextCell = this.current(call) ? completed : { ...cell };
           nextGrid = {
             ...grid,
-            cells: grid.cells.map((member) => member.id === cell.id ? nextCell : member),
+            cells: grid.cells.map((member) =>
+              member.id === cell.id ? nextCell : member,
+            ),
           };
           const others =
             [...this.running.values()].some(
               (work) => work.grid.id === grid.id && work !== call,
             ) ||
-            [...this.copying.values()].some((work) => work.state.grid.id === grid.id);
+            [...this.copying.values()].some(
+              (work) => work.state.grid.id === grid.id,
+            );
           if (!others) this.settleState(nextGrid);
           this.store.saveGeneration(nextGrid, [nextCell]);
         },
@@ -759,7 +799,11 @@ export class Jobs {
           changed = [nextCell];
           if (cell.judge && current() && !output) {
             for (const member of grid.cells) {
-              if (member.id === cell.id || member.generationSourceId !== cell.id) continue;
+              if (
+                member.id === cell.id ||
+                member.generationSourceId !== cell.id
+              )
+                continue;
               changed.push({
                 ...member,
                 status: nextCell.status,
@@ -778,13 +822,18 @@ export class Jobs {
             [...this.running.values()].some(
               (work) => work.grid.id === grid.id && work !== call,
             ) ||
-            [...this.copying.values()].some((work) => work.state.grid.id === grid.id);
+            [...this.copying.values()].some(
+              (work) => work.state.grid.id === grid.id,
+            );
           if (!others) this.settleState(nextGrid);
           this.store.saveGeneration(nextGrid, changed);
         },
         () => {
           for (const next of changed)
-            this.installCell(grid.cells.find((member) => member.id === next.id)!, next);
+            this.installCell(
+              grid.cells.find((member) => member.id === next.id)!,
+              next,
+            );
           grid.status = nextGrid.status;
           grid.interruption = nextGrid.interruption;
           this.running.delete(cell.id);
@@ -797,11 +846,13 @@ export class Jobs {
     }
   }
   private settleState(grid: Grid) {
-    if (grid.cells.every(
-      (cell) =>
-        cell.status === "complete" &&
-        (!cell.judge || cell.judge.status === "complete"),
-    )) {
+    if (
+      grid.cells.every(
+        (cell) =>
+          cell.status === "complete" &&
+          (!cell.judge || cell.judge.status === "complete"),
+      )
+    ) {
       grid.status = "complete";
       delete grid.interruption;
     } else if (

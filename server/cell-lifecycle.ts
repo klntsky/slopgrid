@@ -39,8 +39,7 @@ export function queueCell(cell: Cell) {
       delete cell.judge.retrying;
     }
     if (cell.generationSourceId === cell.id) {
-      if (cell.provenance?.files.length)
-        cell.generationStatus = "complete";
+      if (cell.provenance?.files.length) cell.generationStatus = "complete";
       else if (cell.generationStatus !== "complete")
         cell.generationStatus = "pending";
     }
@@ -53,8 +52,7 @@ export function queueCell(cell: Cell) {
 export function beginCellAttempt(cell: Cell, attemptId = token()) {
   cell.status = "running";
   cell.attemptId = attemptId;
-  if (cell.generationSourceId === cell.id)
-    cell.generationStatus = "running";
+  if (cell.generationSourceId === cell.id) cell.generationStatus = "running";
   // A saved trace remains available while queued, until its replacement starts.
   delete cell.thinkingId;
   delete cell.usage;

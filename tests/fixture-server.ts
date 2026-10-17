@@ -107,7 +107,11 @@ upstream.get("/api/v1/models", (_req, res) =>
           input_modalities: ["text", "image"],
           output_modalities: ["text"],
         },
-        supported_parameters: ["reasoning", "reasoning_effort", "structured_outputs"],
+        supported_parameters: [
+          "reasoning",
+          "reasoning_effort",
+          "structured_outputs",
+        ],
         reasoning: { mandatory: false, supported_efforts: null },
       },
     ],
@@ -183,7 +187,11 @@ upstream.get("/api/v1/images/models/fixture/:model/endpoints", (req, res) =>
     ],
   }),
 );
-async function waitForRelease(prompt: string, res: express.Response, hold = holdGenerations) {
+async function waitForRelease(
+  prompt: string,
+  res: express.Response,
+  hold = holdGenerations,
+) {
   if (hold) {
     await new Promise<void>((resolve) => {
       const entry = {
@@ -266,22 +274,33 @@ upstream.post("/api/v1/chat/completions", async (req, res) => {
     calls.push(prompt);
     await waitForRelease(prompt, res, holdJudges);
     if (res.destroyed) return;
-    const criteria = prompt.split("\n\nCompleted artifact:\n")[0]
-      .split("\n").filter((line: string) => /^\d+\. /.test(line));
-    const text = judgeOutput ?? JSON.stringify({
-      results: criteria.map((criterion: string) => ({
-        verdict: !criterion.toLowerCase().includes("blue circle"),
-        explanation: criterion.toLowerCase().includes("blue circle")
-          ? "There is no blue circle." : "The supplied output satisfies this criterion.",
-      })),
-    });
+    const criteria = prompt
+      .split("\n\nCompleted artifact:\n")[0]
+      .split("\n")
+      .filter((line: string) => /^\d+\. /.test(line));
+    const text =
+      judgeOutput ??
+      JSON.stringify({
+        results: criteria.map((criterion: string) => ({
+          verdict: !criterion.toLowerCase().includes("blue circle"),
+          explanation: criterion.toLowerCase().includes("blue circle")
+            ? "There is no blue circle."
+            : "The supplied output satisfies this criterion.",
+        })),
+      });
     const base = {
-      id: `fixture-judge-${judgeRequests.length}`, object: "chat.completion.chunk",
-      created: Math.floor(Date.now() / 1000), model: req.body.model,
+      id: `fixture-judge-${judgeRequests.length}`,
+      object: "chat.completion.chunk",
+      created: Math.floor(Date.now() / 1000),
+      model: req.body.model,
     };
     res.type("text/event-stream");
-    res.write(`data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: { content: text }, finish_reason: null }] })}\n\n`);
-    res.end(`data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 100, completion_tokens: 200, total_tokens: 300, cost: judgeCost } })}\n\ndata: [DONE]\n\n`);
+    res.write(
+      `data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: { content: text }, finish_reason: null }] })}\n\n`,
+    );
+    res.end(
+      `data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 100, completion_tokens: 200, total_tokens: 300, cost: judgeCost } })}\n\ndata: [DONE]\n\n`,
+    );
     return;
   }
   tokenLimits.push({ model: req.body.model, max_tokens: req.body.max_tokens });
@@ -307,9 +326,10 @@ upstream.post("/api/v1/chat/completions", async (req, res) => {
       })),
     });
   const text = system.includes("image/svg+xml")
-    ? svgOutput ?? (unsafe
-      ? `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><script>window.unsafeOutput=true;parent.unsafeOutput=true;document.cookie="svg_escape=1;path=/";fetch("${web.origin}/svg-probe?script")</script><image href="${web.origin}/svg-probe?image" width="10" height="10"/><circle cx="100" cy="100" r="70"/></svg>`
-      : '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><circle cx="100" cy="100" r="70" fill="tan"/></svg>')
+    ? (svgOutput ??
+      (unsafe
+        ? `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><script>window.unsafeOutput=true;parent.unsafeOutput=true;document.cookie="svg_escape=1;path=/";fetch("${web.origin}/svg-probe?script")</script><image href="${web.origin}/svg-probe?image" width="10" height="10"/><circle cx="100" cy="100" r="70"/></svg>`
+        : '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><circle cx="100" cy="100" r="70" fill="tan"/></svg>'))
     : system.includes("JSON object")
       ? bundle({
           "index.html":

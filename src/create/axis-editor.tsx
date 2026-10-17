@@ -36,9 +36,10 @@ export function AxisEditor({
 }) {
   const kinds: GridInput["rows"]["kind"][] = [
     ...(format === "image"
-      ? ["model", "variable", ...imageKinds] as const
-      : ["model", "effort", "variable"] as const),
-    "judge_model", "judge_effort",
+      ? (["model", "variable", ...imageKinds] as const)
+      : (["model", "effort", "variable"] as const)),
+    "judge_model",
+    "judge_effort",
   ];
   const choices =
     axis.kind === "effort" || axis.kind === "judge_effort"
@@ -67,7 +68,13 @@ export function AxisEditor({
           }}
         >
           {kinds.map((k) => (
-            <option key={k} value={k} disabled={!judgeEnabled && (k === "judge_model" || k === "judge_effort")}>
+            <option
+              key={k}
+              value={k}
+              disabled={
+                !judgeEnabled && (k === "judge_model" || k === "judge_effort")
+              }
+            >
               {dimensionNames[k]}
             </option>
           ))}

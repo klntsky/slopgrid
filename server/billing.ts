@@ -62,7 +62,12 @@ export class Billing {
     return (phase) => {
       const id = token(),
         started = Date.now();
-      let data: CallDetails = { phase, status: "running", attemptId, ...selection };
+      let data: CallDetails = {
+        phase,
+        status: "running",
+        attemptId,
+        ...selection,
+      };
       const save = () => {
         const json = JSON.stringify(data);
         const write = () => {
@@ -158,10 +163,12 @@ export class Billing {
     }[];
     const estimates = new Map(
       cells
-        .filter((cell) =>
-          cell.status === "running" &&
-          (!cell.generationSourceId ||
-            (cell.generationSourceId === cell.id && cell.generationStatus === "running")),
+        .filter(
+          (cell) =>
+            cell.status === "running" &&
+            (!cell.generationSourceId ||
+              (cell.generationSourceId === cell.id &&
+                cell.generationStatus === "running")),
         )
         .map((cell) => [
           cell.id,

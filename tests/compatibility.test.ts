@@ -116,7 +116,10 @@ test("SVG and Image judges require image input, not image output", () => {
         "The judge model must support image inputs for SVG and Image outputs.",
       );
     }
-    assert.equal(canJudge({ ...textJudge, image: false, imageInput: true }, format), true);
+    assert.equal(
+      canJudge({ ...textJudge, image: false, imageInput: true }, format),
+      true,
+    );
   }
 });
 

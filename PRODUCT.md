@@ -75,7 +75,7 @@ Status: high level product goal that is not a requirement (not achieved yet).
 ### 1.1. Benchmarking model outputs
 
 1. Slopgrid lets people submit a prompt and compare generated outputs in a two-dimensional grid whose row and column meanings they choose.
-2. Support model and prompt-variable axes for every output type, thinking-effort axes for text outputs, and size, aspect ratio, quality, background, and input-reference axes for images.
+2. Support model and prompt-variable axes for every output type, generator thinking-effort axes for text outputs, and size, aspect ratio, quality, background, and input-reference axes for images. Judged outputs also support judge model and judge thinking-effort axes as specified in section 3.8.
 3. Offer five output types in this order: Markdown, Image, SVG, Static website, and Chat completion. Image generation uses image-capable models; static websites may contain multiple files, which are served without server-side execution. Chat completion uses the MessagesSquare icon and accepts an ordered chat history with optional unfilled messages, using the same text grid dimensions and output controls. Each supplied message has an editable body and a clickable role badge cycling through system (red), user (blue), assistant (grey), and unfilled (purple). Allow insertion at any position, deletion, and drag reordering, with keyboard reordering available on the drag handle. Preserve message roles, order, and body whitespace through saving, Edit, and Fork, and expand grid variables within each message.
 
    The editor always offers the unfilled role. Selecting unfilled clears the body and replaces its input with "The model will fill this message with an assistant response." Switching back restores an empty editable input. Require a supplied message before the first blank; supplied messages require nonempty bodies. Allow histories without explicit blanks, consecutive blanks, and supplied messages after the final blank.
@@ -176,14 +176,14 @@ Show a small-text footer on every page except the grid page, with "source code" 
 2. All compatibility tables always have model names as rows and parameter values as columns, regardless of generation-axis layout. The thinking-effort table includes selected thinking efforts other than Model default, including fixed model or effort settings, without repeating combinations for prompt variables. Model default remains selectable but is omitted from the table because it is supported for every text model. Each image compatibility grid includes that parameter's selected values, including shared settings and reference groups. Check complete image settings against individual provider endpoints, including reference counts, and attribute combination conflicts only to the involved parameter types.
 3. Use SVG checkmarks for supported combinations, yellow warning icons for unsupported combinations, and a question mark emoji for unknown support.
 4. Do not show a tooltip on a supported checkmark. Image warning tooltips identify the incompatible parameter values or conflicting settings; unknown results identify which support information is unavailable. Each compatibility cell's accessible name includes its model, parameter value, and support status.
-5. Compatibility warnings are advisory and must not block generation. Send the selected settings and show an upstream rejection as a cell error if the provider rejects them.
+5. Thinking-effort and image-setting compatibility warnings are advisory and must not block generation. Send the selected settings and show an upstream rejection as a cell error if the provider rejects them. Judge model eligibility in section 3.8 is required, not advisory.
 
 ### 3.5. Budget and automatic parallelism
 
 1. Text generation requires a per-cell monetary budget, defaulting to $3 per attempt. Preserve saved budgets. It covers estimated total cost, including input, output, and thinking. Image generation does not require a text budget; a missing or invalid text budget must not block image generation after a format change or draft restoration.
 2. Label the compact field "Budget limit per cell," prepend a dollar icon, and reserve enough input padding to keep the value clear of the icon. It must not stretch across the form's full width.
 3. Respect provider/model limits when translating the budget, without adding an unrelated fixed output-size ceiling. A retry gets a new attempt allowance. Missing pricing or token limits, including Auto Router metadata, must not block generation; the creation form's existing warning is sufficient. When a budget cannot be calculated, let the provider determine the output allowance for the selected model.
-4. The creation form chooses parallelism automatically from available balance and estimated generation costs, using conservative estimates when information is unavailable.
+4. The creation form chooses parallelism automatically from available balance and estimated unfinished work, using conservative estimates when information is unavailable. Judging does not introduce displayed cost estimates or spending caps.
 5. The request is a concurrency ceiling, subject to backend capacity and fair allocation, rather than a reservation of workers.
 6. Recalculate automatic text concurrency from unfinished cells after artifact reuse and on Resume; retain existing grids' saved explicit counts on Resume. New form submissions use automatic selection, including Edit and Fork. Initial recommendations do not guarantee sufficient balance for later calls.
 7. Show advisory text warnings near the budget, listing affected models and their highest estimated maximum call costs across expanded prompts. Prefix each model warning with the same warning icon used in compatibility tables. Group repeated models across thinking efforts and other axes into one warning per model. Show unknown estimates explicitly, including when the same model also has calculated warnings. The $3 fallback is not a calculated model maximum.
@@ -214,6 +214,18 @@ Image grids have a "Parameters" button with a 14px Info circle icon immediately 
 11. For Image output, show separate configurable Size, Aspect ratio, Quality, Background, and Input references fields whenever they are absent from both axes. Scalar fields start at Auto, which leaves the choice to the provider; Auto axis values behave the same way. Shared references start empty and apply to every cell. Preserve shared settings and references through draft reload, authorization, Generate, Edit, and Fork.
 12. Moving a configured image field into a row or column dimension transfers its value into the axis selection; shared references become one selected reference group. When a parameter leaves an axis, its separate field resets to Auto or an empty reference collection. Swapping axes preserves selections.
 
+### 3.8. Judged output
+
+1. Add optional "Judged output" before layout, initially containing a huge full-width "[ add a judge ]" button. Adding creates one empty criterion with Correct answer Yes, no selected judge model, and Model default judge thinking effort.
+2. Each "Criterion {N}" has its text and a "Correct answer" Yes/No selector storing a boolean. "Add criterion" defaults to Yes. "Remove criterion {N}" removes it; removing the last leaves one empty criterion with Correct answer Yes. Provide "Remove judge".
+3. With a judge enabled, offer "Judge model" and "Judge thinking effort" as axes or fixed settings below layout in "Specify common parameters" when absent from both axes. Without a judge, disable its axes and omit its settings. Reuse searchable model selection, effort ordering, alias warnings, and advisory effort compatibility. Judge selectors use text-model pricing even for image grids, with "Search judge models" and "Clear judge model filter".
+4. Preserve criteria text and boolean answers, including No, through draft reload, authorization, Edit, and Fork. Supported-format changes retain criteria and judge effort and clear an incompatible judge model. Selecting Website removes judging; show "Websites do not support a judge yet." Removing a judge resets only judge axes to that format's defaults. Moving a setting into an axis transfers its fixed value; moving it out retains its first value. Axis swap preserves selections.
+5. Require at least one nonempty yes/no criterion, a boolean correct answer on every criterion, an effective judge model, valid efforts, and distinct non-variable axes. Judge models require text output and explicit structured-output support; SVG and Image also require image input. Unknown capability and response-format-only support are not sufficient. Website judging is unsupported. Image grids may use judge thinking effort but not generator thinking effort.
+6. Use "Enter at least one yes/no criterion.", "Select a judge model.", "Add a judge to use judge dimensions.", "No compatible judge models are available for this output type.", "The judge model must support structured outputs.", and "The judge model must support image inputs for SVG and Image outputs." for the corresponding validation failures.
+7. Show "Judge budget: no limit. Judge calls are not limited by the generation budget." Do not inherit the generation budget or set a judge monetary/token cap or provider maximum price, and do not show live judge cost estimates.
+8. For judged grids, show layout counts as "{R} rows x {C} columns - {G} generated outputs, {J} judgments", where G counts distinct generation setups and J is the cell count. Leave the existing Parameters popup unchanged; criterion results belong only in the cell's judgment popup.
+
+
 ## 4. Grid layout and metadata
 
 ### 4.1. Table geometry and gestures
@@ -237,7 +249,7 @@ Image grids have a "Parameters" button with a 14px Info circle icon immediately 
 5. Collapse long prompts, with a hover element over the collapsed prompt showing the complete text.
 6. Place an icon-only copy button directly after the inline prompt text; copying applies to the prompt only.
 7. Show the author near the title, followed by "cost $0.NN" and, for the grid owner only, "spent $0.MM", separated by centered dots.
-8. Truncate both grid totals to two decimal places in the UI. While inference runs, animate a gradient wave across the cost and spent text themselves.
+8. Truncate both grid totals to two decimal places in the UI. While generation runs, animate a gradient wave across the cost and spent text themselves. Judge-only work does not animate generation costs.
 
 ### 4.3. Progress and actions
 
@@ -247,7 +259,7 @@ Image grids have a "Parameters" button with a 14px Info circle icon immediately 
 3. Put the pause/resume action after the title/prompt and before Edit. Edit and Publish are compact icon-only controls using the same visual treatment.
 4. Before publication, Edit immediately cancels active inference and returns to parameter selection with the existing setup restored. Generating the edited setup creates a new grid and can reuse matching completed artifacts as specified in section 10.
 5. After publication, offer Fork to restore the setup for modification and generation using the forking user's own connection. Its icon depicts a branch splitting from a continuing main branch.
-6. Show model IDs in row or column labels. Clicking a model ID copies it without a hover hint, while preserving copy-result feedback; a chain icon to the right of its copy icon opens the model's OpenRouter page in a new tab. Copy and link icons follow the same orientation as the label text, including in rotated row titles. Prefix thinking values with "thinking: " and image parameter values with their lowercase display name and ": ", such as "size: 1K" or "aspect ratio: 16:9". Reference headers use "references: <title>". Keep model IDs and prompt variable values unprefixed.
+6. Show model IDs in row or column labels. Clicking a model ID copies it without a hover hint, while preserving copy-result feedback; a chain icon to the right of its copy icon opens the model's OpenRouter page in a new tab. Copy and link icons follow the same orientation as the label text, including in rotated row titles. Prefix thinking values with "thinking: " and image parameter values with their lowercase display name and ": ", such as "size: 1K" or "aspect ratio: 16:9". Judge headers identify "judge model: " and "judge thinking: ", retaining model copy and OpenRouter links. Reference headers use "references: <title>". Keep generator model IDs and prompt variable values unprefixed.
 
 ## 5. Outputs and streaming
 
@@ -300,6 +312,16 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
 4. Keep trace state associated with the correct cell and attempt. Late events or fetch responses must not replace the thinking for a newer attempt.
 5. Preserve captured thinking across completion, failure, pause, normal restarts, and routine deployments, with the same access policy as the corresponding grid. Emergency shutdowns or process crashes may lose thinking that has not yet been persisted; already persisted thinking must remain available. Do not mix trace files into generated website bundles or downloads.
 
+### 5.6. Judgment results
+
+1. The only inline judge UI is the scales icon followed by X/Y in the existing cell controls, including expanded cells. Y is the criteria count and X counts verdicts equal to their configured correct answers. Derive this score rather than persisting it. The completed accessible name is "Judgment: {X} of {Y} correct".
+2. Clicking the control opens a compact "Judged output" popup listing criterion text, green/check "Correct" for a matching answer or red/cross "Incorrect" for a mismatch, and each judge explanation as plain text beneath its criterion. Results and explanations appear only in this popup, with accessible text as well as color. Support outside-click dismissal, Escape, "Close judgment", and focus return using the existing Parameters popup interaction pattern.
+3. Until a validated result is available, show -/Y and neutral unresolved criteria, not a zero score or red/green results. Accessible labels and popup states are "Judge queued", "Judging...", "Judge paused", "Waiting to retry judging...", and "Judging failed: {error}". Unjudged cells have no scales control. Do not add a score panel, percentage, or verdict export.
+4. One judge call evaluates every criterion in order and reports the actual yes/no answer, not whether it matches the expected answer. Do not send correct answers to the judge. Missing or extra results, invalid types, empty explanations, malformed output, and unsuccessful completion fail judging without repair or unstructured fallback. Use "The judge returned an invalid structured result." for invalid results.
+5. Judge the saved Markdown text, completed chat JSON with legacy transcripts normalized, saved image bytes, or a server-rendered PNG of the committed SVG. Retain original SVG output and downloads. Render without browser or native fallback, external resource fetches, or local image resolution, using the bundled font, transparency, preserved aspect ratio, no upscaling, and a longest edge at most 2048. Report "Could not render this SVG for judging." when rendering fails, preserving the SVG and making no judge request. Missing committed output reports "The generated output is unavailable for judging."
+6. Committed generation remains available for output, raw view, thinking, copy, and download while judging runs or fails, subject to ordinary access control. Cache ready output independently of judgment completion; cached verdicts remain snapshots, not offline inference.
+
+
 ## 6. Inference, scheduling, and recovery
 
 ### 6.1. Worker allocation
@@ -311,7 +333,7 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
 
 ### 6.2. Balance, errors, and retries
 
-1. Check available OpenRouter balance before starting or resuming inference. Image generation below $3 shows a top-up popup with an explicit Continue anyway option; that option uses automatic parallelism for new grids. Text generation uses calculated parallelism for new grids and OpenRouter's admission decisions. Existing grids retain their saved explicit counts on Resume. Fully reused grids require no inference balance check.
+1. Check available OpenRouter balance before starting or resuming inference. Image generation below $3 shows a top-up popup with an explicit Continue anyway option; that option uses automatic parallelism for new grids. Text generation uses calculated parallelism for new grids and OpenRouter's admission decisions. Existing grids retain their saved explicit counts on Resume. Fully reused unjudged grids require no inference balance check; fresh judging always requires inference admission.
 2. Billing interruptions must let users fix the problem and retry repeatedly without breaking the flow. Preserve completed cells and regenerate only unfinished work.
 3. Retry provider rate limits with increasing delays, honoring provider retry guidance while allowing other users' work to continue. Automatically retry temporary in-flight spending-limit billing errors only when OpenRouter supplies retry guidance; otherwise pause for user intervention rather than automatically retrying the billing failure.
 4. Among provider errors, only pricing or billing errors may automatically pause queued batch work. Other provider failures, including age verification, model access restrictions, and invalid or missing credentials, fail only their affected cells while other cells and grids continue. Preserve the provider explanation on each failed cell. Recoverable infrastructure persistence failures suspend new dispatch as specified in section 9.
@@ -328,16 +350,24 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
 5. Delayed updates must not move title, output, thinking, status, or price backward, including after a restart. Retries must show content from the current attempt.
 6. Interrupted unfinished work requires an explicit Resume, preserving completed outputs.
 
+### 6.4. Shared generation and durable judging
+
+1. For judged grids, generate once per distinct generator setup and use the identical committed artifact in each member cell. Judge comparisons do not create additional generation calls. Waiting members consume no generation workers; each judgment uses ordinary worker allocation independently.
+2. Generation failure affects dependent cells; judge failure affects only its judgment. A false verdict is successful judging, not an inference error. Overall cell completion waits for judging, and publication follows the existing unfinished/failed-cell policy.
+3. Preserve committed generation and completed verdicts through Pause, recovery, and Resume. Resume retries only unfinished stages, including incomplete member copies repaired from the committed representative instead of generating again. Preserve temporary-error retries and billing pauses without duplicate requests after cancellation or storage retries.
+4. New grids always need fresh judgments. Reload, Resume, and duplicate creation replay do not repeat completed verdicts. Do not cache verdicts or reuse judgment attempts or usage across grids.
+
+
 ## 7. Costs and billing
 
 ### 7.1. Per-cell and grid prices
 
 1. Show cost information per generation. Display input tokens with an upward arrow and output tokens with a downward arrow, using `$` without a redundant USD suffix.
 2. Show running input and output token counts alongside each text cell's running price, using the same layout and arrows as final counts. Estimate usage from input, visible output, and available thinking while streaming, mark estimates as approximate, and replace them with provider-reported usage when the call completes. Use a monospace font for the per-cell counts and price to reduce text movement.
-3. The cost total is the sum of successful outputs currently shown on the grid plus running inference estimates.
-4. The spent total is the sum of all reported billing charges for this grid plus running inference estimates, including failed, cancelled, and retried calls. Replace each running estimate with its reported charge without counting the attempt twice; discard its estimate when work stops. Show spent only to the grid owner and omit it from responses to other viewers.
+3. The cost total is the sum of successful generation outputs currently shown on the grid plus running generation estimates. Deduplicate shared generation, including when judgments are pending or failed.
+4. The spent total is the sum of all reported generation charges for this grid plus running generation estimates, including failed, cancelled, and retried generation calls. Replace each running estimate with its reported charge without counting the attempt twice; discard its estimate when work stops. Judge charges belong only in Billing and do not change grid Cost, Spent, token counts, or estimates. Show spent only to the grid owner and omit it from responses to other viewers.
 5. Keep both totals' two-decimal UI truncation separate from stored billing precision. Cell charges and billing amounts use two to eight fractional digits, distinguishing unavailable costs from zero. Display a positive charge below the precision limit as "<$0.00000001" so it is never shown as zero.
-6. The cost tooltip is "Inference costs for this grid, not including failed attempts". The spent tooltip is "Inference costs for this grid, including failed attempts - how much you have actually spent on this page".
+6. The cost tooltip is "Generation costs for this grid, not including failed attempts". The spent tooltip is "Generation costs for this grid, including failed attempts".
 
 ### 7.2. Billing history
 
@@ -346,7 +376,7 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
 3. Retain reported charges for unsuccessful calls. Do not turn missing provider cost information into an invented zero charge.
 4. Billing follows ownership: anonymous users see their session's history, and signed-in users see their account-owned grids' history, including grids claimed on sign-in.
 5. Keep provider finish reasons out of the current UI.
-6. Show an aggregate reported-charge total and call count, including the count of calls with unavailable charges. Provide a manual Refresh billing control and a Call column showing each call's `direct` or `image` phase. Present 50 calls per page with Previous and Next controls and the visible range and total, showing pagination only when there is more than one page. Refresh automatically while calls are running and disable manual refresh while fetching. Show loading and empty states. Keep the table horizontally scrollable on narrow screens and truncate long grid links within it.
+6. Show an aggregate reported-charge total and call count, including the count of calls with unavailable charges. Provide a manual Refresh billing control and a Call column showing each call's `direct`, `image`, or "Judge" phase. Judge entries show their actual judge model and thinking effort, including retries and failures. Present 50 calls per page with Previous and Next controls and the visible range and total, showing pagination only when there is more than one page. Refresh automatically while calls are running and disable manual refresh while fetching. Show loading and empty states. Keep the table horizontally scrollable on narrow screens and truncate long grid links within it.
 
 ## 8. Identity, publication, and access
 
@@ -373,7 +403,7 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
 1. New grids are private. Publish opens "Control who can see this grid" with radio choices "Keep private," "Accessible by link," and "Listed publicly," plus Save and Cancel.
 2. Saving Keep private closes without publication. First publication requires confirmation, with Confirm, Cancel, and a "Don't ask again" preference remembered in this browser only after successful confirmation. Failure to save browser preferences must not block publication.
 3. Use this confirmation text: "This projects aims to facilitate model benchmarking and research, and we don't want valuable data to disappear. For this reason, making a published grid private is impossible."
-4. Publication is allowed when every cell is complete or failed, or when the grid is paused with unfinished cells. Published unfinished cells appear as failed with the error reason "Not generated" and no error code. Preserve completed outputs and existing failures. Running cells prevent publication; published grids cannot resume generation.
+4. Publication is allowed when every cell is complete or failed, or when the grid is paused with unfinished cells. Published unfinished cells without committed output appear as failed with the error reason "Not generated" and no error code. Preserve committed outputs, judgment state, and existing failures. Running cells prevent publication; published grids cannot resume inference.
 5. Publishing permanently locks generation inputs and outputs and prevents returning to private visibility. Public grids cannot be deleted so that benchmark data remains available. Title editing remains allowed independently.
 6. Provide an owner-visible route and control to promote an already link-accessible grid to public listing. A publicly listed grid cannot be demoted to link-only or private visibility.
 7. Link-accessible grids are readable by anyone with the link but excluded from public discovery. Public grids appear newest first on the home page beneath Your grids when present, or directly below output-format selection otherwise, including the owner's own public grids.
@@ -412,9 +442,9 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
 
 ## 10. Reusing completed artifacts
 
-1. Edit and Fork retain the source grid through draft reloads and provider authorization. Above Generate, show "Reuse existing artifacts from the previous version", checked by default, with the tooltip "Copy existing artifacts with matching generation settings that fit the token limit". Hide this checkbox for creation without a source, and regenerate every cell when it is unchecked. Connection and balance requirements apply even when all cells can be copied.
-2. Search only the selected accessible source grid, including owned private grids and other users' published grids. Reuse completed outputs with matching generation settings that fit the destination's computed token limit, choosing the first eligible cell in grid order and allowing it to satisfy multiple destination cells. Generate again when the original settings cannot be established or the output or thinking is unavailable.
+1. Edit and Fork retain the source grid through draft reloads and provider authorization. Above Generate, show "Reuse existing artifacts from the previous version", checked by default, with the tooltip "Copy existing artifacts with matching generation settings that fit the token limit". Hide this checkbox for creation without a source, and regenerate every cell when it is unchecked. Connection requirements apply even when all generation can be copied; balance checks follow section 6.2.
+2. Search only the selected accessible source grid, including owned private grids and other users' published grids. Reuse committed generation with matching settings that fit the destination's computed token limit, choosing the first eligible cell in grid order and one source artifact per destination generation group. A source judge failure does not prevent output reuse. Generate again when the original generation settings cannot be established or the output or thinking is unavailable.
 3. Reuse requires equivalent generation settings, including output format, model, expanded prompt, thinking effort, image settings, and ordered reference content. For text, the output and thinking must fit the destination's token allowance. When usage is unknown, the original allowance must fit instead. Changing only the budget does not prevent reuse if the output still fits. Positions, titles, reference filenames, and parallelism do not affect matching; labels that change the expanded prompt do. Auto and unspecified image settings are equivalent, and image generation ignores text thinking settings.
-4. Copies remain independent of the source and follow the destination's ownership and publication rules. Copied cells appear complete immediately, while only unmatched cells generate. An entirely copied grid completes without inference calls. Preserve reported usage and original artifact costs in Cost; copies add no billing entries or Spent.
+4. Copies remain independent of the source and follow the destination's ownership and publication rules. Copied unjudged cells appear complete immediately; judged copies retain committed generation and wait for fresh judging. An entirely copied unjudged grid completes without inference calls. Preserve reported generation usage and original artifact costs in Cost; copies add no generation billing entries or Spent. Never copy verdicts or judge attempts/usage.
 
 5. Reuse must preserve per-cell generation failures: an insufficient cell budget affects that cell without rejecting creation of the grid. Missing pricing does not prevent generation or reuse. When the destination has no calculated token limit, matching completed artifacts can be reused without a token ceiling check.

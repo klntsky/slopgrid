@@ -1005,7 +1005,10 @@ test("committed judged output stays available independently of judgment status",
       }),
       true,
     );
-    assert.equal(hasCompletedOutput({ status, generationSourceId: "source" }), false);
+    assert.equal(
+      hasCompletedOutput({ status, generationSourceId: "source" }),
+      false,
+    );
     assert.equal(
       hasCompletedOutput({
         status,
@@ -1127,7 +1130,10 @@ test("reuse copies one generation per judge group, retains failed-judge output, 
     };
     f.store.saveGeneration(destination);
     const restored = f.store.get(destination.id)!;
-    assert.deepEqual(restored.cells, JSON.parse(JSON.stringify(destination.cells)));
+    assert.deepEqual(
+      restored.cells,
+      JSON.parse(JSON.stringify(destination.cells)),
+    );
     assert.equal(restored.input.judge!.criteria[0].correctAnswer, false);
 
     await f.store.files.removeArtifact(original.id);
@@ -1143,7 +1149,9 @@ test("reuse copies one generation per judge group, retains failed-judge output, 
       judged.format,
       missing,
     );
-    assert.ok(missing.every((cell) => !cell.provenance && cell.status === "pending"));
+    assert.ok(
+      missing.every((cell) => !cell.provenance && cell.status === "pending"),
+    );
     assert.equal(missing[0].generationStatus, "pending");
     assert.equal(f.calls.length, 1);
   } finally {

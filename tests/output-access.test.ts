@@ -264,12 +264,7 @@ test("committed judged outputs stay readable and downloadable without weakening 
   for (const id of [owner, stranger])
     store.saveSession({ id, created: Date.now() });
   const ownerHeaders = { cookie: `slopgrid=${owner}` };
-  for (const format of [
-    "markdown",
-    "chat-template",
-    "svg",
-    "image",
-  ] as const) {
+  for (const format of ["markdown", "chat-template", "svg", "image"] as const) {
     for (const status of ["pending", "running", "error", "complete"] as const) {
       const input: Grid["input"] = {
         format,

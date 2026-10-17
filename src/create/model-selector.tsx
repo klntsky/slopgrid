@@ -11,7 +11,12 @@ type InsertionTarget = { id: string; side: "before" | "after" };
 
 function insertionTarget(list: HTMLElement, x: number, y: number) {
   const bounds = list.getBoundingClientRect();
-  if (x < bounds.left || x > bounds.right || y < bounds.top || y > bounds.bottom)
+  if (
+    x < bounds.left ||
+    x > bounds.right ||
+    y < bounds.top ||
+    y > bounds.bottom
+  )
     return;
   let target: InsertionTarget | undefined;
   let nearestRow = Infinity;
@@ -66,9 +71,11 @@ export function ModelSelector({
     next.splice(index, 0, id);
     onChange(next);
   }
-  const clearLabel = judge ? "Clear judge model filter" : multiple
-    ? `Clear ${label === "Rows" ? "row" : "column"} model filter`
-    : "Clear model filter";
+  const clearLabel = judge
+    ? "Clear judge model filter"
+    : multiple
+      ? `Clear ${label === "Rows" ? "row" : "column"} model filter`
+      : "Clear model filter";
   const selectedLabel = `Selected ${label === "Rows" ? "row" : "column"} models`;
   const visibleChoices = models.filter((c) =>
     `${c.name} ${c.id}`.toLowerCase().includes(filter.trim().toLowerCase()),
@@ -191,11 +198,16 @@ export function ModelSelector({
                     if (!direction) return;
                     e.preventDefault();
                     const index = values.indexOf(id) + direction;
-                    if (index >= 0 && index < values.length) moveModel(id, index);
+                    if (index >= 0 && index < values.length)
+                      moveModel(id, index);
                   }}
                   onPointerDown={(e) => {
                     if (e.button !== 0) return;
-                    drag.current = { x: e.clientX, y: e.clientY, active: false };
+                    drag.current = {
+                      x: e.clientX,
+                      y: e.clientY,
+                      active: false,
+                    };
                     e.currentTarget.setPointerCapture(e.pointerId);
                   }}
                   onPointerMove={(e) => {
@@ -203,21 +215,26 @@ export function ModelSelector({
                     if (
                       !start ||
                       (!start.active &&
-                        Math.hypot(e.clientX - start.x, e.clientY - start.y) < 5)
+                        Math.hypot(e.clientX - start.x, e.clientY - start.y) <
+                          5)
                     )
                       return;
                     start.active = true;
                     const list =
                       e.currentTarget.closest<HTMLElement>(".selected-models")!;
-                    setDragTarget(
-                      insertionTarget(list, e.clientX, e.clientY),
-                    );
+                    setDragTarget(insertionTarget(list, e.clientX, e.clientY));
                   }}
                   onPointerUp={(e) => {
                     if (drag.current?.active) {
                       const list =
-                        e.currentTarget.closest<HTMLElement>(".selected-models")!;
-                      const target = insertionTarget(list, e.clientX, e.clientY);
+                        e.currentTarget.closest<HTMLElement>(
+                          ".selected-models",
+                        )!;
+                      const target = insertionTarget(
+                        list,
+                        e.clientX,
+                        e.clientY,
+                      );
                       if (target) {
                         const boundary =
                           values.indexOf(target.id) +
