@@ -373,7 +373,7 @@ test("committed judged outputs stay readable and downloadable without weakening 
       assert.deepEqual(view.cells[0].judge, cell.judge);
       assert.equal(view.input.judge.criteria[0].correctAnswer, false);
       const publicationError = store.publish(grid.id, "unlisted", null);
-      if (status !== "complete") {
+      if (status === "running") {
         assert.equal(typeof publicationError, "string");
         continue;
       }
