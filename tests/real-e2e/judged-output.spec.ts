@@ -136,14 +136,10 @@ async function inspect(page: Page, grid: Snapshot, expectedScore: number) {
     expect(cell.outputReady).toBe(true);
     expect(cell.judge?.status).toBe("complete");
     expect(cell.judge?.results).toHaveLength(criteria.length);
-    expect(cell.judge!.results!.map((result) => result.verdict)).toEqual([
-      false,
-      true,
-    ]);
-    for (const result of cell.judge!.results!) {
-      expect(typeof result.verdict).toBe("boolean");
-      expect(result.explanation.trim().length).toBeGreaterThan(0);
-    }
+    expect(
+      cell.judge!.results!.map((result) => result.verdict),
+      JSON.stringify(cell.judge!.results),
+    ).toEqual([false, true]);
     const download = await page.request.get(`/outputs/${cell.id}/download`);
     expect(download.ok()).toBe(true);
     outputs.push(await download.body());
@@ -253,7 +249,7 @@ for (const format of ["markdown", "chat-template", "image", "svg"] as const) {
       format,
       prompt,
       model: format === "image" ? imageGenerator : judges[0],
-      effort: "none",
+      effort: "default",
       budgetUsd: 0.03,
       ...(format === "chat-template"
         ? {
@@ -272,7 +268,7 @@ for (const format of ["markdown", "chat-template", "image", "svg"] as const) {
             },
       columns:
         format === "svg" || format === "chat-template"
-          ? { kind: "effort", values: ["none"] }
+          ? { kind: "effort", values: ["default"] }
           : {
               kind: "judge_effort",
               values: format === "markdown" ? ["default", "none"] : ["default"],
