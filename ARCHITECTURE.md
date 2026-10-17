@@ -170,8 +170,10 @@ Generation attempts are the shared execution boundary for every output format.
 Jobs schedules, cancels, and settles an attempt; the attempt layer coordinates
 its provider calls and progress. The provider adapter prepares and executes
 individual requests. Ordinary generation uses one request, while the template
-strategy resolves unfilled messages and maintains the generated history within
-the same attempt. The request context applies cancellation, billing, and the
+strategy resolves a shared call sequence and maintains the generated history
+within the same attempt. Execution and artifact reuse derive that sequence from
+the template, including its final completion when needed. The request context
+applies cancellation, billing, and the
 persistence barrier to every call. A request waits for its billing record and
 earlier queued writes before reaching the provider, and cancellation interrupts
 that wait.

@@ -5,7 +5,11 @@ import {
   generationBudget,
   generationBudgetForInput,
 } from "../server/generation-budget.js";
-import type { Cell, InferenceProgress } from "../server/domain.js";
+import type {
+  Cell,
+  FilledChatMessage,
+  InferenceProgress,
+} from "../server/domain.js";
 import { readChatOutput } from "../shared/chat-output.js";
 
 const model = {
@@ -160,6 +164,81 @@ test("conversation output preserves message boundaries through streaming and sto
   assert.deepEqual(Object.keys(result.files), ["messages.json"]);
   assert.deepEqual(readChatOutput(progress[0].text), messages.slice(0, 2));
   assert.deepEqual(readChatOutput(progress.at(-1)!.text), messages);
+});
+
+test("supplied final messages get a completion using the complete history and shared budget", async () => {
+  for (const role of ["user", "assistant", "system"] as const) {
+    const messages = [...cell.messages!, { role, content: "Final input" }];
+    const allowances: number[] = [];
+    const histories: FilledChatMessage[][] = [];
+    const result = await fillChatTemplate(
+      { ...cell, budgetUsd: 12, messages },
+      (prompt, dollars) => {
+        allowances.push(dollars);
+        return budgetFor(prompt, dollars);
+      },
+      async (history) => {
+        histories.push(structuredClone(history));
+        return {
+          files: { "index.md": `Answer ${histories.length}` },
+          usage: { inputTokens: 20, outputTokens: 10, costUsd: 2 },
+        };
+      },
+      () => {},
+    );
+    const output = readChatOutput(result.files["messages.json"]);
+    assert.equal(histories.length, 3);
+    assert.deepEqual(allowances, [4, 5, 8]);
+    assert.deepEqual(histories[2], [
+      messages[0],
+      { role: "assistant", content: "Answer 1" },
+      messages[2],
+      { role: "assistant", content: "Answer 2" },
+      messages[4],
+    ]);
+    assert.deepEqual(output, [
+      ...histories[2],
+      { role: "assistant", content: "Answer 3" },
+    ]);
+    assert.equal(result.templateSteps.length, 3);
+    assert.deepEqual(result.usage, {
+      inputTokens: 60,
+      outputTokens: 30,
+      costUsd: 6,
+    });
+    assert.equal(messages.length, 5);
+    assert.equal(messages.at(-1)!.role, role);
+  }
+});
+
+test("cancellation or exhausted budget after the final blank prevents the trailing completion", async () => {
+  for (const cancel of [true, false]) {
+    const controller = new AbortController();
+    let calls = 0;
+    await assert.rejects(() =>
+      fillChatTemplate(
+        {
+          ...cell,
+          messages: [
+            ...cell.messages!,
+            { role: "user", content: "Final input" },
+          ],
+        },
+        budgetFor,
+        async () => {
+          calls++;
+          if (calls === 2 && cancel) controller.abort();
+          return {
+            files: { "index.md": "Answer" },
+            usage: { costUsd: calls === 2 ? 10 : 1 },
+          };
+        },
+        () => {},
+        controller.signal,
+      ),
+    );
+    assert.equal(calls, 2);
+  }
 });
 
 test("existing Markdown conversations preserve fenced role headings and whitespace", () => {

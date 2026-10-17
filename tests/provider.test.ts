@@ -176,7 +176,7 @@ function cell(model: string, effort: string): Cell {
     status: "running",
   };
 }
-test("chat templates fill only blanks sequentially and aggregate the transcript", async () => {
+test("chat templates fill blanks sequentially and complete trailing history", async () => {
   const h = await upstream();
   try {
     const messages: NonNullable<Cell["messages"]> = [
@@ -196,7 +196,7 @@ test("chat templates fill only blanks sequentially and aggregate the transcript"
       (p) => updates.push(p),
       {},
     );
-    assert.equal(h.requests.length, 3);
+    assert.equal(h.requests.length, 4);
     assert.deepEqual(h.requests[0].messages, [messages[0]]);
     assert.deepEqual(h.requests[1].messages, [
       messages[0],
@@ -207,6 +207,11 @@ test("chat templates fill only blanks sequentially and aggregate the transcript"
       ...(h.requests[1].messages as object[]),
       { role: "assistant", content: "# Output" },
     ]);
+    assert.deepEqual(h.requests[3].messages, [
+      ...(h.requests[2].messages as object[]),
+      { role: "assistant", content: "# Output" },
+      messages[5],
+    ]);
     assert.deepEqual(JSON.parse(result.files["messages.json"] as string), [
       messages[0],
       { role: "assistant", content: "# Output" },
@@ -214,10 +219,11 @@ test("chat templates fill only blanks sequentially and aggregate the transcript"
       { role: "assistant", content: "# Output" },
       { role: "assistant", content: "# Output" },
       messages[5],
+      { role: "assistant", content: "# Output" },
     ]);
     assert.equal(updates.at(-1)!.text, result.files["messages.json"]);
-    assert.equal(result.usage?.inputTokens, 3);
-    assert.equal(result.usage?.outputTokens, 3);
+    assert.equal(result.usage?.inputTokens, 4);
+    assert.equal(result.usage?.outputTokens, 4);
     assert.ok(
       Number(h.requests[0].max_tokens) < Number(h.requests[1].max_tokens),
     );

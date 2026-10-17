@@ -132,6 +132,63 @@ test("template usage and per-call reuse survive storage reopening", async () => 
   }
 });
 
+test("template reuse requires the final completion after supplied trailing history", async () => {
+  const f = await runtimeFixture();
+  try {
+    const template = {
+      ...input,
+      format: "chat-template",
+      budgetUsd: 1,
+      rows: { kind: "variable", values: ["cat"] },
+      messages: [
+        { role: "user", content: "$ROW $COLUMN" },
+        { role: "unfilled", content: "" },
+        { role: "user", content: "Final question" },
+      ],
+    };
+    const source = await create(f, template);
+    finish(await f.nextCall(), "First answer");
+    const last = await f.nextCall();
+    assert.deepEqual(
+      last.request.messages.map((m) => ({
+        role: m.role,
+        content: messageText(m.content),
+      })),
+      [
+        { role: "user", content: "cat one" },
+        { role: "assistant", content: "First answer" },
+        { role: "user", content: "Final question" },
+      ],
+    );
+    finish(last, "Final answer");
+    await settled(f, source.id);
+    const copy = await create(f, {
+      ...template,
+      sourceGridId: source.id,
+      reuseArtifacts: true,
+    });
+    assert.equal(copy.status, "complete");
+    assert.equal(f.calls.length, 2);
+    f.store.db
+      .prepare(
+        "UPDATE cells SET data=json_remove(data,'$.provenance.templateSteps[1]') WHERE id=?",
+      )
+      .run(source.cells[0].id);
+    const regenerated = await create(f, {
+      ...template,
+      sourceGridId: source.id,
+      reuseArtifacts: true,
+    });
+    assert.notEqual(regenerated.status, "complete");
+    finish(await f.nextCall(), "Fresh first answer");
+    finish(await f.nextCall(), "Fresh final answer");
+    await settled(f, regenerated.id);
+    assert.equal(f.calls.length, 4);
+  } finally {
+    await f.close();
+  }
+});
+
 test("failed templates retain the partial transcript and aggregate charged usage", async () => {
   const f = await runtimeFixture();
   try {

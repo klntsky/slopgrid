@@ -301,7 +301,11 @@ confirmed deletion on touch devices.
 Chat template coverage checks role-specific validation, filler rendering, format
 switching, saved blanks, and insertion focus after a blank. Provider tests assert
 the exact prefix for each sequential call, including consecutive blanks and
-trailing supplied messages. Orchestrator tests cover shared budgets, unknown
+trailing supplied messages and their final completion. Check supplied user,
+assistant, and system endings, complete-history requests, shared allowance for
+the final call, and cancellation or budget exhaustion before it. Reuse tests
+must reject saved outputs missing that call while retaining reuse for complete
+sequences. Orchestrator tests cover shared budgets, unknown
 metadata, aggregate usage, cancellation, later-call failure, retry, and per-call
 reuse limits. Runtime tests verify persisted aggregate usage and artifact reuse;
 browser tests verify streaming message bubbles, role-based alignment, system-message

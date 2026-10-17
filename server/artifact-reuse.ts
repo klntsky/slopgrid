@@ -6,7 +6,7 @@ import type { Cell, Grid } from "./domain.js";
 import type { Store } from "./store.js";
 import type { Provider } from "./provider.js";
 import { inferenceSignature, templateSignature } from "./prepared-inference.js";
-import { templateFits } from "./chat-template.js";
+import { templateFits, templateSequence } from "./chat-template.js";
 
 export async function reuseArtifacts(
   store: Store,
@@ -36,12 +36,12 @@ export async function reuseArtifacts(
           (model) => model.id === cell.model,
         );
         if (!model) continue;
-        const blanks = cell.messages?.filter(
+        const calls = templateSequence(cell.messages ?? []).filter(
           (m) => m.role === "unfilled",
         ).length;
         match = matching.find((candidate) => {
           const steps = candidate.provenance?.templateSteps;
-          if (!steps?.length || steps.length !== blanks) return false;
+          if (!steps?.length || steps.length !== calls) return false;
           try {
             return templateFits(steps, cell.budgetUsd, (inputTokens, dollars) =>
               generationBudgetForInput(model, inputTokens, dollars),

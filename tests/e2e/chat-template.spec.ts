@@ -16,6 +16,7 @@ test("chat template editing, persistence, sequential output and exports", async 
       { role: "user", content: "Next question two" },
       { role: "assistant", content: answer },
       { role: "system", content: "Keep answers concise." },
+      { role: "assistant", content: answer },
     ],
     null,
     2,
@@ -107,7 +108,7 @@ test("chat template editing, persistence, sequential output and exports", async 
   );
   await request.post("/fixture/release", { data: { all: true } });
   await expectProgress(page, 1, 1);
-  await expect(preview.locator(".chat-bubble")).toHaveCount(5);
+  await expect(preview.locator(".chat-bubble")).toHaveCount(6);
   await page.screenshot({
     path: "test-results/chat-conversation-grid.png",
     fullPage: true,
@@ -118,6 +119,7 @@ test("chat template editing, persistence, sequential output and exports", async 
   const rawOutput = await page.request.get(rawOutputURL! + "&raw=1");
   expect(await rawOutput.text()).toBe(expected);
   await expect(preview.locator('[data-role="assistant"] h2')).toHaveText([
+    "user",
     "user",
     "user",
   ]);
@@ -165,7 +167,7 @@ test("chat template editing, persistence, sequential output and exports", async 
     page
       .getByRole("region", { name: /^Expanded output:/ })
       .locator(".chat-bubble"),
-  ).toHaveCount(5);
+  ).toHaveCount(6);
   await page
     .getByRole("button", { name: "Collapse Chat template", exact: true })
     .click();
@@ -186,7 +188,7 @@ test("chat template editing, persistence, sequential output and exports", async 
     .getAttribute("href");
   const standalone = await context.newPage();
   await standalone.goto(outputURL!);
-  await expect(standalone.locator(".chat-bubble")).toHaveCount(5);
+  await expect(standalone.locator(".chat-bubble")).toHaveCount(6);
   await expect(standalone.locator('[data-role="assistant"]').first()).toHaveCSS(
     "align-self",
     "flex-start",
@@ -201,8 +203,8 @@ test("chat template editing, persistence, sequential output and exports", async 
   });
   await standalone.close();
   await page.reload();
-  await expect(page.locator(".markdown-preview h1")).toHaveCount(2);
-  await expect(preview.locator(".chat-bubble")).toHaveCount(5);
+  await expect(page.locator(".markdown-preview h1")).toHaveCount(3);
+  await expect(preview.locator(".chat-bubble")).toHaveCount(6);
   await page.getByRole("button", { name: "EDIT", exact: true }).click();
   await expect(page.locator(".chat-role-unfilled")).toHaveCount(2);
   await expect(page.getByLabel("Message 1", { exact: true })).toHaveValue(

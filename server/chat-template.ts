@@ -1,12 +1,19 @@
 import {
   chatText,
   type Cell,
+  type ChatMessage,
   type FilledChatMessage,
   type InferenceProgress,
   type TemplateStep,
 } from "./domain.js";
 import type { TextBudget } from "./generation-budget.js";
 import { sumUsage } from "./usage.js";
+
+export function templateSequence(messages: ChatMessage[]): ChatMessage[] {
+  return messages.length && messages.at(-1)!.role !== "unfilled"
+    ? [...messages, { role: "unfilled", content: "" }]
+    : messages;
+}
 
 export async function fillChatTemplate(
   cell: Cell,
@@ -24,17 +31,18 @@ export async function fillChatTemplate(
 ) {
   const history: FilledChatMessage[] = [];
   const templateSteps: TemplateStep[] = [];
+  const sequence = templateSequence(cell.messages!);
   let remaining = cell.budgetUsd;
-  let blanks = cell.messages!.filter((m) => m.role === "unfilled").length;
+  let callsRemaining = sequence.filter((m) => m.role === "unfilled").length;
   let thinking = "";
-  for (const message of cell.messages!) {
+  for (const message of sequence) {
     signal?.throwIfAborted();
     if (message.role !== "unfilled") {
       history.push({ ...message, role: message.role });
       continue;
     }
     const prompt = chatText(history);
-    const allowance = remaining / blanks;
+    const allowance = remaining / callsRemaining;
     const budget = budgetFor(prompt, allowance);
     let latest: InferenceProgress | undefined;
     const result = await run(history, budget, (progress) => {
@@ -74,7 +82,7 @@ export async function fillChatTemplate(
       usage,
       costUsd,
     });
-    blanks--;
+    callsRemaining--;
     history.push({ role: "assistant", content });
     thinking += latest?.thinking ?? "";
   }
