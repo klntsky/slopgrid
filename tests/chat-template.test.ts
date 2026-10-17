@@ -147,3 +147,18 @@ test("missing reported cost uses token estimates and unknown metadata keeps prov
   );
   assert.equal(calls, 2);
 });
+
+test("template reuse rejects changed pricing on later prefixes even when the first call is unchanged", async () => {
+  const tiered = { ...model, pricing: { ...model.pricing,
+    overrides: [{ min_prompt_tokens: 300, prompt: 0.002 }] } };
+  const result = await fillChatTemplate(cell,
+    (prompt, dollars) => generationBudget(tiered, prompt, "", dollars),
+    async () => ({ files: { "index.md": "Long answer ".repeat(30) }, usage: { inputTokens: 100, outputTokens: 10, costUsd: 0.2 } }),
+    () => {});
+  const changed = { ...tiered, pricing: { ...tiered.pricing,
+    overrides: [{ min_prompt_tokens: 300, prompt: 0.003 }] } };
+  assert.deepEqual(generationBudget(tiered, "user: First", "", 5).maxPrice,
+    generationBudget(changed, "user: First", "", 5).maxPrice);
+  assert.equal(templateFits(result.templateSteps, 10,
+    (prompt, dollars) => generationBudget(changed, prompt, "", dollars)), false);
+});

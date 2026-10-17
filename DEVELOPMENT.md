@@ -308,6 +308,12 @@ browser tests verify completed transcript rendering and copying. Run the focused
 domain, chat-template, provider, cost-estimates, billing, artifact-reuse, and chat
 browser suites on staging for changes spanning these boundaries.
 
+Template architecture regression coverage uses real engine processes to exercise
+storage locks between blanks, cancellation while waiting for durable billing,
+crashes between billing and cell settlement, graceful drain, and retries with
+fresh history. Reuse coverage changes pricing only for a later accumulated
+prefix to detect assumptions based on the first request alone.
+
 Recovery coverage exercises a failed later reference upload followed by reload
 and retry, large reference retention through reload and authorization, clipboard
 failure and retry without duplicate writes, independent grid-list failures, and
