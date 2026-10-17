@@ -24,6 +24,7 @@ function models(target = "fixture/v1"): Model[] {
     ...m,
     name: m.id,
     image: false,
+    imageInput: false,
     text: true,
     reasoning: false,
     reasoningMandatory: false,

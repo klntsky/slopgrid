@@ -21,6 +21,7 @@ test("catalog loads all details together and refreshes only on the server timer"
         id,
         name: version,
         image: id !== "text",
+        imageInput: false,
         text: id === "text",
         reasoning: false,
         reasoningMandatory: false,

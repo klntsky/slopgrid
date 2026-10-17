@@ -84,6 +84,7 @@ test("page HTML contains the complete model dump before rendering and updates fr
     id: "image",
     name: '</script><script>window.bad = true</script> $& "quoted"',
     image: true,
+    imageInput: false,
     text: false,
     reasoning: false,
     reasoningMandatory: false,
