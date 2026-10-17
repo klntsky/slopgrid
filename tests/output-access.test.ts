@@ -256,3 +256,189 @@ test("private outputs require ownership, isolated grants are scoped and revoked 
     200,
   );
 });
+
+test("committed judged outputs stay readable and downloadable without weakening ownership checks", async (t) => {
+  const { origin, store } = await appFixture(t);
+  const owner = token();
+  const stranger = token();
+  for (const id of [owner, stranger])
+    store.saveSession({ id, created: Date.now() });
+  const ownerHeaders = { cookie: `slopgrid=${owner}` };
+  for (const format of [
+    "markdown",
+    "chat-template",
+    "svg",
+    "image",
+  ] as const) {
+    for (const status of ["pending", "running", "error", "complete"] as const) {
+      const input: Grid["input"] = {
+        format,
+        prompt: "A saved artifact",
+        rows: { kind: "variable", values: ["one"] },
+        columns: { kind: "effort", values: ["none"] },
+        model: "fixture/text",
+        effort: "none",
+        budgetUsd: 1,
+        judge: {
+          criteria: [{ text: "Is this saved?", correctAnswer: false }],
+          model: "fixture/judge",
+          effort: "default",
+        },
+      };
+      const cell = {
+        ...expandGrid(input)[0],
+        id: token(),
+        status,
+        generationStatus: "complete" as const,
+        mediaType: format === "image" ? "image/png" : undefined,
+        judge: {
+          model: "fixture/judge",
+          effort: "default",
+          status,
+          ...(status === "error" ? { error: "Judge unavailable" } : {}),
+          ...(status === "complete"
+            ? {
+                results: [
+                  { verdict: false, explanation: "The artifact was saved." },
+                ],
+              }
+            : {}),
+        },
+      };
+      const filename =
+        format === "markdown"
+          ? "index.md"
+          : format === "chat-template"
+            ? "messages.json"
+            : format === "svg"
+              ? "index.svg"
+              : "image";
+      const grid: Grid = {
+        id: token(),
+        owner,
+        input,
+        status: "paused",
+        published: false,
+        visibility: "private",
+        createdAt: new Date().toISOString(),
+        cells: [
+          {
+            ...cell,
+            generationSourceId: cell.id,
+            provenance: { signature: "saved-generation", files: [filename] },
+          },
+        ],
+      };
+      store.insert(grid);
+      store.files.write(cell.id, {
+        [filename]:
+          format === "chat-template"
+            ? JSON.stringify([{ role: "assistant", content: "Saved artifact" }])
+            : "Saved artifact",
+      });
+      const paths = [
+        `/outputs/${cell.id}`,
+        `/outputs/${cell.id}/download`,
+        ...(format === "markdown" || format === "chat-template"
+          ? [`/outputs/${cell.id}?raw=1`]
+          : []),
+      ];
+      for (const path of paths) {
+        for (const headers of [
+          new Headers(),
+          new Headers({ cookie: `slopgrid=${stranger}` }),
+        ]) {
+          const denied = await fetch(origin + path, { headers });
+          assert.equal(denied.status, 404);
+          assert.equal(denied.headers.get("X-Slopgrid-Output-Ready"), null);
+          assert.equal(denied.headers.get("Cache-Control"), "no-store");
+        }
+        const response = await fetch(origin + path, {
+          headers: ownerHeaders,
+        });
+        assert.equal(response.status, 200);
+        assert.equal(response.headers.get("X-Slopgrid-Output-Ready"), "1");
+        assert.match(await response.text(), /Saved artifact/);
+      }
+      const view = await (
+        await fetch(`${origin}/api/grids/${grid.id}`, {
+          headers: ownerHeaders,
+        })
+      ).json();
+      assert.equal(view.cells[0].outputReady, true);
+      assert.equal(view.cells[0].outputURL, `${origin}/outputs/${cell.id}`);
+      assert.equal(view.cells[0].status, status);
+      assert.equal(view.cells[0].generationSourceId, cell.id);
+      assert.equal(view.cells[0].generationStatus, "complete");
+      assert.deepEqual(view.cells[0].judge, cell.judge);
+      assert.equal(view.input.judge.criteria[0].correctAnswer, false);
+      store.publish(grid.id, "unlisted", null);
+      const publishedView = await (
+        await fetch(`${origin}/api/grids/${grid.id}`)
+      ).json();
+      assert.equal(publishedView.cells[0].outputReady, true);
+      assert.equal(publishedView.cells[0].outputURL, view.cells[0].outputURL);
+      assert.equal(publishedView.cells[0].status, status);
+      assert.deepEqual(publishedView.cells[0].judge, cell.judge);
+      for (const path of paths) {
+        const response = await fetch(origin + path);
+        assert.equal(response.status, 200);
+        assert.equal(response.headers.get("X-Slopgrid-Output-Ready"), "1");
+      }
+    }
+  }
+});
+
+test("uncommitted judged files are not exposed before generation commits", async (t) => {
+  const { origin, store } = await appFixture(t);
+  const owner = token();
+  store.saveSession({ id: owner, created: Date.now() });
+  const input: Grid["input"] = {
+    format: "markdown",
+    prompt: "Uncommitted artifact",
+    rows: { kind: "variable", values: ["one"] },
+    columns: { kind: "effort", values: ["none"] },
+    model: "fixture/text",
+    effort: "none",
+    budgetUsd: 1,
+    judge: {
+      criteria: [{ text: "Is this saved?", correctAnswer: true }],
+      model: "fixture/judge",
+      effort: "default",
+    },
+  };
+  const cellId = token();
+  const grid: Grid = {
+    id: token(),
+    owner,
+    input,
+    status: "paused",
+    published: false,
+    visibility: "private",
+    createdAt: new Date().toISOString(),
+    cells: [
+      {
+        ...expandGrid(input)[0],
+        id: cellId,
+        status: "pending",
+        generationSourceId: cellId,
+        provenance: { signature: "not-committed", files: [] },
+      },
+    ],
+  };
+  store.insert(grid);
+  store.files.write(cellId, { "index.md": "Uncommitted artifact" });
+  const headers = { cookie: `slopgrid=${owner}` };
+  assert.equal(store.outputMetadata(cellId)?.outputReady, false);
+  assert.equal(store.outputDownload(cellId), undefined);
+  for (const path of [`/outputs/${cellId}`, `/outputs/${cellId}/download`]) {
+    const response = await fetch(origin + path, { headers });
+    assert.equal(response.status, 404);
+    assert.equal(response.headers.get("X-Slopgrid-Output-Ready"), null);
+  }
+  const view = await (
+    await fetch(`${origin}/api/grids/${grid.id}`, { headers })
+  ).json();
+  assert.equal(view.cells[0].outputReady, false);
+  assert.equal(view.cells[0].outputURL, undefined);
+});

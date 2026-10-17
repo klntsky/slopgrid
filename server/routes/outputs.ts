@@ -77,13 +77,13 @@ export function createOutputRoutes(
     const viewer = session.read(req);
     if (!output || !canViewGrid(output, viewer)) return res.sendStatus(404);
     res.locals.output = output;
-    if (output.status === "complete") res.set("X-Slopgrid-Output-Ready", "1");
+    if (output.outputReady) res.set("X-Slopgrid-Output-Ready", "1");
     res.locals.file = outputFile(output);
     next();
   });
   app.get("/outputs/:id/offline", async (req, res) => {
     const output = res.locals.output;
-    if (output.status !== "complete" || output.format !== "html")
+    if (!output.outputReady || output.format !== "html")
       return res.sendStatus(404);
     const id = String(req.params.id);
     const pages = await offlineWebsite(
@@ -96,7 +96,7 @@ export function createOutputRoutes(
   app.get("/offline/outputs/:id/*path", async (req, res) => {
     res.set("Content-Security-Policy", offlineWebsitePolicy);
     const output = res.locals.output;
-    if (output.status !== "complete" || output.format !== "html")
+    if (!output.outputReady || output.format !== "html")
       return res.sendStatus(404);
     const id = String(req.params.id);
     const path = (req.params.path as string[]).join("/");
@@ -171,7 +171,7 @@ export function createOutputRoutes(
     const output = res.locals.output as NonNullable<
       ReturnType<Store["outputMetadata"]>
     >;
-    if (output.status !== "complete" || output.format === "html")
+    if (!output.outputReady || output.format === "html")
       return res.sendStatus(404);
     res.set(
       "Content-Security-Policy",

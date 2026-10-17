@@ -23,10 +23,12 @@ import { ContainedImage } from "../contained-image";
 import { useTooltip, tooltipRef } from "../components/use-tooltip";
 import { copyOutput } from "./copy-output";
 import { useOffline } from "../pwa";
+import { JudgeResultButton } from "./judge-result-button";
 export function OutputCell({
   cell,
   format,
   gridStatus,
+  criteria,
   title,
   expanded = false,
   rawMarkdown = false,
@@ -38,6 +40,7 @@ export function OutputCell({
   cell: ViewGrid["cells"][number];
   format: GridInput["format"];
   gridStatus: ViewGrid["status"];
+  criteria?: NonNullable<GridInput["judge"]>["criteria"];
   title: string;
   expanded?: boolean;
   rawMarkdown?: boolean;
@@ -58,12 +61,12 @@ export function OutputCell({
   const inputHint = useTooltip<HTMLSpanElement>("Input tokens");
   const outputHint = useTooltip<HTMLSpanElement>("Output tokens");
   const outputURL =
-    offline && format === "html" && cell.status === "complete"
+    offline && format === "html" && cell.outputReady
       ? `/offline/outputs/${cell.id}/index.html`
       : isMarkdownFormat(format) && cell.outputURL
         ? `${cell.outputURL}?theme=${resolvedTheme}`
         : cell.outputURL;
-  const complete = cell.status === "complete";
+  const complete = cell.outputReady;
   const usage = complete ? cell.usage : cell.estimatedUsage;
   const approximate = complete ? "" : "≈";
   const markdown =
@@ -72,7 +75,8 @@ export function OutputCell({
   const hasOutput =
     complete || !!(format === "html" ? cell.previewURL : cell.draft?.trim());
   const thinking =
-    hasThinking && (showThinking ?? (cell.status === "running" && !hasOutput));
+    hasThinking &&
+    (showThinking ?? (!complete && cell.status === "running" && !hasOutput));
   const thinkingLabel = thinking ? "Show output" : "Show thinking";
   const expandable =
     complete || cell.status === "running" || thinking || expanded;
@@ -142,7 +146,7 @@ export function OutputCell({
             title={`Thinking: ${title}`}
             raw="wrap"
             draft={cell.thinking}
-            streaming={cell.status === "running"}
+            streaming={!complete && cell.status === "running"}
           />
         </div>
       )}
@@ -201,10 +205,11 @@ export function OutputCell({
           )}
         </div>
       )}
-      {!expanded &&
-        (complete ||
-          (cell.status === "running" &&
-            (markdown || cell.estimatedUsage?.costUsd !== undefined))) && (
+      {((cell.judge && criteria) ||
+        (!expanded &&
+          (complete ||
+            (cell.status === "running" &&
+              (markdown || cell.estimatedUsage?.costUsd !== undefined))))) && (
           <div className="cell-footer">
             <div className="cell-actions">
               {complete && (
@@ -234,6 +239,13 @@ export function OutputCell({
                     <Download aria-hidden="true" />
                   </a>
                 </>
+              )}
+              {cell.judge && criteria && (
+                <JudgeResultButton
+                  judge={cell.judge}
+                  criteria={criteria}
+                  gridStatus={gridStatus}
+                />
               )}
             </div>
             <small className="cell-usage">

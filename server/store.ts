@@ -6,6 +6,7 @@ import Database from "better-sqlite3";
 import { encrypt, decrypt } from "./encryption.js";
 import {
   expandGrid,
+  hasCompletedOutput,
   type Grid,
   type StoredGrid,
   type Cell,
@@ -243,7 +244,8 @@ export class Store {
     const { owner, ownerUserId, published, input } = JSON.parse(
       row.grid,
     ) as Grid;
-    const { status, mediaType, thinkingId } = JSON.parse(row.cell) as Cell;
+    const cell = JSON.parse(row.cell) as Cell;
+    const { status, mediaType, thinkingId } = cell;
     return {
       owner,
       ownerUserId,
@@ -251,26 +253,28 @@ export class Store {
       format: input.format,
       thinkingId,
       status,
+      outputReady: hasCompletedOutput(cell),
       mediaType,
     };
   }
   outputDownload(id: string) {
     const row = this.db
       .prepare(
-        `SELECT g.id AS gridId, g.data, c.position,
-          json_extract(c.data, '$.mediaType') AS mediaType
+        `SELECT g.id AS gridId, g.data, c.position, c.data AS cell
          FROM cells c JOIN grids g ON g.id=c.grid_id
-         WHERE c.id=? AND json_extract(c.data, '$.status')='complete'`,
+         WHERE c.id=?`,
       )
       .get(id) as
       | {
           gridId: string;
           data: string;
           position: number;
-          mediaType: string | null;
+          cell: string;
         }
       | undefined;
     if (!row) return;
+    const cell = JSON.parse(row.cell) as Cell;
+    if (!hasCompletedOutput(cell)) return;
     const { input } = JSON.parse(row.data) as Pick<Grid, "input">;
     const columns = input.columns.values.length;
     return {
@@ -279,7 +283,7 @@ export class Store {
       row: input.rows.values[Math.floor(row.position / columns)],
       column: input.columns.values[row.position % columns],
       format: input.format,
-      mediaType: row.mediaType ?? undefined,
+      mediaType: cell.mediaType,
     };
   }
   session(id: string): Session | undefined {
