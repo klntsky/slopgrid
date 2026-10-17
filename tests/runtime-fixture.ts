@@ -155,6 +155,7 @@ export async function runtimeFixture(
     request: CapturedRequest;
     prompt: string;
     aborted: boolean;
+    closed: Promise<void>;
     write: (delta: object) => void;
     finish: (
       cost?: number,
@@ -217,6 +218,9 @@ export async function runtimeFixture(
         .map((message) => messageText(message.content))
         .join(""),
       aborted: false,
+      closed: new Promise<void>((resolve) => {
+        res.once("close", () => resolve());
+      }),
       disconnect: () => res.destroy(),
       write: (delta: object) => {
         event(delta);

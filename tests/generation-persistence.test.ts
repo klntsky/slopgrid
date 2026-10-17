@@ -91,7 +91,8 @@ test(
         gridId: grid.id,
         sessionId: f.owner,
       });
-      await until(() => call.aborted, Boolean);
+      await call.closed;
+      assert.equal(call.aborted, true);
       const paused = await pausing;
       assert.equal(paused.status, "paused");
       assert.equal(paused.live, true);
