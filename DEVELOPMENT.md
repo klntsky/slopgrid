@@ -453,6 +453,11 @@ and [judgment results](PRODUCT.md#56-judgment-results).
   `OPENROUTER_API_KEY`, the specified GPT-4.1 mini/nano judges, and Gemini 2.5 Flash
   Image generation. Missing credentials, model availability, and insufficient
   balance fail verification instead of switching models or skipping tests.
+  The two-effort case requires routes accepting both default effort and `none`;
+  an unavailable model/parameter combination remains a reported failure. Separate
+  default-effort cases exercise each format and fresh judging after reuse. Score
+  assertions follow actual verdicts rather than requiring a model to satisfy the
+  generation prompt or agree with an expected answer.
 
 Run the focused suites through the slopgrid-ops staging command. For manual
 visual inspection, start an isolated `startTestServer("mock")` on staging in
