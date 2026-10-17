@@ -7,15 +7,6 @@ import {
 import type { GridInput } from "./domain.js";
 import type { Model } from "./provider.js";
 
-export function canJudge(model: Model, format: GridInput["format"]): boolean {
-  return (
-    format !== "html" &&
-    model.text &&
-    model.structuredOutputs === true &&
-    ((format !== "svg" && format !== "image") || model.imageInput === true)
-  );
-}
-
 export function effortLabel(effort: string): string {
   return effort === "default"
     ? "Model default"

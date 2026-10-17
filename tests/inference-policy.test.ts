@@ -15,7 +15,6 @@ test("admission sums individual costs, preserves automatic selection, and skips 
         name: "Test",
         text: true,
         image: false,
-        imageInput: false,
         reasoning: false,
         reasoningMandatory: false,
       };

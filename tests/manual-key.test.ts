@@ -31,7 +31,6 @@ for (const format of ["markdown", "image"] as const) {
             name: "Text",
             text: true,
             image: true,
-            imageInput: false,
             reasoning: false,
             reasoningMandatory: false,
           },

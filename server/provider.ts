@@ -26,7 +26,6 @@ export type Model = {
   canonicalSlug?: string;
   name: string;
   image: boolean;
-  imageInput: boolean;
   text: boolean;
   reasoning: boolean;
   reasoningMandatory: boolean;
@@ -182,10 +181,6 @@ export class Provider {
           m.top_provider?.max_completion_tokens ??
           undefined,
         image: imageIds.has(m.id),
-        imageInput:
-          previous?.imageInput ||
-          m.architecture.input_modalities?.includes("image") ||
-          false,
         text:
           previous?.text ||
           m.architecture.output_modalities?.includes("text") ||

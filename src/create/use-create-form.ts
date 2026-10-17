@@ -10,7 +10,6 @@ import { modelCatalog } from "../model-catalog";
 import { useConnection, useInferenceCapacity } from "../queries";
 import { useCreateDraft } from "./draft";
 import { useCreateSubmission } from "./use-create-submission";
-import { canJudge } from "../../server/compatibility";
 
 function useBudgetEstimate(input: GridInput) {
   const [minute, setMinute] = useState(() => Math.floor(Date.now() / 60000));
@@ -51,33 +50,9 @@ export function useCreateForm() {
     input.format !== "image" &&
     ![input.rows.kind, input.columns.kind].includes("effort");
   const modelMissing = commonModel && !input.model;
-  const commonJudgeModel = !!input.judge &&
-    ![input.rows.kind, input.columns.kind].includes("judge_model");
-  const commonJudgeEffort = !!input.judge &&
-    ![input.rows.kind, input.columns.kind].includes("judge_effort");
-  const judgeModels = modelCatalog.filter((model) => canJudge(model, input.format))
-    .sort((a, b) => a.name.localeCompare(b.name, "en", { sensitivity: "base" }) ||
-      a.id.localeCompare(b.id, "en"));
-  const judgeModelIds = [input.rows, input.columns]
-    .find((axis) => axis.kind === "judge_model")?.values ??
-    [input.judge?.model ?? ""];
-  const judgeIssue = input.judge
-    ? !input.judge.criteria.length || input.judge.criteria.some((criterion) =>
-        !criterion.text.trim() || typeof criterion.correctAnswer !== "boolean")
-      ? "Enter at least one yes/no criterion."
-      : !judgeModels.length
-        ? "No compatible judge models are available for this output type."
-        : !judgeModelIds.length || judgeModelIds.some((id) => !id)
-          ? "Select a judge model."
-          : judgeModelIds.some((id) => !judgeModels.some((model) => model.id === id))
-            ? "Select a judge model."
-            : undefined
-    : [input.rows, input.columns].some((axis) =>
-        axis.kind === "judge_model" || axis.kind === "judge_effort")
-      ? "Add a judge to use judge dimensions." : undefined;
   const submission = useCreateSubmission({
     draft,
-    blocked: modelMissing || !!judgeIssue || workersPending,
+    blocked: modelMissing || workersPending,
     parallelWorkers,
     onReferenceUploaded: editing.replaceReference,
   });
@@ -105,7 +80,6 @@ export function useCreateForm() {
         ? "Could not determine the automatic worker count."
         : "Checking the automatic worker count."),
     modelMissing && "Select a model.",
-    judgeIssue,
     !input.rows.values.length && "Select row values.",
     !input.columns.values.length && "Select column values.",
     !connection.data?.connected && "Connect OpenRouter.",
@@ -131,9 +105,6 @@ export function useCreateForm() {
     models,
     commonModel,
     commonEffort,
-    judgeModels,
-    commonJudgeModel,
-    commonJudgeEffort,
     generateReasons,
     submission,
   };

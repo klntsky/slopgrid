@@ -22,8 +22,6 @@ export function formatCost(cost: number | undefined): string {
 export const dimensionNames = {
   model: "Model",
   effort: "Thinking effort",
-  judge_model: "Judge model",
-  judge_effort: "Judge thinking effort",
   variable: "Prompt variable",
   ...imageParameterNames,
 };
@@ -33,6 +31,6 @@ export function cellError(cell: ViewGrid["cells"][number]) {
     : `Error ${cell.errorCode}: ${cell.error}`;
 }
 export function displayValue(value: string, kind: GridInput["rows"]["kind"]) {
-  if (kind === "effort" || kind === "judge_effort") return effortLabel(value);
+  if (kind === "effort") return effortLabel(value);
   return value;
 }

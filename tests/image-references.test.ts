@@ -20,7 +20,6 @@ for (const shared of [false, true])
         id: "fixture/image",
         name: "Image",
         image: true,
-        imageInput: false,
         text: false,
         reasoning: false,
         reasoningMandatory: false,
