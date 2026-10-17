@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import { once } from "node:events";
 import { z } from "zod";
 import { Provider } from "../server/provider.js";
-import { prepareJudgeInference, judgeSystem } from "../server/judge.js";
+import { prepareJudgeInference } from "../server/judge.js";
 import type { CallDetails } from "../server/billing.js";
 const requestSchema = z.object({
   max_tokens: z.number().optional(),
@@ -18,7 +18,7 @@ const requestSchema = z.object({
       properties: z.object({ results: z.object({ items: z.object({ additionalProperties: z.boolean() }) }) }),
     }),
   }) }),
-  messages: z.array(z.object({ content: z.union([
+  messages: z.array(z.object({ role: z.string(), content: z.union([
     z.string(),
     z.array(z.object({ image_url: z.object({ url: z.string() }).optional() }).passthrough()),
   ]) }).passthrough()),
@@ -103,7 +103,8 @@ for (const sample of [
       assert.equal(request.response_format.json_schema.strict, true);
       assert.equal(request.response_format.json_schema.schema.additionalProperties, false);
       assert.equal(request.response_format.json_schema.schema.properties.results.items.additionalProperties, false);
-      assert.equal(request.messages[0].content, judgeSystem);
+      assert.equal(request.messages[0].role, "system");
+      assert.equal(request.messages[1].role, "user");
       assert.match(JSON.stringify(request.messages[1]), /1\. Is there a circle\?/);
       assert.equal(JSON.stringify(request.messages).includes("correctAnswer"), false);
     } finally { await upstream.close(); }

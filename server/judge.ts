@@ -52,7 +52,7 @@ export async function judgeInference(
       system: judgeSystem,
       messages: [{ role: "user", content: typeof artifact === "string"
         ? heading + artifact
-        : [{ type: "text", text: heading }, { type: "image", image: artifact.bytes, mediaType: artifact.mediaType }],
+        : [{ type: "text", text: heading }, { type: "file", data: artifact.bytes, mediaType: artifact.mediaType }],
       }],
       output: Output.object({ schema: judgmentSchema, name: "judgment" }),
       maxRetries: 0,
