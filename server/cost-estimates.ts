@@ -31,7 +31,8 @@ export function estimateCell(
     return unknown("Total cost estimate unavailable.");
   // Later requests contain answers whose lengths are not known before generation.
   // Reserve the whole attempt budget for capacity instead of a single-call cost.
-  if (format === "chat-template") return unknown("Total cost estimate unavailable.");
+  if (format === "chat-template")
+    return unknown("Total cost estimate unavailable.");
   try {
     const budget = generationBudget(
       model,

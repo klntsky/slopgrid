@@ -47,6 +47,12 @@ test("cell cost follows the latest call while billing preserves earlier attempts
     assert.equal(store.billing.gridSpent(grid.id, grid.cells), 0.5);
     const second = recordCall("direct");
     assert.equal(store.billing.gridSpent(grid.id, grid.cells), 0.7);
+    // A template's aggregate preview includes earlier calls already in the ledger.
+    grid.cells[0].estimatedUsage = { costUsd: 0.7 };
+    grid.cells[0].currentCallCostUsd = 0.2;
+    assert.equal(store.billing.gridSpent(grid.id, grid.cells), 0.7);
+    delete grid.cells[0].currentCallCostUsd;
+    grid.cells[0].estimatedUsage = { costUsd: 0.2 };
     assert.equal(store.billing.cell("cell")?.usage, undefined);
     second.complete(
       { phase: "direct", finishReason: "stop", rawFinishReason: "stop" },
@@ -81,10 +87,9 @@ test("cell cost follows the latest call while billing preserves earlier attempts
       id: "other-grid",
       cells: [{ ...grid.cells[0], id: "other-cell" }],
     });
-    store.billing.observe("other-cell")("direct").complete(
-      { phase: "direct", finishReason: "stop" },
-      { costUsd: 10 },
-    );
+    store.billing
+      .observe("other-cell")("direct")
+      .complete({ phase: "direct", finishReason: "stop" }, { costUsd: 10 });
     assert.equal(store.billing.gridSpent(grid.id, grid.cells), 0.6);
   } finally {
     store.db.close();

@@ -95,8 +95,10 @@ export class Store {
       ...cell,
       ...JSON.parse(cells[index].data),
       id: cells[index].id,
-      ...(grid.input.format === "chat-template" && JSON.parse(cells[index].data).status === "complete"
-        ? {} : this.billing.cell(cells[index].id)),
+      ...(grid.input.format === "chat-template" &&
+      JSON.parse(cells[index].data).status === "complete"
+        ? {}
+        : this.billing.cell(cells[index].id)),
     }));
     return grid;
   }
@@ -148,8 +150,12 @@ export class Store {
             status,
             error,
             errorCode,
-            usage: grid.input.format === "chat-template" || !hasCalls.get(cell.id) ? usage : undefined,
-            ...(grid.input.format === "chat-template" && cell.status !== "complete" && { draft: cell.draft }),
+            usage:
+              grid.input.format === "chat-template" || !hasCalls.get(cell.id)
+                ? usage
+                : undefined,
+            ...(grid.input.format === "chat-template" &&
+              cell.status !== "complete" && { draft: cell.draft }),
             mediaType,
             thinkingId,
             provenance,

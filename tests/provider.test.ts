@@ -187,22 +187,37 @@ test("chat templates fill only blanks sequentially and aggregate the transcript"
       { role: "user", content: "Trailing text" },
     ];
     const updates: InferenceProgress[] = [];
-    const result = await h.provider.generate("key", "chat-template",
-      { ...cell("required", "default"), messages }, (p) => updates.push(p));
+    const result = await h.provider.generate(
+      "key",
+      "chat-template",
+      { ...cell("required", "default"), messages },
+      (p) => updates.push(p),
+    );
     assert.equal(h.requests.length, 3);
     assert.deepEqual(h.requests[0].messages, [messages[0]]);
-    assert.deepEqual(h.requests[1].messages, [messages[0],
-      { role: "assistant", content: "# Output" }, messages[2]]);
-    assert.deepEqual(h.requests[2].messages, [...h.requests[1].messages as object[],
-      { role: "assistant", content: "# Output" }]);
-    assert.equal(result.files["index.md"],
-      "## user\n\nFirst question\n\n## assistant\n\n# Output\n\n## user\n\nSecond question\n\n## assistant\n\n# Output\n\n## assistant\n\n# Output\n\n## user\n\nTrailing text");
+    assert.deepEqual(h.requests[1].messages, [
+      messages[0],
+      { role: "assistant", content: "# Output" },
+      messages[2],
+    ]);
+    assert.deepEqual(h.requests[2].messages, [
+      ...(h.requests[1].messages as object[]),
+      { role: "assistant", content: "# Output" },
+    ]);
+    assert.equal(
+      result.files["index.md"],
+      "## user\n\nFirst question\n\n## assistant\n\n# Output\n\n## user\n\nSecond question\n\n## assistant\n\n# Output\n\n## assistant\n\n# Output\n\n## user\n\nTrailing text",
+    );
     assert.equal(updates.at(-1)!.text, result.files["index.md"]);
     assert.equal(result.usage?.inputTokens, 3);
     assert.equal(result.usage?.outputTokens, 3);
-    assert.ok(Number(h.requests[0].max_tokens) < Number(h.requests[1].max_tokens));
+    assert.ok(
+      Number(h.requests[0].max_tokens) < Number(h.requests[1].max_tokens),
+    );
     assert.equal(messages[1].role, "unfilled");
-  } finally { await h.close(); }
+  } finally {
+    await h.close();
+  }
 });
 test("chat completion sends the exact history and saves Markdown", async () => {
   const h = await upstream();

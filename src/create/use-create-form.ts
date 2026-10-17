@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { unusedVariableIssue, isChatFormat, chatInputIssue, type GridInput } from "../../server/domain";
+import {
+  unusedVariableIssue,
+  isChatFormat,
+  chatInputIssue,
+  type GridInput,
+} from "../../server/domain";
 import { estimateGrid } from "../../server/cost-estimates";
 import { modelCatalog } from "../model-catalog";
 import { useConnection, useInferenceCapacity } from "../queries";

@@ -198,7 +198,9 @@ export function Create() {
           <div className="section-heading">
             <span className="number">{commonParameters ? "04" : "03"}</span>
             <h2>
-              {isChatFormat(input.format) ? "Chat history" : "Enter your prompt"}
+              {isChatFormat(input.format)
+                ? "Chat history"
+                : "Enter your prompt"}
             </h2>
           </div>
 

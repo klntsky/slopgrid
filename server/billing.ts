@@ -129,7 +129,10 @@ export class Billing {
     const estimates = new Map(
       cells
         .filter((cell) => cell.status === "running")
-        .map((cell) => [cell.id, cell.currentCallCostUsd ?? cell.estimatedUsage?.costUsd ?? 0]),
+        .map((cell) => [
+          cell.id,
+          cell.currentCallCostUsd ?? cell.estimatedUsage?.costUsd ?? 0,
+        ]),
     );
     return rows.reduce(
       (sum, row) =>

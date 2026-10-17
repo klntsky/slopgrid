@@ -1,5 +1,10 @@
 import { useState, useEffect } from "react";
-import { chatText, isChatFormat, isMarkdownFormat, type GridInput } from "../../server/domain";
+import {
+  chatText,
+  isChatFormat,
+  isMarkdownFormat,
+  type GridInput,
+} from "../../server/domain";
 import type { ReferenceImage } from "../../server/image-settings";
 export type Draft = {
   formatSelected: boolean;
@@ -53,10 +58,13 @@ export function startDraft(format: GridInput["format"]) {
   saveDraft(selectDraftFormat(readDraft(), format));
 }
 function selectDraftFormat(d: Draft, format: GridInput["format"]): Draft {
-  const messages = (d.input.messages ?? [
-    { role: "user" as const, content: d.input.prompt },
-  ]).map((message) => format === "chat" && message.role === "unfilled"
-    ? { role: "assistant" as const, content: "" } : message);
+  const messages = (
+    d.input.messages ?? [{ role: "user" as const, content: d.input.prompt }]
+  ).map((message) =>
+    format === "chat" && message.role === "unfilled"
+      ? { role: "assistant" as const, content: "" }
+      : message,
+  );
   return {
     ...d,
     formatSelected: true,
@@ -69,10 +77,9 @@ function selectDraftFormat(d: Draft, format: GridInput["format"]): Draft {
       inputReferences: undefined,
       model: "",
       effort: "default",
-      rows:
-        isMarkdownFormat(format)
-          ? { kind: "effort", values: ["default"] }
-          : { kind: "model", values: [] },
+      rows: isMarkdownFormat(format)
+        ? { kind: "effort", values: ["default"] }
+        : { kind: "model", values: [] },
       columns:
         format === "image"
           ? { kind: "quality", values: ["auto"] }

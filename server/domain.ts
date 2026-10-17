@@ -27,27 +27,42 @@ const axis = z.object({
     .refine((v) => new Set(v).size === v.length, "Values must be distinct"),
 });
 const budgetSchema = z.number().finite().positive();
-const chatMessageSchema = z.object({
-  role: z.enum(["system", "user", "assistant", "unfilled"]),
-  content: z.string(),
-}).refine((message) => message.role === "unfilled"
-  ? message.content === "" : message.content.trim().length > 0,
-  "Enter a message, or leave an unfilled message empty.");
+const chatMessageSchema = z
+  .object({
+    role: z.enum(["system", "user", "assistant", "unfilled"]),
+    content: z.string(),
+  })
+  .refine(
+    (message) =>
+      message.role === "unfilled"
+        ? message.content === ""
+        : message.content.trim().length > 0,
+    "Enter a message, or leave an unfilled message empty.",
+  );
 export type ChatMessage = z.infer<typeof chatMessageSchema>;
-export type FilledChatMessage = ChatMessage & { role: "system" | "user" | "assistant" };
+export type FilledChatMessage = ChatMessage & {
+  role: "system" | "user" | "assistant";
+};
 export function isChatFormat(format: GridInput["format"]): boolean {
   return format === "chat" || format === "chat-template";
 }
 export function isMarkdownFormat(format: GridInput["format"]): boolean {
   return format === "markdown" || isChatFormat(format);
 }
-export function chatInputIssue(format: GridInput["format"], messages: ChatMessage[] = []): string | undefined {
+export function chatInputIssue(
+  format: GridInput["format"],
+  messages: ChatMessage[] = [],
+): string | undefined {
   if (!messages.length) return "Add a message.";
-  if (messages.some((m) => m.role !== "unfilled" && !m.content.trim())) return "Enter a message.";
+  if (messages.some((m) => m.role !== "unfilled" && !m.content.trim()))
+    return "Enter a message.";
   if (format === "chat-template") {
-    if (!messages.some((m) => m.role === "unfilled")) return "Add an unfilled message.";
-    if (messages[0].role === "unfilled") return "Add a message before the first unfilled message.";
-  } else if (messages.some((m) => m.role === "unfilled")) return "Unfilled messages require Chat template.";
+    if (!messages.some((m) => m.role === "unfilled"))
+      return "Add an unfilled message.";
+    if (messages[0].role === "unfilled")
+      return "Add a message before the first unfilled message.";
+  } else if (messages.some((m) => m.role === "unfilled"))
+    return "Unfilled messages require Chat template.";
 }
 export function chatText(messages: ChatMessage[]): string {
   return messages

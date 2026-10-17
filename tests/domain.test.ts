@@ -13,7 +13,9 @@ test("chat templates require blanks after a prefix and preserve expanded history
     ],
     rows: { kind: "variable", values: ["one"] },
     columns: { kind: "model", values: ["test/model"] },
-    model: "", effort: "default", budgetUsd: 3,
+    model: "",
+    effort: "default",
+    budgetUsd: 3,
   };
   const parsed = gridSchema.parse(source);
   assert.equal(expandGrid(parsed)[0].messages![0].content, "Question one");
@@ -23,8 +25,12 @@ test("chat templates require blanks after a prefix and preserve expanded history
     [source.messages[0]],
     [source.messages[0], { role: "unfilled", content: "hidden" }],
     [{ role: "user", content: " " }, source.messages[1]],
-  ]) assert.equal(gridSchema.safeParse({ ...source, messages }).success, false);
-  assert.equal(gridSchema.safeParse({ ...source, format: "chat" }).success, false);
+  ])
+    assert.equal(gridSchema.safeParse({ ...source, messages }).success, false);
+  assert.equal(
+    gridSchema.safeParse({ ...source, format: "chat" }).success,
+    false,
+  );
 });
 
 test("chat histories preserve roles and whitespace while expanding variables", () => {

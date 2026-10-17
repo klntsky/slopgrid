@@ -34,8 +34,16 @@ function outputFile(output: NonNullable<ReturnType<Store["outputMetadata"]>>) {
         mediaType: "text/markdown",
         extension: "md",
       },
-      chat: { filename: "index.md", mediaType: "text/markdown", extension: "md" },
-      "chat-template": { filename: "index.md", mediaType: "text/markdown", extension: "md" },
+      chat: {
+        filename: "index.md",
+        mediaType: "text/markdown",
+        extension: "md",
+      },
+      "chat-template": {
+        filename: "index.md",
+        mediaType: "text/markdown",
+        extension: "md",
+      },
     }[output.format];
   const extensions: Record<string, string> = {
     "image/png": "png",

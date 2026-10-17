@@ -413,9 +413,11 @@ export class Jobs {
             installed = true;
           }
           const billing = this.store.billing.cell(cell.id);
-          if (billing && !(output && grid.input.format === "chat-template")) Object.assign(nextCell, billing);
+          if (billing && !(output && grid.input.format === "chat-template"))
+            Object.assign(nextCell, billing);
           clearCellProgress(nextCell);
-          if (!output && grid.input.format === "chat-template") nextCell.draft = cell.draft;
+          if (!output && grid.input.format === "chat-template")
+            nextCell.draft = cell.draft;
           nextGrid = {
             ...grid,
             cells: grid.cells.map((c) => (c.id === cell.id ? nextCell : c)),

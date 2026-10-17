@@ -18,7 +18,11 @@ export function ChatEditor({
   const inserted = useRef<number | undefined>(undefined);
   useLayoutEffect(() => {
     if (inserted.current === undefined) return;
-    root.current?.querySelector<HTMLTextAreaElement>(`[data-message-index="${inserted.current}"] textarea`)?.focus();
+    root.current
+      ?.querySelector<HTMLTextAreaElement>(
+        `[data-message-index="${inserted.current}"] textarea`,
+      )
+      ?.focus();
     inserted.current = undefined;
   }, [messages]);
   const [dragTarget, setDragTarget] = useState<number>();
@@ -144,8 +148,12 @@ export function ChatEditor({
               className={`model-badge chat-role chat-role-${message.role}`}
               aria-label={`Message ${index + 1} role: ${message.role}`}
               onClick={() => {
-                const role = roles[(roles.indexOf(message.role) + 1) % roles.length];
-                update(index, { role, ...(role === "unfilled" && { content: "" }) });
+                const role =
+                  roles[(roles.indexOf(message.role) + 1) % roles.length];
+                update(index, {
+                  role,
+                  ...(role === "unfilled" && { content: "" }),
+                });
               }}
             >
               {message.role}
@@ -162,15 +170,19 @@ export function ChatEditor({
             }}
           >
             {message.role === "unfilled" ? (
-              <span className="chat-unfilled-text">The model will fill this message with an assistant response.</span>
-            ) : <textarea
-              aria-label={`Message ${index + 1}`}
-              rows={1}
-              value={message.content}
-              onChange={(event) =>
-                update(index, { content: event.target.value })
-              }
-            />}
+              <span className="chat-unfilled-text">
+                The model will fill this message with an assistant response.
+              </span>
+            ) : (
+              <textarea
+                aria-label={`Message ${index + 1}`}
+                rows={1}
+                value={message.content}
+                onChange={(event) =>
+                  update(index, { content: event.target.value })
+                }
+              />
+            )}
             {deleting === index && (
               <button
                 type="button"

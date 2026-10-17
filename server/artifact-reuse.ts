@@ -38,28 +38,32 @@ export async function reuseArtifacts(
     let templateMatch: Cell | undefined;
     if (format === "chat-template") {
       for (const candidate of matching ?? []) {
-        if (await provider.templateFits(cell, candidate.provenance?.templateSteps)) {
+        if (
+          await provider.templateFits(cell, candidate.provenance?.templateSteps)
+        ) {
           templateMatch = candidate;
           break;
         }
       }
     }
-    const match = format === "chat-template" ? templateMatch : matching
-      ?.find((candidate) => {
-        if (prepared.format === "image") return true;
-        if (prepared.text.maxOutputTokens === undefined) return true;
-        // Reported completion tokens include reasoning. If usage is absent, only
-        // the original request ceiling can establish that the output fits.
-        const tokens =
-          candidate.usage?.outputTokens ??
-          candidate.provenance?.maxOutputTokens;
-        return (
-          tokens !== undefined &&
-          Number.isFinite(tokens) &&
-          tokens >= 0 &&
-          tokens <= prepared.text.maxOutputTokens
-        );
-      });
+    const match =
+      format === "chat-template"
+        ? templateMatch
+        : matching?.find((candidate) => {
+            if (prepared.format === "image") return true;
+            if (prepared.text.maxOutputTokens === undefined) return true;
+            // Reported completion tokens include reasoning. If usage is absent, only
+            // the original request ceiling can establish that the output fits.
+            const tokens =
+              candidate.usage?.outputTokens ??
+              candidate.provenance?.maxOutputTokens;
+            return (
+              tokens !== undefined &&
+              Number.isFinite(tokens) &&
+              tokens >= 0 &&
+              tokens <= prepared.text.maxOutputTokens
+            );
+          });
     if (match) {
       const destinations = matches.get(match) ?? [];
       destinations.push(cell);

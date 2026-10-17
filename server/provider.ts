@@ -250,11 +250,26 @@ export class Provider {
     const prepared = await this.prepare(format, cell, references);
     if (format === "chat-template") {
       const model = (await this.models()).find((m) => m.id === cell.model)!;
-      const result = await fillChatTemplate(cell,
+      const result = await fillChatTemplate(
+        cell,
         (prompt, dollars) => generationBudget(model, prompt, "", dollars),
-        (messages, budget, progress) => generateInference(this.baseURL, key,
-          prepareTextInference("chat", { ...cell, prompt: chatText(messages), messages }, budget, false),
-          progress, signal, observe), onChunk, signal);
+        (messages, budget, progress) =>
+          generateInference(
+            this.baseURL,
+            key,
+            prepareTextInference(
+              "chat",
+              { ...cell, prompt: chatText(messages), messages },
+              budget,
+              false,
+            ),
+            progress,
+            signal,
+            observe,
+          ),
+        onChunk,
+        signal,
+      );
       return { ...result, signature: inferenceSignature(prepared) };
     }
     const result = await generateInference(
@@ -273,11 +288,18 @@ export class Provider {
     };
   }
   async templateFits(cell: Cell, steps: TemplateStep[] | undefined) {
-    if (!steps?.length || steps.length !== cell.messages?.filter((m) => m.role === "unfilled").length) return false;
+    if (
+      !steps?.length ||
+      steps.length !==
+        cell.messages?.filter((m) => m.role === "unfilled").length
+    )
+      return false;
     const model = (await this.models()).find((m) => m.id === cell.model);
     if (!model) return false;
     try {
-      return templateFits(steps, cell.budgetUsd, (prompt, dollars) => generationBudget(model, prompt, "", dollars));
+      return templateFits(steps, cell.budgetUsd, (prompt, dollars) =>
+        generationBudget(model, prompt, "", dollars),
+      );
     } catch (error) {
       if (error instanceof PreparationError) return false;
       throw error;
@@ -294,10 +316,20 @@ export class Provider {
     );
     if (!pricedModel)
       throw new PreparationError(`Pricing is unavailable for ${cell.model}.`);
-    const blanks = format === "chat-template" ? cell.messages?.filter((m) => m.role === "unfilled").length ?? 0 : 0;
+    const blanks =
+      format === "chat-template"
+        ? (cell.messages?.filter((m) => m.role === "unfilled").length ?? 0)
+        : 0;
     const budget = generationBudget(
       pricedModel,
-      blanks ? chatText(cell.messages!.slice(0, cell.messages!.findIndex((m) => m.role === "unfilled"))) : cell.prompt,
+      blanks
+        ? chatText(
+            cell.messages!.slice(
+              0,
+              cell.messages!.findIndex((m) => m.role === "unfilled"),
+            ),
+          )
+        : cell.prompt,
       instruction(format),
       cell.budgetUsd / (blanks || 1),
     );
