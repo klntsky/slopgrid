@@ -101,7 +101,7 @@ export function Create() {
                         position === index ? { ...item, text: event.target.value } : item) },
                     }))} />
                   <label>Correct answer
-                    <select value={String(criterion.correctAnswer)}
+                    <select aria-label="Correct answer" value={String(criterion.correctAnswer)}
                       onChange={(event) => update((current) => ({
                         judge: { ...current.judge!, criteria: current.judge!.criteria.map((item, position) =>
                           position === index ? { ...item, correctAnswer: event.target.value === "true" } : item) },
