@@ -3,6 +3,7 @@ import type { Cell, GridInput } from "./domain.js";
 import type { Store } from "./store.js";
 import type { ReferenceContent } from "./image-references.js";
 import { readChatOutput } from "../shared/chat-output.js";
+import { rasterizeSvg } from "./svg-raster.js";
 
 const artifacts = new WeakMap<Store, Map<string, Promise<ReferenceContent>>>();
 
@@ -38,7 +39,10 @@ export async function loadJudgeArtifact(
   const sourceId = cell.generationSourceId ?? cell.id;
   let prepared = cache.get(sourceId);
   if (!prepared) {
-    prepared = Promise.resolve(artifact);
+    prepared = rasterizeSvg(bytes, signal).catch((error) => {
+      if (cache.get(sourceId) === prepared) cache.delete(sourceId);
+      throw error;
+    });
     cache.set(sourceId, prepared);
   }
   return prepared;

@@ -6,6 +6,11 @@ import { z } from "zod";
 import { Provider } from "../server/provider.js";
 import { prepareJudgeInference } from "../server/judge.js";
 import type { CallDetails } from "../server/billing.js";
+import { inflateSync } from "node:zlib";
+import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { rasterizeSvg } from "../server/svg-raster.js";
 const requestSchema = z.object({
   max_tokens: z.number().optional(),
   max_completion_tokens: z.number().optional(),
@@ -155,3 +160,90 @@ for (const selection of [
     } finally { await upstream.close(); }
   });
 }
+
+function pngPixels(bytes: Buffer) {
+  const width = bytes.readUInt32BE(16), height = bytes.readUInt32BE(20);
+  assert.equal(bytes[24], 8);
+  assert.equal(bytes[25], 6);
+  const chunks: Buffer[] = [];
+  for (let offset = 8; offset < bytes.length;) {
+    const length = bytes.readUInt32BE(offset);
+    if (bytes.toString("ascii", offset + 4, offset + 8) === "IDAT")
+      chunks.push(bytes.subarray(offset + 8, offset + 8 + length));
+    offset += length + 12;
+  }
+  const raw = inflateSync(Buffer.concat(chunks));
+  const stride = width * 4;
+  const pixels = Buffer.alloc(stride * height);
+  for (let y = 0; y < height; y++) {
+    const filter = raw[y * (stride + 1)];
+    for (let x = 0; x < stride; x++) {
+      const left = x >= 4 ? pixels[y * stride + x - 4] : 0;
+      const above = y ? pixels[(y - 1) * stride + x] : 0;
+      const corner = y && x >= 4 ? pixels[(y - 1) * stride + x - 4] : 0;
+      const p = left + above - corner;
+      const a = Math.abs(p - left), b = Math.abs(p - above), c = Math.abs(p - corner);
+      const prediction = filter === 0 ? 0 : filter === 1 ? left : filter === 2 ? above :
+        filter === 3 ? Math.floor((left + above) / 2) : a <= b && a <= c ? left : b <= c ? above : corner;
+      pixels[y * stride + x] = raw[y * (stride + 1) + 1 + x] + prediction;
+    }
+  }
+  return { width, height, at: (x: number, y: number) => [...pixels.subarray((y * width + x) * 4, (y * width + x + 1) * 4)] };
+}
+
+test("SVG rasterization preserves pixels and transparency without upscaling, and bounds large outputs", async () => {
+  const small = pngPixels((await rasterizeSvg(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="80" height="40"><rect x="10" y="10" width="20" height="20" fill="red"/></svg>'))).bytes);
+  assert.deepEqual([small.width, small.height], [80, 40]);
+  assert.deepEqual(small.at(15, 15), [255, 0, 0, 255]);
+  assert.deepEqual(small.at(0, 0), [0, 0, 0, 0]);
+  const large = pngPixels((await rasterizeSvg(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="4096" height="2048"><rect width="4096" height="2048" fill="red"/></svg>'))).bytes);
+  assert.deepEqual([large.width, large.height], [2048, 1024]);
+  assert.deepEqual(large.at(1024, 512), [255, 0, 0, 255]);
+});
+
+test("SVG rasterization retains bundled-font text and embedded image pixels", async () => {
+  const blue = await rasterizeSvg(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2"><rect width="2" height="2" fill="blue"/></svg>'));
+  const result = await rasterizeSvg(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="100" height="40"><text x="10" y="30" font-family="monospace" font-size="24" fill="#00ff00">H</text><image x="50" y="10" width="20" height="20" href="data:image/png;base64,${blue.bytes.toString("base64")}"/></svg>`));
+  const image = pngPixels(result.bytes);
+  assert.deepEqual(image.at(13, 15), [0, 255, 0, 255]);
+  assert.deepEqual(image.at(60, 20), [0, 0, 255, 255]);
+  assert.deepEqual(image.at(90, 30), [0, 0, 0, 0]);
+});
+
+test("SVG rasterization cannot fetch external resources or load local image paths", async () => {
+  let requests = 0;
+  const server = createServer((_req, res) => { requests++; res.end(); });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const directory = await mkdtemp(join(tmpdir(), "slopgrid-svg-resources-"));
+  try {
+    await assert.rejects(rasterizeSvg(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><image width="20" height="20" href="http://127.0.0.1:${address.port}/image.png"/></svg>`)), /Could not render this SVG for judging/);
+    assert.equal(requests, 0);
+    const file = join(directory, "local.png");
+    const red = await rasterizeSvg(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2"><rect width="2" height="2" fill="red"/></svg>'));
+    await writeFile(file, red.bytes);
+    for (const href of [file, `file://${file}`]) {
+      try {
+        const result = await rasterizeSvg(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><image width="20" height="20" href="${href}"/></svg>`));
+        assert.deepEqual(pngPixels(result.bytes).at(10, 10), [0, 0, 0, 0]);
+      } catch (error) {
+        assert.match(String(error), /Could not render this SVG for judging/);
+      }
+    }
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("SVG rasterization rejects malformed input and cancellation terminates its worker", async () => {
+  await assert.rejects(rasterizeSvg(Buffer.from("not SVG")), /Could not render this SVG for judging/);
+  const controller = new AbortController();
+  const rendering = rasterizeSvg(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"/>'), controller.signal);
+  const reason = new Error("Stopped");
+  controller.abort(reason);
+  await assert.rejects(rendering, (error) => error === reason);
+  await assert.rejects(rasterizeSvg(Buffer.from("<svg/>"), controller.signal), (error) => error === reason);
+});
