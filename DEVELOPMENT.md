@@ -281,7 +281,7 @@ Storage and route tests exercise persistence and reopening. Upgrade and unsuppor
 Chat coverage validates roles and message bodies, variable expansion, exact
 provider history and prefix preservation, and reuse signatures. Browser coverage
 exercises insertion, deletion, pointer and keyboard reordering, draft and Edit
-restoration, provider connection, and Markdown rendering and copying. Chat inputs
+restoration, provider connection, conversation rendering, and JSON copying. Chat inputs
 are checked for automatic growth and shrinkage, including wrapping at phone
 widths, and editing coverage uses the insertion gaps and input deletion controls.
 Insertion coverage verifies immediate input focus when appending a message or
@@ -298,8 +298,10 @@ Deletion coverage checks the five/six-word boundary with mixed whitespace,
 inline confirmation, dismissal on editing or leaving the message, Escape, and
 confirmed deletion on touch devices.
 
-Chat template coverage checks role-specific validation, filler rendering, format
-switching, saved blanks, and insertion focus after a blank. Provider tests assert
+Chat completion coverage checks role-specific validation, filler rendering, saved
+blanks, and insertion focus after a blank. Histories without explicit blanks must
+produce one completion and preserve the supplied history in the JSON output.
+Provider tests assert
 the exact prefix for each sequential call, including consecutive blanks and
 trailing supplied messages and their final completion. Check supplied user,
 assistant, and system endings, complete-history requests, shared allowance for
@@ -312,7 +314,7 @@ browser tests verify streaming message bubbles, role-based alignment, system-mes
 tint, raw JSON, expansion, standalone outputs, reload, copying, and downloads.
 Provider wire tests verify stable per-cell routing sessions, explicit cache
 boundaries for every role, reuse across long supplied sections, and unchanged
-saved conversations and ordinary chat requests.
+saved conversations, including histories without explicit blanks.
 Message-boundary coverage includes role headings and fenced code inside generated
 answers, while storage coverage checks JSON artifacts and existing transcript reads.
 Run the focused

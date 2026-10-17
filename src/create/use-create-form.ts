@@ -84,7 +84,7 @@ export function useCreateForm() {
     !input.columns.values.length && "Select column values.",
     !connection.data?.connected && "Connect OpenRouter.",
     isChatFormat(input.format)
-      ? chatInputIssue(input.format, input.messages)
+      ? chatInputIssue(input.messages)
       : !input.prompt.trim() && "Enter a prompt.",
     unusedVariableIssue(input),
     input.format !== "image" &&

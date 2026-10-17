@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { expandGrid, gridSchema } from "../server/domain.js";
 
-test("chat templates require blanks after a prefix and preserve expanded history", () => {
+test("chat completion accepts optional blanks after a prefix and preserves expanded history", () => {
   const source = {
     format: "chat-template",
     messages: [
@@ -22,11 +22,14 @@ test("chat templates require blanks after a prefix and preserve expanded history
   assert.deepEqual(parsed.messages, source.messages);
   for (const messages of [
     source.messages.slice(1),
-    [source.messages[0]],
     [source.messages[0], { role: "unfilled", content: "hidden" }],
     [{ role: "user", content: " " }, source.messages[1]],
   ])
     assert.equal(gridSchema.safeParse({ ...source, messages }).success, false);
+  assert.equal(
+    gridSchema.safeParse({ ...source, messages: [source.messages[0]] }).success,
+    true,
+  );
   assert.equal(
     gridSchema.safeParse({ ...source, format: "chat" }).success,
     false,
@@ -35,7 +38,7 @@ test("chat templates require blanks after a prefix and preserve expanded history
 
 test("chat histories preserve roles and whitespace while expanding variables", () => {
   const source = {
-    format: "chat",
+    format: "chat-template",
     messages: [
       { role: "system", content: "Use $ROW" },
       { role: "user", content: "Ask $COLUMN" },

@@ -9,7 +9,7 @@ async function history(page: import("@playwright/test").Page) {
     );
 }
 
-test("chat editing, ordering, persistence and Markdown output", async ({
+test("chat editing, ordering, persistence and completion without explicit blanks", async ({
   page,
   request,
   context,
@@ -64,6 +64,10 @@ test("chat editing, ordering, persistence and Markdown output", async ({
   await page
     .getByRole("button", { name: "Message 2 role: assistant", exact: true })
     .click();
+  await page
+    .getByRole("button", { name: "Message 2 role: unfilled", exact: true })
+    .click();
+  await page.getByLabel("Message 2", { exact: true }).fill("Use Markdown");
   await expect(
     page.getByRole("button", { name: "Message 2 role: system", exact: true }),
   ).toBeVisible();
@@ -131,7 +135,19 @@ test("chat editing, ordering, persistence and Markdown output", async ({
   await page.getByRole("button", { name: "Copy output", exact: true }).click();
   await expect
     .poll(() => page.evaluate(() => navigator.clipboard.readText()))
-    .toBe("# Chat result\n");
+    .toBe(
+      JSON.stringify(
+        [
+          { role: "system", content: "Use Markdown" },
+          { role: "user", content: "Question cat hat" },
+          { role: "assistant", content: "Answer prefix " },
+          { role: "assistant", content: "# Chat result\n" },
+        ],
+        null,
+        2,
+      ),
+    );
+  await expect(page.locator(".chat-bubble")).toHaveCount(4);
   await page.reload();
   await expect(page.locator(".markdown-preview h1")).toHaveText("Chat result");
   await page.getByRole("button", { name: "EDIT", exact: true }).click();
@@ -226,13 +242,18 @@ test("every chat control works from the keyboard, including an empty history", a
   await page.keyboard.press("Shift+Tab");
   const role = page.locator(".chat-role").first();
   await expect(role).toBeFocused();
-  for (const next of ["assistant", "system", "user"]) {
+  for (const next of ["assistant", "unfilled", "system", "user"]) {
     await page.keyboard.press("Space");
     await expect(role).toHaveAttribute("aria-label", `Message 1 role: ${next}`);
-    await expect(page.getByLabel("Message 1", { exact: true })).toHaveValue(
-      "First\nline",
-    );
+    if (next === "unfilled")
+      await expect(page.getByLabel("Message 1", { exact: true })).toHaveCount(0);
+    else
+      await expect(page.getByLabel("Message 1", { exact: true })).toHaveValue(
+        next === "assistant" ? "First\nline" : "",
+      );
   }
+  await page.getByLabel("Message 1", { exact: true }).fill("First\nline");
+  await role.focus();
   await page.keyboard.press("Tab");
   await page.keyboard.press("Tab");
   await expect(

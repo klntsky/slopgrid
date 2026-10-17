@@ -24,7 +24,7 @@ The user defines what columns and rows of a grid mean;
 - Backgrounds: automatic, transparent, or opaque
 - Groups of input reference images
 
-### SVG, Markdown, Website, Chat completion, and Chat template outputs
+### SVG, Markdown, Website, and Chat completion outputs
 
 - Models
 - Thinking efforts

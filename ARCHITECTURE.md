@@ -155,13 +155,13 @@ is derived from raw accumulated text rather than a previous repaired preview.
 Output-preservation rules are defined in
 [PRODUCT.md](PRODUCT.md#51-shared-controls-and-output-preservation).
 
-Chat completion stores a Markdown response. Chat template stores the completed
+Chat completion retains the `chat-template` storage identifier and stores the completed
 message array as a JSON output artifact and streams that same representation.
 The shared conversation renderer formats each message body separately, keeping
 message boundaries independent of Markdown content. Grid previews and standalone
 outputs use the same renderer and styles; raw views, copying, and downloads use
 the stored JSON. The output reader also supports existing Markdown transcripts.
-Both formats retain ordered input messages, and grid expansion substitutes
+Chat inputs retain ordered messages, and grid expansion substitutes
 variables in each message body. A derived transcript supplies titles and prompt
 display. Inference sends structured messages without an additional system
 instruction, and request signatures include the history.

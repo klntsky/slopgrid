@@ -58,13 +58,8 @@ export function startDraft(format: GridInput["format"]) {
   saveDraft(selectDraftFormat(readDraft(), format));
 }
 function selectDraftFormat(d: Draft, format: GridInput["format"]): Draft {
-  const messages = (
-    d.input.messages ?? [{ role: "user" as const, content: d.input.prompt }]
-  ).map((message) =>
-    format === "chat" && message.role === "unfilled"
-      ? { role: "assistant" as const, content: "" }
-      : message,
-  );
+  const messages =
+    d.input.messages ?? [{ role: "user" as const, content: d.input.prompt }];
   return {
     ...d,
     formatSelected: true,

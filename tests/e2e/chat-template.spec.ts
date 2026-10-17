@@ -26,7 +26,7 @@ test("chat template editing, persistence, sequential output and exports", async 
   });
   await page.goto("/");
   await page
-    .getByRole("button", { name: "Chat template", exact: true })
+    .getByRole("button", { name: "Chat completion", exact: true })
     .click();
   await page.getByLabel("Message 1", { exact: true }).fill("Question $ROW");
   async function appendBlank(index: number) {
@@ -161,7 +161,7 @@ test("chat template editing, persistence, sequential output and exports", async 
     .getByRole("button", { name: "View conversation", exact: true })
     .click();
   await page
-    .getByRole("button", { name: "Expand Chat template", exact: true })
+    .getByRole("button", { name: "Expand Chat completion", exact: true })
     .click();
   await expect(
     page
@@ -169,7 +169,7 @@ test("chat template editing, persistence, sequential output and exports", async 
       .locator(".chat-bubble"),
   ).toHaveCount(6);
   await page
-    .getByRole("button", { name: "Collapse Chat template", exact: true })
+    .getByRole("button", { name: "Collapse Chat completion", exact: true })
     .click();
   await page.getByRole("button", { name: "Copy output", exact: true }).click();
   await expect
@@ -213,9 +213,9 @@ test("chat template editing, persistence, sequential output and exports", async 
   await page
     .getByRole("button", { name: "Chat completion", exact: true })
     .click();
-  await expect(page.locator(".chat-role-unfilled")).toHaveCount(0);
-  await expect(page.getByLabel("Message 2", { exact: true })).toHaveValue("");
-  await expect(
-    page.getByRole("button", { name: "Generate", exact: true }),
-  ).toBeDisabled();
+  await expect(page).toHaveURL(/\/$/);
+  await page
+    .getByRole("button", { name: "Chat completion", exact: true })
+    .click();
+  await expect(page.locator(".chat-role-unfilled")).toHaveCount(2);
 });

@@ -5,15 +5,16 @@ import { useLayoutEffect, useRef, useState } from "react";
 export function ChatEditor({
   messages,
   onChange,
-  template = false,
 }: {
   messages: ChatMessage[];
   onChange: (messages: ChatMessage[]) => void;
-  template?: boolean;
 }) {
-  const roles: ChatMessage["role"][] = template
-    ? ["system", "user", "assistant", "unfilled"]
-    : ["system", "user", "assistant"];
+  const roles: ChatMessage["role"][] = [
+    "system",
+    "user",
+    "assistant",
+    "unfilled",
+  ];
   const root = useRef<HTMLDivElement>(null);
   const inserted = useRef<number | undefined>(undefined);
   useLayoutEffect(() => {

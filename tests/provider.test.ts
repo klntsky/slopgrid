@@ -320,7 +320,7 @@ test("template caching preserves long prefixes and isolates cell routing", async
     await h.close();
   }
 });
-test("chat completion sends the exact history and saves Markdown", async () => {
+test("chat completion without blanks sends the exact history and saves a conversation", async () => {
   const h = await upstream();
   try {
     const messages = [
@@ -328,37 +328,45 @@ test("chat completion sends the exact history and saves Markdown", async () => {
       { role: "user" as const, content: "Tell me a story." },
       { role: "assistant" as const, content: "Once upon a time " },
     ];
-    const result = await h.provider.generate(
+    const input = { ...cell("required", "default"), messages };
+    const result = await generateAttempt(
+      h.provider,
       "key",
-      "chat",
-      { ...cell("required", "default"), messages },
+      "chat-template",
+      input,
       () => {},
+      {},
     );
     assert.deepEqual(
       h.requests[0].messages,
-      messages.map((message) => ({
+      messages.map((message, index) => ({
         ...message,
         content:
-          message.role === "system"
-            ? [{ type: "text", text: message.content }]
+          index === messages.length - 1
+            ? [
+                {
+                  type: "text",
+                  text: message.content,
+                  cache_control: { type: "ephemeral" },
+                },
+              ]
             : message.content,
       })),
     );
-    assert.equal(h.requests[0].session_id, undefined);
-    assert.equal(typeof result.files["index.md"], "string");
-    const prepared = await h.provider.prepare("chat", {
-      ...cell("required", "default"),
-      messages,
-    });
-    const changed = await h.provider.prepare("chat", {
-      ...cell("required", "default"),
+    assert.equal(h.requests.length, 1);
+    assert.equal(h.requests[0].session_id, input.id);
+    const conversation = JSON.parse(String(result.files["messages.json"]));
+    assert.deepEqual(conversation.slice(0, -1), messages);
+    assert.equal(conversation.at(-1).role, "assistant");
+    assert.equal(typeof conversation.at(-1).content, "string");
+    const { templateSignature } = await import("../server/prepared-inference.js");
+    const changed = {
+      ...input,
       messages: messages.map((m, i) =>
         i === 2 ? { ...m, content: "Different prefix" } : m,
       ),
-    });
-    const { inferenceSignature } =
-      await import("../server/prepared-inference.js");
-    assert.notEqual(inferenceSignature(prepared), inferenceSignature(changed));
+    };
+    assert.notEqual(templateSignature(input), templateSignature(changed));
   } finally {
     await h.close();
   }

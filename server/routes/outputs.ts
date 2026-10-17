@@ -41,11 +41,6 @@ function outputFile(output: NonNullable<ReturnType<Store["outputMetadata"]>>) {
         mediaType: "text/markdown",
         extension: "md",
       },
-      chat: {
-        filename: "index.md",
-        mediaType: "text/markdown",
-        extension: "md",
-      },
       "chat-template": {
         filename: "messages.json",
         mediaType: "application/json",

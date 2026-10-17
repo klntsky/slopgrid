@@ -44,25 +44,19 @@ export type FilledChatMessage = ChatMessage & {
   role: "system" | "user" | "assistant";
 };
 export function isChatFormat(format: GridInput["format"]): boolean {
-  return format === "chat" || format === "chat-template";
+  return format === "chat-template";
 }
 export function isMarkdownFormat(format: GridInput["format"]): boolean {
   return format === "markdown" || isChatFormat(format);
 }
 export function chatInputIssue(
-  format: GridInput["format"],
   messages: ChatMessage[] = [],
 ): string | undefined {
   if (!messages.length) return "Add a message.";
   if (messages.some((m) => m.role !== "unfilled" && !m.content.trim()))
     return "Enter a message.";
-  if (format === "chat-template") {
-    if (!messages.some((m) => m.role === "unfilled"))
-      return "Add an unfilled message.";
-    if (messages[0].role === "unfilled")
-      return "Add a message before the first unfilled message.";
-  } else if (messages.some((m) => m.role === "unfilled"))
-    return "Unfilled messages require Chat template.";
+  if (messages[0].role === "unfilled")
+    return "Add a message before the first unfilled message.";
 }
 export function chatText(messages: ChatMessage[]): string {
   return messages
@@ -87,7 +81,7 @@ export const gridSchema = z
   .discriminatedUnion("format", [
     z.object({
       ...gridFields,
-      format: z.enum(["svg", "markdown", "html", "chat", "chat-template"]),
+      format: z.enum(["svg", "markdown", "html", "chat-template"]),
       budgetUsd: budgetSchema,
     }),
     z.object({
@@ -105,7 +99,7 @@ export const gridSchema = z
   .superRefine((g, c) => {
     const issue = (message: string) => c.addIssue({ code: "custom", message });
     if (isChatFormat(g.format)) {
-      const message = chatInputIssue(g.format, g.messages);
+      const message = chatInputIssue(g.messages);
       if (message) issue(message);
     }
     if (!g.prompt.trim()) issue("Enter a prompt.");

@@ -206,7 +206,6 @@ export function Create() {
 
           {isChatFormat(input.format) ? (
             <ChatEditor
-              template={input.format === "chat-template"}
               messages={input.messages ?? []}
               onChange={(messages) => update({ messages })}
             />
