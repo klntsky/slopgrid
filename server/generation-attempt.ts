@@ -46,21 +46,21 @@ export async function generateAttempt(
   );
   if (!model)
     throw new PreparationError(`Pricing is unavailable for ${cell.model}.`);
+  let previousPrefixLength = 0;
   const result = await fillChatTemplate(
     cell,
     (prompt, dollars) => generationBudget(model, prompt, "", dollars),
-    (messages, budget, progress) =>
-      provider.request(
-        key,
-        prepareTextInference(
-          "chat",
-          { ...cell, prompt: chatText(messages), messages },
-          budget,
-          false,
-        ),
-        progress,
-        context,
-      ),
+    (messages, budget, progress) => {
+      const prepared = prepareTextInference(
+        "chat",
+        { ...cell, prompt: chatText(messages), messages },
+        budget,
+        false,
+        { sessionId: cell.id, previousPrefixLength },
+      );
+      previousPrefixLength = messages.length;
+      return provider.request(key, prepared, progress, context);
+    },
     onChunk,
     context.signal,
   );

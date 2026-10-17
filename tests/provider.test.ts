@@ -197,18 +197,59 @@ test("chat templates fill blanks sequentially and complete trailing history", as
       {},
     );
     assert.equal(h.requests.length, 4);
-    assert.deepEqual(h.requests[0].messages, [messages[0]]);
-    assert.deepEqual(h.requests[1].messages, [
+    const histories = h.requests.map((request) =>
+      (
+        request.messages as {
+          role: string;
+          content: string | { text: string }[];
+        }[]
+      ).map(({ role, content }) => ({
+        role,
+        content:
+          typeof content === "string"
+            ? content
+            : content.map((part) => part.text).join(""),
+      })),
+    );
+    for (const [index, request] of h.requests.entries()) {
+      assert.equal(request.session_id, "cell");
+      const wire = request.messages as { content: unknown }[];
+      const positions = [
+        ...new Set([
+          index ? histories[index - 1].length - 1 : 0,
+          wire.length - 1,
+        ]),
+      ];
+      assert.deepEqual(
+        wire.flatMap((message, i) =>
+          Array.isArray(message.content) &&
+          message.content.some((part) => part.cache_control)
+            ? [i]
+            : [],
+        ),
+        positions,
+      );
+      for (const position of positions)
+        assert.deepEqual(wire[position].content, [
+          {
+            type: "text",
+            text: histories[index][position].content,
+            cache_control: { type: "ephemeral" },
+          },
+        ]);
+    }
+    assert.deepEqual(histories[0], [messages[0]]);
+    assert.deepEqual(histories[1], [
       messages[0],
       { role: "assistant", content: "# Output" },
       messages[2],
     ]);
-    assert.deepEqual(h.requests[2].messages, [
-      ...(h.requests[1].messages as object[]),
+    assert.deepEqual(histories[2], [
+      ...histories[1],
       { role: "assistant", content: "# Output" },
     ]);
-    assert.deepEqual(h.requests[3].messages, [
-      ...(h.requests[2].messages as object[]),
+    assert.deepEqual(histories[3], [
+      ...histories[2],
       { role: "assistant", content: "# Output" },
       messages[5],
     ]);
@@ -228,6 +269,53 @@ test("chat templates fill blanks sequentially and complete trailing history", as
       Number(h.requests[0].max_tokens) < Number(h.requests[1].max_tokens),
     );
     assert.equal(messages[1].role, "unfilled");
+  } finally {
+    await h.close();
+  }
+});
+test("template caching preserves long prefixes and isolates cell routing", async () => {
+  const h = await upstream();
+  try {
+    for (const role of ["system", "assistant"] as const) {
+      const messages: NonNullable<Cell["messages"]> = [
+        { role, content: "Reusable prefix" },
+        { role: "unfilled", content: "" },
+        ...Array.from({ length: 25 }, (_, index) => ({
+          role: "user" as const,
+          content: `Question ${index}`,
+        })),
+        { role, content: "Finish" },
+      ];
+      const original = JSON.stringify(messages);
+      await generateAttempt(
+        h.provider,
+        "key",
+        "chat-template",
+        { ...cell("all", "high"), id: role, messages },
+        () => {},
+        {},
+      );
+      const [first, last] = h.requests.slice(-2);
+      assert.equal(first.session_id, role);
+      assert.equal(last.session_id, role);
+      assert.deepEqual(last.reasoning, { effort: "high" });
+      assert.equal(
+        (last.provider as { require_parameters: boolean }).require_parameters,
+        true,
+      );
+      const history = last.messages as { role: string; content: unknown }[];
+      for (const index of [0, history.length - 1]) {
+        assert.equal(history[index].role, role);
+        assert.deepEqual(history[index].content, [
+          {
+            type: "text",
+            text: index === 0 ? "Reusable prefix" : "Finish",
+            cache_control: { type: "ephemeral" },
+          },
+        ]);
+      }
+      assert.equal(JSON.stringify(messages), original);
+    }
   } finally {
     await h.close();
   }
@@ -256,6 +344,7 @@ test("chat completion sends the exact history and saves Markdown", async () => {
             : message.content,
       })),
     );
+    assert.equal(h.requests[0].session_id, undefined);
     assert.equal(typeof result.files["index.md"], "string");
     const prepared = await h.provider.prepare("chat", {
       ...cell("required", "default"),

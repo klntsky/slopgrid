@@ -41,6 +41,7 @@ export function prepareTextInference(
   cell: Cell,
   budget: TextBudget,
   structured: boolean,
+  cache?: { sessionId: string; previousPrefixLength: number },
 ) {
   return {
     ...common(cell),
@@ -52,15 +53,35 @@ export function prepareTextInference(
       maxOutputTokens: budget.maxOutputTokens,
       schema: structured ? z.toJSONSchema(websiteSchema) : undefined,
       options: {
-        extraBody:
-          cell.effort !== "default"
+        extraBody: {
+          ...(cache && {
+            session_id: cache.sessionId,
+            // Use wire content blocks: the SDK otherwise puts assistant cache
+            // controls on the message rather than on its text block.
+            messages: cell.messages?.map((message, index, messages) => ({
+              role: message.role,
+              content:
+                index === messages.length - 1 ||
+                index === cache.previousPrefixLength - 1
+                  ? [
+                      {
+                        type: "text",
+                        text: message.content,
+                        cache_control: { type: "ephemeral" },
+                      },
+                    ]
+                  : message.content,
+            })),
+          }),
+          ...(cell.effort !== "default"
             ? {
                 reasoning:
                   cell.effort === "none"
                     ? { enabled: false }
                     : { effort: cell.effort },
               }
-            : {},
+            : {}),
+        },
         provider: { require_parameters: true, max_price: budget.maxPrice },
       },
     },

@@ -178,6 +178,12 @@ persistence barrier to every call. A request waits for its billing record and
 earlier queued writes before reaching the provider, and cancellation interrupts
 that wait.
 
+Template requests use the cell ID as the OpenRouter routing session across calls
+and retries. The attempt tracks the preceding request's prefix length; the
+provider adapter marks that boundary and the current history's end with ephemeral
+cache controls. These request-only controls leave saved messages and artifact
+signatures unchanged. Provider cache eligibility and retention determine hits.
+
 Usage comes from the attempt's durable billing records for every format,
 including failed calls when usage is reported. Copied artifacts retain their
 saved usage without acquiring another attempt's billing records. Reuse

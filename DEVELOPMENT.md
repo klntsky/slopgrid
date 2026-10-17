@@ -310,6 +310,9 @@ metadata, aggregate usage, cancellation, later-call failure, retry, and per-call
 reuse limits. Runtime tests verify persisted aggregate usage and artifact reuse;
 browser tests verify streaming message bubbles, role-based alignment, system-message
 tint, raw JSON, expansion, standalone outputs, reload, copying, and downloads.
+Provider wire tests verify stable per-cell routing sessions, explicit cache
+boundaries for every role, reuse across long supplied sections, and unchanged
+saved conversations and ordinary chat requests.
 Message-boundary coverage includes role headings and fenced code inside generated
 answers, while storage coverage checks JSON artifacts and existing transcript reads.
 Run the focused
