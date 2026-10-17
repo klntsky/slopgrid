@@ -68,14 +68,17 @@ test("chat template editing, persistence, sequential output and exports", async 
   await page.locator(".chat-append").hover();
   await page.getByRole("button", { name: "Add message", exact: true }).click();
   await page
-    .getByLabel("Message 5", { exact: true })
-    .fill("Keep answers concise.");
-  await page
     .getByRole("button", { name: "Message 5 role: user", exact: true })
     .click();
   await page
     .getByRole("button", { name: "Message 5 role: assistant", exact: true })
     .click();
+  await page
+    .getByRole("button", { name: "Message 5 role: unfilled", exact: true })
+    .click();
+  await page
+    .getByLabel("Message 5", { exact: true })
+    .fill("Keep answers concise.");
   await page
     .getByRole("combobox", { name: "Rows", exact: true })
     .selectOption("variable");
