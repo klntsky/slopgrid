@@ -272,7 +272,7 @@ export function Create() {
             <span className="number">{commonParameters ? "04" : "03"}</span>
             <h2>
               {isChatFormat(input.format)
-                ? "Chat history"
+                ? "Enter chat history"
                 : "Enter your prompt"}
             </h2>
           </div>
@@ -306,7 +306,7 @@ export function Create() {
         <section>
           <div className="section-heading">
             <span className="number">{commonParameters ? "05" : "04"}</span>
-            <h2>Output judge</h2>
+            <h2>Add a LLM judge · evaluates the output</h2>
           </div>
           {input.format === "html" ? (
             <p className="hint">Websites do not support a judge yet.</p>

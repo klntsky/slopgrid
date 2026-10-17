@@ -246,7 +246,9 @@ test("every chat control works from the keyboard, including an empty history", a
     await page.keyboard.press("Space");
     await expect(role).toHaveAttribute("aria-label", `Message 1 role: ${next}`);
     if (next === "unfilled")
-      await expect(page.getByLabel("Message 1", { exact: true })).toHaveCount(0);
+      await expect(page.getByLabel("Message 1", { exact: true })).toHaveCount(
+        0,
+      );
     else
       await expect(page.getByLabel("Message 1", { exact: true })).toHaveValue(
         next === "assistant" ? "First\nline" : "",
@@ -347,7 +349,7 @@ test.describe("chat history on touch devices", () => {
     await expect(confirm).toHaveCount(0);
     await cross.tap();
     await page
-      .getByRole("heading", { name: "Chat history", exact: true })
+      .getByRole("heading", { name: "Enter chat history", exact: true })
       .tap();
     await expect(confirm).toHaveCount(0);
     await input.tap({ position: { x: 20, y: 24 } });
