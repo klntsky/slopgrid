@@ -273,6 +273,8 @@ Image grids have a "Parameters" button with a 14px Info circle icon immediately 
 
 ### 5.3. Images and SVG
 
+The SVG generation prompt must require a well-formed standalone XML SVG document, prohibit all XML and CSS comments, and require XML escaping in text, CSS, and attribute values.
+
 1. Display generated images and SVG as images that always fit the cell. Provide an icon-only Expand button that opens the output in the grid workspace while keeping the navbar visible. Collapse or Escape restores the grid layout, viewing state, and button focus. SVG previews continue streaming while expanded.
 2. During SVG streaming, apply the same limited repairs as for saved output. Continue updating the preview while thinking is shown, and reveal the latest preview when switching back to output.
 3. Do not reject SVG merely because markup validation considers it malformed or unconventional; browsers may still recover it.
