@@ -139,6 +139,7 @@ test("chat template editing, persistence, sequential output and exports", async 
     (element) => getComputedStyle(element).backgroundColor,
   );
   await page.getByRole("button", { name: "Switch to dark theme" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   const darkTint = await system.evaluate(
     (element) => getComputedStyle(element).backgroundColor,
   );
