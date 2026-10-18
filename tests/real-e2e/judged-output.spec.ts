@@ -161,8 +161,6 @@ async function inspect(page: Page, grid: Snapshot) {
     name: "Judgment details",
     exact: true,
   });
-  await expect(details).toBeHidden();
-  await scores.first().click();
   await expect(scores.first()).toHaveAttribute("aria-pressed", "true");
   await expect(details).toBeVisible();
   await expect(cell.locator(".cell-view").first()).toBeVisible();

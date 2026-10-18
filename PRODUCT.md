@@ -331,9 +331,9 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
 ### 5.6. Judgment results
 
 1. Show the scales control in the existing cell controls once judged output generation has completed, including expanded cells. Y is the criteria count and X counts verdicts equal to their configured correct answers. The completed accessible name is "Judgment: {X} of {Y} correct".
-2. Clicking the scales control shows a floating judgment panel over the output; clicking it again dismisses the panel.
+2. Automatically show the floating judgment panel over the output when judging completes, and when opening a grid with completed judgments. The scales control toggles the panel; manual dismissal or switching to thinking remains in effect until the page is reopened.
    - Keep the output visible behind the panel. Showing judgment returns from thinking to output; showing thinking hides the panel. Preserve the selected presentation across expansion and collapse.
-   - Anchor the panel at the bottom of the cell and size it to its contents. Constrain larger results to the available cell area and scroll within the panel.
+   - Anchor the panel at the bottom of the cell and size it to its contents, up to half the cell height. Scroll within the panel when results exceed that limit.
    - Use unruled rows with a status icon, criterion text, and plain explanation side by side.
    - Show icon-only verdicts: green/check for a matching answer and red/cross for a mismatch, with accessible Correct/Incorrect labels.
    - Keep the panel open on outside clicks. Escape retains expanded-cell collapse behavior. Preserve the output's raw/rendered selection when toggling the panel.

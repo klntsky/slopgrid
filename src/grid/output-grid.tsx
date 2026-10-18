@@ -28,9 +28,12 @@ function ResizeHandle({
 }
 export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
   const [views, setViews] = useState<
-    Record<string, { raw?: boolean; mode?: CellView }>
+    Record<string, { raw?: boolean; mode?: CellView; judgeComplete?: boolean }>
   >({});
-  function setView(id: string, view: { raw?: boolean; mode?: CellView }) {
+  function setView(
+    id: string,
+    view: { raw?: boolean; mode?: CellView; judgeComplete?: boolean },
+  ) {
     setViews((current) => ({ ...current, [id]: { ...current[id], ...view } }));
   }
   const [selection, setSelection] = useState<{
@@ -203,8 +206,18 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
                           title={title(cell)}
                           expanded={expanded?.id === cell.id}
                           rawMarkdown={views[cell.id]?.raw}
-                          view={views[cell.id]?.mode}
-                          onChangeView={(mode) => setView(cell.id, { mode })}
+                          view={
+                            views[cell.id]?.judgeComplete ===
+                            (cell.judge?.status === "complete")
+                              ? views[cell.id]?.mode
+                              : undefined
+                          }
+                          onChangeView={(mode) =>
+                            setView(cell.id, {
+                              mode,
+                              judgeComplete: cell.judge?.status === "complete",
+                            })
+                          }
                           onToggleRawMarkdown={() =>
                             setView(cell.id, { raw: !views[cell.id]?.raw })
                           }

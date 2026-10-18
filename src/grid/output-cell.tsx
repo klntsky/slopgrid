@@ -79,16 +79,18 @@ export function OutputCell({
   const hasThinking = !!(cell.thinking || cell.thinkingURL);
   const hasOutput =
     complete || !!(format === "html" ? cell.previewURL : cell.draft?.trim());
-  const activeView =
-    view ??
-    (hasThinking && !complete && cell.status === "running" && !hasOutput
-      ? "thinking"
-      : "output");
-  const thinking = hasThinking && activeView === "thinking";
   const judgment =
     complete && cell.judge && criteria
       ? summarizeJudgment(cell.judge, criteria, gridStatus)
       : undefined;
+  const activeView =
+    view ??
+    (judgment?.results
+      ? "judgment"
+      : hasThinking && !complete && cell.status === "running" && !hasOutput
+        ? "thinking"
+        : "output");
+  const thinking = hasThinking && activeView === "thinking";
   const judging = !!judgment && activeView === "judgment";
   const thinkingLabel = thinking ? "Show output" : "Show thinking";
   const expandable =

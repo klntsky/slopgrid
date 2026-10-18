@@ -565,7 +565,7 @@ async function createJudged(page: Page, input: GridInput = judgedInput) {
   return grid.id as string;
 }
 
-test("judge controls wait for generation and bottom overlays grow from content size to a scrollable cell", async ({
+test("judgments open automatically on completion and reload, with scrollable half-height overlays", async ({
   page,
 }) => {
   const finalExplanation = "The red rectangle is visible.";
@@ -635,13 +635,17 @@ test("judge controls wait for generation and bottom overlays grow from content s
   expect(
     viewport.y + viewport.height - compact.y - compact.height,
   ).toBeLessThan(compact.y - viewport.y);
+  await score.click();
+  await expect(details).toBeHidden();
 
   await page.request.post("/fixture/release", { data: { all: true } });
   await expect(score).toHaveText("2/2");
   await expect(score).toHaveAttribute("aria-busy", "false");
+  await expect(details).toBeVisible();
+  await expect(score).toHaveAttribute("aria-pressed", "true");
   await expect(details.getByRole("status")).toHaveCount(0);
   const full = (await details.boundingBox())!;
-  expect(full.height).toBeGreaterThan(viewport.height * 0.9);
+  expect(full.height).toBeLessThanOrEqual(viewport.height / 2);
   expect(full.x).toBeGreaterThanOrEqual(viewport.x);
   expect(full.y).toBeGreaterThanOrEqual(viewport.y);
   expect(full.x + full.width).toBeLessThanOrEqual(
@@ -667,6 +671,9 @@ test("judge controls wait for generation and bottom overlays grow from content s
   await score.click();
   await expect(details).toBeHidden();
   await expect(image).toBeVisible();
+  await page.reload();
+  await expect(score).toHaveAttribute("aria-pressed", "true");
+  await expect(details).toBeVisible();
 });
 
 test("shared generation stays usable behind judgment overlays and persists expanded", async ({
@@ -1258,7 +1265,6 @@ for (const format of ["svg", "image"] as const) {
     expect(
       (await (await page.request.get("/fixture/calls")).json()).length,
     ).toBe(5);
-    await scores.first().click();
     const details = page.locator(".cell").first().getByRole("region", {
       name: "Judgment details",
       exact: true,
@@ -1294,10 +1300,6 @@ for (const format of ["svg", "image"] as const) {
         }),
       ).toHaveCount(4);
       expect(new URL(page.url()).pathname).not.toBe(`/grid/${id}`);
-      await page
-        .getByRole("button", { name: "Judgment: 1 of 2 correct", exact: true })
-        .first()
-        .click();
       const items = details.getByRole("listitem");
       await expect(
         items.nth(0).getByRole("img", { name: "Incorrect", exact: true }),
@@ -1401,4 +1403,5 @@ test("judgment overlays replace thinking while leaving output visible, including
     cell.getByRole("button", { name: "Judgment: 2 of 2 correct", exact: true }),
   ).toHaveText("2/2");
   await expect(output).toBeVisible();
+  await expect(details).toBeVisible();
 });
