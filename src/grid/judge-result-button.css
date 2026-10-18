@@ -16,16 +16,29 @@
 .cell-view.cell-judgment {
   display: flex;
   align-items: flex-end;
-  justify-content: center;
-  padding: 8px;
+  justify-content: flex-start;
+  position: relative;
+  padding: 8px 12px;
   pointer-events: none;
   z-index: 2;
+}
+.cell-view.cell-judgment::after {
+  content: "";
+  position: absolute;
+  left: var(--judge-button-x);
+  bottom: 2px;
+  width: 12px;
+  height: 12px;
+  background: var(--paper);
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  transform: translateX(-50%) rotate(45deg);
 }
 .judge-results {
   width: fit-content;
   max-width: 100%;
   max-height: 50%;
-  min-width: 0;
+  min-width: min(100%, calc(var(--judge-button-x) + 8px));
   min-height: 0;
   overflow: auto;
   padding: 12px;
