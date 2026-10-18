@@ -63,7 +63,7 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
     () => new WeakMap<HTMLElement, number>(),
   );
   const [savedJudgeScrolls] = useState(() => new Map<HTMLElement, number>());
-  const criterionPointer = useRef<PointerEvent | null>(null);
+  const criterionPointer = useRef<PointerEvent | Touch | null>(null);
   const hoveredCriterion = useRef<number | null>(null);
   const hoveredJudgeView = useRef<HTMLElement | null>(null);
   function criterionRow(target: EventTarget | null) {
@@ -143,11 +143,25 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
     }
   }
   function trackCriterionPointer(event: PointerEvent) {
-    criterionPointer.current = event.pointerType === "touch" ? null : event;
-    updateCriterionHover(
-      criterionPointer.current ? criterionRow(event.target) : null,
-    );
+    if (event.pointerType === "touch") return;
+    criterionPointer.current = event;
+    updateCriterionHover(criterionRow(event.target));
   }
+  useLayoutEffect(() => {
+    function touch(event: TouchEvent) {
+      criterionPointer.current =
+        event.touches.length === 1 ? event.touches[0] : null;
+      updateCriterionHover(criterionUnderCursor());
+    }
+    // Native scrolling cancels pointer events, but touch events keep tracking
+    // the finger. Retain its last position for taps and momentum scrolling.
+    document.addEventListener("touchstart", touch, { passive: true });
+    document.addEventListener("touchmove", touch, { passive: true });
+    return () => {
+      document.removeEventListener("touchstart", touch);
+      document.removeEventListener("touchmove", touch);
+    };
+  }, []);
   useLayoutEffect(() => {
     if (criterionPointer.current)
       updateCriterionHover(criterionUnderCursor(), true);
@@ -262,7 +276,8 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
       ref={workspace}
       onPointerOver={(event) => trackCriterionPointer(event.nativeEvent)}
       onPointerMove={(event) => trackCriterionPointer(event.nativeEvent)}
-      onPointerLeave={() => {
+      onPointerLeave={(event) => {
+        if (event.pointerType === "touch") return;
         criterionPointer.current = null;
         updateCriterionHover(null);
       }}

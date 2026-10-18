@@ -1581,3 +1581,171 @@ test("judgment hover temporarily reveals matching criteria and restores independ
   await expect.poll(positions).toEqual([userScrolled, original[1]]);
   await expect.poll(() => backgrounds(3)).toEqual([unhovered, unhovered]);
 });
+
+test.describe("touch judgment following", () => {
+  test.use({
+    viewport: { width: 390, height: 844 },
+    isMobile: true,
+    hasTouch: true,
+  });
+
+  test("touch judgment taps and native swipes share highlights, aligned positions, and restoration", async ({
+    page,
+  }) => {
+    const criteria = Array.from({ length: 6 }, (_, index) => ({
+      text: `Does condition ${index + 1} hold?`,
+      correctAnswer: true,
+    }));
+    await page.request.post("/fixture/reset", {
+      data: {
+        judgeOutput: JSON.stringify({
+          results: criteria.map((_, index) => ({
+            verdict: true,
+            explanation:
+              `Condition ${index + 1}: the red rectangle matches the requested output. `.repeat(
+                2,
+              ),
+          })),
+        }),
+      },
+    });
+    const id = await createJudged(page, {
+      ...judgedInput,
+      rows: { kind: "judge_model", values: ["fixture/text"] },
+      columns: { kind: "judge_effort", values: ["none", "high"] },
+      judge: { ...judgedInput.judge!, criteria },
+    });
+    await page.evaluate((id) => {
+      localStorage.setItem(
+        `slopgrid:grid:${id}:sizes`,
+        JSON.stringify({ columns: [140, 200], rows: [400] }),
+      );
+    }, id);
+    await page.reload();
+    const results = page.getByRole("region", {
+      name: "Judgment details",
+      exact: true,
+    });
+    await expect(results).toHaveCount(2);
+    const source = results.nth(0);
+    const target = results.nth(1);
+    await source.evaluate((container) => {
+      const row = container.querySelector(".judge-result-criteria")!
+        .children[1] as HTMLElement;
+      container.scrollTop = row.offsetTop - 80;
+    });
+    await target.evaluate((container) => {
+      container.scrollTop = container.scrollHeight;
+    });
+    const original = await target.evaluate((container) => container.scrollTop);
+    const backgrounds = (index: number) =>
+      results.evaluateAll(
+        (containers, index) =>
+          containers.map(
+            (container) =>
+              getComputedStyle(
+                container.querySelector(".judge-result-criteria")!.children[
+                  index
+                ],
+              ).backgroundColor,
+          ),
+        index,
+      );
+    const unselected = (await backgrounds(1))[0];
+    const expectSelected = async (index: number) => {
+      await expect
+        .poll(async () => {
+          const colors = await backgrounds(index);
+          return colors[0] !== unselected && colors[0] === colors[1];
+        })
+        .toBe(true);
+      for (const panel of await results.all())
+        await expect(
+          panel.locator(".judge-result-criteria > li").nth(index),
+        ).toBeInViewport();
+    };
+    const a = (await source.boundingBox())!;
+    const b = (await target.boundingBox())!;
+    await page.touchscreen.tap(a.x + 20, a.y + 120);
+    await expectSelected(1);
+    await expect
+      .poll(() =>
+        results.evaluateAll((containers) => {
+          const offsets = containers.map(
+            (container) =>
+              container
+                .querySelector(".judge-result-criteria")!
+                .children[1].getBoundingClientRect().top -
+              container.getBoundingClientRect().top,
+          );
+          return Math.abs(offsets[0] - offsets[1]);
+        }),
+      )
+      .toBeLessThan(1);
+    await source.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+    const before = await source.evaluate((container) => container.scrollTop);
+    const ended = source.evaluate(
+      (container) =>
+        new Promise<number>((resolve) =>
+          container.addEventListener(
+            "scrollend",
+            () => resolve(container.scrollTop),
+            { once: true },
+          ),
+        ),
+    );
+    const client = await page.context().newCDPSession(page);
+    await client.send("Input.dispatchTouchEvent", {
+      type: "touchStart",
+      touchPoints: [{ x: a.x + 20, y: a.y + 220, id: 1 }],
+    });
+    for (const y of [210, 190, 170, 140])
+      await client.send("Input.dispatchTouchEvent", {
+        type: "touchMove",
+        touchPoints: [{ x: a.x + 20, y: a.y + y, id: 1 }],
+      });
+    await client.send("Input.dispatchTouchEvent", {
+      type: "touchEnd",
+      touchPoints: [],
+    });
+    await expect
+      .poll(() => source.evaluate((container) => container.scrollTop))
+      .toBeGreaterThan(before);
+    const ownPosition = await ended;
+    const criterionAt = ({ x, y }: { x: number; y: number }) => {
+      const row = document
+        .elementFromPoint(x, y)
+        ?.closest(".judge-result-criteria > li");
+      return row ? Array.from(row.parentElement!.children).indexOf(row) : -1;
+    };
+    const scrolled = await page.evaluate(criterionAt, {
+      x: a.x + 20,
+      y: a.y + 140,
+    });
+    expect(scrolled).toBeGreaterThanOrEqual(0);
+    await expectSelected(scrolled);
+    const next = await page.evaluate(criterionAt, {
+      x: b.x + 20,
+      y: b.y + 140,
+    });
+    expect(next).toBeGreaterThanOrEqual(0);
+    await page.touchscreen.tap(b.x + 20, b.y + 140);
+    await expectSelected(next);
+    await page.getByRole("button", { name: /Switch to .* theme/ }).tap();
+    await expect
+      .poll(() => backgrounds(next))
+      .toEqual([unselected, unselected]);
+    await expect
+      .poll(() => source.evaluate((container) => container.scrollTop))
+      .toBe(ownPosition);
+    await expect
+      .poll(() => target.evaluate((container) => container.scrollTop))
+      .toBe(original);
+    await client.detach();
+  });
+});
