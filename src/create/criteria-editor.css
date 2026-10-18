@@ -14,31 +14,27 @@
 }
 
 .criteria-answer-column {
-  width: 7rem;
+  width: 4rem;
 }
 
-.criteria-table th,
 .criteria-table td {
   padding: 6px 0;
-  border-bottom: 1px solid var(--line);
   text-align: left;
   vertical-align: top;
 }
 
-.criteria-table th {
-  font-size: 13px;
-  font-weight: 500;
-  overflow-wrap: anywhere;
-}
-
-.criteria-table th:nth-child(2),
 .criteria-table td:nth-child(2) {
   padding-right: 10px;
 }
 
-.criteria-table textarea,
-.criteria-table select {
+.criteria-table textarea {
   min-width: 0;
+}
+
+.criteria-answer {
+  min-width: 44px;
+  padding: 4px 8px;
+  justify-content: center;
 }
 
 .criteria-row[data-dragging="true"] {

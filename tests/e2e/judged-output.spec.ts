@@ -22,22 +22,20 @@ test("judge criteria preserve boolean answers and judge axes restore fixed setti
   await page
     .getByLabel("Criterion 1", { exact: true })
     .fill("Is there a blue circle?");
-  await page
-    .getByLabel("Correct answer", { exact: true })
-    .selectOption("false");
+  await page.getByLabel("Correct answer", { exact: true }).click();
   await page.reload();
   await expect(page.getByLabel("Criterion 1", { exact: true })).toHaveValue(
     "Is there a blue circle?",
   );
-  await expect(page.getByLabel("Correct answer", { exact: true })).toHaveValue(
-    "false",
-  );
+  await expect(
+    page.getByLabel("Correct answer", { exact: true }),
+  ).toHaveAttribute("aria-pressed", "false");
   await page
     .getByRole("button", { name: "Add criterion", exact: true })
     .click();
   await expect(
     page.getByLabel("Correct answer", { exact: true }).nth(1),
-  ).toHaveValue("true");
+  ).toHaveAttribute("aria-pressed", "true");
   await page.getByLabel("Criterion 2", { exact: true }).hover();
   await page
     .getByRole("button", { name: "Remove criterion 2", exact: true })
@@ -51,9 +49,9 @@ test("judge criteria preserve boolean answers and judge axes restore fixed setti
     .getByRole("button", { name: "Add criterion", exact: true })
     .click();
   await expect(page.getByLabel("Criterion 1", { exact: true })).toHaveValue("");
-  await expect(page.getByLabel("Correct answer", { exact: true })).toHaveValue(
-    "true",
-  );
+  await expect(
+    page.getByLabel("Correct answer", { exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
   await fixedJudge
     .getByRole("searchbox", { name: "Search judge models", exact: true })
     .fill("fixture/other");
@@ -213,9 +211,7 @@ test("criterion deletion uses confirmation boundaries and permits an empty table
   });
   const confirm = page.getByRole("button", { name: "Delete", exact: true });
   await first.fill("one two three four five six");
-  await page
-    .getByLabel("Correct answer", { exact: true })
-    .selectOption("false");
+  await page.getByLabel("Correct answer", { exact: true }).click();
   await page
     .getByRole("button", { name: "Add criterion", exact: true })
     .click();
@@ -227,9 +223,9 @@ test("criterion deletion uses confirmation boundaries and permits an empty table
     .getByRole("button", { name: "Remove criterion 2", exact: true })
     .click();
   await expect(page.getByLabel("Criterion 2", { exact: true })).toHaveCount(0);
-  await expect(page.getByLabel("Correct answer", { exact: true })).toHaveValue(
-    "false",
-  );
+  await expect(
+    page.getByLabel("Correct answer", { exact: true }),
+  ).toHaveAttribute("aria-pressed", "false");
   await first.hover();
   await remove.click();
   await expect(confirm).toBeVisible();
@@ -256,9 +252,9 @@ test("criterion deletion uses confirmation boundaries and permits an empty table
     .getByRole("button", { name: "Add criterion", exact: true })
     .click();
   await expect(first).toHaveValue("");
-  await expect(page.getByLabel("Correct answer", { exact: true })).toHaveValue(
-    "true",
-  );
+  await expect(
+    page.getByLabel("Correct answer", { exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
 });
 
 test("criterion handles reorder questions and their answers by keyboard and pointer", async ({
@@ -277,10 +273,11 @@ test("criterion handles reorder questions and their answers by keyboard and poin
     await page
       .getByLabel(`Criterion ${index + 1}`, { exact: true })
       .fill(["First question", "Second question", "Third question"][index]);
-    await page
-      .getByLabel("Correct answer", { exact: true })
-      .nth(index)
-      .selectOption(index === 1 ? "true" : "false");
+    if (index !== 1)
+      await page
+        .getByLabel("Correct answer", { exact: true })
+        .nth(index)
+        .click();
   }
   async function values() {
     return {
@@ -292,7 +289,7 @@ test("criterion handles reorder questions and their answers by keyboard and poin
       answers: await page
         .getByLabel("Correct answer", { exact: true })
         .evaluateAll((inputs) =>
-          inputs.map((input) => (input as HTMLSelectElement).value),
+          inputs.map((input) => input.getAttribute("aria-pressed")),
         ),
     };
   }
@@ -429,9 +426,7 @@ test("format changes retain criteria and judge effort, clear incompatible models
   await page
     .getByLabel("Criterion 1", { exact: true })
     .fill("Is there a blue circle?");
-  await page
-    .getByLabel("Correct answer", { exact: true })
-    .selectOption("false");
+  await page.getByLabel("Correct answer", { exact: true }).click();
   const judge = page.getByRole("radiogroup", {
     name: "Judge model",
     exact: true,
@@ -447,9 +442,9 @@ test("format changes retain criteria and judge effort, clear incompatible models
   await expect(page.getByLabel("Criterion 1", { exact: true })).toHaveValue(
     "Is there a blue circle?",
   );
-  await expect(page.getByLabel("Correct answer", { exact: true })).toHaveValue(
-    "false",
-  );
+  await expect(
+    page.getByLabel("Correct answer", { exact: true }),
+  ).toHaveAttribute("aria-pressed", "false");
   await expect(
     page.getByLabel("Judge thinking effort", { exact: true }),
   ).toHaveValue("high");
@@ -471,9 +466,9 @@ test("format changes retain criteria and judge effort, clear incompatible models
   await expect(page.getByLabel("Criterion 1", { exact: true })).toHaveValue(
     "Is there a blue circle?",
   );
-  await expect(page.getByLabel("Correct answer", { exact: true })).toHaveValue(
-    "false",
-  );
+  await expect(
+    page.getByLabel("Correct answer", { exact: true }),
+  ).toHaveAttribute("aria-pressed", "false");
   await expect(
     page.getByLabel("Judge thinking effort", { exact: true }),
   ).toHaveValue("high");
@@ -486,9 +481,9 @@ test("format changes retain criteria and judge effort, clear incompatible models
     0,
   );
   await page.reload();
-  await expect(page.getByLabel("Correct answer", { exact: true })).toHaveValue(
-    "false",
-  );
+  await expect(
+    page.getByLabel("Correct answer", { exact: true }),
+  ).toHaveAttribute("aria-pressed", "false");
   await expect(
     page.getByLabel("Judge thinking effort", { exact: true }),
   ).toHaveValue("high");
@@ -513,9 +508,9 @@ test("format changes retain criteria and judge effort, clear incompatible models
     .getByRole("checkbox", { name: "Add a LLM judge", exact: true })
     .check();
   await expect(page.getByLabel("Criterion 1", { exact: true })).toHaveValue("");
-  await expect(page.getByLabel("Correct answer", { exact: true })).toHaveValue(
-    "true",
-  );
+  await expect(
+    page.getByLabel("Correct answer", { exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
   await judge
     .getByRole("button", { name: "Clear judge model filter", exact: true })
     .click();
@@ -808,9 +803,7 @@ test("judge answers and axes survive draft reload, OAuth, Edit, and Fork", async
   await page
     .getByLabel("Criterion 1", { exact: true })
     .fill(judgedInput.judge!.criteria[0].text);
-  await page
-    .getByLabel("Correct answer", { exact: true })
-    .selectOption("false");
+  await page.getByLabel("Correct answer", { exact: true }).click();
   await page
     .getByRole("button", { name: "Add criterion", exact: true })
     .click();
@@ -864,10 +857,10 @@ test("judge answers and axes survive draft reload, OAuth, Edit, and Fork", async
     );
     await expect(
       page.getByLabel("Correct answer", { exact: true }).nth(0),
-    ).toHaveValue("false");
+    ).toHaveAttribute("aria-pressed", "false");
     await expect(
       page.getByLabel("Correct answer", { exact: true }).nth(1),
-    ).toHaveValue("true");
+    ).toHaveAttribute("aria-pressed", "true");
     await expect(
       page.getByRole("combobox", { name: "Rows", exact: true }),
     ).toHaveValue("judge_model");
@@ -1079,10 +1072,7 @@ for (const format of ["svg", "image"] as const) {
     ).not.toBeVisible();
     if (format === "svg") {
       await page.getByRole("button", { name: "EDIT", exact: true }).click();
-      await page
-        .getByLabel("Correct answer", { exact: true })
-        .nth(0)
-        .selectOption("true");
+      await page.getByLabel("Correct answer", { exact: true }).nth(0).click();
       await page.getByRole("button", { name: "Generate", exact: true }).click();
       await expect(
         page.getByRole("button", {

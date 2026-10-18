@@ -375,8 +375,7 @@ export function Create() {
                 }
               />
               <p className="hint">
-                Judge budget: no limit. Judge calls are not limited by the
-                generation budget.
+                Judge calls are not limited by the generation budget.
               </p>
             </>
           ) : null}

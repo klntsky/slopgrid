@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { Plus } from "lucide-react";
 import type { GridInput } from "../../server/domain";
 import { DeletableInput } from "./deletable-input";
 import { ReorderHandle } from "./reorder-handle";
@@ -45,13 +46,6 @@ export function CriteriaEditor({
           <col />
           <col className="criteria-answer-column" />
         </colgroup>
-        <thead>
-          <tr>
-            <th scope="col" aria-label="Move criterion" />
-            <th scope="col">Criterion</th>
-            <th scope="col">Correct answer</th>
-          </tr>
-        </thead>
         <tbody>
           {criteria.map((criterion, index) => (
             <tr
@@ -100,18 +94,17 @@ export function CriteriaEditor({
                 </DeletableInput>
               </td>
               <td>
-                <select
+                <button
+                  type="button"
+                  className="model-badge criteria-answer"
                   aria-label="Correct answer"
-                  value={String(criterion.correctAnswer)}
-                  onChange={(event) =>
-                    update(index, {
-                      correctAnswer: event.target.value === "true",
-                    })
+                  aria-pressed={criterion.correctAnswer}
+                  onClick={() =>
+                    update(index, { correctAnswer: !criterion.correctAnswer })
                   }
                 >
-                  <option value="true">Yes</option>
-                  <option value="false">No</option>
-                </select>
+                  {criterion.correctAnswer ? "Yes" : "No"}
+                </button>
               </td>
             </tr>
           ))}
@@ -123,6 +116,7 @@ export function CriteriaEditor({
           onChange([...criteria, { text: "", correctAnswer: true }])
         }
       >
+        <Plus size={16} aria-hidden="true" />
         Add criterion
       </button>
     </div>
