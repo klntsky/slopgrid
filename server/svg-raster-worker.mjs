@@ -40,11 +40,11 @@ async function render(svg) {
     if (renderer.imagesToResolve().length)
       throw new Error("Unresolved SVG image resources");
     // The API exposes intrinsic dimensions after parsing; fitTo is construction-only.
-    if (Math.max(renderer.width, renderer.height) > 2048) {
+    if (Math.max(renderer.width, renderer.height) > 1024) {
       const mode = renderer.width >= renderer.height ? "width" : "height";
       renderer.free();
       renderer = undefined;
-      renderer = new Resvg(svg, { ...options, fitTo: { mode, value: 2048 } });
+      renderer = new Resvg(svg, { ...options, fitTo: { mode, value: 1024 } });
     }
     image = renderer.render();
     return image.asPng();

@@ -15,8 +15,10 @@ test("chat editing, ordering, persistence and completion without explicit blanks
   context,
 }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  const answer =
+    "# Chat result\n\n## user\n\nA literal role heading inside the answer.\n\n```md\n## assistant\n\nStill the same answer.\n```\n";
   await request.post("/fixture/reset", {
-    data: { markdownOutput: "# Chat result\n" },
+    data: { markdownOutput: answer },
   });
   await page.goto("/");
   await page
@@ -141,15 +143,25 @@ test("chat editing, ordering, persistence and completion without explicit blanks
           { role: "system", content: "Use Markdown" },
           { role: "user", content: "Question cat hat" },
           { role: "assistant", content: "Answer prefix " },
-          { role: "assistant", content: "# Chat result\n" },
+          { role: "assistant", content: answer },
         ],
         null,
         2,
       ),
     );
   await expect(page.locator(".chat-bubble")).toHaveCount(4);
+  await expect(
+    page.locator(".chat-bubble").last().getByRole("heading", {
+      name: "user",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(page.locator(".chat-bubble").last().locator("pre")).toHaveText(
+    "## assistant\n\nStill the same answer.\n",
+  );
   await page.reload();
   await expect(page.locator(".markdown-preview h1")).toHaveText("Chat result");
+  await expect(page.locator(".chat-bubble")).toHaveCount(4);
   await page.getByRole("button", { name: "EDIT", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "Chat completion", exact: true }),

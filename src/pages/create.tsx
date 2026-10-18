@@ -351,7 +351,7 @@ export function Create() {
             </h2>
           </div>
           {input.format === "html" ? (
-            <p className="hint">Websites do not support a judge yet.</p>
+            <p className="hint">Websites do not support a judge.</p>
           ) : input.judge ? (
             <>
               <CriteriaEditor
@@ -365,7 +365,7 @@ export function Create() {
                 }}
               />
               <p className="hint">
-                Judge calls are not limited by the generation budget.
+                Judge calls are not counted towards the generation budget.
               </p>
             </>
           ) : null}

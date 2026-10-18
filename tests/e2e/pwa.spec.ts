@@ -95,6 +95,8 @@ test("visited pages and completed outputs survive offline reload without retaini
         return grid;
       },
     );
+    // Finished generation must remain cacheable while judging is pending or fails.
+    // Overall cell status includes judging, so it cannot determine output readiness.
     for (const status of ["pending", "error", "complete"] as const) {
       const template = grids[0];
       const cellId = token();

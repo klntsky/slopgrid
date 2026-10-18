@@ -384,17 +384,31 @@ test("SVG rasterization preserves pixels and transparency without upscaling, and
   assert.deepEqual([small.width, small.height], [80, 40]);
   assert.deepEqual(small.at(15, 15), [255, 0, 0, 255]);
   assert.deepEqual(small.at(0, 0), [0, 0, 0, 0]);
-  const large = pngPixels(
-    (
-      await rasterizeSvg(
-        Buffer.from(
-          '<svg xmlns="http://www.w3.org/2000/svg" width="4096" height="2048"><rect width="4096" height="2048" fill="red"/></svg>',
-        ),
-      )
-    ).bytes,
-  );
-  assert.deepEqual([large.width, large.height], [2048, 1024]);
-  assert.deepEqual(large.at(1024, 512), [255, 0, 0, 255]);
+  for (const [width, height, expectedWidth, expectedHeight] of [
+    [1536, 768, 1024, 512],
+    [768, 1536, 512, 1024],
+    [1024, 512, 1024, 512],
+  ]) {
+    const large = pngPixels(
+      (
+        await rasterizeSvg(
+          Buffer.from(
+            `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="${width}" height="${height}" fill="red"/></svg>`,
+          ),
+        )
+      ).bytes,
+    );
+    assert.deepEqual(
+      [large.width, large.height],
+      [expectedWidth, expectedHeight],
+    );
+    assert.ok(large.width <= 1024 && large.height <= 1024);
+    assert.equal(large.width / large.height, width / height);
+    assert.deepEqual(
+      large.at(Math.floor(large.width / 2), Math.floor(large.height / 2)),
+      [255, 0, 0, 255],
+    );
+  }
 });
 
 test("SVG rasterization retains bundled-font text and embedded image pixels", async () => {

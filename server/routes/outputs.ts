@@ -148,11 +148,7 @@ export function createOutputRoutes(
       });
       return res.type("application/zip").send(Buffer.from(archive));
     }
-    const file =
-      store.files.path(id, filename) ??
-      (output.format === "chat-template"
-        ? store.files.path(id, "index.md")
-        : undefined);
+    const file = store.files.path(id, filename);
     if (!file) return res.sendStatus(404);
     if (output.format === "chat-template")
       return res
@@ -180,11 +176,7 @@ export function createOutputRoutes(
     const { filename, mediaType } = res.locals.file as ReturnType<
       typeof outputFile
     >;
-    const file =
-      store.files.path(id, filename) ??
-      (output.format === "chat-template"
-        ? store.files.path(id, "index.md")
-        : undefined);
+    const file = store.files.path(id, filename);
     if (!file) return res.sendStatus(404);
     if (output.format === "svg" || output.format === "image") {
       if (output.published) {

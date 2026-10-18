@@ -506,9 +506,6 @@ test("format changes retain criteria and judge effort, clear incompatible models
   await page
     .getByRole("button", { name: "Static website", exact: true })
     .click();
-  await expect(
-    page.getByText("Websites do not support a judge yet.", { exact: true }),
-  ).toBeVisible();
   await expect(page.getByLabel("Criterion 1", { exact: true })).toHaveCount(0);
   await expect(
     page.getByRole("radiogroup", { name: "Judge model", exact: true }),

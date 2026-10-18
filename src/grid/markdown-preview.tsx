@@ -128,7 +128,13 @@ export function MarkdownPreview({
               {markdown}
             </pre>
           ) : conversation ? (
-            <ChatConversation messages={readChatOutput(markdown)} />
+            <ChatConversation
+              messages={
+                !markdown && (streaming || query.data === undefined)
+                  ? []
+                  : readChatOutput(markdown)
+              }
+            />
           ) : (
             <MarkdownContent markdown={markdown} />
           )}

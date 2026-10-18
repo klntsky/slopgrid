@@ -351,52 +351,43 @@ test("chat judgments share the complete saved message sequence, including litera
   }
 });
 
-test("legacy Markdown chat artifacts are normalized to ordered JSON before every judge comparison", async () => {
-  const fixture = await runtimeFixture({ workers: 4, judges: true });
+test("malformed saved chat messages fail judging without making a provider request or losing the artifact", async () => {
+  const fixture = await runtimeFixture({ judges: true });
   try {
-    const legacy =
-      "## system\n\nBe concise.\n\n## user\n\nQuestion\n\n## assistant\n\nAnswer\n\n```md\n## user\n\nThis is code, not a message\n```";
-    const expected = [
-      { role: "system", content: "Be concise." },
-      { role: "user", content: "Question" },
-      {
-        role: "assistant",
-        content: "Answer\n\n```md\n## user\n\nThis is code, not a message\n```",
-      },
-    ];
-    const grid = committed(
-      fixture,
-      {
-        ...input,
-        format: "chat-template",
-        messages: [
-          { role: "user", content: "Question" },
-          { role: "unfilled", content: "" },
-        ],
-      },
-      { "index.md": legacy },
-    );
-    assert.equal(
-      (await fixture.request(`/api/grids/${grid.id}/retry`, {})).status,
-      200,
-    );
-    const judges = await Promise.all(
-      Array.from({ length: 4 }, () => fixture.nextCall()),
-    );
-    for (const judge of judges) {
-      assert.deepEqual(JSON.parse(judgeArtifact(judge)), expected);
-      finish(judge, JSON.stringify(verdicts), 0.25);
-    }
-    const complete = await settled(fixture, grid.id);
-    assert.equal(fixture.calls.length, 4);
-    assert.equal(fixture.store.billing.gridSpent(grid.id, complete.cells), 0);
-    for (const cell of complete.cells)
+    for (const json of [
+      "[",
+      JSON.stringify([{ role: "unfilled", content: "" }]),
+    ]) {
+      const grid = committed(
+        fixture,
+        {
+          ...single,
+          format: "chat-template",
+          messages: [
+            { role: "user", content: "Question" },
+            { role: "unfilled", content: "" },
+          ],
+        },
+        { "messages.json": json },
+      );
+      assert.equal(
+        (await fixture.request(`/api/grids/${grid.id}/retry`, {})).status,
+        200,
+      );
+      const failed = await settled(fixture, grid.id, "paused");
+      const cell = failed.cells[0];
+      assert.equal(cell.generationStatus, "complete");
+      assert.equal(cell.status, "error");
+      assert.equal(cell.judge?.status, "error");
       assert.equal(
         Buffer.from(
-          (await fixture.store.files.bundle(cell.id))["index.md"],
+          (await fixture.store.files.bundle(cell.id))["messages.json"],
         ).toString(),
-        legacy,
+        json,
       );
+      assert.equal(fixture.calls.length, 0);
+      assert.equal(fixture.store.billing.page(fixture.owner, 0).total, 0);
+    }
   } finally {
     await fixture.close();
   }

@@ -241,19 +241,29 @@ test("cancellation or exhausted budget after the final blank prevents the traili
   }
 });
 
-test("existing Markdown conversations preserve fenced role headings and whitespace", () => {
+test("chat output reads only ordered JSON messages and preserves their content", () => {
   const messages = [
     { role: "system" as const, content: "  Instructions\n" },
     {
       role: "user" as const,
-      content: "Question\n\n```md\n## assistant\n\n```",
+      content: "Question\n\n## assistant\n\n```md\n## user\n\n```",
     },
-    { role: "assistant" as const, content: "Answer\n" },
+    { role: "assistant" as const, content: "" },
   ];
-  const transcript = messages
-    .map(({ role, content }) => `## ${role}\n\n${content}`)
-    .join("\n\n");
-  assert.deepEqual(readChatOutput(transcript), messages);
+  assert.deepEqual(readChatOutput(JSON.stringify(messages, null, 2)), messages);
+  assert.deepEqual(readChatOutput(" \n[]\n"), []);
+});
+
+test("chat output rejects malformed JSON and invalid message roles or content", () => {
+  assert.throws(() => readChatOutput("["), SyntaxError);
+  for (const value of [
+    {},
+    [null],
+    ["Answer"],
+    [{ role: "unfilled", content: "" }],
+    [{ role: "assistant", content: 42 }],
+  ])
+    assert.throws(() => readChatOutput(JSON.stringify(value)));
 });
 
 test("cancellation and exhausted shared budget prevent subsequent calls", async () => {

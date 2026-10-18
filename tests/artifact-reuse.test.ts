@@ -105,6 +105,15 @@ test("template usage and per-call reuse survive storage reopening", async () => 
       { role: "assistant", content: "First answer" },
       { role: "assistant", content: "Second answer" },
     ]);
+    const download = await f.request(`/outputs/${copy.cells[0].id}/download`);
+    assert.equal(download.status, 200);
+    assert.match(download.headers.get("content-type")!, /application\/json/);
+    assert.match(download.headers.get("content-disposition")!, /\.json/);
+    assert.deepEqual(await download.json(), [
+      { role: "user", content: "cat one" },
+      { role: "assistant", content: "First answer" },
+      { role: "assistant", content: "Second answer" },
+    ]);
     assert.equal(
       (await f.fetch(f.origin + `/outputs/${copy.cells[0].id}?raw=1`)).status,
       404,
@@ -124,17 +133,6 @@ test("template usage and per-call reuse survive storage reopening", async () => 
     finish(await f.nextCall(), "Fresh second answer");
     assert.equal((await settled(f, regenerated.id)).status, "complete");
     assert.equal(f.calls.length, calls + 2);
-    f.store.files.write(source.cells[0].id, {
-      "index.md":
-        "## user\n\ncat one\n\n## assistant\n\nFirst answer\n\n## assistant\n\nSecond answer",
-    });
-    const legacy = await f.request(`/outputs/${source.cells[0].id}/download`);
-    assert.match(legacy.headers.get("content-type")!, /application\/json/);
-    assert.deepEqual(await legacy.json(), [
-      { role: "user", content: "cat one" },
-      { role: "assistant", content: "First answer" },
-      { role: "assistant", content: "Second answer" },
-    ]);
   } finally {
     await f.close();
   }

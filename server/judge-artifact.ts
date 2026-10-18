@@ -31,9 +31,7 @@ export async function loadJudgeArtifact(
       : format === "svg"
         ? "index.svg"
         : format === "chat-template"
-          ? bundle?.files["messages.json"]
-            ? "messages.json"
-            : "index.md"
+          ? "messages.json"
           : "index.md";
   const data = bundle?.files[filename];
   if (!data)

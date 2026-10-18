@@ -117,8 +117,8 @@ access, and shared reference thumbnail loading after reload.
 
 List-title coverage checks persisted axis expansion, repeated variables, literal
 dollar signs in values, Unicode-safe truncation, and preservation across title
-edits, generation updates, and reopening storage. Legacy-schema migration coverage
-verifies that the original prompt is copied into a missing field once. The title browser
+edits, generation updates, and reopening storage. Older-grid coverage verifies
+that the original prompt is copied into a missing field once. The title browser
 journey checks custom title precedence and truncated expanded prompts in owned
 and public lists after clearing the title and reloading.
 
@@ -199,16 +199,13 @@ draft bursts. Snapshot-read coverage checks strictly increasing sequences withou
 database writes, fresh ordering after settled metadata edits, and a stable epoch
 across web replacement. Browser coverage delays a paused HTTP snapshot across an
 engine restart and checks that its later arrival cannot reopen streaming.
-Migration coverage uses actual legacy schemas, not a new schema with a lowered
-version. It preserves existing grid metadata, sessions, cells, references, charges,
-row ordering, and the engine clock; checks rollback on failure; and exercises
-normal reads and writes after upgrading.
+Migration coverage preserves existing grid metadata, sessions, cells, references,
+and charges, and checks that reopening storage does not reset the engine clock.
 
 The runtime behavior tests share `tests/runtime-fixture.ts`: a controlled OpenRouter HTTP service, a real inference child, a replaceable web child, and a temporary SQLite database and output directory. The actual provider SDK, stream parser, billing recorder, and Unix-socket API remain in use. Fixture children, including browser app processes, report readiness over IPC after their listeners are available. Startup waits report the child error or exit status, with a bounded timeout for a hung process, instead of treating a delayed startup as an application transition failure. Tests explicitly release streaming chunks or failures instead of relying on provider response timing. Sessions are seeded directly; authentication flows have separate coverage.
 
-Browser HTTPS fixtures reserve the same port on IPv4 and IPv6 loopback before
-announcing readiness, so localhost cannot reach an unrelated listener. Lifecycle
-coverage requests both addresses and reuses the port after shutdown.
+Browser HTTPS tests require IPv4 and IPv6 loopback support, with the selected
+port available on both `127.0.0.1` and `::1`.
 
 Grid-price coverage distinguishes visible successful-output cost from owner-only lifetime spending. Billing tests cover reported usage arriving before cell settlement, reported zero charges, cancellation, retries, and isolation between grids. Browser coverage follows both totals through streaming, failure, retry, reload, and publication; HTTP and SSE coverage ensures non-owners never receive `spentUsd`. Reordered-snapshot coverage checks both displayed totals. A controlled-stream browser scenario checks thinking scroll-following through successive chunks and viewport resizing, wheel-scrolling up to preserve a reading position, returning to the bottom, and completion through the saved-trace fetch. Thinking-exhaustion coverage distinguishes a fully consumed reasoning budget from partial output and early termination, verifies durable errors and traces, separates charges from successful-output costs, and observes SSE closure. SVG view-switch coverage checks decoded image content while hidden behind thinking, preserves the mounted preview across toggles, and verifies completion while thinking remains selected. Expansion coverage follows SVG updates through completion and website updates in the overlay, verifies generated JavaScript execution, and checks image/SVG/website collapse via Escape, restored focus, retained table elements, and saved dimensions. Website coverage presses Escape while focus is inside the isolated frame.
 
@@ -280,15 +277,7 @@ Preserve the automatically created development encryption key, since changing it
 
 Keep SQLite and output-directory backups, including uploaded references, together with the encryption key needed to read stored credentials. See [state and persistence](ARCHITECTURE.md#state-and-persistence) for storage responsibilities and output lifecycle.
 
-Storage and route tests exercise persistence and reopening. Upgrade and
-unsupported-version tests check that existing production data is preserved.
-Session tests reopen storage with an old session and verify retained account
-identity, encrypted credentials, persistent cookie renewal, and logout revocation.
-Billing migration coverage distinguishes unavailable charges from known zero
-charges and retains deterministic pagination.
-
-Disposable staging grids can be removed through the private operations deployment
-command before upgrading, without changing the production-data migration.
+Storage and route tests exercise persistence and reopening. Upgrade and unsupported-version tests check that existing data is preserved. Session tests reopen storage with an old session and verify retained account identity, encrypted credentials, persistent cookie renewal, and logout revocation.
 
 ## Generation and output validation
 
@@ -443,43 +432,3 @@ Reuse scenarios use typed grid snapshots and captured requests, consume new upst
 Browser-fixture lifecycle coverage starts the production entrypoints behind HTTPS, exercises their API, and verifies process cleanup, temporary data removal and reuse of the listening port.
 
 Budget estimation coverage includes mixed calculated and $3 fallback costs, dispatch-order prefixes, zero output prices, exact input-cost budgets, unknown metadata, prompt expansion, pricing schedules, and automatic versus explicit worker selection. Browser coverage verifies automatic form submissions despite stale draft overrides for text and images, per-model warning grouping, highest calculated amounts across expanded prompts, and simultaneous known and unknown estimates without asserting static tooltip wording, plus saved budgets and automatic submission. Admission tests cover unfinished-cell counts on Resume, artifact reuse, and budget-specific 403 pauses while active calls finish.
-
-## Judged output validation
-
-The current behavior is defined in [PRODUCT.md](PRODUCT.md#38-judged-output)
-and [judgment results](PRODUCT.md#56-judgment-results).
-
-- `tests/judging.test.ts` drives the real SDK against controlled HTTP responses
-  and checks structured-result boundaries, unsuccessful completions, cancellation,
-  uncapped requests, and multimodal input. Its raster tests inspect PNG pixels,
-  font text, embedded images, size bounds, resource isolation, and worker shutdown
-  without opening a browser.
-- `tests/judging-runtime.test.ts` retains the engine, web process, SQLite, files,
-  SDK, and transport while controlling the external provider. It covers shared
-  generation, artifact inputs, independent stages, recovery, reuse, and accounting.
-  Run affected billing, artifact-reuse, output-access, persistence, and scheduling
-  coverage alongside it when those boundaries change.
-- `tests/e2e/judged-output.spec.ts` exercises checkbox and heading enablement,
-  viewport anchoring, criteria-table deletion boundaries, reordering with answer
-  preservation, form restoration, fixed and axis selections, expected-answer
-  scoring, output/thinking/judgment transitions, output access, page closure, and
-  generation-only totals. Run `tests/e2e/thinking.spec.ts` alongside it when cell
-  content modes change, and `tests/e2e/chat.spec.ts` when shared editor controls
-  change. The PWA browser suite covers ready-output caching independently of
-  judgment completion.
-- `tests/real-e2e/judged-output.spec.ts` uses the existing private
-  `OPENROUTER_API_KEY`, GPT-5 mini/nano judges, and Gemini 2.5 Flash
-  Image generation. Missing credentials, model availability, and insufficient
-  balance fail verification instead of switching models or skipping tests.
-  The Markdown comparison exercises low and high effort on both judges and fresh
-  judging after reuse; the other formats exercise low judge effort. Unavailable
-  model/parameter combinations remain reported failures. Score assertions follow
-  actual verdicts rather than requiring a model to satisfy the generation prompt
-  or agree with an expected answer.
-
-Run the focused suites through the slopgrid-ops staging command. For manual
-visual inspection, start an isolated `startTestServer("mock")` on staging in
-tmux `bg`, explicitly set the candidate `FRONTEND_PATH` and fixture GitHub
-credentials, and attach to remote Chromium through an SSH-forwarded CDP port.
-Inspect the actual cell controls and in-cell judgment view, and correlate them
-with captured provider calls. Keep temporary inspection code outside the repository.
