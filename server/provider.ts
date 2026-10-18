@@ -19,6 +19,7 @@ import { canJudge, judgeModelIssue } from "./compatibility.js";
 import {
   efforts,
   type Cell,
+  type GenerationParameters,
   type GridInput,
   type InferenceProgress,
 } from "./domain.js";
@@ -255,12 +256,13 @@ export class Provider {
   async generate(
     key: string,
     format: SingleOutputFormat,
-    cell: Cell,
+    cell: GenerationParameters,
     onChunk: (progress: InferenceProgress) => void,
     signal?: AbortSignal,
     observe?: CallObserver,
     references?: ReferenceContent[],
     beforeRequest?: () => Promise<void>,
+    _taskId?: string,
   ): Promise<{
     signature: string;
     maxOutputTokens?: number;
@@ -291,7 +293,7 @@ export class Provider {
   }
   async prepare(
     format: SingleOutputFormat,
-    cell: Cell,
+    cell: GenerationParameters,
     references: ReferenceContent[] = [],
   ) {
     if (format === "image") return prepareImageInference(cell, references);

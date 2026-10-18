@@ -29,7 +29,7 @@ for (const billed of [false, true])
           debug = await crashCheckpoint(
             f.engine.child,
             "jobs.ts",
-            "const billing=this.store.billing.cell(",
+            "const current=this.current(call)",
           );
           call.finish();
           await debug.paused;
@@ -73,7 +73,7 @@ for (const billed of [false, true])
         assert.equal(
           readFileSync(
             f.store.files.thinkingPath(
-              grid.cells[0].id,
+              f.store.get(grid.id)!.cells[0].thinkingSourceId!,
               paused.cells[0].thinkingId!,
             )!,
             "utf8",
@@ -112,14 +112,14 @@ for (const checkpoint of [
   },
   {
     name: "after billing before output files",
-    file: "jobs.ts",
-    statement: "this.store.files.write(",
+    file: "workflow-executor.ts",
+    statement: "store.files.write(",
     persisted: false,
     billed: true,
   },
   {
     name: "after output files before cell persistence",
-    file: "jobs.ts",
+    file: "workflow-executor.ts",
     statement: "installed=true",
     persisted: false,
     billed: true,
@@ -171,14 +171,20 @@ for (const checkpoint of [
         assert.equal(recovered.cells[0].status, "complete");
         assert.equal(
           readFileSync(
-            f.store.files.path(grid.cells[0].id, "index.md")!,
+            f.store.files.path(
+              f.store.get(grid.id)!.cells[0].artifactId!,
+              "index.md",
+            )!,
             "utf8",
           ),
           "Already completed",
         );
         assert.equal(
           readFileSync(
-            f.store.files.thinkingPath(grid.cells[1].id, thinking)!,
+            f.store.files.thinkingPath(
+              f.store.get(grid.id)!.cells[1].thinkingSourceId!,
+              thinking,
+            )!,
             "utf8",
           ),
           "Retained reasoning",
@@ -217,7 +223,10 @@ for (const checkpoint of [
           assert.equal(f.calls.length, 3);
           assert.equal(
             readFileSync(
-              f.store.files.path(grid.cells[1].id, "index.md")!,
+              f.store.files.path(
+                f.store.get(grid.id)!.cells[1].artifactId!,
+                "index.md",
+              )!,
               "utf8",
             ),
             "Explicit retry",

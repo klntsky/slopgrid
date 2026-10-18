@@ -15,6 +15,81 @@ function serial(work) {
   writes = result.catch(() => {});
   return result;
 }
+async function migrateSnapshots() {
+  return serial(async () => {
+    const state = await caches.open(STATE);
+    const saved = await state.match("/__offline_schema");
+    const schema = saved ? await saved.json() : undefined;
+    if (schema?.version === 2) return;
+    // Cache.put moves an entry to the end. Persist the original eviction order
+    // before rewriting so an interrupted activation can restore it on retry.
+    const previousOrders = new Map(
+      schema?.orders?.map(({ name, urls }) => [name, urls]),
+    );
+    const orders = await Promise.all(
+      (await caches.keys())
+        .filter((name) => name.startsWith(PREFIX))
+        .map(async (name) => {
+          const current = (await (await caches.open(name)).keys()).map(
+            (request) => request.url,
+          );
+          const original = previousOrders.get(name);
+          const known = new Set(original);
+          return {
+            name,
+            urls: original
+              ? [...original, ...current.filter((url) => !known.has(url))]
+              : current,
+          };
+        }),
+    );
+    await state.put("/__offline_schema", json({ orders }));
+    for (const { name, urls } of orders) {
+      const cache = await caches.open(name);
+      let reordered = previousOrders.has(name);
+      for (const url of urls) {
+        let response = await cache.match(url);
+        if (!response) continue;
+        if (
+          new URL(url).origin === self.location.origin &&
+          /^\/api\/grids\/[a-f0-9]{48}$/.test(new URL(url).pathname)
+        ) {
+          const grid = await response.clone().json();
+          let changed = false;
+          grid.cells = grid.cells.map((cell) => {
+            if (
+              cell.generationId &&
+              !("generationSourceId" in cell) &&
+              !("generationStatus" in cell)
+            )
+              return cell;
+            changed = true;
+            const { generationSourceId, generationStatus, ...canonical } = cell;
+            return {
+              ...canonical,
+              generationId:
+                cell.generationId || "g:" + (generationSourceId || cell.id),
+            };
+          });
+          if (changed) {
+            const headers = new Headers(response.headers);
+            headers.delete("Content-Length");
+            response = new Response(JSON.stringify(grid), {
+              status: response.status,
+              statusText: response.statusText,
+              headers,
+            });
+            reordered = true;
+          }
+        }
+        // Reinsert the remaining entries in their original order, without the
+        // normal quota eviction path: metadata migration must not lose outputs.
+        if (reordered) await cache.put(url, response);
+      }
+    }
+    await state.put("/__offline_schema", json({ version: 2 }));
+  });
+}
 async function currentScope() {
   if (scope === undefined) {
     const saved = await (await caches.open(STATE)).match("/__offline_scope");
@@ -301,7 +376,7 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   // Retain hashed assets referenced by previously cached pages and open tabs.
   // Activation follows the browser lifecycle instead of replacing a live worker.
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(migrateSnapshots().then(() => self.clients.claim()));
 });
 self.addEventListener("fetch", (event) => {
   const request = event.request;

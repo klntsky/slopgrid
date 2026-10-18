@@ -64,7 +64,13 @@ test(
       assert.equal(stored.visibility, "public");
       assert.equal(stored.status, "complete");
       assert.equal(
-        readFileSync(f.store.files.path(grid.cells[0].id, "index.md")!, "utf8"),
+        readFileSync(
+          f.store.files.path(
+            f.store.get(grid.id)!.cells[0].artifactId!,
+            "index.md",
+          )!,
+          "utf8",
+        ),
         "First. 0. 1. 2. 3. 4. 5. 6. 7. ",
       );
       assert.equal(f.store.billing.page(f.owner, 0, "account").costUsd, 0.0123);

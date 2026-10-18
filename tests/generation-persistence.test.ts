@@ -128,7 +128,7 @@ test(
       debug = await crashCheckpoint(
         f.engine.child,
         "jobs.ts",
-        "beginCellAttempt(prepared)",
+        "beginTaskAttempt(prepared)",
       );
       const starting = f.engine.api.startGrid({
         gridId: grid.id,
@@ -208,7 +208,7 @@ test(
       assert.equal(
         readFileSync(
           f.store.files.thinkingPath(
-            grid.cells[0].id,
+            f.store.get(grid.id)!.cells[0].thinkingSourceId!,
             complete.cells[0].thinkingId!,
           )!,
           "utf8",
@@ -216,11 +216,56 @@ test(
         "Retained thinking",
       );
       assert.equal(
-        readFileSync(f.store.files.path(grid.cells[0].id, "index.md")!, "utf8"),
+        readFileSync(
+          f.store.files.path(
+            f.store.get(grid.id)!.cells[0].artifactId!,
+            "index.md",
+          )!,
+          "utf8",
+        ),
         "Retained output",
       );
     } finally {
       if (locked) f.store.db.exec("ROLLBACK");
+      await f.close();
+    }
+  },
+);
+
+test(
+  "reasoning accepted during a storage lock survives pause before its queued write",
+  { timeout: 40000 },
+  async () => {
+    const f = await runtimeFixture({ workers: 1 });
+    let unlock = () => {};
+    try {
+      const grid = f.grid();
+      await f.engine.api.startGrid({ gridId: grid.id, sessionId: f.owner });
+      const call = await f.nextCall();
+      unlock = holdDatabaseWrites(f.store);
+      call.write({ reasoning: "Accepted reasoning before pause." });
+      await until(
+        () => f.engine.api.status(),
+        (state) => !state.persistence.healthy,
+      );
+      const live = await f.engine.api.getGrid(grid.id);
+      const thinkingId = live.cells[0].thinkingId!;
+      assert.equal(live.cells[0].thinking, "Accepted reasoning before pause.");
+      await f.engine.api.pauseGrid({ gridId: grid.id, sessionId: f.owner });
+      await call.closed;
+      unlock();
+      await until(
+        () => f.engine.api.getGrid(grid.id),
+        (state) => !state.live,
+      );
+      const response = await f.request(
+        `/outputs/${grid.cells[0].id}/thinking/${thinkingId}`,
+      );
+      assert.equal(response.status, 200);
+      assert.equal(await response.text(), "Accepted reasoning before pause.");
+      assert.equal(f.calls.length, 1);
+    } finally {
+      unlock();
       await f.close();
     }
   },

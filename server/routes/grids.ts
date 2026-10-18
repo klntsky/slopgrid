@@ -1,6 +1,6 @@
 import { selectedReferences } from "../image-settings.js";
 import { reuseArtifacts } from "../artifact-reuse.js";
-import { assignGenerationSources } from "../generation-groups.js";
+import { createWorkflow, projectWorkflow } from "../workflow.js";
 import { canViewGrid, ownsGrid } from "../grid-policy.js";
 import { z } from "zod";
 import { manualKey } from "../manual-keys.js";
@@ -194,7 +194,7 @@ export function createGridRoutes({
         .status(400)
         .json({ error: "A reference image is unavailable." });
     const cells = expandGrid(input).map((c) => ({ ...c, id: token() }));
-    assignGenerationSources(input.format, cells);
+    const tasks = createWorkflow(input, cells);
     if (!rate(`create:${s.id}`, 10) || !rate(`create-ip:${req.ip}`, 30))
       return res
         .status(429)
@@ -210,37 +210,28 @@ export function createGridRoutes({
       cells,
       createdAt: new Date().toISOString(),
     };
-    let inserted = false;
+    if (source && reuse.data.reuseArtifacts)
+      await reuseArtifacts(store, provider, source, tasks);
+    projectWorkflow(g, tasks);
+    // Reused artifact references create no files before admission or insertion.
+    if (
+      cells.some((cell) => cell.status !== "complete") &&
+      !(await allowInference(
+        req,
+        res,
+        s,
+        input.parallelWorkers,
+        input.format,
+        cells,
+      ))
+    )
+      return;
+    if (cells.every((cell) => cell.status === "complete"))
+      g.status = "complete";
     let savedGrid = g;
-    try {
-      if (source && reuse.data.reuseArtifacts)
-        await reuseArtifacts(store, provider, source, input.format, cells);
-      if (
-        cells.some((cell) => cell.status !== "complete") &&
-        !(await allowInference(
-          req,
-          res,
-          s,
-          input.parallelWorkers,
-          input.format,
-          cells,
-        ))
-      )
-        return;
-      if (cells.every((cell) => cell.status === "complete"))
-        g.status = "complete";
-      if (creation) savedGrid = creation.insert(g);
-      else store.insert(g);
-      inserted = savedGrid.id === g.id;
-    } finally {
-      // Reuse precedes admission so only unfinished calls affect concurrency.
-      // Rejected creation must not retain copied outputs or thinking traces.
-      if (!inserted)
-        await Promise.all(
-          cells.map((cell) => store.files.removeArtifact(cell.id)),
-        );
-    }
-    return saved(savedGrid, inserted);
+    if (creation) savedGrid = creation.insert(g, tasks);
+    else store.insert(g, tasks);
+    return saved(savedGrid, savedGrid.id === g.id);
   });
   app.get("/api/grid-slugs/:slug", (req, res) => {
     const slug = String(req.params.slug);

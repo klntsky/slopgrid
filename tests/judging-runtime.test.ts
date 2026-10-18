@@ -8,7 +8,10 @@ import {
   type RuntimeFixture,
 } from "./runtime-fixture.js";
 import type { GridInput } from "../server/domain.js";
-import { assignGenerationSources } from "../server/generation-groups.js";
+import { projectWorkflow } from "../server/workflow.js";
+import { token } from "../server/ids.js";
+import { rmSync } from "node:fs";
+import { join } from "node:path";
 import { holdDatabaseWrites } from "./database-lock.js";
 import { crashCheckpoint } from "./crash-checkpoint.js";
 
@@ -101,8 +104,8 @@ async function settled(
   );
   return fixture.store.get(id)!;
 }
-// Seed a crash boundary: only the representative's files and commit are durable.
-// All subsequent copy, rendering, inference and settlement use the real services.
+// Seed a crash boundary with one durable shared generation artifact. Rendering,
+// inference and settlement continue through the real services.
 function committed(
   fixture: RuntimeFixture,
   body: GridInput,
@@ -110,16 +113,21 @@ function committed(
   mediaType?: string,
 ) {
   const grid = fixture.grid(body);
-  assignGenerationSources(body.format, grid.cells);
-  const source = grid.cells[0];
-  source.generationStatus = "complete";
-  source.provenance = {
-    signature: "committed-runtime-artifact",
-    files: Object.keys(files).sort(),
+  const tasks = fixture.store.workflow(grid.id);
+  const generation = tasks.find((task) => task.kind === "generation")!;
+  const artifactId = token();
+  generation.status = "complete";
+  generation.output = {
+    artifactId,
+    mediaType,
+    provenance: {
+      signature: "committed-runtime-artifact",
+      files: Object.keys(files).sort(),
+    },
   };
-  source.mediaType = mediaType;
-  fixture.store.files.write(source.id, files);
-  fixture.store.saveGeneration(grid);
+  fixture.store.files.write(artifactId, files);
+  fixture.store.saveWorkflow(grid, [generation]);
+  projectWorkflow(grid, tasks);
   return grid;
 }
 test("two judge models by two efforts generate once, judge four times, and isolate all judge charges", async () => {
@@ -162,16 +170,13 @@ test("two judge models by two efforts generate once, judge four times, and isola
       (grid) => grid.status === "complete",
     );
     assert.equal(fixture.calls.length, 5);
-    assert.equal(
-      new Set(grid.cells.map((cell) => cell.generationSourceId)).size,
-      1,
-    );
+    assert.equal(new Set(grid.cells.map((cell) => cell.generationId)).size, 1);
     for (const cell of grid.cells) {
       assert.deepEqual(cell.judge?.results, verdicts.results);
       assert.equal(cell.usage?.costUsd, 0.1);
       assert.equal(
         Buffer.from(
-          (await fixture.store.files.bundle(cell.id))["index.md"],
+          (await fixture.store.files.bundle(cell.artifactId!))["index.md"],
         ).toString(),
         "# A red rectangle",
       );
@@ -271,7 +276,7 @@ test("invalid judgment keeps the committed generation and retry never regenerate
       () => fixture.store.get(id)!,
       (grid) => grid.cells[0].judge?.status === "error",
     );
-    assert.equal(failed.cells[0].generationStatus, "complete");
+    assert.ok(failed.cells[0].artifactId);
     assert.ok(failed.cells[0].provenance?.files.includes("index.md"));
     assert.equal(failed.cells[0].usage?.costUsd, 0.1);
     const resume = await fixture.request(`/api/grids/${id}/retry`, {});
@@ -332,7 +337,7 @@ test("chat judgments share the complete saved message sequence, including litera
     }
     const grid = await settled(fixture, id);
     for (const cell of grid.cells) {
-      const saved = await fixture.store.files.bundle(cell.id);
+      const saved = await fixture.store.files.bundle(cell.artifactId!);
       assert.deepEqual(
         JSON.parse(Buffer.from(saved["messages.json"]).toString()),
         expected,
@@ -376,12 +381,12 @@ test("malformed saved chat messages fail judging without making a provider reque
       );
       const failed = await settled(fixture, grid.id, "paused");
       const cell = failed.cells[0];
-      assert.equal(cell.generationStatus, "complete");
+      assert.ok(cell.artifactId);
       assert.equal(cell.status, "error");
       assert.equal(cell.judge?.status, "error");
       assert.equal(
         Buffer.from(
-          (await fixture.store.files.bundle(cell.id))["messages.json"],
+          (await fixture.store.files.bundle(cell.artifactId!))["messages.json"],
         ).toString(),
         json,
       );
@@ -425,7 +430,7 @@ test("image generation is saved byte-for-byte and every judge receives those byt
     for (const cell of grid.cells) {
       assert.equal(cell.mediaType, "image/png");
       assert.deepEqual(
-        Buffer.from((await fixture.store.files.bundle(cell.id)).image),
+        Buffer.from((await fixture.store.files.bundle(cell.artifactId!)).image),
         png,
       );
       assert.equal(cell.usage?.costUsd, 0.04);
@@ -474,7 +479,7 @@ test("SVG comparisons receive the same rendered PNG of the committed normalized 
     const grid = await settled(fixture, id);
     assert.equal(fixture.calls.length, 5);
     for (const cell of grid.cells) {
-      const saved = await fixture.store.files.bundle(cell.id);
+      const saved = await fixture.store.files.bundle(cell.artifactId!);
       assert.deepEqual(Object.keys(saved), ["index.svg"]);
       assert.equal(Buffer.from(saved["index.svg"]).toString(), svg);
     }
@@ -523,7 +528,7 @@ test("an image artifact with SVG media type follows the renderer path while its 
       assert.equal(cell.mediaType, "image/svg+xml");
       assert.equal(
         Buffer.from(
-          (await fixture.store.files.bundle(cell.id)).image,
+          (await fixture.store.files.bundle(cell.artifactId!)).image,
         ).toString(),
         svg,
       );
@@ -533,67 +538,67 @@ test("an image artifact with SVG media type follows the renderer path while its 
   }
 });
 
-test("a render failure never calls the judge or loses the SVG; retry discards the failed render without regenerating", async () => {
+test("a render failure never calls the judge or loses the immutable SVG, including on retry", async () => {
   const fixture = await runtimeFixture({ judges: true });
   try {
     const invalid = `<svg xmlns="http://www.w3.org/2000/svg" width="80" height="40"><image href="${fixture.providerURL}/unresolved.png" width="80" height="40"/></svg>`;
     const id = await create(fixture, { ...single, format: "svg" });
     finish(await fixture.nextCall(), invalid, 0.1);
     const failed = await settled(fixture, id, "paused");
-    assert.equal(failed.cells[0].generationStatus, "complete");
+    assert.ok(failed.cells[0].artifactId);
     assert.match(
       failed.cells[0].judge!.error!,
       /Could not render this SVG for judging/,
     );
     assert.equal(
       Buffer.from(
-        (await fixture.store.files.bundle(failed.cells[0].id))["index.svg"],
+        (await fixture.store.files.bundle(failed.cells[0].artifactId!))[
+          "index.svg"
+        ],
       ).toString(),
       invalid,
     );
     assert.equal(fixture.calls.length, 1);
     assert.equal(fixture.store.billing.page(fixture.owner, 0).total, 1);
-    fixture.store.files.write(failed.cells[0].id, { "index.svg": svg });
     assert.equal(
       (await fixture.request(`/api/grids/${id}/retry`, {})).status,
       200,
     );
-    const judge = await fixture.nextCall();
-    assert.equal(judgeImage(judge).mediaType, "image/png");
-    finish(judge, JSON.stringify(verdicts), 0.25);
-    const complete = await settled(fixture, id);
-    assert.equal(fixture.calls.length, 2);
-    assert.equal(fixture.store.billing.gridSpent(id, complete.cells), 0.1);
+    const retried = await settled(fixture, id, "paused");
+    assert.equal(fixture.calls.length, 1);
+    assert.equal(retried.cells[0].artifactId, failed.cells[0].artifactId);
+    assert.match(
+      retried.cells[0].judge!.error!,
+      /Could not render this SVG for judging/,
+    );
     assert.equal(
       Buffer.from(
-        (await fixture.store.files.bundle(complete.cells[0].id))["index.svg"],
+        (await fixture.store.files.bundle(retried.cells[0].artifactId!))[
+          "index.svg"
+        ],
       ).toString(),
-      svg,
+      invalid,
     );
   } finally {
     await fixture.close();
   }
 });
 
-test("missing committed representative output fails the group as unavailable instead of generating again", async () => {
+test("missing shared committed output fails each judgment without regenerating or falling back to cell files", async () => {
   const fixture = await runtimeFixture({ workers: 2, judges: true });
   try {
     const grid = committed(fixture, pair, { "index.md": "Committed output" });
-    const source = grid.cells[0],
-      member = grid.cells[1];
-    member.provenance = source.provenance;
-    fixture.store.files.write(member.id, {
-      "index.md": "A surviving member copy",
+    const artifactId = grid.cells[0].artifactId!;
+    rmSync(join(fixture.store.files.root, encodeURIComponent(artifactId)), {
+      recursive: true,
     });
-    fixture.store.saveGeneration(grid);
-    await fixture.store.files.removeArtifact(source.id);
     for (let attempt = 0; attempt < 2; attempt++) {
       assert.equal(
         (await fixture.request(`/api/grids/${grid.id}/retry`, {})).status,
         200,
       );
       const failed = await settled(fixture, grid.id, "paused");
-      assert.equal(failed.cells[0].generationStatus, "complete");
+      assert.ok(failed.cells[0].artifactId);
       for (const cell of failed.cells) {
         assert.equal(cell.status, "error");
         assert.equal(cell.judge?.status, "error");
@@ -606,29 +611,23 @@ test("missing committed representative output fails the group as unavailable ins
       assert.equal(fixture.store.billing.page(fixture.owner, 0).total, 0);
     }
     assert.equal(
-      Buffer.from(
-        (await fixture.store.files.bundle(member.id))["index.md"],
-      ).toString(),
-      "A surviving member copy",
+      new Set(fixture.store.get(grid.id)!.cells.map((cell) => cell.artifactId))
+        .size,
+      1,
     );
   } finally {
     await fixture.close();
   }
 });
 
-test("an incomplete matching member copy is replaced from its committed representative before judging", async () => {
+test("a restart judges one shared immutable artifact without creating per-cell copies", async () => {
   const fixture = await runtimeFixture({ workers: 2, judges: true });
   try {
     const files = {
-      "index.md": "Durable representative",
+      "index.md": "Durable shared output",
       "companion.txt": "All inventory files must survive",
     };
     const grid = committed(fixture, { ...pair, parallelWorkers: 2 }, files);
-    const source = grid.cells[0],
-      member = grid.cells[1];
-    member.provenance = source.provenance;
-    fixture.store.files.write(member.id, { "index.md": "Partial stale copy" });
-    fixture.store.saveGeneration(grid);
     await fixture.engine.close();
     await fixture.startEngine();
     assert.equal(
@@ -641,10 +640,17 @@ test("an incomplete matching member copy is replaced from its committed represen
       finish(judge, JSON.stringify(verdicts), 0.25);
     }
     const complete = await settled(fixture, grid.id);
+    assert.equal(
+      new Set(complete.cells.map((cell) => cell.artifactId)).size,
+      1,
+    );
+    assert.ok(complete.cells.every((cell) => cell.artifactId !== cell.id));
+    for (const cell of complete.cells)
+      assert.equal(fixture.store.files.path(cell.id, "index.md"), undefined);
     assert.equal(fixture.calls.length, 2);
     assert.equal(fixture.store.billing.gridSpent(grid.id, complete.cells), 0);
     for (const cell of complete.cells) {
-      const bundle = await fixture.store.files.bundle(cell.id);
+      const bundle = await fixture.store.files.bundle(cell.artifactId!);
       assert.deepEqual(
         Object.fromEntries(
           Object.entries(bundle).map(([name, bytes]) => [
@@ -675,7 +681,7 @@ test("a charged unsuccessful generation fails every dependent and retry produces
     assert.ok(
       failed.cells.every((cell) => !cell.provenance && !cell.judge?.results),
     );
-    assert.equal(failed.cells[0].generationStatus, "error");
+    assert.equal(failed.cells[0].artifactId, undefined);
     assert.equal(fixture.store.billing.gridSpent(id, failed.cells), 0.125);
     assert.equal(
       (await fixture.request(`/api/grids/${id}/retry`, {})).status,
@@ -858,12 +864,15 @@ test("a judge billing pause survives engine restart and resumes only unfinished 
       ),
     );
     assert.equal(fixture.store.billing.gridSpent(id, complete.cells), 0.125);
-    assert.deepEqual(fixture.store.billing.cell(complete.cells[0].id), {
-      usage: complete.cells[0].usage,
-    });
     assert.deepEqual(
-      fixture.store.billing.cell(complete.cells[1].id),
-      undefined,
+      fixture.store.billing.task(complete.cells[0].generationId!),
+      {
+        usage: complete.cells[0].usage,
+      },
+    );
+    assert.equal(
+      complete.cells[1].generationId,
+      complete.cells[0].generationId,
     );
     const billing = fixture.store.billing.page(fixture.owner, 0);
     assert.equal(billing.total, 4);
@@ -951,7 +960,7 @@ test(
       );
       const blocked = await fixture.engine.api.getGrid(id);
       assert.equal(blocked.cells[0].judge?.status, "running");
-      assert.equal(blocked.cells[0].generationStatus, "complete");
+      assert.ok(blocked.cells[0].artifactId);
       assert.equal(blocked.cells[0].usage?.costUsd, 0.125);
       assert.equal(fixture.calls.length, 2);
       unlock();
@@ -993,7 +1002,7 @@ test(
       const debug = await crashCheckpoint(
         fixture.engine.child,
         "jobs.ts",
-        "beginJudgeAttempt(prepared)",
+        "beginTaskAttempt(prepared)",
       );
       closeDebugger = () => debug.close();
       finish(generation, "Already durable before judge admission", 0.125);
@@ -1014,7 +1023,7 @@ test(
       });
       unlock();
       const paused = await settled(fixture, id, "paused");
-      assert.equal(paused.cells[0].generationStatus, "complete");
+      assert.ok(paused.cells[0].artifactId);
       assert.equal(paused.cells[0].judge?.status, "pending");
       assert.equal(paused.cells[0].judge?.attemptId, undefined);
       assert.equal(fixture.calls.length, 1);
@@ -1083,10 +1092,12 @@ test(
       const paused = await settled(fixture, id, "paused");
       assert.equal(paused.cells[0].judge?.status, "pending");
       assert.equal(paused.cells[0].judge?.results, undefined);
-      assert.equal(paused.cells[0].generationStatus, "complete");
+      assert.ok(paused.cells[0].artifactId);
       assert.equal(
         Buffer.from(
-          (await fixture.store.files.bundle(paused.cells[0].id))["index.md"],
+          (await fixture.store.files.bundle(paused.cells[0].artifactId!))[
+            "index.md"
+          ],
         ).toString(),
         "Generation must not be cleared by judging",
       );

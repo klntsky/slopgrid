@@ -1,5 +1,12 @@
 import { Provider } from "../server/provider.js";
-import type { Grid, Cell, InferenceProgress } from "../server/domain.js";
+import type {
+  Grid,
+  Cell,
+  GenerationParameters,
+  InferenceProgress,
+} from "../server/domain.js";
+import type { CallObserver } from "../server/billing.js";
+import type { ReferenceContent } from "../server/image-references.js";
 
 type Result = Awaited<ReturnType<Provider["generate"]>>;
 export class ControlledProvider extends Provider {
@@ -19,18 +26,23 @@ export class ControlledProvider extends Provider {
   override generate(
     _key: string,
     _format: Grid["input"]["format"],
-    cell: Cell,
+    input: GenerationParameters,
     onChunk: (progress: InferenceProgress) => void,
     signal?: AbortSignal,
+    _observe?: CallObserver,
+    _references?: ReferenceContent[],
+    _beforeRequest?: () => Promise<void>,
+    taskId?: string,
   ): Promise<Result> {
-    this.started.push({ id: cell.id, owner: cell.prompt.split(" ")[0] });
+    if (!taskId) throw new Error("Controlled generation requires a task ID.");
+    this.started.push({ id: taskId, owner: input.prompt.split(" ")[0] });
     return new Promise((resolve, reject) => {
       const abort = () => {
-        this.pending.delete(cell.id);
+        this.pending.delete(taskId);
         reject(new DOMException("Paused", "AbortError"));
       };
       const cleanup = () => signal?.removeEventListener("abort", abort);
-      this.pending.set(cell.id, {
+      this.pending.set(taskId, {
         resolve: (result) => {
           cleanup();
           resolve(result);
@@ -57,6 +69,7 @@ export class ControlledProvider extends Provider {
     held.reject({ statusCode, ...extra });
   }
   owners() {
-    return [...this.pending.keys()].map((id) => id.split("/")[0]);
+    const owners = new Map(this.started.map(({ id, owner }) => [id, owner]));
+    return [...this.pending.keys()].map((id) => owners.get(id)!);
   }
 }

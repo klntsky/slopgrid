@@ -11,6 +11,10 @@ import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { rasterizeSvg } from "../server/svg-raster.js";
+import type { Worker } from "node:worker_threads";
+import type { GenerationTask } from "../server/domain.js";
+import { Store } from "../server/store.js";
+import { loadJudgeArtifact } from "../server/judge-artifact.js";
 const requestSchema = z.object({
   max_tokens: z.number().optional(),
   max_completion_tokens: z.number().optional(),
@@ -493,4 +497,105 @@ test("SVG rasterization rejects malformed input and cancellation terminates its 
     rasterizeSvg(Buffer.from("<svg/>"), controller.signal),
     (error) => error === reason,
   );
+});
+
+test("cancelling SVG preparation does not cancel another generation sharing its artifact", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "slopgrid-shared-svg-"));
+  const store = new Store(join(directory, "app.sqlite"), Buffer.alloc(32, 7));
+  const firstController = new AbortController();
+  const secondController = new AbortController();
+  const deliveries: (() => void)[] = [];
+  let released = false;
+  let firstWorker!: () => void;
+  const started = new Promise<void>((resolve) => (firstWorker = resolve));
+  const hold = (worker: Worker) => {
+    const emit = worker.emit;
+    t.mock.method(
+      worker,
+      "emit",
+      (event: string | symbol, ...args: unknown[]) => {
+        if (!released && (event === "message" || event === "exit")) {
+          deliveries.push(() => Reflect.apply(emit, worker, [event, ...args]));
+          return true;
+        }
+        return Reflect.apply(emit, worker, [event, ...args]);
+      },
+    );
+    firstWorker();
+  };
+  process.on("worker", hold);
+  const release = () => {
+    released = true;
+    for (const deliver of deliveries.splice(0)) deliver();
+  };
+  const loads: Promise<unknown>[] = [];
+  try {
+    store.files.write("shared-svg", {
+      "index.svg":
+        '<svg xmlns="http://www.w3.org/2000/svg" width="80" height="40"><rect width="80" height="40" fill="red"/></svg>',
+    });
+    const generation: GenerationTask = {
+      id: "first-generation",
+      kind: "generation",
+      status: "complete",
+      input: {
+        format: "svg",
+        model: "fixture/text",
+        effort: "none",
+        prompt: "A red rectangle",
+        budgetUsd: 0.1,
+      },
+      output: {
+        artifactId: "shared-svg",
+        provenance: { signature: "shared-svg", files: ["index.svg"] },
+      },
+    };
+    const first = loadJudgeArtifact(store, generation, firstController.signal);
+    loads.push(first);
+    await started;
+    let readComplete!: () => void;
+    const loaded = new Promise<void>((resolve) => (readComplete = resolve));
+    const check = secondController.signal.throwIfAborted.bind(
+      secondController.signal,
+    );
+    let checks = 0;
+    // Synchronize after the actual artifact read, before either worker can settle.
+    t.mock.method(secondController.signal, "throwIfAborted", () => {
+      check();
+      if (++checks === 2) readComplete();
+    });
+    const second = loadJudgeArtifact(
+      store,
+      { ...generation, id: "second-generation" },
+      secondController.signal,
+    );
+    loads.push(second);
+    const outcomes = Promise.allSettled([first, second]);
+    await loaded;
+    const reason = new Error("First generation paused");
+    firstController.abort(reason);
+    release();
+    const [cancelled, unaffected] = await outcomes;
+    assert.equal(cancelled.status, "rejected");
+    if (cancelled.status === "rejected") assert.equal(cancelled.reason, reason);
+    assert.equal(unaffected.status, "fulfilled");
+    if (unaffected.status === "fulfilled") {
+      assert.notEqual(typeof unaffected.value, "string");
+      if (typeof unaffected.value === "string") throw new Error("Expected PNG");
+      assert.equal(unaffected.value.mediaType, "image/png");
+      const bytes = Buffer.from(unaffected.value.bytes);
+      assert.deepEqual(
+        [bytes.readUInt32BE(16), bytes.readUInt32BE(20)],
+        [80, 40],
+      );
+    }
+  } finally {
+    firstController.abort();
+    secondController.abort();
+    release();
+    process.off("worker", hold);
+    await Promise.allSettled(loads);
+    store.db.close();
+    await rm(directory, { recursive: true, force: true });
+  }
 });

@@ -67,8 +67,8 @@ export function createHostDispatcher(
     }
     const file = path.startsWith("__preview/")
       ? await generation.previewPath({ cellId: id, path })
-      : output.status === "complete" && output.format === "html"
-        ? store.files.path(id, path)
+      : output.outputReady && output.format === "html"
+        ? store.files.path(output.artifactId!, path)
         : await generation.previewPath({ cellId: id, path });
     if (!file) return res.sendStatus(404);
     if (path.endsWith(".html")) {

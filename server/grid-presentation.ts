@@ -39,8 +39,7 @@ export function createGridPresenter(store: Store, origin: URL) {
         status: c.status,
         outputReady: hasCompletedOutput(c),
         judge: c.judge,
-        generationSourceId: c.generationSourceId,
-        generationStatus: c.generationStatus,
+        generationId: c.generationId!,
         error: c.error,
         errorCode: c.errorCode,
         ...(g.published &&

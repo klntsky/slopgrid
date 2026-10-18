@@ -7,6 +7,7 @@ import { webFixture } from "../web-fixture";
 import { Store } from "../../server/store";
 import { expandGrid, type GridInput, type Grid } from "../../server/domain";
 import { token } from "../../server/ids";
+import { createWorkflow } from "../../server/workflow";
 
 test("private websites load in frames and direct tabs for the owning user across sessions", async ({
   playwright,
@@ -57,9 +58,9 @@ test("private websites load in frames and direct tabs for the owning user across
         status: "complete",
       })),
     };
-    store.insert(grid);
     const cell = grid.cells[0];
-    store.files.write(cell.id, {
+    const artifactId = token();
+    const files = {
       "index.html":
         '<!doctype html><link rel="stylesheet" href="style.css"><h1>Private website</h1><p>Loading</p><script type="module" src="app.js"></script>',
       "style.css": '@import "./theme.css"; h1 { color: navy; }',
@@ -67,7 +68,19 @@ test("private websites load in frames and direct tabs for the owning user across
       "app.js":
         'import { message } from "./message.mjs"; document.querySelector("p").textContent = message;',
       "message.mjs": 'export const message = "Private module loaded";',
-    });
+    };
+    const tasks = createWorkflow(input, grid.cells);
+    const task = tasks.find((task) => task.kind === "generation")!;
+    task.status = "complete";
+    task.output = {
+      artifactId,
+      provenance: {
+        signature: "private-website-fixture",
+        files: Object.keys(files),
+      },
+    };
+    store.files.write(artifactId, files);
+    store.insert(grid, tasks);
     const context = await browser.newContext({ ignoreHTTPSErrors: true });
     await context.addCookies([
       {

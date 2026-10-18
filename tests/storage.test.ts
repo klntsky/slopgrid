@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { token } from "../server/ids.js";
 import { Store } from "../server/store.js";
 import { expandGrid, type Grid } from "../server/domain.js";
+import { createWorkflow } from "../server/workflow.js";
 
 test("an initialized store opens for reads while another connection holds the write lock", () => {
   const dir = mkdtempSync(join(tmpdir(), "slopgrid-store-lock-"));
@@ -89,7 +90,7 @@ test("list prompts are expanded and truncated once, then persist independently o
       assert.equal(saved.expanded_prompt_for_title, scenario.expected);
       assert.equal(saved.input.prompt, scenario.prompt);
       store.setTitle(grid.id, "Custom title");
-      store.saveGeneration(grid);
+      store.saveWorkflow(grid, store.workflow(grid.id));
       assert.equal(
         store.get(grid.id)!.expanded_prompt_for_title,
         scenario.expected,
@@ -118,7 +119,7 @@ test("list prompts are expanded and truncated once, then persist independently o
   }
 });
 
-test("outputs are real files and SQLite stores only configuration and cell state once", () => {
+test("outputs use opaque immutable artifacts and SQLite stores workflow metadata without output bytes", () => {
   const dir = mkdtempSync(join(tmpdir(), "slopgrid-storage-"));
   const store = new Store(join(dir, "app.sqlite"), Buffer.alloc(32, 1));
   try {
@@ -143,21 +144,39 @@ test("outputs are real files and SQLite stores only configuration and cell state
     };
     store.insert(grid);
     const payload = "Unique generated website payload";
-    store.files.write("cell", {
+    const artifactId = token();
+    store.files.write(artifactId, {
       "index.html": payload,
       "nested/style.css": "body{color:red}",
     });
-    grid.cells[0].status = "complete";
-    grid.cells[0].draft = "Temporary preview payload";
+    const tasks = store.workflow(grid.id);
+    const generation = tasks.find((task) => task.kind === "generation")!;
+    generation.status = "complete";
     const thinkingId = token();
-    grid.cells[0].thinkingId = thinkingId;
-    grid.cells[0].thinking = "Captured thinking payload";
-    store.files.appendThinking("cell", thinkingId, grid.cells[0].thinking);
-    store.saveGeneration(grid);
-    const path = store.files.path("cell", "index.html")!;
+    const thinkingSourceId = token();
+    generation.output = {
+      artifactId,
+      provenance: {
+        signature: "saved-generation",
+        files: ["index.html", "nested/style.css"],
+      },
+      thinkingId,
+      thinkingSourceId,
+    };
+    generation.progress = {
+      draft: "Temporary preview payload",
+      thinking: "Captured thinking payload",
+    };
+    store.files.appendThinking(
+      thinkingSourceId,
+      thinkingId,
+      "Captured thinking payload",
+    );
+    store.saveWorkflow(grid, tasks);
+    const path = store.files.path(artifactId, "index.html")!;
     assert.equal(readFileSync(path, "utf8"), payload);
     assert.equal(
-      readFileSync(store.files.path("cell", "nested/style.css")!, "utf8"),
+      readFileSync(store.files.path(artifactId, "nested/style.css")!, "utf8"),
       "body{color:red}",
     );
     const before = statSync(path);
@@ -169,22 +188,38 @@ test("outputs are real files and SQLite stores only configuration and cell state
     const cellData = (
       store.db.prepare("SELECT data FROM cells").get() as { data: string }
     ).data;
+    const taskRow = store.db.prepare("SELECT data FROM workflow_tasks").get();
+    assert.ok(
+      taskRow &&
+        typeof taskRow === "object" &&
+        "data" in taskRow &&
+        typeof taskRow.data === "string",
+    );
+    const taskData = taskRow.data;
     assert.ok(!gridData.includes('"cells"'));
-    assert.ok(!cellData.includes('"prompt"') && !cellData.includes('"model"'));
-    assert.ok(!gridData.includes(payload) && !cellData.includes(payload));
-    assert.ok(!cellData.includes("Temporary preview payload"));
+    assert.equal(cellData, "{}");
+    assert.ok(!gridData.includes(payload) && !taskData.includes(payload));
+    assert.ok(!taskData.includes("Temporary preview payload"));
     assert.equal(store.get("grid")!.cells[0].prompt, "Draw cat");
     assert.ok(
       !gridData.includes("Captured thinking payload") &&
-        !cellData.includes("Captured thinking payload"),
+        !taskData.includes("Captured thinking payload"),
     );
     const restoredThinking = store.get("grid")!.cells[0].thinkingId!;
     assert.equal(
-      readFileSync(store.files.thinkingPath("cell", restoredThinking)!, "utf8"),
+      readFileSync(
+        store.files.thinkingPath(thinkingSourceId, restoredThinking)!,
+        "utf8",
+      ),
       "Captured thinking payload",
     );
-    assert.equal(store.files.path("cell", "../app.sqlite"), undefined);
-    assert.throws(() => store.files.write("cell", { "../outside": "escape" }));
+    assert.equal(store.files.path(artifactId, "../app.sqlite"), undefined);
+    assert.throws(() =>
+      store.files.write(artifactId, { "../outside": "escape" }),
+    );
+    assert.throws(() =>
+      store.files.write(artifactId, { "index.html": "replacement" }),
+    );
     assert.equal(readFileSync(path, "utf8"), payload);
     store.files.write("image", { image: new Uint8Array([0, 255, 128, 1]) });
     assert.deepEqual(
@@ -197,55 +232,103 @@ test("outputs are real files and SQLite stores only configuration and cell state
   }
 });
 
-test("artifact copies preserve every file and thinking independently, while incomplete sources are misses", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "slopgrid-copy-"));
+test("shared artifact and independent trace references survive deletion until the last workflow is removed", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "slopgrid-shared-"));
   const store = new Store(join(dir, "app.sqlite"), Buffer.alloc(32, 1));
   try {
+    const input: Grid["input"] = {
+      format: "html",
+      prompt: "Shared website",
+      rows: { kind: "variable", values: ["one"] },
+      columns: { kind: "effort", values: ["none"] },
+      model: "fixture/text",
+      effort: "none",
+      budgetUsd: 1,
+    };
+    const artifactId = token();
+    const thinkingSourceId = token();
+    const thinkingId = token();
     const expected = {
-      "index.html": Buffer.from("<h1>Independent</h1>"),
+      "index.html": Buffer.from("<h1>Shared</h1>"),
       "nested/image.bin": Buffer.from([0, 255, 128, 1]),
     };
-    const thinkingId = token();
-    store.files.write("source", expected);
-    store.files.appendThinking("source", thinkingId, "Thinking\n\u263a");
+    store.files.write(artifactId, expected);
+    store.files.appendThinking(thinkingSourceId, thinkingId, "Shared thinking");
     const inventory = Object.keys(expected);
     assert.equal(
-      await store.files.readArtifact(
-        "source",
-        [...inventory, "missing.css"],
+      await store.files.hasArtifact(
+        artifactId,
+        inventory,
         thinkingId,
+        thinkingSourceId,
       ),
-      undefined,
+      true,
     );
     assert.equal(
-      await store.files.readArtifact("source", inventory, token()),
-      undefined,
+      await store.files.hasArtifact(artifactId, [...inventory, "missing.css"]),
+      false,
     );
     assert.equal(
-      await store.files.readArtifact("source", ["../app.sqlite"]),
+      await store.files.hasArtifact(
+        artifactId,
+        inventory,
+        token(),
+        thinkingSourceId,
+      ),
+      false,
+    );
+    assert.equal(
+      await store.files.hasArtifact(artifactId, ["../app.sqlite"]),
+      false,
+    );
+    const grids: Grid[] = [];
+    for (let i = 0; i < 2; i++) {
+      const grid: Grid = {
+        id: token(),
+        owner: `owner-${i}`,
+        input,
+        status: "complete",
+        published: false,
+        visibility: "private",
+        createdAt: new Date().toISOString(),
+        cells: expandGrid(input).map((cell) => ({ ...cell, id: token() })),
+      };
+      const tasks = createWorkflow(input, grid.cells);
+      const generation = tasks.find((task) => task.kind === "generation")!;
+      generation.status = "complete";
+      generation.output = {
+        artifactId,
+        thinkingId,
+        thinkingSourceId,
+        provenance: { signature: "shared", files: inventory },
+      };
+      store.insert(grid, tasks);
+      grids.push(grid);
+    }
+    assert.equal(store.files.removeArtifact(artifactId), false);
+    assert.equal(store.files.removeArtifact(thinkingSourceId), false);
+    store.db.prepare("DELETE FROM grids WHERE id=?").run(grids[0].id);
+    assert.equal(store.removeUnreferencedArtifact(artifactId), false);
+    assert.equal(store.removeUnreferencedArtifact(thinkingSourceId), false);
+    assert.deepEqual({ ...(await store.files.bundle(artifactId)) }, expected);
+    assert.equal(
+      readFileSync(
+        store.files.thinkingPath(thinkingSourceId, thinkingId)!,
+        "utf8",
+      ),
+      "Shared thinking",
+    );
+    assert.equal(
+      store.outputMetadata(grids[1].cells[0].id)?.artifactId,
+      artifactId,
+    );
+    store.db.prepare("DELETE FROM grids WHERE id=?").run(grids[1].id);
+    assert.equal(store.removeUnreferencedArtifact(artifactId), true);
+    assert.equal(store.removeUnreferencedArtifact(thinkingSourceId), true);
+    assert.equal(await store.files.hasArtifact(artifactId, inventory), false);
+    assert.equal(
+      store.files.thinkingPath(thinkingSourceId, thinkingId),
       undefined,
-    );
-    const bundle = await store.files.readArtifact(
-      "source",
-      inventory,
-      thinkingId,
-    );
-    assert.ok(bundle);
-    const copiedThinking = await store.files.writeArtifact(
-      "destination",
-      bundle,
-    );
-    assert.ok(copiedThinking);
-    assert.notEqual(copiedThinking, thinkingId);
-    rmSync(join(store.files.root, "source"), { recursive: true });
-    rmSync(store.files.thinkingPath("source", thinkingId)!);
-    assert.deepEqual(
-      { ...(await store.files.bundle("destination")) },
-      expected,
-    );
-    assert.deepEqual(
-      readFileSync(store.files.thinkingPath("destination", copiedThinking)!),
-      Buffer.from("Thinking\n\u263a"),
     );
   } finally {
     store.db.close();

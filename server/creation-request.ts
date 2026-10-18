@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { Store, Session } from "./store.js";
-import type { Grid } from "./domain.js";
+import type { Grid, WorkflowTask } from "./domain.js";
 import { anonymousOwner } from "./session.js";
 import { ownsGrid } from "./grid-policy.js";
 
@@ -45,12 +45,12 @@ export function creationRequest(
       });
     return grid;
   }
-  function insert(grid: Grid) {
+  function insert(grid: Grid, tasks?: WorkflowTask[]) {
     return store.db
       .transaction(() => {
         const previous = existing();
         if (previous) return previous;
-        store.insert(grid);
+        store.insert(grid, tasks);
         store.db
           .prepare(
             "INSERT INTO creation_requests (owner, request_id, fingerprint, grid_id) VALUES (?,?,?,?)",

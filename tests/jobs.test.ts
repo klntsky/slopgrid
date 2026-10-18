@@ -9,6 +9,11 @@ import { ControlledProvider } from "./controlled-provider.js";
 import { expandGrid, type Grid } from "../server/domain.js";
 import { compareGridVersions } from "../shared/grid-version.js";
 import { recoverInterruptedGrids } from "../server/recovery.js";
+import { Jobs } from "../server/jobs.js";
+import type {
+  WorkflowCommit,
+  WorkflowExecutor,
+} from "../server/workflow-executor.js";
 
 const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
 function harness(limit?: number) {
@@ -16,6 +21,7 @@ function harness(limit?: number) {
   const store = new Store(":memory:", Buffer.alloc(32, 3), dir),
     provider = new ControlledProvider(),
     { jobs, api } = createGenerationService(store, provider, limit);
+  const taskIds = new Map<string, string>();
   function grid(owner: string, name: string, count: number): Grid {
     store.saveSession({ id: owner, key: "fixture-key", created: Date.now() });
     const rows = Math.min(count, 8);
@@ -48,7 +54,11 @@ function harness(limit?: number) {
       })),
     };
     store.insert(g);
+    for (const cell of g.cells) taskIds.set(cell.id, cell.generationId!);
     return g;
+  }
+  function task(cellId: string) {
+    return taskIds.get(cellId)!;
   }
   async function close() {
     await flush();
@@ -59,7 +69,7 @@ function harness(limit?: number) {
     store.db.close();
     rmSync(dir, { recursive: true, force: true });
   }
-  return { store, provider, jobs, api, grid, close };
+  return { store, provider, jobs, api, grid, task, close };
 }
 
 test("streaming bursts and preview notifications do not write to SQLite", async () => {
@@ -68,7 +78,7 @@ test("streaming bursts and preview notifications do not write to SQLite", async 
     const grid = h.grid("alice", "streaming", 8);
     h.jobs.start(grid);
     await flush();
-    const call = h.provider.pending.get(grid.cells[0].id)!;
+    const call = h.provider.pending.get(grid.cells[0].generationId!)!;
     const changes = () =>
       (
         h.store.db.prepare("SELECT total_changes() AS count").get() as {
@@ -106,7 +116,10 @@ test("streaming bursts and preview notifications do not write to SQLite", async 
     );
     assert.equal(
       readFileSync(
-        h.store.files.thinkingPath(grid.cells[0].id, thinkingId)!,
+        h.store.files.thinkingPath(
+          h.store.get(grid.id)!.cells[0].thinkingSourceId!,
+          thinkingId,
+        )!,
         "utf8",
       ),
       "First thinking" + ".".repeat(100),
@@ -116,7 +129,7 @@ test("streaming bursts and preview notifications do not write to SQLite", async 
   }
 });
 
-test("cell completion and subsequent dispatch leave unrelated cell rows untouched", async () => {
+test("task completion and subsequent dispatch leave cell identity rows untouched", async () => {
   const h = harness(1);
   try {
     const grid = h.grid("alice", "writes", 8);
@@ -127,15 +140,12 @@ test("cell completion and subsequent dispatch leave unrelated cell rows untouche
       CREATE TEMP TRIGGER record_cell_write AFTER UPDATE ON cells
       BEGIN INSERT INTO cell_writes VALUES (NEW.id); END;
     `);
-    h.provider.finish(grid.cells[0].id);
+    h.provider.finish(grid.cells[0].generationId!);
     await flush();
     const writes = h.store.db
       .prepare("SELECT id FROM cell_writes ORDER BY rowid")
       .all();
-    assert.deepEqual(writes, [
-      { id: grid.cells[0].id },
-      { id: grid.cells[1].id },
-    ]);
+    assert.deepEqual(writes, []);
     assert.equal(h.store.get(grid.id)!.cells[0].status, "complete");
     assert.equal(h.store.get(grid.id)!.cells[1].status, "running");
   } finally {
@@ -149,7 +159,7 @@ test("draft ordering survives metadata changes, pause, and recovery of a billing
     const grid = h.grid("alice", "ordering", 3);
     h.jobs.start(grid);
     await flush();
-    const call = h.provider.pending.get(grid.cells[0].id)!;
+    const call = h.provider.pending.get(grid.cells[0].generationId!)!;
     call.write("First");
     const first = await h.api.getGrid(grid.id);
     call.write("Second");
@@ -170,7 +180,7 @@ test("draft ordering survives metadata changes, pause, and recovery of a billing
     assert.equal(third.version.epoch, edited.version.epoch);
     assert.ok(compareGridVersions(third.version, edited.version) > 0);
 
-    h.provider.fail(grid.cells[1].id, 402);
+    h.provider.fail(grid.cells[1].generationId!, 402);
     await flush();
     call.write("Continued after billing pause");
     const paused = await h.api.getGrid(grid.id);
@@ -238,23 +248,29 @@ test("grid requests cap their own workers when another grid raises the owner's l
     await flush();
     h.jobs.start(h.grid("bob", "grid", 4));
     await flush();
-    assert.deepEqual([...h.provider.pending.keys()].sort(), [
-      "alice/first/0",
-      "alice/second/0",
-      "alice/second/1",
-      "bob/grid/0",
-    ]);
-    h.provider.finish("alice/second/0");
+    assert.deepEqual(
+      [...h.provider.pending.keys()].sort(),
+      [
+        h.task("alice/first/0"),
+        h.task("alice/second/0"),
+        h.task("alice/second/1"),
+        h.task("bob/grid/0"),
+      ].sort(),
+    );
+    h.provider.finish(h.task("alice/second/0"));
     await flush();
     assert.equal(h.provider.started.at(-1)!.owner, "bob");
-    h.provider.finish("alice/first/0");
+    h.provider.finish(h.task("alice/first/0"));
     await flush();
-    assert.deepEqual([...h.provider.pending.keys()].sort(), [
-      "alice/first/1",
-      "alice/second/1",
-      "bob/grid/0",
-      "bob/grid/1",
-    ]);
+    assert.deepEqual(
+      [...h.provider.pending.keys()].sort(),
+      [
+        h.task("alice/first/1"),
+        h.task("alice/second/1"),
+        h.task("bob/grid/0"),
+        h.task("bob/grid/1"),
+      ].sort(),
+    );
   } finally {
     await h.close();
   }
@@ -270,20 +286,20 @@ test("new users receive freed slots before a user with more workers, without int
     h.jobs.start(h.grid("carol", "grid", 8));
     await flush();
     assert.equal(h.provider.started.length, 4);
-    h.provider.finish("alice/grid/0");
+    h.provider.finish(h.task("alice/grid/0"));
     await flush();
     assert.equal(h.provider.started.at(-1)!.owner, "bob");
-    assert.ok(h.provider.pending.has("alice/grid/1"));
-    h.provider.finish("alice/grid/1");
+    assert.ok(h.provider.pending.has(h.task("alice/grid/1")));
+    h.provider.finish(h.task("alice/grid/1"));
     await flush();
     assert.equal(h.provider.started.at(-1)!.owner, "carol");
-    h.provider.finish("alice/grid/2");
+    h.provider.finish(h.task("alice/grid/2"));
     await flush();
     const counts = ["alice", "bob", "carol"].map(
       (owner) => h.provider.owners().filter((o) => o === owner).length,
     );
     assert.ok(Math.max(...counts) - Math.min(...counts) <= 1);
-    h.provider.finish("bob/grid/0");
+    h.provider.finish(h.task("bob/grid/0"));
     await flush();
     assert.equal(h.provider.started.at(-1)!.owner, "bob");
     assert.equal(h.provider.pending.size, 4);
@@ -322,14 +338,14 @@ test("billing pauses queued work while other in-flight cells finish and complete
     await flush();
     h.jobs.start(other);
     h.jobs.start(h.grid("bob", "grid", 3));
-    h.provider.fail("alice/first/0", 402);
+    h.provider.fail(h.task("alice/first/0"), 402);
     await flush();
     assert.equal(alice.status, "paused");
     assert.equal(other.status, "paused");
-    assert.ok(h.provider.pending.has("alice/first/1"));
+    assert.ok(h.provider.pending.has(h.task("alice/first/1")));
     assert.equal(h.provider.started.at(-1)!.owner, "bob");
-    h.provider.finish("alice/first/1");
-    h.provider.finish("alice/first/2");
+    h.provider.finish(h.task("alice/first/1"));
+    h.provider.finish(h.task("alice/first/2"));
     await flush();
     assert.equal(alice.cells.filter((c) => c.status === "complete").length, 2);
     h.jobs.start(h.store.get(alice.id)!);
@@ -339,10 +355,10 @@ test("billing pauses queued work while other in-flight cells finish and complete
       await flush();
     }
     assert.equal(h.store.get(alice.id)!.status, "complete");
-    for (const id of ["alice/first/1", "alice/first/2"])
+    for (const id of [h.task("alice/first/1"), h.task("alice/first/2")])
       assert.equal(h.provider.started.filter((c) => c.id === id).length, 1);
     assert.equal(
-      h.provider.started.filter((c) => c.id === "alice/first/0").length,
+      h.provider.started.filter((c) => c.id === h.task("alice/first/0")).length,
       2,
     );
   } finally {
@@ -356,13 +372,13 @@ test("retrying a paused grid while another cell is active cannot generate that c
     const g = h.grid("alice", "grid", 3);
     h.jobs.start(g);
     await flush();
-    h.provider.fail("alice/grid/0", 402);
+    h.provider.fail(h.task("alice/grid/0"), 402);
     await flush();
     h.jobs.start(h.store.get(g.id)!);
     await flush();
-    assert.ok(h.provider.pending.has("alice/grid/1"));
+    assert.ok(h.provider.pending.has(h.task("alice/grid/1")));
     assert.equal(
-      h.provider.started.filter((c) => c.id === "alice/grid/1").length,
+      h.provider.started.filter((c) => c.id === h.task("alice/grid/1")).length,
       1,
     );
     assert.equal(h.provider.pending.size, 2);
@@ -377,7 +393,7 @@ test("manual pause aborts active cells, discards drafts and gives the released s
     const g = h.grid("alice", "grid", 3);
     h.jobs.start(g);
     await flush();
-    h.provider.pending.get("alice/grid/0")!.write("Temporary drawing");
+    h.provider.pending.get(h.task("alice/grid/0"))!.write("Temporary drawing");
     h.jobs.start(h.grid("bob", "grid", 2));
     h.jobs.pause(g);
     await flush();
@@ -391,7 +407,7 @@ test("manual pause aborts active cells, discards drafts and gives the released s
     h.jobs.start(paused);
     await flush();
     assert.equal(h.provider.pending.size, 2);
-    h.provider.finish("bob/grid/0");
+    h.provider.finish(h.task("bob/grid/0"));
     await flush();
     assert.equal(h.provider.started.at(-1)!.owner, "alice");
   } finally {
@@ -405,11 +421,11 @@ test("a failed cell releases its slot without automatic retries and other cells 
     const g = h.grid("alice", "grid", 2);
     h.jobs.start(g);
     await flush();
-    h.provider.fail("alice/grid/0", 502);
+    h.provider.fail(h.task("alice/grid/0"), 502);
     await flush();
     assert.equal(g.cells[0].status, "error");
-    assert.ok(h.provider.pending.has("alice/grid/1"));
-    h.provider.finish("alice/grid/1");
+    assert.ok(h.provider.pending.has(h.task("alice/grid/1")));
+    h.provider.finish(h.task("alice/grid/1"));
     await flush();
     assert.equal(h.store.get(g.id)!.status, "paused");
     assert.equal(h.provider.started.length, 2);
@@ -417,7 +433,7 @@ test("a failed cell releases its slot without automatic retries and other cells 
     await flush();
     assert.deepEqual(
       h.provider.started.map((c) => c.id),
-      ["alice/grid/0", "alice/grid/1", "alice/grid/0"],
+      [h.task("alice/grid/0"), h.task("alice/grid/1"), h.task("alice/grid/0")],
     );
   } finally {
     await h.close();
@@ -431,15 +447,15 @@ test("backoff releases workers to other users, honors Retry-After, and retries w
     const alice = h.grid("alice", "grid", 3);
     h.jobs.start(alice);
     await flush();
-    h.provider.finish("alice/grid/0");
+    h.provider.finish(h.task("alice/grid/0"));
     await flush();
-    h.provider.pending.get("alice/grid/1")!.write("Partial output", {
+    h.provider.pending.get(h.task("alice/grid/1"))!.write("Partial output", {
       costUsd: 0.1,
       inputTokens: 10,
       outputTokens: 20,
     });
     h.jobs.start(h.grid("bob", "grid", 1));
-    h.provider.fail("alice/grid/1", 429, {
+    h.provider.fail(h.task("alice/grid/1"), 429, {
       message: "Too many requests",
       responseHeaders: { "retry-after": "5" },
     });
@@ -450,8 +466,8 @@ test("backoff releases workers to other users, honors Retry-After, and retries w
     assert.equal(alice.cells[1].estimatedUsage, undefined);
     assert.equal(alice.cells[1].error, "Too many requests");
     assert.equal(alice.cells[1].errorCode, 429);
-    assert.ok(h.provider.pending.has("bob/grid/0"));
-    h.provider.finish("bob/grid/0");
+    assert.ok(h.provider.pending.has(h.task("bob/grid/0")));
+    h.provider.finish(h.task("bob/grid/0"));
     await flush();
     t.mock.timers.tick(4999);
     await flush();
@@ -461,15 +477,16 @@ test("backoff releases workers to other users, honors Retry-After, and retries w
     );
     t.mock.timers.tick(1);
     await flush();
-    assert.ok(h.provider.pending.has("alice/grid/1"));
+    assert.ok(h.provider.pending.has(h.task("alice/grid/1")));
     assert.equal(alice.cells[1].error, undefined);
-    h.provider.finish("alice/grid/1");
+    h.provider.finish(h.task("alice/grid/1"));
     await flush();
-    h.provider.finish("alice/grid/2");
+    h.provider.finish(h.task("alice/grid/2"));
     await flush();
     assert.equal(alice.status, "complete");
     assert.equal(
-      h.provider.started.filter((call) => call.id === "alice/grid/0").length,
+      h.provider.started.filter((call) => call.id === h.task("alice/grid/0"))
+        .length,
       1,
     );
   } finally {
@@ -484,7 +501,7 @@ test("billing failures without retry guidance pause until explicitly resumed", a
     const grid = h.grid("alice", "grid", 2);
     h.jobs.start(grid);
     await flush();
-    h.provider.fail("alice/grid/0", 402, {
+    h.provider.fail(h.task("alice/grid/0"), 402, {
       message: "In-flight spending budget is full",
       metadata: { limit_source: "openrouter_in_flight_budget" },
     });
@@ -510,7 +527,7 @@ test("temporary budget failures with retry guidance back off, stop after five re
     h.jobs.start(grid);
     await flush();
     for (let attempt = 0; attempt < 6; attempt++) {
-      h.provider.fail("alice/grid/0", 402, {
+      h.provider.fail(h.task("alice/grid/0"), 402, {
         message: "In-flight spending budget is full",
         metadata: { limit_source: "openrouter_in_flight_budget" },
         responseHeaders: { "retry-after": "1" },
@@ -549,7 +566,7 @@ test("pausing during backoff prevents the timer from restarting inference and Re
     const grid = h.grid("alice", "grid", 1);
     h.jobs.start(grid);
     await flush();
-    h.provider.fail("alice/grid/0", 429, {
+    h.provider.fail(h.task("alice/grid/0"), 429, {
       responseHeaders: { "retry-after": "5" },
     });
     await flush();
@@ -562,7 +579,7 @@ test("pausing during backoff prevents the timer from restarting inference and Re
     t.mock.timers.tick(3000);
     await flush();
     assert.equal(h.provider.pending.size, 1);
-    h.provider.fail("alice/grid/0", 429);
+    h.provider.fail(h.task("alice/grid/0"), 429);
     await flush();
     h.jobs.pause(grid);
     await flush();
@@ -584,7 +601,7 @@ test("non-pricing failures stay on their cells while queued grids keep generatin
     h.jobs.start(second);
     await flush();
     for (const [index, code] of [401, 403, 502].entries()) {
-      h.provider.fail(`alice/first/${index}`, code, {
+      h.provider.fail(h.task(`alice/first/${index}`), code, {
         message:
           code === 403
             ? "Age verification required"
@@ -594,7 +611,7 @@ test("non-pricing failures stay on their cells while queued grids keep generatin
       assert.equal(first.cells[index].status, "error");
       assert.equal(first.interruption, undefined);
       assert.equal(second.status, "running");
-      assert.ok(h.provider.pending.has(`alice/first/${index + 1}`));
+      assert.ok(h.provider.pending.has(h.task(`alice/first/${index + 1}`)));
     }
     while (h.provider.pending.size) {
       for (const id of [...h.provider.pending.keys()]) h.provider.finish(id);
@@ -625,11 +642,11 @@ test("losing a queued grid's credential does not pause another grid with its own
     const session = h.store.session("alice")!;
     delete session.key;
     h.store.saveSession(session);
-    h.provider.finish("alice/first/0");
+    h.provider.finish(h.task("alice/first/0"));
     await flush();
     assert.equal(first.cells[1].status, "error");
     assert.equal(first.interruption, undefined);
-    assert.ok(h.provider.pending.has("alice/second/0"));
+    assert.ok(h.provider.pending.has(h.task("alice/second/0")));
     while (h.provider.pending.size) {
       for (const id of [...h.provider.pending.keys()]) h.provider.finish(id);
       await flush();
@@ -637,9 +654,76 @@ test("losing a queued grid's credential does not pause another grid with its own
     assert.equal(h.store.get(second.id)!.status, "complete");
     assert.deepEqual(
       h.provider.started.map((call) => call.id),
-      ["alice/first/0", "alice/second/0", "alice/second/1"],
+      [
+        h.task("alice/first/0"),
+        h.task("alice/second/0"),
+        h.task("alice/second/1"),
+      ],
     );
   } finally {
+    await h.close();
+  }
+});
+
+test("task scheduling pins dispatch ownership until settlement and discards late commits after Pause/Resume", async () => {
+  const h = harness(2);
+  const pending = new Map<string, (commit: WorkflowCommit) => void>();
+  const started: string[] = [];
+  let lateCommits = 0;
+  const executor: WorkflowExecutor = {
+    run(task) {
+      started.push(task.id);
+      return new Promise<WorkflowCommit>((resolve) =>
+        pending.set(task.id, resolve),
+      );
+    },
+    finish() {},
+    settled() {},
+    clear() {},
+  };
+  const jobs = new Jobs(h.store, executor, 2);
+  const first = h.grid("alice", "pinned", 2);
+  const waiting = h.grid("alice", "waiting", 1);
+  const bob = h.grid("bob", "active", 1);
+  first.input.parallelWorkers = 1;
+  for (const owner of ["alice", "bob"]) {
+    const session = h.store.session(owner)!;
+    session.inferenceConcurrency = 1;
+    h.store.saveSession(session);
+  }
+  try {
+    jobs.start(first);
+    jobs.start(bob);
+    jobs.start(waiting);
+    await flush();
+    assert.deepEqual(started, [
+      first.cells[0].generationId,
+      bob.cells[0].generationId,
+    ]);
+    jobs.pause(first);
+    jobs.start(first, undefined, h.store.session("bob"));
+    await flush();
+    assert.equal(started.length, 2, "aborted work still owns its worker slot");
+    pending.get(first.cells[0].generationId!)!(() => {
+      lateCommits++;
+      return {
+        artifactId: "discarded-late-artifact",
+        provenance: { signature: "late", files: ["index.md"] },
+      };
+    });
+    pending.delete(first.cells[0].generationId!);
+    await flush();
+    assert.equal(lateCommits, 0, "a stale commit thunk must never be invoked");
+    assert.equal(h.store.get(first.id)!.cells[0].artifactId, undefined);
+    assert.equal(started.at(-1), waiting.cells[0].generationId);
+    assert.equal(jobs.status().runningCalls, 2);
+  } finally {
+    for (const grid of [first, waiting, bob]) jobs.pause(grid);
+    for (const resolve of pending.values())
+      resolve(() => {
+        throw new Error("Paused task output must not commit");
+      });
+    await flush();
     await h.close();
   }
 });

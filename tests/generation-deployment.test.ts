@@ -121,7 +121,10 @@ test(
       assert.equal(completed.status, "complete");
       assert.equal(
         readFileSync(
-          store.files.path(completed.cells[0].id, "index.md")!,
+          store.files.path(
+            store.get(completed.id)!.cells[0].artifactId!,
+            "index.md",
+          )!,
           "utf8",
         ),
         "Before deployment. After deployment.",
@@ -129,7 +132,7 @@ test(
       assert.equal(
         readFileSync(
           store.files.thinkingPath(
-            completed.cells[0].id,
+            store.get(completed.id)!.cells[0].thinkingSourceId!,
             completed.cells[0].thinkingId!,
           )!,
           "utf8",

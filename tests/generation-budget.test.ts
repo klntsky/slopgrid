@@ -91,13 +91,9 @@ test("a cell request uses the full dollar budget and constrains effective condit
       "key",
       "markdown",
       {
-        id: "cell",
-        row: 0,
-        column: 0,
         model: "example/model",
         effort: "max",
         prompt: "Make a heading",
-        status: "running",
         budgetUsd: 1,
       },
       () => {},

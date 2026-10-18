@@ -49,6 +49,34 @@ function legacyDatabase(version: number) {
     db.exec(
       "CREATE UNIQUE INDEX grids_slug ON grids(json_extract(data,'$.slug'))",
     );
+  if (version >= 13)
+    db.exec(`
+      DROP INDEX grids_slug;
+      ALTER TABLE grids ADD COLUMN owner TEXT NOT NULL DEFAULT '';
+      ALTER TABLE grids ADD COLUMN owner_user_id TEXT;
+      ALTER TABLE grids ADD COLUMN published INTEGER NOT NULL DEFAULT 0 CHECK (published IN (0, 1));
+      ALTER TABLE grids ADD COLUMN visibility TEXT NOT NULL DEFAULT '';
+      ALTER TABLE grids ADD COLUMN slug TEXT;
+      ALTER TABLE grids ADD COLUMN created_at TEXT NOT NULL DEFAULT '';
+      ALTER TABLE sessions ADD COLUMN anonymous_id TEXT;
+      ALTER TABLE sessions ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE inference_calls ADD COLUMN attempt_id TEXT;
+      ALTER TABLE inference_calls ADD COLUMN phase TEXT NOT NULL DEFAULT '';
+      ALTER TABLE inference_calls ADD COLUMN status TEXT NOT NULL DEFAULT '';
+      ALTER TABLE inference_calls ADD COLUMN cost_usd REAL;
+      CREATE UNIQUE INDEX grids_slug ON grids(slug);
+      CREATE INDEX grids_owner_user_created ON grids(owner_user_id,created_at DESC,id);
+      CREATE INDEX grids_owner_created ON grids(owner,created_at DESC,id);
+      CREATE INDEX grids_visibility_created ON grids(visibility,created_at DESC,id);
+      CREATE INDEX sessions_anonymous_created ON sessions(anonymous_id,created_at DESC);
+      CREATE INDEX inference_calls_attempt ON inference_calls(cell_id,attempt_id,started_at) WHERE phase!='judge';
+      CREATE INDEX inference_calls_running ON inference_calls(status) WHERE status='running';
+      CREATE TABLE grid_reference_images (
+        grid_id TEXT NOT NULL REFERENCES grids(id) ON DELETE CASCADE,
+        reference_id TEXT NOT NULL, PRIMARY KEY (grid_id,reference_id)
+      ) STRICT;
+      CREATE INDEX grid_reference_images_reference ON grid_reference_images(reference_id,grid_id);
+    `);
   db.pragma(`user_version = ${version}`);
   return db;
 }
@@ -185,6 +213,30 @@ function seedLegacy(db: Database.Database, version: number) {
       usage: { outputTokens: 3 },
     }),
   );
+  if (version >= 13)
+    db.exec(`
+      UPDATE grids SET owner=json_extract(data,'$.owner'),
+        owner_user_id=json_extract(data,'$.ownerUserId'),
+        published=json_extract(data,'$.published'),
+        visibility=json_extract(data,'$.visibility'),
+        slug=json_extract(data,'$.slug'),created_at=json_extract(data,'$.createdAt');
+      UPDATE grids SET data=json_set(data,
+        '$.expanded_prompt_for_title',json_extract(data,'$.input.prompt'))
+        WHERE json_type(data,'$.expanded_prompt_for_title') IS NULL;
+      UPDATE grids SET data=json_remove(data,
+        '$.owner','$.ownerUserId','$.published','$.visibility','$.slug','$.createdAt');
+      UPDATE sessions SET anonymous_id=json_extract(data,'$.anonymousId'),
+        created_at=json_extract(data,'$.created'),
+        data=json_remove(data,'$.anonymousId','$.created');
+      UPDATE inference_calls SET attempt_id=json_extract(data,'$.attemptId'),
+        phase=json_extract(data,'$.phase'),status=json_extract(data,'$.status'),
+        cost_usd=json_extract(data,'$.usage.costUsd'),
+        data=json_remove(data,'$.attemptId','$.phase','$.status','$.usage.costUsd');
+      INSERT INTO grid_reference_images (grid_id,reference_id)
+        VALUES ('grid','reference'),('grid','missing-reference'),('grid','unused-reference'),
+          ('private-grid','reference'),('private-grid','missing-reference'),
+          ('private-grid','unused-reference');
+    `);
 }
 
 function storedData(db: Database.Database, id: string) {
@@ -227,7 +279,7 @@ test("production v12 migrates ownership, sessions, references and billing withou
         db.prepare(`SELECT rowid,id FROM ${table} ORDER BY rowid`).all(),
     );
     initializeDatabase(db);
-    assert.equal(db.pragma("user_version", { simple: true }), 13);
+    assert.equal(db.pragma("user_version", { simple: true }), 14);
     assert.deepEqual(
       ["grids", "sessions", "cells", "inference_calls"].map((table) =>
         db.prepare(`SELECT rowid,id FROM ${table} ORDER BY rowid`).all(),
@@ -309,10 +361,11 @@ test("production v12 migrates ownership, sessions, references and billing withou
     assert.equal(field(db, "SELECT epoch FROM generation_clock", "epoch"), 37);
     const paid = db
       .prepare(
-        "SELECT attempt_id,phase,status,cost_usd,data FROM inference_calls WHERE id='paid'",
+        "SELECT task_id,attempt_id,phase,status,cost_usd,data FROM inference_calls WHERE id='paid'",
       )
       .get();
     assert.deepEqual(paid, {
+      task_id: "g:cell",
       attempt_id: "attempt",
       phase: "image",
       status: "succeeded",
@@ -324,13 +377,43 @@ test("production v12 migrates ownership, sessions, references and billing withou
         usage: { inputTokens: 10, outputTokens: 20 },
       }),
     });
+    assert.deepEqual(
+      db.prepare("SELECT generation_id,judgment_id,data FROM cells").all(),
+      [{ generation_id: "g:cell", judgment_id: null, data: "{}" }],
+    );
+    const generation = db
+      .prepare(
+        "SELECT status,artifact_id,thinking_source_id,data FROM workflow_tasks",
+      )
+      .get() as {
+      status: string;
+      artifact_id: string;
+      thinking_source_id: string;
+      data: string;
+    };
+    assert.equal(generation.status, "complete");
+    assert.equal(generation.artifact_id, "cell");
+    assert.equal(generation.thinking_source_id, "cell");
+    assert.deepEqual(JSON.parse(generation.data), {
+      input: {
+        format: "markdown",
+        model: "generator",
+        effort: "none",
+        prompt: "Hello {name}",
+        budgetUsd: 1,
+      },
+      output: {
+        provenance: { signature: "", files: ["index.md"] },
+        thinkingId: "trace",
+      },
+    });
     const billing = new Billing(db);
-    assert.deepEqual(billing.cell("cell", "attempt")?.usage, {
+    assert.deepEqual(billing.task("g:cell", "attempt")?.usage, {
       costUsd: 0.25,
       inputTokens: 15,
       outputTokens: 20,
     });
-    assert.deepEqual(billing.cell("cell")?.usage, { outputTokens: 3 });
+    assert.deepEqual(billing.task("g:cell")?.usage, { outputTokens: 3 });
     assert.equal(billing.page("anonymous", 0).total, 0);
     const page = billing.page("anonymous", 0, "account");
     assert.deepEqual(
@@ -376,13 +459,13 @@ test("production v12 migrates ownership, sessions, references and billing withou
   }
 });
 
-for (const version of [8, 9, 10, 11]) {
-  test(`production v${version} upgrades directly to v13 with historical metadata intact`, () => {
+for (const version of [8, 9, 10, 11, 13]) {
+  test(`production v${version} upgrades directly to v14 with historical metadata intact`, () => {
     const db = legacyDatabase(version);
     try {
       seedLegacy(db, version);
       initializeDatabase(db);
-      assert.equal(db.pragma("user_version", { simple: true }), 13);
+      assert.equal(db.pragma("user_version", { simple: true }), 14);
       const data = storedData(db, "grid");
       assert.equal(data.expanded_prompt_for_title, input.prompt);
       assert.equal(data.revision, undefined);
@@ -417,7 +500,7 @@ for (const version of [8, 9, 10, 11]) {
   });
 }
 
-test("a failed v13 backfill rolls back columns, payloads, indexes and version atomically", () => {
+test("a failed upgrade chain rolls back columns, payloads, indexes and version atomically", () => {
   const db = legacyDatabase(12);
   try {
     seedLegacy(db, 12);
@@ -439,7 +522,7 @@ test("fresh databases use the canonical schema and reject invalid published flag
   const db = new Database(":memory:");
   try {
     initializeDatabase(db);
-    assert.equal(db.pragma("user_version", { simple: true }), 13);
+    assert.equal(db.pragma("user_version", { simple: true }), 14);
     const insert = db.prepare(
       "INSERT INTO grids (id,data,owner,published,visibility,created_at) VALUES (?,?,?,?,?,?)",
     );
@@ -462,7 +545,7 @@ test("fresh databases use the canonical schema and reject invalid published flag
 });
 
 test("unsupported versions leave stored data untouched", () => {
-  for (const version of [7, 14]) {
+  for (const version of [7, 15]) {
     const db = legacyDatabase(version);
     try {
       seedLegacy(db, version);
@@ -475,5 +558,457 @@ test("unsupported versions leave stored data untouched", () => {
     } finally {
       db.close();
     }
+  }
+});
+
+test("v13 judged groups preserve generation artifacts, independent judgments and unfinished traces", () => {
+  const db = legacyDatabase(13);
+  try {
+    seedLegacy(db, 13);
+    const judgedInput = {
+      ...input,
+      format: "chat-template",
+      prompt: "Answer $COLUMN",
+      messages: [
+        { role: "user", content: "Answer $COLUMN" },
+        { role: "unfilled", content: "" },
+      ],
+      rows: { kind: "judge_model", values: ["judge-a", "judge-b"] },
+      columns: { kind: "variable", values: ["one", "two"] },
+      judge: {
+        model: "",
+        effort: "high",
+        criteria: [{ text: "Correct?", correctAnswer: true }],
+      },
+    };
+    const gridData = storedData(db, "grid");
+    db.prepare("UPDATE grids SET data=? WHERE id='grid'").run(
+      JSON.stringify({ ...gridData, input: judgedInput }),
+    );
+    const provenance = {
+      signature: "saved-signature",
+      files: ["index.md"],
+      templateSteps: [{ maxOutputTokens: 99, usage: { costUsd: 0.25 } }],
+    };
+    db.prepare("UPDATE cells SET data=? WHERE id='cell'").run(
+      JSON.stringify({
+        model: "saved-model",
+        effort: "high",
+        prompt: "Saved prompt",
+        messages: [{ role: "user", content: "Saved message" }],
+        budgetUsd: 0.75,
+        status: "error",
+        generationSourceId: "cell",
+        generationStatus: "complete",
+        attemptId: "generation-attempt",
+        thinkingId: "generation-trace",
+        provenance,
+        usage: { costUsd: 0.25 },
+        judge: {
+          model: "judge-a",
+          effort: "high",
+          status: "error",
+          attemptId: "judge-attempt",
+          error: "Invalid judgment",
+          errorCode: 422,
+        },
+      }),
+    );
+    const insert = db.prepare(
+      "INSERT INTO cells (id,grid_id,position,data) VALUES (?,'grid',?,?)",
+    );
+    insert.run(
+      "unfinished",
+      1,
+      JSON.stringify({
+        status: "running",
+        generationSourceId: "unfinished",
+        generationStatus: "running",
+        attemptId: "unfinished-attempt",
+        thinkingId: "unfinished-trace",
+        draft: "Retained assistant text",
+      }),
+    );
+    const results = [{ verdict: true, explanation: "Correct" }];
+    insert.run(
+      "member",
+      2,
+      JSON.stringify({
+        status: "complete",
+        generationSourceId: "cell",
+        thinkingId: "copied-trace",
+        provenance,
+        judge: {
+          model: "judge-b",
+          effort: "high",
+          status: "complete",
+          results,
+        },
+      }),
+    );
+    insert.run(
+      "waiting",
+      3,
+      JSON.stringify({
+        status: "pending",
+        generationSourceId: "unfinished",
+      }),
+    );
+    db.prepare(
+      `INSERT INTO inference_calls
+        (rowid,id,cell_id,started_at,data,attempt_id,phase,status,cost_usd)
+        VALUES (30,'judgment','member',100,?,'judgment-attempt','judge','succeeded',0.5)`,
+    ).run(JSON.stringify({ generationId: "provider-judge-id" }));
+    const identities = db
+      .prepare("SELECT rowid,id FROM cells ORDER BY rowid")
+      .all();
+    initializeDatabase(db);
+    assert.deepEqual(
+      db.prepare("SELECT rowid,id FROM cells ORDER BY rowid").all(),
+      identities,
+    );
+    assert.deepEqual(
+      db
+        .prepare(
+          "SELECT id,kind,status,dependency_id,artifact_id,thinking_source_id FROM workflow_tasks ORDER BY rowid",
+        )
+        .all(),
+      [
+        {
+          id: "g:cell",
+          kind: "generation",
+          status: "complete",
+          dependency_id: null,
+          artifact_id: "cell",
+          thinking_source_id: "cell",
+        },
+        {
+          id: "j:cell",
+          kind: "judge",
+          status: "error",
+          dependency_id: "g:cell",
+          artifact_id: null,
+          thinking_source_id: null,
+        },
+        {
+          id: "j:member",
+          kind: "judge",
+          status: "complete",
+          dependency_id: "g:cell",
+          artifact_id: null,
+          thinking_source_id: null,
+        },
+        {
+          id: "g:unfinished",
+          kind: "generation",
+          status: "running",
+          dependency_id: null,
+          artifact_id: null,
+          thinking_source_id: "unfinished",
+        },
+        {
+          id: "j:unfinished",
+          kind: "judge",
+          status: "pending",
+          dependency_id: "g:unfinished",
+          artifact_id: null,
+          thinking_source_id: null,
+        },
+        {
+          id: "j:waiting",
+          kind: "judge",
+          status: "pending",
+          dependency_id: "g:unfinished",
+          artifact_id: null,
+          thinking_source_id: null,
+        },
+      ],
+    );
+    const taskData = Object.fromEntries(
+      (
+        db.prepare("SELECT id,data FROM workflow_tasks").all() as {
+          id: string;
+          data: string;
+        }[]
+      ).map((row) => [row.id, JSON.parse(row.data)]),
+    );
+    assert.deepEqual(taskData["g:cell"], {
+      input: {
+        format: "chat-template",
+        model: "saved-model",
+        effort: "high",
+        prompt: "Saved prompt",
+        messages: [{ role: "user", content: "Saved message" }],
+        budgetUsd: 0.75,
+      },
+      attemptId: "generation-attempt",
+      output: {
+        provenance,
+        usage: { costUsd: 0.25 },
+        thinkingId: "generation-trace",
+      },
+    });
+    assert.deepEqual(taskData["j:cell"], {
+      input: {
+        model: "judge-a",
+        effort: "high",
+        criteria: judgedInput.judge.criteria,
+      },
+      attemptId: "judge-attempt",
+      error: "Invalid judgment",
+      errorCode: 422,
+    });
+    assert.deepEqual(taskData["j:member"].output, { results });
+    assert.deepEqual(taskData["g:unfinished"].progress, {
+      thinkingId: "unfinished-trace",
+      draft: "Retained assistant text",
+    });
+    assert.deepEqual(
+      db
+        .prepare(
+          "SELECT id,generation_id,judgment_id,data FROM cells ORDER BY position",
+        )
+        .all(),
+      [
+        {
+          id: "cell",
+          generation_id: "g:cell",
+          judgment_id: "j:cell",
+          data: "{}",
+        },
+        {
+          id: "unfinished",
+          generation_id: "g:unfinished",
+          judgment_id: "j:unfinished",
+          data: "{}",
+        },
+        {
+          id: "member",
+          generation_id: "g:cell",
+          judgment_id: "j:member",
+          data: "{}",
+        },
+        {
+          id: "waiting",
+          generation_id: "g:unfinished",
+          judgment_id: "j:waiting",
+          data: "{}",
+        },
+      ],
+    );
+    assert.deepEqual(
+      db
+        .prepare("SELECT task_id,data FROM inference_calls WHERE id='judgment'")
+        .get(),
+      {
+        task_id: "j:member",
+        data: JSON.stringify({ generationId: "provider-judge-id" }),
+      },
+    );
+    assert.equal(new Billing(db).gridSpent("grid", []), 0.25);
+    assert.equal(new Billing(db).task("j:member")?.usage?.costUsd, 0.5);
+    assert.deepEqual(db.pragma("foreign_key_check"), []);
+    const stable = snapshot(db);
+    initializeDatabase(db);
+    assert.deepEqual(snapshot(db), stable);
+  } finally {
+    db.close();
+  }
+});
+
+test("v14 workflow backfill failure restores a production v13 database atomically", () => {
+  const db = legacyDatabase(13);
+  try {
+    seedLegacy(db, 13);
+    db.exec(
+      "CREATE TRIGGER reject_cell_link BEFORE UPDATE ON cells BEGIN SELECT RAISE(ABORT,'workflow blocked'); END",
+    );
+    const before = snapshot(db);
+    assert.throws(() => initializeDatabase(db), /workflow blocked/);
+    assert.deepEqual(snapshot(db), before);
+    db.exec("DROP TRIGGER reject_cell_link");
+    initializeDatabase(db);
+    assert.equal(db.pragma("user_version", { simple: true }), 14);
+  } finally {
+    db.close();
+  }
+});
+
+test("fresh and upgraded databases expose identical canonical columns and indexes", () => {
+  const fresh = new Database(":memory:");
+  const upgraded = legacyDatabase(13);
+  try {
+    seedLegacy(upgraded, 13);
+    initializeDatabase(fresh);
+    initializeDatabase(upgraded);
+    const tables = fresh
+      .prepare(
+        "SELECT name FROM sqlite_schema WHERE type='table' ORDER BY name",
+      )
+      .all() as { name: string }[];
+    for (const { name } of tables) {
+      assert.deepEqual(
+        fresh.pragma(`table_info(${name})`),
+        upgraded.pragma(`table_info(${name})`),
+      );
+      assert.deepEqual(
+        fresh.pragma(`foreign_key_list(${name})`),
+        upgraded.pragma(`foreign_key_list(${name})`),
+      );
+      assert.deepEqual(
+        fresh.pragma(`index_list(${name})`),
+        upgraded.pragma(`index_list(${name})`),
+      );
+    }
+  } finally {
+    fresh.close();
+    upgraded.close();
+  }
+});
+
+test("legacy key grouping shares judged output only and keeps the physical output owner", () => {
+  for (const judged of [false, true]) {
+    const db = legacyDatabase(13);
+    try {
+      seedLegacy(db, 13);
+      const migratedInput = {
+        ...input,
+        prompt: "Identical generation input",
+        rows: judged
+          ? { kind: "judge_model", values: ["judge-a", "judge-b"] }
+          : { kind: "variable", values: ["one", "two"] },
+        ...(judged
+          ? {
+              judge: {
+                model: "",
+                effort: "high",
+                criteria: [{ text: "Correct?", correctAnswer: true }],
+              },
+            }
+          : {}),
+      };
+      db.prepare("UPDATE grids SET data=? WHERE id='grid'").run(
+        JSON.stringify({ ...storedData(db, "grid"), input: migratedInput }),
+      );
+      db.prepare("UPDATE cells SET data=? WHERE id='cell'").run(
+        JSON.stringify({
+          status: "pending",
+          thinkingId: "unfinished-trace",
+          attemptId: "unfinished-attempt",
+        }),
+      );
+      db.prepare(
+        "INSERT INTO cells (id,grid_id,position,data) VALUES ('physical-owner','grid',1,?)",
+      ).run(
+        JSON.stringify({
+          status: "complete",
+          thinkingId: "saved-trace",
+          attemptId: "committed-attempt",
+          usage: { costUsd: 0.25 },
+        }),
+      );
+      initializeDatabase(db);
+      assert.equal(
+        field(
+          db,
+          "SELECT COUNT(*) count FROM workflow_tasks WHERE kind='generation'",
+          "count",
+        ),
+        judged ? 1 : 2,
+      );
+      const physical = db
+        .prepare(
+          "SELECT id,artifact_id,thinking_source_id,data FROM workflow_tasks WHERE artifact_id='physical-owner'",
+        )
+        .get() as {
+        id: string;
+        artifact_id: string;
+        thinking_source_id: string;
+        data: string;
+      };
+      assert.equal(physical.id, judged ? "g:cell" : "g:physical-owner");
+      assert.equal(physical.thinking_source_id, "physical-owner");
+      assert.equal(JSON.parse(physical.data).attemptId, "committed-attempt");
+      assert.deepEqual(JSON.parse(physical.data).output, {
+        provenance: { signature: "", files: ["index.md"] },
+        thinkingId: "saved-trace",
+        usage: { costUsd: 0.25 },
+      });
+      assert.equal(
+        field(
+          db,
+          "SELECT COUNT(*) count FROM workflow_tasks WHERE kind='judge'",
+          "count",
+        ),
+        judged ? 2 : 0,
+      );
+      assert.deepEqual(db.pragma("foreign_key_check"), []);
+    } finally {
+      db.close();
+    }
+  }
+});
+
+test("legacy chat output without provenance uses the canonical conversation inventory", () => {
+  const db = legacyDatabase(13);
+  try {
+    seedLegacy(db, 13);
+    db.prepare("UPDATE grids SET data=? WHERE id='grid'").run(
+      JSON.stringify({
+        ...storedData(db, "grid"),
+        input: {
+          ...input,
+          format: "chat-template",
+          messages: [
+            { role: "user", content: "Saved question" },
+            { role: "unfilled", content: "" },
+          ],
+        },
+      }),
+    );
+    initializeDatabase(db);
+    const row = db
+      .prepare("SELECT artifact_id,data FROM workflow_tasks WHERE id='g:cell'")
+      .get() as { artifact_id: string; data: string };
+    assert.equal(row.artifact_id, "cell");
+    assert.deepEqual(JSON.parse(row.data).output.provenance, {
+      signature: "",
+      files: ["messages.json"],
+    });
+  } finally {
+    db.close();
+  }
+});
+
+test("legacy completed output without an attempt retains its own reported usage", () => {
+  const db = legacyDatabase(13);
+  try {
+    seedLegacy(db, 13);
+    db.prepare("UPDATE cells SET data=? WHERE id='cell'").run(
+      JSON.stringify({ status: "complete" }),
+    );
+    db.exec("DELETE FROM inference_calls");
+    db.prepare(
+      `INSERT INTO inference_calls
+        (id,cell_id,started_at,data,attempt_id,phase,status,cost_usd)
+        VALUES ('legacy-charge','cell',42,?,NULL,'direct','succeeded',0)`,
+    ).run(JSON.stringify({ usage: { inputTokens: 4, outputTokens: 6 } }));
+    initializeDatabase(db);
+    const task = JSON.parse(
+      field(
+        db,
+        "SELECT data FROM workflow_tasks WHERE id='g:cell'",
+        "data",
+      ) as string,
+    );
+    assert.deepEqual(task.output.usage, {
+      inputTokens: 4,
+      outputTokens: 6,
+      costUsd: 0,
+    });
+    assert.equal(task.attemptId, undefined);
+    assert.deepEqual(db.pragma("foreign_key_check"), []);
+  } finally {
+    db.close();
   }
 });

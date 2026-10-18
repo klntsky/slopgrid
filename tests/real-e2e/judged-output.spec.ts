@@ -131,9 +131,7 @@ async function create(
 }
 
 async function inspect(page: Page, grid: Snapshot) {
-  expect(new Set(grid.cells.map((cell) => cell.generationSourceId)).size).toBe(
-    1,
-  );
+  expect(new Set(grid.cells.map((cell) => cell.generationId)).size).toBe(1);
   const outputs: Buffer[] = [];
   const expected = grid.input.judge!.criteria;
   const scores = page.locator(".judge-result-button");

@@ -73,28 +73,20 @@ export function createInferenceGuard(store: Store, provider: Provider) {
       const models = format === "image" ? [] : await provider.models();
       const now = new Date();
       const costs: number[] = [];
-      const byId = new Map(cells.map((cell) => [cell.id, cell]));
       const sources = new Set<string>();
       for (const cell of cells) {
-        const sourceId = cell.judge
-          ? (cell.generationSourceId ?? cell.id)
-          : cell.id;
+        const sourceId = cell.generationId;
+        if (!sourceId)
+          throw new Error("Inference admission requires a generation task.");
         if (sources.has(sourceId)) continue;
         sources.add(sourceId);
-        const source = byId.get(sourceId) ?? cell;
-        if (
-          source.status === "complete" ||
-          (source.judge &&
-            (source.generationStatus === "complete" ||
-              source.provenance?.files.length))
-        )
-          continue;
+        if (cell.artifactId) continue;
         costs.push(
           format === "image"
             ? 3
             : estimateCell(
-                models.find((model) => model.id === source.model),
-                source,
+                models.find((model) => model.id === cell.model),
+                cell,
                 format,
                 now,
               ).costUsd,

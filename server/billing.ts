@@ -82,6 +82,14 @@ export class Billing {
     return (phase) => {
       const id = token(),
         started = Date.now();
+      const links = this.db
+        .prepare("SELECT generation_id,judgment_id FROM cells WHERE id=?")
+        .get(cellId) as
+        | { generation_id: string | null; judgment_id: string | null }
+        | undefined;
+      const taskId =
+        phase === "judge" ? links?.judgment_id : links?.generation_id;
+      if (!taskId) throw new Error("Inference call requires a workflow task");
       let data: CallDetails = {
         phase,
         status: "running",
@@ -98,14 +106,15 @@ export class Billing {
           this.db
             .prepare(
               `INSERT INTO inference_calls
-                (id,cell_id,started_at,data,attempt_id,phase,status,cost_usd)
-              VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET
+                (id,cell_id,task_id,started_at,data,attempt_id,phase,status,cost_usd)
+              VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET
                 data=excluded.data,attempt_id=excluded.attempt_id,
                 phase=excluded.phase,status=excluded.status,cost_usd=excluded.cost_usd`,
             )
             .run(
               id,
               cellId,
+              taskId,
               started,
               json,
               attemptId ?? null,
@@ -151,16 +160,16 @@ export class Billing {
       };
     };
   }
-  cell(
-    cellId: string,
+  task(
+    taskId: string,
     attemptId?: string,
   ): { usage?: Cell["usage"] } | undefined {
     if (attemptId) {
       const rows = this.db
         .prepare(
-          "SELECT data,attempt_id,phase,status,cost_usd FROM inference_calls WHERE cell_id=? AND attempt_id=? AND phase!='judge' ORDER BY started_at, rowid",
+          "SELECT data,attempt_id,phase,status,cost_usd FROM inference_calls WHERE task_id=? AND attempt_id=? ORDER BY started_at, rowid",
         )
-        .all(cellId, attemptId) as CallRow[];
+        .all(taskId, attemptId) as CallRow[];
       return rows.length
         ? {
             usage: sumUsage(rows.map((row) => readCall(row).usage)),
@@ -170,49 +179,49 @@ export class Billing {
     const row = this.db
       .prepare(
         `
-      SELECT data,attempt_id,phase,status,cost_usd FROM inference_calls WHERE cell_id=? AND phase!='judge'
+      SELECT data,attempt_id,phase,status,cost_usd FROM inference_calls WHERE task_id=?
       ORDER BY started_at DESC, rowid DESC LIMIT 1
     `,
       )
-      .get(cellId) as CallRow | undefined;
+      .get(taskId) as CallRow | undefined;
     return row ? { usage: readCall(row).usage } : undefined;
   }
   gridSpent(gridId: string, cells: readonly Cell[]): number {
     const rows = this.db
       .prepare(
-        `SELECT c.id, COALESCE(SUM(b.cost_usd),0) costUsd,
+        `SELECT t.id,t.status, COALESCE(SUM(b.cost_usd),0) costUsd,
         (SELECT latest.cost_usd FROM inference_calls latest
-          WHERE latest.cell_id=c.id AND latest.phase!='judge'
+          WHERE latest.task_id=t.id AND latest.phase!='judge'
           ORDER BY latest.started_at DESC,latest.rowid DESC LIMIT 1) latestCostUsd
-        FROM cells c LEFT JOIN inference_calls b ON b.cell_id=c.id
+        FROM workflow_tasks t LEFT JOIN inference_calls b ON b.task_id=t.id
           AND b.phase!='judge'
-        WHERE c.grid_id=? GROUP BY c.id`,
+        WHERE t.grid_id=? AND t.kind='generation' GROUP BY t.id`,
       )
       .all(gridId) as {
       id: string;
+      status: string;
       costUsd: number;
       latestCostUsd: number | null;
     }[];
-    const estimates = new Map(
-      cells
-        .filter(
-          (cell) =>
-            cell.status === "running" &&
-            (!cell.generationSourceId ||
-              (cell.generationSourceId === cell.id &&
-                cell.generationStatus === "running")),
-        )
-        .map((cell) => [
-          cell.id,
+    const estimates = new Map<string, number>();
+    for (const cell of cells) {
+      if (cell.status !== "running" || !cell.generationId) continue;
+      estimates.set(
+        cell.generationId,
+        Math.max(
+          estimates.get(cell.generationId) ?? 0,
           cell.currentCallCostUsd ?? cell.estimatedUsage?.costUsd ?? 0,
-        ]),
-    );
+        ),
+      );
+    }
     return rows.reduce(
       (sum, row) =>
         sum +
         row.costUsd +
-        // A reported charge can arrive before the running cell settles.
-        (row.latestCostUsd === null ? (estimates.get(row.id) ?? 0) : 0),
+        // A reported charge can arrive before the running task settles.
+        (row.status === "running" && row.latestCostUsd === null
+          ? (estimates.get(row.id) ?? 0)
+          : 0),
       0,
     );
   }

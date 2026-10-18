@@ -193,6 +193,7 @@ test("chat templates fill blanks sequentially and complete trailing history", as
       "key",
       "chat-template",
       { ...cell("required", "default"), messages },
+      "template-generation",
       (p) => updates.push(p),
       {},
     );
@@ -273,7 +274,7 @@ test("chat templates fill blanks sequentially and complete trailing history", as
     await h.close();
   }
 });
-test("template caching preserves long prefixes and isolates cell routing", async () => {
+test("template caching preserves long prefixes and isolates generation routing", async () => {
   const h = await upstream();
   try {
     for (const role of ["system", "assistant"] as const) {
@@ -291,7 +292,8 @@ test("template caching preserves long prefixes and isolates cell routing", async
         h.provider,
         "key",
         "chat-template",
-        { ...cell("all", "high"), id: role, messages },
+        { ...cell("all", "high"), messages },
+        role,
         () => {},
         {},
       );
@@ -334,6 +336,7 @@ test("chat completion without blanks sends the exact history and saves a convers
       "key",
       "chat-template",
       input,
+      "chat-generation",
       () => {},
       {},
     );
@@ -359,7 +362,8 @@ test("chat completion without blanks sends the exact history and saves a convers
     assert.deepEqual(conversation.slice(0, -1), messages);
     assert.equal(conversation.at(-1).role, "assistant");
     assert.equal(typeof conversation.at(-1).content, "string");
-    const { templateSignature } = await import("../server/prepared-inference.js");
+    const { templateSignature } =
+      await import("../server/prepared-inference.js");
     const changed = {
       ...input,
       messages: messages.map((m, i) =>

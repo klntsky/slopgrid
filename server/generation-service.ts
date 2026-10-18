@@ -3,6 +3,7 @@ import { token } from "./ids.js";
 import { Jobs } from "./jobs.js";
 import type { Store } from "./store.js";
 import type { Provider } from "./provider.js";
+import { createWorkflowExecutor } from "./workflow-executor.js";
 import { ownsGrid } from "./grid-policy.js";
 import {
   generationFailure,
@@ -19,7 +20,8 @@ export function createGenerationService(
   const epoch = store.nextGenerationEpoch();
   let sequence = 0;
   const updates = new EventEmitter().setMaxListeners(0);
-  const jobs = new Jobs(store, provider, workersMax, (grid) => {
+  const executor = createWorkflowExecutor(store, provider);
+  const jobs = new Jobs(store, executor, workersMax, (grid) => {
     updates.emit(grid.id);
   });
   const instance = token();
@@ -84,7 +86,9 @@ export function createGenerationService(
       return getGrid(id);
     },
     async previewPath({ cellId, path }) {
-      return jobs.previews.path(cellId, path);
+      const metadata = store.outputMetadata(cellId);
+      if (!metadata) return;
+      return executor.previews.path(metadata.generationId, path);
     },
     subscribeGrid(id, snapshot, disconnected) {
       const send = () => {
@@ -113,5 +117,5 @@ export function createGenerationService(
       return status();
     },
   };
-  return { api, jobs };
+  return { api, jobs, executor };
 }

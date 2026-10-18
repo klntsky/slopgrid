@@ -7,7 +7,10 @@ import { Store } from "../server/store.js";
 import { recoverInterruptedGrids } from "../server/recovery.js";
 import { Jobs } from "../server/jobs.js";
 import { Provider } from "../server/provider.js";
-import type { Grid } from "../server/domain.js";
+import { expandGrid, type Grid, type GridInput } from "../server/domain.js";
+import { createWorkflow } from "../server/workflow.js";
+import { createWorkflowExecutor } from "../server/workflow-executor.js";
+import { token } from "../server/ids.js";
 
 test("a restart preserves finished outputs and pauses interrupted work until an explicit retry", async () => {
   const dir = mkdtempSync(join(tmpdir(), "slopgrid-recovery-")),
@@ -59,8 +62,21 @@ test("a restart preserves finished outputs and pauses interrupted work until an 
         },
       ],
     };
-    store.files.write("finished", { "index.md": "Saved output" });
-    store.insert(g);
+    const tasks = createWorkflow(g.input, g.cells);
+    const finished = tasks[0];
+    assert.equal(finished.kind, "generation");
+    if (finished.kind !== "generation") throw new Error("Expected generation");
+    finished.status = "complete";
+    finished.output = {
+      artifactId: "finished-artifact",
+      provenance: { signature: "saved", files: ["index.md"] },
+    };
+    tasks[1].status = "running";
+    tasks[1].attemptId = "interrupted-attempt";
+    store.files.write(finished.output.artifactId, {
+      "index.md": "Saved output",
+    });
+    store.insert(g, tasks);
     const raw = store.db.prepare("SELECT data FROM sessions").get() as {
       data: string;
     };
@@ -84,13 +100,9 @@ test("a restart preserves finished outputs and pauses interrupted work until an 
     assert.equal(restored.cells[1].status, "pending");
     const requests: string[] = [];
     class RecoveryProvider extends Provider {
-      override async generate(
-        key: string,
-        _format: Grid["input"]["format"],
-        cell: Grid["cells"][number],
-      ) {
-        assert.equal(key, "private-openrouter-key");
-        requests.push(cell.id);
+      override async generate(...args: Parameters<Provider["generate"]>) {
+        assert.equal(args[0], "private-openrouter-key");
+        requests.push(args[8]!);
         return {
           signature: "fixture-signature",
           files: { "index.md": "Recovered output" },
@@ -101,7 +113,7 @@ test("a restart preserves finished outputs and pauses interrupted work until an 
     const completed = new Promise<void>((resolve) => {
       const jobs = new Jobs(
         store,
-        new RecoveryProvider(),
+        createWorkflowExecutor(store, new RecoveryProvider()),
         undefined,
         (grid) => {
           if (grid.status === "complete") resolve();
@@ -110,17 +122,93 @@ test("a restart preserves finished outputs and pauses interrupted work until an 
       jobs.start(restored);
     });
     await completed;
-    assert.deepEqual(requests, ["interrupted"]);
+    assert.deepEqual(requests, [g.cells[1].generationId]);
     assert.equal(
-      readFileSync(store.files.path("finished", "index.md")!, "utf8"),
+      readFileSync(store.files.path("finished-artifact", "index.md")!, "utf8"),
       "Saved output",
     );
     assert.equal(
-      readFileSync(store.files.path("interrupted", "index.md")!, "utf8"),
+      readFileSync(
+        store.files.path(store.get(g.id)!.cells[1].artifactId!, "index.md")!,
+        "utf8",
+      ),
       "Recovered output",
     );
     store.db.close();
   } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("recovery preserves a shared generation and settled judgment while requeuing only interrupted tasks", () => {
+  const dir = mkdtempSync(join(tmpdir(), "slopgrid-task-recovery-"));
+  const store = new Store(":memory:", Buffer.alloc(32, 2), dir);
+  try {
+    const input: GridInput = {
+      format: "markdown",
+      prompt: "Shared output",
+      rows: { kind: "judge_model", values: ["fixture/one", "fixture/two"] },
+      columns: { kind: "judge_effort", values: ["none"] },
+      model: "fixture/text",
+      effort: "none",
+      budgetUsd: 1,
+      judge: {
+        model: "fixture/one",
+        effort: "none",
+        criteria: [{ text: "Is this shared?", correctAnswer: true }],
+      },
+    };
+    const grid: Grid = {
+      id: "shared-recovery",
+      owner: "owner",
+      input,
+      cells: expandGrid(input).map((cell, index) => ({
+        ...cell,
+        id: `shared-recovery-cell-${index}`,
+      })),
+      published: false,
+      visibility: "private",
+      status: "running",
+      createdAt: new Date().toISOString(),
+    };
+    const tasks = createWorkflow(input, grid.cells);
+    const generation = tasks.find((task) => task.kind === "generation")!;
+    const judgments = tasks.filter((task) => task.kind === "judge");
+    const artifactId = token();
+    generation.status = "complete";
+    generation.output = {
+      artifactId,
+      provenance: { signature: "shared", files: ["index.md"] },
+    };
+    judgments[0].status = "complete";
+    judgments[0].output = {
+      results: [{ verdict: true, explanation: "Shared output." }],
+    };
+    judgments[1].status = "running";
+    judgments[1].attemptId = token();
+    store.files.write(artifactId, { "index.md": "Shared output" });
+    store.insert(grid, tasks);
+    recoverInterruptedGrids(store);
+    const restored = store.get(grid.id)!;
+    assert.equal(restored.status, "paused");
+    assert.equal(restored.interruption, "restart");
+    assert.equal(restored.cells[0].status, "complete");
+    assert.equal(restored.cells[1].status, "pending");
+    assert.equal(restored.cells[0].artifactId, artifactId);
+    assert.equal(restored.cells[1].artifactId, artifactId);
+    assert.deepEqual(
+      restored.cells[0].judge?.results,
+      judgments[0].output.results,
+    );
+    assert.equal(
+      store.workflow(grid.id).filter((task) => task.kind === "generation")
+        .length,
+      1,
+    );
+    recoverInterruptedGrids(store);
+    assert.deepEqual(store.get(grid.id), restored);
+  } finally {
+    store.db.close();
     rmSync(dir, { recursive: true, force: true });
   }
 });

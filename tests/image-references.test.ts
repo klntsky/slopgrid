@@ -311,7 +311,7 @@ test("grid creation records every selected reference atomically and keeps member
     ...input,
     referenceGroups: { Pair: [first], Other: [spare] },
   };
-  store.saveGeneration(grid);
+  store.saveWorkflow(grid, store.workflow(grid.id));
   assert.deepEqual(store.get(grid.id)!.input, input);
   assert.equal(store.references.allowed(second.id, owner), true);
   assert.equal(store.references.allowed(spare.id, owner), false);

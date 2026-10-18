@@ -8,12 +8,12 @@ import { join } from "node:path";
 import {
   expandGrid,
   hasCompletedOutput,
-  type Cell,
   type Grid,
   type GridInput,
 } from "../server/domain.js";
-import { assignGenerationSources } from "../server/generation-groups.js";
+import { createWorkflow, projectWorkflow } from "../server/workflow.js";
 import { reuseArtifacts } from "../server/artifact-reuse.js";
+import { token } from "../server/ids.js";
 import {
   runtimeFixture,
   until,
@@ -90,10 +90,9 @@ test("template usage and per-call reuse survive storage reopening", async () => 
     });
     assert.equal(copy.cells[0].status, "complete");
     assert.equal(f.calls.length, calls);
-    assert.deepEqual(
-      await f.store.files.bundle(copy.cells[0].id),
-      await f.store.files.bundle(saved.cells[0].id),
-    );
+    const artifactId = f.store.outputMetadata(copy.cells[0].id)!.artifactId;
+    assert.equal(artifactId, saved.cells[0].artifactId);
+    assert.notEqual(artifactId, copy.cells[0].id);
     assertCost(f.store.get(copy.id)!.cells[0].usage!.costUsd!, 0.0246);
     const conversation = await f.request(`/outputs/${copy.cells[0].id}?raw=1`);
     assert.match(
@@ -120,9 +119,9 @@ test("template usage and per-call reuse survive storage reopening", async () => 
     );
     f.store.db
       .prepare(
-        "UPDATE cells SET data=json_remove(data,'$.provenance.templateSteps[1].usage.inputTokens') WHERE id=?",
+        "UPDATE workflow_tasks SET data=json_remove(data,'$.output.provenance.templateSteps[1].usage.inputTokens') WHERE id=?",
       )
-      .run(copy.cells[0].id);
+      .run(copy.cells[0].generationId);
     const regenerated = await create(f, {
       ...template,
       sourceGridId: copy.id,
@@ -177,9 +176,9 @@ test("template reuse requires the final completion after supplied trailing histo
     assert.equal(f.calls.length, 2);
     f.store.db
       .prepare(
-        "UPDATE cells SET data=json_remove(data,'$.provenance.templateSteps[1]') WHERE id=?",
+        "UPDATE workflow_tasks SET data=json_remove(data,'$.output.provenance.templateSteps[1]') WHERE id=?",
       )
-      .run(source.cells[0].id);
+      .run(source.cells[0].generationId);
     const regenerated = await create(f, {
       ...template,
       sourceGridId: source.id,
@@ -226,7 +225,7 @@ test("failed templates retain the partial transcript and aggregate charged usage
   }
 });
 
-test("edit copies exact completed cells through reorder, cancellation, web replacement and engine restart", async () => {
+test("edit shares exact completed artifacts through reorder, cancellation, web replacement and engine restart", async () => {
   const f = await runtimeFixture();
   try {
     const source = await create(f, input);
@@ -259,14 +258,12 @@ test("edit copies exact completed cells through reorder, cancellation, web repla
     );
     const copy = f.store.get(next.id)!.cells[3];
     assert.notEqual(copy.id, sourceCell.id);
-    assert.notEqual(copy.thinkingId, sourceCell.thinkingId);
-    assert.deepEqual(
-      await f.store.files.bundle(copy.id),
-      await f.store.files.bundle(sourceCell.id),
-    );
+    assert.equal(copy.thinkingId, sourceCell.thinkingId);
+    assert.equal(copy.artifactId, sourceCell.artifactId);
+    assert.equal(copy.thinkingSourceId, sourceCell.thinkingSourceId);
     assert.equal(
       readFileSync(
-        f.store.files.thinkingPath(copy.id, copy.thinkingId!)!,
+        f.store.files.thinkingPath(copy.thinkingSourceId!, copy.thinkingId!)!,
         "utf8",
       ),
       "Recorded thinking.",
@@ -315,7 +312,7 @@ test("edit copies exact completed cells through reorder, cancellation, web repla
   }
 });
 
-test("copies require intact inventories and thinking, and remain independent of the original", async () => {
+test("reuse requires intact content and retains shared artifacts while either grid references them", async () => {
   const f = await runtimeFixture();
   try {
     const config = {
@@ -338,19 +335,24 @@ test("copies require intact inventories and thinking, and remain independent of 
         }),
       );
     const completed = await settled(f, source.id);
-    rmSync(f.store.files.path(completed.cells[1].id, "nested/style.css")!);
+    rmSync(
+      f.store.files.path(completed.cells[1].artifactId!, "nested/style.css")!,
+    );
     rmSync(
       f.store.files.thinkingPath(
-        completed.cells[2].id,
+        completed.cells[2].thinkingSourceId!,
         completed.cells[2].thinkingId!,
       )!,
     );
     f.store.db
       .prepare(
-        "UPDATE cells SET data=json_remove(data,'$.provenance') WHERE id=?",
+        "UPDATE workflow_tasks SET data=json_remove(data,'$.output.provenance') WHERE id=?",
       )
-      .run(completed.cells[3].id);
-    chmodSync(f.store.files.path(completed.cells[4].id, "index.html")!, 0);
+      .run(completed.cells[3].generationId);
+    chmodSync(
+      f.store.files.path(completed.cells[4].artifactId!, "index.html")!,
+      0,
+    );
     const copied = await create(f, {
       ...config,
       sourceGridId: source.id,
@@ -369,19 +371,24 @@ test("copies require intact inventories and thinking, and remain independent of 
       );
     await settled(f, copied.id);
     const first = f.store.get(copied.id)!.cells[0];
-    rmSync(join(f.store.files.root, completed.cells[0].id), {
-      recursive: true,
-    });
-    rmSync(
-      f.store.files.thinkingPath(
-        completed.cells[0].id,
-        completed.cells[0].thinkingId!,
-      )!,
+    assert.equal(first.artifactId, completed.cells[0].artifactId);
+    assert.equal(f.store.removeUnreferencedArtifact(first.artifactId!), false);
+    f.store.db.transaction(() => {
+      f.store.db
+        .prepare(
+          "DELETE FROM inference_calls WHERE cell_id IN (SELECT id FROM cells WHERE grid_id=?)",
+        )
+        .run(source.id);
+      f.store.db.prepare("DELETE FROM grids WHERE id=?").run(source.id);
+    })();
+    assert.equal(f.store.removeUnreferencedArtifact(first.artifactId!), false);
+    assert.equal(
+      Object.keys(await f.store.files.bundle(first.artifactId!)).length,
+      2,
     );
-    assert.equal(Object.keys(await f.store.files.bundle(first.id)).length, 2);
     assert.equal(
       readFileSync(
-        f.store.files.thinkingPath(first.id, first.thinkingId!)!,
+        f.store.files.thinkingPath(first.thinkingSourceId!, first.thinkingId!)!,
         "utf8",
       ),
       "Recorded thinking.",
@@ -442,6 +449,11 @@ test("forks isolate access and billing while preserving artifact costs and admis
     );
     assert.equal(f.store.billing.page(f.owner, 0, "destination-user").total, 2);
     const cell = completed.cells[0];
+    const sourceCell = f.store.get(source.id)!.cells[0];
+    assert.equal(cell.artifactId, sourceCell.artifactId);
+    assert.equal(cell.thinkingSourceId, sourceCell.thinkingSourceId);
+    assert.equal(cell.thinkingId, sourceCell.thinkingId);
+    assert.notEqual(cell.id, sourceCell.id);
     for (const path of [
       `/api/grids/${completed.id}`,
       `/outputs/${cell.id}`,
@@ -699,7 +711,13 @@ test("reuse selects the first matching source whose actual usage fits the new li
     );
     for (const cell of copied.cells)
       assert.equal(
-        readFileSync(f.store.files.path(cell.id, "index.md")!, "utf8"),
+        readFileSync(
+          f.store.files.path(
+            f.store.outputMetadata(cell.id)!.artifactId!,
+            "index.md",
+          )!,
+          "utf8",
+        ),
         "Small",
       );
     assert.equal(f.calls.length, 4);
@@ -860,7 +878,13 @@ test("duplicate effective prompts choose the first source cell and model alias r
     assert.equal(copied.status, "complete");
     assert.equal(f.calls.length, 4);
     assert.equal(
-      readFileSync(f.store.files.path(copied.cells[3].id, "index.md")!, "utf8"),
+      readFileSync(
+        f.store.files.path(
+          f.store.outputMetadata(copied.cells[3].id)!.artifactId!,
+          "index.md",
+        )!,
+        "utf8",
+      ),
       "Output 0",
     );
     f.catalog.data[2].alias_target!.slug = "fixture/other";
@@ -937,7 +961,7 @@ test("reuse leaves preparation failures on individual cells and skips unsigned s
     );
     f.store.db
       .prepare(
-        "UPDATE cells SET data=json_remove(data,'$.provenance') WHERE grid_id=?",
+        "UPDATE workflow_tasks SET data=json_remove(data,'$.output.provenance') WHERE grid_id=? AND kind='generation'",
       )
       .run(source.id);
     const unsigned = await create(f, {
@@ -956,7 +980,7 @@ test("reuse leaves preparation failures on individual cells and skips unsigned s
   }
 });
 
-test("judged generation groups use the first row-major source without grouping unjudged cells", () => {
+test("workflow groups judged generation while keeping ordinary cells independent", () => {
   const judged: GridInput = {
     ...input,
     prompt: "Same output",
@@ -972,60 +996,26 @@ test("judged generation groups use the first row-major source without grouping u
     ...cell,
     id: `group-${index}`,
   }));
-  assignGenerationSources(judged.format, [...cells].reverse());
-  assert.deepEqual(
-    cells.map((cell) => cell.generationSourceId),
-    cells.map(() => cells[0].id),
+  const tasks = createWorkflow(judged, cells);
+  assert.equal(tasks.filter((task) => task.kind === "generation").length, 1);
+  assert.equal(tasks.filter((task) => task.kind === "judge").length, 4);
+  assert.ok(cells.every((cell) => cell.generationId === cells[0].generationId));
+  assert.notEqual(cells[0].generationId, cells[0].id);
+  assert.equal(new Set(cells.map((cell) => cell.judgmentId)).size, 4);
+  const unjudged = { ...judged, judge: undefined };
+  const ordinary = expandGrid(unjudged).map((cell, index) => ({
+    ...cell,
+    id: `unjudged-${index}`,
+  }));
+  const independent = createWorkflow(unjudged, ordinary);
+  assert.equal(independent.length, ordinary.length);
+  assert.equal(
+    new Set(ordinary.map((cell) => cell.generationId)).size,
+    ordinary.length,
   );
-  assert.deepEqual(
-    cells.map((cell) => cell.generationStatus),
-    ["pending", undefined, undefined, undefined],
-  );
-  const changed: Cell = { ...cells[0], id: "different", budgetUsd: 0.2 };
-  assignGenerationSources(judged.format, [...cells, changed]);
-  assert.equal(changed.generationSourceId, changed.id);
-  assert.equal(changed.generationStatus, "pending");
-  const unjudged = expandGrid({ ...judged, judge: undefined }).map(
-    (cell, index) => ({ ...cell, id: `unjudged-${index}` }),
-  );
-  assignGenerationSources(judged.format, unjudged);
-  assert.ok(unjudged.every((cell) => !("generationSourceId" in cell)));
 });
 
-test("committed judged output stays available independently of judgment status", () => {
-  assert.equal(hasCompletedOutput({ status: "complete" }), true);
-  for (const status of ["pending", "running", "error"] as const) {
-    assert.equal(
-      hasCompletedOutput({
-        status,
-        generationSourceId: "source",
-        provenance: { signature: "signature", files: ["index.md"] },
-      }),
-      true,
-    );
-    assert.equal(
-      hasCompletedOutput({ status, generationSourceId: "source" }),
-      false,
-    );
-    assert.equal(
-      hasCompletedOutput({
-        status,
-        provenance: { signature: "signature", files: ["index.md"] },
-      }),
-      false,
-    );
-    assert.equal(
-      hasCompletedOutput({
-        status,
-        generationSourceId: "source",
-        provenance: { signature: "signature", files: [] },
-      }),
-      false,
-    );
-  }
-});
-
-test("reuse copies one generation per judge group, retains failed-judge output, and persists fresh judgments", async () => {
+test("reuse shares one generation per judge group without copying judgments or attempts", async () => {
   const f = await runtimeFixture();
   try {
     const config: GridInput = {
@@ -1033,63 +1023,44 @@ test("reuse copies one generation per judge group, retains failed-judge output, 
       prompt: "Reusable output",
       rows: { kind: "model", values: ["fixture/text"] },
       columns: { kind: "effort", values: ["none"] },
+      judge: {
+        criteria: [{ text: "Is this empty?", correctAnswer: false }],
+        model: "fixture/text",
+        effort: "none",
+      },
     };
     const created = await create(f, config);
     finish(await f.nextCall(), "Shared artifact");
+    (await f.nextCall()).fail(400);
     await settled(f, created.id);
     const source = f.store.get(created.id)!;
     const original = source.cells[0];
-    original.status = "error";
-    original.generationSourceId = original.id;
-    original.generationStatus = "complete";
-    original.judge = {
-      model: "old-judge",
-      effort: "high",
-      status: "error",
-      attemptId: "old-judge-attempt",
-      error: "Judge failed",
-      errorCode: 400,
-      results: [{ verdict: false, explanation: "Do not reuse this verdict." }],
-    };
+    assert.equal(original.judge?.status, "error");
     const judged: GridInput = {
       ...config,
       rows: { kind: "judge_model", values: ["judge-a", "judge-b"] },
       columns: { kind: "judge_effort", values: ["none", "low"] },
-      judge: {
-        criteria: [{ text: "Is this empty?", correctAnswer: false }],
-        model: "",
-        effort: "default",
-      },
+      judge: { ...config.judge!, model: "", effort: "default" },
     };
     const destination: Grid = {
       ...source,
-      id: "judged-reuse-destination",
+      id: token(),
       input: judged,
       status: "paused",
-      cells: expandGrid(judged).map((cell, index) => ({
-        ...cell,
-        id: `judged-reuse-${index}`,
-      })),
+      cells: expandGrid(judged).map((cell) => ({ ...cell, id: token() })),
     };
-    assignGenerationSources(judged.format, destination.cells);
-    let reads = 0;
-    const readArtifact = f.store.files.readArtifact.bind(f.store.files);
-    f.store.files.readArtifact = async (...args) => {
-      reads++;
-      return readArtifact(...args);
-    };
-    await reuseArtifacts(
-      f.store,
-      new Provider(f.providerURL),
-      source,
-      judged.format,
-      destination.cells,
-    );
-    assert.equal(reads, 1);
-    assert.equal(f.calls.length, 1);
+    const tasks = createWorkflow(judged, destination.cells);
+    const before = readdirSync(f.store.files.root).sort();
+    await reuseArtifacts(f.store, new Provider(f.providerURL), source, tasks);
+    projectWorkflow(destination, tasks);
+    assert.deepEqual(readdirSync(f.store.files.root).sort(), before);
+    assert.equal(f.calls.length, 2);
     for (const cell of destination.cells) {
       assert.equal(cell.status, "pending");
       assert.equal(hasCompletedOutput(cell), true);
+      assert.equal(cell.artifactId, original.artifactId);
+      assert.equal(cell.thinkingId, original.thinkingId);
+      assert.equal(cell.thinkingSourceId, original.thinkingSourceId);
       assert.deepEqual(cell.judge, {
         model: judged.rows.values[cell.row],
         effort: judged.columns.values[cell.column],
@@ -1098,60 +1069,36 @@ test("reuse copies one generation per judge group, retains failed-judge output, 
       assert.equal(cell.attemptId, undefined);
       assert.deepEqual(cell.usage, original.usage);
       assert.deepEqual(cell.provenance, original.provenance);
-      assert.deepEqual(
-        await f.store.files.bundle(cell.id),
-        await f.store.files.bundle(original.id),
-      );
     }
-    assert.deepEqual(
-      destination.cells.map((cell) => cell.generationStatus),
-      ["complete", undefined, undefined, undefined],
-    );
-    f.store.insert(destination);
-    assert.deepEqual(
-      f.store.get(destination.id)!.cells,
-      JSON.parse(JSON.stringify(destination.cells)),
-    );
-    destination.cells[0].judge = {
-      ...destination.cells[0].judge!,
-      status: "complete",
-      attemptId: "fresh-judge-attempt",
+    const generation = tasks.find((task) => task.kind === "generation")!;
+    assert.equal(generation.attemptId, undefined);
+    assert.equal(generation.error, undefined);
+    f.store.insert(destination, tasks);
+    const judgments = tasks.filter((task) => task.kind === "judge");
+    judgments[0].status = "complete";
+    judgments[0].attemptId = "fresh-judge-attempt";
+    judgments[0].output = {
       results: [{ verdict: false, explanation: "The output is not empty." }],
     };
-    destination.cells[1].judge = {
-      ...destination.cells[1].judge!,
-      status: "error",
-      attemptId: "failed-judge-attempt",
-      error: "Temporary error",
-      errorCode: 503,
-      retrying: true,
-    };
-    f.store.saveGeneration(destination);
+    judgments[1].status = "error";
+    judgments[1].attemptId = "failed-judge-attempt";
+    judgments[1].error = "Temporary error";
+    judgments[1].errorCode = 503;
+    f.store.saveWorkflow(destination, tasks);
     const restored = f.store.get(destination.id)!;
     assert.deepEqual(
-      restored.cells,
-      JSON.parse(JSON.stringify(destination.cells)),
+      restored.cells[0].judge?.results,
+      judgments[0].output.results,
     );
+    assert.equal(restored.cells[1].judge?.error, "Temporary error");
     assert.equal(restored.input.judge!.criteria[0].correctAnswer, false);
-
-    await f.store.files.removeArtifact(original.id);
-    const missing = expandGrid(judged).map((cell, index) => ({
-      ...cell,
-      id: `missing-reuse-${index}`,
-    }));
-    assignGenerationSources(judged.format, missing);
-    await reuseArtifacts(
-      f.store,
-      new Provider(f.providerURL),
-      source,
-      judged.format,
-      missing,
-    );
     assert.ok(
-      missing.every((cell) => !cell.provenance && cell.status === "pending"),
+      restored.cells.every((cell) => cell.artifactId === original.artifactId),
     );
-    assert.equal(missing[0].generationStatus, "pending");
-    assert.equal(f.calls.length, 1);
+    assert.equal(
+      f.store.removeUnreferencedArtifact(original.artifactId!),
+      false,
+    );
   } finally {
     await f.close();
   }

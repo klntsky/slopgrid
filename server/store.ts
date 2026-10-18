@@ -6,10 +6,10 @@ import Database from "better-sqlite3";
 import { encrypt, decrypt } from "./encryption.js";
 import {
   expandGrid,
-  hasCompletedOutput,
   type Grid,
   type StoredGrid,
   type Cell,
+  type WorkflowTask,
   type User,
   type Identity,
 } from "./domain.js";
@@ -18,6 +18,7 @@ import { OutputFiles } from "./files.js";
 import { token } from "./ids.js";
 import { initializeDatabase } from "./database.js";
 import { expandPromptForTitle } from "./grid-title.js";
+import { createWorkflow, projectWorkflow } from "./workflow.js";
 export type Session = {
   id: string;
   anonymousId?: string;
@@ -28,6 +29,36 @@ export type Session = {
   inferenceConcurrency?: number;
   created: number;
 };
+type WorkflowRow = {
+  id: string;
+  kind: WorkflowTask["kind"];
+  status: WorkflowTask["status"];
+  dependency_id: string | null;
+  artifact_id: string | null;
+  thinking_source_id: string | null;
+  data: string;
+};
+function readTask(row: WorkflowRow): WorkflowTask {
+  const task = {
+    ...JSON.parse(row.data),
+    id: row.id,
+    kind: row.kind,
+    status: row.status,
+  } as WorkflowTask;
+  if (task.kind === "judge") {
+    task.generationId = row.dependency_id!;
+  } else {
+    if (row.artifact_id)
+      task.output = { ...task.output!, artifactId: row.artifact_id };
+    if (row.thinking_source_id) {
+      if (task.output?.thinkingId)
+        task.output.thinkingSourceId = row.thinking_source_id;
+      if (task.progress?.thinkingId)
+        task.progress.thinkingSourceId = row.thinking_source_id;
+    }
+  }
+  return task;
+}
 export class Store {
   db: Database.Database;
   files: OutputFiles;
@@ -50,6 +81,7 @@ export class Store {
       this.billing = new Billing(this.db);
       this.files = new OutputFiles(
         resolve(outputsPath ?? join(dirname(path), "outputs")),
+        (id) => this.artifactReferenced(id),
       );
       this.references = createImageReferences(this.db, this.files);
     } catch (error) {
@@ -104,25 +136,27 @@ export class Store {
     if (!grid.title) delete grid.title;
     if (!grid.interruption) delete grid.interruption;
     const cells = this.db
-      .prepare("SELECT id, data FROM cells WHERE grid_id=? ORDER BY position")
-      .all(id) as { id: string; data: string }[];
-    grid.cells = expandGrid(grid.input).map((cell, index) => {
-      const saved = JSON.parse(cells[index].data) as Cell;
-      return {
-        ...cell,
-        ...saved,
-        id: cells[index].id,
-        ...(saved.attemptId
-          ? this.billing.cell(cells[index].id, saved.attemptId)
-          : saved.usage
-            ? {}
-            : this.billing.cell(cells[index].id)),
-      };
-    });
+      .prepare(
+        "SELECT id, generation_id, judgment_id FROM cells WHERE grid_id=? ORDER BY position",
+      )
+      .all(id) as {
+      id: string;
+      generation_id: string;
+      judgment_id: string | null;
+    }[];
+    grid.cells = expandGrid(grid.input).map((cell, index) => ({
+      ...cell,
+      id: cells[index].id,
+      generationId: cells[index].generation_id,
+      judgmentId: cells[index].judgment_id ?? undefined,
+    }));
+    const tasks = this.workflow(id);
+    projectWorkflow(grid, tasks);
     return grid;
   }
   // Creation is the only operation that writes both metadata and generation state.
-  insert(grid: Grid) {
+  insert(grid: Grid, tasks = createWorkflow(grid.input, grid.cells)) {
+    projectWorkflow(grid, tasks);
     const {
       id,
       cells,
@@ -166,63 +200,124 @@ export class Store {
         for (const referenceId of referenceIds)
           insertReference.run(id, referenceId);
       }
+      this.saveWorkflow(grid, tasks);
       const insert = this.db.prepare(
-        "INSERT INTO cells (id, grid_id, position, data) VALUES (?,?,?,?)",
+        "INSERT INTO cells (id, grid_id, position, data, generation_id, judgment_id) VALUES (?,?,?,'{}',?,?)",
       );
       cells.forEach((cell, position) =>
-        insert.run(cell.id, id, position, "{}"),
+        insert.run(
+          cell.id,
+          id,
+          position,
+          cell.generationId,
+          cell.judgmentId ?? null,
+        ),
       );
-      this.saveGeneration(grid);
     })();
   }
-  saveGeneration(grid: Grid, cells: readonly Cell[] = grid.cells) {
+  workflow(gridId: string): WorkflowTask[] {
+    const rows = this.db
+      .prepare(
+        "SELECT id,kind,status,dependency_id,artifact_id,thinking_source_id,data FROM workflow_tasks WHERE grid_id=? ORDER BY rowid",
+      )
+      .all(gridId) as WorkflowRow[];
+    return rows.map((row) => {
+      const task = readTask(row);
+      if (task.kind === "generation" && (task.attemptId || !task.output)) {
+        const billing = this.billing.task(task.id, task.attemptId);
+        if (billing) {
+          if (task.output) task.output.usage = billing.usage;
+          else task.progress = { ...task.progress, usage: billing.usage };
+        }
+      }
+      return task;
+    });
+  }
+  saveWorkflow(grid: Grid, tasks: readonly WorkflowTask[]) {
     this.db.transaction(() => {
       this.db
         .prepare(
           `UPDATE grids SET data=json_set(data, '$.status', ?, '$.interruption', json(?)) WHERE id=?`,
         )
         .run(grid.status, JSON.stringify(grid.interruption ?? null), grid.id);
-      const saveCell = this.db.prepare(
-        "UPDATE cells SET data=? WHERE id=? AND grid_id=?",
+      const save = this.db.prepare(
+        `INSERT INTO workflow_tasks
+          (id,grid_id,kind,status,dependency_id,artifact_id,thinking_source_id,data)
+          VALUES (?,?,?,?,?,?,?,?)
+          ON CONFLICT(id) DO UPDATE SET
+            kind=excluded.kind,status=excluded.status,
+            dependency_id=excluded.dependency_id,artifact_id=excluded.artifact_id,
+            thinking_source_id=excluded.thinking_source_id,data=excluded.data
+          WHERE workflow_tasks.grid_id=excluded.grid_id`,
       );
-      const hasCalls = this.db.prepare(
-        "SELECT 1 FROM inference_calls WHERE cell_id=? LIMIT 1",
-      );
-      for (const cell of cells) {
-        const {
-          status,
-          error,
-          errorCode,
-          usage,
-          mediaType,
-          thinkingId,
-          provenance,
-          attemptId,
-          judge,
-          generationSourceId,
-          generationStatus,
-        } = cell;
-        saveCell.run(
-          JSON.stringify({
-            status,
-            error,
-            errorCode,
-            usage: !attemptId || !hasCalls.get(cell.id) ? usage : undefined,
-            ...(grid.input.format === "chat-template" &&
-              cell.status !== "complete" && { draft: cell.draft }),
-            mediaType,
-            thinkingId,
-            provenance,
-            attemptId,
-            judge,
-            generationSourceId,
-            generationStatus,
-          }),
-          cell.id,
+      for (const task of tasks) {
+        let output: unknown = task.output;
+        let artifactId: string | undefined;
+        let thinkingSourceId: string | undefined;
+        let progress: { thinkingId?: string; draft?: string } | undefined;
+        if (task.kind === "generation") {
+          if (task.status === "complete" && !task.output?.artifactId)
+            throw new Error(
+              "A completed generation must reference an artifact.",
+            );
+          if (task.output) {
+            const {
+              artifactId: artifact,
+              thinkingSourceId: thinkingSource,
+              ...result
+            } = task.output;
+            artifactId = artifact;
+            thinkingSourceId = thinkingSource;
+            output = result;
+          }
+          thinkingSourceId =
+            task.progress?.thinkingSourceId ?? thinkingSourceId;
+          if (
+            task.progress?.thinkingId ||
+            (task.input.format === "chat-template" &&
+              task.status !== "complete" &&
+              task.progress?.draft !== undefined)
+          )
+            progress = {
+              thinkingId: task.progress.thinkingId,
+              draft:
+                task.input.format === "chat-template" &&
+                task.status !== "complete"
+                  ? task.progress.draft
+                  : undefined,
+            };
+        }
+        const changed = save.run(
+          task.id,
           grid.id,
+          task.kind,
+          task.status,
+          task.kind === "judge" ? task.generationId : null,
+          artifactId ?? null,
+          thinkingSourceId ?? null,
+          JSON.stringify({
+            input: task.input,
+            output,
+            attemptId: task.attemptId,
+            error: task.error,
+            errorCode: task.errorCode,
+            progress,
+          }),
         );
+        if (!changed.changes)
+          throw new Error("A workflow task cannot change grids.");
       }
     })();
+  }
+  artifactReferenced(id: string): boolean {
+    return !!this.db
+      .prepare(
+        "SELECT 1 FROM workflow_tasks WHERE artifact_id=? OR thinking_source_id=? LIMIT 1",
+      )
+      .get(id, id);
+  }
+  removeUnreferencedArtifact(id: string): boolean {
+    return this.db.transaction(() => this.files.removeArtifact(id)).immediate();
   }
   setTitle(id: string, title: string) {
     this.db
@@ -278,9 +373,14 @@ export class Store {
     const row = this.db
       .prepare(
         `SELECT g.owner, g.owner_user_id AS ownerUserId, g.published,
-        g.data AS grid, c.data AS cell
-      FROM cells c JOIN grids g ON g.id=c.grid_id WHERE c.id=?
-    `,
+          g.data AS grid, generation.status, generation.artifact_id AS artifactId,
+          generation.thinking_source_id AS thinkingSourceId,
+          c.generation_id AS generationId,
+          generation.data AS generation, judgment.status AS judgmentStatus
+        FROM cells c JOIN grids g ON g.id=c.grid_id
+        JOIN workflow_tasks generation ON generation.id=c.generation_id
+        LEFT JOIN workflow_tasks judgment ON judgment.id=c.judgment_id
+        WHERE c.id=?`,
       )
       .get(id) as
       | {
@@ -288,42 +388,47 @@ export class Store {
           ownerUserId: string | null;
           published: number;
           grid: string;
-          cell: string;
+          status: Cell["status"];
+          generationId: string;
+          artifactId: string | null;
+          thinkingSourceId: string | null;
+          generation: string;
+          judgmentStatus: Cell["status"] | null;
         }
       | undefined;
     if (!row) return;
     const { input } = JSON.parse(row.grid) as Pick<Grid, "input">;
-    const cell = JSON.parse(row.cell) as Cell;
-    const { status, mediaType, thinkingId } = cell;
+    const generation = JSON.parse(row.generation) as Pick<
+      Extract<WorkflowTask, { kind: "generation" }>,
+      "output" | "progress"
+    >;
     return {
       owner: row.owner,
       ownerUserId: row.ownerUserId ?? undefined,
       published: row.published === 1,
       format: input.format,
-      thinkingId,
-      status,
-      outputReady: hasCompletedOutput(cell),
-      mediaType,
+      generationId: row.generationId,
+      thinkingId:
+        generation.progress?.thinkingId ?? generation.output?.thinkingId,
+      thinkingSourceId: row.thinkingSourceId ?? undefined,
+      artifactId: row.artifactId ?? undefined,
+      status:
+        row.status === "complete" && row.artifactId
+          ? (row.judgmentStatus ?? "complete")
+          : row.status,
+      outputReady: !!row.artifactId,
+      mediaType: generation.output?.mediaType,
     };
   }
   outputDownload(id: string) {
+    const output = this.outputMetadata(id);
+    if (!output?.outputReady) return;
     const row = this.db
       .prepare(
-        `SELECT g.id AS gridId, g.data, c.position, c.data AS cell
-         FROM cells c JOIN grids g ON g.id=c.grid_id
-         WHERE c.id=?`,
+        `SELECT g.id AS gridId, g.data, c.position
+         FROM cells c JOIN grids g ON g.id=c.grid_id WHERE c.id=?`,
       )
-      .get(id) as
-      | {
-          gridId: string;
-          data: string;
-          position: number;
-          cell: string;
-        }
-      | undefined;
-    if (!row) return;
-    const cell = JSON.parse(row.cell) as Cell;
-    if (!hasCompletedOutput(cell)) return;
+      .get(id) as { gridId: string; data: string; position: number };
     const { input } = JSON.parse(row.data) as Pick<Grid, "input">;
     const columns = input.columns.values.length;
     return {
@@ -332,7 +437,9 @@ export class Store {
       row: input.rows.values[Math.floor(row.position / columns)],
       column: input.columns.values[row.position % columns],
       format: input.format,
-      mediaType: cell.mediaType,
+      mediaType: output.mediaType,
+      artifactId: output.artifactId!,
+      thinkingSourceId: output.thinkingSourceId,
     };
   }
   session(id: string): Session | undefined {

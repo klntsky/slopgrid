@@ -90,7 +90,7 @@ test(
       );
       assert.equal(paused.status, "paused");
       assert.equal(paused.cells[0].thinkingId, thinkingId);
-      assert.equal(f.store.files.path(grid.cells[0].id, "index.md"), undefined);
+      assert.equal(paused.cells[0].artifactId, undefined);
       await assert.rejects(
         f.engine.api.startGrid({ gridId: grid.id, sessionId: f.owner }),
         { code: "DRAINING" },

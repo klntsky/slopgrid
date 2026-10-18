@@ -5,8 +5,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "../server/store.js";
 import { expandGrid, type Cell, type GridInput } from "../server/domain.js";
+import { createWorkflow } from "../server/workflow.js";
 
-test("cell cost follows the latest call while billing preserves earlier attempts and finish reasons", () => {
+test("generation usage follows the latest call while billing preserves earlier attempts and finish reasons", () => {
   const directory = mkdtempSync(join(tmpdir(), "slopgrid-billing-"));
   const store = new Store(join(directory, "db.sqlite"), Buffer.alloc(32, 1));
   try {
@@ -32,6 +33,10 @@ test("cell cost follows the latest call while billing preserves earlier attempts
     const grid = store.get("grid")!;
     grid.cells[0].status = "running";
     grid.cells[0].estimatedUsage = { costUsd: 0.2 };
+    const generationId = grid.cells[0].generationId!;
+    const tasks = store.workflow(grid.id);
+    tasks[0].status = "running";
+    store.saveWorkflow(grid, tasks);
     const recordCall = store.billing.observe("cell");
     const first = recordCall("direct");
     first.complete(
@@ -53,12 +58,12 @@ test("cell cost follows the latest call while billing preserves earlier attempts
     assert.equal(store.billing.gridSpent(grid.id, grid.cells), 0.7);
     delete grid.cells[0].currentCallCostUsd;
     grid.cells[0].estimatedUsage = { costUsd: 0.2 };
-    assert.equal(store.billing.cell("cell")?.usage, undefined);
+    assert.equal(store.billing.task(generationId)?.usage, undefined);
     second.complete(
       { phase: "direct", finishReason: "stop", rawFinishReason: "stop" },
       { inputTokens: 10, outputTokens: 20, costUsd: 0.1 },
     );
-    assert.equal(store.billing.cell("cell")?.usage?.costUsd, 0.1);
+    assert.equal(store.billing.task(generationId)?.usage?.costUsd, 0.1);
     assert.equal(store.billing.gridSpent(grid.id, grid.cells), 0.6);
     const history = store.billing.page("owner", 0);
     assert.equal(history.total, 2);
@@ -118,21 +123,32 @@ test("judge attempts retain actual selections and charges without entering gener
     const cells: Cell[] = expandGrid(input).map((cell, index) => ({
       ...cell,
       id: index ? "member" : "source",
-      generationSourceId: "source",
-      status: "running" as const,
-      generationStatus: index ? undefined : ("complete" as const),
-      usage: { costUsd: 0.1, inputTokens: 10, outputTokens: 20 },
+      status: "pending" as const,
     }));
-    store.insert({
-      id: "grid",
-      owner: "owner",
-      input,
-      cells,
-      status: "running",
-      published: false,
-      visibility: "private",
-      createdAt: new Date().toISOString(),
-    });
+    const tasks = createWorkflow(input, cells);
+    const generation = tasks.find((task) => task.kind === "generation");
+    assert.ok(generation);
+    generation.status = "complete";
+    generation.output = {
+      artifactId: "committed-output",
+      provenance: { signature: "saved", files: ["index.md"] },
+      usage: { costUsd: 0.1, inputTokens: 10, outputTokens: 20 },
+    };
+    for (const task of tasks)
+      if (task.kind === "judge") task.status = "running";
+    store.insert(
+      {
+        id: "grid",
+        owner: "owner",
+        input,
+        cells,
+        status: "running",
+        published: false,
+        visibility: "private",
+        createdAt: new Date().toISOString(),
+      },
+      tasks,
+    );
     store.billing
       .observe(
         "source",
@@ -163,18 +179,27 @@ test("judge attempts retain actual selections and charges without entering gener
       effort: "high",
     })("judge");
     cells[0].estimatedUsage = { costUsd: 0.8 };
-    assert.deepEqual(store.billing.cell("source")?.usage, {
+    assert.deepEqual(store.billing.task(generation.id)?.usage, {
       costUsd: 0.1,
       inputTokens: 10,
       outputTokens: 20,
     });
-    assert.deepEqual(store.billing.cell("source", "generation")?.usage, {
+    assert.deepEqual(store.billing.task(generation.id, "generation")?.usage, {
       costUsd: 0.1,
       inputTokens: 10,
       outputTokens: 20,
     });
-    assert.equal(store.billing.cell("member"), undefined);
-    assert.equal(store.billing.cell("member", "judge-attempt"), undefined);
+    assert.equal(cells[0].generationId, cells[1].generationId);
+    assert.deepEqual(store.billing.task(cells[1].generationId!)?.usage, {
+      costUsd: 0.1,
+      inputTokens: 10,
+      outputTokens: 20,
+    });
+    assert.equal(store.billing.task(generation.id, "judge-attempt"), undefined);
+    assert.deepEqual(
+      store.billing.task(cells[1].judgmentId!, "judge-attempt")?.usage,
+      { costUsd: 0.3, inputTokens: 300, outputTokens: 400 },
+    );
     assert.equal(store.billing.gridSpent("grid", cells), 0.1);
     assert.equal(
       store.billing.gridSpent("grid", store.get("grid")!.cells),
@@ -213,6 +238,11 @@ test("canonical billing survives reopening and recovery with free and unavailabl
       budgetUsd: 1,
       rows: { kind: "variable", values: ["one"] },
       columns: { kind: "effort", values: ["none"] },
+      judge: {
+        model: "actual-judge",
+        effort: "high",
+        criteria: [{ text: "Correct?", correctAnswer: true }],
+      },
     };
     store.insert({
       id: "grid",
@@ -225,6 +255,7 @@ test("canonical billing survives reopening and recovery with free and unavailabl
       visibility: "private",
       createdAt: "2025-03-04T05:06:07.000Z",
     });
+    const generationId = store.get("grid")!.cells[0].generationId!;
     const free = store.billing.observe("cell", "generation")("direct");
     free.update({ generationId: "provider-id", httpStatus: 200 });
     free.complete(
@@ -250,9 +281,10 @@ test("canonical billing survives reopening and recovery with free and unavailabl
 
     const stored = store.db
       .prepare(
-        "SELECT attempt_id,phase,status,cost_usd,data FROM inference_calls ORDER BY rowid",
+        "SELECT task_id,attempt_id,phase,status,cost_usd,data FROM inference_calls ORDER BY rowid",
       )
       .all() as {
+      task_id: string;
       attempt_id: string;
       phase: string;
       status: string;
@@ -293,6 +325,15 @@ test("canonical billing survives reopening and recovery with free and unavailabl
         },
       ],
     );
+    assert.deepEqual(
+      stored.map((row) => row.task_id),
+      [
+        generationId,
+        generationId,
+        store.get("grid")!.cells[0].judgmentId,
+        generationId,
+      ],
+    );
     for (const row of stored) {
       const data = JSON.parse(row.data);
       assert.equal(Object.hasOwn(data, "attemptId"), false);
@@ -300,16 +341,16 @@ test("canonical billing survives reopening and recovery with free and unavailabl
       assert.equal(Object.hasOwn(data, "status"), false);
       assert.equal(Object.hasOwn(data.usage ?? {}, "costUsd"), false);
     }
-    assert.deepEqual(store.billing.cell("cell", "generation")?.usage, {
+    assert.deepEqual(store.billing.task(generationId, "generation")?.usage, {
       costUsd: 0,
       inputTokens: 10,
       outputTokens: 5,
     });
-    assert.deepEqual(store.billing.cell("cell", "unknown-cost")?.usage, {
+    assert.deepEqual(store.billing.task(generationId, "unknown-cost")?.usage, {
       inputTokens: 3,
       outputTokens: 4,
     });
-    assert.equal(store.billing.cell("cell", "unfinished"), undefined);
+    assert.equal(store.billing.task(generationId, "unfinished"), undefined);
     assert.equal(store.billing.page("anonymous", 0).total, 0);
     const before = store.billing.page("anonymous", 0, "account");
     assert.deepEqual(
@@ -360,6 +401,122 @@ test("canonical billing survives reopening and recovery with free and unavailabl
     assert.deepEqual(
       [...first.calls, ...second.calls].map((call) => call.id),
       ordered.map((row) => row.id),
+    );
+  } finally {
+    store.db.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("shared generation calls aggregate across ledger cells without duplicating estimates or judge work", () => {
+  const directory = mkdtempSync(join(tmpdir(), "slopgrid-shared-billing-"));
+  const store = new Store(join(directory, "db.sqlite"), Buffer.alloc(32, 1));
+  try {
+    const input: GridInput = {
+      format: "markdown",
+      prompt: "Shared output",
+      model: "generator",
+      effort: "none",
+      budgetUsd: 1,
+      rows: { kind: "judge_model", values: ["judge-a", "judge-b"] },
+      columns: { kind: "judge_effort", values: ["high"] },
+      judge: {
+        model: "",
+        effort: "high",
+        criteria: [{ text: "Correct?", correctAnswer: true }],
+      },
+    };
+    const cells = expandGrid(input).map((cell, index) => ({
+      ...cell,
+      id: `cell-${index}`,
+    }));
+    const tasks = createWorkflow(input, cells);
+    const generation = tasks.find((task) => task.kind === "generation");
+    assert.ok(generation);
+    generation.status = "running";
+    generation.attemptId = "shared-attempt";
+    generation.progress = { currentCallCostUsd: 0.05 };
+    const grid = {
+      id: "grid",
+      owner: "owner",
+      input,
+      cells,
+      status: "running" as const,
+      published: false,
+      visibility: "private" as const,
+      createdAt: new Date().toISOString(),
+    };
+    store.insert(grid, tasks);
+    const sourceObserver = store.billing.observe("cell-0", "shared-attempt");
+    const first = sourceObserver("direct");
+    first.update({ generationId: "provider-generation-id" });
+    first.complete(
+      { phase: "direct", finishReason: "stop" },
+      { costUsd: 0.1, inputTokens: 10, outputTokens: 0 },
+    );
+    store.billing
+      .observe(
+        "cell-1",
+        "shared-attempt",
+      )("direct")
+      .complete(
+        { phase: "direct", finishReason: "stop" },
+        { costUsd: 0.2, inputTokens: 0, outputTokens: 20 },
+      );
+    sourceObserver("judge").complete(
+      { phase: "judge", finishReason: "stop" },
+      { costUsd: 0.4 },
+    );
+    assert.deepEqual(store.billing.task(generation.id, "shared-attempt"), {
+      usage: {
+        costUsd: 0.30000000000000004,
+        inputTokens: 10,
+        outputTokens: 20,
+      },
+    });
+    assert.equal(
+      store.billing.task(cells[0].judgmentId!, "shared-attempt")?.usage
+        ?.costUsd,
+      0.4,
+    );
+    assert.ok(Math.abs(store.billing.gridSpent(grid.id, cells) - 0.3) < 1e-9);
+    const retry = store.billing.observe("cell-1", "retry-attempt")("direct");
+    assert.ok(Math.abs(store.billing.gridSpent(grid.id, cells) - 0.35) < 1e-9);
+    assert.deepEqual(
+      store.billing.task(generation.id, "retry-attempt")?.usage,
+      {},
+    );
+    retry.update({ usage: { costUsd: 0 } });
+    assert.ok(Math.abs(store.billing.gridSpent(grid.id, cells) - 0.3) < 1e-9);
+    retry.fail(new Error("Cancelled"), true);
+    assert.deepEqual(
+      store.billing.task(generation.id, "retry-attempt")?.usage,
+      {
+        costUsd: 0,
+      },
+    );
+    const rows = store.db
+      .prepare(
+        "SELECT cell_id,task_id,data FROM inference_calls ORDER BY rowid",
+      )
+      .all() as { cell_id: string; task_id: string; data: string }[];
+    assert.deepEqual(
+      rows.map((row) => [row.cell_id, row.task_id]),
+      [
+        ["cell-0", generation.id],
+        ["cell-1", generation.id],
+        ["cell-0", cells[0].judgmentId],
+        ["cell-1", generation.id],
+      ],
+    );
+    assert.equal(
+      JSON.parse(rows[0].data).generationId,
+      "provider-generation-id",
+    );
+    assert.ok(Math.abs(store.billing.page("owner", 0).costUsd - 0.7) < 1e-9);
+    assert.throws(
+      () => store.billing.observe("missing-cell")("direct"),
+      /requires a workflow task/,
     );
   } finally {
     store.db.close();

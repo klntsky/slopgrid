@@ -9,16 +9,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join, dirname } from "node:path";
-import {
-  readdir,
-  readFile,
-  mkdir,
-  mkdtemp,
-  rename,
-  rm,
-  writeFile,
-} from "node:fs/promises";
-import { token } from "./ids.js";
+import { readdir, readFile, access, stat } from "node:fs/promises";
+import { constants } from "node:fs";
 
 export type ArtifactBundle = {
   files: Record<string, Uint8Array>;
@@ -34,7 +26,10 @@ export function safePath(path: string): boolean {
   );
 }
 export class OutputFiles {
-  constructor(readonly root: string) {
+  constructor(
+    readonly root: string,
+    private readonly referenced: (id: string) => boolean = () => false,
+  ) {
     mkdirSync(root, { recursive: true, mode: 0o700 });
   }
   private directory(id: string): string {
@@ -48,7 +43,9 @@ export class OutputFiles {
     )
       throw new Error("Output files need safe relative paths");
     const target = this.directory(id);
+    if (existsSync(target)) throw new Error("Output artifact already exists");
     const temporary = mkdtempSync(join(this.root, ".pending-"));
+    let installed = false;
     try {
       for (const [path, content] of Object.entries(files)) {
         const parts = path.split("/");
@@ -56,11 +53,10 @@ export class OutputFiles {
         mkdirSync(join(temporary, ...parts), { recursive: true, mode: 0o700 });
         writeFileSync(join(temporary, path), content, { mode: 0o600 });
       }
-      // A retry may replace files left by a crash before SQLite marked completion.
-      rmSync(target, { recursive: true, force: true });
       renameSync(temporary, target);
+      installed = true;
     } finally {
-      rmSync(temporary, { recursive: true, force: true });
+      if (!installed) rmSync(temporary, { recursive: true, force: true });
     }
   }
   path(id: string, path: string): string | undefined {
@@ -68,40 +64,65 @@ export class OutputFiles {
     const file = join(this.directory(id), path);
     return existsSync(file) && statSync(file).isFile() ? file : undefined;
   }
-  private thinkingFile(cellId: string, id: string): string | undefined {
+  private thinkingFile(sourceId: string, id: string): string | undefined {
     if (!/^[a-f0-9]{48}$/.test(id)) return;
     return join(
       this.root,
       ".thinking",
-      encodeURIComponent(cellId),
+      encodeURIComponent(sourceId),
       id + ".txt",
     );
   }
-  appendThinking(cellId: string, id: string, text: string) {
-    const file = this.thinkingFile(cellId, id);
+  appendThinking(sourceId: string, id: string, text: string) {
+    const file = this.thinkingFile(sourceId, id);
     if (!file) throw new Error("Invalid thinking ID");
     mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
     appendFileSync(file, text, { mode: 0o600 });
   }
-  writeThinking(cellId: string, id: string, text: string) {
-    const file = this.thinkingFile(cellId, id);
+  writeThinking(sourceId: string, id: string, text: string) {
+    const file = this.thinkingFile(sourceId, id);
     if (!file) throw new Error("Invalid thinking ID");
     mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
     const temporary = file + ".pending";
     writeFileSync(temporary, text, { mode: 0o600 });
     renameSync(temporary, file);
   }
-  thinkingPath(cellId: string, id: string): string | undefined {
-    const file = this.thinkingFile(cellId, id);
+  thinkingPath(sourceId: string, id: string): string | undefined {
+    const file = this.thinkingFile(sourceId, id);
     return file && existsSync(file) ? file : undefined;
+  }
+  async hasArtifact(
+    id: string,
+    inventory: readonly string[],
+    thinkingId?: string,
+    thinkingSourceId?: string,
+  ): Promise<boolean> {
+    if (!inventory.length || inventory.some((path) => !safePath(path)))
+      return false;
+    try {
+      const paths = inventory.map((path) => join(this.directory(id), path));
+      if (thinkingId) {
+        if (!thinkingSourceId) return false;
+        const thinking = this.thinkingFile(thinkingSourceId, thinkingId);
+        if (!thinking) return false;
+        paths.push(thinking);
+      }
+      for (const path of paths) {
+        if (!(await stat(path)).isFile()) return false;
+        await access(path, constants.R_OK);
+      }
+      return true;
+    } catch {
+      return false;
+    }
   }
   async readArtifact(
     id: string,
     inventory: readonly string[],
     thinkingId?: string,
+    thinkingSourceId?: string,
   ): Promise<ArtifactBundle | undefined> {
-    // Validate and read the complete source before any destination is written.
-    // Source read failures are misses; destination failures remain ordinary errors.
+    // Missing or unreadable content remains an unavailable artifact.
     try {
       if (!inventory.length || inventory.some((path) => !safePath(path)))
         return;
@@ -109,39 +130,12 @@ export class OutputFiles {
       for (const path of inventory)
         files[path] = await readFile(join(this.directory(id), path));
       if (!thinkingId) return { files };
-      const thinking = this.thinkingFile(id, thinkingId);
+      if (!thinkingSourceId) return;
+      const thinking = this.thinkingFile(thinkingSourceId, thinkingId);
       if (!thinking) return;
       return { files, thinking: await readFile(thinking) };
     } catch {
       return;
-    }
-  }
-  async writeArtifact(
-    id: string,
-    bundle: ArtifactBundle,
-  ): Promise<string | undefined> {
-    if (
-      !Object.keys(bundle.files).length ||
-      Object.keys(bundle.files).some((path) => !safePath(path))
-    )
-      throw new Error("Output files need safe relative paths");
-    const temporary = await mkdtemp(join(this.root, ".pending-"));
-    try {
-      for (const [path, content] of Object.entries(bundle.files)) {
-        const file = join(temporary, path);
-        await mkdir(dirname(file), { recursive: true, mode: 0o700 });
-        await writeFile(file, content, { mode: 0o600 });
-      }
-      await rename(temporary, this.directory(id));
-    } finally {
-      await rm(temporary, { recursive: true, force: true });
-    }
-    if (bundle.thinking !== undefined) {
-      const thinkingId = token();
-      const file = this.thinkingFile(id, thinkingId)!;
-      await mkdir(dirname(file), { recursive: true, mode: 0o700 });
-      await writeFile(file, bundle.thinking, { mode: 0o600 });
-      return thinkingId;
     }
   }
   async bundle(id: string): Promise<Record<string, Uint8Array>> {
@@ -162,11 +156,13 @@ export class OutputFiles {
     return files;
   }
 
-  async removeArtifact(id: string) {
-    await rm(this.directory(id), { recursive: true, force: true });
-    await rm(join(this.root, ".thinking", encodeURIComponent(id)), {
+  removeArtifact(id: string): boolean {
+    if (this.referenced(id)) return false;
+    rmSync(this.directory(id), { recursive: true, force: true });
+    rmSync(join(this.root, ".thinking", encodeURIComponent(id)), {
       recursive: true,
       force: true,
     });
+    return true;
   }
 }

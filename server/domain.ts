@@ -242,8 +242,10 @@ export type Cell = {
   budgetUsd: number;
   imageSettings?: ImageSettings;
   status: "pending" | "running" | "complete" | "error";
-  generationSourceId?: string;
-  generationStatus?: Cell["status"];
+  generationId?: string;
+  judgmentId?: string;
+  artifactId?: string;
+  thinkingSourceId?: string;
   judge?: {
     model: string;
     effort: string;
@@ -273,13 +275,59 @@ export type Cell = {
   preview?: { attempt: string; revision: number };
   usage?: { inputTokens?: number; outputTokens?: number; costUsd?: number };
 };
-export function hasCompletedOutput(
-  cell: Pick<Cell, "status" | "provenance" | "generationSourceId">,
-): boolean {
-  return (
-    cell.status === "complete" ||
-    Boolean(cell.generationSourceId && cell.provenance?.files.length)
-  );
+export type WorkflowState = {
+  status: Cell["status"];
+  attemptId?: string;
+  error?: string;
+  errorCode?: string | number;
+  retrying?: boolean;
+};
+export type Task<Input, Output> = WorkflowState & {
+  id: string;
+  input: Input;
+  output?: Output;
+};
+export type GenerationParameters = Pick<
+  Cell,
+  "model" | "effort" | "prompt" | "messages" | "budgetUsd" | "imageSettings"
+>;
+export type GenerationInput = GenerationParameters & {
+  format: GridInput["format"];
+};
+export type GenerationOutput = {
+  artifactId: string;
+  mediaType?: string;
+  provenance: NonNullable<Cell["provenance"]>;
+  usage?: Cell["usage"];
+  thinkingId?: string;
+  thinkingSourceId?: string;
+};
+export type GenerationTask = Task<GenerationInput, GenerationOutput> & {
+  kind: "generation";
+  progress?: Pick<
+    Cell,
+    | "draft"
+    | "thinking"
+    | "thinkingId"
+    | "thinkingSourceId"
+    | "estimatedUsage"
+    | "currentCallCostUsd"
+    | "usage"
+    | "preview"
+  >;
+};
+export type JudgmentInput = {
+  model: string;
+  effort: string;
+  criteria: NonNullable<GridInput["judge"]>["criteria"];
+};
+export type JudgmentTask = Task<JudgmentInput, { results: JudgeResult[] }> & {
+  kind: "judge";
+  generationId: string;
+};
+export type WorkflowTask = GenerationTask | JudgmentTask;
+export function hasCompletedOutput(cell: Pick<Cell, "artifactId">): boolean {
+  return !!cell.artifactId;
 }
 export type TemplateStep = {
   maxOutputTokens?: number;

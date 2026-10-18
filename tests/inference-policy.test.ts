@@ -6,7 +6,7 @@ import type { Model } from "../server/provider.js";
 import type { Request, Response } from "express";
 import { createInferenceGuard } from "../server/inference-policy.js";
 import { expandGrid, type GridInput } from "../server/domain.js";
-import { assignGenerationSources } from "../server/generation-groups.js";
+import { createWorkflow } from "../server/workflow.js";
 
 test("admission sums individual costs, preserves automatic selection, and skips completed cells on resume", async (t) => {
   class Provider extends ControlledProvider {
@@ -63,7 +63,7 @@ test("admission sums individual costs, preserves automatic selection, and skips 
   const saved = store.get(grid.id)!;
   assert.equal(saved.input.parallelWorkers, undefined);
   assert.equal(store.session(saved.owner)!.inferenceConcurrency, 3);
-  provider.finish(saved.cells[0].id);
+  provider.finish(saved.cells[0].generationId!);
   await new Promise((resolve) => setTimeout(resolve, 25));
   await fetch(`${origin}/api/grids/${grid.id}/pause`, {
     method: "POST",
@@ -139,7 +139,7 @@ test("automatic judged admission reserves one generation per source and each unf
     ...cell,
     id: `reservation-${index}`,
   }));
-  assignGenerationSources(input.format, cells);
+  createWorkflow(input, cells);
   assert.equal(
     await allow(req, res, session, undefined, input.format, cells),
     true,
@@ -147,9 +147,8 @@ test("automatic judged admission reserves one generation per source and each unf
   // $0.10 generation and three $3 judge reservations fit; a fourth judge does not.
   assert.equal(store.session(session.id)!.inferenceConcurrency, 4);
 
-  cells[0].generationStatus = "complete";
+  for (const cell of cells) cell.artifactId = "shared-generated-artifact";
   cells[0].judge!.status = "complete";
-  // Missing member copies are repaired, not reserved as more generation.
   assert.equal(
     await allow(
       req,
@@ -174,14 +173,14 @@ test("automatic judged admission reserves one generation per source and each unf
       id: `image-reservation-${index}`,
     }),
   );
-  assignGenerationSources("image", images);
+  createWorkflow({ ...input, format: "image" }, images);
   assert.equal(
     await allow(req, res, session, undefined, "image", images),
     true,
   );
   assert.equal(store.session(session.id)!.inferenceConcurrency, 3);
   assert.equal(provider.modelReads, modelReads);
-  images[0].generationStatus = "complete";
+  for (const cell of images) cell.artifactId = "shared-generated-image";
   for (const cell of images.slice(0, 2)) cell.judge!.status = "complete";
   assert.equal(
     await allow(req, res, session, undefined, "image", images),

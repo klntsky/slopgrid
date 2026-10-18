@@ -20,7 +20,7 @@ export async function appFixture(
     secret = Buffer.alloc(32, 7);
   const server = createServer();
   const engineStore = new Store(database, secret);
-  const { api, jobs } = createGenerationService(
+  const { api, jobs, executor } = createGenerationService(
     engineStore,
     options.provider ?? new Provider(),
     options.workersMax,
@@ -39,7 +39,7 @@ export async function appFixture(
       }[];
       for (const { id } of grids) jobs.pause(engineStore.get(id)!);
       await new Promise((resolve) => setImmediate(resolve));
-      jobs.previews.clearAll();
+      executor.previews.clearAll();
       engineServer.closeAllConnections();
       await new Promise<void>((resolve) => engineServer.close(() => resolve()));
       engineStore.db.close();
@@ -64,5 +64,14 @@ export async function appFixture(
     generation,
   });
   server.on("request", application.app);
-  return { ...application, jobs, generation, origin, port, database, secret };
+  return {
+    ...application,
+    jobs,
+    executor,
+    generation,
+    origin,
+    port,
+    database,
+    secret,
+  };
 }

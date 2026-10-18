@@ -103,7 +103,13 @@ test(
       assert.equal(f.calls.length, 1);
       assert.equal(call.aborted, false);
       assert.equal(
-        readFileSync(f.store.files.path(grid.cells[0].id, "index.md")!, "utf8"),
+        readFileSync(
+          f.store.files.path(
+            f.store.get(grid.id)!.cells[0].artifactId!,
+            "index.md",
+          )!,
+          "utf8",
+        ),
         chunk.repeat(8),
       );
       assert.equal(f.store.billing.page(f.owner, 0).costUsd, 0.0123);

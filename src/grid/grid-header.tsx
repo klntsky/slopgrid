@@ -30,20 +30,24 @@ export function GridHeader({
     progressText = failed
       ? `${finished} of ${g.cells.length} outputs finished: ${complete} complete, ${failed} failed`
       : `${complete} of ${g.cells.length} outputs complete`;
-  const generationCells = g.cells.filter(
-    (cell) => !cell.generationSourceId || cell.generationSourceId === cell.id,
-  );
+  const generations = new Set<string>();
+  const generationCells = g.cells.filter((cell) => {
+    if (generations.has(cell.generationId)) return false;
+    generations.add(cell.generationId);
+    return true;
+  });
   const costs = generationCells.flatMap((cell) => {
     const cost = cell.outputReady
       ? cell.usage?.costUsd
-      : (cell.generationStatus ?? cell.status) === "running"
+      : cell.status === "running"
         ? cell.estimatedUsage?.costUsd
         : undefined;
     return cost === undefined ? [] : [cost];
   });
   const estimated = generationCells.some(
     (cell) =>
-      (cell.generationStatus ?? cell.status) === "running" &&
+      !cell.outputReady &&
+      cell.status === "running" &&
       cell.estimatedUsage?.costUsd !== undefined,
   );
   const totalCost =
@@ -55,7 +59,9 @@ export function GridHeader({
       ? "Cost unavailable"
       : `${estimated ? "≈" : ""}${totalUsd.format(totalCost)}`;
   const generationRunning = g.input.judge
-    ? generationCells.some((cell) => cell.generationStatus === "running")
+    ? generationCells.some(
+        (cell) => !cell.outputReady && cell.status === "running",
+      )
     : g.status === "running" ||
       g.cells.some((cell) => cell.status === "running");
   const paused = g.status === "paused" && g.canEdit && !g.published;
