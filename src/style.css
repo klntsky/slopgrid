@@ -479,7 +479,7 @@ section {
 .fixed-options {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 24px;
+  gap: 32px;
   margin-bottom: 22px;
 }
 .axes {
@@ -489,7 +489,7 @@ section {
 .image-options {
   display: flex;
   flex-wrap: wrap;
-  gap: 24px;
+  gap: 32px;
   margin-bottom: 22px;
 }
 .image-options > div {
@@ -1215,6 +1215,8 @@ button.editable-title > .lucide {
   .axes,
   .fixed-options {
     grid-template-columns: 1fr;
+  }
+  .axes {
     gap: 10px;
   }
   .axis-swap {
