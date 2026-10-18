@@ -354,7 +354,7 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
    - Directly scrolling a view updates its own reading position.
 8. Highlight the criterion under the cursor in every judgment view in the grid. Update the shared highlight as scrolling changes the criterion under a stationary cursor, and clear it when the cursor leaves the criterion rows.
 9. On touchscreens, use single-finger contact as the shared criterion hover anchor, with the same highlighting, visibility, and vertical alignment as mouse hover.
-   - Keep the contacted criterion fixed throughout single-finger scrolling, including momentum after release. Continue synchronizing that criterion's position, and retarget at the last touch position only once scrolling finishes.
+   - Keep the contacted criterion fixed throughout single-finger scrolling, including momentum after release. When scrolling finishes, retain the selection and final scroll positions.
    - Tapping another criterion changes the anchor. Tapping outside the criteria or using multiple fingers clears it and restores peer positions.
    - Preserve native scrolling and grid pinch zoom.
 
