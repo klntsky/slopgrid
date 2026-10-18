@@ -334,6 +334,7 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
 2. Automatically show the judgment view when judging completes, and when opening a grid with completed judgments. The scales control switches between judgment and output; manual dismissal or choosing thinking remains in effect until the page is reopened.
    - Output, thinking, and judgment are alternate views. Selecting one replaces the other within the cell. Preserve the selected presentation across expansion and collapse.
    - Fill the available cell viewport edge to edge with a flat cell-colored results surface, including resized and expanded cells. Scroll within the results view when its content exceeds the viewport.
+   - Show inset shadows only along the top and bottom edges where more results remain: top when scrolled away from the start, bottom when scrolled away from the end, and neither when all results fit.
    - Use unruled rows with a status icon, criterion text, and plain explanation side by side. Wrap the displayed predicate title in `not()` when its expected answer is false; retain the original criterion text for editing and judge requests.
    - Show icon-only verdicts: green/check for a matching answer and red/cross for a mismatch, with accessible Correct/Incorrect labels.
    - Preserve the judgment selection on outside clicks. Escape retains expanded-cell collapse behavior. Preserve the output's raw/rendered selection when switching views.
@@ -345,7 +346,8 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
    - Report "Could not render this SVG for judging." when rendering fails, preserving the SVG and leaving judging failed.
    - Unavailable generated output reports "The generated output is unavailable for judging."
 6. Completed generation remains available for output, raw view, thinking, copy, and download while judging runs or fails, subject to ordinary access control. Cache ready output independently of judgment completion; display cached verdicts as saved results.
-7. Scrolling any judgment view synchronizes the other judgment views in that grid. Use the first currently visible criterion as the anchor and position that same criterion at the same vertical offset in the other views, so differing explanation heights do not require matching absolute scroll positions.
+7. When scrolling with a criterion under the cursor, synchronize the other judgment views in that grid using that criterion as the anchor. Position it at the same vertical offset in each view rather than matching absolute scroll positions.
+8. Highlight the criterion under the cursor in every judgment view in the grid. Update the shared highlight as scrolling changes the criterion under a stationary cursor, and clear it when the cursor leaves the criterion rows.
 
 
 ## 6. Inference, scheduling, and recovery
