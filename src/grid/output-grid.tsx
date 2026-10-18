@@ -6,7 +6,7 @@ import { GridViewport } from "./viewport";
 import { dimensionNames, displayValue } from "../format";
 import { ExpandButton } from "../components/expand-button";
 import { ContainedImage } from "../contained-image";
-import { OutputCell } from "./output-cell";
+import { OutputCell, type CellView } from "./output-cell";
 function ResizeHandle({
   axis,
   index,
@@ -28,9 +28,9 @@ function ResizeHandle({
 }
 export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
   const [views, setViews] = useState<
-    Record<string, { raw?: boolean; thinking?: boolean }>
+    Record<string, { raw?: boolean; mode?: CellView }>
   >({});
-  function setView(id: string, view: { raw?: boolean; thinking?: boolean }) {
+  function setView(id: string, view: { raw?: boolean; mode?: CellView }) {
     setViews((current) => ({ ...current, [id]: { ...current[id], ...view } }));
   }
   const [selection, setSelection] = useState<{
@@ -41,7 +41,10 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
     (cell) =>
       selection?.kind === "output" &&
       cell.id === selection.id &&
-      (cell.outputReady || cell.status === "running" || !!cell.thinkingURL),
+      (cell.outputReady ||
+        cell.status === "running" ||
+        !!cell.thinkingURL ||
+        !!cell.judge),
   );
   const reference =
     selection?.kind === "reference"
@@ -200,10 +203,8 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
                           title={title(cell)}
                           expanded={expanded?.id === cell.id}
                           rawMarkdown={views[cell.id]?.raw}
-                          showThinking={views[cell.id]?.thinking}
-                          onShowThinking={(thinking) =>
-                            setView(cell.id, { thinking })
-                          }
+                          view={views[cell.id]?.mode}
+                          onChangeView={(mode) => setView(cell.id, { mode })}
                           onToggleRawMarkdown={() =>
                             setView(cell.id, { raw: !views[cell.id]?.raw })
                           }

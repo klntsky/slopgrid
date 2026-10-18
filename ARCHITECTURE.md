@@ -160,12 +160,15 @@ exist; the scheduler owns producer selection and member-copy repair.
 
 ## Outputs and live views
 
-The grid parameters and judgment controls render through React portals into
-Tippy content containers attached to the document body. Each control owns its
-popup interaction and focus return, not engine state. Common parameters come
-from saved grid input, filtered by selected axis kinds. Judgment presentation
-combines criteria with persisted results, while reference thumbnails use the
-existing authorized reference route.
+The grid parameters control renders through a React portal into a Tippy content
+container attached to the document body and owns its popup interaction and focus
+return, not engine state. Common parameters come from saved grid input, filtered
+by selected axis kinds; reference thumbnails use the authorized reference route.
+
+The grid owns per-cell content selection and expansion state. Cells present
+output, thinking, and judgment through the same content viewport, keeping output
+previews mounted while inactive. Judgment presentation combines saved criteria
+with persisted results and does not own inference or billing state.
 
 The output layer owns format instructions, parsing, completed files, and
 temporary previews. Website output is a bundle of validated relative paths with

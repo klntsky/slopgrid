@@ -23,7 +23,12 @@ import { ContainedImage } from "../contained-image";
 import { useTooltip, tooltipRef } from "../components/use-tooltip";
 import { copyOutput } from "./copy-output";
 import { useOffline } from "../pwa";
-import { JudgeResultButton } from "./judge-result-button";
+import {
+  JudgeResultButton,
+  JudgeResults,
+  summarizeJudgment,
+} from "./judge-result-button";
+export type CellView = "output" | "thinking" | "judgment";
 export function OutputCell({
   cell,
   format,
@@ -33,8 +38,8 @@ export function OutputCell({
   expanded = false,
   rawMarkdown = false,
   onToggleRawMarkdown,
-  showThinking,
-  onShowThinking,
+  view,
+  onChangeView,
   onToggleExpand,
 }: {
   cell: ViewGrid["cells"][number];
@@ -45,8 +50,8 @@ export function OutputCell({
   expanded?: boolean;
   rawMarkdown?: boolean;
   onToggleRawMarkdown?: () => void;
-  showThinking?: boolean;
-  onShowThinking?: (thinking: boolean) => void;
+  view?: CellView;
+  onChangeView?: (view: CellView) => void;
   onToggleExpand?: (button: HTMLButtonElement) => void;
 }) {
   const { resolvedTheme } = useTheme();
@@ -74,20 +79,32 @@ export function OutputCell({
   const hasThinking = !!(cell.thinking || cell.thinkingURL);
   const hasOutput =
     complete || !!(format === "html" ? cell.previewURL : cell.draft?.trim());
-  const thinking =
-    hasThinking &&
-    (showThinking ?? (!complete && cell.status === "running" && !hasOutput));
+  const activeView =
+    view ??
+    (hasThinking && !complete && cell.status === "running" && !hasOutput
+      ? "thinking"
+      : "output");
+  const thinking = hasThinking && activeView === "thinking";
+  const judgment =
+    cell.judge && criteria
+      ? summarizeJudgment(cell.judge, criteria, gridStatus)
+      : undefined;
+  const judging = !!judgment && activeView === "judgment";
   const thinkingLabel = thinking ? "Show output" : "Show thinking";
   const expandable =
-    complete || cell.status === "running" || thinking || expanded;
-  const expandLabel = `${expanded ? "Collapse" : "Expand"} ${thinking ? "thinking" : formatNames[format]}`;
+    complete || cell.status === "running" || thinking || judging || expanded;
+  const expandLabel = `${expanded ? "Collapse" : "Expand"} ${judging ? "judgment" : thinking ? "thinking" : formatNames[format]}`;
   return (
     <article
       className={`cell${expanded ? " cell-expanded" : ""}`}
       role={expanded ? "region" : undefined}
       aria-label={expanded ? `Expanded output: ${title}` : undefined}
     >
-      <div className="cell-view" aria-hidden={thinking} inert={thinking}>
+      <div
+        className="cell-view"
+        aria-hidden={thinking || judging}
+        inert={thinking || judging}
+      >
         {offline && !complete ? (
           <p>This output isn't available offline.</p>
         ) : markdown ? (
@@ -150,9 +167,14 @@ export function OutputCell({
           />
         </div>
       )}
+      {judgment && criteria && (
+        <div className="cell-view" aria-hidden={!judging} inert={!judging}>
+          <JudgeResults summary={judgment} criteria={criteria} />
+        </div>
+      )}
       {(expandable || hasThinking) && (
         <div className="markdown-actions">
-          {markdown && !thinking && (
+          {markdown && !thinking && !judging && (
             <button
               className="secondary"
               aria-label={rawLabel}
@@ -187,7 +209,7 @@ export function OutputCell({
               aria-pressed={thinking}
               data-tooltip={thinkingLabel}
               ref={tooltipRef}
-              onClick={() => onShowThinking?.(!thinking)}
+              onClick={() => onChangeView?.(thinking ? "output" : "thinking")}
             >
               {thinking ? (
                 <Palette aria-hidden="true" />
@@ -240,11 +262,11 @@ export function OutputCell({
                 </a>
               </>
             )}
-            {cell.judge && criteria && (
+            {judgment && (
               <JudgeResultButton
-                judge={cell.judge}
-                criteria={criteria}
-                gridStatus={gridStatus}
+                summary={judgment}
+                active={judging}
+                onToggle={() => onChangeView?.(judging ? "output" : "judgment")}
               />
             )}
           </div>

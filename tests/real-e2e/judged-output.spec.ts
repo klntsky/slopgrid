@@ -156,29 +156,32 @@ async function inspect(page: Page, grid: Snapshot) {
   }
   for (const output of outputs.slice(1))
     expect(output.equals(outputs[0])).toBe(true);
-  await expect(
-    page.getByRole("dialog", { name: "Judged output", exact: true }),
-  ).not.toBeVisible();
-  await scores.first().click();
-  const popup = page.getByRole("dialog", {
-    name: "Judged output",
+  const cell = page.locator(".cell").first();
+  const details = cell.getByRole("region", {
+    name: "Judgment details",
     exact: true,
   });
-  await expect(popup).toBeVisible();
-  const items = popup.getByRole("listitem");
+  await expect(details).toBeHidden();
+  await scores.first().click();
+  await expect(scores.first()).toHaveAttribute("aria-pressed", "true");
+  await expect(details).toBeVisible();
+  const items = details.getByRole("listitem");
   for (const [index, result] of grid.cells[0].judge!.results!.entries()) {
     const matched = result.verdict === expected[index].correctAnswer;
     await expect(
-      items
-        .nth(index)
-        .getByText(matched ? "Correct" : "Incorrect", { exact: true }),
+      items.nth(index).getByRole("img", {
+        name: matched ? "Correct" : "Incorrect",
+        exact: true,
+      }),
     ).toBeVisible();
     await expect(
       items.nth(index).getByText(result.explanation, { exact: true }),
     ).toBeVisible();
   }
-  await page.keyboard.press("Escape");
-  await expect(scores.first()).toBeFocused();
+  await expect(details.getByText(/^(Correct|Incorrect)$/)).toHaveCount(0);
+  await scores.first().click();
+  await expect(details).toBeHidden();
+  await expect(scores.first()).toHaveAttribute("aria-pressed", "false");
   const links = page.getByRole("link", { name: "Open output", exact: true });
   await expect(links).toHaveCount(grid.cells.length);
   for (const link of await links.all()) {

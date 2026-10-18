@@ -447,11 +447,12 @@ and [judgment results](PRODUCT.md#56-judgment-results).
   coverage alongside it when those boundaries change.
 - `tests/e2e/judged-output.spec.ts` exercises checkbox and heading enablement,
   viewport anchoring, criteria-table deletion boundaries, reordering with answer
-  preservation, and form restoration,
-  fixed and axis selections, expected-answer scoring, popup interactions, output
-  access, page closure, and generation-only totals. Run `tests/e2e/chat.spec.ts`
-  alongside it when shared editor controls change. The PWA browser suite covers
-  ready-output caching independently of judgment completion.
+  preservation, form restoration, fixed and axis selections, expected-answer
+  scoring, output/thinking/judgment transitions, output access, page closure, and
+  generation-only totals. Run `tests/e2e/thinking.spec.ts` alongside it when cell
+  content modes change, and `tests/e2e/chat.spec.ts` when shared editor controls
+  change. The PWA browser suite covers ready-output caching independently of
+  judgment completion.
 - `tests/real-e2e/judged-output.spec.ts` uses the existing private
   `OPENROUTER_API_KEY`, GPT-5 mini/nano judges, and Gemini 2.5 Flash
   Image generation. Missing credentials, model availability, and insufficient
@@ -466,5 +467,5 @@ Run the focused suites through the slopgrid-ops staging command. For manual
 visual inspection, start an isolated `startTestServer("mock")` on staging in
 tmux `bg`, explicitly set the candidate `FRONTEND_PATH` and fixture GitHub
 credentials, and attach to remote Chromium through an SSH-forwarded CDP port.
-Inspect the actual cell controls and popup, and correlate them with the fixture's
-captured provider calls. Keep temporary inspection code outside the repository.
+Inspect the actual cell controls and in-cell judgment view, and correlate them
+with captured provider calls. Keep temporary inspection code outside the repository.

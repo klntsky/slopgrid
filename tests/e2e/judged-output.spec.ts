@@ -568,7 +568,7 @@ async function createJudged(page: Page, input: GridInput = judgedInput) {
   return grid.id as string;
 }
 
-test("shared generation stays usable while judging; the scales popup scores expected answers and works expanded", async ({
+test("shared generation stays usable while judging; inline judgments score expected answers and persist expanded", async ({
   page,
 }) => {
   await page.request.post("/fixture/reset", {
@@ -608,16 +608,48 @@ test("shared generation stays usable while judging; the scales popup scores expe
   ).toHaveCount(4);
   const generated = await (await page.request.get(`/api/grids/${id}`)).json();
   expect(generated.spentUsd).toBe(0.1);
+  const cell = page.locator(".cell").first();
+  await cell.getByRole("button", { name: "View raw", exact: true }).click();
+  const raw = cell.locator(".markdown-preview pre");
+  await expect(raw).toHaveText("# A generated cat\n\nWearing a hat.");
   await scores.first().click();
-  const popup = page.getByRole("dialog", {
-    name: "Judged output",
+  const details = cell.getByRole("region", {
+    name: "Judgment details",
     exact: true,
   });
-  await expect(popup).toBeVisible();
-  await expect(popup.getByText("Correct", { exact: true })).toHaveCount(0);
-  await expect(popup.getByText("Incorrect", { exact: true })).toHaveCount(0);
-  await page.keyboard.press("Escape");
-  await expect(scores.first()).toBeFocused();
+  await expect(details).toBeVisible();
+  await expect(scores.first()).toHaveAttribute("aria-pressed", "true");
+  await expect(raw).toBeHidden();
+  await expect(
+    details.getByRole("img", { name: /^(Correct|Incorrect)$/ }),
+  ).toHaveCount(0);
+  await expect(details.getByRole("status")).toContainText("Judging...");
+  await expect(
+    cell.getByRole("button", { name: "View Markdown", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    cell.getByRole("link", { name: "Open output", exact: true }),
+  ).toBeVisible();
+  await expect(
+    cell.getByRole("button", { name: "Copy output", exact: true }),
+  ).toBeVisible();
+  await expect(
+    cell.getByRole("link", { name: "Download output", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("heading", { level: 1, name: judgedInput.prompt, exact: true })
+    .click();
+  await expect(details).toBeVisible();
+  await scores.first().click();
+  await expect(details).toBeHidden();
+  await expect(scores.first()).toHaveAttribute("aria-pressed", "false");
+  await expect(raw).toBeVisible();
+  await expect(
+    cell.getByRole("button", { name: "View Markdown", exact: true }),
+  ).toBeVisible();
+  await scores.first().focus();
+  await page.keyboard.press("Enter");
+  await expect(details).toBeVisible();
   await page.request.post("/fixture/release", { data: { all: true } });
   const completed = page.getByRole("button", {
     name: "Judgment: 1 of 2 correct",
@@ -625,17 +657,23 @@ test("shared generation stays usable while judging; the scales popup scores expe
   });
   await expect(completed).toHaveCount(4);
   await expect(completed).toHaveText(["1/2", "1/2", "1/2", "1/2"]);
+  await expect(details).toBeVisible();
+  const items = details.getByRole("listitem");
   await expect(
-    page.getByText("No blue circle.", { exact: true }),
-  ).not.toBeVisible();
-  await completed.first().focus();
-  await page.keyboard.press("Enter");
-  const items = popup.getByRole("listitem");
-  await expect(
-    items.nth(0).getByText("Correct", { exact: true }),
+    items.nth(0).getByRole("img", { name: "Correct", exact: true }),
   ).toBeVisible();
   await expect(
-    items.nth(1).getByText("Incorrect", { exact: true }),
+    items.nth(1).getByRole("img", { name: "Incorrect", exact: true }),
+  ).toBeVisible();
+  await expect(
+    items
+      .nth(0)
+      .getByText(judgedInput.judge!.criteria[0].text, { exact: true }),
+  ).toBeVisible();
+  await expect(
+    items
+      .nth(1)
+      .getByText(judgedInput.judge!.criteria[1].text, { exact: true }),
   ).toBeVisible();
   await expect(
     items.nth(0).getByText("No blue circle.", { exact: true }),
@@ -643,40 +681,61 @@ test("shared generation stays usable while judging; the scales popup scores expe
   await expect(
     items.nth(1).getByText("No red rectangle.", { exact: true }),
   ).toBeVisible();
-  expect(
-    await items
-      .nth(0)
-      .getByText("Correct", { exact: true })
-      .evaluate((element) => getComputedStyle(element).color),
-  ).not.toBe(
-    await items
-      .nth(1)
-      .getByText("Incorrect", { exact: true })
-      .evaluate((element) => getComputedStyle(element).color),
-  );
-  await popup
-    .getByRole("button", { name: "Close judgment", exact: true })
-    .click();
-  await expect(completed.first()).toBeFocused();
-  await completed.first().click();
-  await page
-    .getByRole("heading", { level: 1, name: judgedInput.prompt, exact: true })
-    .click();
-  await expect(popup).not.toBeVisible();
-  await page
-    .locator(".cell")
-    .first()
-    .getByRole("button", { name: "Expand Markdown", exact: true })
+  await expect(details.getByText(/^(Correct|Incorrect)$/)).toHaveCount(0);
+  await cell
+    .getByRole("button", { name: "Expand judgment", exact: true })
     .click();
   const expanded = page.getByRole("region", { name: /^Expanded output:/ });
+  const expandedDetails = expanded.getByRole("region", {
+    name: "Judgment details",
+    exact: true,
+  });
+  await expect(expandedDetails).toBeVisible();
   await expect(
     expanded.getByRole("link", { name: "Download output", exact: true }),
   ).toBeVisible();
+  await expect(
+    expanded.getByRole("button", { name: "Copy output", exact: true }),
+  ).toBeVisible();
+  const expandedScore = expanded.getByRole("button", {
+    name: "Judgment: 1 of 2 correct",
+    exact: true,
+  });
+  await expect(expandedScore).toHaveAttribute("aria-pressed", "true");
+  await expandedScore.click();
+  await expect(expandedDetails).toBeHidden();
+  await expect(expanded.locator(".markdown-preview pre")).toHaveText(
+    "# A generated cat\n\nWearing a hat.",
+  );
+  await expect(
+    expanded.getByRole("button", { name: "View Markdown", exact: true }),
+  ).toBeVisible();
+  await expandedScore.click();
   await expanded
-    .getByRole("button", { name: "Judgment: 1 of 2 correct", exact: true })
+    .getByRole("button", { name: "Collapse judgment", exact: true })
     .click();
-  await expect(popup).toBeVisible();
+  await expect(details).toBeVisible();
+  await expect(completed.first()).toHaveAttribute("aria-pressed", "true");
+  await cell
+    .getByRole("button", { name: "Expand judgment", exact: true })
+    .click();
   await page.keyboard.press("Escape");
+  await expect(expanded).toHaveCount(0);
+  await expect(details).toBeVisible();
+  await completed.first().click();
+  await expect(details).toBeHidden();
+  await expect(raw).toBeVisible();
+  await cell
+    .getByRole("button", { name: "View Markdown", exact: true })
+    .click();
+  await expect(
+    cell.getByRole("heading", { name: "A generated cat", exact: true }),
+  ).toBeVisible();
+  await completed.first().click();
+  await completed.first().click();
+  await expect(
+    cell.getByRole("heading", { name: "A generated cat", exact: true }),
+  ).toBeVisible();
   const grid = await (await page.request.get(`/api/grids/${id}`)).json();
   expect(grid.cells.map((cell: { usage: unknown }) => cell.usage)).toEqual(
     Array(4).fill({ inputTokens: 10, outputTokens: 20, costUsd: 0.1 }),
@@ -688,9 +747,6 @@ test("shared generation stays usable while judging; the scales popup scores expe
   expect(
     (await (await page.request.get("/fixture/judge-requests")).json()).length,
   ).toBe(4);
-  await page
-    .getByRole("button", { name: "Collapse Markdown", exact: true })
-    .click();
   await expect(
     page.locator(".grid-cost .live-cost, .grid-spent .live-cost"),
   ).toHaveCount(0);
@@ -752,13 +808,46 @@ test("failed judging shows unresolved criteria without hiding generation or its 
     (await page.request.get(`/outputs/${grid.cells[0].id}/download`)).status(),
   ).toBe(200);
   await score.click();
-  const popup = page.getByRole("dialog", {
-    name: "Judged output",
+  const cell = page.locator(".cell");
+  const details = cell.getByRole("region", {
+    name: "Judgment details",
     exact: true,
   });
-  await expect(popup.getByRole("status")).toContainText("Judging failed:");
-  await expect(popup.getByText("Correct", { exact: true })).toHaveCount(0);
-  await page.keyboard.press("Escape");
+  await expect(details.getByRole("status")).toContainText("Judging failed:");
+  await expect(
+    details.getByRole("img", { name: /^(Correct|Incorrect)$/ }),
+  ).toHaveCount(0);
+  await expect(
+    cell.getByRole("heading", { name: "A generated cat", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    cell.getByRole("link", { name: "Open output", exact: true }),
+  ).toBeVisible();
+  await expect(
+    cell.getByRole("button", { name: "Copy output", exact: true }),
+  ).toBeVisible();
+  await expect(
+    cell.getByRole("link", { name: "Download output", exact: true }),
+  ).toBeVisible();
+  await cell
+    .getByRole("button", { name: "Expand judgment", exact: true })
+    .click();
+  const expanded = page.getByRole("region", { name: /^Expanded output:/ });
+  await expect(
+    expanded.getByRole("region", { name: "Judgment details", exact: true }),
+  ).toContainText("Judging failed:");
+  await expect(
+    expanded.getByRole("link", { name: "Download output", exact: true }),
+  ).toBeVisible();
+  await expanded
+    .getByRole("button", { name: "Collapse judgment", exact: true })
+    .click();
+  await expect(details).toBeVisible();
+  await score.click();
+  await expect(details).toBeHidden();
+  await expect(
+    cell.getByRole("heading", { name: "A generated cat", exact: true }),
+  ).toBeVisible();
   await page.reload();
   await expect(
     page.getByLabel("Total cost: $0.10", { exact: true }),
@@ -1067,24 +1156,29 @@ for (const format of ["svg", "image"] as const) {
       (await (await page.request.get("/fixture/calls")).json()).length,
     ).toBe(5);
     await scores.first().click();
-    const popup = page.getByRole("dialog", {
-      name: "Judged output",
+    const details = page.locator(".cell").first().getByRole("region", {
+      name: "Judgment details",
       exact: true,
     });
-    await expect(popup.getByRole("listitem")).toHaveCount(2);
-    await expect(popup.getByText("Correct", { exact: true })).toHaveCount(2);
-    await expect(popup.getByText("Incorrect", { exact: true })).toHaveCount(0);
+    await expect(details).toBeVisible();
+    await expect(details.getByRole("listitem")).toHaveCount(2);
     await expect(
-      popup.getByText("There is no blue circle.", { exact: true }),
+      details.getByRole("img", { name: "Correct", exact: true }),
+    ).toHaveCount(2);
+    await expect(
+      details.getByRole("img", { name: "Incorrect", exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      details.getByText("There is no blue circle.", { exact: true }),
     ).toBeVisible();
     await expect(
-      popup.getByText("The supplied output satisfies this criterion.", {
+      details.getByText("The supplied output satisfies this criterion.", {
         exact: true,
       }),
     ).toBeVisible();
-    await page.keyboard.press("Escape");
+    await scores.first().click();
     await expect(
-      page.getByText("There is no blue circle.", { exact: true }),
+      details.getByText("There is no blue circle.", { exact: true }),
     ).not.toBeVisible();
     if (format === "svg") {
       await page.getByRole("button", { name: "EDIT", exact: true }).click();
@@ -1101,12 +1195,12 @@ for (const format of ["svg", "image"] as const) {
         .getByRole("button", { name: "Judgment: 1 of 2 correct", exact: true })
         .first()
         .click();
-      const items = popup.getByRole("listitem");
+      const items = details.getByRole("listitem");
       await expect(
-        items.nth(0).getByText("Incorrect", { exact: true }),
+        items.nth(0).getByRole("img", { name: "Incorrect", exact: true }),
       ).toBeVisible();
       await expect(
-        items.nth(1).getByText("Correct", { exact: true }),
+        items.nth(1).getByRole("img", { name: "Correct", exact: true }),
       ).toBeVisible();
       expect(
         (await (await page.request.get("/fixture/calls")).json()).length,
@@ -1118,3 +1212,89 @@ for (const format of ["svg", "image"] as const) {
     }
   });
 }
+
+test("judgment and thinking are exclusive in-cell views while judging, including expanded controls", async ({
+  page,
+}) => {
+  await page.request.post("/fixture/reset", {
+    data: { costStreaming: true, holdJudges: true },
+  });
+  await createJudged(page, {
+    ...judgedInput,
+    rows: { kind: "judge_model", values: ["fixture/text"] },
+    columns: { kind: "judge_effort", values: ["none"] },
+  });
+  const cell = page.locator(".cell");
+  const score = cell.getByRole("button", { name: "Judging...", exact: true });
+  const details = cell.getByRole("region", {
+    name: "Judgment details",
+    exact: true,
+  });
+  const thinking = cell.getByRole("region", { name: /^Thinking:/ });
+  const output = cell.getByRole("heading", { name: "Drawing", exact: true });
+  await expect(score).toHaveText("-/2");
+  await expect(output).toBeVisible();
+  await cell
+    .getByRole("button", { name: "Show thinking", exact: true })
+    .click();
+  await expect(thinking).toContainText("Thinking through the drawing.");
+  await expect(output).toHaveCount(0);
+  await expect(details).toBeHidden();
+  await score.click();
+  await expect(score).toHaveAttribute("aria-pressed", "true");
+  await expect(details).toBeVisible();
+  await expect(thinking).toBeHidden();
+  await expect(output).toHaveCount(0);
+  await expect(
+    cell.getByRole("button", { name: "View raw", exact: true }),
+  ).toHaveCount(0);
+  await cell
+    .getByRole("button", { name: "Show thinking", exact: true })
+    .click();
+  await expect(thinking).toBeVisible();
+  await expect(details).toBeHidden();
+  await expect(score).toHaveAttribute("aria-pressed", "false");
+  await score.click();
+  await cell
+    .getByRole("button", { name: "Expand judgment", exact: true })
+    .click();
+  const expanded = page.getByRole("region", { name: /^Expanded output:/ });
+  const expandedDetails = expanded.getByRole("region", {
+    name: "Judgment details",
+    exact: true,
+  });
+  await expect(expandedDetails.getByRole("status")).toContainText("Judging...");
+  await expect(
+    expanded.getByRole("link", { name: "Open output", exact: true }),
+  ).toBeVisible();
+  await expect(
+    expanded.getByRole("button", { name: "Copy output", exact: true }),
+  ).toBeVisible();
+  await expect(
+    expanded.getByRole("link", { name: "Download output", exact: true }),
+  ).toBeVisible();
+  await expanded
+    .getByRole("button", { name: "Show thinking", exact: true })
+    .click();
+  await expect(expandedDetails).toBeHidden();
+  await expect(
+    expanded.getByRole("region", { name: /^Thinking:/ }),
+  ).toBeVisible();
+  await expanded
+    .getByRole("button", { name: "Judging...", exact: true })
+    .click();
+  await expect(expandedDetails).toBeVisible();
+  await expanded
+    .getByRole("button", { name: "Collapse judgment", exact: true })
+    .click();
+  await expect(details).toBeVisible();
+  await score.click();
+  await expect(output).toBeVisible();
+  await expect(thinking).toBeHidden();
+  await expect(details).toBeHidden();
+  await page.request.post("/fixture/release", { data: { all: true } });
+  await expect(
+    cell.getByRole("button", { name: "Judgment: 2 of 2 correct", exact: true }),
+  ).toHaveText("2/2");
+  await expect(output).toBeVisible();
+});

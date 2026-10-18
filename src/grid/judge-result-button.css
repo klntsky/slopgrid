@@ -5,52 +5,39 @@
   padding-inline: 7px;
   font-variant-numeric: tabular-nums;
 }
-.tippy-box[data-theme~="judge-result"] {
-  border: 1px solid #000;
-  border-radius: 8px;
-  box-shadow: 0 6px 24px var(--shadow);
-  font-size: 14px;
-  line-height: 1.5;
-}
-.tippy-box[data-theme~="judge-result"] .tippy-content {
-  padding: 0;
-}
-.judge-result-popup {
-  width: min(420px, calc(100vw - 24px));
-  max-height: min(75vh, calc(100dvh - 120px));
+.judge-results {
+  min-width: 0;
+  min-height: 0;
   overflow: auto;
-  padding: 18px;
-  color: inherit;
+  padding: 12px;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.4;
 }
-.judge-result-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
-.judge-result-heading h2 {
-  margin: 0;
-  font-size: 18px;
-}
-.judge-result-heading .text-button {
-  color: inherit;
+.cell:has(.markdown-actions) .judge-results {
+  padding-top: 56px;
 }
 .judge-result-state {
-  margin: 14px 0 0;
+  margin: 0 0 10px;
   overflow-wrap: anywhere;
 }
 .judge-result-criteria {
   list-style: none;
   padding: 0;
-  margin: 16px 0 0;
+  margin: 0;
+}
+.judge-result-criteria li {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) minmax(0, 1.5fr);
+  align-items: start;
+  gap: 8px;
 }
 .judge-result-criteria li + li {
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid #555;
+  margin-top: 10px;
 }
 .judge-result-criterion,
 .judge-result-explanation {
+  min-width: 0;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
@@ -60,24 +47,23 @@
 .judge-result-verdict {
   display: flex;
   align-items: center;
-  gap: 5px;
-  margin-top: 6px;
+  justify-content: center;
+  padding-top: 1px;
 }
 .judge-result-verdict .lucide {
   width: 16px;
   height: 16px;
 }
 .judge-correct {
-  color: #7de49b;
+  color: color-mix(in srgb, #3c8a51 75%, var(--text));
 }
 .judge-incorrect {
-  color: #ff9393;
+  color: color-mix(in srgb, #b64249 75%, var(--text));
 }
 .judge-result-explanation {
-  margin: 6px 0 0;
+  margin: 0;
 }
 .judge-result-unresolved {
-  display: inline-block;
-  margin-top: 6px;
-  color: #bbb;
+  color: var(--muted);
+  text-align: center;
 }
