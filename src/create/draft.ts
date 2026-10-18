@@ -8,6 +8,7 @@ import {
 import type { ReferenceImage } from "../../server/image-settings";
 import { canJudge } from "../../server/compatibility";
 import { modelCatalog } from "../model-catalog";
+import { removeJudge } from "./change-axis";
 export type Draft = {
   formatSelected: boolean;
   input: GridInput;
@@ -47,7 +48,7 @@ function readDraft(): Draft {
     const draft: Draft =
       JSON.parse(sessionStorage.getItem(storageKey) ?? "null") ?? initial;
     if (draft.input.judge && !draft.input.judge.criteria.length) {
-      draft.input.judge.criteria = [{ text: "", correctAnswer: true }];
+      Object.assign(draft.input, removeJudge(draft.input));
     }
     return draft;
   } catch {

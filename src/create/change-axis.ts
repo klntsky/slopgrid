@@ -1,9 +1,29 @@
-import type { GridInput } from "../../server/domain";
+import { isMarkdownFormat, type GridInput } from "../../server/domain";
 import {
   imageChoices,
   type ScalarImageKind,
   type ReferenceGroups,
 } from "../../server/image-settings";
+
+export function removeJudge(
+  input: GridInput,
+): Pick<GridInput, "judge" | "rows" | "columns"> {
+  return {
+    judge: undefined,
+    rows: input.rows.kind.startsWith("judge_")
+      ? isMarkdownFormat(input.format)
+        ? { kind: "effort", values: ["default"] }
+        : { kind: "model", values: [] }
+      : input.rows,
+    columns: input.columns.kind.startsWith("judge_")
+      ? input.format === "image"
+        ? { kind: "quality", values: ["auto"] }
+        : isMarkdownFormat(input.format)
+          ? { kind: "model", values: [] }
+          : { kind: "effort", values: ["default"] }
+      : input.columns,
+  };
+}
 
 export function changeAxis(
   input: GridInput,

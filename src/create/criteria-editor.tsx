@@ -78,9 +78,7 @@ export function CriteriaEditor({
                   label={`Remove criterion ${index + 1}`}
                   onRemove={() =>
                     onChange(
-                      criteria.length === 1
-                        ? [{ text: "", correctAnswer: true }]
-                        : criteria.filter((_, position) => position !== index),
+                      criteria.filter((_, position) => position !== index),
                     )
                   }
                 >

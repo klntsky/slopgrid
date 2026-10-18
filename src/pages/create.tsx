@@ -2,7 +2,7 @@ import { ModelSelector } from "../create/model-selector";
 import { ChatEditor } from "../create/chat-editor";
 import { CriteriaEditor } from "../create/criteria-editor";
 import { ImageOptions } from "../create/image-options";
-import { changeAxis } from "../create/change-axis";
+import { changeAxis, removeJudge } from "../create/change-axis";
 import { FormatPicker } from "../components/format-picker";
 import { useNavigate } from "@tanstack/react-router";
 import { saveDraft } from "../create/draft";
@@ -16,7 +16,7 @@ import {
   type GridInput,
 } from "../../server/domain";
 import { generationGroupKey } from "../../shared/generation-key";
-import { expandGrid, isMarkdownFormat } from "../../server/domain";
+import { expandGrid } from "../../server/domain";
 import { effortLabel } from "../../server/compatibility";
 import { useCreateForm } from "../create/use-create-form";
 import { AxisEditor } from "../create/axis-editor";
@@ -60,6 +60,20 @@ export function Create() {
       behavior: "instant",
     });
   }, [judgeEnabled]);
+  function setJudgeEnabled(enabled: boolean) {
+    judgeHeaderTop.current = judgeHeader.current?.getBoundingClientRect().top;
+    if (enabled) {
+      update({
+        judge: {
+          criteria: [{ text: "", correctAnswer: true }],
+          model: "",
+          effort: "default",
+        },
+      });
+    } else {
+      update(removeJudge);
+    }
+  }
   const { generate, onUploading, lowBalance, setLowBalance, busy, error } =
     submission;
   const compatibility = compatibilityTables({ input, models });
@@ -328,35 +342,7 @@ export function Create() {
                   aria-label="Add a LLM judge"
                   checked={judgeEnabled}
                   disabled={input.format === "html"}
-                  onChange={(event) => {
-                    judgeHeaderTop.current =
-                      judgeHeader.current?.getBoundingClientRect().top;
-                    if (event.target.checked) {
-                      update({
-                        judge: {
-                          criteria: [{ text: "", correctAnswer: true }],
-                          model: "",
-                          effort: "default",
-                        },
-                      });
-                    } else {
-                      update((current) => ({
-                        judge: undefined,
-                        rows: current.rows.kind.startsWith("judge_")
-                          ? isMarkdownFormat(current.format)
-                            ? { kind: "effort", values: ["default"] }
-                            : { kind: "model", values: [] }
-                          : current.rows,
-                        columns: current.columns.kind.startsWith("judge_")
-                          ? current.format === "image"
-                            ? { kind: "quality", values: ["auto"] }
-                            : isMarkdownFormat(current.format)
-                              ? { kind: "model", values: [] }
-                              : { kind: "effort", values: ["default"] }
-                          : current.columns,
-                      }));
-                    }
-                  }}
+                  onChange={(event) => setJudgeEnabled(event.target.checked)}
                 />
                 <span>Add a LLM judge · evaluates the output</span>
               </label>
@@ -368,11 +354,13 @@ export function Create() {
             <>
               <CriteriaEditor
                 criteria={input.judge.criteria}
-                onChange={(criteria) =>
-                  update((current) => ({
-                    judge: { ...current.judge!, criteria },
-                  }))
-                }
+                onChange={(criteria) => {
+                  if (!criteria.length) setJudgeEnabled(false);
+                  else
+                    update((current) => ({
+                      judge: { ...current.judge!, criteria },
+                    }));
+                }}
               />
               <p className="hint">
                 Judge calls are not limited by the generation budget.

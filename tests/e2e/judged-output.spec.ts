@@ -44,6 +44,12 @@ test("judge criteria preserve boolean answers and judge axes restore fixed setti
   await page
     .getByRole("button", { name: "Remove criterion 1", exact: true })
     .click();
+  await expect(
+    page.getByRole("checkbox", { name: "Add a LLM judge", exact: true }),
+  ).not.toBeChecked();
+  await page
+    .getByRole("checkbox", { name: "Add a LLM judge", exact: true })
+    .check();
   await expect(page.getByLabel("Criterion 1", { exact: true })).toHaveValue("");
   await expect(
     page.getByLabel("Correct answer", { exact: true }),
@@ -190,7 +196,7 @@ test("the judge heading toggles judging without shifting its viewport position",
   }
 });
 
-test("criterion deletion uses confirmation boundaries and replaces the last row", async ({
+test("criterion deletion uses confirmation boundaries and disables the last judge", async ({
   page,
 }) => {
   await page.goto("/");
@@ -239,24 +245,32 @@ test("criterion deletion uses confirmation boundaries and replaces the last row"
   await first.hover();
   await remove.click();
   await confirm.click();
-  await expect(first).toHaveValue("");
-  await expect(enabled).toBeChecked();
+  await expect(first).toHaveCount(0);
+  await expect(enabled).not.toBeChecked();
   await page.reload();
+  await expect(first).toHaveCount(0);
+  await expect(enabled).not.toBeChecked();
+  await enabled.check();
   await expect(first).toHaveValue("");
-  await expect(enabled).toBeChecked();
   await expect(
     page.getByLabel("Correct answer", { exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
   await page.evaluate(() => {
     const draft = JSON.parse(sessionStorage.getItem("slopgrid-draft")!);
     draft.input.judge.criteria = [];
+    draft.input.rows = { kind: "judge_model", values: ["fixture/text"] };
+    draft.input.columns = { kind: "judge_effort", values: ["high"] };
     sessionStorage.setItem("slopgrid-draft", JSON.stringify(draft));
   });
   await page.reload();
-  await expect(first).toHaveValue("");
+  await expect(first).toHaveCount(0);
+  await expect(enabled).not.toBeChecked();
   await expect(
-    page.getByLabel("Correct answer", { exact: true }),
-  ).toHaveAttribute("aria-pressed", "true");
+    page.getByRole("combobox", { name: "Rows", exact: true }),
+  ).toHaveValue("effort");
+  await expect(
+    page.getByRole("combobox", { name: "Columns", exact: true }),
+  ).toHaveValue("model");
 });
 
 test("criterion handles reorder questions and their answers by keyboard and pointer", async ({
