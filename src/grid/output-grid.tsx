@@ -59,32 +59,32 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
   const expandedView = useRef<HTMLElement>(null);
   const returnButton = useRef<HTMLButtonElement>(null);
   const workspace = useRef<HTMLDivElement>(null);
-  const [pendingJudgeScrolls] = useState(
-    () => new WeakMap<HTMLElement, number>(),
-  );
-  const [savedJudgeScrolls] = useState(() => new Map<HTMLElement, number>());
-  const criterionPointer = useRef<PointerEvent | Touch | null>(null);
-  const hoveredCriterion = useRef<number | null>(null);
-  const hoveredJudgeView = useRef<HTMLElement | null>(null);
-  const touchHoverFrame = useRef<number | null>(null);
-  const touchHoverForce = useRef(false);
-  const touchCriterion = useRef<HTMLElement | null>(null);
-  function criterionRow(target: EventTarget | null) {
+  const [pendingScrolls] = useState(() => new WeakMap<HTMLElement, number>());
+  const [savedScrolls] = useState(() => new Map<HTMLElement, number>());
+  const scrollPointer = useRef<PointerEvent | Touch | null>(null);
+  const hoveredIndex = useRef<number | null>(null);
+  const anchorView = useRef<HTMLElement | null>(null);
+  const touchAnchorFrame = useRef<number | null>(null);
+  const touchAnchorForce = useRef(false);
+  const touchItem = useRef<HTMLElement | null>(null);
+  function scrollItem(target: EventTarget | null) {
     const row =
       target instanceof Element
-        ? target.closest<HTMLElement>(".judge-result-criteria > li")
+        ? target.closest<HTMLElement>(
+            ".judge-result-criteria > li, .conversation-preview .chat-bubble",
+          )
         : null;
-    return row && workspace.current?.contains(row) ? row : null;
-  }
-  function criterionUnderCursor() {
-    const pointer = criterionPointer.current;
-    return pointer
-      ? criterionRow(
-          document.elementFromPoint(pointer.clientX, pointer.clientY),
-        )
+    return row && workspace.current?.contains(row) && !row.closest("[inert]")
+      ? row
       : null;
   }
-  function criterionIndex(row: Element) {
+  function itemUnderPointer() {
+    const pointer = scrollPointer.current;
+    return pointer
+      ? scrollItem(document.elementFromPoint(pointer.clientX, pointer.clientY))
+      : null;
+  }
+  function itemIndex(row: Element) {
     let index = 0;
     for (
       let sibling = row.previousElementSibling;
@@ -94,41 +94,64 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
       index++;
     return index;
   }
-  function setJudgmentScroll(target: HTMLElement, top: number) {
+  function setSyncedScroll(target: HTMLElement, top: number) {
     const before = target.scrollTop;
     target.scrollTop = top;
     if (target.scrollTop !== before)
-      pendingJudgeScrolls.set(target, target.scrollTop);
+      pendingScrolls.set(target, target.scrollTop);
   }
-  function updateCriterionHover(row: HTMLElement | null, force = false) {
-    const index = row ? criterionIndex(row) : null;
-    const source = row?.closest<HTMLElement>(".judge-results") ?? null;
-    const previous = hoveredCriterion.current;
+  function updateScrollAnchor(row: HTMLElement | null, force = false) {
+    const index = row ? itemIndex(row) : null;
+    const source =
+      row?.closest<HTMLElement>(".judge-results, .conversation-preview") ??
+      null;
+    const judging = source?.classList.contains("judge-results") ?? false;
+    const previous = hoveredIndex.current;
     if (
       index === previous &&
-      source === hoveredJudgeView.current &&
+      source === anchorView.current &&
       (!force || index === null)
     )
       return;
-    hoveredCriterion.current = index;
-    hoveredJudgeView.current = source;
-    const offset = row && source ? row.offsetTop - source.scrollTop : 0;
+    hoveredIndex.current = index;
+    anchorView.current = source;
+    const offset =
+      row && source
+        ? row.getBoundingClientRect().top - source.getBoundingClientRect().top
+        : 0;
     for (const list of workspace.current!.querySelectorAll(
-      ".judge-result-criteria",
+      ".judge-result-criteria, .conversation-preview .chat-conversation",
     )) {
-      if (previous !== null && previous !== index)
-        list.children[previous]?.removeAttribute("data-criterion-hovered");
-      if (index === null) continue;
-      list.children[index]?.setAttribute("data-criterion-hovered", "");
-      const target = list.closest<HTMLElement>(".judge-results")!;
-      if (target === source) continue;
-      const criterion = list.children[index] as HTMLElement | undefined;
-      if (!criterion) continue;
-      const before = target.scrollTop;
-      const top = criterion.offsetTop;
-      const bottom = top + criterion.offsetHeight;
+      const judgeList = list.classList.contains("judge-result-criteria");
+      const current = judgeList === judging ? index : null;
+      if (judgeList) {
+        if (previous !== null && previous !== current)
+          list.children[previous]?.removeAttribute("data-criterion-hovered");
+        if (current !== null)
+          list.children[current]?.setAttribute("data-criterion-hovered", "");
+      }
+      const target = list.closest<HTMLElement>(
+        ".judge-results, .conversation-preview",
+      )!;
+      if (current === null) {
+        const saved = savedScrolls.get(target);
+        if (saved !== undefined) {
+          setSyncedScroll(target, saved);
+          savedScrolls.delete(target);
+        }
+        continue;
+      }
+      if (target === source || target.closest("[inert]")) continue;
+      const item = list.children[current] as HTMLElement | undefined;
       const height = target.clientHeight;
-      if (!height || bottom === top) continue;
+      if (!item || !height) continue;
+      const viewBounds = target.getBoundingClientRect();
+      const itemBounds = item.getBoundingClientRect();
+      const scale = viewBounds.height / height;
+      const before = target.scrollTop;
+      const top = before + (itemBounds.top - viewBounds.top) / scale;
+      const bottom = before + (itemBounds.bottom - viewBounds.top) / scale;
+      if (bottom === top) continue;
       // Match offsets within bounds that show the full row, or fill the
       // viewport with the row when it is too tall to fit.
       const minimum = Math.max(0, Math.min(top, bottom - height));
@@ -136,73 +159,70 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
         target.scrollHeight - height,
         Math.max(top, bottom - height),
       );
-      const next = Math.max(minimum, Math.min(maximum, top - offset));
+      const next = Math.max(minimum, Math.min(maximum, top - offset / scale));
       if (next !== before) {
-        if (!savedJudgeScrolls.has(target))
-          savedJudgeScrolls.set(target, before);
-        setJudgmentScroll(target, next);
+        if (!savedScrolls.has(target)) savedScrolls.set(target, before);
+        setSyncedScroll(target, next);
       }
     }
     if (index === null) {
-      for (const [target, top] of savedJudgeScrolls)
-        setJudgmentScroll(target, top);
-      savedJudgeScrolls.clear();
+      for (const [target, top] of savedScrolls) setSyncedScroll(target, top);
+      savedScrolls.clear();
     }
   }
-  function scheduleTouchHover(force = false) {
-    touchHoverForce.current ||= force;
-    if (touchHoverFrame.current !== null) return;
-    touchHoverFrame.current = requestAnimationFrame(() => {
-      touchHoverFrame.current = null;
-      const force = touchHoverForce.current;
-      touchHoverForce.current = false;
-      const pointer = criterionPointer.current;
+  function scheduleTouchAnchor(force = false) {
+    touchAnchorForce.current ||= force;
+    if (touchAnchorFrame.current !== null) return;
+    touchAnchorFrame.current = requestAnimationFrame(() => {
+      touchAnchorFrame.current = null;
+      const force = touchAnchorForce.current;
+      touchAnchorForce.current = false;
+      const pointer = scrollPointer.current;
       if (!pointer || !("pointerType" in pointer)) {
-        const row = criterionRow(touchCriterion.current);
-        updateCriterionHover(row, force);
+        const row = scrollItem(touchItem.current);
+        updateScrollAnchor(row, force);
       }
     });
   }
-  function trackCriterionPointer(event: PointerEvent) {
+  function trackScrollPointer(event: PointerEvent) {
     if (event.pointerType === "touch") return;
-    criterionPointer.current = event;
-    updateCriterionHover(criterionRow(event.target));
+    scrollPointer.current = event;
+    updateScrollAnchor(scrollItem(event.target));
   }
   useLayoutEffect(() => {
     function touch(event: TouchEvent) {
-      criterionPointer.current =
+      scrollPointer.current =
         event.touches.length === 1 ? event.touches[0] : null;
-      touchCriterion.current = criterionUnderCursor();
-      scheduleTouchHover();
+      touchItem.current = itemUnderPointer();
+      scheduleTouchAnchor();
     }
-    // Keep the touched criterion until another touch starts. Native scrolling
+    // Keep the touched item until another touch starts. Native scrolling
     // and gesture completion must not clear it or restore peer positions.
     document.addEventListener("touchstart", touch, { passive: true });
     return () => {
       document.removeEventListener("touchstart", touch);
-      if (touchHoverFrame.current !== null)
-        cancelAnimationFrame(touchHoverFrame.current);
-      touchHoverFrame.current = null;
-      touchHoverForce.current = false;
-      touchCriterion.current = null;
+      if (touchAnchorFrame.current !== null)
+        cancelAnimationFrame(touchAnchorFrame.current);
+      touchAnchorFrame.current = null;
+      touchAnchorForce.current = false;
+      touchItem.current = null;
     };
   }, []);
   useLayoutEffect(() => {
-    const pointer = criterionPointer.current;
+    const pointer = scrollPointer.current;
     if (!pointer) return;
-    if ("pointerType" in pointer)
-      updateCriterionHover(criterionUnderCursor(), true);
-    else scheduleTouchHover(true);
+    if ("pointerType" in pointer) updateScrollAnchor(itemUnderPointer(), true);
+    else scheduleTouchAnchor(true);
   }, [g.cells, expandedId, views]);
-  function syncJudgmentScroll(source: HTMLElement) {
-    const expected = pendingJudgeScrolls.get(source);
-    pendingJudgeScrolls.delete(source);
+  function syncOutputScroll(source: HTMLElement) {
+    const expected = pendingScrolls.get(source);
+    pendingScrolls.delete(source);
     if (expected === source.scrollTop) return;
     // A user's scroll replaces this view's saved position, not its peers'.
-    savedJudgeScrolls.delete(source);
-    const pointer = criterionPointer.current;
-    if (pointer && !("pointerType" in pointer)) scheduleTouchHover(true);
-    else updateCriterionHover(criterionUnderCursor(), true);
+    savedScrolls.delete(source);
+    const pointer = scrollPointer.current;
+    if (pointer && !("pointerType" in pointer)) scheduleTouchAnchor(true);
+    else updateScrollAnchor(itemUnderPointer(), true);
   }
   function expand(
     kind: "output" | "reference",
@@ -304,20 +324,20 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
     <div
       className="grid-workspace"
       ref={workspace}
-      onPointerOver={(event) => trackCriterionPointer(event.nativeEvent)}
-      onPointerMove={(event) => trackCriterionPointer(event.nativeEvent)}
+      onPointerOver={(event) => trackScrollPointer(event.nativeEvent)}
+      onPointerMove={(event) => trackScrollPointer(event.nativeEvent)}
       onPointerLeave={(event) => {
         if (event.pointerType === "touch") return;
-        criterionPointer.current = null;
-        updateCriterionHover(null);
+        scrollPointer.current = null;
+        updateScrollAnchor(null);
       }}
       onScrollCapture={(event) => {
         const source = event.target;
         if (
           source instanceof HTMLElement &&
-          source.classList.contains("judge-results")
+          source.matches(".judge-results, .conversation-preview")
         )
-          syncJudgmentScroll(source);
+          syncOutputScroll(source);
       }}
     >
       <div className="grid-table-view" data-expanded={!!expandedId}>
