@@ -35,6 +35,17 @@
   overscroll-behavior: contain;
   background: var(--cell);
 }
+.judge-results[data-can-scroll-up] {
+  box-shadow: inset 0 12px 12px -12px var(--shadow);
+}
+.judge-results[data-can-scroll-down] {
+  box-shadow: inset 0 -12px 12px -12px var(--shadow);
+}
+.judge-results[data-can-scroll-up][data-can-scroll-down] {
+  box-shadow:
+    inset 0 12px 12px -12px var(--shadow),
+    inset 0 -12px 12px -12px var(--shadow);
+}
 .judge-result-state {
   margin: 0 0 10px;
   overflow-wrap: anywhere;

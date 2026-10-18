@@ -90,6 +90,26 @@ export function JudgeResultButton({
   );
 }
 
+function observeJudgmentEdges(container: HTMLDivElement | null) {
+  if (!container) return;
+  const update = () => {
+    const limit = container.scrollHeight - container.clientHeight;
+    const top = Math.max(0, Math.min(container.scrollTop, limit));
+    container.toggleAttribute("data-can-scroll-up", top > 0);
+    // Scroll offsets can be fractional while scroll heights are rounded.
+    container.toggleAttribute("data-can-scroll-down", limit - top > 1);
+  };
+  const observer = new ResizeObserver(update);
+  observer.observe(container);
+  observer.observe(container.querySelector(".judge-results-content")!);
+  container.addEventListener("scroll", update, { passive: true });
+  update();
+  return () => {
+    observer.disconnect();
+    container.removeEventListener("scroll", update);
+  };
+}
+
 export function JudgeResults({
   summary,
   criteria,
@@ -100,54 +120,59 @@ export function JudgeResults({
   return (
     <div
       className="judge-results"
+      ref={observeJudgmentEdges}
       role="region"
       aria-label="Judgment details"
       tabIndex={0}
     >
-      {!summary.results && (
-        <p className="judge-result-state" role="status">
-          {summary.state}
-        </p>
-      )}
-      <ol className="judge-result-criteria">
-        {criteria.map((criterion, index) => {
-          const result = summary.results?.[index];
-          const matches = result?.verdict === criterion.correctAnswer;
-          return (
-            <li key={index}>
-              {result ? (
+      <div className="judge-results-content">
+        {!summary.results && (
+          <p className="judge-result-state" role="status">
+            {summary.state}
+          </p>
+        )}
+        <ol className="judge-result-criteria">
+          {criteria.map((criterion, index) => {
+            const result = summary.results?.[index];
+            const matches = result?.verdict === criterion.correctAnswer;
+            return (
+              <li key={index}>
+                {result ? (
+                  <span
+                    className={`judge-result-verdict ${matches ? "judge-correct" : "judge-incorrect"}`}
+                    role="img"
+                    aria-label={matches ? "Correct" : "Incorrect"}
+                  >
+                    {matches ? (
+                      <Check aria-hidden="true" />
+                    ) : (
+                      <X aria-hidden="true" />
+                    )}
+                  </span>
+                ) : (
+                  <span
+                    className="judge-result-unresolved"
+                    role="img"
+                    aria-label={summary.state}
+                  >
+                    -
+                  </span>
+                )}
                 <span
-                  className={`judge-result-verdict ${matches ? "judge-correct" : "judge-incorrect"}`}
-                  role="img"
-                  aria-label={matches ? "Correct" : "Incorrect"}
+                  className={`judge-result-criterion${result ? (matches ? " judge-correct" : " judge-incorrect") : ""}`}
                 >
-                  {matches ? (
-                    <Check aria-hidden="true" />
-                  ) : (
-                    <X aria-hidden="true" />
-                  )}
+                  {criterion.correctAnswer
+                    ? criterion.text
+                    : `not(${criterion.text})`}
                 </span>
-              ) : (
-                <span
-                  className="judge-result-unresolved"
-                  role="img"
-                  aria-label={summary.state}
-                >
-                  -
-                </span>
-              )}
-              <span
-                className={`judge-result-criterion${result ? (matches ? " judge-correct" : " judge-incorrect") : ""}`}
-              >
-                {criterion.correctAnswer
-                  ? criterion.text
-                  : `not(${criterion.text})`}
-              </span>
-              <p className="judge-result-explanation">{result?.explanation}</p>
-            </li>
-          );
-        })}
-      </ol>
+                <p className="judge-result-explanation">
+                  {result?.explanation}
+                </p>
+              </li>
+            );
+          })}
+        </ol>
+      </div>
     </div>
   );
 }
