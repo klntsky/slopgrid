@@ -166,8 +166,9 @@ provider request signature.
   font bytes. Workers have no browser or host-resource resolver. Rendered content
   is shared within a generation task; the content executor manages its lifetime.
 - The presenter exposes output readiness separately from overall cell completion.
-  Cell controls and offline caching consume that boundary. Billing owns all
-  actual task charges; generation summaries exclude judge calls.
+  Cell controls and offline caching consume that boundary. Billing owns actual
+  task charges and grid spending; generation usage stays separate for Cost and
+  token counts.
 
 ## Outputs and live views
 
