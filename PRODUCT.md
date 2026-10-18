@@ -352,6 +352,10 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
    - Preserve each view's own reading position while it follows another view. Restore saved positions when no criterion is hovered.
    - Directly scrolling a view updates its own reading position.
 8. Highlight the criterion under the cursor in every judgment view in the grid. Update the shared highlight as scrolling changes the criterion under a stationary cursor, and clear it when the cursor leaves the criterion rows.
+9. On touchscreens, use single-finger contact as the shared criterion hover anchor, with the same highlighting, visibility, and vertical alignment as mouse hover.
+   - Track the finger during native scrolling and retain its last position after release, so momentum continues updating the highlighted criterion and synchronized positions.
+   - Tapping another criterion changes the anchor. Tapping outside the criteria or using multiple fingers clears it and restores peer positions.
+   - Preserve native scrolling and grid pinch zoom.
 
 
 ## 6. Inference, scheduling, and recovery
