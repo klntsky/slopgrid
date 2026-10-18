@@ -68,9 +68,7 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
   const hoveredJudgeView = useRef<HTMLElement | null>(null);
   const touchHoverFrame = useRef<number | null>(null);
   const touchHoverForce = useRef(false);
-  const touching = useRef(false);
   const touchCriterion = useRef<HTMLElement | null>(null);
-  const touchView = useRef<HTMLElement | null>(null);
   function criterionRow(target: EventTarget | null) {
     const row =
       target instanceof Element
@@ -156,10 +154,7 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
       touchHoverForce.current = false;
       const pointer = criterionPointer.current;
       if (!pointer || !("pointerType" in pointer)) {
-        const row =
-          touching.current || touchView.current
-            ? touchCriterion.current
-            : criterionUnderCursor();
+        const row = criterionRow(touchCriterion.current);
         updateCriterionHover(row, force);
       }
     });
@@ -171,59 +166,21 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
   }
   useLayoutEffect(() => {
     function touch(event: TouchEvent) {
-      if (event.type === "touchend" || event.type === "touchcancel") {
-        if (!event.touches.length) touching.current = false;
-        return;
-      }
-      if (event.type === "touchstart") {
-        touching.current = event.touches.length === 1;
-        criterionPointer.current = touching.current ? event.touches[0] : null;
-        touchCriterion.current = criterionUnderCursor();
-        const view =
-          touching.current && event.target instanceof Element
-            ? event.target.closest<HTMLElement>(".judge-results")
-            : null;
-        touchView.current =
-          view && workspace.current?.contains(view) ? view : null;
-      } else if (touching.current && event.touches.length === 1) {
-        criterionPointer.current = event.touches[0];
-      } else {
-        return;
-      }
+      criterionPointer.current =
+        event.touches.length === 1 ? event.touches[0] : null;
+      touchCriterion.current = criterionUnderCursor();
       scheduleTouchHover();
     }
-    function scrollEnd(event: Event) {
-      if (
-        !touchView.current ||
-        event.target !== touchView.current ||
-        touching.current
-      )
-        return;
-      touchView.current = null;
-      touchCriterion.current = null;
-      scheduleTouchHover(true);
-    }
-    // Native scrolling cancels pointer events, but touch events keep tracking
-    // the finger. Retain its last position for taps and momentum scrolling.
-    // Keep the contacted row fixed until the browser reports scroll completion.
+    // Keep the touched criterion until another touch starts. Native scrolling
+    // and gesture completion must not clear it or restore peer positions.
     document.addEventListener("touchstart", touch, { passive: true });
-    document.addEventListener("touchmove", touch, { passive: true });
-    document.addEventListener("touchend", touch, { passive: true });
-    document.addEventListener("touchcancel", touch, { passive: true });
-    document.addEventListener("scrollend", scrollEnd, true);
     return () => {
       document.removeEventListener("touchstart", touch);
-      document.removeEventListener("touchmove", touch);
-      document.removeEventListener("touchend", touch);
-      document.removeEventListener("touchcancel", touch);
-      document.removeEventListener("scrollend", scrollEnd, true);
       if (touchHoverFrame.current !== null)
         cancelAnimationFrame(touchHoverFrame.current);
       touchHoverFrame.current = null;
       touchHoverForce.current = false;
-      touching.current = false;
       touchCriterion.current = null;
-      touchView.current = null;
     };
   }, []);
   useLayoutEffect(() => {

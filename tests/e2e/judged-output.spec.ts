@@ -1722,7 +1722,7 @@ test.describe("touch judgment following", () => {
       type: "touchStart",
       touchPoints: [{ x: a.x + 20, y: a.y + 260, id: 1 }],
     });
-    for (const y of [245, 210, 170, 130, 90])
+    for (const y of [245, 210, 170, 130, 90, -20])
       await client.send("Input.dispatchTouchEvent", {
         type: "touchMove",
         touchPoints: [{ x: a.x + 20, y: a.y + y, id: 1 }],
@@ -1747,12 +1747,20 @@ test.describe("touch judgment following", () => {
         ?.closest(".judge-result-criteria > li");
       return row ? Array.from(row.parentElement!.children).indexOf(row) : -1;
     };
-    const scrolled = await page.evaluate(criterionAt, {
+    const releasedOver = await page.evaluate(criterionAt, {
       x: a.x + 20,
-      y: a.y + 90,
+      y: a.y - 20,
     });
-    expect(scrolled).toBeGreaterThan(1);
-    await expectSelected(scrolled);
+    expect(releasedOver).toBe(-1);
+    await expect
+      .poll(() => backgrounds(1))
+      .toEqual([selectedBackground, selectedBackground]);
+    await expect
+      .poll(() => source.evaluate((container) => container.scrollTop))
+      .toBe(ownPosition);
+    expect(await target.evaluate((container) => container.scrollTop)).not.toBe(
+      original,
+    );
     const next = await page.evaluate(criterionAt, {
       x: b.x + 20,
       y: b.y + 140,
