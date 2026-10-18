@@ -565,7 +565,111 @@ async function createJudged(page: Page, input: GridInput = judgedInput) {
   return grid.id as string;
 }
 
-test("shared generation stays usable while judging; inline judgments score expected answers and persist expanded", async ({
+test("judge controls wait for generation and bottom overlays grow from content size to a scrollable cell", async ({
+  page,
+}) => {
+  const finalExplanation = "The red rectangle is visible.";
+  await page.request.post("/fixture/reset", {
+    data: {
+      holdGenerations: true,
+      holdJudges: true,
+      svgOutput:
+        '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600"><rect width="600" height="600" fill="red"/></svg>',
+      judgeOutput: JSON.stringify({
+        results: [
+          {
+            verdict: false,
+            explanation: Array.from(
+              { length: 60 },
+              (_, index) =>
+                `Detail ${index + 1}: the rectangle is red, not blue.`,
+            ).join("\n"),
+          },
+          { verdict: true, explanation: finalExplanation },
+        ],
+      }),
+    },
+  });
+  await createJudged(page, {
+    ...judgedInput,
+    format: "svg",
+    rows: { kind: "judge_model", values: ["fixture/text"] },
+    columns: { kind: "judge_effort", values: ["none"] },
+    judge: {
+      ...judgedInput.judge!,
+      criteria: [
+        { text: "Is it blue?", correctAnswer: false },
+        { text: "Is it red?", correctAnswer: true },
+      ],
+    },
+  });
+  await expect
+    .poll(
+      async () =>
+        (await (await page.request.get("/fixture/workers")).json()).held.length,
+    )
+    .toBe(1);
+  const cell = page.locator(".cell");
+  const score = cell.locator(".judge-result-button");
+  await expect(score).toHaveCount(0);
+  const held = await (await page.request.get("/fixture/workers")).json();
+  await page.request.post("/fixture/release", {
+    data: { prompt: held.held[0] },
+  });
+  await expect(score).toHaveAccessibleName("Judging...");
+  await expect(score).toHaveAttribute("aria-busy", "true");
+  await expect(score).toHaveText("/2");
+  const image = cell.getByRole("img", { name: "Generated SVG", exact: true });
+  await expect(image).toBeVisible();
+  await score.click();
+  const details = cell.getByRole("region", {
+    name: "Judgment details",
+    exact: true,
+  });
+  await expect(details).toBeVisible();
+  await expect(image).toBeVisible();
+  const viewport = (await cell.locator(".cell-view").first().boundingBox())!;
+  const compact = (await details.boundingBox())!;
+  expect(compact.height).toBeLessThan(viewport.height / 2);
+  expect(compact.width).toBeLessThan(viewport.width);
+  expect(
+    viewport.y + viewport.height - compact.y - compact.height,
+  ).toBeLessThan(compact.y - viewport.y);
+
+  await page.request.post("/fixture/release", { data: { all: true } });
+  await expect(score).toHaveText("2/2");
+  await expect(score).toHaveAttribute("aria-busy", "false");
+  await expect(details.getByRole("status")).toHaveCount(0);
+  const full = (await details.boundingBox())!;
+  expect(full.height).toBeGreaterThan(viewport.height * 0.9);
+  expect(full.x).toBeGreaterThanOrEqual(viewport.x);
+  expect(full.y).toBeGreaterThanOrEqual(viewport.y);
+  expect(full.x + full.width).toBeLessThanOrEqual(
+    viewport.x + viewport.width + 1,
+  );
+  expect(full.y + full.height).toBeLessThanOrEqual(
+    viewport.y + viewport.height + 1,
+  );
+  expect(
+    await details.evaluate(
+      (element) => element.scrollHeight > element.clientHeight,
+    ),
+  ).toBe(true);
+  await details.hover();
+  await page.mouse.wheel(0, 10000);
+  await expect
+    .poll(() => details.evaluate((element) => element.scrollTop))
+    .toBeGreaterThan(0);
+  await expect(
+    details.getByText(finalExplanation, { exact: true }),
+  ).toBeInViewport();
+  await expect(score).toBeVisible();
+  await score.click();
+  await expect(details).toBeHidden();
+  await expect(image).toBeVisible();
+});
+
+test("shared generation stays usable behind judgment overlays and persists expanded", async ({
   page,
 }) => {
   await page.request.post("/fixture/reset", {
@@ -587,7 +691,9 @@ test("shared generation stays usable while judging; inline judgments score expec
   await expect(
     page.getByRole("link", { name: "Download output", exact: true }),
   ).toHaveCount(4);
-  await expect(scores).toHaveText(["-/2", "-/2", "-/2", "-/2"]);
+  await expect(scores).toHaveText(["/2", "/2", "/2", "/2"]);
+  for (const score of await scores.all())
+    await expect(score).toHaveAttribute("aria-busy", "true");
   await expect(
     page.getByLabel("Total cost: $0.10", { exact: true }),
   ).toBeVisible();
@@ -616,7 +722,7 @@ test("shared generation stays usable while judging; inline judgments score expec
   });
   await expect(details).toBeVisible();
   await expect(scores.first()).toHaveAttribute("aria-pressed", "true");
-  await expect(raw).toBeHidden();
+  await expect(raw).toBeVisible();
   await expect(
     details.getByRole("img", { name: /^(Correct|Incorrect)$/ }),
   ).toHaveCount(0);
@@ -654,6 +760,7 @@ test("shared generation stays usable while judging; inline judgments score expec
   });
   await expect(completed).toHaveCount(4);
   await expect(completed).toHaveText(["1/2", "1/2", "1/2", "1/2"]);
+  await expect(completed.first()).toHaveAttribute("aria-busy", "false");
   await expect(details).toBeVisible();
   const items = details.getByRole("listitem");
   await expect(
@@ -816,7 +923,7 @@ test("failed judging shows unresolved criteria without hiding generation or its 
   ).toHaveCount(0);
   await expect(
     cell.getByRole("heading", { name: "A generated cat", exact: true }),
-  ).toHaveCount(0);
+  ).toBeVisible();
   await expect(
     cell.getByRole("link", { name: "Open output", exact: true }),
   ).toBeVisible();
@@ -1210,7 +1317,7 @@ for (const format of ["svg", "image"] as const) {
   });
 }
 
-test("judgment and thinking are exclusive in-cell views while judging, including expanded controls", async ({
+test("judgment overlays replace thinking while leaving output visible, including expanded controls", async ({
   page,
 }) => {
   await page.request.post("/fixture/reset", {
@@ -1229,7 +1336,8 @@ test("judgment and thinking are exclusive in-cell views while judging, including
   });
   const thinking = cell.getByRole("region", { name: /^Thinking:/ });
   const output = cell.getByRole("heading", { name: "Drawing", exact: true });
-  await expect(score).toHaveText("-/2");
+  await expect(score).toHaveText("/2");
+  await expect(score).toHaveAttribute("aria-busy", "true");
   await expect(output).toBeVisible();
   await cell
     .getByRole("button", { name: "Show thinking", exact: true })
@@ -1241,7 +1349,7 @@ test("judgment and thinking are exclusive in-cell views while judging, including
   await expect(score).toHaveAttribute("aria-pressed", "true");
   await expect(details).toBeVisible();
   await expect(thinking).toBeHidden();
-  await expect(output).toHaveCount(0);
+  await expect(output).toBeVisible();
   await expect(
     cell.getByRole("button", { name: "View raw", exact: true }),
   ).toHaveCount(0);

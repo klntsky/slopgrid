@@ -330,13 +330,14 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
 
 ### 5.6. Judgment results
 
-1. Keep the scales icon followed by X/Y in the existing cell controls, including expanded cells. Y is the criteria count and X counts verdicts equal to their configured correct answers. The completed accessible name is "Judgment: {X} of {Y} correct".
-2. Clicking the scales control replaces output or thinking with a compact in-cell judgment view; clicking it again restores output.
-   - Output, thinking, and judgment are mutually exclusive views. Preserve the selected view across expansion and collapse.
-   - Use unruled rows with a status icon, criterion text, and plain explanation side by side, integrated directly into the cell.
+1. Show the scales control in the existing cell controls once judged output generation has completed, including expanded cells. Y is the criteria count and X counts verdicts equal to their configured correct answers. The completed accessible name is "Judgment: {X} of {Y} correct".
+2. Clicking the scales control shows a floating judgment panel over the output; clicking it again dismisses the panel.
+   - Keep the output visible behind the panel. Showing judgment returns from thinking to output; showing thinking hides the panel. Preserve the selected presentation across expansion and collapse.
+   - Anchor the panel at the bottom of the cell and size it to its contents. Constrain larger results to the available cell area and scroll within the panel.
+   - Use unruled rows with a status icon, criterion text, and plain explanation side by side.
    - Show icon-only verdicts: green/check for a matching answer and red/cross for a mismatch, with accessible Correct/Incorrect labels.
-   - Keep the view selected on outside clicks. Escape retains expanded-cell collapse behavior. Returning to output preserves its raw/rendered selection.
-3. Until a validated result is available, show -/Y and neutral unresolved criteria. Accessible labels and judgment-view states are "Judge queued", "Judging...", "Judge paused", "Waiting to retry judging...", and "Judging failed: {error}". Show the scales control on judged cells.
+   - Keep the panel open on outside clicks. Escape retains expanded-cell collapse behavior. Preserve the output's raw/rendered selection when toggling the panel.
+3. While judging is running, show a spinner before /Y in place of the numerator. Replace it with X after a validated result completes. Queued, paused, retrying, and failed judgments show -/Y and neutral unresolved criteria. Accessible labels and panel states are "Judge queued", "Judging...", "Judge paused", "Waiting to retry judging...", and "Judging failed: {error}".
 4. Evaluate every criterion in order against the generated output, independently of the configured correct answers. Report the actual yes/no answer and a nonempty explanation for each criterion. Compare answers with the configured correct answers to determine the score. Missing or extra results, invalid types, empty explanations, malformed output, and unsuccessful completion fail judging. Use "The judge returned an invalid structured result." for invalid results.
 5. Judge completed Markdown text, ordered chat messages, images, or a PNG rendering of the completed SVG.
    - Retain original SVG output and downloads.

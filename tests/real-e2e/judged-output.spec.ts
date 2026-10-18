@@ -165,6 +165,7 @@ async function inspect(page: Page, grid: Snapshot) {
   await scores.first().click();
   await expect(scores.first()).toHaveAttribute("aria-pressed", "true");
   await expect(details).toBeVisible();
+  await expect(cell.locator(".cell-view").first()).toBeVisible();
   const items = details.getByRole("listitem");
   for (const [index, result] of grid.cells[0].judge!.results!.entries()) {
     const matched = result.verdict === expected[index].correctAnswer;

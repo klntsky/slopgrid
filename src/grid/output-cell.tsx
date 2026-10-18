@@ -86,7 +86,7 @@ export function OutputCell({
       : "output");
   const thinking = hasThinking && activeView === "thinking";
   const judgment =
-    cell.judge && criteria
+    complete && cell.judge && criteria
       ? summarizeJudgment(cell.judge, criteria, gridStatus)
       : undefined;
   const judging = !!judgment && activeView === "judgment";
@@ -100,11 +100,7 @@ export function OutputCell({
       role={expanded ? "region" : undefined}
       aria-label={expanded ? `Expanded output: ${title}` : undefined}
     >
-      <div
-        className="cell-view"
-        aria-hidden={thinking || judging}
-        inert={thinking || judging}
-      >
+      <div className="cell-view" aria-hidden={thinking} inert={thinking}>
         {offline && !complete ? (
           <p>This output isn't available offline.</p>
         ) : markdown ? (
@@ -168,7 +164,11 @@ export function OutputCell({
         </div>
       )}
       {judgment && criteria && (
-        <div className="cell-view" aria-hidden={!judging} inert={!judging}>
+        <div
+          className="cell-view cell-judgment"
+          aria-hidden={!judging}
+          inert={!judging}
+        >
           <JudgeResults summary={judgment} criteria={criteria} />
         </div>
       )}
@@ -227,7 +227,7 @@ export function OutputCell({
           )}
         </div>
       )}
-      {((cell.judge && criteria) ||
+      {(judgment ||
         (!expanded &&
           (complete ||
             (cell.status === "running" &&

@@ -1,4 +1,4 @@
-import { Check, Scale, X } from "lucide-react";
+import { Check, LoaderCircle, Scale, X } from "lucide-react";
 import type { GridInput } from "../../server/domain";
 import type { ViewGrid } from "../api";
 import "./judge-result-button.css";
@@ -7,6 +7,7 @@ export type JudgmentSummary = {
   results: NonNullable<ViewGrid["cells"][number]["judge"]>["results"];
   correct: number | undefined;
   total: number;
+  running: boolean;
   state: string;
   label: string;
 };
@@ -47,7 +48,15 @@ export function summarizeJudgment(
   const label = results
     ? `Judgment: ${correct} of ${criteria.length} correct`
     : state;
-  return { results, correct, total: criteria.length, state, label };
+  return {
+    results,
+    correct,
+    total: criteria.length,
+    running:
+      judge.status === "running" && gridStatus !== "paused" && !judge.retrying,
+    state,
+    label,
+  };
 }
 
 export function JudgeResultButton({
@@ -65,11 +74,17 @@ export function JudgeResultButton({
       className="judge-result-button"
       aria-label={summary.label}
       aria-pressed={active}
+      aria-busy={summary.running}
       onClick={onToggle}
     >
       <Scale aria-hidden="true" />
-      <span aria-hidden="true">
-        {summary.correct ?? "-"}/{summary.total}
+      <span className="judge-result-score" aria-hidden="true">
+        {summary.running ? (
+          <LoaderCircle className="spinner" aria-hidden="true" />
+        ) : (
+          (summary.correct ?? "-")
+        )}
+        <span>/{summary.total}</span>
       </span>
     </button>
   );

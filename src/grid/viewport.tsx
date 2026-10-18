@@ -204,7 +204,7 @@ export function GridViewport({
         if (
           e.pointerType !== "mouse" ||
           e.target.closest(
-            'img, iframe, .markdown-preview, button, a, input, textarea, select, [contenteditable]:not([contenteditable="false"])',
+            'img, iframe, .markdown-preview, .judge-results, button, a, input, textarea, select, [contenteditable]:not([contenteditable="false"])',
           )
         )
           return;
