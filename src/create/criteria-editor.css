@@ -32,10 +32,17 @@
 }
 
 .criteria-answer {
-  --role-color: var(--muted);
   height: calc(1.6rem + 24px);
   min-width: 44px;
   justify-content: center;
+}
+
+.criteria-answer[aria-pressed="true"] {
+  --role-color: #3c8a51;
+}
+
+.criteria-answer[aria-pressed="false"] {
+  --role-color: #b64249;
 }
 
 .criteria-row[data-dragging="true"] {
