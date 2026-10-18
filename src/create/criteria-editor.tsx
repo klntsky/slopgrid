@@ -103,7 +103,7 @@ export function CriteriaEditor({
                     update(index, { correctAnswer: !criterion.correctAnswer })
                   }
                 >
-                  {criterion.correctAnswer ? "Yes" : "No"}
+                  {criterion.correctAnswer ? "YES" : "NO"}
                 </button>
               </td>
             </tr>
