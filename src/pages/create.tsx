@@ -49,12 +49,9 @@ export function Create() {
   const { generate, onUploading, lowBalance, setLowBalance, busy, error } =
     submission;
   const compatibility = compatibilityTables({ input, models });
-  const commonParameters =
-    input.format === "image" ||
-    commonModel ||
-    commonEffort ||
-    commonJudgeModel ||
-    commonJudgeEffort;
+  const commonFixedParameters =
+    commonModel || commonEffort || commonJudgeModel || commonJudgeEffort;
+  const commonParameters = input.format === "image" || commonFixedParameters;
   const promptVariables = (["rows", "columns"] as const)
     .filter((axis) => input[axis].kind === "variable")
     .map((axis) => (axis === "rows" ? "$ROW" : "$COLUMN"));
@@ -157,7 +154,7 @@ export function Create() {
           </div>
           <p className="hint">
             {input.judge ? (
-              `${input.rows.values.length} rows x ${input.columns.values.length} columns - ${generatedOutputs} generated outputs, ${input.rows.values.length * input.columns.values.length} judgments`
+              `${input.rows.values.length} rows x ${input.columns.values.length} columns - ${generatedOutputs} generated outputs`
             ) : (
               <>
                 {input.rows.values.length} rows × {input.columns.values.length}{" "}
@@ -173,16 +170,91 @@ export function Create() {
             <span className="number">03</span>
             <h2>Specify common parameters</h2>
           </div>
-          {commonModel && (
-            <fieldset role="radiogroup" aria-label="Model">
-              <legend>Model</legend>
-              <ModelSelector
-                models={models}
-                format={input.format}
-                values={input.model ? [input.model] : []}
-                onChange={(values) => update({ model: values[0] ?? "" })}
-              />
-            </fieldset>
+          {commonFixedParameters && (
+            <div className="fixed-options">
+              {commonModel && (
+                <fieldset role="radiogroup" aria-label="Model">
+                  <legend>Model</legend>
+                  <ModelSelector
+                    models={models}
+                    format={input.format}
+                    values={input.model ? [input.model] : []}
+                    onChange={(values) => update({ model: values[0] ?? "" })}
+                  />
+                </fieldset>
+              )}
+              {commonEffort && (
+                <div>
+                  <label>
+                    Thinking effort
+                    <select
+                      aria-label="Thinking effort"
+                      value={input.effort}
+                      onChange={(e) =>
+                        update({
+                          effort: e.target.value as GridInput["effort"],
+                        })
+                      }
+                    >
+                      {efforts.map((e) => (
+                        <option key={e} value={e}>
+                          {effortLabel(e)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {compatibility.effort}
+                </div>
+              )}
+              {commonJudgeModel && input.judge && (
+                <fieldset role="radiogroup" aria-label="Judge model">
+                  <legend>Judge model</legend>
+                  <ModelSelector
+                    judge
+                    models={judgeModels}
+                    format={input.format}
+                    values={input.judge.model ? [input.judge.model] : []}
+                    onChange={(values) =>
+                      update({
+                        judge: { ...input.judge!, model: values[0] ?? "" },
+                      })
+                    }
+                  />
+                  {!judgeModels.length && (
+                    <p className="hint">
+                      No compatible judge models are available for this output
+                      type.
+                    </p>
+                  )}
+                </fieldset>
+              )}
+              {commonJudgeEffort && input.judge && (
+                <div>
+                  <label>
+                    Judge thinking effort
+                    <select
+                      aria-label="Judge thinking effort"
+                      value={input.judge.effort}
+                      onChange={(event) =>
+                        update({
+                          judge: {
+                            ...input.judge!,
+                            effort: event.target.value as GridInput["effort"],
+                          },
+                        })
+                      }
+                    >
+                      {efforts.map((effort) => (
+                        <option key={effort} value={effort}>
+                          {effortLabel(effort)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {compatibility.judge_effort}
+                </div>
+              )}
+            </div>
           )}
           {input.format === "image" && (
             <ImageOptions
@@ -191,78 +263,6 @@ export function Create() {
               onChange={update}
               onBusy={onUploading}
             />
-          )}
-          {commonEffort && (
-            <div className="fixed-options">
-              <div>
-                <label>
-                  Thinking effort
-                  <select
-                    aria-label="Thinking effort"
-                    value={input.effort}
-                    onChange={(e) =>
-                      update({
-                        effort: e.target.value as GridInput["effort"],
-                      })
-                    }
-                  >
-                    {efforts.map((e) => (
-                      <option key={e} value={e}>
-                        {effortLabel(e)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                {compatibility.effort}
-              </div>
-            </div>
-          )}
-          {commonJudgeModel && input.judge && (
-            <fieldset role="radiogroup" aria-label="Judge model">
-              <legend>Judge model</legend>
-              <ModelSelector
-                judge
-                models={judgeModels}
-                format={input.format}
-                values={input.judge.model ? [input.judge.model] : []}
-                onChange={(values) =>
-                  update({ judge: { ...input.judge!, model: values[0] ?? "" } })
-                }
-              />
-              {!judgeModels.length && (
-                <p className="hint">
-                  No compatible judge models are available for this output type.
-                </p>
-              )}
-            </fieldset>
-          )}
-          {commonJudgeEffort && input.judge && (
-            <div className="fixed-options">
-              <div>
-                <label>
-                  Judge thinking effort
-                  <select
-                    aria-label="Judge thinking effort"
-                    value={input.judge.effort}
-                    onChange={(event) =>
-                      update({
-                        judge: {
-                          ...input.judge!,
-                          effort: event.target.value as GridInput["effort"],
-                        },
-                      })
-                    }
-                  >
-                    {efforts.map((effort) => (
-                      <option key={effort} value={effort}>
-                        {effortLabel(effort)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                {compatibility.judge_effort}
-              </div>
-            </div>
           )}
         </section>
       )}

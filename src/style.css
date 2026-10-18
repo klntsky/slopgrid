@@ -496,7 +496,7 @@ section {
   flex-basis: 100%;
 }
 .axis,
-.fixed-options > div {
+.fixed-options > * {
   min-width: 0;
 }
 .axis-swap {

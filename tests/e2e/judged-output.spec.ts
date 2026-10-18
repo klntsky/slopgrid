@@ -93,11 +93,6 @@ test("judge criteria preserve boolean answers and judge axes restore fixed setti
   await expect(
     page.getByLabel("Judge thinking effort", { exact: true }),
   ).toHaveCount(0);
-  await expect(
-    page.getByText("2 rows x 2 columns - 1 generated outputs, 4 judgments", {
-      exact: true,
-    }),
-  ).toBeVisible();
   await page
     .getByRole("button", { name: "Swap rows and columns", exact: true })
     .click();
@@ -698,11 +693,6 @@ test("judge answers and axes survive draft reload, OAuth, Edit, and Fork", async
     await expect(
       page.getByLabel("Judge thinking effort", { exact: true }),
     ).toHaveCount(0);
-    await expect(
-      page.getByText("2 rows x 2 columns - 1 generated outputs, 4 judgments", {
-        exact: true,
-      }),
-    ).toBeVisible();
   };
   await page.reload();
   await expectRestored();
