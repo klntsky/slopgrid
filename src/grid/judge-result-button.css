@@ -19,6 +19,7 @@
   justify-content: flex-start;
   position: relative;
   padding: 8px 12px;
+  overflow: clip;
   pointer-events: none;
   z-index: 2;
 }

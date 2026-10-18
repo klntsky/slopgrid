@@ -333,7 +333,7 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
 1. Show the scales control in the existing cell controls once judged output generation has completed, including expanded cells. Y is the criteria count and X counts verdicts equal to their configured correct answers. The completed accessible name is "Judgment: {X} of {Y} correct".
 2. Automatically show the floating judgment panel over the output when judging completes, and when opening a grid with completed judgments. The scales control toggles the panel; manual dismissal or switching to thinking remains in effect until the page is reopened.
    - Keep the output visible behind the panel. Showing judgment returns from thinking to output; showing thinking hides the panel. Preserve the selected presentation across expansion and collapse.
-   - Anchor the panel at the bottom of the cell, with a small triangle pointing to the scales control. Size it to its contents, up to half the cell height. Scroll within the panel when results exceed that limit.
+   - Anchor the panel at the bottom of the cell, with a small triangle pointing to the scales control. Keep the panel and its pointer within that cell's output viewport, including resized and expanded cells. Size the panel to its contents, up to the available width and half the cell height. Scroll within the panel when results exceed those bounds.
    - Use unruled rows with a status icon, criterion text, and plain explanation side by side. Wrap the displayed predicate title in `not()` when its expected answer is false; retain the original criterion text for editing and judge requests.
    - Show icon-only verdicts: green/check for a matching answer and red/cross for a mismatch, with accessible Correct/Incorrect labels.
    - Keep the panel open on outside clicks. Escape retains expanded-cell collapse behavior. Preserve the output's raw/rendered selection when toggling the panel.
@@ -379,7 +379,7 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
 
 1. For judged grids, generate once per distinct generator setup and use the identical committed artifact in each member cell. Judge comparisons do not create additional generation calls. Waiting members consume no generation workers; each judgment uses ordinary worker allocation independently.
 2. Generation failure affects dependent cells; judge failure affects only its judgment. A false verdict is successful judging, not an inference error. Overall cell completion waits for judging, and publication follows the existing unfinished/failed-cell policy.
-3. Preserve committed generation and completed verdicts through Pause, recovery, and Resume. Resume retries only unfinished stages, including incomplete member copies repaired from the committed representative instead of generating again. Preserve temporary-error retries and billing pauses without duplicate requests after cancellation or storage retries.
+3. Preserve committed generation and completed verdicts through Pause, recovery, and Resume. Resume retries only unfinished stages. Preserve temporary-error retries and billing pauses without duplicate requests after cancellation or storage retries.
 4. New grids always need fresh judgments. Reload, Resume, and duplicate creation replay do not repeat completed verdicts. Do not cache verdicts or reuse judgment attempts or usage across grids.
 
 
