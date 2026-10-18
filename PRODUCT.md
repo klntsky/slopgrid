@@ -330,13 +330,13 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
 
 ### 5.6. Judgment results
 
-1. Show the scales control in the existing cell controls once judged output generation has completed, including expanded cells. Y is the criteria count and X counts verdicts equal to their configured correct answers. The completed accessible name is "Judgment: {X} of {Y} correct".
-2. Automatically show the floating judgment panel over the output when judging completes, and when opening a grid with completed judgments. The scales control toggles the panel; manual dismissal or switching to thinking remains in effect until the page is reopened.
-   - Keep the output visible behind the panel. Showing judgment returns from thinking to output; showing thinking hides the panel. Preserve the selected presentation across expansion and collapse.
-   - Anchor the panel at the bottom of the cell, with a small triangle pointing to the scales control. Use a dark shadow in both themes. Keep the panel and its pointer within that cell's output viewport, including resized and expanded cells. Size the panel to its contents, up to the available width and half the cell height. Scroll within the panel when results exceed those bounds.
+1. Show the scales control and its score in the top cell toolbar immediately after Thinking, once judged output generation has completed, including expanded cells. Y is the criteria count and X counts verdicts equal to their configured correct answers. The completed accessible name is "Judgment: {X} of {Y} correct".
+2. Automatically show the judgment view when judging completes, and when opening a grid with completed judgments. The scales control switches between judgment and output; manual dismissal or choosing thinking remains in effect until the page is reopened.
+   - Output, thinking, and judgment are alternate views. Selecting one replaces the other within the cell. Preserve the selected presentation across expansion and collapse.
+   - Fill the available cell viewport edge to edge with a flat cell-colored results surface, including resized and expanded cells. Scroll within the results view when its content exceeds the viewport.
    - Use unruled rows with a status icon, criterion text, and plain explanation side by side. Wrap the displayed predicate title in `not()` when its expected answer is false; retain the original criterion text for editing and judge requests.
    - Show icon-only verdicts: green/check for a matching answer and red/cross for a mismatch, with accessible Correct/Incorrect labels.
-   - Keep the panel open on outside clicks. Escape retains expanded-cell collapse behavior. Preserve the output's raw/rendered selection when toggling the panel.
+   - Preserve the judgment selection on outside clicks. Escape retains expanded-cell collapse behavior. Preserve the output's raw/rendered selection when switching views.
 3. While judging is running, show a spinner before /Y in place of the numerator. Replace it with X after a validated result completes. Queued, paused, retrying, and failed judgments show -/Y and neutral unresolved criteria. Accessible labels and panel states are "Judge queued", "Judging...", "Judge paused", "Waiting to retry judging...", and "Judging failed: {error}".
 4. Evaluate every criterion in order against the generated output, independently of the configured correct answers. Report the actual yes/no answer and a nonempty explanation for each criterion. Compare answers with the configured correct answers to determine the score. Missing or extra results, invalid types, empty explanations, malformed output, and unsuccessful completion fail judging. Use "The judge returned an invalid structured result." for invalid results.
 5. Judge completed Markdown text, ordered chat messages, images, or a PNG rendering of the completed SVG.
@@ -345,6 +345,7 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
    - Report "Could not render this SVG for judging." when rendering fails, preserving the SVG and leaving judging failed.
    - Unavailable generated output reports "The generated output is unavailable for judging."
 6. Completed generation remains available for output, raw view, thinking, copy, and download while judging runs or fails, subject to ordinary access control. Cache ready output independently of judgment completion; display cached verdicts as saved results.
+7. Scrolling any judgment view synchronizes the other judgment views in that grid. Use the first currently visible criterion as the anchor and position that same criterion at the same vertical offset in the other views, so differing explanation heights do not require matching absolute scroll positions.
 
 
 ## 6. Inference, scheduling, and recovery
