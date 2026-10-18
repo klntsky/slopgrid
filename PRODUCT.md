@@ -252,7 +252,7 @@ Image grids have a "Parameters" button with a 14px Info circle icon immediately 
 4. Page-height filling may expand output rows, but must never stretch the header row. Its height stays natural through viewport fitting, zoom, resizing, and restoration of saved sizes.
 5. Users resize output columns and rows through their corresponding header edges. Each shared edge controls the column to its right or row below it, including the last output row. The header row and label column themselves are not resizable. Resizing permits column widths from 120 to 20,000 pixels and row heights from 160 to 20,000 pixels.
 6. Remember output dimensions for each grid in the current browser without sharing size preferences with other browsers. Restoring output sizes must preserve the header's natural height.
-7. Support pinch zoom whenever a touchscreen is present, regardless of screen width. Start by fitting the table to available width and prevent zooming out beyond that width fit. Limit zooming in to three times the table's unscaled size.
+7. Support pinch zoom whenever a touchscreen is present, regardless of screen width. Start by fitting the table to available height, up to its unscaled size, and prevent zooming out beyond that height fit. Limit zooming in to three times the table's unscaled size. Allow horizontal scrolling when the height-fitted grid is wider than the viewport.
 8. Keep one-finger scrolling usable, including within Markdown cells. Zoom the grid rather than the application navbar.
 9. Click-dragging empty grid areas scrolls both axes. Drags starting on images, website frames, Markdown or thinking previews, interactive controls, and resize handles retain their own behavior. Image padding belongs to the draggable grid, while images retain their centered, aspect-ratio-preserving fit.
 
@@ -288,6 +288,7 @@ Image grids have a "Parameters" button with a 14px Info circle icon immediately 
 5. Preserve generated output independently of metadata edits and publication, without an application output-byte limit.
    Show Expand and view controls when a cell has output or thinking content to inspect, is generating, or is already expanded. Omit them from empty queued, paused, and failed cells. Keep output links, copying, and downloading conditional on available output.
 6. Treat an unsuccessful completion reason as a generation failure rather than silently accepting incomplete output. When reported thinking tokens exhaust the requested output-token limit without producing output, show "The model spent all of its <limit> output token limit on thinking without producing output - this is a common failure mode of some models indicating that the thinking level is too high for the task", substituting the actual limit (for example, 234K). Preserve its thinking trace and charges.
+7. Thinking and Judge buttons show a consistent visible pressed state in the website's selected colors while their respective views are active. Returning to output clears both pressed states.
 
 ### 5.2. Markdown
 
@@ -353,7 +354,7 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
    - Directly scrolling a view updates its own reading position.
 8. Highlight the criterion under the cursor in every judgment view in the grid. Update the shared highlight as scrolling changes the criterion under a stationary cursor, and clear it when the cursor leaves the criterion rows.
 9. On touchscreens, use single-finger contact as the shared criterion hover anchor, with the same highlighting, visibility, and vertical alignment as mouse hover.
-   - Track the finger during native scrolling and retain its last position after release, so momentum continues updating the highlighted criterion and synchronized positions.
+   - Keep the contacted criterion fixed throughout single-finger scrolling, including momentum after release. Continue synchronizing that criterion's position, and retarget at the last touch position only once scrolling finishes.
    - Tapping another criterion changes the anchor. Tapping outside the criteria or using multiple fingers clears it and restores peer positions.
    - Preserve native scrolling and grid pinch zoom.
 
