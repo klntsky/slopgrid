@@ -55,9 +55,10 @@ export function AxisEditor({
         }));
   return (
     <div className="axis">
-      <label>
-        <span className="axis-name">{label}</span>
+      <label className="axis-selector">
+        <span className="axis-name">{label}:</span>
         <select
+          aria-label={label}
           value={axis.kind}
           onChange={(e) => {
             const kind = e.target.value as GridInput["rows"]["kind"];

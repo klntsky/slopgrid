@@ -483,7 +483,6 @@ section {
   margin-bottom: 22px;
 }
 .axes {
-  --axis-label-height: 24px;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   gap: 12px;
 }
@@ -504,13 +503,23 @@ section {
 .fixed-options > * {
   min-width: 0;
 }
+.axis-selector {
+  flex-direction: row;
+  align-items: center;
+}
+.axis-selector select {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+}
 .axis-name {
+  flex-shrink: 0;
   font-size: 18px;
-  line-height: var(--axis-label-height);
+  line-height: 24px;
 }
 .axis-swap {
   align-self: start;
-  margin-top: calc(var(--axis-label-height) + 9px);
+  margin-top: 0;
   padding: 12px;
   color: var(--logo-color);
 }
@@ -1234,7 +1243,6 @@ button.editable-title > .lucide {
     gap: 10px;
   }
   .axis-swap {
-    margin-top: 0;
     justify-self: center;
   }
   .axis-swap .lucide {
