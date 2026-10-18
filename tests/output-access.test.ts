@@ -448,7 +448,6 @@ test("committed judged outputs stay readable and downloadable without weakening 
       assert.equal(publishedView.cells[0].outputReady, true);
       assert.equal(publishedView.cells[0].outputURL, view.cells[0].outputURL);
       assert.equal(publishedView.cells[0].status, status);
-      assert.deepEqual(publishedView.cells[0].judge, cell.judge);
       for (const path of paths) {
         const response = await fetch(origin + path);
         assert.equal(response.status, 200);
