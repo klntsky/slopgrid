@@ -109,6 +109,7 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
       return;
     hoveredCriterion.current = index;
     hoveredJudgeView.current = source;
+    const offset = row && source ? row.offsetTop - source.scrollTop : 0;
     for (const list of workspace.current!.querySelectorAll(
       ".judge-result-criteria",
     )) {
@@ -124,10 +125,11 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
       const top = criterion.offsetTop;
       const bottom = top + criterion.offsetHeight;
       const height = target.clientHeight;
-      let next = before;
-      if (criterion.offsetHeight <= height)
-        next = Math.max(bottom - height, Math.min(before, top));
-      else if (bottom <= before || top >= before + height) next = top;
+      if (!height || bottom === top) continue;
+      // Match the source offset while keeping at least one CSS pixel in view.
+      const minimum = Math.max(0, top - height + 1);
+      const maximum = Math.min(target.scrollHeight - height, bottom - 1);
+      const next = Math.max(minimum, Math.min(maximum, top - offset));
       if (next !== before) {
         if (!savedJudgeScrolls.has(target))
           savedJudgeScrolls.set(target, before);

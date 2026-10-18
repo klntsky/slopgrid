@@ -1514,6 +1514,20 @@ test("judgment hover temporarily reveals matching criteria and restores independ
   await expectHighlighted(1);
   expect((await positions())[0]).toBe(original[0]);
   await expect.poll(async () => (await positions())[1]).not.toBe(original[1]);
+  await expect
+    .poll(() =>
+      results.evaluateAll((containers) => {
+        const offsets = containers.map(
+          (container) =>
+            container
+              .querySelector(".judge-result-criteria")!
+              .children[1].getBoundingClientRect().top -
+            container.getBoundingClientRect().top,
+        );
+        return Math.abs(offsets[0] - offsets[1]);
+      }),
+    )
+    .toBeLessThan(1);
 
   // A deep position in a taller explanation must not scroll past the peer's criterion.
   await source.evaluate((container) => {
