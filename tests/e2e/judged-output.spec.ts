@@ -1682,6 +1682,11 @@ test.describe("touch judgment following", () => {
         }),
       )
       .toBeLessThan(1);
+    await source.evaluate((container) => {
+      const row = container.querySelector(".judge-result-criteria")!
+        .children[1] as HTMLElement;
+      container.scrollTop = row.offsetTop + row.offsetHeight - 280;
+    });
     await source.evaluate(
       () =>
         new Promise<void>((resolve) =>
@@ -1689,6 +1694,19 @@ test.describe("touch judgment following", () => {
         ),
     );
     const before = await source.evaluate((container) => container.scrollTop);
+    const selectedBackground = (await backgrounds(1))[0];
+    const scrollSamples = await source.evaluateHandle((container) => {
+      const colors: string[] = [];
+      const record = () => {
+        for (const list of document.querySelectorAll(".judge-result-criteria"))
+          colors.push(getComputedStyle(list.children[1]).backgroundColor);
+      };
+      container.addEventListener("scroll", record, { passive: true });
+      return {
+        colors,
+        stop: () => container.removeEventListener("scroll", record),
+      };
+    });
     const ended = source.evaluate(
       (container) =>
         new Promise<number>((resolve) =>
@@ -1702,9 +1720,9 @@ test.describe("touch judgment following", () => {
     const client = await page.context().newCDPSession(page);
     await client.send("Input.dispatchTouchEvent", {
       type: "touchStart",
-      touchPoints: [{ x: a.x + 20, y: a.y + 220, id: 1 }],
+      touchPoints: [{ x: a.x + 20, y: a.y + 260, id: 1 }],
     });
-    for (const y of [210, 190, 170, 140])
+    for (const y of [245, 210, 170, 130, 90])
       await client.send("Input.dispatchTouchEvent", {
         type: "touchMove",
         touchPoints: [{ x: a.x + 20, y: a.y + y, id: 1 }],
@@ -1717,6 +1735,12 @@ test.describe("touch judgment following", () => {
       .poll(() => source.evaluate((container) => container.scrollTop))
       .toBeGreaterThan(before);
     const ownPosition = await ended;
+    const duringScroll = await scrollSamples.evaluate((state) => {
+      state.stop();
+      return state.colors;
+    });
+    await scrollSamples.dispose();
+    expect(new Set(duringScroll)).toEqual(new Set([selectedBackground]));
     const criterionAt = ({ x, y }: { x: number; y: number }) => {
       const row = document
         .elementFromPoint(x, y)
@@ -1725,9 +1749,9 @@ test.describe("touch judgment following", () => {
     };
     const scrolled = await page.evaluate(criterionAt, {
       x: a.x + 20,
-      y: a.y + 140,
+      y: a.y + 90,
     });
-    expect(scrolled).toBeGreaterThanOrEqual(0);
+    expect(scrolled).toBeGreaterThan(1);
     await expectSelected(scrolled);
     const next = await page.evaluate(criterionAt, {
       x: b.x + 20,
