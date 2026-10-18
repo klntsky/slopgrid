@@ -1664,7 +1664,7 @@ test("judgment hover fits matching criteria in unequal-height panels", async ({
       .nth(index)
       .boundingBox())!;
     await page.mouse.move(
-      sourceBox.x + 4,
+      sourceBox.x + 20,
       (Math.max(sourceBox.y, row.y) +
         Math.min(sourceBox.y + sourceBox.height, row.y + row.height)) /
         2,
