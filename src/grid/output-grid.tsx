@@ -62,8 +62,10 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
   const [pendingJudgeScrolls] = useState(
     () => new WeakMap<HTMLElement, number>(),
   );
+  const [savedJudgeScrolls] = useState(() => new Map<HTMLElement, number>());
   const criterionPointer = useRef<PointerEvent | null>(null);
   const hoveredCriterion = useRef<number | null>(null);
+  const hoveredJudgeView = useRef<HTMLElement | null>(null);
   function criterionRow(target: EventTarget | null) {
     const row =
       target instanceof Element
@@ -89,52 +91,72 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
       index++;
     return index;
   }
-  function highlightCriterion(row: HTMLElement | null, force = false) {
+  function setJudgmentScroll(target: HTMLElement, top: number) {
+    const before = target.scrollTop;
+    target.scrollTop = top;
+    if (target.scrollTop !== before)
+      pendingJudgeScrolls.set(target, target.scrollTop);
+  }
+  function updateCriterionHover(row: HTMLElement | null, force = false) {
     const index = row ? criterionIndex(row) : null;
+    const source = row?.closest<HTMLElement>(".judge-results") ?? null;
     const previous = hoveredCriterion.current;
-    if (index === previous && (!force || index === null)) return;
+    if (
+      index === previous &&
+      source === hoveredJudgeView.current &&
+      (!force || index === null)
+    )
+      return;
     hoveredCriterion.current = index;
+    hoveredJudgeView.current = source;
     for (const list of workspace.current!.querySelectorAll(
       ".judge-result-criteria",
     )) {
       if (previous !== null && previous !== index)
         list.children[previous]?.removeAttribute("data-criterion-hovered");
-      if (index !== null)
-        list.children[index]?.setAttribute("data-criterion-hovered", "");
+      if (index === null) continue;
+      list.children[index]?.setAttribute("data-criterion-hovered", "");
+      const target = list.closest<HTMLElement>(".judge-results")!;
+      if (target === source) continue;
+      const criterion = list.children[index] as HTMLElement | undefined;
+      if (!criterion) continue;
+      const before = target.scrollTop;
+      const top = criterion.offsetTop;
+      const bottom = top + criterion.offsetHeight;
+      const height = target.clientHeight;
+      let next = before;
+      if (criterion.offsetHeight <= height)
+        next = Math.max(bottom - height, Math.min(before, top));
+      else if (bottom <= before || top >= before + height) next = top;
+      if (next !== before) {
+        if (!savedJudgeScrolls.has(target))
+          savedJudgeScrolls.set(target, before);
+        setJudgmentScroll(target, next);
+      }
+    }
+    if (index === null) {
+      for (const [target, top] of savedJudgeScrolls)
+        setJudgmentScroll(target, top);
+      savedJudgeScrolls.clear();
     }
   }
   function trackCriterionPointer(event: PointerEvent) {
     criterionPointer.current = event.pointerType === "touch" ? null : event;
-    highlightCriterion(
+    updateCriterionHover(
       criterionPointer.current ? criterionRow(event.target) : null,
     );
   }
   useLayoutEffect(() => {
     if (criterionPointer.current)
-      highlightCriterion(criterionUnderCursor(), true);
+      updateCriterionHover(criterionUnderCursor(), true);
   }, [g.cells, expandedId, views]);
   function syncJudgmentScroll(source: HTMLElement) {
     const expected = pendingJudgeScrolls.get(source);
     pendingJudgeScrolls.delete(source);
     if (expected === source.scrollTop) return;
-    const current = criterionUnderCursor();
-    highlightCriterion(current);
-    if (!current || current.closest(".judge-results") !== source) return;
-    const index = criterionIndex(current);
-    const offset = source.scrollTop - current.offsetTop;
-    for (const target of workspace.current!.querySelectorAll<HTMLElement>(
-      ".judge-results",
-    )) {
-      if (target === source) continue;
-      const row = target.querySelector(".judge-result-criteria")?.children[
-        index
-      ] as HTMLElement | undefined;
-      if (!row) continue;
-      const before = target.scrollTop;
-      target.scrollTop = row.offsetTop + offset;
-      if (target.scrollTop !== before)
-        pendingJudgeScrolls.set(target, target.scrollTop);
-    }
+    // A user's scroll replaces this view's saved position, not its peers'.
+    savedJudgeScrolls.delete(source);
+    updateCriterionHover(criterionUnderCursor(), true);
   }
   function expand(
     kind: "output" | "reference",
@@ -240,7 +262,7 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
       onPointerMove={(event) => trackCriterionPointer(event.nativeEvent)}
       onPointerLeave={() => {
         criterionPointer.current = null;
-        highlightCriterion(null);
+        updateCriterionHover(null);
       }}
       onScrollCapture={(event) => {
         const source = event.target;

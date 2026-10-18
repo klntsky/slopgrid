@@ -1400,7 +1400,7 @@ test("judgment views replace thinking and output, including expanded controls", 
   await expect(details).toBeVisible();
 });
 
-test("judgment scrolling anchors and highlights the criterion under the cursor across differently sized cells", async ({
+test("judgment hover temporarily reveals matching criteria and restores independent scroll positions", async ({
   page,
 }) => {
   const criteria = Array.from({ length: 4 }, (_, index) => ({
@@ -1446,15 +1446,6 @@ test("judgment scrolling anchors and highlights the criterion under the cursor a
     { steps: 8 },
   );
   await page.mouse.up();
-  const anchor = (container: HTMLElement) => {
-    const top = container.getBoundingClientRect().top;
-    const rows = container.querySelector(".judge-result-criteria")!.children;
-    for (let index = 0; index < rows.length; index++) {
-      const rect = rows[index].getBoundingClientRect();
-      if (rect.bottom > top) return { index, offset: rect.top - top };
-    }
-    throw new Error("No visible criterion");
-  };
   const position = (
     container: HTMLElement,
     { index, offset }: { index: number; offset: number },
@@ -1469,6 +1460,10 @@ test("judgment scrolling anchors and highlights the criterion under the cursor a
   };
   const source = results.nth(0);
   const target = results.nth(1);
+  const positions = () =>
+    results.evaluateAll((containers) =>
+      containers.map((container) => container.scrollTop),
+    );
   const backgrounds = (index: number) =>
     results.evaluateAll(
       (containers, index) =>
@@ -1493,52 +1488,71 @@ test("judgment scrolling anchors and highlights the criterion under the cursor a
         );
       })
       .toBe(true);
+    for (const panel of await results.all())
+      await expect(
+        panel.locator(".judge-result-criteria > li").nth(index),
+      ).toBeInViewport();
   };
-  const criterionOffset = (container: HTMLElement, index: number) =>
-    container
-      .querySelector(".judge-result-criteria")!
-      .children[index].getBoundingClientRect().top -
-    container.getBoundingClientRect().top;
-  // Leave the previous criterion partly visible above the cursor's criterion.
-  await source.evaluate(position, { index: 1, offset: -150 });
   const sourceBox = (await source.boundingBox())!;
-  await page.mouse.move(sourceBox.x + 20, sourceBox.y + 210);
+  const targetBox = (await target.boundingBox())!;
+  const hoverSource = () =>
+    page.mouse.move(sourceBox.x + 20, sourceBox.y + sourceBox.height / 2);
+  const hoverTarget = () =>
+    page.mouse.move(targetBox.x + 20, targetBox.y + targetBox.height / 2);
+  await page.mouse.move(1, 1);
+  await source.evaluate(position, { index: 1, offset: -80 });
+  await target.evaluate((container) => {
+    container.scrollTop = container.scrollHeight;
+  });
+  const original = await positions();
+  await expect(
+    target.locator(".judge-result-criteria > li").nth(1),
+  ).not.toBeInViewport();
+
+  // Hover alone reveals the peer; the source keeps its own reading position.
+  await hoverSource();
   await expectHighlighted(1);
-  const before = await source.evaluate((element) => element.scrollTop);
+  expect((await positions())[0]).toBe(original[0]);
+  await expect.poll(async () => (await positions())[1]).not.toBe(original[1]);
+
+  // A deep position in a taller explanation must not scroll past the peer's criterion.
+  await source.evaluate((container) => {
+    const row = container.querySelector(".judge-result-criteria")!
+      .children[1] as HTMLElement;
+    container.scrollTop =
+      row.offsetTop + row.offsetHeight - container.clientHeight * 0.75;
+  });
+  await expectHighlighted(1);
+  const ownSourcePosition = (await positions())[0];
+  await page.mouse.move(1, 1);
+  await expect.poll(positions).toEqual([ownSourcePosition, original[1]]);
+  await expect.poll(() => backgrounds(1)).toEqual([unhovered, unhovered]);
+
+  // Changing the hover source must not overwrite either view's saved position.
+  await hoverTarget();
+  await expectHighlighted(3);
+  await hoverSource();
+  await expectHighlighted(3);
+  await page.mouse.move(1, 1);
+  await expect.poll(positions).toEqual([ownSourcePosition, original[1]]);
+
+  // Scrolling a former follower makes the new position its own.
+  await hoverTarget();
+  await expectHighlighted(3);
+  await hoverSource();
+  const followed = (await positions())[0];
   await page.mouse.wheel(0, 16);
   await expect
-    .poll(() => source.evaluate((element) => element.scrollTop))
-    .toBeGreaterThan(before);
-  await expect
-    .poll(async () =>
-      Math.abs(
-        (await source.evaluate(criterionOffset, 1)) -
-          (await target.evaluate(criterionOffset, 1)),
+    .poll(() => source.evaluate((container) => container.scrollTop))
+    .toBeGreaterThan(followed);
+  await source.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
       ),
-    )
-    .toBeLessThan(1);
-  expect((await source.evaluate(anchor)).index).toBe(0);
-  expect(
-    Math.abs(
-      (await source.evaluate((element) => element.scrollTop)) -
-        (await target.evaluate((element) => element.scrollTop)),
-    ),
-  ).toBeGreaterThan(100);
-  const targetBox = (await target.boundingBox())!;
-  await page.mouse.move(targetBox.x + 20, targetBox.y + 210);
-  // Scroll beneath a stationary pointer; the highlighted criterion must change.
-  await target.evaluate(position, { index: 2, offset: -150 });
-  await expect
-    .poll(async () =>
-      Math.abs(
-        (await source.evaluate(criterionOffset, 2)) -
-          (await target.evaluate(criterionOffset, 2)),
-      ),
-    )
-    .toBeLessThan(1);
-  await expectHighlighted(2);
-  expect((await target.evaluate(anchor)).index).toBe(1);
-  await expect.poll(() => backgrounds(1)).toEqual([unhovered, unhovered]);
+  );
+  const userScrolled = (await positions())[0];
   await page.mouse.move(1, 1);
-  await expect.poll(() => backgrounds(2)).toEqual([unhovered, unhovered]);
+  await expect.poll(positions).toEqual([userScrolled, original[1]]);
+  await expect.poll(() => backgrounds(3)).toEqual([unhovered, unhovered]);
 });
