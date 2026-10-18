@@ -51,7 +51,7 @@
   background: var(--paper);
   border: 1px solid var(--line);
   border-radius: 10px;
-  box-shadow: 0 2px 12px color-mix(in srgb, var(--text) 15%, transparent);
+  box-shadow: 0 2px 12px var(--shadow);
 }
 .judge-result-state {
   margin: 0 0 10px;
