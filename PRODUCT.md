@@ -334,7 +334,7 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
 2. Automatically show the floating judgment panel over the output when judging completes, and when opening a grid with completed judgments. The scales control toggles the panel; manual dismissal or switching to thinking remains in effect until the page is reopened.
    - Keep the output visible behind the panel. Showing judgment returns from thinking to output; showing thinking hides the panel. Preserve the selected presentation across expansion and collapse.
    - Anchor the panel at the bottom of the cell, with a small triangle pointing to the scales control. Size it to its contents, up to half the cell height. Scroll within the panel when results exceed that limit.
-   - Use unruled rows with a status icon, criterion text, and plain explanation side by side.
+   - Use unruled rows with a status icon, criterion text, and plain explanation side by side. Wrap the displayed predicate title in `not()` when its expected answer is false; retain the original criterion text for editing and judge requests.
    - Show icon-only verdicts: green/check for a matching answer and red/cross for a mismatch, with accessible Correct/Incorrect labels.
    - Keep the panel open on outside clicks. Escape retains expanded-cell collapse behavior. Preserve the output's raw/rendered selection when toggling the panel.
 3. While judging is running, show a spinner before /Y in place of the numerator. Replace it with X after a validated result completes. Queued, paused, retrying, and failed judgments show -/Y and neutral unresolved criteria. Accessible labels and panel states are "Judge queued", "Judging...", "Judge paused", "Waiting to retry judging...", and "Judging failed: {error}".

@@ -157,7 +157,9 @@ export function JudgeResults({
               <span
                 className={`judge-result-criterion${result ? (matches ? " judge-correct" : " judge-incorrect") : ""}`}
               >
-                {criterion.text}
+                {criterion.correctAnswer
+                  ? criterion.text
+                  : `not(${criterion.text})`}
               </span>
               <p className="judge-result-explanation">{result?.explanation}</p>
             </li>

@@ -778,7 +778,9 @@ test("shared generation stays usable behind judgment overlays and persists expan
   await expect(
     items
       .nth(0)
-      .getByText(judgedInput.judge!.criteria[0].text, { exact: true }),
+      .getByText(`not(${judgedInput.judge!.criteria[0].text})`, {
+        exact: true,
+      }),
   ).toBeVisible();
   await expect(
     items
