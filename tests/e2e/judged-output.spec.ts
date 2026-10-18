@@ -1400,7 +1400,7 @@ test("judgment views replace thinking and output, including expanded controls", 
   await expect(details).toBeVisible();
 });
 
-test("judgment scrolling aligns the first visible criterion across differently sized cells in either direction", async ({
+test("judgment scrolling anchors and highlights the criterion under the cursor across differently sized cells", async ({
   page,
 }) => {
   const criteria = Array.from({ length: 4 }, (_, index) => ({
@@ -1413,7 +1413,7 @@ test("judgment scrolling aligns the first visible criterion across differently s
         results: criteria.map((_, index) => ({
           verdict: true,
           explanation: Array.from(
-            { length: 60 },
+            { length: index === 0 ? 6 : 60 },
             (_, line) =>
               `Condition ${index + 1}, detail ${line + 1}: the generated output satisfies the requested requirement and includes the relevant supporting detail.`,
           ).join("\n"),
@@ -1469,27 +1469,76 @@ test("judgment scrolling aligns the first visible criterion across differently s
   };
   const source = results.nth(0);
   const target = results.nth(1);
-  await source.evaluate(position, { index: 1, offset: 9 });
-  await expect.poll(async () => (await target.evaluate(anchor)).index).toBe(1);
-  expect(
-    Math.abs(
-      (await source.evaluate(anchor)).offset -
-        (await target.evaluate(anchor)).offset,
-    ),
-  ).toBeLessThan(1);
+  const backgrounds = (index: number) =>
+    results.evaluateAll(
+      (containers, index) =>
+        containers.map(
+          (container) =>
+            getComputedStyle(
+              container.querySelector(".judge-result-criteria")!.children[
+                index
+              ],
+            ).backgroundColor,
+        ),
+      index,
+    );
+  const unhovered = (await backgrounds(0))[0];
+  const expectHighlighted = async (index: number) => {
+    await expect
+      .poll(async () => {
+        const colors = await backgrounds(index);
+        return (
+          colors[0] !== unhovered &&
+          colors.every((color) => color === colors[0])
+        );
+      })
+      .toBe(true);
+  };
+  const criterionOffset = (container: HTMLElement, index: number) =>
+    container
+      .querySelector(".judge-result-criteria")!
+      .children[index].getBoundingClientRect().top -
+    container.getBoundingClientRect().top;
+  // Leave the previous criterion partly visible above the cursor's criterion.
+  await source.evaluate(position, { index: 1, offset: -150 });
+  const sourceBox = (await source.boundingBox())!;
+  await page.mouse.move(sourceBox.x + 20, sourceBox.y + 210);
+  await expectHighlighted(1);
+  const before = await source.evaluate((element) => element.scrollTop);
+  await page.mouse.wheel(0, 16);
+  await expect
+    .poll(() => source.evaluate((element) => element.scrollTop))
+    .toBeGreaterThan(before);
+  await expect
+    .poll(async () =>
+      Math.abs(
+        (await source.evaluate(criterionOffset, 1)) -
+          (await target.evaluate(criterionOffset, 1)),
+      ),
+    )
+    .toBeLessThan(1);
+  expect((await source.evaluate(anchor)).index).toBe(0);
   expect(
     Math.abs(
       (await source.evaluate((element) => element.scrollTop)) -
         (await target.evaluate((element) => element.scrollTop)),
     ),
   ).toBeGreaterThan(100);
-  await target.evaluate(position, { index: 2, offset: 14 });
-  await expect.poll(async () => (await source.evaluate(anchor)).index).toBe(2);
-  expect(
-    Math.abs(
-      (await source.evaluate(anchor)).offset -
-        (await target.evaluate(anchor)).offset,
-    ),
-  ).toBeLessThan(1);
-  expect((await target.evaluate(anchor)).index).toBe(2);
+  const targetBox = (await target.boundingBox())!;
+  await page.mouse.move(targetBox.x + 20, targetBox.y + 210);
+  // Scroll beneath a stationary pointer; the highlighted criterion must change.
+  await target.evaluate(position, { index: 2, offset: -150 });
+  await expect
+    .poll(async () =>
+      Math.abs(
+        (await source.evaluate(criterionOffset, 2)) -
+          (await target.evaluate(criterionOffset, 2)),
+      ),
+    )
+    .toBeLessThan(1);
+  await expectHighlighted(2);
+  expect((await target.evaluate(anchor)).index).toBe(1);
+  await expect.poll(() => backgrounds(1)).toEqual([unhovered, unhovered]);
+  await page.mouse.move(1, 1);
+  await expect.poll(() => backgrounds(2)).toEqual([unhovered, unhovered]);
 });

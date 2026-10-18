@@ -61,6 +61,9 @@
   align-items: start;
   gap: 8px;
 }
+.judge-result-criteria li[data-criterion-hovered] {
+  background-color: color-mix(in srgb, var(--selected) 50%, transparent);
+}
 .judge-result-criteria li + li {
   margin-top: 10px;
 }
