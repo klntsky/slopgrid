@@ -90,11 +90,11 @@ const gridFields = {
             text: z
               .string()
               .trim()
-              .min(1, "Enter at least one yes/no criterion."),
+              .min(1, "Enter a yes-or-no question for each criterion."),
             correctAnswer: z.boolean(),
           }),
         )
-        .min(1, "Enter at least one yes/no criterion."),
+        .min(1, "Add at least one criterion."),
       model: z.string().trim(),
       effort: z.enum(efforts),
     })

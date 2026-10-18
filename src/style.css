@@ -429,8 +429,11 @@ section {
   visibility: hidden;
 }
 .model-badge.chat-role,
+.model-badge.criteria-answer,
 .chat-role:enabled:hover,
-.chat-role:enabled:active {
+.criteria-answer:enabled:hover,
+.chat-role:enabled:active,
+.criteria-answer:enabled:active {
   flex: 1;
   padding-inline: 8px;
   background: color-mix(in srgb, var(--role-color) 12%, var(--paper));

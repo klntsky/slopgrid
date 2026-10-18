@@ -44,7 +44,12 @@ const initial: Draft = {
 };
 function readDraft(): Draft {
   try {
-    return JSON.parse(sessionStorage.getItem(storageKey) ?? "null") ?? initial;
+    const draft: Draft =
+      JSON.parse(sessionStorage.getItem(storageKey) ?? "null") ?? initial;
+    if (draft.input.judge && !draft.input.judge.criteria.length) {
+      draft.input.judge.criteria = [{ text: "", correctAnswer: true }];
+    }
+    return draft;
   } catch {
     return initial;
   }

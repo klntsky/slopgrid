@@ -44,10 +44,6 @@ test("judge criteria preserve boolean answers and judge axes restore fixed setti
   await page
     .getByRole("button", { name: "Remove criterion 1", exact: true })
     .click();
-  await expect(page.getByLabel("Criterion 1", { exact: true })).toHaveCount(0);
-  await page
-    .getByRole("button", { name: "Add criterion", exact: true })
-    .click();
   await expect(page.getByLabel("Criterion 1", { exact: true })).toHaveValue("");
   await expect(
     page.getByLabel("Correct answer", { exact: true }),
@@ -194,7 +190,7 @@ test("the judge heading toggles judging without shifting its viewport position",
   }
 });
 
-test("criterion deletion uses confirmation boundaries and permits an empty table", async ({
+test("criterion deletion uses confirmation boundaries and replaces the last row", async ({
   page,
 }) => {
   await page.goto("/");
@@ -243,14 +239,20 @@ test("criterion deletion uses confirmation boundaries and permits an empty table
   await first.hover();
   await remove.click();
   await confirm.click();
-  await expect(first).toHaveCount(0);
+  await expect(first).toHaveValue("");
   await expect(enabled).toBeChecked();
   await page.reload();
-  await expect(first).toHaveCount(0);
+  await expect(first).toHaveValue("");
   await expect(enabled).toBeChecked();
-  await page
-    .getByRole("button", { name: "Add criterion", exact: true })
-    .click();
+  await expect(
+    page.getByLabel("Correct answer", { exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await page.evaluate(() => {
+    const draft = JSON.parse(sessionStorage.getItem("slopgrid-draft")!);
+    draft.input.judge.criteria = [];
+    sessionStorage.setItem("slopgrid-draft", JSON.stringify(draft));
+  });
+  await page.reload();
   await expect(first).toHaveValue("");
   await expect(
     page.getByLabel("Correct answer", { exact: true }),

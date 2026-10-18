@@ -68,22 +68,23 @@ export function useCreateForm() {
     (axis) => axis.kind === "judge_model",
   )?.values ?? [input.judge?.model ?? ""];
   const judgeIssue = input.judge
-    ? !input.judge.criteria.length ||
-      input.judge.criteria.some(
-        (criterion) =>
-          !criterion.text.trim() ||
-          typeof criterion.correctAnswer !== "boolean",
-      )
-      ? "Enter at least one yes/no criterion."
-      : !judgeModels.length
-        ? "No compatible judge models are available for this output type."
-        : !judgeModelIds.length || judgeModelIds.some((id) => !id)
-          ? "Select a judge model."
-          : judgeModelIds.some(
-                (id) => !judgeModels.some((model) => model.id === id),
-              )
+    ? !input.judge.criteria.length
+      ? "Add at least one criterion."
+      : input.judge.criteria.some(
+            (criterion) =>
+              !criterion.text.trim() ||
+              typeof criterion.correctAnswer !== "boolean",
+          )
+        ? "Enter a yes-or-no question for each criterion."
+        : !judgeModels.length
+          ? "No compatible judge models are available for this output type."
+          : !judgeModelIds.length || judgeModelIds.some((id) => !id)
             ? "Select a judge model."
-            : undefined
+            : judgeModelIds.some(
+                  (id) => !judgeModels.some((model) => model.id === id),
+                )
+              ? "Select a judge model."
+              : undefined
     : [input.rows, input.columns].some(
           (axis) => axis.kind === "judge_model" || axis.kind === "judge_effort",
         )

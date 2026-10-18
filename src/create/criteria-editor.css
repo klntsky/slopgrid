@@ -32,8 +32,9 @@
 }
 
 .criteria-answer {
+  --role-color: var(--muted);
+  height: calc(1.6rem + 24px);
   min-width: 44px;
-  padding: 4px 8px;
   justify-content: center;
 }
 
