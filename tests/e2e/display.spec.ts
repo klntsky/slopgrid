@@ -377,6 +377,16 @@ test.describe("mobile grid interaction", () => {
         cell = page.locator(".cell").first(),
         header = page.getByRole("banner");
       const before = (await cell.boundingBox())!;
+      await expect
+        .poll(() =>
+          grid.evaluate((viewport) =>
+            Math.abs(
+              viewport.querySelector("table")!.getBoundingClientRect().height -
+                viewport.clientHeight,
+            ),
+          ),
+        )
+        .toBeLessThan(1);
       const client = await page.context().newCDPSession(page);
       async function touch(
         type: "touchStart" | "touchMove" | "touchEnd",
@@ -401,14 +411,23 @@ test.describe("mobile grid interaction", () => {
       await expect
         .poll(async () => (await cell.boundingBox())!.width)
         .toBeGreaterThan(before.width * 1.4);
-      const left = await grid.evaluate((el) => el.scrollLeft);
-      await touch("touchStart", [{ x: 290, y, id: 1 }]);
-      for (const nextX of [250, 200, 150, 100])
-        await touch("touchMove", [{ x: nextX, y, id: 1 }]);
+      const top = await grid.evaluate((el) => el.scrollTop);
+      const rowLabel = (await grid
+        .locator("tbody > tr > th")
+        .first()
+        .boundingBox())!;
+      const pan = {
+        x: rowLabel.x + rowLabel.width / 2,
+        y: rowLabel.y + rowLabel.height / 2,
+        id: 1,
+      };
+      await touch("touchStart", [pan]);
+      for (const distance of [20, 50, 80, 110])
+        await touch("touchMove", [{ ...pan, y: pan.y - distance }]);
       await touch("touchEnd", []);
       await expect
-        .poll(() => grid.evaluate((el) => el.scrollLeft))
-        .toBeGreaterThan(left);
+        .poll(() => grid.evaluate((el) => el.scrollTop))
+        .toBeGreaterThan(top);
       await touch("touchStart", [
         { x: 190, y, id: 1 },
         { x: 350, y, id: 2 },

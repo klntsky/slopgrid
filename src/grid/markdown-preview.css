@@ -103,6 +103,12 @@
   border-color: transparent;
   background: transparent;
 }
+.markdown-actions > button[aria-pressed="true"],
+.markdown-actions > button[aria-pressed="true"]:hover {
+  border-color: var(--selected-border);
+  background: var(--selected);
+  box-shadow: inset 0 0 0 1px var(--selected-border);
+}
 .markdown-actions .lucide {
   width: 18px;
   height: 18px;
