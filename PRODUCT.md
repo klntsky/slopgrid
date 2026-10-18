@@ -363,6 +363,12 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
    - Preserve native scrolling and grid pinch zoom.
 
 
+### 5.7. Chat history scrolling
+
+1. Pair messages by their position in rendered chat histories across the grid. Use the [same scroll-following behavior as judgment results](#56-judgment-results): bounded vertical alignment, independent reading-position restoration, and touch anchors retained through dragging, momentum, and scroll completion.
+2. Keep each bubble's normal role styling while it anchors scrolling, without adding a highlight.
+3. Follow rendered chat histories as a group, separately from judgment views. Raw text and thinking keep independent scrolling.
+
 ## 6. Inference, scheduling, and recovery
 
 ### 6.1. Worker allocation
