@@ -1736,7 +1736,9 @@ test.describe("touch judgment following", () => {
     expect(next).toBeGreaterThanOrEqual(0);
     await page.touchscreen.tap(b.x + 20, b.y + 140);
     await expectSelected(next);
-    await page.getByRole("button", { name: /Switch to .* theme/ }).tap();
+    await page
+      .getByRole("button", { name: "Navigation menu", exact: true })
+      .tap();
     await expect
       .poll(() => backgrounds(next))
       .toEqual([unselected, unselected]);
