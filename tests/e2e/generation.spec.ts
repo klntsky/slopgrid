@@ -602,7 +602,7 @@ for (const model of ["fixture/text", "fixture/other"])
     ).toContainText("Planning the website layout.");
     await page.getByRole("button", { name: "Expand thinking" }).click();
     await page.getByRole("button", { name: "Collapse thinking" }).click();
-    await page.getByRole("button", { name: "Show output" }).click();
+    await page.getByRole("button", { name: "Show thinking" }).click();
     expect(await originalFrame.evaluate((element) => element.isConnected)).toBe(
       true,
     );
@@ -816,9 +816,6 @@ test("cost excludes failed attempts while owner spending retains them through st
     await expect(thinkingView(0)).toContainText(
       "Thinking through the drawing.",
     );
-    await expect(
-      cells.nth(0).getByRole("button", { name: "Show output" }),
-    ).toBeVisible();
     const reasoning = await price(0);
     expect(reasoning).toBeGreaterThan(0);
     await expect(tokenCounts(0)).toHaveAttribute("aria-label", /^Estimated:/);
@@ -899,7 +896,7 @@ test("cost excludes failed attempts while owner spending retains them through st
       "**Literal thinking** <b>not HTML</b>",
     );
     await expect(spent).toHaveAttribute("aria-label", "Total spent: $0.03");
-    await cells.nth(1).getByRole("button", { name: "Show output" }).click();
+    await cells.nth(1).getByRole("button", { name: "Show thinking" }).click();
     await page.getByRole("button", { name: "Resume generation" }).click();
     await expect
       .poll(
@@ -992,9 +989,7 @@ test("Markdown streams into its preview and preserves content and scroll while c
     await expect
       .poll(async () => (await preview.locator("pre").textContent())!.length)
       .toBeGreaterThan(partial.length);
-    await cell
-      .getByRole("button", { name: "View Markdown", exact: true })
-      .click();
+    await cell.getByRole("button", { name: "View raw", exact: true }).click();
     await cell
       .getByRole("button", { name: "Expand Markdown", exact: true })
       .click();

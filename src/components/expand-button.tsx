@@ -18,6 +18,7 @@ export function ExpandButton({
       data-tooltip={label}
       ref={tooltipRef}
       aria-expanded={expanded}
+      aria-pressed={expanded}
       onClick={(event) => onClick(event.currentTarget)}
     >
       {expanded ? (

@@ -510,9 +510,7 @@ test("Markdown preserves raw content and rendered structure across toggles and e
   const viewRaw = page.getByRole("button", { name: "View raw", exact: true });
   const checkRaw = async () => {
     const preview = page.locator(".markdown-preview:visible");
-    await expect(
-      page.getByRole("button", { name: "View Markdown", exact: true }),
-    ).toBeVisible();
+    await expect(viewRaw).toHaveAttribute("aria-pressed", "true");
     expect(await preview.locator("pre").textContent()).toBe(markdown);
     await expect(preview.locator("code, p")).toHaveCount(0);
   };
@@ -526,9 +524,7 @@ test("Markdown preserves raw content and rendered structure across toggles and e
     .getByRole("button", { name: "Collapse Markdown", exact: true })
     .click();
   await checkRaw();
-  await page
-    .getByRole("button", { name: "View Markdown", exact: true })
-    .click();
+  await page.getByRole("button", { name: "View raw", exact: true }).click();
   const checkRendered = async () => {
     const preview = page.locator(".markdown-preview:visible");
     await expect(preview.locator("pre")).toHaveText(code);
@@ -543,9 +539,7 @@ test("Markdown preserves raw content and rendered structure across toggles and e
   await checkRendered();
   await viewRaw.click();
   await checkRaw();
-  await page
-    .getByRole("button", { name: "View Markdown", exact: true })
-    .click();
+  await page.getByRole("button", { name: "View raw", exact: true }).click();
   await checkRendered();
   await page
     .getByRole("button", { name: "Collapse Markdown", exact: true })

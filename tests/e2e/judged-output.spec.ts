@@ -720,8 +720,8 @@ test("shared generation stays usable across judgment views and persists expanded
   ).toHaveCount(0);
   await expect(details.getByRole("status")).toContainText("Judging...");
   await expect(
-    cell.getByRole("button", { name: "View Markdown", exact: true }),
-  ).toHaveCount(0);
+    cell.getByRole("button", { name: "View raw", exact: true }),
+  ).toHaveAttribute("aria-pressed", "false");
   await expect(
     cell.getByRole("link", { name: "Open output", exact: true }),
   ).toBeVisible();
@@ -738,9 +738,9 @@ test("shared generation stays usable across judgment views and persists expanded
   await scores.first().click();
   await expect(details).toBeHidden();
   await expect(scores.first()).toHaveAttribute("aria-pressed", "false");
-  await expect(raw).toBeVisible();
+  await expect(raw).toBeHidden();
   await expect(
-    cell.getByRole("button", { name: "View Markdown", exact: true }),
+    cell.getByRole("heading", { name: "A generated cat", exact: true }),
   ).toBeVisible();
   await scores.first().focus();
   await page.keyboard.press("Enter");
@@ -806,11 +806,8 @@ test("shared generation stays usable across judgment views and persists expanded
   await expect(expandedScore).toHaveAttribute("aria-pressed", "true");
   await expandedScore.click();
   await expect(expandedDetails).toBeHidden();
-  await expect(expanded.locator(".markdown-preview pre")).toHaveText(
-    "# A generated cat\n\nWearing a hat.",
-  );
   await expect(
-    expanded.getByRole("button", { name: "View Markdown", exact: true }),
+    expanded.getByRole("heading", { name: "A generated cat", exact: true }),
   ).toBeVisible();
   await expandedScore.click();
   await expanded
@@ -826,10 +823,7 @@ test("shared generation stays usable across judgment views and persists expanded
   await expect(details).toBeVisible();
   await completed.first().click();
   await expect(details).toBeHidden();
-  await expect(raw).toBeVisible();
-  await cell
-    .getByRole("button", { name: "View Markdown", exact: true })
-    .click();
+  await expect(raw).toBeHidden();
   await expect(
     cell.getByRole("heading", { name: "A generated cat", exact: true }),
   ).toBeVisible();
@@ -1312,7 +1306,7 @@ for (const format of ["svg", "image"] as const) {
   });
 }
 
-test("judgment views replace thinking and output, including expanded controls", async ({
+test("output modes are exclusive and expansion retains the selected view", async ({
   page,
 }) => {
   await page.request.post("/fixture/reset", {
@@ -1324,80 +1318,92 @@ test("judgment views replace thinking and output, including expanded controls", 
     columns: { kind: "judge_effort", values: ["none"] },
   });
   const cell = page.locator(".cell");
-  const score = cell.getByRole("button", { name: "Judging...", exact: true });
+  const rawButton = cell.getByRole("button", { name: "View raw", exact: true });
+  const thinkingButton = cell.getByRole("button", {
+    name: "Show thinking",
+    exact: true,
+  });
+  const score = cell.getByRole("button", {
+    name: /^(Judging\.\.\.|Judgment:)/,
+  });
+  const expand = cell.locator(".markdown-expand");
   const details = cell.getByRole("region", {
     name: "Judgment details",
     exact: true,
   });
   const thinking = cell.getByRole("region", { name: /^Thinking:/ });
   const output = cell.getByRole("heading", { name: "Drawing", exact: true });
+  const raw = cell.locator(".cell-view").first().locator(".markdown-raw");
+  const expectMode = async (active: "raw" | "thinking" | "judgment" | null) => {
+    for (const [mode, button] of [
+      ["raw", rawButton],
+      ["thinking", thinkingButton],
+      ["judgment", score],
+    ] as const) {
+      await expect(button).toBeVisible();
+      await expect(button).toHaveAttribute(
+        "aria-pressed",
+        String(active === mode),
+      );
+    }
+  };
   await expect(score).toHaveText("/2");
-  await expect(score).toHaveAttribute("aria-busy", "true");
   await expect(output).toBeVisible();
-  await cell
-    .getByRole("button", { name: "Show thinking", exact: true })
-    .click();
+  await expectMode(null);
+  await rawButton.click();
+  await expect(raw).toContainText("# Drawing");
+  await expectMode("raw");
+  await thinkingButton.click();
   await expect(thinking).toContainText("Thinking through the drawing.");
-  await expect(output).toHaveCount(0);
-  await expect(details).toBeHidden();
-  await score.click();
-  await expect(score).toHaveAttribute("aria-pressed", "true");
-  await expect(details).toBeVisible();
-  await expect(thinking).toBeHidden();
-  await expect(output).toHaveCount(0);
-  await expect(
-    cell.getByRole("button", { name: "View raw", exact: true }),
-  ).toHaveCount(0);
-  await cell
-    .getByRole("button", { name: "Show thinking", exact: true })
-    .click();
-  await expect(thinking).toBeVisible();
-  await expect(details).toBeHidden();
-  await expect(score).toHaveAttribute("aria-pressed", "false");
-  await score.click();
-  await cell
-    .getByRole("button", { name: "Expand judgment", exact: true })
-    .click();
-  const expanded = page.getByRole("region", { name: /^Expanded output:/ });
-  const expandedDetails = expanded.getByRole("region", {
-    name: "Judgment details",
-    exact: true,
-  });
-  await expect(expandedDetails.getByRole("status")).toContainText("Judging...");
-  await expect(
-    expanded.getByRole("link", { name: "Open output", exact: true }),
-  ).toHaveCount(0);
-  await expect(
-    expanded.getByRole("button", { name: "Copy output", exact: true }),
-  ).toHaveCount(0);
-  await expect(
-    expanded.getByRole("link", { name: "Download output", exact: true }),
-  ).toHaveCount(0);
-  await expanded
-    .getByRole("button", { name: "Show thinking", exact: true })
-    .click();
-  await expect(expandedDetails).toBeHidden();
-  await expect(
-    expanded.getByRole("region", { name: /^Thinking:/ }),
-  ).toBeVisible();
-  await expanded
-    .getByRole("button", { name: "Judging...", exact: true })
-    .click();
-  await expect(expandedDetails).toBeVisible();
-  await expanded
-    .getByRole("button", { name: "Collapse judgment", exact: true })
-    .click();
-  await expect(details).toBeVisible();
-  await score.click();
+  await expect(raw).toBeHidden();
+  await expectMode("thinking");
+  await thinkingButton.click();
   await expect(output).toBeVisible();
-  await expect(thinking).toBeHidden();
-  await expect(details).toBeHidden();
-  await page.request.post("/fixture/release", { data: { all: true } });
-  await expect(
-    cell.getByRole("button", { name: "Judgment: 2 of 2 correct", exact: true }),
-  ).toHaveText("2/2");
-  await expect(output).toHaveCount(0);
+  await expectMode(null);
+  await score.click();
   await expect(details).toBeVisible();
+  await expect(thinking).toBeHidden();
+  await expectMode("judgment");
+  await rawButton.click();
+  await expect(raw).toContainText("# Drawing");
+  await expect(details).toBeHidden();
+  await expectMode("raw");
+  await rawButton.click();
+  await expect(output).toBeVisible();
+  await expectMode(null);
+
+  await thinkingButton.click();
+  await expand.click();
+  const expanded = page.getByRole("region", { name: /^Expanded output:/ });
+  await expect(expanded).toBeVisible();
+  await expect(expand).toHaveAttribute("aria-pressed", "true");
+  await expect(thinking).toBeVisible();
+  await expectMode("thinking");
+  await score.click();
+  await expect(details).toBeVisible();
+  await expectMode("judgment");
+  await expect(expand).toHaveAttribute("aria-pressed", "true");
+  await rawButton.click();
+  await expect(raw).toContainText("# Drawing");
+  await expectMode("raw");
+  await expect(expand).toHaveAttribute("aria-pressed", "true");
+  await rawButton.click();
+  await expect(output).toBeVisible();
+  await expectMode(null);
+  await expect(expand).toHaveAttribute("aria-pressed", "true");
+  await thinkingButton.click();
+  await expand.click();
+  await expect(expanded).toHaveCount(0);
+  await expect(expand).toHaveAttribute("aria-pressed", "false");
+  await expect(thinking).toBeVisible();
+  await expectMode("thinking");
+  await thinkingButton.click();
+  await expect(output).toBeVisible();
+  await expectMode(null);
+  await page.request.post("/fixture/release", { data: { all: true } });
+  await expect(score).toHaveText("2/2");
+  await expect(details).toBeVisible();
+  await expectMode("judgment");
 });
 
 test("judgment hover temporarily reveals matching criteria and restores independent scroll positions", async ({

@@ -157,9 +157,7 @@ test("chat template editing, persistence, sequential output and exports", async 
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.getByRole("button", { name: "View raw", exact: true }).click();
   await expect(preview.locator(".markdown-raw")).toHaveText(expected);
-  await page
-    .getByRole("button", { name: "View conversation", exact: true })
-    .click();
+  await page.getByRole("button", { name: "View raw", exact: true }).click();
   await page
     .getByRole("button", { name: "Expand Chat completion", exact: true })
     .click();

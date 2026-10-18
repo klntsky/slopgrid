@@ -6,8 +6,6 @@ import {
   Download,
   CodeXml,
   Brain,
-  Palette,
-  MessagesSquare,
 } from "lucide-react";
 import { ExpandButton } from "../components/expand-button";
 import { CopyButton } from "../components/copy-button";
@@ -28,7 +26,7 @@ import {
   JudgeResults,
   summarizeJudgment,
 } from "./judge-result-button";
-export type CellView = "output" | "thinking" | "judgment";
+export type CellView = "output" | "raw" | "thinking" | "judgment";
 export function OutputCell({
   cell,
   format,
@@ -36,8 +34,6 @@ export function OutputCell({
   criteria,
   title,
   expanded = false,
-  rawMarkdown = false,
-  onToggleRawMarkdown,
   view,
   onChangeView,
   onToggleExpand,
@@ -48,20 +44,13 @@ export function OutputCell({
   criteria?: NonNullable<GridInput["judge"]>["criteria"];
   title: string;
   expanded?: boolean;
-  rawMarkdown?: boolean;
-  onToggleRawMarkdown?: () => void;
   view?: CellView;
   onChangeView?: (view: CellView) => void;
   onToggleExpand?: (button: HTMLButtonElement) => void;
 }) {
   const { resolvedTheme } = useTheme();
   const offline = useOffline();
-  const rawLabel = rawMarkdown
-    ? format === "chat-template"
-      ? "View conversation"
-      : "View Markdown"
-    : "View raw";
-  const rawHint = useTooltip<HTMLButtonElement>(rawLabel);
+  const rawHint = useTooltip<HTMLButtonElement>("View raw");
   const downloadHint = useTooltip<HTMLAnchorElement>("Download output");
   const inputHint = useTooltip<HTMLSpanElement>("Input tokens");
   const outputHint = useTooltip<HTMLSpanElement>("Output tokens");
@@ -90,12 +79,15 @@ export function OutputCell({
       : hasThinking && !complete && cell.status === "running" && !hasOutput
         ? "thinking"
         : "output");
+  const raw = activeView === "raw";
   const thinking = hasThinking && activeView === "thinking";
   const judging = !!judgment && activeView === "judgment";
-  const thinkingLabel = thinking ? "Show output" : "Show thinking";
   const expandable =
     complete || cell.status === "running" || thinking || judging || expanded;
   const expandLabel = `${expanded ? "Collapse" : "Expand"} ${judging ? "judgment" : thinking ? "thinking" : formatNames[format]}`;
+  function toggleView(mode: CellView) {
+    onChangeView?.(activeView === mode ? "output" : mode);
+  }
   return (
     <article
       className={`cell${expanded ? " cell-expanded" : ""}`}
@@ -116,7 +108,7 @@ export function OutputCell({
             draft={cell.draft}
             streaming={!complete}
             title={title}
-            raw={rawMarkdown}
+            raw={raw}
             conversation={format === "chat-template"}
           />
         ) : format === "html" && (complete || cell.status === "running") ? (
@@ -176,55 +168,34 @@ export function OutputCell({
       )}
       {(expandable || hasThinking) && (
         <div className="markdown-actions">
-          {markdown && !thinking && !judging && (
+          {markdown && (
             <button
               className="secondary"
-              aria-label={rawLabel}
-              onClick={onToggleRawMarkdown}
+              aria-label="View raw"
+              aria-pressed={raw}
+              onClick={() => toggleView("raw")}
               ref={rawHint}
             >
-              {rawMarkdown && format === "chat-template" ? (
-                <MessagesSquare aria-hidden="true" />
-              ) : rawMarkdown ? (
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <path d="M2 18V6l5 7 5-7v12M16 6h1a6 6 0 0 1 0 12h-1Z" />
-                </svg>
-              ) : (
-                <CodeXml aria-hidden="true" />
-              )}
+              <CodeXml aria-hidden="true" />
             </button>
           )}
           {hasThinking && (
             <button
               className="secondary"
-              aria-label={thinkingLabel}
+              aria-label="Show thinking"
               aria-pressed={thinking}
-              data-tooltip={thinkingLabel}
+              data-tooltip="Show thinking"
               ref={tooltipRef}
-              onClick={() => onChangeView?.(thinking ? "output" : "thinking")}
+              onClick={() => toggleView("thinking")}
             >
-              {thinking ? (
-                <Palette aria-hidden="true" />
-              ) : (
-                <Brain aria-hidden="true" />
-              )}
+              <Brain aria-hidden="true" />
             </button>
           )}
           {judgment && (
             <JudgeResultButton
               summary={judgment}
               active={judging}
-              onToggle={() => onChangeView?.(judging ? "output" : "judgment")}
+              onToggle={() => toggleView("judgment")}
             />
           )}
           {expandable && onToggleExpand && (

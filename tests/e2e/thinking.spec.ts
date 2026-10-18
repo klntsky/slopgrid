@@ -52,7 +52,7 @@ test("thinking follows streaming text until scrolled up and resumes at the botto
     await expect.poll(bottomGap).toBeLessThanOrEqual(2);
     // An explicit thinking choice survives output arrival and the saved-text fetch.
     await page
-      .getByRole("button", { name: "Show output", exact: true })
+      .getByRole("button", { name: "Show thinking", exact: true })
       .click();
     await page
       .getByRole("button", { name: "Show thinking", exact: true })
@@ -180,7 +180,7 @@ test("SVG streaming advances behind thinking and survives view switches through 
     const trace = page.getByRole("region", { name: /^Thinking:/ });
     await expect(trace).toContainText("Thinking before drawing.");
     await page
-      .getByRole("button", { name: "Show output", exact: true })
+      .getByRole("button", { name: "Show thinking", exact: true })
       .click();
     call.write({
       content:
@@ -213,7 +213,7 @@ test("SVG streaming advances behind thinking and survives view switches through 
     await expect(trace).toContainText("Now adding blue.");
     await expect.poll(color).toEqual([0, 0, 255, 255]);
     await page
-      .getByRole("button", { name: "Show output", exact: true })
+      .getByRole("button", { name: "Show thinking", exact: true })
       .click();
     await expect(preview).toBeVisible();
     expect(await mounted!.evaluate((el) => el.isConnected)).toBe(true);
@@ -228,7 +228,7 @@ test("SVG streaming advances behind thinking and survives view switches through 
     );
     await expect(trace).toContainText("Now adding blue.");
     await page
-      .getByRole("button", { name: "Show output", exact: true })
+      .getByRole("button", { name: "Show thinking", exact: true })
       .click();
     const final = page.getByRole("img", { name: "Generated SVG", exact: true });
     await expect(final).toBeVisible();

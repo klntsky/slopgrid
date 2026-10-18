@@ -96,7 +96,9 @@ test("open browsers reconnect to a replaced web process while markdown, thinking
       await expect(p.getByRole("region", { name: /^Thinking:/ })).toContainText(
         "After restart.",
       );
-      await p.getByRole("button", { name: "Show output", exact: true }).click();
+      await p
+        .getByRole("button", { name: "Show thinking", exact: true })
+        .click();
     }
     mdCall.finish();
     htmlCall.write({ content: "}]}" });
