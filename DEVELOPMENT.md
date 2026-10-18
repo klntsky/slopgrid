@@ -445,9 +445,11 @@ and [judgment results](PRODUCT.md#56-judgment-results).
   generation, artifact inputs, independent stages, recovery, reuse, and accounting.
   Run affected billing, artifact-reuse, output-access, persistence, and scheduling
   coverage alongside it when those boundaries change.
-- `tests/e2e/judged-output.spec.ts` exercises form restoration, boolean answers,
+- `tests/e2e/judged-output.spec.ts` exercises checkbox enablement, criteria-table
+  deletion boundaries and reordering with answer preservation, form restoration,
   fixed and axis selections, expected-answer scoring, popup interactions, output
-  access, page closure, and generation-only totals. The PWA browser suite covers
+  access, page closure, and generation-only totals. Run `tests/e2e/chat.spec.ts`
+  alongside it when shared editor controls change. The PWA browser suite covers
   ready-output caching independently of judgment completion.
 - `tests/real-e2e/judged-output.spec.ts` uses the existing private
   `OPENROUTER_API_KEY`, GPT-5 mini/nano judges, and Gemini 2.5 Flash

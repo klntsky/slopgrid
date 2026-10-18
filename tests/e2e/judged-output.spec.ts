@@ -8,7 +8,9 @@ test("judge criteria preserve boolean answers and judge axes restore fixed setti
 }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Markdown", exact: true }).click();
-  await page.getByRole("button", { name: "Add judge", exact: true }).click();
+  await page
+    .getByRole("checkbox", { name: "Add a LLM judge", exact: true })
+    .check();
   const fixedJudge = page.getByRole("radiogroup", {
     name: "Judge model",
     exact: true,
@@ -36,11 +38,17 @@ test("judge criteria preserve boolean answers and judge axes restore fixed setti
   await expect(
     page.getByLabel("Correct answer", { exact: true }).nth(1),
   ).toHaveValue("true");
+  await page.getByLabel("Criterion 2", { exact: true }).hover();
   await page
     .getByRole("button", { name: "Remove criterion 2", exact: true })
     .click();
+  await page.getByLabel("Criterion 1", { exact: true }).hover();
   await page
     .getByRole("button", { name: "Remove criterion 1", exact: true })
+    .click();
+  await expect(page.getByLabel("Criterion 1", { exact: true })).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Add criterion", exact: true })
     .click();
   await expect(page.getByLabel("Criterion 1", { exact: true })).toHaveValue("");
   await expect(page.getByLabel("Correct answer", { exact: true })).toHaveValue(
@@ -138,7 +146,9 @@ test("judge criteria preserve boolean answers and judge axes restore fixed setti
   await page
     .getByRole("combobox", { name: "Columns", exact: true })
     .selectOption("judge_effort");
-  await page.getByRole("button", { name: "Remove judge", exact: true }).click();
+  await page
+    .getByRole("checkbox", { name: "Add a LLM judge", exact: true })
+    .uncheck();
   await expect(
     page.getByRole("combobox", { name: "Rows", exact: true }),
   ).toHaveValue("effort");
@@ -146,8 +156,158 @@ test("judge criteria preserve boolean answers and judge axes restore fixed setti
     page.getByRole("combobox", { name: "Columns", exact: true }),
   ).toHaveValue("model");
   await expect(
-    page.getByRole("button", { name: "Add judge", exact: true }),
-  ).toBeVisible();
+    page.getByRole("checkbox", { name: "Add a LLM judge", exact: true }),
+  ).not.toBeChecked();
+});
+
+test("criterion deletion uses confirmation boundaries and permits an empty table", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Markdown", exact: true }).click();
+  const enabled = page.getByRole("checkbox", {
+    name: "Add a LLM judge",
+    exact: true,
+  });
+  await enabled.check();
+  const first = page.getByLabel("Criterion 1", { exact: true });
+  const remove = page.getByRole("button", {
+    name: "Remove criterion 1",
+    exact: true,
+  });
+  const confirm = page.getByRole("button", { name: "Delete", exact: true });
+  await first.fill("one two three four five six");
+  await page
+    .getByLabel("Correct answer", { exact: true })
+    .selectOption("false");
+  await page
+    .getByRole("button", { name: "Add criterion", exact: true })
+    .click();
+  await page
+    .getByLabel("Criterion 2", { exact: true })
+    .fill("one two three four five");
+  await page.getByLabel("Criterion 2", { exact: true }).hover();
+  await page
+    .getByRole("button", { name: "Remove criterion 2", exact: true })
+    .click();
+  await expect(page.getByLabel("Criterion 2", { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("Correct answer", { exact: true })).toHaveValue(
+    "false",
+  );
+  await first.hover();
+  await remove.click();
+  await expect(confirm).toBeVisible();
+  await expect(first).toHaveValue("one two three four five six");
+  await page.keyboard.press("Escape");
+  await expect(confirm).toHaveCount(0);
+  await first.hover();
+  await remove.click();
+  await first.fill("editing this question cancels deletion confirmation");
+  await expect(confirm).toHaveCount(0);
+  await first.hover();
+  await remove.click();
+  await page.getByLabel("Correct answer", { exact: true }).focus();
+  await expect(confirm).toHaveCount(0);
+  await first.hover();
+  await remove.click();
+  await confirm.click();
+  await expect(first).toHaveCount(0);
+  await expect(enabled).toBeChecked();
+  await page.reload();
+  await expect(first).toHaveCount(0);
+  await expect(enabled).toBeChecked();
+  await page
+    .getByRole("button", { name: "Add criterion", exact: true })
+    .click();
+  await expect(first).toHaveValue("");
+  await expect(page.getByLabel("Correct answer", { exact: true })).toHaveValue(
+    "true",
+  );
+});
+
+test("criterion handles reorder questions and their answers by keyboard and pointer", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Markdown", exact: true }).click();
+  await page
+    .getByRole("checkbox", { name: "Add a LLM judge", exact: true })
+    .check();
+  for (let index = 0; index < 3; index++) {
+    if (index)
+      await page
+        .getByRole("button", { name: "Add criterion", exact: true })
+        .click();
+    await page
+      .getByLabel(`Criterion ${index + 1}`, { exact: true })
+      .fill(["First question", "Second question", "Third question"][index]);
+    await page
+      .getByLabel("Correct answer", { exact: true })
+      .nth(index)
+      .selectOption(index === 1 ? "true" : "false");
+  }
+  async function values() {
+    return {
+      questions: await page
+        .getByRole("textbox", { name: /^Criterion \d+$/ })
+        .evaluateAll((inputs) =>
+          inputs.map((input) => (input as HTMLTextAreaElement).value),
+        ),
+      answers: await page
+        .getByLabel("Correct answer", { exact: true })
+        .evaluateAll((inputs) =>
+          inputs.map((input) => (input as HTMLSelectElement).value),
+        ),
+    };
+  }
+  await page
+    .getByRole("button", { name: "Move criterion 2", exact: true })
+    .focus();
+  await page.keyboard.press("ArrowUp");
+  await expect(
+    page.getByRole("button", { name: "Move criterion 1", exact: true }),
+  ).toBeFocused();
+  await expect.poll(values).toEqual({
+    questions: ["Second question", "First question", "Third question"],
+    answers: ["true", "false", "false"],
+  });
+  async function drag(from: number, target: number, side: "before" | "after") {
+    const handle = page.getByRole("button", {
+      name: `Move criterion ${from}`,
+      exact: true,
+    });
+    await handle.scrollIntoViewIfNeeded();
+    const start = (await handle.boundingBox())!;
+    const end = (await page
+      .getByLabel(`Criterion ${target}`, { exact: true })
+      .boundingBox())!;
+    await page.mouse.move(
+      start.x + start.width / 2,
+      start.y + start.height / 2,
+    );
+    await page.mouse.down();
+    await page.mouse.move(
+      end.x + end.width / 2,
+      end.y + end.height * (side === "before" ? 0.2 : 0.8),
+      { steps: 8 },
+    );
+    await page.mouse.up();
+  }
+  await drag(3, 1, "before");
+  await expect.poll(values).toEqual({
+    questions: ["Third question", "Second question", "First question"],
+    answers: ["false", "true", "false"],
+  });
+  await drag(1, 3, "after");
+  await expect.poll(values).toEqual({
+    questions: ["Second question", "First question", "Third question"],
+    answers: ["true", "false", "false"],
+  });
+  await page.reload();
+  await expect.poll(values).toEqual({
+    questions: ["Second question", "First question", "Third question"],
+    answers: ["true", "false", "false"],
+  });
 });
 
 test("removing a judge preserves ordinary axes and generation settings", async ({
@@ -168,11 +328,15 @@ test("removing a judge preserves ordinary axes and generation settings", async (
   await page
     .getByLabel("Prompt", { exact: true })
     .fill("Describe $ROW wearing a $COLUMN");
-  await page.getByRole("button", { name: "Add judge", exact: true }).click();
+  await page
+    .getByRole("checkbox", { name: "Add a LLM judge", exact: true })
+    .check();
   await page
     .getByRole("combobox", { name: "Rows", exact: true })
     .selectOption("judge_effort");
-  await page.getByRole("button", { name: "Remove judge", exact: true }).click();
+  await page
+    .getByRole("checkbox", { name: "Add a LLM judge", exact: true })
+    .uncheck();
   await expect(
     page.getByRole("combobox", { name: "Rows", exact: true }),
   ).toHaveValue("effort");
@@ -223,7 +387,9 @@ test("format changes retain criteria and judge effort, clear incompatible models
   );
   await page.goto("/");
   await page.getByRole("button", { name: "Markdown", exact: true }).click();
-  await page.getByRole("button", { name: "Add judge", exact: true }).click();
+  await page
+    .getByRole("checkbox", { name: "Add a LLM judge", exact: true })
+    .check();
   await page
     .getByLabel("Criterion 1", { exact: true })
     .fill("Is there a blue circle?");
@@ -301,13 +467,15 @@ test("format changes retain criteria and judge effort, clear incompatible models
     page.getByRole("radiogroup", { name: "Judge model", exact: true }),
   ).toHaveCount(0);
   await expect(
-    page.getByRole("button", { name: "Add judge", exact: true }),
-  ).toHaveCount(0);
+    page.getByRole("checkbox", { name: "Add a LLM judge", exact: true }),
+  ).toBeDisabled();
   await page.getByRole("button", { name: "Markdown", exact: true }).click();
   await expect(
-    page.getByRole("button", { name: "Add judge", exact: true }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "Add judge", exact: true }).click();
+    page.getByRole("checkbox", { name: "Add a LLM judge", exact: true }),
+  ).not.toBeChecked();
+  await page
+    .getByRole("checkbox", { name: "Add a LLM judge", exact: true })
+    .check();
   await expect(page.getByLabel("Criterion 1", { exact: true })).toHaveValue("");
   await expect(page.getByLabel("Correct answer", { exact: true })).toHaveValue(
     "true",
@@ -598,7 +766,9 @@ test("judge answers and axes survive draft reload, OAuth, Edit, and Fork", async
 }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Markdown", exact: true }).click();
-  await page.getByRole("button", { name: "Add judge", exact: true }).click();
+  await page
+    .getByRole("checkbox", { name: "Add a LLM judge", exact: true })
+    .check();
   await page
     .getByLabel("Criterion 1", { exact: true })
     .fill(judgedInput.judge!.criteria[0].text);
