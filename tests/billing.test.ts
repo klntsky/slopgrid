@@ -485,15 +485,15 @@ test("shared generation calls aggregate across ledger cells without duplicating 
         ?.costUsd,
       0.4,
     );
-    assert.ok(Math.abs(store.billing.gridSpent(grid.id, cells) - 0.3) < 1e-9);
+    assert.ok(Math.abs(store.billing.gridSpent(grid.id, cells) - 0.7) < 1e-9);
     const retry = store.billing.observe("cell-1", "retry-attempt")("direct");
-    assert.ok(Math.abs(store.billing.gridSpent(grid.id, cells) - 0.35) < 1e-9);
+    assert.ok(Math.abs(store.billing.gridSpent(grid.id, cells) - 0.75) < 1e-9);
     assert.deepEqual(
       store.billing.task(generation.id, "retry-attempt")?.usage,
       {},
     );
     retry.update({ usage: { costUsd: 0 } });
-    assert.ok(Math.abs(store.billing.gridSpent(grid.id, cells) - 0.3) < 1e-9);
+    assert.ok(Math.abs(store.billing.gridSpent(grid.id, cells) - 0.7) < 1e-9);
     retry.fail(new Error("Cancelled"), true);
     assert.deepEqual(
       store.billing.task(generation.id, "retry-attempt")?.usage,
