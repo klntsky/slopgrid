@@ -1793,7 +1793,7 @@ test.describe("touch judgment following", () => {
     const unselected = await background();
     const box = (await row.boundingBox())!;
     const panel = (await source.boundingBox())!;
-    const point = { x: panel.x + 20, y: box.y + box.height / 2 };
+    const point = { x: panel.x + 20, y: box.y + Math.min(20, box.height / 2) };
     await page.touchscreen.tap(point.x, point.y);
     await expect.poll(background).not.toBe(unselected);
     const selected = await background();
@@ -1813,7 +1813,7 @@ test.describe("touch judgment following", () => {
       type: "touchStart",
       touchPoints: [{ ...point, id: 1 }],
     });
-    for (const distance of [20, 40, 60])
+    for (const distance of [30, 60, 90])
       await client.send("Input.dispatchTouchEvent", {
         type: "touchMove",
         touchPoints: [{ x: point.x, y: point.y - distance, id: 1 }],
