@@ -483,6 +483,7 @@ section {
   margin-bottom: 22px;
 }
 .axes {
+  --axis-label-height: 24px;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   gap: 12px;
 }
@@ -503,15 +504,28 @@ section {
 .fixed-options > * {
   min-width: 0;
 }
+.axis-name {
+  font-size: 18px;
+  line-height: var(--axis-label-height);
+}
 .axis-swap {
   align-self: start;
-  margin-top: 24px;
+  margin-top: calc(var(--axis-label-height) + 9px);
   padding: 12px;
   color: var(--logo-color);
 }
 .axis-swap .lucide {
   width: 20px;
   height: 20px;
+}
+.parameter-name {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+}
+legend.parameter-name,
+.parameter-name-standalone {
+  margin-bottom: 9px;
 }
 label {
   display: flex;

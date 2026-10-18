@@ -202,7 +202,7 @@ export function Create() {
             <div className="fixed-options">
               {commonModel && (
                 <fieldset role="radiogroup" aria-label="Model">
-                  <legend>Model</legend>
+                  <legend className="parameter-name">Model</legend>
                   <ModelSelector
                     models={models}
                     format={input.format}
@@ -214,7 +214,7 @@ export function Create() {
               {commonEffort && (
                 <div>
                   <label>
-                    Thinking effort
+                    <span className="parameter-name">Thinking effort</span>
                     <select
                       aria-label="Thinking effort"
                       value={input.effort}
@@ -236,7 +236,7 @@ export function Create() {
               )}
               {commonJudgeModel && input.judge && (
                 <fieldset role="radiogroup" aria-label="Judge model">
-                  <legend>Judge model</legend>
+                  <legend className="parameter-name">Judge model</legend>
                   <ModelSelector
                     judge
                     models={judgeModels}
@@ -259,7 +259,9 @@ export function Create() {
               {commonJudgeEffort && input.judge && (
                 <div>
                   <label>
-                    Judge thinking effort
+                    <span className="parameter-name">
+                      Judge thinking effort
+                    </span>
                     <select
                       aria-label="Judge thinking effort"
                       value={input.judge.effort}

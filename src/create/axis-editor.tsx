@@ -56,7 +56,7 @@ export function AxisEditor({
   return (
     <div className="axis">
       <label>
-        {label}
+        <span className="axis-name">{label}</span>
         <select
           value={axis.kind}
           onChange={(e) => {
