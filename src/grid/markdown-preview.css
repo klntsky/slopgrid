@@ -107,7 +107,13 @@
 .markdown-actions > button[aria-pressed="true"]:hover {
   border-color: var(--selected-border);
   background: var(--selected);
-  box-shadow: inset 0 0 0 1px var(--selected-border);
+  box-shadow: inset 0 2px 4px var(--shadow);
+}
+@media (hover: none), (pointer: coarse) {
+  .markdown-actions > button[aria-pressed="false"]:hover:not(:active) {
+    border-color: transparent;
+    background: transparent;
+  }
 }
 .markdown-actions .lucide {
   width: 18px;
