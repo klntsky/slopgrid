@@ -160,6 +160,42 @@ test("judge criteria preserve boolean answers and judge axes restore fixed setti
   ).not.toBeChecked();
 });
 
+test("the judge heading toggles judging without shifting its viewport position", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "SVG", exact: true }).click();
+  const checkbox = page.getByRole("checkbox", {
+    name: "Add a LLM judge",
+    exact: true,
+  });
+  const heading = page.getByText("Add a LLM judge · evaluates the output", {
+    exact: true,
+  });
+  for (const width of [1100, 390]) {
+    await page.setViewportSize({ width, height: 844 });
+    await checkbox.evaluate((element) =>
+      element.scrollIntoView({ block: "center", behavior: "instant" }),
+    );
+    const before = (await checkbox.boundingBox())!.y;
+    await heading.click();
+    await expect(checkbox).toBeChecked();
+    await expect(
+      page.getByRole("radiogroup", { name: "Judge model", exact: true }),
+    ).toBeVisible();
+    await expect
+      .poll(async () => Math.abs((await checkbox.boundingBox())!.y - before))
+      .toBeLessThan(1);
+    await checkbox.uncheck();
+    await expect(
+      page.getByRole("radiogroup", { name: "Judge model", exact: true }),
+    ).toHaveCount(0);
+    await expect
+      .poll(async () => Math.abs((await checkbox.boundingBox())!.y - before))
+      .toBeLessThan(1);
+  }
+});
+
 test("criterion deletion uses confirmation boundaries and permits an empty table", async ({
   page,
 }) => {

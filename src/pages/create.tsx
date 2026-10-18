@@ -8,6 +8,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { saveDraft } from "../create/draft";
 import { useGrids, usePublicGrids } from "../queries";
 import { ArrowUpRight, DollarSign, ArrowLeftRight } from "lucide-react";
+import { useLayoutEffect, useRef } from "react";
 import {
   efforts,
   isChatFormat,
@@ -47,6 +48,18 @@ export function Create() {
     submission,
   } = useCreateForm();
   const { formatSelected, input } = draft;
+  const judgeEnabled = !!input.judge;
+  const judgeHeader = useRef<HTMLDivElement>(null);
+  const judgeHeaderTop = useRef<number | undefined>(undefined);
+  useLayoutEffect(() => {
+    const previousTop = judgeHeaderTop.current;
+    judgeHeaderTop.current = undefined;
+    if (previousTop === undefined || !judgeHeader.current) return;
+    window.scrollBy({
+      top: judgeHeader.current.getBoundingClientRect().top - previousTop,
+      behavior: "instant",
+    });
+  }, [judgeEnabled]);
   const { generate, onUploading, lowBalance, setLowBalance, busy, error } =
     submission;
   const compatibility = compatibilityTables({ input, models });
@@ -305,42 +318,49 @@ export function Create() {
       )}
       {formatSelected && (
         <section>
-          <div className="section-heading">
+          <div className="section-heading" ref={judgeHeader}>
             <span className="number">{commonParameters ? "05" : "04"}</span>
-            <input
-              type="checkbox"
-              aria-label="Add a LLM judge"
-              checked={!!input.judge}
-              disabled={input.format === "html"}
-              onChange={(event) => {
-                if (event.target.checked) {
-                  update({
-                    judge: {
-                      criteria: [{ text: "", correctAnswer: true }],
-                      model: "",
-                      effort: "default",
-                    },
-                  });
-                } else {
-                  update((current) => ({
-                    judge: undefined,
-                    rows: current.rows.kind.startsWith("judge_")
-                      ? isMarkdownFormat(current.format)
-                        ? { kind: "effort", values: ["default"] }
-                        : { kind: "model", values: [] }
-                      : current.rows,
-                    columns: current.columns.kind.startsWith("judge_")
-                      ? current.format === "image"
-                        ? { kind: "quality", values: ["auto"] }
-                        : isMarkdownFormat(current.format)
-                          ? { kind: "model", values: [] }
-                          : { kind: "effort", values: ["default"] }
-                      : current.columns,
-                  }));
-                }
-              }}
-            />
-            <h2>Add a LLM judge · evaluates the output</h2>
+            <h2>
+              <label htmlFor="judge-enabled" className="checkbox judge-toggle">
+                <input
+                  id="judge-enabled"
+                  type="checkbox"
+                  aria-label="Add a LLM judge"
+                  checked={judgeEnabled}
+                  disabled={input.format === "html"}
+                  onChange={(event) => {
+                    judgeHeaderTop.current =
+                      judgeHeader.current?.getBoundingClientRect().top;
+                    if (event.target.checked) {
+                      update({
+                        judge: {
+                          criteria: [{ text: "", correctAnswer: true }],
+                          model: "",
+                          effort: "default",
+                        },
+                      });
+                    } else {
+                      update((current) => ({
+                        judge: undefined,
+                        rows: current.rows.kind.startsWith("judge_")
+                          ? isMarkdownFormat(current.format)
+                            ? { kind: "effort", values: ["default"] }
+                            : { kind: "model", values: [] }
+                          : current.rows,
+                        columns: current.columns.kind.startsWith("judge_")
+                          ? current.format === "image"
+                            ? { kind: "quality", values: ["auto"] }
+                            : isMarkdownFormat(current.format)
+                              ? { kind: "model", values: [] }
+                              : { kind: "effort", values: ["default"] }
+                          : current.columns,
+                      }));
+                    }
+                  }}
+                />
+                <span>Add a LLM judge · evaluates the output</span>
+              </label>
+            </h2>
           </div>
           {input.format === "html" ? (
             <p className="hint">Websites do not support a judge yet.</p>

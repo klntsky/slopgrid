@@ -597,6 +597,17 @@ legend {
 .checkbox input {
   accent-color: var(--accent);
 }
+.checkbox.judge-toggle {
+  font: inherit;
+  padding: 0;
+  cursor: pointer;
+}
+.judge-toggle input {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  margin: 0;
+}
 .hint {
   font-size: 12px;
   line-height: 1.6;
