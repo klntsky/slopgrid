@@ -177,8 +177,9 @@ container attached to the document body and owns its popup interaction and focus
 return, not engine state. Common parameters come from saved grid input, filtered
 by selected axis kinds; reference thumbnails use the authorized reference route.
 
-The grid owns per-cell content selection, expansion state, and criterion-aware
-scroll and hover coordination across judgment views. Cells keep output previews mounted
+The grid owns per-cell content selection, expansion state, independent reading
+positions, and criterion-aware scroll and hover coordination across judgment
+views. Cells keep output previews mounted
 while output, thinking, and judgment are alternate views. Judgment presentation
 combines saved criteria with persisted results and does not own inference or
 billing state.

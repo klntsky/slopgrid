@@ -336,6 +336,7 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
    - Fill the available cell viewport edge to edge with a flat cell-colored results surface, including resized and expanded cells. Scroll within the results view when its content exceeds the viewport.
    - Show inset shadows only along the top and bottom edges where more results remain: top when scrolled away from the start, bottom when scrolled away from the end, and neither when all results fit.
    - Use unruled rows with a status icon, criterion text, and plain explanation side by side. Wrap the displayed predicate title in `not()` when its expected answer is false; retain the original criterion text for editing and judge requests.
+   - Keep adjacent criterion rows contiguous so crossing their boundary switches the shared hover without clearing it.
    - Show icon-only verdicts: green/check for a matching answer and red/cross for a mismatch, with accessible Correct/Incorrect labels.
    - Preserve the judgment selection on outside clicks. Escape retains expanded-cell collapse behavior. Preserve the output's raw/rendered selection when switching views.
 3. While judging is running, show a spinner before /Y in place of the numerator. Replace it with X after a validated result completes. Queued, paused, retrying, and failed judgments show -/Y and neutral unresolved criteria. Accessible labels and panel states are "Judge queued", "Judging...", "Judge paused", "Waiting to retry judging...", and "Judging failed: {error}".
@@ -346,7 +347,10 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
    - Report "Could not render this SVG for judging." when rendering fails, preserving the SVG and leaving judging failed.
    - Unavailable generated output reports "The generated output is unavailable for judging."
 6. Completed generation remains available for output, raw view, thinking, copy, and download while judging runs or fails, subject to ordinary access control. Cache ready output independently of judgment completion; display cached verdicts as saved results.
-7. When scrolling with a criterion under the cursor, synchronize the other judgment views in that grid using that criterion as the anchor. Position it at the same vertical offset in each view rather than matching absolute scroll positions.
+7. Hovering a criterion temporarily brings the matching criterion into view in every other judgment view in that grid.
+   - Match the hovered row's vertical offset within its viewport as closely as visibility and scroll limits allow. Follow changes as the source view scrolls.
+   - Preserve each view's own reading position while it follows another view. Restore saved positions when no criterion is hovered.
+   - Directly scrolling a view updates its own reading position.
 8. Highlight the criterion under the cursor in every judgment view in the grid. Update the shared highlight as scrolling changes the criterion under a stationary cursor, and clear it when the cursor leaves the criterion rows.
 
 
