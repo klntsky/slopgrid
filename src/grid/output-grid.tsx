@@ -143,10 +143,11 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
       }
       if (target === source || target.closest("[inert]")) continue;
       const item = list.children[current] as HTMLElement | undefined;
-      const height = target.clientHeight;
-      if (!item || !height) continue;
+      if (!item || !target.clientHeight) continue;
       const viewBounds = target.getBoundingClientRect();
       const itemBounds = item.getBoundingClientRect();
+      // Integer clientHeight drifts over long histories at fractional grid zoom.
+      const height = parseFloat(getComputedStyle(target).height);
       const scale = viewBounds.height / height;
       const before = target.scrollTop;
       const top = before + (itemBounds.top - viewBounds.top) / scale;
