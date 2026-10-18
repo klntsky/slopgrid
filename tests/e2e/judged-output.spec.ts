@@ -565,7 +565,7 @@ async function createJudged(page: Page, input: GridInput = judgedInput) {
   return grid.id as string;
 }
 
-test("judgments open automatically on completion and reload, with scrollable half-height overlays", async ({
+test("judgments open automatically on completion and reload as a scrollable full-cell view", async ({
   page,
 }) => {
   const finalExplanation = "The red rectangle is visible.";
@@ -627,14 +627,9 @@ test("judgments open automatically on completion and reload, with scrollable hal
     exact: true,
   });
   await expect(details).toBeVisible();
-  await expect(image).toBeVisible();
-  const viewport = (await cell.locator(".cell-view").first().boundingBox())!;
-  const compact = (await details.boundingBox())!;
-  expect(compact.height).toBeLessThan(viewport.height / 2);
-  expect(compact.width).toBeLessThan(viewport.width);
-  expect(
-    viewport.y + viewport.height - compact.y - compact.height,
-  ).toBeLessThan(compact.y - viewport.y);
+  await expect(image).toBeHidden();
+  const viewport = (await cell.locator(".cell-view").last().boundingBox())!;
+  expect(await details.boundingBox()).toEqual(viewport);
   await score.click();
   await expect(details).toBeHidden();
 
@@ -644,16 +639,7 @@ test("judgments open automatically on completion and reload, with scrollable hal
   await expect(details).toBeVisible();
   await expect(score).toHaveAttribute("aria-pressed", "true");
   await expect(details.getByRole("status")).toHaveCount(0);
-  const full = (await details.boundingBox())!;
-  expect(full.height).toBeLessThanOrEqual(viewport.height / 2);
-  expect(full.x).toBeGreaterThanOrEqual(viewport.x);
-  expect(full.y).toBeGreaterThanOrEqual(viewport.y);
-  expect(full.x + full.width).toBeLessThanOrEqual(
-    viewport.x + viewport.width + 1,
-  );
-  expect(full.y + full.height).toBeLessThanOrEqual(
-    viewport.y + viewport.height + 1,
-  );
+  expect(await details.boundingBox()).toEqual(viewport);
   expect(
     await details.evaluate(
       (element) => element.scrollHeight > element.clientHeight,
@@ -676,7 +662,7 @@ test("judgments open automatically on completion and reload, with scrollable hal
   await expect(details).toBeVisible();
 });
 
-test("shared generation stays usable behind judgment overlays and persists expanded", async ({
+test("shared generation stays usable across judgment views and persists expanded", async ({
   page,
 }) => {
   await page.request.post("/fixture/reset", {
@@ -728,7 +714,7 @@ test("shared generation stays usable behind judgment overlays and persists expan
   });
   await expect(details).toBeVisible();
   await expect(scores.first()).toHaveAttribute("aria-pressed", "true");
-  await expect(raw).toBeVisible();
+  await expect(raw).toBeHidden();
   await expect(
     details.getByRole("img", { name: /^(Correct|Incorrect)$/ }),
   ).toHaveCount(0);
@@ -809,10 +795,10 @@ test("shared generation stays usable behind judgment overlays and persists expan
   await expect(expandedDetails).toBeVisible();
   await expect(
     expanded.getByRole("link", { name: "Download output", exact: true }),
-  ).toBeVisible();
+  ).toHaveCount(0);
   await expect(
     expanded.getByRole("button", { name: "Copy output", exact: true }),
-  ).toBeVisible();
+  ).toHaveCount(0);
   const expandedScore = expanded.getByRole("button", {
     name: "Judgment: 1 of 2 correct",
     exact: true,
@@ -935,7 +921,7 @@ test("failed judging shows unresolved criteria without hiding generation or its 
   ).toHaveCount(0);
   await expect(
     cell.getByRole("heading", { name: "A generated cat", exact: true }),
-  ).toBeVisible();
+  ).toHaveCount(0);
   await expect(
     cell.getByRole("link", { name: "Open output", exact: true }),
   ).toBeVisible();
@@ -954,7 +940,7 @@ test("failed judging shows unresolved criteria without hiding generation or its 
   ).toContainText("Judging failed:");
   await expect(
     expanded.getByRole("link", { name: "Download output", exact: true }),
-  ).toBeVisible();
+  ).toHaveCount(0);
   await expanded
     .getByRole("button", { name: "Collapse judgment", exact: true })
     .click();
@@ -1199,6 +1185,7 @@ for (const format of ["svg", "image"] as const) {
     });
     await expect(scores).toHaveCount(4);
     await expect(scores).toHaveText(["2/2", "2/2", "2/2", "2/2"]);
+    for (const score of await scores.all()) await score.click();
     const images = page.getByRole("img", {
       name: format === "svg" ? "Generated SVG" : "Generated image",
       exact: true,
@@ -1271,6 +1258,7 @@ for (const format of ["svg", "image"] as const) {
     expect(
       (await (await page.request.get("/fixture/calls")).json()).length,
     ).toBe(5);
+    for (const score of await scores.all()) await score.click();
     const details = page.locator(".cell").first().getByRole("region", {
       name: "Judgment details",
       exact: true,
@@ -1324,7 +1312,7 @@ for (const format of ["svg", "image"] as const) {
   });
 }
 
-test("judgment overlays replace thinking while leaving output visible, including expanded controls", async ({
+test("judgment views replace thinking and output, including expanded controls", async ({
   page,
 }) => {
   await page.request.post("/fixture/reset", {
@@ -1356,7 +1344,7 @@ test("judgment overlays replace thinking while leaving output visible, including
   await expect(score).toHaveAttribute("aria-pressed", "true");
   await expect(details).toBeVisible();
   await expect(thinking).toBeHidden();
-  await expect(output).toBeVisible();
+  await expect(output).toHaveCount(0);
   await expect(
     cell.getByRole("button", { name: "View raw", exact: true }),
   ).toHaveCount(0);
@@ -1378,13 +1366,13 @@ test("judgment overlays replace thinking while leaving output visible, including
   await expect(expandedDetails.getByRole("status")).toContainText("Judging...");
   await expect(
     expanded.getByRole("link", { name: "Open output", exact: true }),
-  ).toBeVisible();
+  ).toHaveCount(0);
   await expect(
     expanded.getByRole("button", { name: "Copy output", exact: true }),
-  ).toBeVisible();
+  ).toHaveCount(0);
   await expect(
     expanded.getByRole("link", { name: "Download output", exact: true }),
-  ).toBeVisible();
+  ).toHaveCount(0);
   await expanded
     .getByRole("button", { name: "Show thinking", exact: true })
     .click();
@@ -1408,6 +1396,100 @@ test("judgment overlays replace thinking while leaving output visible, including
   await expect(
     cell.getByRole("button", { name: "Judgment: 2 of 2 correct", exact: true }),
   ).toHaveText("2/2");
-  await expect(output).toBeVisible();
+  await expect(output).toHaveCount(0);
   await expect(details).toBeVisible();
+});
+
+test("judgment scrolling aligns the first visible criterion across differently sized cells in either direction", async ({
+  page,
+}) => {
+  const criteria = Array.from({ length: 4 }, (_, index) => ({
+    text: `Does the output satisfy condition ${index + 1}?`,
+    correctAnswer: true,
+  }));
+  await page.request.post("/fixture/reset", {
+    data: {
+      judgeOutput: JSON.stringify({
+        results: criteria.map((_, index) => ({
+          verdict: true,
+          explanation: Array.from(
+            { length: 60 },
+            (_, line) =>
+              `Condition ${index + 1}, detail ${line + 1}: the generated output satisfies the requested requirement and includes the relevant supporting detail.`,
+          ).join("\n"),
+        })),
+      }),
+    },
+  });
+  await createJudged(page, {
+    ...judgedInput,
+    rows: { kind: "judge_model", values: ["fixture/text"] },
+    columns: { kind: "judge_effort", values: ["none", "high"] },
+    judge: { ...judgedInput.judge!, criteria },
+  });
+  const results = page.getByRole("region", {
+    name: "Judgment details",
+    exact: true,
+  });
+  await expect(results).toHaveCount(2);
+  const handle = (await page
+    .getByRole("separator", { name: "Resize column 1", exact: true })
+    .boundingBox())!;
+  await page.mouse.move(
+    handle.x + handle.width / 2,
+    handle.y + handle.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    handle.x + handle.width / 2 - 220,
+    handle.y + handle.height / 2,
+    { steps: 8 },
+  );
+  await page.mouse.up();
+  const anchor = (container: HTMLElement) => {
+    const top = container.getBoundingClientRect().top;
+    const rows = container.querySelector(".judge-result-criteria")!.children;
+    for (let index = 0; index < rows.length; index++) {
+      const rect = rows[index].getBoundingClientRect();
+      if (rect.bottom > top) return { index, offset: rect.top - top };
+    }
+    throw new Error("No visible criterion");
+  };
+  const position = (
+    container: HTMLElement,
+    { index, offset }: { index: number; offset: number },
+  ) => {
+    const row = container.querySelector(".judge-result-criteria")!.children[
+      index
+    ];
+    container.scrollTop +=
+      row.getBoundingClientRect().top -
+      container.getBoundingClientRect().top +
+      offset;
+  };
+  const source = results.nth(0);
+  const target = results.nth(1);
+  await source.evaluate(position, { index: 1, offset: 9 });
+  await expect.poll(async () => (await target.evaluate(anchor)).index).toBe(1);
+  expect(
+    Math.abs(
+      (await source.evaluate(anchor)).offset -
+        (await target.evaluate(anchor)).offset,
+    ),
+  ).toBeLessThan(1);
+  expect(
+    Math.abs(
+      (await source.evaluate((element) => element.scrollTop)) -
+        (await target.evaluate((element) => element.scrollTop)),
+    ),
+  ).toBeGreaterThan(100);
+  await target.evaluate(position, { index: 2, offset: 14 });
+  await expect.poll(async () => (await source.evaluate(anchor)).index).toBe(2);
+  expect(
+    Math.abs(
+      (await source.evaluate(anchor)).offset -
+        (await target.evaluate(anchor)).offset,
+    ),
+  ).toBeLessThan(1);
+  expect((await target.evaluate(anchor)).index).toBe(2);
 });

@@ -59,6 +59,38 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
   const expandedView = useRef<HTMLElement>(null);
   const returnButton = useRef<HTMLButtonElement>(null);
   const workspace = useRef<HTMLDivElement>(null);
+  const [pendingJudgeScrolls] = useState(
+    () => new WeakMap<HTMLElement, number>(),
+  );
+  function syncJudgmentScroll(source: HTMLElement) {
+    const expected = pendingJudgeScrolls.get(source);
+    pendingJudgeScrolls.delete(source);
+    if (expected === source.scrollTop) return;
+    const rows = source.querySelector(".judge-result-criteria")?.children;
+    if (!rows) return;
+    let index = 0;
+    for (; index < rows.length; index++) {
+      const row = rows[index] as HTMLElement;
+      if (row.offsetTop + row.offsetHeight > source.scrollTop) break;
+    }
+    const first = rows[index] as HTMLElement | undefined;
+    if (!first || first.offsetTop >= source.scrollTop + source.clientHeight)
+      return;
+    const offset = source.scrollTop - first.offsetTop;
+    for (const target of workspace.current!.querySelectorAll<HTMLElement>(
+      ".judge-results",
+    )) {
+      if (target === source) continue;
+      const row = target.querySelector(".judge-result-criteria")?.children[
+        index
+      ] as HTMLElement | undefined;
+      if (!row) continue;
+      const before = target.scrollTop;
+      target.scrollTop = row.offsetTop + offset;
+      if (target.scrollTop !== before)
+        pendingJudgeScrolls.set(target, target.scrollTop);
+    }
+  }
   function expand(
     kind: "output" | "reference",
     id: string,
@@ -156,7 +188,18 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
     );
   }
   return (
-    <div className="grid-workspace" ref={workspace}>
+    <div
+      className="grid-workspace"
+      ref={workspace}
+      onScrollCapture={(event) => {
+        const source = event.target;
+        if (
+          source instanceof HTMLElement &&
+          source.classList.contains("judge-results")
+        )
+          syncJudgmentScroll(source);
+      }}
+    >
       <div className="grid-table-view" data-expanded={!!expandedId}>
         <GridViewport
           key={g.id}

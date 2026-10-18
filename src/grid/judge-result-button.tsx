@@ -58,23 +58,6 @@ export function summarizeJudgment(
     label,
   };
 }
-function anchorJudgment(button: HTMLButtonElement | null) {
-  const cell = button?.closest<HTMLElement>(".cell");
-  if (!button || !cell) return;
-  const align = () =>
-    cell.style.setProperty(
-      "--judge-button-x",
-      `${button.offsetLeft + button.offsetWidth / 2}px`,
-    );
-  align();
-  const observer = new ResizeObserver(align);
-  observer.observe(button);
-  observer.observe(cell);
-  return () => {
-    observer.disconnect();
-    cell.style.removeProperty("--judge-button-x");
-  };
-}
 
 export function JudgeResultButton({
   summary,
@@ -88,8 +71,7 @@ export function JudgeResultButton({
   return (
     <button
       type="button"
-      className="judge-result-button"
-      ref={anchorJudgment}
+      className="secondary judge-result-button"
       aria-label={summary.label}
       aria-pressed={active}
       aria-busy={summary.running}

@@ -161,7 +161,7 @@ async function inspect(page: Page, grid: Snapshot) {
   });
   await expect(scores.first()).toHaveAttribute("aria-pressed", "true");
   await expect(details).toBeVisible();
-  await expect(cell.locator(".cell-view").first()).toBeVisible();
+  await expect(cell.locator(".cell-view").first()).toBeHidden();
   const items = details.getByRole("listitem");
   for (const [index, result] of grid.cells[0].judge!.results!.entries()) {
     const matched = result.verdict === expected[index].correctAnswer;
@@ -179,6 +179,7 @@ async function inspect(page: Page, grid: Snapshot) {
   await scores.first().click();
   await expect(details).toBeHidden();
   await expect(scores.first()).toHaveAttribute("aria-pressed", "false");
+  await expect(cell.locator(".cell-view").first()).toBeVisible();
   const links = page.getByRole("link", { name: "Open output", exact: true });
   await expect(links).toHaveCount(grid.cells.length);
   for (const link of await links.all()) {

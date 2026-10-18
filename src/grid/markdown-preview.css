@@ -118,6 +118,20 @@
   > :first-child:not(pre):not(table):not(.chat-conversation) {
   margin-right: 112px;
 }
+
+.cell:has(.markdown-actions > .judge-result-button)
+  .markdown-document
+  > :first-child:not(pre):not(table):not(.chat-conversation) {
+  margin-right: 134px;
+}
+
+.cell:has(.markdown-actions > .judge-result-button):has(
+    .markdown-actions > :nth-child(4)
+  )
+  .markdown-document
+  > :first-child:not(pre):not(table):not(.chat-conversation) {
+  margin-right: 170px;
+}
 .cell .conversation-preview {
   padding-top: 64px;
 }

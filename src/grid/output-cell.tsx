@@ -102,7 +102,11 @@ export function OutputCell({
       role={expanded ? "region" : undefined}
       aria-label={expanded ? `Expanded output: ${title}` : undefined}
     >
-      <div className="cell-view" aria-hidden={thinking} inert={thinking}>
+      <div
+        className="cell-view"
+        aria-hidden={thinking || judging}
+        inert={thinking || judging}
+      >
         {offline && !complete ? (
           <p>This output isn't available offline.</p>
         ) : markdown ? (
@@ -166,11 +170,7 @@ export function OutputCell({
         </div>
       )}
       {judgment && criteria && (
-        <div
-          className="cell-view cell-judgment"
-          aria-hidden={!judging}
-          inert={!judging}
-        >
+        <div className="cell-view" aria-hidden={!judging} inert={!judging}>
           <JudgeResults summary={judgment} criteria={criteria} />
         </div>
       )}
@@ -220,6 +220,13 @@ export function OutputCell({
               )}
             </button>
           )}
+          {judgment && (
+            <JudgeResultButton
+              summary={judgment}
+              active={judging}
+              onToggle={() => onChangeView?.(judging ? "output" : "judgment")}
+            />
+          )}
           {expandable && onToggleExpand && (
             <ExpandButton
               expanded={expanded}
@@ -229,84 +236,76 @@ export function OutputCell({
           )}
         </div>
       )}
-      {(judgment ||
-        (!expanded &&
-          (complete ||
-            (cell.status === "running" &&
-              (markdown || cell.estimatedUsage?.costUsd !== undefined))))) && (
-        <div className="cell-footer">
-          <div className="cell-actions">
-            {complete && (
-              <>
-                <a
-                  href={outputURL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label="Open output"
-                  data-tooltip="Open output"
+      {!expanded &&
+        (complete ||
+          (cell.status === "running" &&
+            (markdown || cell.estimatedUsage?.costUsd !== undefined))) && (
+          <div className="cell-footer">
+            <div className="cell-actions">
+              {complete && (
+                <>
+                  <a
+                    href={outputURL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label="Open output"
+                    data-tooltip="Open output"
+                    ref={tooltipRef}
+                  >
+                    <ArrowUpRight aria-hidden="true" />
+                  </a>
+                  {format !== "html" && (
+                    <CopyButton
+                      label="Copy output"
+                      copy={() => copyOutput(cell.outputURL!, format)}
+                    />
+                  )}
+                  <a
+                    href={`/outputs/${cell.id}/download`}
+                    aria-label="Download output"
+                    ref={downloadHint}
+                    download
+                  >
+                    <Download aria-hidden="true" />
+                  </a>
+                </>
+              )}
+            </div>
+            <small className="cell-usage">
+              {usage && (
+                <span
+                  className="cell-tokens"
+                  role="img"
+                  aria-label={`${complete ? "" : "Estimated: "}${usage.inputTokens ?? 0} input tokens, ${usage.outputTokens ?? 0} output tokens`}
+                >
+                  <span className="token-count" ref={inputHint} tabIndex={0}>
+                    {approximate}
+                    {usage.inputTokens ?? 0}
+                    <ArrowUp aria-hidden="true" />
+                  </span>
+                  <span className="token-count" ref={outputHint} tabIndex={0}>
+                    {approximate}
+                    {usage.outputTokens ?? 0}
+                    <ArrowDown aria-hidden="true" />
+                  </span>
+                </span>
+              )}
+              {(complete || cell.estimatedUsage?.costUsd !== undefined) && (
+                <span
                   ref={tooltipRef}
+                  tabIndex={0}
+                  data-tooltip={
+                    complete ? "OpenRouter reported cost" : "Estimated cost"
+                  }
                 >
-                  <ArrowUpRight aria-hidden="true" />
-                </a>
-                {format !== "html" && (
-                  <CopyButton
-                    label="Copy output"
-                    copy={() => copyOutput(cell.outputURL!, format)}
-                  />
-                )}
-                <a
-                  href={`/outputs/${cell.id}/download`}
-                  aria-label="Download output"
-                  ref={downloadHint}
-                  download
-                >
-                  <Download aria-hidden="true" />
-                </a>
-              </>
-            )}
-            {judgment && (
-              <JudgeResultButton
-                summary={judgment}
-                active={judging}
-                onToggle={() => onChangeView?.(judging ? "output" : "judgment")}
-              />
-            )}
+                  {complete
+                    ? formatCost(cell.usage?.costUsd)
+                    : `≈${formatCost(cell.estimatedUsage?.costUsd)}`}
+                </span>
+              )}
+            </small>
           </div>
-          <small className="cell-usage">
-            {usage && (
-              <span
-                className="cell-tokens"
-                role="img"
-                aria-label={`${complete ? "" : "Estimated: "}${usage.inputTokens ?? 0} input tokens, ${usage.outputTokens ?? 0} output tokens`}
-              >
-                <span className="token-count" ref={inputHint} tabIndex={0}>
-                  {approximate}
-                  {usage.inputTokens ?? 0}
-                  <ArrowUp aria-hidden="true" />
-                </span>
-                <span className="token-count" ref={outputHint} tabIndex={0}>
-                  {approximate}
-                  {usage.outputTokens ?? 0}
-                  <ArrowDown aria-hidden="true" />
-                </span>
-              </span>
-            )}
-            {(complete || cell.estimatedUsage?.costUsd !== undefined) && (
-              <span
-                ref={tooltipRef}
-                tabIndex={0}
-                data-tooltip={
-                  complete ? "OpenRouter reported cost" : "Estimated cost"
-                }
-              >
-                {complete
-                  ? formatCost(cell.usage?.costUsd)
-                  : `≈${formatCost(cell.estimatedUsage?.costUsd)}`}
-              </span>
-            )}
-          </small>
-        </div>
-      )}
+        )}
     </article>
   );
 }
