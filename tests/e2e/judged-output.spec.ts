@@ -1523,6 +1523,17 @@ test("judgment hover temporarily reveals matching criteria and restores independ
       row.offsetTop + row.offsetHeight - container.clientHeight * 0.75;
   });
   await expectHighlighted(1);
+  // Crossing adjacent rows must switch criteria without ending the hover.
+  const row = (await source
+    .locator(".judge-result-criteria > li")
+    .nth(1)
+    .boundingBox())!;
+  await page.mouse.move(sourceBox.x + 20, row.y + row.height - 1);
+  await expectHighlighted(1);
+  await page.mouse.move(sourceBox.x + 20, row.y + row.height + 1);
+  await expectHighlighted(2);
+  await page.mouse.move(sourceBox.x + 20, row.y + row.height - 1);
+  await expectHighlighted(1);
   const ownSourcePosition = (await positions())[0];
   await page.mouse.move(1, 1);
   await expect.poll(positions).toEqual([ownSourcePosition, original[1]]);
