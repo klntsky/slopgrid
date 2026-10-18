@@ -130,7 +130,7 @@ function committed(
   projectWorkflow(grid, tasks);
   return grid;
 }
-test("two judge models by two efforts generate once, judge four times, and isolate all judge charges", async () => {
+test("two judge models by two efforts generate once, judge four times, and include all judge charges in spent", async () => {
   const fixture = await runtimeFixture({ workers: 4, judges: true });
   try {
     const id = await create(fixture);
@@ -181,7 +181,7 @@ test("two judge models by two efforts generate once, judge four times, and isola
         "# A red rectangle",
       );
     }
-    assert.equal(fixture.store.billing.gridSpent(id, grid.cells), 0.1);
+    assert.equal(fixture.store.billing.gridSpent(id, grid.cells), 1.1);
     const billing = fixture.store.billing.page(fixture.owner, 0);
     assert.equal(
       billing.calls.filter((call) => call.phase === "judge").length,
@@ -251,7 +251,7 @@ test("pause and engine restart preserve generation and settled judgments; reused
       fixture.calls.filter((call) => !call.request.response_format).length,
       1,
     );
-    assert.equal(fixture.store.billing.gridSpent(reusedId, reused.cells), 0);
+    assert.equal(fixture.store.billing.gridSpent(reusedId, reused.cells), 0.8);
     assert.deepEqual(
       reused.cells.map((cell) => cell.judge?.results),
       [verdicts.results, verdicts.results],
@@ -289,7 +289,10 @@ test("invalid judgment keeps the committed generation and retry never regenerate
       (grid) => grid.status === "complete",
     );
     assert.equal(fixture.calls.length, 3);
-    assert.equal(fixture.store.billing.gridSpent(id, complete.cells), 0.1);
+    assert.ok(
+      Math.abs(fixture.store.billing.gridSpent(id, complete.cells) - 0.6) <
+        1e-9,
+    );
     assert.ok(
       Math.abs(fixture.store.billing.page(fixture.owner, 0).costUsd - 0.6) <
         1e-9,
@@ -349,7 +352,7 @@ test("chat judgments share the complete saved message sequence, including litera
     }
     assert.equal(fixture.calls.length, 6);
     assert.ok(
-      Math.abs(fixture.store.billing.gridSpent(id, grid.cells) - 0.3) < 1e-9,
+      Math.abs(fixture.store.billing.gridSpent(id, grid.cells) - 1.3) < 1e-9,
     );
   } finally {
     await fixture.close();
@@ -441,7 +444,7 @@ test("image generation is saved byte-for-byte and every judge receives those byt
     const response = await fixture.request(`/api/grids/${id}`);
     assert.equal(response.status, 200);
     const reloaded = await response.json();
-    assert.equal(reloaded.spentUsd, 0.04);
+    assert.equal(reloaded.spentUsd, 1.04);
     assert.deepEqual(
       reloaded.cells.map((cell: { usage: unknown }) => cell.usage),
       grid.cells.map((cell) => cell.usage),
@@ -648,7 +651,7 @@ test("a restart judges one shared immutable artifact without creating per-cell c
     for (const cell of complete.cells)
       assert.equal(fixture.store.files.path(cell.id, "index.md"), undefined);
     assert.equal(fixture.calls.length, 2);
-    assert.equal(fixture.store.billing.gridSpent(grid.id, complete.cells), 0);
+    assert.equal(fixture.store.billing.gridSpent(grid.id, complete.cells), 0.5);
     for (const cell of complete.cells) {
       const bundle = await fixture.store.files.bundle(cell.artifactId!);
       assert.deepEqual(
@@ -699,7 +702,7 @@ test("a charged unsuccessful generation fails every dependent and retry produces
     }
     const complete = await settled(fixture, id);
     assert.equal(fixture.calls.length, 6);
-    assert.equal(fixture.store.billing.gridSpent(id, complete.cells), 0.375);
+    assert.equal(fixture.store.billing.gridSpent(id, complete.cells), 2.375);
     assert.ok(
       complete.cells.every(
         (cell) =>
@@ -753,8 +756,8 @@ test("a judge failure is local, and reusing its generation starts fresh judgment
       fixture.calls.filter((call) => !call.request.response_format).length,
       1,
     );
-    assert.equal(fixture.store.billing.gridSpent(id, source.cells), 0.125);
-    assert.equal(fixture.store.billing.gridSpent(reusedId, reused.cells), 0);
+    assert.equal(fixture.store.billing.gridSpent(id, source.cells), 0.875);
+    assert.equal(fixture.store.billing.gridSpent(reusedId, reused.cells), 3);
     assert.ok(
       reused.cells.every(
         (cell) =>
@@ -807,7 +810,7 @@ test(
         fixture.calls.filter((call) => !call.request.response_format).length,
         2,
       );
-      assert.equal(fixture.store.billing.gridSpent(id, complete.cells), 0.125);
+      assert.equal(fixture.store.billing.gridSpent(id, complete.cells), 0.875);
       const billing = fixture.store.billing.page(fixture.owner, 0);
       assert.equal(
         billing.calls.filter((call) => call.status === "failed").length,
@@ -863,7 +866,7 @@ test("a judge billing pause survives engine restart and resumes only unfinished 
           cell.usage.outputTokens === 20,
       ),
     );
-    assert.equal(fixture.store.billing.gridSpent(id, complete.cells), 0.125);
+    assert.equal(fixture.store.billing.gridSpent(id, complete.cells), 0.875);
     assert.deepEqual(
       fixture.store.billing.task(complete.cells[0].generationId!),
       {
@@ -886,7 +889,7 @@ test("a judge billing pause survives engine restart and resumes only unfinished 
       ),
     );
     const reloaded = await (await fixture.request(`/api/grids/${id}`)).json();
-    assert.equal(reloaded.spentUsd, 0.125);
+    assert.equal(reloaded.spentUsd, 0.875);
     assert.deepEqual(
       reloaded.cells.map((cell: { usage: unknown }) => cell.usage),
       complete.cells.map((cell) => cell.usage),
@@ -930,7 +933,7 @@ test("duplicate creation replay while judging and after restart never repeats ge
     assert.equal(fixture.store.billing.page(fixture.owner, 0).total, 3);
     assert.equal(
       fixture.store.billing.gridSpent(id, fixture.store.get(id)!.cells),
-      0.125,
+      0.875,
     );
   } finally {
     await fixture.close();
@@ -974,7 +977,7 @@ test(
       assert.equal(fixture.calls.length, 3);
       assert.equal(fixture.store.billing.page(fixture.owner, 0).total, 3);
       assert.equal(fixture.store.billing.page(fixture.owner, 0).costUsd, 0.875);
-      assert.equal(fixture.store.billing.gridSpent(id, complete.cells), 0.125);
+      assert.equal(fixture.store.billing.gridSpent(id, complete.cells), 0.875);
       await fixture.engine.close();
       await fixture.startEngine();
       assert.deepEqual(
@@ -1116,7 +1119,7 @@ test(
       assert.deepEqual(complete.cells[0].judge?.results, verdicts.results);
       assert.equal(complete.cells[0].usage?.costUsd, 0.125);
       assert.equal(fixture.calls.length, 3);
-      assert.equal(fixture.store.billing.gridSpent(id, complete.cells), 0.125);
+      assert.equal(fixture.store.billing.gridSpent(id, complete.cells), 0.875);
       assert.equal(fixture.store.billing.page(fixture.owner, 0).total, 3);
     } finally {
       unlock();

@@ -74,7 +74,7 @@ export function GridHeader({
     "Generation costs for this grid, not including failed attempts",
   );
   const spentHint = useTooltip<HTMLSpanElement>(
-    "Generation costs for this grid, including failed attempts",
+    "Generation and judging costs for this grid, including failed attempts",
   );
   const spentText =
     g.spentUsd === undefined

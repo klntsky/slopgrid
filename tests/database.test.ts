@@ -792,7 +792,7 @@ test("v13 judged groups preserve generation artifacts, independent judgments and
         data: JSON.stringify({ generationId: "provider-judge-id" }),
       },
     );
-    assert.equal(new Billing(db).gridSpent("grid", []), 0.25);
+    assert.equal(new Billing(db).gridSpent("grid", []), 0.75);
     assert.equal(new Billing(db).task("j:member")?.usage?.costUsd, 0.5);
     assert.deepEqual(db.pragma("foreign_key_check"), []);
     const stable = snapshot(db);

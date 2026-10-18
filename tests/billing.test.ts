@@ -102,7 +102,7 @@ test("generation usage follows the latest call while billing preserves earlier a
   }
 });
 
-test("judge attempts retain actual selections and charges without entering generation usage or spent fallbacks", () => {
+test("judge charges enter spent without changing generation usage or duplicating estimates", () => {
   const directory = mkdtempSync(join(tmpdir(), "slopgrid-judge-billing-"));
   const store = new Store(join(directory, "db.sqlite"), Buffer.alloc(32, 1));
   try {
@@ -200,10 +200,11 @@ test("judge attempts retain actual selections and charges without entering gener
       store.billing.task(cells[1].judgmentId!, "judge-attempt")?.usage,
       { costUsd: 0.3, inputTokens: 300, outputTokens: 400 },
     );
-    assert.equal(store.billing.gridSpent("grid", cells), 0.1);
-    assert.equal(
-      store.billing.gridSpent("grid", store.get("grid")!.cells),
-      0.1,
+    assert.ok(Math.abs(store.billing.gridSpent("grid", cells) - 0.6) < 1e-9);
+    assert.ok(
+      Math.abs(
+        store.billing.gridSpent("grid", store.get("grid")!.cells) - 0.6,
+      ) < 1e-9,
     );
     const billing = store.billing.page("owner", 0);
     assert.ok(Math.abs(billing.costUsd - 0.6) < 1e-9);
@@ -218,7 +219,12 @@ test("judge attempts retain actual selections and charges without entering gener
         ["judge-a", "high"],
       ],
     );
+    pending.update({ usage: { costUsd: 0.4 } });
     pending.fail(new Error("Cancelled"), true);
+    assert.ok(Math.abs(store.billing.gridSpent("grid", cells) - 1) < 1e-9);
+    const free = store.billing.observe("source", "free-judge")("judge");
+    free.complete({ phase: "judge", finishReason: "stop" }, { costUsd: 0 });
+    assert.ok(Math.abs(store.billing.gridSpent("grid", cells) - 1) < 1e-9);
   } finally {
     store.db.close();
     rmSync(directory, { recursive: true, force: true });

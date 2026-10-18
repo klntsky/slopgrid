@@ -767,6 +767,12 @@ test("shared generation stays usable behind judgment overlays and persists expan
   await expect(completed).toHaveCount(4);
   await expect(completed).toHaveText(["1/2", "1/2", "1/2", "1/2"]);
   await expect(completed.first()).toHaveAttribute("aria-busy", "false");
+  await expect(
+    page.getByLabel("Total cost: $0.10", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByLabel("Total spent: $1.10", { exact: true }),
+  ).toBeVisible();
   await expect(details).toBeVisible();
   const items = details.getByRole("listitem");
   await expect(
@@ -776,11 +782,9 @@ test("shared generation stays usable behind judgment overlays and persists expan
     items.nth(1).getByRole("img", { name: "Incorrect", exact: true }),
   ).toBeVisible();
   await expect(
-    items
-      .nth(0)
-      .getByText(`not(${judgedInput.judge!.criteria[0].text})`, {
-        exact: true,
-      }),
+    items.nth(0).getByText(`not(${judgedInput.judge!.criteria[0].text})`, {
+      exact: true,
+    }),
   ).toBeVisible();
   await expect(
     items
@@ -852,7 +856,7 @@ test("shared generation stays usable behind judgment overlays and persists expan
   expect(grid.cells.map((cell: { usage: unknown }) => cell.usage)).toEqual(
     Array(4).fill({ inputTokens: 10, outputTokens: 20, costUsd: 0.1 }),
   );
-  expect(grid.spentUsd).toBe(0.1);
+  expect(grid.spentUsd).toBe(1.1);
   expect((await (await page.request.get("/fixture/calls")).json()).length).toBe(
     5,
   );
@@ -870,7 +874,7 @@ test("shared generation stays usable behind judgment overlays and persists expan
     page.getByLabel("Total cost: $0.10", { exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByLabel("Total spent: $0.10", { exact: true }),
+    page.getByLabel("Total spent: $1.10", { exact: true }),
   ).toBeVisible();
   await expect(
     page.getByRole("img", {
@@ -882,7 +886,7 @@ test("shared generation stays usable behind judgment overlays and persists expan
     page.locator(".grid-cost .live-cost, .grid-spent .live-cost"),
   ).toHaveCount(0);
   const reloaded = await (await page.request.get(`/api/grids/${id}`)).json();
-  expect(reloaded.spentUsd).toBe(generated.spentUsd);
+  expect(reloaded.spentUsd).toBe(grid.spentUsd);
   expect(reloaded.cells.map((cell: { usage: unknown }) => cell.usage)).toEqual(
     generated.cells.map((cell: { usage: unknown }) => cell.usage),
   );

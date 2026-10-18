@@ -210,11 +210,8 @@ async function billing(page: Page, grid: Snapshot, generationCount: number) {
       grid.cells.map((cell) => `${cell.judge!.model}/${cell.judge!.effort}`),
     ),
   );
-  const generationCost = generation.reduce(
-    (sum, call) => sum + call.usage!.costUsd!,
-    0,
-  );
-  expect(grid.spentUsd).toBeCloseTo(generationCost, 10);
+  const gridCost = calls.reduce((sum, call) => sum + call.usage!.costUsd!, 0);
+  expect(grid.spentUsd).toBeCloseTo(gridCost, 10);
   if (generationCount) {
     for (const cell of grid.cells)
       expect(cell.usage).toEqual(generation[0].usage);

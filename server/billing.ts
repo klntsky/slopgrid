@@ -189,16 +189,16 @@ export class Billing {
   gridSpent(gridId: string, cells: readonly Cell[]): number {
     const rows = this.db
       .prepare(
-        `SELECT t.id,t.status, COALESCE(SUM(b.cost_usd),0) costUsd,
+        `SELECT t.id,t.kind,t.status, COALESCE(SUM(b.cost_usd),0) costUsd,
         (SELECT latest.cost_usd FROM inference_calls latest
-          WHERE latest.task_id=t.id AND latest.phase!='judge'
+          WHERE latest.task_id=t.id
           ORDER BY latest.started_at DESC,latest.rowid DESC LIMIT 1) latestCostUsd
         FROM workflow_tasks t LEFT JOIN inference_calls b ON b.task_id=t.id
-          AND b.phase!='judge'
-        WHERE t.grid_id=? AND t.kind='generation' GROUP BY t.id`,
+        WHERE t.grid_id=? GROUP BY t.id`,
       )
       .all(gridId) as {
       id: string;
+      kind: string;
       status: string;
       costUsd: number;
       latestCostUsd: number | null;
@@ -219,7 +219,9 @@ export class Billing {
         sum +
         row.costUsd +
         // A reported charge can arrive before the running task settles.
-        (row.status === "running" && row.latestCostUsd === null
+        (row.kind === "generation" &&
+        row.status === "running" &&
+        row.latestCostUsd === null
           ? (estimates.get(row.id) ?? 0)
           : 0),
       0,
