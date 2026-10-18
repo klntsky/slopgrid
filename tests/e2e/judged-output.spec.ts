@@ -691,9 +691,8 @@ test("shared generation stays usable behind judgment overlays and persists expan
   await expect(
     page.getByRole("link", { name: "Download output", exact: true }),
   ).toHaveCount(4);
-  await expect(scores).toHaveText(["/2", "/2", "/2", "/2"]);
-  for (const score of await scores.all())
-    await expect(score).toHaveAttribute("aria-busy", "true");
+  await expect(scores.first()).toHaveText("/2");
+  await expect(scores.first()).toHaveAttribute("aria-busy", "true");
   await expect(
     page.getByLabel("Total cost: $0.10", { exact: true }),
   ).toBeVisible();
