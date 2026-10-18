@@ -288,9 +288,10 @@ Image grids have a "Parameters" button with a 14px Info circle icon immediately 
 5. Preserve generated output independently of metadata edits and publication, without an application output-byte limit.
    Show Expand and view controls when a cell has output or thinking content to inspect, is generating, or is already expanded. Omit them from empty queued, paused, and failed cells. Keep output links, copying, and downloading conditional on available output.
 6. Treat an unsuccessful completion reason as a generation failure rather than silently accepting incomplete output. When reported thinking tokens exhaust the requested output-token limit without producing output, show "The model spent all of its <limit> output token limit on thinking without producing output - this is a common failure mode of some models indicating that the thinking level is too high for the task", substituting the actual limit (for example, 234K). Preserve its thinking trace and charges.
-7. Raw, Thinking, and Judge are mutually exclusive content modes. Their buttons show a consistent visible pressed state in the website's selected colors. Selecting a mode releases the other two; selecting the active mode again returns to output with all three mode buttons unpressed.
+7. Raw, Thinking, and Judge are mutually exclusive content modes. Their buttons show a consistent, visibly recessed pressed state in the website's selected colors. Selecting a mode releases the other two; selecting the active mode again returns to output with all three mode buttons unpressed.
    - Keep every available mode control visible in each view, including Raw while thinking or judgment results are displayed.
    - Keep Raw and Thinking icons and control names stable: "View raw" and "Show thinking".
+   - On mobile touchscreens, unselected mode buttons keep their neutral appearance after taps instead of showing hover styling.
 8. Expand has an independent pressed state while the cell is expanded. Expanding or collapsing preserves the selected content mode, and switching content modes preserves expansion.
 
 ### 5.2. Markdown
