@@ -1500,7 +1500,7 @@ test("judgment hover temporarily reveals matching criteria and restores independ
   const hoverTarget = () =>
     page.mouse.move(targetBox.x + 20, targetBox.y + targetBox.height / 2);
   await page.mouse.move(1, 1);
-  await source.evaluate(position, { index: 1, offset: -80 });
+  await source.evaluate(position, { index: 1, offset: 80 });
   await target.evaluate((container) => {
     container.scrollTop = container.scrollHeight;
   });
@@ -1580,6 +1580,144 @@ test("judgment hover temporarily reveals matching criteria and restores independ
   await page.mouse.move(1, 1);
   await expect.poll(positions).toEqual([userScrolled, original[1]]);
   await expect.poll(() => backgrounds(3)).toEqual([unhovered, unhovered]);
+});
+
+test("judgment hover fits matching criteria in unequal-height panels", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  const criteria = Array.from({ length: 3 }, (_, index) => ({
+    text: `Is condition ${index + 1} satisfied?`,
+    correctAnswer: true,
+  }));
+  await page.request.post("/fixture/reset", {
+    data: {
+      judgeOutput: JSON.stringify({
+        results: criteria.map((_, index) => ({
+          verdict: true,
+          explanation:
+            index === 1
+              ? "The requested condition is satisfied."
+              : `Condition ${index + 1} matches the requested output. `.repeat(
+                  60,
+                ),
+        })),
+      }),
+    },
+  });
+  const id = await createJudged(page, {
+    ...judgedInput,
+    rows: { kind: "judge_effort", values: ["none", "high"] },
+    columns: { kind: "judge_model", values: ["fixture/text"] },
+    judge: { ...judgedInput.judge!, criteria },
+  });
+  await page.evaluate((id) => {
+    localStorage.setItem(
+      `slopgrid:grid:${id}:sizes`,
+      JSON.stringify({ columns: [320], rows: [460, 260] }),
+    );
+  }, id);
+  await page.reload();
+  const results = page.getByRole("region", {
+    name: "Judgment details",
+    exact: true,
+  });
+  await expect(results).toHaveCount(2);
+  const source = results.nth(0);
+  const target = results.nth(1);
+  for (const panel of await results.all())
+    await expect(panel.locator(".judge-result-criteria > li")).toHaveCount(3);
+  const sourceBox = (await source.boundingBox())!;
+  const bounds = (index: number) =>
+    results.evaluateAll(
+      (containers, index) =>
+        containers.map((container) => {
+          const row = container.querySelector(".judge-result-criteria")!
+            .children[index];
+          const panel = container.getBoundingClientRect();
+          const rect = row.getBoundingClientRect();
+          return {
+            top: rect.top - panel.top,
+            bottom: rect.bottom - panel.top,
+            rowHeight: rect.height,
+            height: container.clientHeight,
+          };
+        }),
+      index,
+    );
+  const hover = async (index: number, offset: number) => {
+    await page.mouse.move(1, 1);
+    await source.evaluate(
+      (container, { index, offset }) => {
+        const row = container.querySelector(".judge-result-criteria")!.children[
+          index
+        ] as HTMLElement;
+        container.scrollTop = row.offsetTop - offset;
+      },
+      { index, offset },
+    );
+    const ownPosition = await source.evaluate(
+      (container) => container.scrollTop,
+    );
+    const row = (await source
+      .locator(".judge-result-criteria > li")
+      .nth(index)
+      .boundingBox())!;
+    await page.mouse.move(
+      sourceBox.x + 4,
+      (Math.max(sourceBox.y, row.y) +
+        Math.min(sourceBox.y + sourceBox.height, row.y + row.height)) /
+        2,
+    );
+    return ownPosition;
+  };
+  const initial = await bounds(1);
+  expect(initial[0].height).toBeGreaterThan(initial[1].height);
+  expect(initial[1].rowHeight).toBeLessThan(initial[1].height);
+
+  // A matching offset that clips the bottom is shifted just enough to fit.
+  const ownPosition = await hover(1, 180);
+  await expect
+    .poll(async () => {
+      const [, peer] = await bounds(1);
+      return Math.abs(peer.bottom - peer.height);
+    })
+    .toBeLessThan(1);
+  expect((await bounds(1))[1].top).toBeGreaterThanOrEqual(0);
+  expect(await source.evaluate((container) => container.scrollTop)).toBe(
+    ownPosition,
+  );
+
+  // Feasible offsets stay synchronized rather than always aligning an edge.
+  await hover(1, 20);
+  await expect
+    .poll(async () => {
+      const [anchor, peer] = await bounds(1);
+      return Math.abs(anchor.top - peer.top);
+    })
+    .toBeLessThan(1);
+
+  // A clipped top is brought fully into the receiving panel.
+  await hover(1, -20);
+  await expect
+    .poll(async () => Math.abs((await bounds(1))[1].top))
+    .toBeLessThan(1);
+
+  // Oversized rows fill the panel, retaining a shared offset when feasible.
+  await hover(2, 80);
+  await expect
+    .poll(async () => Math.abs((await bounds(2))[1].top))
+    .toBeLessThan(1);
+  const oversized = (await bounds(2))[1];
+  expect(oversized.rowHeight).toBeGreaterThan(oversized.height);
+  expect(oversized.bottom).toBeGreaterThanOrEqual(oversized.height);
+  await hover(2, -80);
+  await expect
+    .poll(async () => {
+      const [anchor, peer] = await bounds(2);
+      return Math.abs(anchor.top - peer.top);
+    })
+    .toBeLessThan(1);
 });
 
 test.describe("touch judgment following", () => {

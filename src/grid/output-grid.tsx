@@ -129,9 +129,13 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
       const bottom = top + criterion.offsetHeight;
       const height = target.clientHeight;
       if (!height || bottom === top) continue;
-      // Match the source offset while keeping at least one CSS pixel in view.
-      const minimum = Math.max(0, top - height + 1);
-      const maximum = Math.min(target.scrollHeight - height, bottom - 1);
+      // Match offsets within bounds that show the full row, or fill the
+      // viewport with the row when it is too tall to fit.
+      const minimum = Math.max(0, Math.min(top, bottom - height));
+      const maximum = Math.min(
+        target.scrollHeight - height,
+        Math.max(top, bottom - height),
+      );
       const next = Math.max(minimum, Math.min(maximum, top - offset));
       if (next !== before) {
         if (!savedJudgeScrolls.has(target))
