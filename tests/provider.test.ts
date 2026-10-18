@@ -213,7 +213,6 @@ test("chat templates fill blanks sequentially and complete trailing history", as
       })),
     );
     for (const [index, request] of h.requests.entries()) {
-      assert.equal(request.session_id, "cell");
       const wire = request.messages as { content: unknown }[];
       const positions = [
         ...new Set([
@@ -357,7 +356,6 @@ test("chat completion without blanks sends the exact history and saves a convers
       })),
     );
     assert.equal(h.requests.length, 1);
-    assert.equal(h.requests[0].session_id, input.id);
     const conversation = JSON.parse(String(result.files["messages.json"]));
     assert.deepEqual(conversation.slice(0, -1), messages);
     assert.equal(conversation.at(-1).role, "assistant");

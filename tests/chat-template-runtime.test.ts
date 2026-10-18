@@ -133,7 +133,7 @@ test(
       debug = await crashCheckpoint(
         f.engine.child,
         "workflow-executor.ts",
-        "const billing=store.billing.task(",
+        "const billing=store.billing.task(task.id,context.attemptId)",
       );
       last.write({ content: "Last answer" });
       last.finish();

@@ -6,6 +6,7 @@ import { appFixture } from "./app-fixture.js";
 import { Provider } from "../server/provider.js";
 import { Store } from "../server/store.js";
 import { expandGrid, gridSchema, type Grid } from "../server/domain.js";
+import { createWorkflow } from "../server/workflow.js";
 
 const png = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
@@ -108,7 +109,18 @@ for (const shared of [false, true])
         status: "complete",
       })),
     };
-    store.insert(grid);
+    const tasks = createWorkflow(input, grid.cells);
+    for (const task of tasks) {
+      if (task.kind !== "generation") throw new Error("Expected generation");
+      task.status = "complete";
+      task.output = {
+        artifactId: "reference-grid-output",
+        mediaType: "image/png",
+        provenance: { signature: "reference-fixture", files: ["image"] },
+      };
+    }
+    store.files.write("reference-grid-output", { image: png });
+    store.insert(grid, tasks);
     const user = store.identify("github", "reference-owner", {
       provider: "github",
       username: "owner",
@@ -146,6 +158,7 @@ for (const shared of [false, true])
       ownerUserId: undefined,
       published: false,
       visibility: "private",
+      status: "paused",
       cells: grid.cells.map((c) => ({ ...c, id: "fork-cell" })),
     });
     store.db.prepare("DELETE FROM grids WHERE id=?").run(grid.id);

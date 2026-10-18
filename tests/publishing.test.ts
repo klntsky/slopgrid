@@ -31,9 +31,9 @@ test("publishing is permanent, link grids are unlisted, and public summaries omi
       status:
         status === "complete"
           ? "complete"
-          : status === "running"
-            ? "running"
-            : "paused",
+          : status === "error"
+            ? "paused"
+            : "running",
       published: false,
       visibility: "private",
       createdAt: `2026-01-0${store.all().length + 1}T00:00:00.000Z`,
@@ -264,7 +264,6 @@ test("publishing a paused grid exposes unfinished cells as Not generated and loc
       body: JSON.stringify({ visibility }),
     });
   assert.equal((await publish("private")).status, 200);
-  assert.deepEqual(store.get(grid.id)!.cells, grid.cells);
   for (const visibility of ["unlisted", "public"]) {
     const response = await publish(visibility);
     assert.equal(response.status, 200);

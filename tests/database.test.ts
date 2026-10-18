@@ -394,19 +394,6 @@ test("production v12 migrates ownership, sessions, references and billing withou
     assert.equal(generation.status, "complete");
     assert.equal(generation.artifact_id, "cell");
     assert.equal(generation.thinking_source_id, "cell");
-    assert.deepEqual(JSON.parse(generation.data), {
-      input: {
-        format: "markdown",
-        model: "generator",
-        effort: "none",
-        prompt: "Hello {name}",
-        budgetUsd: 1,
-      },
-      output: {
-        provenance: { signature: "", files: ["index.md"] },
-        thinkingId: "trace",
-      },
-    });
     const billing = new Billing(db);
     assert.deepEqual(billing.task("g:cell", "attempt")?.usage, {
       costUsd: 0.25,

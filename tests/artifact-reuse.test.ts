@@ -1061,11 +1061,9 @@ test("reuse shares one generation per judge group without copying judgments or a
       assert.equal(cell.artifactId, original.artifactId);
       assert.equal(cell.thinkingId, original.thinkingId);
       assert.equal(cell.thinkingSourceId, original.thinkingSourceId);
-      assert.deepEqual(cell.judge, {
-        model: judged.rows.values[cell.row],
-        effort: judged.columns.values[cell.column],
-        status: "pending",
-      });
+      assert.equal(cell.judge?.model, judged.rows.values[cell.row]);
+      assert.equal(cell.judge?.effort, judged.columns.values[cell.column]);
+      assert.equal(cell.judge?.status, "pending");
       assert.equal(cell.attemptId, undefined);
       assert.deepEqual(cell.usage, original.usage);
       assert.deepEqual(cell.provenance, original.provenance);

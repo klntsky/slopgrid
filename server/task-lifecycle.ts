@@ -17,11 +17,11 @@ export function queueTask(task: WorkflowTask) {
   clearFailure(task);
   delete task.retrying;
   if (task.kind === "generation" && task.progress) {
-    const { thinkingId, thinkingSourceId, draft } = task.progress;
+    const { thinkingId, thinkingSourceId, usage } = task.progress;
     task.progress = {
       thinkingId,
       thinkingSourceId,
-      ...(task.input.format === "chat-template" && { draft }),
+      usage,
     };
   }
 }
