@@ -199,3 +199,170 @@ test("judge attempts retain actual selections and charges without entering gener
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test("canonical billing survives reopening and recovery with free and unavailable costs distinct", () => {
+  const directory = mkdtempSync(join(tmpdir(), "slopgrid-canonical-billing-"));
+  const path = join(directory, "db.sqlite");
+  let store = new Store(path, Buffer.alloc(32, 1));
+  try {
+    const input: GridInput = {
+      format: "markdown",
+      prompt: "Saved billing",
+      model: "generator",
+      effort: "none",
+      budgetUsd: 1,
+      rows: { kind: "variable", values: ["one"] },
+      columns: { kind: "effort", values: ["none"] },
+    };
+    store.insert({
+      id: "grid",
+      owner: "anonymous",
+      ownerUserId: "account",
+      input,
+      cells: expandGrid(input).map((cell) => ({ ...cell, id: "cell" })),
+      status: "paused",
+      published: false,
+      visibility: "private",
+      createdAt: "2025-03-04T05:06:07.000Z",
+    });
+    const free = store.billing.observe("cell", "generation")("direct");
+    free.update({ generationId: "provider-id", httpStatus: 200 });
+    free.complete(
+      { phase: "direct", finishReason: "stop", reasoningTokens: 2 },
+      { costUsd: 0, inputTokens: 10, outputTokens: 5 },
+    );
+    store.billing
+      .observe(
+        "cell",
+        "unknown-cost",
+      )("image")
+      .complete(
+        { phase: "image", finishReason: "stop" },
+        { inputTokens: 3, outputTokens: 4 },
+      );
+    store.billing.observe("cell", "unfinished", {
+      model: "actual-judge",
+      effort: "high",
+    })("judge");
+    const cancelled = store.billing.observe("cell", "cancelled")("direct");
+    cancelled.update({ usage: { costUsd: 0.4, inputTokens: 7 } });
+    cancelled.fail(new Error("Cancelled"), true);
+
+    const stored = store.db
+      .prepare(
+        "SELECT attempt_id,phase,status,cost_usd,data FROM inference_calls ORDER BY rowid",
+      )
+      .all() as {
+      attempt_id: string;
+      phase: string;
+      status: string;
+      cost_usd: number | null;
+      data: string;
+    }[];
+    assert.deepEqual(
+      stored.map(({ attempt_id, phase, status, cost_usd }) => ({
+        attempt_id,
+        phase,
+        status,
+        cost_usd,
+      })),
+      [
+        {
+          attempt_id: "generation",
+          phase: "direct",
+          status: "succeeded",
+          cost_usd: 0,
+        },
+        {
+          attempt_id: "unknown-cost",
+          phase: "image",
+          status: "succeeded",
+          cost_usd: null,
+        },
+        {
+          attempt_id: "unfinished",
+          phase: "judge",
+          status: "running",
+          cost_usd: null,
+        },
+        {
+          attempt_id: "cancelled",
+          phase: "direct",
+          status: "cancelled",
+          cost_usd: 0.4,
+        },
+      ],
+    );
+    for (const row of stored) {
+      const data = JSON.parse(row.data);
+      assert.equal(Object.hasOwn(data, "attemptId"), false);
+      assert.equal(Object.hasOwn(data, "phase"), false);
+      assert.equal(Object.hasOwn(data, "status"), false);
+      assert.equal(Object.hasOwn(data.usage ?? {}, "costUsd"), false);
+    }
+    assert.deepEqual(store.billing.cell("cell", "generation")?.usage, {
+      costUsd: 0,
+      inputTokens: 10,
+      outputTokens: 5,
+    });
+    assert.deepEqual(store.billing.cell("cell", "unknown-cost")?.usage, {
+      inputTokens: 3,
+      outputTokens: 4,
+    });
+    assert.equal(store.billing.cell("cell", "unfinished"), undefined);
+    assert.equal(store.billing.page("anonymous", 0).total, 0);
+    const before = store.billing.page("anonymous", 0, "account");
+    assert.deepEqual(
+      {
+        total: before.total,
+        costUsd: before.costUsd,
+        unavailable: before.unavailable,
+        running: before.running,
+      },
+      { total: 4, costUsd: 0.4, unavailable: 2, running: 1 },
+    );
+    store.db.close();
+    store = new Store(path, Buffer.alloc(32, 1));
+    assert.deepEqual(store.billing.page("anonymous", 0, "account"), before);
+    store.billing.recover();
+    const recovered = store.billing.page("anonymous", 0, "account");
+    assert.equal(recovered.running, 0);
+    assert.equal(recovered.costUsd, 0.4);
+    assert.equal(recovered.unavailable, 2);
+    const interrupted = recovered.calls.find((call) => call.phase === "judge");
+    assert.ok(interrupted);
+    assert.equal(interrupted.status, "interrupted");
+    assert.equal(typeof interrupted.finishedAt, "number");
+    assert.equal(interrupted.model, "actual-judge");
+    assert.equal(interrupted.effort, "high");
+    assert.equal(interrupted.usage, undefined);
+    assert.deepEqual(
+      recovered.calls.filter((call) => call.phase !== "judge"),
+      before.calls.filter((call) => call.phase !== "judge"),
+    );
+    const stable = store.billing.page("anonymous", 0, "account");
+    store.billing.recover();
+    assert.deepEqual(store.billing.page("anonymous", 0, "account"), stable);
+
+    // Pagination must keep insertion order for equal timestamps, not random IDs.
+    for (let index = 0; index < 51; index++)
+      store.billing
+        .observe("cell")("direct")
+        .complete({ phase: "direct", finishReason: "stop" }, { costUsd: 0 });
+    store.db.prepare("UPDATE inference_calls SET started_at=100").run();
+    const ordered = store.db
+      .prepare("SELECT id FROM inference_calls ORDER BY rowid DESC")
+      .all() as { id: string }[];
+    const first = store.billing.page("anonymous", 0, "account");
+    const second = store.billing.page("anonymous", 50, "account");
+    assert.equal(first.total, 55);
+    assert.equal(first.calls.length, 50);
+    assert.deepEqual(
+      [...first.calls, ...second.calls].map((call) => call.id),
+      ordered.map((row) => row.id),
+    );
+  } finally {
+    store.db.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});

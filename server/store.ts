@@ -47,17 +47,6 @@ export class Store {
       this.db.pragma("journal_mode = WAL");
       this.db.pragma("foreign_keys = ON");
       initializeDatabase(this.db);
-      const missingTitle =
-        "json_type(data, '$.expanded_prompt_for_title') IS NULL";
-      // Avoid taking the writer lock when an existing database needs no backfill.
-      if (
-        this.db
-          .prepare(`SELECT 1 FROM grids WHERE ${missingTitle} LIMIT 1`)
-          .get()
-      )
-        this.db.exec(`UPDATE grids SET data=json_set(data,
-          '$.expanded_prompt_for_title', json_extract(data, '$.input.prompt'))
-          WHERE ${missingTitle}`);
       this.billing = new Billing(this.db);
       this.files = new OutputFiles(
         resolve(outputsPath ?? join(dirname(path), "outputs")),
@@ -83,10 +72,35 @@ export class Store {
     ).epoch;
   }
   get(id: string): StoredGrid | undefined {
-    const row = this.db.prepare("SELECT data FROM grids WHERE id=?").get(id) as
-      { data: string } | undefined;
+    const row = this.db
+      .prepare(
+        `SELECT data, owner, owner_user_id AS ownerUserId, published,
+          visibility, slug, created_at AS createdAt FROM grids WHERE id=?`,
+      )
+      .get(id) as
+      | {
+          data: string;
+          owner: string;
+          ownerUserId: string | null;
+          published: number;
+          visibility: Grid["visibility"];
+          slug: string | null;
+          createdAt: string;
+        }
+      | undefined;
     if (!row) return;
-    const grid = { ...JSON.parse(row.data), id } as StoredGrid;
+    const grid = {
+      ...JSON.parse(row.data),
+      id,
+      owner: row.owner,
+      ownerUserId: row.ownerUserId ?? undefined,
+      published: row.published === 1,
+      visibility: row.visibility,
+      slug: row.slug ?? undefined,
+      createdAt: row.createdAt,
+    } as StoredGrid;
+    if (row.ownerUserId === null) delete grid.ownerUserId;
+    if (row.slug === null) delete grid.slug;
     if (!grid.title) delete grid.title;
     if (!grid.interruption) delete grid.interruption;
     const cells = this.db
@@ -109,15 +123,49 @@ export class Store {
   }
   // Creation is the only operation that writes both metadata and generation state.
   insert(grid: Grid) {
-    const { id, cells, ...data } = grid;
+    const {
+      id,
+      cells,
+      owner,
+      ownerUserId,
+      published,
+      visibility,
+      slug,
+      createdAt,
+      ...data
+    } = grid;
     this.db.transaction(() => {
-      this.db.prepare("INSERT INTO grids (id, data) VALUES (?,?)").run(
-        id,
-        JSON.stringify({
-          ...data,
-          expanded_prompt_for_title: expandPromptForTitle(grid.input),
-        }),
-      );
+      this.db
+        .prepare(
+          `INSERT INTO grids
+            (id, data, owner, owner_user_id, published, visibility, slug, created_at)
+            VALUES (?,?,?,?,?,?,?,?)`,
+        )
+        .run(
+          id,
+          JSON.stringify({
+            ...data,
+            expanded_prompt_for_title: expandPromptForTitle(grid.input),
+          }),
+          owner,
+          ownerUserId ?? null,
+          published ? 1 : 0,
+          visibility,
+          slug ?? null,
+          createdAt,
+        );
+      if (grid.input.inputReferences || grid.input.referenceGroups) {
+        const referenceIds = new Set<string>();
+        for (const reference of grid.input.inputReferences ?? [])
+          referenceIds.add(reference.id);
+        for (const group of Object.values(grid.input.referenceGroups ?? {}))
+          for (const reference of group) referenceIds.add(reference.id);
+        const insertReference = this.db.prepare(
+          "INSERT INTO grid_reference_images (grid_id, reference_id) VALUES (?,?)",
+        );
+        for (const referenceId of referenceIds)
+          insertReference.run(id, referenceId);
+      }
       const insert = this.db.prepare(
         "INSERT INTO cells (id, grid_id, position, data) VALUES (?,?,?,?)",
       );
@@ -185,9 +233,7 @@ export class Store {
   }
   gridIdBySlug(slug: string): string | undefined {
     const row = this.db
-      .prepare(
-        "SELECT id FROM grids WHERE json_extract(data, '$.slug')=? AND json_extract(data, '$.visibility')='public'",
-      )
+      .prepare("SELECT id FROM grids WHERE slug=? AND visibility='public'")
       .get(slug) as { id: string } | undefined;
     return row?.id;
   }
@@ -212,15 +258,11 @@ export class Store {
           if (claimed && claimed !== id) return "This slug is already claimed.";
         }
         if (slug && !grid.slug)
-          this.db
-            .prepare(
-              "UPDATE grids SET data=json_set(data, '$.slug', ?) WHERE id=?",
-            )
-            .run(slug, id);
+          this.db.prepare("UPDATE grids SET slug=? WHERE id=?").run(slug, id);
         if (visibility === grid.visibility) return;
         this.db
           .prepare(
-            `UPDATE grids SET data=json_set(data, '$.published', json('true'), '$.visibility', ?, '$.author', json(?)) WHERE id=?`,
+            `UPDATE grids SET published=1, visibility=?, data=json_set(data, '$.author', json(?)) WHERE id=?`,
           )
           .run(
             visibility,
@@ -235,21 +277,28 @@ export class Store {
   outputMetadata(id: string) {
     const row = this.db
       .prepare(
-        `SELECT g.data AS grid, c.data AS cell
+        `SELECT g.owner, g.owner_user_id AS ownerUserId, g.published,
+        g.data AS grid, c.data AS cell
       FROM cells c JOIN grids g ON g.id=c.grid_id WHERE c.id=?
     `,
       )
-      .get(id) as { grid: string; cell: string } | undefined;
+      .get(id) as
+      | {
+          owner: string;
+          ownerUserId: string | null;
+          published: number;
+          grid: string;
+          cell: string;
+        }
+      | undefined;
     if (!row) return;
-    const { owner, ownerUserId, published, input } = JSON.parse(
-      row.grid,
-    ) as Grid;
+    const { input } = JSON.parse(row.grid) as Pick<Grid, "input">;
     const cell = JSON.parse(row.cell) as Cell;
     const { status, mediaType, thinkingId } = cell;
     return {
-      owner,
-      ownerUserId,
-      published,
+      owner: row.owner,
+      ownerUserId: row.ownerUserId ?? undefined,
+      published: row.published === 1,
       format: input.format,
       thinkingId,
       status,
@@ -288,23 +337,37 @@ export class Store {
   }
   session(id: string): Session | undefined {
     const row = this.db
-      .prepare("SELECT data FROM sessions WHERE id=?")
-      .get(id) as { data: string } | undefined;
+      .prepare(
+        "SELECT data, anonymous_id AS anonymousId, created_at AS createdAt FROM sessions WHERE id=?",
+      )
+      .get(id) as
+      | { data: string; anonymousId: string | null; createdAt: number }
+      | undefined;
     if (!row) return;
-    const s: Session = { ...JSON.parse(row.data), id };
+    const s: Session = {
+      ...JSON.parse(row.data),
+      id,
+      anonymousId: row.anonymousId ?? undefined,
+      created: row.createdAt,
+    };
+    if (row.anonymousId === null) delete s.anonymousId;
     if (s.key) s.key = decrypt(s.key, this.secret);
     return s;
   }
   saveSession(session: Session) {
-    const { id, ...data } = session;
+    const { id, anonymousId, created, ...data } = session;
     this.db
-      .prepare("INSERT OR REPLACE INTO sessions (id, data) VALUES (?,?)")
+      .prepare(
+        "INSERT OR REPLACE INTO sessions (id, data, anonymous_id, created_at) VALUES (?,?,?,?)",
+      )
       .run(
         id,
         JSON.stringify({
           ...data,
           key: session.key ? encrypt(session.key, this.secret) : undefined,
         }),
+        anonymousId ?? null,
+        created,
       );
   }
   user(id: string): User | undefined {
@@ -342,15 +405,15 @@ export class Store {
       .run(userId, anonymousId);
     this.db
       .prepare(
-        `UPDATE grids SET data=json_set(data, '$.ownerUserId', ?)
-      WHERE json_extract(data,'$.owner')=? AND json_extract(data,'$.ownerUserId') IS NULL`,
+        `UPDATE grids SET owner_user_id=?
+      WHERE owner=? AND owner_user_id IS NULL`,
       )
       .run(userId, anonymousId);
   }
   sessionForOwner(owner: string): Session | undefined {
     const row = this.db
       .prepare(
-        "SELECT id FROM sessions WHERE id=? OR json_extract(data,'$.anonymousId')=? ORDER BY json_extract(data,'$.created') DESC LIMIT 1",
+        "SELECT id FROM sessions WHERE id=? OR anonymous_id=? ORDER BY created_at DESC LIMIT 1",
       )
       .get(owner, owner) as { id: string } | undefined;
     return row ? this.session(row.id) : undefined;

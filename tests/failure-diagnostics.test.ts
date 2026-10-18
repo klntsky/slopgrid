@@ -44,14 +44,12 @@ test(
         () => f.engine.api.getGrid(grid.id),
         (g) => g.cells[0].status === "error",
       );
-      const read = () =>
-        JSON.parse(
-          (
-            f.store.db
-              .prepare("SELECT data FROM inference_calls WHERE cell_id=?")
-              .get(grid.cells[0].id) as { data: string }
-          ).data,
-        );
+      const read = () => {
+        const row = f.store.db
+          .prepare("SELECT status,data FROM inference_calls WHERE cell_id=?")
+          .get(grid.cells[0].id) as { status: string; data: string };
+        return { ...JSON.parse(row.data), status: row.status };
+      };
       const saved = read();
       assert.equal(saved.status, "failed");
       assert.equal(saved.httpStatus, 200);

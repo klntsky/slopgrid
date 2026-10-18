@@ -117,8 +117,8 @@ access, and shared reference thumbnail loading after reload.
 
 List-title coverage checks persisted axis expansion, repeated variables, literal
 dollar signs in values, Unicode-safe truncation, and preservation across title
-edits, generation updates, and reopening storage. Older-grid coverage verifies
-that the original prompt is copied into a missing field once. The title browser
+edits, generation updates, and reopening storage. Legacy-schema migration coverage
+verifies that the original prompt is copied into a missing field once. The title browser
 journey checks custom title precedence and truncated expanded prompts in owned
 and public lists after clearing the title and reloading.
 
@@ -199,10 +199,16 @@ draft bursts. Snapshot-read coverage checks strictly increasing sequences withou
 database writes, fresh ordering after settled metadata edits, and a stable epoch
 across web replacement. Browser coverage delays a paused HTTP snapshot across an
 engine restart and checks that its later arrival cannot reopen streaming.
-Migration coverage preserves existing grid metadata, sessions, cells, references,
-and charges, and checks that reopening storage does not reset the engine clock.
+Migration coverage uses actual legacy schemas, not a new schema with a lowered
+version. It preserves existing grid metadata, sessions, cells, references, charges,
+row ordering, and the engine clock; checks rollback on failure; and exercises
+normal reads and writes after upgrading.
 
 The runtime behavior tests share `tests/runtime-fixture.ts`: a controlled OpenRouter HTTP service, a real inference child, a replaceable web child, and a temporary SQLite database and output directory. The actual provider SDK, stream parser, billing recorder, and Unix-socket API remain in use. Fixture children, including browser app processes, report readiness over IPC after their listeners are available. Startup waits report the child error or exit status, with a bounded timeout for a hung process, instead of treating a delayed startup as an application transition failure. Tests explicitly release streaming chunks or failures instead of relying on provider response timing. Sessions are seeded directly; authentication flows have separate coverage.
+
+Browser HTTPS fixtures reserve the same port on IPv4 and IPv6 loopback before
+announcing readiness, so localhost cannot reach an unrelated listener. Lifecycle
+coverage requests both addresses and reuses the port after shutdown.
 
 Grid-price coverage distinguishes visible successful-output cost from owner-only lifetime spending. Billing tests cover reported usage arriving before cell settlement, reported zero charges, cancellation, retries, and isolation between grids. Browser coverage follows both totals through streaming, failure, retry, reload, and publication; HTTP and SSE coverage ensures non-owners never receive `spentUsd`. Reordered-snapshot coverage checks both displayed totals. A controlled-stream browser scenario checks thinking scroll-following through successive chunks and viewport resizing, wheel-scrolling up to preserve a reading position, returning to the bottom, and completion through the saved-trace fetch. Thinking-exhaustion coverage distinguishes a fully consumed reasoning budget from partial output and early termination, verifies durable errors and traces, separates charges from successful-output costs, and observes SSE closure. SVG view-switch coverage checks decoded image content while hidden behind thinking, preserves the mounted preview across toggles, and verifies completion while thinking remains selected. Expansion coverage follows SVG updates through completion and website updates in the overlay, verifies generated JavaScript execution, and checks image/SVG/website collapse via Escape, restored focus, retained table elements, and saved dimensions. Website coverage presses Escape while focus is inside the isolated frame.
 
@@ -274,7 +280,15 @@ Preserve the automatically created development encryption key, since changing it
 
 Keep SQLite and output-directory backups, including uploaded references, together with the encryption key needed to read stored credentials. See [state and persistence](ARCHITECTURE.md#state-and-persistence) for storage responsibilities and output lifecycle.
 
-Storage and route tests exercise persistence and reopening. Upgrade and unsupported-version tests check that existing data is preserved. Session tests reopen storage with an old session and verify retained account identity, encrypted credentials, persistent cookie renewal, and logout revocation.
+Storage and route tests exercise persistence and reopening. Upgrade and
+unsupported-version tests check that existing production data is preserved.
+Session tests reopen storage with an old session and verify retained account
+identity, encrypted credentials, persistent cookie renewal, and logout revocation.
+Billing migration coverage distinguishes unavailable charges from known zero
+charges and retains deterministic pagination.
+
+Disposable staging grids can be removed through the private operations deployment
+command before upgrading, without changing the production-data migration.
 
 ## Generation and output validation
 

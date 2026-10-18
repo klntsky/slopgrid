@@ -85,15 +85,9 @@ test("list prompts are expanded and truncated once, then persist independently o
         cells: expandGrid(input).map((cell) => ({ ...cell, id: token() })),
       };
       store.insert(grid);
-      const data = JSON.parse(
-        (
-          store.db
-            .prepare("SELECT data FROM grids WHERE id=?")
-            .get(grid.id) as { data: string }
-        ).data,
-      );
-      assert.equal(data.expanded_prompt_for_title, scenario.expected);
-      assert.equal(data.input.prompt, scenario.prompt);
+      const saved = store.get(grid.id)!;
+      assert.equal(saved.expanded_prompt_for_title, scenario.expected);
+      assert.equal(saved.input.prompt, scenario.prompt);
       store.setTitle(grid.id, "Custom title");
       store.saveGeneration(grid);
       assert.equal(
@@ -102,26 +96,13 @@ test("list prompts are expanded and truncated once, then persist independently o
       );
       store.setTitle(grid.id, "");
     }
-    store.db
-      .prepare(
-        "UPDATE grids SET data=json_remove(data, '$.expanded_prompt_for_title') WHERE id=?",
-      )
-      .run("grid-0");
     store.db.close();
     store = new Store(database, secret);
     for (const [index, scenario] of cases.entries())
       assert.equal(
         store.get(`grid-${index}`)!.expanded_prompt_for_title,
-        index === 0 ? scenario.prompt : scenario.expected,
+        scenario.expected,
       );
-    const legacy = JSON.parse(
-      (
-        store.db.prepare("SELECT data FROM grids WHERE id='grid-0'").get() as {
-          data: string;
-        }
-      ).data,
-    );
-    assert.equal(legacy.expanded_prompt_for_title, cases[0].prompt);
     store.db.exec(
       "CREATE TRIGGER no_recompute BEFORE UPDATE ON grids BEGIN SELECT RAISE(ABORT, 'must not recompute'); END",
     );
@@ -129,7 +110,7 @@ test("list prompts are expanded and truncated once, then persist independently o
     store = new Store(database, secret);
     assert.equal(
       store.get("grid-0")!.expanded_prompt_for_title,
-      cases[0].prompt,
+      cases[0].expected,
     );
   } finally {
     store.db.close();

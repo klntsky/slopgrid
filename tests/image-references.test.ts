@@ -255,3 +255,69 @@ test("reference loaders share exact bytes and hashes while retaining order and e
   renameSync(file + ".held", file);
   assert.deepEqual((await fresh([first.id]))[0].bytes, png);
 });
+
+test("grid creation records every selected reference atomically and keeps membership tied to immutable configuration", async (t) => {
+  const { store } = await appFixture(t);
+  const uploader = { id: "reference-uploader", created: 0 };
+  const owner = { id: "reference-grid-owner", created: 0 };
+  const first = store.references.add(png, "first.png", uploader)!;
+  const second = store.references.add(png, "second.png", uploader)!;
+  const spare = store.references.add(png, "spare.png", uploader)!;
+  const missing = { id: "d".repeat(48), name: "missing.png" };
+  const input: Grid["input"] = {
+    format: "image",
+    prompt: "Use the selected references",
+    model: "fixture/image",
+    effort: "default",
+    budgetUsd: 1,
+    rows: { kind: "input_references", values: ["Pair", "Other"] },
+    columns: { kind: "size", values: ["1K"] },
+    referenceGroups: {
+      Pair: [first, first],
+      Other: [second, missing],
+    },
+  };
+  const grid: Grid = {
+    id: "atomic-reference-grid",
+    owner: owner.id,
+    input,
+    status: "paused",
+    published: false,
+    visibility: "private",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    cells: expandGrid(input).map((cell, index) => ({
+      ...cell,
+      id: `atomic-reference-cell-${index}`,
+    })),
+  };
+  store.db.exec(`CREATE TEMP TRIGGER fail_reference_grid
+    BEFORE INSERT ON cells BEGIN
+      SELECT RAISE(ABORT, 'Injected grid failure');
+    END`);
+  try {
+    assert.throws(() => store.insert(grid), /Injected grid failure/);
+    assert.equal(store.get(grid.id), undefined);
+    assert.equal(store.references.allowed(first.id, owner), false);
+  } finally {
+    store.db.exec("DROP TRIGGER fail_reference_grid");
+  }
+  store.insert(grid);
+  assert.equal(store.references.allowed(first.id, owner), true);
+  assert.equal(store.references.allowed(second.id, owner), true);
+  assert.equal(store.references.allowed(spare.id, owner), false);
+  assert.equal(store.references.allowed(missing.id, owner), false);
+  assert.equal(store.references.allowed(first.id), false);
+  grid.input = {
+    ...input,
+    referenceGroups: { Pair: [first], Other: [spare] },
+  };
+  store.saveGeneration(grid);
+  assert.deepEqual(store.get(grid.id)!.input, input);
+  assert.equal(store.references.allowed(second.id, owner), true);
+  assert.equal(store.references.allowed(spare.id, owner), false);
+  store.db.prepare("DELETE FROM grids WHERE id=?").run(grid.id);
+  assert.equal(store.references.allowed(first.id, owner), false);
+  store.insert(grid);
+  assert.equal(store.references.allowed(second.id, owner), false);
+  assert.equal(store.references.allowed(spare.id, owner), true);
+});
