@@ -1750,4 +1750,87 @@ test.describe("touch judgment following", () => {
       .toBe(original);
     await client.detach();
   });
+
+  test("touch judgment scrolling keeps the contacted short criterion highlighted", async ({
+    page,
+  }) => {
+    const criteria = Array.from({ length: 10 }, (_, index) => ({
+      text: `Condition ${index + 1}?`,
+      correctAnswer: true,
+    }));
+    await page.request.post("/fixture/reset", {
+      data: {
+        judgeOutput: JSON.stringify({
+          results: criteria.map(() => ({
+            verdict: true,
+            explanation: "Matches.",
+          })),
+        }),
+      },
+    });
+    const id = await createJudged(page, {
+      ...judgedInput,
+      rows: { kind: "judge_model", values: ["fixture/text"] },
+      columns: { kind: "judge_effort", values: ["none", "high"] },
+      judge: { ...judgedInput.judge!, criteria },
+    });
+    await page.evaluate((id) => {
+      localStorage.setItem(
+        `slopgrid:grid:${id}:sizes`,
+        JSON.stringify({ columns: [140, 200], rows: [400] }),
+      );
+    }, id);
+    await page.reload();
+    const results = page.getByRole("region", {
+      name: "Judgment details",
+      exact: true,
+    });
+    await expect(results).toHaveCount(2);
+    const source = results.nth(0);
+    const row = source.locator(".judge-result-criteria > li").nth(1);
+    const background = () =>
+      row.evaluate((element) => getComputedStyle(element).backgroundColor);
+    const unselected = await background();
+    const box = (await row.boundingBox())!;
+    const panel = (await source.boundingBox())!;
+    const point = { x: panel.x + 20, y: box.y + box.height / 2 };
+    await page.touchscreen.tap(point.x, point.y);
+    await expect.poll(background).not.toBe(unselected);
+    const selected = await background();
+    const samples = await row.evaluateHandle((element) => {
+      const colors: string[] = [];
+      const record = () =>
+        colors.push(getComputedStyle(element).backgroundColor);
+      document.addEventListener("touchmove", record, { passive: true });
+      return {
+        colors,
+        stop: () => document.removeEventListener("touchmove", record),
+      };
+    });
+    const before = await source.evaluate((container) => container.scrollTop);
+    const client = await page.context().newCDPSession(page);
+    await client.send("Input.dispatchTouchEvent", {
+      type: "touchStart",
+      touchPoints: [{ ...point, id: 1 }],
+    });
+    for (const distance of [20, 40, 60])
+      await client.send("Input.dispatchTouchEvent", {
+        type: "touchMove",
+        touchPoints: [{ x: point.x, y: point.y - distance, id: 1 }],
+      });
+    const observed = await samples.evaluate((state) => {
+      state.stop();
+      return state.colors;
+    });
+    await client.send("Input.dispatchTouchEvent", {
+      type: "touchEnd",
+      touchPoints: [],
+    });
+    await client.detach();
+    await samples.dispose();
+    expect(new Set(observed)).toEqual(new Set([selected]));
+    await expect
+      .poll(() => source.evaluate((container) => container.scrollTop))
+      .toBeGreaterThan(before);
+  });
 });

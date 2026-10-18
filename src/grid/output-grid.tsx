@@ -66,6 +66,8 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
   const criterionPointer = useRef<PointerEvent | Touch | null>(null);
   const hoveredCriterion = useRef<number | null>(null);
   const hoveredJudgeView = useRef<HTMLElement | null>(null);
+  const touchHoverFrame = useRef<number | null>(null);
+  const touchHoverForce = useRef(false);
   function criterionRow(target: EventTarget | null) {
     const row =
       target instanceof Element
@@ -142,6 +144,18 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
       savedJudgeScrolls.clear();
     }
   }
+  function scheduleTouchHover(force = false) {
+    touchHoverForce.current ||= force;
+    if (touchHoverFrame.current !== null) return;
+    touchHoverFrame.current = requestAnimationFrame(() => {
+      touchHoverFrame.current = null;
+      const force = touchHoverForce.current;
+      touchHoverForce.current = false;
+      const pointer = criterionPointer.current;
+      if (!pointer || !("pointerType" in pointer))
+        updateCriterionHover(criterionUnderCursor(), force);
+    });
+  }
   function trackCriterionPointer(event: PointerEvent) {
     if (event.pointerType === "touch") return;
     criterionPointer.current = event;
@@ -151,7 +165,8 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
     function touch(event: TouchEvent) {
       criterionPointer.current =
         event.touches.length === 1 ? event.touches[0] : null;
-      updateCriterionHover(criterionUnderCursor());
+      // Hit-test after native scrolling updates the rendered contact position.
+      scheduleTouchHover();
     }
     // Native scrolling cancels pointer events, but touch events keep tracking
     // the finger. Retain its last position for taps and momentum scrolling.
@@ -160,11 +175,18 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
     return () => {
       document.removeEventListener("touchstart", touch);
       document.removeEventListener("touchmove", touch);
+      if (touchHoverFrame.current !== null)
+        cancelAnimationFrame(touchHoverFrame.current);
+      touchHoverFrame.current = null;
+      touchHoverForce.current = false;
     };
   }, []);
   useLayoutEffect(() => {
-    if (criterionPointer.current)
+    const pointer = criterionPointer.current;
+    if (!pointer) return;
+    if ("pointerType" in pointer)
       updateCriterionHover(criterionUnderCursor(), true);
+    else scheduleTouchHover(true);
   }, [g.cells, expandedId, views]);
   function syncJudgmentScroll(source: HTMLElement) {
     const expected = pendingJudgeScrolls.get(source);
@@ -172,7 +194,9 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
     if (expected === source.scrollTop) return;
     // A user's scroll replaces this view's saved position, not its peers'.
     savedJudgeScrolls.delete(source);
-    updateCriterionHover(criterionUnderCursor(), true);
+    const pointer = criterionPointer.current;
+    if (pointer && !("pointerType" in pointer)) scheduleTouchHover(true);
+    else updateCriterionHover(criterionUnderCursor(), true);
   }
   function expand(
     kind: "output" | "reference",
