@@ -44,25 +44,26 @@ are managed by that pipeline rather than application code.
 
 ## State and persistence
 
-SQLite stores identities, sessions, grid configuration, cell state, reference
-metadata, creation receipts, and the inference ledger. Generated bodies,
-reference bytes, and thinking traces live in the output filesystem. Storage
-paths are resolved from cell and reference records rather than accepted directly
-from browser input.
+SQLite stores identities, sessions, grid configuration, workflow tasks, cell-to-task
+links, reference metadata, creation receipts, and the inference ledger. Cells are
+resolved presentation records, not execution state. Generated bodies, reference
+bytes, and thinking traces live behind the artifact store; browser-supplied paths
+never select stored content.
 
 Schema upgrades and historical backfills run transactionally before storage opens.
-Queryable ownership, publication, session, and billing metadata live in relational
-columns; selected reference images have explicit grid links. JSON holds grid
-configuration and structured cell/provider payloads rather than query keys.
+Queryable ownership, publication, task dependencies, artifact references, and
+billing metadata live in relational columns; selected reference images have
+explicit grid links. JSON holds configuration and structured task/provider
+payloads rather than query keys.
 
 - Grid configuration is stored once. The engine owns generation and billing
   writes; the web process owns metadata and identity changes. Publication and
   admission use transactions so a grid cannot become public during a retry.
-- Completed artifacts are written before their generation stage is marked
-  complete. Live drafts and estimates remain in engine memory; snapshots combine
-  that state with persisted metadata. Failed template transcripts are retained
-  with their cells. Completed output bodies stay in files, while reuse metadata
-  holds per-call usage and allowances.
+- Immutable artifacts are installed before the generation task commits its output
+  reference. Live drafts and estimates remain in engine memory; snapshots project
+  task state onto cells. Failed template transcripts and durable trace references
+  belong to the task. Output metadata carries provenance, per-call usage, and
+  allowances without embedding output bytes.
 - Each engine initialization advances a persisted epoch. Snapshots also carry
   an in-memory sequence, allowing the browser to reject older updates across
   reconnects and engine restarts. Snapshot reads do not write to SQLite.
@@ -75,9 +76,10 @@ configuration and structured cell/provider payloads rather than query keys.
   Restarting the web process does not perform generation recovery.
 
 The inference ledger records each provider call, including failed, cancelled,
-and retried calls with any reported charge. Calls carry their stage's durable
-attempt identifier and effective model selection. Generation usage is
-reconstructed independently of judge calls and earlier generation attempts.
+and retried calls with any reported charge. Calls carry a task identity, durable
+attempt identifier, effective model selection, and a cell for display attribution.
+Generation usage is reconstructed independently of judge calls and earlier
+generation attempts.
 The ledger excludes prompts, outputs, and credentials. The web process reads
 owner-filtered billing data; the engine alone records calls. Live generation
 estimates remain in memory and give way to reported usage.
@@ -100,8 +102,8 @@ are defined in [PRODUCT.md](PRODUCT.md#34-compatibility-presentation).
 
 The browser persists a creation draft and a request identity across reloads.
 The web process validates the input and commits a creation receipt, grid, and
-initial cells together. Replaying the same request resolves to the existing
-grid, which lets the browser recover from a lost creation response without
+initial tasks and cell links together. Replaying the same request resolves to the
+existing grid, which lets the browser recover from a lost creation response without
 starting inference twice.
 
 - Model catalogs are loaded by the web process for forms. Provider adapters own
@@ -113,15 +115,15 @@ starting inference twice.
   separate policy paths.
 - Request preparation applies format instructions, model capabilities, pricing,
   token limits, and routing. Text calls stream through the AI SDK; image calls
-  use its dedicated image path. The engine budgets and schedules individual
-  cell attempts.
+  use its dedicated image path. The engine budgets generation and schedules
+  workflow task attempts.
   When pricing or context limits are unavailable, preparation omits the output
   token limit and provider price cap, leaving the output allowance to the provider.
   Streaming still estimates token counts, while unknown prices leave estimated costs
   absent; reported usage and charges remain authoritative.
 - Scheduling allocates workers across owners and grids. A pause cancels active
-  requests and stops queued cells; cancelled calls retain their worker slots
-  until they settle. Retry and cooldown state live in the engine, while cell
+  requests and stops queued tasks; cancelled calls retain their worker slots
+  until they settle. Retry and cooldown state live in the engine, while task
   transitions and actual calls are persisted.
 - OAuth credentials are encrypted at rest. Manual OpenRouter keys stay in the
   browser and, during accepted work, in engine memory. They are excluded from
@@ -135,30 +137,37 @@ references for dispatch, and reference bytes never enter grid snapshots.
 Committed generation can be reused by Edit/Fork when a source is accessible and
 its prepared request matches the destination. A signature captures request
 semantics, including ordered reference content, while a token ceiling check
-protects text reuse. Reused artifacts are copied under new cell identifiers;
-judgment state is not part of the reusable artifact.
+protects text reuse. Reuse creates a new generation task referencing the same
+immutable artifact and saved usage. Judgment tasks are always independent.
 
-## Shared generation and judgment stages
+## Workflow and content execution
 
-The shared generation key is browser-safe and separate from the provider request
-signature. Creation uses it to assign durable source membership after cell IDs
-exist; the scheduler owns producer selection and member-copy repair.
+Creation assigns durable generation and judgment tasks before scheduling.
+Equivalent judged cells share a generation task; ordinary cells keep independent
+generations. Cells link to those tasks, and judgments depend on committed
+generation output. The browser-safe grouping key remains separate from the
+provider request signature.
 
-- Generation and judging have separate attempt identities and state. The engine
-  commits generation files and provenance before dispatching judgments, and waits
-  for billing persistence before committing a judgment result.
-- Member artifacts use the ordinary output filesystem and access routes. Copy
-  repair is storage work rather than an inference worker or another provider
-  request.
-- The judge adapter owns its strict structured-result contract independently of
-  generation parsing. Artifact loading reads committed content rather than
-  browser previews.
-- SVG rasterization runs in cancellable Node workers with local WASM and verified
-  bundled font bytes. Workers have no browser or host-resource resolver; rendered
-  content is shared within its generation source and released by the scheduler.
+- The scheduler owns admission, worker reservations, attempt identity, retries,
+  cancellation, settlement, and serialized persistence through one task lifecycle.
+  It delegates execution without performing format, provider, or filesystem work.
+- The content executor owns generation and judge adapters, streaming progress,
+  previews, reference loading, artifact installation, and content cleanup. Its
+  commit boundary keeps late results from replacing a newer attempt.
+- Generation commits an opaque artifact reference and provenance before judging
+  begins. Shared cells and reused generations resolve that reference directly;
+  output authorization remains attached to the requested cell.
+- Artifact and thinking-trace deletion checks remaining task references. The
+  operations repository owns offline transfer and administrative deletion using
+  the same shared-ownership boundary.
+- The judge adapter owns strict structured results independently of generation
+  parsing and reads committed content rather than browser previews.
+- SVG rasterization uses cancellable Node workers with local WASM and bundled
+  font bytes. Workers have no browser or host-resource resolver. Rendered content
+  is shared within a generation task; the content executor manages its lifetime.
 - The presenter exposes output readiness separately from overall cell completion.
   Cell controls and offline caching consume that boundary. Billing owns all
-  actual stage charges; generation summaries exclude judge calls.
+  actual task charges; generation summaries exclude judge calls.
 
 ## Outputs and live views
 
@@ -195,10 +204,10 @@ variables in each message body. A derived transcript supplies titles and prompt
 display. Inference sends structured messages without an additional system
 instruction, and request signatures include the history.
 
-Generation attempts are the shared execution boundary for every output format.
-Jobs schedules, cancels, and settles an attempt; the attempt layer coordinates
-its provider calls and progress. The provider adapter prepares and executes
-individual requests. Ordinary generation uses one request, while the template
+Generation attempts are the shared content-execution boundary for every output
+format. The content executor coordinates provider calls and progress within the
+scheduler's task attempt. The provider adapter prepares and executes individual
+requests. Ordinary generation uses one request, while the template
 strategy resolves a shared call sequence and maintains the generated history
 within the same attempt. Execution and artifact reuse derive that sequence from
 the template, including its final completion when needed. The request context
@@ -207,14 +216,14 @@ persistence barrier to every call. A request waits for its billing record and
 earlier queued writes before reaching the provider, and cancellation interrupts
 that wait.
 
-Template requests use the cell ID as the OpenRouter routing session across calls
-and retries. The attempt tracks the preceding request's prefix length; the
+Template requests use the generation task ID as the OpenRouter routing session
+across calls and retries. The attempt tracks the preceding request's prefix length; the
 provider adapter marks that boundary and the current history's end with ephemeral
 cache controls. These request-only controls leave saved messages and artifact
 signatures unchanged. Provider cache eligibility and retention determine hits.
 
 Usage comes from the attempt's durable billing records for every format,
-including failed calls when usage is reported. Copied artifacts retain their
+including failed calls when usage is reported. Shared artifacts retain their
 saved usage without acquiring another attempt's billing records. Reuse
 provenance records each template call's output token allowance, usage, and cost.
 The reuse check uses reported input-token counts and current pricing to calculate
@@ -231,8 +240,8 @@ Markdown from escaped source, validates SVG drafts before display, and keeps
 visible website frames stable while previews change.
 
 Thinking traces are private, attempt-specific files. Snapshots refer to a trace
-rather than embedding its text. Trace reads check ownership and the current
-attempt, and traces are excluded from generated bundles and downloads.
+rather than embedding its text. Reads authorize the requested cell and resolve its
+generation's trace reference. Traces are excluded from bundles and downloads.
 
 ## Identity and access
 
@@ -306,6 +315,8 @@ exclude streamed drafts, temporary previews, and live thinking. Output readiness
 rather than judgment completion, triggers caching of saved outputs and downloads.
 Persisted verdicts remain snapshot data. Reconnection refreshes active queries
 before live streams resume. Mutations and OAuth exchanges remain network-only.
+Cache activation migrates retained snapshot records before serving them to the
+new client, preserving session partitions, saved output bytes, and verdicts.
 
 Session responses carry a one-way hash of the session identifier as a cache
 partition key, which grants no server access. Sign-out and observed session
@@ -367,9 +378,9 @@ that cache without maintaining separate ordering state.
 - `server/app.ts` composes web dependencies and middleware; `server/routes/`
   contains browser-facing routes. `server/generation-api.ts` and
   `server/generation-client.ts` define the private process contract.
-- `server/jobs.ts` coordinates engine execution. Policy, cell lifecycle,
-  provider preparation, storage, billing, and output modules own their respective
-  decisions and side effects outside the scheduler.
+- `server/jobs.ts` owns the task lifecycle and scheduling policy.
+  `server/workflow-executor.ts` owns content execution; provider preparation,
+  storage, billing, and output modules keep their respective side effects.
 - `src/create/` owns form state, drafts, and submission. `src/grid/` owns live
   grid state and views. Shared components and Markdown rendering live outside
   those feature directories.
