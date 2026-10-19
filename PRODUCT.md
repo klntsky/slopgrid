@@ -376,7 +376,7 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
 
 1. Pair messages by their position in rendered chat histories across the grid. Use the [same scroll-following behavior as judgment results](#56-judgment-results): focus-relative whole-history mapping, desktop cursor alignment with retained synchronized positions, and persistent touch comparison focus through native dragging and momentum.
 2. Use the same full-width rectangular area for each message's hover and position mapping, including the space around its bubble. Keep adjacent message areas contiguous and cover the unused space at the end of short histories while preserving the visual spacing between bubbles.
-3. Apply a very subtle tint to the corresponding message bubble in every chat history while its area is hovered or touch-selected. Preserve the bubbles' role colors and alignment.
+3. Apply a very subtle tint to the corresponding message bubble in every chat history while its area is hovered or touch-selected. Preserve the bubbles' role colors and alignment. Apply the active comparison tint to matching messages as they arrive in streaming histories, including while the cursor or touch selection remains unchanged.
 4. Follow rendered chat histories as a group, separately from judgment views. Raw text and thinking keep independent scrolling.
 
 ## 6. Inference, scheduling, and recovery

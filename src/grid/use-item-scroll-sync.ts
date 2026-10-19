@@ -160,6 +160,9 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
     const index = row ? itemIndex(row) : null;
     const group = row ? viewOf(row)?.dataset.scrollSync : undefined;
     if (index === highlightedIndex && group === highlightedGroup) return;
+    applyHighlight(index, group);
+  }
+  function applyHighlight(index: number | null, group: string | undefined) {
     for (const list of root.current!.querySelectorAll(
       "[data-scroll-sync-items]",
     )) {
@@ -323,6 +326,7 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
         for (const row of list.children) observer?.observe(row);
       }
     }
+    applyHighlight(highlightedIndex, highlightedGroup);
     schedule();
   }
   function touchStart(event: TouchEvent) {

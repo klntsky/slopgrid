@@ -387,6 +387,77 @@ test("chat histories follow contiguous full-width message areas and retain their
     .toBe(latest[1]);
 });
 
+test("a streamed peer highlights a newly arrived message under the active comparison focus", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  await page.request.post("/fixture/reset", {
+    data: { holdGenerations: true },
+  });
+  await page.goto("/create");
+  await connectOpenRouter(page);
+  const response = await page.request.post("/api/grids", {
+    headers: { origin: new URL(page.url()).origin },
+    data: {
+      ...historyInput,
+      messages: [
+        { role: "user", content: "Start $ROW $COLUMN" },
+        { role: "unfilled", content: "" },
+        { role: "user", content: "Continue $ROW $COLUMN" },
+        { role: "unfilled", content: "" },
+      ],
+    },
+  });
+  expect(response.status()).toBe(201);
+  const { id } = await response.json();
+  await page.evaluate((id) => {
+    localStorage.setItem(
+      `slopgrid:grid:${id}:sizes`,
+      JSON.stringify({ columns: [420], rows: [300, 300] }),
+    );
+  }, id);
+  await page.goto(`/grid/${id}`);
+  const release = async (prompt: string) => {
+    await expect
+      .poll(async () =>
+        (await (await page.request.get("/fixture/workers")).json()).held,
+      )
+      .toContain(prompt);
+    await page.request.post("/fixture/release", { data: { prompt } });
+  };
+  await release("Start top one");
+  await release("Start top one\nContinue top one");
+  await expectProgress(page, 1, 2);
+  await release("Start bottom one");
+  const panels = page.locator(".conversation-preview");
+  const source = panels.first();
+  const peer = panels.nth(1);
+  await expect(source.locator(".chat-message-row")).toHaveCount(4);
+  await expect(peer.locator(".chat-message-row")).toHaveCount(2);
+  const bubble = source.locator(".chat-bubble").nth(3);
+  const baseline = await bubble.evaluate(
+    (element) => getComputedStyle(element).backgroundColor,
+  );
+  await hoverArea(page, source, 3, 60);
+  await expect
+    .poll(() =>
+      bubble.evaluate((element) => getComputedStyle(element).backgroundColor),
+    )
+    .not.toBe(baseline);
+  const highlighted = await bubble.evaluate(
+    (element) => getComputedStyle(element).backgroundColor,
+  );
+  await release("Start bottom one\nContinue bottom one");
+  await expect(peer.locator(".chat-message-row")).toHaveCount(4);
+  await expect
+    .poll(() => colors(panels, 3))
+    .toEqual([highlighted, highlighted]);
+  await expectProgress(page, 2, 2);
+  await expect
+    .poll(() => colors(panels, 3))
+    .toEqual([highlighted, highlighted]);
+});
+
 test("fresh hover entries align full-area fractions at matching viewport percentages with native clamps", async ({
   page,
 }) => {
