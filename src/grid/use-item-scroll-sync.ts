@@ -184,36 +184,15 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
     highlightedIndex = index;
     highlightedGroup = group;
   }
-  function paintTouchFocus() {
-    for (const view of root.current!.querySelectorAll<HTMLElement>(
-      "[data-scroll-sync-focus]",
-    )) {
-      if (view.dataset.scrollSync === touchGroup && viewOf(view)) continue;
-      view.removeAttribute("data-scroll-sync-focus");
-      view.style.removeProperty("--scroll-sync-focus");
-    }
-    if (!touchGroup) return;
-    const pixels = touchOffsets.get(touchGroup)!;
-    for (const view of views) {
-      if (view.dataset.scrollSync !== touchGroup) continue;
-      const bounds = view.getBoundingClientRect();
-      const height = parseFloat(getComputedStyle(view).height);
-      const offset = (Math.min(pixels, bounds.height) * height) / bounds.height;
-      view.setAttribute("data-scroll-sync-focus", "");
-      view.style.setProperty("--scroll-sync-focus", `${offset}px`);
-    }
-  }
   function clearTouchFocus() {
     touchGroup = undefined;
     highlight(null);
-    paintTouchFocus();
   }
   function rememberTouchFocus(view: HTMLElement, focusY: number) {
     const bounds = view.getBoundingClientRect();
     const pixels = Math.max(0, Math.min(bounds.height, focusY - bounds.top));
     touchGroup = view.dataset.scrollSync!;
     touchOffsets.set(touchGroup, pixels);
-    paintTouchFocus();
     return pixels;
   }
   function rowAtFocus(
@@ -301,7 +280,6 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
     reveal(row, point);
   }
   function flush() {
-    const geometryChanged = dirty;
     if (mode === "scroll" && session) {
       if (!viewOf(session.source)) {
         session = null;
@@ -337,7 +315,6 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
     } else if (mode === "hover" && mouse && !pressed) {
       explore(rowOf(document.elementFromPoint(mouse.x, mouse.y)), mouse);
     }
-    if (touchGroup && geometryChanged && !touchScrolling) paintTouchFocus();
   }
   function schedule() {
     if (frame !== null) return;

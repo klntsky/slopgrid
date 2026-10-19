@@ -50,11 +50,3 @@ th[scope="row"] .axis-reference-previews {
   align-items: center;
   margin: 6px 0 0;
 }
-
-.grid-workspace [data-scroll-sync][data-scroll-sync-focus] {
-  background-image: linear-gradient(var(--accent), var(--accent));
-  background-repeat: no-repeat;
-  background-size: 8px 2px;
-  background-position: 2px calc(var(--scroll-sync-focus) - 1px);
-  background-attachment: scroll;
-}

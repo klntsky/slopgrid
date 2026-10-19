@@ -2429,31 +2429,6 @@ test.describe("touch judgment following", () => {
     });
     await expectSelected(1);
     await expect
-      .poll(() =>
-        results.evaluateAll((containers) =>
-          containers.map((container) =>
-            container.hasAttribute("data-scroll-sync-focus"),
-          ),
-        ),
-      )
-      .toEqual([true, true]);
-    const focusLines = () =>
-      results.evaluateAll((containers) =>
-        containers.map((container) => {
-          const panel = container.getBoundingClientRect();
-          const scale = panel.height / container.clientHeight;
-          return (
-            parseFloat(
-              (container as HTMLElement).style.getPropertyValue(
-                "--scroll-sync-focus",
-              ),
-            ) * scale
-          );
-        }),
-      );
-    for (const line of await focusLines())
-      expect(Math.abs(line - 120)).toBeLessThan(1);
-    await expect
       .poll(() => target.evaluate((container) => container.scrollTop))
       .not.toBe(original);
     expect(await source.evaluate((container) => container.scrollTop)).toBe(
@@ -2527,8 +2502,6 @@ test.describe("touch judgment following", () => {
       touchPoints: [{ x: a.x + 20, y: a.y + 260, id: 1 }],
     });
     await expectSelected(1);
-    for (const line of await focusLines())
-      expect(Math.abs(line - 120)).toBeLessThan(1);
     const beforeDrag = await target.evaluate(
       (container) => container.scrollTop,
     );
@@ -2627,8 +2600,6 @@ test.describe("touch judgment following", () => {
       Math.min(dragGeometry[1].limit, beforeDrag + endDelta),
     );
     expect(Math.abs(settledGeometry[1].position - expectedEnd)).toBeLessThan(2);
-    for (const line of await focusLines())
-      expect(Math.abs(line - 120)).toBeLessThan(1);
     await source.evaluate(
       () =>
         new Promise<void>((resolve) =>
@@ -2654,8 +2625,6 @@ test.describe("touch judgment following", () => {
       next,
       140,
     );
-    for (const line of await focusLines())
-      expect(Math.abs(line - 140)).toBeLessThan(1);
     const dismissedPositions = await results.evaluateAll((containers) =>
       containers.map((container) => container.scrollTop),
     );
@@ -2665,15 +2634,6 @@ test.describe("touch judgment following", () => {
     await expect
       .poll(() => backgrounds(next))
       .toEqual([unselected, unselected]);
-    await expect
-      .poll(() =>
-        results.evaluateAll((containers) =>
-          containers.map((container) =>
-            container.hasAttribute("data-scroll-sync-focus"),
-          ),
-        ),
-      )
-      .toEqual([false, false]);
     expect(
       await results.evaluateAll((containers) =>
         containers.map((container) => container.scrollTop),
@@ -2868,21 +2828,6 @@ test.describe("touch judgment following", () => {
           ),
         )
         .toBeLessThan(2);
-      for (const view of await results.all()) {
-        const line = await view.evaluate((container) => {
-          const scale =
-            container.getBoundingClientRect().height / container.clientHeight;
-          return (
-            parseFloat(
-              (container as HTMLElement).style.getPropertyValue(
-                "--scroll-sync-focus",
-              ),
-            ) * scale
-          );
-        });
-        expect(Math.abs(line - focusPixels)).toBeLessThan(1);
-        await expect(view).toHaveAttribute("data-scroll-sync-focus");
-      }
       await client.send("Input.dispatchTouchEvent", {
         type: "touchEnd",
         touchPoints: [],
