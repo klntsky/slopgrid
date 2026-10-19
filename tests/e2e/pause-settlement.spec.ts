@@ -69,7 +69,11 @@ test("a delayed paused response cannot reopen streaming after the engine restart
     await expect.poll(() => streams.size).toBe(0);
     let newStreams = 0;
     page.on("request", (request) => {
-      if (request.url() === endpoint + "/events") newStreams++;
+      if (
+        new URL(request.url()).pathname ===
+        new URL(endpoint).pathname + "/events"
+      )
+        newStreams++;
     });
     release();
     await delivery;
@@ -152,7 +156,8 @@ test("Pause keeps live updates through reload and reconnect until every cancelle
     await expect.poll(() => streams.size).toBe(1);
     const unavailable = page.waitForResponse(
       (response) =>
-        response.url().endsWith("/events") && response.status() === 502,
+        new URL(response.url()).pathname.endsWith("/events") &&
+        response.status() === 502,
     );
     await kill(f.web);
     await unavailable;

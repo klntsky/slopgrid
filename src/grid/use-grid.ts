@@ -1,10 +1,11 @@
 import { useInferenceMutation } from "../use-inference-mutation";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { api, ApiError, type ViewGrid } from "../api";
 import { saveDraft } from "../create/draft";
 import { cacheGrid, useOffline } from "../pwa";
+import { applyDelta, type GridStreamMessage } from "../../shared/grid-delta";
 export function useGrid(id: string) {
   const cache = useQueryClient(),
     navigate = useNavigate();
@@ -24,6 +25,10 @@ export function useGrid(id: string) {
   const [dismissed, setDismissed] = useState(false),
     [streamLost, setStreamLost] = useState(false);
   const offline = useOffline();
+  const stream = useRef<{ id: string; cursor: string; grid?: ViewGrid }>({
+    id,
+    cursor: "",
+  });
   const completed = query.data?.cells
     .filter((cell) => cell.status === "complete")
     .map((cell) => cell.id)
@@ -39,12 +44,33 @@ export function useGrid(id: string) {
     let closed = false,
       retry: number | undefined,
       events: EventSource;
+    if (stream.current.id !== id) stream.current = { id, cursor: "" };
+    let cursor = stream.current.cursor,
+      previous = stream.current.grid;
     function connect() {
-      events = new EventSource(`/api/grids/${id}/events`);
+      const params = new URLSearchParams({ protocol: "2" });
+      if (cursor) params.set("since", cursor);
+      events = new EventSource(`/api/grids/${id}/events?${params}`);
       events.onmessage = (e) => {
         if (closed) return;
-        setStreamLost(false);
-        cache.setQueryData(["grid", id], JSON.parse(e.data));
+        try {
+          const message: GridStreamMessage<ViewGrid> = JSON.parse(e.data);
+          if ("snapshot" in message) previous = message.snapshot;
+          else {
+            if (!previous || message.base !== cursor)
+              throw new Error("Stream cursor mismatch");
+            previous = applyDelta(previous, message.delta) as ViewGrid;
+          }
+          cursor = e.lastEventId;
+          stream.current = { id, cursor, grid: previous };
+          setStreamLost(false);
+          cache.setQueryData(["grid", id], previous);
+        } catch {
+          previous = undefined;
+          cursor = "";
+          stream.current = { id, cursor };
+          events.onerror?.(new Event("error"));
+        }
       };
       events.onerror = () => {
         events.close();

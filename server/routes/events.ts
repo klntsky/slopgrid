@@ -6,6 +6,8 @@ import type { SessionReader } from "../session.js";
 import type { GridPresenter } from "../grid-presentation.js";
 import { canViewGrid } from "../grid-policy.js";
 import { compareGridVersions } from "../../shared/grid-version.js";
+import { gridDelta } from "../../shared/grid-delta.js";
+import { createStreamHistory } from "../stream-history.js";
 
 export function createEventRoutes({
   store,
@@ -22,11 +24,16 @@ export function createEventRoutes({
 }) {
   const app = Router();
   const connections = new Map<string, number>();
+  const history = createStreamHistory<ReturnType<GridPresenter>>();
   app.get("/api/grids/:id/events", (req, res) => {
     const s = session(req, res),
       id = String(req.params.id),
       g = store.get(id);
     if (!g || !canViewGrid(g, s)) return res.sendStatus(404);
+    const incremental = req.query.protocol === "2";
+    const scope = JSON.stringify([s.id, id]);
+    let cursor = typeof req.query.since === "string" ? req.query.since : "";
+    let previous = incremental ? history.get(cursor, scope) : undefined;
     if (
       (connections.get(s.id) ?? 0) >= 5 ||
       [...connections.values()].reduce((a, b) => a + b, 0) >= 100
@@ -54,7 +61,22 @@ export function createEventRoutes({
         res.destroy();
         return;
       }
-      res.write(`data: ${JSON.stringify(snapshot(grid, current))}\n\n`);
+      const serialized = JSON.stringify(snapshot(grid, current));
+      if (!incremental) {
+        res.write(`data: ${serialized}\n\n`);
+        return;
+      }
+      // Own an immutable JSON baseline: engine state can mutate after delivery.
+      const next: ReturnType<GridPresenter> = JSON.parse(serialized);
+      const message = previous
+        ? {
+            base: cursor,
+            delta: gridDelta(previous, next) ?? { fields: {}, remove: [] },
+          }
+        : { snapshot: next };
+      cursor = history.put(scope, next, Buffer.byteLength(serialized));
+      previous = next;
+      res.write(`id: ${cursor}\ndata: ${JSON.stringify(message)}\n\n`);
     };
     updates.on(id, send);
     const unsubscribe = generation.subscribeGrid(id, send, () => res.end());

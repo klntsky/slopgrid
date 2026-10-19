@@ -157,7 +157,7 @@ Show a small-text footer on every page except the grid page, with "source code" 
 
 1. Model lists are filterable and alphabetically ordered, with a tall selection area that makes multiple options visible at once.
 2. The filter has a magnifying-glass icon, the placeholder "Search models," and an always-visible clear cross.
-3. Initialize model-axis searches to an empty string for Image and to `latest` for every other output type. Initialize the fixed-model search to `latest` for every output type. This filter must not select a model automatically.
+3. Initialize model-axis and fixed-model searches to an empty string for Image and to `latest` for every other output type. This filter must not select a model automatically.
 4. Show selected models as removable badges under multi-model lists, including selections currently hidden by the filter. Model-axis badges support mouse and touch dragging and focused arrow-key movement to reorder selections. While dragging, highlight the insertion space between badges, including the positions before the first and after the last badge, and insert the dragged badge there on release. The insertion marker follows the pointer across wrapped badge rows. Insert each newly selected model beside the selected model closest to it in the complete, unfiltered list, before or after that neighbour according to catalog order. Resolve equal distances toward the earlier catalog entry and preserve the relative order of existing selections, including manual reordering. Neither the badge's model name nor its remove button has a tooltip. Removing a model does not focus the model filter; clearing the filter does.
 5. Shift-click selects or clears a range of visible model checkboxes according to the clicked checkbox's new state.
 6. Use the term "thinking effort." Order efforts by their semantic levels rather than alphabetically or by selection order, and let the effort selector expand to its full content height without an inner scrollbar.
@@ -402,6 +402,7 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
 4. Keep the grid updated while queued or active generation, cancellation, or saving can still change its results or charges. Reloading or reconnecting must recover the current state and continue receiving updates. A storage failure must not unnecessarily stop authorized live progress or present unsaved completion as durable. Deny access when authorization cannot be checked.
 5. Delayed updates must not move title, output, thinking, status, or price backward, including after a restart. Retries must show content from the current attempt.
 6. Interrupted unfinished work requires an explicit Resume, preserving completed outputs.
+7. Live updates send changed fields and newly appended output or thinking without repeating the accumulated text or unchanged cells. Reconnecting recovers changes since the last received update when its recovery state is available; otherwise send one current snapshot and continue incrementally. Bound recovery storage and keep it isolated by viewer and grid.
 
 ### 6.4. Shared generation and durable judging
 
@@ -453,7 +454,7 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
 
 ### 8.3. Publication and discovery
 
-1. New grids are private. Publish opens "Control who can see this grid" with radio choices "Keep private," "Accessible by link," and "Listed publicly," plus Save and Cancel.
+1. New grids are private. Publish opens "Control who can see this grid" with radio choices "Keep private," "Accessible by link," and "Listed publicly," plus Save and Cancel. The publishing button shows its Tippy tooltip even when disabled.
 2. Saving Keep private closes without publication. First publication requires confirmation, with Confirm, Cancel, and a "Don't ask again" preference remembered in this browser only after successful confirmation. Failure to save browser preferences must not block publication.
 3. Use this confirmation text: "This projects aims to facilitate model benchmarking and research, and we don't want valuable data to disappear. For this reason, making a published grid private is impossible."
 4. Publication is allowed when every cell is complete or failed, or when the grid is paused with unfinished cells. Published unfinished cells without committed output appear as failed with the error reason "Not generated" and no error code. Preserve committed outputs, judgment state, and existing failures. Running cells prevent publication; published grids cannot resume inference.

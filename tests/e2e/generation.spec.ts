@@ -360,7 +360,7 @@ test("a dropped event stream reconnects and receives completed generation", asyn
   const failure = new Promise<void>((resolve) => {
     failStream = resolve;
   });
-  await page.route("**/api/grids/*/events", async (route) => {
+  await page.route("**/api/grids/*/events?**", async (route) => {
     await failure;
     await route.abort("connectionfailed");
   });
@@ -370,7 +370,7 @@ test("a dropped event stream reconnects and receives completed generation", asyn
     .getByRole("status")
     .filter({ hasText: "Connection lost. Reconnecting…" });
   await expect(status).toBeVisible();
-  await page.unroute("**/api/grids/*/events");
+  await page.unroute("**/api/grids/*/events?**");
   await expect(status).toHaveCount(0, { timeout: 10000 });
   await request.post("/fixture/release", { data: { all: true } });
   await expectProgress(page, 1, 1);
