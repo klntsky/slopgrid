@@ -267,9 +267,15 @@ for (const format of ["svg", "markdown", "chat-template", "image"] as const) {
     test(`removing a judge avoids a ${side} default collision for ${format}`, () => {
       const defaults = {
         rows:
-          format === "markdown" || format === "chat-template" ? "effort" : "model",
+          format === "markdown" || format === "chat-template"
+            ? "effort"
+            : "model",
         columns:
-          format === "image" ? "quality" : format === "svg" ? "effort" : "model",
+          format === "image"
+            ? "quality"
+            : format === "svg"
+              ? "effort"
+              : "model",
       } as const;
       const other = side === "rows" ? "columns" : "rows";
       const retained: GridInput["rows"] = {
@@ -288,16 +294,13 @@ for (const format of ["svg", "markdown", "chat-template", "image"] as const) {
       const next = { ...input, ...removeJudge(input) };
       assert.deepEqual(next[other], retained);
       assert.equal(next[side].kind, defaults[other]);
-      assert.deepEqual(
-        next[side].values,
-        [
-          defaults[other] === "model"
-            ? input.model
-            : defaults[other] === "effort"
-              ? input.effort
-              : "high",
-        ],
-      );
+      assert.deepEqual(next[side].values, [
+        defaults[other] === "model"
+          ? input.model
+          : defaults[other] === "effort"
+            ? input.effort
+            : "high",
+      ]);
       assert.equal(gridSchema.safeParse(next).success, true);
       assert.deepEqual(input, original);
     });

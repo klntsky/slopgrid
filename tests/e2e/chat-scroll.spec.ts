@@ -419,8 +419,9 @@ test("a streamed peer highlights a newly arrived message under the active compar
   await page.goto(`/grid/${id}`);
   const release = async (prompt: string) => {
     await expect
-      .poll(async () =>
-        (await (await page.request.get("/fixture/workers")).json()).held,
+      .poll(
+        async () =>
+          (await (await page.request.get("/fixture/workers")).json()).held,
       )
       .toContain(prompt);
     await page.request.post("/fixture/release", { data: { prompt } });
