@@ -2,6 +2,7 @@ import { test, expect } from "./fixtures";
 import type { Page } from "@playwright/test";
 import type { GridInput } from "../../server/domain";
 import { finishPublishing, mockModels, selectModel } from "./helpers";
+import { expectItemProgress } from "./scroll-sync";
 
 test("judge criteria preserve boolean answers and judge axes restore fixed settings", async ({
   page,
@@ -1494,10 +1495,6 @@ test("judgment hover temporarily reveals matching criteria and restores independ
         );
       })
       .toBe(true);
-    for (const panel of await results.all())
-      await expect(
-        panel.locator(".judge-result-criteria > li").nth(index),
-      ).toBeInViewport();
   };
   const sourceBox = (await source.boundingBox())!;
   const targetBox = (await target.boundingBox())!;
@@ -1520,22 +1517,9 @@ test("judgment hover temporarily reveals matching criteria and restores independ
   await expectHighlighted(1);
   expect((await positions())[0]).toBe(original[0]);
   await expect.poll(async () => (await positions())[1]).not.toBe(original[1]);
-  await expect
-    .poll(() =>
-      results.evaluateAll((containers) => {
-        const offsets = containers.map(
-          (container) =>
-            container
-              .querySelector(".judge-result-criteria")!
-              .children[1].getBoundingClientRect().top -
-            container.getBoundingClientRect().top,
-        );
-        return Math.abs(offsets[0] - offsets[1]);
-      }),
-    )
-    .toBeLessThan(1);
+  await expectItemProgress(results, ".judge-result-criteria > li", 1);
 
-  // A deep position in a taller explanation must not scroll past the peer's criterion.
+  // Deep scrolling preserves relative progress through the peer's criterion.
   await source.evaluate((container) => {
     const row = container.querySelector(".judge-result-criteria")!
       .children[1] as HTMLElement;
@@ -1543,6 +1527,7 @@ test("judgment hover temporarily reveals matching criteria and restores independ
       row.offsetTop + row.offsetHeight - container.clientHeight * 0.75;
   });
   await expectHighlighted(1);
+  await expectItemProgress(results, ".judge-result-criteria > li", 1);
   // Crossing adjacent rows must switch criteria without ending the hover.
   const row = (await source
     .locator(".judge-result-criteria > li")
@@ -1588,7 +1573,7 @@ test("judgment hover temporarily reveals matching criteria and restores independ
   await expect.poll(() => backgrounds(3)).toEqual([unhovered, unhovered]);
 });
 
-test("judgment hover fits matching criteria in unequal-height panels", async ({
+test("judgment hover synchronizes fractional progress through unequal criteria and respects scroll limits", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 1000 });
@@ -1613,14 +1598,15 @@ test("judgment hover fits matching criteria in unequal-height panels", async ({
   });
   const id = await createJudged(page, {
     ...judgedInput,
-    rows: { kind: "judge_effort", values: ["none", "high"] },
-    columns: { kind: "judge_model", values: ["fixture/text"] },
-    judge: { ...judgedInput.judge!, criteria },
+    prompt: "Draw a red $ROW rectangle",
+    rows: { kind: "variable", values: ["top", "bottom"] },
+    columns: { kind: "judge_effort", values: ["none", "high"] },
+    judge: { ...judgedInput.judge!, model: "fixture/text", criteria },
   });
   await page.evaluate((id) => {
     localStorage.setItem(
       `slopgrid:grid:${id}:sizes`,
-      JSON.stringify({ columns: [320], rows: [460, 260] }),
+      JSON.stringify({ columns: [320, 240], rows: [460, 260] }),
     );
   }, id);
   await page.reload();
@@ -1628,7 +1614,7 @@ test("judgment hover fits matching criteria in unequal-height panels", async ({
     name: "Judgment details",
     exact: true,
   });
-  await expect(results).toHaveCount(2);
+  await expect(results).toHaveCount(4);
   const source = results.nth(0);
   const target = results.nth(1);
   for (const panel of await results.all())
@@ -1678,51 +1664,36 @@ test("judgment hover fits matching criteria in unequal-height panels", async ({
     return ownPosition;
   };
   const initial = await bounds(1);
-  expect(initial[0].height).toBeGreaterThan(initial[1].height);
+  expect(initial[0].height).toBeGreaterThan(initial[2].height);
+  expect(initial[1].rowHeight).toBeGreaterThan(initial[0].rowHeight);
   expect(initial[1].rowHeight).toBeLessThan(initial[1].height);
-
-  // A matching offset that clips the bottom is shifted just enough to fit.
-  const ownPosition = await hover(1, 180);
+  for (const index of [1, 2]) {
+    const geometry = await bounds(index);
+    for (const fraction of [0.25, 0.5, 0.75]) {
+      const own = await hover(index, -fraction * geometry[0].rowHeight);
+      await expectItemProgress(results, ".judge-result-criteria > li", index);
+      for (const peer of await bounds(index))
+        expect(Math.abs(peer.top + fraction * peer.rowHeight)).toBeLessThan(1);
+      expect(await source.evaluate((container) => container.scrollTop)).toBe(
+        own,
+      );
+    }
+  }
+  await hover(0, 64);
+  await expect.poll(() => target.evaluate((view) => view.scrollTop)).toBe(0);
+  await page.mouse.move(1, 1);
+  const endSource = results.last();
+  await endSource.evaluate((view) => {
+    view.scrollTop = view.scrollHeight;
+  });
+  const endBox = (await endSource.boundingBox())!;
+  await page.mouse.move(endBox.x + 20, endBox.y + endBox.height / 2);
   await expect
-    .poll(async () => {
-      const [, peer] = await bounds(1);
-      return Math.abs(peer.bottom - peer.height);
-    })
-    .toBeLessThan(1);
-  expect((await bounds(1))[1].top).toBeGreaterThanOrEqual(0);
-  expect(await source.evaluate((container) => container.scrollTop)).toBe(
-    ownPosition,
-  );
-
-  // Feasible offsets stay synchronized rather than always aligning an edge.
-  await hover(1, 20);
-  await expect
-    .poll(async () => {
-      const [anchor, peer] = await bounds(1);
-      return Math.abs(anchor.top - peer.top);
-    })
-    .toBeLessThan(1);
-
-  // A clipped top is brought fully into the receiving panel.
-  await hover(1, -20);
-  await expect
-    .poll(async () => Math.abs((await bounds(1))[1].top))
-    .toBeLessThan(1);
-
-  // Oversized rows fill the panel, retaining a shared offset when feasible.
-  await hover(2, 80);
-  await expect
-    .poll(async () => Math.abs((await bounds(2))[1].top))
-    .toBeLessThan(1);
-  const oversized = (await bounds(2))[1];
-  expect(oversized.rowHeight).toBeGreaterThan(oversized.height);
-  expect(oversized.bottom).toBeGreaterThanOrEqual(oversized.height);
-  await hover(2, -80);
-  await expect
-    .poll(async () => {
-      const [anchor, peer] = await bounds(2);
-      return Math.abs(anchor.top - peer.top);
-    })
+    .poll(() =>
+      source.evaluate((view) =>
+        Math.abs(view.scrollTop - (view.scrollHeight - view.clientHeight)),
+      ),
+    )
     .toBeLessThan(1);
 });
 
@@ -1803,29 +1774,12 @@ test.describe("touch judgment following", () => {
           return colors[0] !== unselected && colors[0] === colors[1];
         })
         .toBe(true);
-      for (const panel of await results.all())
-        await expect(
-          panel.locator(".judge-result-criteria > li").nth(index),
-        ).toBeInViewport();
     };
     const a = (await source.boundingBox())!;
     const b = (await target.boundingBox())!;
     await page.touchscreen.tap(a.x + 20, a.y + 120);
     await expectSelected(1);
-    await expect
-      .poll(() =>
-        results.evaluateAll((containers) => {
-          const offsets = containers.map(
-            (container) =>
-              container
-                .querySelector(".judge-result-criteria")!
-                .children[1].getBoundingClientRect().top -
-              container.getBoundingClientRect().top,
-          );
-          return Math.abs(offsets[0] - offsets[1]);
-        }),
-      )
-      .toBeLessThan(1);
+    await expectItemProgress(results, ".judge-result-criteria > li", 1);
     await source.evaluate((container) => {
       const row = container.querySelector(".judge-result-criteria")!
         .children[1] as HTMLElement;
@@ -1902,6 +1856,7 @@ test.describe("touch judgment following", () => {
     await expect
       .poll(() => source.evaluate((container) => container.scrollTop))
       .toBe(ownPosition);
+    await expectItemProgress(results, ".judge-result-criteria > li", 1);
     expect(await target.evaluate((container) => container.scrollTop)).not.toBe(
       original,
     );

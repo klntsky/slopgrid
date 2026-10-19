@@ -72,9 +72,11 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
       return;
     hoveredIndex = index;
     anchorView = source;
-    const offset =
-      row && source
-        ? itemBounds(row).top - source.getBoundingClientRect().top
+    const sourceBounds = row ? itemBounds(row) : null;
+    const progress =
+      sourceBounds && source && sourceBounds.height
+        ? (source.getBoundingClientRect().top - sourceBounds.top) /
+          sourceBounds.height
         : 0;
     for (const list of root.current!.querySelectorAll(
       "[data-scroll-sync-items]",
@@ -103,16 +105,12 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
       const scale = viewBounds.height / height;
       const before = target.scrollTop;
       const top = before + (bounds.top - viewBounds.top) / scale;
-      const bottom = before + (bounds.bottom - viewBounds.top) / scale;
-      if (bottom === top) continue;
-      // Match offsets within bounds that show the full item, or fill the
-      // viewport with the item when it is too tall to fit.
-      const minimum = Math.max(0, Math.min(top, bottom - height));
-      const maximum = Math.min(
-        target.scrollHeight - height,
-        Math.max(top, bottom - height),
+      const itemHeight = bounds.height / scale;
+      if (!itemHeight) continue;
+      const next = Math.max(
+        0,
+        Math.min(target.scrollHeight - height, top + progress * itemHeight),
       );
-      const next = Math.max(minimum, Math.min(maximum, top - offset / scale));
       if (next !== before) {
         if (!savedScrolls.has(target)) savedScrolls.set(target, before);
         setSyncedScroll(target, next);

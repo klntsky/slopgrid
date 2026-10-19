@@ -2,6 +2,7 @@ import type { Locator, Page } from "@playwright/test";
 import type { GridInput } from "../../server/domain";
 import { test, expect } from "./fixtures";
 import { expectProgress } from "./helpers";
+import { expectItemProgress } from "./scroll-sync";
 
 const historyInput: GridInput = {
   format: "chat-template",
@@ -136,7 +137,7 @@ async function hoverMessage(
   return own;
 }
 
-test("chat histories follow contiguous full-width message areas, fit unequal panels, and restore reading positions", async ({
+test("chat histories follow contiguous full-width message areas and restore reading positions", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 1000 });
@@ -213,33 +214,15 @@ test("chat histories follow contiguous full-width message areas, fit unequal pan
   await expect.poll(() => positions(panels)).toEqual([own, original[1]]);
   await expect.poll(() => colors(panels, 1)).toEqual(originalColors);
 
-  await hoverMessage(page, source, 1, 180);
-  await expect
-    .poll(async () => {
-      const [, peer] = await bounds(panels, 1);
-      return Math.abs(peer.bottom - peer.height);
-    })
-    .toBeLessThan(1);
-  expect((await bounds(panels, 1))[1].top).toBeGreaterThanOrEqual(-1);
-  await hoverMessage(page, source, 1, -20);
-  await expect
-    .poll(async () => Math.abs((await bounds(panels, 1))[1].top))
-    .toBeLessThan(1);
-
-  await hoverMessage(page, source, 2, 80);
-  await expect
-    .poll(async () => Math.abs((await bounds(panels, 2))[1].top))
-    .toBeLessThan(1);
-  const oversized = (await bounds(panels, 2))[1];
-  expect(oversized.rowHeight).toBeGreaterThan(oversized.height);
-  expect(oversized.bottom).toBeGreaterThanOrEqual(oversized.height);
-  await hoverMessage(page, source, 2, -80);
-  await expect
-    .poll(async () => {
-      const [anchor, peer] = await bounds(panels, 2);
-      return Math.abs(anchor.top - peer.top);
-    })
-    .toBeLessThan(1);
+  for (const offset of [180, -20]) {
+    await hoverMessage(page, source, 1, offset);
+    await expectItemProgress(panels, ".chat-bubble", 1);
+    expect((await bounds(panels, 1))[1].top).toBeCloseTo(offset, 0);
+  }
+  for (const offset of [80, -80]) {
+    await hoverMessage(page, source, 2, offset);
+    await expectItemProgress(panels, ".chat-bubble", 2);
+  }
   await expect.poll(() => colors(panels, 1)).toEqual(originalColors);
   await page.mouse.move(1, 1);
   await expect.poll(async () => (await positions(panels))[1]).toBe(original[1]);
@@ -266,6 +249,61 @@ test("chat histories follow contiguous full-width message areas, fit unequal pan
         .evaluate((view) => view.scrollTop),
     )
     .toBe(original[1]);
+});
+
+test("chat histories synchronize fractional progress through unequal message heights", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  const panels = await openHistories(
+    page,
+    {
+      ...historyInput,
+      columns: { kind: "variable", values: ["left", "right"] },
+      messages: historyInput.messages!.map((message, index) =>
+        index === 1
+          ? {
+              ...message,
+              content:
+                "A short message that wraps differently in narrow and wide columns.",
+            }
+          : message,
+      ),
+    },
+    { columns: [200, 320], rows: [500, 300] },
+  );
+  const source = panels.first();
+  for (const panel of (await panels.all()).slice(1))
+    await panel.evaluate((view) => {
+      view.scrollTop = view.scrollHeight;
+    });
+  const original = await positions(panels);
+  for (const index of [1, 2]) {
+    const geometry = await bounds(panels, index);
+    expect(geometry[0].rowHeight).toBeGreaterThan(geometry[1].rowHeight * 1.3);
+    const scale = await source.evaluate(
+      (view) =>
+        view.getBoundingClientRect().height /
+        parseFloat(getComputedStyle(view).height),
+    );
+    for (const fraction of [0.25, 0.5, 0.75]) {
+      const own = await hoverMessage(
+        page,
+        source,
+        index,
+        (-fraction * geometry[0].rowHeight) / scale,
+      );
+      await expectItemProgress(panels, ".chat-bubble", index);
+      const followed = await bounds(panels, index);
+      for (const peer of followed)
+        expect(Math.abs(peer.top + fraction * peer.rowHeight)).toBeLessThan(1);
+      expect((await positions(panels))[0]).toBe(own);
+    }
+  }
+  await page.mouse.move(1, 1);
+  await expect
+    .poll(async () => (await positions(panels)).slice(1))
+    .toEqual(original.slice(1));
 });
 
 test.describe("mobile chat histories", () => {
@@ -313,31 +351,12 @@ test.describe("mobile chat histories", () => {
       type: "touchStart",
       touchPoints: [{ x, y, id: 1 }],
     });
-    await expect
-      .poll(async () =>
-        (await bounds(panels, 1))
-          .slice(1)
-          .every((peer) => peer.top >= -1 && peer.bottom <= peer.height + 1),
-      )
-      .toBe(true);
+    await expectItemProgress(panels, ".chat-bubble", 1);
     await expectHighlight(panels, 1, originalColors);
     const samples = await source.evaluateHandle(
       (view, selectedColors) => {
-        const visible: boolean[] = [];
         const highlighted: boolean[] = [];
         const record = () => {
-          const peers = Array.from(
-            document.querySelectorAll(".conversation-preview"),
-          ).slice(1);
-          visible.push(
-            peers.every((peer) => {
-              const panel = peer.getBoundingClientRect();
-              const row = peer
-                .querySelectorAll(".chat-bubble")[1]
-                .getBoundingClientRect();
-              return row.top >= panel.top - 1 && row.bottom <= panel.bottom + 1;
-            }),
-          );
           highlighted.push(
             Array.from(
               document.querySelectorAll(".conversation-preview"),
@@ -350,7 +369,6 @@ test.describe("mobile chat histories", () => {
         };
         view.addEventListener("scroll", record, { passive: true });
         return {
-          visible,
           highlighted,
           stop: () => view.removeEventListener("scroll", record),
         };
@@ -380,19 +398,12 @@ test.describe("mobile chat histories", () => {
     const own = await ended;
     const visible = await samples.evaluate((state) => {
       state.stop();
-      return { visible: state.visible, highlighted: state.highlighted };
+      return state.highlighted;
     });
     await samples.dispose();
-    expect(new Set(visible.visible)).toEqual(new Set([true]));
-    expect(new Set(visible.highlighted)).toEqual(new Set([true]));
+    expect(new Set(visible)).toEqual(new Set([true]));
     await expect.poll(async () => (await positions(panels))[0]).toBe(own);
-    await expect
-      .poll(async () =>
-        (await bounds(panels, 1))
-          .slice(1)
-          .every((peer) => peer.top >= -1 && peer.bottom <= peer.height + 1),
-      )
-      .toBe(true);
+    await expectItemProgress(panels, ".chat-bubble", 1);
     await expectHighlight(panels, 1, originalColors);
     await page
       .getByRole("button", { name: "Navigation menu", exact: true })
