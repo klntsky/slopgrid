@@ -51,9 +51,7 @@ export function ModelSelector({
   multiple?: boolean;
 }) {
   const name = useId();
-  const [filter, setFilter] = useState(
-    multiple && format === "image" ? "" : "latest",
-  );
+  const [filter, setFilter] = useState(format === "image" ? "" : "latest");
   const filterInput = useRef<HTMLInputElement>(null);
   const rangeAnchor = useRef<string | undefined>(undefined);
   const drag = useRef<{ x: number; y: number; active: boolean } | null>(null);
