@@ -177,11 +177,16 @@ container attached to the document body and owns its popup interaction and focus
 return, not engine state. Common parameters come from saved grid input, filtered
 by selected axis kinds; reference thumbnails use the authorized reference route.
 
-The grid owns per-cell content selection, expansion state, independent reading
-positions, and item-aware scroll coordination across matching output views.
-Cells keep output previews mounted while content modes alternate. Judgment
-presentation combines saved criteria with persisted results and does not own
-inference or billing state.
+The grid owns per-cell content selection and expansion state. Cells keep output
+previews mounted while content modes alternate.
+
+A content-independent item-following hook owns shared interaction state and
+temporary reading positions. Views declare their synchronization group, ordered
+items, and alignment bounds; their presentation owns highlight styling. Chat
+histories and judgment results use this same coordinator.
+
+Judgment presentation combines saved criteria with persisted results and does
+not own inference or billing state.
 
 The output layer owns format instructions, parsing, completed files, and
 temporary previews. Website output is a bundle of validated relative paths with
