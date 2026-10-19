@@ -1,10 +1,13 @@
 import {
   useLayoutEffect,
   useState,
+  type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   type RefObject,
   type UIEvent,
+  type WheelEvent as ReactWheelEvent,
 } from "react";
+import { buildScrollMap, type ScrollLayout } from "./scroll-map";
 
 export function useItemScrollSync(root: RefObject<HTMLElement | null>) {
   const [sync] = useState(() => createItemScrollSync(root));
@@ -12,33 +15,73 @@ export function useItemScrollSync(root: RefObject<HTMLElement | null>) {
   return sync;
 }
 
-// Views declare a group and an ordered item list. Optional bounds separate an
-// item's hit area from the content that must remain visible while following.
-function createItemScrollSync(root: RefObject<HTMLElement | null>) {
-  const pendingScrolls = new WeakMap<HTMLElement, number>();
-  const savedScrolls = new Map<HTMLElement, number>();
-  let pointer: PointerEvent | Touch | null = null;
-  let hoveredIndex: number | null = null;
-  let anchorView: HTMLElement | null = null;
-  let touchAnchorFrame: number | null = null;
-  let touchAnchorForce = false;
-  let touchItem: HTMLElement | null = null;
+type ViewLayout = ScrollLayout & { height: number };
+type FollowSession = {
+  source: HTMLElement;
+  followers: {
+    view: HTMLElement;
+    start: number;
+    mappedStart: number;
+    map: (position: number) => number;
+  }[];
+};
 
-  function scrollItem(target: EventTarget | null) {
+// Renderers supply groups, ordered items, and optional content bounds. Geometry
+// projects the whole history; selection only controls highlighting and reveal.
+function createItemScrollSync(root: RefObject<HTMLElement | null>) {
+  const saved = new Map<HTMLElement, number>();
+  const layouts = new Map<HTMLElement, ViewLayout>();
+  const views: HTMLElement[] = [];
+  const scrollKeys = new Set([
+    "ArrowUp",
+    "ArrowDown",
+    "PageUp",
+    "PageDown",
+    "Home",
+    "End",
+    " ",
+  ]);
+  let dirty = true;
+  let observer: ResizeObserver | null = null;
+  let mutations: MutationObserver | null = null;
+  let frame: number | null = null;
+  let mode: "idle" | "hover" | "scroll" = "idle";
+  let session: FollowSession | null = null;
+  let pending: FollowSession | null = null;
+  let hoverRow: HTMLElement | null = null;
+  let mouse: { x: number; y: number } | null = null;
+  let pressed = false;
+  let touchScrolling = false;
+  let contact: {
+    row: HTMLElement | null;
+    x: number;
+    y: number;
+    moved: boolean;
+    scrolled: boolean;
+  } | null = null;
+  let highlightedIndex: number | null = null;
+  let highlightedGroup: string | undefined;
+
+  function viewOf(target: EventTarget | null) {
+    const view =
+      target instanceof Element
+        ? target.closest<HTMLElement>("[data-scroll-sync]")
+        : null;
+    return view && root.current?.contains(view) && !view.closest("[inert]")
+      ? view
+      : null;
+  }
+  function rowOf(target: EventTarget | null) {
     const row =
       target instanceof Element
         ? target.closest<HTMLElement>("[data-scroll-sync-items] > *")
         : null;
-    return row && root.current?.contains(row) && !row.closest("[inert]")
-      ? row
-      : null;
+    return row && viewOf(row) ? row : null;
   }
-  function itemUnderPointer() {
-    return pointer
-      ? scrollItem(document.elementFromPoint(pointer.clientX, pointer.clientY))
-      : null;
+  function listOf(view: HTMLElement) {
+    return view.querySelector<HTMLElement>("[data-scroll-sync-items]");
   }
-  function itemIndex(row: Element) {
+  function itemIndex(row: HTMLElement) {
     let index = 0;
     for (
       let sibling = row.previousElementSibling;
@@ -48,125 +91,334 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
       index++;
     return index;
   }
+  function contentOf(row: Element) {
+    return row.querySelector("[data-scroll-sync-bounds]") ?? row;
+  }
   function itemBounds(row: Element) {
-    return (
-      row.querySelector("[data-scroll-sync-bounds]") ?? row
-    ).getBoundingClientRect();
+    return contentOf(row).getBoundingClientRect();
   }
-  function setSyncedScroll(target: HTMLElement, top: number) {
-    const before = target.scrollTop;
-    target.scrollTop = top;
-    if (target.scrollTop !== before)
-      pendingScrolls.set(target, target.scrollTop);
+  function layout(view: HTMLElement): ViewLayout {
+    const cached = layouts.get(view);
+    if (cached) return cached;
+    const bounds = view.getBoundingClientRect();
+    // clientHeight rounding drifts at fractional grid zoom over long histories.
+    const height = parseFloat(getComputedStyle(view).height);
+    const scale = bounds.height / height;
+    const anchors: number[] = [];
+    const list = listOf(view);
+    if (list) {
+      for (const row of list.children) {
+        const item = itemBounds(row);
+        anchors.push(
+          view.scrollTop + (item.top - bounds.top) / scale,
+          view.scrollTop + (item.bottom - bounds.top) / scale,
+        );
+      }
+    }
+    const value = {
+      height,
+      anchors,
+      limit: Math.max(0, view.scrollHeight - view.clientHeight),
+    };
+    layouts.set(view, value);
+    return value;
   }
-  function updateScrollAnchor(row: HTMLElement | null, force = false) {
+  function freshGeometry() {
+    if (!dirty) return;
+    layouts.clear();
+    dirty = false;
+  }
+  function prepare(source: HTMLElement): FollowSession {
+    freshGeometry();
+    const from = layout(source);
+    const start = source.scrollTop;
+    const followers: FollowSession["followers"] = [];
+    for (const view of views) {
+      if (
+        view === source ||
+        view.dataset.scrollSync !== source.dataset.scrollSync
+      )
+        continue;
+      const map = buildScrollMap(from, layout(view));
+      followers.push({
+        view,
+        start: view.scrollTop,
+        mappedStart: map(start),
+        map,
+      });
+    }
+    return { source, followers };
+  }
+  function write(view: HTMLElement, top: number) {
+    const before = view.scrollTop;
+    view.scrollTop = top;
+    if (view.scrollTop !== before && !saved.has(view)) saved.set(view, before);
+  }
+  function restore(group?: string) {
+    for (const [view, top] of saved) {
+      if (group !== undefined && view.dataset.scrollSync === group) continue;
+      view.scrollTop = top;
+      saved.delete(view);
+    }
+  }
+  function highlight(row: HTMLElement | null) {
     const index = row ? itemIndex(row) : null;
-    const source = row?.closest<HTMLElement>("[data-scroll-sync]") ?? null;
-    const group = source?.dataset.scrollSync;
-    const previous = hoveredIndex;
-    if (
-      index === previous &&
-      source === anchorView &&
-      (!force || index === null)
-    )
-      return;
-    hoveredIndex = index;
-    anchorView = source;
-    const sourceBounds = row ? itemBounds(row) : null;
-    const progress =
-      sourceBounds && source && sourceBounds.height
-        ? (source.getBoundingClientRect().top - sourceBounds.top) /
-          sourceBounds.height
-        : 0;
+    const group = row ? viewOf(row)?.dataset.scrollSync : undefined;
+    if (index === highlightedIndex && group === highlightedGroup) return;
     for (const list of root.current!.querySelectorAll(
       "[data-scroll-sync-items]",
     )) {
-      const target = list.closest<HTMLElement>("[data-scroll-sync]")!;
-      const current = target.dataset.scrollSync === group ? index : null;
-      if (previous !== null && previous !== current)
-        list.children[previous]?.removeAttribute("data-scroll-sync-hovered");
-      if (current !== null)
-        list.children[current]?.setAttribute("data-scroll-sync-hovered", "");
-      if (current === null) {
-        const saved = savedScrolls.get(target);
-        if (saved !== undefined) {
-          setSyncedScroll(target, saved);
-          savedScrolls.delete(target);
-        }
-        continue;
-      }
-      if (target === source || target.closest("[inert]")) continue;
-      const item = list.children[current];
-      if (!item || !target.clientHeight) continue;
-      const viewBounds = target.getBoundingClientRect();
-      const bounds = itemBounds(item);
-      // Integer clientHeight drifts over long histories at fractional grid zoom.
-      const height = parseFloat(getComputedStyle(target).height);
-      const scale = viewBounds.height / height;
-      const before = target.scrollTop;
-      const top = before + (bounds.top - viewBounds.top) / scale;
-      const itemHeight = bounds.height / scale;
-      if (!itemHeight) continue;
-      const next = Math.max(
-        0,
-        Math.min(target.scrollHeight - height, top + progress * itemHeight),
-      );
-      if (next !== before) {
-        if (!savedScrolls.has(target)) savedScrolls.set(target, before);
-        setSyncedScroll(target, next);
-      }
+      if (highlightedIndex !== null)
+        list.children[highlightedIndex]?.removeAttribute(
+          "data-scroll-sync-hovered",
+        );
+      if (index !== null && viewOf(list)?.dataset.scrollSync === group)
+        list.children[index]?.setAttribute("data-scroll-sync-hovered", "");
     }
-    if (index === null) {
-      for (const [target, top] of savedScrolls) setSyncedScroll(target, top);
-      savedScrolls.clear();
+    highlightedIndex = index;
+    highlightedGroup = group;
+  }
+  function reveal(row: HTMLElement, point: { x: number; y: number }) {
+    const source = viewOf(row)!;
+    freshGeometry();
+    restore(source.dataset.scrollSync);
+    const index = itemIndex(row);
+    const from = layout(source);
+    const bounds = source.getBoundingClientRect();
+    const ratio = Math.max(
+      0,
+      Math.min(1, (point.y - bounds.top) / bounds.height),
+    );
+    const start = from.anchors[index * 2];
+    const size = from.anchors[index * 2 + 1] - start;
+    const fraction = size
+      ? Math.max(
+          0,
+          Math.min(1, (source.scrollTop + ratio * from.height - start) / size),
+        )
+      : 0;
+    for (const target of views) {
+      if (
+        target === source ||
+        target.dataset.scrollSync !== source.dataset.scrollSync
+      )
+        continue;
+      const to = layout(target);
+      const top = to.anchors[index * 2];
+      const bottom = to.anchors[index * 2 + 1];
+      if (top === undefined || bottom === undefined) continue;
+      const size = bottom - top;
+      const minimum = Math.max(0, Math.min(top, bottom - to.height));
+      const maximum = Math.min(to.limit, Math.max(top, bottom - to.height));
+      const desired =
+        size <= to.height
+          ? target.scrollTop
+          : top + fraction * size - ratio * to.height;
+      write(target, Math.max(minimum, Math.min(maximum, desired)));
+    }
+    pending = prepare(source);
+  }
+  function endHover() {
+    mode = "idle";
+    hoverRow = null;
+    pending = null;
+    highlight(null);
+    restore();
+  }
+  function explore(row: HTMLElement | null, point: { x: number; y: number }) {
+    if (!row) {
+      endHover();
+      return;
+    }
+    mode = "hover";
+    hoverRow = row;
+    highlight(row);
+    reveal(row, point);
+  }
+  function flush() {
+    if (mode === "scroll" && session) {
+      if (!viewOf(session.source)) {
+        session = null;
+        mode = "idle";
+        return;
+      }
+      // Resizing/streaming changes geometry, not the user's current positions.
+      if (dirty) session = prepare(session.source);
+      for (const follower of session.followers) {
+        const delta =
+          follower.map(session.source.scrollTop) - follower.mappedStart;
+        write(follower.view, follower.start + delta);
+      }
+      if (!touchScrolling && mouse)
+        highlight(rowOf(document.elementFromPoint(mouse.x, mouse.y)));
+    } else if (mode === "hover" && hoverRow && mouse && dirty) {
+      const row = rowOf(hoverRow);
+      if (row) reveal(row, mouse);
+      else endHover();
     }
   }
-  function scheduleTouchAnchor(force = false) {
-    touchAnchorForce ||= force;
-    if (touchAnchorFrame !== null) return;
-    touchAnchorFrame = requestAnimationFrame(() => {
-      touchAnchorFrame = null;
-      const force = touchAnchorForce;
-      touchAnchorForce = false;
-      if (!pointer || !("pointerType" in pointer))
-        updateScrollAnchor(scrollItem(touchItem), force);
+  function schedule() {
+    if (frame !== null) return;
+    frame = requestAnimationFrame(() => {
+      frame = null;
+      flush();
     });
+  }
+  function arm(view: HTMLElement | null) {
+    if (!view || (mode === "scroll" && session?.source === view)) return;
+    if (mode === "scroll") {
+      mode = "idle";
+      session = null;
+    }
+    pending = prepare(view);
   }
   function trackPointer(event: ReactPointerEvent<HTMLElement>) {
     if (event.pointerType === "touch") return;
-    pointer = event.nativeEvent;
-    updateScrollAnchor(scrollItem(event.target));
-  }
-  function touch(event: TouchEvent) {
-    pointer = event.touches.length === 1 ? event.touches[0] : null;
-    touchItem = itemUnderPointer();
-    scheduleTouchAnchor();
+    const moved =
+      !mouse || mouse.x !== event.clientX || mouse.y !== event.clientY;
+    mouse = event.nativeEvent;
+    if (!moved || pressed || mode === "scroll") return;
+    explore(rowOf(event.target), mouse);
+    if (!hoverRow) arm(viewOf(event.target));
   }
   function refresh() {
-    if (!pointer) return;
-    if ("pointerType" in pointer) updateScrollAnchor(itemUnderPointer(), true);
-    else scheduleTouchAnchor(true);
+    dirty = true;
+    observer?.disconnect();
+    views.length = 0;
+    for (const view of root.current!.querySelectorAll<HTMLElement>(
+      "[data-scroll-sync]",
+    )) {
+      if (view.closest("[inert]")) continue;
+      views.push(view);
+      observer?.observe(view);
+      const list = listOf(view);
+      if (list) {
+        observer?.observe(list);
+        for (const row of list.children) observer?.observe(contentOf(row));
+      }
+    }
+    schedule();
+  }
+  function touchStart(event: TouchEvent) {
+    if (mode === "scroll") {
+      flush();
+      mode = "idle";
+      session = null;
+    }
+    touchScrolling = false;
+    hoverRow = null;
+    mode = "idle";
+    if (event.touches.length !== 1) {
+      contact = null;
+      pending = null;
+      highlight(null);
+      return;
+    }
+    const touch = event.touches[0];
+    const target = document.elementFromPoint(touch.clientX, touch.clientY);
+    const row = rowOf(target);
+    contact = {
+      row,
+      x: touch.clientX,
+      y: touch.clientY,
+      moved: false,
+      scrolled: false,
+    };
+    mode = "idle";
+    highlight(row);
+    pending = null;
+    arm(viewOf(target));
+  }
+  function touchMove(event: TouchEvent) {
+    if (!contact || event.touches.length !== 1) return;
+    const touch = event.touches[0];
+    const dx = touch.clientX - contact.x;
+    const dy = touch.clientY - contact.y;
+    if (dx * dx + dy * dy > 64) contact.moved = true;
+  }
+  function touchEnd(event: TouchEvent) {
+    if (!contact || event.touches.length) return;
+    const ended = contact;
+    contact = null;
+    if (ended.scrolled) return;
+    pending = null;
+    if (!ended.moved) {
+      if (ended.row && rowOf(ended.row)) {
+        highlight(ended.row);
+        reveal(ended.row, ended);
+      } else endHover();
+    }
+  }
+  function touchCancel() {
+    contact = null;
+  }
+  function releasePointer() {
+    pressed = false;
+  }
+  function scrollEnd(event: Event) {
+    if (mode !== "scroll" || event.target !== session?.source) return;
+    flush();
+    mode = "idle";
+    session = null;
+    pending = null;
+    touchScrolling = false;
   }
   return {
     connect() {
-      // Keep the touched item through dragging, momentum, and completion.
-      document.addEventListener("touchstart", touch, { passive: true });
+      observer = new ResizeObserver(() => {
+        dirty = true;
+        schedule();
+      });
+      refresh();
+      const container = root.current!;
+      mutations = new MutationObserver(refresh);
+      mutations.observe(container, { childList: true, subtree: true });
+      container.addEventListener("scrollend", scrollEnd, true);
+      document.addEventListener("touchstart", touchStart, { passive: true });
+      document.addEventListener("touchmove", touchMove, { passive: true });
+      document.addEventListener("touchend", touchEnd, { passive: true });
+      document.addEventListener("touchcancel", touchCancel, { passive: true });
+      document.addEventListener("pointerup", releasePointer);
+      document.addEventListener("pointercancel", releasePointer);
       return () => {
-        document.removeEventListener("touchstart", touch);
-        if (touchAnchorFrame !== null) cancelAnimationFrame(touchAnchorFrame);
-        touchAnchorFrame = null;
-        touchAnchorForce = false;
-        touchItem = null;
+        observer?.disconnect();
+        observer = null;
+        mutations?.disconnect();
+        mutations = null;
+        container.removeEventListener("scrollend", scrollEnd, true);
+        document.removeEventListener("touchstart", touchStart);
+        document.removeEventListener("touchmove", touchMove);
+        document.removeEventListener("touchend", touchEnd);
+        document.removeEventListener("touchcancel", touchCancel);
+        document.removeEventListener("pointerup", releasePointer);
+        document.removeEventListener("pointercancel", releasePointer);
+        if (frame !== null) cancelAnimationFrame(frame);
+        frame = null;
+        mode = "idle";
+        session = pending = null;
+        contact = null;
       };
     },
     refresh,
     events: {
       onPointerOver: trackPointer,
       onPointerMove: trackPointer,
+      onPointerDownCapture(event: ReactPointerEvent<HTMLElement>) {
+        if (event.pointerType === "touch") return;
+        pressed = true;
+        arm(viewOf(event.target));
+      },
       onPointerLeave(event: ReactPointerEvent<HTMLElement>) {
         if (event.pointerType === "touch") return;
-        pointer = null;
-        updateScrollAnchor(null);
+        mouse = null;
+        if (mode !== "scroll") endHover();
+      },
+      onWheelCapture(event: ReactWheelEvent<HTMLElement>) {
+        arm(viewOf(event.target));
+      },
+      onKeyDownCapture(event: ReactKeyboardEvent<HTMLElement>) {
+        if (!event.ctrlKey && !event.metaKey && scrollKeys.has(event.key))
+          arm(viewOf(event.target));
       },
       onScrollCapture(event: UIEvent<HTMLElement>) {
         const source = event.target;
@@ -175,13 +427,17 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
           !source.hasAttribute("data-scroll-sync")
         )
           return;
-        const expected = pendingScrolls.get(source);
-        pendingScrolls.delete(source);
-        if (expected === source.scrollTop) return;
-        // A user's scroll replaces this view's saved position, not its peers'.
-        savedScrolls.delete(source);
-        if (pointer && !("pointerType" in pointer)) scheduleTouchAnchor(true);
-        else updateScrollAnchor(itemUnderPointer(), true);
+        if (mode !== "scroll" && pending?.source === source) {
+          session = pending;
+          pending = null;
+          mode = "scroll";
+          saved.delete(source);
+          if (contact) {
+            contact.scrolled = true;
+            touchScrolling = true;
+          }
+        }
+        if (mode === "scroll" && session?.source === source) schedule();
       },
     },
   };
