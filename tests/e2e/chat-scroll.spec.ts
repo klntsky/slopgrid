@@ -209,14 +209,15 @@ async function setContentHeights(panels: Locator, heights: number[][]) {
 }
 
 async function wheelToRest(page: Page, source: Locator, delta: number) {
-  const ended = source.evaluate(
-    (view) =>
-      new Promise<void>((resolve) =>
-        view.addEventListener("scrollend", () => resolve(), { once: true }),
-      ),
-  );
+  // Install the listener before dispatching input, even if locator resolution waits.
+  const state = await source.evaluateHandle((view) => ({
+    ended: new Promise<void>((resolve) =>
+      view.addEventListener("scrollend", () => resolve(), { once: true }),
+    ),
+  }));
   await page.mouse.wheel(0, delta);
-  await ended;
+  await state.evaluate(({ ended }) => ended);
+  await state.dispose();
   await frames(page);
 }
 

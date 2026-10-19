@@ -1,24 +1,18 @@
-export type ScrollLayout = {
-  limit: number;
-  // Matched item starts/ends in content coordinates, including intervening gaps.
-  anchors: readonly number[];
-};
-
 export type ScrollMap = {
   project(point: number): number;
   follow(from: number, to: number, focusDelta: number): number;
 };
 
 export function buildScrollMap(
-  source: ScrollLayout,
-  target: ScrollLayout,
+  source: readonly number[],
+  target: readonly number[],
 ): ScrollMap {
   const points: number[] = [];
   const values: number[] = [];
-  const count = Math.min(source.anchors.length, target.anchors.length);
+  const count = Math.min(source.length, target.length);
   for (let i = 0; i < count; i++) {
-    const point = source.anchors[i];
-    const value = target.anchors[i];
+    const point = source[i];
+    const value = target[i];
     const last = points.length - 1;
     if (last >= 0) {
       // A collapsed source area has no interpolation span. Its end owns

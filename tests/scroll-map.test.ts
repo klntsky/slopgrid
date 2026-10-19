@@ -4,8 +4,8 @@ import { buildScrollMap } from "../src/grid/scroll-map.js";
 
 test("projection exactly interpolates full areas and their intervening gaps", () => {
   const map = buildScrollMap(
-    { limit: 100, anchors: [100, 1100, 1200, 1300, 1300, 1800] },
-    { limit: 200, anchors: [50, 550, 750, 1250, 1250, 2250] },
+    [100, 1100, 1200, 1300, 1300, 1800],
+    [50, 550, 750, 1250, 1250, 2250],
   );
   assert.equal(map.project(100), 50);
   assert.equal(map.project(600), 300);
@@ -19,11 +19,8 @@ test("projection exactly interpolates full areas and their intervening gaps", ()
   assert.ok(map.project(1300.001) - map.project(1299.999) < 0.01);
 });
 
-test("projection clamps only at matched content boundaries, not native scroll limits", () => {
-  const map = buildScrollMap(
-    { limit: 0, anchors: [100, 200] },
-    { limit: 0, anchors: [300, 500] },
-  );
+test("projection clamps only at matched content boundaries", () => {
+  const map = buildScrollMap([100, 200], [300, 500]);
   assert.equal(map.project(-100), 300);
   assert.equal(map.project(0), 300);
   assert.equal(map.project(150), 400);
@@ -32,10 +29,7 @@ test("projection clamps only at matched content boundaries, not native scroll li
 });
 
 test("short-area focus movement pauses the receiver rather than reversing it", () => {
-  const map = buildScrollMap(
-    { limit: 1500, anchors: [0, 1000, 1000, 2000] },
-    { limit: 1300, anchors: [0, 200, 200, 1800] },
-  );
+  const map = buildScrollMap([0, 1000, 1000, 2000], [0, 200, 200, 1800]);
   assert.equal(map.follow(100, 200, 50), 0);
   assert.equal(map.follow(200, 100, -50), 0);
   assert.equal(map.follow(100, 200, 10), 10);
@@ -45,10 +39,7 @@ test("short-area focus movement pauses the receiver rather than reversing it", (
 });
 
 test("continuation resumes from the paused position without a reversal catch-up", () => {
-  const map = buildScrollMap(
-    { limit: 1500, anchors: [0, 1000, 1000, 2000] },
-    { limit: 1300, anchors: [0, 200, 200, 1800] },
-  );
+  const map = buildScrollMap([0, 1000, 1000, 2000], [0, 200, 200, 1800]);
   let receiver = 400;
   receiver += map.follow(100, 200, 50);
   assert.equal(receiver, 400);
@@ -61,10 +52,7 @@ test("continuation resumes from the paused position without a reversal catch-up"
 });
 
 test("coalesced and subdivided linear focus paths agree across real area boundaries", () => {
-  const map = buildScrollMap(
-    { limit: 1500, anchors: [0, 1000, 1000, 2000] },
-    { limit: 1300, anchors: [0, 200, 200, 1800] },
-  );
+  const map = buildScrollMap([0, 1000, 1000, 2000], [0, 200, 200, 1800]);
   const coalesced = map.follow(800, 1800, 500);
   const subdivided =
     map.follow(800, 900, 50) +
@@ -85,10 +73,7 @@ test("coalesced and subdivided linear focus paths agree across real area boundar
 });
 
 test("fixed-focus native movement follows ordinary mapped displacement in both directions", () => {
-  const map = buildScrollMap(
-    { limit: 100, anchors: [100, 1100, 1200, 1300] },
-    { limit: 200, anchors: [50, 550, 750, 1250] },
-  );
+  const map = buildScrollMap([100, 1100, 1200, 1300], [50, 550, 750, 1250]);
   assert.equal(map.follow(600, 1250, 0), 700);
   assert.equal(map.follow(1250, 600, 0), -700);
   assert.equal(map.follow(-100, 2000, 0), 1200);
@@ -99,10 +84,7 @@ test("fixed-focus native movement follows ordinary mapped displacement in both d
 });
 
 test("clamped prefixes and suffixes participate in focus movement without event dependence", () => {
-  const map = buildScrollMap(
-    { limit: 50, anchors: [100, 200] },
-    { limit: 50, anchors: [300, 500] },
-  );
+  const map = buildScrollMap([100, 200], [300, 500]);
   assert.equal(map.follow(0, 300, 150), 150);
   assert.equal(
     map.follow(0, 100, 50) +
@@ -122,8 +104,8 @@ test("clamped prefixes and suffixes participate in focus movement without event 
 
 test("collapsed source boundaries have continuous monotone endpoint ownership", () => {
   const map = buildScrollMap(
-    { limit: 100, anchors: [0, 0, 20, 20, 100, 160] },
-    { limit: 200, anchors: [0, 10, 40, 80, 180, 240] },
+    [0, 0, 20, 20, 100, 160],
+    [0, 10, 40, 80, 180, 240],
   );
   assert.equal(map.project(-10), 10);
   assert.equal(map.project(0), 10);
@@ -144,10 +126,7 @@ test("collapsed source boundaries have continuous monotone endpoint ownership", 
 });
 
 test("collapsed target areas pause and continue at their exact boundary", () => {
-  const map = buildScrollMap(
-    { limit: 100, anchors: [0, 100, 100, 200] },
-    { limit: 100, anchors: [0, 0, 0, 100] },
-  );
+  const map = buildScrollMap([0, 100, 100, 200], [0, 0, 0, 100]);
   assert.equal(map.project(50), 0);
   assert.equal(map.project(100), 0);
   assert.equal(map.project(150), 50);
@@ -157,42 +136,27 @@ test("collapsed target areas pause and continue at their exact boundary", () => 
 });
 
 test("partial histories retain only their common matched prefix", () => {
-  const map = buildScrollMap(
-    { limit: 1000, anchors: [10, 20, 40, 50] },
-    { limit: 2000, anchors: [30, 40] },
-  );
+  const map = buildScrollMap([10, 20, 40, 50], [30, 40]);
   assert.equal(map.project(0), 30);
   assert.equal(map.project(15), 35);
   assert.equal(map.project(20), 40);
   assert.equal(map.project(1000), 40);
   assert.equal(map.follow(0, 1000, 0), 10);
   assert.equal(map.follow(1000, 0, 0), -10);
-  const reversed = buildScrollMap(
-    { limit: 2000, anchors: [30, 40] },
-    { limit: 1000, anchors: [10, 20, 40, 50] },
-  );
+  const reversed = buildScrollMap([30, 40], [10, 20, 40, 50]);
   assert.equal(reversed.project(35), 15);
   assert.equal(reversed.project(2000), 20);
 });
 
 test("empty or entirely collapsed common spans cannot produce following movement", () => {
-  const empty = buildScrollMap(
-    { limit: 100, anchors: [10, 20] },
-    { limit: 200, anchors: [] },
-  );
+  const empty = buildScrollMap([10, 20], []);
   assert.equal(empty.project(100), 0);
   assert.equal(empty.follow(0, 100, -50), 0);
-  const singleton = buildScrollMap(
-    { limit: 100, anchors: [10] },
-    { limit: 200, anchors: [30, 40] },
-  );
+  const singleton = buildScrollMap([10], [30, 40]);
   assert.equal(singleton.project(-100), 30);
   assert.equal(singleton.project(100), 30);
   assert.equal(singleton.follow(0, 100, -50), 0);
-  const collapsed = buildScrollMap(
-    { limit: 100, anchors: [10, 10] },
-    { limit: 200, anchors: [30, 40] },
-  );
+  const collapsed = buildScrollMap([10, 10], [30, 40]);
   assert.equal(collapsed.project(10), 40);
   assert.equal(collapsed.follow(0, 100, -50), 0);
 });

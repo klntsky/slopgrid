@@ -183,17 +183,19 @@ previews mounted while content modes alternate.
 A content-independent scroll coordinator owns input-source arbitration, gesture
 focus, and native scroll following. Desktop hover and persistent touch comparison
 share a position-writing path, with each view's current scroll position as the
-authoritative state.
+authoritative state. Armed input, active native scrolling, and ongoing comparison
+state have separate lifetimes.
 Views declare their synchronization group and ordered vertical areas. The
 coordinator measures and observes those areas independently of their rendered
 contents. Presentation owns highlight styling. Chat histories
 and judgment results use this same coordinator.
 
-The coordinator measures and caches view geometry and normalizes interaction
-focus by each viewport's height. A pure mapper projects content coordinates
-through matched full-area boundaries and computes direction-preserving movement
-across those segments. The coordinator applies that movement to current peer
-positions, retains fractional movement, and enforces native scroll limits.
+The coordinator shares measured full-area geometry between touch selection and
+scroll projection, normalizing interaction focus by each viewport's height.
+A pure mapper consumes content anchors and computes direction-preserving
+movement through their matched segments. The coordinator applies that movement
+to current peer positions, retains fractional movement, and owns native scroll
+limits.
 Comparison state preserves paused alignment through desktop scroll completion;
 fresh hover entries and explicit taps establish a new proportional alignment.
 Geometry refreshes resolve the current cursor target without coupling the mapper

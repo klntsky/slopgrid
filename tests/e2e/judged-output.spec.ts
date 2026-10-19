@@ -2395,6 +2395,171 @@ test.describe("touch judgment following", () => {
     hasTouch: true,
   });
 
+  test("touch focus preserves full-area gap and outer-bound selection at fractional zoom", async ({
+    page,
+  }) => {
+    const criteria = Array.from({ length: 4 }, (_, index) => ({
+      text: `Does condition ${index + 1} hold?`,
+      correctAnswer: true,
+    }));
+    await page.request.post("/fixture/reset", {
+      data: {
+        judgeOutput: JSON.stringify({
+          results: criteria.map(() => ({
+            verdict: true,
+            explanation: "Matches.",
+          })),
+        }),
+      },
+    });
+    const id = await createJudged(page, {
+      ...judgedInput,
+      rows: { kind: "judge_model", values: ["fixture/text"] },
+      judge: { ...judgedInput.judge!, criteria },
+    });
+    await page.evaluate((id) => {
+      localStorage.setItem(
+        `slopgrid:grid:${id}:sizes`,
+        JSON.stringify({ columns: [260, 380], rows: [1100] }),
+      );
+    }, id);
+    await page.reload();
+    const results = page.getByRole("region", {
+      name: "Judgment details",
+      exact: true,
+    });
+    await expect(results).toHaveCount(2);
+    const source = results.first();
+    await expect(source).toContainText("Matches.");
+    const unselected = await source
+      .locator("li")
+      .first()
+      .evaluate((row) => getComputedStyle(row).backgroundColor);
+    const frames = () =>
+      page.evaluate(
+        () =>
+          new Promise<void>((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+          ),
+      );
+    const client = await page.context().newCDPSession(page);
+    for (const scenario of [
+      { name: "before first", selected: 0 },
+      { name: "gap", selected: 0 },
+      { name: "collapsed gap", selected: 1 },
+      { name: "after last", selected: 3 },
+    ]) {
+      await test.step(scenario.name, async () => {
+        await results.evaluateAll((containers, name) => {
+          containers.forEach((container, view) => {
+            const height = parseFloat(getComputedStyle(container).height);
+            const list = container.querySelector<HTMLElement>(
+              ".judge-result-criteria",
+            )!;
+            list.style.paddingTop =
+              name === "before first" ? `${height * 0.6}px` : "0";
+            (container as HTMLElement).style.paddingBottom =
+              name === "after last" ? `${height * 0.9}px` : "12px";
+            Array.from(list.children).forEach((child, index) => {
+              const row = child as HTMLElement;
+              row.style.height =
+                name === "collapsed gap" && view === 0 && index === 1
+                  ? "0"
+                  : `${height * 0.35}px`;
+              row.style.marginBottom = index < 3 ? `${height * 0.12}px` : "0";
+              row.style.overflow = "hidden";
+            });
+          });
+        }, scenario.name);
+        await frames();
+        await source.evaluate((container, name) => {
+          const bounds = container.getBoundingClientRect();
+          const height = parseFloat(getComputedStyle(container).height);
+          const scale = bounds.height / height;
+          if (name === "before first") container.scrollTop = 0;
+          else if (name === "after last")
+            container.scrollTop =
+              container.scrollHeight - container.clientHeight - 60;
+          else {
+            const index = name === "collapsed gap" ? 1 : 0;
+            const row = container.querySelector(".judge-result-criteria")!
+              .children[index];
+            container.scrollTop +=
+              (row.getBoundingClientRect().bottom - bounds.top) / scale +
+              height * 0.06 -
+              height / 3;
+          }
+        }, scenario.name);
+        await frames();
+        const box = (await source.boundingBox())!;
+        expect(box.height).toBeLessThan(
+          await source.evaluate((view) =>
+            parseFloat(getComputedStyle(view).height),
+          ),
+        );
+        const x = box.x + 20,
+          y = box.y + box.height * 0.75;
+        const before = await source.evaluate((view) => view.scrollTop);
+        let timestamp = Date.now() / 1000;
+        await client.send("Input.dispatchTouchEvent", {
+          type: "touchStart",
+          touchPoints: [{ x, y, id: 1 }],
+          timestamp,
+        });
+        await frames();
+        const ended = source.evaluate(
+          (view) =>
+            new Promise<void>((resolve) =>
+              view.addEventListener("scrollend", () => resolve(), {
+                once: true,
+              }),
+            ),
+        );
+        for (const distance of [20, 60, 100])
+          await client.send("Input.dispatchTouchEvent", {
+            type: "touchMove",
+            touchPoints: [{ x, y: y - distance, id: 1 }],
+            timestamp: (timestamp += 0.032),
+          });
+        await expect
+          .poll(() => source.evaluate((view) => view.scrollTop))
+          .toBeGreaterThan(before);
+        await expect
+          .poll(() =>
+            results.evaluateAll(
+              (containers, { selected, unselected }) =>
+                containers
+                  .map((container) =>
+                    Array.from(
+                      container.querySelector(".judge-result-criteria")!
+                        .children,
+                    ).map(
+                      (row) =>
+                        getComputedStyle(row).backgroundColor !== unselected,
+                    ),
+                  )
+                  .every((rows) =>
+                    rows.every(
+                      (highlighted, index) =>
+                        highlighted === (index === selected),
+                    ),
+                  ),
+              { selected: scenario.selected, unselected },
+            ),
+          )
+          .toBe(true);
+        await client.send("Input.dispatchTouchEvent", {
+          type: "touchEnd",
+          touchPoints: [],
+          timestamp: timestamp + 0.2,
+        });
+        await ended;
+        await frames();
+      });
+    }
+    await client.detach();
+  });
+
   test("horizontal swipes over judgments pan the grid while vertical swipes scroll results", async ({
     page,
   }) => {
