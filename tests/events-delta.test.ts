@@ -76,16 +76,25 @@ test(
       const stream = await connect(grid.id);
       const initial = await stream.next();
       let state = initial.message.snapshot;
+      let cursor = initial.cursor;
       assert.equal(state.cells[0].draft, prefix);
+      const edited = await f.request(
+        `/api/grids/${grid.id}/title`,
+        { title: "Streaming metadata" },
+        "PATCH",
+      );
+      assert.equal(edited.status, 200);
+      await edited.arrayBuffer();
       call.write({ content: " live", reasoning: " thought" });
       let event;
       do {
         event = await stream.next();
-        assert.equal(event.message.base, initial.cursor);
+        assert.equal(event.message.base, cursor);
         state = applyDelta(state, event.message.delta);
+        cursor = event.cursor;
       } while (state.cells[0].draft !== prefix + " live");
+      assert.equal(state.title, "Streaming metadata");
       assert.ok(event.bytes < 4000, `live frame was ${event.bytes} bytes`);
-      const cursor = event.cursor;
       await stream.close();
       call.write({ content: " disconnected", reasoning: " recovered" });
       await until(
