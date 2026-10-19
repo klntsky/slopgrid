@@ -2082,12 +2082,34 @@ test.describe("touch judgment following", () => {
       exact: true,
     });
     await expect(results).toHaveCount(2);
+    for (const panel of await results.all())
+      await expect(panel.locator(".judge-result-criteria > li")).toHaveCount(6);
+    // Distinct adjacent height ratios distinguish fixed and moving focus lines.
+    await results.evaluateAll((containers) => {
+      const heights = [
+        [520, 120, 900, 600, 600, 600],
+        [780, 240, 450, 900, 900, 900],
+      ];
+      containers.forEach((container, index) => {
+        const rows = container.querySelectorAll<HTMLElement>(
+          ".judge-result-criteria > li",
+        );
+        rows.forEach((row, item) => {
+          row.style.height = `${heights[index][item]}px`;
+          row.style.overflow = "hidden";
+        });
+      });
+    });
     const source = results.nth(0);
     const target = results.nth(1);
     await source.evaluate((container) => {
       const row = container.querySelector(".judge-result-criteria")!
         .children[1] as HTMLElement;
-      container.scrollTop = row.offsetTop - 80;
+      const panel = container.getBoundingClientRect();
+      const scale =
+        panel.height / parseFloat(getComputedStyle(container).height);
+      container.scrollTop +=
+        (row.getBoundingClientRect().top - panel.top - 80) / scale;
     });
     await target.evaluate((container) => {
       container.scrollTop = container.scrollHeight;
