@@ -1,7 +1,9 @@
-// Process supervision, listener discovery and debugger access only.
+// Fixture connection settings, process supervision, listener discovery and debugger access.
+import { installFixtureDatabaseTiming } from "./sqlite-fixture.js";
 import { once } from "node:events";
 import type { Server } from "node:http";
 
+installFixtureDatabaseTiming();
 process.on("disconnect", () => process.exit(0));
 process.on("message", async (message) => {
   if ((message as { inspect?: boolean }).inspect) {
