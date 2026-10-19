@@ -179,12 +179,12 @@ test("late HTTP and reconnected stream snapshots cannot roll back content, think
       return { states, stop: () => observer.disconnect() };
     });
     let connections = 0;
-    await page.route(endpoint + "/events", async (route) => {
+    await page.route(endpoint + "/events?**", async (route) => {
       connections++;
       if (connections === 1)
         await route.fulfill({
           contentType: "text/event-stream",
-          body: `data: ${oldSnapshot}\n\n`,
+          body: `id: older\ndata: {"snapshot":${oldSnapshot}}\n\n`,
         });
       else await route.continue();
     });
