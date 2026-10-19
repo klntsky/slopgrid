@@ -357,11 +357,11 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
 6. Completed generation remains available for output, raw view, thinking, copy, and download while judging runs or fails, subject to ordinary access control. Cache ready output independently of judgment completion; display cached verdicts as saved results.
 7. Synchronize judgment reading positions across the whole ordered criteria list, accounting for different criterion heights, spacing, and scrollable ranges.
    - Estimate corresponding positions continuously between matching boundaries around the interaction's vertical focus, accounting for each view's own start and end.
-   - Keep source scrolling native. Peers continue smoothly from their current positions when scrolling starts or changes source. Hold the gesture's starting focus line fixed as content moves through it.
-   - On idle hover or a confirmed tap, align the corresponding fractional point at the same viewport-relative vertical offset where feasible. Keep the whole matching criterion visible when it fits; oversized criteria may retain context above or below the focus.
+   - Keep source scrolling native. For touch scrolling and scrolling without a hovered source item, peers follow the whole-history map from their current positions, holding the gesture's starting focus line.
+   - During idle hover, confirmed taps, and desktop scroll updates with the cursor over a source item, align the corresponding fractional point at the same viewport-relative vertical offset where feasible. Keep the whole matching criterion visible when it fits; oversized criteria may retain context above or below the focus.
    - During idle mouse hover, continuously update the focus from the exact cursor position, including movement within the same criterion. When matching items have different heights, moving the cursor vertically can scroll peers to maintain fractional-point alignment. Keep the source view's scroll position unchanged.
    - Preserve each view's independent reading position during temporary desktop following. Restore peers on a deliberate idle hover exit; retain final positions when native scrolling finishes.
-8. Highlight the criterion under the cursor in every judgment view in the grid. Scrolling may update the desktop highlight beneath a stationary cursor without changing the scroll mapping. Clear the highlight when the cursor leaves the criterion rows.
+8. Highlight the criterion under the cursor in every judgment view in the grid. Desktop scrolling updates both highlight and alignment for the item beneath a stationary cursor, so returning to idle hover retains that alignment. Clear the highlight when the cursor leaves the criterion rows.
 9. On touchscreens, a confirmed tap establishes a persistent comparison focus and reading line at the tapped point, highlighting and revealing the matching item in every view.
    - Finger contact alone changes neither the selection nor peer positions. Native swipes use the retained reading line rather than the finger's grab position. Without a prior focus, use the source viewport's upper third.
    - Keep the reading line across repeated swipes and when another cell becomes the scroll source. Mark it with a small gutter tick in each synchronized view.
@@ -372,7 +372,7 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
 
 ### 5.7. Chat history scrolling
 
-1. Pair messages by their position in rendered chat histories across the grid. Use the [same scroll-following behavior as judgment results](#56-judgment-results): focus-relative whole-history mapping, desktop hover alignment and reading-position restoration, and persistent touch comparison focus through native dragging and momentum.
+1. Pair messages by their position in rendered chat histories across the grid. Use the [same scroll-following behavior as judgment results](#56-judgment-results): focus-relative whole-history mapping, desktop cursor alignment and reading-position restoration, and persistent touch comparison focus through native dragging and momentum.
 2. Make each message's hover area a full-width rectangle that includes the space around its bubble. Keep adjacent message areas contiguous and cover the unused space at the end of short histories while preserving the visual spacing between bubbles.
 3. Apply a very subtle tint to the corresponding message bubble in every chat history while its area is hovered or touch-selected. Preserve the bubbles' role colors and alignment.
 4. Follow rendered chat histories as a group, separately from judgment views. Raw text and thinking keep independent scrolling.

@@ -189,7 +189,8 @@ judgment results use this same coordinator.
 
 The coordinator measures and caches view geometry. A pure mapper projects whole
 histories around viewport-relative focus offsets while respecting each native
-scroll range. Interaction selection is separate from scroll projection: touch
+scroll range. Desktop scroll updates and hover share the item-reveal path.
+Interaction selection is separate from scroll projection: touch
 highlighting stays fixed during a gesture, then settles at the retained reading
 line without changing scroll positions.
 
