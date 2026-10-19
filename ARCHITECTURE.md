@@ -123,7 +123,8 @@ existing grid without starting inference twice.
 
 Image references are uploaded before grid creation. SQLite stores ownership and
 metadata, while separate files hold the bytes. The engine loads authorized
-references for dispatch, and reference bytes never enter grid snapshots.
+references for each generation attempt; loaded bytes are scoped to that attempt
+and never enter grid snapshots.
 
 Committed generation can be reused by Edit/Fork when a source is accessible and
 its prepared request matches the destination. A signature captures request

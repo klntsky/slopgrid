@@ -45,7 +45,6 @@ export function createWorkflowExecutor(store: Store, provider: Provider) {
     join(store.files.root, ".previews"),
     (write) => persist(write),
   );
-  const references = store.references.loader();
   const executor: WorkflowExecutor & { previews: WebsitePreviews } = {
     previews,
     async run(task, context) {
@@ -82,6 +81,7 @@ export function createWorkflowExecutor(store: Store, provider: Provider) {
       }
       const artifactId = token();
       const thinkingId = token();
+      const references = store.references.loader();
       const inputReferences = await references(
         task.input.imageSettings?.input_references ?? [],
       );
