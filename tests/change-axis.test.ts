@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { GridInput } from "../server/domain.js";
-import { expandGrid } from "../server/domain.js";
+import { expandGrid, gridSchema } from "../server/domain.js";
 import type { ScalarImageKind } from "../server/image-settings.js";
 import { changeAxis, removeJudge } from "../src/create/change-axis.js";
 
@@ -260,6 +260,48 @@ for (const format of [
     );
     assert.deepEqual(input, original);
   });
+}
+
+for (const format of ["svg", "markdown", "chat-template", "image"] as const) {
+  for (const side of ["rows", "columns"] as const) {
+    test(`removing a judge avoids a ${side} default collision for ${format}`, () => {
+      const defaults = {
+        rows:
+          format === "markdown" || format === "chat-template" ? "effort" : "model",
+        columns:
+          format === "image" ? "quality" : format === "svg" ? "effort" : "model",
+      } as const;
+      const other = side === "rows" ? "columns" : "rows";
+      const retained: GridInput["rows"] = {
+        kind: defaults[side],
+        values: defaults[side] === "model" ? ["generator/selected"] : ["high"],
+      };
+      const input: GridInput = {
+        ...initial,
+        format,
+        messages: [{ role: "user", content: "Draw a rectangle" }],
+        imageSettings: { quality: "high" },
+        [side]: { kind: "judge_model", values: ["judge/selected"] },
+        [other]: retained,
+      };
+      const original = structuredClone(input);
+      const next = { ...input, ...removeJudge(input) };
+      assert.deepEqual(next[other], retained);
+      assert.equal(next[side].kind, defaults[other]);
+      assert.deepEqual(
+        next[side].values,
+        [
+          defaults[other] === "model"
+            ? input.model
+            : defaults[other] === "effort"
+              ? input.effort
+              : "high",
+        ],
+      );
+      assert.equal(gridSchema.safeParse(next).success, true);
+      assert.deepEqual(input, original);
+    });
+  }
 }
 
 test("editing reference groups merges supplied groups without transferring fixed parameters", () => {

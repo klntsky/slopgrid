@@ -107,10 +107,24 @@ function resetJudgeAxis(
 export function removeJudge(
   input: GridInput,
 ): Pick<GridInput, "judge" | "rows" | "columns"> {
+  let rows = resetJudgeAxis(input.rows, input.format, "rows");
+  let columns = resetJudgeAxis(input.columns, input.format, "columns");
+  if (rows.kind === columns.kind) {
+    if (rows !== input.rows)
+      rows = moveFixedToAxis(
+        { ...input },
+        resetJudgeAxis(input.rows, input.format, "columns"),
+      );
+    else if (columns !== input.columns)
+      columns = moveFixedToAxis(
+        { ...input },
+        resetJudgeAxis(input.columns, input.format, "rows"),
+      );
+  }
   return {
     judge: undefined,
-    rows: resetJudgeAxis(input.rows, input.format, "rows"),
-    columns: resetJudgeAxis(input.columns, input.format, "columns"),
+    rows,
+    columns,
   };
 }
 
