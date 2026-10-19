@@ -370,7 +370,7 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
 
 ### 8.3. Publication and discovery
 
-1. New grids are private. Publish opens "Control who can see this grid" with radio choices "Keep private," "Accessible by link," and "Listed publicly," plus Save and Cancel.
+1. New grids are private. Publish opens "Control who can see this grid" with radio choices "Keep private," "Accessible by link," and "Listed publicly," plus Save and Cancel. The publishing button shows its Tippy tooltip even when disabled.
 2. Saving Keep private closes without publication. First publication requires confirmation, with Confirm, Cancel, and a "Don't ask again" preference remembered in this browser only after successful confirmation. Failure to save browser preferences must not block publication.
 3. Use this confirmation text: "This projects aims to facilitate model benchmarking and research, and we don't want valuable data to disappear. For this reason, making a published grid private is impossible."
 4. Publication is allowed when every cell is complete or failed, or when the grid is paused with unfinished cells. Published unfinished cells appear as failed with the error reason "Not generated" and no error code. Preserve completed outputs and existing failures. Running cells prevent publication; published grids cannot resume generation.

@@ -680,6 +680,12 @@ legend {
 .generate-hint .generate:disabled {
   pointer-events: none;
 }
+.publish-hint {
+  display: inline-flex;
+}
+.publish-hint button:disabled {
+  pointer-events: none;
+}
 .error {
   border-left: 3px solid var(--error-border);
   padding: 12px 14px;

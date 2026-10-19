@@ -27,20 +27,8 @@ export function PublishGrid({
   });
   return (
     <>
-      <button
-        disabled={disabled || publish.isPending || !grid.canPublish}
-        className="secondary inference-toggle"
-        onClick={() => {
-          publish.reset();
-          setOpen(true);
-        }}
-        aria-label={
-          grid.visibility === "public"
-            ? "Claim slug"
-            : grid.published
-              ? "Change visibility"
-              : "PUBLISH"
-        }
+      <span
+        className="publish-hint"
         data-tooltip={
           grid.visibility === "public"
             ? "Claim slug"
@@ -50,12 +38,28 @@ export function PublishGrid({
         }
         ref={tooltipRef}
       >
-        {grid.published ? (
-          <Eye aria-hidden="true" />
-        ) : (
-          <Upload aria-hidden="true" />
-        )}
-      </button>
+        <button
+          disabled={disabled || publish.isPending || !grid.canPublish}
+          className="secondary inference-toggle"
+          onClick={() => {
+            publish.reset();
+            setOpen(true);
+          }}
+          aria-label={
+            grid.visibility === "public"
+              ? "Claim slug"
+              : grid.published
+                ? "Change visibility"
+                : "PUBLISH"
+          }
+        >
+          {grid.published ? (
+            <Eye aria-hidden="true" />
+          ) : (
+            <Upload aria-hidden="true" />
+          )}
+        </button>
+      </span>
       {open && (
         <PublishDialog
           initialVisibility={grid.visibility}
