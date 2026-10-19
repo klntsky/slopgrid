@@ -48,7 +48,8 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
   let frame: number | null = null;
   let mode: "idle" | "hover" | "scroll" = "idle";
   let session: FollowSession | null = null;
-  let pending: FollowSession | null = null;
+  let pendingSource: HTMLElement | null = null;
+  let pendingStart = 0;
   let hoverRow: HTMLElement | null = null;
   let mouse: { x: number; y: number } | null = null;
   let pressed = false;
@@ -221,12 +222,13 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
           : top + fraction * size - ratio * to.height;
       write(target, Math.max(minimum, Math.min(maximum, desired)));
     }
-    pending = prepare(source);
+    pendingSource = source;
+    pendingStart = source.scrollTop;
   }
   function endHover() {
     mode = "idle";
     hoverRow = null;
-    pending = null;
+    pendingSource = null;
     highlight(null);
     restore();
   }
@@ -271,13 +273,12 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
   }
   function arm(view: HTMLElement | null) {
     if (!view || (mode === "scroll" && session?.source === view)) return;
-    if (mode === "scroll") {
-      mode = "idle";
-      session = null;
-    }
-    // Passive wheel delivery may follow compositor scrolling. Capture the
-    // source's last observed position, but the followers' actual positions.
-    pending = prepare(view, lastScrolls.get(view) ?? view.scrollTop);
+    mode = "idle";
+    session = null;
+    // Passive wheel delivery can follow compositor scrolling. Retain the last
+    // observed source offset; acquire follower maps only when scrolling starts.
+    pendingSource = view;
+    pendingStart = lastScrolls.get(view) ?? view.scrollTop;
   }
   function trackPointer(event: ReactPointerEvent<HTMLElement>) {
     if (event.pointerType === "touch") return;
@@ -318,7 +319,7 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
     mode = "idle";
     if (event.touches.length !== 1) {
       contact = null;
-      pending = null;
+      pendingSource = null;
       highlight(null);
       return;
     }
@@ -334,7 +335,7 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
     };
     mode = "idle";
     highlight(row);
-    pending = null;
+    pendingSource = null;
     arm(viewOf(target));
   }
   function touchMove(event: TouchEvent) {
@@ -349,7 +350,7 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
     const ended = contact;
     contact = null;
     if (ended.scrolled) return;
-    pending = null;
+    pendingSource = null;
     if (!ended.moved) {
       if (ended.row && rowOf(ended.row)) {
         highlight(ended.row);
@@ -368,7 +369,7 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
     flush();
     mode = "idle";
     session = null;
-    pending = null;
+    pendingSource = null;
     touchScrolling = false;
   }
   return {
@@ -403,7 +404,8 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
         if (frame !== null) cancelAnimationFrame(frame);
         frame = null;
         mode = "idle";
-        session = pending = null;
+        session = null;
+        pendingSource = null;
         contact = null;
       };
     },
@@ -435,9 +437,9 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
         if (participating || lastScrolls.has(source))
           lastScrolls.set(source, source.scrollTop);
         if (!participating) return;
-        if (mode !== "scroll" && pending?.source === source) {
-          session = pending;
-          pending = null;
+        if (mode !== "scroll" && pendingSource === source) {
+          session = prepare(source, pendingStart);
+          pendingSource = null;
           mode = "scroll";
           saved.delete(source);
           if (contact) {
