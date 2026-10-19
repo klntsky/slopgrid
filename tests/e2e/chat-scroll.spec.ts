@@ -830,7 +830,8 @@ test.describe("mobile chat histories", () => {
           new Promise<number[]>((resolve) =>
             view.addEventListener(
               "scrollend",
-              () => resolve(views.map((peer) => peer.scrollTop)),
+              () =>
+                resolve(views.map((peer) => (peer as HTMLElement).scrollTop)),
               { once: true },
             ),
           ),
