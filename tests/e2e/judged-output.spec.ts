@@ -36,6 +36,31 @@ function judgmentHistoryPosition(
   return to + ((position - from) / (nextFrom - from)) * (nextTo - to);
 }
 
+function expectJudgmentFocus(
+  source: JudgmentScrollGeometry & { position: number },
+  target: JudgmentScrollGeometry & { position: number },
+  criterion: number,
+  focusPixels: number,
+) {
+  const start = criterion * 2;
+  const fraction =
+    (source.position +
+      Math.min(source.height, focusPixels / source.scale) -
+      source.edges[start]) /
+    (source.edges[start + 1] - source.edges[start]);
+  const offset =
+    target.edges[start] +
+    (target.edges[start + 1] - target.edges[start]) * fraction -
+    target.position -
+    Math.min(target.height, focusPixels / target.scale);
+  expect(target.position).toBeGreaterThanOrEqual(0);
+  expect(target.position).toBeLessThanOrEqual(target.limit);
+  if (target.position < 2) expect(offset).toBeLessThanOrEqual(2);
+  else if (target.position > target.limit - 2)
+    expect(offset).toBeGreaterThanOrEqual(-2);
+  else expect(Math.abs(offset)).toBeLessThan(2);
+}
+
 test("judge criteria preserve boolean answers and judge axes restore fixed settings", async ({
   page,
 }) => {
@@ -1569,22 +1594,13 @@ test("judgment hover temporarily reveals matching criteria and restores independ
           const panel = container.getBoundingClientRect();
           const scale = panel.height / container.clientHeight;
           const top = (rect.top - panel.top) / scale + container.scrollTop;
-          const bottom = top + rect.height / scale;
           const desired =
             top +
             (rect.height / scale) * fraction -
             Math.min(focusOffset, panel.height) / scale;
-          const fits = bottom - top <= container.clientHeight;
-          const low = fits ? bottom - container.clientHeight : 0;
-          const high = fits
-            ? top
-            : container.scrollHeight - container.clientHeight;
           const expected = Math.max(
             0,
-            Math.min(
-              container.scrollHeight - container.clientHeight,
-              Math.max(low, Math.min(high, desired)),
-            ),
+            Math.min(container.scrollHeight - container.clientHeight, desired),
           );
           return Math.abs(container.scrollTop - expected) < 2;
         },
@@ -1607,8 +1623,11 @@ test("judgment hover temporarily reveals matching criteria and restores independ
     .boundingBox())!;
   await page.mouse.move(sourceBox.x + 20, row.y + row.height - 1);
   await expectHighlighted(1);
+  const beforeBoundary = (await positions())[1];
   await page.mouse.move(sourceBox.x + 20, row.y + row.height + 1);
   await expectHighlighted(2);
+  const afterBoundary = (await positions())[1];
+  expect(Math.abs(afterBoundary - beforeBoundary)).toBeLessThan(10);
   await page.mouse.move(sourceBox.x + 20, row.y + row.height - 1);
   await expectHighlighted(1);
   const ownSourcePosition = (await positions())[0];
@@ -1645,7 +1664,7 @@ test("judgment hover temporarily reveals matching criteria and restores independ
   await expect.poll(() => backgrounds(3)).toEqual([unhovered, unhovered]);
 });
 
-test("judgment hover aligns fractional focus and clamps whole fitting criteria in unequal views", async ({
+test("judgment hover aligns short criteria fractionally even when unequal views clip them", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 1000 });
@@ -1762,48 +1781,39 @@ test("judgment hover aligns fractional focus and clamps whole fitting criteria i
     const expected = before.map((bounds, index) => {
       if (index === 0) return bounds.position;
       const top = bounds.position + bounds.top;
-      const bottom = bounds.position + bounds.bottom;
       const desired =
         top +
         bounds.rowHeight * fraction -
         Math.min(focusOffset, bounds.screenHeight) / bounds.scale;
-      return Math.max(
-        0,
-        Math.min(
-          bounds.max,
-          Math.max(bottom - bounds.height, Math.min(top, desired)),
-        ),
-      );
+      return Math.max(0, Math.min(bounds.max, desired));
     });
     expect(Math.abs(expected[1] - before[1].position)).toBeGreaterThan(10);
     await page.mouse.move(box.x + 20, pointerY);
     await expect
       .poll(async () =>
         (await geometry()).every(
-          (bounds, index) =>
-            Math.abs(bounds.position - expected[index]) < 2 &&
-            (index === 0 ||
-              (bounds.top >= -2 && bounds.bottom <= bounds.height + 2)),
+          (bounds, index) => Math.abs(bounds.position - expected[index]) < 2,
         ),
       )
       .toBe(true);
+    const aligned = await geometry();
+    for (let index = 1; index < aligned.length; index++) {
+      const bounds = aligned[index];
+      expect(bounds.position).toBeGreaterThanOrEqual(0);
+      expect(bounds.position).toBeLessThanOrEqual(bounds.max);
+      const offset =
+        (bounds.top + bounds.rowHeight * fraction) * bounds.scale -
+        Math.min(focusOffset, bounds.screenHeight);
+      if (bounds.position < 2) expect(offset).toBeLessThanOrEqual(2);
+      else if (bounds.position > bounds.max - 2)
+        expect(offset).toBeGreaterThanOrEqual(-2);
+      else expect(Math.abs(offset)).toBeLessThan(2);
+    }
     if (edge === "bottom") {
       expect(focusOffset).toBeGreaterThan(before[2].screenHeight);
-      expect(
-        Math.abs((await geometry())[2].bottom - before[2].height),
-      ).toBeLessThan(2);
+      expect(aligned[2].bottom).toBeGreaterThan(aligned[2].height + 2);
     } else if (edge === "top") {
-      expect(Math.abs((await geometry())[1].top)).toBeLessThan(2);
-    } else {
-      const aligned = await geometry();
-      for (let index = 1; index < aligned.length; index++)
-        expect(
-          Math.abs(
-            (aligned[index].top + aligned[index].rowHeight * fraction) *
-              aligned[index].scale -
-              focusOffset,
-          ),
-        ).toBeLessThan(2);
+      expect(aligned[1].top).toBeLessThan(-2);
     }
     const revealed = (await geometry()).map((bounds) => bounds.position);
     await page.mouse.move(box.x + 21, pointerY);
@@ -1923,20 +1933,17 @@ test("native judgment wheel aligns the criterion under a stationary cursor in un
       if (index === leader) continue;
       const view = current[index];
       const row = view.rows[criterion];
-      if (row.height <= view.height) {
-        fittingPeers++;
-        expect(row.top).toBeGreaterThanOrEqual(-2);
-        expect(row.bottom).toBeLessThanOrEqual(view.height + 2);
-      } else {
-        oversizedPeers++;
-        const offset =
-          row.top + row.height * fraction - Math.min(focus, view.height);
-        // Native range limits can prevent fractional alignment at either end.
-        if (view.position < 2) expect(offset).toBeLessThanOrEqual(2);
-        else if (view.position > view.max - 2)
-          expect(offset).toBeGreaterThanOrEqual(-2);
-        else expect(Math.abs(offset)).toBeLessThan(2);
-      }
+      if (row.height <= view.height) fittingPeers++;
+      else oversizedPeers++;
+      expect(view.position).toBeGreaterThanOrEqual(0);
+      expect(view.position).toBeLessThanOrEqual(view.max);
+      const offset =
+        row.top + row.height * fraction - Math.min(focus, view.height);
+      // Only the native range can prevent the matching point from aligning.
+      if (view.position < 2) expect(offset).toBeLessThanOrEqual(2);
+      else if (view.position > view.max - 2)
+        expect(offset).toBeGreaterThanOrEqual(-2);
+      else expect(Math.abs(offset)).toBeLessThan(2);
     }
   };
   // Exercise each criterion with native wheel input.
@@ -2178,9 +2185,8 @@ test("judgment layout changes after desktop scrollend refresh a stationary curso
     )
     .toEqual(Array.from({ length: 4 }, () => [false, true, false, false]));
 
-  // Assert visible geometry rather than duplicating the scroll mapper:
-  // fitting rows stay whole, with their focus line aligned or edge-clamped;
-  // oversized rows align the same fractional point at the stationary cursor.
+  // Short and tall criteria align the same fractional point; only a native
+  // scroll boundary can prevent it from reaching the stationary reading line.
   await expect
     .poll(async () => {
       const current = await geometry();
@@ -2193,22 +2199,16 @@ test("judgment layout changes after desktop scrollend refresh a stationary curso
           const row = view.rows[1];
           const focus = Math.min(focusOffset, view.screenHeight) / view.scale;
           const offset = row.top + row.height * fraction - focus;
-          if (view.position <= 2 || view.position >= view.max - 2) return false;
-          if (row.height > view.height) return Math.abs(offset) < 2;
-          return (
-            row.top >= -2 &&
-            row.bottom <= view.height + 2 &&
-            (Math.abs(offset) < 2 ||
-              (offset > 0 && Math.abs(row.top) < 2) ||
-              (offset < 0 && Math.abs(row.bottom - view.height) < 2))
-          );
+          if (view.position < 0 || view.position > view.max) return false;
+          if (view.position <= 2) return offset <= 2;
+          if (view.position >= view.max - 2) return offset >= -2;
+          return Math.abs(offset) < 2;
         })
       );
     })
     .toBe(true);
   const aligned = await geometry();
   expect(aligned[1].rows[1].height).toBeLessThan(aligned[1].height);
-  expect(Math.abs(aligned[1].rows[1].top)).toBeLessThan(2);
   expect(aligned[2].rows[1].height).toBeGreaterThan(aligned[2].height);
   const settled = await positions();
   const highlighted = await backgrounds();
@@ -2367,15 +2367,7 @@ test.describe("touch judgment following", () => {
       tapTop +
       (tapBottom - tapTop) * tappedFraction -
       Math.min(tapTarget.height, 120 / tapTarget.scale);
-    const tapExpected = Math.max(
-      0,
-      Math.min(
-        tapTarget.limit,
-        tapBottom - tapTop <= tapTarget.height
-          ? Math.max(tapBottom - tapTarget.height, Math.min(tapTop, tapDesired))
-          : tapDesired,
-      ),
-    );
+    const tapExpected = Math.max(0, Math.min(tapTarget.limit, tapDesired));
     await client.send("Input.dispatchTouchEvent", {
       type: "touchStart",
       touchPoints: [{ x: a.x + 20, y: a.y + 120, id: 1 }],
@@ -2582,6 +2574,13 @@ test.describe("touch judgment following", () => {
     });
     expect(readingCriterion).toBeGreaterThan(1);
     await expectSelected(readingCriterion);
+    const settledGeometry = await scrollGeometry();
+    expectJudgmentFocus(
+      settledGeometry[0],
+      settledGeometry[1],
+      readingCriterion,
+      120,
+    );
     for (const line of await focusLines())
       expect(Math.abs(line - 120)).toBeLessThan(1);
     await source.evaluate(
@@ -2602,6 +2601,13 @@ test.describe("touch judgment following", () => {
     expect(next).toBeGreaterThanOrEqual(0);
     await page.touchscreen.tap(b.x + 20, b.y + 140);
     await expectSelected(next);
+    const transferredGeometry = await scrollGeometry();
+    expectJudgmentFocus(
+      transferredGeometry[1],
+      transferredGeometry[0],
+      next,
+      140,
+    );
     for (const line of await focusLines())
       expect(Math.abs(line - 140)).toBeLessThan(1);
     const dismissedPositions = await results.evaluateAll((containers) =>
@@ -2842,6 +2848,13 @@ test.describe("touch judgment following", () => {
       });
       expect(selected).toBeGreaterThanOrEqual(0);
       await expectSelected(selected);
+      const settledGeometry = await geometry();
+      expectJudgmentFocus(
+        settledGeometry[leader],
+        settledGeometry[peer],
+        selected,
+        focusPixels,
+      );
       expect(
         await results.evaluateAll((containers) =>
           containers.map((container) => container.scrollTop),

@@ -27,8 +27,8 @@ type FollowSession = {
   }[];
 };
 
-// Renderers supply groups, ordered items, and optional content bounds. A gesture
-// keeps one focus line while geometry projects the whole surrounding history.
+// Renderers supply groups and ordered vertical areas. A gesture keeps one focus
+// line while geometry projects the whole surrounding history.
 function createItemScrollSync(root: RefObject<HTMLElement | null>) {
   const saved = new Map<HTMLElement, number>();
   const lastScrolls = new WeakMap<HTMLElement, number>();
@@ -98,12 +98,6 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
       index++;
     return index;
   }
-  function contentOf(row: Element) {
-    return row.querySelector("[data-scroll-sync-bounds]") ?? row;
-  }
-  function itemBounds(row: Element) {
-    return contentOf(row).getBoundingClientRect();
-  }
   function layout(view: HTMLElement): ViewLayout {
     const cached = layouts.get(view);
     if (cached) return cached;
@@ -115,7 +109,7 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
     const list = listOf(view);
     if (list) {
       for (const row of list.children) {
-        const item = itemBounds(row);
+        const item = row.getBoundingClientRect();
         anchors.push(
           view.scrollTop + (item.top - bounds.top) / scale,
           view.scrollTop + (item.bottom - bounds.top) / scale,
@@ -290,14 +284,12 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
       const bottom = to.anchors[index * 2 + 1];
       if (top === undefined || bottom === undefined) continue;
       const size = bottom - top;
-      const minimum = size <= to.height ? Math.max(0, bottom - to.height) : 0;
-      const maximum = size <= to.height ? Math.min(to.limit, top) : to.limit;
       const targetFocus = Math.min(
         to.height,
         (pixels * to.height) / target.getBoundingClientRect().height,
       );
       const desired = top + fraction * size - targetFocus;
-      write(target, Math.max(minimum, Math.min(maximum, desired)));
+      write(target, Math.max(0, Math.min(to.limit, desired)));
     }
     pendingSource = source;
     pendingStart = source.scrollTop;
@@ -419,7 +411,7 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
       const list = listOf(view);
       if (list) {
         observer?.observe(list);
-        for (const row of list.children) observer?.observe(contentOf(row));
+        for (const row of list.children) observer?.observe(row);
       }
     }
     schedule();

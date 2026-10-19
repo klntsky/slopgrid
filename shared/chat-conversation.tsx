@@ -10,11 +10,7 @@ export function ChatConversation({
     <ol className="chat-conversation" data-scroll-sync-items="">
       {messages.map((message, index) => (
         <li className="chat-message-row" key={index}>
-          <div
-            className="chat-bubble"
-            data-role={message.role}
-            data-scroll-sync-bounds=""
-          >
+          <div className="chat-bubble" data-role={message.role}>
             <MarkdownContent markdown={message.content} />
           </div>
         </li>
