@@ -104,6 +104,18 @@ function colors(panels: Locator, index: number) {
   );
 }
 
+async function expectHighlight(
+  panels: Locator,
+  index: number,
+  baseline: string[],
+) {
+  await expect
+    .poll(async () =>
+      (await colors(panels, index)).map((color, i) => color !== baseline[i]),
+    )
+    .toEqual(baseline.map(() => true));
+}
+
 async function hoverMessage(
   page: Page,
   panel: Locator,
@@ -124,7 +136,7 @@ async function hoverMessage(
   return own;
 }
 
-test("chat histories align corresponding messages, fit unequal panels, and restore reading positions without highlights", async ({
+test("chat histories follow contiguous full-width message areas, fit unequal panels, and restore reading positions", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 1000 });
@@ -140,6 +152,7 @@ test("chat histories align corresponding messages, fit unequal panels, and resto
   });
   const original = await positions(panels);
   const originalColors = await colors(panels, 1);
+  const nextColors = await colors(panels, 2);
   const initial = await bounds(panels, 1);
   expect(initial[0].height).toBeGreaterThan(initial[1].height);
   expect(initial[1].top).toBeLessThan(0);
@@ -150,7 +163,40 @@ test("chat histories align corresponding messages, fit unequal panels, and resto
       return Math.abs(anchor.top - peer.top);
     })
     .toBeLessThan(1);
-  await expect.poll(() => colors(panels, 1)).toEqual(originalColors);
+  await expectHighlight(panels, 1, originalColors);
+  const area = await source.evaluate((view) => {
+    const bounds = view.getBoundingClientRect();
+    const scale = bounds.height / parseFloat(getComputedStyle(view).height);
+    const rows = view.querySelectorAll(".chat-message-row");
+    const bubble = rows[1]
+      .querySelector(".chat-bubble")!
+      .getBoundingClientRect();
+    return {
+      left: bounds.left + 1,
+      right: bounds.left + (view.clientWidth - 1) * scale,
+      middle: bubble.top + bubble.height / 2,
+      boundary: rows[1].getBoundingClientRect().bottom,
+      next: rows[2].getBoundingClientRect().top,
+    };
+  });
+  for (const x of [area.left, area.right]) {
+    await page.mouse.move(x, area.middle);
+    await expectHighlight(panels, 1, originalColors);
+  }
+  expect(Math.abs(area.boundary - area.next)).toBeLessThan(1);
+  for (const delta of [-7, -1, 1, 7]) {
+    await page.mouse.move(area.left, area.boundary + delta);
+    await expectHighlight(
+      panels,
+      delta < 0 ? 1 : 2,
+      delta < 0 ? originalColors : nextColors,
+    );
+    await expect
+      .poll(() => colors(panels, delta < 0 ? 2 : 1))
+      .toEqual(delta < 0 ? nextColors : originalColors);
+  }
+  await page.mouse.move(area.left, area.middle);
+  await expectHighlight(panels, 1, originalColors);
   expect((await positions(panels))[0]).toBe(original[0]);
   await page.mouse.wheel(0, 16);
   await expect
@@ -165,6 +211,7 @@ test("chat histories align corresponding messages, fit unequal panels, and resto
   const own = (await positions(panels))[0];
   await page.mouse.move(1, 1);
   await expect.poll(() => positions(panels)).toEqual([own, original[1]]);
+  await expect.poll(() => colors(panels, 1)).toEqual(originalColors);
 
   await hoverMessage(page, source, 1, 180);
   await expect
@@ -201,7 +248,15 @@ test("chat histories align corresponding messages, fit unequal panels, and resto
     .first()
     .getByRole("button", { name: "View raw", exact: true })
     .click();
-  await page.locator(".cell").first().locator(".markdown-preview").hover();
+  const rawPreview = page.locator(".cell").first().locator(".markdown-preview");
+  await rawPreview.hover();
+  await rawPreview.evaluate((view) => {
+    view.scrollTop = 0;
+  });
+  await page.mouse.wheel(0, 120);
+  await expect
+    .poll(() => rawPreview.evaluate((view) => view.scrollTop))
+    .toBeGreaterThan(0);
   await expect
     .poll(() =>
       page
@@ -220,7 +275,7 @@ test.describe("mobile chat histories", () => {
     hasTouch: true,
   });
 
-  test("chat histories keep the contacted message followed through fit-height touch scrolling without highlights", async ({
+  test("chat histories keep the contacted message area highlighted and followed through fit-height touch scrolling", async ({
     page,
   }) => {
     const panels = await openHistories(
@@ -251,7 +306,7 @@ test.describe("mobile chat histories", () => {
     const original = await positions(panels);
     const originalColors = await colors(panels, 1);
     const row = (await source.locator(".chat-bubble").nth(1).boundingBox())!;
-    const x = row.x + row.width / 2;
+    const x = (await source.boundingBox())!.x + 1;
     const y = row.y + row.height / 2;
     const client = await page.context().newCDPSession(page);
     await client.send("Input.dispatchTouchEvent", {
@@ -265,28 +320,43 @@ test.describe("mobile chat histories", () => {
           .every((peer) => peer.top >= -1 && peer.bottom <= peer.height + 1),
       )
       .toBe(true);
-    const samples = await source.evaluateHandle((view) => {
-      const visible: boolean[] = [];
-      const record = () => {
-        const peers = Array.from(
-          document.querySelectorAll(".conversation-preview"),
-        ).slice(1);
-        visible.push(
-          peers.every((peer) => {
-            const panel = peer.getBoundingClientRect();
-            const row = peer
-              .querySelectorAll(".chat-bubble")[1]
-              .getBoundingClientRect();
-            return row.top >= panel.top - 1 && row.bottom <= panel.bottom + 1;
-          }),
-        );
-      };
-      view.addEventListener("scroll", record, { passive: true });
-      return {
-        visible,
-        stop: () => view.removeEventListener("scroll", record),
-      };
-    });
+    await expectHighlight(panels, 1, originalColors);
+    const samples = await source.evaluateHandle(
+      (view, selectedColors) => {
+        const visible: boolean[] = [];
+        const highlighted: boolean[] = [];
+        const record = () => {
+          const peers = Array.from(
+            document.querySelectorAll(".conversation-preview"),
+          ).slice(1);
+          visible.push(
+            peers.every((peer) => {
+              const panel = peer.getBoundingClientRect();
+              const row = peer
+                .querySelectorAll(".chat-bubble")[1]
+                .getBoundingClientRect();
+              return row.top >= panel.top - 1 && row.bottom <= panel.bottom + 1;
+            }),
+          );
+          highlighted.push(
+            Array.from(
+              document.querySelectorAll(".conversation-preview"),
+            ).every(
+              (panel, index) =>
+                getComputedStyle(panel.querySelectorAll(".chat-bubble")[1])
+                  .backgroundColor === selectedColors[index],
+            ),
+          );
+        };
+        view.addEventListener("scroll", record, { passive: true });
+        return {
+          visible,
+          highlighted,
+          stop: () => view.removeEventListener("scroll", record),
+        };
+      },
+      await colors(panels, 1),
+    );
     const ended = source.evaluate(
       (view) =>
         new Promise<number>((resolve) =>
@@ -310,10 +380,11 @@ test.describe("mobile chat histories", () => {
     const own = await ended;
     const visible = await samples.evaluate((state) => {
       state.stop();
-      return state.visible;
+      return { visible: state.visible, highlighted: state.highlighted };
     });
     await samples.dispose();
-    expect(new Set(visible)).toEqual(new Set([true]));
+    expect(new Set(visible.visible)).toEqual(new Set([true]));
+    expect(new Set(visible.highlighted)).toEqual(new Set([true]));
     await expect.poll(async () => (await positions(panels))[0]).toBe(own);
     await expect
       .poll(async () =>
@@ -322,13 +393,14 @@ test.describe("mobile chat histories", () => {
           .every((peer) => peer.top >= -1 && peer.bottom <= peer.height + 1),
       )
       .toBe(true);
-    await expect.poll(() => colors(panels, 1)).toEqual(originalColors);
+    await expectHighlight(panels, 1, originalColors);
     await page
       .getByRole("button", { name: "Navigation menu", exact: true })
       .tap();
     await expect
       .poll(() => positions(panels))
       .toEqual([own, ...original.slice(1)]);
+    await expect.poll(() => colors(panels, 1)).toEqual(originalColors);
     await client.detach();
   });
 });

@@ -513,6 +513,25 @@ test("Markdown preserves raw content and rendered structure across toggles and e
     await expect(viewRaw).toHaveAttribute("aria-pressed", "true");
     expect(await preview.locator("pre").textContent()).toBe(markdown);
     await expect(preview.locator("code, p")).toHaveCount(0);
+    const geometry = await preview.evaluate((view) => {
+      const raw = view.querySelector("pre")!;
+      return {
+        fontSize: getComputedStyle(raw).fontSize,
+        defaultFontSize: getComputedStyle(view).fontSize,
+        rawScale: raw.getBoundingClientRect().width / raw.offsetWidth,
+        viewScale: view.getBoundingClientRect().width / view.offsetWidth,
+        contentWidth: raw.scrollWidth,
+        availableWidth: raw.clientWidth,
+        contentHeight: view.scrollHeight,
+        availableHeight: view.clientHeight,
+      };
+    });
+    expect(geometry.fontSize).toBe(geometry.defaultFontSize);
+    expect(geometry.rawScale).toBeCloseTo(geometry.viewScale, 2);
+    expect(geometry.contentWidth).toBeLessThanOrEqual(
+      geometry.availableWidth + 1,
+    );
+    expect(geometry.contentHeight).toBeGreaterThan(geometry.availableHeight);
   };
   await viewRaw.click();
   await checkRaw();

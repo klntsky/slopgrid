@@ -9,8 +9,10 @@ export function ChatConversation({
   return (
     <ol className="chat-conversation">
       {messages.map((message, index) => (
-        <li className="chat-bubble" data-role={message.role} key={index}>
-          <MarkdownContent markdown={message.content} />
+        <li className="chat-message-row" key={index}>
+          <div className="chat-bubble" data-role={message.role}>
+            <MarkdownContent markdown={message.content} />
+          </div>
         </li>
       ))}
     </ol>

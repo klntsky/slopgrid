@@ -1,6 +1,7 @@
 import { Check, LoaderCircle, Scale, X } from "lucide-react";
 import type { GridInput } from "../../server/domain";
 import type { ViewGrid } from "../api";
+import { tooltipRef } from "../components/use-tooltip";
 import "./judge-result-button.css";
 
 export type JudgmentSummary = {
@@ -75,6 +76,8 @@ export function JudgeResultButton({
       aria-label={summary.label}
       aria-pressed={active}
       aria-busy={summary.running}
+      data-tooltip="Show judge results"
+      ref={tooltipRef}
       onClick={onToggle}
     >
       <Scale aria-hidden="true" />

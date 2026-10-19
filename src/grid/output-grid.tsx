@@ -71,7 +71,7 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
     const row =
       target instanceof Element
         ? target.closest<HTMLElement>(
-            ".judge-result-criteria > li, .conversation-preview .chat-bubble",
+            ".judge-result-criteria > li, .conversation-preview .chat-message-row",
           )
         : null;
     return row && workspace.current?.contains(row) && !row.closest("[inert]")
@@ -115,21 +115,23 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
       return;
     hoveredIndex.current = index;
     anchorView.current = source;
+    const content = judging ? row : row?.firstElementChild;
     const offset =
-      row && source
-        ? row.getBoundingClientRect().top - source.getBoundingClientRect().top
+      content && source
+        ? content.getBoundingClientRect().top -
+          source.getBoundingClientRect().top
         : 0;
     for (const list of workspace.current!.querySelectorAll(
       ".judge-result-criteria, .conversation-preview .chat-conversation",
     )) {
       const judgeList = list.classList.contains("judge-result-criteria");
       const current = judgeList === judging ? index : null;
-      if (judgeList) {
-        if (previous !== null && previous !== current)
-          list.children[previous]?.removeAttribute("data-criterion-hovered");
-        if (current !== null)
-          list.children[current]?.setAttribute("data-criterion-hovered", "");
-      }
+      const highlight = judgeList
+        ? "data-criterion-hovered"
+        : "data-message-hovered";
+      if (previous !== null && previous !== current)
+        list.children[previous]?.removeAttribute(highlight);
+      if (current !== null) list.children[current]?.setAttribute(highlight, "");
       const target = list.closest<HTMLElement>(
         ".judge-results, .conversation-preview",
       )!;
@@ -145,7 +147,9 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
       const item = list.children[current] as HTMLElement | undefined;
       if (!item || !target.clientHeight) continue;
       const viewBounds = target.getBoundingClientRect();
-      const itemBounds = item.getBoundingClientRect();
+      const itemBounds = (
+        judgeList ? item : item.firstElementChild!
+      ).getBoundingClientRect();
       // Integer clientHeight drifts over long histories at fractional grid zoom.
       const height = parseFloat(getComputedStyle(target).height);
       const scale = viewBounds.height / height;

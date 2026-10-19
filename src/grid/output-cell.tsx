@@ -155,7 +155,7 @@ export function OutputCell({
             key={cell.thinkingURL}
             url={cell.thinkingURL!}
             title={`Thinking: ${title}`}
-            raw="wrap"
+            raw="thinking"
             draft={cell.thinking}
             streaming={!complete && cell.status === "running"}
           />
