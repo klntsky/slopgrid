@@ -2,7 +2,6 @@ import { fork, type ChildProcess } from "node:child_process";
 import { mkdtempSync, rmSync, openSync, closeSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createServer } from "node:net";
 import { waitForReady } from "./process-ready.js";
 
 export async function startTestServer(
@@ -17,14 +16,11 @@ export async function startTestServer(
       "E2E requires GitHub credentials in private runtime configuration",
     );
   }
-  const port = await new Promise<number>((resolve, reject) => {
-    const probe = createServer();
-    probe.once("error", reject);
-    probe.listen(requestedPort, () => {
-      const selected = (probe.address() as { port: number }).port;
-      probe.close(() => resolve(selected));
-    });
-  });
+  if (
+    !Number.isSafeInteger(requestedPort) ||
+    (requestedPort !== 0 && (requestedPort < 1024 || requestedPort > 65535))
+  )
+    throw new Error("Invalid fixture port");
   const data = mkdtempSync(join(tmpdir(), "slopgrid-e2e-"));
   const log = openSync(join(data, "server.log"), "w", 0o600);
   let child: ChildProcess;
@@ -35,7 +31,7 @@ export async function startTestServer(
       env: {
         ...process.env,
         OPENROUTER_API_KEY: undefined,
-        E2E_PORT: String(port),
+        E2E_PORT: String(requestedPort),
         FIXTURE_DATA: data,
         NODE_ENV: "production",
       },

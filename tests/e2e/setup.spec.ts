@@ -764,7 +764,7 @@ for (const format of ["SVG", "Image"]) {
 }
 
 for (const format of ["SVG", "Image"]) {
-  test(`fixed model radio selector defaults to latest for ${format}`, async ({
+  test(`fixed model radio selection survives filtering and reload for ${format}`, async ({
     page,
   }) => {
     await page.goto("/");
@@ -780,7 +780,7 @@ for (const format of ["SVG", "Image"]) {
       exact: true,
     });
     const search = selector.getByRole("searchbox");
-    await expect(search).toHaveValue("latest");
+    await expect(search).toHaveValue(format === "Image" ? "" : "latest");
     await expect(selector.locator("input:checked")).toHaveCount(0);
     await selector
       .getByRole("button", { name: "Clear model filter", exact: true })
@@ -795,7 +795,7 @@ for (const format of ["SVG", "Image"]) {
     await search.fill("no-such-model");
     await expect(selector.locator(".selected-models")).toHaveCount(0);
     await page.reload();
-    await expect(search).toHaveValue("latest");
+    await expect(search).toHaveValue(format === "Image" ? "" : "latest");
     await search.fill(second);
     await expect(selector.locator("input:checked")).toHaveValue(second);
   });

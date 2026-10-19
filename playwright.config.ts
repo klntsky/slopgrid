@@ -1,7 +1,10 @@
 import { defineConfig } from "@playwright/test";
+import { availableParallelism } from "node:os";
 export default defineConfig({
   fullyParallel: false,
-  workers: 3,
+  workers: process.env.E2E_WORKERS
+    ? Number(process.env.E2E_WORKERS)
+    : Math.min(4, availableParallelism()),
   use: {
     baseURL: process.env.E2E_ORIGIN ?? "http://localhost:4317",
     browserName: "chromium",
@@ -16,7 +19,7 @@ export default defineConfig({
       timeout: 420000,
       use: { trace: "off", screenshot: "off", video: "off" },
     },
-    { name: "mock", testDir: "tests/e2e" },
+    { name: "mock", testDir: "tests/e2e", fullyParallel: true },
     {
       name: "real",
       testDir: "tests/real-e2e",

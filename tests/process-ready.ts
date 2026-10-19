@@ -1,6 +1,6 @@
 import type { ChildProcess } from "node:child_process";
 
-type ReadyMessage = { type: "ready"; origin?: string };
+type ReadyMessage = { type: "ready"; origin?: string; port?: number };
 export function signalReady(origin?: string) {
   const message: ReadyMessage = { type: "ready", origin };
   process.send?.(message);
@@ -41,11 +41,16 @@ export function waitForReady(
       const event = value as {
         type?: string;
         origin?: string;
+        port?: number;
         message?: string;
       };
       if (event.type === "ready") {
         cleanup();
-        resolve({ type: "ready", origin: event.origin });
+        resolve({
+          type: "ready",
+          origin: event.origin,
+          ...(typeof event.port === "number" ? { port: event.port } : {}),
+        });
       } else if (event.type === "startup-error")
         failed(new Error(`${name} startup failed: ${event.message}`));
     };

@@ -1,4 +1,7 @@
-// Process supervision and debugger access only; application code is unmodified.
+// Process supervision, listener discovery and debugger access only.
+import { once } from "node:events";
+import type { Server } from "node:http";
+
 process.on("disconnect", () => process.exit(0));
 process.on("message", async (message) => {
   if ((message as { inspect?: boolean }).inspect) {
@@ -7,5 +10,12 @@ process.on("message", async (message) => {
     process.send?.(inspector.url());
   }
 });
-await import(process.env.FIXTURE_ENTRY!);
+const entry = await import(process.env.FIXTURE_ENTRY!);
+const server = entry.server as Server | undefined;
+if (server) {
+  if (!server.listening) await once(server, "listening");
+  const address = server.address();
+  if (address && typeof address === "object")
+    process.send?.({ type: "ready", port: address.port });
+}
 export {};

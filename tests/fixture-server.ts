@@ -511,6 +511,7 @@ const webConfig = {
   controls: app,
 };
 let web = await webFixture(webConfig);
+webConfig.port = Number(new URL(web.origin).port);
 
 // Keep the upstream and engine warm. Recreate the web process to clear its
 // in-memory rate limits, output access tokens and event subscriptions.

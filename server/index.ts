@@ -88,8 +88,10 @@ else {
     }
   });
 }
-const server = app.listen(port, process.env.BIND_ADDRESS ?? "127.0.0.1", () =>
-  console.log(`slopgrid: ${origin}`),
+export const server = app.listen(
+  port,
+  process.env.BIND_ADDRESS ?? "127.0.0.1",
+  () => console.log(`slopgrid: ${origin}`),
 );
 // SSE clients reconnect to the replacement web process and receive an engine snapshot.
 for (const signal of ["SIGTERM", "SIGINT"] as const)

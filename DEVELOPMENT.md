@@ -87,7 +87,7 @@ describes how they are validated.
 
 ### Running the suites
 
-Select tests that cover the features changed. Simple wording, styling, and documentation changes do not require tests. Run manual tests only on staging through SSH. The complete unit, mock browser, and real-provider browser suites must pass on staging before production deployment.
+Select tests that cover the features changed. Simple wording, styling, and documentation changes do not require tests. Manual tests can run locally when requested, using the fixtures' isolated data and unused ports, or on staging through SSH. The complete unit, mock browser, and real-provider browser suites must pass on staging before production deployment unless tests are explicitly skipped.
 
 Runtime tests of snapshot ordering import the query client directly, keeping browser hooks and PWA initialization out of the Node test process. On shared staging hosts, limit unit-test file concurrency to avoid saturating the host with runtime fixtures.
 
@@ -99,14 +99,17 @@ pnpm test:e2e:mock
 pnpm test:e2e:real
 ```
 
-`pnpm test` builds once, then runs unit tests and the mock and real Playwright projects against that build. Unit tests that start web or browser fixtures require `dist/index.html`, so run `pnpm build` before invoking `pnpm test:unit` on a clean checkout. `pnpm test:built` runs the same suites against the existing build, without rebuilding it. The E2E runner also accepts `--reuse-build` for focused runs against an existing build. The separate E2E commands build once and run their respective project. Verify test-runner changes from a clean checkout without retained frontend assets.
+`pnpm test` builds once, then runs unit tests and the mock and real Playwright projects concurrently against that build. Unit tests that start web or browser fixtures require `dist/index.html`, so run `pnpm build` before invoking `pnpm test:unit` on a clean checkout. `pnpm test:built` runs the same suites against the existing build, without rebuilding it. `tests/run-tests.ts` accepts repeated `--unit FILE` and `--browser FILE` selectors, `--suite mock|real|all`, and `--grep PATTERN` for browser scenarios. The E2E runner also accepts `--reuse-build` for focused runs against an existing build. The separate E2E commands build once and run their respective project. Verify test-runner changes from a clean checkout without retained frontend assets.
 
 Mock browser workers reuse their provider fixture, inference process, and TLS
 certificate. Between cases, the fixture cancels unfinished work, waits for
 settlement, clears database rows and output files, and restarts the web process
 to reset its in-memory access and rate-limit state. Browser contexts remain
 isolated. Fixtures allocate unused ports and temporary data directories, so
-focused tests can also run locally when requested.
+focused tests can also run locally when requested. Browser listeners bind to
+kernel-assigned ports directly, and pass their actual origins to test clients.
+`E2E_PORT` can reserve an explicit browser-suite port when needed; zero selects
+an unused port when the listener starts.
 
 ### Creation and persistence recovery coverage
 
@@ -150,7 +153,7 @@ with the affected billing, publication, migration, reuse and live-update tests.
 
 GitHub CI is disabled in GitHub Actions, and `.github/workflows/ci.yml` is retained. The stored workflow defines `pnpm test`, covering unit tests, the frontend build, mock browser tests, and real OpenRouter browser tests, with the `test` environment and its `OPENROUTER_API_KEY` secret. GitHub client values are non-secret test placeholders because these suites do not authenticate with GitHub; the separate GitHub login suite remains an explicit integration check.
 
-Mock E2E tests are grouped into setup, display, access, and generation files and run with three workers. Workers reuse the fixture resources described above while cases remain sequential within each file. The reset preserves production rate limits while preventing earlier tests from consuming later tests' allowances. Shared helpers keep setup consistent, and interaction journeys reuse grids across state transitions and reloads within a test. Real-provider and GitHub suites run serially in one isolated app server each. Fixture cleanup waits for the app and its inference process to exit before removing temporary app data; test artifacts are removed after each test or suite finishes.
+Mock E2E cases can run concurrently within each file and use up to four workers by default, bounded by available CPU parallelism. Set `E2E_WORKERS` to adjust the browser worker count. Unit files use at most four concurrent processes. Workers reuse the fixture resources described above, and resets preserve production rate limits while preventing earlier tests from consuming later tests' allowances. Shared helpers keep setup consistent, and interaction journeys reuse grids across state transitions and reloads within a test. Real-provider and GitHub suites each use one worker and one isolated app server. The full browser run starts mock and real projects concurrently. Fixture cleanup waits for the app and its inference process to exit before removing temporary app data; test artifacts are removed after each test or suite finishes.
 
 Rate-limit browser coverage exhausts the real grid-creation and API request allowances, checks the visible server message and enabled Generate control after repeated rejection, preserves the draft across reload, and verifies that retry creates exactly one grid once a fresh client address has allowance.
 

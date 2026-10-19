@@ -16,13 +16,18 @@ test("production browser fixtures release processes, TLS listeners and temporary
   process.env.GITHUB_CLIENT_ID = "fixture-client";
   process.env.GITHUB_CLIENT_SECRET = "fixture-secret";
   try {
-    const server = await startTestServer("mock");
+    const [server, peer] = await Promise.all([
+      startTestServer("mock"),
+      startTestServer("mock"),
+    ]);
     const port = Number(new URL(server.origin).port);
     try {
+      assert.notEqual(peer.origin, server.origin);
+      assert.equal((await request(`${peer.origin}/api/session`)).status, 200);
       assert.equal((await request(`${server.origin}/api/session`)).status, 200);
       assert.ok(existsSync(server.data));
     } finally {
-      await server.close();
+      await Promise.all([server.close(), peer.close()]);
     }
     assert.equal(existsSync(server.data), false);
     const replacement = await startTestServer("real", port);
