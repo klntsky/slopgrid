@@ -292,14 +292,16 @@ Image grids have a "Parameters" button with a 14px Info circle icon immediately 
    - Keep every available mode control visible in each view, including Raw while thinking or judgment results are displayed.
    - Keep Raw and Thinking icons and control names stable: "View raw" and "Show thinking".
    - On mobile touchscreens, unselected mode buttons keep their neutral appearance after taps instead of showing hover styling.
+   - Raw source uses the preview's default font size in a monospace font, preserves the source text and line breaks, and wraps words and long tokens to the available width. Use vertical scrolling rather than content-fit zoom for Markdown source and chat JSON, including expanded cells.
 8. Expand has an independent pressed state while the cell is expanded. Expanding or collapsing preserves the selected content mode, and switching content modes preserves expansion.
+   - Its tooltip is always "Expand", in both expanded and collapsed states.
 
 ### 5.2. Markdown
 
 1. Render Markdown formatting while displaying embedded raw HTML as text. Use consistent heading hierarchy, paragraph spacing, code backgrounds, blockquote styling, and theme-aware table borders. Reserve space for controls so they do not obscure content, and keep scrollbar space stable.
 2. Render Markdown incrementally into the same rendered layout used for completion, retaining the preview and scroll position throughout.
 3. Let code blocks take their full natural content width, then scale the whole Markdown document to fit the cell width. Scrolling is vertical only. Use a monospace font with equal advance widths for spaces and full-block characters and natural line spacing for rendered code blocks in grid previews and direct output pages. Use the same font for Markdown source views.
-4. Add an icon-only raw-view toggle with a code icon to the left of Expand. Raw mode shows the original Markdown as unformatted text in a monospace font, preserves line breaks, disables wrapping, and scales to the cell width.
+4. Add an icon-only raw-view toggle with a code icon to the left of Expand. Raw mode shows the original Markdown as unformatted source.
 5. Keep raw view available during streaming.
 6. Put Expand in the top-right corner. Expansion occupies the grid workspace while keeping the navbar visible; collapsing restores the grid's layout and viewing state.
 7. Open output carries the app's currently resolved light or dark theme into the standalone Markdown page, including when the app follows the system theme.
@@ -336,6 +338,7 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
 ### 5.6. Judgment results
 
 1. Show the scales control and its score in the top cell toolbar immediately after Thinking, once judged output generation has completed, including expanded cells. Y is the criteria count and X counts verdicts equal to their configured correct answers. The completed accessible name is "Judgment: {X} of {Y} correct".
+   - Use "Show judge results" as the control's tooltip.
 2. Automatically show the judgment view when judging completes, and when opening a grid with completed judgments. The scales control switches between judgment and output; manual dismissal or choosing thinking remains in effect until the page is reopened.
    - Output, thinking, and judgment are alternate views. Selecting one replaces the other within the cell. Preserve the selected presentation across expansion and collapse.
    - Fill the available cell viewport edge to edge with a flat cell-colored results surface, including resized and expanded cells. Scroll within the results view when its content exceeds the viewport.
@@ -366,8 +369,9 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
 ### 5.7. Chat history scrolling
 
 1. Pair messages by their position in rendered chat histories across the grid. Use the [same scroll-following behavior as judgment results](#56-judgment-results): bounded vertical alignment, independent reading-position restoration, and touch anchors retained through dragging, momentum, and scroll completion.
-2. Keep each bubble's normal role styling while it anchors scrolling, without adding a highlight.
-3. Follow rendered chat histories as a group, separately from judgment views. Raw text and thinking keep independent scrolling.
+2. Make each message's hover area a full-width rectangle that includes the space around its bubble. Keep adjacent message areas contiguous and cover the unused space at the end of short histories while preserving the visual spacing between bubbles.
+3. Apply a very subtle tint to the corresponding message bubble in every chat history while its area is hovered or touch-selected. Preserve the bubbles' role colors and alignment.
+4. Follow rendered chat histories as a group, separately from judgment views. Raw text and thinking keep independent scrolling.
 
 ## 6. Inference, scheduling, and recovery
 
