@@ -43,7 +43,7 @@ export function ImageOptions({
                 }
               >
                 <label>
-                  {dimensionNames[kind]}
+                  <span className="parameter-name">{dimensionNames[kind]}</span>
                   <select
                     value={custom ? "custom" : value}
                     onChange={(event) =>
@@ -82,7 +82,9 @@ export function ImageOptions({
       </div>
       {!dimensions.includes("input_references") && (
         <div>
-          <span>Input references</span>
+          <span className="parameter-name parameter-name-standalone">
+            Input references
+          </span>
           <ReferenceGroups
             shared
             values={["Input references"]}

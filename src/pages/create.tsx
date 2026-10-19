@@ -1,18 +1,22 @@
 import { ModelSelector } from "../create/model-selector";
 import { ChatEditor } from "../create/chat-editor";
+import { CriteriaEditor } from "../create/criteria-editor";
 import { ImageOptions } from "../create/image-options";
-import { changeAxis } from "../create/change-axis";
+import { changeAxis, removeJudge } from "../create/change-axis";
 import { FormatPicker } from "../components/format-picker";
 import { useNavigate } from "@tanstack/react-router";
 import { saveDraft } from "../create/draft";
 import { useGrids, usePublicGrids } from "../queries";
 import { ArrowUpRight, DollarSign, ArrowLeftRight } from "lucide-react";
+import { useLayoutEffect, useRef } from "react";
 import {
   efforts,
   isChatFormat,
   unusedVariableIssue,
   type GridInput,
 } from "../../server/domain";
+import { generationGroupKey } from "../../shared/generation-key";
+import { expandGrid } from "../../server/domain";
 import { effortLabel } from "../../server/compatibility";
 import { useCreateForm } from "../create/use-create-form";
 import { AxisEditor } from "../create/axis-editor";
@@ -37,15 +41,45 @@ export function Create() {
     models,
     commonModel,
     commonEffort,
+    judgeModels,
+    commonJudgeModel,
+    commonJudgeEffort,
     generateReasons,
     submission,
   } = useCreateForm();
   const { formatSelected, input } = draft;
+  const judgeEnabled = !!input.judge;
+  const judgeHeader = useRef<HTMLDivElement>(null);
+  const judgeHeaderTop = useRef<number | undefined>(undefined);
+  useLayoutEffect(() => {
+    const previousTop = judgeHeaderTop.current;
+    judgeHeaderTop.current = undefined;
+    if (previousTop === undefined || !judgeHeader.current) return;
+    window.scrollBy({
+      top: judgeHeader.current.getBoundingClientRect().top - previousTop,
+      behavior: "instant",
+    });
+  }, [judgeEnabled]);
+  function setJudgeEnabled(enabled: boolean) {
+    judgeHeaderTop.current = judgeHeader.current?.getBoundingClientRect().top;
+    if (enabled) {
+      update({
+        judge: {
+          criteria: [{ text: "", correctAnswer: true }],
+          model: "",
+          effort: "default",
+        },
+      });
+    } else {
+      update(removeJudge);
+    }
+  }
   const { generate, onUploading, lowBalance, setLowBalance, busy, error } =
     submission;
   const compatibility = compatibilityTables({ input, models });
-  const commonParameters =
-    input.format === "image" || commonModel || commonEffort;
+  const commonFixedParameters =
+    commonModel || commonEffort || commonJudgeModel || commonJudgeEffort;
+  const commonParameters = input.format === "image" || commonFixedParameters;
   const promptVariables = (["rows", "columns"] as const)
     .filter((axis) => input[axis].kind === "variable")
     .map((axis) => (axis === "rows" ? "$ROW" : "$COLUMN"));
@@ -57,6 +91,13 @@ export function Create() {
   );
   const swapHint = useTooltip<HTMLButtonElement>("Swap rows and columns");
   const generateHint = useTooltip<HTMLDivElement>(generateReasons || undefined);
+  const generatedOutputs = input.judge
+    ? new Set(
+        expandGrid(input).map((cell) =>
+          generationGroupKey(input.format, { ...cell, id: "" }),
+        ),
+      ).size
+    : input.rows.values.length * input.columns.values.length;
 
   return (
     <main className="create-page">
@@ -88,6 +129,8 @@ export function Create() {
               axis={input.rows}
               format={input.format}
               models={models}
+              judgeModels={judgeModels}
+              judgeEnabled={!!input.judge}
               referenceGroups={input.referenceGroups}
               onUploading={onUploading}
               onChange={(rows, referenceGroups) =>
@@ -126,6 +169,8 @@ export function Create() {
               axis={input.columns}
               format={input.format}
               models={models}
+              judgeModels={judgeModels}
+              judgeEnabled={!!input.judge}
               referenceGroups={input.referenceGroups}
               onUploading={onUploading}
               onChange={(columns, referenceGroups) =>
@@ -136,9 +181,14 @@ export function Create() {
             />
           </div>
           <p className="hint">
-            {input.rows.values.length} rows × {input.columns.values.length}{" "}
-            columns · {input.rows.values.length * input.columns.values.length}{" "}
-            outputs
+            {input.judge ? (
+              `${input.rows.values.length} rows x ${input.columns.values.length} columns - ${generatedOutputs} generated outputs`
+            ) : (
+              <>
+                {input.rows.values.length} rows × {input.columns.values.length}{" "}
+                columns · {generatedOutputs} outputs
+              </>
+            )}
           </p>
         </section>
       )}
@@ -148,16 +198,93 @@ export function Create() {
             <span className="number">03</span>
             <h2>Specify common parameters</h2>
           </div>
-          {commonModel && (
-            <fieldset role="radiogroup" aria-label="Model">
-              <legend>Model</legend>
-              <ModelSelector
-                models={models}
-                format={input.format}
-                values={input.model ? [input.model] : []}
-                onChange={(values) => update({ model: values[0] ?? "" })}
-              />
-            </fieldset>
+          {commonFixedParameters && (
+            <div className="fixed-options">
+              {commonModel && (
+                <fieldset role="radiogroup" aria-label="Model">
+                  <legend className="parameter-name">Model</legend>
+                  <ModelSelector
+                    models={models}
+                    format={input.format}
+                    values={input.model ? [input.model] : []}
+                    onChange={(values) => update({ model: values[0] ?? "" })}
+                  />
+                </fieldset>
+              )}
+              {commonEffort && (
+                <div>
+                  <label>
+                    <span className="parameter-name">Thinking effort</span>
+                    <select
+                      aria-label="Thinking effort"
+                      value={input.effort}
+                      onChange={(e) =>
+                        update({
+                          effort: e.target.value as GridInput["effort"],
+                        })
+                      }
+                    >
+                      {efforts.map((e) => (
+                        <option key={e} value={e}>
+                          {effortLabel(e)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {compatibility.effort}
+                </div>
+              )}
+              {commonJudgeModel && input.judge && (
+                <fieldset role="radiogroup" aria-label="Judge model">
+                  <legend className="parameter-name">Judge model</legend>
+                  <ModelSelector
+                    judge
+                    models={judgeModels}
+                    format={input.format}
+                    values={input.judge.model ? [input.judge.model] : []}
+                    onChange={(values) =>
+                      update({
+                        judge: { ...input.judge!, model: values[0] ?? "" },
+                      })
+                    }
+                  />
+                  {!judgeModels.length && (
+                    <p className="hint">
+                      No compatible judge models are available for this output
+                      type.
+                    </p>
+                  )}
+                </fieldset>
+              )}
+              {commonJudgeEffort && input.judge && (
+                <div>
+                  <label>
+                    <span className="parameter-name">
+                      Judge thinking effort
+                    </span>
+                    <select
+                      aria-label="Judge thinking effort"
+                      value={input.judge.effort}
+                      onChange={(event) =>
+                        update({
+                          judge: {
+                            ...input.judge!,
+                            effort: event.target.value as GridInput["effort"],
+                          },
+                        })
+                      }
+                    >
+                      {efforts.map((effort) => (
+                        <option key={effort} value={effort}>
+                          {effortLabel(effort)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {compatibility.judge_effort}
+                </div>
+              )}
+            </div>
           )}
           {input.format === "image" && (
             <ImageOptions
@@ -167,30 +294,6 @@ export function Create() {
               onBusy={onUploading}
             />
           )}
-          {commonEffort && (
-            <div className="fixed-options">
-              <div>
-                <label>
-                  Thinking effort
-                  <select
-                    value={input.effort}
-                    onChange={(e) =>
-                      update({
-                        effort: e.target.value as GridInput["effort"],
-                      })
-                    }
-                  >
-                    {efforts.map((e) => (
-                      <option key={e} value={e}>
-                        {effortLabel(e)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                {compatibility.effort}
-              </div>
-            </div>
-          )}
         </section>
       )}
       {formatSelected && (
@@ -199,7 +302,7 @@ export function Create() {
             <span className="number">{commonParameters ? "04" : "03"}</span>
             <h2>
               {isChatFormat(input.format)
-                ? "Chat history"
+                ? "Enter chat history"
                 : "Enter your prompt"}
             </h2>
           </div>
@@ -231,8 +334,47 @@ export function Create() {
       )}
       {formatSelected && (
         <section>
-          <div className="section-heading">
+          <div className="section-heading" ref={judgeHeader}>
             <span className="number">{commonParameters ? "05" : "04"}</span>
+            <h2>
+              <label htmlFor="judge-enabled" className="checkbox judge-toggle">
+                <input
+                  id="judge-enabled"
+                  type="checkbox"
+                  aria-label="Add a LLM judge"
+                  checked={judgeEnabled}
+                  disabled={input.format === "html"}
+                  onChange={(event) => setJudgeEnabled(event.target.checked)}
+                />
+                <span>Add a LLM judge · evaluates the output</span>
+              </label>
+            </h2>
+          </div>
+          {input.format === "html" ? (
+            <p className="hint">Websites do not support a judge.</p>
+          ) : input.judge ? (
+            <>
+              <CriteriaEditor
+                criteria={input.judge.criteria}
+                onChange={(criteria) => {
+                  if (!criteria.length) setJudgeEnabled(false);
+                  else
+                    update((current) => ({
+                      judge: { ...current.judge!, criteria },
+                    }));
+                }}
+              />
+              <p className="hint">
+                Judge calls are not counted towards the generation budget.
+              </p>
+            </>
+          ) : null}
+        </section>
+      )}
+      {formatSelected && (
+        <section>
+          <div className="section-heading">
+            <span className="number">{commonParameters ? "06" : "05"}</span>
             <h2>Inference provider setup</h2>
           </div>
           <Connection returnTo="/create" />

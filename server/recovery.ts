@@ -1,18 +1,16 @@
 import type { Store } from "./store.js";
-import { clearCellProgress } from "./cell-lifecycle.js";
+import { queueTask } from "./task-lifecycle.js";
 
 /** Recover interrupted work once at application startup, without starting inference. */
 export function recoverInterruptedGrids(store: Store) {
   store.billing.recover();
   for (const grid of store.all()) {
-    const running = grid.cells.filter((cell) => cell.status === "running");
+    const tasks = store.workflow(grid.id);
+    const running = tasks.filter((task) => task.status === "running");
     if (grid.status !== "running" && !running.length) continue;
     grid.status = "paused";
     grid.interruption = "restart";
-    for (const cell of running) {
-      cell.status = "pending";
-      clearCellProgress(cell);
-    }
-    store.saveGeneration(grid, running);
+    for (const task of running) queueTask(task);
+    store.saveWorkflow(grid, running);
   }
 }

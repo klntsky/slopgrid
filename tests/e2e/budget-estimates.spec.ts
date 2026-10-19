@@ -1,5 +1,10 @@
 import { test, expect } from "./fixtures";
-import { mockModels, selectModel, expectProgress } from "./helpers";
+import {
+  connectOpenRouter,
+  mockModels,
+  selectModel,
+  expectProgress,
+} from "./helpers";
 
 test("budget warnings group models across thinking efforts and axis swaps", async ({
   page,
@@ -39,7 +44,7 @@ test("budget warnings group models across thinking efforts and axis swaps", asyn
   await expect(warnings.locator("p")).toHaveCount(2);
   await expect(warnings.locator("[data-tooltip]")).toHaveCount(1);
   await expect(warnings.locator("[data-tooltip]")).toContainText("$1");
-  await expect(warnings.locator('[data-estimate="unknown"]')).toHaveCount(1);
+  await expect(warnings).toContainText("Pricing unavailable.");
   const before = await warnings.locator("p").allTextContents();
   await page.getByRole("button", { name: "Swap rows and columns" }).click();
   await expect(warnings.locator("p")).toHaveText(before);
@@ -66,7 +71,7 @@ test("budget estimates follow expanded prompts, warn without blocking, and prese
   });
   await page.goto("/");
   await page.getByRole("button", { name: "Markdown", exact: true }).click();
-  await page.getByRole("link", { name: "Connect OpenRouter" }).click();
+  await connectOpenRouter(page);
   await expect(
     page.getByLabel("Budget limit per cell", { exact: true }),
   ).toBeVisible();
@@ -96,24 +101,19 @@ test("budget estimates follow expanded prompts, warn without blocking, and prese
   await page.getByLabel("Prompt", { exact: true }).fill("$ROW $COLUMN");
   const budget = page.getByLabel("Budget limit per cell", { exact: true });
   const warnings = page.locator(".budget-warnings");
-  await expect(budget).toHaveValue("3");
   await expect(warnings).toHaveCount(0);
   await budget.fill("0.1");
   await expect(warnings.locator("p")).toHaveCount(1);
   const warning = warnings.locator("[data-tooltip]").first();
   await expect(warning).toContainText("$0.1275");
   await warning.focus();
-  await expect(
-    page.getByRole("tooltip").filter({ hasText: "$0.1" }),
-  ).toBeVisible();
-  const amounts = (await warning.getAttribute("data-tooltip"))!.match(
-    /\$[\d.]+/g,
-  );
-  expect(amounts).toEqual(["$0.1", "$0.1275"]);
+  const tooltip = page.getByRole("tooltip").filter({ hasText: "$0.1" });
+  await expect(tooltip).toBeVisible();
+  await expect(tooltip).toContainText("$0.1275");
   await page.getByLabel("Row values").fill(`a\n${"b".repeat(100)}\nc`);
   await expect(warning).toContainText("$0.1374");
   await page.getByLabel("Row values").fill(`a\n${"b".repeat(1000)}\nc`);
-  await expect(warnings.locator('[data-estimate="unknown"]')).toHaveCount(1);
+  await expect(warnings).toContainText("The cell budget is too small");
   await expect(warning).toContainText("$0.1275");
   await page.getByLabel("Row values").fill("a\nb\nc");
   await page.reload();

@@ -1,6 +1,6 @@
 import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { Cell } from "./domain.js";
+import type { GenerationTask } from "./domain.js";
 import { OutputFiles } from "./files.js";
 import { PartialWebsite } from "./partial-website.js";
 import { token } from "./ids.js";
@@ -21,8 +21,13 @@ export class WebsitePreviews {
   ) {
     this.files = new OutputFiles(root);
   }
-  update(cell: Cell, source: string, notify: () => void) {
-    let entry = this.entries.get(cell.id);
+  update(
+    task: GenerationTask,
+    source: string,
+    notify: () => void,
+    isCurrent: () => boolean,
+  ) {
+    let entry = this.entries.get(task.id);
     if (!entry) {
       entry = {
         attempt: token(),
@@ -30,7 +35,7 @@ export class WebsitePreviews {
         revision: 0,
         at: 0,
       };
-      this.entries.set(cell.id, entry);
+      this.entries.set(task.id, entry);
     }
     if (!entry.parser.update(source) || !entry.parser.files["index.html"])
       return;
@@ -38,8 +43,7 @@ export class WebsitePreviews {
     const flush = () =>
       this.persist(() => {
         current.timer = undefined;
-        if (this.entries.get(cell.id) !== current || cell.status !== "running")
-          return;
+        if (this.entries.get(task.id) !== current || !isCurrent()) return;
         for (const path of current.parser.changed) {
           const content = current.parser.files[path];
           const file = join(this.root, current.attempt, path);
@@ -50,7 +54,7 @@ export class WebsitePreviews {
         }
         current.parser.changed.clear();
         current.at = Date.now();
-        cell.preview = {
+        (task.progress ??= {}).preview = {
           attempt: current.attempt,
           revision: ++current.revision,
         };
@@ -60,8 +64,8 @@ export class WebsitePreviews {
     if (!delay && !current.timer) flush();
     else if (!current.timer) current.timer = setTimeout(flush, delay);
   }
-  path(cellId: string, path: string): string | undefined {
-    const entry = this.entries.get(cellId);
+  path(taskId: string, path: string): string | undefined {
+    const entry = this.entries.get(taskId);
     if (!entry?.revision) return;
     if (path.startsWith("__preview/")) {
       const prefix = `__preview/${entry.attempt}/`;
@@ -70,11 +74,11 @@ export class WebsitePreviews {
     }
     return this.files.path(entry.attempt, path);
   }
-  clear(cell: Cell) {
-    const entry = this.entries.get(cell.id);
+  clear(task: GenerationTask) {
+    const entry = this.entries.get(task.id);
     if (entry) {
       if (entry.timer) clearTimeout(entry.timer);
-      this.entries.delete(cell.id);
+      this.entries.delete(task.id);
       this.persist(() =>
         rmSync(join(this.root, entry.attempt), {
           recursive: true,
@@ -82,7 +86,7 @@ export class WebsitePreviews {
         }),
       );
     }
-    delete cell.preview;
+    if (task.progress) delete task.progress.preview;
   }
   clearAll() {
     for (const entry of this.entries.values())

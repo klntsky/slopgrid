@@ -16,9 +16,9 @@ export function gridListPage(
 ): GridListPage {
   const pageSize = 20;
   const where = session
-    ? `(json_extract(data, '$.ownerUserId') = ? OR
-        (COALESCE(json_extract(data, '$.ownerUserId'), '') = '' AND json_extract(data, '$.owner') = ?))`
-    : "json_extract(data, '$.visibility') = 'public'";
+    ? `(owner_user_id = ? OR
+        (COALESCE(owner_user_id, '') = '' AND owner = ?))`
+    : "visibility = 'public'";
   const params = session
     ? [session.userId ?? null, session.anonymousId ?? session.id]
     : [];
@@ -33,7 +33,7 @@ export function gridListPage(
     const rows = store.db
       .prepare(
         `SELECT id FROM grids WHERE ${where}
-      ORDER BY json_extract(data, '$.createdAt') DESC, id ASC LIMIT ? OFFSET ?`,
+      ORDER BY created_at DESC, id ASC LIMIT ? OFFSET ?`,
       )
       .all(...params, pageSize, (page - 1) * pageSize) as { id: string }[];
     const grids = rows.map(({ id }): GridSummary => {

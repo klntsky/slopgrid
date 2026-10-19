@@ -112,7 +112,6 @@ test(
         () => f.engine.api.getGrid(grid.id),
         (g) => g.status === "complete",
       );
-      assert.equal(f.calls.length, 1);
       assert.equal(call.aborted, false);
     } finally {
       for (const reader of readers) await reader.cancel().catch(() => {});

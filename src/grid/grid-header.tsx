@@ -30,29 +30,40 @@ export function GridHeader({
     progressText = failed
       ? `${finished} of ${g.cells.length} outputs finished: ${complete} complete, ${failed} failed`
       : `${complete} of ${g.cells.length} outputs complete`;
-  const costs = g.cells.flatMap((cell) => {
-    const cost =
-      cell.status === "complete"
-        ? cell.usage?.costUsd
-        : cell.status === "running"
-          ? cell.estimatedUsage?.costUsd
-          : undefined;
+  const generations = new Set<string>();
+  const generationCells = g.cells.filter((cell) => {
+    if (generations.has(cell.generationId)) return false;
+    generations.add(cell.generationId);
+    return true;
+  });
+  const costs = generationCells.flatMap((cell) => {
+    const cost = cell.outputReady
+      ? cell.usage?.costUsd
+      : cell.status === "running"
+        ? cell.estimatedUsage?.costUsd
+        : undefined;
     return cost === undefined ? [] : [cost];
   });
-  const estimated = g.cells.some(
+  const estimated = generationCells.some(
     (cell) =>
-      cell.status === "running" && cell.estimatedUsage?.costUsd !== undefined,
+      !cell.outputReady &&
+      cell.status === "running" &&
+      cell.estimatedUsage?.costUsd !== undefined,
   );
   const totalCost =
-    costs.length || complete === 0
+    costs.length || !generationCells.some((cell) => cell.outputReady)
       ? costs.reduce((sum, cost) => sum + cost, 0)
       : undefined;
   const totalCostText =
     totalCost === undefined
       ? "Cost unavailable"
       : `${estimated ? "≈" : ""}${totalUsd.format(totalCost)}`;
-  const inferenceRunning =
-    g.status === "running" || g.cells.some((cell) => cell.status === "running");
+  const generationRunning = g.input.judge
+    ? generationCells.some(
+        (cell) => !cell.outputReady && cell.status === "running",
+      )
+    : g.status === "running" ||
+      g.cells.some((cell) => cell.status === "running");
   const paused = g.status === "paused" && g.canEdit && !g.published;
   const pauseHint = useTooltip<HTMLButtonElement>(
     paused
@@ -60,10 +71,10 @@ export function GridHeader({
       : "Stops active requests. Work can be resumed later, but unfinished responses will be lost.",
   );
   const costHint = useTooltip<HTMLSpanElement>(
-    "Inference costs for this grid, not including failed attempts",
+    "Generation costs for this grid, not including failed attempts",
   );
   const spentHint = useTooltip<HTMLSpanElement>(
-    "Inference costs for this grid, including failed attempts - how much you have actually spent on this page",
+    "Generation and judging costs for this grid, including failed attempts",
   );
   const spentText =
     g.spentUsd === undefined
@@ -136,7 +147,7 @@ export function GridHeader({
                 tabIndex={0}
               >
                 <span aria-hidden="true">· </span>
-                <span className={inferenceRunning ? "live-cost" : undefined}>
+                <span className={generationRunning ? "live-cost" : undefined}>
                   {totalCost === undefined
                     ? totalCostText
                     : `cost ${totalCostText}`}
@@ -150,7 +161,7 @@ export function GridHeader({
                   tabIndex={0}
                 >
                   <span aria-hidden="true">&middot; </span>
-                  <span className={inferenceRunning ? "live-cost" : undefined}>
+                  <span className={generationRunning ? "live-cost" : undefined}>
                     {`spent ${spentText}`}
                   </span>
                 </span>

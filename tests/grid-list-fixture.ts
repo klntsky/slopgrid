@@ -1,5 +1,6 @@
 import { expandGrid, type Grid } from "../server/domain.js";
 import type { Store } from "../server/store.js";
+import { createWorkflow } from "../server/workflow.js";
 
 export function seedGridLists(
   store: Store,
@@ -28,14 +29,14 @@ export function seedGridLists(
       effort: "default",
       budgetUsd: 3,
     };
-    store.insert({
+    const grid: Grid = {
       id,
       owner: i < counts.owned ? owner : "other-owner",
       input,
       createdAt: new Date(
         Date.UTC(2026, 0, 1 + Math.floor(i / 3)),
       ).toISOString(),
-      status: "complete",
+      status: "paused",
       published: visibility !== "private",
       visibility,
       cells: expandGrid(input).map((cell) => ({
@@ -44,7 +45,13 @@ export function seedGridLists(
         status: "error" as const,
         error: "Fixture output",
       })),
-    });
+    };
+    const tasks = createWorkflow(input, grid.cells);
+    for (const task of tasks) {
+      task.status = "error";
+      task.error = "Fixture output";
+    }
+    store.insert(grid, tasks);
     if (i < counts.owned) owned.push(id);
     if (visibility === "public") publicIds.push(id);
   }

@@ -15,9 +15,10 @@ export function ExpandButton({
       type="button"
       className="secondary markdown-expand"
       aria-label={label}
-      data-tooltip={label}
+      data-tooltip="Expand"
       ref={tooltipRef}
       aria-expanded={expanded}
+      aria-pressed={expanded}
       onClick={(event) => onClick(event.currentTarget)}
     >
       {expanded ? (

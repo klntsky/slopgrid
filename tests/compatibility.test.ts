@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  canJudge,
+  judgeModelIssue,
   thinkingEffortSupport,
   imageSettingsSupport,
 } from "../server/compatibility.js";
@@ -11,6 +13,7 @@ const models: Model[] = [
     id: "required",
     name: "Required thinker",
     image: false,
+    imageInput: false,
     text: true,
     reasoning: true,
     reasoningMandatory: true,
@@ -20,6 +23,7 @@ const models: Model[] = [
     id: "plain",
     name: "Plain model",
     image: false,
+    imageInput: false,
     text: true,
     reasoning: false,
     reasoningMandatory: false,
@@ -29,6 +33,7 @@ const models: Model[] = [
     id: "fixed",
     name: "Fixed thinker",
     image: false,
+    imageInput: false,
     text: true,
     reasoning: true,
     reasoningMandatory: true,
@@ -38,6 +43,7 @@ const models: Model[] = [
     id: "router",
     name: "Dynamic router",
     image: false,
+    imageInput: false,
     text: true,
     reasoning: true,
     reasoningMandatory: false,
@@ -52,6 +58,69 @@ test("thinking effort support distinguishes supported, unsupported, and unknown 
   assert.equal(thinkingEffortSupport(models[3], "high"), "unknown");
   assert.equal(thinkingEffortSupport(models[3], "default"), "supported");
   assert.equal(thinkingEffortSupport(undefined, "default"), "unsupported");
+});
+
+test("judges require explicit structured text output, never response_format alone", () => {
+  const judge: Model = {
+    ...models[1],
+    structuredOutputs: true,
+    imageInput: true,
+  };
+  for (const format of ["markdown", "chat-template", "svg", "image"] as const) {
+    assert.equal(canJudge(judge, format), true);
+    assert.equal(judgeModelIssue(judge, format), undefined);
+    for (const structuredOutputs of [false, undefined]) {
+      const responseFormatOnly = {
+        ...judge,
+        structuredOutputs,
+        supportedParameters: ["response_format"],
+      };
+      assert.equal(canJudge(responseFormatOnly, format), false);
+      assert.equal(
+        judgeModelIssue(responseFormatOnly, format),
+        "The judge model must support structured outputs.",
+      );
+    }
+    assert.equal(canJudge({ ...judge, text: false }, format), false);
+    assert.equal(
+      judgeModelIssue(undefined, format),
+      "The judge model must support structured outputs.",
+    );
+  }
+  assert.equal(canJudge(judge, "html"), false);
+  assert.equal(
+    judgeModelIssue(judge, "html"),
+    "Websites do not support a judge yet.",
+  );
+});
+
+test("SVG and Image judges require image input, not image output", () => {
+  const textJudge: Model = {
+    ...models[1],
+    structuredOutputs: true,
+    image: true,
+    imageInput: false,
+  };
+  for (const format of ["markdown", "chat-template"] as const) {
+    assert.equal(canJudge(textJudge, format), true);
+    assert.equal(judgeModelIssue(textJudge, format), undefined);
+  }
+  for (const format of ["svg", "image"] as const) {
+    for (const model of [
+      textJudge,
+      { ...textJudge, imageInput: undefined } as unknown as Model,
+    ]) {
+      assert.equal(canJudge(model, format), false);
+      assert.equal(
+        judgeModelIssue(model, format),
+        "The judge model must support image inputs for SVG and Image outputs.",
+      );
+    }
+    assert.equal(
+      canJudge({ ...textJudge, image: false, imageInput: true }, format),
+      true,
+    );
+  }
 });
 
 test("image compatibility requires one endpoint to support the whole combination", () => {

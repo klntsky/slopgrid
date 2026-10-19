@@ -156,11 +156,11 @@ export function GridViewport({
       pinching = false;
       zoom(1);
       applySizes();
-      if (touch && viewport.clientWidth)
+      if (touch && viewport.clientHeight)
         zoom(
           Math.min(
             1,
-            viewport.clientWidth / table.getBoundingClientRect().width,
+            viewport.clientHeight / table.getBoundingClientRect().height,
           ),
         );
       viewport.scrollLeft = viewport.scrollTop = 0;
@@ -204,7 +204,7 @@ export function GridViewport({
         if (
           e.pointerType !== "mouse" ||
           e.target.closest(
-            'img, iframe, .markdown-preview, button, a, input, textarea, select, [contenteditable]:not([contenteditable="false"])',
+            'img, iframe, .markdown-preview, .judge-results, button, a, input, textarea, select, [contenteditable]:not([contenteditable="false"])',
           )
         )
           return;
@@ -283,7 +283,8 @@ export function GridViewport({
         scale,
         minimum: Math.min(
           1,
-          (viewport.clientWidth * scale) / table.getBoundingClientRect().width,
+          (viewport.clientHeight * scale) /
+            table.getBoundingClientRect().height,
         ),
         anchor: {
           x: (viewport.scrollLeft + center.x - bounds.left) / scale,

@@ -6,6 +6,7 @@ import { appFixture } from "./app-fixture.js";
 import { Provider } from "../server/provider.js";
 import { Store } from "../server/store.js";
 import { expandGrid, gridSchema, type Grid } from "../server/domain.js";
+import { createWorkflow } from "../server/workflow.js";
 
 const png = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
@@ -20,6 +21,7 @@ for (const shared of [false, true])
         id: "fixture/image",
         name: "Image",
         image: true,
+        imageInput: false,
         text: false,
         reasoning: false,
         reasoningMandatory: false,
@@ -107,7 +109,18 @@ for (const shared of [false, true])
         status: "complete",
       })),
     };
-    store.insert(grid);
+    const tasks = createWorkflow(input, grid.cells);
+    for (const task of tasks) {
+      if (task.kind !== "generation") throw new Error("Expected generation");
+      task.status = "complete";
+      task.output = {
+        artifactId: "reference-grid-output",
+        mediaType: "image/png",
+        provenance: { signature: "reference-fixture", files: ["image"] },
+      };
+    }
+    store.files.write("reference-grid-output", { image: png });
+    store.insert(grid, tasks);
     const user = store.identify("github", "reference-owner", {
       provider: "github",
       username: "owner",
@@ -145,6 +158,7 @@ for (const shared of [false, true])
       ownerUserId: undefined,
       published: false,
       visibility: "private",
+      status: "paused",
       cells: grid.cells.map((c) => ({ ...c, id: "fork-cell" })),
     });
     store.db.prepare("DELETE FROM grids WHERE id=?").run(grid.id);
@@ -243,9 +257,19 @@ test("reference loaders share exact bytes and hashes while retaining order and e
     a.map((ref) => ref.bytes),
     [png, other, png],
   );
-  assert.equal(a[0], a[2]);
-  assert.equal(a[0], b[0]);
-  assert.equal(a[0].sha256, createHash("sha256").update(png).digest("hex"));
+  assert.deepEqual(
+    a.map((ref) => ref.sha256),
+    [png, other, png].map((bytes) =>
+      createHash("sha256").update(bytes).digest("hex"),
+    ),
+  );
+  assert.deepEqual(b, [
+    {
+      bytes: png,
+      mediaType: "image/png",
+      sha256: createHash("sha256").update(png).digest("hex"),
+    },
+  ]);
   const file = store.references.path(first.id)!;
   renameSync(file, file + ".held");
   assert.deepEqual((await load([first.id]))[0].bytes, png);
@@ -253,4 +277,70 @@ test("reference loaders share exact bytes and hashes while retaining order and e
   await assert.rejects(fresh([first.id]), /unavailable/);
   renameSync(file + ".held", file);
   assert.deepEqual((await fresh([first.id]))[0].bytes, png);
+});
+
+test("grid creation records every selected reference atomically and keeps membership tied to immutable configuration", async (t) => {
+  const { store } = await appFixture(t);
+  const uploader = { id: "reference-uploader", created: 0 };
+  const owner = { id: "reference-grid-owner", created: 0 };
+  const first = store.references.add(png, "first.png", uploader)!;
+  const second = store.references.add(png, "second.png", uploader)!;
+  const spare = store.references.add(png, "spare.png", uploader)!;
+  const missing = { id: "d".repeat(48), name: "missing.png" };
+  const input: Grid["input"] = {
+    format: "image",
+    prompt: "Use the selected references",
+    model: "fixture/image",
+    effort: "default",
+    budgetUsd: 1,
+    rows: { kind: "input_references", values: ["Pair", "Other"] },
+    columns: { kind: "size", values: ["1K"] },
+    referenceGroups: {
+      Pair: [first, first],
+      Other: [second, missing],
+    },
+  };
+  const grid: Grid = {
+    id: "atomic-reference-grid",
+    owner: owner.id,
+    input,
+    status: "paused",
+    published: false,
+    visibility: "private",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    cells: expandGrid(input).map((cell, index) => ({
+      ...cell,
+      id: `atomic-reference-cell-${index}`,
+    })),
+  };
+  store.db.exec(`CREATE TEMP TRIGGER fail_reference_grid
+    BEFORE INSERT ON cells BEGIN
+      SELECT RAISE(ABORT, 'Injected grid failure');
+    END`);
+  try {
+    assert.throws(() => store.insert(grid), /Injected grid failure/);
+    assert.equal(store.get(grid.id), undefined);
+    assert.equal(store.references.allowed(first.id, owner), false);
+  } finally {
+    store.db.exec("DROP TRIGGER fail_reference_grid");
+  }
+  store.insert(grid);
+  assert.equal(store.references.allowed(first.id, owner), true);
+  assert.equal(store.references.allowed(second.id, owner), true);
+  assert.equal(store.references.allowed(spare.id, owner), false);
+  assert.equal(store.references.allowed(missing.id, owner), false);
+  assert.equal(store.references.allowed(first.id), false);
+  grid.input = {
+    ...input,
+    referenceGroups: { Pair: [first], Other: [spare] },
+  };
+  store.saveWorkflow(grid, store.workflow(grid.id));
+  assert.deepEqual(store.get(grid.id)!.input, input);
+  assert.equal(store.references.allowed(second.id, owner), true);
+  assert.equal(store.references.allowed(spare.id, owner), false);
+  store.db.prepare("DELETE FROM grids WHERE id=?").run(grid.id);
+  assert.equal(store.references.allowed(first.id, owner), false);
+  store.insert(grid);
+  assert.equal(store.references.allowed(second.id, owner), false);
+  assert.equal(store.references.allowed(spare.id, owner), true);
 });

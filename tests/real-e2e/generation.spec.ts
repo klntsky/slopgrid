@@ -42,7 +42,13 @@ for (const [format, prompt] of Object.entries(prompts)) {
     await page
       .getByRole("combobox", { name: "Columns", exact: true })
       .selectOption("effort");
-    await page.getByRole("checkbox", { name: "None", exact: true }).check();
+    const columnValues = page.getByRole("group", { name: "Column values" });
+    await columnValues
+      .getByRole("checkbox", { name: "Model default", exact: true })
+      .uncheck();
+    await columnValues
+      .getByRole("checkbox", { name: "None", exact: true })
+      .check();
     await page.getByLabel("Prompt", { exact: true }).fill(prompt);
     await page
       .getByRole("button", { name: "Use API key", exact: true })

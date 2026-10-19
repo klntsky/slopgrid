@@ -3,6 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { expandGrid, type Grid } from "../server/domain.js";
 import { Store } from "../server/store.js";
+import { createWorkflow } from "../server/workflow.js";
 
 // Exercise the real session, ownership, persistence, and publishing routes.
 test("publishing is permanent, link grids are unlisted, and public summaries omit private data", async (t) => {
@@ -27,7 +28,12 @@ test("publishing is permanent, link grids are unlisted, and public summaries omi
       id,
       owner,
       input,
-      status: "complete",
+      status:
+        status === "complete"
+          ? "complete"
+          : status === "error"
+            ? "paused"
+            : "running",
       published: false,
       visibility: "private",
       createdAt: `2026-01-0${store.all().length + 1}T00:00:00.000Z`,
@@ -37,7 +43,16 @@ test("publishing is permanent, link grids are unlisted, and public summaries omi
         status,
       })),
     };
-    store.insert(grid);
+    const tasks = createWorkflow(input, grid.cells);
+    for (const task of tasks) {
+      task.status = status;
+      if (task.kind === "generation" && status === "complete")
+        task.output = {
+          artifactId: `published-artifact-${id}`,
+          provenance: { signature: "publishing-fixture", files: ["index.md"] },
+        };
+    }
+    store.insert(grid, tasks);
   }
   async function publish(id: string, body?: unknown, asOwner = true) {
     return fetch(`${origin}/api/grids/${id}/publish`, {
@@ -131,7 +146,16 @@ test("publishing is permanent, link grids are unlisted, and public summaries omi
     })
   ).json();
   assert.equal(mine.total, 5);
-  assert.ok(mine.grids.every((g: Grid) => g.visibility));
+  assert.deepEqual(
+    Object.fromEntries(mine.grids.map((g: Grid) => [g.id, g.visibility])),
+    {
+      private: "private",
+      link: "unlisted",
+      listed: "public",
+      pending: "private",
+      running: "private",
+    },
+  );
   for (const id of ["link", "listed"]) {
     const previous = store.get(id)!;
     const anonymous = await fetch(`${origin}/api/grids/${id}`);
@@ -218,7 +242,26 @@ test("publishing a paused grid exposes unfinished cells as Not generated and loc
       ...(index === 2 ? { error: "Insufficient credits", errorCode: 402 } : {}),
     })),
   };
-  store.insert(grid);
+  const tasks = createWorkflow(input, grid.cells);
+  const states = ["complete", "error", "pending"] as const;
+  tasks.forEach((task, index) => {
+    task.status = states[index];
+    if (task.kind !== "generation") throw new Error("Expected generation");
+    if (index === 0)
+      task.output = {
+        artifactId: "paused-publication-artifact",
+        provenance: { signature: "publishing-fixture", files: ["index.md"] },
+      };
+    if (index === 1) {
+      task.error = "Provider failure";
+      task.errorCode = 500;
+    }
+    if (index === 2) {
+      task.error = "Insufficient credits";
+      task.errorCode = 402;
+    }
+  });
+  store.insert(grid, tasks);
   const publish = (visibility: string) =>
     fetch(`${origin}/api/grids/${grid.id}/publish`, {
       method: "POST",
@@ -230,7 +273,6 @@ test("publishing a paused grid exposes unfinished cells as Not generated and loc
       body: JSON.stringify({ visibility }),
     });
   assert.equal((await publish("private")).status, 200);
-  assert.deepEqual(store.get(grid.id)!.cells, grid.cells);
   for (const visibility of ["unlisted", "public"]) {
     const response = await publish(visibility);
     assert.equal(response.status, 200);

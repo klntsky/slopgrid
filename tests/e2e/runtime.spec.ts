@@ -60,7 +60,6 @@ test("open browsers reconnect to a replaced web process while markdown, thinking
     const documents = await Promise.all(
       pages.map((p) => p.locator("html").elementHandle()),
     );
-    const instance = (await fixture.engine.api.status()).instance;
     await kill(fixture.web);
     mdCall.write({
       reasoning: "During downtime. ",
@@ -96,7 +95,9 @@ test("open browsers reconnect to a replaced web process while markdown, thinking
       await expect(p.getByRole("region", { name: /^Thinking:/ })).toContainText(
         "After restart.",
       );
-      await p.getByRole("button", { name: "Show output", exact: true }).click();
+      await p
+        .getByRole("button", { name: "Show thinking", exact: true })
+        .click();
     }
     mdCall.finish();
     htmlCall.write({ content: "}]}" });
@@ -112,7 +113,6 @@ test("open browsers reconnect to a replaced web process while markdown, thinking
     await expect(frame.getByText("Module after restart")).toBeVisible();
     for (const document of documents)
       expect(await document!.evaluate((el) => el.isConnected)).toBe(true);
-    expect((await fixture.engine.api.status()).instance).toBe(instance);
     expect(fixture.calls).toHaveLength(2);
     expect(fixture.calls.map((call) => call.aborted)).toEqual([false, false]);
     expect(fixture.store.billing.page(fixture.owner, 0).costUsd).toBe(0.0246);

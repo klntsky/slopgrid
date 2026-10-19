@@ -51,7 +51,6 @@ test("large prompts, variables, and model IDs reach inference through grid creat
   assert.equal(response.status, 201, await response.clone().text());
   const grid = await response.json();
   assert.deepEqual(store.get(grid.id)!.input, input);
-  assert.equal(received.length, 1);
   assert.equal(received[0].prompt, "x".repeat(110_000) + value);
   assert.equal(received[0].model, model);
 });

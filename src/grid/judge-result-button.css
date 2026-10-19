@@ -1,0 +1,98 @@
+.markdown-actions:has(> .judge-result-button) {
+  max-width: calc(100% - 16px);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.markdown-actions:has(> .judge-result-button) > button {
+  flex-shrink: 0;
+}
+.markdown-actions .judge-result-button {
+  width: auto;
+  min-width: 58px;
+  gap: 5px;
+  padding-inline: 7px;
+  font-variant-numeric: tabular-nums;
+}
+.judge-result-score {
+  display: inline-flex;
+  align-items: center;
+}
+.markdown-actions .judge-result-score .spinner {
+  width: 1em;
+  height: 1em;
+}
+.judge-results {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 64px 12px 12px;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.4;
+  overscroll-behavior-y: contain;
+  background: var(--cell);
+}
+.judge-results[data-can-scroll-up] {
+  box-shadow: inset 0 12px 12px -12px var(--shadow);
+}
+.judge-results[data-can-scroll-down] {
+  box-shadow: inset 0 -12px 12px -12px var(--shadow);
+}
+.judge-results[data-can-scroll-up][data-can-scroll-down] {
+  box-shadow:
+    inset 0 12px 12px -12px var(--shadow),
+    inset 0 -12px 12px -12px var(--shadow);
+}
+.judge-result-state {
+  margin: 0 0 10px;
+  overflow-wrap: anywhere;
+}
+.judge-result-criteria {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.judge-result-criteria li {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) minmax(0, 1.5fr);
+  align-items: start;
+  gap: 8px;
+}
+.judge-result-criteria li[data-scroll-sync-hovered] {
+  background-color: color-mix(in srgb, var(--selected) 50%, transparent);
+}
+.judge-result-criterion,
+.judge-result-explanation {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.judge-result-criterion {
+  font-weight: 600;
+}
+.judge-result-verdict {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-top: 1px;
+}
+.judge-result-verdict .lucide {
+  width: 16px;
+  height: 16px;
+}
+.judge-correct {
+  color: color-mix(in srgb, #3c8a51 75%, var(--text));
+}
+.judge-incorrect {
+  color: color-mix(in srgb, #b64249 75%, var(--text));
+}
+.judge-result-explanation {
+  margin: 0;
+}
+.judge-result-unresolved {
+  color: var(--muted);
+  text-align: center;
+}

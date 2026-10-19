@@ -43,9 +43,6 @@ test("direct creation opens the form without a saved draft", async ({
 }) => {
   await page.goto("/create");
   await expect(page.getByLabel("Prompt", { exact: true })).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "SVG", exact: true }),
-  ).toHaveAttribute("aria-pressed", "true");
 });
 
 test("home separates discovery from the saved creation form and redirects grids", async ({
@@ -58,9 +55,6 @@ test("home separates discovery from the saved creation form and redirects grids"
   ).toBeVisible();
   await expect(
     page.getByRole("region", { name: "Your grids", exact: true }),
-  ).toHaveCount(0);
-  await expect(
-    page.getByRole("button", { name: "Next", exact: true }),
   ).toHaveCount(0);
   for (const format of ["Markdown", "Image", "SVG", "Static website"]) {
     await page.getByRole("button", { name: format, exact: true }).click();

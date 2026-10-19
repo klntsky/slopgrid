@@ -82,11 +82,6 @@ test("template budgets use actual prefixes and remaining allowance, and reuse ch
   }));
   assert.equal(templateFits(unknownOutput, 10, reuseBudgetFor), true);
   assert.equal(templateFits(unknownOutput, 5, reuseBudgetFor), false);
-  assert.equal(JSON.stringify(result.templateSteps).includes("Answer"), false);
-  for (const step of result.templateSteps) {
-    assert.equal(Object.hasOwn(step, "inputTokens"), false);
-    assert.equal(Object.hasOwn(step, "maxPrice"), false);
-  }
 });
 
 test("template reuse needs a valid reported input count for every call", () => {
@@ -121,13 +116,11 @@ test("template reuse needs a valid reported input count for every call", () => {
 
 test("later failures preserve the emitted prefix and retries start again", async () => {
   const progress: InferenceProgress[] = [];
-  let calls = 0;
   const run = async () =>
     fillChatTemplate(
       cell,
       budgetFor,
       async (messages, _budget, onChunk) => {
-        calls++;
         if (messages.length > 1) throw new Error("Later failure");
         onChunk({ text: "First answer", thinking: "" });
         return { files: { "index.md": "First answer" } };
@@ -135,9 +128,14 @@ test("later failures preserve the emitted prefix and retries start again", async
       (p) => progress.push(p),
     );
   await assert.rejects(run, /Later failure/);
-  assert.match(progress.at(-1)!.text, /First answer/);
+  const expectedPrefix = [
+    { role: "user", content: "First" },
+    { role: "assistant", content: "First answer" },
+  ];
+  assert.deepEqual(readChatOutput(progress.at(-1)!.text), expectedPrefix);
+  progress.length = 0;
   await assert.rejects(run, /Later failure/);
-  assert.equal(calls, 4);
+  assert.deepEqual(readChatOutput(progress.at(-1)!.text), expectedPrefix);
   assert.equal(cell.messages![1].role, "unfilled");
 });
 
@@ -187,7 +185,6 @@ test("supplied final messages get a completion using the complete history and sh
       () => {},
     );
     const output = readChatOutput(result.files["messages.json"]);
-    assert.equal(histories.length, 3);
     assert.deepEqual(allowances, [4, 5, 8]);
     assert.deepEqual(histories[2], [
       messages[0],
@@ -200,14 +197,11 @@ test("supplied final messages get a completion using the complete history and sh
       ...histories[2],
       { role: "assistant", content: "Answer 3" },
     ]);
-    assert.equal(result.templateSteps.length, 3);
     assert.deepEqual(result.usage, {
       inputTokens: 60,
       outputTokens: 30,
       costUsd: 6,
     });
-    assert.equal(messages.length, 5);
-    assert.equal(messages.at(-1)!.role, role);
   }
 });
 
@@ -241,19 +235,29 @@ test("cancellation or exhausted budget after the final blank prevents the traili
   }
 });
 
-test("existing Markdown conversations preserve fenced role headings and whitespace", () => {
+test("chat output reads only ordered JSON messages and preserves their content", () => {
   const messages = [
     { role: "system" as const, content: "  Instructions\n" },
     {
       role: "user" as const,
-      content: "Question\n\n```md\n## assistant\n\n```",
+      content: "Question\n\n## assistant\n\n```md\n## user\n\n```",
     },
-    { role: "assistant" as const, content: "Answer\n" },
+    { role: "assistant" as const, content: "" },
   ];
-  const transcript = messages
-    .map(({ role, content }) => `## ${role}\n\n${content}`)
-    .join("\n\n");
-  assert.deepEqual(readChatOutput(transcript), messages);
+  assert.deepEqual(readChatOutput(JSON.stringify(messages, null, 2)), messages);
+  assert.deepEqual(readChatOutput(" \n[]\n"), []);
+});
+
+test("chat output rejects malformed JSON and invalid message roles or content", () => {
+  assert.throws(() => readChatOutput("["), SyntaxError);
+  for (const value of [
+    {},
+    [null],
+    ["Answer"],
+    [{ role: "unfilled", content: "" }],
+    [{ role: "assistant", content: 42 }],
+  ])
+    assert.throws(() => readChatOutput(JSON.stringify(value)));
 });
 
 test("cancellation and exhausted shared budget prevent subsequent calls", async () => {
@@ -293,19 +297,22 @@ test("missing reported cost uses token estimates and unknown metadata keeps prov
   );
   assert.equal(allowances[1], 9.89);
   assert.equal(result.usage?.costUsd, undefined);
-  let calls = 0;
-  await fillChatTemplate(
+  const unknown = await fillChatTemplate(
     cell,
     (prompt, dollars) =>
       generationBudget({ name: "Unknown" }, prompt, "", dollars),
     async (_messages, budget) => {
-      calls++;
       assert.equal(budget.maxOutputTokens, undefined);
       return { files: { "index.md": "Answer" } };
     },
     () => {},
   );
-  assert.equal(calls, 2);
+  assert.deepEqual(readChatOutput(unknown.files["messages.json"]), [
+    cell.messages![0],
+    { role: "assistant", content: "Answer" },
+    cell.messages![2],
+    { role: "assistant", content: "Answer" },
+  ]);
 });
 
 test("template reuse uses reported input counts and current prices for each allowance", async () => {
@@ -337,10 +344,6 @@ test("template reuse uses reported input counts and current prices for each allo
       overrides: [{ min_prompt_tokens: 300, prompt: 0.003 }],
     },
   };
-  assert.deepEqual(
-    generationBudget(tiered, "user: First", "", 5).maxPrice,
-    generationBudget(changed, "user: First", "", 5).maxPrice,
-  );
   assert.equal(
     templateFits(result.templateSteps, 10, (inputTokens, dollars) =>
       generationBudgetForInput(changed, inputTokens, dollars),

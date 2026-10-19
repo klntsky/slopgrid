@@ -16,6 +16,8 @@ export function AxisEditor({
   axis,
   format,
   models,
+  judgeModels,
+  judgeEnabled = false,
   onChange,
   referenceGroups = {},
   onUploading,
@@ -26,16 +28,21 @@ export function AxisEditor({
   axis: GridInput["rows"];
   format: GridInput["format"];
   models: Model[];
+  judgeModels: Model[];
+  judgeEnabled?: boolean;
   onChange: (axis: GridInput["rows"], groups?: Groups) => void;
   referenceGroups?: Groups;
   onUploading: (busy: boolean) => void;
 }) {
-  const kinds =
-    format === "image"
+  const kinds: GridInput["rows"]["kind"][] = [
+    ...(format === "image"
       ? (["model", "variable", ...imageKinds] as const)
-      : (["model", "effort", "variable"] as const);
+      : (["model", "effort", "variable"] as const)),
+    "judge_model",
+    "judge_effort",
+  ];
   const choices =
-    axis.kind === "effort"
+    axis.kind === "effort" || axis.kind === "judge_effort"
       ? efforts.map((e) => ({ id: e, name: effortLabel(e) }))
       : [
           ...new Set([
@@ -48,9 +55,10 @@ export function AxisEditor({
         }));
   return (
     <div className="axis">
-      <label>
-        {label}
+      <label className="axis-selector">
+        <span className="axis-name">{label}:</span>
         <select
+          aria-label={label}
           value={axis.kind}
           onChange={(e) => {
             const kind = e.target.value as GridInput["rows"]["kind"];
@@ -61,7 +69,13 @@ export function AxisEditor({
           }}
         >
           {kinds.map((k) => (
-            <option key={k} value={k}>
+            <option
+              key={k}
+              value={k}
+              disabled={
+                !judgeEnabled && (k === "judge_model" || k === "judge_effort")
+              }
+            >
               {dimensionNames[k]}
             </option>
           ))}
@@ -94,11 +108,12 @@ export function AxisEditor({
         <fieldset
           aria-label={label === "Rows" ? "Row values" : "Column values"}
         >
-          {axis.kind === "model" ? (
+          {axis.kind === "model" || axis.kind === "judge_model" ? (
             <ModelSelector
               multiple
               label={label}
-              models={models}
+              models={axis.kind === "judge_model" ? judgeModels : models}
+              judge={axis.kind === "judge_model"}
               format={format}
               values={axis.values}
               onChange={(values) => onChange({ ...axis, values })}
@@ -119,7 +134,7 @@ export function AxisEditor({
                       onChange({
                         ...axis,
                         values:
-                          axis.kind === "effort"
+                          axis.kind === "effort" || axis.kind === "judge_effort"
                             ? efforts.filter((effort) => selected.has(effort))
                             : [...selected],
                       });

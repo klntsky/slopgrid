@@ -18,7 +18,14 @@ export const efforts = [
   "xhigh",
   "max",
 ] as const;
-export const kinds = ["model", "effort", "variable", ...imageKinds] as const;
+export const kinds = [
+  "model",
+  "effort",
+  "judge_model",
+  "judge_effort",
+  "variable",
+  ...imageKinds,
+] as const;
 const axis = z.object({
   kind: z.enum(kinds),
   values: z
@@ -75,6 +82,23 @@ const gridFields = {
     .optional(),
   model: z.string().trim(),
   effort: z.enum(efforts),
+  judge: z
+    .object({
+      criteria: z
+        .array(
+          z.object({
+            text: z
+              .string()
+              .trim()
+              .min(1, "Enter a yes-or-no question for each criterion."),
+            correctAnswer: z.boolean(),
+          }),
+        )
+        .min(1, "Add at least one criterion."),
+      model: z.string().trim(),
+      effort: z.enum(efforts),
+    })
+    .optional(),
   parallelWorkers: z.number().int().min(1).optional(),
 };
 export const gridSchema = z
@@ -107,6 +131,19 @@ export const gridSchema = z
       issue("Select a model.");
     if (g.rows.kind === g.columns.kind && g.rows.kind !== "variable")
       issue("Choose different row and column dimensions");
+    const dimensions = [g.rows.kind, g.columns.kind];
+    if (
+      !g.judge &&
+      dimensions.some(
+        (kind) => kind === "judge_model" || kind === "judge_effort",
+      )
+    )
+      issue("Add a judge to use judge dimensions.");
+    if (g.judge) {
+      if (g.format === "html") issue("Websites do not support a judge yet.");
+      if (!dimensions.includes("judge_model") && !g.judge.model)
+        issue("Select a judge model.");
+    }
     if (
       g.format === "image" &&
       [g.rows.kind, g.columns.kind].includes("effort")
@@ -114,7 +151,7 @@ export const gridSchema = z
       issue("Images do not support thinking effort dimensions");
     for (const a of [g.rows, g.columns]) {
       if (
-        a.kind === "effort" &&
+        (a.kind === "effort" || a.kind === "judge_effort") &&
         a.values.some((v) => !efforts.includes(v as (typeof efforts)[number]))
       )
         issue("Unknown thinking effort");
@@ -182,7 +219,7 @@ export function unusedVariableIssue(
       return `Include ${token} in the prompt for ${label} variables.`;
 }
 export type Completion = {
-  phase: "direct" | "image";
+  phase: "direct" | "image" | "judge";
   finishReason?: string;
   rawFinishReason?: string;
   reasoningTokens?: number;
@@ -193,6 +230,7 @@ export type InferenceProgress = {
   estimatedUsage?: Cell["usage"];
   currentCallCostUsd?: number;
 };
+export type JudgeResult = { verdict: boolean; explanation: string };
 export type Cell = {
   id: string;
   row: number;
@@ -204,6 +242,20 @@ export type Cell = {
   budgetUsd: number;
   imageSettings?: ImageSettings;
   status: "pending" | "running" | "complete" | "error";
+  generationId?: string;
+  judgmentId?: string;
+  artifactId?: string;
+  thinkingSourceId?: string;
+  judge?: {
+    model: string;
+    effort: string;
+    status: Cell["status"];
+    attemptId?: string;
+    results?: JudgeResult[];
+    error?: string;
+    errorCode?: string | number;
+    retrying?: boolean;
+  };
   error?: string;
   errorCode?: string | number;
   retrying?: boolean;
@@ -223,6 +275,60 @@ export type Cell = {
   preview?: { attempt: string; revision: number };
   usage?: { inputTokens?: number; outputTokens?: number; costUsd?: number };
 };
+export type WorkflowState = {
+  status: Cell["status"];
+  attemptId?: string;
+  error?: string;
+  errorCode?: string | number;
+  retrying?: boolean;
+};
+export type Task<Input, Output> = WorkflowState & {
+  id: string;
+  input: Input;
+  output?: Output;
+};
+export type GenerationParameters = Pick<
+  Cell,
+  "model" | "effort" | "prompt" | "messages" | "budgetUsd" | "imageSettings"
+>;
+export type GenerationInput = GenerationParameters & {
+  format: GridInput["format"];
+};
+export type GenerationOutput = {
+  artifactId: string;
+  mediaType?: string;
+  provenance: NonNullable<Cell["provenance"]>;
+  usage?: Cell["usage"];
+  thinkingId?: string;
+  thinkingSourceId?: string;
+};
+export type GenerationTask = Task<GenerationInput, GenerationOutput> & {
+  kind: "generation";
+  progress?: Pick<
+    Cell,
+    | "draft"
+    | "thinking"
+    | "thinkingId"
+    | "thinkingSourceId"
+    | "estimatedUsage"
+    | "currentCallCostUsd"
+    | "usage"
+    | "preview"
+  >;
+};
+export type JudgmentInput = {
+  model: string;
+  effort: string;
+  criteria: NonNullable<GridInput["judge"]>["criteria"];
+};
+export type JudgmentTask = Task<JudgmentInput, { results: JudgeResult[] }> & {
+  kind: "judge";
+  generationId: string;
+};
+export type WorkflowTask = GenerationTask | JudgmentTask;
+export function hasCompletedOutput(cell: Pick<Cell, "artifactId">): boolean {
+  return !!cell.artifactId;
+}
 export type TemplateStep = {
   maxOutputTokens?: number;
   usage?: Cell["usage"];
@@ -266,6 +372,13 @@ export function expandGrid(input: GridInput): Omit<Cell, "id">[] {
         model: input.model,
         effort: input.effort,
       };
+      const judge: Cell["judge"] = input.judge
+        ? {
+            model: input.judge.model,
+            effort: input.judge.effort,
+            status: "pending",
+          }
+        : undefined;
       const imageSettings: ImageSettings = { ...input.imageSettings };
       if (input.inputReferences?.length)
         imageSettings.input_references = input.inputReferences.map(
@@ -276,7 +389,12 @@ export function expandGrid(input: GridInput): Omit<Cell, "id">[] {
         [input.columns, c],
       ] as const)
         if (a.kind === "model" || a.kind === "effort") selections[a.kind] = v;
-        else if (a.kind === "input_references")
+        else if (a.kind === "judge_model" || a.kind === "judge_effort") {
+          if (judge) {
+            if (a.kind === "judge_model") judge.model = v;
+            else judge.effort = v;
+          }
+        } else if (a.kind === "input_references")
           imageSettings.input_references =
             input.referenceGroups?.[v]?.map((image) => image.id) ?? [];
         else if (a.kind !== "variable") imageSettings[a.kind] = v;
@@ -304,6 +422,7 @@ export function expandGrid(input: GridInput): Omit<Cell, "id">[] {
           ? { imageSettings: normalizeImageSettings(imageSettings) }
           : {}),
         status: "pending" as const,
+        ...(judge ? { judge } : {}),
       };
     }),
   );

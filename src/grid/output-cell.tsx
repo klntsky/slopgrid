@@ -6,8 +6,6 @@ import {
   Download,
   CodeXml,
   Brain,
-  Palette,
-  MessagesSquare,
 } from "lucide-react";
 import { ExpandButton } from "../components/expand-button";
 import { CopyButton } from "../components/copy-button";
@@ -23,47 +21,46 @@ import { ContainedImage } from "../contained-image";
 import { useTooltip, tooltipRef } from "../components/use-tooltip";
 import { copyOutput } from "./copy-output";
 import { useOffline } from "../pwa";
+import {
+  JudgeResultButton,
+  JudgeResults,
+  summarizeJudgment,
+} from "./judge-result-button";
+export type CellView = "output" | "raw" | "thinking" | "judgment";
 export function OutputCell({
   cell,
   format,
   gridStatus,
+  criteria,
   title,
   expanded = false,
-  rawMarkdown = false,
-  onToggleRawMarkdown,
-  showThinking,
-  onShowThinking,
+  view,
+  onChangeView,
   onToggleExpand,
 }: {
   cell: ViewGrid["cells"][number];
   format: GridInput["format"];
   gridStatus: ViewGrid["status"];
+  criteria?: NonNullable<GridInput["judge"]>["criteria"];
   title: string;
   expanded?: boolean;
-  rawMarkdown?: boolean;
-  onToggleRawMarkdown?: () => void;
-  showThinking?: boolean;
-  onShowThinking?: (thinking: boolean) => void;
+  view?: CellView;
+  onChangeView?: (view: CellView) => void;
   onToggleExpand?: (button: HTMLButtonElement) => void;
 }) {
   const { resolvedTheme } = useTheme();
   const offline = useOffline();
-  const rawLabel = rawMarkdown
-    ? format === "chat-template"
-      ? "View conversation"
-      : "View Markdown"
-    : "View raw";
-  const rawHint = useTooltip<HTMLButtonElement>(rawLabel);
+  const rawHint = useTooltip<HTMLButtonElement>("View raw");
   const downloadHint = useTooltip<HTMLAnchorElement>("Download output");
   const inputHint = useTooltip<HTMLSpanElement>("Input tokens");
   const outputHint = useTooltip<HTMLSpanElement>("Output tokens");
   const outputURL =
-    offline && format === "html" && cell.status === "complete"
+    offline && format === "html" && cell.outputReady
       ? `/offline/outputs/${cell.id}/index.html`
       : isMarkdownFormat(format) && cell.outputURL
         ? `${cell.outputURL}?theme=${resolvedTheme}`
         : cell.outputURL;
-  const complete = cell.status === "complete";
+  const complete = cell.outputReady;
   const usage = complete ? cell.usage : cell.estimatedUsage;
   const approximate = complete ? "" : "≈";
   const markdown =
@@ -71,19 +68,37 @@ export function OutputCell({
   const hasThinking = !!(cell.thinking || cell.thinkingURL);
   const hasOutput =
     complete || !!(format === "html" ? cell.previewURL : cell.draft?.trim());
-  const thinking =
-    hasThinking && (showThinking ?? (cell.status === "running" && !hasOutput));
-  const thinkingLabel = thinking ? "Show output" : "Show thinking";
+  const judgment =
+    complete && cell.judge && criteria
+      ? summarizeJudgment(cell.judge, criteria, gridStatus)
+      : undefined;
+  const activeView =
+    view ??
+    (judgment?.results
+      ? "judgment"
+      : hasThinking && !complete && cell.status === "running" && !hasOutput
+        ? "thinking"
+        : "output");
+  const raw = activeView === "raw";
+  const thinking = hasThinking && activeView === "thinking";
+  const judging = !!judgment && activeView === "judgment";
   const expandable =
-    complete || cell.status === "running" || thinking || expanded;
-  const expandLabel = `${expanded ? "Collapse" : "Expand"} ${thinking ? "thinking" : formatNames[format]}`;
+    complete || cell.status === "running" || thinking || judging || expanded;
+  const expandLabel = `${expanded ? "Collapse" : "Expand"} ${judging ? "judgment" : thinking ? "thinking" : formatNames[format]}`;
+  function toggleView(mode: CellView) {
+    onChangeView?.(activeView === mode ? "output" : mode);
+  }
   return (
     <article
       className={`cell${expanded ? " cell-expanded" : ""}`}
       role={expanded ? "region" : undefined}
       aria-label={expanded ? `Expanded output: ${title}` : undefined}
     >
-      <div className="cell-view" aria-hidden={thinking} inert={thinking}>
+      <div
+        className="cell-view"
+        aria-hidden={thinking || judging}
+        inert={thinking || judging}
+      >
         {offline && !complete ? (
           <p>This output isn't available offline.</p>
         ) : markdown ? (
@@ -93,7 +108,7 @@ export function OutputCell({
             draft={cell.draft}
             streaming={!complete}
             title={title}
-            raw={rawMarkdown}
+            raw={raw}
             conversation={format === "chat-template"}
           />
         ) : format === "html" && (complete || cell.status === "running") ? (
@@ -140,57 +155,48 @@ export function OutputCell({
             key={cell.thinkingURL}
             url={cell.thinkingURL!}
             title={`Thinking: ${title}`}
-            raw="wrap"
+            raw="thinking"
             draft={cell.thinking}
-            streaming={cell.status === "running"}
+            streaming={!complete && cell.status === "running"}
           />
+        </div>
+      )}
+      {judgment && criteria && (
+        <div className="cell-view" aria-hidden={!judging} inert={!judging}>
+          <JudgeResults summary={judgment} criteria={criteria} />
         </div>
       )}
       {(expandable || hasThinking) && (
         <div className="markdown-actions">
-          {markdown && !thinking && (
+          {markdown && (
             <button
               className="secondary"
-              aria-label={rawLabel}
-              onClick={onToggleRawMarkdown}
+              aria-label="View raw"
+              aria-pressed={raw}
+              onClick={() => toggleView("raw")}
               ref={rawHint}
             >
-              {rawMarkdown && format === "chat-template" ? (
-                <MessagesSquare aria-hidden="true" />
-              ) : rawMarkdown ? (
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <path d="M2 18V6l5 7 5-7v12M16 6h1a6 6 0 0 1 0 12h-1Z" />
-                </svg>
-              ) : (
-                <CodeXml aria-hidden="true" />
-              )}
+              <CodeXml aria-hidden="true" />
             </button>
           )}
           {hasThinking && (
             <button
               className="secondary"
-              aria-label={thinkingLabel}
+              aria-label="Show thinking"
               aria-pressed={thinking}
-              data-tooltip={thinkingLabel}
+              data-tooltip="Show thinking"
               ref={tooltipRef}
-              onClick={() => onShowThinking?.(!thinking)}
+              onClick={() => toggleView("thinking")}
             >
-              {thinking ? (
-                <Palette aria-hidden="true" />
-              ) : (
-                <Brain aria-hidden="true" />
-              )}
+              <Brain aria-hidden="true" />
             </button>
+          )}
+          {judgment && (
+            <JudgeResultButton
+              summary={judgment}
+              active={judging}
+              onToggle={() => toggleView("judgment")}
+            />
           )}
           {expandable && onToggleExpand && (
             <ExpandButton

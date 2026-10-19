@@ -6,7 +6,8 @@ import { GridViewport } from "./viewport";
 import { dimensionNames, displayValue } from "../format";
 import { ExpandButton } from "../components/expand-button";
 import { ContainedImage } from "../contained-image";
-import { OutputCell } from "./output-cell";
+import { OutputCell, type CellView } from "./output-cell";
+import { useItemScrollSync } from "./use-item-scroll-sync";
 function ResizeHandle({
   axis,
   index,
@@ -28,9 +29,12 @@ function ResizeHandle({
 }
 export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
   const [views, setViews] = useState<
-    Record<string, { raw?: boolean; thinking?: boolean }>
+    Record<string, { mode?: CellView; judgeComplete?: boolean }>
   >({});
-  function setView(id: string, view: { raw?: boolean; thinking?: boolean }) {
+  function setView(
+    id: string,
+    view: { mode?: CellView; judgeComplete?: boolean },
+  ) {
     setViews((current) => ({ ...current, [id]: { ...current[id], ...view } }));
   }
   const [selection, setSelection] = useState<{
@@ -41,9 +45,10 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
     (cell) =>
       selection?.kind === "output" &&
       cell.id === selection.id &&
-      (cell.status === "complete" ||
+      (cell.outputReady ||
         cell.status === "running" ||
-        !!cell.thinkingURL),
+        !!cell.thinkingURL ||
+        !!cell.judge),
   );
   const reference =
     selection?.kind === "reference"
@@ -55,6 +60,8 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
   const expandedView = useRef<HTMLElement>(null);
   const returnButton = useRef<HTMLButtonElement>(null);
   const workspace = useRef<HTMLDivElement>(null);
+  const scrollSync = useItemScrollSync(workspace);
+  useLayoutEffect(scrollSync.refresh, [g.cells, expandedId, views, scrollSync]);
   function expand(
     kind: "output" | "reference",
     id: string,
@@ -112,12 +119,15 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
     return (
       <>
         <span className={axis === "rows" ? "row-label" : undefined}>
-          {kind === "model" ? (
-            <ModelName model={value} />
+          {kind === "model" || kind === "judge_model" ? (
+            <>
+              {kind === "judge_model" && "judge model: "}
+              <ModelName model={value} />
+            </>
           ) : kind === "input_references" ? (
             `references: ${value}`
-          ) : kind === "effort" ? (
-            `thinking: ${displayValue(value, kind)}`
+          ) : kind === "effort" || kind === "judge_effort" ? (
+            `${kind === "judge_effort" ? "judge thinking" : "thinking"}: ${displayValue(value, kind)}`
           ) : kind !== "variable" ? (
             `${dimensionNames[kind].toLowerCase()}: ${value}`
           ) : (
@@ -149,7 +159,7 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
     );
   }
   return (
-    <div className="grid-workspace" ref={workspace}>
+    <div className="grid-workspace" ref={workspace} {...scrollSync.events}>
       <div className="grid-table-view" data-expanded={!!expandedId}>
         <GridViewport
           key={g.id}
@@ -195,15 +205,20 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
                           cell={cell}
                           format={g.input.format}
                           gridStatus={g.status}
+                          criteria={g.input.judge?.criteria}
                           title={title(cell)}
                           expanded={expanded?.id === cell.id}
-                          rawMarkdown={views[cell.id]?.raw}
-                          showThinking={views[cell.id]?.thinking}
-                          onShowThinking={(thinking) =>
-                            setView(cell.id, { thinking })
+                          view={
+                            views[cell.id]?.judgeComplete ===
+                            (cell.judge?.status === "complete")
+                              ? views[cell.id]?.mode
+                              : undefined
                           }
-                          onToggleRawMarkdown={() =>
-                            setView(cell.id, { raw: !views[cell.id]?.raw })
+                          onChangeView={(mode) =>
+                            setView(cell.id, {
+                              mode,
+                              judgeComplete: cell.judge?.status === "complete",
+                            })
                           }
                           onToggleExpand={(button) =>
                             expanded?.id === cell.id

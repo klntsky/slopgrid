@@ -77,17 +77,17 @@ export function createOutputRoutes(
     const viewer = session.read(req);
     if (!output || !canViewGrid(output, viewer)) return res.sendStatus(404);
     res.locals.output = output;
-    if (output.status === "complete") res.set("X-Slopgrid-Output-Ready", "1");
+    if (output.outputReady) res.set("X-Slopgrid-Output-Ready", "1");
     res.locals.file = outputFile(output);
     next();
   });
   app.get("/outputs/:id/offline", async (req, res) => {
     const output = res.locals.output;
-    if (output.status !== "complete" || output.format !== "html")
+    if (!output.artifactId || output.format !== "html")
       return res.sendStatus(404);
     const id = String(req.params.id);
     const pages = await offlineWebsite(
-      await store.files.bundle(id),
+      await store.files.bundle(output.artifactId),
       id,
       origin.origin,
     );
@@ -96,12 +96,12 @@ export function createOutputRoutes(
   app.get("/offline/outputs/:id/*path", async (req, res) => {
     res.set("Content-Security-Policy", offlineWebsitePolicy);
     const output = res.locals.output;
-    if (output.status !== "complete" || output.format !== "html")
+    if (!output.artifactId || output.format !== "html")
       return res.sendStatus(404);
     const id = String(req.params.id);
     const path = (req.params.path as string[]).join("/");
     const pages = await offlineWebsite(
-      await store.files.bundle(id),
+      await store.files.bundle(output.artifactId),
       id,
       origin.origin,
     );
@@ -112,7 +112,9 @@ export function createOutputRoutes(
     // A versioned URL cannot return a newer attempt under an older query key.
     const attempt = String(req.params.attempt);
     if (res.locals.output.thinkingId !== attempt) return res.sendStatus(404);
-    const file = store.files.thinkingPath(String(req.params.id), attempt);
+    const sourceId = res.locals.output.thinkingSourceId;
+    if (!sourceId) return res.sendStatus(404);
+    const file = store.files.thinkingPath(sourceId, attempt);
     if (!file) return res.sendStatus(404);
     res.set("Content-Security-Policy", "sandbox; default-src 'none'");
     return res.type("text/plain").sendFile(file, { dotfiles: "allow" });
@@ -124,7 +126,7 @@ export function createOutputRoutes(
       return res.status(429).send("Too many downloads. Try again in a minute.");
     }
     const output = store.outputDownload(id);
-    if (!output) return res.sendStatus(404);
+    if (!output?.artifactId) return res.sendStatus(404);
     const { filename, mediaType, extension } = res.locals.file as ReturnType<
       typeof outputFile
     >;
@@ -139,7 +141,7 @@ export function createOutputRoutes(
       ),
     );
     if (output.format === "html") {
-      const files = await store.files.bundle(id);
+      const files = await store.files.bundle(output.artifactId);
       const archive = await new Promise<Uint8Array>((resolve, reject) => {
         zip(files, { level: 6 }, (error, data) => {
           if (error) reject(error);
@@ -148,11 +150,7 @@ export function createOutputRoutes(
       });
       return res.type("application/zip").send(Buffer.from(archive));
     }
-    const file =
-      store.files.path(id, filename) ??
-      (output.format === "chat-template"
-        ? store.files.path(id, "index.md")
-        : undefined);
+    const file = store.files.path(output.artifactId, filename);
     if (!file) return res.sendStatus(404);
     if (output.format === "chat-template")
       return res
@@ -171,7 +169,7 @@ export function createOutputRoutes(
     const output = res.locals.output as NonNullable<
       ReturnType<Store["outputMetadata"]>
     >;
-    if (output.status !== "complete" || output.format === "html")
+    if (!output.artifactId || output.format === "html")
       return res.sendStatus(404);
     res.set(
       "Content-Security-Policy",
@@ -180,11 +178,7 @@ export function createOutputRoutes(
     const { filename, mediaType } = res.locals.file as ReturnType<
       typeof outputFile
     >;
-    const file =
-      store.files.path(id, filename) ??
-      (output.format === "chat-template"
-        ? store.files.path(id, "index.md")
-        : undefined);
+    const file = store.files.path(output.artifactId, filename);
     if (!file) return res.sendStatus(404);
     if (output.format === "svg" || output.format === "image") {
       if (output.published) {

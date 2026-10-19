@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { expandGrid, gridSchema } from "../server/domain.js";
+import { efforts, expandGrid, gridSchema } from "../server/domain.js";
 
 test("chat completion accepts optional blanks after a prefix and preserves expanded history", () => {
   const source = {
@@ -345,4 +345,204 @@ test("Auto and omitted image settings prepare identical requests and artifact si
     ),
     inferenceSignature(omitted),
   );
+});
+
+const judgedInput = {
+  format: "markdown",
+  prompt: "A cat",
+  rows: { kind: "model", values: ["fixture/generator"] },
+  columns: { kind: "effort", values: ["low"] },
+  model: "",
+  effort: "default",
+  budgetUsd: 3,
+  judge: {
+    criteria: [
+      { text: "  Is there a dog?  ", correctAnswer: false },
+      { text: "Is there a cat?", correctAnswer: true },
+    ],
+    model: " fixture/judge ",
+    effort: "medium",
+  },
+};
+
+test("judged configuration trims criteria and preserves explicit false through serialization", () => {
+  const input = gridSchema.parse(judgedInput);
+  assert.deepEqual(input.judge, {
+    ...judgedInput.judge,
+    model: "fixture/judge",
+    criteria: [
+      { text: "Is there a dog?", correctAnswer: false },
+      { text: "Is there a cat?", correctAnswer: true },
+    ],
+  });
+  assert.deepEqual(gridSchema.parse(JSON.parse(JSON.stringify(input))), input);
+  const [cell] = expandGrid(input);
+  assert.deepEqual(cell.judge, {
+    model: "fixture/judge",
+    effort: "medium",
+    status: "pending",
+  });
+  assert.equal(cell.model, "fixture/generator");
+  assert.equal(cell.effort, "low");
+  const unjudged = gridSchema.parse({ ...judgedInput, judge: undefined });
+  assert.equal("judge" in expandGrid(unjudged)[0], false);
+});
+
+test("judging requires criteria, strict boolean answers, an effective model and valid efforts", () => {
+  const judge = judgedInput.judge;
+  for (const invalidJudge of [
+    null,
+    {},
+    { ...judge, criteria: undefined },
+    { ...judge, criteria: [] },
+    { ...judge, criteria: [{ text: " ", correctAnswer: true }] },
+    {
+      ...judge,
+      criteria: [
+        { text: "Valid", correctAnswer: true },
+        { text: "", correctAnswer: false },
+      ],
+    },
+    ...[undefined, null, "false", "true", 0, 1].map((correctAnswer) => ({
+      ...judge,
+      criteria: [{ text: "Valid", correctAnswer }],
+    })),
+    { ...judge, model: "" },
+    { ...judge, model: "  " },
+    { ...judge, model: undefined },
+    { ...judge, effort: undefined },
+    { ...judge, effort: "unknown" },
+  ])
+    assert.equal(
+      gridSchema.safeParse({ ...judgedInput, judge: invalidJudge }).success,
+      false,
+      JSON.stringify(invalidJudge),
+    );
+  assert.equal(
+    gridSchema.safeParse({ ...judgedInput, format: "html" }).success,
+    false,
+  );
+  for (const kind of ["judge_model", "judge_effort"]) {
+    const input = {
+      ...judgedInput,
+      columns: {
+        kind,
+        values: [kind === "judge_model" ? "fixture/judge" : "high"],
+      },
+    };
+    assert.equal(
+      gridSchema.safeParse({ ...input, judge: undefined }).success,
+      false,
+    );
+    assert.equal(
+      gridSchema.safeParse({
+        ...input,
+        model: "fixture/generator",
+        rows: input.columns,
+      }).success,
+      false,
+    );
+    for (const values of [[], [""], ["same", "same"]])
+      assert.equal(
+        gridSchema.safeParse({ ...input, columns: { kind, values } }).success,
+        false,
+      );
+  }
+  assert.equal(
+    gridSchema.safeParse({
+      ...judgedInput,
+      columns: { kind: "judge_effort", values: ["unknown"] },
+    }).success,
+    false,
+  );
+});
+
+test("judge axes expand independently of generator settings in row-major order and after swaps", () => {
+  const input = gridSchema.parse({
+    ...judgedInput,
+    model: "fixture/generator",
+    effort: "high",
+    judge: { ...judgedInput.judge, model: "" },
+    rows: { kind: "judge_model", values: ["judge/a", "judge/b"] },
+    columns: { kind: "judge_effort", values: ["none", "max"] },
+  });
+  const cells = expandGrid(input);
+  assert.deepEqual(
+    cells.map((cell) => [cell.row, cell.column, cell.judge]),
+    [
+      [0, 0, { model: "judge/a", effort: "none", status: "pending" }],
+      [0, 1, { model: "judge/a", effort: "max", status: "pending" }],
+      [1, 0, { model: "judge/b", effort: "none", status: "pending" }],
+      [1, 1, { model: "judge/b", effort: "max", status: "pending" }],
+    ],
+  );
+  assert.ok(
+    cells.every(
+      (cell) => cell.model === input.model && cell.effort === input.effort,
+    ),
+  );
+  assert.ok(cells.every((cell) => cell.imageSettings === undefined));
+  const swapped = expandGrid(
+    gridSchema.parse({
+      ...input,
+      rows: input.columns,
+      columns: input.rows,
+    }),
+  );
+  assert.deepEqual(
+    swapped.map((cell) => cell.judge),
+    [cells[0].judge, cells[2].judge, cells[1].judge, cells[3].judge],
+  );
+  const fixedEffort = expandGrid(
+    gridSchema.parse({
+      ...input,
+      columns: { kind: "effort", values: ["low", "high"] },
+    }),
+  );
+  assert.ok(fixedEffort.every((cell) => cell.judge?.effort === "medium"));
+  assert.deepEqual(
+    fixedEffort.map((cell) => cell.effort),
+    ["low", "high", "low", "high"],
+  );
+});
+
+test("image judging permits judge effort but still prohibits generator effort axes", () => {
+  const input = {
+    ...judgedInput,
+    format: "image",
+    rows: { kind: "model", values: ["fixture/image"] },
+    columns: { kind: "judge_effort", values: ["default", "high"] },
+  };
+  const cells = expandGrid(gridSchema.parse(input));
+  assert.deepEqual(
+    cells.map((cell) => cell.judge?.effort),
+    ["default", "high"],
+  );
+  assert.ok(cells.every((cell) => cell.effort === "default"));
+  assert.deepEqual(
+    cells.map((cell) => cell.imageSettings),
+    [{}, {}],
+  );
+  assert.equal(
+    gridSchema.safeParse({
+      ...input,
+      columns: { kind: "effort", values: ["high"] },
+    }).success,
+    false,
+  );
+});
+
+test("every supported judge effort is accepted fixed and on an axis", () => {
+  for (const effort of efforts) {
+    const fixed = gridSchema.parse({
+      ...judgedInput,
+      judge: { ...judgedInput.judge, effort },
+    });
+    assert.equal(expandGrid(fixed)[0].judge?.effort, effort);
+    const axis = gridSchema.parse({
+      ...judgedInput,
+      columns: { kind: "judge_effort", values: [effort] },
+    });
+    assert.equal(expandGrid(axis)[0].judge?.effort, effort);
+  }
 });

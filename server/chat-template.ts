@@ -1,6 +1,7 @@
 import {
   chatText,
   type Cell,
+  type GenerationParameters,
   type ChatMessage,
   type FilledChatMessage,
   type InferenceProgress,
@@ -16,7 +17,7 @@ export function templateSequence(messages: ChatMessage[]): ChatMessage[] {
 }
 
 export async function fillChatTemplate(
-  cell: Cell,
+  cell: GenerationParameters,
   budgetFor: (prompt: string, dollars: number) => TextBudget,
   run: (
     messages: FilledChatMessage[],

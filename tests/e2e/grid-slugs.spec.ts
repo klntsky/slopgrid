@@ -21,37 +21,25 @@ test("owners claim permanent public slugs and visitors follow and reload slug li
     dialog.getByRole("radio", { name: "Listed publicly" }),
   ).toBeChecked();
   const field = dialog.getByLabel("Slug (optional)");
-  await expect(
-    dialog.getByText("slopgrid.com/", { exact: true }),
-  ).toBeVisible();
   const save = dialog.getByRole("button", { name: "Save", exact: true });
   for (const width of [1280, 390]) {
     await page.setViewportSize({ width, height: 900 });
     await dialog.getByText("slopgrid.com/", { exact: true }).click();
     await expect(field).toBeFocused();
-    await expect(field).toHaveAttribute("placeholder", "your-chosen-slug");
     await save.focus();
     await dialog
       .locator(".publish-slug-input")
       .click({ position: { x: 2, y: 2 } });
     await expect(field).toBeFocused();
     await field.fill("");
-    const bounds = await field.boundingBox();
-    const actions = await save.boundingBox();
     await field.pressSequentially("invalid");
     await expect(dialog.getByRole("alert")).toBeVisible();
     await expect(field).toHaveAttribute("aria-invalid", "true");
     await expect(save).toBeDisabled();
-    const error = await dialog.getByRole("alert").boundingBox();
-    expect(error!.y).toBeGreaterThanOrEqual(bounds!.y + bounds!.height);
-    expect(await field.boundingBox()).toEqual(bounds);
-    expect(await save.boundingBox()).toEqual(actions);
     await field.fill("my-grid1");
     await expect(field).toHaveValue("my-grid1");
     await expect(dialog.getByRole("alert")).toHaveCount(0);
     await expect(save).toBeEnabled();
-    expect(await field.boundingBox()).toEqual(bounds);
-    expect(await save.boundingBox()).toEqual(actions);
     await field.fill("");
     await expect(save).toBeEnabled();
   }

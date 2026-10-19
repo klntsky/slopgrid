@@ -21,8 +21,17 @@ test("diagnostics retain bounded cause codes without serializing private error p
     { name: "Error", code: "UND_ERR_SOCKET" },
   ]);
   let deep: unknown = new Error("private");
-  for (let i = 0; i < 20; i++) deep = new Error("private", { cause: deep });
-  assert.equal(failureDiagnostics(deep).length, 8);
+  for (let i = 0; i < 20; i++)
+    deep = Object.assign(new Error("private", { cause: deep }), {
+      code: `CAUSE_${i}`,
+    });
+  assert.deepEqual(
+    failureDiagnostics(deep),
+    Array.from({ length: 8 }, (_, index) => ({
+      name: "Error",
+      code: `CAUSE_${19 - index}`,
+    })),
+  );
 });
 
 test(
@@ -44,14 +53,12 @@ test(
         () => f.engine.api.getGrid(grid.id),
         (g) => g.cells[0].status === "error",
       );
-      const read = () =>
-        JSON.parse(
-          (
-            f.store.db
-              .prepare("SELECT data FROM inference_calls WHERE cell_id=?")
-              .get(grid.cells[0].id) as { data: string }
-          ).data,
-        );
+      const read = () => {
+        const row = f.store.db
+          .prepare("SELECT status,data FROM inference_calls WHERE cell_id=?")
+          .get(grid.cells[0].id) as { status: string; data: string };
+        return { ...JSON.parse(row.data), status: row.status };
+      };
       const saved = read();
       assert.equal(saved.status, "failed");
       assert.equal(saved.httpStatus, 200);

@@ -1,5 +1,5 @@
 import { test, expect } from "./fixtures";
-import { expectProgress } from "./helpers";
+import { connectOpenRouter, expectProgress } from "./helpers";
 
 test("a later failed upload preserves earlier references across reload and retry", async ({
   page,
@@ -14,23 +14,18 @@ test("a later failed upload preserves earlier references across reload and retry
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
     "base64",
   );
-  await page.getByLabel("Add input references", { exact: true }).setInputFiles(
-    ["first.png", "second.png"].map((name) => ({
-      name,
-      mimeType: "image/png",
-      buffer: png,
-    })),
-  );
+  const files = ["first.png", "second.png"].map((name) => ({
+    name,
+    mimeType: "image/png",
+    buffer: Buffer.concat([png, Buffer.from(name)]),
+  }));
+  await page
+    .getByLabel("Add input references", { exact: true })
+    .setInputFiles(files);
   await expect(
     page.getByRole("img", { name: "second.png", exact: true }),
   ).toBeVisible();
-  await page.getByRole("link", { name: "Connect OpenRouter" }).click();
-  const uploads: string[] = [];
-  page.on("request", (req) => {
-    const url = new URL(req.url());
-    if (req.method() === "POST" && url.pathname === "/api/references")
-      uploads.push(url.searchParams.get("name")!);
-  });
+  await connectOpenRouter(page);
   await page.route("**/api/references?name=second.png", (route) =>
     route.fulfill({ status: 503, json: { error: "Storage unavailable" } }),
   );
@@ -47,8 +42,16 @@ test("a later failed upload preserves earlier references across reload and retry
       `/api${new URL(page.url()).pathname.replace("/grid/", "/grids/")}`,
     )
   ).json();
-  expect(grid.cells.map((cell: { error?: string }) => cell.error)).toEqual([
-    undefined,
+  expect(grid.cells.map((cell: { status: string }) => cell.status)).toEqual([
+    "complete",
   ]);
-  expect(uploads).toEqual(["first.png", "second.png", "second.png"]);
+  const sent = await (await page.request.get("/fixture/image-requests")).json();
+  expect(sent[0].input_references).toEqual(
+    files.map((file) => ({
+      type: "image_url",
+      image_url: {
+        url: `data:image/png;base64,${file.buffer.toString("base64")}`,
+      },
+    })),
+  );
 });

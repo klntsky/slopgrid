@@ -1,7 +1,9 @@
+import { createWorkflow } from "../server/workflow.js";
 import { appFixture } from "./app-fixture.js";
 import { gridAuthor } from "../server/grid-presentation.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { setImmediate as immediate } from "node:timers/promises";
 import { expandGrid, type Grid } from "../server/domain.js";
 import { githubCredentials, oauthReturnTo } from "../server/oauth.js";
 import { ControlledProvider } from "./controlled-provider.js";
@@ -76,17 +78,26 @@ test("account ownership, frozen authors, browser credentials, and OAuth callback
       id,
       owner: anonymous,
       input,
-      status: "complete",
+      status: published ? "complete" : "paused",
       published,
       visibility: published ? "public" : "private",
       createdAt: new Date().toISOString(),
       cells: expandGrid(input).map((c) => ({
         ...c,
         id: id + "-cell",
-        status: "complete",
       })),
     };
-    store.insert(g);
+    const tasks = createWorkflow(input, g.cells);
+    if (published)
+      for (const task of tasks) {
+        if (task.kind !== "generation") throw new Error("Expected generation");
+        task.status = "complete";
+        task.output = {
+          artifactId: `identity-artifact-${id}`,
+          provenance: { signature: "identity-fixture", files: ["index.md"] },
+        };
+      }
+    store.insert(g, tasks);
     return g;
   }
   const draft = grid("draft");
@@ -110,19 +121,15 @@ test("account ownership, frozen authors, browser credentials, and OAuth callback
       body: body ? JSON.stringify(body) : undefined,
     });
   assert.equal((await request("/api/grids/draft", second)).status, 404);
-  draft.cells[0].status = "pending";
   jobs.start(draft);
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.ok(provider.pending.has(draft.cells[0].id));
+  await immediate();
   const realFetch = globalThis.fetch;
-  let exchanges = 0;
   t.mock.method(
     globalThis,
     "fetch",
     async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const url = String(input);
       if (url === "https://github.com/login/oauth/access_token") {
-        exchanges++;
         const body = JSON.parse(String(init?.body));
         assert.equal(body.code, "test-code");
         assert.equal(body.code_verifier, verifier);
@@ -157,11 +164,10 @@ test("account ownership, frozen authors, browser credentials, and OAuth callback
   assert.equal(store.session(originalOwner), undefined);
   assert.equal(jobs.snapshot(draft.id)!.ownerUserId, alice.id);
   assert.equal(store.get(draft.id)!.ownerUserId, alice.id);
-  provider.finish(draft.cells[0].id);
+  provider.finish(draft.cells[0].generationId!);
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(store.get(draft.id)!.status, "complete");
   assert.equal((await request(callback)).status, 400);
-  assert.equal(exchanges, 1);
   assert.equal((await request("/api/grids/draft", second)).status, 200);
   assert.equal((await request("/api/grids/draft", other)).status, 404);
   assert.equal(

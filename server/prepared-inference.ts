@@ -3,9 +3,10 @@ import type { ReferenceContent } from "./image-references.js";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { z } from "zod";
-import type { Cell, GridInput } from "./domain.js";
+import type { GenerationParameters, GridInput } from "./domain.js";
 import type { TextBudget } from "./generation-budget.js";
 import { instruction, websiteSchema } from "./output-format.js";
+import { canonical } from "../shared/canonical.js";
 
 const dependencies = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf8"),
@@ -13,7 +14,7 @@ const dependencies = JSON.parse(
 // Bump the local revision when adapter semantics change without an SDK update.
 const adapterVersion = `1/ai:${dependencies.ai}/openrouter:${dependencies["@openrouter/ai-sdk-provider"]}`;
 export type SingleOutputFormat = Exclude<GridInput["format"], "chat-template">;
-function common(cell: Cell) {
+function common(cell: GenerationParameters) {
   return {
     adapterVersion,
     model: cell.model,
@@ -21,7 +22,7 @@ function common(cell: Cell) {
   };
 }
 export function prepareImageInference(
-  cell: Cell,
+  cell: GenerationParameters,
   references: ReferenceContent[],
 ) {
   const { input_references: _ids, ...imageSettings } = normalizeImageSettings(
@@ -38,7 +39,7 @@ export function prepareImageInference(
 }
 export function prepareTextInference(
   format: Exclude<SingleOutputFormat, "image">,
-  cell: Cell,
+  cell: GenerationParameters,
   budget: TextBudget,
   structured: boolean,
   cache?: { sessionId: string; previousPrefixLength: number },
@@ -90,17 +91,6 @@ export function prepareTextInference(
 export type PreparedInference =
   | ReturnType<typeof prepareTextInference>
   | ReturnType<typeof prepareImageInference>;
-function canonical(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === "object")
-    return Object.fromEntries(
-      Object.entries(value)
-        .filter(([, v]) => v !== undefined)
-        .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-        .map(([k, v]) => [k, canonical(v)]),
-    );
-  return value;
-}
 export function inferenceSignature(prepared: PreparedInference): string {
   if (prepared.format !== "image") {
     const { pricing: _estimation, ...request } = prepared;
@@ -124,7 +114,7 @@ function digest(request: unknown) {
     .digest("hex");
 }
 
-export function templateSignature(cell: Cell): string {
+export function templateSignature(cell: GenerationParameters): string {
   return digest({
     ...common(cell),
     format: "chat-template",

@@ -56,15 +56,16 @@
 }
 .markdown-document .markdown-raw {
   font-family: "Slopgrid Mono", monospace;
-  padding: 28px 0 0;
-  margin: 0;
-  background: none;
-}
-.markdown-document .markdown-wrapped {
+  font-size: inherit;
   width: 100%;
   min-width: 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  padding: 28px 0 0;
+  margin: 0;
+  background: none;
+}
+.markdown-document .markdown-thinking {
   font:
     14px/1.6 "Slopgrid Mono",
     monospace;
@@ -103,6 +104,18 @@
   border-color: transparent;
   background: transparent;
 }
+.markdown-actions > button[aria-pressed="true"],
+.markdown-actions > button[aria-pressed="true"]:hover {
+  border-color: var(--selected-border);
+  background: var(--selected);
+  box-shadow: inset 0 2px 4px var(--shadow);
+}
+@media (hover: none), (pointer: coarse) {
+  .markdown-actions > button[aria-pressed="false"]:hover {
+    border-color: transparent;
+    background: transparent;
+  }
+}
 .markdown-actions .lucide {
   width: 18px;
   height: 18px;
@@ -118,6 +131,41 @@
   > :first-child:not(pre):not(table):not(.chat-conversation) {
   margin-right: 112px;
 }
+
+.cell:has(.markdown-actions > .judge-result-button)
+  .markdown-document
+  > :first-child:not(pre):not(table):not(.chat-conversation) {
+  margin-right: 134px;
+}
+
+.cell:has(.markdown-actions > .judge-result-button):has(
+    .markdown-actions > :nth-child(4)
+  )
+  .markdown-document
+  > :first-child:not(pre):not(table):not(.chat-conversation) {
+  margin-right: 170px;
+}
 .cell .conversation-preview {
+  padding: 0;
+}
+.cell .conversation-preview .markdown-document {
+  display: flex;
+  min-height: 100%;
+}
+.cell .conversation-preview .chat-conversation {
+  flex: 1;
+  min-width: 0;
+}
+.cell .conversation-preview .chat-message-row {
+  padding: 8px 24px;
+}
+.cell .conversation-preview .chat-message-row:first-child {
   padding-top: 64px;
+}
+.cell .conversation-preview .chat-message-row:last-child {
+  flex-grow: 1;
+  padding-bottom: 24px;
+}
+.cell .chat-message-row[data-scroll-sync-hovered] > .chat-bubble {
+  background: color-mix(in srgb, var(--chat-bubble-fill) 97%, var(--text));
 }

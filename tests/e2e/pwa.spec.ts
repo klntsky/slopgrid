@@ -7,6 +7,7 @@ import { webFixture } from "../web-fixture";
 import { Store } from "../../server/store";
 import { expandGrid, type GridInput, type Grid } from "../../server/domain";
 import { token } from "../../server/ids";
+import { createWorkflow } from "../../server/workflow";
 import { startTestServer } from "../test-server";
 import { create, expectProgress } from "./helpers";
 
@@ -57,13 +58,43 @@ test("visited pages and completed outputs survive offline reload without retaini
           cells: expandGrid(input).map((cell) => ({
             ...cell,
             id: token(),
-            status: "complete",
-            ...(format === "image" ? { mediaType: "image/png" } : {}),
           })),
         };
-        store.insert(grid);
+        const tasks = createWorkflow(input, grid.cells);
+        const task = tasks.find((task) => task.kind === "generation")!;
+        task.status = "complete";
+        task.output = {
+          artifactId: token(),
+          mediaType: format === "image" ? "image/png" : undefined,
+          provenance: {
+            signature: "offline-output",
+            files:
+              format === "markdown"
+                ? ["index.md"]
+                : format === "svg"
+                  ? ["index.svg"]
+                  : format === "image"
+                    ? ["image"]
+                    : [
+                        "index.html",
+                        "style.css",
+                        "theme.css",
+                        "app.js",
+                        "message.js",
+                        "nested/page.html",
+                      ],
+          },
+          thinkingId: token(),
+          thinkingSourceId: token(),
+        };
+        store.insert(grid, tasks);
+        store.files.appendThinking(
+          task.output.thinkingSourceId!,
+          task.output.thinkingId!,
+          `Saved ${format} thinking`,
+        );
         store.files.write(
-          grid.cells[0].id,
+          task.output.artifactId,
           format === "markdown"
             ? { "index.md": "# Cached markdown\n\nSaved content" }
             : format === "svg"
@@ -95,6 +126,74 @@ test("visited pages and completed outputs survive offline reload without retaini
         return grid;
       },
     );
+    // Finished generation must remain cacheable while judging is pending or fails.
+    // Overall cell status includes judging, so it cannot determine output readiness.
+    for (const status of ["pending", "error", "complete"] as const) {
+      const template = grids[0];
+      const cellId = token();
+      const filename = "index.md";
+      const grid: Grid = {
+        ...template,
+        id: token(),
+        input: {
+          ...template.input,
+          prompt: `Offline judgment ${status}`,
+          judge: {
+            criteria: [{ text: "Is this a website?", correctAnswer: false }],
+            model: "fixture/text",
+            effort: "default",
+          },
+        },
+        status: "paused",
+        cells: [
+          {
+            ...template.cells[0],
+            id: cellId,
+            status,
+            judge: {
+              model: "fixture/text",
+              effort: "default",
+              status,
+              ...(status === "error" ? { error: "Judge unavailable" } : {}),
+              ...(status === "complete"
+                ? {
+                    results: [
+                      {
+                        verdict: false,
+                        explanation: "This is saved Markdown, not a website.",
+                      },
+                    ],
+                  }
+                : {}),
+            },
+          },
+        ],
+      };
+      const tasks = createWorkflow(grid.input, grid.cells);
+      const task = tasks.find((task) => task.kind === "generation")!;
+      const judgment = tasks.find((task) => task.kind === "judge")!;
+      task.status = "complete";
+      task.output = {
+        artifactId: token(),
+        provenance: { signature: "offline-output", files: [filename] },
+        thinkingId: token(),
+        thinkingSourceId: token(),
+      };
+      judgment.status = status;
+      if (status === "error") judgment.error = "Judge unavailable";
+      if (status === "complete")
+        judgment.output = { results: grid.cells[0].judge!.results! };
+      store.insert(grid, tasks);
+      store.files.appendThinking(
+        task.output.thinkingSourceId!,
+        task.output.thinkingId!,
+        `Saved judgment ${status} thinking`,
+      );
+      store.files.write(task.output.artifactId, {
+        [filename]: "# Cached markdown\n\nSaved content",
+      });
+      grids.push(grid);
+    }
     const context = await browser.newContext({ ignoreHTTPSErrors: true });
     await context.addCookies([
       {
@@ -127,15 +226,43 @@ test("visited pages and completed outputs survive offline reload without retaini
         )
         .toBe(true);
     }
+    for (const grid of grids.filter((grid) => grid.input.judge)) {
+      const savedCell = await page.evaluate(async (id) => {
+        for (const name of await caches.keys()) {
+          const response = await (
+            await caches.open(name)
+          ).match(`/api/grids/${id}`);
+          if (response) return (await response.json()).cells[0];
+        }
+      }, grid.id);
+      expect(savedCell.outputReady).toBe(true);
+      expect(savedCell.outputURL).toContain(`/outputs/${grid.cells[0].id}`);
+      expect(savedCell.judge).toEqual(grid.cells[0].judge);
+    }
     await page.goto(web.origin);
     await context.setOffline(true);
     await page.reload();
     for (const grid of grids) {
       await page
         .getByRole("link", {
-          name: new RegExp(`Offline ${grid.input.format}$`),
+          name: new RegExp(`${grid.input.prompt}$`),
         })
         .click();
+      if (grid.cells[0].judge?.status === "complete") {
+        const judgment = page.getByRole("region", {
+          name: "Judgment details",
+          exact: true,
+        });
+        await expect(
+          judgment.getByRole("img", { name: "Correct", exact: true }),
+        ).toBeVisible();
+        await page
+          .getByRole("button", {
+            name: "Judgment: 1 of 1 correct",
+            exact: true,
+          })
+          .click();
+      }
       if (grid.input.format === "markdown")
         await expect(
           page.getByRole("heading", { name: "Cached markdown" }),
@@ -184,6 +311,15 @@ test("visited pages and completed outputs survive offline reload without retaini
       }
       await page.reload();
       await expect(page.locator("article.cell")).toHaveCount(1);
+      if (grid.input.judge) {
+        const snapshot = await page.evaluate(
+          async (id) => (await fetch(`/api/grids/${id}`)).json(),
+          grid.id,
+        );
+        expect(snapshot.live).toBe(false);
+        expect(snapshot.cells[0].outputReady).toBe(true);
+        expect(snapshot.cells[0].judge).toEqual(grid.cells[0].judge);
+      }
       await page.goto(web.origin);
     }
     await page.goto(`${web.origin}/grid/${token()}`);
@@ -270,7 +406,9 @@ test("streaming output is excluded until completion and remains available after 
     await page.request.post("/fixture/svg-next");
     await expect
       .poll(() =>
-        page.getByRole("img", { name: "SVG preview", exact: true }).getAttribute("src"),
+        page
+          .getByRole("img", { name: "SVG preview", exact: true })
+          .getAttribute("src"),
       )
       .toContain("fill%3D%22blue");
     await page.request.post("/fixture/svg-next");

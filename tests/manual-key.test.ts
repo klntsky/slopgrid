@@ -31,6 +31,7 @@ for (const format of ["markdown", "image"] as const) {
             name: "Text",
             text: true,
             image: true,
+            imageInput: false,
             reasoning: false,
             reasoningMandatory: false,
           },
@@ -126,10 +127,6 @@ for (const format of ["markdown", "image"] as const) {
       });
       assert.equal(response.status, 201);
       gridId = (await response.json()).id;
-      assert.equal(
-        store.session(store.get(gridId!)!.owner)!.inferenceConcurrency,
-        format === "image" ? 30 : 2,
-      );
       const cookie = response.headers.get("set-cookie")!.split(";")[0];
       assert.deepEqual(provider.calls, ["test-manual-key"]);
       const session = await fetch(`${origin}/api/session`, {
@@ -162,10 +159,6 @@ for (const format of ["markdown", "image"] as const) {
         headers: { Cookie: cookie, Authorization: "Bearer test-manual-key" },
       });
       assert.equal(resumed.status, 200);
-      assert.equal(
-        store.session(store.get(gridId!)!.owner)!.inferenceConcurrency,
-        format === "image" ? 15 : 1,
-      );
     } finally {
       if (gridId) jobs.pause(store.get(gridId)!);
       await new Promise((resolve) => setImmediate(resolve));

@@ -4,6 +4,7 @@ import { once } from "node:events";
 import {
   runtimeFixture,
   until,
+  messageText,
   type RuntimeFixture,
 } from "./runtime-fixture.js";
 import { holdDatabaseWrites } from "./database-lock.js";
@@ -23,28 +24,52 @@ function template(f: RuntimeFixture) {
   });
 }
 
-test("a template continues once storage recovers without replaying completed calls", { timeout: 40000 }, async () => {
-  const f = await runtimeFixture();
-  let unlock = () => {};
-  try {
-    const grid = template(f);
-    await f.engine.api.startGrid({ gridId: grid.id, sessionId: f.owner });
-    const first = await f.nextCall();
-    first.write({ content: "Retained first answer" });
-    unlock = holdDatabaseWrites(f.store);
-    first.finish();
-    await until(() => f.engine.api.status(), (s) => !s.persistence.healthy);
-    await new Promise((resolve) => setTimeout(resolve, 250));
-    assert.equal(f.calls.length, 1);
-    unlock();
-    const last = await f.nextCall();
-    assert.equal(last.request.messages[1].content, "Retained first answer");
-    last.write({ content: "Last answer" }); last.finish();
-    await until(() => f.engine.api.getGrid(grid.id), (g) => g.status === "complete");
-    assert.equal(f.calls.length, 2);
-    assert.equal(f.store.billing.page(f.owner, 0).costUsd, 0.0246);
-  } finally { unlock(); await f.close(); }
-});
+test(
+  "a template continues once storage recovers without replaying completed calls",
+  { timeout: 40000 },
+  async () => {
+    const f = await runtimeFixture();
+    let unlock = () => {};
+    try {
+      const grid = template(f);
+      await f.engine.api.startGrid({ gridId: grid.id, sessionId: f.owner });
+      const first = await f.nextCall();
+      first.write({ content: "Retained first answer" });
+      unlock = holdDatabaseWrites(f.store);
+      first.finish();
+      await until(
+        () => f.engine.api.status(),
+        (s) => !s.persistence.healthy,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      assert.equal(f.calls.length, 1);
+      unlock();
+      const last = await f.nextCall();
+      assert.equal(last.request.messages[1].content, "Retained first answer");
+      last.write({ content: "Last answer" });
+      last.finish();
+      const complete = await until(
+        () => f.engine.api.getGrid(grid.id),
+        (g) => g.status === "complete",
+      );
+      const saved = await f.store.files.bundle(complete.cells[0].artifactId!);
+      assert.deepEqual(
+        JSON.parse(Buffer.from(saved["messages.json"]).toString()),
+        [
+          { role: "user", content: "Question one" },
+          { role: "assistant", content: "Retained first answer" },
+          { role: "user", content: "Next question" },
+          { role: "assistant", content: "Last answer" },
+        ],
+      );
+      assert.equal(f.calls.length, 2);
+      assert.equal(f.store.billing.page(f.owner, 0).costUsd, 0.0246);
+    } finally {
+      unlock();
+      await f.close();
+    }
+  },
+);
 
 test(
   "template requests wait for billing writes, and Pause cancels that wait",
@@ -81,7 +106,13 @@ test(
       assert.equal(f.calls.length, 1);
       await f.engine.api.startGrid({ gridId: grid.id, sessionId: f.owner });
       const retry = await f.nextCall();
-      assert.equal(retry.request.messages.length, 1);
+      assert.deepEqual(
+        retry.request.messages.map(({ role, content }) => ({
+          role,
+          content: messageText(content),
+        })),
+        [{ role: "user", content: "Question one" }],
+      );
       retry.write({ content: "Fresh first answer" });
       retry.finish();
       const last = await f.nextCall();
@@ -118,8 +149,8 @@ test(
       const last = await f.nextCall();
       debug = await crashCheckpoint(
         f.engine.child,
-        "jobs.ts",
-        "const billing=this.store.billing.cell(",
+        "workflow-executor.ts",
+        "const billing=store.billing.task(task.id,context.attemptId)",
       );
       last.write({ content: "Last answer" });
       last.finish();
@@ -136,7 +167,13 @@ test(
       assert.equal(f.calls.length, 2);
       await f.engine.api.startGrid({ gridId: grid.id, sessionId: f.owner });
       const retry = await f.nextCall();
-      assert.equal(retry.request.messages.length, 1);
+      assert.deepEqual(
+        retry.request.messages.map(({ role, content }) => ({
+          role,
+          content: messageText(content),
+        })),
+        [{ role: "user", content: "Question one" }],
+      );
       retry.write({ content: "New first" });
       retry.finish(0.02);
       const end = await f.nextCall();
@@ -176,7 +213,18 @@ test(
       last.write({ content: "Last answer" });
       last.finish();
       assert.deepEqual(await exited, [0, null]);
-      assert.equal(f.store.get(grid.id)!.status, "complete");
+      const complete = f.store.get(grid.id)!;
+      assert.equal(complete.status, "complete");
+      const saved = await f.store.files.bundle(complete.cells[0].artifactId!);
+      assert.deepEqual(
+        JSON.parse(Buffer.from(saved["messages.json"]).toString()),
+        [
+          { role: "user", content: "Question one" },
+          { role: "assistant", content: "First answer" },
+          { role: "user", content: "Next question" },
+          { role: "assistant", content: "Last answer" },
+        ],
+      );
       assert.equal(f.calls.length, 2);
       assert.equal(
         f.calls.some((call) => call.aborted),
@@ -201,7 +249,13 @@ test(
       first.finish();
       (await f.nextCall()).fail(429);
       const retry = await f.nextCall();
-      assert.equal(retry.request.messages.length, 1);
+      assert.deepEqual(
+        retry.request.messages.map(({ role, content }) => ({
+          role,
+          content: messageText(content),
+        })),
+        [{ role: "user", content: "Question one" }],
+      );
       retry.write({ content: "Fresh answer" });
       retry.finish();
       const last = await f.nextCall();
@@ -211,6 +265,16 @@ test(
       const complete = await until(
         () => f.engine.api.getGrid(grid.id),
         (g) => g.status === "complete",
+      );
+      const saved = await f.store.files.bundle(complete.cells[0].artifactId!);
+      assert.deepEqual(
+        JSON.parse(Buffer.from(saved["messages.json"]).toString()),
+        [
+          { role: "user", content: "Question one" },
+          { role: "assistant", content: "Fresh answer" },
+          { role: "user", content: "Next question" },
+          { role: "assistant", content: "Last answer" },
+        ],
       );
       assert.equal(complete.cells[0].usage!.costUsd, 0.0246);
       assert.equal(f.calls.length, 4);

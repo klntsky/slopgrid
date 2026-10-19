@@ -18,7 +18,7 @@ export function MarkdownPreview({
 }: {
   url: string;
   title: string;
-  raw?: boolean | "wrap";
+  raw?: boolean | "thinking";
   draft?: string;
   streaming?: boolean;
   conversation?: boolean;
@@ -42,9 +42,10 @@ export function MarkdownPreview({
     const preview = previewRef.current;
     const document = documentRef.current;
     if (!preview || !document) return;
-    if (raw === "wrap") {
+    if (raw) {
       document.style.removeProperty("width");
       document.style.removeProperty("zoom");
+      if (raw !== "thinking") return;
       const follow = () => {
         if (following.current) {
           preview.scrollTop = preview.scrollHeight;
@@ -85,12 +86,13 @@ export function MarkdownPreview({
     <div
       ref={previewRef}
       className={`markdown-preview${conversation && !raw ? " conversation-preview" : ""}`}
+      data-scroll-sync={conversation && !raw ? "chat" : undefined}
       role="region"
       aria-label={title}
       aria-busy={streaming}
       tabIndex={0}
       onScroll={({ currentTarget: preview }) => {
-        if (raw !== "wrap") return;
+        if (raw !== "thinking") return;
         const top = preview.scrollTop;
         const atBottom = preview.scrollHeight - preview.clientHeight - top <= 2;
         // Appends and queued programmatic scroll events do not signal user intent.
@@ -101,7 +103,7 @@ export function MarkdownPreview({
       }}
       onWheel={(event) => {
         if (
-          raw === "wrap" &&
+          raw === "thinking" &&
           event.deltaY < 0 &&
           event.currentTarget.scrollTop > 0
         )
@@ -123,12 +125,18 @@ export function MarkdownPreview({
         <div className="markdown-document" ref={documentRef}>
           {raw ? (
             <pre
-              className={`markdown-raw${raw === "wrap" ? " markdown-wrapped" : ""}`}
+              className={`markdown-raw${raw === "thinking" ? " markdown-thinking" : ""}`}
             >
               {markdown}
             </pre>
           ) : conversation ? (
-            <ChatConversation messages={readChatOutput(markdown)} />
+            <ChatConversation
+              messages={
+                !markdown && (streaming || query.data === undefined)
+                  ? []
+                  : readChatOutput(markdown)
+              }
+            />
           ) : (
             <MarkdownContent markdown={markdown} />
           )}

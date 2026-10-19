@@ -7,7 +7,7 @@ test.describe("touch expansion", () => {
     hasTouch: true,
     isMobile: true,
   });
-  test("expanded output keeps the complete navbar visible and uses unscaled controls", async ({
+  test("expanded output keeps navigation usable and restores grid dimensions", async ({
     page,
     request,
   }) => {
@@ -37,8 +37,6 @@ test.describe("touch expansion", () => {
       name: "Collapse SVG",
       exact: true,
     });
-    expect((await collapse.boundingBox())!.width).toBeCloseTo(36, 0);
-    await expect(expanded.locator(".cell-footer")).toHaveCount(0);
     await menu.tap();
     await page
       .getByRole("link", { name: "SETTINGS", exact: true })

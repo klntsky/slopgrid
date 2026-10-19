@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { appFixture } from "./app-fixture.js";
 import { expandGrid, type Grid } from "../server/domain.js";
 import { Store } from "../server/store.js";
+import { createWorkflow } from "../server/workflow.js";
 
 test("public slug claims validate, serialize, persist and preserve existing links", async (t) => {
   const { origin, store, database, secret } = await appFixture(t);
@@ -17,8 +18,8 @@ test("public slug claims validate, serialize, persist and preserve existing link
     effort: "none",
     budgetUsd: 5,
   };
-  for (const id of ["first", "second", "third"])
-    store.insert({
+  for (const id of ["first", "second", "third"]) {
+    const grid: Grid = {
       id,
       owner,
       input,
@@ -31,7 +32,18 @@ test("public slug claims validate, serialize, persist and preserve existing link
         id: `${id}-cell`,
         status: "complete",
       })),
-    });
+    };
+    const tasks = createWorkflow(input, grid.cells);
+    for (const task of tasks) {
+      if (task.kind !== "generation") throw new Error("Expected generation");
+      task.status = "complete";
+      task.output = {
+        artifactId: `slug-output-${id}`,
+        provenance: { signature: "slug-fixture", files: ["index.md"] },
+      };
+    }
+    store.insert(grid, tasks);
+  }
   const publish = (
     id: string,
     slug?: unknown,

@@ -34,12 +34,12 @@ try {
   if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
 }
 const store = new Store(config.database, config.secret, config.outputsPath);
-const { api, jobs } = createGenerationService(
+const { api, executor } = createGenerationService(
   store,
   new Provider(process.env.OPENROUTER_BASE_URL),
   Number(process.env.WORKERS_MAX ?? 100),
 );
-jobs.previews.clearAll();
+executor.previews.clearAll();
 recoverInterruptedGrids(store);
 if (process.env.GENERATION_DRAINING === "1") await api.drain();
 const server = await serveGeneration(api, config.socket);

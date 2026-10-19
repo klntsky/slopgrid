@@ -3,7 +3,7 @@ import type { Grid } from "./domain.js";
 import type { GridVersion } from "../shared/grid-version.js";
 
 // Version this contract when a web release cannot talk to the running engine.
-export const generationProtocol = 7;
+export const generationProtocol = 9;
 const id = z.string().min(1).max(200);
 export const startGridRequest = z.strictObject({
   gridId: id,

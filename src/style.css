@@ -307,14 +307,11 @@ section {
   align-items: flex-start;
   gap: 4px;
 }
-.chat-remove {
-  height: calc(1.6rem + 24px);
-}
-.chat-message-input {
+.deletable-input {
   position: relative;
   min-width: 0;
 }
-.chat-message-input textarea {
+.deletable-input textarea {
   display: block;
   field-sizing: content;
   min-height: 0;
@@ -323,21 +320,24 @@ section {
   overflow: hidden;
   overflow-wrap: anywhere;
 }
-.chat-remove {
+.deletable-input-remove {
+  height: calc(1.6rem + 24px);
+  color: var(--muted);
+  padding: 5px;
   position: absolute;
   right: 3px;
   top: 0;
-  opacity: 0;
+  opacity: 0.5;
   pointer-events: none;
 }
-.chat-message-input:hover .chat-remove,
-.chat-remove:focus-visible {
+.deletable-input:hover .deletable-input-remove,
+.deletable-input-remove:focus-visible {
   opacity: 1;
   pointer-events: auto;
 }
-.chat-confirm-delete,
-.chat-confirm-delete:enabled:hover,
-.chat-confirm-delete:enabled:active {
+.deletable-input-confirm-delete,
+.deletable-input-confirm-delete:enabled:hover,
+.deletable-input-confirm-delete:enabled:active {
   position: absolute;
   top: 0;
   right: 40px;
@@ -349,24 +349,29 @@ section {
   background: #a92f36;
   border-color: #a92f36;
 }
-.chat-remove,
-.chat-drag {
+@media (hover: none), (pointer: coarse) {
+  .deletable-input:focus-within .deletable-input-remove {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+.reorder-handle {
   color: var(--muted);
   opacity: 0.5;
   padding: 5px;
 }
-.chat-drag {
+.reorder-handle {
   width: 24px;
   padding: 0;
   flex-shrink: 0;
   touch-action: none;
   cursor: grab;
 }
-.chat-drag,
+.reorder-handle,
 .model-badge.chat-role {
   height: 28px;
 }
-.chat-drag .lucide {
+.reorder-handle .lucide {
   width: 14px;
   height: 22px;
 }
@@ -404,10 +409,6 @@ section {
   .chat-append {
     opacity: 1;
   }
-  .chat-message-input:focus-within .chat-remove {
-    opacity: 1;
-    pointer-events: auto;
-  }
 }
 .chat-message[data-dragging="true"] {
   opacity: 0.6;
@@ -428,8 +429,11 @@ section {
   visibility: hidden;
 }
 .model-badge.chat-role,
+.model-badge.criteria-answer,
 .chat-role:enabled:hover,
-.chat-role:enabled:active {
+.criteria-answer:enabled:hover,
+.chat-role:enabled:active,
+.criteria-answer:enabled:active {
   flex: 1;
   padding-inline: 8px;
   background: color-mix(in srgb, var(--role-color) 12%, var(--paper));
@@ -475,7 +479,7 @@ section {
 .fixed-options {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 24px;
+  gap: 32px;
   margin-bottom: 22px;
 }
 .axes {
@@ -485,7 +489,7 @@ section {
 .image-options {
   display: flex;
   flex-wrap: wrap;
-  gap: 24px;
+  gap: 32px;
   margin-bottom: 22px;
 }
 .image-options > div {
@@ -496,18 +500,41 @@ section {
   flex-basis: 100%;
 }
 .axis,
-.fixed-options > div {
+.fixed-options > * {
   min-width: 0;
+}
+.axis-selector {
+  flex-direction: row;
+  align-items: center;
+}
+.axis-selector select {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+}
+.axis-name {
+  flex-shrink: 0;
+  font-size: 18px;
+  line-height: 24px;
 }
 .axis-swap {
   align-self: start;
-  margin-top: 24px;
+  margin-top: 0;
   padding: 12px;
   color: var(--logo-color);
 }
 .axis-swap .lucide {
   width: 20px;
   height: 20px;
+}
+.parameter-name {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+}
+legend.parameter-name,
+.parameter-name-standalone {
+  margin-bottom: 9px;
 }
 label {
   display: flex;
@@ -595,6 +622,17 @@ legend {
 }
 .checkbox input {
   accent-color: var(--accent);
+}
+.checkbox.judge-toggle {
+  font: inherit;
+  padding: 0;
+  cursor: pointer;
+}
+.judge-toggle input {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  margin: 0;
 }
 .hint {
   font-size: 12px;
@@ -1039,6 +1077,7 @@ button.editable-title > .lucide {
 .cell {
   display: grid;
   grid-template-rows: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   width: 100%;
   height: 100%;
   min-height: 0;
@@ -1206,10 +1245,11 @@ button.editable-title > .lucide {
   .axes,
   .fixed-options {
     grid-template-columns: 1fr;
+  }
+  .axes {
     gap: 10px;
   }
   .axis-swap {
-    margin-top: 0;
     justify-self: center;
   }
   .axis-swap .lucide {

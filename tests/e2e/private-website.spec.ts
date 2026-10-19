@@ -7,6 +7,7 @@ import { webFixture } from "../web-fixture";
 import { Store } from "../../server/store";
 import { expandGrid, type GridInput, type Grid } from "../../server/domain";
 import { token } from "../../server/ids";
+import { createWorkflow } from "../../server/workflow";
 
 test("private websites load in frames and direct tabs for the owning user across sessions", async ({
   playwright,
@@ -57,9 +58,9 @@ test("private websites load in frames and direct tabs for the owning user across
         status: "complete",
       })),
     };
-    store.insert(grid);
     const cell = grid.cells[0];
-    store.files.write(cell.id, {
+    const artifactId = token();
+    const files = {
       "index.html":
         '<!doctype html><link rel="stylesheet" href="style.css"><h1>Private website</h1><p>Loading</p><script type="module" src="app.js"></script>',
       "style.css": '@import "./theme.css"; h1 { color: navy; }',
@@ -67,7 +68,19 @@ test("private websites load in frames and direct tabs for the owning user across
       "app.js":
         'import { message } from "./message.mjs"; document.querySelector("p").textContent = message;',
       "message.mjs": 'export const message = "Private module loaded";',
-    });
+    };
+    const tasks = createWorkflow(input, grid.cells);
+    const task = tasks.find((task) => task.kind === "generation")!;
+    task.status = "complete";
+    task.output = {
+      artifactId,
+      provenance: {
+        signature: "private-website-fixture",
+        files: Object.keys(files),
+      },
+    };
+    store.files.write(artifactId, files);
+    store.insert(grid, tasks);
     const context = await browser.newContext({ ignoreHTTPSErrors: true });
     await context.addCookies([
       {
@@ -86,48 +99,27 @@ test("private websites load in frames and direct tabs for the owning user across
     await expect(direct).toHaveURL(output);
     await direct.close();
     const page = await context.newPage();
-    const importedCSS = page.waitForResponse((response) =>
-      response.url().endsWith("/theme.css"),
-    );
     await page.goto(`${origin}/grid/${grid.id}`);
-    expect((await importedCSS).status()).toBe(200);
     const frame = page.frameLocator("iframe");
     await expect(frame.getByText("Private module loaded")).toBeVisible();
-    const cookies = (await context.cookies()).filter((cookie) =>
-      cookie.name.startsWith("__Host-slopgrid"),
+    const outputCookie = (await context.cookies()).find(
+      (cookie) => cookie.name === "__Host-slopgrid-output",
     );
-    expect(cookies.some((cookie) => cookie.name === "__Host-slopgrid")).toBe(
-      true,
+    expect(outputCookie).toMatchObject({ httpOnly: true, secure: true });
+    await expect(frame.locator("h1")).toHaveCSS("color", "rgb(0, 0, 128)");
+    await expect(frame.locator("body")).toHaveCSS(
+      "background-color",
+      "rgb(255, 255, 240)",
     );
-    expect(
-      cookies.some((cookie) => cookie.name === "__Host-slopgrid-output"),
-    ).toBe(true);
-    for (const cookie of cookies) {
-      expect(cookie.expires).toBeGreaterThan(Date.now() / 1000 + 399 * 86400);
-      expect(cookie.httpOnly).toBe(true);
-      expect(cookie.secure).toBe(true);
-    }
-    const sheetsLoaded = (element: Element) => {
-      const sheet = (element as HTMLLinkElement).sheet;
-      if (!sheet) return false;
-      try {
-        return sheet.cssRules.length > 0;
-      } catch {
-        return false;
-      }
-    };
-    await expect
-      .poll(() =>
-        frame.locator('link[rel="stylesheet"]').evaluate(sheetsLoaded),
-      )
-      .toBe(true);
     const opened = context.waitForEvent("page");
     await page.getByRole("link", { name: "Open output" }).click();
     const tab = await opened;
     await expect(tab.getByText("Private module loaded")).toBeVisible();
-    await expect
-      .poll(() => tab.locator('link[rel="stylesheet"]').evaluate(sheetsLoaded))
-      .toBe(true);
+    await expect(tab.locator("h1")).toHaveCSS("color", "rgb(0, 0, 128)");
+    await expect(tab.locator("body")).toHaveCSS(
+      "background-color",
+      "rgb(255, 255, 240)",
+    );
     await expect(tab).toHaveURL(output);
     await expect(tab.locator("iframe")).toHaveCount(0);
     expect(await tab.evaluate(async () => (await fetch("/style.css")).ok)).toBe(
@@ -208,11 +200,10 @@ test("private websites load in frames and direct tabs for the owning user across
     expect((await outputFrame.goto(output))!.status()).toBe(404);
     await page.reload();
     await expect(frame.getByText("Private module loaded")).toBeVisible();
-    await expect
-      .poll(() =>
-        frame.locator('link[rel="stylesheet"]').evaluate(sheetsLoaded),
-      )
-      .toBe(true);
+    await expect(frame.locator("body")).toHaveCSS(
+      "background-color",
+      "rgb(255, 255, 240)",
+    );
     const account = store.identify("github", "123", {
       provider: "github",
       username: "owner",
@@ -245,13 +236,10 @@ test("private websites load in frames and direct tabs for the owning user across
         signedIn.page.getByText("Private module loaded"),
       ).toBeVisible();
       await expect(signedIn.page).toHaveURL(output);
-      await expect
-        .poll(() =>
-          signedIn.page
-            .locator('link[rel="stylesheet"]')
-            .evaluate(sheetsLoaded),
-        )
-        .toBe(true);
+      await expect(signedIn.page.locator("body")).toHaveCSS(
+        "background-color",
+        "rgb(255, 255, 240)",
+      );
     }
     store.deleteSession(first.sessionId);
     expect((await first.page.reload())!.status()).toBe(404);

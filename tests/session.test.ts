@@ -44,3 +44,44 @@ test("sessions retain identity and credentials regardless of age and renew persi
   assert.match(logout.headers.get("set-cookie")!, /Max-Age=34560000;/);
   assert.equal(store.session(id), undefined);
 });
+
+test("owner recovery selects the newest matching session and updates anonymous ownership without losing credentials", async (t) => {
+  const { store, database, secret } = await appFixture(t);
+  const original = {
+    id: "original-owner",
+    created: 9,
+    key: "older-credential",
+  };
+  const rotated = {
+    id: "rotated-session",
+    anonymousId: original.id,
+    created: 10,
+    key: "latest-credential",
+    inferenceConcurrency: 3,
+  };
+  store.saveSession(rotated);
+  store.saveSession({
+    id: "unrelated-session",
+    anonymousId: "another-owner",
+    created: 100,
+    key: "unrelated-credential",
+  });
+  store.saveSession(original);
+  assert.deepEqual(store.sessionForOwner(original.id), rotated);
+  const reopened = new Store(database, secret);
+  try {
+    assert.deepEqual(reopened.sessionForOwner(original.id), rotated);
+    const detached = {
+      id: rotated.id,
+      created: rotated.created,
+      key: rotated.key,
+      inferenceConcurrency: rotated.inferenceConcurrency,
+    };
+    reopened.saveSession(detached);
+    assert.deepEqual(reopened.session(rotated.id), detached);
+    assert.deepEqual(reopened.sessionForOwner(original.id), original);
+    assert.deepEqual(reopened.sessionForOwner(rotated.id), detached);
+  } finally {
+    reopened.db.close();
+  }
+});

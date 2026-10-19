@@ -13,6 +13,11 @@ import { createSessionReader } from "../server/session.js";
 let balanceUsd = 100;
 let tokenLimits: { model: string; max_tokens: number }[] = [];
 let imageRequests: Record<string, unknown>[] = [];
+let judgeRequests: Record<string, unknown>[] = [];
+let judgeOutput: string | undefined;
+let judgeCost = 0.25;
+let holdJudges = false;
+let svgOutput: string | undefined;
 let streamBilling = false;
 let unsafe = false;
 let markdownOutput: string | undefined;
@@ -79,7 +84,7 @@ upstream.get("/api/v1/models", (_req, res) =>
         context_length: 1000000,
         top_provider: { max_completion_tokens: 500000 },
         architecture: {
-          input_modalities: ["text"],
+          input_modalities: ["text", "image"],
           output_modalities: ["text"],
         },
         supported_parameters: [
@@ -99,10 +104,14 @@ upstream.get("/api/v1/models", (_req, res) =>
         context_length: 1000000,
         top_provider: { max_completion_tokens: 500000 },
         architecture: {
-          input_modalities: ["text"],
+          input_modalities: ["text", "image"],
           output_modalities: ["text"],
         },
-        supported_parameters: ["reasoning", "reasoning_effort"],
+        supported_parameters: [
+          "reasoning",
+          "reasoning_effort",
+          "structured_outputs",
+        ],
         reasoning: { mandatory: false, supported_efforts: null },
       },
     ],
@@ -178,8 +187,12 @@ upstream.get("/api/v1/images/models/fixture/:model/endpoints", (req, res) =>
     ],
   }),
 );
-async function waitForRelease(prompt: string, res: express.Response) {
-  if (holdGenerations) {
+async function waitForRelease(
+  prompt: string,
+  res: express.Response,
+  hold = holdGenerations,
+) {
+  if (hold) {
     await new Promise<void>((resolve) => {
       const entry = {
         prompt,
@@ -256,6 +269,40 @@ upstream.post("/api/v1/chat/completions", async (req, res) => {
       req.body.messages.find((m: { role: string }) => m.role === "system")
         ?.content ?? "",
     );
+  if (req.body.response_format?.json_schema?.name === "judgment") {
+    judgeRequests.push(req.body);
+    calls.push(prompt);
+    await waitForRelease(prompt, res, holdJudges);
+    if (res.destroyed) return;
+    const criteria = prompt
+      .split("\n\nCompleted artifact:\n")[0]
+      .split("\n")
+      .filter((line: string) => /^\d+\. /.test(line));
+    const text =
+      judgeOutput ??
+      JSON.stringify({
+        results: criteria.map((criterion: string) => ({
+          verdict: !criterion.toLowerCase().includes("blue circle"),
+          explanation: criterion.toLowerCase().includes("blue circle")
+            ? "There is no blue circle."
+            : "The supplied output satisfies this criterion.",
+        })),
+      });
+    const base = {
+      id: `fixture-judge-${judgeRequests.length}`,
+      object: "chat.completion.chunk",
+      created: Math.floor(Date.now() / 1000),
+      model: req.body.model,
+    };
+    res.type("text/event-stream");
+    res.write(
+      `data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: { content: text }, finish_reason: null }] })}\n\n`,
+    );
+    res.end(
+      `data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 100, completion_tokens: 200, total_tokens: 300, cost: judgeCost } })}\n\ndata: [DONE]\n\n`,
+    );
+    return;
+  }
   tokenLimits.push({ model: req.body.model, max_tokens: req.body.max_tokens });
   calls.push(prompt);
   await waitForRelease(prompt, res);
@@ -279,9 +326,10 @@ upstream.post("/api/v1/chat/completions", async (req, res) => {
       })),
     });
   const text = system.includes("image/svg+xml")
-    ? unsafe
-      ? `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><script>window.unsafeOutput=true;parent.unsafeOutput=true;document.cookie="svg_escape=1;path=/";fetch("${web.origin}/svg-probe?script")</script><image href="${web.origin}/svg-probe?image" width="10" height="10"/><circle cx="100" cy="100" r="70"/></svg>`
-      : '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><circle cx="100" cy="100" r="70" fill="tan"/></svg>'
+    ? (svgOutput ??
+      (unsafe
+        ? `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><script>window.unsafeOutput=true;parent.unsafeOutput=true;document.cookie="svg_escape=1;path=/";fetch("${web.origin}/svg-probe?script")</script><image href="${web.origin}/svg-probe?image" width="10" height="10"/><circle cx="100" cy="100" r="70"/></svg>`
+        : '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><circle cx="100" cy="100" r="70" fill="tan"/></svg>'))
     : system.includes("JSON object")
       ? bundle({
           "index.html":
@@ -443,6 +491,11 @@ app.post("/fixture/reset", (req, res) => {
   transientStatus = req.body.transientStatus ?? 429;
   transientStream = !!req.body.transientStream;
   holdGenerations = !!req.body.holdGenerations;
+  holdJudges = !!req.body.holdJudges;
+  judgeOutput = req.body.judgeOutput;
+  judgeCost = req.body.judgeCost ?? 0.25;
+  svgOutput = req.body.svgOutput;
+  judgeRequests = [];
   for (const entry of [...held]) entry.release();
   aborted = [];
   websiteStreaming = !!req.body.websiteStreaming;
@@ -477,6 +530,7 @@ app.get("/fixture/workers", (_req, res) =>
 app.post("/fixture/release", (req, res) => {
   if (req.body.all) {
     holdGenerations = false;
+    holdJudges = false;
     for (const entry of [...held]) entry.release();
   } else held.find((entry) => entry.prompt === req.body.prompt)?.release();
   res.json({ ok: true });
@@ -489,6 +543,7 @@ app.post("/fixture/credits", (req, res) => {
 });
 app.get("/fixture/token-limits", (_req, res) => res.json(tokenLimits));
 app.get("/fixture/image-requests", (_req, res) => res.json(imageRequests));
+app.get("/fixture/judge-requests", (_req, res) => res.json(judgeRequests));
 app.get("/fixture/calls", (_req, res) => res.json(calls));
 app.get("/svg-probe", (req, res) => {
   svgProbes.push(req.originalUrl);

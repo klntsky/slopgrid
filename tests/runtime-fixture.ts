@@ -14,12 +14,25 @@ export type CapturedRequest = {
   model: string;
   messages: {
     role: string;
-    content: string | { type: string; text?: string }[];
+    content:
+      string | { type: string; text?: string; image_url?: { url: string } }[];
   }[];
   max_tokens?: number;
   reasoning?: { effort?: string };
   provider?: { max_price?: Record<string, number> };
-  response_format?: { json_schema: { schema: Record<string, unknown> } };
+  response_format?: {
+    json_schema: {
+      name: string;
+      strict?: boolean;
+      schema: Record<string, unknown>;
+    };
+  };
+};
+
+export type CapturedImageRequest = {
+  model: string;
+  prompt: string;
+  [parameter: string]: unknown;
 };
 export function messageText(
   content: CapturedRequest["messages"][number]["content"],
@@ -48,7 +61,9 @@ export async function kill(child: ChildProcess) {
 }
 
 /** Real service processes with a controllable external HTTP provider. */
-export async function runtimeFixture(options: { workers?: number } = {}) {
+export async function runtimeFixture(
+  options: { workers?: number; judges?: boolean; images?: boolean } = {},
+) {
   const directory = mkdtempSync(join(tmpdir(), "slopgrid-runtime-"));
   const database = join(directory, "app.sqlite"),
     secret = Buffer.alloc(32, 9);
@@ -77,16 +92,61 @@ export async function runtimeFixture(options: { workers?: number } = {}) {
         context_length: 100000,
         top_provider: { max_completion_tokens: 1000 },
         architecture: {
-          input_modalities: ["text"],
+          input_modalities: ["text", "image"],
           output_modalities: ["text"],
         },
         supported_parameters: ["reasoning", "structured_outputs"],
       },
+      ...(options.judges
+        ? [
+            {
+              id: "fixture/judge-other",
+              name: "Other judge",
+              pricing: { prompt: "0.000001", completion: "0.000001" },
+              context_length: 100000,
+              top_provider: { max_completion_tokens: 1000 },
+              architecture: {
+                input_modalities: ["text", "image"],
+                output_modalities: ["text"],
+              },
+              supported_parameters: ["reasoning", "structured_outputs"],
+            },
+          ]
+        : []),
     ],
   };
   const credits = { total_credits: 100, total_usage: 0 };
   upstream.get("/models", (_req, res) => res.json(catalog));
-  upstream.get("/images/models", (_req, res) => res.json({ data: [] }));
+  upstream.get("/images/models", (_req, res) =>
+    res.json({
+      data: options.images
+        ? [
+            {
+              id: "fixture/image",
+              name: "Fixture image",
+              architecture: {
+                input_modalities: ["text"],
+                output_modalities: ["image"],
+              },
+              supported_parameters: { n: { type: "integer" } },
+            },
+          ]
+        : [],
+    }),
+  );
+  upstream.get("/images/models/fixture/image/endpoints", (_req, res) =>
+    res.json({
+      endpoints: [
+        {
+          provider_name: "Fixture provider",
+          pricing: [
+            { billable: "output_image", unit: "image", cost_usd: 0.04 },
+          ],
+          supported_parameters: { n: { type: "integer" } },
+        },
+      ],
+    }),
+  );
   upstream.get("/credits", (_req, res) => res.json({ data: credits }));
   upstream.get("/key", (_req, res) =>
     res.json({ data: { limit_remaining: 100 } }),
@@ -95,6 +155,7 @@ export async function runtimeFixture(options: { workers?: number } = {}) {
     request: CapturedRequest;
     prompt: string;
     aborted: boolean;
+    closed: Promise<void>;
     write: (delta: object) => void;
     finish: (
       cost?: number,
@@ -107,6 +168,37 @@ export async function runtimeFixture(options: { workers?: number } = {}) {
     fail: (status?: number) => void;
     disconnect: () => void;
   }[] = [];
+  const imageCalls: {
+    request: CapturedImageRequest;
+    aborted: boolean;
+    finish: (bytes: Uint8Array, cost?: number) => void;
+    fail: (status?: number) => void;
+  }[] = [];
+  upstream.post("/images", (req, res) => {
+    const call = {
+      request: req.body as CapturedImageRequest,
+      aborted: false,
+      finish: (bytes: Uint8Array, cost = 0.04) =>
+        res.json({
+          created: 1,
+          data: [{ b64_json: Buffer.from(bytes).toString("base64") }],
+          usage: {
+            prompt_tokens: 10,
+            completion_tokens: 20,
+            total_tokens: 30,
+            cost,
+          },
+        }),
+      fail: (status = 429) =>
+        res.status(status).json({
+          error: { code: status, message: "Controlled image provider failure" },
+        }),
+    };
+    res.on("close", () => {
+      if (!res.writableEnded) call.aborted = true;
+    });
+    imageCalls.push(call);
+  });
   upstream.post("/chat/completions", (req, res) => {
     const id = `call-${calls.length}`;
     const event = (
@@ -126,6 +218,9 @@ export async function runtimeFixture(options: { workers?: number } = {}) {
         .map((message) => messageText(message.content))
         .join(""),
       aborted: false,
+      closed: new Promise<void>((resolve) => {
+        res.once("close", () => resolve());
+      }),
       disconnect: () => res.destroy(),
       write: (delta: object) => {
         event(delta);
@@ -205,11 +300,16 @@ export async function runtimeFixture(options: { workers?: number } = {}) {
     await close();
     throw error;
   }
-  let nextCallIndex = 0;
+  let nextCallIndex = 0,
+    nextImageCallIndex = 0;
   return {
     nextCall: () => {
       const index = nextCallIndex++;
       return until(() => calls[index], Boolean);
+    },
+    nextImageCall: () => {
+      const index = nextImageCallIndex++;
+      return until(() => imageCalls[index], Boolean);
     },
     catalog,
     providerURL,
@@ -219,6 +319,7 @@ export async function runtimeFixture(options: { workers?: number } = {}) {
     store,
     owner,
     calls,
+    imageCalls,
     close,
     startWeb,
     startEngine,

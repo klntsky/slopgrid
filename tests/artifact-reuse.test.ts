@@ -1,11 +1,18 @@
 import { Provider } from "../server/provider.js";
-import { inferenceSignature } from "../server/prepared-inference.js";
 import type { ViewGrid } from "../src/api.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, rmSync, chmodSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import type { GridInput } from "../server/domain.js";
+import {
+  expandGrid,
+  hasCompletedOutput,
+  type Grid,
+  type GridInput,
+} from "../server/domain.js";
+import { createWorkflow, projectWorkflow } from "../server/workflow.js";
+import { reuseArtifacts } from "../server/artifact-reuse.js";
+import { token } from "../server/ids.js";
 import {
   runtimeFixture,
   until,
@@ -73,7 +80,6 @@ test("template usage and per-call reuse survive storage reopening", async () => 
     await settled(f, source.id);
     const saved = f.store.get(source.id)!;
     assertCost(saved.cells[0].usage!.costUsd!, 0.0246);
-    assert.equal(saved.cells[0].provenance!.templateSteps!.length, 2);
     const calls = f.calls.length;
     const copy = await create(f, {
       ...template,
@@ -82,10 +88,8 @@ test("template usage and per-call reuse survive storage reopening", async () => 
     });
     assert.equal(copy.cells[0].status, "complete");
     assert.equal(f.calls.length, calls);
-    assert.deepEqual(
-      await f.store.files.bundle(copy.cells[0].id),
-      await f.store.files.bundle(saved.cells[0].id),
-    );
+    const artifactId = f.store.outputMetadata(copy.cells[0].id)!.artifactId;
+    assert.equal(artifactId, saved.cells[0].artifactId);
     assertCost(f.store.get(copy.id)!.cells[0].usage!.costUsd!, 0.0246);
     const conversation = await f.request(`/outputs/${copy.cells[0].id}?raw=1`);
     assert.match(
@@ -97,15 +101,24 @@ test("template usage and per-call reuse survive storage reopening", async () => 
       { role: "assistant", content: "First answer" },
       { role: "assistant", content: "Second answer" },
     ]);
+    const download = await f.request(`/outputs/${copy.cells[0].id}/download`);
+    assert.equal(download.status, 200);
+    assert.match(download.headers.get("content-type")!, /application\/json/);
+    assert.match(download.headers.get("content-disposition")!, /\.json/);
+    assert.deepEqual(await download.json(), [
+      { role: "user", content: "cat one" },
+      { role: "assistant", content: "First answer" },
+      { role: "assistant", content: "Second answer" },
+    ]);
     assert.equal(
       (await f.fetch(f.origin + `/outputs/${copy.cells[0].id}?raw=1`)).status,
       404,
     );
     f.store.db
       .prepare(
-        "UPDATE cells SET data=json_remove(data,'$.provenance.templateSteps[1].usage.inputTokens') WHERE id=?",
+        "UPDATE workflow_tasks SET data=json_remove(data,'$.output.provenance.templateSteps[1].usage.inputTokens') WHERE id=?",
       )
-      .run(copy.cells[0].id);
+      .run(copy.cells[0].generationId);
     const regenerated = await create(f, {
       ...template,
       sourceGridId: copy.id,
@@ -116,17 +129,6 @@ test("template usage and per-call reuse survive storage reopening", async () => 
     finish(await f.nextCall(), "Fresh second answer");
     assert.equal((await settled(f, regenerated.id)).status, "complete");
     assert.equal(f.calls.length, calls + 2);
-    f.store.files.write(source.cells[0].id, {
-      "index.md":
-        "## user\n\ncat one\n\n## assistant\n\nFirst answer\n\n## assistant\n\nSecond answer",
-    });
-    const legacy = await f.request(`/outputs/${source.cells[0].id}/download`);
-    assert.match(legacy.headers.get("content-type")!, /application\/json/);
-    assert.deepEqual(await legacy.json(), [
-      { role: "user", content: "cat one" },
-      { role: "assistant", content: "First answer" },
-      { role: "assistant", content: "Second answer" },
-    ]);
   } finally {
     await f.close();
   }
@@ -171,9 +173,9 @@ test("template reuse requires the final completion after supplied trailing histo
     assert.equal(f.calls.length, 2);
     f.store.db
       .prepare(
-        "UPDATE cells SET data=json_remove(data,'$.provenance.templateSteps[1]') WHERE id=?",
+        "UPDATE workflow_tasks SET data=json_remove(data,'$.output.provenance.templateSteps[1]') WHERE id=?",
       )
-      .run(source.cells[0].id);
+      .run(source.cells[0].generationId);
     const regenerated = await create(f, {
       ...template,
       sourceGridId: source.id,
@@ -220,7 +222,7 @@ test("failed templates retain the partial transcript and aggregate charged usage
   }
 });
 
-test("edit copies exact completed cells through reorder, cancellation, web replacement and engine restart", async () => {
+test("edit shares exact completed artifacts through reorder, cancellation, web replacement and engine restart", async () => {
   const f = await runtimeFixture();
   try {
     const source = await create(f, input);
@@ -253,14 +255,12 @@ test("edit copies exact completed cells through reorder, cancellation, web repla
     );
     const copy = f.store.get(next.id)!.cells[3];
     assert.notEqual(copy.id, sourceCell.id);
-    assert.notEqual(copy.thinkingId, sourceCell.thinkingId);
-    assert.deepEqual(
-      await f.store.files.bundle(copy.id),
-      await f.store.files.bundle(sourceCell.id),
-    );
+    assert.equal(copy.thinkingId, sourceCell.thinkingId);
+    assert.equal(copy.artifactId, sourceCell.artifactId);
+    assert.equal(copy.thinkingSourceId, sourceCell.thinkingSourceId);
     assert.equal(
       readFileSync(
-        f.store.files.thinkingPath(copy.id, copy.thinkingId!)!,
+        f.store.files.thinkingPath(copy.thinkingSourceId!, copy.thinkingId!)!,
         "utf8",
       ),
       "Recorded thinking.",
@@ -309,7 +309,7 @@ test("edit copies exact completed cells through reorder, cancellation, web repla
   }
 });
 
-test("copies require intact inventories and thinking, and remain independent of the original", async () => {
+test("reuse requires intact content and retains shared artifacts while either grid references them", async () => {
   const f = await runtimeFixture();
   try {
     const config = {
@@ -332,19 +332,24 @@ test("copies require intact inventories and thinking, and remain independent of 
         }),
       );
     const completed = await settled(f, source.id);
-    rmSync(f.store.files.path(completed.cells[1].id, "nested/style.css")!);
+    rmSync(
+      f.store.files.path(completed.cells[1].artifactId!, "nested/style.css")!,
+    );
     rmSync(
       f.store.files.thinkingPath(
-        completed.cells[2].id,
+        completed.cells[2].thinkingSourceId!,
         completed.cells[2].thinkingId!,
       )!,
     );
     f.store.db
       .prepare(
-        "UPDATE cells SET data=json_remove(data,'$.provenance') WHERE id=?",
+        "UPDATE workflow_tasks SET data=json_remove(data,'$.output.provenance') WHERE id=?",
       )
-      .run(completed.cells[3].id);
-    chmodSync(f.store.files.path(completed.cells[4].id, "index.html")!, 0);
+      .run(completed.cells[3].generationId);
+    chmodSync(
+      f.store.files.path(completed.cells[4].artifactId!, "index.html")!,
+      0,
+    );
     const copied = await create(f, {
       ...config,
       sourceGridId: source.id,
@@ -363,19 +368,27 @@ test("copies require intact inventories and thinking, and remain independent of 
       );
     await settled(f, copied.id);
     const first = f.store.get(copied.id)!.cells[0];
-    rmSync(join(f.store.files.root, completed.cells[0].id), {
-      recursive: true,
-    });
-    rmSync(
-      f.store.files.thinkingPath(
-        completed.cells[0].id,
-        completed.cells[0].thinkingId!,
-      )!,
+    assert.equal(first.artifactId, completed.cells[0].artifactId);
+    assert.equal(f.store.removeUnreferencedArtifact(first.artifactId!), false);
+    f.store.db.transaction(() => {
+      f.store.db
+        .prepare(
+          "DELETE FROM inference_calls WHERE cell_id IN (SELECT id FROM cells WHERE grid_id=?)",
+        )
+        .run(source.id);
+      f.store.db.prepare("DELETE FROM grids WHERE id=?").run(source.id);
+    })();
+    assert.equal(f.store.removeUnreferencedArtifact(first.artifactId!), false);
+    assert.deepEqual(
+      { ...(await f.store.files.bundle(first.artifactId!)) },
+      {
+        "index.html": Buffer.from("<h1>intact</h1>"),
+        "nested/style.css": Buffer.from("h1{color:red}"),
+      },
     );
-    assert.equal(Object.keys(await f.store.files.bundle(first.id)).length, 2);
     assert.equal(
       readFileSync(
-        f.store.files.thinkingPath(first.id, first.thinkingId!)!,
+        f.store.files.thinkingPath(first.thinkingSourceId!, first.thinkingId!)!,
         "utf8",
       ),
       "Recorded thinking.",
@@ -436,6 +449,11 @@ test("forks isolate access and billing while preserving artifact costs and admis
     );
     assert.equal(f.store.billing.page(f.owner, 0, "destination-user").total, 2);
     const cell = completed.cells[0];
+    const sourceCell = f.store.get(source.id)!.cells[0];
+    assert.equal(cell.artifactId, sourceCell.artifactId);
+    assert.equal(cell.thinkingSourceId, sourceCell.thinkingSourceId);
+    assert.equal(cell.thinkingId, sourceCell.thinkingId);
+    assert.notEqual(cell.id, sourceCell.id);
     for (const path of [
       `/api/grids/${completed.id}`,
       `/outputs/${cell.id}`,
@@ -693,7 +711,13 @@ test("reuse selects the first matching source whose actual usage fits the new li
     );
     for (const cell of copied.cells)
       assert.equal(
-        readFileSync(f.store.files.path(cell.id, "index.md")!, "utf8"),
+        readFileSync(
+          f.store.files.path(
+            f.store.outputMetadata(cell.id)!.artifactId!,
+            "index.md",
+          )!,
+          "utf8",
+        ),
         "Small",
       );
     assert.equal(f.calls.length, 4);
@@ -749,76 +773,34 @@ test("missing token usage reuses only when the original ceiling fits, including 
   }
 });
 
-test("actual prepared requests and artifact signatures cover adapter policy and ignore key order", async () => {
+test("stored artifacts with stale request signatures regenerate instead of reusing incompatible output", async () => {
   const f = await runtimeFixture();
   try {
-    const source = await create(f, {
+    const config = {
       ...input,
-      format: "html",
       rows: { kind: "variable", values: ["cat"] },
-    });
-    const call = await f.nextCall();
-    finish(
-      call,
-      JSON.stringify({
-        files: [{ path: "index.html", content: "<h1>Saved</h1>" }],
-      }),
-    );
-    await settled(f, source.id);
-    const cell = f.store.get(source.id)!.cells[0];
-    const provider = new Provider(f.providerURL);
-    const prepared = await provider.prepare("html", cell, []);
-    assert.equal(inferenceSignature(prepared), cell.provenance!.signature);
-    assert.notEqual(prepared.format, "image");
-    if (prepared.format === "image") throw new Error("Expected text request");
-    assert.equal(call.request.max_tokens, prepared.text.maxOutputTokens);
-    const signature = inferenceSignature(prepared);
-    const reordered = {
-      ...prepared,
-      text: {
-        ...prepared.text,
-        options: {
-          ...prepared.text.options,
-          provider: {
-            max_price: prepared.text.options.provider.max_price,
-            require_parameters:
-              prepared.text.options.provider.require_parameters,
-          },
-        },
-      },
     };
-    assert.equal(inferenceSignature(reordered), signature);
-    for (const changed of [
-      { ...prepared, adapterVersion: prepared.adapterVersion + "-changed" },
-      {
-        ...prepared,
-        text: { ...prepared.text, system: prepared.text.system + " changed" },
-      },
-      {
-        ...prepared,
-        text: {
-          ...prepared.text,
-          schema: { ...prepared.text.schema!, description: "Changed schema" },
-        },
-      },
-      {
-        ...prepared,
-        text: {
-          ...prepared.text,
-          options: {
-            ...prepared.text.options,
-            provider: {
-              ...prepared.text.options.provider,
-              max_price: {
-                ...prepared.text.options.provider.max_price!,
-                prompt: 2,
-              },
-            },
-          },
-        },
-      },
-    ])
-      assert.notEqual(inferenceSignature(changed), signature);
+    const source = await create(f, config);
+    finish(await f.nextCall(), "Old output");
+    const saved = await settled(f, source.id);
+    f.store.db
+      .prepare(
+        "UPDATE workflow_tasks SET data=json_set(data,'$.output.provenance.signature','stale-adapter-policy') WHERE id=?",
+      )
+      .run(saved.cells[0].generationId);
+    const regenerated = await create(f, {
+      ...config,
+      sourceGridId: source.id,
+      reuseArtifacts: true,
+    });
+    assert.notEqual(regenerated.cells[0].status, "complete");
+    finish(await f.nextCall(), "Fresh compatible output");
+    const completed = await settled(f, regenerated.id);
+    assert.equal(completed.cells[0].status, "complete");
+    const output = await f.request(`/outputs/${completed.cells[0].id}?raw=1`);
+    assert.equal(output.status, 200);
+    assert.equal(await output.text(), "Fresh compatible output");
+    assertCost(completed.spentUsd!, 0.0123);
   } finally {
     await f.close();
   }
@@ -854,7 +836,13 @@ test("duplicate effective prompts choose the first source cell and model alias r
     assert.equal(copied.status, "complete");
     assert.equal(f.calls.length, 4);
     assert.equal(
-      readFileSync(f.store.files.path(copied.cells[3].id, "index.md")!, "utf8"),
+      readFileSync(
+        f.store.files.path(
+          f.store.outputMetadata(copied.cells[3].id)!.artifactId!,
+          "index.md",
+        )!,
+        "utf8",
+      ),
       "Output 0",
     );
     f.catalog.data[2].alias_target!.slug = "fixture/other";
@@ -931,7 +919,7 @@ test("reuse leaves preparation failures on individual cells and skips unsigned s
     );
     f.store.db
       .prepare(
-        "UPDATE cells SET data=json_remove(data,'$.provenance') WHERE grid_id=?",
+        "UPDATE workflow_tasks SET data=json_remove(data,'$.output.provenance') WHERE grid_id=? AND kind='generation'",
       )
       .run(source.id);
     const unsigned = await create(f, {
@@ -945,6 +933,148 @@ test("reuse leaves preparation failures on individual cells and skips unsigned s
       /budget is too small/,
     );
     assert.equal(f.calls.length, 2);
+  } finally {
+    await f.close();
+  }
+});
+
+test("generation failures reach every judged group member while ordinary cells remain independent", () => {
+  const judged: GridInput = {
+    ...input,
+    prompt: "Same output",
+    rows: { kind: "judge_model", values: ["judge-a", "judge-b"] },
+    columns: { kind: "judge_effort", values: ["none", "low"] },
+    judge: {
+      criteria: [{ text: "Is this empty?", correctAnswer: false }],
+      model: "",
+      effort: "default",
+    },
+  };
+  const cells = expandGrid(judged).map((cell, index) => ({
+    ...cell,
+    id: `group-${index}`,
+  }));
+  const tasks = createWorkflow(judged, cells);
+  const generation = tasks.find((task) => task.kind === "generation")!;
+  generation.status = "error";
+  generation.error = "Generation failed";
+  const grid: Grid = {
+    id: "groups",
+    owner: "owner",
+    input: judged,
+    cells,
+    status: "paused",
+    published: false,
+    visibility: "private",
+    createdAt: "2026-01-01T00:00:00.000Z",
+  };
+  projectWorkflow(grid, tasks);
+  assert.deepEqual(
+    cells.map((cell) => [cell.status, cell.error]),
+    Array.from({ length: 4 }, () => ["error", "Generation failed"]),
+  );
+  const unjudged = { ...judged, judge: undefined };
+  const ordinary = expandGrid(unjudged).map((cell, index) => ({
+    ...cell,
+    id: `unjudged-${index}`,
+  }));
+  const independent = createWorkflow(unjudged, ordinary);
+  independent[0].status = "error";
+  independent[0].error = "Generation failed";
+  projectWorkflow({ ...grid, input: unjudged, cells: ordinary }, independent);
+  assert.deepEqual(
+    ordinary.map((cell) => [cell.status, cell.error]),
+    [
+      ["error", "Generation failed"],
+      ["pending", undefined],
+      ["pending", undefined],
+      ["pending", undefined],
+    ],
+  );
+});
+
+test("reuse shares one generation per judge group without copying judgments or attempts", async () => {
+  const f = await runtimeFixture();
+  try {
+    const config: GridInput = {
+      ...input,
+      prompt: "Reusable output",
+      rows: { kind: "model", values: ["fixture/text"] },
+      columns: { kind: "effort", values: ["none"] },
+      judge: {
+        criteria: [{ text: "Is this empty?", correctAnswer: false }],
+        model: "fixture/text",
+        effort: "none",
+      },
+    };
+    const created = await create(f, config);
+    finish(await f.nextCall(), "Shared artifact");
+    (await f.nextCall()).fail(400);
+    await settled(f, created.id);
+    const source = f.store.get(created.id)!;
+    const original = source.cells[0];
+    assert.equal(original.judge?.status, "error");
+    const judged: GridInput = {
+      ...config,
+      rows: { kind: "judge_model", values: ["judge-a", "judge-b"] },
+      columns: { kind: "judge_effort", values: ["none", "low"] },
+      judge: { ...config.judge!, model: "", effort: "default" },
+    };
+    const destination: Grid = {
+      ...source,
+      id: token(),
+      input: judged,
+      status: "paused",
+      cells: expandGrid(judged).map((cell) => ({ ...cell, id: token() })),
+    };
+    const tasks = createWorkflow(judged, destination.cells);
+    const before = readdirSync(f.store.files.root).sort();
+    await reuseArtifacts(f.store, new Provider(f.providerURL), source, tasks);
+    projectWorkflow(destination, tasks);
+    assert.deepEqual(readdirSync(f.store.files.root).sort(), before);
+    assert.equal(f.calls.length, 2);
+    for (const cell of destination.cells) {
+      assert.equal(cell.status, "pending");
+      assert.equal(hasCompletedOutput(cell), true);
+      assert.equal(cell.artifactId, original.artifactId);
+      assert.equal(cell.thinkingId, original.thinkingId);
+      assert.equal(cell.thinkingSourceId, original.thinkingSourceId);
+      assert.equal(cell.judge?.model, judged.rows.values[cell.row]);
+      assert.equal(cell.judge?.effort, judged.columns.values[cell.column]);
+      assert.equal(cell.judge?.status, "pending");
+      assert.equal(cell.attemptId, undefined);
+      assert.deepEqual(cell.usage, original.usage);
+      assert.deepEqual(cell.provenance, original.provenance);
+    }
+    const generation = tasks.find((task) => task.kind === "generation")!;
+    assert.equal(generation.attemptId, undefined);
+    assert.equal(generation.error, undefined);
+    f.store.insert(destination, tasks);
+    const judgments = tasks.filter((task) => task.kind === "judge");
+    judgments[0].status = "complete";
+    judgments[0].attemptId = "fresh-judge-attempt";
+    judgments[0].output = {
+      results: [{ verdict: false, explanation: "The output is not empty." }],
+    };
+    judgments[1].status = "error";
+    judgments[1].attemptId = "failed-judge-attempt";
+    judgments[1].error = "Temporary error";
+    judgments[1].errorCode = 503;
+    f.store.saveWorkflow(destination, tasks);
+    const restored = f.store.get(destination.id)!;
+    assert.deepEqual(
+      restored.cells[0].judge?.results,
+      judgments[0].output.results,
+    );
+    assert.equal(restored.cells[1].judge?.error, "Temporary error");
+    assert.equal(restored.input.judge!.criteria[0].correctAnswer, false);
+    assert.ok(
+      restored.cells.every((cell) => cell.artifactId === original.artifactId),
+    );
+    assert.equal(
+      f.store.removeUnreferencedArtifact(original.artifactId!),
+      false,
+    );
   } finally {
     await f.close();
   }

@@ -1,5 +1,6 @@
 import type { GridInput } from "./domain.js";
 import type { Model } from "./provider.js";
+import { judgeModelIssue } from "./compatibility.js";
 
 export class ModelResolutionError extends Error {}
 
@@ -35,14 +36,43 @@ export function resolveGridModels(
       return id;
     }
   }
-  const axis = (value: GridInput["rows"]): GridInput["rows"] =>
-    value.kind === "model"
-      ? { ...value, values: [...new Set(value.values.map(resolve))] }
+  function resolveJudge(id: string): string {
+    if (!id) throw new ModelResolutionError("Select a judge model.");
+    const resolved = resolve(id);
+    const issue = judgeModelIssue(catalog.get(resolved), input.format);
+    if (issue) throw new ModelResolutionError(issue);
+    return resolved;
+  }
+  const axis = (value: GridInput["rows"]): GridInput["rows"] => {
+    if (
+      (value.kind === "judge_model" || value.kind === "judge_effort") &&
+      !input.judge
+    )
+      throw new ModelResolutionError("Add a judge to use judge dimensions.");
+    return value.kind === "model" || value.kind === "judge_model"
+      ? {
+          ...value,
+          values: [
+            ...new Set(
+              value.values.map(value.kind === "model" ? resolve : resolveJudge),
+            ),
+          ],
+        }
       : { ...value, values: [...value.values] };
+  };
+  if (input.judge && input.format === "html")
+    throw new ModelResolutionError("Websites do not support a judge yet.");
   const rows = axis(input.rows),
     columns = axis(input.columns);
-  const model = [rows.kind, columns.kind].includes("model")
-    ? ""
-    : resolve(input.model);
-  return { ...input, model, rows, columns };
+  const dimensions = [rows.kind, columns.kind];
+  const model = dimensions.includes("model") ? "" : resolve(input.model);
+  const judge = input.judge
+    ? {
+        ...input.judge,
+        model: dimensions.includes("judge_model")
+          ? ""
+          : resolveJudge(input.judge.model),
+      }
+    : undefined;
+  return { ...input, model, rows, columns, ...(judge ? { judge } : {}) };
 }

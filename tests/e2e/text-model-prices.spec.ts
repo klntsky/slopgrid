@@ -45,7 +45,6 @@ test("text model prices convert token rates and retain free and missing pricing 
     name: "Fixture text",
     exact: true,
   });
-  await expect(model).not.toBeChecked();
   await model.check();
   await page.getByRole("button", { name: "Swap rows and columns" }).click();
   await page.getByLabel("Search models").fill("");

@@ -4,9 +4,11 @@ import assert from "node:assert/strict";
 import { request } from "node:http";
 import { expandGrid, type Grid } from "../server/domain.js";
 import { token } from "../server/ids.js";
+import { rmSync } from "node:fs";
+import { createWorkflow, projectWorkflow } from "../server/workflow.js";
 
 test("private outputs require ownership, isolated grants are scoped and revoked with the session, and publishing allows sharing", async (t) => {
-  const { origin, port, store, jobs } = await appFixture(t);
+  const { origin, port, store, executor } = await appFixture(t);
   const owner = token(),
     stranger = token();
   for (const id of [owner, stranger])
@@ -36,17 +38,40 @@ test("private outputs require ownership, isolated grants are scoped and revoked 
         status: running ? "running" : "complete",
       })),
     };
-    store.insert(g);
-    const cell = g.cells[0];
-    if (running)
-      jobs.previews.update(
-        cell,
+    const tasks = createWorkflow(input, g.cells);
+    const generation = tasks.find((task) => task.kind === "generation")!;
+    const artifactId = token();
+    if (running) generation.status = "running";
+    else {
+      generation.status = "complete";
+      generation.output = {
+        artifactId,
+        provenance: {
+          signature: "saved-generation",
+          files: [
+            format === "html"
+              ? "index.html"
+              : format === "markdown"
+                ? "index.md"
+                : format === "svg"
+                  ? "index.svg"
+                  : "image",
+          ],
+        },
+      };
+    }
+    projectWorkflow(g, tasks);
+    store.insert(g, tasks);
+    if (running) {
+      executor.previews.update(
+        generation,
         '{"files":[{"path":"index.html","content":"<h1>Private preview</h1>"}]}',
-        () => {},
+        () => projectWorkflow(g, tasks),
+        () => true,
       );
-    else
+    } else
       store.files.write(
-        cell.id,
+        artifactId,
         format === "html"
           ? {
               "index.html": '<script type="module" src="app.js"></script>',
@@ -112,13 +137,16 @@ test("private outputs require ownership, isolated grants are scoped and revoked 
     const grid = makeGrid(format),
       id = grid.cells[0].id;
     const thinkingId = token();
-    grid.cells[0].thinkingId = thinkingId;
+    const tasks = store.workflow(grid.id);
+    const generation = tasks.find((task) => task.kind === "generation")!;
+    generation.output!.thinkingId = thinkingId;
+    generation.output!.thinkingSourceId = token();
     store.files.appendThinking(
-      id,
+      generation.output!.thinkingSourceId,
       thinkingId,
       "Private thinking <script>still text</script>",
     );
-    store.saveGeneration(grid);
+    store.saveWorkflow(grid, tasks);
     const thinkingPath = `/outputs/${id}/thinking/${thinkingId}`;
     assert.equal(
       (await get(`/outputs/${id}/thinking/${token()}`, { Cookie: cookie }))
@@ -136,6 +164,9 @@ test("private outputs require ownership, isolated grants are scoped and revoked 
       `/outputs/${id}/download`,
       format === "html" ? `/outputs/${id}/website` : `/outputs/${id}`,
       ...(format === "markdown" ? [`/outputs/${id}?raw=1`] : []),
+      ...(format === "html"
+        ? [`/outputs/${id}/offline`, `/offline/outputs/${id}/index.html`]
+        : []),
     ];
     for (const path of paths) {
       const visitors: Record<string, string>[] = [
@@ -188,9 +219,18 @@ test("private outputs require ownership, isolated grants are scoped and revoked 
       const outputCookie = await authorize(id);
       assert.equal((await isolated(id, "/app.js", outputCookie)).status, 200);
       const other = makeGrid("html");
+      const sharedTasks = store.workflow(other.id);
+      const shared = sharedTasks.find((task) => task.kind === "generation")!;
+      shared.output = structuredClone(generation.output);
+      store.saveWorkflow(other, sharedTasks);
       assert.equal(
         (await isolated(other.cells[0].id, "/index.html", outputCookie)).status,
         404,
+      );
+      const otherCookie = await authorize(other.cells[0].id);
+      assert.equal(
+        (await isolated(other.cells[0].id, "/app.js", otherCookie)).status,
+        200,
       );
       const pending = await get(`/outputs/${id}/website`, { Cookie: cookie });
       store.deleteSession(owner);
@@ -255,4 +295,211 @@ test("private outputs require ownership, isolated grants are scoped and revoked 
     ).status,
     200,
   );
+  const missingId = accountGrid.cells[0].id;
+  const artifactId = store.outputMetadata(missingId)!.artifactId!;
+  rmSync(store.files.path(artifactId, "index.md")!);
+  for (const path of [
+    `/outputs/${missingId}`,
+    `/outputs/${missingId}/download`,
+  ])
+    assert.equal(
+      (await get(path, { Cookie: `slopgrid=${stranger}` })).status,
+      404,
+    );
+});
+
+test("committed judged outputs stay readable and downloadable without weakening ownership checks", async (t) => {
+  const { origin, store } = await appFixture(t);
+  const owner = token();
+  const stranger = token();
+  for (const id of [owner, stranger])
+    store.saveSession({ id, created: Date.now() });
+  const ownerHeaders = { cookie: `slopgrid=${owner}` };
+  for (const format of ["markdown", "chat-template", "svg", "image"] as const) {
+    for (const status of ["pending", "running", "error", "complete"] as const) {
+      const input: Grid["input"] = {
+        format,
+        prompt: "A saved artifact",
+        rows: { kind: "variable", values: ["one"] },
+        columns: { kind: "effort", values: ["none"] },
+        model: "fixture/text",
+        effort: "none",
+        budgetUsd: 1,
+        judge: {
+          criteria: [{ text: "Is this saved?", correctAnswer: false }],
+          model: "fixture/judge",
+          effort: "default",
+        },
+      };
+      const cell = {
+        ...expandGrid(input)[0],
+        id: token(),
+        status,
+        artifactId: token(),
+        mediaType: format === "image" ? "image/png" : undefined,
+        judge: {
+          model: "fixture/judge",
+          effort: "default",
+          status,
+          ...(status === "error" ? { error: "Judge unavailable" } : {}),
+          ...(status === "complete"
+            ? {
+                results: [
+                  { verdict: false, explanation: "The artifact was saved." },
+                ],
+              }
+            : {}),
+        },
+      };
+      const filename =
+        format === "markdown"
+          ? "index.md"
+          : format === "chat-template"
+            ? "messages.json"
+            : format === "svg"
+              ? "index.svg"
+              : "image";
+      const grid: Grid = {
+        id: token(),
+        owner,
+        input,
+        status: "paused",
+        published: false,
+        visibility: "private",
+        createdAt: new Date().toISOString(),
+        cells: [cell],
+      };
+      const tasks = createWorkflow(input, grid.cells);
+      const generation = tasks.find((task) => task.kind === "generation")!;
+      const judgment = tasks.find((task) => task.kind === "judge")!;
+      generation.status = "complete";
+      generation.output = {
+        artifactId: cell.artifactId,
+        mediaType: cell.mediaType,
+        provenance: { signature: "saved-generation", files: [filename] },
+        thinkingId: token(),
+        thinkingSourceId: token(),
+      };
+      judgment.status = status;
+      if (status === "error") judgment.error = "Judge unavailable";
+      if (status === "complete")
+        judgment.output = { results: cell.judge.results! };
+      projectWorkflow(grid, tasks);
+      store.insert(grid, tasks);
+      store.files.appendThinking(
+        generation.output.thinkingSourceId!,
+        generation.output.thinkingId!,
+        "Saved thinking",
+      );
+      store.files.write(cell.artifactId, {
+        [filename]:
+          format === "chat-template"
+            ? JSON.stringify([{ role: "assistant", content: "Saved artifact" }])
+            : "Saved artifact",
+      });
+      const paths = [
+        `/outputs/${cell.id}`,
+        `/outputs/${cell.id}/download`,
+        `/outputs/${cell.id}/thinking/${generation.output.thinkingId}`,
+        ...(format === "markdown" || format === "chat-template"
+          ? [`/outputs/${cell.id}?raw=1`]
+          : []),
+      ];
+      for (const path of paths) {
+        for (const headers of [
+          new Headers(),
+          new Headers({ cookie: `slopgrid=${stranger}` }),
+        ]) {
+          const denied = await fetch(origin + path, { headers });
+          assert.equal(denied.status, 404);
+          assert.equal(denied.headers.get("X-Slopgrid-Output-Ready"), null);
+          assert.equal(denied.headers.get("Cache-Control"), "no-store");
+        }
+        const response = await fetch(origin + path, {
+          headers: ownerHeaders,
+        });
+        assert.equal(response.status, 200);
+        assert.equal(response.headers.get("X-Slopgrid-Output-Ready"), "1");
+        assert.match(await response.text(), /Saved (?:artifact|thinking)/);
+      }
+      const view = await (
+        await fetch(`${origin}/api/grids/${grid.id}`, {
+          headers: ownerHeaders,
+        })
+      ).json();
+      assert.equal(view.cells[0].outputReady, true);
+      assert.equal(view.cells[0].outputURL, `${origin}/outputs/${cell.id}`);
+      assert.equal(view.cells[0].status, status);
+      assert.equal(view.input.judge.criteria[0].correctAnswer, false);
+      const publicationError = store.publish(grid.id, "unlisted", null);
+      if (status === "running") {
+        assert.equal(typeof publicationError, "string");
+        continue;
+      }
+      assert.equal(publicationError, undefined);
+      const publishedView = await (
+        await fetch(`${origin}/api/grids/${grid.id}`)
+      ).json();
+      assert.equal(publishedView.cells[0].outputReady, true);
+      assert.equal(publishedView.cells[0].outputURL, view.cells[0].outputURL);
+      assert.equal(publishedView.cells[0].status, status);
+      for (const path of paths) {
+        const response = await fetch(origin + path);
+        assert.equal(response.status, 200);
+        assert.equal(response.headers.get("X-Slopgrid-Output-Ready"), "1");
+      }
+    }
+  }
+});
+
+test("uncommitted judged files are not exposed before generation commits", async (t) => {
+  const { origin, store } = await appFixture(t);
+  const owner = token();
+  store.saveSession({ id: owner, created: Date.now() });
+  const input: Grid["input"] = {
+    format: "markdown",
+    prompt: "Uncommitted artifact",
+    rows: { kind: "variable", values: ["one"] },
+    columns: { kind: "effort", values: ["none"] },
+    model: "fixture/text",
+    effort: "none",
+    budgetUsd: 1,
+    judge: {
+      criteria: [{ text: "Is this saved?", correctAnswer: true }],
+      model: "fixture/judge",
+      effort: "default",
+    },
+  };
+  const cellId = token();
+  const grid: Grid = {
+    id: token(),
+    owner,
+    input,
+    status: "paused",
+    published: false,
+    visibility: "private",
+    createdAt: new Date().toISOString(),
+    cells: [
+      {
+        ...expandGrid(input)[0],
+        id: cellId,
+        status: "pending",
+      },
+    ],
+  };
+  store.insert(grid);
+  store.files.write(token(), { "index.md": "Uncommitted artifact" });
+  const headers = { cookie: `slopgrid=${owner}` };
+  assert.equal(store.outputMetadata(cellId)?.outputReady, false);
+  assert.equal(store.outputDownload(cellId), undefined);
+  for (const path of [`/outputs/${cellId}`, `/outputs/${cellId}/download`]) {
+    const response = await fetch(origin + path, { headers });
+    assert.equal(response.status, 404);
+    assert.equal(response.headers.get("X-Slopgrid-Output-Ready"), null);
+  }
+  const view = await (
+    await fetch(`${origin}/api/grids/${grid.id}`, { headers })
+  ).json();
+  assert.equal(view.cells[0].outputReady, false);
+  assert.equal(view.cells[0].outputURL, undefined);
 });

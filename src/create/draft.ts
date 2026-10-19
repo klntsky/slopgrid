@@ -6,6 +6,9 @@ import {
   type GridInput,
 } from "../../server/domain";
 import type { ReferenceImage } from "../../server/image-settings";
+import { canJudge } from "../../server/compatibility";
+import { modelCatalog } from "../model-catalog";
+import { removeJudge } from "./change-axis";
 export type Draft = {
   formatSelected: boolean;
   input: GridInput;
@@ -42,7 +45,12 @@ const initial: Draft = {
 };
 function readDraft(): Draft {
   try {
-    return JSON.parse(sessionStorage.getItem(storageKey) ?? "null") ?? initial;
+    const draft: Draft =
+      JSON.parse(sessionStorage.getItem(storageKey) ?? "null") ?? initial;
+    if (draft.input.judge && !draft.input.judge.criteria.length) {
+      Object.assign(draft.input, removeJudge(draft.input));
+    }
+    return draft;
   } catch {
     return initial;
   }
@@ -58,14 +66,37 @@ export function startDraft(format: GridInput["format"]) {
   saveDraft(selectDraftFormat(readDraft(), format));
 }
 function selectDraftFormat(d: Draft, format: GridInput["format"]): Draft {
-  const messages =
-    d.input.messages ?? [{ role: "user" as const, content: d.input.prompt }];
+  const messages = d.input.messages ?? [
+    { role: "user" as const, content: d.input.prompt },
+  ];
+  const judgeModel =
+    [d.input.rows, d.input.columns].find((axis) => axis.kind === "judge_model")
+      ?.values[0] ??
+    d.input.judge?.model ??
+    "";
+  const judgeEffort =
+    [d.input.rows, d.input.columns].find((axis) => axis.kind === "judge_effort")
+      ?.values[0] ??
+    d.input.judge?.effort ??
+    "default";
   return {
     ...d,
     formatSelected: true,
     input: {
       ...d.input,
       format,
+      judge:
+        format === "html"
+          ? undefined
+          : d.input.judge && {
+              ...d.input.judge,
+              effort: judgeEffort as GridInput["effort"],
+              model: modelCatalog.some(
+                (model) => model.id === judgeModel && canJudge(model, format),
+              )
+                ? judgeModel
+                : "",
+            },
       messages: isChatFormat(format) ? messages : undefined,
       prompt: isChatFormat(format) ? chatText(messages) : d.input.prompt,
       imageSettings: undefined,

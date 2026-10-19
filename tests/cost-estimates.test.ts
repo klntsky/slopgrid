@@ -10,6 +10,7 @@ const model: Model = {
   name: "Test",
   text: true,
   image: false,
+  imageInput: false,
   reasoning: false,
   reasoningMandatory: false,
   pricing: { prompt: 0, completion: 0.001 },

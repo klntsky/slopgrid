@@ -11,18 +11,20 @@ test("tooltips escape clipped cells and remain in the viewport on keyboard focus
   await expand.focus();
   const hint = page.getByRole("tooltip");
   await expect(hint).toBeVisible();
-  expect(
-    await hint.evaluate((node) => {
-      const r = node.getBoundingClientRect();
-      return (
-        r.left >= 0 &&
-        r.top >= 0 &&
-        r.right <= innerWidth &&
-        r.bottom <= innerHeight &&
-        !node.closest(".cell")
-      );
-    }),
-  ).toBe(true);
+  await expect
+    .poll(() =>
+      hint.evaluate(
+        (node) =>
+          new Promise<number>((resolve) => {
+            const observer = new IntersectionObserver(([entry]) => {
+              observer.disconnect();
+              resolve(entry.intersectionRatio);
+            });
+            observer.observe(node);
+          }),
+      ),
+    )
+    .toBeGreaterThanOrEqual(0.99);
   await expand.press("Escape");
   await expect(hint).toHaveCount(0);
   await expect(expand).toBeFocused();

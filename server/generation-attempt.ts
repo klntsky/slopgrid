@@ -1,6 +1,6 @@
 import {
   chatText,
-  type Cell,
+  type GenerationParameters,
   type GridInput,
   type InferenceProgress,
   type TemplateStep,
@@ -25,7 +25,8 @@ export async function generateAttempt(
   provider: Provider,
   key: string,
   format: GridInput["format"],
-  cell: Cell,
+  cell: GenerationParameters,
+  taskId: string,
   onChunk: (progress: InferenceProgress) => void,
   context: InferenceContext,
   references?: ReferenceContent[],
@@ -40,6 +41,7 @@ export async function generateAttempt(
       context.observe,
       references,
       context.beforeRequest,
+      taskId,
     );
   const model = (await provider.models()).find(
     (model) => model.id === cell.model,
@@ -56,7 +58,7 @@ export async function generateAttempt(
         { ...cell, prompt: chatText(messages), messages },
         budget,
         false,
-        { sessionId: cell.id, previousPrefixLength },
+        { sessionId: taskId, previousPrefixLength },
       );
       previousPrefixLength = messages.length;
       return provider.request(key, prepared, progress, context);
