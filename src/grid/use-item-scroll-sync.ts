@@ -20,18 +20,6 @@ export function useItemScrollSync(root: RefObject<HTMLElement | null>) {
 }
 
 type ViewLayout = ScrollLayout & { height: number };
-type Comparison = {
-  source: HTMLElement;
-  from: ViewLayout;
-  point: number;
-  focusFraction: number;
-  followers: {
-    view: HTMLElement;
-    layout: ViewLayout;
-    map: ScrollMap;
-    remainder: number;
-  }[];
-};
 
 // Renderers supply groups and ordered vertical areas. A gesture keeps one focus
 // line while geometry projects the whole surrounding history.
@@ -39,6 +27,7 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
   const lastScrolls = new WeakMap<HTMLElement, number>();
   const touchFractions = new Map<string, number>();
   const layouts = new Map<HTMLElement, ViewLayout>();
+  const maps = new Map<HTMLElement, ScrollMap>();
   const views: HTMLElement[] = [];
   const scrollKeys = new Set([
     "ArrowUp",
@@ -55,7 +44,7 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
   let frame: number | null = null;
   let mode: "idle" | "hover" | "scroll" = "idle";
   let session: { source: HTMLElement; focusFraction: number } | null = null;
-  let comparison: Comparison | null = null;
+  let mappedSource: HTMLElement | null = null;
   let pendingSource: HTMLElement | null = null;
   let pendingStart = 0;
   let pendingFocusFraction = 0.5;
@@ -130,50 +119,11 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
     layouts.set(view, value);
     return value;
   }
-  function sameGeometry(before: ViewLayout, after: ViewLayout) {
-    if (
-      before.height !== after.height ||
-      before.anchors.length !== after.anchors.length
-    )
-      return false;
-    for (let i = 0; i < before.anchors.length; i++)
-      if (before.anchors[i] !== after.anchors[i]) return false;
-    return true;
-  }
   function freshGeometry() {
     if (!dirty) return;
     layouts.clear();
+    maps.clear();
     dirty = false;
-    if (!comparison) return;
-    const source = comparison.source;
-    if (!viewOf(source)) {
-      comparison = null;
-      return;
-    }
-    const from = layout(source);
-    let count = 0;
-    for (const view of views)
-      if (
-        view !== source &&
-        view.dataset.scrollSync === source.dataset.scrollSync
-      )
-        count++;
-    if (
-      count !== comparison.followers.length ||
-      !sameGeometry(comparison.from, from)
-    ) {
-      comparison = null;
-      return;
-    }
-    comparison.from = from;
-    for (const follower of comparison.followers) {
-      const to = layout(follower.view);
-      if (!viewOf(follower.view) || !sameGeometry(follower.layout, to)) {
-        comparison = null;
-        return;
-      }
-      follower.layout = to;
-    }
   }
   function focusAt(view: HTMLElement, y: number | null = null) {
     const bounds = view.getBoundingClientRect();
@@ -181,74 +131,30 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
       ? 0.5
       : Math.max(0, Math.min(1, (y - bounds.top) / bounds.height));
   }
-  function createComparison(
-    source: HTMLElement,
-    focusFraction: number,
-    start = source.scrollTop,
-  ): Comparison {
-    const from = layout(source);
-    const followers: Comparison["followers"] = [];
-    for (const view of views) {
-      if (
-        view === source ||
-        view.dataset.scrollSync !== source.dataset.scrollSync
-      )
-        continue;
-      const to = layout(view);
-      followers.push({
-        view,
-        layout: to,
-        map: buildScrollMap(from, to),
-        remainder: 0,
-      });
-    }
-    return {
-      source,
-      from,
-      point: start + focusFraction * from.height,
-      focusFraction,
-      followers,
-    };
-  }
-  function prepare(
-    source: HTMLElement,
-    start = source.scrollTop,
-    focusFraction = 0.5,
-  ) {
-    freshGeometry();
-    if (comparison?.source !== source)
-      comparison = createComparison(source, focusFraction, start);
-    return { source, focusFraction };
-  }
   function synchronize(source: HTMLElement, focusFraction: number) {
     freshGeometry();
-    const seed = comparison?.source !== source;
-    if (seed) comparison = createComparison(source, focusFraction);
-    const state = comparison!;
-    const point = source.scrollTop + focusFraction * state.from.height;
-    for (const follower of state.followers) {
-      const { view, layout: to, map } = follower;
-      const desired = seed
-        ? map.project(point) - focusFraction * to.height
-        : view.scrollTop +
-          follower.remainder +
-          map.follow(
-            state.point,
-            point,
-            (focusFraction - state.focusFraction) * to.height,
-          );
-      const bounded = Math.max(0, Math.min(to.limit, desired));
-      const remainder = write(view, bounded);
-      follower.remainder =
-        bounded === 0 || bounded === to.limit ? 0 : remainder;
+    if (mappedSource !== source) {
+      maps.clear();
+      mappedSource = source;
     }
-    state.point = point;
-    state.focusFraction = focusFraction;
+    const from = layout(source);
+    const point = source.scrollTop + focusFraction * from.height;
+    const group = source.dataset.scrollSync;
+    for (const view of views) {
+      if (view === source || view.dataset.scrollSync !== group) continue;
+      const to = layout(view);
+      let map = maps.get(view);
+      if (!map) {
+        map = buildScrollMap(from, to);
+        maps.set(view, map);
+      }
+      const desired = map.project(point) - focusFraction * to.height;
+      write(view, Math.max(0, Math.min(to.limit, desired)));
+    }
   }
   function write(view: HTMLElement, top: number) {
     view.scrollTop = top;
     lastScrolls.set(view, view.scrollTop);
-    return top - view.scrollTop;
   }
   function highlight(row: HTMLElement | null) {
     const index = row ? itemIndex(row) : null;
@@ -269,7 +175,6 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
   }
   function clearTouchFocus() {
     touchGroup = undefined;
-    comparison = null;
     highlight(null);
   }
   function rememberTouchFocus(view: HTMLElement, fraction: number) {
@@ -318,7 +223,6 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
     hoverRow = null;
     pendingSource = null;
     pendingTouch = false;
-    comparison = null;
     highlight(null);
   }
   function explore(row: HTMLElement | null, point: { x: number; y: number }) {
@@ -335,14 +239,11 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
     if (mode === "scroll" && session) {
       if (!viewOf(session.source)) {
         session = null;
-        comparison = null;
         mode = "idle";
         touchScrolling = false;
         return;
       }
       freshGeometry();
-      if (touchScrolling && comparison?.source !== session.source)
-        comparison = createComparison(session.source, session.focusFraction);
       const row =
         !touchScrolling && mouse
           ? rowOf(document.elementFromPoint(mouse.x, mouse.y))
@@ -432,7 +333,6 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
     }
     mode = "idle";
     session = null;
-    comparison = null;
     touchScrolling = false;
     hoverRow = null;
     mouse = null;
@@ -545,7 +445,8 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
         frame = null;
         mode = "idle";
         session = null;
-        comparison = null;
+        mappedSource = null;
+        maps.clear();
         pendingSource = null;
         pendingTouch = false;
         touchGroup = undefined;
@@ -583,7 +484,7 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
           lastScrolls.set(source, source.scrollTop);
         if (!participating) return;
         if (mode !== "scroll" && pendingSource === source) {
-          session = prepare(source, pendingStart, pendingFocusFraction);
+          session = { source, focusFraction: pendingFocusFraction };
           const touch = pendingTouch;
           pendingSource = null;
           pendingTouch = false;

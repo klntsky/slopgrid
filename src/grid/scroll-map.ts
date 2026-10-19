@@ -6,7 +6,6 @@ export type ScrollLayout = {
 
 export type ScrollMap = {
   project(point: number): number;
-  follow(from: number, to: number, focusDelta: number): number;
 };
 
 export function buildScrollMap(
@@ -59,30 +58,5 @@ export function buildScrollMap(
     return values[segment] + (point - points[segment]) * slopes[segment];
   }
 
-  function follow(from: number, to: number, focusDelta: number): number {
-    if (last < 1 || from === to) return 0;
-    if (focusDelta === 0) return project(to) - project(from);
-
-    const direction = to > from ? 1 : -1;
-    const distance = Math.abs(to - from);
-    const end = Math.max(from, to);
-    let point = Math.min(from, to);
-    let segment = segmentAt(point);
-    let movement = 0;
-    while (point < end) {
-      const next = segment < last ? Math.min(end, points[segment + 1]) : end;
-      const length = next - point;
-      const slope = segment < 0 || segment >= last ? 0 : slopes[segment];
-      const delta =
-        direction * slope * length - focusDelta * (length / distance);
-      // Filter each actual linear segment, not the whole event: a short
-      // area can pause without cancelling movement in the next area.
-      if (delta * direction > 0) movement += delta;
-      point = next;
-      segment++;
-    }
-    return movement;
-  }
-
-  return { project, follow };
+  return { project };
 }

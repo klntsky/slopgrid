@@ -33,12 +33,12 @@ function expectJudgmentFocus(
   else expect(Math.abs(offset)).toBeLessThan(2);
 }
 
-// Measure the corresponding full-li landmark on screen, not a scroll-map copy.
-function judgmentLandmarkOffset(
-  source: JudgmentScrollGeometry & { position: number },
-  target: JudgmentScrollGeometry & { position: number },
+function expectJudgmentAlignment(
+  views: (JudgmentScrollGeometry & { position: number })[],
+  leader: number,
   focusFraction: number,
 ) {
+  const source = views[leader];
   const point = source.position + source.height * focusFraction;
   const start = source.edges.findIndex(
     (edge, index) =>
@@ -48,34 +48,7 @@ function judgmentLandmarkOffset(
     start,
     "the persistent focus lies inside a rendered criterion",
   ).toBeGreaterThanOrEqual(0);
-  const fraction =
-    (point - source.edges[start]) /
-    (source.edges[start + 1] - source.edges[start]);
-  return (
-    target.edges[start] +
-    fraction * (target.edges[start + 1] - target.edges[start]) -
-    target.position -
-    target.height * focusFraction
-  );
-}
-
-function expectJudgmentContinuation(
-  before: (JudgmentScrollGeometry & { position: number })[],
-  after: (JudgmentScrollGeometry & { position: number })[],
-  leader: number,
-  focusFraction: number,
-) {
-  const peer = 1 - leader;
-  const drift =
-    judgmentLandmarkOffset(after[leader], after[peer], focusFraction) -
-    judgmentLandmarkOffset(before[leader], before[peer], focusFraction);
-  expect(after[leader].position).toBeGreaterThan(before[leader].position);
-  expect(after[peer].position).toBeGreaterThanOrEqual(before[peer].position);
-  expect(after[peer].position).toBeGreaterThanOrEqual(0);
-  expect(after[peer].position).toBeLessThanOrEqual(after[peer].limit);
-  if (after[peer].position >= after[peer].limit - 2)
-    expect(drift).toBeGreaterThanOrEqual(-2);
-  else expect(Math.abs(drift)).toBeLessThan(2);
+  expectJudgmentFocus(source, views[1 - leader], start / 2, focusFraction);
 }
 
 test("judge criteria preserve boolean answers and judge axes restore fixed settings", async ({
@@ -1691,7 +1664,7 @@ test("judgment hover retains synchronized positions across exit and source chang
     .poll(() => backgrounds(sourceCriterion))
     .toEqual([unhovered, unhovered]);
 
-  // Native scrolling a former follower rebases from the retained current state.
+  // Native scrolling a former follower preserves the source's native movement.
   await hoverSource();
   await expectHighlighted(sourceCriterion);
   const beforeNative = await positions();
@@ -1880,8 +1853,8 @@ test("judgment hover aligns short criteria fractionally even when unequal views 
       .toEqual(revealed);
   }
 
-  // A live percentage may outrun a short peer criterion. Pause rather than
-  // reverse, and retain that drift through scrollend and pointer refreshes.
+  // A short peer must reverse as the live viewport percentage changes, rather
+  // than retaining the alignment from an earlier cursor position.
   await page.mouse.move(1, 1);
   await results.evaluateAll((containers) => {
     containers.forEach((container, index) => {
@@ -1916,25 +1889,38 @@ test("judgment hover aligns short criteria fractionally even when unequal views 
   await page.mouse.move(box.x + 20, box.y + box.height * 0.25);
   await frames();
   const seeded = await geometry();
+  const assertAlignment = async (focusFraction: number) => {
+    const views = await geometry();
+    const fraction =
+      (views[0].height * focusFraction - views[0].top) / views[0].rowHeight;
+    for (const view of views.slice(1)) {
+      const offset =
+        view.top + view.rowHeight * fraction - view.height * focusFraction;
+      if (view.position < 2) expect(offset).toBeLessThanOrEqual(2);
+      else if (view.position > view.max - 2)
+        expect(offset).toBeGreaterThanOrEqual(-2);
+      else expect(Math.abs(offset)).toBeLessThan(2);
+    }
+    return views;
+  };
+  await assertAlignment(0.25);
+  let previous = seeded;
   for (const fraction of [0.45, 0.35]) {
     await page.mouse.move(box.x + 20, box.y + box.height * fraction);
     await frames();
-    expect((await geometry()).map((view) => view.position)).toEqual(
-      seeded.map((view) => view.position),
-    );
+    const aligned = await assertAlignment(fraction);
+    expect(aligned[0].position).toBe(seeded[0].position);
+    for (let index = 1; index < aligned.length; index++) {
+      if (fraction === 0.45)
+        expect(aligned[index].position).toBeLessThan(previous[index].position);
+      else
+        expect(aligned[index].position).toBeGreaterThan(
+          previous[index].position,
+        );
+    }
+    previous = aligned;
   }
-  const paused = await geometry();
-  const landmarkOffsets = (
-    views: { height: number; top: number; rowHeight: number }[],
-  ) => {
-    const fraction =
-      (views[0].height * 0.35 - views[0].top) / views[0].rowHeight;
-    return views.map(
-      (view) => view.top + view.rowHeight * fraction - view.height * 0.35,
-    );
-  };
-  const drift = landmarkOffsets(paused);
-  expect(Math.abs(drift[1])).toBeGreaterThan(10);
+  const aligned = await geometry();
   await results.evaluateAll((containers) => {
     for (const container of containers) {
       const row = container.querySelector(".judge-result-criteria")!
@@ -1944,7 +1930,7 @@ test("judgment hover aligns short criteria fractionally even when unequal views 
   });
   await frames();
   expect((await geometry()).map((view) => view.position)).toEqual(
-    paused.map((view) => view.position),
+    aligned.map((view) => view.position),
   );
   const ended = source.evaluate(
     (container) =>
@@ -1958,20 +1944,21 @@ test("judgment hover aligns short criteria fractionally even when unequal views 
   await ended;
   await frames();
   const reversed = await geometry();
-  expect(Math.abs(reversed[0].position - paused[0].position + 48)).toBeLessThan(
-    2,
-  );
-  const retainedDrift = landmarkOffsets(reversed);
-  for (let index = 1; index < reversed.length; index++) {
-    expect(reversed[index].position).toBeLessThan(paused[index].position);
-    expect(Math.abs(retainedDrift[index] - drift[index])).toBeLessThan(2);
-  }
+  expect(
+    Math.abs(reversed[0].position - aligned[0].position + 48),
+  ).toBeLessThan(2);
+  await assertAlignment(0.35);
   await page.mouse.move(box.x + 21, box.y + box.height * 0.35);
   await frames();
   expect((await geometry()).map((view) => view.position)).toEqual(
     reversed.map((view) => view.position),
   );
   await page.mouse.move(1, 1);
+  await frames();
+  expect((await geometry()).map((view) => view.position)).toEqual(
+    reversed.map((view) => view.position),
+  );
+  await page.mouse.move(box.x + 21, box.y + box.height * 0.35);
   await frames();
   expect((await geometry()).map((view) => view.position)).toEqual(
     reversed.map((view) => view.position),
@@ -2070,13 +2057,12 @@ test("native judgment wheel aligns the criterion under a stationary cursor in un
   const seenCriteria = new Set<number>();
   let fittingPeers = 0;
   let oversizedPeers = 0;
-  let comparison: { leader: number; offsets: number[] } | undefined;
   const assertAlignment = async (leader: number, focus: number) => {
     const current = await geometry();
     const criterion = current[leader].rows.findIndex(
       (row) => row.top <= focus && row.bottom > focus,
     );
-    // A gap has no hovered criterion and retains whole-history following.
+    // Criterion landmarks measure alignment only when the focus is inside one.
     if (criterion === -1) return;
     if (leader === 0) seenCriteria.add(criterion);
     const sourceRow = current[leader].rows[criterion];
@@ -2098,16 +2084,11 @@ test("native judgment wheel aligns the criterion under a stationary cursor in un
       expect(view.position).toBeGreaterThanOrEqual(0);
       expect(view.position).toBeLessThanOrEqual(view.max);
       const offset = offsets[index];
-      const retained =
-        comparison?.leader === leader ? comparison.offsets[index] : 0;
-      // Constant viewport focus conserves the rendered landmark, including
-      // any discrepancy retained after a native boundary was reached.
-      if (view.position < 2) expect(offset - retained).toBeLessThanOrEqual(2);
+      if (view.position < 2) expect(offset).toBeLessThanOrEqual(2);
       else if (view.position > view.max - 2)
-        expect(offset - retained).toBeGreaterThanOrEqual(-2);
-      else expect(Math.abs(offset - retained)).toBeLessThan(2);
+        expect(offset).toBeGreaterThanOrEqual(-2);
+      else expect(Math.abs(offset)).toBeLessThan(2);
     }
-    comparison = { leader, offsets };
   };
   await assertAlignment(0, focusOffset);
   // Exercise each criterion with native wheel input.
@@ -2734,12 +2715,8 @@ test.describe("touch judgment following", () => {
     const duringDrag = await scrollGeometry();
     expect(duringDrag[0].position).toBeGreaterThan(before);
     // The lower grab keeps the tap's percentage, even in the shorter receiver.
-    expectJudgmentContinuation(dragGeometry, duringDrag, 0, focusFraction);
-    const grabFraction = 260 / a.height;
-    const grabDrift =
-      judgmentLandmarkOffset(duringDrag[0], duringDrag[1], grabFraction) -
-      judgmentLandmarkOffset(dragGeometry[0], dragGeometry[1], grabFraction);
-    expect(Math.abs(grabDrift)).toBeGreaterThan(2);
+    expect(duringDrag[0].position).toBeGreaterThan(dragGeometry[0].position);
+    expectJudgmentAlignment(duringDrag, 0, focusFraction);
     for (const y of [130, 90, 20, -40, -100, -180])
       await client.send("Input.dispatchTouchEvent", {
         type: "touchMove",
@@ -2776,7 +2753,7 @@ test.describe("touch judgment following", () => {
     expect(readingCriterion).toBeGreaterThan(1);
     await expectSelected(readingCriterion);
     const settledGeometry = await scrollGeometry();
-    expectJudgmentContinuation(dragGeometry, settledGeometry, 0, focusFraction);
+    expectJudgmentAlignment(settledGeometry, 0, focusFraction);
     await source.evaluate(
       () =>
         new Promise<void>((resolve) =>
@@ -2943,6 +2920,19 @@ test.describe("touch judgment following", () => {
         expect(await page.evaluate(criterionAt, point)).not.toBe(reading);
       }
       const before = await geometry();
+      if (leader === 0) {
+        // The first actual scroll must correct deliberately unmatched peers.
+        const fraction =
+          (before[0].position + before[0].height / 3 - before[0].edges[0]) /
+          (before[0].edges[1] - before[0].edges[0]);
+        const peerLandmark =
+          before[1].edges[0] +
+          fraction * (before[1].edges[1] - before[1].edges[0]) -
+          before[1].position;
+        expect(Math.abs(peerLandmark - before[1].height / 3)).toBeGreaterThan(
+          2,
+        );
+      }
       await client.send("Input.dispatchTouchEvent", {
         type: "touchStart",
         touchPoints: [{ ...point, id: 1 }],
@@ -2981,7 +2971,7 @@ test.describe("touch judgment following", () => {
       expect(during[leader].position - before[leader].position).toBeLessThan(
         110,
       );
-      expectJudgmentContinuation(before, during, leader, 1 / 3);
+      expectJudgmentAlignment(during, leader, 1 / 3);
       await client.send("Input.dispatchTouchEvent", {
         type: "touchEnd",
         touchPoints: [],
@@ -2994,7 +2984,7 @@ test.describe("touch judgment following", () => {
       expect(selected).toBeGreaterThanOrEqual(0);
       await expectSelected(selected);
       const settled = await geometry();
-      expectJudgmentContinuation(before, settled, leader, 1 / 3);
+      expectJudgmentAlignment(settled, leader, 1 / 3);
       expect(
         await results.evaluateAll((containers) =>
           containers.map((container) => container.scrollTop),
