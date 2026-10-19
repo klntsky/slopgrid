@@ -2395,6 +2395,94 @@ test.describe("touch judgment following", () => {
     hasTouch: true,
   });
 
+  test("horizontal swipes over judgments pan the grid while vertical swipes scroll results", async ({
+    page,
+  }) => {
+    const criteria = Array.from({ length: 6 }, (_, index) => ({
+      text: `Does condition ${index + 1} hold?`,
+      correctAnswer: true,
+    }));
+    await page.request.post("/fixture/reset", {
+      data: {
+        judgeOutput: JSON.stringify({
+          results: criteria.map(() => ({
+            verdict: true,
+            explanation: "The output satisfies this condition. ".repeat(12),
+          })),
+        }),
+      },
+    });
+    const id = await createJudged(page, {
+      ...judgedInput,
+      rows: { kind: "judge_model", values: ["fixture/text"] },
+      judge: { ...judgedInput.judge!, criteria },
+    });
+    await page.evaluate((id) => {
+      localStorage.setItem(
+        `slopgrid:grid:${id}:sizes`,
+        JSON.stringify({ columns: [440, 440], rows: [460] }),
+      );
+    }, id);
+    await page.reload();
+    const grid = page.getByLabel("Generated output grid");
+    const results = page.getByRole("region", {
+      name: "Judgment details",
+      exact: true,
+    });
+    await expect(results).toHaveCount(2);
+    const source = results.first();
+    await expect(source.locator(".judge-result-criteria > li")).toHaveCount(6);
+    await expect(source).toContainText("The output satisfies this condition.");
+    const client = await page.context().newCDPSession(page);
+    const swipe = async (x: number, y: number, dx: number, dy: number) => {
+      let timestamp = Date.now() / 1000;
+      await client.send("Input.dispatchTouchEvent", {
+        type: "touchStart",
+        touchPoints: [{ x, y, id: 1 }],
+        timestamp,
+      });
+      for (let step = 1; step <= 6; step++)
+        await client.send("Input.dispatchTouchEvent", {
+          type: "touchMove",
+          touchPoints: [
+            { x: x + (dx * step) / 6, y: y + (dy * step) / 6, id: 1 },
+          ],
+          timestamp: (timestamp += 0.032),
+        });
+      await client.send("Input.dispatchTouchEvent", {
+        type: "touchEnd",
+        touchPoints: [],
+        timestamp: timestamp + 0.2,
+      });
+    };
+    const box = (await source.boundingBox())!;
+    const y = box.y + box.height / 2;
+    const ended = grid.evaluate(
+      (view) =>
+        new Promise<void>((resolve) =>
+          view.addEventListener("scrollend", () => resolve(), { once: true }),
+        ),
+    );
+    await swipe(300, y, -120, 0);
+    await ended;
+    expect(await grid.evaluate((view) => view.scrollLeft)).toBeGreaterThan(60);
+    expect(await source.evaluate((view) => view.scrollTop)).toBe(0);
+    await grid.evaluate((view) => {
+      view.scrollLeft = 0;
+    });
+    const verticalEnd = source.evaluate(
+      (view) =>
+        new Promise<void>((resolve) =>
+          view.addEventListener("scrollend", () => resolve(), { once: true }),
+        ),
+    );
+    await swipe(220, y + 40, 0, -120);
+    await verticalEnd;
+    expect(await source.evaluate((view) => view.scrollTop)).toBeGreaterThan(60);
+    expect(await grid.evaluate((view) => view.scrollLeft)).toBe(0);
+    await client.detach();
+  });
+
   test("touch judgment taps establish a persistent viewport percentage through swipes and dismissal", async ({
     page,
   }) => {
