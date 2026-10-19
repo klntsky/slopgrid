@@ -409,7 +409,7 @@ test("fresh hover entries align full-area fractions at matching viewport percent
   const target = panels.nth(1);
   await setContentHeights(panels, [
     [600, 80, 700, 1000],
-    [120, 120, 900, 80],
+    [120, 120, 900, 160],
   ]);
   await frames(page);
 
