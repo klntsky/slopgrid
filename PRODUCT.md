@@ -356,9 +356,9 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
    - Unavailable generated output reports "The generated output is unavailable for judging."
 6. Completed generation remains available for output, raw view, thinking, copy, and download while judging runs or fails, subject to ordinary access control. Cache ready output independently of judgment completion; display cached verdicts as saved results.
 7. Synchronize judgment reading positions across the whole ordered criteria list, accounting for different criterion heights, spacing, and scrollable ranges.
-   - Estimate corresponding positions with a continuous linear mapping between matching criterion boundaries and each view's start and end.
-   - Keep source scrolling native. Peers continue smoothly from their current positions when scrolling starts or changes source, without hover visibility corrections interrupting the motion.
-   - For idle mouse hover or a confirmed tap, prioritize visibility: minimally reveal the whole matching criterion when it fits; otherwise reveal the corresponding point within the oversized criterion.
+   - Estimate corresponding positions continuously between matching boundaries around the interaction's vertical focus, accounting for each view's own start and end.
+   - Keep source scrolling native. Peers continue smoothly from their current positions when scrolling starts or changes source. Hold the gesture's starting focus line fixed as content moves through it.
+   - On idle hover or a confirmed tap, align the corresponding fractional point at the same viewport-relative vertical offset where feasible. Keep the whole matching criterion visible when it fits; oversized criteria may retain context above or below the focus.
    - Preserve each view's independent reading position during temporary following. Restore peers on a deliberate idle hover exit or an outside tap; retain final positions when native scrolling finishes.
 8. Highlight the criterion under the cursor in every judgment view in the grid. Scrolling may update the desktop highlight beneath a stationary cursor without changing the scroll mapping. Clear the highlight when the cursor leaves the criterion rows.
 9. On touchscreens, single-finger contact highlights the matching criterion without moving peers. A confirmed tap reveals it after release.
@@ -369,7 +369,7 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
 
 ### 5.7. Chat history scrolling
 
-1. Pair messages by their position in rendered chat histories across the grid. Use the [same scroll-following behavior as judgment results](#56-judgment-results): whole-history position mapping, visibility-first hover and confirmed taps, independent reading-position restoration, and touch selection retained through native dragging and momentum.
+1. Pair messages by their position in rendered chat histories across the grid. Use the [same scroll-following behavior as judgment results](#56-judgment-results): focus-relative whole-history mapping and hover/tap alignment, independent reading-position restoration, and touch selection retained through native dragging and momentum.
 2. Make each message's hover area a full-width rectangle that includes the space around its bubble. Keep adjacent message areas contiguous and cover the unused space at the end of short histories while preserving the visual spacing between bubbles.
 3. Apply a very subtle tint to the corresponding message bubble in every chat history while its area is hovered or touch-selected. Preserve the bubbles' role colors and alignment.
 4. Follow rendered chat histories as a group, separately from judgment views. Raw text and thinking keep independent scrolling.
