@@ -253,7 +253,7 @@ Image grids have a "Parameters" button with a 14px Info circle icon immediately 
 5. Users resize output columns and rows through their corresponding header edges. Each shared edge controls the column to its right or row below it, including the last output row. The header row and label column themselves are not resizable. Resizing permits column widths from 120 to 20,000 pixels and row heights from 160 to 20,000 pixels.
 6. Remember output dimensions for each grid in the current browser without sharing size preferences with other browsers. Restoring output sizes must preserve the header's natural height.
 7. Support pinch zoom whenever a touchscreen is present, regardless of screen width. Start by fitting the table to available height, up to its unscaled size, and prevent zooming out beyond that height fit. Limit zooming in to three times the table's unscaled size. Allow horizontal scrolling when the height-fitted grid is wider than the viewport.
-8. Keep one-finger scrolling usable, including within Markdown cells. Zoom the grid rather than the application navbar.
+8. Keep one-finger scrolling usable, including within Markdown cells. Horizontal swipes over chat histories and judgment results scroll a wider grid, while vertical swipes scroll their contents. Zoom the grid rather than the application navbar.
 9. Click-dragging empty grid areas scrolls both axes. Drags starting on images, website frames, Markdown or thinking previews, interactive controls, and resize handles retain their own behavior. Image padding belongs to the draggable grid, while images retain their centered, aspect-ratio-preserving fit.
 
 ### 4.2. Title, prompt, author, and price
