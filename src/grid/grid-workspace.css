@@ -51,7 +51,7 @@ th[scope="row"] .axis-reference-previews {
   margin: 6px 0 0;
 }
 
-[data-scroll-sync][data-scroll-sync-focus] {
+.grid-workspace [data-scroll-sync][data-scroll-sync-focus] {
   background-image: linear-gradient(var(--accent), var(--accent));
   background-repeat: no-repeat;
   background-size: 8px 2px;
