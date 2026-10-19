@@ -976,10 +976,12 @@ test.describe("mobile chat histories", () => {
           ),
         await panels.elementHandles(),
       );
+      let timestamp = Date.now() / 1000;
       for (const delta of [15, 32]) {
         await client.send("Input.dispatchTouchEvent", {
           type: "touchMove",
           touchPoints: [{ x, y: y - delta, id: 1 }],
+          timestamp: (timestamp += 0.032),
         });
         await frames(page, 1);
       }
@@ -992,6 +994,7 @@ test.describe("mobile chat histories", () => {
         await client.send("Input.dispatchTouchEvent", {
           type: "touchMove",
           touchPoints: [{ x, y: y - delta, id: 1 }],
+          timestamp: (timestamp += 0.032),
         });
         await frames(page, 1);
       }
@@ -1000,6 +1003,7 @@ test.describe("mobile chat histories", () => {
       await client.send("Input.dispatchTouchEvent", {
         type: "touchEnd",
         touchPoints: [],
+        timestamp: timestamp + 0.016,
       });
       const atRest = await ended;
       if (requireMomentum)

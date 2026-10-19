@@ -2575,12 +2575,19 @@ test.describe("touch judgment following", () => {
     expect(readingCriterion).toBeGreaterThan(1);
     await expectSelected(readingCriterion);
     const settledGeometry = await scrollGeometry();
-    expectJudgmentFocus(
-      settledGeometry[0],
-      settledGeometry[1],
-      readingCriterion,
-      120,
+    const endDelta =
+      judgmentHistoryPosition(
+        dragGeometry[0],
+        dragGeometry[1],
+        120,
+        settledGeometry[0].position,
+      ) -
+      judgmentHistoryPosition(dragGeometry[0], dragGeometry[1], 120, before);
+    const expectedEnd = Math.max(
+      0,
+      Math.min(dragGeometry[1].limit, beforeDrag + endDelta),
     );
+    expect(Math.abs(settledGeometry[1].position - expectedEnd)).toBeLessThan(2);
     for (const line of await focusLines())
       expect(Math.abs(line - 120)).toBeLessThan(1);
     await source.evaluate(
@@ -2848,13 +2855,24 @@ test.describe("touch judgment following", () => {
       });
       expect(selected).toBeGreaterThanOrEqual(0);
       await expectSelected(selected);
-      const settledGeometry = await geometry();
-      expectJudgmentFocus(
-        settledGeometry[leader],
-        settledGeometry[peer],
-        selected,
-        focusPixels,
+      const finalDelta =
+        judgmentHistoryPosition(
+          before[leader],
+          before[peer],
+          focusPixels,
+          finalPositions[leader],
+        ) -
+        judgmentHistoryPosition(
+          before[leader],
+          before[peer],
+          focusPixels,
+          before[leader].position,
+        );
+      const expectedEnd = Math.max(
+        0,
+        Math.min(before[peer].limit, before[peer].position + finalDelta),
       );
+      expect(Math.abs(finalPositions[peer] - expectedEnd)).toBeLessThan(2);
       expect(
         await results.evaluateAll((containers) =>
           containers.map((container) => container.scrollTop),
