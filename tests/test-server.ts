@@ -51,6 +51,41 @@ export async function startTestServer(
     child.once("error", () => resolve());
   });
   let closing: Promise<void> | undefined;
+  let resetSequence = 0;
+  function reset() {
+    const id = ++resetSequence;
+    return new Promise<{ instance: string; webPID: number }>(
+      (resolve, reject) => {
+        const cleanup = () => {
+          clearTimeout(timer);
+          child.off("message", message);
+          child.off("exit", stopped);
+        };
+        const stopped = () => {
+          cleanup();
+          reject(new Error("Browser fixture exited during reset"));
+        };
+        const message = (value: any) => {
+          if (value?.type !== "reset" || value.id !== id) return;
+          cleanup();
+          if (value.error) reject(new Error(value.error));
+          else resolve(value.state);
+        };
+        const timer = setTimeout(() => {
+          cleanup();
+          reject(new Error("Browser fixture reset timed out"));
+        }, 30000);
+        child.on("message", message);
+        child.once("exit", stopped);
+        child.send({ type: "reset", id }, (error) => {
+          if (error) {
+            cleanup();
+            reject(error);
+          }
+        });
+      },
+    );
+  }
   function close() {
     return (closing ??= (async () => {
       if (child.connected) child.disconnect();
@@ -62,7 +97,7 @@ export async function startTestServer(
     const ready = await waitForReady(child, "Browser fixture");
     if (!ready.origin)
       throw new Error("Browser fixture did not report its origin");
-    return { origin: ready.origin, data, close };
+    return { origin: ready.origin, data, close, reset };
   } catch (error) {
     await close();
     throw error;

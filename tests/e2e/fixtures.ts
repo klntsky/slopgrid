@@ -1,18 +1,34 @@
 import { test as base, expect } from "@playwright/test";
 import { startTestServer } from "../test-server";
 
-export const test = base.extend<{ mockServer: string }>({
-  mockServer: [
+type WorkerServer = { origin: string; prepare: () => Promise<void> };
+
+export const test = base.extend<
+  { mockServer: string },
+  { workerServer: WorkerServer }
+>({
+  workerServer: [
     async ({}, use) => {
       const server = await startTestServer("mock");
       try {
-        await use(server.origin);
+        let used = false;
+        await use({
+          origin: server.origin,
+          prepare: async () => {
+            if (used) await server.reset();
+            used = true;
+          },
+        });
       } finally {
         await server.close();
       }
     },
-    { timeout: 45000 },
+    { scope: "worker", timeout: 45000 },
   ],
+  mockServer: async ({ workerServer }, use) => {
+    await workerServer.prepare();
+    await use(workerServer.origin);
+  },
   baseURL: async ({ mockServer }, use) => {
     await use(mockServer);
   },

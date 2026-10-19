@@ -5,11 +5,13 @@ import { webFixture } from "./web-fixture.js";
 // OAuth callback, AI SDK, worker and SSE endpoint.
 import express from "express";
 import { randomBytes, createHash } from "node:crypto";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, rmSync } from "node:fs";
 import { once } from "node:events";
 import { Store } from "../server/store.js";
 import { seedGridLists } from "./grid-list-fixture.js";
 import { createSessionReader } from "../server/session.js";
+import { ownsGrid } from "../server/grid-policy.js";
+import { until } from "./runtime-fixture.js";
 let balanceUsd = 100;
 let tokenLimits: { model: string; max_tokens: number }[] = [];
 let imageRequests: Record<string, unknown>[] = [];
@@ -430,37 +432,40 @@ app.post("/fixture/grids", (req, res) => {
     seedGridLists(store, session.anonymousId ?? session.id, req.body?.counts),
   );
 });
-app.post("/fixture/reset", (req, res) => {
+function resetControls(body: express.Request["body"]) {
   store.db.exec("DROP TRIGGER IF EXISTS fail_reference_upload");
-  if (req.body.referenceStorageFailure)
+  if (body.referenceStorageFailure)
     store.db.exec(`CREATE TRIGGER fail_reference_upload
       BEFORE INSERT ON reference_images BEGIN
         SELECT RAISE(FAIL, 'Injected reference storage failure');
       END`);
-  balanceUsd = req.body.balanceUsd ?? 100;
-  generationError = !!req.body.generationError;
-  transientFailures = req.body.transientFailures ?? 0;
-  transientStatus = req.body.transientStatus ?? 429;
-  transientStream = !!req.body.transientStream;
-  holdGenerations = !!req.body.holdGenerations;
+  balanceUsd = body.balanceUsd ?? 100;
+  generationError = !!body.generationError;
+  transientFailures = body.transientFailures ?? 0;
+  transientStatus = body.transientStatus ?? 429;
+  transientStream = !!body.transientStream;
+  holdGenerations = !!body.holdGenerations;
   for (const entry of [...held]) entry.release();
   aborted = [];
-  websiteStreaming = !!req.body.websiteStreaming;
-  costStreaming = !!req.body.costStreaming;
-  textCost = req.body.textCost ?? 0.000123;
+  websiteStreaming = !!body.websiteStreaming;
+  costStreaming = !!body.costStreaming;
+  textCost = body.textCost ?? 0.000123;
   advanceWebsite?.();
   advanceWebsite = undefined;
-  svgStreaming = !!req.body.svgStreaming;
+  svgStreaming = !!body.svgStreaming;
   advanceSvg?.();
   advanceSvg = undefined;
-  billing = !!req.body.billing;
-  unsafe = !!req.body.unsafe;
-  markdownOutput = req.body.markdownOutput;
-  streamBilling = !!req.body.streamBilling;
+  billing = !!body.billing;
+  unsafe = !!body.unsafe;
+  markdownOutput = body.markdownOutput;
+  streamBilling = !!body.streamBilling;
   calls = [];
   tokenLimits = [];
   imageRequests = [];
   svgProbes = [];
+}
+app.post("/fixture/reset", (req, res) => {
+  resetControls(req.body);
   res.json({ ok: true });
 });
 app.post("/fixture/website-next", (_req, res) => {
@@ -495,7 +500,7 @@ app.get("/svg-probe", (req, res) => {
   res.sendStatus(204);
 });
 app.get("/fixture/svg-probes", (_req, res) => res.json(svgProbes));
-const web = await webFixture({
+const webConfig = {
   directory: data,
   database: `${data}/.data/db.sqlite`,
   secret: Buffer.alloc(32, 1),
@@ -504,7 +509,56 @@ const web = await webFixture({
   providerURL: `${upstreamOrigin}/api/v1`,
   authURL: `${upstreamOrigin}/auth`,
   controls: app,
-});
+};
+let web = await webFixture(webConfig);
+
+// Keep the upstream and engine warm. Recreate the web process to clear its
+// in-memory rate limits, output access tokens and event subscriptions.
+export async function reset() {
+  await web.close();
+  await generation.api.drain();
+  const sessions = (
+    store.db.prepare("SELECT id FROM sessions").all() as { id: string }[]
+  ).map(({ id }) => store.session(id)!);
+  for (const grid of store.all()) {
+    if (!(await generation.api.getGrid(grid.id)).live) continue;
+    const session = sessions.find((session) => ownsGrid(grid, session));
+    if (!session) throw new Error("Active fixture grid has no owner session");
+    await generation.api.pauseGrid({ gridId: grid.id, sessionId: session.id });
+  }
+  await until(
+    () => generation.api.status(),
+    (state) =>
+      state.runningCalls === 0 &&
+      state.activeGrids === 0 &&
+      state.persistence.healthy,
+  );
+  resetControls({});
+  codes.clear();
+  // Clear all fixture data while preserving the warm engine's epoch counter.
+  const tables = store.db
+    .prepare(
+      "SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name != 'generation_clock'",
+    )
+    .all() as { name: string }[];
+  store.db.pragma("foreign_keys = OFF");
+  try {
+    store.db.transaction(() => {
+      for (const { name } of tables)
+        store.db.exec(`DELETE FROM "${name.replaceAll('"', '""')}"`);
+    })();
+  } finally {
+    store.db.pragma("foreign_keys = ON");
+  }
+  rmSync(store.files.root, { recursive: true, force: true });
+  mkdirSync(store.files.root, { recursive: true, mode: 0o700 });
+  await generation.api.accept();
+  web = await webFixture(webConfig);
+  return {
+    instance: (await generation.api.status()).instance,
+    webPID: web.child.pid!,
+  };
+}
 export const close = async () => {
   await web.close();
   await generation.close();
