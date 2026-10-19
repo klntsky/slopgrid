@@ -361,11 +361,11 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
    - During idle hover, confirmed taps, and desktop scroll updates with the cursor over a source area, align its corresponding fractional point at the same viewport-relative vertical offset where feasible. Clamp each resulting scroll position only to that view's native scroll range.
    - During idle mouse hover, continuously update the focus from the exact cursor position, including movement within the same criterion. When matching items have different heights, moving the cursor vertically can scroll peers to maintain fractional-point alignment. Keep the source view's scroll position unchanged.
    - Maintain the invariant "scrolling without moving the mouse is the same as scrolling and refreshing the mouse position", including native scroll completion, delayed input delivery, and layout changes beneath a stationary cursor.
-   - Preserve each view's independent reading position during temporary desktop following. Restore peers on a deliberate idle hover exit; retain final positions when native scrolling finishes.
+   - Keep each view at its latest synchronized position when the cursor leaves an area, cell, or grid, or changes synchronization groups. Subsequent hover and scrolling continue from the current positions.
 8. Highlight the criterion under the cursor in every judgment view in the grid. Desktop scrolling updates both highlight and alignment for the item beneath a stationary cursor, so returning to idle hover retains that alignment. Clear the highlight when the cursor leaves the criterion rows.
 9. On touchscreens, a confirmed tap establishes a persistent comparison focus and reading line at the tapped point, highlighting and revealing the matching item in every view.
    - Finger contact alone changes neither the selection nor peer positions. Native swipes use the retained reading line rather than the finger's grab position. Without a prior focus, use the source viewport's upper third.
-   - Keep the reading line across repeated swipes and when another cell becomes the scroll source. Mark it with a small gutter tick in each synchronized view.
+   - Keep the reading line across repeated swipes and when another cell becomes the scroll source.
    - Highlight the item at the reading line when scrolling begins, and hold that highlight through dragging and native momentum. When scrolling settles, highlight the item now at that line without moving any view.
    - Tapping another point updates the focus and reading line. Tapping outside clears the emphasis while retaining every view's final reading position.
    - Multiple fingers release synchronization without moving the views. Preserve native scrolling and grid pinch zoom.
@@ -373,7 +373,7 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
 
 ### 5.7. Chat history scrolling
 
-1. Pair messages by their position in rendered chat histories across the grid. Use the [same scroll-following behavior as judgment results](#56-judgment-results): focus-relative whole-history mapping, desktop cursor alignment and reading-position restoration, and persistent touch comparison focus through native dragging and momentum.
+1. Pair messages by their position in rendered chat histories across the grid. Use the [same scroll-following behavior as judgment results](#56-judgment-results): focus-relative whole-history mapping, desktop cursor alignment with retained synchronized positions, and persistent touch comparison focus through native dragging and momentum.
 2. Use the same full-width rectangular area for each message's hover and position mapping, including the space around its bubble. Keep adjacent message areas contiguous and cover the unused space at the end of short histories while preserving the visual spacing between bubbles.
 3. Apply a very subtle tint to the corresponding message bubble in every chat history while its area is hovered or touch-selected. Preserve the bubbles' role colors and alignment.
 4. Follow rendered chat histories as a group, separately from judgment views. Raw text and thinking keep independent scrolling.

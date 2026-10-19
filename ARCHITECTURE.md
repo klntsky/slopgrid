@@ -181,11 +181,12 @@ The grid owns per-cell content selection and expansion state. Cells keep output
 previews mounted while content modes alternate.
 
 A content-independent scroll coordinator owns input-source arbitration, gesture
-focus, and native scroll following. It separates transient desktop hover reveals
-and saved peer positions from persistent touch comparison focus and reading lines.
+focus, and native scroll following. Desktop hover and persistent touch comparison
+share a position-writing path, with each view's current scroll position as the
+authoritative state.
 Views declare their synchronization group and ordered vertical areas. The
 coordinator measures and observes those areas independently of their rendered
-contents. Presentation owns highlight and focus-marker styling. Chat histories
+contents. Presentation owns highlight styling. Chat histories
 and judgment results use this same coordinator.
 
 The coordinator measures and caches view geometry. A pure mapper projects whole
