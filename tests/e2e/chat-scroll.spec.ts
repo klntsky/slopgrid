@@ -454,7 +454,7 @@ test("hover aligns fractional message points in screen pixels, with visibility c
   }
 });
 
-test("native wheel mapping keeps its starting focus line while crossing a message boundary", async ({
+test("native wheel realigns the message crossing beneath a stationary pointer without a later hover jump", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 1000 });
@@ -463,98 +463,72 @@ test("native wheel mapping keeps its starting focus line while crossing a messag
     rows: [460, 260],
   });
   const source = panels.first();
-  const target = panels.nth(1);
   await setMessageHeights(panels, [
     [260, 80, 600, 400],
-    [520, 240, 1200, 800],
+    [520, 120, 1200, 800],
   ]);
-  await position(source, 1, 80);
+  await position(source, 1, 200);
   await frames(page);
   const baseline = await colors(panels, 1);
   const nextBaseline = await colors(panels, 2);
-  const geometry = await panels.evaluateAll((views) =>
-    views.map((view) => {
-      const panel = view.getBoundingClientRect();
-      const scale = panel.height / parseFloat(getComputedStyle(view).height);
-      const rows = Array.from(view.querySelectorAll(".chat-bubble"), (row) =>
-        row.getBoundingClientRect(),
-      );
-      return {
-        x: panel.left + 1,
-        y: rows[1].bottom - 4 * scale,
-        remaining: 4,
-        gap: (rows[2].top - rows[1].bottom) / scale,
-        previousHeight: rows[0].height / scale,
-        height: rows[1].height / scale,
-        nextHeight: rows[2].height / scale,
-      };
-    }),
-  );
-  const point = geometry[0];
+  const panel = (await source.boundingBox())!;
+  const row = (await source.locator(".chat-bubble").nth(1).boundingBox())!;
+  const point = {
+    x: row.x + row.width / 2,
+    y: row.y + row.height * 0.625,
+  };
+  const focusOffset = point.y - panel.y;
+  const initial = await bounds(panels, 1);
+  expect(initial[0].height).toBeGreaterThan(initial[1].height);
+  expect(initial[1].rowHeight).toBeLessThan(initial[1].height);
+  expect(focusOffset).toBeGreaterThan(initial[1].height);
+  expect(focusOffset).toBeLessThan(initial[0].height);
   await page.mouse.move(point.x, point.y);
   await expectHighlight(panels, 1, baseline);
-  // Hover alignment must not replace the peer's actual position as the native
-  // gesture's origin. Its mapped displacement is rebased onto this position.
-  await target.evaluate((view) => {
-    view.scrollTop = 400;
-  });
-  await frames(page);
-  const before = await positions(panels);
-  const motion = await recordMotion(panels, 1);
-  await wheelToRest(page, source, 40);
-  const after = await positions(panels);
-  const delta = after.map((position, i) => position - before[i]);
-  expect(delta[0]).toBeCloseTo(40, 0);
-  expect(delta[0]).toBeGreaterThan(point.remaining + point.gap);
-  const expected =
-    point.remaining * (geometry[1].height / point.height) +
-    geometry[1].gap +
-    (delta[0] - point.remaining - point.gap) *
-      (geometry[1].nextHeight / point.nextHeight);
-  // The viewport top is still in the preceding message, whose ratio differs
-  // from the focused message. A top-based map gives a different displacement.
-  const viewportTopDelta =
-    delta[0] * (geometry[1].previousHeight / point.previousHeight);
-  expect(Math.abs(expected - viewportTopDelta)).toBeGreaterThan(8);
-  expect(Math.abs(delta[1] - expected)).toBeLessThanOrEqual(2);
-  await expectHighlight(panels, 2, nextBaseline);
-  // A subsequent native step must continue from the same map even though the
-  // highlighted message changed beneath the stationary pointer.
-  await wheelToRest(page, source, 8);
-  const continued = await positions(panels);
-  expect(continued[0] - after[0]).toBeCloseTo(8, 0);
-  const continuation =
-    (continued[0] - after[0]) * (geometry[1].nextHeight / point.nextHeight);
-  expect(Math.abs(continued[1] - after[1] - continuation)).toBeLessThanOrEqual(
-    2,
+  await expectMessageFocus(panels, 1, 0.625, focusOffset);
+  const fittingPeer = (await bounds(panels, 1))[1];
+  expect(Math.abs(fittingPeer.bottom - fittingPeer.height)).toBeLessThanOrEqual(
+    1.5,
   );
-  await frames(page, 12);
-  expect(await positions(panels)).toEqual(continued);
-  const samples = await motion.evaluate((state) => state.stop());
-  await motion.dispose();
-  expectMonotone(
-    samples.map((sample) => sample.positions),
-    1,
-  );
-  for (const sample of samples) {
-    expect(sample.positions[1]).toBeGreaterThanOrEqual(before[1] - 1);
-    expect(sample.positions[1] - before[1]).toBeLessThanOrEqual(
-      expected + continuation + 2,
-    );
+
+  // The fitting message starts bottom-clamped in the shorter peer. Carrying
+  // its relative mapped displacement into the next message would retain that
+  // clamp's offset instead of aligning the new message under this same point.
+  let before = await positions(panels);
+  for (const delta of [100, 8]) {
+    await wheelToRest(page, source, delta);
+    const after = await positions(panels);
+    expect(after[0] - before[0]).toBeCloseTo(delta, 0);
+    const current = (await source
+      .locator(".chat-bubble")
+      .nth(2)
+      .boundingBox())!;
+    expect(current.y).toBeLessThan(point.y);
+    expect(current.y + current.height).toBeGreaterThan(point.y);
+    const fraction = (point.y - current.y) / current.height;
+    await expectMessageFocus(panels, 2, fraction, focusOffset);
+    await expectHighlight(panels, 2, nextBaseline);
+    const peer = (await bounds(panels, 2))[1];
+    expect(peer.rowHeight).toBeGreaterThan(peer.height);
+    expect(
+      Math.abs(
+        peer.top +
+          fraction * peer.rowHeight -
+          Math.min(focusOffset, peer.height),
+      ),
+    ).toBeLessThanOrEqual(1.5);
+    before = await positions(panels);
   }
-  expect(
-    await source.evaluate((view, point) => {
-      const row = document
-        .elementFromPoint(point.x, point.y)
-        ?.closest(".chat-message-row");
-      return Array.from(view.querySelectorAll(".chat-message-row")).indexOf(
-        row as Element,
-      );
-    }, point),
-  ).toBe(2);
+  await frames(page, 12);
+  expect(await positions(panels)).toEqual(before);
+  await page.mouse.move(point.x + 1, point.y);
+  await frames(page, 12);
+  const afterHover = await positions(panels);
+  expect(afterHover[0]).toBe(before[0]);
+  expect(Math.abs(afterHover[1] - before[1])).toBeLessThanOrEqual(1);
 });
 
-test("unequal histories follow monotonically to each view's own native range boundaries", async ({
+test("native wheel uses hover visibility clamps and oversized fractional focus across unequal viewports", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 1000 });
@@ -568,54 +542,114 @@ test("unequal histories follow monotonically to each view's own native range bou
   );
   const source = panels.first();
   await setMessageHeights(panels, [
-    [160, 60, 800, 400],
-    [320, 180, 400, 900],
-    [240, 100, 1200, 500],
-    [480, 220, 600, 1000],
+    [600, 120, 800, 600],
+    [480, 80, 600, 700],
+    [360, 120, 1200, 800],
+    [600, 160, 900, 900],
   ]);
-  await panels.evaluateAll((views) => {
-    for (const view of views) view.scrollTop = 0;
-  });
-  await frames(page);
-  const geometry = await panels.evaluateAll((views) =>
-    views.map((view) => ({
-      viewport: view.clientHeight,
-      range: view.scrollHeight - view.clientHeight,
-      message: view.querySelectorAll(".chat-bubble")[2].getBoundingClientRect()
-        .height,
-    })),
-  );
-  expect(new Set(geometry.map((view) => view.viewport)).size).toBeGreaterThan(
-    1,
-  );
-  expect(new Set(geometry.map((view) => view.range)).size).toBe(4);
-  expect(new Set(geometry.map((view) => view.message)).size).toBe(4);
-  const box = (await source.boundingBox())!;
-  await page.mouse.move(box.x + box.width / 2, box.y + 100);
-  const down = await recordMotion(panels, 0);
-  await wheelToRest(page, source, 100_000);
-  const bottom = geometry.map((view) => view.range);
-  await expect.poll(() => positions(panels)).toEqual(bottom);
-  await frames(page, 12);
-  expect(await positions(panels)).toEqual(bottom);
-  const downSamples = await down.evaluate((state) => state.stop());
-  await down.dispose();
-  expectMonotone(
-    downSamples.map((sample) => sample.positions),
-    1,
-  );
-
-  const up = await recordMotion(panels, 0);
-  await wheelToRest(page, source, -100_000);
-  await expect.poll(() => positions(panels)).toEqual([0, 0, 0, 0]);
-  await frames(page, 12);
-  expect(await positions(panels)).toEqual([0, 0, 0, 0]);
-  const upSamples = await up.evaluate((state) => state.stop());
-  await up.dispose();
-  expectMonotone(
-    upSamples.map((sample) => sample.positions),
-    -1,
-  );
+  for (const scenario of [
+    {
+      name: "fitting messages stay top-clamped",
+      index: 1,
+      offset: -40,
+      fraction: 0.6,
+      delta: -20,
+    },
+    {
+      name: "fitting messages stay bottom-clamped in shorter peers",
+      index: 1,
+      offset: "near-bottom" as const,
+      fraction: 0.5,
+      delta: 40,
+    },
+    {
+      name: "oversized messages align their current fractional focus",
+      index: 2,
+      offset: -200,
+      fraction: 0.5,
+      delta: 80,
+    },
+  ]) {
+    await test.step(scenario.name, async () => {
+      await page.mouse.move(1, 1);
+      for (const peer of (await panels.all()).slice(1))
+        await position(peer, scenario.index, 10);
+      const offset =
+        scenario.offset === "near-bottom"
+          ? await source.evaluate((view) => view.clientHeight - 80)
+          : scenario.offset;
+      await position(source, scenario.index, offset);
+      await frames(page);
+      const panel = (await source.boundingBox())!;
+      const row = (await source
+        .locator(".chat-bubble")
+        .nth(scenario.index)
+        .boundingBox())!;
+      const point = {
+        x: row.x + row.width / 2,
+        y: row.y + scenario.fraction * row.height,
+      };
+      const focusOffset = point.y - panel.y;
+      expect(focusOffset).toBeGreaterThan(0);
+      expect(focusOffset).toBeLessThan(panel.height);
+      await page.mouse.move(point.x, point.y);
+      await expectMessageFocus(
+        panels,
+        scenario.index,
+        scenario.fraction,
+        focusOffset,
+      );
+      const before = await positions(panels);
+      await wheelToRest(page, source, scenario.delta);
+      const after = await positions(panels);
+      expect(after[0] - before[0]).toBeCloseTo(scenario.delta, 0);
+      const current = (await source
+        .locator(".chat-bubble")
+        .nth(scenario.index)
+        .boundingBox())!;
+      expect(current.y).toBeLessThan(point.y);
+      expect(current.y + current.height).toBeGreaterThan(point.y);
+      const fraction = (point.y - current.y) / current.height;
+      await expectMessageFocus(panels, scenario.index, fraction, focusOffset);
+      const aligned = await bounds(panels, scenario.index);
+      expect(aligned[0].height).toBeGreaterThan(aligned[2].height);
+      expect(
+        new Set(aligned.map((view) => view.rowHeight)).size,
+      ).toBeGreaterThan(1);
+      for (const [index, peer] of aligned.entries()) {
+        if (index === 0) continue;
+        if (scenario.index === 2) {
+          expect(peer.rowHeight).toBeGreaterThan(peer.height);
+          expect(
+            Math.abs(
+              peer.top +
+                fraction * peer.rowHeight -
+                Math.min(focusOffset, peer.height),
+            ),
+          ).toBeLessThanOrEqual(1.5);
+        } else {
+          expect(peer.rowHeight).toBeLessThan(peer.height);
+          expect(peer.top).toBeGreaterThanOrEqual(-1.5);
+          expect(peer.bottom).toBeLessThanOrEqual(peer.height + 1.5);
+          if (scenario.delta < 0)
+            expect(Math.abs(peer.top)).toBeLessThanOrEqual(1.5);
+          else if (index >= 2)
+            expect(Math.abs(peer.bottom - peer.height)).toBeLessThanOrEqual(
+              1.5,
+            );
+        }
+      }
+      const settled = await positions(panels);
+      await page.mouse.move(point.x + 1, point.y);
+      await frames(page, 12);
+      const afterHover = await positions(panels);
+      expect(afterHover[0]).toBe(settled[0]);
+      for (let index = 1; index < afterHover.length; index++)
+        expect(
+          Math.abs(afterHover[index] - settled[index]),
+        ).toBeLessThanOrEqual(1);
+    });
+  }
 });
 
 test.describe("mobile chat histories", () => {

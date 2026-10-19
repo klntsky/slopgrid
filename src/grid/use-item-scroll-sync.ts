@@ -340,13 +340,21 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
         );
         if (touchScrolling) rememberTouchFocus(session.source, session.focusY);
       }
-      for (const follower of session.followers) {
-        const delta =
-          follower.map(session.source.scrollTop) - follower.mappedStart;
-        write(follower.view, follower.start + delta);
+      const row =
+        !touchScrolling && mouse
+          ? rowOf(document.elementFromPoint(mouse.x, mouse.y))
+          : null;
+      if (row && mouse && viewOf(row) === session.source) {
+        highlight(row);
+        reveal(row, mouse);
+      } else {
+        for (const follower of session.followers) {
+          const delta =
+            follower.map(session.source.scrollTop) - follower.mappedStart;
+          write(follower.view, follower.start + delta);
+        }
+        if (!touchScrolling && mouse) highlight(row);
       }
-      if (!touchScrolling && mouse)
-        highlight(rowOf(document.elementFromPoint(mouse.x, mouse.y)));
     } else if (mode === "hover" && hoverRow && mouse && dirty) {
       const row = rowOf(hoverRow);
       if (row) reveal(row, mouse);

@@ -1817,7 +1817,7 @@ test("judgment hover aligns fractional focus and clamps whole fitting criteria i
   }
 });
 
-test("native judgment wheel follows the whole history smoothly across criteria and gaps", async ({
+test("native judgment wheel aligns the criterion under a stationary cursor in unequal views", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 1000 });
@@ -1867,59 +1867,33 @@ test("native judgment wheel follows the whole history smoothly across criteria a
     results.evaluateAll((containers) =>
       containers.map((view) => view.scrollTop),
     );
-  const geometry = await results.evaluateAll((containers) =>
-    containers.map((container) => {
-      const panel = container.getBoundingClientRect();
-      const scale = panel.height / container.clientHeight;
-      return {
-        height: container.clientHeight,
-        scale,
-        max: container.scrollHeight - container.clientHeight,
-        rows: Array.from(
-          container.querySelectorAll(".judge-result-criteria > li"),
-          (row) => {
-            const rect = row.getBoundingClientRect();
-            return {
-              top: (rect.top - panel.top) / scale + container.scrollTop,
-              bottom: (rect.bottom - panel.top) / scale + container.scrollTop,
-              height: rect.height / scale,
-            };
-          },
-        ),
-      };
-    }),
-  );
-  expect(geometry[0].height).toBeGreaterThan(geometry[2].height);
-  expect(geometry[1].rows[0].height).toBeGreaterThan(
-    geometry[0].rows[0].height,
-  );
-  expect(geometry[1].max).toBeGreaterThan(geometry[0].max);
-  expect(geometry[0].rows[1].top).toBeGreaterThanOrEqual(
-    geometry[0].rows[0].bottom,
-  );
-  const row = source.locator(".judge-result-criteria > li").first();
-  const unselected = await row.evaluate(
-    (element) => getComputedStyle(element).backgroundColor,
-  );
-  const box = (await source.boundingBox())!;
-  const rowBox = (await row.boundingBox())!;
-  const pointerY =
-    (Math.max(box.y, rowBox.y) +
-      Math.min(box.y + box.height, rowBox.y + rowBox.height)) /
-    2;
-  const focusPixels = pointerY - box.y;
-  await page.mouse.move(box.x + 20, pointerY);
-  await expect
-    .poll(() =>
-      row.evaluate((element) => getComputedStyle(element).backgroundColor),
-    )
-    .not.toBe(unselected);
-  // Input starts from actual independent positions, not a selected-row alignment.
-  await results.evaluateAll((containers) => {
-    containers.forEach((container, index) => {
-      container.scrollTop = index * 17;
-    });
-  });
+  const geometry = () =>
+    results.evaluateAll((containers) =>
+      containers.map((container) => {
+        const panel = container.getBoundingClientRect();
+        return {
+          position: container.scrollTop,
+          max: container.scrollHeight - container.clientHeight,
+          height: panel.height,
+          width: panel.width,
+          rows: Array.from(
+            container.querySelectorAll(".judge-result-criteria > li"),
+            (row) => {
+              const rect = row.getBoundingClientRect();
+              return {
+                top: rect.top - panel.top,
+                bottom: rect.bottom - panel.top,
+                height: rect.height,
+              };
+            },
+          ),
+        };
+      }),
+    );
+  const initial = await geometry();
+  expect(initial[0].height).toBeGreaterThan(initial[2].height);
+  expect(initial[0].width).toBeGreaterThan(initial[1].width);
+  expect(initial[1].rows[0].height).toBeGreaterThan(initial[0].rows[0].height);
   const frames = () =>
     page.evaluate(
       () =>
@@ -1927,29 +1901,47 @@ test("native judgment wheel follows the whole history smoothly across criteria a
           requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
         ),
     );
+  const box = (await source.boundingBox())!;
+  const focusOffset = Math.min(100, box.height / 3);
+  const pointerY = box.y + focusOffset;
+  await page.mouse.move(box.x + 20, pointerY);
   await frames();
-  const samples: number[][] = [await positions()];
-  const histories = geometry.map((bounds) => ({
-    limit: bounds.max,
-    height: bounds.height,
-    scale: bounds.scale,
-    edges: bounds.rows.flatMap((item) => [item.top, item.bottom]),
-  }));
-  const boundaries = histories[0].edges
-    .map((edge) => edge - focusPixels / histories[0].scale)
-    .filter((position) => position > 0 && position < geometry[0].max);
-  let focusedBoundaries = 0;
-  let crossedGap = false;
-  while (samples.at(-1)![0] < geometry[0].max - 1) {
-    const previous = samples.at(-1)!;
-    const nextBoundary = boundaries.find(
-      (position) => position > previous[0] + 2,
+  const seenCriteria = new Set<number>();
+  let fittingPeers = 0;
+  let oversizedPeers = 0;
+  const assertAlignment = async (leader: number, focus: number) => {
+    const current = await geometry();
+    const criterion = current[leader].rows.findIndex(
+      (row) => row.top <= focus && row.bottom > focus,
     );
-    const delta = Math.min(
-      48,
-      geometry[0].max - previous[0],
-      nextBoundary === undefined ? Infinity : nextBoundary - previous[0],
-    );
+    // A gap has no hovered criterion and retains whole-history following.
+    if (criterion === -1) return;
+    if (leader === 0) seenCriteria.add(criterion);
+    const sourceRow = current[leader].rows[criterion];
+    const fraction = (focus - sourceRow.top) / sourceRow.height;
+    for (let index = 0; index < current.length; index++) {
+      if (index === leader) continue;
+      const view = current[index];
+      const row = view.rows[criterion];
+      if (row.height <= view.height) {
+        fittingPeers++;
+        expect(row.top).toBeGreaterThanOrEqual(-2);
+        expect(row.bottom).toBeLessThanOrEqual(view.height + 2);
+      } else {
+        oversizedPeers++;
+        const offset =
+          row.top + row.height * fraction - Math.min(focus, view.height);
+        // Native range limits can prevent fractional alignment at either end.
+        if (view.position < 2) expect(offset).toBeLessThanOrEqual(2);
+        else if (view.position > view.max - 2)
+          expect(offset).toBeGreaterThanOrEqual(-2);
+        else expect(Math.abs(offset)).toBeLessThan(2);
+      }
+    }
+  };
+  while ((await positions())[0] < initial[0].max - 1) {
+    const before = await positions();
+    const delta = Math.min(16, initial[0].max - before[0]);
     const ended = source.evaluate(
       (container) =>
         new Promise<void>((resolve) =>
@@ -1961,61 +1953,32 @@ test("native judgment wheel follows the whole history smoothly across criteria a
     await page.mouse.wheel(0, delta);
     await ended;
     await frames();
-    const current = await positions();
-    expect(Math.abs(current[0] - previous[0] - delta)).toBeLessThan(2);
-    for (let index = 1; index < current.length; index++) {
-      expect(current[index]).toBeGreaterThanOrEqual(previous[index] - 1);
-      // These widths differ by less than 2x; no boundary may create a jump.
-      expect(current[index] - previous[index]).toBeLessThan(delta * 4 + 4);
-      const mappedDelta =
-        judgmentHistoryPosition(
-          histories[0],
-          histories[index],
-          focusPixels,
-          current[0],
-        ) -
-        judgmentHistoryPosition(
-          histories[0],
-          histories[index],
-          focusPixels,
-          previous[0],
-        );
-      const expected = Math.max(
-        0,
-        Math.min(geometry[index].max, previous[index] + mappedDelta),
-      );
-      expect(Math.abs(current[index] - expected)).toBeLessThan(2);
-    }
-    if (nextBoundary !== undefined && Math.abs(current[0] - nextBoundary) < 2)
-      focusedBoundaries++;
-    crossedGap ||=
-      previous[0] <= geometry[0].rows[1].top &&
-      current[0] >= geometry[0].rows[0].bottom;
-    samples.push(current);
+    const settled = await positions();
+    // The browser, not peer alignment, owns the source's wheel displacement.
+    expect(Math.abs(settled[0] - before[0] - delta)).toBeLessThan(2);
+    await assertAlignment(0, focusOffset);
+    // This idle cursor reveal must agree with scroll-time reveal, including
+    // after the stationary pointer has crossed into another criterion.
+    await page.mouse.move(box.x + 21, pointerY);
+    await frames();
+    expect(await positions()).toEqual(settled);
+    await page.mouse.move(box.x + 20, pointerY);
+    await frames();
+    expect(await positions()).toEqual(settled);
   }
-  expect(crossedGap).toBe(true);
-  expect(focusedBoundaries).toBeGreaterThanOrEqual(3);
-  // Following continues past the originally highlighted criterion in every peer.
-  for (let index = 1; index < geometry.length; index++) {
-    expect(samples.at(-1)![index]).toBeGreaterThan(
-      geometry[index].rows[1].bottom,
-    );
-    expect(Math.abs(samples.at(-1)![index] - geometry[index].max)).toBeLessThan(
-      2,
-    );
-  }
-  const settled = await positions();
-  await frames();
-  expect(await positions()).toEqual(settled);
-  await page.mouse.move(1, 1);
-  await expect.poll(positions).toEqual([settled[0], 0, 0, 0]);
-  // A former programmatic follower can take ownership with real wheel input.
+  expect(seenCriteria.size).toBeGreaterThanOrEqual(3);
+  expect(fittingPeers).toBeGreaterThan(0);
+  expect(oversizedPeers).toBeGreaterThan(0);
+
+  // A former programmatic follower can take ownership with native wheel input.
   await target.evaluate((container) => {
     container.scrollTop = container.scrollHeight;
   });
   await frames();
   const targetBox = (await target.boundingBox())!;
-  await page.mouse.move(targetBox.x + 20, targetBox.y + targetBox.height / 2);
+  const targetFocus = targetBox.height / 2;
+  await page.mouse.move(targetBox.x + 20, targetBox.y + targetFocus);
+  await frames();
   const handoff = await positions();
   const ended = target.evaluate(
     (container) =>
@@ -2030,9 +1993,16 @@ test("native judgment wheel follows the whole history smoothly across criteria a
   await frames();
   const transferred = await positions();
   expect(Math.abs(transferred[1] - handoff[1] + 48)).toBeLessThan(2);
-  expect(transferred[0]).toBeLessThan(handoff[0]);
-  await page.mouse.move(1, 1);
-  await expect.poll(positions).toEqual([settled[0], transferred[1], 0, 0]);
+  await assertAlignment(1, targetFocus);
+  expect(
+    transferred.some(
+      (position, index) =>
+        index !== 1 && Math.abs(position - handoff[index]) > 2,
+    ),
+  ).toBe(true);
+  await page.mouse.move(targetBox.x + 21, targetBox.y + targetFocus);
+  await frames();
+  expect(await positions()).toEqual(transferred);
 });
 
 test.describe("touch judgment following", () => {
