@@ -189,14 +189,20 @@ coordinator measures and observes those areas independently of their rendered
 contents. Presentation owns highlight styling. Chat histories
 and judgment results use this same coordinator.
 
-The coordinator measures and caches view geometry. A pure mapper projects whole
-histories around viewport-relative focus offsets while respecting each native
-scroll range. Desktop scroll updates and hover share the item-reveal path.
-Scroll completion returns desktop ownership to hover, and geometry refreshes
-resolve the current cursor target rather than retaining a previously hovered item.
-Interaction selection is separate from scroll projection: touch
-highlighting stays fixed during a gesture, then settles at the retained reading
-line without changing scroll positions.
+The coordinator measures and caches view geometry and normalizes interaction
+focus by each viewport's height. A pure mapper projects content coordinates
+through matched full-area boundaries and computes direction-preserving movement
+across those segments. The coordinator applies that movement to current peer
+positions, retains fractional movement, and enforces native scroll limits.
+Comparison state preserves paused alignment through desktop scroll completion;
+fresh hover entries and explicit taps establish a new proportional alignment.
+Geometry refreshes resolve the current cursor target without coupling the mapper
+to rendered contents.
+
+Interaction selection is separate from scroll projection: touch highlighting
+stays fixed during a gesture, then settles at the retained viewport percentage
+without changing scroll positions. Touch handoff retains that percentage across
+unequal-height views while following from their current positions.
 
 Judgment presentation combines saved criteria with persisted results and does
 not own inference or billing state.
