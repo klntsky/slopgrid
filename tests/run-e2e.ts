@@ -4,6 +4,7 @@ import { tmpdir, homedir } from "node:os";
 import { join } from "node:path";
 import { parseEnv } from "node:util";
 import { startTestServer } from "./test-server";
+import { parseE2EPort } from "./e2e-port";
 
 const args = process.argv.slice(2);
 const index = args.indexOf("--suite");
@@ -13,6 +14,7 @@ if (!["all", "mock", "real", "github"].includes(suite))
 const reuseIndex = args.indexOf("--reuse-build");
 const reuseBuild = reuseIndex >= 0;
 if (reuseBuild) args.splice(reuseIndex, 1);
+const port = parseE2EPort(process.env.E2E_PORT);
 function realKey() {
   if (process.env.OPENROUTER_API_KEY) return process.env.OPENROUTER_API_KEY;
   try {
@@ -69,7 +71,6 @@ for (const project of suite === "all"
   try {
     // Mock tests create their own servers; real suites share one serial server.
     if (project !== "mock") {
-      const port = Number(process.env.E2E_PORT ?? 0);
       server = await startTestServer(project, port);
     }
     const code = await command(

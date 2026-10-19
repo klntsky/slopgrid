@@ -3,17 +3,14 @@ import { mkdtempSync, rmSync, openSync, closeSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { waitForReady } from "./process-ready.js";
+import { seedTestDatabase } from "./database-fixture.js";
+import { validateE2EPort } from "./e2e-port.js";
 
 export async function startTestServer(
   project: "mock" | "real" | "github",
-  requestedPort = 0,
+  requestedPort: number,
 ) {
-  if (
-    !Number.isSafeInteger(requestedPort) ||
-    (requestedPort !== 0 && requestedPort < 1024) ||
-    requestedPort > 65535
-  )
-    throw new Error("Invalid E2E_PORT");
+  validateE2EPort(requestedPort);
   if (
     !process.env.GITHUB_CLIENT_ID?.trim() ||
     !process.env.GITHUB_CLIENT_SECRET?.trim()
@@ -26,6 +23,11 @@ export async function startTestServer(
   const log = openSync(join(data, "server.log"), "w", 0o600);
   let child: ChildProcess;
   try {
+    seedTestDatabase(
+      project === "mock"
+        ? join(data, ".data/db.sqlite")
+        : join(data, "app.sqlite"),
+    );
     child = fork(join(process.cwd(), "tests/e2e-process.ts"), [project], {
       execArgv: ["--import", "tsx"],
       stdio: ["ignore", log, log, "ipc"],

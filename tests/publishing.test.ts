@@ -1,15 +1,25 @@
+import { token } from "../server/ids.js";
 import { appFixture } from "./app-fixture.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { expandGrid, type Grid } from "../server/domain.js";
+import { expandGrid, type Grid, type GridSummary } from "../server/domain.js";
 import { Store } from "../server/store.js";
 import { createWorkflow } from "../server/workflow.js";
 
 // Exercise the real session, ownership, persistence, and publishing routes.
 test("publishing is permanent, link grids are unlisted, and public summaries omit private data", async (t) => {
   const { origin, store, database, secret } = await appFixture(t);
-  const owner = "a".repeat(48);
+  const owner = token();
   store.saveSession({ id: owner, created: Date.now() });
+  const ids = {
+    private: token(),
+    link: token(),
+    listed: token(),
+    pending: token(),
+    running: token(),
+    newer: token(),
+  };
+  let creationIndex = 0;
   function grid(
     id: string,
     status: Grid["cells"][number]["status"] = "complete",
@@ -36,7 +46,7 @@ test("publishing is permanent, link grids are unlisted, and public summaries omi
             : "running",
       published: false,
       visibility: "private",
-      createdAt: `2026-01-0${store.all().length + 1}T00:00:00.000Z`,
+      createdAt: new Date(Date.UTC(2026, 0, ++creationIndex)).toISOString(),
       cells: expandGrid(input).map((cell) => ({
         ...cell,
         id: `${id}-cell`,
@@ -66,30 +76,60 @@ test("publishing is permanent, link grids are unlisted, and public summaries omi
     });
   }
   async function publicGrids() {
-    return (await (await fetch(`${origin}/api/grids/public`)).json()).grids;
+    const grids: GridSummary[] = [];
+    for (let page = 1; ; page++) {
+      const response = await fetch(`${origin}/api/grids/public?page=${page}`);
+      assert.equal(response.status, 200);
+      const body = await response.json();
+      grids.push(...body.grids);
+      if (grids.length >= body.total) return grids;
+    }
   }
-  grid("private");
-  grid("link");
-  grid("listed", "error", "svg");
-  grid("pending", "pending");
-  grid("running", "running");
-  assert.equal((await fetch(`${origin}/api/grids/private`)).status, 404);
-  assert.equal((await fetch(`${origin}/api/grids/private/events`)).status, 404);
+  const baselinePublic = await publicGrids();
+  async function assertPublic(added: string[]) {
+    const inventory = store.db
+      .prepare(
+        "SELECT id, created_at AS createdAt FROM grids WHERE visibility='public'",
+      )
+      .all() as { id: string; createdAt: string }[];
+    const createdAt = new Map(
+      inventory.map((grid) => [grid.id, grid.createdAt]),
+    );
+    const expected = [...baselinePublic.map((grid) => grid.id), ...added].sort(
+      (a, b) =>
+        createdAt.get(b)!.localeCompare(createdAt.get(a)!) ||
+        (a < b ? -1 : a > b ? 1 : 0),
+    );
+    const summaries = await publicGrids();
+    assert.deepEqual(summaries.map((grid) => grid.id), expected);
+    assert.deepEqual(
+      summaries.filter((grid) => !added.includes(grid.id)),
+      baselinePublic,
+    );
+    return summaries;
+  }
+  grid(ids.private);
+  grid(ids.link);
+  grid(ids.listed, "error", "svg");
+  grid(ids.pending, "pending");
+  grid(ids.running, "running");
+  assert.equal((await fetch(`${origin}/api/grids/${ids.private}`)).status, 404);
+  assert.equal((await fetch(`${origin}/api/grids/${ids.private}/events`)).status, 404);
   assert.equal(
-    (await publish("private", { visibility: "public" }, false)).status,
+    (await publish(ids.private, { visibility: "public" }, false)).status,
     404,
   );
   for (const body of [{ visibility: "invalid" }, {}, null, undefined])
-    assert.equal((await publish("private", body)).status, 400);
+    assert.equal((await publish(ids.private, body)).status, 400);
   assert.equal(
-    (await publish("private", { visibility: "private" })).status,
+    (await publish(ids.private, { visibility: "private" })).status,
     200,
   );
-  assert.equal(store.get("private")!.published, false);
-  for (const id of ["pending", "running"])
+  assert.equal(store.get(ids.private)!.published, false);
+  for (const id of [ids.pending, ids.running])
     assert.equal((await publish(id, { visibility: "public" })).status, 409);
-  assert.equal((await publish("link", { visibility: "unlisted" })).status, 200);
-  const billed = store.billing.observe("link-cell")("direct");
+  assert.equal((await publish(ids.link, { visibility: "unlisted" })).status, 200);
+  const billed = store.billing.observe(`${ids.link}-cell`)("direct");
   billed.complete(
     { phase: "direct", finishReason: "stop" },
     { costUsd: 0.125 },
@@ -97,13 +137,13 @@ test("publishing is permanent, link grids are unlisted, and public summaries omi
   for (const asOwner of [true, false]) {
     const headers: HeadersInit = asOwner ? { cookie: `slopgrid=${owner}` } : {};
     const view = await (
-      await fetch(`${origin}/api/grids/link`, { headers })
+      await fetch(`${origin}/api/grids/${ids.link}`, { headers })
     ).json();
     assert.equal(Object.hasOwn(view, "spentUsd"), asOwner);
     if (asOwner) assert.equal(view.spentUsd, 0.125);
     const controller = new AbortController();
     try {
-      const stream = await fetch(`${origin}/api/grids/link/events`, {
+      const stream = await fetch(`${origin}/api/grids/${ids.link}/events`, {
         headers,
         signal: controller.signal,
       });
@@ -127,19 +167,16 @@ test("publishing is permanent, link grids are unlisted, and public summaries omi
       controller.abort();
     }
   }
-  assert.deepEqual(await publicGrids(), []);
-  assert.equal((await publish("listed", { visibility: "public" })).status, 200);
+  await assertPublic([]);
+  assert.equal((await publish(ids.listed, { visibility: "public" })).status, 200);
   assert.equal((await fetch(`${origin}/api/grids/public`)).status, 200);
-  assert.deepEqual(
-    (await publicGrids()).map((g: Grid) => g.id),
-    ["listed"],
-  );
-  const summaries = await publicGrids();
-  assert.equal(summaries[0].format, "svg");
-  assert.equal(summaries[0].visibility, "public");
-  assert.equal(summaries[0].owner, undefined);
-  assert.equal(summaries[0].cells, undefined);
-  assert.equal(summaries[0].input, undefined);
+  const summaries = await assertPublic([ids.listed]);
+  const listed = summaries.find((grid) => grid.id === ids.listed)!;
+  assert.equal(listed.format, "svg");
+  assert.equal(listed.visibility, "public");
+  assert.equal(Object.hasOwn(listed, "owner"), false);
+  assert.equal(Object.hasOwn(listed, "cells"), false);
+  assert.equal(Object.hasOwn(listed, "input"), false);
   const mine = await (
     await fetch(`${origin}/api/grids`, {
       headers: { cookie: `slopgrid=${owner}` },
@@ -149,14 +186,14 @@ test("publishing is permanent, link grids are unlisted, and public summaries omi
   assert.deepEqual(
     Object.fromEntries(mine.grids.map((g: Grid) => [g.id, g.visibility])),
     {
-      private: "private",
-      link: "unlisted",
-      listed: "public",
-      pending: "private",
-      running: "private",
+      [ids.private]: "private",
+      [ids.link]: "unlisted",
+      [ids.listed]: "public",
+      [ids.pending]: "private",
+      [ids.running]: "private",
     },
   );
-  for (const id of ["link", "listed"]) {
+  for (const id of [ids.link, ids.listed]) {
     const previous = store.get(id)!;
     const anonymous = await fetch(`${origin}/api/grids/${id}`);
     assert.equal(anonymous.status, 200);
@@ -165,7 +202,7 @@ test("publishing is permanent, link grids are unlisted, and public summaries omi
       (await publish(id, { visibility: previous.visibility })).status,
       200,
     );
-    for (const visibility of id === "link"
+    for (const visibility of id === ids.link
       ? ["private"]
       : ["private", "unlisted"])
       assert.equal((await publish(id, { visibility })).status, 409);
@@ -178,35 +215,29 @@ test("publishing is permanent, link grids are unlisted, and public summaries omi
       assert.equal(response.status, 409);
     }
   }
-  grid("newer");
-  await publish("newer", { visibility: "public" });
-  assert.deepEqual(
-    (await publicGrids()).map((g: Grid) => g.id),
-    ["newer", "listed"],
-  );
-  const beforePromotion = store.get("link")!;
+  grid(ids.newer);
+  await publish(ids.newer, { visibility: "public" });
+  await assertPublic([ids.newer, ids.listed]);
+  const beforePromotion = store.get(ids.link)!;
   assert.equal(
-    (await publish("link", { visibility: "public" }, false)).status,
+    (await publish(ids.link, { visibility: "public" }, false)).status,
     404,
   );
-  assert.equal(store.get("link")!.visibility, "unlisted");
-  assert.equal((await publish("link", { visibility: "public" })).status, 200);
-  assert.deepEqual(store.get("link"), {
+  assert.equal(store.get(ids.link)!.visibility, "unlisted");
+  assert.equal((await publish(ids.link, { visibility: "public" })).status, 200);
+  assert.deepEqual(store.get(ids.link), {
     ...beforePromotion,
     visibility: "public",
   });
-  assert.deepEqual(
-    (await publicGrids()).map((g: Grid) => g.id),
-    ["newer", "listed", "link"],
-  );
-  assert.equal((await publish("link", { visibility: "public" })).status, 200);
+  await assertPublic([ids.newer, ids.listed, ids.link]);
+  assert.equal((await publish(ids.link, { visibility: "public" })).status, 200);
   for (const visibility of ["private", "unlisted"])
-    assert.equal((await publish("link", { visibility })).status, 409);
+    assert.equal((await publish(ids.link, { visibility })).status, 409);
   const reopened = new Store(database, secret);
   try {
-    assert.equal(reopened.get("listed")!.visibility, "public");
-    assert.equal(reopened.get("link")!.visibility, "public");
-    assert.equal(reopened.get("private")!.visibility, "private");
+    assert.equal(reopened.get(ids.listed)!.visibility, "public");
+    assert.equal(reopened.get(ids.link)!.visibility, "public");
+    assert.equal(reopened.get(ids.private)!.visibility, "private");
   } finally {
     reopened.db.close();
   }
@@ -214,7 +245,7 @@ test("publishing is permanent, link grids are unlisted, and public summaries omi
 
 test("publishing a paused grid exposes unfinished cells as Not generated and locks generation", async (t) => {
   const { origin, store, database, secret } = await appFixture(t);
-  const owner = "b".repeat(48);
+  const owner = token();
   store.saveSession({ id: owner, created: Date.now() });
   const input: Grid["input"] = {
     format: "markdown",
@@ -226,7 +257,7 @@ test("publishing a paused grid exposes unfinished cells as Not generated and loc
     budgetUsd: 5,
   };
   const grid: Grid = {
-    id: "paused-publication",
+    id: token(),
     owner,
     input,
     status: "paused",
@@ -236,7 +267,7 @@ test("publishing a paused grid exposes unfinished cells as Not generated and loc
     createdAt: new Date().toISOString(),
     cells: expandGrid(input).map((cell, index) => ({
       ...cell,
-      id: `paused-cell-${index}`,
+      id: token(),
       status: index === 0 ? "complete" : index === 1 ? "error" : "pending",
       ...(index === 1 ? { error: "Provider failure", errorCode: 500 } : {}),
       ...(index === 2 ? { error: "Insufficient credits", errorCode: 402 } : {}),

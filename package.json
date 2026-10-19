@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server/dev.ts",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && NODE_ENV=production vite build",
     "start": "NODE_ENV=production tsx server/index.ts",
     "test": "pnpm build && pnpm test:built",
     "test:e2e": "tsx tests/run-e2e.ts --suite all",

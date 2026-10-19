@@ -32,11 +32,17 @@ from a shared staging runtime or mutable worktree. Existing deployed releases
 are verified and never rewritten.
 
 Validation runs in a separate run-owned source workspace with that run's frontend
-build and read-only dependency link. A short temporary directory supplies fresh
+build and read-only dependency link. A short temporary directory supplies isolated
 SQLite/output paths, a generation socket and PM2 home. These override inherited
 and private test settings; fixture servers use OS-assigned ports (`E2E_PORT=0`).
-Temporary runtime data is removed after success or failure. The result explicitly
-records passed, failed, or skipped for this run, not a historical status file.
+Production validation snapshots the live SQLite database through its online backup
+API, then runs candidate storage initialization on the copy. Test service fixtures
+receive independent copies of that migrated database; schema-specific unit fixtures
+retain their own databases. Output artifacts and production runtime credentials
+remain outside the validation boundary. Migration rehearsal is required even when
+tests are explicitly skipped. Temporary runtime data is removed after success or
+failure. The result explicitly records passed, failed, or skipped for this run,
+not a historical status file.
 
 `validate` never prepares or deploys a persistent runtime and can run concurrently
 with other candidates or a production deployment. Production prepares and promotes

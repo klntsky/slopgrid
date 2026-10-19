@@ -1,3 +1,4 @@
+import { token } from "../server/ids.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { appFixture } from "./app-fixture.js";
@@ -5,7 +6,7 @@ import { seedGridLists } from "./grid-list-fixture.js";
 
 test("grid pages filter before counting, order ties consistently, and bound page requests", async (t) => {
   const { origin, store } = await appFixture(t);
-  const owner = "a".repeat(48);
+  const owner = token();
   store.saveSession({ id: owner, created: Date.now() });
   const { owned, publicIds } = seedGridLists(store, owner);
   const get = (path: string, cookie = owner) =>
@@ -47,13 +48,13 @@ test("grid pages filter before counting, order ties consistently, and bound page
     ])
       assert.equal((await get(`${path}?page=${value}`)).status, 400);
   }
-  const account = store.identify("github", "pagination-user", {
+  const account = store.identify("github", `pagination-${token()}`, {
     provider: "github",
     username: "pager",
     profileURL: "https://github.com/pager",
   });
   store.claim(owner, account.id);
-  const signedIn = "b".repeat(48);
+  const signedIn = token();
   store.saveSession({ id: signedIn, created: Date.now(), userId: account.id });
   assert.equal((await (await get("", signedIn)).json()).total, 43);
   assert.deepEqual(await (await get("?page=3")).json(), {

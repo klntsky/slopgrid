@@ -16,6 +16,8 @@ This document explains responsibilities and boundaries. Product behavior is in
   It delegates generation commands to the engine instead of running provider
   work in a request handler. It serves built frontend assets in production,
   retaining prior assets needed by open tabs across updates.
+  Requests accepted during startup wait for engine and frontend initialization
+  and are served once the HTTP routes are ready.
 - The inference engine (`server/engine.ts`) owns admission, scheduling, provider
   requests, retries, cancellation, billing writes, and recovery. Its runtime
   holds active work and execution credentials that cannot be reconstructed from
@@ -35,8 +37,11 @@ lifetime.
 Development and candidate validation own isolated runtimes rather than sharing
 staging state. Each development worktree has its own persistent storage and
 encryption key, private engine socket, loopback web listener, and application
-hostname. The development launcher owns both process lifetimes and keeps HMR
-on the web listener. Browser fixtures own independent temporary runtimes.
+hostname. Development and production run the same web and engine entrypoints
+and share frontend routing, model/grid bootstrapping, and HTML response handling.
+Vite supplies development modules and HMR; production supplies built assets and
+their cache policy. The development launcher owns both process lifetimes and
+keeps HMR on the web listener. Browser fixtures own independent temporary runtimes.
 Credentials remain in ignored local configuration; deployed runtime locations do
 not select development or candidate state.
 

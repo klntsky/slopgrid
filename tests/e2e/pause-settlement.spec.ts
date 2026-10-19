@@ -168,7 +168,14 @@ test("Pause keeps live updates through reload and reconnect until every cancelle
       content: "Late cancelled output",
       reasoning: "Late thinking",
     });
+    const reconnected = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname.endsWith("/events") &&
+        response.status() === 200,
+    );
     await f.startWeb();
+    // A request issued during startup is not yet a working subscription.
+    await reconnected;
     await expect.poll(() => streams.size, { timeout: 15000 }).toBe(1);
     expect(await f.engine.api.status()).toMatchObject({ runningCalls: 2 });
     expect((await f.engine.api.getGrid(grid.id)).live).toBe(true);
@@ -178,6 +185,11 @@ test("Pause keeps live updates through reload and reconnect until every cancelle
     const settled = await f.engine.api.getGrid(grid.id);
     expect(settled.live).toBe(false);
     expect(settled).toMatchObject({ status: "paused", spentUsd: 0 });
+    expect(await f.engine.api.status()).toMatchObject({
+      activeGrids: 0,
+      runningCalls: 0,
+      persistence: { healthy: true, pendingOperations: 0 },
+    });
     expect(settled.cells.map((cell) => cell.status)).toEqual([
       "pending",
       "pending",

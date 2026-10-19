@@ -10,6 +10,9 @@ import { token } from "../../server/ids";
 import { createWorkflow } from "../../server/workflow";
 import { startTestServer } from "../test-server";
 import { create, expectProgress } from "./helpers";
+import { parseE2EPort } from "../e2e-port";
+
+const port = parseE2EPort(process.env.E2E_PORT);
 
 test("visited pages and completed outputs survive offline reload without retaining streaming output or another session", async ({
   playwright,
@@ -346,7 +349,7 @@ test("visited pages and completed outputs survive offline reload without retaini
 test("streaming output is excluded until completion and remains available after reconnecting", async ({
   playwright,
 }) => {
-  const server = await startTestServer("mock");
+  const server = await startTestServer("mock", port);
   const browser = await playwright.chromium.launch({
     args: ["--ignore-certificate-errors"],
   });

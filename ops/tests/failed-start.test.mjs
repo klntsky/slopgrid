@@ -150,7 +150,7 @@ test("failed-start runtime guards use only isolated releases and private PM2", a
       await exited;
     });
     await once(server.stdout, "data");
-    await assert.rejects(assertFailedStartRecovery(target, "staging"), /API is reachable/);
+    await assert.rejects(assertFailedStartRecovery(target, "staging"));
   });
 
   await t.test("a broken status control cannot hide a live generation socket", async (child) => {

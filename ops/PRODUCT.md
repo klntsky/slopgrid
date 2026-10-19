@@ -7,15 +7,23 @@
    locally and remotely; neither branch-name arguments nor skipped stages authorize
    production. Missing or unreachable authority fails closed.
 2. Candidate validation must use independent build/source workspaces, temporary
-   data, sockets, process-manager homes, and OS-assigned ports. It must not depend
-   on or mutate shared staging or production runtimes. Explicit staging remains
+   data, sockets, process-manager homes, and OS-assigned ports. Tests must not
+   mutate shared staging or production runtimes. Explicit staging remains
    an administrative target, isolated from production.
 3. Build once per run and promote that exact frontend artifact to production.
    Production defaults to the complete unit, mock browser, and real-provider
-   browser suites; an explicit `--skip-tests` records the decision and skips tests.
+   browser suites; an explicit `--skip-tests` records the decision and skips tests,
+   but still requires the production database migration rehearsal.
    `validate` also supports scoped tests and never deploys a persistent runtime.
    Production promotes only its configured runtime after authoritative-master
    authorization, independent of staging.
+   - Before production promotion, take a consistent read-only snapshot of the real
+     production database without copying output artifacts.
+   - Run the candidate's database migrations on the isolated snapshot, then seed
+     database-backed service tests from the migrated data. Keep schema-specific
+     unit fixtures independent.
+   - Missing production data, migration failure, or test failure must prevent
+     promotion. Delete the temporary database copies after success or failure.
 4. Choose soft updates when engine dependencies, package configuration, runtime
    configuration, and the Node executable are compatible. Otherwise drain
    accepted work without a timeout, back up retained data, and replace the engine.

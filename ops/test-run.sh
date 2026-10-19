@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Internal remote check worker: run selected Node tests (or the full operations
+# suite) in the supplied check directory, recording the log, PID, and exit status.
 set -euo pipefail
 umask 077
 run=${1:?Missing check directory}

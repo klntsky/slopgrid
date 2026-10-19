@@ -3,7 +3,8 @@ import { startGenerationFixture } from "./generation-fixture.js";
 import { webFixture } from "./web-fixture.js";
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
-const port = Number(process.env.E2E_PORT ?? 0);
+import { parseE2EPort } from "./e2e-port.js";
+const port = parseE2EPort(process.env.E2E_PORT);
 const data = process.env.FIXTURE_DATA!;
 const secret = randomBytes(32);
 const generation = await startGenerationFixture({

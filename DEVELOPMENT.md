@@ -21,7 +21,7 @@ Browser storage and service workers are origin-scoped, so a changed port creates
 
 ## GitHub integration verification
 
-`pnpm test:e2e:github` runs against real GitHub and OpenRouter in its own isolated candidate runtime. Supply GitHub client credentials and the normal real OpenRouter test credential source. Set `GITHUB_INTERACTIVE=1` to complete GitHub login and any two-factor challenge in a visible browser, or provide `GITHUB_BROWSER_STATE` referencing a private Playwright storage-state file containing an authenticated GitHub browser session. Keep this file outside the repository. Browser fixtures choose available ports by default. Set `E2E_PORT` only when GitHub callback registration needs a fixed test origin, and register that origin followed by `/api/auth/github/callback`. The runner rejects an occupied explicitly selected port rather than attaching to another worktree's server.
+`pnpm test:e2e:github` runs against real GitHub and OpenRouter in its own isolated candidate runtime. Supply GitHub client credentials and the normal real OpenRouter test credential source. Set `GITHUB_INTERACTIVE=1` to complete GitHub login and any two-factor challenge in a visible browser, or provide `GITHUB_BROWSER_STATE` referencing a private Playwright storage-state file containing an authenticated GitHub browser session. Keep this file outside the repository. Browser runners require an explicit `E2E_PORT`: use `0` to request an OS-assigned port, or a fixed port when GitHub callback registration needs a stable test origin. Register that origin followed by `/api/auth/github/callback`. Missing, blank, invalid, or occupied fixed ports fail rather than selecting another port or attaching to another worktree's server.
 
 The test creates and generates an anonymous grid, signs in through GitHub, verifies claiming and publication attribution, signs in through GitHub in a separate browser context, checks account access and billing, and signs out. It uses no mocked OAuth or inference endpoints. Missing credentials, authorization failure, and provider errors fail verification rather than silently skipping it. Unit identity tests exercise the real app and database with mocked GitHub token and profile responses, including claiming active grids, session rotation, and callback replay rejection. They do not authenticate with GitHub.
 
@@ -41,11 +41,18 @@ Set `GITHUB_BROWSER_STATE` to the absolute path of this file when running the Gi
 
 ## Frontend builds
 
+`pnpm build` always compiles the production frontend, including when the invoking
+test environment sets `NODE_ENV=test`.
+
 Catalog checks cover combined model and image-detail loading, periodic server refreshes with retained snapshots after upstream failures, unrestricted cached model-list reads, and HTML bootstrap execution under the page CSP. Browser coverage checks model selection, pricing, and compatibility without model API requests, including after navigation and reload.
 
 When changing SDK imports or upgrading the SDK, compare production JavaScript sizes and retained modules in the isolated candidate worktree to catch accidental inclusion of unused client code.
 
 Browser tests must serve the candidate worktree's frontend build, not retained assets from a deployment or another worktree. Fixtures select their own runtime paths and candidate frontend path. When manually configuring an isolated candidate runtime, set `FRONTEND_PATH` explicitly to that candidate's `dist` directory and supply credentials separately from deployed runtime location settings.
+
+Set `E2E_PORT=0` explicitly for browser suites that should use OS-assigned ports.
+Browser runners reject missing or blank port configuration before building or
+starting services.
 
 Frontend serving and retained assets are described under [process boundaries](ARCHITECTURE.md#process-boundaries).
 
@@ -418,7 +425,7 @@ Deployment remains separate from development. Invoke
 isolated committed validation without changing a shared runtime. The default
 revision is that worktree's HEAD; commands outside an application worktree use
 the configured application checkout. Infrastructure settings are loaded from
-the ignored repository-root `.env`; see [operations configuration](ops/DEVELOPMENT.md).
+the ignored repository-root `.env`; see [operations configuration](ops/README.md#configuration).
 Select affected checks with repeated `--unit FILE` and `--browser FILE` arguments.
 
 When production deployment is explicitly requested, use

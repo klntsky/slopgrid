@@ -1,3 +1,5 @@
+import { randomInt } from "node:crypto";
+import { token } from "../server/ids.js";
 import { createWorkflow } from "../server/workflow.js";
 import { appFixture } from "./app-fixture.js";
 import { gridAuthor } from "../server/grid-presentation.js";
@@ -43,20 +45,28 @@ test("GitHub credentials are mandatory and OAuth return paths stay local", () =>
 test("account ownership, frozen authors, browser credentials, and OAuth callbacks claim active grids and rotate sessions", async (t) => {
   const provider = new ControlledProvider();
   const { origin, store, jobs } = await appFixture(t, { provider });
-  const alice = store.identify("github", "123", {
+  let aliceSubject: number;
+  do {
+    aliceSubject = randomInt(2 ** 47, 2 ** 48 - 1);
+  } while (
+    store.db
+      .prepare("SELECT 1 FROM oauth_identities WHERE provider='github' AND subject=?")
+      .get(String(aliceSubject))
+  );
+  const alice = store.identify("github", String(aliceSubject), {
     provider: "github",
     username: "alice",
     profileURL: "https://github.com/alice",
   });
-  const bob = store.identify("github", "456", {
+  const bob = store.identify("github", `identity-bob-${token()}`, {
     provider: "github",
     username: "bob",
     profileURL: "https://github.com/bob",
   });
-  let anonymous = "a".repeat(48);
+  let anonymous = token();
   const originalOwner = anonymous,
-    second = "b".repeat(48),
-    other = "c".repeat(48);
+    second = token(),
+    other = token();
   store.saveSession({
     id: anonymous,
     created: Date.now(),
@@ -100,8 +110,8 @@ test("account ownership, frozen authors, browser credentials, and OAuth callback
     store.insert(g, tasks);
     return g;
   }
-  const draft = grid("draft");
-  grid("historical", true);
+  const draft = grid(token());
+  const historical = grid(token(), true);
   const call = store.billing.observe(draft.cells[0].id)("direct");
   call.complete({ phase: "direct", finishReason: "stop" }, { costUsd: 1 });
   const request = (
@@ -120,7 +130,7 @@ test("account ownership, frozen authors, browser credentials, and OAuth callback
       },
       body: body ? JSON.stringify(body) : undefined,
     });
-  assert.equal((await request("/api/grids/draft", second)).status, 404);
+  assert.equal((await request(`/api/grids/${draft.id}`, second)).status, 404);
   jobs.start(draft);
   await immediate();
   const realFetch = globalThis.fetch;
@@ -146,7 +156,7 @@ test("account ownership, frozen authors, browser credentials, and OAuth callback
           new Headers(init?.headers).get("authorization"),
           "Bearer github-test-token",
         );
-        return Response.json({ id: 123, login: "alice" });
+        return Response.json({ id: aliceSubject, login: "alice" });
       }
       return realFetch(input, init);
     },
@@ -168,11 +178,11 @@ test("account ownership, frozen authors, browser credentials, and OAuth callback
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(store.get(draft.id)!.status, "complete");
   assert.equal((await request(callback)).status, 400);
-  assert.equal((await request("/api/grids/draft", second)).status, 200);
-  assert.equal((await request("/api/grids/draft", other)).status, 404);
+  assert.equal((await request(`/api/grids/${draft.id}`, second)).status, 200);
+  assert.equal((await request(`/api/grids/${draft.id}`, other)).status, 404);
   assert.equal(
     (
-      await request("/api/grids/draft/publish", other, "POST", {
+      await request(`/api/grids/${draft.id}/publish`, other, "POST", {
         visibility: "public",
       })
     ).status,
@@ -185,33 +195,35 @@ test("account ownership, frozen authors, browser credentials, and OAuth callback
   assert.equal((await (await request("/api/billing", second)).json()).total, 1);
   assert.equal((await (await request("/api/billing", other)).json()).total, 0);
   assert.equal(
-    (await (await request("/api/grids/draft", second)).json()).author.username,
+    (await (await request(`/api/grids/${draft.id}`, second)).json()).author.username,
     "alice",
   );
   assert.equal(
-    (await (await request("/api/grids/historical", second)).json()).author,
+    (await (await request(`/api/grids/${historical.id}`, second)).json()).author,
     null,
   );
-  const published = await request("/api/grids/draft/publish", second, "POST", {
+  const published = await request(`/api/grids/${draft.id}/publish`, second, "POST", {
     visibility: "public",
   });
   assert.equal(published.status, 200);
   assert.equal((await published.json()).author.username, "alice");
-  const renamed = store.identify("github", "123", {
+  const renamed = store.identify("github", String(aliceSubject), {
     provider: "github",
     username: "newalice",
     profileURL: "https://github.com/newalice",
   });
   assert.equal(renamed.id, alice.id);
   store.claim(anonymous, bob.id);
-  assert.equal(store.get("draft")!.ownerUserId, alice.id);
-  assert.equal(gridAuthor(store.get("draft")!, store)?.username, "alice");
-  assert.equal(
-    (await (await request("/api/grids/public")).json()).grids.find(
-      (g: Grid) => g.id === "draft",
-    ).author.username,
-    "alice",
-  );
+  assert.equal(store.get(draft.id)!.ownerUserId, alice.id);
+  assert.equal(gridAuthor(store.get(draft.id)!, store)?.username, "alice");
+  let publicDraft;
+  for (let page = 1; ; page++) {
+    const body = await (await request(`/api/grids/public?page=${page}`)).json();
+    publicDraft = body.grids.find((grid: Grid) => grid.id === draft.id);
+    if (publicDraft || page * body.pageSize >= body.total) break;
+  }
+  assert.ok(publicDraft);
+  assert.equal(publicDraft.author.username, "alice");
   const start = await request("/api/auth/github/start?returnTo=%2Fgrids");
   const url = new URL(start.headers.get("location")!);
   assert.equal(url.origin, "https://github.com");

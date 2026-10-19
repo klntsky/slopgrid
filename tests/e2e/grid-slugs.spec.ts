@@ -14,6 +14,8 @@ test("owners claim permanent public slugs and visitors follow and reload slug li
   await expectProgress(page, 1, 1);
   const original = page.url();
   const slug = `my-cool-grid-${new URL(original).pathname.split("/").pop()}`;
+  const availableSlug = `available-${new URL(original).pathname.split("/").pop()}`;
+  const missingSlug = `missing-${new URL(original).pathname.split("/").pop()}`;
   await page.getByRole("button", { name: "PUBLISH", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await dialog.getByText("slopgrid.com/", { exact: true }).click();
@@ -36,8 +38,8 @@ test("owners claim permanent public slugs and visitors follow and reload slug li
     await expect(dialog.getByRole("alert")).toBeVisible();
     await expect(field).toHaveAttribute("aria-invalid", "true");
     await expect(save).toBeDisabled();
-    await field.fill("my-grid1");
-    await expect(field).toHaveValue("my-grid1");
+    await field.fill(availableSlug);
+    await expect(field).toHaveValue(availableSlug);
     await expect(dialog.getByRole("alert")).toHaveCount(0);
     await expect(save).toBeEnabled();
     await field.fill("");
@@ -59,7 +61,15 @@ test("owners claim permanent public slugs and visitors follow and reload slug li
   const visitor = await context.browser()!.newContext({ baseURL });
   try {
     const tab = await visitor.newPage();
-    await tab.goto("/");
+    let publicPage = 1;
+    for (; ; publicPage++) {
+      const body = await (
+        await tab.request.get(`/api/grids/public?page=${publicPage}`)
+      ).json();
+      if (body.grids.some((grid: { slug?: string }) => grid.slug === slug)) break;
+      expect(publicPage * body.pageSize).toBeLessThan(body.total);
+    }
+    await tab.goto(`/?publicPage=${publicPage}`);
     const link = tab.locator(`.public-grids a[href="/${slug}"]`);
     await expect(link).toBeVisible();
     await link.click();
@@ -72,7 +82,7 @@ test("owners claim permanent public slugs and visitors follow and reload slug li
     await expectProgress(tab, 1, 1);
     await tab.goto(original);
     await expectProgress(tab, 1, 1);
-    await tab.goto("/missing-public-slug");
+    await tab.goto(`/${missingSlug}`);
     await expect(tab.getByRole("alert")).toBeVisible();
     await tab.goto("/settings");
     await expect(

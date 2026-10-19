@@ -147,3 +147,57 @@ test("page HTML contains the complete model dump before rendering and updates fr
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test("development serves live HTML through the shared frontend routes without disabling HMR scripts", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "slopgrid-vite-"));
+  const template = (title: string) =>
+    `<!doctype html><html><head><title>${title}</title></head><body><div id="root"></div></body></html>`;
+  writeFileSync(join(directory, "index.html"), template("First version"));
+  const app = express();
+  const server = createServer(app);
+  const { createServer: createViteServer } = await import("vite");
+  const vite = await createViteServer({
+    root: directory,
+    configFile: false,
+    server: { middlewareMode: true, hmr: { server } },
+    appType: "custom",
+  });
+  try {
+    app.use((_req, res, next) => {
+      res.set(
+        "Content-Security-Policy",
+        "default-src 'self'; script-src 'self' 'unsafe-inline'",
+      );
+      next();
+    });
+    app.use(await createFrontendRoutes(directory, undefined, undefined, vite));
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const origin = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+    for (const path of ["/", "/create", "/settings", `/grid/${"a".repeat(48)}`]) {
+      const response = await fetch(origin + path);
+      assert.equal(response.status, 200);
+      assert.equal(response.headers.get("cache-control"), "no-store");
+      assert.equal(
+        response.headers.get("content-security-policy"),
+        "default-src 'self'; script-src 'self' 'unsafe-inline'",
+      );
+      const html = await response.text();
+      assert.match(html, /First version/);
+      assert.match(html, /src="\/@vite\/client"/);
+      assert.match(html, /window\.__SLOPGRID_MODELS__ = \[\]/);
+    }
+    const client = await fetch(`${origin}/@vite/client`);
+    assert.equal(client.status, 200);
+    assert.match(client.headers.get("content-type")!, /javascript/);
+    await client.arrayBuffer();
+    writeFileSync(join(directory, "index.html"), template("Second version"));
+    const refreshed = await (await fetch(origin + "/create")).text();
+    assert.match(refreshed, /Second version/);
+    assert.doesNotMatch(refreshed, /First version/);
+  } finally {
+    await vite.close();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    rmSync(directory, { recursive: true, force: true });
+  }
+});

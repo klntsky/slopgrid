@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Internal remote pipeline worker: process the supplied run directory's request,
+# recording the log, PID, and exit status. Lock deployments, but not validation.
 set -euo pipefail
 umask 077
 run=${1:?Missing run directory}

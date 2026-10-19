@@ -85,7 +85,7 @@ test("cached list pages survive unavailable page APIs and restore independent na
   const seed = await page.request.post("/fixture/grids", {
     data: { counts: { owned: 83, public: 83 } },
   });
-  const { owned: ids, publicIds } = await seed.json();
+  const { owned: ids, publicPaths } = await seed.json();
   await page.route(/\/api\/grids(?:\/public)?\?page=/, async (route) => {
     const url = new URL(route.request().url());
     if (Number(url.searchParams.get("page")) <= 3) return route.abort();
@@ -105,18 +105,18 @@ test("cached list pages survive unavailable page APIs and restore independent na
     `/grid/${ids[20]}`,
   );
   await publicGrids.getByRole("button", { name: "Next", exact: true }).click();
-  await expect(publicGrids.locator(".history-row a").first()).toHaveAttribute(
+  await expect(publicGrids.locator(".history-grid-link").first()).toHaveAttribute(
     "href",
-    `/grid/${publicIds[20]}`,
+    publicPaths[20],
   );
   await page.reload();
   await expect(owned.locator(".history-row a").first()).toHaveAttribute(
     "href",
     `/grid/${ids[20]}`,
   );
-  await expect(publicGrids.locator(".history-row a").first()).toHaveAttribute(
+  await expect(publicGrids.locator(".history-grid-link").first()).toHaveAttribute(
     "href",
-    `/grid/${publicIds[20]}`,
+    publicPaths[20],
   );
   await owned.getByRole("button", { name: "Next", exact: true }).click();
   await expect(owned.locator(".history-row a").first()).toHaveAttribute(
@@ -124,7 +124,19 @@ test("cached list pages survive unavailable page APIs and restore independent na
     `/grid/${ids[40]}`,
   );
   await page.goto("/?yourPage=4&publicPage=5");
-  await expect(publicGrids.locator(".history-row")).toHaveCount(3);
+  const publicPageFive = publicPaths.slice(80, 100);
+  await expect(publicGrids.locator(".history-row")).toHaveCount(
+    publicPageFive.length,
+  );
+  await expect(publicGrids.locator(".history-grid-link").first()).toHaveAttribute(
+    "href",
+    publicPageFive[0],
+  );
+  expect(
+    await publicGrids.locator(".history-grid-link").evaluateAll(
+      (links) => links.map((link) => link.getAttribute("href")),
+    ),
+  ).toEqual(publicPageFive);
   await owned.getByRole("button", { name: "Next", exact: true }).click();
   await expect(owned.locator(".history-row")).toHaveCount(3);
 });

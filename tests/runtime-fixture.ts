@@ -9,6 +9,7 @@ import { Store } from "../server/store.js";
 import { expandGrid, type GridInput, type Grid } from "../server/domain.js";
 import { token } from "../server/ids.js";
 import { webFixture } from "./web-fixture.js";
+import { seedTestDatabase } from "./database-fixture.js";
 
 export type CapturedRequest = {
   model: string;
@@ -67,6 +68,7 @@ export async function runtimeFixture(
   const directory = mkdtempSync(join(tmpdir(), "slopgrid-runtime-"));
   const database = join(directory, "app.sqlite"),
     secret = Buffer.alloc(32, 9);
+  seedTestDatabase(database);
   const store = new Store(database, secret);
   const owner = token();
   store.saveSession({ id: owner, key: "manual-test-key", created: Date.now() });

@@ -10,6 +10,7 @@ import { createGenerationService } from "../server/generation-service.js";
 import { serveGeneration } from "../server/generation-server.js";
 import { generationClient } from "../server/generation-client.js";
 import { createApp, type Config } from "../server/app.js";
+import { seedTestDatabase } from "./database-fixture.js";
 
 export async function appFixture(
   t: TestContext,
@@ -18,6 +19,7 @@ export async function appFixture(
   const directory = mkdtempSync(join(tmpdir(), "slopgrid-test-"));
   const database = join(directory, "db.sqlite"),
     secret = Buffer.alloc(32, 7);
+  seedTestDatabase(database);
   const server = createServer();
   const engineStore = new Store(database, secret);
   const { api, jobs, executor } = createGenerationService(

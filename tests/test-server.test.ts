@@ -1,11 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { startTestServer } from "./test-server.js";
 import { Agent } from "undici";
 import { request as httpsRequest } from "node:https";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Store } from "../server/store.js";
+import { seedGridLists } from "./grid-list-fixture.js";
 
 test("production browser fixtures release processes, TLS listeners and temporary data", async () => {
   const previous = { ...process.env };
@@ -14,7 +16,7 @@ test("production browser fixtures release processes, TLS listeners and temporary
   process.env.GITHUB_CLIENT_ID = "fixture-client";
   process.env.GITHUB_CLIENT_SECRET = "fixture-secret";
   try {
-    const server = await startTestServer("mock");
+    const server = await startTestServer("mock", 0);
     const port = Number(new URL(server.origin).port);
     try {
       assert.equal((await request(`${server.origin}/api/session`)).status, 200);
@@ -85,9 +87,9 @@ test("concurrent real browser fixtures ignore ambient deployment runtime paths",
       WORKERS_MAX: "0",
     });
     delete process.env.E2E_PORT;
-    const first = await startTestServer("real");
+    const first = await startTestServer("real", 0);
     closeServers.push(first.close);
-    const second = await startTestServer("real");
+    const second = await startTestServer("real", 0);
     closeServers.push(second.close);
     assert.notEqual(first.origin, second.origin);
     assert.notEqual(first.data, second.data);
@@ -129,5 +131,59 @@ test("concurrent real browser fixtures ignore ambient deployment runtime paths",
     await dispatcher.destroy();
     process.env = previous;
     rmSync(ambient, { recursive: true, force: true });
+  }
+});
+
+test("browser fixtures reject invalid numeric ports before startup", async () => {
+  for (const port of [NaN, Infinity, -1, 1, 1023, 65536, 3000.5])
+    await assert.rejects(startTestServer("mock", port), /Invalid E2E_PORT/);
+});
+
+test("browser services exercise populated snapshot copies without copying artifacts or changing the source", async () => {
+  const previous = { ...process.env };
+  const directory = mkdtempSync(join(tmpdir(), "slopgrid-seeded-browser-"));
+  const database = join(directory, "snapshot.sqlite");
+  const source = new Store(database, Buffer.alloc(32, 6));
+  const { publicIds } = seedGridLists(source, "snapshot-owner", { owned: 1, public: 1 });
+  source.saveSession({ id: "historical-session", key: "historical-secret", created: 1 });
+  mkdirSync(join(directory, "outputs"), { recursive: true });
+  writeFileSync(join(directory, "outputs/production-only.txt"), "production artifact");
+  source.db.close();
+  const original = readFileSync(database);
+  const dispatcher = new Agent({ connect: { rejectUnauthorized: false } });
+  try {
+    Object.assign(process.env, {
+      GITHUB_CLIENT_ID: "fixture-client",
+      GITHUB_CLIENT_SECRET: "fixture-secret",
+      SLOPGRID_TEST_DATABASE: database,
+    });
+    for (const project of ["mock", "real"] as const) {
+      const server = await startTestServer(project, 0);
+      try {
+        const response = await fetch(`${server.origin}/api/grids/${publicIds[0]}`, {
+          dispatcher,
+        } as RequestInit);
+        assert.equal(response.status, 200);
+        const grid = await response.json() as { id: string; status: string };
+        assert.equal(grid.id, publicIds[0]);
+        assert.equal(grid.status, "paused");
+        const outputs = project === "mock"
+          ? join(server.data, ".data/outputs")
+          : join(server.data, "outputs");
+        assert.equal(existsSync(join(outputs, "production-only.txt")), false);
+        assert.deepEqual(readFileSync(database), original);
+      } finally {
+        await server.close();
+      }
+      assert.equal(existsSync(server.data), false);
+    }
+    assert.equal(
+      readFileSync(join(directory, "outputs/production-only.txt"), "utf8"),
+      "production artifact",
+    );
+  } finally {
+    await dispatcher.destroy();
+    process.env = previous;
+    rmSync(directory, { recursive: true, force: true });
   }
 });

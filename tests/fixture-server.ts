@@ -10,6 +10,8 @@ import { once } from "node:events";
 import { Store } from "../server/store.js";
 import { seedGridLists } from "./grid-list-fixture.js";
 import { createSessionReader } from "../server/session.js";
+import { parseE2EPort } from "./e2e-port.js";
+const port = parseE2EPort(process.env.E2E_PORT);
 let balanceUsd = 100;
 let tokenLimits: { model: string; max_tokens: number }[] = [];
 let imageRequests: Record<string, unknown>[] = [];
@@ -457,7 +459,6 @@ upstream.post("/api/v1/chat/completions", async (req, res) => {
 const upstreamServer = upstream.listen(0);
 await once(upstreamServer, "listening");
 const upstreamOrigin = `http://localhost:${(upstreamServer.address() as { port: number }).port}`;
-const port = Number(process.env.E2E_PORT ?? 0);
 const data = process.env.FIXTURE_DATA!;
 mkdirSync(`${data}/.data`, { recursive: true });
 const generation = await startGenerationFixture({

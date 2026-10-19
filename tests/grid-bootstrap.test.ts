@@ -1,3 +1,4 @@
+import { token } from "../server/ids.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { runInNewContext } from "node:vm";
@@ -21,7 +22,7 @@ test("HTML embeds three session-filtered pages with safe scripts and per-respons
     join(directory, "index.html"),
     '<html><head></head><body><div id="root"></div></body></html>',
   );
-  const owner = "a".repeat(48);
+  const owner = token();
   store.saveSession({ id: owner, created: Date.now() });
   const { owned, publicIds } = seedGridLists(store, owner, {
     owned: 83,
@@ -80,6 +81,14 @@ test("HTML embeds three session-filtered pages with safe scripts and per-respons
     ),
     JSON.stringify(owned.slice(0, 60)),
   );
+  assert.equal(
+    JSON.stringify(
+      first.public.flatMap((page) => page.data.grids.map((grid) => grid.id)),
+    ),
+    JSON.stringify(publicIds.slice(0, 60)),
+  );
+  for (const page of first.public)
+    assert.equal(page.data.total, publicIds.length);
   const selected = await read("/?yourPage=2&publicPage=3", owner);
   assert.equal(
     JSON.stringify(selected.owned.map((page) => page.key)),
@@ -90,14 +99,26 @@ test("HTML embeds three session-filtered pages with safe scripts and per-respons
     "[3,4,5]",
   );
   assert.equal(selected.public[0].data.grids[0].id, publicIds[40]);
+  assert.equal(
+    JSON.stringify(
+      selected.public.flatMap((page) => page.data.grids.map((grid) => grid.id)),
+    ),
+    JSON.stringify(publicIds.slice(40, 100)),
+  );
   const visitor = await read("/");
   assert.equal(visitor.owned.length, 1);
   assert.equal(visitor.owned[0].data.total, 0);
   assert.equal(visitor.public.length, 3);
   assert.ok(!JSON.stringify(visitor).includes(title));
-  const last = await read("/?yourPage=999&publicPage=5", owner);
+  const lastPublicPage = Math.ceil(publicIds.length / 20);
+  const last = await read(`/?yourPage=999&publicPage=${lastPublicPage}`, owner);
   assert.equal(last.owned.length, 1);
   assert.equal(last.owned[0].key, 999);
   assert.equal(last.owned[0].data.page, 5);
   assert.equal(last.public.length, 1);
+  assert.equal(last.public[0].data.page, lastPublicPage);
+  assert.equal(
+    JSON.stringify(last.public[0].data.grids.map((grid) => grid.id)),
+    JSON.stringify(publicIds.slice((lastPublicPage - 1) * 20)),
+  );
 });

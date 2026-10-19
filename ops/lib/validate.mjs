@@ -3,8 +3,10 @@ import { parseEnv } from "node:util";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomBytes } from "node:crypto";
+import { createRequire } from "node:module";
 import { command, writeJSON, verifyManifest } from "./common.mjs";
 import { validationWorkspace } from "./artifacts.mjs";
+import { environment } from "./runtime.mjs";
 
 export function validationCommands(options, unitFiles) {
   if (options.tests === "skip") return [];
@@ -51,6 +53,8 @@ export function validationEnvironment(workspace, runtime, privateEnv = {}, inher
     PORT: "0",
     E2E_PORT: "0",
     APP_ORIGIN: "http://127.0.0.1",
+    TMPDIR: runtime,
+    SLOPGRID_TEST_DATABASE: undefined,
   };
 }
 
@@ -75,33 +79,65 @@ export async function validateBuild(request, build, run) {
   writeJSON(join(run, "validation.json"), result);
   let runtime;
   try {
-    if (request.tests === "skip")
-      console.log(
-        "Tests explicitly skipped; build and deployment checks still apply.",
-      );
-    else {
+    if (request.tests !== "skip" || request.target === "production") {
       const workspace = validationWorkspace(build, run);
       const privateEnv = request.config.testEnvFile
         ? parseEnv(readFileSync(request.config.testEnvFile, "utf8"))
         : {};
       runtime = mkdtempSync(join(tmpdir(), "sg-validation-"));
       const env = validationEnvironment(workspace, runtime, privateEnv);
-      const unitFiles = readdirSync(join(workspace, "tests"))
-        .filter((name) => name.endsWith(".test.ts"))
-        .sort()
-        .map((name) => `tests/${name}`);
-      for (const args of validationCommands(request, unitFiles))
-        command("pnpm", args, { cwd: workspace, env });
+      if (request.target === "production") {
+        console.log("Rehearsing migrations on an isolated production database snapshot (no artifacts).");
+        const source = environment(request.config.targets.production);
+        const Database = createRequire(join(workspace, "package.json"))("better-sqlite3");
+        const database = new Database(source.DATABASE_PATH, {
+          readonly: true,
+          fileMustExist: true,
+        });
+        try {
+          await database.backup(env.DATABASE_PATH);
+        } finally {
+          database.close();
+        }
+        command(process.execPath, [
+          "--import", "tsx",
+          "--input-type=module",
+          "--eval",
+          `import { Store } from "./server/store.ts";
+const store = new Store(process.env.DATABASE_PATH, Buffer.from(process.env.KEY_ENCRYPTION_SECRET, "hex"), process.env.OUTPUTS_PATH);
+store.db.close();`,
+        ], { cwd: workspace, env });
+        result.migration = "passed";
+        env.SLOPGRID_TEST_DATABASE = env.DATABASE_PATH;
+      }
+      if (request.tests !== "skip") {
+        const unitFiles = readdirSync(join(workspace, "tests"))
+          .filter((name) => name.endsWith(".test.ts"))
+          .sort()
+          .map((name) => `tests/${name}`);
+        for (const args of validationCommands(request, unitFiles))
+          command("pnpm", args, { cwd: workspace, env });
+      }
       verifyManifest(workspace, build.manifest.frontend);
     }
+    if (request.tests === "skip")
+      console.log(
+        "Tests explicitly skipped; required validation and deployment checks still apply.",
+      );
     result.status = request.tests === "skip" ? "skipped" : "passed";
   } catch (error) {
     result.status = "failed";
     throw error;
   } finally {
-    result.completedAt = new Date().toISOString();
-    writeJSON(join(run, "validation.json"), result);
-    if (runtime) rmSync(runtime, { recursive: true, force: true });
+    try {
+      if (runtime) rmSync(runtime, { recursive: true, force: true });
+    } catch (error) {
+      result.status = "failed";
+      throw error;
+    } finally {
+      result.completedAt = new Date().toISOString();
+      writeJSON(join(run, "validation.json"), result);
+    }
   }
   return result;
 }

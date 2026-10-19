@@ -1,3 +1,4 @@
+import { token } from "../server/ids.js";
 import { createHash } from "node:crypto";
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -30,6 +31,9 @@ for (const shared of [false, true])
     const { origin, store, database, secret } = await appFixture(t, {
       provider,
     });
+    const initialGrids = store.db
+      .prepare("SELECT COUNT(*) AS count FROM grids")
+      .get();
     const upload = (data: Buffer, cookie?: string, requestOrigin = origin) =>
       fetch(`${origin}/api/references?name=photo.png`, {
         method: "POST",
@@ -94,9 +98,12 @@ for (const shared of [false, true])
     });
     assert.equal(forged.status, 400);
     assert.match((await forged.json()).error, /reference image is unavailable/);
-    assert.equal(store.all().length, 0);
+    assert.deepEqual(
+      store.db.prepare("SELECT COUNT(*) AS count FROM grids").get(),
+      initialGrids,
+    );
     const grid: Grid = {
-      id: "reference-grid",
+      id: token(),
       owner,
       input,
       status: "complete",
@@ -105,30 +112,31 @@ for (const shared of [false, true])
       createdAt: new Date().toISOString(),
       cells: expandGrid(input).map((c) => ({
         ...c,
-        id: "reference-cell",
+        id: token(),
         status: "complete",
       })),
     };
     const tasks = createWorkflow(input, grid.cells);
+    const artifactId = token();
     for (const task of tasks) {
       if (task.kind !== "generation") throw new Error("Expected generation");
       task.status = "complete";
       task.output = {
-        artifactId: "reference-grid-output",
+        artifactId,
         mediaType: "image/png",
         provenance: { signature: "reference-fixture", files: ["image"] },
       };
     }
-    store.files.write("reference-grid-output", { image: png });
+    store.files.write(artifactId, { image: png });
     store.insert(grid, tasks);
-    const user = store.identify("github", "reference-owner", {
+    const user = store.identify("github", `reference-owner-${token()}`, {
       provider: "github",
       username: "owner",
       profileURL: "https://github.com/owner",
     });
     store.claim(owner, user.id);
     store.deleteSession(owner);
-    const secondSession = "b".repeat(48);
+    const secondSession = token();
     store.saveSession({
       id: secondSession,
       userId: user.id,
@@ -151,23 +159,24 @@ for (const shared of [false, true])
     );
     assert.equal((await read(spare.id)).status, 404);
     // A fork retains access independently of the original grid and uploader.
+    const forkOwner = token();
     store.insert({
       ...grid,
-      id: "fork",
-      owner: "c".repeat(48),
+      id: token(),
+      owner: forkOwner,
       ownerUserId: undefined,
       published: false,
       visibility: "private",
       status: "paused",
-      cells: grid.cells.map((c) => ({ ...c, id: "fork-cell" })),
+      cells: grid.cells.map((c) => ({ ...c, id: token() })),
     });
     store.db.prepare("DELETE FROM grids WHERE id=?").run(grid.id);
-    store.saveSession({ id: "c".repeat(48), created: Date.now() });
+    store.saveSession({ id: forkOwner, created: Date.now() });
     assert.equal((await read(image.id)).status, 404);
     assert.deepEqual(
       Buffer.from(
         await (
-          await read(image.id, `slopgrid=${"c".repeat(48)}`)
+          await read(image.id, `slopgrid=${forkOwner}`)
         ).arrayBuffer(),
       ),
       png,
@@ -189,6 +198,9 @@ for (const shared of [false, true])
 
 test("reference uploads distinguish invalid files from storage failures and recover on retry", async (t) => {
   const { origin, store } = await appFixture(t);
+  const initialReferences = store.db
+    .prepare("SELECT COUNT(*) AS count FROM reference_images")
+    .get();
   const upload = (data = png) =>
     fetch(`${origin}/api/references?name=photo.png`, {
       method: "POST",
@@ -219,13 +231,9 @@ test("reference uploads distinguish invalid files from storage failures and reco
     const failed = await upload();
     assert.equal(failed.status, 500);
     assert.deepEqual(await failed.json(), { error: "Could not upload image." });
-    assert.equal(
-      (
-        store.db
-          .prepare("SELECT COUNT(*) AS count FROM reference_images")
-          .get() as { count: number }
-      ).count,
-      0,
+    assert.deepEqual(
+      store.db.prepare("SELECT COUNT(*) AS count FROM reference_images").get(),
+      initialReferences,
     );
   } finally {
     store.db.exec("DROP TRIGGER fail_reference_upload");
@@ -244,7 +252,7 @@ test("reference uploads distinguish invalid files from storage failures and reco
 
 test("reference loaders share exact bytes and hashes while retaining order and execution boundaries", async (t) => {
   const { store } = await appFixture(t);
-  const session = { id: "reference-loader-owner", created: Date.now() };
+  const session = { id: token(), created: Date.now() };
   const other = Buffer.concat([png, Buffer.from("different")]);
   const first = store.references.add(png, "one.png", session)!;
   const second = store.references.add(other, "two.png", session)!;
@@ -281,12 +289,12 @@ test("reference loaders share exact bytes and hashes while retaining order and e
 
 test("grid creation records every selected reference atomically and keeps membership tied to immutable configuration", async (t) => {
   const { store } = await appFixture(t);
-  const uploader = { id: "reference-uploader", created: 0 };
-  const owner = { id: "reference-grid-owner", created: 0 };
+  const uploader = { id: token(), created: 0 };
+  const owner = { id: token(), created: 0 };
   const first = store.references.add(png, "first.png", uploader)!;
   const second = store.references.add(png, "second.png", uploader)!;
   const spare = store.references.add(png, "spare.png", uploader)!;
-  const missing = { id: "d".repeat(48), name: "missing.png" };
+  const missing = { id: token(), name: "missing.png" };
   const input: Grid["input"] = {
     format: "image",
     prompt: "Use the selected references",
@@ -301,16 +309,16 @@ test("grid creation records every selected reference atomically and keeps member
     },
   };
   const grid: Grid = {
-    id: "atomic-reference-grid",
+    id: token(),
     owner: owner.id,
     input,
     status: "paused",
     published: false,
     visibility: "private",
     createdAt: "2026-01-01T00:00:00.000Z",
-    cells: expandGrid(input).map((cell, index) => ({
+    cells: expandGrid(input).map((cell) => ({
       ...cell,
-      id: `atomic-reference-cell-${index}`,
+      id: token(),
     })),
   };
   store.db.exec(`CREATE TEMP TRIGGER fail_reference_grid
