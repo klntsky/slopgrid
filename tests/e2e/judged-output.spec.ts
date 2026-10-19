@@ -1464,7 +1464,7 @@ test("output modes are exclusive and expansion retains the selected view", async
   await expectMode("judgment");
 });
 
-test("judgment hover temporarily reveals matching criteria and restores independent scroll positions", async ({
+test("judgment hover retains synchronized positions across exit and source changes", async ({
   page,
 }) => {
   const criteria = Array.from({ length: 4 }, (_, index) => ({
@@ -1559,6 +1559,23 @@ test("judgment hover temporarily reveals matching criteria and restores independ
     page.mouse.move(sourceBox.x + 20, sourceBox.y + sourceBox.height / 2);
   const hoverTarget = () =>
     page.mouse.move(targetBox.x + 20, targetBox.y + targetBox.height / 2);
+  const criterionAt = (box: { x: number; y: number; height: number }) =>
+    page.evaluate(
+      ({ x, y }) => {
+        const row = document
+          .elementFromPoint(x, y)
+          ?.closest(".judge-result-criteria > li");
+        return row ? Array.from(row.parentElement!.children).indexOf(row) : -1;
+      },
+      { x: box.x + 20, y: box.y + box.height / 2 },
+    );
+  const frames = () =>
+    page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
   await page.mouse.move(1, 1);
   await source.evaluate(position, { index: 1, offset: 80 });
   await target.evaluate((container) => {
@@ -1630,38 +1647,60 @@ test("judgment hover temporarily reveals matching criteria and restores independ
   expect(Math.abs(afterBoundary - beforeBoundary)).toBeLessThan(10);
   await page.mouse.move(sourceBox.x + 20, row.y + row.height - 1);
   await expectHighlighted(1);
-  const ownSourcePosition = (await positions())[0];
+  const synchronized = await positions();
+  expect(synchronized[1]).not.toBe(original[1]);
   await page.mouse.move(1, 1);
-  await expect.poll(positions).toEqual([ownSourcePosition, original[1]]);
+  await expect.poll(positions).toEqual(synchronized);
   await expect.poll(() => backgrounds(1)).toEqual([unhovered, unhovered]);
 
-  // Changing the hover source must not overwrite either view's saved position.
+  // A new source starts at its latest synchronized position, not its old bottom.
+  const targetCriterion = await criterionAt(targetBox);
+  expect(targetCriterion).toBeGreaterThanOrEqual(0);
   await hoverTarget();
-  await expectHighlighted(3);
+  await expectHighlighted(targetCriterion);
+  await frames();
+  const targetOwned = await positions();
+  expect(targetOwned[1]).toBe(synchronized[1]);
+  const sourceCriterion = await criterionAt(sourceBox);
+  expect(sourceCriterion).toBeGreaterThanOrEqual(0);
   await hoverSource();
-  await expectHighlighted(3);
+  await expectHighlighted(sourceCriterion);
+  await frames();
+  const transferred = await positions();
+  expect(transferred[0]).toBe(targetOwned[0]);
   await page.mouse.move(1, 1);
-  await expect.poll(positions).toEqual([ownSourcePosition, original[1]]);
-
-  // Scrolling a former follower makes the new position its own.
-  await hoverTarget();
-  await expectHighlighted(3);
-  await hoverSource();
-  const followed = (await positions())[0];
-  await page.mouse.wheel(0, 16);
+  await expect.poll(positions).toEqual(transferred);
   await expect
-    .poll(() => source.evaluate((container) => container.scrollTop))
-    .toBeGreaterThan(followed);
-  await source.evaluate(
-    () =>
+    .poll(() => backgrounds(sourceCriterion))
+    .toEqual([unhovered, unhovered]);
+
+  // Native scrolling a former follower rebases from the retained current state.
+  await hoverSource();
+  await expectHighlighted(sourceCriterion);
+  const beforeNative = await positions();
+  expect(beforeNative[0]).toBe(transferred[0]);
+  const ended = source.evaluate(
+    (container) =>
       new Promise<void>((resolve) =>
-        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        container.addEventListener("scrollend", () => resolve(), {
+          once: true,
+        }),
       ),
   );
-  const userScrolled = (await positions())[0];
+  await page.mouse.wheel(0, 16);
+  await ended;
+  await frames();
+  const userScrolled = await positions();
+  expect(Math.abs(userScrolled[0] - beforeNative[0] - 16)).toBeLessThan(2);
+  expect(userScrolled[1]).not.toBe(beforeNative[1]);
+  const nativeCriterion = await criterionAt(sourceBox);
+  expect(nativeCriterion).toBeGreaterThanOrEqual(0);
+  await expectHighlighted(nativeCriterion);
   await page.mouse.move(1, 1);
-  await expect.poll(positions).toEqual([userScrolled, original[1]]);
-  await expect.poll(() => backgrounds(3)).toEqual([unhovered, unhovered]);
+  await expect.poll(positions).toEqual(userScrolled);
+  await expect
+    .poll(() => backgrounds(nativeCriterion))
+    .toEqual([unhovered, unhovered]);
 });
 
 test("judgment hover aligns short criteria fractionally even when unequal views clip them", async ({
@@ -1823,7 +1862,7 @@ test("judgment hover aligns short criteria fractionally even when unequal views 
     await page.mouse.move(1, 1);
     await expect
       .poll(async () => (await geometry()).map((bounds) => bounds.position))
-      .toEqual(before.map((bounds) => bounds.position));
+      .toEqual(revealed);
   }
 });
 

@@ -144,12 +144,14 @@ async function expectAreaFocus(
   index: number,
   fraction: number,
   focusOffset: number,
+  sourceIndex = 0,
 ) {
   await expect
     .poll(() =>
       panels.evaluateAll(
-        (views, { index, fraction, focusOffset }) =>
-          views.slice(1).every((view) => {
+        (views, { index, fraction, focusOffset, sourceIndex }) =>
+          views.every((view, i) => {
+            if (i === sourceIndex) return true;
             const panel = view.getBoundingClientRect();
             const row = view
               .querySelectorAll(".chat-message-row")
@@ -168,7 +170,7 @@ async function expectAreaFocus(
                 (error > 0 && limit - view.scrollTop <= 1))
             );
           }),
-        { index, fraction, focusOffset },
+        { index, fraction, focusOffset, sourceIndex },
       ),
     )
     .toBe(true);
@@ -252,7 +254,7 @@ function expectMonotone(samples: number[][], direction: 1 | -1) {
       ).toBeGreaterThanOrEqual(-1);
 }
 
-test("chat histories follow contiguous full-width message areas and restore reading positions", async ({
+test("chat histories follow contiguous full-width message areas and retain their latest reading positions", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 1000 });
@@ -268,12 +270,14 @@ test("chat histories follow contiguous full-width message areas and restore read
   });
   const original = await positions(panels);
   const originalColors = await colors(panels, 1);
+  const nextColors = await colors(panels, 2);
   const initial = await bounds(panels, 1);
   expect(initial[0].height).toBeGreaterThan(initial[1].height);
   expect(initial[1].top).toBeLessThan(0);
   const focus = await hoverArea(page, source, 1, 80);
   await expectAreaFocus(panels, 1, focus.fraction, focus.focusOffset);
   await expectHighlight(panels, 1, originalColors);
+  expect((await positions(panels))[1]).not.toBe(original[1]);
   const area = await source.evaluate((view) => {
     const bounds = view.getBoundingClientRect();
     const scale = bounds.height / parseFloat(getComputedStyle(view).height);
@@ -299,10 +303,50 @@ test("chat histories follow contiguous full-width message areas and restore read
   expect((await positions(panels))[0]).toBe(original[0]);
   await wheelToRest(page, source, 16);
   expect((await positions(panels))[0]).toBeGreaterThan(original[0]);
-  const own = (await positions(panels))[0];
-  await page.mouse.move(1, 1);
-  await expect.poll(() => positions(panels)).toEqual([own, original[1]]);
+  const followed = await positions(panels);
+  expect(followed[1]).not.toBe(original[1]);
+  await page
+    .locator(".cell")
+    .first()
+    .getByRole("button", { name: "View raw", exact: true })
+    .hover();
   await expect.poll(() => colors(panels, 1)).toEqual(originalColors);
+  await frames(page, 12);
+  expect(await positions(panels)).toEqual(followed);
+  await page.mouse.move(1, 1);
+  await frames(page, 12);
+  expect(await positions(panels)).toEqual(followed);
+
+  const current = (await bounds(panels, 1))[0];
+  const sourceBox = (await source.boundingBox())!;
+  const currentOffset = current.top + current.rowHeight / 2;
+  await page.mouse.move(area.right, sourceBox.y + currentOffset);
+  await expectAreaFocus(panels, 1, 0.5, currentOffset);
+  await expectHighlight(panels, 1, originalColors);
+  expect((await positions(panels))[0]).toBe(followed[0]);
+
+  const beforeHandoff = await positions(panels);
+  const peer = (await bounds(panels, 1))[1];
+  const targetBox = (await target.boundingBox())!;
+  const peerOffset = peer.top + peer.rowHeight / 2;
+  expect(peerOffset).toBeGreaterThan(0);
+  expect(peerOffset).toBeLessThan(targetBox.height);
+  await page.mouse.move(
+    targetBox.x + targetBox.width / 2,
+    targetBox.y + peerOffset,
+  );
+  await expectAreaFocus(panels, 1, 0.5, peerOffset, 1);
+  await expectHighlight(panels, 1, originalColors);
+  expect((await positions(panels))[1]).toBe(beforeHandoff[1]);
+  const handedOff = await positions(panels);
+  await wheelToRest(page, target, 16);
+  const afterHandoff = await positions(panels);
+  expect(afterHandoff[1] - handedOff[1]).toBeCloseTo(16, 0);
+  expect(afterHandoff[0]).toBeGreaterThan(handedOff[0]);
+  await page.mouse.move(1, 1);
+  await expect.poll(() => colors(panels, 1)).toEqual(originalColors);
+  await frames(page, 12);
+  expect(await positions(panels)).toEqual(afterHandoff);
 
   for (const [index, offset] of [
     [1, 180],
@@ -314,8 +358,11 @@ test("chat histories follow contiguous full-width message areas and restore read
     await expectAreaFocus(panels, index, focus.fraction, focus.focusOffset);
   }
   await expect.poll(() => colors(panels, 1)).toEqual(originalColors);
+  const latest = await positions(panels);
   await page.mouse.move(1, 1);
-  await expect.poll(async () => (await positions(panels))[1]).toBe(original[1]);
+  await expect.poll(() => colors(panels, 2)).toEqual(nextColors);
+  await frames(page, 12);
+  expect(await positions(panels)).toEqual(latest);
   await page
     .locator(".cell")
     .first()
@@ -338,7 +385,7 @@ test("chat histories follow contiguous full-width message areas and restore read
         .locator(".markdown-preview")
         .evaluate((view) => view.scrollTop),
     )
-    .toBe(original[1]);
+    .toBe(latest[1]);
 });
 
 test("hover aligns full-area fractions with only native scroll-range clamps", async ({
@@ -427,6 +474,9 @@ test("hover aligns full-area fractions with only native scroll-range clamps", as
       [20, 20, 20, 20],
       [20, 20, 300, 20],
     ]);
+    await target.evaluate((view) => {
+      view.scrollTop = 0;
+    });
     await frames(page);
     const areas = await bounds(panels, 3);
     expect(areas[0].limit).toBe(0);

@@ -30,7 +30,6 @@ type FollowSession = {
 // Renderers supply groups and ordered vertical areas. A gesture keeps one focus
 // line while geometry projects the whole surrounding history.
 function createItemScrollSync(root: RefObject<HTMLElement | null>) {
-  const saved = new Map<HTMLElement, number>();
   const lastScrolls = new WeakMap<HTMLElement, number>();
   const touchOffsets = new Map<string, number>();
   const layouts = new Map<HTMLElement, ViewLayout>();
@@ -165,19 +164,8 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
     return { source, focusY: bounds.top + pixels, followers };
   }
   function write(view: HTMLElement, top: number) {
-    const before = view.scrollTop;
     view.scrollTop = top;
     lastScrolls.set(view, view.scrollTop);
-    if (!touchGroup && view.scrollTop !== before && !saved.has(view))
-      saved.set(view, before);
-  }
-  function restore(group?: string) {
-    for (const [view, top] of saved) {
-      if (group !== undefined && view.dataset.scrollSync === group) continue;
-      view.scrollTop = top;
-      lastScrolls.set(view, view.scrollTop);
-      saved.delete(view);
-    }
   }
   function highlight(row: HTMLElement | null) {
     const index = row ? itemIndex(row) : null;
@@ -259,7 +247,6 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
   function reveal(row: HTMLElement, point: { x: number; y: number }) {
     const source = viewOf(row)!;
     freshGeometry();
-    if (!touchGroup) restore(source.dataset.scrollSync);
     const index = itemIndex(row);
     const from = layout(source);
     const bounds = source.getBoundingClientRect();
@@ -302,7 +289,6 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
     pendingSource = null;
     pendingTouch = false;
     highlight(null);
-    restore();
   }
   function explore(row: HTMLElement | null, point: { x: number; y: number }) {
     if (!row) {
@@ -429,8 +415,6 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
     mouse = null;
     pendingSource = null;
     pendingTouch = false;
-    // Touch navigation accepts the visible positions; it has no hover exit.
-    saved.clear();
     if (event.touches.length !== 1) {
       contact = null;
       clearTouchFocus();
@@ -581,7 +565,6 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
           pendingSource = null;
           pendingTouch = false;
           mode = "scroll";
-          saved.delete(source);
           touchScrolling = touch;
           if (touch) {
             const pixels = rememberTouchFocus(source, session.focusY);
