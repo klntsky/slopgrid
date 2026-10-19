@@ -7,7 +7,11 @@ import {
   type UIEvent,
   type WheelEvent as ReactWheelEvent,
 } from "react";
-import { buildScrollMap, type ScrollLayout } from "./scroll-map";
+import {
+  buildScrollMap,
+  type ScrollLayout,
+  type ScrollMap,
+} from "./scroll-map";
 
 export function useItemScrollSync(root: RefObject<HTMLElement | null>) {
   const [sync] = useState(() => createItemScrollSync(root));
@@ -16,14 +20,16 @@ export function useItemScrollSync(root: RefObject<HTMLElement | null>) {
 }
 
 type ViewLayout = ScrollLayout & { height: number };
-type FollowSession = {
+type Comparison = {
   source: HTMLElement;
-  focusY: number;
+  from: ViewLayout;
+  point: number;
+  focusFraction: number;
   followers: {
     view: HTMLElement;
-    start: number;
-    mappedStart: number;
-    map: (position: number) => number;
+    layout: ViewLayout;
+    map: ScrollMap;
+    remainder: number;
   }[];
 };
 
@@ -31,7 +37,7 @@ type FollowSession = {
 // line while geometry projects the whole surrounding history.
 function createItemScrollSync(root: RefObject<HTMLElement | null>) {
   const lastScrolls = new WeakMap<HTMLElement, number>();
-  const touchOffsets = new Map<string, number>();
+  const touchFractions = new Map<string, number>();
   const layouts = new Map<HTMLElement, ViewLayout>();
   const views: HTMLElement[] = [];
   const scrollKeys = new Set([
@@ -48,10 +54,11 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
   let mutations: MutationObserver | null = null;
   let frame: number | null = null;
   let mode: "idle" | "hover" | "scroll" = "idle";
-  let session: FollowSession | null = null;
+  let session: { source: HTMLElement; focusFraction: number } | null = null;
+  let comparison: Comparison | null = null;
   let pendingSource: HTMLElement | null = null;
   let pendingStart = 0;
-  let pendingFocusY: number | null = null;
+  let pendingFocusFraction = 0.5;
   let pendingTouch = false;
   let touchGroup: string | undefined;
   let hoverRow: HTMLElement | null = null;
@@ -123,25 +130,64 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
     layouts.set(view, value);
     return value;
   }
+  function sameGeometry(before: ViewLayout, after: ViewLayout) {
+    if (
+      before.height !== after.height ||
+      before.anchors.length !== after.anchors.length
+    )
+      return false;
+    for (let i = 0; i < before.anchors.length; i++)
+      if (before.anchors[i] !== after.anchors[i]) return false;
+    return true;
+  }
   function freshGeometry() {
     if (!dirty) return;
     layouts.clear();
     dirty = false;
-  }
-  function prepare(
-    source: HTMLElement,
-    start = source.scrollTop,
-    focusY: number | null = null,
-  ): FollowSession {
-    freshGeometry();
+    if (!comparison) return;
+    const source = comparison.source;
+    if (!viewOf(source)) {
+      comparison = null;
+      return;
+    }
     const from = layout(source);
-    const bounds = source.getBoundingClientRect();
-    const pixels =
-      focusY === null
-        ? bounds.height / 2
-        : Math.max(0, Math.min(bounds.height, focusY - bounds.top));
-    const sourceFocus = (pixels * from.height) / bounds.height;
-    const followers: FollowSession["followers"] = [];
+    let count = 0;
+    for (const view of views)
+      if (
+        view !== source &&
+        view.dataset.scrollSync === source.dataset.scrollSync
+      )
+        count++;
+    if (
+      count !== comparison.followers.length ||
+      !sameGeometry(comparison.from, from)
+    ) {
+      comparison = null;
+      return;
+    }
+    comparison.from = from;
+    for (const follower of comparison.followers) {
+      const to = layout(follower.view);
+      if (!viewOf(follower.view) || !sameGeometry(follower.layout, to)) {
+        comparison = null;
+        return;
+      }
+      follower.layout = to;
+    }
+  }
+  function focusAt(view: HTMLElement, y: number | null = null) {
+    const bounds = view.getBoundingClientRect();
+    return y === null
+      ? 0.5
+      : Math.max(0, Math.min(1, (y - bounds.top) / bounds.height));
+  }
+  function createComparison(
+    source: HTMLElement,
+    focusFraction: number,
+    start = source.scrollTop,
+  ): Comparison {
+    const from = layout(source);
+    const followers: Comparison["followers"] = [];
     for (const view of views) {
       if (
         view === source ||
@@ -149,23 +195,60 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
       )
         continue;
       const to = layout(view);
-      const targetFocus = Math.min(
-        to.height,
-        (pixels * to.height) / view.getBoundingClientRect().height,
-      );
-      const map = buildScrollMap(from, to, sourceFocus, targetFocus);
       followers.push({
         view,
-        start: view.scrollTop,
-        mappedStart: map(start),
-        map,
+        layout: to,
+        map: buildScrollMap(from, to),
+        remainder: 0,
       });
     }
-    return { source, focusY: bounds.top + pixels, followers };
+    return {
+      source,
+      from,
+      point: start + focusFraction * from.height,
+      focusFraction,
+      followers,
+    };
+  }
+  function prepare(
+    source: HTMLElement,
+    start = source.scrollTop,
+    focusFraction = 0.5,
+  ) {
+    freshGeometry();
+    if (comparison?.source !== source)
+      comparison = createComparison(source, focusFraction, start);
+    return { source, focusFraction };
+  }
+  function synchronize(source: HTMLElement, focusFraction: number) {
+    freshGeometry();
+    const seed = comparison?.source !== source;
+    if (seed) comparison = createComparison(source, focusFraction);
+    const state = comparison!;
+    const point = source.scrollTop + focusFraction * state.from.height;
+    for (const follower of state.followers) {
+      const { view, layout: to, map } = follower;
+      const desired = seed
+        ? map.project(point) - focusFraction * to.height
+        : view.scrollTop +
+          follower.remainder +
+          map.follow(
+            state.point,
+            point,
+            (focusFraction - state.focusFraction) * to.height,
+          );
+      const bounded = Math.max(0, Math.min(to.limit, desired));
+      const remainder = write(view, bounded);
+      follower.remainder =
+        bounded === 0 || bounded === to.limit ? 0 : remainder;
+    }
+    state.point = point;
+    state.focusFraction = focusFraction;
   }
   function write(view: HTMLElement, top: number) {
     view.scrollTop = top;
     lastScrolls.set(view, view.scrollTop);
+    return top - view.scrollTop;
   }
   function highlight(row: HTMLElement | null) {
     const index = row ? itemIndex(row) : null;
@@ -186,18 +269,16 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
   }
   function clearTouchFocus() {
     touchGroup = undefined;
+    comparison = null;
     highlight(null);
   }
-  function rememberTouchFocus(view: HTMLElement, focusY: number) {
-    const bounds = view.getBoundingClientRect();
-    const pixels = Math.max(0, Math.min(bounds.height, focusY - bounds.top));
+  function rememberTouchFocus(view: HTMLElement, fraction: number) {
     touchGroup = view.dataset.scrollSync!;
-    touchOffsets.set(touchGroup, pixels);
-    return pixels;
+    touchFractions.set(touchGroup, fraction);
   }
   function rowAtFocus(
     view: HTMLElement,
-    pixels: number,
+    fraction: number,
     start = view.scrollTop,
   ) {
     const bounds = view.getBoundingClientRect();
@@ -206,7 +287,7 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
         ? 0
         : ((view.scrollTop - start) * bounds.height) /
           parseFloat(getComputedStyle(view).height);
-    const y = bounds.top + Math.min(pixels, bounds.height) - shift;
+    const y = bounds.top + fraction * bounds.height - shift;
     let previous: HTMLElement | null = null;
     const list = listOf(view);
     if (list)
@@ -221,45 +302,15 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
   }
   function settleTouchFocus(view: HTMLElement) {
     if (viewOf(view) && view.dataset.scrollSync === touchGroup)
-      highlight(rowAtFocus(view, touchOffsets.get(touchGroup!)!));
+      highlight(rowAtFocus(view, touchFractions.get(touchGroup!)!));
   }
   function reveal(row: HTMLElement, point: { x: number; y: number }) {
     const source = viewOf(row)!;
-    freshGeometry();
-    const index = itemIndex(row);
-    const from = layout(source);
-    const bounds = source.getBoundingClientRect();
-    const pixels = Math.max(0, Math.min(bounds.height, point.y - bounds.top));
-    const sourceFocus = (pixels * from.height) / bounds.height;
-    const start = from.anchors[index * 2];
-    const size = from.anchors[index * 2 + 1] - start;
-    const fraction = size
-      ? Math.max(
-          0,
-          Math.min(1, (source.scrollTop + sourceFocus - start) / size),
-        )
-      : 0;
-    for (const target of views) {
-      if (
-        target === source ||
-        target.dataset.scrollSync !== source.dataset.scrollSync
-      )
-        continue;
-      const to = layout(target);
-      const top = to.anchors[index * 2];
-      const bottom = to.anchors[index * 2 + 1];
-      if (top === undefined || bottom === undefined) continue;
-      const size = bottom - top;
-      const targetFocus = Math.min(
-        to.height,
-        (pixels * to.height) / target.getBoundingClientRect().height,
-      );
-      const desired = top + fraction * size - targetFocus;
-      write(target, Math.max(0, Math.min(to.limit, desired)));
-    }
+    const fraction = focusAt(source, point.y);
+    synchronize(source, fraction);
     pendingSource = source;
     pendingStart = source.scrollTop;
-    pendingFocusY = point.y;
+    pendingFocusFraction = fraction;
     pendingTouch = false;
   }
   function endHover() {
@@ -267,6 +318,7 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
     hoverRow = null;
     pendingSource = null;
     pendingTouch = false;
+    comparison = null;
     highlight(null);
   }
   function explore(row: HTMLElement | null, point: { x: number; y: number }) {
@@ -283,19 +335,14 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
     if (mode === "scroll" && session) {
       if (!viewOf(session.source)) {
         session = null;
+        comparison = null;
         mode = "idle";
         touchScrolling = false;
         return;
       }
-      // Resizing/streaming changes geometry, not the user's current positions.
-      if (dirty) {
-        session = prepare(
-          session.source,
-          session.source.scrollTop,
-          session.focusY,
-        );
-        if (touchScrolling) rememberTouchFocus(session.source, session.focusY);
-      }
+      freshGeometry();
+      if (touchScrolling && comparison?.source !== session.source)
+        comparison = createComparison(session.source, session.focusFraction);
       const row =
         !touchScrolling && mouse
           ? rowOf(document.elementFromPoint(mouse.x, mouse.y))
@@ -305,11 +352,7 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
         highlight(row);
         reveal(row, mouse);
       } else {
-        for (const follower of session.followers) {
-          const delta =
-            follower.map(session.source.scrollTop) - follower.mappedStart;
-          write(follower.view, follower.start + delta);
-        }
+        synchronize(session.source, session.focusFraction);
         if (!touchScrolling && mouse) highlight(row);
       }
     } else if (mode === "hover" && mouse && !pressed) {
@@ -347,8 +390,10 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
     pendingSource = view;
     pendingStart = lastScrolls.get(view) ?? view.scrollTop;
     pendingTouch = touch;
-    pendingFocusY =
-      focusY ?? (viewOf(hoverRow) === view ? (mouse?.y ?? null) : null);
+    pendingFocusFraction = focusAt(
+      view,
+      row && viewOf(row) === view && mouse ? mouse.y : (focusY ?? null),
+    );
   }
   function trackPointer(event: ReactPointerEvent<HTMLElement>) {
     if (event.pointerType === "touch") return;
@@ -387,6 +432,7 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
     }
     mode = "idle";
     session = null;
+    comparison = null;
     touchScrolling = false;
     hoverRow = null;
     mouse = null;
@@ -414,11 +460,8 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
       scrolled: false,
     };
     const bounds = view.getBoundingClientRect();
-    const pixels = Math.min(
-      bounds.height,
-      touchOffsets.get(view.dataset.scrollSync!) ?? bounds.height / 3,
-    );
-    arm(view, bounds.top + pixels, true);
+    const fraction = touchFractions.get(view.dataset.scrollSync!) ?? 1 / 3;
+    arm(view, bounds.top + fraction * bounds.height, true);
   }
   function touchMove(event: TouchEvent) {
     if (!contact || event.touches.length !== 1) return;
@@ -435,7 +478,8 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
     pendingSource = null;
     pendingTouch = false;
     if (ended.row && rowOf(ended.row)) {
-      rememberTouchFocus(viewOf(ended.row)!, ended.y);
+      const source = viewOf(ended.row)!;
+      rememberTouchFocus(source, focusAt(source, ended.y));
       highlight(ended.row);
       reveal(ended.row, ended);
       pendingSource = null;
@@ -462,9 +506,10 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
     pendingSource = null;
     pendingTouch = false;
     touchScrolling = false;
-    if (!touch && mouse && !pressed) {
-      const row = rowOf(document.elementFromPoint(mouse.x, mouse.y));
-      if (row) explore(row, mouse);
+    if (!touch) {
+      if (mouse && !pressed)
+        explore(rowOf(document.elementFromPoint(mouse.x, mouse.y)), mouse);
+      else endHover();
     }
   }
   return {
@@ -500,10 +545,11 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
         frame = null;
         mode = "idle";
         session = null;
+        comparison = null;
         pendingSource = null;
         pendingTouch = false;
         touchGroup = undefined;
-        touchOffsets.clear();
+        touchFractions.clear();
         contact = null;
       };
     },
@@ -537,15 +583,15 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
           lastScrolls.set(source, source.scrollTop);
         if (!participating) return;
         if (mode !== "scroll" && pendingSource === source) {
-          session = prepare(source, pendingStart, pendingFocusY);
+          session = prepare(source, pendingStart, pendingFocusFraction);
           const touch = pendingTouch;
           pendingSource = null;
           pendingTouch = false;
           mode = "scroll";
           touchScrolling = touch;
           if (touch) {
-            const pixels = rememberTouchFocus(source, session.focusY);
-            highlight(rowAtFocus(source, pixels, pendingStart));
+            rememberTouchFocus(source, session.focusFraction);
+            highlight(rowAtFocus(source, session.focusFraction, pendingStart));
             if (contact) contact.scrolled = true;
           }
         }
