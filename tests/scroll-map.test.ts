@@ -62,3 +62,44 @@ test("non-scrollable panels remain fixed and partial histories retain their matc
   assert.equal(map(15), 35);
   assert.equal(map(100), 100);
 });
+
+test("whole-history projection follows landmarks around the focus rather than the viewport top", () => {
+  const map = buildScrollMap(
+    { limit: 2700, anchors: [100, 1100, 1100, 2100, 2100, 3100] },
+    { limit: 3000, anchors: [100, 600, 600, 2600, 2600, 3600] },
+    400,
+  );
+  assert.equal(map(700), 200);
+  assert.equal(map(1000), 800);
+  assert.equal(map(1050) - map(1000), 100);
+  assert.equal(map(1700), 2200);
+  assert.ok(map(700.001) - map(699.999) < 0.01);
+  assert.equal(map(0), 0);
+  assert.equal(map(2700), 3000);
+});
+
+test("unequal viewports can use different feasible focus offsets", () => {
+  const map = buildScrollMap(
+    { limit: 2700, anchors: [100, 1100, 1100, 2100, 2100, 3100] },
+    { limit: 3000, anchors: [100, 600, 600, 2600, 2600, 3600] },
+    400,
+    180,
+  );
+  assert.equal(map(700), 420);
+  assert.equal(map(1000), 1020);
+  assert.equal(map(1700), 2420);
+  assert.equal(map(2700), 3000);
+});
+
+test("focus offsets collapse edge landmarks without reversing motion or losing native limits", () => {
+  const map = buildScrollMap(
+    { limit: 100, anchors: [0, 40, 100, 180] },
+    { limit: 70, anchors: [0, 10, 80, 190] },
+    60,
+    120,
+  );
+  assert.equal(map(0), 0);
+  assert.equal(map(40), 0);
+  assert.equal(map(70), 35);
+  assert.equal(map(100), 70);
+});

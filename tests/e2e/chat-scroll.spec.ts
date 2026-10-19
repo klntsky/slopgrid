@@ -136,6 +136,44 @@ async function hoverMessage(
   return own;
 }
 
+async function expectMessageFocus(
+  panels: Locator,
+  index: number,
+  fraction: number,
+  focusOffset: number,
+) {
+  await expect
+    .poll(() =>
+      panels.evaluateAll(
+        (views, { index, fraction, focusOffset }) =>
+          views.slice(1).every((view) => {
+            const panel = view.getBoundingClientRect();
+            const row = view
+              .querySelectorAll(".chat-bubble")
+              [index].getBoundingClientRect();
+            const scale =
+              panel.height / parseFloat(getComputedStyle(view).height);
+            const top = row.top - panel.top;
+            const desired =
+              Math.min(focusOffset, panel.height) - fraction * row.height;
+            const visibleTop =
+              row.height <= panel.height
+                ? Math.max(0, Math.min(panel.height - row.height, desired))
+                : desired;
+            const expected = Math.max(
+              top -
+                (view.scrollHeight - view.clientHeight - view.scrollTop) *
+                  scale,
+              Math.min(top + view.scrollTop * scale, visibleTop),
+            );
+            return Math.abs(top - expected) <= 1.5;
+          }),
+        { index, fraction, focusOffset },
+      ),
+    )
+    .toBe(true);
+}
+
 async function frames(page: Page, count = 2) {
   await page.evaluate(
     (count) =>
@@ -329,7 +367,94 @@ test("chat histories follow contiguous full-width message areas and restore read
     .toBe(original[1]);
 });
 
-test("small native wheel motion crosses a hovered message boundary without choosing that message's scroll scale", async ({
+test("hover aligns fractional message points in screen pixels, with visibility clamps", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  const panels = await openHistories(page, historyInput, {
+    columns: [320],
+    rows: [460, 260],
+  });
+  const source = panels.first();
+  const target = panels.nth(1);
+  await setMessageHeights(panels, [
+    [300, 80, 700, 400],
+    [480, 120, 900, 500],
+  ]);
+  await frames(page);
+
+  for (const scenario of [
+    { name: "already fully visible", index: 1, offset: 60, fraction: 0.25 },
+    { name: "whole-item bottom clamp", index: 1, offset: 200, fraction: 0.5 },
+    {
+      name: "clipped oversized alignment",
+      index: 2,
+      offset: -200,
+      fraction: 0.5,
+    },
+    {
+      name: "oversized with context above",
+      index: 2,
+      offset: 80,
+      fraction: 0.1,
+    },
+    {
+      name: "oversized with context below",
+      index: 2,
+      offset: -600,
+      fraction: 0.95,
+    },
+  ]) {
+    await test.step(scenario.name, async () => {
+      await page.mouse.move(1, 1);
+      await position(source, scenario.index, scenario.offset);
+      await position(target, scenario.index, 10);
+      await frames(page);
+      const before = await positions(panels);
+      const initial = await bounds(panels, scenario.index);
+      expect(initial[0].height).toBeGreaterThan(initial[1].height);
+      expect(initial[0].rowHeight).not.toBe(initial[1].rowHeight);
+      if (scenario.name === "already fully visible") {
+        expect(initial[1].top).toBeGreaterThanOrEqual(0);
+        expect(initial[1].bottom).toBeLessThan(initial[1].height);
+      }
+      const panel = (await source.boundingBox())!;
+      const row = (await source
+        .locator(".chat-bubble")
+        .nth(scenario.index)
+        .boundingBox())!;
+      const y = row.y + scenario.fraction * row.height;
+      expect(y).toBeGreaterThan(panel.y);
+      expect(y).toBeLessThan(panel.y + panel.height);
+      await page.mouse.move(row.x + row.width / 2, y);
+      await expectMessageFocus(
+        panels,
+        scenario.index,
+        scenario.fraction,
+        y - panel.y,
+      );
+      const after = await positions(panels);
+      expect(after[0]).toBe(before[0]);
+      const peer = (await bounds(panels, scenario.index))[1];
+      if (scenario.name === "whole-item bottom clamp") {
+        expect(Math.abs(peer.bottom - peer.height)).toBeLessThanOrEqual(1.5);
+      } else {
+        expect(
+          Math.abs(
+            peer.top + scenario.fraction * peer.rowHeight - (y - panel.y),
+          ),
+        ).toBeLessThanOrEqual(1.5);
+        expect(Math.abs(after[1] - before[1])).toBeGreaterThan(5);
+        if (scenario.name === "oversized with context above")
+          expect(peer.top).toBeGreaterThan(5);
+        if (scenario.name === "oversized with context below")
+          expect(peer.bottom).toBeLessThan(peer.height - 5);
+      }
+    });
+  }
+});
+
+test("native wheel mapping keeps its starting focus line while crossing a message boundary", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 1000 });
@@ -343,62 +468,90 @@ test("small native wheel motion crosses a hovered message boundary without choos
     [260, 80, 600, 400],
     [520, 240, 1200, 800],
   ]);
+  await position(source, 1, 80);
   await frames(page);
-  const deltas: number[][] = [];
-
-  // Both trials have the same native starting positions. Only the message
-  // beneath the pointer differs; it must not select the scrolling map.
-  for (const index of [1, 2]) {
-    await page.mouse.move(1, 1);
-    await position(source, 1, 80);
-    await frames(page);
-    const baseline = await colors(panels, index);
-    const point = await source.evaluate((view, index) => {
+  const baseline = await colors(panels, 1);
+  const nextBaseline = await colors(panels, 2);
+  const geometry = await panels.evaluateAll((views) =>
+    views.map((view) => {
       const panel = view.getBoundingClientRect();
-      const rows = view.querySelectorAll(".chat-message-row");
-      const boundary = rows[1].getBoundingClientRect().bottom;
-      return { x: panel.left + 1, y: boundary + (index === 1 ? -2 : 20) };
-    }, index);
-    await page.mouse.move(point.x, point.y);
-    await expectHighlight(panels, index, baseline);
-    // Hover reveal is temporary; start this scroll with an independently
-    // chosen peer position, so the first wheel must rebase rather than jump.
-    await target.evaluate((view) => {
-      view.scrollTop = 400;
-    });
-    await frames(page);
-    const before = await positions(panels);
-    const motion = await recordMotion(panels, index);
-    await wheelToRest(page, source, 8);
-    await frames(page, 12);
-    const samples = await motion.evaluate((state) => state.stop());
-    await motion.dispose();
-    const after = await positions(panels);
-    const delta = after.map((position, i) => position - before[i]);
-    deltas.push(delta);
-    expect(delta[0]).toBeCloseTo(8, 0);
-    expect(delta[1]).toBeGreaterThan(0);
-    expect(delta[1]).toBeLessThan(40);
-    expectMonotone(
-      samples.map((sample) => sample.positions),
-      1,
+      const scale = panel.height / parseFloat(getComputedStyle(view).height);
+      const rows = Array.from(view.querySelectorAll(".chat-bubble"), (row) =>
+        row.getBoundingClientRect(),
+      );
+      return {
+        x: panel.left + 1,
+        y: rows[1].bottom - 4 * scale,
+        remaining: 4,
+        gap: (rows[2].top - rows[1].bottom) / scale,
+        previousHeight: rows[0].height / scale,
+        height: rows[1].height / scale,
+        nextHeight: rows[2].height / scale,
+      };
+    }),
+  );
+  const point = geometry[0];
+  await page.mouse.move(point.x, point.y);
+  await expectHighlight(panels, 1, baseline);
+  // Hover alignment must not replace the peer's actual position as the native
+  // gesture's origin. Its mapped displacement is rebased onto this position.
+  await target.evaluate((view) => {
+    view.scrollTop = 400;
+  });
+  await frames(page);
+  const before = await positions(panels);
+  const motion = await recordMotion(panels, 1);
+  await wheelToRest(page, source, 40);
+  const after = await positions(panels);
+  const delta = after.map((position, i) => position - before[i]);
+  expect(delta[0]).toBeCloseTo(40, 0);
+  expect(delta[0]).toBeGreaterThan(point.remaining + point.gap);
+  const expected =
+    point.remaining * (geometry[1].height / point.height) +
+    geometry[1].gap +
+    (delta[0] - point.remaining - point.gap) *
+      (geometry[1].nextHeight / point.nextHeight);
+  // The viewport top is still in the preceding message, whose ratio differs
+  // from the focused message. A top-based map gives a different displacement.
+  const viewportTopDelta =
+    delta[0] * (geometry[1].previousHeight / point.previousHeight);
+  expect(Math.abs(expected - viewportTopDelta)).toBeGreaterThan(8);
+  expect(Math.abs(delta[1] - expected)).toBeLessThanOrEqual(2);
+  await expectHighlight(panels, 2, nextBaseline);
+  // A subsequent native step must continue from the same map even though the
+  // highlighted message changed beneath the stationary pointer.
+  await wheelToRest(page, source, 8);
+  const continued = await positions(panels);
+  expect(continued[0] - after[0]).toBeCloseTo(8, 0);
+  const continuation =
+    (continued[0] - after[0]) * (geometry[1].nextHeight / point.nextHeight);
+  expect(Math.abs(continued[1] - after[1] - continuation)).toBeLessThanOrEqual(
+    2,
+  );
+  await frames(page, 12);
+  expect(await positions(panels)).toEqual(continued);
+  const samples = await motion.evaluate((state) => state.stop());
+  await motion.dispose();
+  expectMonotone(
+    samples.map((sample) => sample.positions),
+    1,
+  );
+  for (const sample of samples) {
+    expect(sample.positions[1]).toBeGreaterThanOrEqual(before[1] - 1);
+    expect(sample.positions[1] - before[1]).toBeLessThanOrEqual(
+      expected + continuation + 2,
     );
-    for (const sample of samples) {
-      expect(sample.positions[1] - before[1]).toBeLessThan(40);
-    }
-    if (index === 1)
-      expect(
-        await source.evaluate((view, point) => {
-          const row = document
-            .elementFromPoint(point.x, point.y)
-            ?.closest(".chat-message-row");
-          return Array.from(view.querySelectorAll(".chat-message-row")).indexOf(
-            row as Element,
-          );
-        }, point),
-      ).toBe(2);
   }
-  expect(Math.abs(deltas[0][1] - deltas[1][1])).toBeLessThanOrEqual(1);
+  expect(
+    await source.evaluate((view, point) => {
+      const row = document
+        .elementFromPoint(point.x, point.y)
+        ?.closest(".chat-message-row");
+      return Array.from(view.querySelectorAll(".chat-message-row")).indexOf(
+        row as Element,
+      );
+    }, point),
+  ).toBe(2);
 });
 
 test("unequal histories follow monotonically to each view's own native range boundaries", async ({
@@ -504,6 +657,7 @@ test.describe("mobile chat histories", () => {
       y: row.y + row.height / 2,
       id: 1,
     };
+    const focusOffset = point.y - (await source.boundingBox())!.y;
     const client = await page.context().newCDPSession(page);
     await client.send("Input.dispatchTouchEvent", {
       type: "touchStart",
@@ -516,13 +670,7 @@ test.describe("mobile chat histories", () => {
       type: "touchEnd",
       touchPoints: [],
     });
-    await expect
-      .poll(async () =>
-        (await bounds(panels, 1))
-          .slice(1)
-          .every((peer) => peer.top >= -1 && peer.bottom <= peer.height + 1),
-      )
-      .toBe(true);
+    await expectMessageFocus(panels, 1, 0.5, focusOffset);
     expect((await positions(panels))[0]).toBe(original[0]);
     const revealed = await positions(panels);
     for (let i = 1; i < revealed.length; i++)

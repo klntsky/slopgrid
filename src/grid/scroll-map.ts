@@ -4,15 +4,24 @@ export type ScrollLayout = {
   anchors: readonly number[];
 };
 
-export function buildScrollMap(source: ScrollLayout, target: ScrollLayout) {
+// Focus offsets are viewport-relative, in each view's unscaled coordinates.
+export function buildScrollMap(
+  source: ScrollLayout,
+  target: ScrollLayout,
+  sourceFocus = 0,
+  targetFocus = sourceFocus,
+) {
   if (source.limit <= 0 || target.limit <= 0) return () => 0;
   const knots = [0, 0];
   const count = Math.min(source.anchors.length, target.anchors.length);
   for (let i = 0; i < count; i++) {
-    const x = source.anchors[i];
+    const x = source.anchors[i] - sourceFocus;
     // Endpoint anchors own collapsed ranges. Keep one value at shared edges.
     if (x <= knots[knots.length - 2] || x >= source.limit) continue;
-    knots.push(x, Math.max(0, Math.min(target.limit, target.anchors[i])));
+    knots.push(
+      x,
+      Math.max(0, Math.min(target.limit, target.anchors[i] - targetFocus)),
+    );
   }
   knots.push(source.limit, target.limit);
   return (position: number) => {

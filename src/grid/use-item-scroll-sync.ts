@@ -18,6 +18,7 @@ export function useItemScrollSync(root: RefObject<HTMLElement | null>) {
 type ViewLayout = ScrollLayout & { height: number };
 type FollowSession = {
   source: HTMLElement;
+  focusY: number | null;
   followers: {
     view: HTMLElement;
     start: number;
@@ -26,8 +27,8 @@ type FollowSession = {
   }[];
 };
 
-// Renderers supply groups, ordered items, and optional content bounds. Geometry
-// projects the whole history; selection only controls highlighting and reveal.
+// Renderers supply groups, ordered items, and optional content bounds. A gesture
+// keeps one focus line while geometry projects the whole surrounding history.
 function createItemScrollSync(root: RefObject<HTMLElement | null>) {
   const saved = new Map<HTMLElement, number>();
   const lastScrolls = new WeakMap<HTMLElement, number>();
@@ -50,6 +51,7 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
   let session: FollowSession | null = null;
   let pendingSource: HTMLElement | null = null;
   let pendingStart = 0;
+  let pendingFocusY: number | null = null;
   let hoverRow: HTMLElement | null = null;
   let mouse: { x: number; y: number } | null = null;
   let pressed = false;
@@ -133,9 +135,16 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
   function prepare(
     source: HTMLElement,
     start = source.scrollTop,
+    focusY: number | null = null,
   ): FollowSession {
     freshGeometry();
     const from = layout(source);
+    const bounds = source.getBoundingClientRect();
+    const pixels =
+      focusY === null
+        ? bounds.height / 2
+        : Math.max(0, Math.min(bounds.height, focusY - bounds.top));
+    const sourceFocus = (pixels * from.height) / bounds.height;
     const followers: FollowSession["followers"] = [];
     for (const view of views) {
       if (
@@ -143,7 +152,12 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
         view.dataset.scrollSync !== source.dataset.scrollSync
       )
         continue;
-      const map = buildScrollMap(from, layout(view));
+      const to = layout(view);
+      const targetFocus = Math.min(
+        to.height,
+        (pixels * to.height) / view.getBoundingClientRect().height,
+      );
+      const map = buildScrollMap(from, to, sourceFocus, targetFocus);
       followers.push({
         view,
         start: view.scrollTop,
@@ -151,7 +165,7 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
         map,
       });
     }
-    return { source, followers };
+    return { source, focusY, followers };
   }
   function write(view: HTMLElement, top: number) {
     const before = view.scrollTop;
@@ -191,16 +205,14 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
     const index = itemIndex(row);
     const from = layout(source);
     const bounds = source.getBoundingClientRect();
-    const ratio = Math.max(
-      0,
-      Math.min(1, (point.y - bounds.top) / bounds.height),
-    );
+    const pixels = Math.max(0, Math.min(bounds.height, point.y - bounds.top));
+    const sourceFocus = (pixels * from.height) / bounds.height;
     const start = from.anchors[index * 2];
     const size = from.anchors[index * 2 + 1] - start;
     const fraction = size
       ? Math.max(
           0,
-          Math.min(1, (source.scrollTop + ratio * from.height - start) / size),
+          Math.min(1, (source.scrollTop + sourceFocus - start) / size),
         )
       : 0;
     for (const target of views) {
@@ -214,16 +226,18 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
       const bottom = to.anchors[index * 2 + 1];
       if (top === undefined || bottom === undefined) continue;
       const size = bottom - top;
-      const minimum = Math.max(0, Math.min(top, bottom - to.height));
-      const maximum = Math.min(to.limit, Math.max(top, bottom - to.height));
-      const desired =
-        size <= to.height
-          ? target.scrollTop
-          : top + fraction * size - ratio * to.height;
+      const minimum = size <= to.height ? Math.max(0, bottom - to.height) : 0;
+      const maximum = size <= to.height ? Math.min(to.limit, top) : to.limit;
+      const targetFocus = Math.min(
+        to.height,
+        (pixels * to.height) / target.getBoundingClientRect().height,
+      );
+      const desired = top + fraction * size - targetFocus;
       write(target, Math.max(minimum, Math.min(maximum, desired)));
     }
     pendingSource = source;
     pendingStart = source.scrollTop;
+    pendingFocusY = point.y;
   }
   function endHover() {
     mode = "idle";
@@ -250,7 +264,12 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
         return;
       }
       // Resizing/streaming changes geometry, not the user's current positions.
-      if (dirty) session = prepare(session.source);
+      if (dirty)
+        session = prepare(
+          session.source,
+          session.source.scrollTop,
+          session.focusY,
+        );
       for (const follower of session.followers) {
         const delta =
           follower.map(session.source.scrollTop) - follower.mappedStart;
@@ -271,7 +290,7 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
       flush();
     });
   }
-  function arm(view: HTMLElement | null) {
+  function arm(view: HTMLElement | null, focusY?: number) {
     if (!view || (mode === "scroll" && session?.source === view)) return;
     mode = "idle";
     session = null;
@@ -279,6 +298,8 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
     // observed source offset; acquire follower maps only when scrolling starts.
     pendingSource = view;
     pendingStart = lastScrolls.get(view) ?? view.scrollTop;
+    pendingFocusY =
+      focusY ?? (viewOf(hoverRow) === view ? (mouse?.y ?? null) : null);
   }
   function trackPointer(event: ReactPointerEvent<HTMLElement>) {
     if (event.pointerType === "touch") return;
@@ -287,7 +308,7 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
     mouse = event.nativeEvent;
     if (!moved || pressed || mode === "scroll") return;
     explore(rowOf(event.target), mouse);
-    if (!hoverRow) arm(viewOf(event.target));
+    if (!hoverRow) arm(viewOf(event.target), mouse.y);
   }
   function refresh() {
     dirty = true;
@@ -336,7 +357,7 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
     mode = "idle";
     highlight(row);
     pendingSource = null;
-    arm(viewOf(target));
+    arm(viewOf(target), touch.clientY);
   }
   function touchMove(event: TouchEvent) {
     if (!contact || event.touches.length !== 1) return;
@@ -416,7 +437,7 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
       onPointerDownCapture(event: ReactPointerEvent<HTMLElement>) {
         if (event.pointerType === "touch") return;
         pressed = true;
-        arm(viewOf(event.target));
+        arm(viewOf(event.target), event.clientY);
       },
       onPointerLeave(event: ReactPointerEvent<HTMLElement>) {
         if (event.pointerType === "touch") return;
@@ -424,7 +445,7 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
         if (mode !== "scroll") endHover();
       },
       onWheelCapture(event: ReactWheelEvent<HTMLElement>) {
-        arm(viewOf(event.target));
+        arm(viewOf(event.target), event.clientY);
       },
       onKeyDownCapture(event: ReactKeyboardEvent<HTMLElement>) {
         if (!event.ctrlKey && !event.metaKey && scrollKeys.has(event.key))
@@ -438,7 +459,7 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
           lastScrolls.set(source, source.scrollTop);
         if (!participating) return;
         if (mode !== "scroll" && pendingSource === source) {
-          session = prepare(source, pendingStart);
+          session = prepare(source, pendingStart, pendingFocusY);
           pendingSource = null;
           mode = "scroll";
           saved.delete(source);

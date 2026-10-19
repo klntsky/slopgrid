@@ -3,6 +3,39 @@ import type { Page } from "@playwright/test";
 import type { GridInput } from "../../server/domain";
 import { finishPublishing, mockModels, selectModel } from "./helpers";
 
+type JudgmentScrollGeometry = {
+  limit: number;
+  height: number;
+  scale: number;
+  edges: number[];
+};
+
+// Interpolate matching visible-history boundaries, retaining native endpoints.
+function judgmentHistoryPosition(
+  source: JudgmentScrollGeometry,
+  target: JudgmentScrollGeometry,
+  focusPixels: number,
+  position: number,
+) {
+  const sourceFocus = Math.min(source.height, focusPixels / source.scale);
+  const targetFocus = Math.min(target.height, focusPixels / target.scale);
+  const landmarks: [number, number][] = [[0, 0]];
+  source.edges.forEach((edge, index) => {
+    const from = edge - sourceFocus;
+    if (from <= landmarks.at(-1)![0] || from >= source.limit) return;
+    landmarks.push([
+      from,
+      Math.max(0, Math.min(target.limit, target.edges[index] - targetFocus)),
+    ]);
+  });
+  landmarks.push([source.limit, target.limit]);
+  const end = landmarks.findIndex(([from]) => from >= position);
+  if (end <= 0) return 0;
+  const [from, to] = landmarks[end - 1];
+  const [nextFrom, nextTo] = landmarks[end];
+  return to + ((position - from) / (nextFrom - from)) * (nextTo - to);
+}
+
 test("judge criteria preserve boolean answers and judge axes restore fixed settings", async ({
   page,
 }) => {
@@ -1528,14 +1561,35 @@ test("judgment hover temporarily reveals matching criteria and restores independ
     );
   await expect
     .poll(() =>
-      target.evaluate((container, fraction) => {
-        const row = container.querySelector(".judge-result-criteria")!
-          .children[1];
-        const rect = row.getBoundingClientRect();
-        const panel = container.getBoundingClientRect();
-        const point = rect.top + rect.height * fraction;
-        return point >= panel.top - 2 && point <= panel.bottom + 2;
-      }, pointedFraction),
+      target.evaluate(
+        (container, { fraction, focusOffset }) => {
+          const row = container.querySelector(".judge-result-criteria")!
+            .children[1];
+          const rect = row.getBoundingClientRect();
+          const panel = container.getBoundingClientRect();
+          const scale = panel.height / container.clientHeight;
+          const top = (rect.top - panel.top) / scale + container.scrollTop;
+          const bottom = top + rect.height / scale;
+          const desired =
+            top +
+            (rect.height / scale) * fraction -
+            Math.min(focusOffset, panel.height) / scale;
+          const fits = bottom - top <= container.clientHeight;
+          const low = fits ? bottom - container.clientHeight : 0;
+          const high = fits
+            ? top
+            : container.scrollHeight - container.clientHeight;
+          const expected = Math.max(
+            0,
+            Math.min(
+              container.scrollHeight - container.clientHeight,
+              Math.max(low, Math.min(high, desired)),
+            ),
+          );
+          return Math.abs(container.scrollTop - expected) < 2;
+        },
+        { fraction: pointedFraction, focusOffset: sourceBox.height / 2 },
+      ),
     )
     .toBe(true);
 
@@ -1591,7 +1645,7 @@ test("judgment hover temporarily reveals matching criteria and restores independ
   await expect.poll(() => backgrounds(3)).toEqual([unhovered, unhovered]);
 });
 
-test("judgment hover minimally reveals a whole fitting criterion in unequal views", async ({
+test("judgment hover aligns fractional focus and clamps whole fitting criteria in unequal views", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 1000 });
@@ -1646,6 +1700,8 @@ test("judgment hover minimally reveals a whole fitting criterion in unequal view
         const scale = panel.height / container.clientHeight;
         return {
           position: container.scrollTop,
+          scale,
+          screenHeight: panel.height,
           top: (rect.top - panel.top) / scale,
           bottom: (rect.bottom - panel.top) / scale,
           rowHeight: rect.height / scale,
@@ -1654,61 +1710,111 @@ test("judgment hover minimally reveals a whole fitting criterion in unequal view
         };
       }),
     );
-  await page.mouse.move(1, 1);
-  await source.evaluate((container) => {
-    const row = container.querySelector(".judge-result-criteria")!.children[1];
-    container.scrollTop +=
-      row.getBoundingClientRect().top -
-      container.getBoundingClientRect().top -
-      40;
-  });
-  for (const [index, panel] of (await results.all()).entries()) {
-    if (index === 0) continue;
-    await panel.evaluate((container, index) => {
-      container.scrollTop = index === 2 ? container.scrollHeight : 0;
-    }, index);
+  const cases = [
+    { fraction: 0.75, edge: "middle" },
+    { fraction: 0.9, edge: "bottom" },
+    { fraction: 0.75, edge: "top" },
+  ] as const;
+  for (const { fraction, edge } of cases) {
+    await page.mouse.move(1, 1);
+    await source.evaluate((container, edge) => {
+      const row = container.querySelector(".judge-result-criteria")!
+        .children[1];
+      const panel = container.getBoundingClientRect();
+      const rect = row.getBoundingClientRect();
+      const scale = panel.height / container.clientHeight;
+      const top =
+        edge === "bottom"
+          ? container.clientHeight - rect.height / scale - 4
+          : edge === "top"
+            ? 8 - (rect.height / scale) * 0.75
+            : 40;
+      container.scrollTop += (rect.top - panel.top) / scale - top;
+    }, edge);
+    for (const [index, panel] of (await results.all()).entries()) {
+      if (index === 0) continue;
+      await panel.evaluate((container, index) => {
+        const rect = container.getBoundingClientRect();
+        const row = container
+          .querySelector(".judge-result-criteria")!
+          .children[1].getBoundingClientRect();
+        const scale = rect.height / container.clientHeight;
+        // This receiver already shows the entire criterion, but at the wrong line.
+        if (index === 1)
+          container.scrollTop += (row.top - rect.top) / scale - 180;
+        else container.scrollTop = index === 2 ? container.scrollHeight : 0;
+      }, index);
+    }
+    const before = await geometry();
+    expect(before[0].height).toBeGreaterThan(before[2].height);
+    expect(before[1].rowHeight).toBeGreaterThan(before[0].rowHeight);
+    for (const bounds of before)
+      expect(bounds.rowHeight).toBeLessThan(bounds.height);
+    expect(before[1].top).toBeGreaterThanOrEqual(0);
+    expect(before[1].bottom).toBeLessThan(before[1].height);
+    const row = (await source
+      .locator(".judge-result-criteria > li")
+      .nth(1)
+      .boundingBox())!;
+    const box = (await source.boundingBox())!;
+    const pointerY = row.y + row.height * fraction;
+    const focusOffset = pointerY - box.y;
+    const expected = before.map((bounds, index) => {
+      if (index === 0) return bounds.position;
+      const top = bounds.position + bounds.top;
+      const bottom = bounds.position + bounds.bottom;
+      const desired =
+        top +
+        bounds.rowHeight * fraction -
+        Math.min(focusOffset, bounds.screenHeight) / bounds.scale;
+      return Math.max(
+        0,
+        Math.min(
+          bounds.max,
+          Math.max(bottom - bounds.height, Math.min(top, desired)),
+        ),
+      );
+    });
+    expect(Math.abs(expected[1] - before[1].position)).toBeGreaterThan(10);
+    await page.mouse.move(box.x + 20, pointerY);
+    await expect
+      .poll(async () =>
+        (await geometry()).every(
+          (bounds, index) =>
+            Math.abs(bounds.position - expected[index]) < 2 &&
+            (index === 0 ||
+              (bounds.top >= -2 && bounds.bottom <= bounds.height + 2)),
+        ),
+      )
+      .toBe(true);
+    if (edge === "bottom") {
+      expect(focusOffset).toBeGreaterThan(before[2].screenHeight);
+      expect(
+        Math.abs((await geometry())[2].bottom - before[2].height),
+      ).toBeLessThan(2);
+    } else if (edge === "top") {
+      expect(Math.abs((await geometry())[1].top)).toBeLessThan(2);
+    } else {
+      const aligned = await geometry();
+      for (let index = 1; index < aligned.length; index++)
+        expect(
+          Math.abs(
+            (aligned[index].top + aligned[index].rowHeight * fraction) *
+              aligned[index].scale -
+              focusOffset,
+          ),
+        ).toBeLessThan(2);
+    }
+    const revealed = (await geometry()).map((bounds) => bounds.position);
+    await page.mouse.move(box.x + 21, pointerY);
+    await expect
+      .poll(async () => (await geometry()).map((bounds) => bounds.position))
+      .toEqual(revealed);
+    await page.mouse.move(1, 1);
+    await expect
+      .poll(async () => (await geometry()).map((bounds) => bounds.position))
+      .toEqual(before.map((bounds) => bounds.position));
   }
-  const before = await geometry();
-  expect(before[0].height).toBeGreaterThan(before[2].height);
-  expect(before[1].rowHeight).toBeGreaterThan(before[0].rowHeight);
-  for (const bounds of before)
-    expect(bounds.rowHeight).toBeLessThan(bounds.height);
-  const row = (await source
-    .locator(".judge-result-criteria > li")
-    .nth(1)
-    .boundingBox())!;
-  const box = (await source.boundingBox())!;
-  await page.mouse.move(box.x + 20, row.y + row.height / 2);
-  const expected = before.map((bounds, index) => {
-    if (index === 0) return bounds.position;
-    const delta =
-      bounds.top < 0
-        ? bounds.top
-        : bounds.bottom > bounds.height
-          ? bounds.bottom - bounds.height
-          : 0;
-    return Math.max(0, Math.min(bounds.max, bounds.position + delta));
-  });
-  await expect
-    .poll(async () =>
-      (await geometry()).every(
-        (bounds, index) =>
-          Math.abs(bounds.position - expected[index]) < 2 &&
-          bounds.top >= -2 &&
-          bounds.bottom <= bounds.height + 2,
-      ),
-    )
-    .toBe(true);
-  // A small real pointer move inside the same criterion must not center it.
-  const revealed = (await geometry()).map((bounds) => bounds.position);
-  await page.mouse.move(box.x + 21, row.y + row.height / 2);
-  await expect
-    .poll(async () => (await geometry()).map((bounds) => bounds.position))
-    .toEqual(revealed);
-  await page.mouse.move(1, 1);
-  await expect
-    .poll(async () => (await geometry()).map((bounds) => bounds.position))
-    .toEqual(before.map((bounds) => bounds.position));
 });
 
 test("native judgment wheel follows the whole history smoothly across criteria and gaps", async ({
@@ -1767,6 +1873,7 @@ test("native judgment wheel follows the whole history smoothly across criteria a
       const scale = panel.height / container.clientHeight;
       return {
         height: container.clientHeight,
+        scale,
         max: container.scrollHeight - container.clientHeight,
         rows: Array.from(
           container.querySelectorAll(".judge-result-criteria > li"),
@@ -1796,12 +1903,12 @@ test("native judgment wheel follows the whole history smoothly across criteria a
   );
   const box = (await source.boundingBox())!;
   const rowBox = (await row.boundingBox())!;
-  await page.mouse.move(
-    box.x + 20,
+  const pointerY =
     (Math.max(box.y, rowBox.y) +
       Math.min(box.y + box.height, rowBox.y + rowBox.height)) /
-      2,
-  );
+    2;
+  const focusPixels = pointerY - box.y;
+  await page.mouse.move(box.x + 20, pointerY);
   await expect
     .poll(() =>
       row.evaluate((element) => getComputedStyle(element).backgroundColor),
@@ -1809,7 +1916,9 @@ test("native judgment wheel follows the whole history smoothly across criteria a
     .not.toBe(unselected);
   // Input starts from actual independent positions, not a selected-row alignment.
   await results.evaluateAll((containers) => {
-    for (const container of containers) container.scrollTop = 0;
+    containers.forEach((container, index) => {
+      container.scrollTop = index * 17;
+    });
   });
   const frames = () =>
     page.evaluate(
@@ -1820,10 +1929,27 @@ test("native judgment wheel follows the whole history smoothly across criteria a
     );
   await frames();
   const samples: number[][] = [await positions()];
+  const histories = geometry.map((bounds) => ({
+    limit: bounds.max,
+    height: bounds.height,
+    scale: bounds.scale,
+    edges: bounds.rows.flatMap((item) => [item.top, item.bottom]),
+  }));
+  const boundaries = histories[0].edges
+    .map((edge) => edge - focusPixels / histories[0].scale)
+    .filter((position) => position > 0 && position < geometry[0].max);
+  let focusedBoundaries = 0;
   let crossedGap = false;
   while (samples.at(-1)![0] < geometry[0].max - 1) {
     const previous = samples.at(-1)!;
-    const delta = Math.min(48, geometry[0].max - previous[0]);
+    const nextBoundary = boundaries.find(
+      (position) => position > previous[0] + 2,
+    );
+    const delta = Math.min(
+      48,
+      geometry[0].max - previous[0],
+      nextBoundary === undefined ? Infinity : nextBoundary - previous[0],
+    );
     const ended = source.evaluate(
       (container) =>
         new Promise<void>((resolve) =>
@@ -1841,13 +1967,34 @@ test("native judgment wheel follows the whole history smoothly across criteria a
       expect(current[index]).toBeGreaterThanOrEqual(previous[index] - 1);
       // These widths differ by less than 2x; no boundary may create a jump.
       expect(current[index] - previous[index]).toBeLessThan(delta * 4 + 4);
+      const mappedDelta =
+        judgmentHistoryPosition(
+          histories[0],
+          histories[index],
+          focusPixels,
+          current[0],
+        ) -
+        judgmentHistoryPosition(
+          histories[0],
+          histories[index],
+          focusPixels,
+          previous[0],
+        );
+      const expected = Math.max(
+        0,
+        Math.min(geometry[index].max, previous[index] + mappedDelta),
+      );
+      expect(Math.abs(current[index] - expected)).toBeLessThan(2);
     }
+    if (nextBoundary !== undefined && Math.abs(current[0] - nextBoundary) < 2)
+      focusedBoundaries++;
     crossedGap ||=
       previous[0] <= geometry[0].rows[1].top &&
       current[0] >= geometry[0].rows[0].bottom;
     samples.push(current);
   }
   expect(crossedGap).toBe(true);
+  expect(focusedBoundaries).toBeGreaterThanOrEqual(3);
   // Following continues past the originally highlighted criterion in every peer.
   for (let index = 1; index < geometry.length; index++) {
     expect(samples.at(-1)![index]).toBeGreaterThan(
@@ -1908,9 +2055,11 @@ test.describe("touch judgment following", () => {
           results: criteria.map((_, index) => ({
             verdict: true,
             explanation:
-              `Condition ${index + 1}: the red rectangle matches the requested output. `.repeat(
-                2,
-              ),
+              index === 1
+                ? "Matches."
+                : `Condition ${index + 1}: the red rectangle matches the requested output. `.repeat(
+                    2,
+                  ),
           })),
         }),
       },
@@ -1972,6 +2121,51 @@ test.describe("touch judgment following", () => {
     const untouched = await results.evaluateAll((containers) =>
       containers.map((container) => container.scrollTop),
     );
+    const scrollGeometry = () =>
+      results.evaluateAll((containers) =>
+        containers.map((container) => {
+          const panel = container.getBoundingClientRect();
+          const scale = panel.height / container.clientHeight;
+          return {
+            position: container.scrollTop,
+            limit: container.scrollHeight - container.clientHeight,
+            height: container.clientHeight,
+            scale,
+            edges: Array.from(
+              container.querySelectorAll(".judge-result-criteria > li"),
+              (row) => {
+                const rect = row.getBoundingClientRect();
+                return [
+                  (rect.top - panel.top) / scale + container.scrollTop,
+                  (rect.bottom - panel.top) / scale + container.scrollTop,
+                ];
+              },
+            ).flat(),
+          };
+        }),
+      );
+    const tapGeometry = await scrollGeometry();
+    const tappedFraction =
+      (tapGeometry[0].position +
+        120 / tapGeometry[0].scale -
+        tapGeometry[0].edges[2]) /
+      (tapGeometry[0].edges[3] - tapGeometry[0].edges[2]);
+    const tapTarget = tapGeometry[1];
+    const tapTop = tapTarget.edges[2];
+    const tapBottom = tapTarget.edges[3];
+    const tapDesired =
+      tapTop +
+      (tapBottom - tapTop) * tappedFraction -
+      Math.min(tapTarget.height, 120 / tapTarget.scale);
+    const tapExpected = Math.max(
+      0,
+      Math.min(
+        tapTarget.limit,
+        tapBottom - tapTop <= tapTarget.height
+          ? Math.max(tapBottom - tapTarget.height, Math.min(tapTop, tapDesired))
+          : tapDesired,
+      ),
+    );
     await client.send("Input.dispatchTouchEvent", {
       type: "touchStart",
       touchPoints: [{ x: a.x + 20, y: a.y + 120, id: 1 }],
@@ -1999,18 +2193,13 @@ test.describe("touch judgment following", () => {
       untouched[0],
     );
     await expect
-      .poll(() =>
-        target.evaluate((container) => {
-          const row = container.querySelector(".judge-result-criteria")!
-            .children[1];
-          const rect = row.getBoundingClientRect();
-          const panel = container.getBoundingClientRect();
-          return rect.height <= panel.height
-            ? rect.top >= panel.top - 2 && rect.bottom <= panel.bottom + 2
-            : rect.top < panel.bottom && rect.bottom > panel.top;
-        }),
+      .poll(async () =>
+        Math.abs(
+          (await target.evaluate((container) => container.scrollTop)) -
+            tapExpected,
+        ),
       )
-      .toBe(true);
+      .toBeLessThan(2);
     await source.evaluate((container) => {
       const row = container.querySelector(".judge-result-criteria")!
         .children[1] as HTMLElement;
@@ -2053,7 +2242,53 @@ test.describe("touch judgment following", () => {
     const beforeDrag = await target.evaluate(
       (container) => container.scrollTop,
     );
-    for (const y of [245, 210, 170, 130, 90, 20, -40, -100, -180])
+    const dragGeometry = await scrollGeometry();
+    for (const y of [245, 210, 170])
+      await client.send("Input.dispatchTouchEvent", {
+        type: "touchMove",
+        touchPoints: [{ x: a.x + 20, y: a.y + y, id: 1 }],
+      });
+    await source.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+    const duringDrag = await scrollGeometry();
+    expect(duringDrag[0].position).toBeGreaterThan(before);
+    // The finger has moved, but the history projection retains contact's 260px line.
+    const frozenDelta =
+      judgmentHistoryPosition(
+        dragGeometry[0],
+        dragGeometry[1],
+        260,
+        duringDrag[0].position,
+      ) -
+      judgmentHistoryPosition(dragGeometry[0], dragGeometry[1], 260, before);
+    const frozenExpected = Math.max(
+      0,
+      Math.min(dragGeometry[1].limit, beforeDrag + frozenDelta),
+    );
+    expect(frozenExpected).toBeGreaterThan(1);
+    expect(frozenExpected).toBeLessThan(dragGeometry[1].limit - 1);
+    const movingDelta =
+      judgmentHistoryPosition(
+        dragGeometry[0],
+        dragGeometry[1],
+        170,
+        duringDrag[0].position,
+      ) -
+      judgmentHistoryPosition(dragGeometry[0], dragGeometry[1], 170, before);
+    expect(Math.abs(movingDelta - frozenDelta)).toBeGreaterThan(2);
+    await expect
+      .poll(async () =>
+        Math.abs(
+          (await target.evaluate((container) => container.scrollTop)) -
+            frozenExpected,
+        ),
+      )
+      .toBeLessThan(2);
+    for (const y of [130, 90, 20, -40, -100, -180])
       await client.send("Input.dispatchTouchEvent", {
         type: "touchMove",
         touchPoints: [{ x: a.x + 20, y: a.y + y, id: 1 }],
