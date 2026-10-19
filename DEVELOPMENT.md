@@ -49,6 +49,14 @@ Frontend serving and retained assets are described under [process boundaries](AR
 
 ## Validation
 
+The focused backpressure reproduction is
+`pnpm exec tsx --test tests/events-backpressure.test.ts`. Run it locally only
+when explicitly requested. It controls engine notification timing while using
+the real engine transport and web SSE route, comparing consecutive small and
+large snapshots with an actively reading client. The large-snapshot case is a
+regression test for connection loss under transient write pressure; it does not
+establish the cause of any particular deployed browser's reconnections.
+
 ### Test design
 
 SVG output regression tests use minimal fixtures reduced from observed provider
