@@ -379,6 +379,14 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
 3. Apply a very subtle tint to the corresponding message bubble in every chat history while its area is hovered or touch-selected. Preserve the bubbles' role colors and alignment. Apply the active comparison tint to matching messages as they arrive in streaming histories, including while the cursor or touch selection remains unchanged.
 4. Follow rendered chat histories as a group, separately from judgment views. Raw text and thinking keep independent scrolling.
 
+### 5.8. Standalone Rust WASM game template
+
+1. Provide a standalone, buildable Rust template that opens a blank WebGL2 canvas. Game code owns its state, rendering, and simulation model.
+2. Supply animation-frame redraws with timestamps and elapsed time in seconds. Keep the canvas drawing buffer and rendering viewport aligned with its displayed size and device-pixel ratio.
+3. Deliver keyboard events with key identity, modifiers, and repeat information, together with held-key state. Deliver pointer events and frame-local wheel deltas. Release held input when focus is lost, and let game code choose which inputs prevent browser defaults while preserving modified keyboard shortcuts.
+4. Make Web Audio available after a keyboard or pointer gesture, with access to both tone playback and the browser audio API.
+5. Support startup from local WASM files or supplied WASM bytes for offline packaging. Display startup and runtime errors, and release animation callbacks, input listeners, pointer capture, and audio resources when stopped.
+
 ## 6. Inference, scheduling, and recovery
 
 ### 6.1. Worker allocation
