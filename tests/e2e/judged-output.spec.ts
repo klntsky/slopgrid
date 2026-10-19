@@ -2011,6 +2011,218 @@ test("native judgment wheel aligns the criterion under a stationary cursor in un
   expect(await positions()).toEqual(transferred);
 });
 
+test("judgment layout changes after desktop scrollend refresh a stationary cursor in unequal views", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  const criteria = Array.from({ length: 4 }, (_, index) => ({
+    text: `Condition ${index + 1}?`,
+    correctAnswer: true,
+  }));
+  await page.request.post("/fixture/reset", {
+    data: {
+      judgeOutput: JSON.stringify({
+        results: criteria.map(() => ({
+          verdict: true,
+          explanation: "Matches.",
+        })),
+      }),
+    },
+  });
+  const id = await createJudged(page, {
+    ...judgedInput,
+    prompt: "Draw a red $ROW rectangle",
+    rows: { kind: "variable", values: ["top", "bottom"] },
+    columns: { kind: "judge_effort", values: ["none", "high"] },
+    judge: { ...judgedInput.judge!, model: "fixture/text", criteria },
+  });
+  await page.evaluate((id) => {
+    localStorage.setItem(
+      `slopgrid:grid:${id}:sizes`,
+      JSON.stringify({ columns: [320, 240], rows: [460, 260] }),
+    );
+  }, id);
+  await page.reload();
+  const results = page.getByRole("region", {
+    name: "Judgment details",
+    exact: true,
+  });
+  await expect(results).toHaveCount(4);
+  for (const panel of await results.all())
+    await expect(panel.locator(".judge-result-criteria > li")).toHaveCount(4);
+  await results.evaluateAll((containers) => {
+    containers.forEach((container, view) => {
+      // Keep the native source fixed when an earlier criterion grows.
+      (container as HTMLElement).style.overflowAnchor = "none";
+      const height = container.clientHeight;
+      const focusedHeight =
+        view === 0 ? height / 2 : view === 1 ? height - 8 : height * 2;
+      container
+        .querySelectorAll<HTMLElement>(".judge-result-criteria > li")
+        .forEach((row, index) => {
+          row.style.height = `${index === 1 ? focusedHeight : height * 2}px`;
+          row.style.overflow = "hidden";
+        });
+    });
+  });
+  const source = results.first();
+  const frames = () =>
+    page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+  const positions = () =>
+    results.evaluateAll((containers) =>
+      containers.map((container) => container.scrollTop),
+    );
+  const geometry = () =>
+    results.evaluateAll((containers) =>
+      containers.map((container) => {
+        const panel = container.getBoundingClientRect();
+        const scale = panel.height / container.clientHeight;
+        return {
+          position: container.scrollTop,
+          max: container.scrollHeight - container.clientHeight,
+          height: container.clientHeight,
+          screenHeight: panel.height,
+          width: panel.width,
+          scale,
+          rows: Array.from(
+            container.querySelectorAll(".judge-result-criteria > li"),
+            (row) => {
+              const rect = row.getBoundingClientRect();
+              return {
+                top: (rect.top - panel.top) / scale,
+                bottom: (rect.bottom - panel.top) / scale,
+                height: rect.height / scale,
+              };
+            },
+          ),
+        };
+      }),
+    );
+  const backgrounds = () =>
+    results.evaluateAll((containers) =>
+      containers.map((container) =>
+        Array.from(
+          container.querySelectorAll(".judge-result-criteria > li"),
+          (row) => getComputedStyle(row).backgroundColor,
+        ),
+      ),
+    );
+  await page.mouse.move(1, 1);
+  await frames();
+  const unhighlighted = await backgrounds();
+  const initial = await geometry();
+  expect(initial[0].height).toBeGreaterThan(initial[2].height);
+  expect(initial[0].width).toBeGreaterThan(initial[1].width);
+  const box = (await source.boundingBox())!;
+  const focusOffset = Math.min(100, box.height / 3);
+  const pointer = { x: box.x + 20, y: box.y + focusOffset };
+  const hitCriterion = () =>
+    source.evaluate((container, pointer) => {
+      const row = document
+        .elementFromPoint(pointer.x, pointer.y)
+        ?.closest(".judge-result-criteria > li");
+      return Array.from(
+        container.querySelectorAll(".judge-result-criteria > li"),
+      ).findIndex((candidate) => candidate === row);
+    }, pointer);
+  await page.mouse.move(pointer.x, pointer.y);
+  await frames();
+  expect(await hitCriterion()).toBe(0);
+
+  // Cross two criterion boundaries with one native scroll, without refreshing
+  // the cursor. Neither the pre-scroll row nor the scroll-time row is the row
+  // that the subsequent layout change should reveal.
+  const before = await positions();
+  const row = initial[0].rows[2];
+  const delta = (row.top + row.height / 2) * initial[0].scale - focusOffset;
+  const ended = source.evaluate(
+    (container) =>
+      new Promise<void>((resolve) =>
+        container.addEventListener("scrollend", () => resolve(), {
+          once: true,
+        }),
+      ),
+  );
+  await page.mouse.wheel(0, delta);
+  await ended;
+  await frames();
+  const scrolled = await positions();
+  expect(Math.abs(scrolled[0] - before[0] - delta)).toBeLessThan(2);
+  expect(await hitCriterion()).toBe(2);
+
+  const growth = await source.evaluate((container, pointerY) => {
+    const rows = container.querySelectorAll<HTMLElement>(
+      ".judge-result-criteria > li",
+    );
+    const scale =
+      container.getBoundingClientRect().height / container.clientHeight;
+    const next = rows[1].getBoundingClientRect();
+    const growth = (pointerY - next.top - next.height / 2) / scale;
+    rows[0].style.height = `${
+      parseFloat(getComputedStyle(rows[0]).height) + growth
+    }px`;
+    return growth;
+  }, pointer.y);
+  expect(growth).toBeGreaterThan(0);
+  await expect.poll(hitCriterion).toBe(1);
+  await expect
+    .poll(async () =>
+      (await backgrounds()).map((colors, view) =>
+        colors.map((color, index) => color !== unhighlighted[view][index]),
+      ),
+    )
+    .toEqual(Array.from({ length: 4 }, () => [false, true, false, false]));
+
+  // Assert visible geometry rather than duplicating the scroll mapper:
+  // fitting rows stay whole, with their focus line aligned or edge-clamped;
+  // oversized rows align the same fractional point at the stationary cursor.
+  await expect
+    .poll(async () => {
+      const current = await geometry();
+      const sourceRow = current[0].rows[1];
+      const fraction =
+        (focusOffset / current[0].scale - sourceRow.top) / sourceRow.height;
+      return (
+        current[0].position === scrolled[0] &&
+        current.slice(1).every((view) => {
+          const row = view.rows[1];
+          const focus = Math.min(focusOffset, view.screenHeight) / view.scale;
+          const offset = row.top + row.height * fraction - focus;
+          if (view.position <= 2 || view.position >= view.max - 2) return false;
+          if (row.height > view.height) return Math.abs(offset) < 2;
+          return (
+            row.top >= -2 &&
+            row.bottom <= view.height + 2 &&
+            (Math.abs(offset) < 2 ||
+              (offset > 0 && Math.abs(row.top) < 2) ||
+              (offset < 0 && Math.abs(row.bottom - view.height) < 2))
+          );
+        })
+      );
+    })
+    .toBe(true);
+  const aligned = await geometry();
+  expect(aligned[1].rows[1].height).toBeLessThan(aligned[1].height);
+  expect(Math.abs(aligned[1].rows[1].top)).toBeLessThan(2);
+  expect(aligned[2].rows[1].height).toBeGreaterThan(aligned[2].height);
+  const settled = await positions();
+  const highlighted = await backgrounds();
+  expect(settled[0]).toBe(scrolled[0]);
+  await frames();
+  expect(await positions()).toEqual(settled);
+  await page.mouse.move(pointer.x + 1, pointer.y);
+  await frames();
+  expect(await positions()).toEqual(settled);
+  await frames();
+  expect(await positions()).toEqual(settled);
+  expect(await backgrounds()).toEqual(highlighted);
+});
+
 test.describe("touch judgment following", () => {
   test.use({
     viewport: { width: 390, height: 844 },

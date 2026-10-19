@@ -454,7 +454,7 @@ test("hover aligns fractional message points in screen pixels, with visibility c
   }
 });
 
-test("native wheel realigns the message crossing beneath a stationary pointer without a later hover jump", async ({
+test("native scrollend resumes stationary-pointer alignment when source scrolling precedes delayed wheel input", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 1000 });
@@ -494,11 +494,68 @@ test("native wheel realigns the message crossing beneath a stationary pointer wi
   // The fitting message starts bottom-clamped in the shorter peer. Carrying
   // its relative mapped displacement into the next message would retain that
   // clamp's offset instead of aligning the new message under this same point.
+  const nativeBefore = await positions(panels);
+  await wheelToRest(page, source, 8);
   let before = await positions(panels);
+  expect(before[0] - nativeBefore[0]).toBeCloseTo(8, 0);
+  await expectHighlight(panels, 1, baseline);
+
   for (const delta of [100, 8]) {
-    await wheelToRest(page, source, delta);
-    const after = await positions(panels);
-    expect(after[0] - before[0]).toBeCloseTo(delta, 0);
+    const motion = await recordMotion(panels, 2);
+    const replay = await source.evaluate(
+      async (view, { delta, point }) => {
+        const order: { type: string; trusted: boolean }[] = [];
+        const scrolled = new Promise<number>((resolve) =>
+          view.addEventListener(
+            "scroll",
+            (event) => {
+              order.push({ type: event.type, trusted: event.isTrusted });
+              resolve(view.scrollTop);
+            },
+            { once: true },
+          ),
+        );
+        const ended = new Promise<boolean>((resolve) =>
+          view.addEventListener(
+            "scrollend",
+            (event) => resolve(event.isTrusted),
+            { once: true },
+          ),
+        );
+        view.addEventListener(
+          "wheel",
+          (event) => order.push({ type: event.type, trusted: event.isTrusted }),
+          { once: true },
+        );
+        const before = view.scrollTop;
+        view.scrollTop += delta;
+        const target = view.scrollTop;
+        const observed = await scrolled;
+        // Reproduce the opposite of ordinary wheel ordering: this notification
+        // arrives after a real scroll, and cannot perform another native scroll.
+        view.dispatchEvent(
+          new WheelEvent("wheel", {
+            bubbles: true,
+            cancelable: true,
+            clientX: point.x,
+            clientY: point.y,
+            deltaY: delta,
+          }),
+        );
+        const nativeEnd = await ended;
+        return { before, target, observed, nativeEnd, order };
+      },
+      { delta, point },
+    );
+    expect(replay.order).toEqual([
+      { type: "scroll", trusted: true },
+      { type: "wheel", trusted: false },
+    ]);
+    expect(replay.nativeEnd).toBe(true);
+    expect(replay.before).toBe(before[0]);
+    expect(replay.target - replay.before).toBeCloseTo(delta, 0);
+    expect(replay.observed).toBe(replay.target);
+    expect((await positions(panels))[0]).toBe(replay.target);
     const current = (await source
       .locator(".chat-bubble")
       .nth(2)
@@ -518,9 +575,18 @@ test("native wheel realigns the message crossing beneath a stationary pointer wi
       ),
     ).toBeLessThanOrEqual(1.5);
     before = await positions(panels);
+    expect(before[0]).toBe(replay.target);
+    await frames(page, 12);
+    const samples = await motion.evaluate((recorder) => recorder.stop());
+    await motion.dispose();
+    expectMonotone(
+      samples.map((sample) => sample.positions),
+      1,
+    );
+    for (const sample of samples)
+      expect([replay.before, replay.target]).toContain(sample.positions[0]);
+    expect(await positions(panels)).toEqual(before);
   }
-  await frames(page, 12);
-  expect(await positions(panels)).toEqual(before);
   await page.mouse.move(point.x + 1, point.y);
   await frames(page, 12);
   const afterHover = await positions(panels);

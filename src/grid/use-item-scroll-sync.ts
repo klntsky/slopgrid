@@ -345,6 +345,7 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
           ? rowOf(document.elementFromPoint(mouse.x, mouse.y))
           : null;
       if (row && mouse && viewOf(row) === session.source) {
+        hoverRow = row;
         highlight(row);
         reveal(row, mouse);
       } else {
@@ -355,10 +356,8 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
         }
         if (!touchScrolling && mouse) highlight(row);
       }
-    } else if (mode === "hover" && hoverRow && mouse && dirty) {
-      const row = rowOf(hoverRow);
-      if (row) reveal(row, mouse);
-      else endHover();
+    } else if (mode === "hover" && mouse && !pressed) {
+      explore(rowOf(document.elementFromPoint(mouse.x, mouse.y)), mouse);
     }
     if (touchGroup && geometryChanged && !touchScrolling) paintTouchFocus();
   }
@@ -378,7 +377,15 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
     )
       return;
     if (!touch && touchGroup) clearTouchFocus();
-    mode = "idle";
+    const row =
+      !touch && mouse && !pressed
+        ? rowOf(document.elementFromPoint(mouse.x, mouse.y))
+        : null;
+    mode = row && viewOf(row) === view ? "hover" : "idle";
+    if (mode === "hover") {
+      hoverRow = row;
+      schedule();
+    }
     session = null;
     // Passive wheel delivery can follow compositor scrolling. Retain the last
     // observed source offset; acquire follower maps only when scrolling starts.
@@ -502,6 +509,10 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
     pendingSource = null;
     pendingTouch = false;
     touchScrolling = false;
+    if (!touch && mouse && !pressed) {
+      const row = rowOf(document.elementFromPoint(mouse.x, mouse.y));
+      if (row) explore(row, mouse);
+    }
   }
   return {
     connect() {
@@ -586,7 +597,16 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
             if (contact) contact.scrolled = true;
           }
         }
-        if (mode === "scroll" && session?.source === source) schedule();
+        if (mode === "scroll") {
+          if (session?.source === source) schedule();
+        } else if (!touchGroup && !contact && mouse && !pressed) {
+          const row = rowOf(document.elementFromPoint(mouse.x, mouse.y));
+          if (row && viewOf(row) === source) {
+            mode = "hover";
+            hoverRow = row;
+            schedule();
+          }
+        }
       },
     },
   };
