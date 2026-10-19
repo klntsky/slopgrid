@@ -328,6 +328,7 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
 5. Delayed updates must not move title, output, thinking, status, or price backward, including after a restart. Retries must show content from the current attempt.
 6. Interrupted unfinished work requires an explicit Resume, preserving completed outputs.
 7. Live updates send changed fields and newly appended output or thinking without repeating the accumulated text or unchanged cells. Reconnecting recovers changes since the last received update when its recovery state is available; otherwise send one current snapshot and continue incrementally. Bound recovery storage and keep it isolated by viewer and grid.
+8. Multiple tabs receive live updates independently. Bursts of generation updates must not force an actively reading tab to reconnect.
 
 ## 7. Costs and billing
 

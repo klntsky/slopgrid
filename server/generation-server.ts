@@ -48,16 +48,32 @@ export async function serveGeneration(api: GenerationAPI, socket: string) {
     await api.getGrid(id);
     res.type("application/x-ndjson").set("Cache-Control", "no-store");
     res.flushHeaders();
+    let pending: string | undefined;
+    const flush = () => {
+      if (
+        pending === undefined ||
+        res.writableNeedDrain ||
+        res.destroyed ||
+        res.writableEnded
+      )
+        return;
+      const next = pending;
+      pending = undefined;
+      res.write(next);
+    };
+    res.on("drain", flush);
     const unsubscribe = api.subscribeGrid(
       id,
       (grid) => {
-        // Disconnect slow consumers rather than retaining unbounded draft snapshots.
-        if (res.writableNeedDrain) res.destroy();
-        else res.write(JSON.stringify(grid) + "\n");
+        // Each reader keeps only its newest immutable snapshot while blocked.
+        pending = JSON.stringify(grid) + "\n";
+        flush();
       },
       () => res.end(),
     );
     res.on("close", () => {
+      pending = undefined;
+      res.off("drain", flush);
       unsubscribe();
     });
   });
@@ -89,12 +105,10 @@ export async function serveGeneration(api: GenerationAPI, socket: string) {
           error instanceof Error ? error.name : "unknown",
           (error as { code?: string })?.code,
         );
-        res
-          .status(500)
-          .json({
-            code: "UNAVAILABLE",
-            error: "Generation service is unavailable.",
-          });
+        res.status(500).json({
+          code: "UNAVAILABLE",
+          error: "Generation service is unavailable.",
+        });
         return;
       }
       const body = recoverableStorageError(error)

@@ -22,11 +22,12 @@ async function stalled(options: RequestOptions) {
 }
 
 test(
-  "stalled web and engine viewers are disconnected without blocking inference or a healthy viewer",
+  "a stalled engine viewer recovers independently while stalled web viewers release capacity",
   { timeout: 30000 },
   async () => {
     const f = await runtimeFixture();
     const slow: IncomingMessage[] = [];
+    let slowEngine: IncomingMessage | undefined;
     let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
     let reading: Promise<void> | undefined;
     try {
@@ -65,12 +66,10 @@ test(
           }),
         );
       assert.equal((await f.request(endpoint)).status, 429);
-      slow.push(
-        await stalled({
-          socketPath: f.database + ".sock",
-          path: `/v1/grids/${grid.id}/events`,
-        }),
-      );
+      slowEngine = await stalled({
+        socketPath: f.database + ".sock",
+        path: `/v1/grids/${grid.id}/events`,
+      });
       // Paused readers stop draining their actual sockets. Successive snapshots
       // exceed socket buffers while the healthy client acknowledges each update.
       const chunk = "Streaming payload. ".repeat(30000);
@@ -93,11 +92,32 @@ test(
       assert.equal(
         slow.every((response) => !response.complete),
         true,
-        "both transports must drop stalled subscriptions, not retain them indefinitely",
+        "stalled web subscriptions must release capacity",
+      );
+      assert.equal(slowEngine.destroyed, false);
+      let recovered: Grid | undefined;
+      let engineBuffer = "";
+      slowEngine.setEncoding("utf8");
+      slowEngine.on("data", (chunk: string) => {
+        engineBuffer += chunk;
+        let boundary: number;
+        while ((boundary = engineBuffer.indexOf("\n")) >= 0) {
+          recovered = JSON.parse(engineBuffer.slice(0, boundary));
+          engineBuffer = engineBuffer.slice(boundary + 1);
+        }
+      });
+      slowEngine.resume();
+      await until(
+        () => recovered,
+        (g) => g?.cells[0].draft === chunk.repeat(8),
       );
       call.finish();
       await until(
         () => latest,
+        (g) => g?.status === "complete",
+      );
+      await until(
+        () => recovered,
         (g) => g?.status === "complete",
       );
       assert.equal(f.calls.length, 1);
@@ -109,6 +129,7 @@ test(
       assert.equal(f.store.billing.page(f.owner, 0).costUsd, 0.0123);
     } finally {
       for (const response of slow) response.destroy();
+      slowEngine?.destroy();
       await reader?.cancel();
       await reading;
       await f.close();

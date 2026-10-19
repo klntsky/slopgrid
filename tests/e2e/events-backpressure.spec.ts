@@ -5,7 +5,7 @@ import type { GenerationSnapshot } from "../../server/generation-api";
 import { runtimeFixture } from "../runtime-fixture";
 
 for (const size of [1024, 1024 * 1024]) {
-  test(`a browser receives ${size}-byte snapshot bursts without reopening events`, async ({
+  test(`two browser tabs receive ${size}-byte snapshot bursts without reopening events`, async ({
     page,
     context,
   }, testInfo) => {
@@ -22,7 +22,7 @@ for (const size of [1024, 1024 * 1024]) {
         draft: "Ready",
       })),
     };
-    let publish: ((grid: GenerationSnapshot) => void) | undefined;
+    const subscribers = new Set<(grid: GenerationSnapshot) => void>();
     const socket = join(f.directory, "browser-burst.sock");
     // Control notification timing without intercepting browser requests or
     // replacing EventSource, the engine transport, or the web streaming route.
@@ -31,26 +31,31 @@ for (const size of [1024, 1024 * 1024]) {
         ...f.engine.api,
         getGrid: async () => current,
         subscribeGrid(_id, snapshot) {
-          publish = snapshot;
+          subscribers.add(snapshot);
           snapshot(current);
           return () => {
-            publish = undefined;
+            subscribers.delete(snapshot);
           };
         },
       },
       socket,
     );
-    const requests: { atMs: number; status?: number }[] = [];
+    const pages = [page, await context.newPage()];
+    const requests: { tab: number; atMs: number; status?: number }[] = [];
     const started = Date.now();
-    page.on("request", (request) => {
-      if (new URL(request.url()).pathname.endsWith("/events")) {
-        const entry: (typeof requests)[number] = { atMs: Date.now() - started };
-        requests.push(entry);
-        void request.response().then((response) => {
-          entry.status = response?.status();
-        });
-      }
-    });
+    for (const [tab, browserPage] of pages.entries())
+      browserPage.on("request", (request) => {
+        if (new URL(request.url()).pathname.endsWith("/events")) {
+          const entry: (typeof requests)[number] = {
+            tab,
+            atMs: Date.now() - started,
+          };
+          requests.push(entry);
+          void request.response().then((response) => {
+            entry.status = response?.status();
+          });
+        }
+      });
     try {
       await f.startWeb(socket);
       await context.addCookies([
@@ -63,16 +68,18 @@ for (const size of [1024, 1024 * 1024]) {
           url: f.origin,
         },
       ]);
-      await page.goto(`${f.origin}/grid/${grid.id}`);
-      const preview = page.locator(".markdown-preview:visible");
-      await expect(preview).toContainText("Ready");
-      await expect.poll(() => publish !== undefined).toBe(true);
-      expect(requests).toHaveLength(1);
+      const previews = pages.map((p) => p.locator(".markdown-preview:visible"));
+      for (const [index, browserPage] of pages.entries()) {
+        await browserPage.goto(`${f.origin}/grid/${grid.id}`);
+        await expect(previews[index]).toContainText("Ready");
+      }
+      await expect.poll(() => subscribers.size).toBe(2);
+      expect(requests).toHaveLength(2);
       // A Markdown comment keeps the rendered DOM small while the transport
       // still carries the complete draft on each engine notification.
       const prefix = `<!--${"x".repeat(size)}-->\n\n`;
       for (let round = 1; round <= 3; round++) {
-        await expect.poll(() => publish !== undefined).toBe(true);
+        await expect.poll(() => subscribers.size).toBe(2);
         for (let update = 1; update <= 2; update++) {
           current = {
             ...current,
@@ -85,19 +92,21 @@ for (const size of [1024, 1024 * 1024]) {
               draft: `${prefix}Round ${round}, update ${update}`,
             })),
           };
-          publish!(current);
+          for (const publish of subscribers) publish(current);
         }
         // Recovery may use another connection. Check it recovers the actual
         // latest output before asserting that no reconnect was necessary.
-        await expect(preview).toContainText(`Round ${round}, update 2`, {
-          timeout: 10000,
-        });
+        for (const preview of previews)
+          await expect(preview).toContainText(`Round ${round}, update 2`, {
+            timeout: 10000,
+          });
       }
       expect(f.calls).toHaveLength(0);
-      expect(
-        requests,
-        "snapshot bursts must reach the browser on its original SSE connection",
-      ).toHaveLength(1);
+      for (const tab of [0, 1])
+        expect(
+          requests.filter((request) => request.tab === tab),
+          "snapshot bursts must reach each tab on its original SSE connection",
+        ).toHaveLength(1);
     } finally {
       console.log(
         `SSE requests for ${size}-byte drafts: ${JSON.stringify(requests)}`,
@@ -106,7 +115,7 @@ for (const size of [1024, 1024 * 1024]) {
         body: JSON.stringify(requests, null, 2),
         contentType: "application/json",
       });
-      await page.close();
+      for (const browserPage of pages) await browserPage.close();
       await f.close();
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));

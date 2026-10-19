@@ -59,11 +59,11 @@ establish the cause of any particular deployed browser's reconnections.
 
 The matching browser reproduction is
 `pnpm exec tsx tests/run-e2e.ts --suite mock tests/e2e/events-backpressure.spec.ts --workers=1`.
-It uses Chromium and the built application with controlled engine notifications,
+It uses two Chromium tabs and the built application with controlled engine notifications,
 then records actual event request times and statuses across three snapshot
-bursts while checking that the latest output reaches the page. It compares
+bursts while checking that the latest output reaches both tabs. It compares
 small and large drafts without intercepting browser requests or replacing
-EventSource. The expected connection count is one in both cases.
+EventSource. The expected connection count is one per tab in both cases.
 
 ### Test design
 
@@ -258,7 +258,7 @@ the fixture certificate explicitly so Chromium permits worker registration.
 4. **Complete draining:** cover queued cells, retry timers, and cancelled calls whose provider work has not settled. Accepted work finishes, new work is rejected, drained status waits correctly, and cancelling maintenance restores admission. See `tests/generation-drain.test.ts`.
 5. **Engine death at persistence boundaries:** kill the real process midstream and around billing, file, and cell-state persistence. Preserve committed outputs, retain recorded charges, settle interrupted ledger entries, and require explicit Resume without duplicating completed work. See `tests/generation-crash.test.ts`.
 6. **Reordered browser updates:** release older HTTP or SSE snapshots after newer state, including across reconnection, and ensure output, thinking, title, status, and prices never regress even transiently. See `tests/e2e/ordering.spec.ts`.
-7. **Slow and disconnected viewers:** stall one subscriber while another remains healthy, repeatedly disconnect/reconnect, and verify generation continues, abandoned capacity is released, and a reconnect sees current state. See `tests/generation-viewers.test.ts`.
+7. **Slow and disconnected viewers:** stall one engine subscriber while another remains healthy and verify that the stalled reader receives the latest draft and completion on the same connection after resuming. Check that stalled web viewers and repeated disconnects release admission capacity, generation continues, and a reconnect sees current state. See `tests/generation-viewers.test.ts`.
 
 Crash tests use `tests/crash-checkpoint.ts` to attach Node's inspector to the fixture engine and stop at a specific statement before killing the process. Checkpoints are located in the executed script and must identify a unique statement. Inspector activation exists only in the test supervision wrapper. Cancellation and drain tests observe the real SDK closing the upstream HTTP connection, while a SQLite writer lock keeps settlement pending. Browser tests retain the same pending state across reload, web replacement and engine death, and verify that late writes from the external provider cannot install cancelled output.
 

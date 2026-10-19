@@ -195,7 +195,10 @@ a new attempt discard unfinished previews. Product behavior is defined in
 [PRODUCT.md](PRODUCT.md).
 
 The engine sends snapshots containing cell state, drafts, estimates, and preview
-identifiers. The web process checks the viewer's session and access before
+identifiers. Each engine subscription owns its write buffer and retains only the
+newest pending serialized snapshot until its transport drains. Closing the
+subscription releases its pending state and drain listener independently of
+other readers. The web process checks the viewer's session and access before
 forwarding live updates. Version 2 browser streams start with a snapshot and
 send recursive field changes and string appends afterward. Opaque event cursors
 identify immutable baselines in a viewer-and-grid-scoped recovery cache, bounded
