@@ -81,7 +81,7 @@ export function Billing() {
                         {call.model}
                         <small>{call.effort}</small>
                       </td>
-                      <td>{call.phase === "judge" ? "Judge" : call.phase}</td>
+                      <td>{call.phase}</td>
                       <td>
                         <span
                           className={

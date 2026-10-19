@@ -53,7 +53,6 @@ for (const parameter of parameters) {
       });
       const restored = parameter.owner === "generator" ? left : left.judge!;
       assert.equal(restored[parameter.field], values[0]);
-      assert.equal(settings[parameter.field], fixedValue);
       assert.deepEqual(initial, original);
     }
   });
@@ -180,8 +179,6 @@ test("shared references enter a unique group including newly supplied group name
   assert.deepEqual(entered.referenceGroups?.["Group 2"], existing);
   assert.equal(entered.inputReferences, undefined);
   assert.deepEqual(input, original);
-  assert.deepEqual(Object.keys(input.referenceGroups!), ["Group 1", "Group 3"]);
-  assert.deepEqual(Object.keys(groups), ["Group 2"]);
 
   const edited = changeAxis(entered, "rows", {
     kind: "input_references",

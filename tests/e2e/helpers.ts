@@ -1,9 +1,10 @@
 import { expect } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import type { ModelInfo } from "../../server/model-catalog";
 import { createHash } from "node:crypto";
 
 export async function mockModels(
-  page: import("@playwright/test").Page,
+  page: Page,
   change: (models: ModelInfo[]) => ModelInfo[],
 ) {
   await page.route("**/*", async (route) => {
@@ -36,7 +37,7 @@ export async function mockModels(
   });
 }
 
-export async function finishPublishing(page: import("@playwright/test").Page) {
+export async function finishPublishing(page: Page) {
   const dialog = page.getByRole("dialog");
   await dialog.getByRole("radio", { name: "Accessible by link" }).check();
   await dialog.getByRole("button", { name: "Save", exact: true }).click();
@@ -44,8 +45,41 @@ export async function finishPublishing(page: import("@playwright/test").Page) {
   await expect(dialog).toHaveCount(0);
 }
 
+export async function connectOpenRouter(page: Page) {
+  await page
+    .getByRole("link", { name: "Connect OpenRouter", exact: true })
+    .click();
+  await expect(page.getByText("Connected", { exact: true })).toBeVisible();
+}
+
+export async function scrollToRest(
+  scroller: Locator,
+  scroll: () => Promise<unknown>,
+) {
+  // Wait for listener installation before dispatching native input.
+  const handle = await scroller.evaluateHandle((view) => ({
+    ended: new Promise<void>((resolve) =>
+      view.addEventListener("scrollend", () => resolve(), { once: true }),
+    ),
+  }));
+  try {
+    await scroll();
+    await handle.evaluate(({ ended }) => ended);
+    await scroller
+      .page()
+      .evaluate(
+        () =>
+          new Promise<void>((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+          ),
+      );
+  } finally {
+    await handle.dispose();
+  }
+}
+
 export async function expectProgress(
-  page: import("@playwright/test").Page,
+  page: Page,
   finished: number,
   total: number,
 ) {
@@ -56,7 +90,7 @@ export async function expectProgress(
 }
 
 export async function create(
-  page: import("@playwright/test").Page,
+  page: Page,
   format = "SVG",
   rows = "cat\ndog",
   columns = "hat",
@@ -78,15 +112,11 @@ export async function create(
     model ?? (format === "Image" ? "fixture/image" : "fixture/text"),
   );
   await page.getByLabel("Prompt", { exact: true }).fill(prompt);
-  await page.getByRole("link", { name: "Connect OpenRouter" }).click();
-  await expect(page.getByText("Connected", { exact: true })).toBeVisible();
+  await connectOpenRouter(page);
   await page.getByRole("button", { name: "Generate", exact: true }).click();
 }
 
-export async function selectModel(
-  page: import("@playwright/test").Page,
-  model: string,
-) {
+export async function selectModel(page: Page, model: string) {
   const selector = page.getByRole("radiogroup", { name: "Model", exact: true });
   await selector.getByRole("searchbox").fill(model);
   await selector

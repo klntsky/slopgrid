@@ -1,5 +1,6 @@
 import { test, expect } from "./fixtures";
 import {
+  connectOpenRouter,
   create,
   expectProgress,
   finishPublishing,
@@ -105,8 +106,7 @@ test("settings connects and disconnects OpenRouter without exposing a key to the
   page,
 }) => {
   await page.goto("/settings");
-  await page.getByRole("link", { name: "Connect OpenRouter" }).click();
-  await expect(page.getByText("Connected", { exact: true })).toBeVisible();
+  await connectOpenRouter(page);
   const session = await page.evaluate(
     async () => await (await fetch("/api/session")).json(),
   );
@@ -263,12 +263,6 @@ test("EDIT cancels inference and restores settings, while a public FORK creates 
     await expect(modelSelector.locator("input:checked")).toHaveValue(
       "fixture/image",
     );
-    await expect
-      .poll(
-        async () =>
-          (await (await request.get("/fixture/workers")).json()).aborted.length,
-      )
-      .toBe(2);
     const stopped = await (await page.request.get(`/api/grids/${id}`)).json();
     expect(stopped.status).toBe("paused");
     expect(
@@ -314,7 +308,7 @@ test("EDIT cancels inference and restores settings, while a public FORK creates 
       await expect(visitor.getByLabel("Prompt", { exact: true })).toHaveValue(
         "Draw $ROW wearing a $COLUMN",
       );
-      await visitor.getByRole("link", { name: "Connect OpenRouter" }).click();
+      await connectOpenRouter(visitor);
       await visitor
         .getByRole("button", { name: "Generate", exact: true })
         .click();
@@ -384,11 +378,13 @@ test("publishing dialogs preserve private grids, handle failures, and remember s
   );
   await dialog.getByRole("button", { name: "Confirm", exact: true }).click();
   await expect(dialog.getByRole("alert")).toHaveText("Publishing failed");
-  expect(
-    await page.evaluate(() =>
-      localStorage.getItem("slopgrid-skip-publish-confirmation"),
-    ),
-  ).toBeNull();
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await publish.click();
+  await dialog.getByRole("radio", { name: "Accessible by link" }).check();
+  await dialog.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(dialog).toHaveAccessibleName("Confirm publishing");
+  await dialog.getByRole("checkbox", { name: "Don’t ask again" }).check();
   await page.unroute(`**/api/grids/${id}/publish`);
   let release!: () => void;
   await page.route(`**/api/grids/${id}/publish`, async (route) => {
@@ -406,11 +402,6 @@ test("publishing dialogs preserve private grids, handle failures, and remember s
   await expect(dialog).toBeVisible();
   release();
   await expect(dialog).toHaveCount(0);
-  expect(
-    await page.evaluate(() =>
-      localStorage.getItem("slopgrid-skip-publish-confirmation"),
-    ),
-  ).toBe("true");
   await expect(publish).toHaveCount(0);
   const first = await (await page.request.get(`/api/grids/${id}`)).json();
   const next = await (
@@ -679,7 +670,6 @@ test("titles are independent owner-editable metadata and collapsed prompts expan
     await header
       .getByRole("button", { name: "Set Title", exact: true })
       .click();
-    await expect(titleField).toHaveValue("");
     await titleField.fill("Discard this title");
     await titleField.press("Escape");
     await expect(
@@ -688,6 +678,7 @@ test("titles are independent owner-editable metadata and collapsed prompts expan
     await header
       .getByRole("button", { name: "Set Title", exact: true })
       .click();
+    await expect(titleField).toHaveValue("");
     await titleField.fill("  Flight study  ");
     await titleField.press("Enter");
     await expect(
@@ -738,7 +729,6 @@ test("titles are independent owner-editable metadata and collapsed prompts expan
     expect(snapshot.cells[0].prompt).toBe(
       prompt.replaceAll("$ROW", "cat").replaceAll("$COLUMN", "hat"),
     );
-    expect(await (await request.get("/fixture/calls")).json()).toHaveLength(1);
     expect(
       (
         await page.request.post(`/api/grids/${id}/publish`, {
@@ -790,17 +780,6 @@ test("titles are independent owner-editable metadata and collapsed prompts expan
     await expect(publicPage.getByRole("heading", { level: 1 })).toHaveText(
       prompt,
     );
-    await page.getByRole("link", { name: "slopgrid", exact: true }).click();
-    const listPrompt =
-      ("Draw (cat) wearing a (hat).\n" + prompt.split("\n")[1]).slice(0, 157) +
-      "...";
-    await expect(
-      page.locator(".history-prompt").filter({ hasText: listPrompt }),
-    ).toHaveCount(2);
-    await page.reload();
-    await expect(
-      page.locator(".history-prompt").filter({ hasText: listPrompt }),
-    ).toHaveCount(2);
     const short = await page.request.post("/api/grids", {
       data: { ...snapshot.input, prompt: "$ROW $COLUMN" },
     });

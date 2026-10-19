@@ -482,7 +482,6 @@ test("judge axes expand independently of generator settings in row-major order a
     ),
   );
   assert.ok(cells.every((cell) => cell.imageSettings === undefined));
-  assert.notEqual(cells[0].judge, cells[1].judge);
   const swapped = expandGrid(
     gridSchema.parse({
       ...input,

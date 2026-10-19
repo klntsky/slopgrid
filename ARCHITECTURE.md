@@ -1,9 +1,9 @@
 # Architecture
 
-Slopgrid has a React client, a web process, and a separate, long-lived inference
-engine. The web process owns browser requests and access control. The engine owns
-generation and provider calls. They share SQLite and an output filesystem, but
-communicate about generation through a private API.
+Slopgrid separates its web process from a long-lived inference engine. The web
+process owns HTTP requests and access control. The engine owns generation and
+provider calls. They share SQLite and an output filesystem, but communicate about
+generation through a private API.
 
 This document explains responsibilities and boundaries. Product behavior is in
 [PRODUCT.md](PRODUCT.md), and setup, operations, and validation are in
@@ -11,9 +11,6 @@ This document explains responsibilities and boundaries. Product behavior is in
 
 ## Process boundaries
 
-- The React client owns creation drafts, model selection, grid views, and browser
-  interactions. TanStack Router handles navigation, TanStack Query handles API
-  state, and server-sent events carry live grid snapshots.
 - The web process (`server/index.ts`) owns sessions, authentication, grid
   metadata, catalog data for forms, HTTP routes, and authorized output delivery.
   It delegates generation commands to the engine instead of running provider
@@ -96,15 +93,9 @@ remain separate from these diagnostic fields, and retry policy is unchanged.
 
 ## Creation and inference
 
-Compatibility tables share model selection, name resolution, and support-state
-aggregation with provider-combination checks. Their presentation requirements
-are defined in [PRODUCT.md](PRODUCT.md#34-compatibility-presentation).
-
-The browser persists a creation draft and a request identity across reloads.
 The web process validates the input and commits a creation receipt, grid, and
 initial tasks and cell links together. Replaying the same request resolves to the
-existing grid, which lets the browser recover from a lost creation response without
-starting inference twice.
+existing grid without starting inference twice.
 
 - Model catalogs are loaded by the web process for forms. Provider adapters own
   catalog interpretation, credit lookup, and request preparation; they remain
@@ -170,65 +161,22 @@ provider request signature.
   task charges and grid spending; generation usage stays separate for Cost and
   token counts.
 
-## Outputs and live views
-
-The grid parameters control renders through a React portal into a Tippy content
-container attached to the document body and owns its popup interaction and focus
-return, not engine state. Common parameters come from saved grid input, filtered
-by selected axis kinds; reference thumbnails use the authorized reference route.
-
-The grid owns per-cell content selection and expansion state. Cells keep output
-previews mounted while content modes alternate.
-
-A content-independent scroll coordinator owns input-source arbitration, gesture
-focus, and native scroll following. Desktop hover and persistent touch comparison
-share a position-writing path, with each view's current scroll position as the
-authoritative state.
-Views declare their synchronization group and ordered vertical areas. The
-coordinator measures and observes those areas independently of their rendered
-contents. Presentation owns highlight styling. Chat histories
-and judgment results use this same coordinator.
-
-The coordinator measures and caches view geometry and normalizes interaction
-focus by each viewport's height. A pure mapper projects content coordinates
-through matched full-area boundaries and computes direction-preserving movement
-across those segments. The coordinator applies that movement to current peer
-positions, retains fractional movement, and enforces native scroll limits.
-Comparison state preserves paused alignment through desktop scroll completion;
-fresh hover entries and explicit taps establish a new proportional alignment.
-Geometry refreshes resolve the current cursor target without coupling the mapper
-to rendered contents.
-
-Interaction selection is separate from scroll projection: touch highlighting
-stays fixed during a gesture, then settles at the retained viewport percentage
-without changing scroll positions. Touch handoff retains that percentage across
-unequal-height views while following from their current positions.
-
-Judgment presentation combines saved criteria with persisted results and does
-not own inference or billing state.
+## Output execution and delivery
 
 The output layer owns format instructions, parsing, completed files, and
 temporary previews. Website output is a bundle of validated relative paths with
 an entry page. One path validator protects both stored bundles and preview
 serving. Temporary previews belong to the active attempt and are cleared when
-that attempt ends or the engine starts. Browser previews and final storage share
-the SVG text preparation function in `shared/svg.ts`. Its scanner tracks open
-elements and quoted values without parsing or reserializing XML; code-block
-extraction and namespace repair are independent of tag completion. Each preview
-is derived from raw accumulated text rather than a previous repaired preview.
-Output-preservation rules are defined in
+that attempt ends or the engine starts. SVG preparation is shared between
+streaming preview generation and committed output storage. Content-preservation
+requirements are defined in
 [PRODUCT.md](PRODUCT.md#51-shared-controls-and-output-preservation).
 
-Chat completion retains the `chat-template` storage identifier and stores the completed
-message array as a JSON output artifact and streams that same representation.
-The shared conversation renderer formats each message body separately, keeping
-message boundaries independent of Markdown content. Grid previews and standalone
-outputs use the same renderer and styles; raw views, copying, and downloads use
-the stored JSON.
-Chat inputs retain ordered messages, and grid expansion substitutes
-variables in each message body. A derived transcript supplies titles and prompt
-display. Inference sends structured messages without an additional system
-instruction, and request signatures include the history.
+Chat completion retains the `chat-template` storage identifier and stores and
+streams the completed message array as a JSON artifact. Chat inputs retain
+ordered messages, and grid expansion substitutes variables in each message body.
+Inference sends structured messages without an additional system instruction,
+and request signatures include the history.
 
 Generation attempts are the shared content-execution boundary for every output
 format. The content executor coordinates provider calls and progress within the
@@ -265,12 +213,8 @@ send recursive field changes and string appends afterward. Opaque event cursors
 identify immutable baselines in a viewer-and-grid-scoped recovery cache, bounded
 to 32 MiB of serialized baselines, 128 entries, and 60 seconds. Reconnecting supplies the last received
 cursor and receives a delta from that baseline, or a fresh snapshot after
-eviction or a web restart. The browser keeps its stream baseline separate from
-the query cache so concurrent HTTP responses cannot invalidate delta application.
-Existing version 1 clients continue receiving snapshots until they reload.
-Reconnecting does not restart inference. The client renders
-Markdown from escaped source, validates SVG drafts before display, and keeps
-visible website frames stable while previews change.
+eviction or a web restart. Existing version 1 clients continue receiving
+snapshots until they reload. Reconnecting does not restart inference.
 
 Thinking traces are private, attempt-specific files. Active snapshots carry
 accumulated thinking; completed snapshots refer to the saved trace. Reads
@@ -334,80 +278,16 @@ Direct private HTML navigation uses the same access checks and redirect. The
 bridge that preserves frame scroll state communicates only with its application
 parent and grants no additional access.
 
-## Progressive web app and offline storage
-
-The build emits a web manifest, PNG app icons, a service worker with the release's
-asset inventory, and a generic offline shell. Installation caches the shell and
-frontend assets. Hashed assets remain available for cached pages across releases;
-worker activation follows the browser lifecycle without replacing a worker used
-by open tabs. Registration runs alongside rendering and does not gate startup.
-
-The worker fetches pages and read-only API data from the network first, retaining
-successful responses and the list pages embedded in HTML. Network failures use
-cached responses, while HTTP denials remain authoritative. Cached grid snapshots
-exclude streamed drafts, temporary previews, and live thinking. Output readiness,
-rather than judgment completion, triggers caching of saved outputs and downloads.
-Persisted verdicts remain snapshot data. Reconnection refreshes active queries
-before live streams resume. Mutations and OAuth exchanges remain network-only.
-Cache activation migrates retained snapshot records before serving them to the
-new client, preserving session partitions, saved output bytes, and verdicts.
-
-Session responses carry a one-way hash of the session identifier as a cache
-partition key, which grants no server access. Sign-out and observed session
-changes remove cached data; an epoch check rejects writes from obsolete requests.
-Offline copies remain readable in their last known session until the browser can
-observe revocation online. Cache writes are serialized, quota errors evict older
-data entries, and storage failures do not prevent online requests from succeeding.
-Draft storage and the application shell are separate from replaceable cached data.
-
 Completed website bundles also have a self-contained offline representation.
 HTML, CSS imports, static resource references, and module imports are rewritten
 to embedded data URLs. The original bundle remains available as a cached ZIP.
 Offline HTML documents are served at application paths under `/offline/outputs/`
 with a response-level opaque sandbox and a policy that prohibits network access,
 forms, and nested frames. These documents cannot read application cookies,
-storage, or the parent DOM. The iframe permits worker interception of the initial
-navigation; the response policy imposes isolation before generated code runs.
-Its navigation bridge accepts only the current frame and paths within its own
-output. Generated scripts that construct resource URLs at runtime are not
-rewritten; reconnecting restores the original website preview.
+storage, or the parent DOM. The response policy imposes isolation before
+generated code runs.
 
 ## Code ownership
-
-Controls explicitly attach contextual hints through the shared tooltip helper.
-Tippy handles positioning outside clipping containers, while the helper owns
-content updates and Escape dismissal. Its document key listener exists only
-while the tooltip is visible and is removed on hiding or destruction.
-
-The navbar owns its navigation popup above the grid workspace. The workspace
-contains grid stacking layers and expanded previews, keeping their ordering
-independent of navigation.
-
-The grid page occupies a fixed viewport shell, keeping its header independent
-of document scrolling on the previous route. The grid viewport owns scrolling
-within that shell, while the router restores ordinary-page scroll positions
-through browser history.
-
-Markdown and conversation previews, thinking traces, and text clipboard actions
-share an output query keyed by the canonical source URL. Completed text is cached once, while
-preview components retain streaming drafts until the saved output arrives.
-Image clipboard conversion remains separate from text loading.
-
-The grid viewport owns measured and saved dimensions, zoom, and pointer
-gestures in one lifecycle. Resizing and pinch anchoring use its shared
-coordinate space, and gesture handlers share capture and cleanup. The output
-grid supplies labels and cells without maintaining a second geometry model.
-
-The grid workspace owns the expanded selection and focus restoration. Output
-cells stay mounted while their presentation expands within the workspace;
-website browsing contexts and preview state are retained without a second
-output tree or scroll transfer between copies. The workspace owns background
-inertness independently of the navbar.
-
-The browser query client owns grid snapshot ordering for HTTP reads, command
-responses, and live events. Its grid cache rule compares engine epochs and
-sequences before accepting replacements; individual update paths write through
-that cache without maintaining separate ordering state.
 
 - `server/app.ts` composes web dependencies and middleware; `server/routes/`
   contains browser-facing routes. `server/generation-api.ts` and
@@ -415,25 +295,10 @@ that cache without maintaining separate ordering state.
 - `server/jobs.ts` owns the task lifecycle and scheduling policy.
   `server/workflow-executor.ts` owns content execution; provider preparation,
   storage, billing, and output modules keep their respective side effects.
-- `src/create/` owns form state, drafts, and submission. `src/grid/` owns live
-  grid state and views. Shared components and Markdown rendering live outside
-  those feature directories.
-- The home and creation routes share the format picker and persisted draft.
-  Route components compose listing queries and form state; navigation behavior
-  is defined in [PRODUCT.md](PRODUCT.md#31-form-and-output-selection).
 - Grid listing queries filter ownership or public visibility in SQLite before
   counting and selecting a page. Only that page's grids are loaded for summary
   presentation, with counts and rows read in one transaction. The list APIs
   return grids, total, page, and pageSize, and validate the requested page.
-  Independent query keys and home search parameters retain each list's page.
-- Home HTML embeds the requested page and its next two available pages for
-  each list from one database snapshot. Creation HTML embeds the first three
-  available pages of both lists, and the creation page uses the same list hooks
-  to prefetch them during client navigation without displaying the lists.
-  Production and development use the same
-  session-filtered bootstrap. Request-specific HTML uses HTTP no-store and varies
-  by cookie, while the service worker retains session-scoped offline copies. It
-  escapes script content and permits its inline script with a CSP hash.
-  Before React renders, these pages seed the existing query cache. List queries
-  share a 30-second freshness period and prefetch only the next two available
-  pages; existing mutation invalidation refreshes affected cached lists.
+- The web process embeds authorized grid-list pages in HTML from one database
+  snapshot. Request-specific HTML uses HTTP no-store and varies by cookie,
+  escapes script content, and permits its inline script with a CSP hash.

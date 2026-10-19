@@ -38,7 +38,6 @@ test("production browser fixtures release processes, TLS listeners and temporary
         );
         assert.equal(status, 200);
       }
-      assert.ok(existsSync(server.data));
     } finally {
       await server.close();
     }

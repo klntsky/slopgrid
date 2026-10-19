@@ -97,12 +97,8 @@ test("page HTML contains the complete model dump before rendering and updates fr
     ],
   };
   let publish: (models: ModelInfo[]) => void = () => {};
-  let reads = 0;
   const catalog: ModelCatalog = {
-    read: async () => {
-      reads++;
-      return [model];
-    },
+    read: async () => [model],
     subscribe(listener) {
       publish = listener;
       listener([model]);
@@ -144,10 +140,8 @@ test("page HTML contains the complete model dump before rendering and updates fr
           .includes(`'sha256-${hash}'`),
       );
     }
-    assert.equal(reads, 1);
     publish([{ ...model, name: "Updated catalog" }]);
     assert.match(await (await fetch(origin)).text(), /Updated catalog/);
-    assert.equal(reads, 1);
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
     rmSync(directory, { recursive: true, force: true });

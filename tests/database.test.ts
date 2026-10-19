@@ -240,15 +240,14 @@ function seedLegacy(db: Database.Database, version: number) {
 }
 
 function storedData(db: Database.Database, id: string) {
-  const row = db.prepare("SELECT data FROM grids WHERE id=?").get(id);
-  assert.ok(row && typeof row === "object" && "data" in row);
-  assert.equal(typeof row.data, "string");
-  return JSON.parse(String(row.data));
+  const row = db
+    .prepare<[string], { data: string }>("SELECT data FROM grids WHERE id=?")
+    .get(id)!;
+  return JSON.parse(row.data);
 }
 
 function field(db: Database.Database, sql: string, key: string) {
-  const row = db.prepare<[], Record<string, unknown>>(sql).get();
-  assert.ok(row);
+  const row = db.prepare<[], Record<string, unknown>>(sql).get()!;
   return row[key];
 }
 
@@ -377,10 +376,6 @@ test("production v12 migrates ownership, sessions, references and billing withou
         usage: { inputTokens: 10, outputTokens: 20 },
       }),
     });
-    assert.deepEqual(
-      db.prepare("SELECT generation_id,judgment_id,data FROM cells").all(),
-      [{ generation_id: "g:cell", judgment_id: null, data: "{}" }],
-    );
     const generation = db
       .prepare(
         "SELECT status,artifact_id,thinking_source_id,data FROM workflow_tasks",
@@ -753,7 +748,7 @@ test("v13 judged groups preserve generation artifacts, independent judgments and
     assert.deepEqual(
       db
         .prepare(
-          "SELECT id,generation_id,judgment_id,data FROM cells ORDER BY position",
+          "SELECT id,generation_id,judgment_id FROM cells ORDER BY position",
         )
         .all(),
       [
@@ -761,25 +756,21 @@ test("v13 judged groups preserve generation artifacts, independent judgments and
           id: "cell",
           generation_id: "g:cell",
           judgment_id: "j:cell",
-          data: "{}",
         },
         {
           id: "unfinished",
           generation_id: "g:unfinished",
           judgment_id: "j:unfinished",
-          data: "{}",
         },
         {
           id: "member",
           generation_id: "g:cell",
           judgment_id: "j:member",
-          data: "{}",
         },
         {
           id: "waiting",
           generation_id: "g:unfinished",
           judgment_id: "j:waiting",
-          data: "{}",
         },
       ],
     );
@@ -821,35 +812,56 @@ test("v14 workflow backfill failure restores a production v13 database atomicall
   }
 });
 
-test("fresh and upgraded databases expose identical canonical columns and indexes", () => {
-  const fresh = new Database(":memory:");
-  const upgraded = legacyDatabase(13);
-  try {
-    seedLegacy(upgraded, 13);
-    initializeDatabase(fresh);
-    initializeDatabase(upgraded);
-    const tables = fresh
-      .prepare(
-        "SELECT name FROM sqlite_schema WHERE type='table' ORDER BY name",
-      )
-      .all() as { name: string }[];
-    for (const { name } of tables) {
-      assert.deepEqual(
-        fresh.pragma(`table_info(${name})`),
-        upgraded.pragma(`table_info(${name})`),
+test("fresh and upgraded databases enforce publication, slug uniqueness and grid cleanup", () => {
+  for (const version of [0, 13]) {
+    const db =
+      version === 0 ? new Database(":memory:") : legacyDatabase(version);
+    try {
+      db.pragma("foreign_keys = ON");
+      if (version) seedLegacy(db, version);
+      initializeDatabase(db);
+      const insert = db.prepare(
+        "INSERT INTO grids (id,data,owner,published,visibility,created_at,slug) VALUES (?,'{}','owner',?,'public',?,?)",
       );
-      assert.deepEqual(
-        fresh.pragma(`foreign_key_list(${name})`),
-        upgraded.pragma(`foreign_key_list(${name})`),
+      insert.run("constraint-grid", 1, createdAt, "unique-public-slug");
+      assert.throws(
+        () => insert.run("duplicate-slug", 1, createdAt, "unique-public-slug"),
+        /UNIQUE constraint failed/,
       );
-      assert.deepEqual(
-        fresh.pragma(`index_list(${name})`),
-        upgraded.pragma(`index_list(${name})`),
+      assert.throws(
+        () => insert.run("invalid-publication", 2, createdAt, null),
+        /CHECK constraint failed/,
       );
+      const cell = db.prepare(
+        "INSERT INTO cells (id,grid_id,position,data) VALUES (?,?,0,'{}')",
+      );
+      assert.throws(
+        () => cell.run("orphan-cell", "missing-grid"),
+        /FOREIGN KEY constraint failed/,
+      );
+      cell.run("constraint-cell", "constraint-grid");
+      db.prepare(
+        "INSERT INTO grid_reference_images (grid_id,reference_id) VALUES ('constraint-grid','selected-reference')",
+      ).run();
+      db.prepare(
+        "INSERT INTO creation_requests (owner,request_id,fingerprint,grid_id) VALUES ('owner','constraint-request','fingerprint','constraint-grid')",
+      ).run();
+      db.prepare("DELETE FROM grids WHERE id='constraint-grid'").run();
+      for (const table of [
+        "cells",
+        "grid_reference_images",
+        "creation_requests",
+      ])
+        assert.deepEqual(
+          db
+            .prepare(`SELECT * FROM ${table} WHERE grid_id='constraint-grid'`)
+            .all(),
+          [],
+        );
+      assert.deepEqual(db.pragma("foreign_key_check"), []);
+    } finally {
+      db.close();
     }
-  } finally {
-    fresh.close();
-    upgraded.close();
   }
 });
 

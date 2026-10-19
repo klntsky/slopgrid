@@ -257,9 +257,19 @@ test("reference loaders share exact bytes and hashes while retaining order and e
     a.map((ref) => ref.bytes),
     [png, other, png],
   );
-  assert.equal(a[0], a[2]);
-  assert.equal(a[0], b[0]);
-  assert.equal(a[0].sha256, createHash("sha256").update(png).digest("hex"));
+  assert.deepEqual(
+    a.map((ref) => ref.sha256),
+    [png, other, png].map((bytes) =>
+      createHash("sha256").update(bytes).digest("hex"),
+    ),
+  );
+  assert.deepEqual(b, [
+    {
+      bytes: png,
+      mediaType: "image/png",
+      sha256: createHash("sha256").update(png).digest("hex"),
+    },
+  ]);
   const file = store.references.path(first.id)!;
   renameSync(file, file + ".held");
   assert.deepEqual((await load([first.id]))[0].bytes, png);

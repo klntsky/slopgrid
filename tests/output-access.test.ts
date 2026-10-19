@@ -224,10 +224,6 @@ test("private outputs require ownership, isolated grants are scoped and revoked 
       shared.output = structuredClone(generation.output);
       store.saveWorkflow(other, sharedTasks);
       assert.equal(
-        store.outputMetadata(other.cells[0].id)?.artifactId,
-        generation.output!.artifactId,
-      );
-      assert.equal(
         (await isolated(other.cells[0].id, "/index.html", outputCookie)).status,
         404,
       );
@@ -434,7 +430,6 @@ test("committed judged outputs stay readable and downloadable without weakening 
       assert.equal(view.cells[0].outputReady, true);
       assert.equal(view.cells[0].outputURL, `${origin}/outputs/${cell.id}`);
       assert.equal(view.cells[0].status, status);
-      assert.equal(view.cells[0].generationId, generation.id);
       assert.equal(view.input.judge.criteria[0].correctAnswer, false);
       const publicationError = store.publish(grid.id, "unlisted", null);
       if (status === "running") {

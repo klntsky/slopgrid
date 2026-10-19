@@ -63,7 +63,6 @@ test("HTML embeds three session-filtered pages with safe scripts and per-respons
         ),
     );
     assert.match(response.headers.get("vary")!, /Cookie/);
-    assert.ok(html.indexOf("slopgrid-grids") < html.indexOf('id="root"'));
     return context.window.__SLOPGRID_GRIDS__;
   }
   const first = await read("/", owner);

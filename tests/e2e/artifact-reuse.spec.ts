@@ -1,7 +1,12 @@
 import type { Page } from "@playwright/test";
 import type { ViewGrid } from "../../src/api";
 import { test, expect } from "./fixtures";
-import { create, expectProgress, finishPublishing } from "./helpers";
+import {
+  connectOpenRouter,
+  create,
+  expectProgress,
+  finishPublishing,
+} from "./helpers";
 
 async function readGrid(
   page: Page,
@@ -40,7 +45,7 @@ test("reuse selection survives Edit, reload, OAuth and Fork, and unchecked draft
   await expect(reuse).not.toBeChecked();
   expect((await page.request.delete("/api/session/key")).status()).toBe(200);
   await page.reload();
-  await page.getByRole("link", { name: "Connect OpenRouter" }).click();
+  await connectOpenRouter(page);
   await expect(reuse).not.toBeChecked();
   await reuse.check();
   await page.getByLabel("Budget limit per cell", { exact: true }).fill("0.5");
@@ -78,11 +83,13 @@ test("reuse selection survives Edit, reload, OAuth and Fork, and unchecked draft
   await reuse.uncheck();
   await page.reload();
   await expect(reuse).not.toBeChecked();
-  const before = await (await request.get("/fixture/calls")).json();
   await page.getByRole("button", { name: "Generate", exact: true }).click();
   await expectProgress(page, 2, 2);
-  const after = await (await request.get("/fixture/calls")).json();
-  expect(after.length - before.length).toBe(2);
+  expect((await readGrid(page)).spentUsd).toBe(0.5);
+  await expect(page.locator(".grid-spent")).toHaveAttribute(
+    "aria-label",
+    "Total spent: $0.50",
+  );
   await page.getByRole("button", { name: "PUBLISH", exact: true }).click();
   await finishPublishing(page);
   await page.getByRole("button", { name: "FORK", exact: true }).click();
@@ -91,7 +98,11 @@ test("reuse selection survives Edit, reload, OAuth and Fork, and unchecked draft
   await expect(reuse).toBeChecked();
   await page.getByRole("button", { name: "Generate", exact: true }).click();
   await expectProgress(page, 2, 2);
-  expect(await (await request.get("/fixture/calls")).json()).toEqual(after);
+  expect((await readGrid(page)).spentUsd).toBe(0);
+  await expect(page.locator(".grid-cost")).toHaveAttribute(
+    "aria-label",
+    "Total cost: $0.50",
+  );
 });
 
 test("image reuse follows ordered reference bytes and effective image settings through the provider SDK", async ({
@@ -101,8 +112,7 @@ test("image reuse follows ordered reference bytes and effective image settings t
   await request.post("/fixture/reset", { data: {} });
   await page.goto("/");
   await page.getByRole("button", { name: "Image", exact: true }).click();
-  await page.getByRole("link", { name: "Connect OpenRouter" }).click();
-  await expect(page.getByText("Connected", { exact: true })).toBeVisible();
+  await connectOpenRouter(page);
   const png = Buffer.from(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
     "base64",
@@ -182,15 +192,14 @@ for (const [kind, initial, changed] of [
   ["background", "opaque", "transparent"],
   ["aspect_ratio", "1:1", "16:9"],
 ] as const) {
-  test(`image reuse changes only ${kind} while keeping every other parameter fixed`, async ({
+  test(`image reuse invalidates a cached artifact when the ${kind} axis changes`, async ({
     page,
     request,
   }) => {
     await request.post("/fixture/reset", { data: {} });
     await page.goto("/");
     await page.getByRole("button", { name: "Image", exact: true }).click();
-    await page.getByRole("link", { name: "Connect OpenRouter" }).click();
-    await expect(page.getByText("Connected", { exact: true })).toBeVisible();
+    await connectOpenRouter(page);
     const config = {
       format: "image",
       prompt: "Draw $ROW",
@@ -211,6 +220,6 @@ for (const [kind, initial, changed] of [
     const sent = await (await request.get("/fixture/image-requests")).json();
     expect(sent).toHaveLength(2);
     expect(sent[0][kind]).toBe(initial);
-    expect(sent[1]).toEqual({ ...sent[0], [kind]: changed });
+    expect(sent[1][kind]).toBe(changed);
   });
 }

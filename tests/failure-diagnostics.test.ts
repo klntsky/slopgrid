@@ -21,8 +21,17 @@ test("diagnostics retain bounded cause codes without serializing private error p
     { name: "Error", code: "UND_ERR_SOCKET" },
   ]);
   let deep: unknown = new Error("private");
-  for (let i = 0; i < 20; i++) deep = new Error("private", { cause: deep });
-  assert.equal(failureDiagnostics(deep).length, 8);
+  for (let i = 0; i < 20; i++)
+    deep = Object.assign(new Error("private", { cause: deep }), {
+      code: `CAUSE_${i}`,
+    });
+  assert.deepEqual(
+    failureDiagnostics(deep),
+    Array.from({ length: 8 }, (_, index) => ({
+      name: "Error",
+      code: `CAUSE_${19 - index}`,
+    })),
+  );
 });
 
 test(

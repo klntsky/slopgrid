@@ -8,7 +8,6 @@ test("owned and public grids page independently and restore after navigation", a
     page.getByRole("region", { name: /^Public grids\b/, exact: true }),
   ).toBeVisible();
   const seed = await page.request.post("/fixture/grids");
-  expect(seed.status()).toBe(200);
   const { owned: ids } = await seed.json();
   await page.reload();
   const owned = page.getByRole("region", { name: "Your grids", exact: true });

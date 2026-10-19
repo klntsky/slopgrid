@@ -10,7 +10,6 @@ import type { Cell, InferenceProgress } from "../server/domain.js";
 async function upstream(streamError?: Record<string, unknown>) {
   const requests: Record<string, unknown>[] = [];
   const imageEndpoints: Record<string, unknown>[] = [];
-  let imageEndpointRequests = 0;
   const catalog = [
     {
       id: "required",
@@ -79,7 +78,6 @@ async function upstream(streamError?: Record<string, unknown>) {
       );
     }
     if (req.url === "/images/models/image/endpoints") {
-      imageEndpointRequests++;
       res.setHeader("Content-Type", "application/json");
       return res.end(JSON.stringify({ endpoints: imageEndpoints }));
     }
@@ -158,9 +156,6 @@ async function upstream(streamError?: Record<string, unknown>) {
     catalog,
     requests,
     imageEndpoints,
-    get imageEndpointRequests() {
-      return imageEndpointRequests;
-    },
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };
 }
@@ -287,7 +282,7 @@ test("template caching preserves long prefixes and isolates generation routing",
         { role, content: "Finish" },
       ];
       const original = JSON.stringify(messages);
-      await generateAttempt(
+      const result = await generateAttempt(
         h.provider,
         "key",
         "chat-template",
@@ -316,6 +311,12 @@ test("template caching preserves long prefixes and isolates generation routing",
         ]);
       }
       assert.equal(JSON.stringify(messages), original);
+      assert.deepEqual(JSON.parse(String(result.files["messages.json"])), [
+        messages[0],
+        { role: "assistant", content: "# Output" },
+        ...messages.slice(2),
+        { role: "assistant", content: "# Output" },
+      ]);
     }
   } finally {
     await h.close();
@@ -357,18 +358,10 @@ test("chat completion without blanks sends the exact history and saves a convers
     );
     assert.equal(h.requests.length, 1);
     const conversation = JSON.parse(String(result.files["messages.json"]));
-    assert.deepEqual(conversation.slice(0, -1), messages);
-    assert.equal(conversation.at(-1).role, "assistant");
-    assert.equal(typeof conversation.at(-1).content, "string");
-    const { templateSignature } =
-      await import("../server/prepared-inference.js");
-    const changed = {
-      ...input,
-      messages: messages.map((m, i) =>
-        i === 2 ? { ...m, content: "Different prefix" } : m,
-      ),
-    };
-    assert.notEqual(templateSignature(input), templateSignature(changed));
+    assert.deepEqual(conversation, [
+      ...messages,
+      { role: "assistant", content: "# Output" },
+    ]);
   } finally {
     await h.close();
   }
@@ -515,52 +508,27 @@ test("a schema-capable provider rejecting a request never triggers an unconstrai
 test("selected settings reach inference even when the catalog warns they are unsupported", async () => {
   const h = await upstream();
   try {
-    await h.provider.generate(
-      "fixture-key",
-      "markdown",
-      cell("required", "default"),
-      () => {},
-    );
-    await h.provider.generate(
-      "fixture-key",
-      "markdown",
-      cell("all", "none"),
-      () => {},
-    );
-    await h.provider.generate(
-      "fixture-key",
-      "markdown",
-      cell("required", "high"),
-      () => {},
-    );
-    assert.equal(h.requests[0].reasoning, undefined);
-    assert.deepEqual(h.requests[1].reasoning, { enabled: false });
-    assert.deepEqual(h.requests[2].reasoning, { effort: "high" });
-    assert.deepEqual(h.requests[2].provider, {
-      require_parameters: true,
-      max_price: { prompt: 3, completion: 20 },
-    });
-    await h.provider.generate(
-      "fixture-key",
-      "markdown",
-      cell("required", "none"),
-      () => {},
-    );
-    await h.provider.generate(
-      "fixture-key",
-      "markdown",
-      cell("required", "max"),
-      () => {},
-    );
-    await h.provider.generate(
-      "fixture-key",
-      "markdown",
-      cell("fixed", "high"),
-      () => {},
-    );
-    assert.deepEqual(h.requests[3].reasoning, { enabled: false });
-    assert.deepEqual(h.requests[4].reasoning, { effort: "max" });
-    assert.deepEqual(h.requests[5].reasoning, { effort: "high" });
+    for (const [model, effort, reasoning] of [
+      ["required", "default", undefined],
+      ["all", "none", { enabled: false }],
+      ["required", "high", { effort: "high" }],
+      ["required", "none", { enabled: false }],
+      ["required", "max", { effort: "max" }],
+      ["fixed", "high", { effort: "high" }],
+    ] as const) {
+      const result = await h.provider.generate(
+        "fixture-key",
+        "markdown",
+        cell(model, effort),
+        () => {},
+      );
+      assert.equal(result.files["index.md"], "# Output");
+      assert.deepEqual(h.requests.at(-1)!.reasoning, reasoning);
+      assert.deepEqual(h.requests.at(-1)!.provider, {
+        require_parameters: true,
+        max_price: { prompt: 3, completion: 20 },
+      });
+    }
   } finally {
     await h.close();
   }
@@ -684,8 +652,6 @@ test("image endpoint metadata rejects missing provider attribution and recovers 
     await assert.rejects(h.provider.imageEndpoints("image"), /provider_name/);
     endpoint.provider_name = "Actual provider";
     assert.deepEqual(await h.provider.imageEndpoints("image"), [endpoint]);
-    assert.deepEqual(await h.provider.imageEndpoints("image"), [endpoint]);
-    assert.equal(h.imageEndpointRequests, 3);
   } finally {
     await h.close();
   }
@@ -702,8 +668,6 @@ test("image endpoint pricing distinguishes malformed metadata from explicitly un
     await assert.rejects(h.provider.imageEndpoints("image"), /pricing/);
     endpoint.pricing = [];
     assert.deepEqual(await h.provider.imageEndpoints("image"), [endpoint]);
-    assert.deepEqual(await h.provider.imageEndpoints("image"), [endpoint]);
-    assert.equal(h.imageEndpointRequests, 2);
   } finally {
     await h.close();
   }

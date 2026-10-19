@@ -91,6 +91,12 @@ test(
       assert.equal(paused.status, "paused");
       assert.equal(paused.cells[0].thinkingId, thinkingId);
       assert.equal(paused.cells[0].artifactId, undefined);
+      assert.equal(
+        await (
+          await f.request(`/outputs/${grid.cells[0].id}/thinking/${thinkingId}`)
+        ).text(),
+        "Saved thinking",
+      );
       await assert.rejects(
         f.engine.api.startGrid({ gridId: grid.id, sessionId: f.owner }),
         { code: "DRAINING" },
@@ -105,7 +111,23 @@ test(
         (g) => g.status === "complete",
       );
       assert.notEqual(complete.cells[0].thinkingId, thinkingId);
-      assert.equal(f.calls.length, 2);
+      assert.equal(
+        await (await f.request(`/outputs/${grid.cells[0].id}?raw=1`)).text(),
+        "Fresh output",
+      );
+      assert.equal(
+        (await f.request(`/outputs/${grid.cells[0].id}/thinking/${thinkingId}`))
+          .status,
+        404,
+      );
+      assert.equal(
+        await (
+          await f.request(
+            `/outputs/${grid.cells[0].id}/thinking/${complete.cells[0].thinkingId}`,
+          )
+        ).text(),
+        "Fresh thinking",
+      );
     } finally {
       unlock();
       await f.close();

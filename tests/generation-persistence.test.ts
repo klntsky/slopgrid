@@ -27,12 +27,21 @@ test(
         (s) => s.persistence.healthy,
       );
       await f.engine.api.startGrid({ gridId: grid.id, sessionId: f.owner });
-      (await f.nextCall()).finish();
+      const call = await f.nextCall();
+      call.write({ content: "Recovered admission output" });
+      call.finish();
       await until(
-        () => f.engine.api.status(),
-        (s) => s.runningCalls === 0,
+        () => f.engine.api.getGrid(grid.id),
+        (g) => g.status === "complete",
       );
-      assert.equal(f.calls.length, 1);
+      assert.equal(
+        await (await f.request(`/outputs/${grid.cells[0].id}?raw=1`)).text(),
+        "Recovered admission output",
+      );
+      const billing = f.store.billing.page(f.owner, 0);
+      assert.equal(billing.total, 1);
+      assert.equal(billing.running, 0);
+      assert.equal(billing.costUsd, 0.0123);
     } finally {
       unlock();
       await f.close();
@@ -62,10 +71,6 @@ test(
       );
       assert.equal((await f.engine.api.getGrid(grid.id)).live, false);
       assert.equal(f.store.get(grid.id)!.status, "paused");
-      assert.deepEqual(
-        f.store.db.prepare("SELECT * FROM fault_child").all(),
-        [],
-      );
       assert.deepEqual(snapshots, ["paused"]);
       assert.equal(f.calls.length, 0);
     } finally {

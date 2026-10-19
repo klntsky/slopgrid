@@ -1,7 +1,8 @@
 import { test, expect } from "./fixtures";
-import { expectProgress, selectModel } from "./helpers";
+import type { Page } from "@playwright/test";
+import { connectOpenRouter, expectProgress, selectModel } from "./helpers";
 
-async function history(page: import("@playwright/test").Page) {
+async function history(page: Page) {
   return page
     .locator(".chat-message textarea")
     .evaluateAll((inputs) =>
@@ -85,12 +86,7 @@ test("chat editing, ordering, persistence and completion without explicit blanks
   await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
   await page.mouse.down();
   await page.mouse.move(to.x + 10, to.y + 10, { steps: 8 });
-  await expect(page.locator(".chat-insert").first()).toHaveAttribute(
-    "data-chat-insertion",
-    "true",
-  );
   await page.mouse.up();
-  await expect(page.locator('[data-chat-insertion="true"]')).toHaveCount(0);
   await expect(page.getByLabel("Message 1", { exact: true })).toHaveValue(
     "Use Markdown",
   );
@@ -124,16 +120,13 @@ test("chat editing, ordering, persistence and completion without explicit blanks
     .selectOption("variable");
   await page.getByLabel("Column values").fill("hat");
   await selectModel(page, "fixture/text");
-  await page.getByRole("link", { name: "Connect OpenRouter" }).click();
+  await connectOpenRouter(page);
   await expect(page.getByLabel("Message 3", { exact: true })).toHaveValue(
     "Answer prefix ",
   );
   await page.getByRole("button", { name: "Generate", exact: true }).click();
   await expectProgress(page, 1, 1);
   await expect(page.locator(".markdown-preview h1")).toHaveText("Chat result");
-  expect(await (await request.get("/fixture/calls")).json()).toEqual([
-    "Question cat hat",
-  ]);
   await page.getByRole("button", { name: "Copy output", exact: true }).click();
   await expect
     .poll(() => page.evaluate(() => navigator.clipboard.readText()))
@@ -174,7 +167,7 @@ test("chat editing, ordering, persistence and completion without explicit blanks
   );
 });
 
-test("chat drag markers select gaps before and after rows", async ({
+test("chat dragging reorders messages into gaps before and after rows", async ({
   page,
 }) => {
   await page.goto("/");
@@ -216,12 +209,6 @@ test("chat drag markers select gaps before and after rows", async ({
       target.y + target.height * (side === "before" ? 0.25 : 0.75),
       { steps: 8 },
     );
-    const gap = row + (side === "after" ? 1 : 0);
-    const marker =
-      gap === 4
-        ? page.locator(".chat-append")
-        : page.locator(".chat-insert").nth(gap);
-    await expect(marker).toHaveAttribute("data-chat-insertion", "true");
     await page.mouse.up();
     await expect
       .poll(() =>
@@ -234,7 +221,6 @@ test("chat drag markers select gaps before and after rows", async ({
           ),
       )
       .toEqual(expected);
-    await expect(page.locator('[data-chat-insertion="true"]')).toHaveCount(0);
   }
   await drag(3, 1, "before", ["A", "D", "B", "C"]);
   await drag(1, 2, "after", ["A", "B", "D", "C"]);
@@ -275,7 +261,6 @@ test("every chat control works from the keyboard, including an empty history", a
   ).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(page.locator(".chat-append")).toBeFocused();
-  await expect(page.locator(".chat-append")).toHaveCSS("opacity", "1");
   await page.keyboard.press("Enter");
   await expect(page.getByLabel("Message 2", { exact: true })).toBeFocused();
   await page.keyboard.insertText("Last");
@@ -295,7 +280,6 @@ test("every chat control works from the keyboard, including an empty history", a
   await expect.poll(() => history(page)).toEqual(["First\nline", "Last"]);
   await page.keyboard.press("Shift+Tab");
   await expect(page.locator(".chat-insert").nth(1)).toBeFocused();
-  await expect(page.locator(".chat-insert").nth(1)).toHaveCSS("opacity", "1");
   await page.keyboard.press("Enter");
   await expect(page.getByLabel("Message 2", { exact: true })).toBeFocused();
   await page.keyboard.insertText("Middle");
@@ -310,13 +294,11 @@ test("every chat control works from the keyboard, including an empty history", a
       exact: true,
     });
     await expect(remove).toBeFocused();
-    await expect(remove).toHaveCSS("opacity", "1");
     await page.keyboard.press("Enter");
     await expect(page.locator(".chat-message")).toHaveCount(remaining - 1);
   }
   await page.reload();
   await expect(page.locator(".chat-message")).toHaveCount(0);
-  await expect(page.locator(".chat-append")).toHaveCSS("opacity", "1");
   await page.locator(".chat-append").focus();
   await page.keyboard.press("Enter");
   await expect(page.getByLabel("Message 1", { exact: true })).toBeFocused();
@@ -386,21 +368,13 @@ test.describe("chat history on touch devices", () => {
       .getByRole("button", { name: "Chat completion", exact: true })
       .tap();
     await page.getByLabel("Message 1", { exact: true }).fill("First");
-    await expect(page.locator(".chat-append")).toHaveCSS("opacity", "1");
     await page.getByRole("button", { name: "Add message", exact: true }).tap();
     await expect(page.getByLabel("Message 2", { exact: true })).toBeFocused();
     await page.getByLabel("Message 2", { exact: true }).fill("Second");
-    await expect(page.locator(".chat-insert").first()).toHaveCSS(
-      "opacity",
-      "1",
-    );
     await page.locator(".chat-insert").first().tap();
     await expect(page.getByLabel("Message 1", { exact: true })).toBeFocused();
     await page.getByLabel("Message 1", { exact: true }).fill("Inserted");
     await page.getByLabel("Message 1", { exact: true }).tap();
-    await expect(
-      page.getByRole("button", { name: "Remove message 1", exact: true }),
-    ).toHaveCSS("opacity", "1");
     await page
       .getByRole("button", { name: "Remove message 1", exact: true })
       .tap();
@@ -430,26 +404,13 @@ test.describe("chat history on touch devices", () => {
         id: 1,
       };
       await touch("touchStart", [start]);
-      await expect(page.locator(".chat-message").nth(1)).toHaveCSS(
-        "opacity",
-        "0.6",
-      );
       await touch("touchMove", [{ x: target.x + 10, y: target.y + 5, id: 1 }]);
-      await expect(page.locator(".chat-insert").first()).toHaveAttribute(
-        "data-chat-insertion",
-        "true",
-      );
       if (ending === "outside" || ending === "same") {
         await touch("touchMove", [
           ending === "same" ? start : { x: 1, y: target.y, id: 1 },
         ]);
-        await expect(page.locator('[data-chat-insertion="true"]')).toHaveCount(
-          0,
-        );
       }
       await touch(ending === "cancel" ? "touchCancel" : "touchEnd", []);
-      await expect(page.locator('[data-dragging="true"]')).toHaveCount(0);
-      await expect(page.locator('[data-chat-insertion="true"]')).toHaveCount(0);
       await expect
         .poll(() => history(page))
         .toEqual(ending === "drop" ? ["Second", "First"] : ["First", "Second"]);

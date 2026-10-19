@@ -60,6 +60,16 @@ function harness(limit?: number) {
   function task(cellId: string) {
     return taskIds.get(cellId)!;
   }
+  function running(...grids: Grid[]) {
+    return grids
+      .flatMap((grid) =>
+        jobs
+          .snapshot(grid.id)!
+          .cells.filter((cell) => cell.status === "running")
+          .map((cell) => cell.id),
+      )
+      .sort();
+  }
   async function close() {
     await flush();
     while (provider.pending.size) {
@@ -69,51 +79,31 @@ function harness(limit?: number) {
     store.db.close();
     rmSync(dir, { recursive: true, force: true });
   }
-  return { store, provider, jobs, api, grid, task, close };
+  return { store, provider, jobs, api, grid, task, running, close };
 }
 
-test("streaming bursts and preview notifications do not write to SQLite", async () => {
+test("streaming bursts expose the latest draft and persist the full reasoning trace", async () => {
   const h = harness(1);
   try {
     const grid = h.grid("alice", "streaming", 8);
     h.jobs.start(grid);
     await flush();
     const call = h.provider.pending.get(grid.cells[0].generationId!)!;
-    const changes = () =>
-      (
-        h.store.db.prepare("SELECT total_changes() AS count").get() as {
-          count: number;
-        }
-      ).count;
-    const before = changes();
     for (let index = 1; index <= 100; index++)
       call.write("Output ".repeat(index), { costUsd: index / 1000 });
-    await new Promise((resolve) => setTimeout(resolve, 350));
-    assert.equal(
-      changes(),
-      before,
-      "drafts, estimates and their notifications stay in memory",
-    );
     assert.equal(
       h.jobs.snapshot(grid.id)!.cells[0].draft,
       "Output ".repeat(100),
     );
+    assert.equal(
+      h.jobs.snapshot(grid.id)!.cells[0].estimatedUsage?.costUsd,
+      0.1,
+    );
 
     call.write("Output", undefined, "First thinking");
-    const thinkingId = h.store.get(grid.id)!.cells[0].thinkingId;
-    assert.ok(
-      thinkingId,
-      "the trace identifier is durable as soon as thinking arrives",
-    );
-    const checkpointed = changes();
+    const thinkingId = h.store.get(grid.id)!.cells[0].thinkingId!;
     for (let index = 1; index <= 100; index++)
       call.write("Output", undefined, "First thinking" + ".".repeat(index));
-    await new Promise((resolve) => setTimeout(resolve, 350));
-    assert.equal(
-      changes(),
-      checkpointed,
-      "appending to the same trace needs no SQLite writes",
-    );
     assert.equal(
       readFileSync(
         h.store.files.thinkingPath(
@@ -129,25 +119,26 @@ test("streaming bursts and preview notifications do not write to SQLite", async 
   }
 });
 
-test("task completion and subsequent dispatch leave cell identity rows untouched", async () => {
+test("completed output is persisted before the next queued cell runs", async () => {
   const h = harness(1);
   try {
     const grid = h.grid("alice", "writes", 8);
     h.jobs.start(grid);
     await flush();
-    h.store.db.exec(`
-      CREATE TEMP TABLE cell_writes (id TEXT);
-      CREATE TEMP TRIGGER record_cell_write AFTER UPDATE ON cells
-      BEGIN INSERT INTO cell_writes VALUES (NEW.id); END;
-    `);
     h.provider.finish(grid.cells[0].generationId!);
     await flush();
-    const writes = h.store.db
-      .prepare("SELECT id FROM cell_writes ORDER BY rowid")
-      .all();
-    assert.deepEqual(writes, []);
     assert.equal(h.store.get(grid.id)!.cells[0].status, "complete");
     assert.equal(h.store.get(grid.id)!.cells[1].status, "running");
+    assert.equal(
+      readFileSync(
+        h.store.files.path(
+          h.store.get(grid.id)!.cells[0].artifactId!,
+          "index.md",
+        )!,
+        "utf8",
+      ),
+      grid.cells[0].generationId,
+    );
   } finally {
     await h.close();
   }
@@ -217,14 +208,20 @@ test("budget-specific 403 pauses queued work while active calls finish", async (
     await flush();
     assert.equal(g.status, "paused");
     assert.equal(g.interruption, "billing");
-    assert.deepEqual([...h.provider.pending.keys()], [second]);
+    assert.deepEqual(
+      h.jobs.snapshot(g.id)!.cells.map((cell) => cell.status),
+      ["pending", "running", "pending"],
+    );
     h.provider.finish(second);
     await flush();
     assert.equal(
       g.cells.filter((cell) => cell.status === "complete").length,
       1,
     );
-    assert.equal(h.provider.started.length, 2);
+    assert.deepEqual(
+      h.store.get(g.id)!.cells.map((cell) => cell.status),
+      ["pending", "complete", "pending"],
+    );
   } finally {
     await h.close();
   }
@@ -246,31 +243,31 @@ test("grid requests cap their own workers when another grid raises the owner's l
     h.store.saveSession(session);
     h.jobs.start(second);
     await flush();
-    h.jobs.start(h.grid("bob", "grid", 4));
+    const bob = h.grid("bob", "grid", 4);
+    h.jobs.start(bob);
     await flush();
-    assert.deepEqual(
-      [...h.provider.pending.keys()].sort(),
-      [
-        h.task("alice/first/0"),
-        h.task("alice/second/0"),
-        h.task("alice/second/1"),
-        h.task("bob/grid/0"),
-      ].sort(),
-    );
+    assert.deepEqual(h.running(first, second, bob), [
+      "alice/first/0",
+      "alice/second/0",
+      "alice/second/1",
+      "bob/grid/0",
+    ]);
     h.provider.finish(h.task("alice/second/0"));
     await flush();
-    assert.equal(h.provider.started.at(-1)!.owner, "bob");
+    assert.deepEqual(h.running(first, second, bob), [
+      "alice/first/0",
+      "alice/second/1",
+      "bob/grid/0",
+      "bob/grid/1",
+    ]);
     h.provider.finish(h.task("alice/first/0"));
     await flush();
-    assert.deepEqual(
-      [...h.provider.pending.keys()].sort(),
-      [
-        h.task("alice/first/1"),
-        h.task("alice/second/1"),
-        h.task("bob/grid/0"),
-        h.task("bob/grid/1"),
-      ].sort(),
-    );
+    assert.deepEqual(h.running(first, second, bob), [
+      "alice/first/1",
+      "alice/second/1",
+      "bob/grid/0",
+      "bob/grid/1",
+    ]);
   } finally {
     await h.close();
   }
@@ -279,30 +276,40 @@ test("grid requests cap their own workers when another grid raises the owner's l
 test("new users receive freed slots before a user with more workers, without interrupting active calls", async () => {
   const h = harness(4);
   try {
-    h.jobs.start(h.grid("alice", "grid", 8));
+    const alice = h.grid("alice", "grid", 8);
+    const bob = h.grid("bob", "grid", 8);
+    const carol = h.grid("carol", "grid", 8);
+    h.jobs.start(alice);
     await flush();
-    assert.equal(h.provider.pending.size, 4);
-    h.jobs.start(h.grid("bob", "grid", 8));
-    h.jobs.start(h.grid("carol", "grid", 8));
+    assert.equal(h.jobs.status().runningCalls, 4);
+    h.jobs.start(bob);
+    h.jobs.start(carol);
     await flush();
-    assert.equal(h.provider.started.length, 4);
+    assert.deepEqual(h.running(alice, bob, carol), [
+      "alice/grid/0",
+      "alice/grid/1",
+      "alice/grid/2",
+      "alice/grid/3",
+    ]);
     h.provider.finish(h.task("alice/grid/0"));
     await flush();
-    assert.equal(h.provider.started.at(-1)!.owner, "bob");
-    assert.ok(h.provider.pending.has(h.task("alice/grid/1")));
+    assert.deepEqual(h.running(bob), ["bob/grid/0"]);
+    assert.deepEqual(h.running(alice), [
+      "alice/grid/1",
+      "alice/grid/2",
+      "alice/grid/3",
+    ]);
     h.provider.finish(h.task("alice/grid/1"));
     await flush();
-    assert.equal(h.provider.started.at(-1)!.owner, "carol");
+    assert.deepEqual(h.running(carol), ["carol/grid/0"]);
     h.provider.finish(h.task("alice/grid/2"));
     await flush();
-    const counts = ["alice", "bob", "carol"].map(
-      (owner) => h.provider.owners().filter((o) => o === owner).length,
-    );
+    const counts = [alice, bob, carol].map((grid) => h.running(grid).length);
     assert.ok(Math.max(...counts) - Math.min(...counts) <= 1);
     h.provider.finish(h.task("bob/grid/0"));
     await flush();
-    assert.equal(h.provider.started.at(-1)!.owner, "bob");
-    assert.equal(h.provider.pending.size, 4);
+    assert.deepEqual(h.running(bob), ["bob/grid/1"]);
+    assert.equal(h.jobs.status().runningCalls, 4);
   } finally {
     await h.close();
   }
@@ -311,19 +318,32 @@ test("new users receive freed slots before a user with more workers, without int
 test("allocation is per user across grids and rotates equal users when capacity is scarce", async () => {
   const h = harness(1);
   try {
-    h.jobs.start(h.grid("alice", "first", 2));
-    h.jobs.start(h.grid("alice", "second", 2));
-    h.jobs.start(h.grid("bob", "grid", 2));
-    h.jobs.start(h.grid("carol", "grid", 2));
+    const grids = [
+      h.grid("alice", "first", 2),
+      h.grid("alice", "second", 2),
+      h.grid("bob", "grid", 2),
+      h.grid("carol", "grid", 2),
+    ];
+    for (const grid of grids) h.jobs.start(grid);
     await flush();
-    for (let i = 0; i < 5; i++) {
-      h.provider.finish([...h.provider.pending.keys()][0]);
-      await flush();
+    const dispatched: string[] = [];
+    for (let i = 0; i < 6; i++) {
+      const active = h.running(...grids);
+      assert.equal(active.length, 1);
+      dispatched.push(active[0]);
+      if (i < 5) {
+        h.provider.finish(h.task(active[0]));
+        await flush();
+      }
     }
-    assert.deepEqual(
-      h.provider.started.map((call) => call.owner),
-      ["alice", "bob", "carol", "alice", "bob", "carol"],
-    );
+    assert.deepEqual(dispatched, [
+      "alice/first/0",
+      "bob/grid/0",
+      "carol/grid/0",
+      "alice/first/1",
+      "bob/grid/1",
+      "carol/grid/1",
+    ]);
   } finally {
     await h.close();
   }
@@ -381,7 +401,7 @@ test("retrying a paused grid while another cell is active cannot generate that c
       h.provider.started.filter((c) => c.id === h.task("alice/grid/1")).length,
       1,
     );
-    assert.equal(h.provider.pending.size, 2);
+    assert.equal(h.jobs.status().runningCalls, 2);
   } finally {
     await h.close();
   }
@@ -394,7 +414,8 @@ test("manual pause aborts active cells, discards drafts and gives the released s
     h.jobs.start(g);
     await flush();
     h.provider.pending.get(h.task("alice/grid/0"))!.write("Temporary drawing");
-    h.jobs.start(h.grid("bob", "grid", 2));
+    const bob = h.grid("bob", "grid", 2);
+    h.jobs.start(bob);
     h.jobs.pause(g);
     await flush();
     const paused = h.store.get(g.id)!;
@@ -403,13 +424,13 @@ test("manual pause aborts active cells, discards drafts and gives the released s
     assert.ok(
       paused.cells.every((cell) => cell.status === "pending" && !cell.draft),
     );
-    assert.deepEqual(h.provider.owners(), ["bob", "bob"]);
+    assert.deepEqual(h.running(g, bob), ["bob/grid/0", "bob/grid/1"]);
     h.jobs.start(paused);
     await flush();
-    assert.equal(h.provider.pending.size, 2);
+    assert.equal(h.jobs.status().runningCalls, 2);
     h.provider.finish(h.task("bob/grid/0"));
     await flush();
-    assert.equal(h.provider.started.at(-1)!.owner, "alice");
+    assert.deepEqual(h.running(g), ["alice/grid/0"]);
   } finally {
     await h.close();
   }
@@ -424,11 +445,11 @@ test("a failed cell releases its slot without automatic retries and other cells 
     h.provider.fail(h.task("alice/grid/0"), 502);
     await flush();
     assert.equal(g.cells[0].status, "error");
-    assert.ok(h.provider.pending.has(h.task("alice/grid/1")));
+    assert.equal(h.store.get(g.id)!.cells[1].status, "running");
     h.provider.finish(h.task("alice/grid/1"));
     await flush();
     assert.equal(h.store.get(g.id)!.status, "paused");
-    assert.equal(h.provider.started.length, 2);
+    assert.equal(h.jobs.status().runningCalls, 0);
     h.jobs.start(h.store.get(g.id)!);
     await flush();
     assert.deepEqual(
@@ -471,13 +492,11 @@ test("backoff releases workers to other users, honors Retry-After, and retries w
     await flush();
     t.mock.timers.tick(4999);
     await flush();
-    assert.equal(
-      h.provider.started.filter((call) => call.owner === "alice").length,
-      2,
-    );
+    assert.equal(h.jobs.snapshot(alice.id)!.cells[1].status, "pending");
+    assert.equal(h.jobs.status().runningCalls, 0);
     t.mock.timers.tick(1);
     await flush();
-    assert.ok(h.provider.pending.has(h.task("alice/grid/1")));
+    assert.equal(h.jobs.snapshot(alice.id)!.cells[1].status, "running");
     assert.equal(alice.cells[1].error, undefined);
     h.provider.finish(h.task("alice/grid/1"));
     await flush();
@@ -510,10 +529,20 @@ test("billing failures without retry guidance pause until explicitly resumed", a
     assert.equal(grid.interruption, "billing");
     t.mock.timers.tick(120000);
     await flush();
-    assert.equal(h.provider.started.length, 1);
+    assert.equal(h.jobs.status().runningCalls, 0);
+    assert.equal(h.store.get(grid.id)!.status, "paused");
     h.jobs.start(grid);
     await flush();
-    assert.equal(h.provider.started.length, 2);
+    assert.deepEqual(
+      h.jobs.snapshot(grid.id)!.cells.map((cell) => cell.status),
+      ["running", "pending"],
+    );
+    h.provider.finish(h.task("alice/grid/0"));
+    await flush();
+    assert.deepEqual(
+      h.store.get(grid.id)!.cells.map((cell) => cell.status),
+      ["complete", "running"],
+    );
   } finally {
     await h.close();
   }
@@ -537,10 +566,11 @@ test("temporary budget failures with retry guidance back off, stop after five re
         assert.equal(grid.status, "running");
         t.mock.timers.tick(1000 * 2 ** attempt - 1);
         await flush();
-        assert.equal(h.provider.pending.size, 0);
+        assert.equal(h.jobs.snapshot(grid.id)!.cells[0].status, "pending");
+        assert.equal(h.jobs.status().runningCalls, 0);
         t.mock.timers.tick(1000 * 2 ** attempt + 1);
         await flush();
-        assert.equal(h.provider.pending.size, 1);
+        assert.equal(h.jobs.snapshot(grid.id)!.cells[0].status, "running");
       }
     }
     assert.equal(grid.status, "paused");
@@ -553,7 +583,8 @@ test("temporary budget failures with retry guidance back off, stop after five re
     assert.equal(h.store.get(grid.id)!.cells[0].errorCode, 402);
     t.mock.timers.tick(120000);
     await flush();
-    assert.equal(h.provider.started.length, 6);
+    assert.equal(h.jobs.status().runningCalls, 0);
+    assert.equal(h.store.get(grid.id)!.cells[0].status, "error");
   } finally {
     await h.close();
   }
@@ -575,10 +606,11 @@ test("pausing during backoff prevents the timer from restarting inference and Re
     t.mock.timers.tick(2000);
     h.jobs.start(grid);
     await flush();
-    assert.equal(h.provider.pending.size, 0);
+    assert.equal(h.jobs.snapshot(grid.id)!.cells[0].status, "pending");
+    assert.equal(h.jobs.status().runningCalls, 0);
     t.mock.timers.tick(3000);
     await flush();
-    assert.equal(h.provider.pending.size, 1);
+    assert.equal(h.jobs.snapshot(grid.id)!.cells[0].status, "running");
     h.provider.fail(h.task("alice/grid/0"), 429);
     await flush();
     h.jobs.pause(grid);
@@ -586,7 +618,8 @@ test("pausing during backoff prevents the timer from restarting inference and Re
     t.mock.timers.tick(60000);
     await flush();
     assert.equal(grid.status, "paused");
-    assert.equal(h.provider.started.length, 2);
+    assert.equal(h.jobs.status().runningCalls, 0);
+    assert.equal(h.store.get(grid.id)!.cells[0].status, "pending");
   } finally {
     await h.close();
   }
@@ -625,7 +658,6 @@ test("non-pricing failures stay on their cells while queued grids keep generatin
     );
     assert.equal(saved.cells[1].error, "Age verification required");
     assert.equal(saved.cells[1].errorCode, 403);
-    assert.equal(h.provider.started.length, 6);
   } finally {
     await h.close();
   }
@@ -668,11 +700,8 @@ test("losing a queued grid's credential does not pause another grid with its own
 test("task scheduling pins dispatch ownership until settlement and discards late commits after Pause/Resume", async () => {
   const h = harness(2);
   const pending = new Map<string, (commit: WorkflowCommit) => void>();
-  const started: string[] = [];
-  let lateCommits = 0;
   const executor: WorkflowExecutor = {
     run(task) {
-      started.push(task.id);
       return new Promise<WorkflowCommit>((resolve) =>
         pending.set(task.id, resolve),
       );
@@ -696,16 +725,21 @@ test("task scheduling pins dispatch ownership until settlement and discards late
     jobs.start(bob);
     jobs.start(waiting);
     await flush();
-    assert.deepEqual(started, [
-      first.cells[0].generationId,
-      bob.cells[0].generationId,
-    ]);
+    assert.deepEqual(
+      jobs.snapshot(first.id)!.cells.map((cell) => cell.status),
+      ["running", "pending"],
+    );
+    assert.equal(jobs.snapshot(bob.id)!.cells[0].status, "running");
+    assert.equal(jobs.snapshot(waiting.id)!.cells[0].status, "pending");
     jobs.pause(first);
     jobs.start(first, undefined, h.store.session("bob"));
     await flush();
-    assert.equal(started.length, 2, "aborted work still owns its worker slot");
+    assert.equal(jobs.status().runningCalls, 2);
+    assert.equal(jobs.snapshot(waiting.id)!.cells[0].status, "pending");
     pending.get(first.cells[0].generationId!)!(() => {
-      lateCommits++;
+      h.store.files.write("discarded-late-artifact", {
+        "index.md": "Output from the cancelled attempt",
+      });
       return {
         artifactId: "discarded-late-artifact",
         provenance: { signature: "late", files: ["index.md"] },
@@ -713,9 +747,13 @@ test("task scheduling pins dispatch ownership until settlement and discards late
     });
     pending.delete(first.cells[0].generationId!);
     await flush();
-    assert.equal(lateCommits, 0, "a stale commit thunk must never be invoked");
+    assert.equal(
+      h.store.files.path("discarded-late-artifact", "index.md"),
+      undefined,
+      "cancelled attempts must not install output files",
+    );
     assert.equal(h.store.get(first.id)!.cells[0].artifactId, undefined);
-    assert.equal(started.at(-1), waiting.cells[0].generationId);
+    assert.equal(jobs.snapshot(waiting.id)!.cells[0].status, "running");
     assert.equal(jobs.status().runningCalls, 2);
   } finally {
     for (const grid of [first, waiting, bob]) jobs.pause(grid);

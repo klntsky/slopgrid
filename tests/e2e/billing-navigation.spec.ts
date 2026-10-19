@@ -1,7 +1,7 @@
 import { test, expect } from "./fixtures";
 import { create, expectProgress } from "./helpers";
 
-test("billing navigates real call pages and refreshes without duplicate requests", async ({
+test("billing navigates persisted call pages and preserves the current page while refreshing", async ({
   page,
   request,
 }) => {
@@ -35,9 +35,7 @@ test("billing navigates real call pages and refreshes without duplicate requests
   const gate = new Promise<void>((resolve) => {
     release = resolve;
   });
-  let refreshRequests = 0;
   await page.route("**/api/billing?*", async (route) => {
-    refreshRequests++;
     const response = await route.fetch();
     await gate;
     await route.fulfill({ response });
@@ -51,7 +49,10 @@ test("billing navigates real call pages and refreshes without duplicate requests
   await page.keyboard.press("Enter");
   release();
   await expect(refresh).toBeEnabled();
-  expect(refreshRequests).toBe(1);
+  await expect(page.locator("tbody tr")).toHaveCount(1);
+  await expect(page.locator(".billing-pagination")).toContainText(
+    /51.51 of 51/,
+  );
   await page.unroute("**/api/billing?*");
   await page.getByRole("button", { name: "Previous", exact: true }).click();
   await expect(page.locator("tbody tr")).toHaveCount(50);

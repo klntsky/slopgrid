@@ -146,7 +146,16 @@ test("publishing is permanent, link grids are unlisted, and public summaries omi
     })
   ).json();
   assert.equal(mine.total, 5);
-  assert.ok(mine.grids.every((g: Grid) => g.visibility));
+  assert.deepEqual(
+    Object.fromEntries(mine.grids.map((g: Grid) => [g.id, g.visibility])),
+    {
+      private: "private",
+      link: "unlisted",
+      listed: "public",
+      pending: "private",
+      running: "private",
+    },
+  );
   for (const id of ["link", "listed"]) {
     const previous = store.get(id)!;
     const anonymous = await fetch(`${origin}/api/grids/${id}`);

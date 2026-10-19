@@ -59,7 +59,10 @@ for (const billed of [false, true])
         );
         queryClient.setQueryData(["grid", grid.id], recovered);
         queryClient.setQueryData(["grid", grid.id], paused);
-        assert.equal(queryClient.getQueryData(["grid", grid.id]), recovered);
+        assert.deepEqual(
+          queryClient.getQueryData(["grid", grid.id]),
+          recovered,
+        );
         assert.equal(f.store.billing.page(f.owner, 0).running, 0);
         assert.equal(
           f.store.billing.page(f.owner, 0).costUsd,

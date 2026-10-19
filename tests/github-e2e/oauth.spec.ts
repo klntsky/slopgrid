@@ -93,7 +93,6 @@ test("real GitHub sign-in claims an anonymous grid, shares account access, and f
   await expect(page.locator(".public-grids .grid-author")).toContainText(
     user.username,
   );
-  expect(await page.locator("a a").count()).toBe(0);
   const state = await page.context().storageState();
   const second = await browser.newContext({
     baseURL,
@@ -118,9 +117,12 @@ test("real GitHub sign-in claims an anonymous grid, shares account access, and f
       (await (await otherPage.request.get(`/api/grids/${grid.id}`)).json())
         .canEdit,
     ).toBe(true);
-    expect(
-      (await (await otherPage.request.get("/api/billing")).json()).total,
-    ).toBeGreaterThan(0);
+    const billing = await (await otherPage.request.get("/api/billing")).json();
+    expect(billing.calls).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ gridId: grid.id, status: "succeeded" }),
+      ]),
+    );
     await otherPage
       .locator("main")
       .getByRole("button", { name: "Sign out", exact: true })

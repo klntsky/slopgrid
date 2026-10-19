@@ -121,7 +121,7 @@ test("creation receipt failure rolls back the grid and retry rechecks current ow
     );
     f.store.db.exec("DROP TRIGGER reject_receipt");
     const saved = await (await f.request("/api/grids", body)).json();
-    assert.ok(saved.id);
+    assert.equal(f.store.get(saved.id)!.status, "paused");
     f.store.db
       .prepare("UPDATE grids SET owner_user_id='another-account' WHERE id=?")
       .run(saved.id);

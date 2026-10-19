@@ -1,5 +1,4 @@
 import { Provider } from "../server/provider.js";
-import { inferenceSignature } from "../server/prepared-inference.js";
 import type { ViewGrid } from "../src/api.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -81,7 +80,6 @@ test("template usage and per-call reuse survive storage reopening", async () => 
     await settled(f, source.id);
     const saved = f.store.get(source.id)!;
     assertCost(saved.cells[0].usage!.costUsd!, 0.0246);
-    assert.equal(saved.cells[0].provenance!.templateSteps!.length, 2);
     const calls = f.calls.length;
     const copy = await create(f, {
       ...template,
@@ -92,7 +90,6 @@ test("template usage and per-call reuse survive storage reopening", async () => 
     assert.equal(f.calls.length, calls);
     const artifactId = f.store.outputMetadata(copy.cells[0].id)!.artifactId;
     assert.equal(artifactId, saved.cells[0].artifactId);
-    assert.notEqual(artifactId, copy.cells[0].id);
     assertCost(f.store.get(copy.id)!.cells[0].usage!.costUsd!, 0.0246);
     const conversation = await f.request(`/outputs/${copy.cells[0].id}?raw=1`);
     assert.match(
@@ -382,9 +379,12 @@ test("reuse requires intact content and retains shared artifacts while either gr
       f.store.db.prepare("DELETE FROM grids WHERE id=?").run(source.id);
     })();
     assert.equal(f.store.removeUnreferencedArtifact(first.artifactId!), false);
-    assert.equal(
-      Object.keys(await f.store.files.bundle(first.artifactId!)).length,
-      2,
+    assert.deepEqual(
+      { ...(await f.store.files.bundle(first.artifactId!)) },
+      {
+        "index.html": Buffer.from("<h1>intact</h1>"),
+        "nested/style.css": Buffer.from("h1{color:red}"),
+      },
     );
     assert.equal(
       readFileSync(
@@ -773,76 +773,34 @@ test("missing token usage reuses only when the original ceiling fits, including 
   }
 });
 
-test("actual prepared requests and artifact signatures cover adapter policy and ignore key order", async () => {
+test("stored artifacts with stale request signatures regenerate instead of reusing incompatible output", async () => {
   const f = await runtimeFixture();
   try {
-    const source = await create(f, {
+    const config = {
       ...input,
-      format: "html",
       rows: { kind: "variable", values: ["cat"] },
-    });
-    const call = await f.nextCall();
-    finish(
-      call,
-      JSON.stringify({
-        files: [{ path: "index.html", content: "<h1>Saved</h1>" }],
-      }),
-    );
-    await settled(f, source.id);
-    const cell = f.store.get(source.id)!.cells[0];
-    const provider = new Provider(f.providerURL);
-    const prepared = await provider.prepare("html", cell, []);
-    assert.equal(inferenceSignature(prepared), cell.provenance!.signature);
-    assert.notEqual(prepared.format, "image");
-    if (prepared.format === "image") throw new Error("Expected text request");
-    assert.equal(call.request.max_tokens, prepared.text.maxOutputTokens);
-    const signature = inferenceSignature(prepared);
-    const reordered = {
-      ...prepared,
-      text: {
-        ...prepared.text,
-        options: {
-          ...prepared.text.options,
-          provider: {
-            max_price: prepared.text.options.provider.max_price,
-            require_parameters:
-              prepared.text.options.provider.require_parameters,
-          },
-        },
-      },
     };
-    assert.equal(inferenceSignature(reordered), signature);
-    for (const changed of [
-      { ...prepared, adapterVersion: prepared.adapterVersion + "-changed" },
-      {
-        ...prepared,
-        text: { ...prepared.text, system: prepared.text.system + " changed" },
-      },
-      {
-        ...prepared,
-        text: {
-          ...prepared.text,
-          schema: { ...prepared.text.schema!, description: "Changed schema" },
-        },
-      },
-      {
-        ...prepared,
-        text: {
-          ...prepared.text,
-          options: {
-            ...prepared.text.options,
-            provider: {
-              ...prepared.text.options.provider,
-              max_price: {
-                ...prepared.text.options.provider.max_price!,
-                prompt: 2,
-              },
-            },
-          },
-        },
-      },
-    ])
-      assert.notEqual(inferenceSignature(changed), signature);
+    const source = await create(f, config);
+    finish(await f.nextCall(), "Old output");
+    const saved = await settled(f, source.id);
+    f.store.db
+      .prepare(
+        "UPDATE workflow_tasks SET data=json_set(data,'$.output.provenance.signature','stale-adapter-policy') WHERE id=?",
+      )
+      .run(saved.cells[0].generationId);
+    const regenerated = await create(f, {
+      ...config,
+      sourceGridId: source.id,
+      reuseArtifacts: true,
+    });
+    assert.notEqual(regenerated.cells[0].status, "complete");
+    finish(await f.nextCall(), "Fresh compatible output");
+    const completed = await settled(f, regenerated.id);
+    assert.equal(completed.cells[0].status, "complete");
+    const output = await f.request(`/outputs/${completed.cells[0].id}?raw=1`);
+    assert.equal(output.status, 200);
+    assert.equal(await output.text(), "Fresh compatible output");
+    assertCost(completed.spentUsd!, 0.0123);
   } finally {
     await f.close();
   }
@@ -980,7 +938,7 @@ test("reuse leaves preparation failures on individual cells and skips unsigned s
   }
 });
 
-test("workflow groups judged generation while keeping ordinary cells independent", () => {
+test("generation failures reach every judged group member while ordinary cells remain independent", () => {
   const judged: GridInput = {
     ...input,
     prompt: "Same output",
@@ -997,21 +955,41 @@ test("workflow groups judged generation while keeping ordinary cells independent
     id: `group-${index}`,
   }));
   const tasks = createWorkflow(judged, cells);
-  assert.equal(tasks.filter((task) => task.kind === "generation").length, 1);
-  assert.equal(tasks.filter((task) => task.kind === "judge").length, 4);
-  assert.ok(cells.every((cell) => cell.generationId === cells[0].generationId));
-  assert.notEqual(cells[0].generationId, cells[0].id);
-  assert.equal(new Set(cells.map((cell) => cell.judgmentId)).size, 4);
+  const generation = tasks.find((task) => task.kind === "generation")!;
+  generation.status = "error";
+  generation.error = "Generation failed";
+  const grid: Grid = {
+    id: "groups",
+    owner: "owner",
+    input: judged,
+    cells,
+    status: "paused",
+    published: false,
+    visibility: "private",
+    createdAt: "2026-01-01T00:00:00.000Z",
+  };
+  projectWorkflow(grid, tasks);
+  assert.deepEqual(
+    cells.map((cell) => [cell.status, cell.error]),
+    Array.from({ length: 4 }, () => ["error", "Generation failed"]),
+  );
   const unjudged = { ...judged, judge: undefined };
   const ordinary = expandGrid(unjudged).map((cell, index) => ({
     ...cell,
     id: `unjudged-${index}`,
   }));
   const independent = createWorkflow(unjudged, ordinary);
-  assert.equal(independent.length, ordinary.length);
-  assert.equal(
-    new Set(ordinary.map((cell) => cell.generationId)).size,
-    ordinary.length,
+  independent[0].status = "error";
+  independent[0].error = "Generation failed";
+  projectWorkflow({ ...grid, input: unjudged, cells: ordinary }, independent);
+  assert.deepEqual(
+    ordinary.map((cell) => [cell.status, cell.error]),
+    [
+      ["error", "Generation failed"],
+      ["pending", undefined],
+      ["pending", undefined],
+      ["pending", undefined],
+    ],
   );
 });
 

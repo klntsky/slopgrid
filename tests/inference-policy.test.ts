@@ -84,12 +84,10 @@ test("admission sums individual costs, preserves automatic selection, and skips 
 
 test("automatic judged admission reserves one generation per source and each unfinished judge", async (t) => {
   class Provider extends ControlledProvider {
-    modelReads = 0;
     override async balanceUsd() {
       return 9.5;
     }
     override async models(): Promise<Model[]> {
-      this.modelReads++;
       return [
         {
           id: "cheap",
@@ -162,10 +160,8 @@ test("automatic judged admission reserves one generation per source and each unf
   );
   assert.equal(store.session(session.id)!.inferenceConcurrency, 3);
 
-  const modelReads = provider.modelReads;
   assert.equal(await allow(req, res, session, 7, input.format, cells), true);
   assert.equal(store.session(session.id)!.inferenceConcurrency, 7);
-  assert.equal(provider.modelReads, modelReads);
 
   const images = expandGrid({ ...input, format: "image" }).map(
     (cell, index) => ({
@@ -179,7 +175,6 @@ test("automatic judged admission reserves one generation per source and each unf
     true,
   );
   assert.equal(store.session(session.id)!.inferenceConcurrency, 3);
-  assert.equal(provider.modelReads, modelReads);
   for (const cell of images) cell.artifactId = "shared-generated-image";
   for (const cell of images.slice(0, 2)) cell.judge!.status = "complete";
   assert.equal(

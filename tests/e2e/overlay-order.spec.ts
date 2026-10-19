@@ -35,7 +35,7 @@ for (const format of ["SVG", "Image", "Markdown", "Static website"]) {
         ).toBe(true);
       }
       await page.getByRole("button", { name: "Navigation menu" }).tap();
-      const menu = page.locator('nav[data-open="true"]');
+      const menu = page.getByRole("navigation");
       await expect(menu).toBeVisible();
       await expect(page.getByRole("tooltip")).toHaveCount(0);
       // Sample the whole popup, including padding and the progress-bar crossing.

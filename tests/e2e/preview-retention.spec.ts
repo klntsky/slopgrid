@@ -15,12 +15,15 @@ for (const touch of [false, true]) {
       await expectProgress(page, 1, 1);
       const frame = page.frameLocator('iframe[aria-hidden="false"]');
       await expect(frame.locator("body")).toBeVisible();
-      const original = await page
-        .locator('iframe[aria-hidden="false"]')
-        .elementHandle();
       await frame.locator("body").evaluate((body) => {
-        body.dataset.retained = "website-session";
+        body.insertAdjacentHTML(
+          "beforeend",
+          "<label>Preview note <input></label>",
+        );
       });
+      await frame
+        .getByRole("textbox", { name: "Preview note" })
+        .fill("website-session");
       const expand = page.getByRole("button", {
         name: "Expand Static website",
         exact: true,
@@ -28,20 +31,16 @@ for (const touch of [false, true]) {
       await expand.click();
       const region = page.getByRole("region", { name: /^Expanded output:/ });
       await expect(
-        region.frameLocator('iframe[aria-hidden="false"]').locator("body"),
-      ).toHaveAttribute("data-retained", "website-session");
-      expect(
-        await region
-          .locator('iframe[aria-hidden="false"]')
-          .evaluate((node, saved) => node === saved, original),
-      ).toBe(true);
+        region
+          .frameLocator('iframe[aria-hidden="false"]')
+          .getByRole("textbox", { name: "Preview note" }),
+      ).toHaveValue("website-session");
       await page
         .getByRole("button", { name: "Collapse Static website", exact: true })
         .click();
-      await expect(frame.locator("body")).toHaveAttribute(
-        "data-retained",
-        "website-session",
-      );
+      await expect(
+        frame.getByRole("textbox", { name: "Preview note" }),
+      ).toHaveValue("website-session");
       await expect(expand).toBeFocused();
     });
   });

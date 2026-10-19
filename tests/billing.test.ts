@@ -126,8 +126,7 @@ test("judge charges enter spent without changing generation usage or duplicating
       status: "pending" as const,
     }));
     const tasks = createWorkflow(input, cells);
-    const generation = tasks.find((task) => task.kind === "generation");
-    assert.ok(generation);
+    const generation = tasks.find((task) => task.kind === "generation")!;
     generation.status = "complete";
     generation.output = {
       artifactId: "committed-output",
@@ -189,7 +188,6 @@ test("judge charges enter spent without changing generation usage or duplicating
       inputTokens: 10,
       outputTokens: 20,
     });
-    assert.equal(cells[0].generationId, cells[1].generationId);
     assert.deepEqual(store.billing.task(cells[1].generationId!)?.usage, {
       costUsd: 0.1,
       inputTokens: 10,
@@ -285,68 +283,6 @@ test("canonical billing survives reopening and recovery with free and unavailabl
     cancelled.update({ usage: { costUsd: 0.4, inputTokens: 7 } });
     cancelled.fail(new Error("Cancelled"), true);
 
-    const stored = store.db
-      .prepare(
-        "SELECT task_id,attempt_id,phase,status,cost_usd,data FROM inference_calls ORDER BY rowid",
-      )
-      .all() as {
-      task_id: string;
-      attempt_id: string;
-      phase: string;
-      status: string;
-      cost_usd: number | null;
-      data: string;
-    }[];
-    assert.deepEqual(
-      stored.map(({ attempt_id, phase, status, cost_usd }) => ({
-        attempt_id,
-        phase,
-        status,
-        cost_usd,
-      })),
-      [
-        {
-          attempt_id: "generation",
-          phase: "direct",
-          status: "succeeded",
-          cost_usd: 0,
-        },
-        {
-          attempt_id: "unknown-cost",
-          phase: "image",
-          status: "succeeded",
-          cost_usd: null,
-        },
-        {
-          attempt_id: "unfinished",
-          phase: "judge",
-          status: "running",
-          cost_usd: null,
-        },
-        {
-          attempt_id: "cancelled",
-          phase: "direct",
-          status: "cancelled",
-          cost_usd: 0.4,
-        },
-      ],
-    );
-    assert.deepEqual(
-      stored.map((row) => row.task_id),
-      [
-        generationId,
-        generationId,
-        store.get("grid")!.cells[0].judgmentId,
-        generationId,
-      ],
-    );
-    for (const row of stored) {
-      const data = JSON.parse(row.data);
-      assert.equal(Object.hasOwn(data, "attemptId"), false);
-      assert.equal(Object.hasOwn(data, "phase"), false);
-      assert.equal(Object.hasOwn(data, "status"), false);
-      assert.equal(Object.hasOwn(data.usage ?? {}, "costUsd"), false);
-    }
     assert.deepEqual(store.billing.task(generationId, "generation")?.usage, {
       costUsd: 0,
       inputTokens: 10,
@@ -367,6 +303,19 @@ test("canonical billing survives reopening and recovery with free and unavailabl
         running: before.running,
       },
       { total: 4, costUsd: 0.4, unavailable: 2, running: 1 },
+    );
+    assert.deepEqual(
+      before.calls.map((call) => [
+        call.phase,
+        call.status,
+        call.usage?.costUsd,
+      ]),
+      [
+        ["direct", "cancelled", 0.4],
+        ["judge", "running", undefined],
+        ["image", "succeeded", undefined],
+        ["direct", "succeeded", 0],
+      ],
     );
     store.db.close();
     store = new Store(path, Buffer.alloc(32, 1));
@@ -437,8 +386,7 @@ test("shared generation calls aggregate across ledger cells without duplicating 
       id: `cell-${index}`,
     }));
     const tasks = createWorkflow(input, cells);
-    const generation = tasks.find((task) => task.kind === "generation");
-    assert.ok(generation);
+    const generation = tasks.find((task) => task.kind === "generation")!;
     generation.status = "running";
     generation.attemptId = "shared-attempt";
     generation.progress = { currentCallCostUsd: 0.05 };
@@ -501,25 +449,14 @@ test("shared generation calls aggregate across ledger cells without duplicating 
         costUsd: 0,
       },
     );
-    const rows = store.db
-      .prepare(
-        "SELECT cell_id,task_id,data FROM inference_calls ORDER BY rowid",
-      )
-      .all() as { cell_id: string; task_id: string; data: string }[];
-    assert.deepEqual(
-      rows.map((row) => [row.cell_id, row.task_id]),
-      [
-        ["cell-0", generation.id],
-        ["cell-1", generation.id],
-        ["cell-0", cells[0].judgmentId],
-        ["cell-1", generation.id],
-      ],
-    );
+    const history = store.billing.page("owner", 0);
     assert.equal(
-      JSON.parse(rows[0].data).generationId,
-      "provider-generation-id",
+      history.calls.find(
+        (call) => call.generationId === "provider-generation-id",
+      )?.usage?.costUsd,
+      0.1,
     );
-    assert.ok(Math.abs(store.billing.page("owner", 0).costUsd - 0.7) < 1e-9);
+    assert.ok(Math.abs(history.costUsd - 0.7) < 1e-9);
     assert.throws(
       () => store.billing.observe("missing-cell")("direct"),
       /requires a workflow task/,

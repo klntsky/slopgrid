@@ -14,8 +14,10 @@ test("dollar budgets reserve input costs, price reasoning as output, and respect
     128000,
   );
   const smaller = generationBudget(model, "hello", "system", 1);
-  assert.ok(smaller.inputCost !== undefined);
-  assert.ok(smaller.inputCost + smaller.maxOutputTokens * 0.00002 <= 1);
+  assert.ok(
+    smaller.inputCost! > 0 &&
+      smaller.inputCost! + smaller.maxOutputTokens! * 0.00002 <= 1,
+  );
   assert.equal(
     generationBudget(
       { ...model, pricing: { prompt: 0, completion: 0 } },
@@ -98,7 +100,6 @@ test("a cell request uses the full dollar budget and constrains effective condit
       },
       () => {},
     );
-    assert.equal(requests.length, 1);
     assert.ok(requests[0].max_tokens > 24000 && requests[0].max_tokens < 25000);
     assert.deepEqual(requests[0].provider.max_price, {
       prompt: 3,

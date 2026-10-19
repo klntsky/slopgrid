@@ -99,48 +99,27 @@ test("private websites load in frames and direct tabs for the owning user across
     await expect(direct).toHaveURL(output);
     await direct.close();
     const page = await context.newPage();
-    const importedCSS = page.waitForResponse((response) =>
-      response.url().endsWith("/theme.css"),
-    );
     await page.goto(`${origin}/grid/${grid.id}`);
-    expect((await importedCSS).status()).toBe(200);
     const frame = page.frameLocator("iframe");
     await expect(frame.getByText("Private module loaded")).toBeVisible();
-    const cookies = (await context.cookies()).filter((cookie) =>
-      cookie.name.startsWith("__Host-slopgrid"),
+    const outputCookie = (await context.cookies()).find(
+      (cookie) => cookie.name === "__Host-slopgrid-output",
     );
-    expect(cookies.some((cookie) => cookie.name === "__Host-slopgrid")).toBe(
-      true,
+    expect(outputCookie).toMatchObject({ httpOnly: true, secure: true });
+    await expect(frame.locator("h1")).toHaveCSS("color", "rgb(0, 0, 128)");
+    await expect(frame.locator("body")).toHaveCSS(
+      "background-color",
+      "rgb(255, 255, 240)",
     );
-    expect(
-      cookies.some((cookie) => cookie.name === "__Host-slopgrid-output"),
-    ).toBe(true);
-    for (const cookie of cookies) {
-      expect(cookie.expires).toBeGreaterThan(Date.now() / 1000 + 399 * 86400);
-      expect(cookie.httpOnly).toBe(true);
-      expect(cookie.secure).toBe(true);
-    }
-    const sheetsLoaded = (element: Element) => {
-      const sheet = (element as HTMLLinkElement).sheet;
-      if (!sheet) return false;
-      try {
-        return sheet.cssRules.length > 0;
-      } catch {
-        return false;
-      }
-    };
-    await expect
-      .poll(() =>
-        frame.locator('link[rel="stylesheet"]').evaluate(sheetsLoaded),
-      )
-      .toBe(true);
     const opened = context.waitForEvent("page");
     await page.getByRole("link", { name: "Open output" }).click();
     const tab = await opened;
     await expect(tab.getByText("Private module loaded")).toBeVisible();
-    await expect
-      .poll(() => tab.locator('link[rel="stylesheet"]').evaluate(sheetsLoaded))
-      .toBe(true);
+    await expect(tab.locator("h1")).toHaveCSS("color", "rgb(0, 0, 128)");
+    await expect(tab.locator("body")).toHaveCSS(
+      "background-color",
+      "rgb(255, 255, 240)",
+    );
     await expect(tab).toHaveURL(output);
     await expect(tab.locator("iframe")).toHaveCount(0);
     expect(await tab.evaluate(async () => (await fetch("/style.css")).ok)).toBe(
@@ -221,11 +200,10 @@ test("private websites load in frames and direct tabs for the owning user across
     expect((await outputFrame.goto(output))!.status()).toBe(404);
     await page.reload();
     await expect(frame.getByText("Private module loaded")).toBeVisible();
-    await expect
-      .poll(() =>
-        frame.locator('link[rel="stylesheet"]').evaluate(sheetsLoaded),
-      )
-      .toBe(true);
+    await expect(frame.locator("body")).toHaveCSS(
+      "background-color",
+      "rgb(255, 255, 240)",
+    );
     const account = store.identify("github", "123", {
       provider: "github",
       username: "owner",
@@ -258,13 +236,10 @@ test("private websites load in frames and direct tabs for the owning user across
         signedIn.page.getByText("Private module loaded"),
       ).toBeVisible();
       await expect(signedIn.page).toHaveURL(output);
-      await expect
-        .poll(() =>
-          signedIn.page
-            .locator('link[rel="stylesheet"]')
-            .evaluate(sheetsLoaded),
-        )
-        .toBe(true);
+      await expect(signedIn.page.locator("body")).toHaveCSS(
+        "background-color",
+        "rgb(255, 255, 240)",
+      );
     }
     store.deleteSession(first.sessionId);
     expect((await first.page.reload())!.status()).toBe(404);

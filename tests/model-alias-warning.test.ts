@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { ModelAliasWarnings } from "../src/create/model-alias-warnings.js";
 import { Provider } from "../server/provider.js";
 
-test("catalog metadata supplies selected moving-alias warnings without changing the selected ID", async (t) => {
+test("only selected moving aliases render a warning with their current target", async (t) => {
   t.mock.method(globalThis, "fetch", async () =>
     Response.json({
       data: [
@@ -30,23 +30,23 @@ test("catalog metadata supplies selected moving-alias warnings without changing 
     }),
   );
   const models = await new Provider().models();
-  assert.equal(models[0].canonicalSlug, "fixture/chat-latest-20260505");
-  for (const others of [[], ["fixture/version", "~fixture/latest"]]) {
-    const render = (values: string[]) =>
-      renderToStaticMarkup(
-        createElement(ModelAliasWarnings, {
-          models,
-          values,
-        }),
-      );
-    assert.doesNotMatch(render([]), /data-model-alias-warning/);
-    assert.doesNotMatch(
-      render(["fixture/version", "~fixture/latest"]),
-      /data-model-alias-warning/,
+  const render = (values: string[]) =>
+    renderToStaticMarkup(
+      createElement(ModelAliasWarnings, {
+        models,
+        values,
+      }),
     );
+  assert.equal(render([]), "");
+  assert.equal(render(["fixture/version", "~fixture/latest"]), "");
+  for (const others of [[], ["fixture/version", "~fixture/latest"]]) {
     const selected = render([...others, "fixture/chat-latest"]);
+    assert.match(selected, /role="status"/);
     assert.match(selected, /data-model-alias-warning="fixture\/chat-latest"/);
     assert.match(selected, /fixture\/chat-latest-20260505/);
-    assert.doesNotMatch(render([]), /data-model-alias-warning/);
+    assert.doesNotMatch(
+      selected,
+      /data-model-alias-warning="(?:fixture\/version|~fixture\/latest)"/,
+    );
   }
 });

@@ -1,4 +1,5 @@
 import { test, expect } from "./fixtures";
+import { connectOpenRouter } from "./helpers";
 
 test("failed grid lists retry independently and OAuth failures retain their retry actions", async ({
   page,
@@ -37,6 +38,5 @@ test("failed grid lists retry independently and OAuth failures retain their retr
       .getByRole("region", { name: "Account", exact: true })
       .getByRole("link", { name: "Sign in with GitHub" }),
   ).toBeVisible();
-  await page.getByRole("link", { name: "Connect OpenRouter" }).click();
-  await expect(page.getByText("Connected", { exact: true })).toBeVisible();
+  await connectOpenRouter(page);
 });

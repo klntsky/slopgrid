@@ -92,6 +92,7 @@ Status: high level product goal that is not a requirement (not achieved yet).
    Fill blanks sequentially within each cell, using only the preceding messages and earlier generated answers. Insert each answer as an assistant message and generate exactly once per blank. If the final template message is a supplied user, assistant, or system message, run one additional inference call using the complete filled history and append its assistant response. A template ending in an unfilled message finishes with that blank's response. Render the completed conversation as messenger-style bubbles without visible role labels: assistant messages on the left, user messages on the right, and centered system messages with a subtle red tint. Preserve Markdown formatting within each message and include trailing supplied messages. Use the same conversation view while streaming, when expanded, and when opening an output directly. Store the conversation as an ordered JSON array of objects containing role and content; raw view, copying, and download expose that JSON, with downloads using a .json extension. Stream the completed prefix and current answer. Retain the partial conversation after failure, and restart from the first blank on retry. Saved inputs, Edit, and Fork retain the template rather than generated answers.
 
    Share the cell budget across all template calls, allocating the remaining allowance equally among remaining calls, including the final completion when needed. Account for the actual accumulated history and subtract reported cost or available usage-based estimates; reserve the allocated share when cost cannot be estimated. Keep provider-controlled token limits when metadata is unavailable. Aggregate usage across calls and keep thinking separate from the transcript. Later input lengths are unknown before generation, so preflight estimates reserve the cell budget and show the existing unavailable-estimate warning. Reuse requires valid reported input-token counts for every required call and every generated answer to fit its destination call allowance at current prices. Use the original output token limit when reported output usage is unavailable, and regenerate when a required call or input-token count is unavailable.
+
 4. Show generation progress as it happens, retain completed results, and let owners publish their grids afterward.
 5. Keep all calls needed to produce a cell's output within one generation attempt.
 6. Apply sensible request and generation rate limits without imposing deadlines on accepted inference.
@@ -241,7 +242,6 @@ Image grids have a "Parameters" button with a 14px Info circle icon immediately 
 7. Show "Judge calls are not counted towards the generation budget." Execute judge calls independently of generation-budget limits and record their actual charges in Billing.
 8. For judged grids, show layout counts as "{R} rows x {C} columns - {G} generated outputs", where G counts distinct generation setups. Show criterion results in the cell's judgment view.
 
-
 ## 4. Grid layout and metadata
 
 ### 4.1. Table geometry and gestures
@@ -357,12 +357,13 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
 6. Completed generation remains available for output, raw view, thinking, copy, and download while judging runs or fails, subject to ordinary access control. Cache ready output independently of judgment completion; display cached verdicts as saved results.
 7. Synchronize judgment reading positions across the whole ordered criteria list, accounting for different criterion heights, spacing, and scrollable ranges.
    - Map the full bounds of each ordered vertical area, including padding and unused space, and interpolate corresponding positions continuously around the interaction's vertical focus.
-   - Keep source scrolling native. For touch scrolling and scrolling without a hovered source item, peers follow the whole-history map from their current positions, holding the gesture's starting viewport percentage.
-   - On a fresh hover entry or confirmed tap, align the corresponding fractional area position at the same percentage of each viewport's height, subject only to native scroll limits.
+   - On every hover, confirmed tap, and native-scroll update, align the corresponding fractional area position at the same percentage of each viewport's height, subject only to native scroll limits.
+   - Keep source scrolling native. Touch scrolling and scrolling without a hovered source item hold the gesture's starting viewport percentage while applying that alignment.
    - Continuously derive desktop focus from the exact cursor position, including movement within an area. Vertical cursor movement can scroll peers without scrolling the source.
-   - During continued hover and desktop scrolling, prefer the live cursor's viewport percentage. As the source content focus advances or retreats, peers may move in that direction or hold, but must not reverse. Allow alignment to drift while paused, and resume from current positions without a catch-up jump when direction changes. Synchronization does not change the source's native scroll position.
+   - During continued hover and desktop scrolling, recompute the same proportional alignment from the current source position, focus, and area bounds, independently of earlier peer positions. Peers may move in either direction as needed to maintain that alignment.
    - Maintain the invariant "scrolling without moving the mouse is the same as scrolling and refreshing the mouse position", including native scroll completion, delayed input delivery, and layout changes beneath a stationary cursor.
-   - Keep each view at its latest synchronized position when the cursor leaves an area, cell, or grid, or changes synchronization groups. Subsequent hover and scrolling continue from the current positions.
+   - Returning to the browser window with unchanged cursor position, source scroll position, and geometry leaves every view's scroll position unchanged.
+   - Keep each view at its latest synchronized position when the cursor leaves an area, cell, or grid, or changes synchronization groups.
 8. Highlight the criterion under the cursor in every judgment view in the grid. Desktop scrolling updates both highlight and alignment for the item beneath a stationary cursor, so returning to idle hover retains that alignment. Clear the highlight when the cursor leaves the criterion rows.
 9. On touchscreens, a confirmed tap establishes a persistent comparison focus and reading line at the tapped viewport percentage, highlighting and revealing the matching item in every view.
    - Finger contact alone changes neither the selection nor peer positions. Native swipes use the retained reading line rather than the finger's grab position. Without a prior focus, use the source viewport's upper third.
@@ -370,7 +371,6 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
    - Highlight the item at the reading line when scrolling begins, and hold that highlight through dragging and native momentum. When scrolling settles, highlight the item now at that line without moving any view.
    - Tapping another point updates the focus and reading line. Tapping outside clears the emphasis while retaining every view's final reading position.
    - Multiple fingers release synchronization without moving the views. Preserve native scrolling and grid pinch zoom.
-
 
 ### 5.7. Chat history scrolling
 
@@ -414,7 +414,6 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
 2. Generation failure affects dependent cells; judge failure affects only its judgment. A false verdict is successful judging, not an inference error. Overall cell completion waits for judging, and publication follows the existing unfinished/failed-cell policy.
 3. Preserve committed generation and completed verdicts through Pause, recovery, and Resume. Resume retries only unfinished stages. Preserve temporary-error retries and billing pauses without duplicate requests after cancellation or storage retries.
 4. New grids always need fresh judgments. Reload, Resume, and duplicate creation replay do not repeat completed verdicts. Do not cache verdicts or reuse judgment attempts or usage across grids.
-
 
 ## 7. Costs and billing
 

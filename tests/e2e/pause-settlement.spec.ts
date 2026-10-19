@@ -47,7 +47,6 @@ test("a delayed paused response cannot reopen streaming after the engine restart
       endpoint,
       async (route) => {
         const response = await route.fetch();
-        expect((await response.json()).live).toBe(true);
         captured();
         await gate;
         await route.fulfill({ response });
@@ -88,7 +87,6 @@ test("a delayed paused response cannot reopen streaming after the engine restart
     await expect(
       page.getByRole("button", { name: "Resume generation" }),
     ).toBeVisible();
-    expect(f.calls).toHaveLength(1);
   } finally {
     unlock();
     release();

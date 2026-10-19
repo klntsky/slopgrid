@@ -140,6 +140,9 @@ async function inspect(page: Page, grid: Snapshot) {
     expect(cell.outputReady).toBe(true);
     expect(cell.judge?.status).toBe("complete");
     expect(cell.judge?.results).toHaveLength(expected.length);
+    expect(cell.judge!.results!.map((result) => result.verdict)).toEqual(
+      criteria.map((criterion) => criterion.correctAnswer),
+    );
     const correct = cell.judge!.results!.filter(
       (result, criterion) =>
         result.verdict === expected[criterion].correctAnswer,
@@ -175,7 +178,6 @@ async function inspect(page: Page, grid: Snapshot) {
       items.nth(index).getByText(result.explanation, { exact: true }),
     ).toBeVisible();
   }
-  await expect(details.getByText(/^(Correct|Incorrect)$/)).toHaveCount(0);
   await scores.first().click();
   await expect(details).toBeHidden();
   await expect(scores.first()).toHaveAttribute("aria-pressed", "false");
@@ -231,7 +233,7 @@ async function billing(page: Page, grid: Snapshot, generationCount: number) {
   );
   await page.goto("/billing");
   await expect(
-    page.getByRole("cell", { name: "Judge", exact: true }),
+    page.getByRole("cell", { name: "judge", exact: true }),
   ).toHaveCount(bill.calls.filter((call) => call.phase === "judge").length);
 }
 

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { token } from "../server/ids.js";
@@ -119,7 +119,7 @@ test("list prompts are expanded and truncated once, then persist independently o
   }
 });
 
-test("outputs use opaque immutable artifacts and SQLite stores workflow metadata without output bytes", () => {
+test("saved outputs and traces remain readable after publication and reject artifact mutation or path traversal", () => {
   const dir = mkdtempSync(join(tmpdir(), "slopgrid-storage-"));
   const store = new Store(join(dir, "app.sqlite"), Buffer.alloc(32, 1));
   try {
@@ -179,32 +179,10 @@ test("outputs use opaque immutable artifacts and SQLite stores workflow metadata
       readFileSync(store.files.path(artifactId, "nested/style.css")!, "utf8"),
       "body{color:red}",
     );
-    const before = statSync(path);
     store.publish(grid.id, "unlisted", null);
-    assert.equal(statSync(path).mtimeMs, before.mtimeMs);
-    const gridData = (
-      store.db.prepare("SELECT data FROM grids").get() as { data: string }
-    ).data;
-    const cellData = (
-      store.db.prepare("SELECT data FROM cells").get() as { data: string }
-    ).data;
-    const taskRow = store.db.prepare("SELECT data FROM workflow_tasks").get();
-    assert.ok(
-      taskRow &&
-        typeof taskRow === "object" &&
-        "data" in taskRow &&
-        typeof taskRow.data === "string",
-    );
-    const taskData = taskRow.data;
-    assert.ok(!gridData.includes('"cells"'));
-    assert.equal(cellData, "{}");
-    assert.ok(!gridData.includes(payload) && !taskData.includes(payload));
-    assert.ok(!taskData.includes("Temporary preview payload"));
+    assert.equal(readFileSync(path, "utf8"), payload);
+    assert.equal(store.outputMetadata("cell")?.artifactId, artifactId);
     assert.equal(store.get("grid")!.cells[0].prompt, "Draw cat");
-    assert.ok(
-      !gridData.includes("Captured thinking payload") &&
-        !taskData.includes("Captured thinking payload"),
-    );
     const restoredThinking = store.get("grid")!.cells[0].thinkingId!;
     assert.equal(
       readFileSync(

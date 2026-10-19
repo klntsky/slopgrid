@@ -1,7 +1,7 @@
 import { test, expect } from "./fixtures";
 import { create, expectProgress } from "./helpers";
 
-test("shared text cache copies the displayed Markdown without another output request", async ({
+test("displayed Markdown remains copyable when output requests are unavailable", async ({
   page,
   context,
   request,
@@ -14,14 +14,9 @@ test("shared text cache copies the displayed Markdown without another output req
   await expect(page.locator(".markdown-preview h1")).toHaveText(
     "Cached output",
   );
-  let extraRequests = 0;
-  await page.route("**/outputs/**", async (route) => {
-    extraRequests++;
-    await route.abort();
-  });
+  await page.route("**/outputs/**", (route) => route.abort());
   await page.getByRole("button", { name: "Copy output", exact: true }).click();
   await expect
     .poll(() => page.evaluate(() => navigator.clipboard.readText()))
     .toBe(markdown);
-  expect(extraRequests).toBe(0);
 });

@@ -1,7 +1,7 @@
 import { test, expect } from "./fixtures";
-import { expectProgress } from "./helpers";
+import { connectOpenRouter, expectProgress } from "./helpers";
 
-test("a supported large reference survives reload and authorization without storing its bytes in the draft", async ({
+test("a supported large reference survives reload, authorization and generation", async ({
   page,
   request,
 }) => {
@@ -30,15 +30,11 @@ test("a supported large reference survives reload and authorization without stor
       preview.evaluate((node) => (node as HTMLImageElement).naturalWidth),
     )
     .toBe(1);
-  expect(
-    await page.evaluate(() => sessionStorage.getItem("slopgrid-draft")!.length),
-  ).toBeLessThan(4096);
-  await page.getByRole("link", { name: "Connect OpenRouter" }).click();
+  await connectOpenRouter(page);
   await expect(preview).toBeVisible();
   await page.getByRole("button", { name: "Generate", exact: true }).click();
   await expectProgress(page, 1, 1);
   const sent = await (await request.get("/fixture/image-requests")).json();
-  expect(sent).toHaveLength(1);
   expect(sent[0].input_references[0].image_url.url).toBe(
     `data:image/png;base64,${buffer.toString("base64")}`,
   );

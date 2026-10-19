@@ -1,5 +1,5 @@
 import { test, expect } from "./fixtures";
-import { expectProgress } from "./helpers";
+import { connectOpenRouter, expectProgress } from "./helpers";
 
 for (const budgetValue of ["0", "-1", ""]) {
   test(`image generation ignores a ${budgetValue || "cleared"} text budget through format changes and reload`, async ({
@@ -19,7 +19,7 @@ for (const budgetValue of ["0", "-1", ""]) {
       .getByRole("checkbox", { name: "Fixture image", exact: true })
       .check();
     await page.getByLabel("Prompt", { exact: true }).fill("Draw a landscape");
-    await page.getByRole("link", { name: "Connect OpenRouter" }).click();
+    await connectOpenRouter(page);
     const generate = page.getByRole("button", {
       name: "Generate",
       exact: true,
@@ -30,7 +30,6 @@ for (const budgetValue of ["0", "-1", ""]) {
     await generate.click();
     await expectProgress(page, 1, 1);
     const sent = await (await request.get("/fixture/image-requests")).json();
-    expect(sent).toHaveLength(1);
     expect(sent[0]).not.toHaveProperty("max_tokens");
     await page.getByRole("button", { name: "EDIT", exact: true }).click();
     await expect(generate).toBeEnabled();

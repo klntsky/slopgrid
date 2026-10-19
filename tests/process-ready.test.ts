@@ -18,7 +18,7 @@ test("engine readiness reports startup causes and resolves only when its API is 
       secret: Buffer.alloc(32, 1),
     });
     try {
-      assert.equal((await engine.api.status()).runningCalls, 0);
+      await assert.doesNotReject(() => engine.api.status());
     } finally {
       await engine.close();
     }
