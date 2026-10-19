@@ -18,7 +18,7 @@ export function useItemScrollSync(root: RefObject<HTMLElement | null>) {
 type ViewLayout = ScrollLayout & { height: number };
 type FollowSession = {
   source: HTMLElement;
-  focusY: number | null;
+  focusY: number;
   followers: {
     view: HTMLElement;
     start: number;
@@ -32,6 +32,7 @@ type FollowSession = {
 function createItemScrollSync(root: RefObject<HTMLElement | null>) {
   const saved = new Map<HTMLElement, number>();
   const lastScrolls = new WeakMap<HTMLElement, number>();
+  const touchOffsets = new Map<string, number>();
   const layouts = new Map<HTMLElement, ViewLayout>();
   const views: HTMLElement[] = [];
   const scrollKeys = new Set([
@@ -52,6 +53,8 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
   let pendingSource: HTMLElement | null = null;
   let pendingStart = 0;
   let pendingFocusY: number | null = null;
+  let pendingTouch = false;
+  let touchGroup: string | undefined;
   let hoverRow: HTMLElement | null = null;
   let mouse: { x: number; y: number } | null = null;
   let pressed = false;
@@ -165,13 +168,14 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
         map,
       });
     }
-    return { source, focusY, followers };
+    return { source, focusY: bounds.top + pixels, followers };
   }
   function write(view: HTMLElement, top: number) {
     const before = view.scrollTop;
     view.scrollTop = top;
     lastScrolls.set(view, view.scrollTop);
-    if (view.scrollTop !== before && !saved.has(view)) saved.set(view, before);
+    if (!touchGroup && view.scrollTop !== before && !saved.has(view))
+      saved.set(view, before);
   }
   function restore(group?: string) {
     for (const [view, top] of saved) {
@@ -198,10 +202,70 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
     highlightedIndex = index;
     highlightedGroup = group;
   }
+  function paintTouchFocus() {
+    for (const view of root.current!.querySelectorAll<HTMLElement>(
+      "[data-scroll-sync-focus]",
+    )) {
+      if (view.dataset.scrollSync === touchGroup && viewOf(view)) continue;
+      view.removeAttribute("data-scroll-sync-focus");
+      view.style.removeProperty("--scroll-sync-focus");
+    }
+    if (!touchGroup) return;
+    const pixels = touchOffsets.get(touchGroup)!;
+    for (const view of views) {
+      if (view.dataset.scrollSync !== touchGroup) continue;
+      const bounds = view.getBoundingClientRect();
+      const height = parseFloat(getComputedStyle(view).height);
+      const offset = (Math.min(pixels, bounds.height) * height) / bounds.height;
+      view.setAttribute("data-scroll-sync-focus", "");
+      view.style.setProperty("--scroll-sync-focus", `${offset}px`);
+    }
+  }
+  function clearTouchFocus() {
+    touchGroup = undefined;
+    highlight(null);
+    paintTouchFocus();
+  }
+  function rememberTouchFocus(view: HTMLElement, focusY: number) {
+    const bounds = view.getBoundingClientRect();
+    const pixels = Math.max(0, Math.min(bounds.height, focusY - bounds.top));
+    touchGroup = view.dataset.scrollSync!;
+    touchOffsets.set(touchGroup, pixels);
+    paintTouchFocus();
+    return pixels;
+  }
+  function rowAtFocus(
+    view: HTMLElement,
+    pixels: number,
+    start = view.scrollTop,
+  ) {
+    const bounds = view.getBoundingClientRect();
+    const shift =
+      start === view.scrollTop
+        ? 0
+        : ((view.scrollTop - start) * bounds.height) /
+          parseFloat(getComputedStyle(view).height);
+    const y = bounds.top + Math.min(pixels, bounds.height) - shift;
+    let previous: HTMLElement | null = null;
+    const list = listOf(view);
+    if (list)
+      for (const child of list.children) {
+        const row = child as HTMLElement;
+        const item = row.getBoundingClientRect();
+        if (y < item.top) return previous ?? row;
+        if (y < item.bottom) return row;
+        previous = row;
+      }
+    return previous;
+  }
+  function settleTouchFocus(view: HTMLElement) {
+    if (viewOf(view) && view.dataset.scrollSync === touchGroup)
+      highlight(rowAtFocus(view, touchOffsets.get(touchGroup!)!));
+  }
   function reveal(row: HTMLElement, point: { x: number; y: number }) {
     const source = viewOf(row)!;
     freshGeometry();
-    restore(source.dataset.scrollSync);
+    if (!touchGroup) restore(source.dataset.scrollSync);
     const index = itemIndex(row);
     const from = layout(source);
     const bounds = source.getBoundingClientRect();
@@ -238,11 +302,13 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
     pendingSource = source;
     pendingStart = source.scrollTop;
     pendingFocusY = point.y;
+    pendingTouch = false;
   }
   function endHover() {
     mode = "idle";
     hoverRow = null;
     pendingSource = null;
+    pendingTouch = false;
     highlight(null);
     restore();
   }
@@ -257,19 +323,23 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
     reveal(row, point);
   }
   function flush() {
+    const geometryChanged = dirty;
     if (mode === "scroll" && session) {
       if (!viewOf(session.source)) {
         session = null;
         mode = "idle";
+        touchScrolling = false;
         return;
       }
       // Resizing/streaming changes geometry, not the user's current positions.
-      if (dirty)
+      if (dirty) {
         session = prepare(
           session.source,
           session.source.scrollTop,
           session.focusY,
         );
+        if (touchScrolling) rememberTouchFocus(session.source, session.focusY);
+      }
       for (const follower of session.followers) {
         const delta =
           follower.map(session.source.scrollTop) - follower.mappedStart;
@@ -282,6 +352,7 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
       if (row) reveal(row, mouse);
       else endHover();
     }
+    if (touchGroup && geometryChanged && !touchScrolling) paintTouchFocus();
   }
   function schedule() {
     if (frame !== null) return;
@@ -290,14 +361,22 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
       flush();
     });
   }
-  function arm(view: HTMLElement | null, focusY?: number) {
-    if (!view || (mode === "scroll" && session?.source === view)) return;
+  function arm(view: HTMLElement | null, focusY?: number, touch = false) {
+    if (
+      !view ||
+      (mode === "scroll" &&
+        session?.source === view &&
+        touch === touchScrolling)
+    )
+      return;
+    if (!touch && touchGroup) clearTouchFocus();
     mode = "idle";
     session = null;
     // Passive wheel delivery can follow compositor scrolling. Retain the last
     // observed source offset; acquire follower maps only when scrolling starts.
     pendingSource = view;
     pendingStart = lastScrolls.get(view) ?? view.scrollTop;
+    pendingTouch = touch;
     pendingFocusY =
       focusY ?? (viewOf(hoverRow) === view ? (mouse?.y ?? null) : null);
   }
@@ -307,6 +386,7 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
       !mouse || mouse.x !== event.clientX || mouse.y !== event.clientY;
     mouse = event.nativeEvent;
     if (!moved || pressed || mode === "scroll") return;
+    if (touchGroup) clearTouchFocus();
     explore(rowOf(event.target), mouse);
     if (!hoverRow) arm(viewOf(event.target), mouse.y);
   }
@@ -330,22 +410,33 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
     schedule();
   }
   function touchStart(event: TouchEvent) {
-    if (mode === "scroll") {
+    if (mode === "scroll" && session) {
+      const source = session.source;
       flush();
-      mode = "idle";
-      session = null;
+      if (touchScrolling) settleTouchFocus(source);
     }
+    mode = "idle";
+    session = null;
     touchScrolling = false;
     hoverRow = null;
-    mode = "idle";
+    mouse = null;
+    pendingSource = null;
+    pendingTouch = false;
+    // Touch navigation accepts the visible positions; it has no hover exit.
+    saved.clear();
     if (event.touches.length !== 1) {
       contact = null;
-      pendingSource = null;
-      highlight(null);
+      clearTouchFocus();
       return;
     }
     const touch = event.touches[0];
     const target = document.elementFromPoint(touch.clientX, touch.clientY);
+    const view = viewOf(target);
+    if (!view) {
+      contact = null;
+      clearTouchFocus();
+      return;
+    }
     const row = rowOf(target);
     contact = {
       row,
@@ -354,10 +445,12 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
       moved: false,
       scrolled: false,
     };
-    mode = "idle";
-    highlight(row);
-    pendingSource = null;
-    arm(viewOf(target), touch.clientY);
+    const bounds = view.getBoundingClientRect();
+    const pixels = Math.min(
+      bounds.height,
+      touchOffsets.get(view.dataset.scrollSync!) ?? bounds.height / 3,
+    );
+    arm(view, bounds.top + pixels, true);
   }
   function touchMove(event: TouchEvent) {
     if (!contact || event.touches.length !== 1) return;
@@ -370,27 +463,36 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
     if (!contact || event.touches.length) return;
     const ended = contact;
     contact = null;
-    if (ended.scrolled) return;
+    if (ended.scrolled || ended.moved) return;
     pendingSource = null;
-    if (!ended.moved) {
-      if (ended.row && rowOf(ended.row)) {
-        highlight(ended.row);
-        reveal(ended.row, ended);
-      } else endHover();
-    }
+    pendingTouch = false;
+    if (ended.row && rowOf(ended.row)) {
+      rememberTouchFocus(viewOf(ended.row)!, ended.y);
+      highlight(ended.row);
+      reveal(ended.row, ended);
+      pendingSource = null;
+    } else clearTouchFocus();
   }
   function touchCancel() {
     contact = null;
+    if (mode !== "scroll") {
+      pendingSource = null;
+      pendingTouch = false;
+    }
   }
   function releasePointer() {
     pressed = false;
   }
   function scrollEnd(event: Event) {
     if (mode !== "scroll" || event.target !== session?.source) return;
+    const source = session.source;
+    const touch = touchScrolling;
     flush();
     mode = "idle";
+    if (touch) settleTouchFocus(source);
     session = null;
     pendingSource = null;
+    pendingTouch = false;
     touchScrolling = false;
   }
   return {
@@ -427,6 +529,9 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
         mode = "idle";
         session = null;
         pendingSource = null;
+        pendingTouch = false;
+        touchGroup = undefined;
+        touchOffsets.clear();
         contact = null;
       };
     },
@@ -445,6 +550,7 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
         if (mode !== "scroll") endHover();
       },
       onWheelCapture(event: ReactWheelEvent<HTMLElement>) {
+        mouse = event.nativeEvent;
         arm(viewOf(event.target), event.clientY);
       },
       onKeyDownCapture(event: ReactKeyboardEvent<HTMLElement>) {
@@ -460,12 +566,16 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
         if (!participating) return;
         if (mode !== "scroll" && pendingSource === source) {
           session = prepare(source, pendingStart, pendingFocusY);
+          const touch = pendingTouch;
           pendingSource = null;
+          pendingTouch = false;
           mode = "scroll";
           saved.delete(source);
-          if (contact) {
-            contact.scrolled = true;
-            touchScrolling = true;
+          touchScrolling = touch;
+          if (touch) {
+            const pixels = rememberTouchFocus(source, session.focusY);
+            highlight(rowAtFocus(source, pixels, pendingStart));
+            if (contact) contact.scrolled = true;
           }
         }
         if (mode === "scroll" && session?.source === source) schedule();

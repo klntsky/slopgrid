@@ -2042,7 +2042,7 @@ test.describe("touch judgment following", () => {
     hasTouch: true,
   });
 
-  test("touch judgment starts only highlight, taps reveal, and native swipes retain their positions", async ({
+  test("touch judgment taps establish a persistent reading line through swipes and dismissal", async ({
     page,
   }) => {
     const criteria = Array.from({ length: 6 }, (_, index) => ({
@@ -2192,7 +2192,7 @@ test.describe("touch judgment following", () => {
       type: "touchStart",
       touchPoints: [{ x: a.x + 20, y: a.y + 120, id: 1 }],
     });
-    await expectSelected(1);
+    await expect.poll(() => backgrounds(1)).toEqual([unselected, unselected]);
     await source.evaluate(
       () =>
         new Promise<void>((resolve) =>
@@ -2208,6 +2208,32 @@ test.describe("touch judgment following", () => {
       type: "touchEnd",
       touchPoints: [],
     });
+    await expectSelected(1);
+    await expect
+      .poll(() =>
+        results.evaluateAll((containers) =>
+          containers.map((container) =>
+            container.hasAttribute("data-scroll-sync-focus"),
+          ),
+        ),
+      )
+      .toEqual([true, true]);
+    const focusLines = () =>
+      results.evaluateAll((containers) =>
+        containers.map((container) => {
+          const panel = container.getBoundingClientRect();
+          const scale = panel.height / container.clientHeight;
+          return (
+            parseFloat(
+              (container as HTMLElement).style.getPropertyValue(
+                "--scroll-sync-focus",
+              ),
+            ) * scale
+          );
+        }),
+      );
+    for (const line of await focusLines())
+      expect(Math.abs(line - 120)).toBeLessThan(1);
     await expect
       .poll(() => target.evaluate((container) => container.scrollTop))
       .not.toBe(original);
@@ -2228,9 +2254,9 @@ test.describe("touch judgment following", () => {
       const panel = container.getBoundingClientRect();
       const scale =
         panel.height / parseFloat(getComputedStyle(container).height);
-      // Keep contact 10 native pixels before the boundary at any grid zoom.
+      // The reading line starts in criterion 1; the lower grab is in criterion 2.
       container.scrollTop +=
-        (row.getBoundingClientRect().bottom - panel.top - 260) / scale - 10;
+        (row.getBoundingClientRect().bottom - panel.top - 120) / scale - 10;
     });
     await source.evaluate(
       () =>
@@ -2242,14 +2268,29 @@ test.describe("touch judgment following", () => {
     const selectedBackground = (await backgrounds(1))[0];
     const scrollSamples = await source.evaluateHandle((container) => {
       const colors: string[] = [];
+      const momentumColors: string[] = [];
+      let released = false;
+      const release = () => {
+        released = true;
+      };
       const record = () => {
-        for (const list of document.querySelectorAll(".judge-result-criteria"))
-          colors.push(getComputedStyle(list.children[1]).backgroundColor);
+        for (const list of document.querySelectorAll(
+          ".judge-result-criteria",
+        )) {
+          const color = getComputedStyle(list.children[1]).backgroundColor;
+          colors.push(color);
+          if (released) momentumColors.push(color);
+        }
       };
       container.addEventListener("scroll", record, { passive: true });
+      document.addEventListener("touchend", release, { once: true });
       return {
         colors,
-        stop: () => container.removeEventListener("scroll", record),
+        momentumColors,
+        stop: () => {
+          container.removeEventListener("scroll", record);
+          document.removeEventListener("touchend", release);
+        },
       };
     });
     const ended = results.evaluateAll(
@@ -2266,6 +2307,9 @@ test.describe("touch judgment following", () => {
       type: "touchStart",
       touchPoints: [{ x: a.x + 20, y: a.y + 260, id: 1 }],
     });
+    await expectSelected(1);
+    for (const line of await focusLines())
+      expect(Math.abs(line - 120)).toBeLessThan(1);
     const beforeDrag = await target.evaluate(
       (container) => container.scrollTop,
     );
@@ -2283,15 +2327,15 @@ test.describe("touch judgment following", () => {
     );
     const duringDrag = await scrollGeometry();
     expect(duringDrag[0].position).toBeGreaterThan(before);
-    // The finger has moved, but the history projection retains contact's 260px line.
+    // A lower finger grab must reuse the tap's 120px line, not establish 260px.
     const frozenDelta =
       judgmentHistoryPosition(
         dragGeometry[0],
         dragGeometry[1],
-        260,
+        120,
         duringDrag[0].position,
       ) -
-      judgmentHistoryPosition(dragGeometry[0], dragGeometry[1], 260, before);
+      judgmentHistoryPosition(dragGeometry[0], dragGeometry[1], 120, before);
     const frozenExpected = Math.max(
       0,
       Math.min(dragGeometry[1].limit, beforeDrag + frozenDelta),
@@ -2302,10 +2346,10 @@ test.describe("touch judgment following", () => {
       judgmentHistoryPosition(
         dragGeometry[0],
         dragGeometry[1],
-        170,
+        260,
         duringDrag[0].position,
       ) -
-      judgmentHistoryPosition(dragGeometry[0], dragGeometry[1], 170, before);
+      judgmentHistoryPosition(dragGeometry[0], dragGeometry[1], 260, before);
     expect(Math.abs(movingDelta - frozenDelta)).toBeGreaterThan(2);
     await expect
       .poll(async () =>
@@ -2328,46 +2372,30 @@ test.describe("touch judgment following", () => {
       .poll(() => source.evaluate((container) => container.scrollTop))
       .toBeGreaterThan(before);
     const endPositions = await ended;
-    const ownPosition = endPositions[0];
     const duringScroll = await scrollSamples.evaluate((state) => {
       state.stop();
-      return state.colors;
+      return { colors: state.colors, momentumColors: state.momentumColors };
     });
     await scrollSamples.dispose();
-    expect(new Set(duringScroll)).toEqual(new Set([selectedBackground]));
+    expect(new Set(duringScroll.colors)).toEqual(new Set([selectedBackground]));
+    expect(duringScroll.momentumColors.length).toBeGreaterThan(0);
+    expect(new Set(duringScroll.momentumColors)).toEqual(
+      new Set([selectedBackground]),
+    );
     const criterionAt = ({ x, y }: { x: number; y: number }) => {
       const row = document
         .elementFromPoint(x, y)
         ?.closest(".judge-result-criteria > li");
       return row ? Array.from(row.parentElement!.children).indexOf(row) : -1;
     };
-    const releasedOver = await page.evaluate(criterionAt, {
+    const readingCriterion = await page.evaluate(criterionAt, {
       x: a.x + 20,
-      y: a.y - 20,
+      y: a.y + 120,
     });
-    expect(releasedOver).toBe(-1);
-    await expect
-      .poll(() => backgrounds(1))
-      .toEqual([selectedBackground, selectedBackground]);
-    await expect
-      .poll(() => source.evaluate((container) => container.scrollTop))
-      .toBe(ownPosition);
-    await expect
-      .poll(() => target.evaluate((container) => container.scrollTop))
-      .toBeGreaterThan(beforeDrag);
-    // The map advances beyond the contacted criterion while its identity stays locked.
-    await expect
-      .poll(() =>
-        target.evaluate((container) => {
-          const row = container.querySelector(".judge-result-criteria")!
-            .children[1];
-          return (
-            row.getBoundingClientRect().bottom -
-            container.getBoundingClientRect().top
-          );
-        }),
-      )
-      .toBeLessThan(0);
+    expect(readingCriterion).toBeGreaterThan(1);
+    await expectSelected(readingCriterion);
+    for (const line of await focusLines())
+      expect(Math.abs(line - 120)).toBeLessThan(1);
     await source.evaluate(
       () =>
         new Promise<void>((resolve) =>
@@ -2386,6 +2414,11 @@ test.describe("touch judgment following", () => {
     expect(next).toBeGreaterThanOrEqual(0);
     await page.touchscreen.tap(b.x + 20, b.y + 140);
     await expectSelected(next);
+    for (const line of await focusLines())
+      expect(Math.abs(line - 140)).toBeLessThan(1);
+    const dismissedPositions = await results.evaluateAll((containers) =>
+      containers.map((container) => container.scrollTop),
+    );
     await page
       .getByRole("button", { name: "Navigation menu", exact: true })
       .tap();
@@ -2393,15 +2426,23 @@ test.describe("touch judgment following", () => {
       .poll(() => backgrounds(next))
       .toEqual([unselected, unselected]);
     await expect
-      .poll(() => source.evaluate((container) => container.scrollTop))
-      .toBe(ownPosition);
-    await expect
-      .poll(() => target.evaluate((container) => container.scrollTop))
-      .toBe(original);
+      .poll(() =>
+        results.evaluateAll((containers) =>
+          containers.map((container) =>
+            container.hasAttribute("data-scroll-sync-focus"),
+          ),
+        ),
+      )
+      .toEqual([false, false]);
+    expect(
+      await results.evaluateAll((containers) =>
+        containers.map((container) => container.scrollTop),
+      ),
+    ).toEqual(dismissedPositions);
     await client.detach();
   });
 
-  test("touch judgment scrolling keeps the contacted short criterion highlighted", async ({
+  test("first judgment swipe defaults to the upper third and keeps that line across cells", async ({
     page,
   }) => {
     const criteria = Array.from({ length: 10 }, (_, index) => ({
@@ -2436,51 +2477,189 @@ test.describe("touch judgment following", () => {
       exact: true,
     });
     await expect(results).toHaveCount(2);
-    const source = results.nth(0);
-    const row = source.locator(".judge-result-criteria > li").nth(1);
-    const background = () =>
-      row.evaluate((element) => getComputedStyle(element).backgroundColor);
-    const unselected = await background();
-    const box = (await row.boundingBox())!;
-    const panel = (await source.boundingBox())!;
-    const point = { x: panel.x + 20, y: box.y + Math.min(20, box.height / 2) };
-    await page.touchscreen.tap(point.x, point.y);
-    await expect.poll(background).not.toBe(unselected);
-    const selected = await background();
-    const samples = await row.evaluateHandle((element) => {
-      const colors: string[] = [];
-      const record = () =>
-        colors.push(getComputedStyle(element).backgroundColor);
-      document.addEventListener("touchmove", record, { passive: true });
-      return {
-        colors,
-        stop: () => document.removeEventListener("touchmove", record),
-      };
-    });
-    const before = await source.evaluate((container) => container.scrollTop);
-    const client = await page.context().newCDPSession(page);
-    await client.send("Input.dispatchTouchEvent", {
-      type: "touchStart",
-      touchPoints: [{ ...point, id: 1 }],
-    });
-    for (const distance of [30, 60, 90])
-      await client.send("Input.dispatchTouchEvent", {
-        type: "touchMove",
-        touchPoints: [{ x: point.x, y: point.y - distance, id: 1 }],
+    await results.evaluateAll((containers) => {
+      containers.forEach((container, index) => {
+        const height = container.clientHeight;
+        const ratios =
+          index === 0
+            ? [0.45, 0.25, 1.25, 0.8, 1.5, 0.9, 1.4, 1, 1.2, 1.5]
+            : [0.75, 0.4, 0.7, 1.3, 0.8, 1.5, 1, 1.4, 0.9, 1.2];
+        container
+          .querySelectorAll<HTMLElement>(".judge-result-criteria > li")
+          .forEach((row, item) => {
+            row.style.height = `${height * ratios[item]}px`;
+            row.style.overflow = "hidden";
+          });
+        container.scrollTop = index * 70;
       });
-    const observed = await samples.evaluate((state) => {
-      state.stop();
-      return state.colors;
     });
-    await client.send("Input.dispatchTouchEvent", {
-      type: "touchEnd",
-      touchPoints: [],
-    });
+    const source = results.nth(0);
+    const sourcePanel = (await source.boundingBox())!;
+    const focusPixels = sourcePanel.height / 3;
+    const backgrounds = (index: number) =>
+      results.evaluateAll(
+        (containers, index) =>
+          containers.map(
+            (container) =>
+              getComputedStyle(
+                container.querySelector(".judge-result-criteria")!.children[
+                  index
+                ],
+              ).backgroundColor,
+          ),
+        index,
+      );
+    const unselected = (await backgrounds(0))[0];
+    const expectSelected = async (index: number) => {
+      await expect
+        .poll(async () => {
+          const colors = await backgrounds(index);
+          return colors[0] !== unselected && colors[0] === colors[1];
+        })
+        .toBe(true);
+    };
+    const geometry = () =>
+      results.evaluateAll((containers) =>
+        containers.map((container) => {
+          const panel = container.getBoundingClientRect();
+          const scale = panel.height / container.clientHeight;
+          return {
+            position: container.scrollTop,
+            limit: container.scrollHeight - container.clientHeight,
+            height: container.clientHeight,
+            scale,
+            edges: Array.from(
+              container.querySelectorAll(".judge-result-criteria > li"),
+              (row) => {
+                const rect = row.getBoundingClientRect();
+                return [
+                  (rect.top - panel.top) / scale + container.scrollTop,
+                  (rect.bottom - panel.top) / scale + container.scrollTop,
+                ];
+              },
+            ).flat(),
+          };
+        }),
+      );
+    const criterionAt = ({ x, y }: { x: number; y: number }) => {
+      const row = document
+        .elementFromPoint(x, y)
+        ?.closest(".judge-result-criteria > li");
+      return row ? Array.from(row.parentElement!.children).indexOf(row) : -1;
+    };
+    const client = await page.context().newCDPSession(page);
+    let selected = -1;
+    // The second swipe switches native leader, with a different finger grab.
+    for (const leader of [0, 1]) {
+      const panel = (await results.nth(leader).boundingBox())!;
+      const point = {
+        x: panel.x + 20,
+        y: panel.y + panel.height * (leader === 0 ? 0.85 : 0.65),
+      };
+      const reading = await page.evaluate(criterionAt, {
+        x: point.x,
+        y: panel.y + focusPixels,
+      });
+      expect(reading).toBeGreaterThanOrEqual(0);
+      if (leader === 0) {
+        expect(reading).toBe(0);
+        expect(await page.evaluate(criterionAt, point)).not.toBe(reading);
+      }
+      const before = await geometry();
+      await client.send("Input.dispatchTouchEvent", {
+        type: "touchStart",
+        touchPoints: [{ ...point, id: 1 }],
+      });
+      expect((await geometry()).map((view) => view.position)).toEqual(
+        before.map((view) => view.position),
+      );
+      if (selected < 0)
+        await expect
+          .poll(() => backgrounds(reading))
+          .toEqual([unselected, unselected]);
+      else await expectSelected(selected);
+      const ended = results.evaluateAll(
+        (containers, leader) =>
+          new Promise<number[]>((resolve) =>
+            containers[leader].addEventListener(
+              "scrollend",
+              () => resolve(containers.map((view) => view.scrollTop)),
+              { once: true },
+            ),
+          ),
+        leader,
+      );
+      for (const distance of [15, 40, 70, 100])
+        await client.send("Input.dispatchTouchEvent", {
+          type: "touchMove",
+          touchPoints: [{ x: point.x, y: point.y - distance, id: 1 }],
+        });
+      await expect
+        .poll(() =>
+          results.nth(leader).evaluate((container) => container.scrollTop),
+        )
+        .toBeGreaterThan(before[leader].position);
+      await expectSelected(reading);
+      const during = await geometry();
+      const peer = 1 - leader;
+      const mappedDelta =
+        judgmentHistoryPosition(
+          before[leader],
+          before[peer],
+          focusPixels,
+          during[leader].position,
+        ) -
+        judgmentHistoryPosition(
+          before[leader],
+          before[peer],
+          focusPixels,
+          before[leader].position,
+        );
+      const expected = Math.max(
+        0,
+        Math.min(before[peer].limit, before[peer].position + mappedDelta),
+      );
+      await expect
+        .poll(async () =>
+          Math.abs(
+            (await results
+              .nth(peer)
+              .evaluate((container) => container.scrollTop)) - expected,
+          ),
+        )
+        .toBeLessThan(2);
+      for (const view of await results.all()) {
+        const line = await view.evaluate((container) => {
+          const scale =
+            container.getBoundingClientRect().height / container.clientHeight;
+          return (
+            parseFloat(
+              (container as HTMLElement).style.getPropertyValue(
+                "--scroll-sync-focus",
+              ),
+            ) * scale
+          );
+        });
+        expect(Math.abs(line - focusPixels)).toBeLessThan(1);
+        await expect(view).toHaveAttribute("data-scroll-sync-focus");
+      }
+      await client.send("Input.dispatchTouchEvent", {
+        type: "touchEnd",
+        touchPoints: [],
+      });
+      const finalPositions = await ended;
+      selected = await page.evaluate(criterionAt, {
+        x: point.x,
+        y: panel.y + focusPixels,
+      });
+      expect(selected).toBeGreaterThanOrEqual(0);
+      await expectSelected(selected);
+      expect(
+        await results.evaluateAll((containers) =>
+          containers.map((container) => container.scrollTop),
+        ),
+      ).toEqual(finalPositions);
+    }
     await client.detach();
-    await samples.dispose();
-    expect(new Set(observed)).toEqual(new Set([selected]));
-    await expect
-      .poll(() => source.evaluate((container) => container.scrollTop))
-      .toBeGreaterThan(before);
   });
 });

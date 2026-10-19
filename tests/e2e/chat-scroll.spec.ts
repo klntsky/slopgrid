@@ -625,7 +625,7 @@ test.describe("mobile chat histories", () => {
     hasTouch: true,
   });
 
-  test("touch contact highlights without moving peers, and only a confirmed tap reveals them", async ({
+  test("contact preserves selection and positions until a confirmed tap, and dismissal keeps the revealed positions", async ({
     page,
   }) => {
     const panels = await openHistories(
@@ -663,7 +663,7 @@ test.describe("mobile chat histories", () => {
       type: "touchStart",
       touchPoints: [point],
     });
-    await expectHighlight(panels, 1, baseline);
+    await expect.poll(() => colors(panels, 1)).toEqual(baseline);
     await frames(page, 4);
     expect(await positions(panels)).toEqual(original);
     await client.send("Input.dispatchTouchEvent", {
@@ -678,15 +678,48 @@ test.describe("mobile chat histories", () => {
     await frames(page, 12);
     expect(await positions(panels)).toEqual(revealed);
     await expectHighlight(panels, 1, baseline);
+    const selected = await colors(panels, 1);
+    const nextBaseline = await colors(panels, 2);
+    const nextPoint = await source.evaluate((view) => {
+      const panel = view.getBoundingClientRect();
+      const row = view
+        .querySelectorAll(".chat-bubble")[2]
+        .getBoundingClientRect();
+      const y = Math.min(panel.bottom - 20, row.top + 30);
+      return {
+        x: row.left + row.width / 2,
+        y,
+        id: 1,
+        fraction: (y - row.top) / row.height,
+        offset: y - panel.top,
+      };
+    });
+    await client.send("Input.dispatchTouchEvent", {
+      type: "touchStart",
+      touchPoints: [{ x: nextPoint.x, y: nextPoint.y, id: 1 }],
+    });
+    await frames(page, 4);
+    expect(await positions(panels)).toEqual(revealed);
+    expect(await colors(panels, 1)).toEqual(selected);
+    expect(await colors(panels, 2)).toEqual(nextBaseline);
+    await client.send("Input.dispatchTouchEvent", {
+      type: "touchEnd",
+      touchPoints: [],
+    });
+    await expectMessageFocus(panels, 2, nextPoint.fraction, nextPoint.offset);
+    await expectHighlight(panels, 2, nextBaseline);
+    const retapped = await positions(panels);
+    expect(retapped[0]).toBe(original[0]);
     await page
       .getByRole("button", { name: "Navigation menu", exact: true })
       .tap();
-    await expect.poll(() => positions(panels)).toEqual(original);
-    await expect.poll(() => colors(panels, 1)).toEqual(baseline);
+    await expect.poll(() => colors(panels, 2)).toEqual(nextBaseline);
+    await frames(page, 12);
+    expect(await positions(panels)).toEqual(retapped);
     await client.detach();
   });
 
-  test("native drag and momentum keep the contacted highlight locked without release or scrollend snaps", async ({
+  test("native swipes keep a persistent reading line across momentum, repeated grabs, taps, and peer handoff", async ({
     page,
   }) => {
     const panels = await openHistories(
@@ -699,83 +732,243 @@ test.describe("mobile chat histories", () => {
     );
     const source = panels.first();
     await setMessageHeights(panels, [
-      [260, 80, 1000, 700],
-      [520, 160, 1400, 900],
-      [390, 120, 1200, 800],
-      [780, 240, 1800, 1100],
+      [260, 80, 5000, 5000],
+      [520, 160, 7000, 7000],
+      [390, 120, 6000, 6000],
+      [780, 240, 9000, 9000],
     ]);
-    expect(
-      await source.evaluate(
-        (view) => view.getBoundingClientRect().height / view.clientHeight,
-      ),
-    ).toBeLessThan(1);
-    await position(source, 1, 240);
+    const sourceBox = (await source.boundingBox())!;
+    let focusOffset = sourceBox.height / 3;
+    const remaining = 40;
+    await position(
+      source,
+      1,
+      (await source.evaluate((view) => view.clientHeight)) / 3 - 80 + remaining,
+    );
     for (const panel of (await panels.all()).slice(1))
       await panel.evaluate((view) => {
         view.scrollTop = 60;
       });
     await frames(page);
-    const original = await positions(panels);
-    const baseline = await colors(panels, 1);
-    const row = (await source.locator(".chat-bubble").nth(1).boundingBox())!;
-    const x = (await source.boundingBox())!.x + 1;
-    const y = row.y + row.height / 2;
+    const baseline = await Promise.all(
+      [0, 1, 2, 3].map((index) => colors(panels, index)),
+    );
+    const geometry = await panels.evaluateAll((views) =>
+      views.map((view) => {
+        const panel = view.getBoundingClientRect();
+        const scale = panel.height / parseFloat(getComputedStyle(view).height);
+        const rows = Array.from(view.querySelectorAll(".chat-bubble"), (row) =>
+          row.getBoundingClientRect(),
+        );
+        return {
+          gap: (rows[2].top - rows[1].bottom) / scale,
+          height: rows[1].height / scale,
+          nextHeight: rows[2].height / scale,
+        };
+      }),
+    );
     const client = await page.context().newCDPSession(page);
-    await client.send("Input.dispatchTouchEvent", {
-      type: "touchStart",
-      touchPoints: [{ x, y, id: 1 }],
-    });
-    await expectHighlight(panels, 1, baseline);
-    await frames(page, 4);
-    expect(await positions(panels)).toEqual(original);
-    const selected = await colors(panels, 1);
-    const motion = await recordMotion(panels, 1);
-    const ended = source.evaluate(
-      (view) =>
-        new Promise<number>((resolve) =>
-          view.addEventListener("scrollend", () => resolve(view.scrollTop), {
-            once: true,
-          }),
-        ),
-    );
-    for (const delta of [15, 40, 75, 120]) {
+    const readingIndex = (leader: Locator) =>
+      leader.evaluate((view, offset) => {
+        const y = view.getBoundingClientRect().top + offset;
+        return Array.from(view.querySelectorAll(".chat-message-row")).findIndex(
+          (row) => {
+            const rect = row.getBoundingClientRect();
+            return rect.top <= y && rect.bottom >= y;
+          },
+        );
+      }, focusOffset);
+    const expectFocusLine = async () => {
+      await expect
+        .poll(() =>
+          panels.evaluateAll(
+            (views, offset) =>
+              views.every((view) => {
+                const rect = view.getBoundingClientRect();
+                const style = getComputedStyle(view);
+                const scale = rect.height / parseFloat(style.height);
+                const marker = parseFloat(
+                  style.getPropertyValue("--scroll-sync-focus"),
+                );
+                return (
+                  view.hasAttribute("data-scroll-sync-focus") &&
+                  Math.abs(marker * scale - Math.min(offset, rect.height)) <=
+                    1.5
+                );
+              }),
+            focusOffset,
+          ),
+        )
+        .toBe(true);
+    };
+    const swipe = async (
+      leaderIndex: number,
+      grabFraction: number,
+      requireMomentum = false,
+    ) => {
+      const leader = panels.nth(leaderIndex);
+      const index = await readingIndex(leader);
+      expect(index).toBeGreaterThanOrEqual(0);
+      const before = await positions(panels);
+      const beforeColors = await Promise.all(
+        [0, 1, 2, 3].map((index) => colors(panels, index)),
+      );
+      const box = (await leader.boundingBox())!;
+      const x = box.x + 1;
+      const y = box.y + box.height * grabFraction;
       await client.send("Input.dispatchTouchEvent", {
-        type: "touchMove",
-        touchPoints: [{ x, y: y - delta, id: 1 }],
+        type: "touchStart",
+        touchPoints: [{ x, y, id: 1 }],
       });
-      await frames(page, 1);
+      await frames(page, 4);
+      expect(await positions(panels)).toEqual(before);
+      expect(
+        await Promise.all([0, 1, 2, 3].map((index) => colors(panels, index))),
+      ).toEqual(beforeColors);
+      const ended = leader.evaluate(
+        (view, views) =>
+          new Promise<number[]>((resolve) =>
+            view.addEventListener(
+              "scrollend",
+              () => resolve(views.map((peer) => peer.scrollTop)),
+              { once: true },
+            ),
+          ),
+        await panels.elementHandles(),
+      );
+      for (const delta of [15, 32]) {
+        await client.send("Input.dispatchTouchEvent", {
+          type: "touchMove",
+          touchPoints: [{ x, y: y - delta, id: 1 }],
+        });
+        await frames(page, 1);
+      }
+      // The reading line, not the finger's much lower grab point, chooses the
+      // highlight for the entire native gesture.
+      await expectHighlight(panels, index, baseline[index]);
+      await expectFocusLine();
+      const selected = await colors(panels, index);
+      const motion = await recordMotion(panels, index);
+      for (const delta of [56, 80]) {
+        await client.send("Input.dispatchTouchEvent", {
+          type: "touchMove",
+          touchPoints: [{ x, y: y - delta, id: 1 }],
+        });
+        await frames(page, 1);
+      }
+      const released = await positions(panels);
+      expect(released[leaderIndex]).toBeGreaterThan(before[leaderIndex]);
+      await client.send("Input.dispatchTouchEvent", {
+        type: "touchEnd",
+        touchPoints: [],
+      });
+      const atRest = await ended;
+      if (requireMomentum)
+        expect(atRest[leaderIndex]).toBeGreaterThan(released[leaderIndex]);
+      await frames(page, 12);
+      expect(await positions(panels)).toEqual(atRest);
+      const samples = await motion.evaluate((state) => state.stop());
+      await motion.dispose();
+      expect(samples.length).toBeGreaterThan(3);
+      expectMonotone(
+        samples.map((sample) => sample.positions),
+        1,
+      );
+      for (const sample of samples) {
+        if (sample.positions[leaderIndex] < atRest[leaderIndex] - 1)
+          expect(sample.colors).toEqual(selected);
+        for (let i = 0; i < atRest.length; i++) {
+          expect(sample.positions[i]).toBeGreaterThanOrEqual(before[i] - 1);
+          expect(sample.positions[i]).toBeLessThanOrEqual(atRest[i] + 1);
+        }
+      }
+      const finalIndex = await readingIndex(leader);
+      expect(finalIndex).toBeGreaterThanOrEqual(0);
+      await expectHighlight(panels, finalIndex, baseline[finalIndex]);
+      if (finalIndex !== index)
+        await expect.poll(() => colors(panels, index)).toEqual(baseline[index]);
+      await expectFocusLine();
+      return { before, atRest, finalIndex };
+    };
+
+    expect(await readingIndex(source)).toBe(1);
+    // No tap has established a line. A low grab must still map the upper-third
+    // point through the message boundary, rebased onto each peer's actual 60px.
+    const first = await swipe(0, 0.9, true);
+    expect(first.finalIndex).toBe(2);
+    const delta = first.atRest[0] - first.before[0];
+    expect(delta).toBeGreaterThan(remaining + geometry[0].gap);
+    for (let i = 1; i < first.atRest.length; i++) {
+      const expected =
+        remaining * (geometry[i].height / geometry[0].height) +
+        geometry[i].gap +
+        (delta - remaining - geometry[0].gap) *
+          (geometry[i].nextHeight / geometry[0].nextHeight);
+      expect(
+        Math.abs(first.atRest[i] - first.before[i] - expected),
+      ).toBeLessThanOrEqual(3);
     }
-    const released = await positions(panels);
-    expect(released[0]).toBeGreaterThan(original[0]);
-    await client.send("Input.dispatchTouchEvent", {
-      type: "touchEnd",
-      touchPoints: [],
+    // A different grab must neither recenter at contact nor replace the line.
+    const repeated = await swipe(0, 0.55);
+    expect(repeated.before).toEqual(first.atRest);
+    for (let i = 1; i < repeated.atRest.length; i++) {
+      const expected =
+        (repeated.atRest[0] - repeated.before[0]) *
+        (geometry[i].nextHeight / geometry[0].nextHeight);
+      expect(
+        Math.abs(repeated.atRest[i] - repeated.before[i] - expected),
+      ).toBeLessThanOrEqual(2);
+    }
+
+    // Unlike a pan, an explicit tap establishes a new reading line and aligns
+    // the selected fractional point in the peers.
+    const tap = await source.evaluate((view) => {
+      const panel = view.getBoundingClientRect();
+      const row = view
+        .querySelectorAll(".chat-bubble")[2]
+        .getBoundingClientRect();
+      const y = panel.top + panel.height * 0.65;
+      return {
+        x: row.left + row.width / 2,
+        y,
+        offset: y - panel.top,
+        fraction: (y - row.top) / row.height,
+      };
     });
-    const own = await ended;
-    expect(own).toBeGreaterThan(released[0]);
-    await frames(page);
-    const final = await positions(panels);
-    expect(final[0]).toBe(own);
-    for (let i = 1; i < final.length; i++)
-      expect(final[i]).toBeGreaterThan(original[i]);
-    await frames(page, 12);
-    expect(await positions(panels)).toEqual(final);
-    const samples = await motion.evaluate((state) => state.stop());
-    await motion.dispose();
-    expect(samples.length).toBeGreaterThan(3);
-    expectMonotone(
-      samples.map((sample) => sample.positions),
-      1,
-    );
-    for (const sample of samples) expect(sample.colors).toEqual(selected);
-    await expectHighlight(panels, 1, baseline);
+    expect(tap.fraction).toBeGreaterThan(0);
+    expect(tap.fraction).toBeLessThan(1);
+    const beforeTap = await positions(panels);
+    await page.touchscreen.tap(tap.x, tap.y);
+    focusOffset = tap.offset;
+    await expectMessageFocus(panels, 2, tap.fraction, focusOffset);
+    expect((await positions(panels))[0]).toBe(beforeTap[0]);
+    await expectFocusLine();
+    await swipe(0, 0.9);
+
+    // The peer becomes the native leader, but inherits the same reading line
+    // and starts all deltas at the panels' current, post-momentum positions.
+    const handoff = await swipe(1, 0.8);
+    for (let i = 0; i < handoff.atRest.length; i++) {
+      const expected =
+        (handoff.atRest[1] - handoff.before[1]) *
+        (geometry[i].nextHeight / geometry[1].nextHeight);
+      expect(
+        Math.abs(handoff.atRest[i] - handoff.before[i] - expected),
+      ).toBeLessThanOrEqual(2);
+    }
     await page
       .getByRole("button", { name: "Navigation menu", exact: true })
       .tap();
+    await expect.poll(() => colors(panels, 2)).toEqual(baseline[2]);
     await expect
-      .poll(() => positions(panels))
-      .toEqual([own, ...original.slice(1)]);
-    await expect.poll(() => colors(panels, 1)).toEqual(baseline);
+      .poll(() =>
+        panels.evaluateAll((views) =>
+          views.every((view) => !view.hasAttribute("data-scroll-sync-focus")),
+        ),
+      )
+      .toBe(true);
+    await frames(page, 12);
+    expect(await positions(panels)).toEqual(handoff.atRest);
     await client.detach();
   });
 });
