@@ -402,6 +402,7 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
 4. Keep the grid updated while queued or active generation, cancellation, or saving can still change its results or charges. Reloading or reconnecting must recover the current state and continue receiving updates. A storage failure must not unnecessarily stop authorized live progress or present unsaved completion as durable. Deny access when authorization cannot be checked.
 5. Delayed updates must not move title, output, thinking, status, or price backward, including after a restart. Retries must show content from the current attempt.
 6. Interrupted unfinished work requires an explicit Resume, preserving completed outputs.
+7. Live updates send changed fields and newly appended output or thinking without repeating the accumulated text or unchanged cells. Reconnecting recovers changes since the last received update when its recovery state is available; otherwise send one current snapshot and continue incrementally. Bound recovery storage and keep it isolated by viewer and grid.
 
 ### 6.4. Shared generation and durable judging
 

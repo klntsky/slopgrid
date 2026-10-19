@@ -248,13 +248,20 @@ a new attempt discard unfinished previews. Product behavior is defined in
 
 The engine sends snapshots containing cell state, drafts, estimates, and preview
 identifiers. The web process checks the viewer's session and access before
-forwarding live updates. The browser reconnects to current engine state after
-a dropped stream; reconnecting does not restart inference. The client renders
+forwarding live updates. Version 2 browser streams start with a snapshot and
+send recursive field changes and string appends afterward. Opaque event cursors
+identify immutable baselines in a viewer-and-grid-scoped recovery cache, bounded
+to 32 MiB of serialized baselines, 128 entries, and 60 seconds. Reconnecting supplies the last received
+cursor and receives a delta from that baseline, or a fresh snapshot after
+eviction or a web restart. The browser keeps its stream baseline separate from
+the query cache so concurrent HTTP responses cannot invalidate delta application.
+Existing version 1 clients continue receiving snapshots until they reload.
+Reconnecting does not restart inference. The client renders
 Markdown from escaped source, validates SVG drafts before display, and keeps
 visible website frames stable while previews change.
 
-Thinking traces are private, attempt-specific files. Snapshots refer to a trace
-rather than embedding its text. Reads authorize the requested cell and resolve its
+Thinking traces are private, attempt-specific files. Active snapshots carry
+accumulated thinking; completed snapshots refer to the saved trace. Reads authorize the requested cell and resolve its
 generation's trace reference. Traces are excluded from bundles and downloads.
 
 ## Identity and access
