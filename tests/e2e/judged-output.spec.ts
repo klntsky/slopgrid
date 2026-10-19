@@ -1939,9 +1939,15 @@ test("native judgment wheel aligns the criterion under a stationary cursor in un
       }
     }
   };
-  while ((await positions())[0] < initial[0].max - 1) {
+  // Exercise each criterion with native wheel input.
+  for (const row of initial[0].rows) {
     const before = await positions();
-    const delta = Math.min(16, initial[0].max - before[0]);
+    const destination = Math.max(
+      0,
+      Math.min(initial[0].max, row.top + row.height / 2 - focusOffset),
+    );
+    const delta = destination - before[0];
+    if (Math.abs(delta) < 1) continue;
     const ended = source.evaluate(
       (container) =>
         new Promise<void>((resolve) =>
