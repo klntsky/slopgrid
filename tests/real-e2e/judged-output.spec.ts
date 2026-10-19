@@ -97,6 +97,7 @@ async function create(
     headers,
     data: {
       ...input,
+      continueWithLowBalance: input.format === "image",
       ...(reuse ? { sourceGridId: reuse, reuseArtifacts: true } : {}),
     },
   });
