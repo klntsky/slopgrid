@@ -200,7 +200,7 @@ message array as a JSON output artifact and streams that same representation.
 The shared conversation renderer formats each message body separately, keeping
 message boundaries independent of Markdown content. Grid previews and standalone
 outputs use the same renderer and styles; raw views, copying, and downloads use
-the stored JSON. The output reader also supports existing Markdown transcripts.
+the stored JSON.
 Chat inputs retain ordered messages, and grid expansion substitutes
 variables in each message body. A derived transcript supplies titles and prompt
 display. Inference sends structured messages without an additional system
