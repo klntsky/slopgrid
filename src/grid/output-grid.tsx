@@ -7,6 +7,7 @@ import { dimensionNames, displayValue } from "../format";
 import { ExpandButton } from "../components/expand-button";
 import { ContainedImage } from "../contained-image";
 import { OutputCell, type CellView } from "./output-cell";
+import { useItemScrollSync } from "./use-item-scroll-sync";
 function ResizeHandle({
   axis,
   index,
@@ -59,176 +60,8 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
   const expandedView = useRef<HTMLElement>(null);
   const returnButton = useRef<HTMLButtonElement>(null);
   const workspace = useRef<HTMLDivElement>(null);
-  const [pendingScrolls] = useState(() => new WeakMap<HTMLElement, number>());
-  const [savedScrolls] = useState(() => new Map<HTMLElement, number>());
-  const scrollPointer = useRef<PointerEvent | Touch | null>(null);
-  const hoveredIndex = useRef<number | null>(null);
-  const anchorView = useRef<HTMLElement | null>(null);
-  const touchAnchorFrame = useRef<number | null>(null);
-  const touchAnchorForce = useRef(false);
-  const touchItem = useRef<HTMLElement | null>(null);
-  function scrollItem(target: EventTarget | null) {
-    const row =
-      target instanceof Element
-        ? target.closest<HTMLElement>(
-            ".judge-result-criteria > li, .conversation-preview .chat-message-row",
-          )
-        : null;
-    return row && workspace.current?.contains(row) && !row.closest("[inert]")
-      ? row
-      : null;
-  }
-  function itemUnderPointer() {
-    const pointer = scrollPointer.current;
-    return pointer
-      ? scrollItem(document.elementFromPoint(pointer.clientX, pointer.clientY))
-      : null;
-  }
-  function itemIndex(row: Element) {
-    let index = 0;
-    for (
-      let sibling = row.previousElementSibling;
-      sibling;
-      sibling = sibling.previousElementSibling
-    )
-      index++;
-    return index;
-  }
-  function setSyncedScroll(target: HTMLElement, top: number) {
-    const before = target.scrollTop;
-    target.scrollTop = top;
-    if (target.scrollTop !== before)
-      pendingScrolls.set(target, target.scrollTop);
-  }
-  function updateScrollAnchor(row: HTMLElement | null, force = false) {
-    const index = row ? itemIndex(row) : null;
-    const source =
-      row?.closest<HTMLElement>(".judge-results, .conversation-preview") ??
-      null;
-    const judging = source?.classList.contains("judge-results") ?? false;
-    const previous = hoveredIndex.current;
-    if (
-      index === previous &&
-      source === anchorView.current &&
-      (!force || index === null)
-    )
-      return;
-    hoveredIndex.current = index;
-    anchorView.current = source;
-    const content = judging ? row : row?.firstElementChild;
-    const offset =
-      content && source
-        ? content.getBoundingClientRect().top -
-          source.getBoundingClientRect().top
-        : 0;
-    for (const list of workspace.current!.querySelectorAll(
-      ".judge-result-criteria, .conversation-preview .chat-conversation",
-    )) {
-      const judgeList = list.classList.contains("judge-result-criteria");
-      const current = judgeList === judging ? index : null;
-      const highlight = judgeList
-        ? "data-criterion-hovered"
-        : "data-message-hovered";
-      if (previous !== null && previous !== current)
-        list.children[previous]?.removeAttribute(highlight);
-      if (current !== null) list.children[current]?.setAttribute(highlight, "");
-      const target = list.closest<HTMLElement>(
-        ".judge-results, .conversation-preview",
-      )!;
-      if (current === null) {
-        const saved = savedScrolls.get(target);
-        if (saved !== undefined) {
-          setSyncedScroll(target, saved);
-          savedScrolls.delete(target);
-        }
-        continue;
-      }
-      if (target === source || target.closest("[inert]")) continue;
-      const item = list.children[current] as HTMLElement | undefined;
-      if (!item || !target.clientHeight) continue;
-      const viewBounds = target.getBoundingClientRect();
-      const itemBounds = (
-        judgeList ? item : item.firstElementChild!
-      ).getBoundingClientRect();
-      // Integer clientHeight drifts over long histories at fractional grid zoom.
-      const height = parseFloat(getComputedStyle(target).height);
-      const scale = viewBounds.height / height;
-      const before = target.scrollTop;
-      const top = before + (itemBounds.top - viewBounds.top) / scale;
-      const bottom = before + (itemBounds.bottom - viewBounds.top) / scale;
-      if (bottom === top) continue;
-      // Match offsets within bounds that show the full row, or fill the
-      // viewport with the row when it is too tall to fit.
-      const minimum = Math.max(0, Math.min(top, bottom - height));
-      const maximum = Math.min(
-        target.scrollHeight - height,
-        Math.max(top, bottom - height),
-      );
-      const next = Math.max(minimum, Math.min(maximum, top - offset / scale));
-      if (next !== before) {
-        if (!savedScrolls.has(target)) savedScrolls.set(target, before);
-        setSyncedScroll(target, next);
-      }
-    }
-    if (index === null) {
-      for (const [target, top] of savedScrolls) setSyncedScroll(target, top);
-      savedScrolls.clear();
-    }
-  }
-  function scheduleTouchAnchor(force = false) {
-    touchAnchorForce.current ||= force;
-    if (touchAnchorFrame.current !== null) return;
-    touchAnchorFrame.current = requestAnimationFrame(() => {
-      touchAnchorFrame.current = null;
-      const force = touchAnchorForce.current;
-      touchAnchorForce.current = false;
-      const pointer = scrollPointer.current;
-      if (!pointer || !("pointerType" in pointer)) {
-        const row = scrollItem(touchItem.current);
-        updateScrollAnchor(row, force);
-      }
-    });
-  }
-  function trackScrollPointer(event: PointerEvent) {
-    if (event.pointerType === "touch") return;
-    scrollPointer.current = event;
-    updateScrollAnchor(scrollItem(event.target));
-  }
-  useLayoutEffect(() => {
-    function touch(event: TouchEvent) {
-      scrollPointer.current =
-        event.touches.length === 1 ? event.touches[0] : null;
-      touchItem.current = itemUnderPointer();
-      scheduleTouchAnchor();
-    }
-    // Keep the touched item until another touch starts. Native scrolling
-    // and gesture completion must not clear it or restore peer positions.
-    document.addEventListener("touchstart", touch, { passive: true });
-    return () => {
-      document.removeEventListener("touchstart", touch);
-      if (touchAnchorFrame.current !== null)
-        cancelAnimationFrame(touchAnchorFrame.current);
-      touchAnchorFrame.current = null;
-      touchAnchorForce.current = false;
-      touchItem.current = null;
-    };
-  }, []);
-  useLayoutEffect(() => {
-    const pointer = scrollPointer.current;
-    if (!pointer) return;
-    if ("pointerType" in pointer) updateScrollAnchor(itemUnderPointer(), true);
-    else scheduleTouchAnchor(true);
-  }, [g.cells, expandedId, views]);
-  function syncOutputScroll(source: HTMLElement) {
-    const expected = pendingScrolls.get(source);
-    pendingScrolls.delete(source);
-    if (expected === source.scrollTop) return;
-    // A user's scroll replaces this view's saved position, not its peers'.
-    savedScrolls.delete(source);
-    const pointer = scrollPointer.current;
-    if (pointer && !("pointerType" in pointer)) scheduleTouchAnchor(true);
-    else updateScrollAnchor(itemUnderPointer(), true);
-  }
+  const scrollSync = useItemScrollSync(workspace);
+  useLayoutEffect(scrollSync.refresh, [g.cells, expandedId, views, scrollSync]);
   function expand(
     kind: "output" | "reference",
     id: string,
@@ -326,25 +159,7 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
     );
   }
   return (
-    <div
-      className="grid-workspace"
-      ref={workspace}
-      onPointerOver={(event) => trackScrollPointer(event.nativeEvent)}
-      onPointerMove={(event) => trackScrollPointer(event.nativeEvent)}
-      onPointerLeave={(event) => {
-        if (event.pointerType === "touch") return;
-        scrollPointer.current = null;
-        updateScrollAnchor(null);
-      }}
-      onScrollCapture={(event) => {
-        const source = event.target;
-        if (
-          source instanceof HTMLElement &&
-          source.matches(".judge-results, .conversation-preview")
-        )
-          syncOutputScroll(source);
-      }}
-    >
+    <div className="grid-workspace" ref={workspace} {...scrollSync.events}>
       <div className="grid-table-view" data-expanded={!!expandedId}>
         <GridViewport
           key={g.id}

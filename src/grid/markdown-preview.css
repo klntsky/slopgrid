@@ -166,6 +166,6 @@
   flex-grow: 1;
   padding-bottom: 24px;
 }
-.cell .chat-message-row[data-message-hovered] > .chat-bubble {
+.cell .chat-message-row[data-scroll-sync-hovered] > .chat-bubble {
   background: color-mix(in srgb, var(--chat-bubble-fill) 97%, var(--text));
 }

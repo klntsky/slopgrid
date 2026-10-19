@@ -61,7 +61,7 @@
   align-items: start;
   gap: 8px;
 }
-.judge-result-criteria li[data-criterion-hovered] {
+.judge-result-criteria li[data-scroll-sync-hovered] {
   background-color: color-mix(in srgb, var(--selected) 50%, transparent);
 }
 .judge-result-criterion,

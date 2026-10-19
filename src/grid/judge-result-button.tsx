@@ -123,6 +123,7 @@ export function JudgeResults({
   return (
     <div
       className="judge-results"
+      data-scroll-sync="judge"
       ref={observeJudgmentEdges}
       role="region"
       aria-label="Judgment details"
@@ -134,7 +135,7 @@ export function JudgeResults({
             {summary.state}
           </p>
         )}
-        <ol className="judge-result-criteria">
+        <ol className="judge-result-criteria" data-scroll-sync-items="">
           {criteria.map((criterion, index) => {
             const result = summary.results?.[index];
             const matches = result?.verdict === criterion.correctAnswer;

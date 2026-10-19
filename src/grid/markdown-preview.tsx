@@ -86,6 +86,7 @@ export function MarkdownPreview({
     <div
       ref={previewRef}
       className={`markdown-preview${conversation && !raw ? " conversation-preview" : ""}`}
+      data-scroll-sync={conversation && !raw ? "chat" : undefined}
       role="region"
       aria-label={title}
       aria-busy={streaming}
