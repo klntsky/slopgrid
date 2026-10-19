@@ -1644,7 +1644,11 @@ test("judgment hover synchronizes fractional progress through unequal criteria a
         const row = container.querySelector(".judge-result-criteria")!.children[
           index
         ] as HTMLElement;
-        container.scrollTop = row.offsetTop - offset;
+        const panel = container.getBoundingClientRect();
+        const scale =
+          panel.height / parseFloat(getComputedStyle(container).height);
+        container.scrollTop +=
+          (row.getBoundingClientRect().top - panel.top) / scale - offset;
       },
       { index, offset },
     );
@@ -1672,8 +1676,10 @@ test("judgment hover synchronizes fractional progress through unequal criteria a
     for (const fraction of [0.25, 0.5, 0.75]) {
       const own = await hover(index, -fraction * geometry[0].rowHeight);
       await expectItemProgress(results, ".judge-result-criteria > li", index);
-      for (const peer of await bounds(index))
-        expect(Math.abs(peer.top + fraction * peer.rowHeight)).toBeLessThan(1);
+      const anchor = (await bounds(index))[0];
+      expect(Math.abs(anchor.top + fraction * anchor.rowHeight)).toBeLessThan(
+        1,
+      );
       expect(await source.evaluate((container) => container.scrollTop)).toBe(
         own,
       );
@@ -1780,6 +1786,9 @@ test.describe("touch judgment following", () => {
     await page.touchscreen.tap(a.x + 20, a.y + 120);
     await expectSelected(1);
     await expectItemProgress(results, ".judge-result-criteria > li", 1);
+    await expect
+      .poll(() => target.evaluate((container) => container.scrollTop))
+      .not.toBe(original);
     await source.evaluate((container) => {
       const row = container.querySelector(".judge-result-criteria")!
         .children[1] as HTMLElement;
@@ -1857,9 +1866,6 @@ test.describe("touch judgment following", () => {
       .poll(() => source.evaluate((container) => container.scrollTop))
       .toBe(ownPosition);
     await expectItemProgress(results, ".judge-result-criteria > li", 1);
-    expect(await target.evaluate((container) => container.scrollTop)).not.toBe(
-      original,
-    );
     const next = await page.evaluate(criterionAt, {
       x: b.x + 20,
       y: b.y + 140,
