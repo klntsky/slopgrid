@@ -7,6 +7,7 @@ import {
 } from "./frontend.js";
 import { createGridBootstrap } from "./grid-bootstrap.js";
 import { readFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import { createApp } from "./app.js";
 import { generationClient } from "./generation-client.js";
 import { runtimeConfig } from "./runtime-config.js";
@@ -15,10 +16,27 @@ const github = githubCredentials(
   process.env.GITHUB_CLIENT_ID,
   process.env.GITHUB_CLIENT_SECRET,
 );
-const port = Number(process.env.PORT ?? 3000),
-  production = process.env.NODE_ENV === "production";
-const origin = process.env.APP_ORIGIN ?? `http://localhost:${port}`,
-  outputDomain = process.env.OUTPUT_DOMAIN ?? `-slopgrid.localhost:${port}`;
+const production = process.env.NODE_ENV === "production";
+const server = createServer();
+// Bind once: port zero allocates an isolated development listener without a probe race.
+const listening = Promise.withResolvers<void>();
+server.once("error", listening.reject);
+server.listen(
+  Number(process.env.PORT ?? 3000),
+  process.env.BIND_ADDRESS ?? "127.0.0.1",
+  () => {
+    server.off("error", listening.reject);
+    listening.resolve();
+  },
+);
+await listening.promise;
+const address = server.address();
+if (!address || typeof address === "string")
+  throw new Error("Web server did not bind a TCP port");
+const port = address.port;
+const hostname = production ? "localhost" : (process.env.DEV_HOST ?? "localhost");
+const origin = process.env.APP_ORIGIN ?? `http://${hostname}:${port}`,
+  outputDomain = process.env.OUTPUT_DOMAIN ?? `-slopgrid.${hostname}:${port}`;
 if (
   production &&
   (!process.env.APP_ORIGIN ||
@@ -68,7 +86,7 @@ else {
         },
       },
     ],
-    server: { middlewareMode: true },
+    server: { middlewareMode: true, hmr: { server } },
     appType: "custom",
   });
   app.use(vite.middlewares);
@@ -88,9 +106,8 @@ else {
     }
   });
 }
-const server = app.listen(port, process.env.BIND_ADDRESS ?? "127.0.0.1", () =>
-  console.log(`slopgrid: ${origin}`),
-);
+server.on("request", app);
+console.log(`slopgrid: ${origin}`);
 // SSE clients reconnect to the replacement web process and receive an engine snapshot.
 for (const signal of ["SIGTERM", "SIGINT"] as const)
   process.on(signal, () => {

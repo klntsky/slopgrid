@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx server/index.ts",
+    "dev": "tsx server/dev.ts",
     "build": "tsc --noEmit && vite build",
     "start": "NODE_ENV=production tsx server/index.ts",
     "test": "pnpm build && pnpm test:built",
@@ -16,7 +16,6 @@
     "test:e2e:real": "tsx tests/run-e2e.ts --suite real",
     "test:built": "pnpm test:unit && tsx tests/run-e2e.ts --suite all --reuse-build",
     "start:engine": "NODE_ENV=production tsx server/engine.ts",
-    "dev:engine": "tsx server/engine.ts",
     "generation": "tsx server/generation-control.ts"
   },
   "dependencies": {

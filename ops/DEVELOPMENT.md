@@ -1,0 +1,146 @@
+# Development and operation
+
+## Configuration
+
+Operations code lives in `ops/` in the application repository. All local
+infrastructure settings come from the application repository root `.env`, which
+is ignored by Git. Environment variables override file values for automation.
+No machine-specific JSON configuration or separate operations checkout is used.
+
+Configure these variables without committing their values:
+
+| Variables | Purpose |
+| --- | --- |
+| `OPS_HOST` | SSH destination, including an account or alias when required |
+| `OPS_REPOSITORY` | Local application checkout, relative to the repository root or absolute; defaults to the current repository root |
+| `OPS_MASTER_REPOSITORY` | Authoritative application's Git repository URL |
+| `OPS_REMOTE_ROOT` | Absolute remote directory for tools, runs, and checks |
+| `OPS_NODE_PATH` | Complete remote executable search path |
+| `OPS_TEST_ENV_FILE` | Optional private remote test-credential file |
+| `OPS_STAGING_STATE`, `OPS_PRODUCTION_STATE` | Absolute runtime state directories |
+| `OPS_STAGING_CONFIG`, `OPS_PRODUCTION_CONFIG` | Absolute generated configuration directories |
+| `OPS_STAGING_APPLICATION_ROOT`, `OPS_PRODUCTION_APPLICATION_ROOT` | Absolute roots for relative runtime storage paths |
+| `OPS_STAGING_ENV_FILE`, `OPS_PRODUCTION_ENV_FILE` | Private deployed runtime environment files |
+| `OPS_STAGING_WEB_PROCESS`, `OPS_PRODUCTION_WEB_PROCESS` | Distinct web process names |
+| `OPS_STAGING_ENGINE_PROCESS`, `OPS_PRODUCTION_ENGINE_PROCESS` | Distinct engine process names |
+
+Both the initiating machine and remote host need Git read access to
+`OPS_MASTER_REPOSITORY`. There is no fallback to a local branch, cached tracking
+ref, or request-supplied master SHA. Missing configuration, missing master, and
+query failures reject production, including plans and explicit test skips.
+Real-provider tests also support the application's existing private test
+configuration. The root `.env` is never included in source or tools archives.
+
+Each target's `envFile` is the private source of application configuration.
+Relative database and output paths resolve against `applicationRoot`; they never
+resolve against a release directory. Provide the port, HTTPS application origin,
+output domain, encryption secret, and GitHub credentials required by Slopgrid.
+The pipeline derives absolute storage paths, socket paths, and retained frontend
+paths, and writes process-specific environment files under the target's config
+directory. It does not print credentials or copy them into releases.
+
+Install Node 22.12 or newer, the pnpm version declared by Slopgrid, PM2, tmux,
+flock, tar, rsync, Git, and the browser dependencies required by Slopgrid tests.
+The configured SSH account owns the runtime files and runs PM2. Existing split
+deployments can be adopted through their release pointers and process names.
+Fresh split deployments start with machinery mode and create runtime directories;
+host networking and runtime credentials must already exist.
+
+## Commands
+
+```sh
+./deploy.sh validate
+./deploy.sh validate HEAD --unit tests/publishing.test.ts --browser tests/e2e/grid-slugs.spec.ts
+./deploy.sh production HEAD
+./deploy.sh production HEAD --skip-tests
+./deploy.sh production HEAD --plan
+./deploy.sh status RUN_ID
+```
+
+The revision can be a Git commit, branch, or tag; HEAD is the default. Invoke the
+command from an application worktree to select that worktree automatically.
+Only worktrees of the configured application repository are recognized; commands
+from other directories use the configured checkout. Application and operations
+source must be committed before uploading. Validation uses run-owned
+build/source workspaces, fresh temporary data, a private generation socket and
+PM2 home, and OS-assigned test ports (`E2E_PORT=0`). Application test runners must
+support that port contract. Inherited or private test configuration cannot select
+shared runtime storage or ports.
+
+Production accepts only a resolved commit equal to the freshly queried
+`refs/heads/master` tip in `OPS_MASTER_REPOSITORY`; historical master commits and
+divergent worktree commits are rejected. A branch name is not authorization.
+The local gate runs before any upload; the remote pipeline independently checks
+before runtime operations, after tests, and immediately before promotion.
+`--skip-tests` never bypasses it. Production deploys only the single configured
+production runtime; it never deploys or depends on staging.
+
+`--plan` uploads nothing and changes no runtime; production plans query master.
+`--mode soft` rejects incompatible engine changes; `--mode machinery` drains
+and replaces the engine; automatic mode is the default. The explicit `staging`
+target remains an administrative deployment, not a shared worktree testing target.
+
+Each remote run retains its request, source archive, log, validation result,
+phase record, and exit status. A disconnected client can reconnect with the
+printed status command. A nonzero result is a failed deployment, even when a
+previous run succeeded. Concurrent runtime deployments fail with an explicit lock
+error; independent `validate` runs do not acquire the production deployment lock.
+Correct the reported cause and repeat the same command; do not fabricate status
+files or patch installed code. If startup fails after migration, use the recorded
+backup and phase to assess recovery before changing live data.
+
+## Moving a grid between environments
+
+Run `node grid-transfer.mjs` on the host with `--app PATH` pointing to an
+installed application release, `--source-db PATH`, `--target-db PATH`,
+`--source-outputs PATH`, `--target-outputs PATH`, `--grid ID`,
+`--remove-model MODEL`, and `--backup-dir PATH`. Paths and environment settings
+belong in private host configuration or operator commands outside this repository.
+
+The default invocation previews a move without changing data. Add `--apply`
+to move a settled private SVG grid with model rows and one column, omitting
+one failed model. The destination must already contain the matching account.
+The command preserves the grid ID, remaining artifacts, thinking, and call history,
+and does not copy sessions or credentials. Keep the backup for recovery.
+
+A destination collision aborts the command. If interrupted after the destination
+was committed, both copies may remain; inspect them before proceeding and do not
+overwrite the destination. This operation moves data without deploying code or
+making production HTTP requests.
+
+Run `tests/grid-transfer.test.mjs` on staging with `SLOPGRID_TEST_APP` pointing
+to an installed staging release. Its isolated databases and output directories
+cover ownership mapping, exclusion of a failed model, byte preservation, backups,
+read-only preview, collision and active-work rejection, and import rollback.
+
+## Validation
+
+Run `./check.sh` for the pipeline's own regression checks. The permanent runner
+uploads working source to the staging host and runs tests in tmux bg with isolated
+temporary data. It uses dependencies from the current staging release and never
+deploys or sends requests to production. Test-managed child processes and fixture
+directories are separate from deployment scripts.
+
+Coverage includes CLI validation policy, target isolation, real transitive
+engine fingerprints, artifact corruption, promotion ordering and failure gates,
+environment quoting, SQLite and output backups, real deployment locking,
+fresh per-run exit status, and startup/failure detection through an isolated
+PM2 daemon. Application validation is selected by the command and runs in
+per-run workspaces on the configured host, never against staging or production
+runtime data. A skipped test run is recorded as skipped, never passed.
+
+Focused workflow checks (fixture adapters, no deployment):
+
+```sh
+./check.sh tests/isolation.test.mjs
+./check.sh --test-name-pattern='one isolated build|real lock|argument policy' tests/pipeline.test.mjs
+```
+
+The isolation checks exercise authoritative Git refs, CLI rejection before SSH,
+direct production rejection with skipped tests, post-test master movement,
+overridden shared environment settings, and concurrent real remote runners
+using per-run build/validation state while the production lock is held.
+
+The pipeline has no third-party dependencies of its own. Runtime fingerprinting
+and SQLite backups use the deployed application's dependencies. New deployment
+behavior should have focused regression coverage at its responsibility boundary.

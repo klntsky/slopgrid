@@ -23,13 +23,15 @@ export function embedGridData(
 ) {
   if (!data) return html;
   const script = `window.__SLOPGRID_GRIDS__ = ${JSON.stringify(data).replaceAll("<", "\\u003c")};`;
-  const hash = createHash("sha256").update(script).digest("base64");
   const policy = res.get("Content-Security-Policy");
-  if (policy)
+  // A hash disables unsafe-inline, including Vite's development preamble.
+  if (policy && !/script-src[^;]*'unsafe-inline'/.test(policy)) {
+    const hash = createHash("sha256").update(script).digest("base64");
     res.set(
       "Content-Security-Policy",
       policy.replace("script-src 'self'", `script-src 'self' 'sha256-${hash}'`),
     );
+  }
   res.vary("Cookie");
   return html.replace(
     "</head>",

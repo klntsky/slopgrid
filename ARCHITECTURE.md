@@ -32,12 +32,24 @@ update: admission closes, accepted work and unsettled calls finish, and the
 engine is replaced. The release keeps its code and dependencies fixed for its
 lifetime.
 
-The separate slopgrid-ops repository owns deployment orchestration. Its command
-installs a committed pipeline implementation, builds and validates on staging,
-selects a compatible soft update or a draining machinery update, and promotes
-the same build when production is explicitly requested. Immutable releases,
-retained frontend assets, private runtime configuration, and per-run records
-are managed by that pipeline rather than application code.
+Development and candidate validation own isolated runtimes rather than sharing
+staging state. Each development worktree has its own persistent storage and
+encryption key, private engine socket, loopback web listener, and application
+hostname. The development launcher owns both process lifetimes and keeps HMR
+on the web listener. Browser fixtures own independent temporary runtimes.
+Credentials remain in ignored local configuration; deployed runtime locations do
+not select development or candidate state.
+
+The repository's `ops/` directory owns deployment orchestration for committed
+revisions, including release builds, update-mode selection, draining, promotion,
+and deployment status. Immutable releases, retained frontend assets, private
+deployed runtime configuration, and deployment records belong to that pipeline,
+not to the development launcher or application request handlers. Candidate
+validation uses run-owned build and runtime state without deploying a shared
+site. Production remains a single runtime. The pipeline authorizes its resolved
+revision against the authoritative remote `master` tip before upload and before
+production changes. Per-worktree isolation belongs to development and candidate
+validation, not parallel production sites.
 
 ## State and persistence
 

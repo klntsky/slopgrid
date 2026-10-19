@@ -5,21 +5,23 @@ responsibilities and runtime behavior are described in [ARCHITECTURE.md](ARCHITE
 
 ## Requirements and setup
 
-Use Node.js 22.12 or newer and pnpm 12.4.2. Browser and runtime fixtures use OpenSSL to generate temporary HTTPS certificates. Supply `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` through private runtime configuration before starting the app; either missing or empty variable prevents startup. SQLite uses `better-sqlite3`; environments without a matching prebuilt binary need Python and a C/C++ build toolchain. Native build permissions are in `pnpm-workspace.yaml`.
+Use Node.js 22.12 or newer and pnpm 12.4.2. Browser and runtime fixtures use OpenSSL to generate temporary HTTPS certificates. Supply `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` through private configuration outside the repository before starting the app; either missing or empty variable prevents startup. Load only the credentials and provider settings needed for development, not a deployed runtime environment file containing database paths, sockets, origins, or production settings. SQLite uses `better-sqlite3`; environments without a matching prebuilt binary need Python and a C/C++ build toolchain. Native build permissions are in `pnpm-workspace.yaml`.
 
 ```sh
 pnpm install
 pnpm exec playwright install chromium firefox
-pnpm dev:engine
-# In another terminal:
 pnpm dev
 ```
 
-Open http://localhost:3000. Chromium resolves HTML output hosts ending in `.localhost` to loopback, and OpenRouter OAuth supports localhost callbacks. Preserve the development database and encryption key under `.data/` to retain sessions.
+`pnpm dev` launches the engine and web process together; do not start a separate development engine. Open the origin printed by the launcher. It uses a stable, worktree-specific `dev-<path-hash>.localhost` hostname and an OS-assigned loopback port, so concurrent worktrees do not compete for a listener or share application cookies. HMR uses the same web listener. Chromium resolves hosts ending in `.localhost` to loopback, and OpenRouter OAuth supports localhost callbacks. Set `PORT` explicitly only when a registered development OAuth callback needs a fixed origin; each concurrent worktree still needs an available port.
+
+The database, generated outputs, and persistent development encryption key stay under that worktree's `.data/`. Preserve them together to retain stored sessions and readable encrypted credentials. The launcher overrides inherited runtime locations and production settings, uses a short socket path in a private temporary directory, and prints that path and the runtime locations. Only one `pnpm dev` session may run in a worktree. Stopping the launcher stops its own processes and removes temporary runtime resources; engine shutdown may wait for active provider calls to settle.
+
+Browser storage and service workers are origin-scoped, so a changed port creates a different storage origin. Cookies are not port-scoped: the distinct worktree hostnames, rather than ports alone, separate application cookies. Use the printed URL and separate browser contexts or profiles when comparing independent login sessions, OAuth flows, or output-site access. Generated HTML hosts remain distinct from the application host.
 
 ## GitHub integration verification
 
-`pnpm test:e2e:github` runs against real GitHub and OpenRouter. Supply GitHub client credentials and the normal real OpenRouter test credential source. Set `GITHUB_INTERACTIVE=1` to complete GitHub login and any two-factor challenge in a visible browser, or provide `GITHUB_BROWSER_STATE` referencing a private Playwright storage-state file containing an authenticated GitHub browser session. Keep this file outside the repository. Register the callback using the test application origin followed by `/api/auth/github/callback`. The runner rejects an occupied test port before launching.
+`pnpm test:e2e:github` runs against real GitHub and OpenRouter in its own isolated candidate runtime. Supply GitHub client credentials and the normal real OpenRouter test credential source. Set `GITHUB_INTERACTIVE=1` to complete GitHub login and any two-factor challenge in a visible browser, or provide `GITHUB_BROWSER_STATE` referencing a private Playwright storage-state file containing an authenticated GitHub browser session. Keep this file outside the repository. Browser fixtures choose available ports by default. Set `E2E_PORT` only when GitHub callback registration needs a fixed test origin, and register that origin followed by `/api/auth/github/callback`. The runner rejects an occupied explicitly selected port rather than attaching to another worktree's server.
 
 The test creates and generates an anonymous grid, signs in through GitHub, verifies claiming and publication attribution, signs in through GitHub in a separate browser context, checks account access and billing, and signs out. It uses no mocked OAuth or inference endpoints. Missing credentials, authorization failure, and provider errors fail verification rather than silently skipping it. Unit identity tests exercise the real app and database with mocked GitHub token and profile responses, including claiming active grids, session rotation, and callback replay rejection. They do not authenticate with GitHub.
 
@@ -41,17 +43,17 @@ Set `GITHUB_BROWSER_STATE` to the absolute path of this file when running the Gi
 
 Catalog checks cover combined model and image-detail loading, periodic server refreshes with retained snapshots after upstream failures, unrestricted cached model-list reads, and HTML bootstrap execution under the page CSP. Browser coverage checks model selection, pricing, and compatibility without model API requests, including after navigation and reload.
 
-When changing SDK imports or upgrading the SDK, compare production JavaScript sizes and retained modules on staging to catch accidental inclusion of unused client code.
+When changing SDK imports or upgrading the SDK, compare production JavaScript sizes and retained modules in the isolated candidate worktree to catch accidental inclusion of unused client code.
 
-When browser tests load a runtime environment file, set `FRONTEND_PATH` explicitly to the candidate's `dist` directory so they exercise the candidate build.
+Browser tests must serve the candidate worktree's frontend build, not retained assets from a deployment or another worktree. Fixtures select their own runtime paths and candidate frontend path. When manually configuring an isolated candidate runtime, set `FRONTEND_PATH` explicitly to that candidate's `dist` directory and supply credentials separately from deployed runtime location settings.
 
 Frontend serving and retained assets are described under [process boundaries](ARCHITECTURE.md#process-boundaries).
 
 ## Validation
 
 The focused backpressure reproduction is
-`pnpm exec tsx --test tests/events-backpressure.test.ts`. Run it locally only
-when explicitly requested. It controls engine notification timing while using
+`pnpm exec tsx --test tests/events-backpressure.test.ts`. Run it in the isolated
+candidate worktree. It controls engine notification timing while using
 the real engine transport and web SSE route, comparing consecutive small and
 large snapshots with an actively reading client. The large-snapshot case is a
 regression test for connection loss under transient write pressure; it does not
@@ -103,9 +105,9 @@ describes how they are validated.
 
 ### Running the suites
 
-Select tests that cover the features changed. Simple wording, styling, and documentation changes do not require tests. Run manual tests only on staging through SSH. The complete unit, mock browser, and real-provider browser suites must pass on staging before production deployment.
+Select tests that cover the features changed. Simple wording, styling, and documentation changes do not require tests. Run affected automated and manual tests in an isolated candidate worktree and runtime, without using shared staging or production state. Before production deployment, the complete unit, mock browser, and real-provider browser suites must pass against that isolated candidate revision.
 
-Runtime tests of snapshot ordering import the query client directly, keeping browser hooks and PWA initialization out of the Node test process. On shared staging hosts, limit unit-test file concurrency to avoid saturating the host with runtime fixtures.
+Runtime tests of snapshot ordering import the query client directly, keeping browser hooks and PWA initialization out of the Node test process. Fixtures own temporary databases, outputs, private sockets, and available listeners; concurrent worktrees must not reuse one another's runtime locations. Limit unit-test file concurrency when needed to avoid saturating the machine with runtime fixtures.
 
 ```sh
 pnpm test
@@ -152,8 +154,9 @@ recovery. Inspector checkpoints place locks or kill the engine at specific
 persistence boundaries without changing its methods. Crash coverage retains the
 distinction between installed files and committed completion; a restart never
 replays inference automatically.
-Disk-full recovery is outside this validation scope. Run these checks on staging
-with the affected billing, publication, migration, reuse and live-update tests.
+Disk-full recovery is outside this validation scope. Run these checks in the
+isolated candidate runtime with the affected billing, publication, migration,
+reuse and live-update tests.
 
 ### GitHub CI
 
@@ -284,7 +287,7 @@ The shared browser and runtime fixtures run the production web and engine entryp
 | `OPENROUTER_AUTH_URL`   | OpenRouter authorization page URL for the web process; defaults to the OpenRouter authorization page. Browser fixtures point it at their external OAuth service.  |
 | `WORKERS_MAX`           | Maximum concurrent cell generations across the inference process; defaults to 100 and must be a positive safe integer.                                            |
 
-Preserve the automatically created development encryption key, since changing it makes existing stored credentials unreadable. Run exactly one inference process per database, and configure both web and inference processes with the same database, output directory, encryption key, and generation socket.
+Preserve the automatically created development encryption key, since changing it makes existing stored credentials unreadable. Run exactly one inference process per database, and configure both web and inference processes with the same database, output directory, encryption key, and generation socket. The table describes standalone runtime configuration; `pnpm dev` owns its isolated locations, origin, listener, and frontend settings instead of using deployed values.
 
 ## Storage maintenance and validation
 
@@ -335,7 +338,7 @@ Message-boundary coverage includes role headings and fenced code inside generate
 answers, while storage coverage checks JSON artifacts and existing transcript reads.
 Run the focused
 domain, chat-template, provider, cost-estimates, billing, artifact-reuse, and chat
-browser suites on staging for changes spanning these boundaries.
+browser suites in the isolated candidate runtime for changes spanning these boundaries.
 
 Template architecture regression coverage uses real engine processes to exercise
 storage locks between blanks, cancellation while waiting for durable billing,
@@ -410,17 +413,38 @@ Publishing tests cover access, immutable visibility, summary filtering, and pers
 
 ## Generation process control
 
-Use the slopgrid-ops deployment command for the complete build, validation, and
-deployment workflow: `../slopgrid-ops/deploy.sh staging` or, when explicitly
-requested, `../slopgrid-ops/deploy.sh production`. It accepts a committed revision,
-defaults to HEAD, and chooses the update mode automatically. Select affected
-staging tests with repeated `--unit FILE` and `--browser FILE` arguments; use
-`--skip-tests` for simple staging changes or an explicit instruction to skip
-tests. Production otherwise runs the complete staging suite before promotion.
-The command waits for the final result and reports how to reconnect after an
-SSH disconnect. Pipeline setup and validation belong in slopgrid-ops.
+Deployment remains separate from development. Invoke
+`./ops/deploy.sh validate [REV]` from the candidate application worktree for
+isolated committed validation without changing a shared runtime. The default
+revision is that worktree's HEAD; commands outside an application worktree use
+the configured application checkout. Infrastructure settings are loaded from
+the ignored repository-root `.env`; see [operations configuration](ops/DEVELOPMENT.md).
+Select affected checks with repeated `--unit FILE` and `--browser FILE` arguments.
+
+When production deployment is explicitly requested, use
+`./ops/deploy.sh production [REV]`. It validates in a run-owned workspace and updates
+only the single production runtime. The resolved revision must equal the freshly
+queried authoritative `master` tip, not a historical master commit or divergent
+feature commit. Both initiating and remote machines need Git read access to the
+`OPS_MASTER_REPOSITORY` URL in the root `.env`. The gate runs before
+upload and remotely before production changes; `--skip-tests` does not bypass
+it. Skip production validation only after the complete isolated candidate suites
+have passed and skipping was explicitly requested. Production never deploys
+staging. The explicit staging target is administrative, not a common testing
+environment.
+
+The command chooses the update mode and reports the final result with
+reconnection instructions after an SSH disconnect. Deployment implementation
+and pipeline changes belong in `ops/`, not in the development launcher.
+Keep infrastructure values and secrets in the ignored root `.env`, not tracked files.
 
 `pnpm generation status` reads the engine instance and workload counts. `pnpm generation drain` closes admission and waits for accepted grids and unsettled requests to finish. `pnpm generation accept` reopens admission, including when cancelling a planned machinery update. These commands require the same runtime configuration as the application and connect only through its private socket. A drain has no inference timeout and does not cancel user work.
+
+For a running development worktree, prefix these commands with
+`GENERATION_SOCKET` set to the printed socket path so they address that
+launcher's private engine, for example
+`GENERATION_SOCKET='/printed/socket/path' pnpm generation status`.
+Do not source a deployed runtime environment to select a development engine.
 
 Choose the deployment mode using the [process boundaries](ARCHITECTURE.md#process-boundaries). Both mocked and real-provider browser suites use a separate inference child process. The process-lifetime regression replaces the web child during an active streamed call and verifies queue draining and recorded costs.
 

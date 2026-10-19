@@ -9,7 +9,21 @@ export function serviceFixture(
   const child = fork(join(process.cwd(), "tests/service-process.ts"), [], {
     execArgv: ["--import", "tsx"],
     stdio: ["ignore", "pipe", "pipe", "ipc"],
-    env: { ...process.env, ...env, FIXTURE_ENTRY: join(process.cwd(), entry) },
+    env: {
+      ...process.env,
+      NODE_ENV: "production",
+      PORT: undefined,
+      BIND_ADDRESS: undefined,
+      APP_ORIGIN: undefined,
+      OUTPUT_DOMAIN: undefined,
+      DATABASE_PATH: undefined,
+      OUTPUTS_PATH: undefined,
+      FRONTEND_PATH: undefined,
+      GENERATION_SOCKET: undefined,
+      KEY_ENCRYPTION_SECRET: undefined,
+      ...env,
+      FIXTURE_ENTRY: join(process.cwd(), entry),
+    },
   });
   let output = "";
   const started = new Promise<void>((resolve, reject) => {

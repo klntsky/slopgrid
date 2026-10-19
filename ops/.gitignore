@@ -1,0 +1,8 @@
+*.mp4
+*.log
+node_modules/
+coverage/
+edit-demo.mjs
+probe-svg.mjs
+record-artifact.mjs
+record-page.mjs

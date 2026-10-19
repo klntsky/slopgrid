@@ -9,6 +9,12 @@ export async function startTestServer(
   requestedPort = 0,
 ) {
   if (
+    !Number.isSafeInteger(requestedPort) ||
+    (requestedPort !== 0 && requestedPort < 1024) ||
+    requestedPort > 65535
+  )
+    throw new Error("Invalid E2E_PORT");
+  if (
     !process.env.GITHUB_CLIENT_ID?.trim() ||
     !process.env.GITHUB_CLIENT_SECRET?.trim()
   ) {

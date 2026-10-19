@@ -4,7 +4,7 @@ import { request, type RequestListener } from "node:http";
 import { once } from "node:events";
 import { execFileSync } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { Agent } from "undici";
 import { serviceFixture, stopService } from "./service-fixture.js";
 
@@ -116,6 +116,8 @@ export async function webFixture(config: {
       APP_ORIGIN: origin,
       OUTPUT_DOMAIN: `-output.${hostname}:${new URL(origin).port}`,
       DATABASE_PATH: config.database,
+      OUTPUTS_PATH: join(dirname(config.database), "outputs"),
+      FRONTEND_PATH: join(process.cwd(), "dist"),
       GENERATION_SOCKET: config.socket,
       KEY_ENCRYPTION_SECRET: config.secret.toString("hex"),
       OPENROUTER_BASE_URL: config.providerURL,

@@ -457,7 +457,7 @@ upstream.post("/api/v1/chat/completions", async (req, res) => {
 const upstreamServer = upstream.listen(0);
 await once(upstreamServer, "listening");
 const upstreamOrigin = `http://localhost:${(upstreamServer.address() as { port: number }).port}`;
-const port = Number(process.env.E2E_PORT ?? 4317);
+const port = Number(process.env.E2E_PORT ?? 0);
 const data = process.env.FIXTURE_DATA!;
 mkdirSync(`${data}/.data`, { recursive: true });
 const generation = await startGenerationFixture({

@@ -1,5 +1,6 @@
 import { serviceFixture, stopService } from "./service-fixture.js";
 import { generationClient } from "../server/generation-client.js";
+import { dirname, join } from "node:path";
 
 export async function startGenerationFixture(config: {
   database: string;
@@ -14,7 +15,7 @@ export async function startGenerationFixture(config: {
     "Generation engine ready",
     {
       DATABASE_PATH: config.database,
-      OUTPUTS_PATH: config.outputsPath,
+      OUTPUTS_PATH: config.outputsPath ?? join(dirname(config.database), "outputs"),
       KEY_ENCRYPTION_SECRET: config.secret.toString("hex"),
       GENERATION_SOCKET: socket,
       OPENROUTER_BASE_URL: config.providerURL,

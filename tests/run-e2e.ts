@@ -69,11 +69,7 @@ for (const project of suite === "all"
   try {
     // Mock tests create their own servers; real suites share one serial server.
     if (project !== "mock") {
-      const port = Number(
-        process.env.E2E_PORT ?? (project === "github" ? 4391 : 4317),
-      );
-      if (!Number.isSafeInteger(port) || port < 1024 || port > 65535)
-        throw new Error("Invalid E2E_PORT");
+      const port = Number(process.env.E2E_PORT ?? 0);
       server = await startTestServer(project, port);
     }
     const code = await command(
