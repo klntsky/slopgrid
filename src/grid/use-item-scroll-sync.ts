@@ -30,6 +30,7 @@ type FollowSession = {
 // projects the whole history; selection only controls highlighting and reveal.
 function createItemScrollSync(root: RefObject<HTMLElement | null>) {
   const saved = new Map<HTMLElement, number>();
+  const lastScrolls = new WeakMap<HTMLElement, number>();
   const layouts = new Map<HTMLElement, ViewLayout>();
   const views: HTMLElement[] = [];
   const scrollKeys = new Set([
@@ -128,10 +129,12 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
     layouts.clear();
     dirty = false;
   }
-  function prepare(source: HTMLElement): FollowSession {
+  function prepare(
+    source: HTMLElement,
+    start = source.scrollTop,
+  ): FollowSession {
     freshGeometry();
     const from = layout(source);
-    const start = source.scrollTop;
     const followers: FollowSession["followers"] = [];
     for (const view of views) {
       if (
@@ -152,12 +155,14 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
   function write(view: HTMLElement, top: number) {
     const before = view.scrollTop;
     view.scrollTop = top;
+    lastScrolls.set(view, view.scrollTop);
     if (view.scrollTop !== before && !saved.has(view)) saved.set(view, before);
   }
   function restore(group?: string) {
     for (const [view, top] of saved) {
       if (group !== undefined && view.dataset.scrollSync === group) continue;
       view.scrollTop = top;
+      lastScrolls.set(view, view.scrollTop);
       saved.delete(view);
     }
   }
@@ -270,7 +275,9 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
       mode = "idle";
       session = null;
     }
-    pending = prepare(view);
+    // Passive wheel delivery may follow compositor scrolling. Capture the
+    // source's last observed position, but the followers' actual positions.
+    pending = prepare(view, lastScrolls.get(view) ?? view.scrollTop);
   }
   function trackPointer(event: ReactPointerEvent<HTMLElement>) {
     if (event.pointerType === "touch") return;
@@ -290,6 +297,7 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
     )) {
       if (view.closest("[inert]")) continue;
       views.push(view);
+      if (!lastScrolls.has(view)) lastScrolls.set(view, view.scrollTop);
       observer?.observe(view);
       const list = listOf(view);
       if (list) {
@@ -422,11 +430,11 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
       },
       onScrollCapture(event: UIEvent<HTMLElement>) {
         const source = event.target;
-        if (
-          !(source instanceof HTMLElement) ||
-          !source.hasAttribute("data-scroll-sync")
-        )
-          return;
+        if (!(source instanceof HTMLElement)) return;
+        const participating = source.hasAttribute("data-scroll-sync");
+        if (participating || lastScrolls.has(source))
+          lastScrolls.set(source, source.scrollTop);
+        if (!participating) return;
         if (mode !== "scroll" && pending?.source === source) {
           session = pending;
           pending = null;

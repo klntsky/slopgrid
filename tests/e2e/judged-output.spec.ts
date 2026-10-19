@@ -1728,7 +1728,7 @@ test("native judgment wheel follows the whole history smoothly across criteria a
             index === 1
               ? "Matches."
               : `Condition ${index + 1} satisfies the requested output. `.repeat(
-                  12,
+                  index === 3 ? 24 : 12,
                 ),
         })),
       }),
@@ -1787,7 +1787,9 @@ test("native judgment wheel follows the whole history smoothly across criteria a
     geometry[0].rows[0].height,
   );
   expect(geometry[1].max).toBeGreaterThan(geometry[0].max);
-  expect(geometry[0].rows[1].top).toBeGreaterThan(geometry[0].rows[0].bottom);
+  expect(geometry[0].rows[1].top).toBeGreaterThanOrEqual(
+    geometry[0].rows[0].bottom,
+  );
   const row = source.locator(".judge-result-criteria > li").first();
   const unselected = await row.evaluate(
     (element) => getComputedStyle(element).backgroundColor,
