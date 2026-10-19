@@ -57,6 +57,14 @@ large snapshots with an actively reading client. The large-snapshot case is a
 regression test for connection loss under transient write pressure; it does not
 establish the cause of any particular deployed browser's reconnections.
 
+The matching browser reproduction is
+`pnpm exec tsx tests/run-e2e.ts --suite mock tests/e2e/events-backpressure.spec.ts --workers=1`.
+It uses Chromium and the built application with controlled engine notifications,
+then records actual event request times and statuses across three snapshot
+bursts while checking that the latest output reaches the page. It compares
+small and large drafts without intercepting browser requests or replacing
+EventSource. The expected connection count is one in both cases.
+
 ### Test design
 
 SVG output regression tests use minimal fixtures reduced from observed provider
