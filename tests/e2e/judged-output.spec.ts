@@ -2203,7 +2203,12 @@ test.describe("touch judgment following", () => {
     await source.evaluate((container) => {
       const row = container.querySelector(".judge-result-criteria")!
         .children[1] as HTMLElement;
-      container.scrollTop = row.offsetTop + row.offsetHeight - 280;
+      const panel = container.getBoundingClientRect();
+      const scale =
+        panel.height / parseFloat(getComputedStyle(container).height);
+      // Keep contact 10 native pixels before the boundary at any grid zoom.
+      container.scrollTop +=
+        (row.getBoundingClientRect().bottom - panel.top - 260) / scale - 10;
     });
     await source.evaluate(
       () =>
