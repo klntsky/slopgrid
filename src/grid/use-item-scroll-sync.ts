@@ -550,7 +550,7 @@ function createItemScrollSync(root: RefObject<HTMLElement | null>) {
         if (mode !== "scroll") endHover();
       },
       onWheelCapture(event: ReactWheelEvent<HTMLElement>) {
-        mouse = event.nativeEvent;
+        // Wheel events round subpixel coordinates but do not move the cursor.
         arm(viewOf(event.target), event.clientY);
       },
       onKeyDownCapture(event: ReactKeyboardEvent<HTMLElement>) {
