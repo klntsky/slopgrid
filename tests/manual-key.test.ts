@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { once } from "node:events";
 import { Provider } from "../server/provider.js";
+import { token } from "../server/ids.js";
 import type { Cell, GridInput, InferenceProgress } from "../server/domain.js";
 
 for (const format of ["markdown", "image"] as const) {
@@ -64,6 +65,16 @@ for (const format of ["markdown", "image"] as const) {
       provider,
       workersMax: 1,
     });
+    const historicalSession = token();
+    store.saveSession({
+      id: historicalSession,
+      key: "existing-oauth-key",
+      created: 1,
+    });
+    const existingSessions = new Set(
+      (store.db.prepare("SELECT id FROM sessions").all() as { id: string }[])
+        .map((row) => row.id),
+    );
     let gridId: string | undefined;
     try {
       assert.equal(
@@ -133,13 +144,18 @@ for (const format of ["markdown", "image"] as const) {
         headers: { Cookie: cookie },
       });
       assert.deepEqual(await session.json(), { connected: false, user: null });
-      const rows = store.db.prepare("SELECT data FROM sessions").all() as {
+      const rows = store.db.prepare("SELECT id, data FROM sessions").all() as {
+        id: string;
         data: string;
       }[];
       assert.equal(
-        rows.some((row) => Object.hasOwn(JSON.parse(row.data), "key")),
+        rows.some(
+          (row) => !existingSessions.has(row.id) &&
+            Object.hasOwn(JSON.parse(row.data), "key"),
+        ),
         false,
       );
+      assert.equal(store.session(historicalSession)!.key, "existing-oauth-key");
       provider.release!();
       while (provider.calls.length < 2)
         await new Promise((resolve) => setImmediate(resolve));
