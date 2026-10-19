@@ -519,7 +519,9 @@ test("Markdown preserves raw content and rendered structure across toggles and e
         fontSize: getComputedStyle(raw).fontSize,
         defaultFontSize: getComputedStyle(view).fontSize,
         rawScale: raw.getBoundingClientRect().width / raw.offsetWidth,
-        viewScale: view.getBoundingClientRect().width / view.offsetWidth,
+        viewScale:
+          view.getBoundingClientRect().width /
+          parseFloat(getComputedStyle(view).width),
         contentWidth: raw.scrollWidth,
         availableWidth: raw.clientWidth,
         contentHeight: view.scrollHeight,
