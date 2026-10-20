@@ -1,5 +1,4 @@
 import { createServer } from "node:https";
-import { createServer as tcpServer } from "node:net";
 import { request, type RequestListener } from "node:http";
 import { once } from "node:events";
 import { execFileSync } from "node:child_process";
@@ -7,6 +6,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { Agent } from "undici";
 import { serviceFixture, stopService } from "./service-fixture.js";
+import { waitForReady } from "./process-ready.js";
 
 export async function webFixture(config: {
   directory: string;
@@ -41,11 +41,7 @@ export async function webFixture(config: {
       ],
       { stdio: "ignore" },
     );
-  const probe = tcpServer();
-  probe.listen(0, "127.0.0.1");
-  await once(probe, "listening");
-  const backend = (probe.address() as { port: number }).port;
-  await new Promise<void>((resolve) => probe.close(() => resolve()));
+  let backend: number;
   const handleRequest: RequestListener = (req, res) => {
     if (
       config.controls &&
@@ -111,7 +107,7 @@ export async function webFixture(config: {
     `slopgrid: ${origin}`,
     {
       NODE_ENV: "production",
-      PORT: String(backend),
+      PORT: "0",
       BIND_ADDRESS: "127.0.0.1",
       APP_ORIGIN: origin,
       OUTPUT_DOMAIN: `-output.${hostname}:${new URL(origin).port}`,
@@ -140,7 +136,13 @@ export async function webFixture(config: {
     await agent.destroy();
   }
   try {
-    await started;
+    const [, ready] = await Promise.all([
+      started,
+      waitForReady(child, "Web backend"),
+    ]);
+    if (!ready.port)
+      throw new Error("Web backend did not report its bound port");
+    backend = ready.port;
     return { child, origin, close, fetch: fetchLocal };
   } catch (error) {
     await close();
