@@ -95,6 +95,10 @@ cell links, and ledger attribution. The application owns schema migration.
 Artifact and thinking storage is shared by reference: transfer and administrative
 deletion preserve bytes still owned by retained tasks. Account mapping belongs
 to the move; sessions and inference credentials remain environment-local.
+Transfer requires the current schema 17, including multi-field variable inputs;
+administrative deletion also accepts deployed schemas 12 through 16 before the
+application upgrades them. Reference usage links include every configured variable
+field attachment, independent of which fields the accepted workflow consumes.
 
 ## Host prerequisites
 

@@ -9,12 +9,7 @@ import { saveDraft } from "../create/draft";
 import { useGrids, usePublicGrids } from "../queries";
 import { ArrowUpRight, DollarSign, ArrowLeftRight } from "lucide-react";
 import { useLayoutEffect, useRef } from "react";
-import {
-  efforts,
-  isChatFormat,
-  unusedVariableIssue,
-  type GridInput,
-} from "../../server/domain";
+import { efforts, isChatFormat, type GridInput } from "../../server/domain";
 import { generationGroupKey } from "../../shared/generation-key";
 import { expandGrid } from "../../server/domain";
 import { effortLabel } from "../../server/compatibility";
@@ -26,6 +21,8 @@ import { Connection } from "../components/connection";
 import { ErrorMessage } from "../components/error-message";
 import { LowBalanceDialog } from "../components/inference-dialogs";
 import { useTooltip } from "../components/use-tooltip";
+import { promptVariableIssue } from "../../server/prompt-variables";
+
 export function Create() {
   useGrids();
   usePublicGrids();
@@ -34,6 +31,7 @@ export function Create() {
     draft,
     update,
     selectFormat,
+    swapAxes,
     setReuseArtifacts,
     connection,
     capacity,
@@ -80,9 +78,15 @@ export function Create() {
   const commonFixedParameters =
     commonModel || commonEffort || commonJudgeModel || commonJudgeEffort;
   const commonParameters = input.format === "image" || commonFixedParameters;
-  const promptVariables = (["rows", "columns"] as const)
-    .filter((axis) => input[axis].kind === "variable")
-    .map((axis) => (axis === "rows" ? "$ROW" : "$COLUMN"));
+  const promptVariables = (["rows", "columns"] as const).flatMap((side) => {
+    const axis = input[side];
+    return axis.kind === "variable"
+      ? (axis.values[0] ?? []).map(
+          (_, index) => `$${side === "rows" ? "ROW" : "COLUMN"}${index + 1}`,
+        )
+      : [];
+  });
+  const variableIssue = promptVariableIssue(input);
   const budgetHint = useTooltip<HTMLLabelElement>(
     "Used to calculate each output’s token limit.",
   );
@@ -91,13 +95,14 @@ export function Create() {
   );
   const swapHint = useTooltip<HTMLButtonElement>("Swap rows and columns");
   const generateHint = useTooltip<HTMLDivElement>(generateReasons || undefined);
-  const generatedOutputs = input.judge
-    ? new Set(
-        expandGrid(input).map((cell) =>
-          generationGroupKey(input.format, { ...cell, id: "" }),
-        ),
-      ).size
-    : input.rows.values.length * input.columns.values.length;
+  const generatedOutputs =
+    input.judge && !variableIssue
+      ? new Set(
+          expandGrid(input).map((cell) =>
+            generationGroupKey(input.format, { ...cell, id: "" }),
+          ),
+        ).size
+      : input.rows.values.length * input.columns.values.length;
 
   return (
     <main className="create-page">
@@ -128,7 +133,11 @@ export function Create() {
               the grid?
             </h2>
           </div>
-          <div className="axes" key={input.format}>
+          <fieldset
+            className="axes"
+            key={input.format}
+            disabled={submission.uploading || busy}
+          >
             <AxisEditor
               label="Rows"
               children={compatibility[input.rows.kind]}
@@ -150,22 +159,7 @@ export function Create() {
               className="text-button axis-swap"
               aria-label="Swap rows and columns"
               ref={swapHint}
-              onClick={() =>
-                update({
-                  rows: input.columns,
-                  columns: input.rows,
-                  prompt: input.prompt.replace(/\$(ROW|COLUMN)/g, (_, axis) =>
-                    axis === "ROW" ? "$COLUMN" : "$ROW",
-                  ),
-                  messages: input.messages?.map((message) => ({
-                    ...message,
-                    content: message.content.replace(
-                      /\$(ROW|COLUMN)/g,
-                      (_, axis) => (axis === "ROW" ? "$COLUMN" : "$ROW"),
-                    ),
-                  })),
-                })
-              }
+              onClick={swapAxes}
             >
               <ArrowLeftRight aria-hidden="true" />
             </button>
@@ -185,7 +179,7 @@ export function Create() {
                 )
               }
             />
-          </div>
+          </fieldset>
           <p className="hint">
             {input.judge ? (
               `${input.rows.values.length} rows x ${input.columns.values.length} columns - ${generatedOutputs} generated outputs`
@@ -334,12 +328,11 @@ export function Create() {
             />
           )}
           {isChatFormat(input.format) && compatibility.input_references}
-          <ErrorMessage
-            error={input.prompt.trim() ? unusedVariableIssue(input) : undefined}
-          />
+          <ErrorMessage error={variableIssue} />
           {promptVariables.map((variable) => (
             <p className="hint" key={variable}>
-              {variable} will be replaced with the values you specify above.
+              {variable} inserts the field's text and images where referenced in
+              the prompt or judge criteria.
             </p>
           ))}
         </section>

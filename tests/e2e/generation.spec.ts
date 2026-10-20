@@ -570,7 +570,7 @@ for (const model of ["fixture/text", "fixture/other"])
       "Static website",
       "cat",
       "hat",
-      "Draw $ROW wearing a $COLUMN",
+      "Draw $ROW1 wearing a $COLUMN1",
       model,
     );
     const frame = page.frameLocator("iframe:visible").first();

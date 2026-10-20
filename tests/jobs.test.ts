@@ -27,14 +27,18 @@ function harness(limit?: number) {
     const rows = Math.min(count, 8);
     const input: Grid["input"] = {
       format: "markdown",
-      prompt: "$ROW $COLUMN",
+      prompt: "$ROW1 $COLUMN1",
       rows: {
         kind: "variable",
-        values: Array.from({ length: rows }, (_, i) => `${owner} ${i}`),
+        values: Array.from({ length: rows }, (_, i) => [
+          { text: `${owner} ${i}` },
+        ]),
       },
       columns: {
         kind: "variable",
-        values: Array.from({ length: count / rows }, (_, i) => String(i)),
+        values: Array.from({ length: count / rows }, (_, i) => [
+          { text: String(i) },
+        ]),
       },
       model: "fixture/text",
       effort: "none",

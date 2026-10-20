@@ -1,6 +1,7 @@
 import type { GridInput } from "../server/domain";
 import { effortLabel, imageParameterNames } from "../server/compatibility";
 import type { ViewGrid } from "./api";
+import type { VariableField } from "../server/prompt-variables";
 export const formatNames = {
   markdown: "Markdown",
   image: "Image",
@@ -24,7 +25,7 @@ export const dimensionNames = {
   effort: "Thinking effort",
   judge_model: "Judge model",
   judge_effort: "Judge thinking effort",
-  variable: "Prompt variable",
+  variable: "Prompt variables",
   ...imageParameterNames,
 };
 export function cellError(cell: ViewGrid["cells"][number]) {
@@ -32,7 +33,18 @@ export function cellError(cell: ViewGrid["cells"][number]) {
     ? cell.error
     : `Error ${cell.errorCode}: ${cell.error}`;
 }
-export function displayValue(value: string, kind: GridInput["rows"]["kind"]) {
+export function displayValue(
+  value: string | VariableField[],
+  kind: GridInput["rows"]["kind"],
+) {
+  if (Array.isArray(value))
+    return value
+      .map((field) =>
+        [field.text, ...(field.images ?? []).map((image) => image.name)]
+          .filter(Boolean)
+          .join(" · "),
+      )
+      .join(" | ");
   if (kind === "effort" || kind === "judge_effort") return effortLabel(value);
   return value;
 }

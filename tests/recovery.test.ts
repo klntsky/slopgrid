@@ -34,8 +34,11 @@ test("a restart preserves finished outputs and pauses interrupted work until an 
       input: {
         format: "markdown",
         prompt: "Hello",
-        rows: { kind: "variable", values: ["cat", "dog"] },
-        columns: { kind: "variable", values: ["hat"] },
+        rows: {
+          kind: "variable",
+          values: [[{ text: "cat" }], [{ text: "dog" }]],
+        },
+        columns: { kind: "variable", values: [[{ text: "hat" }]] },
         model: "fixture/text",
         effort: "none",
         budgetUsd: 5,

@@ -15,7 +15,9 @@ for (const billed of [false, true])
       let unlock = () => {};
       let debug: Awaited<ReturnType<typeof crashCheckpoint>> | undefined;
       try {
-        const grid = f.grid({ rows: { kind: "variable", values: ["cat"] } });
+        const grid = f.grid({
+          rows: { kind: "variable", values: [[{ text: "cat" }]] },
+        });
         await f.engine.api.startGrid({ gridId: grid.id, sessionId: f.owner });
         const call = await f.call(0);
         call.write({ content: "Discarded output", reasoning: "Saved trace" });

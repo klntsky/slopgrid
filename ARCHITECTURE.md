@@ -138,6 +138,18 @@ existing grid without starting inference twice.
   grids, snapshots, output files, and billing records; Resume after an engine
   restart needs a new submission of a manual key.
 
+Variable axes store positional records of text and attachment references.
+Setup validation and grid expansion own token interpretation: they resolve
+generator messages and per-cell judge criteria independently before workflow
+execution. The runtime receives expanded text and referenced images rather than
+templates. Model admission checks only the images each consumer receives;
+storage authorization tracks all configured field attachments.
+
+Storage upgrades and browser draft migration convert historical single-value
+axes into one-field records. Accepted workflow inputs and immutable artifacts
+keep their original payloads; presentation metadata and current-grid references
+remain independent of reusable generated content.
+
 Image uploads have independent names and ownership records. Their bytes are
 SHA-256-addressed and shared across uploads and grids. SQLite links each grid to
 its uploads and each upload to its content, keeping access control and shared

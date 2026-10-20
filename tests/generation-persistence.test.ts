@@ -17,7 +17,9 @@ test(
     const f = await runtimeFixture();
     let unlock = () => {};
     try {
-      const grid = f.grid({ rows: { kind: "variable", values: ["one"] } });
+      const grid = f.grid({
+        rows: { kind: "variable", values: [[{ text: "one" }]] },
+      });
       unlock = holdDatabaseWrites(f.store);
       await assert.rejects(
         f.engine.api.startGrid({ gridId: grid.id, sessionId: f.owner }),
@@ -62,7 +64,9 @@ test(
     let restore = () => {};
     let unsubscribe = () => {};
     try {
-      const grid = f.grid({ rows: { kind: "variable", values: ["one"] } });
+      const grid = f.grid({
+        rows: { kind: "variable", values: [[{ text: "one" }]] },
+      });
       const snapshots: string[] = [];
       unsubscribe = f.engine.api.subscribeGrid(
         grid.id,

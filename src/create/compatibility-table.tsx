@@ -2,7 +2,8 @@ import type { ReactNode } from "react";
 import { tooltipRef } from "../components/use-tooltip";
 import { Check, TriangleAlert } from "lucide-react";
 import { expandGrid, isChatFormat, type GridInput } from "../../server/domain";
-import { imageKinds } from "../../server/image-settings";
+import { generatorReferences, imageKinds } from "../../server/image-settings";
+import { promptVariableIssue } from "../../server/prompt-variables";
 import {
   effortLabel,
   thinkingEffortSupport,
@@ -20,11 +21,20 @@ export type CompatibilityTables = Partial<
   Record<GridInput["rows"]["kind"], ReactNode>
 >;
 
+function withPlaceholder(axis: GridInput["rows"]): GridInput["rows"] {
+  if (axis.values.length) return axis;
+  return axis.kind === "variable"
+    ? { ...axis, values: [[{ text: "" }]] }
+    : { ...axis, values: [""] };
+}
+
 export function compatibilityTables({
   input,
   models,
 }: Props): CompatibilityTables {
-  const axes = [input.rows, input.columns];
+  const axes = [input.rows, input.columns].filter(
+    (axis) => axis.kind !== "variable",
+  );
   const judgeModels = (
     axes.find((axis) => axis.kind === "judge_model")?.values ?? [
       input.judge?.model ?? "",
@@ -87,17 +97,15 @@ export function compatibilityTables({
     };
   }
   // Unfilled unrelated axes do not hide compatibility for settings already chosen.
-  const expanded = expandGrid({
-    ...input,
-    rows: {
-      ...input.rows,
-      values: input.rows.values.length ? input.rows.values : [""],
-    },
-    columns: {
-      ...input.columns,
-      values: input.columns.values.length ? input.columns.values : [""],
-    },
-  }).map((cell) => ({
+  const expanded = (
+    promptVariableIssue(input)
+      ? []
+      : expandGrid({
+          ...input,
+          rows: withPlaceholder(input.rows),
+          columns: withPlaceholder(input.columns),
+        })
+  ).map((cell) => ({
     ...cell,
     compatibility: imageSettingsSupport(
       models
@@ -116,13 +124,15 @@ export function compatibilityTables({
             : input.columns.kind === kind
               ? "columns"
               : undefined;
-        const values = side
-          ? input[side].values
-          : [
-              kind === "input_references"
-                ? `${input.inputReferences?.length ?? 0} images`
-                : input.imageSettings?.[kind] || "auto",
-            ];
+        const axis = side ? input[side] : undefined;
+        const values =
+          axis && axis.kind !== "variable"
+            ? axis.values
+            : [
+                kind === "input_references"
+                  ? `${input.inputReferences?.length ?? 0} images`
+                  : input.imageSettings?.[kind] || "auto",
+              ];
         const cells = selectedModels.map(({ id }) =>
           values.map((value) => {
             const matches = expanded
@@ -174,10 +184,7 @@ function ChatImageCompatibility({
   input: GridInput;
   models: readonly SelectedModel[];
 }) {
-  const count = (input.messages ?? []).reduce(
-    (total, message) => total + (message.images?.length ?? 0),
-    0,
-  );
+  const count = generatorReferences(input).length;
   const cells = models.map<Compatibility[]>(({ info }) => [
     count === 0
       ? { support: "supported" }

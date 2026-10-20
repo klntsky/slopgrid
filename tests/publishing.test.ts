@@ -28,8 +28,8 @@ test("publishing is permanent, link grids are unlisted, and public summaries omi
   ) {
     const input: Grid["input"] = {
       format,
-      prompt: "Draw $ROW",
-      rows: { kind: "variable", values: ["cat"] },
+      prompt: "Draw $ROW1",
+      rows: { kind: "variable", values: [[{ text: "cat" }]] },
       columns: { kind: "effort", values: ["none"] },
       model: "fixture/text",
       effort: "none",
@@ -258,8 +258,11 @@ test("publishing a paused grid exposes unfinished cells as Not generated and loc
   store.saveSession({ id: owner, created: Date.now() });
   const input: Grid["input"] = {
     format: "markdown",
-    prompt: "Draw $ROW",
-    rows: { kind: "variable", values: ["cat", "dog", "owl"] },
+    prompt: "Draw $ROW1",
+    rows: {
+      kind: "variable",
+      values: [[{ text: "cat" }], [{ text: "dog" }], [{ text: "owl" }]],
+    },
     columns: { kind: "effort", values: ["none"] },
     model: "fixture/text",
     effort: "none",

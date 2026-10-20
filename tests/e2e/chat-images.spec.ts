@@ -6,6 +6,7 @@ import {
   finishPublishing,
   mockModels,
   selectModel,
+  setVariableValues,
 } from "./helpers";
 
 const png = Buffer.from(
@@ -60,11 +61,11 @@ async function variableAxes(page: Page) {
   await page
     .getByRole("combobox", { name: "Rows", exact: true })
     .selectOption("variable");
-  await page.getByLabel("Row values", { exact: true }).fill("one");
+  await setVariableValues(page, "Rows", ["one"]);
   await page
     .getByRole("combobox", { name: "Columns", exact: true })
     .selectOption("variable");
-  await page.getByLabel("Column values", { exact: true }).fill("one");
+  await setVariableValues(page, "Columns", ["one"]);
 }
 async function unsupportedOtherModel(page: Page) {
   await page.goto("/create");
@@ -89,7 +90,7 @@ test("message attachments gate every model and reach only their own completion t
   await request.post("/fixture/reset", { data: { markdownOutput: answer } });
   await page
     .getByLabel("Message 1", { exact: true })
-    .fill("Describe the first image. $ROW $COLUMN");
+    .fill("Describe the first image. $ROW1 $COLUMN1");
   await appendCompletionAndUser(page);
   await page
     .getByLabel("Message 3", { exact: true })
@@ -125,11 +126,17 @@ test("message attachments gate every model and reach only their own completion t
   await selectModel(page, "fixture/text");
   await expect(generate).toBeEnabled();
   await page
+    .getByRole("button", {
+      name: `Remove ${laterImage.name} from message 3`,
+      exact: true,
+    })
+    .click();
+  await page
     .getByRole("combobox", { name: "Columns", exact: true })
     .selectOption("model");
   await page
     .getByLabel("Message 1", { exact: true })
-    .fill("Describe the first image. $ROW");
+    .fill("Describe the first image. $ROW1");
   const models = page.getByRole("group", {
     name: "Column values",
     exact: true,
@@ -138,10 +145,16 @@ test("message attachments gate every model and reach only their own completion t
   await models
     .getByRole("checkbox", { name: "Second model", exact: true })
     .check();
+  await page
+    .getByLabel("Add images to message 3", { exact: true })
+    .setInputFiles(laterImage);
   await expect(generate).toBeDisabled();
   await models
-    .getByRole("checkbox", { name: "Second model", exact: true })
-    .uncheck();
+    .getByRole("button", {
+      name: "Remove fixture/other from columns",
+      exact: true,
+    })
+    .click();
   await page
     .getByLabel("Add images to message 1", { exact: true })
     .setInputFiles(firstImage);
@@ -210,7 +223,7 @@ test("image-only message attachments follow reorder, format switches, Edit and F
   });
   await page
     .getByLabel("Message 1", { exact: true })
-    .fill("First question $ROW $COLUMN");
+    .fill("First question $ROW1 $COLUMN1");
   await page
     .getByLabel("Add images to message 1", { exact: true })
     .setInputFiles(firstImage);
@@ -324,15 +337,17 @@ test("clipboard images attach to their user turn and disabled role badges retain
 }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await unsupportedOtherModel(page);
+  await variableAxes(page);
+  await selectModel(page, "fixture/other");
   await request.post("/fixture/reset", {
     data: { markdownOutput: "Clipboard answer." },
   });
   const first = page.getByLabel("Message 1", { exact: true });
-  await first.fill("Earlier $ROW $COLUMN");
+  await first.fill("Earlier $ROW1 $COLUMN1");
   await page.evaluate(() => navigator.clipboard.writeText("\nNotes"));
   await first.press("End");
   await first.press("ControlOrMeta+V");
-  await expect(first).toHaveValue("Earlier $ROW $COLUMN\nNotes");
+  await expect(first).toHaveValue("Earlier $ROW1 $COLUMN1\nNotes");
   await appendCompletionAndUser(page);
   const clipboardBytes = await page.evaluate(async () => {
     const canvas = document.createElement("canvas");
@@ -368,8 +383,6 @@ test("clipboard images attach to their user turn and disabled role badges retain
   await page.reload();
   await expect(later.locator(".reference-image img")).toBeVisible();
   await expect(page.getByLabel("Message 3", { exact: true })).toHaveValue("");
-  await variableAxes(page);
-  await selectModel(page, "fixture/other");
   const generate = page.getByRole("button", { name: "Generate", exact: true });
   await expect(generate).toBeDisabled();
   await selectModel(page, "fixture/text");

@@ -534,6 +534,60 @@ section {
 .fixed-options > * {
   min-width: 0;
 }
+.variable-table-scroll {
+  overflow-x: auto;
+}
+.variable-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.variable-table th,
+.variable-table td {
+  min-width: 180px;
+  padding: 6px;
+  vertical-align: top;
+  border: 1px solid var(--line);
+}
+.variable-table th {
+  text-align: left;
+  font-weight: 500;
+}
+.variable-table th .text-button {
+  float: right;
+  padding: 0;
+}
+.variable-table .variable-case-remove,
+.variable-table thead td {
+  width: 32px;
+  min-width: 32px;
+  padding: 6px 0;
+  border: 0;
+}
+.variable-cell-input {
+  position: relative;
+  min-width: 180px;
+}
+.variable-cell-input textarea {
+  display: block;
+  min-height: 72px;
+  padding-right: 34px;
+  resize: vertical;
+}
+.variable-cell-input .reference-upload-compact {
+  right: 3px;
+  opacity: 1;
+  pointer-events: auto;
+}
+.variable-table .reference-images {
+  margin-block: 8px 0;
+}
+.variable-table-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 8px;
+}
 .axis-selector {
   flex-direction: row;
   align-items: center;

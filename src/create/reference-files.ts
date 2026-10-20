@@ -49,9 +49,9 @@ export async function uploadReferences(
 ): Promise<GridInput> {
   const names =
     input.format === "image"
-      ? [input.rows, input.columns]
-          .filter((axis) => axis.kind === "input_references")
-          .flatMap((axis) => axis.values)
+      ? [input.rows, input.columns].flatMap((axis) =>
+          axis.kind === "input_references" ? axis.values : [],
+        )
       : [];
   const groups = Object.fromEntries(
     names.map((name) => [name, [...input.referenceGroups![name]]]),
@@ -62,11 +62,37 @@ export async function uploadReferences(
     ...message,
     ...(message.images && { images: [...message.images] }),
   }));
-  const references = isChatFormat(input.format)
-    ? (messages ?? []).flatMap((message) =>
-        message.images ? [message.images] : [],
-      )
-    : [...Object.values(groups), ...(inputReferences ? [inputReferences] : [])];
+  const cloneAxis = (axis: GridInput["rows"]): GridInput["rows"] =>
+    axis.kind === "variable"
+      ? {
+          ...axis,
+          values: axis.values.map((entry) =>
+            entry.map((field) => ({
+              ...field,
+              ...(field.images && { images: [...field.images] }),
+            })),
+          ),
+        }
+      : axis;
+  const rows = cloneAxis(input.rows);
+  const columns = cloneAxis(input.columns);
+  const references = [
+    ...(isChatFormat(input.format)
+      ? (messages ?? []).flatMap((message) =>
+          message.images ? [message.images] : [],
+        )
+      : [
+          ...Object.values(groups),
+          ...(inputReferences ? [inputReferences] : []),
+        ]),
+    ...[rows, columns].flatMap((axis) =>
+      axis.kind === "variable"
+        ? axis.values.flatMap((entry) =>
+            entry.flatMap((field) => (field.images ? [field.images] : [])),
+          )
+        : [],
+    ),
+  ];
   const replacements = new Map<string, ReferenceImage>();
   for (const images of references) {
     for (let index = 0; index < images.length; index++) {
@@ -105,6 +131,8 @@ export async function uploadReferences(
   }
   return {
     ...input,
+    rows,
+    columns,
     messages,
     referenceGroups: input.format === "image" ? groups : undefined,
     inputReferences,

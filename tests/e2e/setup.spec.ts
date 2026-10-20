@@ -5,6 +5,7 @@ import {
   expectProgress,
   selectModel,
   mockModels,
+  setVariableValues,
 } from "./helpers";
 
 test("disabled Generate explains blockers on hover and keyboard focus", async ({
@@ -29,17 +30,15 @@ test("disabled Generate explains blockers on hover and keyboard focus", async ({
   await page
     .getByRole("combobox", { name: "Columns", exact: true })
     .selectOption("variable");
-  await page.getByLabel("Row values").fill("cat");
-  await page.getByLabel("Column values").fill("hat");
-  await page.getByLabel("Prompt", { exact: true }).fill("$ROW");
+  await setVariableValues(page, "Rows", ["cat"]);
+  await setVariableValues(page, "Columns", ["hat"]);
+  await page.getByLabel("Prompt", { exact: true }).fill("$ROW1");
   await wrapper.focus();
   await expect(tooltip).toContainText("Select a model.");
-  await expect(tooltip).toContainText(
-    "Include $COLUMN in the prompt for column variables.",
-  );
+  await expect(generate).toBeDisabled();
   await expect(tooltip).not.toContainText("Select row values.");
   await selectModel(page, "fixture/text");
-  await page.getByLabel("Prompt", { exact: true }).fill("$ROW $COLUMN");
+  await page.getByLabel("Prompt", { exact: true }).fill("$ROW1 $COLUMN1");
   let releaseCapacity!: () => void;
   const capacityResponse = new Promise<void>((resolve) => {
     releaseCapacity = resolve;
@@ -91,7 +90,7 @@ test("axis swap preserves selections and substitutes the corresponding prompt va
     exact: true,
   });
   await rows.selectOption("variable");
-  await page.getByLabel("Row values").fill("cat\ndog");
+  await setVariableValues(page, "Rows", ["cat", "dog"]);
   await columns.selectOption("effort");
   const columnValues = page.getByRole("group", { name: "Column values" });
   await columnValues
@@ -101,7 +100,7 @@ test("axis swap preserves selections and substitutes the corresponding prompt va
     .getByRole("checkbox", { name: "high", exact: true })
     .check();
   const prompt = page.getByLabel("Prompt", { exact: true });
-  await prompt.fill("Draw $ROW");
+  await prompt.fill("Draw $ROW1");
   const swap = page.getByRole("button", { name: "Swap rows and columns" });
   await swap.click();
   await expect(rows).toHaveValue("effort");
@@ -109,16 +108,31 @@ test("axis swap preserves selections and substitutes the corresponding prompt va
   await expect(
     page.getByRole("group", { name: "Row values" }).locator("input:checked"),
   ).toHaveCount(2);
-  await expect(page.getByLabel("Column values")).toHaveValue("cat\ndog");
-  await expect(prompt).toHaveValue("Draw $COLUMN");
+  await expect(
+    page.getByLabel("$COLUMN1, case 1", { exact: true }),
+  ).toHaveValue("cat");
+  await expect(
+    page.getByLabel("$COLUMN1, case 2", { exact: true }),
+  ).toHaveValue("dog");
+  await expect(prompt).toHaveValue("Draw $COLUMN1");
   await swap.click();
   await expect(rows).toHaveValue("variable");
   await expect(columns).toHaveValue("effort");
-  await expect(page.getByLabel("Row values")).toHaveValue("cat\ndog");
-  await expect(prompt).toHaveValue("Draw $ROW");
+  await expect(page.getByLabel("$ROW1, case 1", { exact: true })).toHaveValue(
+    "cat",
+  );
+  await expect(page.getByLabel("$ROW1, case 2", { exact: true })).toHaveValue(
+    "dog",
+  );
+  await expect(prompt).toHaveValue("Draw $ROW1");
   await page.reload();
-  await expect(page.getByLabel("Row values")).toHaveValue("cat\ndog");
-  await expect(prompt).toHaveValue("Draw $ROW");
+  await expect(page.getByLabel("$ROW1, case 1", { exact: true })).toHaveValue(
+    "cat",
+  );
+  await expect(page.getByLabel("$ROW1, case 2", { exact: true })).toHaveValue(
+    "dog",
+  );
+  await expect(prompt).toHaveValue("Draw $ROW1");
 });
 
 test("model filtering preserves deliberate selections and supports keyboard removal", async ({
@@ -281,13 +295,13 @@ test("unused prompt variables block generation and the API rejects bypasses", as
   await page
     .getByRole("combobox", { name: "Columns", exact: true })
     .selectOption("variable");
-  await page.getByLabel("Row values").fill("cat\ndog");
-  await page.getByLabel("Column values").fill("hat\ncape");
-  for (const prompt of ["Draw a cat", "$ROW", "$COLUMN"]) {
+  await setVariableValues(page, "Rows", ["cat", "dog"]);
+  await setVariableValues(page, "Columns", ["hat", "cape"]);
+  for (const prompt of ["Draw a cat", "$ROW1", "$COLUMN1"]) {
     await page.getByLabel("Prompt", { exact: true }).fill(prompt);
     await expect(page.getByRole("alert")).toBeVisible();
   }
-  await page.getByLabel("Prompt", { exact: true }).fill("$ROW $COLUMN");
+  await page.getByLabel("Prompt", { exact: true }).fill("$ROW1 $COLUMN1");
   const connect = page.getByRole("link", { name: "Connect OpenRouter" });
   await connect.click();
   await expect(
@@ -297,23 +311,23 @@ test("unused prompt variables block generation and the API rejects bypasses", as
   await expect(
     page.getByRole("button", { name: "Generate", exact: true }),
   ).toBeEnabled();
-  await page.getByLabel("Prompt", { exact: true }).fill("$ROW");
+  await page.getByLabel("Prompt", { exact: true }).fill("$ROW1");
   await expect(
     page.getByRole("button", { name: "Generate", exact: true }),
   ).toBeDisabled();
   const response = await page.request.post("/api/grids", {
     data: {
       format: "image",
-      prompt: "$ROW",
-      rows: { kind: "variable", values: ["cat"] },
-      columns: { kind: "variable", values: ["hat"] },
+      prompt: "$ROW1",
+      rows: { kind: "variable", values: [[{ text: "cat" }]] },
+      columns: { kind: "variable", values: [[{ text: "hat" }]] },
       model: "fixture/image",
       effort: "none",
       budgetUsd: 5,
     },
   });
   expect(response.status()).toBe(400);
-  await page.getByLabel("Prompt", { exact: true }).fill("$ROW $COLUMN");
+  await page.getByLabel("Prompt", { exact: true }).fill("$ROW1 $COLUMN1");
   await page.getByRole("button", { name: "Generate", exact: true }).click();
   await expectProgress(page, 4, 4);
 });
@@ -352,9 +366,9 @@ test("selecting an output type reveals the entire form and preserves it on reloa
   await page
     .getByRole("combobox", { name: "Columns", exact: true })
     .selectOption("model");
-  await prompt.fill("Draw $ROW");
+  await prompt.fill("Draw $ROW1");
   await page.reload();
-  await expect(prompt).toHaveValue("Draw $ROW");
+  await expect(prompt).toHaveValue("Draw $ROW1");
   await expect(
     page.getByRole("link", { name: "Connect OpenRouter" }),
   ).toBeVisible();
@@ -367,8 +381,7 @@ test("selecting an output type reveals the entire form and preserves it on reloa
     exact: true,
   });
   await model.check();
-  await expect(generate).toBeDisabled();
-  await page.getByLabel("Row values").fill("cat\ndog");
+  await setVariableValues(page, "Rows", ["cat", "dog"]);
   await expect(generate).toBeEnabled();
   await model.uncheck();
   await expect(generate).toBeDisabled();
@@ -516,7 +529,7 @@ test("compatibility keeps model rows and effort columns with variable axes and f
     name: "Thinking effort compatibility",
   });
   await rows.selectOption("variable");
-  await page.getByLabel("Row values").fill("cat\ndog\nfox");
+  await setVariableValues(page, "Rows", ["cat", "dog", "fox"]);
   await page.getByRole("button", { name: "Clear column model filter" }).click();
   await page
     .getByRole("checkbox", { name: "Second model", exact: true })
@@ -684,13 +697,13 @@ for (const format of ["SVG", "Image"]) {
     await page
       .getByRole("combobox", { name: "Columns", exact: true })
       .selectOption("variable");
-    await page.getByLabel("Row values").fill("cat\ndog");
-    await page.getByLabel("Column values").fill("hat\ncape");
+    await setVariableValues(page, "Rows", ["cat", "dog"]);
+    await setVariableValues(page, "Columns", ["hat", "cape"]);
     await selectModel(
       page,
       format === "Image" ? "fixture/image" : "fixture/text",
     );
-    await page.getByLabel("Prompt", { exact: true }).fill("$ROW $COLUMN");
+    await page.getByLabel("Prompt", { exact: true }).fill("$ROW1 $COLUMN1");
     await connectOpenRouter(page);
     await page.evaluate(() => {
       const draft = JSON.parse(sessionStorage.getItem("slopgrid-draft")!);
@@ -841,10 +854,12 @@ for (const format of ["SVG", "Static website", "Markdown"]) {
       page.getByRole("checkbox", { name: "None", exact: true }),
     ).toBeChecked();
     await effortKind.selectOption("variable");
+    const side = format === "Markdown" ? "Rows" : "Columns";
     const variableValues = page.getByLabel(
-      format === "Markdown" ? "Row values" : "Column values",
+      format === "Markdown" ? "$ROW1, case 1" : "$COLUMN1, case 1",
+      { exact: true },
     );
-    await variableValues.fill("landscape");
+    await setVariableValues(page, side, ["landscape"]);
     await page.reload();
     await expect(modelKind).toHaveValue("model");
     await expect(effortKind).toHaveValue("variable");

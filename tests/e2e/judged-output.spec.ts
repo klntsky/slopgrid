@@ -7,6 +7,7 @@ import {
   mockModels,
   scrollToRest,
   selectModel,
+  setVariableValues,
 } from "./helpers";
 
 type JudgmentScrollGeometry = {
@@ -421,16 +422,16 @@ test("removing a judge preserves ordinary axes and generation settings", async (
   await page
     .getByRole("combobox", { name: "Rows", exact: true })
     .selectOption("variable");
-  await page.getByLabel("Row values", { exact: true }).fill("cat\ndog");
+  await setVariableValues(page, "Rows", ["cat", "dog"]);
   await page
     .getByRole("combobox", { name: "Columns", exact: true })
     .selectOption("variable");
-  await page.getByLabel("Column values", { exact: true }).fill("hat");
+  await setVariableValues(page, "Columns", ["hat"]);
   await selectModel(page, "fixture/text");
   await page.getByLabel("Thinking effort", { exact: true }).selectOption("low");
   await page
     .getByLabel("Prompt", { exact: true })
-    .fill("Describe $ROW wearing a $COLUMN");
+    .fill("Describe $ROW1 wearing a $COLUMN1");
   await page
     .getByRole("checkbox", { name: "Add a LLM judge", exact: true })
     .check();
@@ -446,9 +447,9 @@ test("removing a judge preserves ordinary axes and generation settings", async (
   await expect(
     page.getByRole("combobox", { name: "Columns", exact: true }),
   ).toHaveValue("variable");
-  await expect(page.getByLabel("Column values", { exact: true })).toHaveValue(
-    "hat",
-  );
+  await expect(
+    page.getByLabel("$COLUMN1, case 1", { exact: true }),
+  ).toHaveValue("hat");
   const models = page.getByRole("radiogroup", { name: "Model", exact: true });
   await expect(
     models.locator('input[type="radio"][value="fixture/text"]'),
@@ -459,7 +460,7 @@ test("removing a judge preserves ordinary axes and generation settings", async (
       .getByRole("checkbox", { name: "Model default", exact: true }),
   ).toBeChecked();
   await expect(page.getByLabel("Prompt", { exact: true })).toHaveValue(
-    "Describe $ROW wearing a $COLUMN",
+    "Describe $ROW1 wearing a $COLUMN1",
   );
   await expect(
     page.getByRole("radiogroup", { name: "Judge model", exact: true }),
@@ -499,7 +500,7 @@ test("chat input images require a vision judge and removing them restores text-o
     .click();
   await page
     .getByLabel("Message 1", { exact: true })
-    .fill("Describe this image. $ROW $COLUMN");
+    .fill("Describe this image. $ROW1 $COLUMN1");
   for (let index = 2; index <= 4; index++) {
     await page.locator(".chat-append").hover();
     await page
@@ -512,11 +513,11 @@ test("chat input images require a vision judge and removing them restores text-o
   await page
     .getByRole("combobox", { name: "Rows", exact: true })
     .selectOption("variable");
-  await page.getByLabel("Row values", { exact: true }).fill("one");
+  await setVariableValues(page, "Rows", ["one"]);
   await page
     .getByRole("combobox", { name: "Columns", exact: true })
     .selectOption("variable");
-  await page.getByLabel("Column values", { exact: true }).fill("one");
+  await setVariableValues(page, "Columns", ["one"]);
   await selectModel(page, "fixture/text");
   await page
     .getByRole("checkbox", { name: "Add a LLM judge", exact: true })
@@ -1794,8 +1795,11 @@ test("judgment hover aligns short criteria fractionally even when unequal views 
   });
   const id = await createJudged(page, {
     ...judgedInput,
-    prompt: "Draw a red $ROW rectangle",
-    rows: { kind: "variable", values: ["top", "bottom"] },
+    prompt: "Draw a red $ROW1 rectangle",
+    rows: {
+      kind: "variable",
+      values: [[{ text: "top" }], [{ text: "bottom" }]],
+    },
     columns: { kind: "judge_effort", values: ["none", "high"] },
     judge: { ...judgedInput.judge!, model: "fixture/text", criteria },
   });
@@ -2051,8 +2055,11 @@ test("native judgment wheel aligns the criterion under a stationary cursor in un
   });
   const id = await createJudged(page, {
     ...judgedInput,
-    prompt: "Draw a red $ROW rectangle",
-    rows: { kind: "variable", values: ["top", "bottom"] },
+    prompt: "Draw a red $ROW1 rectangle",
+    rows: {
+      kind: "variable",
+      values: [[{ text: "top" }], [{ text: "bottom" }]],
+    },
     columns: { kind: "judge_effort", values: ["none", "high"] },
     judge: { ...judgedInput.judge!, model: "fixture/text", criteria },
   });
@@ -2215,8 +2222,11 @@ test("judgment layout changes after desktop scrollend refresh a stationary curso
   });
   const id = await createJudged(page, {
     ...judgedInput,
-    prompt: "Draw a red $ROW rectangle",
-    rows: { kind: "variable", values: ["top", "bottom"] },
+    prompt: "Draw a red $ROW1 rectangle",
+    rows: {
+      kind: "variable",
+      values: [[{ text: "top" }], [{ text: "bottom" }]],
+    },
     columns: { kind: "judge_effort", values: ["none", "high"] },
     judge: { ...judgedInput.judge!, model: "fixture/text", criteria },
   });

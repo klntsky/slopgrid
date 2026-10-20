@@ -197,6 +197,7 @@ export async function generateInference(
       includeRawChunks: true,
       ...(prepared.text.messages
         ? {
+            ...(system && { system }),
             messages: prepared.text.messages,
             allowSystemInMessages: true,
           }

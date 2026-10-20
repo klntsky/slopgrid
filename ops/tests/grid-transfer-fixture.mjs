@@ -96,7 +96,7 @@ function fixture(t, { shared = false } = {}) {
   });
   for (const db of [source, target])
     db.exec(`
-    PRAGMA user_version=16; PRAGMA foreign_keys=ON;
+    PRAGMA user_version=17; PRAGMA foreign_keys=ON;
     CREATE TABLE grids(id TEXT PRIMARY KEY,data TEXT,owner TEXT,owner_user_id TEXT,published INTEGER,visibility TEXT,slug TEXT,created_at TEXT);
     CREATE TABLE workflow_tasks(id TEXT PRIMARY KEY,grid_id TEXT REFERENCES grids(id) ON DELETE CASCADE,kind TEXT,status TEXT,dependency_id TEXT REFERENCES workflow_tasks(id),artifact_id TEXT,thinking_source_id TEXT,data TEXT);
     CREATE TABLE cells(id TEXT PRIMARY KEY,grid_id TEXT REFERENCES grids(id) ON DELETE CASCADE,position INTEGER,data TEXT,generation_id TEXT REFERENCES workflow_tasks(id),judgment_id TEXT REFERENCES workflow_tasks(id),UNIQUE(grid_id,position));
@@ -415,4 +415,60 @@ export function rejectSourceRemoval(db) {
   db.exec(
     "CREATE TRIGGER reject BEFORE DELETE ON grids BEGIN SELECT RAISE(ABORT,'source removal failure'); END",
   );
+}
+
+export function seedTransferVariableFields(f) {
+  const first = {
+    id: "reference-image",
+    name: "horse.png",
+    ...f.referenceDimensions,
+  };
+  const unused = {
+    id: "variable-unused",
+    name: "unused.png",
+    ...f.referenceDimensions,
+  };
+  f.source
+    .prepare("INSERT INTO reference_images VALUES (?,?,?,?,?,?)")
+    .run(
+      unused.id,
+      "source-session",
+      "source-owner",
+      unused.name,
+      "image/png",
+      f.referenceSha256,
+    );
+  f.source
+    .prepare("INSERT INTO grid_reference_images VALUES (?,?)")
+    .run(f.options.grid, unused.id);
+  const row = f.source
+    .prepare("SELECT data FROM grids WHERE id=?")
+    .get(f.options.grid);
+  const data = JSON.parse(row.data);
+  data.input.prompt = "Draw $COLUMN1";
+  data.input.columns = {
+    kind: "variable",
+    values: [
+      [
+        { text: "literal $COLUMN", images: [first] },
+        { text: "unused field", images: [unused] },
+      ],
+    ],
+  };
+  f.source
+    .prepare("UPDATE grids SET data=? WHERE id=?")
+    .run(JSON.stringify(data), f.options.grid);
+  f.source
+    .prepare(
+      `UPDATE workflow_tasks SET data=json_set(data,
+    '$.input.images',json(?)) WHERE grid_id=? AND kind='generation'`,
+    )
+    .run(JSON.stringify([first]), f.options.grid);
+  f.source
+    .prepare(
+      `UPDATE workflow_tasks SET data=json_set(data,
+    '$.input.images',json(?)) WHERE grid_id=? AND kind='judge'`,
+    )
+    .run(JSON.stringify([unused]), f.options.grid);
+  return { first, unused, columns: data.input.columns };
 }

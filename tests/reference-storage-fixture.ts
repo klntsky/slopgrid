@@ -31,7 +31,9 @@ export function referenceBlobs(db: Database.Database) {
 
 export function referenceUsageLinks(db: Database.Database) {
   return db
-    .prepare("SELECT * FROM grid_reference_images ORDER BY reference_id")
+    .prepare<[], { grid_id: string; reference_id: string }>(
+      "SELECT * FROM grid_reference_images ORDER BY reference_id",
+    )
     .all();
 }
 

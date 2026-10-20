@@ -62,6 +62,7 @@ import {
   transferGrids,
   rejectTransferCells,
   rejectSourceRemoval,
+  seedTransferVariableFields,
 } from "./grid-transfer-fixture.mjs";
 
 function copySharedBytes(f) {
@@ -333,6 +334,8 @@ test("unsafe transfers leave both databases and source files untouched", async (
     ["target schema14", (f) => setReferenceSchemaVersion(f.target, 14)],
     ["source schema15", (f) => setReferenceSchemaVersion(f.source, 15)],
     ["target schema15", (f) => setReferenceSchemaVersion(f.target, 15)],
+    ["source schema16", (f) => setReferenceSchemaVersion(f.source, 16)],
+    ["target schema16", (f) => setReferenceSchemaVersion(f.target, 16)],
   ])
     await t.test(name, (child) => {
       const f = fixture(child);
@@ -855,4 +858,43 @@ test("unsafe shared upload paths, bytes and metadata collisions fail before tran
       assert.equal(existsSync(f.options.backupDir), false);
       assert.ok(transferredGridExists(f.source, f.options.grid));
     });
+});
+
+test("schema17 transfers and exports variable fields, expanded task images and unused configured references", (t) => {
+  const f = fixture(t);
+  const { first, unused, columns } = seedTransferVariableFields(f);
+  const tasks = transferTasks(f.source).filter(
+    (task) => task.id !== f.generations[1] && task.id !== f.judgments[1],
+  );
+  transferGrid(Database, { ...f.options, apply: true });
+  const saved = JSON.parse(transferGridRow(f.target, f.options.grid).data);
+  assert.deepEqual(saved.input.columns, columns);
+  assert.equal(saved.input.prompt, "Draw $COLUMN1");
+  assert.deepEqual(transferTasks(f.target), tasks);
+  assert.deepEqual(
+    orderedReferenceLinks(f.target)
+      .map(({ reference_id }) => reference_id)
+      .sort(),
+    [first.id, unused.id].sort(),
+  );
+  for (const reference of gridReferenceImages(f.target, f.options.grid))
+    assert.equal(reference.owner_user_id, "target-owner");
+  const backup = JSON.parse(
+    readFileSync(join(f.options.backupDir, "source.json"), "utf8"),
+  );
+  assert.deepEqual(JSON.parse(backup.grid.data).input.columns, columns);
+  assert.deepEqual(
+    backup.referenceImages.map(({ id }) => id).sort(),
+    [first.id, unused.id].sort(),
+  );
+  assert.deepEqual(referenceBlobs(f.target), [
+    { sha256: f.referenceSha256, ...f.referenceDimensions },
+  ]);
+  assert.deepEqual(
+    readFileSync(
+      join(f.options.targetOutputs, ".references", f.referenceSha256),
+    ),
+    f.referenceBytes,
+  );
+  assert.deepEqual(referenceForeignKeyViolations(f.target), []);
 });

@@ -74,8 +74,8 @@ test("reference SHA validators reuse bytes only after authorization, including a
     model: "fixture/text",
     effort: "none",
     budgetUsd: 1,
-    rows: { kind: "variable", values: ["one"] },
-    columns: { kind: "variable", values: ["one"] },
+    rows: { kind: "variable", values: [[{ text: "one" }]] },
+    columns: { kind: "variable", values: [[{ text: "one" }]] },
   };
   const grid: Grid = {
     id: token(),

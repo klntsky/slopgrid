@@ -22,8 +22,8 @@ test("generation usage follows the latest call while billing preserves earlier a
       model: "example/model",
       effort: "default",
       budgetUsd: 5,
-      rows: { kind: "variable", values: ["cat"] },
-      columns: { kind: "variable", values: ["hat"] },
+      rows: { kind: "variable", values: [[{ text: "cat" }]] },
+      columns: { kind: "variable", values: [[{ text: "hat" }]] },
     };
     store.insert({
       id: "grid",
@@ -243,7 +243,7 @@ test("canonical billing survives reopening and recovery with free and unavailabl
       model: "generator",
       effort: "none",
       budgetUsd: 1,
-      rows: { kind: "variable", values: ["one"] },
+      rows: { kind: "variable", values: [[{ text: "one" }]] },
       columns: { kind: "effort", values: ["none"] },
       judge: {
         model: "actual-judge",

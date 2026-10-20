@@ -8,6 +8,10 @@ import type {
 } from "./domain.js";
 import { token } from "./ids.js";
 import { generationGroupKey } from "../shared/generation-key.js";
+import {
+  interpolateVariables,
+  mergeVariableImages,
+} from "./prompt-variables.js";
 
 export function createWorkflow(
   input: GridInput,
@@ -29,6 +33,7 @@ export function createWorkflow(
           effort: cell.effort,
           prompt: cell.prompt,
           messages: cell.messages,
+          ...(cell.images ? { images: cell.images } : {}),
           budgetUsd: cell.budgetUsd,
           imageSettings: cell.imageSettings,
         },
@@ -38,6 +43,17 @@ export function createWorkflow(
     }
     cell.generationId = generation.id;
     if (cell.judge && input.judge) {
+      let images: JudgmentTask["input"]["images"];
+      const criteria = input.judge.criteria.map((criterion) => {
+        const expanded = interpolateVariables(
+          criterion.text,
+          input,
+          cell.row,
+          cell.column,
+        );
+        images = mergeVariableImages(images, expanded.images);
+        return { ...criterion, text: expanded.text };
+      });
       const judgment: JudgmentTask = {
         id: token(),
         kind: "judge",
@@ -46,7 +62,8 @@ export function createWorkflow(
         input: {
           model: cell.judge.model,
           effort: cell.judge.effort,
-          criteria: input.judge.criteria,
+          criteria,
+          ...(images ? { images } : {}),
         },
       };
       tasks.push(judgment);
@@ -80,6 +97,7 @@ export function projectWorkflow(
     cell.effort = input.effort;
     cell.prompt = input.prompt;
     cell.messages = input.messages;
+    cell.images = input.images;
     cell.budgetUsd = input.budgetUsd;
     cell.imageSettings = input.imageSettings;
     cell.status =

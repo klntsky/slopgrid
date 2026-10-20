@@ -29,7 +29,7 @@ function completedChatGrid(
     format: "chat-template",
     messages,
     prompt: "",
-    rows: { kind: "variable", values: ["one"] },
+    rows: { kind: "variable", values: [[{ text: "one" }]] },
     columns: { kind: "effort", values: ["none"] },
     model: "fixture/text",
     effort: "none",
@@ -71,8 +71,8 @@ test("private outputs require ownership, isolated grants are scoped and revoked 
   function makeGrid(format: Grid["input"]["format"], running = false) {
     const input: Grid["input"] = {
       format,
-      prompt: "$ROW",
-      rows: { kind: "variable", values: ["cat"] },
+      prompt: "$ROW1",
+      rows: { kind: "variable", values: [[{ text: "cat" }]] },
       columns: { kind: "effort", values: ["none"] },
       model: "fixture/text",
       effort: "none",
@@ -374,7 +374,7 @@ test("committed judged outputs stay readable and downloadable without weakening 
       const input: Grid["input"] = {
         format,
         prompt: "A saved artifact",
-        rows: { kind: "variable", values: ["one"] },
+        rows: { kind: "variable", values: [[{ text: "one" }]] },
         columns: { kind: "effort", values: ["none"] },
         model: "fixture/text",
         effort: "none",
@@ -513,7 +513,7 @@ test("uncommitted judged files are not exposed before generation commits", async
   const input: Grid["input"] = {
     format: "markdown",
     prompt: "Uncommitted artifact",
-    rows: { kind: "variable", values: ["one"] },
+    rows: { kind: "variable", values: [[{ text: "one" }]] },
     columns: { kind: "effort", values: ["none"] },
     model: "fixture/text",
     effort: "none",

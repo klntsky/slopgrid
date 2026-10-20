@@ -7,6 +7,7 @@ import {
 import { ReferenceGroups } from "./reference-groups";
 import { ModelSelector } from "./model-selector";
 import { CustomAxisSizes } from "./custom-image-size";
+import { VariableTable } from "./variable-table";
 import { efforts, type GridInput } from "../../server/domain";
 import { effortLabel } from "../../server/compatibility";
 import type { Model } from "../../server/provider";
@@ -47,7 +48,9 @@ export function AxisEditor({
       : [
           ...new Set([
             ...(imageChoices[axis.kind as keyof typeof imageChoices] ?? []),
-            ...(axis.kind === "size" ? [] : axis.values),
+            ...(axis.kind === "size" || axis.kind === "variable"
+              ? []
+              : axis.values),
           ]),
         ].map((value) => ({
           id: value,
@@ -62,10 +65,11 @@ export function AxisEditor({
           value={axis.kind}
           onChange={(e) => {
             const kind = e.target.value as GridInput["rows"]["kind"];
-            onChange({
-              kind,
-              values: [],
-            });
+            onChange(
+              kind === "variable"
+                ? { kind, values: [[{ text: "" }]] }
+                : { kind, values: [] },
+            );
           }}
         >
           {kinds.map((k) => (
@@ -89,21 +93,12 @@ export function AxisEditor({
           onChange={(values, groups) => onChange({ ...axis, values }, groups)}
         />
       ) : axis.kind === "variable" ? (
-        <label>
-          <textarea
-            aria-label={label === "Rows" ? "Row values" : "Column values"}
-            rows={4}
-            placeholder={"cat\ndog"}
-            value={axis.values.join("\n")}
-            onChange={(e) =>
-              onChange({ ...axis, values: e.target.value.split("\n") })
-            }
-          />
-          <span className="hint">
-            One value per line. Use {label === "Rows" ? "$ROW" : "$COLUMN"} to
-            reference this value in the prompt.
-          </span>
-        </label>
+        <VariableTable
+          label={label}
+          values={axis.values}
+          onChange={(values) => onChange({ ...axis, values })}
+          onBusy={onUploading}
+        />
       ) : (
         <fieldset
           aria-label={label === "Rows" ? "Row values" : "Column values"}

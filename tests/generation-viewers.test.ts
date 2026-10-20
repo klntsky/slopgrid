@@ -31,7 +31,9 @@ test(
     let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
     let reading: Promise<void> | undefined;
     try {
-      const grid = f.grid({ rows: { kind: "variable", values: ["cat"] } });
+      const grid = f.grid({
+        rows: { kind: "variable", values: [[{ text: "cat" }]] },
+      });
       await f.engine.api.startGrid({ gridId: grid.id, sessionId: f.owner });
       const call = await f.call(0);
       const endpoint = `/api/grids/${grid.id}/events`;
@@ -149,7 +151,9 @@ test(
   async () => {
     const f = await runtimeFixture();
     try {
-      const grid = f.grid({ rows: { kind: "variable", values: ["cat"] } });
+      const grid = f.grid({
+        rows: { kind: "variable", values: [[{ text: "cat" }]] },
+      });
       await f.engine.api.startGrid({ gridId: grid.id, sessionId: f.owner });
       const call = await f.call(0);
       const endpoint = `${f.origin}/api/grids/${grid.id}/events`;

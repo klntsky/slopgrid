@@ -41,7 +41,9 @@ test(
   async () => {
     const f = await runtimeFixture();
     try {
-      const grid = f.grid({ rows: { kind: "variable", values: ["cat"] } });
+      const grid = f.grid({
+        rows: { kind: "variable", values: [[{ text: "cat" }]] },
+      });
       await f.engine.api.startGrid({ gridId: grid.id, sessionId: f.owner });
       const call = await f.call(0);
       call.write({ content: "Partial output" });

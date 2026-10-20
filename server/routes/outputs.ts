@@ -13,6 +13,7 @@ import { zip } from "fflate";
 import { downloadFilename } from "../download-filename.js";
 import { canViewGrid } from "../grid-policy.js";
 import type { SessionReader } from "../session.js";
+import type { VariableField } from "../prompt-variables.js";
 import { offlineWebsite, offlineWebsitePolicy } from "../offline-website.js";
 
 const markdownFont = readFileSync(
@@ -22,6 +23,14 @@ const conversationStyle = readFileSync(
   new URL("../../shared/chat-conversation.css", import.meta.url),
   "utf8",
 );
+
+function downloadAxisLabel(value: string | VariableField[]): string {
+  if (typeof value === "string") return value;
+  const first = value[0];
+  return (
+    first?.text || first?.images?.map((image) => image.name).join(" ") || ""
+  );
+}
 
 function outputFile(output: NonNullable<ReturnType<Store["outputMetadata"]>>) {
   if (output.format !== "image")
@@ -135,8 +144,8 @@ export function createOutputRoutes(
       downloadFilename(
         output.prompt,
         output.gridId,
-        output.row,
-        output.column,
+        downloadAxisLabel(output.row),
+        downloadAxisLabel(output.column),
         extension,
       ),
     );

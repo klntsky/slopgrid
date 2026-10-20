@@ -89,12 +89,50 @@ export async function expectProgress(
   await expect(bar).toHaveAttribute("max", String(total));
 }
 
+export async function setVariableValues(
+  page: Page,
+  side: "Rows" | "Columns",
+  values: string[],
+) {
+  expect(values.length).toBeGreaterThan(0);
+  const axis = side === "Rows" ? "row" : "column";
+  const token = side === "Rows" ? "$ROW1" : "$COLUMN1";
+  const table = page.getByRole("table", {
+    name: side === "Rows" ? "Row variables" : "Column variables",
+    exact: true,
+  });
+  await expect(table).toBeVisible();
+  const cases = table.getByRole("button", {
+    name: new RegExp(`^Remove ${axis} case \\d+$`),
+  });
+  let count = await cases.count();
+  while (count < values.length) {
+    await page
+      .getByRole("button", { name: `Add ${axis} case`, exact: true })
+      .click();
+    count++;
+  }
+  while (count > values.length) {
+    await table
+      .getByRole("button", {
+        name: `Remove ${axis} case ${count}`,
+        exact: true,
+      })
+      .click();
+    count--;
+  }
+  for (const [index, value] of values.entries())
+    await table
+      .getByLabel(`${token}, case ${index + 1}`, { exact: true })
+      .fill(value);
+}
+
 export async function create(
   page: Page,
   format = "SVG",
   rows = "cat\ndog",
   columns = "hat",
-  prompt = "Draw $ROW wearing a $COLUMN",
+  prompt = "Draw $ROW1 wearing a $COLUMN1",
   model?: string,
 ) {
   await page.goto("/");
@@ -102,11 +140,11 @@ export async function create(
   await page
     .getByRole("combobox", { name: "Rows", exact: true })
     .selectOption("variable");
-  await page.getByLabel("Row values").fill(rows);
+  await setVariableValues(page, "Rows", rows.split("\n"));
   await page
     .getByRole("combobox", { name: "Columns", exact: true })
     .selectOption("variable");
-  await page.getByLabel("Column values").fill(columns);
+  await setVariableValues(page, "Columns", columns.split("\n"));
   await selectModel(
     page,
     model ?? (format === "Image" ? "fixture/image" : "fixture/text"),

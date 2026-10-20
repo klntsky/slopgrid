@@ -8,8 +8,8 @@ import { changeAxis, removeJudge } from "../src/create/change-axis.js";
 const initial: GridInput = {
   format: "svg",
   prompt: "Draw a rectangle",
-  rows: { kind: "variable", values: ["row"] },
-  columns: { kind: "variable", values: ["column"] },
+  rows: { kind: "variable", values: [[{ text: "row" }]] },
+  columns: { kind: "variable", values: [[{ text: "column" }]] },
   model: "generator/fixed",
   effort: "high",
   budgetUsd: 3,
@@ -49,7 +49,7 @@ for (const parameter of parameters) {
       assert.deepEqual(edited[side].values, values);
       const left = changeAxis(edited, side, {
         kind: "variable",
-        values: ["new"],
+        values: [[{ text: "new" }]],
       });
       const restored = parameter.owner === "generator" ? left : left.judge!;
       assert.equal(restored[parameter.field], values[0]);
@@ -65,7 +65,7 @@ for (const parameter of parameters) {
     const original = structuredClone(input);
     const next = changeAxis(input, "rows", {
       kind: "variable",
-      values: ["row"],
+      values: [[{ text: "row" }]],
     });
     const settings = parameter.owner === "generator" ? next : next.judge!;
     assert.equal(
@@ -142,7 +142,7 @@ for (const kind of Object.keys(imageValues) as ScalarImageKind[]) {
     assert.deepEqual(edited.rows.values, ["auto"]);
     const left = changeAxis(edited, "rows", {
       kind: "variable",
-      values: ["row"],
+      values: [[{ text: "row" }]],
     });
     assert.equal(left.imageSettings?.[kind], undefined);
     assert.deepEqual(left.imageSettings, entered.imageSettings);
@@ -187,7 +187,7 @@ test("shared references enter a unique group including newly supplied group name
   assert.deepEqual(edited.rows.values, ["Group 3", "Group 4"]);
   const left = changeAxis(edited, "rows", {
     kind: "variable",
-    values: ["row"],
+    values: [[{ text: "row" }]],
   });
   assert.equal(left.inputReferences, undefined);
   assert.deepEqual(left.referenceGroups, edited.referenceGroups);
@@ -212,7 +212,7 @@ test("reference ownership prevents stealing shared images and leaving clears sta
   assert.deepEqual(entered.inputReferences, original.inputReferences);
   const left = changeAxis(entered, "rows", {
     kind: "variable",
-    values: ["row"],
+    values: [[{ text: "row" }]],
   });
   assert.equal(left.inputReferences, undefined);
   assert.deepEqual(input, original);

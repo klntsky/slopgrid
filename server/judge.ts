@@ -2,7 +2,8 @@ import { streamText, Output } from "ai";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { z } from "zod";
 import type { JudgmentInput, JudgeResult } from "./domain.js";
-import type { ChatInputMessage } from "./chat-messages.js";
+import { chatMessages, type ChatInputMessage } from "./chat-messages.js";
+import type { ReferenceInputs } from "./image-references.js";
 import type { CallRecorder } from "./billing.js";
 import { completionFailure } from "./failures.js";
 import {
@@ -28,6 +29,7 @@ export async function judgeInference(
   input: JudgmentInput,
   messages: ChatInputMessage[],
   context: InferenceContext = {},
+  references?: ReferenceInputs,
 ): Promise<{ results: JudgeResult[] }> {
   let call: CallRecorder | undefined;
   const provider = createOpenRouter({
@@ -57,10 +59,16 @@ export async function judgeInference(
       messages: [
         ...messages,
         { role: "system", content: judgeSystem },
-        {
-          role: "user",
-          content: `Criteria:\n${input.criteria.map((criterion, index) => `${index + 1}. ${criterion.text}`).join("\n")}`,
-        },
+        ...chatMessages(
+          [
+            {
+              role: "user",
+              content: `Criteria:\n${input.criteria.map((criterion, index) => `${index + 1}. ${criterion.text}`).join("\n")}`,
+              images: input.images,
+            },
+          ],
+          references,
+        ),
       ],
       allowSystemInMessages: true,
       output: Output.object({ schema: judgmentSchema, name: "judgment" }),

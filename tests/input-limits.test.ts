@@ -27,7 +27,7 @@ test("large prompts, variables, and model IDs reach inference through grid creat
   });
   const owner = "a".repeat(48);
   store.saveSession({ id: owner, key: "fixture-key", created: Date.now() });
-  const prompt = "x".repeat(110_000) + "$ROW";
+  const prompt = "x".repeat(110_000) + "$ROW1";
   const value = "v".repeat(1000);
   const model = "fixture/" + "m".repeat(300);
   const input: GridInput = {
@@ -36,7 +36,7 @@ test("large prompts, variables, and model IDs reach inference through grid creat
     model,
     effort: "none",
     budgetUsd: 5,
-    rows: { kind: "variable", values: [value] },
+    rows: { kind: "variable", values: [[{ text: value }]] },
     columns: { kind: "effort", values: ["none"] },
   };
   const response = await fetch(`${origin}/api/grids`, {

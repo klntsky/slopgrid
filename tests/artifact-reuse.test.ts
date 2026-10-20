@@ -13,6 +13,7 @@ import {
 import { createWorkflow, projectWorkflow } from "../server/workflow.js";
 import { reuseArtifacts } from "../server/artifact-reuse.js";
 import { token } from "../server/ids.js";
+import { generationGroupKey } from "../shared/generation-key.js";
 import {
   runtimeFixture,
   until,
@@ -33,9 +34,12 @@ import {
 
 const input: GridInput = {
   format: "markdown",
-  prompt: "$ROW $COLUMN",
-  rows: { kind: "variable", values: ["cat", "dog", "owl", "fox"] },
-  columns: { kind: "variable", values: ["one"] },
+  prompt: "$ROW1 $COLUMN1",
+  rows: {
+    kind: "variable",
+    values: ["cat", "dog", "owl", "fox"].map((text) => [{ text }]),
+  },
+  columns: { kind: "variable", values: ["one"].map((text) => [{ text }]) },
   model: "fixture/text",
   effort: "none",
   budgetUsd: 0.1,
@@ -63,6 +67,145 @@ function finish(call: RuntimeCall, text = "Artifact") {
   call.finish();
 }
 
+test("generator grouping ignores judge-only fields and attachment display metadata", () => {
+  const image = { id: "source", name: "source.png", width: 10, height: 20 };
+  const setup: GridInput = {
+    ...input,
+    prompt: "$ROW1",
+    rows: {
+      kind: "variable",
+      values: [
+        [{ text: "same", images: [image] }, { text: "first answer" }],
+        [
+          {
+            text: "same",
+            images: [{ ...image, name: "renamed.png", width: 30, height: 40 }],
+          },
+          { text: "second answer" },
+        ],
+      ],
+    },
+    columns: { kind: "judge_model", values: ["fixture/text"] },
+    judge: {
+      model: "",
+      effort: "default",
+      criteria: [{ text: "Matches $ROW2?", correctAnswer: false }],
+    },
+  };
+  const cells = expandGrid(setup).map((cell) => ({ ...cell, id: token() }));
+  assert.equal(
+    generationGroupKey(setup.format, cells[0]),
+    generationGroupKey(setup.format, cells[1]),
+  );
+  const workflow = createWorkflow(setup, cells);
+  assert.equal(workflow.filter((task) => task.kind === "generation").length, 1);
+  assert.equal(workflow.filter((task) => task.kind === "judge").length, 2);
+  assert.notEqual(
+    generationGroupKey(setup.format, {
+      ...cells[0],
+      images: [{ id: "other", name: image.name }],
+    }),
+    generationGroupKey(setup.format, cells[0]),
+  );
+});
+
+test("non-chat image reuse follows content and ignores changed judge-only fields", async () => {
+  const f = await runtimeFixture();
+  try {
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
+      "base64",
+    );
+    const session = { id: f.owner, created: 0 };
+    const originalImage = f.store.references.add(png, "source.png", session)!;
+    const copiedImage = f.store.references.add(png, "copy.png", session)!;
+    const changedImage = f.store.references.add(
+      Buffer.concat([png, Buffer.from("changed")]),
+      "changed.png",
+      session,
+    )!;
+    const setup: GridInput = {
+      ...input,
+      prompt: "$ROW1",
+      rows: {
+        kind: "variable",
+        values: [
+          [
+            { text: "Describe this shape.", images: [originalImage] },
+            { text: "first expected answer", images: [changedImage] },
+          ],
+        ],
+      },
+      columns: { kind: "judge_model", values: ["fixture/text"] },
+      judge: {
+        model: "",
+        effort: "none",
+        criteria: [{ text: "Matches $ROW2?", correctAnswer: false }],
+      },
+    };
+    const source = await create(f, setup);
+    finish(await f.nextCall(), "Shared shape");
+    finish(
+      await f.nextCall(),
+      '{"results":[{"verdict":true,"explanation":"Matches."}]}',
+    );
+    await settled(f, source.id);
+    const copy = await create(f, {
+      ...setup,
+      rows: {
+        kind: "variable",
+        values: [
+          [
+            { text: "Describe this shape.", images: [copiedImage] },
+            { text: "changed expected answer", images: [originalImage] },
+          ],
+        ],
+      },
+      sourceGridId: source.id,
+      reuseArtifacts: true,
+    });
+    const judge = await f.nextCall();
+    assert.match(
+      messageText(judge.request.messages.at(-1)!.content),
+      /changed expected answer/,
+    );
+    finish(judge, '{"results":[{"verdict":false,"explanation":"Different."}]}');
+    await settled(f, copy.id);
+    assert.equal(f.calls.length, 3);
+    assert.equal(
+      f.store.outputMetadata(copy.cells[0].id)!.artifactId,
+      f.store.outputMetadata(source.cells[0].id)!.artifactId,
+    );
+    const changed = await create(f, {
+      ...setup,
+      rows: {
+        kind: "variable",
+        values: [
+          [
+            { text: "Describe this shape.", images: [changedImage] },
+            { text: "first expected answer", images: [changedImage] },
+          ],
+        ],
+      },
+      sourceGridId: source.id,
+      reuseArtifacts: true,
+    });
+    finish(await f.nextCall(), "Changed shape");
+    finish(
+      await f.nextCall(),
+      '{"results":[{"verdict":true,"explanation":"Matches."}]}',
+    );
+    await settled(f, changed.id);
+    assert.equal(f.calls.length, 5);
+    assert.notEqual(
+      f.store.outputMetadata(changed.cells[0].id)!.artifactId,
+      f.store.outputMetadata(source.cells[0].id)!.artifactId,
+    );
+  } finally {
+    await f.close();
+  }
+});
+
 test("chat reuse matches attachment content across uploads but not moved attachments", async () => {
   const f = await runtimeFixture();
   try {
@@ -81,11 +224,11 @@ test("chat reuse matches attachment content across uploads but not moved attachm
     const template = {
       ...input,
       format: "chat-template",
-      rows: { kind: "variable", values: ["cat"] },
+      rows: { kind: "variable", values: ["cat"].map((text) => [{ text }]) },
       messages: [
         {
           role: "user",
-          content: "Describe $ROW $COLUMN",
+          content: "Describe $ROW1 $COLUMN1",
           images: [{ id: first.id, name: first.name }],
         },
         { role: "assistant", content: "A supplied answer." },
@@ -150,9 +293,9 @@ test("template usage and per-call reuse survive storage reopening", async () => 
       ...input,
       format: "chat-template",
       budgetUsd: 1,
-      rows: { kind: "variable", values: ["cat"] },
+      rows: { kind: "variable", values: ["cat"].map((text) => [{ text }]) },
       messages: [
-        { role: "user", content: "$ROW $COLUMN" },
+        { role: "user", content: "$ROW1 $COLUMN1" },
         { role: "unfilled", content: "" },
         { role: "unfilled", content: "" },
       ],
@@ -226,9 +369,9 @@ test("template reuse requires the final completion after supplied trailing histo
       ...input,
       format: "chat-template",
       budgetUsd: 1,
-      rows: { kind: "variable", values: ["cat"] },
+      rows: { kind: "variable", values: ["cat"].map((text) => [{ text }]) },
       messages: [
-        { role: "user", content: "$ROW $COLUMN" },
+        { role: "user", content: "$ROW1 $COLUMN1" },
         { role: "unfilled", content: "" },
         { role: "user", content: "Final question" },
       ],
@@ -279,9 +422,9 @@ test("failed templates retain the partial transcript and aggregate charged usage
       ...input,
       format: "chat-template",
       budgetUsd: 1,
-      rows: { kind: "variable", values: ["cat"] },
+      rows: { kind: "variable", values: ["cat"].map((text) => [{ text }]) },
       messages: [
-        { role: "user", content: "$ROW $COLUMN" },
+        { role: "user", content: "$ROW1 $COLUMN1" },
         { role: "unfilled", content: "" },
         { role: "unfilled", content: "" },
       ],
@@ -319,8 +462,14 @@ test("edit shares exact completed artifacts through reorder, cancellation, web r
     const sourceCell = f.store.get(source.id)!.cells[0];
     const changed = {
       ...input,
-      rows: { kind: "variable", values: ["fox", "cat", "dog", "owl", "new"] },
-      columns: { kind: "variable", values: ["two", "one"] },
+      rows: {
+        kind: "variable",
+        values: ["fox", "cat", "dog", "owl", "new"].map((text) => [{ text }]),
+      },
+      columns: {
+        kind: "variable",
+        values: ["two", "one"].map((text) => [{ text }]),
+      },
     };
     const callsBeforeEdit = f.calls.length;
     const next = await create(f, {
@@ -398,11 +547,13 @@ test("reuse requires intact content and retains shared artifacts while either gr
       format: "html",
       rows: {
         kind: "variable",
-        values: ["intact", "asset", "thinking", "unsigned", "unreadable"],
+        values: ["intact", "asset", "thinking", "unsigned", "unreadable"].map(
+          (text) => [{ text }],
+        ),
       },
     };
     const source = await create(f, config);
-    for (const name of config.rows.values)
+    for (const [{ text: name }] of config.rows.values)
       finish(
         await f.nextCall(),
         JSON.stringify({
@@ -472,7 +623,10 @@ test("reuse requires intact content and retains shared artifacts while either gr
 test("forks isolate access and billing while preserving artifact costs and admission prerequisites", async () => {
   const f = await runtimeFixture();
   try {
-    const config = { ...input, rows: { kind: "variable", values: ["cat"] } };
+    const config = {
+      ...input,
+      rows: { kind: "variable", values: ["cat"].map((text) => [{ text }]) },
+    };
     const source = await create(f, config);
     finish(await f.nextCall());
     await settled(f, source.id);
@@ -497,7 +651,10 @@ test("forks isolate access and billing while preserving artifact costs and admis
     assert.equal(f.store.publish(source.id, "public", null), undefined);
     const destination = await create(f, {
       ...config,
-      rows: { kind: "variable", values: ["cat", "dog"] },
+      rows: {
+        kind: "variable",
+        values: ["cat", "dog"].map((text) => [{ text }]),
+      },
       sourceGridId: source.id,
       reuseArtifacts: true,
     });
@@ -589,7 +746,10 @@ test("forks isolate access and billing while preserving artifact costs and admis
       (
         await f.request("/api/grids", {
           ...config,
-          rows: { kind: "variable", values: ["cat", "new"] },
+          rows: {
+            kind: "variable",
+            values: ["cat", "new"].map((text) => [{ text }]),
+          },
           sourceGridId: source.id,
           reuseArtifacts: true,
         })
@@ -615,7 +775,7 @@ test("effective model, prompt, effort and format determine actual reuse", async 
     f.catalog.data.push({ ...f.catalog.data[0], id: "fixture/other" });
     const config: GridInput = {
       ...input,
-      rows: { kind: "variable", values: ["cat"] },
+      rows: { kind: "variable", values: ["cat"].map((text) => [{ text }]) },
     };
     const source = await create(f, config);
     finish(await f.nextCall());
@@ -632,7 +792,7 @@ test("effective model, prompt, effort and format determine actual reuse", async 
       },
       {
         name: "prompt",
-        input: { prompt: "Changed $ROW $COLUMN" },
+        input: { prompt: "Changed $ROW1 $COLUMN1" },
         verify: (call) => assert.equal(call.prompt, "Changed cat one"),
       },
       {
@@ -704,7 +864,7 @@ test("budget and token ceiling changes reuse outputs that fit through copies and
     const config: GridInput = {
       ...input,
       budgetUsd: 2,
-      rows: { kind: "variable", values: ["cat"] },
+      rows: { kind: "variable", values: ["cat"].map((text) => [{ text }]) },
     };
     const source = await create(f, config);
     const call = await f.nextCall();
@@ -758,9 +918,12 @@ test("reuse selects the first matching source whose actual usage fits the new li
     const config: GridInput = {
       ...input,
       budgetUsd: 1,
-      prompt: "$ROW$COLUMN",
-      rows: { kind: "variable", values: ["a", "ab"] },
-      columns: { kind: "variable", values: ["bc", "c"] },
+      prompt: "$ROW1$COLUMN1",
+      rows: { kind: "variable", values: ["a", "ab"].map((text) => [{ text }]) },
+      columns: {
+        kind: "variable",
+        values: ["bc", "c"].map((text) => [{ text }]),
+      },
     };
     const source = await create(f, config);
     const first = await f.nextCall();
@@ -805,7 +968,7 @@ test("missing token usage reuses only when the original ceiling fits, including 
     const config: GridInput = {
       ...input,
       budgetUsd: 0.5,
-      rows: { kind: "variable", values: ["cat"] },
+      rows: { kind: "variable", values: ["cat"].map((text) => [{ text }]) },
     };
     const source = await create(f, config);
     finish(await f.nextCall());
@@ -844,7 +1007,7 @@ test("stored artifacts with stale request signatures regenerate instead of reusi
   try {
     const config = {
       ...input,
-      rows: { kind: "variable", values: ["cat"] },
+      rows: { kind: "variable", values: ["cat"].map((text) => [{ text }]) },
     };
     const source = await create(f, config);
     finish(await f.nextCall(), "Old output");
@@ -882,10 +1045,13 @@ test("duplicate effective prompts choose the first source cell and model alias r
     await f.startWeb();
     const config = {
       ...input,
-      prompt: "$ROW$COLUMN",
+      prompt: "$ROW1$COLUMN1",
       model: "fixture/latest",
-      rows: { kind: "variable", values: ["a", "ab"] },
-      columns: { kind: "variable", values: ["bc", "c"] },
+      rows: { kind: "variable", values: ["a", "ab"].map((text) => [{ text }]) },
+      columns: {
+        kind: "variable",
+        values: ["bc", "c"].map((text) => [{ text }]),
+      },
     };
     const source = await create(f, config);
     for (let i = 0; i < 4; i++) finish(await f.nextCall(), `Output ${i}`);
@@ -941,8 +1107,8 @@ test("reuse leaves preparation failures on individual cells and skips unsigned s
     await f.startWeb();
     const config: GridInput = {
       ...input,
-      prompt: "$ROW",
-      rows: { kind: "variable", values: ["cat"] },
+      prompt: "$ROW1",
+      rows: { kind: "variable", values: ["cat"].map((text) => [{ text }]) },
       columns: { kind: "model", values: ["fixture/text"] },
     };
     const source = await create(f, config);

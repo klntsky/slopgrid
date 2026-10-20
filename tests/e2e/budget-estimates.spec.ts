@@ -4,6 +4,7 @@ import {
   mockModels,
   selectModel,
   expectProgress,
+  setVariableValues,
 } from "./helpers";
 
 test("budget warnings group models across thinking efforts and axis swaps", async ({
@@ -95,10 +96,10 @@ test("budget estimates follow expanded prompts, warn without blocking, and prese
   await page
     .getByRole("combobox", { name: "Columns", exact: true })
     .selectOption("variable");
-  await page.getByLabel("Row values").fill("a\nb\nc");
-  await page.getByLabel("Column values").fill("d");
+  await setVariableValues(page, "Rows", ["a", "b", "c"]);
+  await setVariableValues(page, "Columns", ["d"]);
   await selectModel(page, "fixture/text");
-  await page.getByLabel("Prompt", { exact: true }).fill("$ROW $COLUMN");
+  await page.getByLabel("Prompt", { exact: true }).fill("$ROW1 $COLUMN1");
   const budget = page.getByLabel("Budget limit per cell", { exact: true });
   const warnings = page.locator(".budget-warnings");
   await expect(warnings).toHaveCount(0);
@@ -110,12 +111,12 @@ test("budget estimates follow expanded prompts, warn without blocking, and prese
   const tooltip = page.getByRole("tooltip").filter({ hasText: "$0.1" });
   await expect(tooltip).toBeVisible();
   await expect(tooltip).toContainText("$0.1275");
-  await page.getByLabel("Row values").fill(`a\n${"b".repeat(100)}\nc`);
+  await setVariableValues(page, "Rows", ["a", "b".repeat(100), "c"]);
   await expect(warning).toContainText("$0.1374");
-  await page.getByLabel("Row values").fill(`a\n${"b".repeat(1000)}\nc`);
+  await setVariableValues(page, "Rows", ["a", "b".repeat(1000), "c"]);
   await expect(warnings).toContainText("The cell budget is too small");
   await expect(warning).toContainText("$0.1275");
-  await page.getByLabel("Row values").fill("a\nb\nc");
+  await setVariableValues(page, "Rows", ["a", "b", "c"]);
   await page.reload();
   await expect(budget).toHaveValue("0.1");
   const sent = page.waitForRequest(

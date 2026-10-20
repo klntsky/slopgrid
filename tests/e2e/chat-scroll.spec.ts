@@ -5,16 +5,16 @@ import { connectOpenRouter, expectProgress, scrollToRest } from "./helpers";
 
 const historyInput: GridInput = {
   format: "chat-template",
-  prompt: "History $ROW $COLUMN",
+  prompt: "History $ROW1 $COLUMN1",
   model: "fixture/text",
   effort: "none",
   budgetUsd: 1,
-  rows: { kind: "variable", values: ["top", "bottom"] },
-  columns: { kind: "variable", values: ["one"] },
+  rows: { kind: "variable", values: [[{ text: "top" }], [{ text: "bottom" }]] },
+  columns: { kind: "variable", values: [[{ text: "one" }]] },
   messages: [
     {
       role: "user",
-      content: "Earlier $ROW $COLUMN. " + "History detail. ".repeat(40),
+      content: "Earlier $ROW1 $COLUMN1. " + "History detail. ".repeat(40),
     },
     { role: "assistant", content: "OK" },
     { role: "user", content: "Later history detail. ".repeat(80) },
@@ -401,9 +401,9 @@ test("a streamed peer highlights a newly arrived message under the active compar
     data: {
       ...historyInput,
       messages: [
-        { role: "user", content: "Start $ROW $COLUMN" },
+        { role: "user", content: "Start $ROW1 $COLUMN1" },
         { role: "unfilled", content: "" },
-        { role: "user", content: "Continue $ROW $COLUMN" },
+        { role: "user", content: "Continue $ROW1 $COLUMN1" },
         { role: "unfilled", content: "" },
       ],
     },
@@ -895,7 +895,10 @@ test("native wheel preserves full-area landmarks seeded at matching viewport per
     page,
     {
       ...historyInput,
-      columns: { kind: "variable", values: ["left", "right"] },
+      columns: {
+        kind: "variable",
+        values: [[{ text: "left" }], [{ text: "right" }]],
+      },
     },
     { columns: [200, 320], rows: [500, 300] },
   );
@@ -1020,7 +1023,10 @@ test.describe("mobile chat histories", () => {
       page,
       {
         ...historyInput,
-        columns: { kind: "variable", values: ["left", "right"] },
+        columns: {
+          kind: "variable",
+          values: [[{ text: "left" }], [{ text: "right" }]],
+        },
       },
       { columns: [180, 240], rows: [500, 300] },
     );
@@ -1123,7 +1129,10 @@ test.describe("mobile chat histories", () => {
       page,
       {
         ...historyInput,
-        columns: { kind: "variable", values: ["left", "right"] },
+        columns: {
+          kind: "variable",
+          values: [[{ text: "left" }], [{ text: "right" }]],
+        },
       },
       { columns: [180, 240], rows: [500, 300] },
     );

@@ -41,9 +41,9 @@ for (const limit of ["grid creation", "API traffic"] as const) {
                   format: "image",
                   model: "fixture/image",
                   effort: "default",
-                  prompt: "Draw $ROW wearing a $COLUMN",
-                  rows: { kind: "variable", values: ["cat"] },
-                  columns: { kind: "variable", values: ["hat"] },
+                  prompt: "Draw $ROW1 wearing a $COLUMN1",
+                  rows: { kind: "variable", values: [[{ text: "cat" }]] },
+                  columns: { kind: "variable", values: [[{ text: "hat" }]] },
                   budgetUsd: 5,
                 },
               });
@@ -79,10 +79,14 @@ for (const limit of ["grid creation", "API traffic"] as const) {
     await expect(page.getByRole("alert")).toHaveText(message);
     await expect(generate).toBeEnabled();
     await expect(page.getByLabel("Prompt", { exact: true })).toHaveValue(
-      "Draw $ROW wearing a $COLUMN",
+      "Draw $ROW1 wearing a $COLUMN1",
     );
-    await expect(page.getByLabel("Row values")).toHaveValue("cat");
-    await expect(page.getByLabel("Column values")).toHaveValue("hat");
+    await expect(page.getByLabel("$ROW1, case 1", { exact: true })).toHaveValue(
+      "cat",
+    );
+    await expect(
+      page.getByLabel("$COLUMN1, case 1", { exact: true }),
+    ).toHaveValue("hat");
     await expect(page.getByRole("progressbar")).toHaveCount(0);
     const rejected = page.waitForResponse(
       (response) =>
@@ -97,10 +101,14 @@ for (const limit of ["grid creation", "API traffic"] as const) {
     clientIP = "192.0.2.81";
     await page.reload();
     await expect(page.getByLabel("Prompt", { exact: true })).toHaveValue(
-      "Draw $ROW wearing a $COLUMN",
+      "Draw $ROW1 wearing a $COLUMN1",
     );
-    await expect(page.getByLabel("Row values")).toHaveValue("cat");
-    await expect(page.getByLabel("Column values")).toHaveValue("hat");
+    await expect(page.getByLabel("$ROW1, case 1", { exact: true })).toHaveValue(
+      "cat",
+    );
+    await expect(
+      page.getByLabel("$COLUMN1, case 1", { exact: true }),
+    ).toHaveValue("hat");
     await generate.click();
     await expectProgress(page, 1, 1);
     await expect(page.getByRole("alert")).toHaveCount(0);

@@ -518,3 +518,32 @@ export function seedUnattributedLegacyCharge(db: Database.Database) {
       VALUES ('legacy-charge','cell',42,?,NULL,'direct','succeeded',0)`,
   ).run(JSON.stringify({ usage: { inputTokens: 4, outputTokens: 6 } }));
 }
+
+export function restoreV16VariableInputs(
+  db: Database.Database,
+  input: unknown,
+) {
+  db.prepare("UPDATE grids SET data=json_set(data,'$.input',json(?))").run(
+    JSON.stringify(input),
+  );
+  db.pragma("user_version=16");
+}
+
+export function rejectVariableTemplateMigration(db: Database.Database) {
+  db.exec(`CREATE TEMP TRIGGER reject_variable_template_migration
+    BEFORE UPDATE ON grids WHEN OLD.id='grid' BEGIN
+      SELECT RAISE(ABORT, 'variable migration blocked');
+    END`);
+  return () => db.exec("DROP TRIGGER reject_variable_template_migration");
+}
+
+export function retainExpandedVariableTaskText(db: Database.Database) {
+  db.exec(`UPDATE workflow_tasks SET data=json_set(data,
+    '$.input.prompt','Already expanded literal $ROW and $COLUMN',
+    '$.input.messages',json('[{"role":"user","content":"Literal $ROW"}]'));
+    INSERT INTO workflow_tasks
+      (id,grid_id,kind,status,dependency_id,data)
+      VALUES ('accepted-judge','grid','judge','running','g:cell',
+        '{"input":{"model":"judge","criteria":[{"text":"Expanded literal $COLUMN","correctAnswer":false}]},"attemptId":"accepted-attempt"}');
+    UPDATE cells SET judgment_id='accepted-judge' WHERE id='cell';`);
+}

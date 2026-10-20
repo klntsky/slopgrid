@@ -24,7 +24,9 @@ test("a delayed paused response cannot reopen streaming after the engine restart
     await page
       .context()
       .addCookies([{ name: f.cookieName, value: f.owner, url: f.origin }]);
-    const grid = f.grid({ rows: { kind: "variable", values: ["cat"] } });
+    const grid = f.grid({
+      rows: { kind: "variable", values: [[{ text: "cat" }]] },
+    });
     await f.engine.api.startGrid({ gridId: grid.id, sessionId: f.owner });
     await f.call(0);
     unlock = holdDatabaseWrites(f.store);

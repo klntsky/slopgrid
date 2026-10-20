@@ -1,6 +1,6 @@
 import {
   imageKinds,
-  selectedReferences,
+  generatorReferences,
   normalizeImageSettings,
   type ImageCapabilities,
   type ImageSettings,
@@ -12,7 +12,7 @@ export function imageInputIssue(
   input: GridInput,
   models: readonly Model[],
 ): string | undefined {
-  if (!selectedReferences(input).length) return undefined;
+  if (!generatorReferences(input).length) return undefined;
   const ids = [input.rows, input.columns].find((axis) => axis.kind === "model")
     ?.values ?? [input.model];
   if (

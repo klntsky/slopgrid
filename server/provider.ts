@@ -244,8 +244,16 @@ export class Provider {
     input: JudgmentInput,
     messages: ChatInputMessage[],
     context: InferenceContext = {},
+    references?: ReferenceInputs,
   ) {
-    return judgeInference(this.baseURL, key, input, messages, context);
+    return judgeInference(
+      this.baseURL,
+      key,
+      input,
+      messages,
+      context,
+      references,
+    );
   }
   async generate(
     key: string,

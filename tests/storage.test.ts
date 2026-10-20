@@ -27,6 +27,7 @@ import {
   removeStoredGrid,
   rejectStoredGridUpdates,
 } from "./grid-storage-fixture.js";
+import { restoreV16VariableInputs } from "./database-migration-fixture.js";
 import {
   referencePng,
   orientedReferenceJpeg,
@@ -61,13 +62,13 @@ test("list prompts are expanded and truncated once, then persist independently o
   try {
     const cases = [
       {
-        prompt: "Draw $ROW wearing $COLUMN; repeat $ROW.",
+        prompt: "Draw $ROW1 wearing $COLUMN1; repeat $ROW1.",
         rows: ["cat", "dog"],
         columns: ["hat", "cape"],
         expected: "Draw (cat|dog) wearing (hat|cape); repeat (cat|dog).",
       },
       {
-        prompt: "$ROW $COLUMN",
+        prompt: "$ROW1 $COLUMN1",
         rows: ["$COLUMN", "$&"],
         columns: ["$ROW"],
         expected: "($COLUMN|$&) ($ROW)",
@@ -85,7 +86,7 @@ test("list prompts are expanded and truncated once, then persist independently o
         expected: "x".repeat(157) + "...",
       },
       {
-        prompt: "$ROW",
+        prompt: "$ROW1",
         rows: ["\u{1f431}".repeat(160)],
         columns: ["hat"],
         expected: "(" + "\u{1f431}".repeat(156) + "...",
@@ -95,8 +96,14 @@ test("list prompts are expanded and truncated once, then persist independently o
       const input: Grid["input"] = {
         format: "markdown",
         prompt: scenario.prompt,
-        rows: { kind: "variable", values: scenario.rows },
-        columns: { kind: "variable", values: scenario.columns },
+        rows: {
+          kind: "variable",
+          values: scenario.rows.map((text) => [{ text }]),
+        },
+        columns: {
+          kind: "variable",
+          values: scenario.columns.map((text) => [{ text }]),
+        },
         model: "fixture/text",
         effort: "none",
         budgetUsd: 1,
@@ -149,8 +156,8 @@ test("saved outputs and traces remain readable after publication and reject arti
   try {
     const input: Grid["input"] = {
       format: "html",
-      prompt: "Draw $ROW",
-      rows: { kind: "variable", values: ["cat"] },
+      prompt: "Draw $ROW1",
+      rows: { kind: "variable", values: [[{ text: "cat" }]] },
       columns: { kind: "effort", values: ["none"] },
       model: "fixture/text",
       effort: "none",
@@ -241,7 +248,7 @@ test("shared artifact and independent trace references survive deletion until th
     const input: Grid["input"] = {
       format: "html",
       prompt: "Shared website",
-      rows: { kind: "variable", values: ["one"] },
+      rows: { kind: "variable", values: [[{ text: "one" }]] },
       columns: { kind: "effort", values: ["none"] },
       model: "fixture/text",
       effort: "none",
@@ -573,3 +580,228 @@ test("v15 CAS metadata backfills once per SHA, keeps missing images usable as me
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("v16 saved variable grids reopen with accepted payloads intact and can be edited and forked", () => {
+  const dir = mkdtempSync(join(tmpdir(), "slopgrid-variable-migration-"));
+  const database = join(dir, "app.sqlite");
+  const secret = Buffer.alloc(32, 1);
+  let store = new Store(database, secret);
+  try {
+    const input = gridSchema.parse({
+      format: "markdown",
+      prompt: "Draw $ROW1",
+      rows: { kind: "variable", values: [[{ text: "literal $COLUMN" }]] },
+      columns: { kind: "effort", values: ["none"] },
+      model: "fixture/text",
+      effort: "none",
+      budgetUsd: 1,
+    });
+    const grid: Grid = {
+      id: token(),
+      owner: "owner",
+      input,
+      status: "running",
+      published: false,
+      visibility: "private",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      cells: expandGrid(input).map((cell) => ({ ...cell, id: token() })),
+    };
+    const tasks = createWorkflow(input, grid.cells);
+    tasks[0].status = "running";
+    tasks[0].attemptId = "accepted-attempt";
+    store.insert(grid, tasks);
+    const accepted = store.workflow(grid.id);
+    const title = store.get(grid.id)!.expanded_prompt_for_title;
+    restoreV16VariableInputs(store.db, {
+      ...input,
+      prompt: "Draw $ROW",
+      rows: { kind: "variable", values: ["literal $COLUMN"] },
+    });
+    store.db.close();
+    store = new Store(database, secret);
+    const saved = store.get(grid.id)!;
+    assert.deepEqual(saved.input, input);
+    assert.equal(saved.cells[0].prompt, "Draw literal $COLUMN");
+    assert.equal(saved.expanded_prompt_for_title, title);
+    assert.deepEqual(store.workflow(grid.id), accepted);
+    const edited = gridSchema.parse({
+      ...saved.input,
+      rows: {
+        kind: "variable",
+        values: [[{ text: "edited $ROW1" }, { text: "second field" }]],
+      },
+      prompt: "Draw $ROW1 with $ROW2",
+    });
+    const fork: Grid = {
+      ...saved,
+      id: token(),
+      input: edited,
+      status: "paused",
+      cells: expandGrid(edited).map((cell) => ({ ...cell, id: token() })),
+    };
+    store.insert(fork);
+    assert.equal(
+      store.get(fork.id)!.cells[0].prompt,
+      "Draw edited $ROW1 with second field",
+    );
+    assert.deepEqual(store.get(grid.id)!.input, input);
+    store.db.close();
+    store = new Store(database, secret);
+    assert.deepEqual(store.get(fork.id)!.input, edited);
+    assert.deepEqual(store.workflow(grid.id), accepted);
+  } finally {
+    store.db.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+for (const format of ["markdown", "chat-template", "image"] as const)
+  test(`${format} variable fields and expanded tasks hydrate authoritative dimensions and retain all configured reference links`, () => {
+    const dir = mkdtempSync(join(tmpdir(), "slopgrid-variable-references-"));
+    const database = join(dir, "app.sqlite");
+    const secret = Buffer.alloc(32, 1);
+    let store = new Store(database, secret);
+    try {
+      const owner = { id: "uploader", created: 0 };
+      const generator = store.references.add(
+        referencePng,
+        "generator.png",
+        owner,
+      )!;
+      const criterion = store.references.add(
+        referencePng,
+        "criterion.png",
+        owner,
+      )!;
+      const unused = store.references.add(referencePng, "unused.png", owner)!;
+      const explicit = store.references.add(
+        referencePng,
+        "explicit.png",
+        owner,
+      )!;
+      const forged = (image: typeof generator) => ({
+        ...image,
+        width: 999,
+        height: 999,
+      });
+      const input = gridSchema.parse({
+        format,
+        prompt: "Describe $ROW1",
+        ...(format === "chat-template"
+          ? {
+              messages: [
+                {
+                  role: "user",
+                  content: "Describe $ROW1",
+                  images: [forged(explicit)],
+                },
+              ],
+            }
+          : format === "image"
+            ? { inputReferences: [forged(explicit)] }
+            : {}),
+        rows: {
+          kind: "variable",
+          values: [
+            [
+              { text: "generator", images: [forged(generator)] },
+              { text: "unused", images: [forged(unused)] },
+            ],
+          ],
+        },
+        columns: {
+          kind: "variable",
+          values: [[{ text: "criterion", images: [forged(criterion)] }]],
+        },
+        model: "fixture/text",
+        effort: "none",
+        budgetUsd: 1,
+        judge: {
+          model: "fixture/judge",
+          effort: "none",
+          criteria: [{ text: "Matches $COLUMN1?", correctAnswer: false }],
+        },
+      });
+      const grid: Grid = {
+        id: token(),
+        owner: owner.id,
+        input,
+        status: "paused",
+        published: false,
+        visibility: "private",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        cells: expandGrid(input).map((cell) => ({ ...cell, id: token() })),
+      };
+      store.insert(grid);
+      removeStoredReferenceDimensions(store.db);
+      store.db.close();
+      store = new Store(database, secret);
+      const saved = store.get(grid.id)!;
+      assert.equal(saved.input.rows.kind, "variable");
+      if (saved.input.rows.kind !== "variable")
+        throw new Error("Expected variable rows");
+      assert.deepEqual(saved.input.rows.values[0][0].images, [generator]);
+      assert.deepEqual(saved.input.rows.values[0][1].images, [unused]);
+      assert.equal(saved.input.columns.kind, "variable");
+      if (saved.input.columns.kind !== "variable")
+        throw new Error("Expected variable columns");
+      assert.deepEqual(saved.input.columns.values[0][0].images, [criterion]);
+      const tasks = store.workflow(grid.id);
+      const generation = tasks.find((task) => task.kind === "generation")!;
+      const judgment = tasks.find((task) => task.kind === "judge")!;
+      if (format === "chat-template")
+        assert.deepEqual(generation.input.messages![0].images, [
+          explicit,
+          generator,
+        ]);
+      else if (format === "image")
+        assert.deepEqual(generation.input.imageSettings?.input_references, [
+          explicit.id,
+          generator.id,
+        ]);
+      else {
+        assert.deepEqual(generation.input.images, [generator]);
+        assert.deepEqual(saved.cells[0].images, [generator]);
+      }
+      assert.deepEqual(judgment.input.images, [criterion]);
+      assert.deepEqual(
+        referenceUsageLinks(store.db)
+          .map((link) => link.reference_id)
+          .sort(),
+        [
+          generator,
+          criterion,
+          unused,
+          ...(format === "markdown" ? [] : [explicit]),
+        ]
+          .map(({ id }) => id)
+          .sort(),
+      );
+      assert.equal(
+        store.references.path(generator.id),
+        store.references.path(criterion.id),
+      );
+      const fork: Grid = {
+        ...saved,
+        id: token(),
+        owner: "fork-owner",
+        input: saved.input,
+        cells: expandGrid(saved.input).map((cell) => ({
+          ...cell,
+          id: token(),
+        })),
+      };
+      store.insert(fork);
+      removeStoredGrid(store.db, grid.id);
+      for (const image of [generator, criterion, unused])
+        assert.equal(
+          store.references.allowed(image.id, { id: "fork-owner", created: 0 }),
+          true,
+        );
+      assert.deepEqual(store.get(fork.id)!.input, saved.input);
+      assert.deepEqual(referenceForeignKeyViolations(store.db), []);
+    } finally {
+      store.db.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });

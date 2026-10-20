@@ -78,7 +78,7 @@ test("visited pages and completed outputs survive offline reload without retaini
             }
           : {}),
         rows: { kind: "model", values: ["fixture/text"] },
-        columns: { kind: "variable", values: ["one"] },
+        columns: { kind: "variable", values: [[{ text: "one" }]] },
         model: "fixture/text",
         effort: "none",
         budgetUsd: 1,

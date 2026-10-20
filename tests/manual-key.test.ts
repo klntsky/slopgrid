@@ -124,9 +124,12 @@ for (const format of ["markdown", "image"] as const) {
       remaining = 12;
       const input: GridInput = {
         format,
-        prompt: "$ROW $COLUMN",
-        rows: { kind: "variable", values: ["cat", "dog"] },
-        columns: { kind: "variable", values: ["hat"] },
+        prompt: "$ROW1 $COLUMN1",
+        rows: {
+          kind: "variable",
+          values: [[{ text: "cat" }], [{ text: "dog" }]],
+        },
+        columns: { kind: "variable", values: [[{ text: "hat" }]] },
         model: "fixture/text",
         effort: "default",
         budgetUsd: 5,

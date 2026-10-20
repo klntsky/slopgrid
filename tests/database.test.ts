@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import Database from "better-sqlite3";
 import { Billing } from "../server/billing.js";
 import { initializeDatabase } from "../server/database.js";
+import { migrateVariableInput } from "../shared/variable-migration.js";
 
 import * as migration from "./database-migration-fixture.js";
 import {
@@ -20,7 +21,7 @@ test("production v12 migrates ownership, sessions, references and billing withou
     seedLegacy(db, 12);
     const before = migration.migratedRecordIdentities(db);
     initializeDatabase(db);
-    assert.equal(migration.databaseVersion(db), 16);
+    assert.equal(migration.databaseVersion(db), 17);
     assert.deepEqual(migration.migratedRecordIdentities(db), before);
     assert.deepEqual(migration.migratedGridOwnership(db), {
       owner: "anonymous",
@@ -32,7 +33,7 @@ test("production v12 migrates ownership, sessions, references and billing withou
     });
     const gridData = storedData(db, "grid");
     assert.deepEqual(gridData, {
-      input,
+      input: migrateVariableInput(input),
       status: "paused",
       title: "Saved",
       author: { name: "Author" },
@@ -140,12 +141,12 @@ test("production v12 migrates ownership, sessions, references and billing withou
 });
 
 for (const version of [8, 9, 10, 11, 13]) {
-  test(`production v${version} upgrades directly to v16 with historical metadata intact`, () => {
+  test(`production v${version} upgrades directly to v17 with historical metadata intact`, () => {
     const db = legacyDatabase(version);
     try {
       seedLegacy(db, version);
       initializeDatabase(db);
-      assert.equal(migration.databaseVersion(db), 16);
+      assert.equal(migration.databaseVersion(db), 17);
       const data = storedData(db, "grid");
       assert.equal(data.expanded_prompt_for_title, input.prompt);
       assert.equal(data.revision, undefined);
@@ -191,7 +192,7 @@ test("fresh databases use the canonical schema and reject invalid published flag
   const db = new Database(":memory:");
   try {
     initializeDatabase(db);
-    assert.equal(migration.databaseVersion(db), 16);
+    assert.equal(migration.databaseVersion(db), 17);
     migration.insertPublicationBoundaryGrid(db, "grid", 0, "private");
     assert.throws(
       () =>
@@ -208,7 +209,7 @@ test("fresh databases use the canonical schema and reject invalid published flag
 });
 
 test("unsupported versions leave stored data untouched", () => {
-  for (const version of [7, 17]) {
+  for (const version of [7, 18]) {
     const db = legacyDatabase(version);
     try {
       seedLegacy(db, version);
@@ -437,7 +438,7 @@ test("v14 workflow backfill failure restores a production v13 database atomicall
     assert.deepEqual(snapshot(db), before);
     allowCellBackfill();
     initializeDatabase(db);
-    assert.equal(migration.databaseVersion(db), 16);
+    assert.equal(migration.databaseVersion(db), 17);
   } finally {
     db.close();
   }
@@ -607,7 +608,7 @@ test("v15 blob migration preserves content identity and enforces paired positive
     insertReferenceBlobDimensions(db, "a".repeat(64), 7, 3);
     restoreV15ReferenceSchema(db);
     initializeDatabase(db);
-    assert.equal(migration.databaseVersion(db), 16);
+    assert.equal(migration.databaseVersion(db), 17);
     assert.deepEqual(referenceBlobs(db), [
       { sha256: "a".repeat(64), width: null, height: null },
     ]);
@@ -627,6 +628,123 @@ test("v15 blob migration preserves content identity and enforces paired positive
     assert.deepEqual(referenceBlobs(db), [
       { sha256: "a".repeat(64), width: null, height: null },
       { sha256: "b".repeat(64), width: 3, height: 7 },
+    ]);
+    assert.deepEqual(migration.foreignKeyViolations(db), []);
+  } finally {
+    db.close();
+  }
+});
+
+test("v16 variable migration changes templates only and preserves accepted tasks, receipts and metadata", () => {
+  const db = legacyDatabase(13);
+  try {
+    seedLegacy(db, 13);
+    initializeDatabase(db);
+    const legacyInput = {
+      ...input,
+      prompt: "Compare $ROW and $COLUMN; $ROW1 $ROWS $ROW_suffix",
+      rows: { kind: "variable", values: ["Literal $ROW", "two"] },
+      columns: { kind: "variable", values: ["Literal $COLUMN"] },
+      messages: [{ role: "user", content: "$ROW versus $COLUMN" }],
+      judge: {
+        model: "judge",
+        effort: "none",
+        criteria: [
+          { text: "Is $ROW better than $COLUMN?", correctAnswer: false },
+        ],
+      },
+    };
+    migration.restoreV16VariableInputs(db, legacyInput);
+    migration.retainExpandedVariableTaskText(db);
+    const before = snapshot(db);
+    initializeDatabase(db);
+    const after = snapshot(db);
+    assert.equal(after.version, 17);
+    assert.deepEqual(after.schema, before.schema);
+    assert.deepEqual(
+      after.rows.filter(([table]) => table !== "grids"),
+      before.rows.filter(([table]) => table !== "grids"),
+    );
+    const data = storedData(db, "grid");
+    assert.deepEqual(data, {
+      ...storedData(db, "private-grid"),
+      input: migrateVariableInput(legacyInput),
+      status: "paused",
+      title: "Saved",
+      author: { name: "Author" },
+      expanded_prompt_for_title: input.prompt,
+    });
+    assert.equal(
+      storedData(db, "private-grid").expanded_prompt_for_title,
+      "Already expanded",
+    );
+    const stable = snapshot(db);
+    initializeDatabase(db);
+    assert.deepEqual(snapshot(db), stable);
+    assert.deepEqual(migration.foreignKeyViolations(db), []);
+  } finally {
+    db.close();
+  }
+});
+
+test("v16 template migration rolls back all grids and the version when a later grid write fails", () => {
+  const db = legacyDatabase(13);
+  try {
+    seedLegacy(db, 13);
+    initializeDatabase(db);
+    migration.restoreV16VariableInputs(db, {
+      ...input,
+      prompt: "Hello $ROW",
+    });
+    const unblock = migration.rejectVariableTemplateMigration(db);
+    const before = snapshot(db);
+    assert.throws(() => initializeDatabase(db), /variable migration blocked/);
+    assert.deepEqual(snapshot(db), before);
+    unblock();
+    initializeDatabase(db);
+    assert.equal(migration.databaseVersion(db), 17);
+    assert.equal(storedData(db, "grid").input.prompt, "Hello $ROW1");
+  } finally {
+    db.close();
+  }
+});
+
+test("v17 backfills variable field and chat references while retaining historical usage links", () => {
+  const db = legacyDatabase(13);
+  try {
+    seedLegacy(db, 13);
+    initializeDatabase(db);
+    migration.restoreV16VariableInputs(db, {
+      ...input,
+      prompt: "$ROW1",
+      rows: {
+        kind: "variable",
+        values: [
+          [
+            { text: "used", images: [{ id: "field-used", name: "used.png" }] },
+            {
+              text: "unused",
+              images: [{ id: "field-unused", name: "unused.png" }],
+            },
+          ],
+        ],
+      },
+      messages: [
+        {
+          role: "user",
+          content: "image",
+          images: [{ id: "message", name: "message.png" }],
+        },
+      ],
+    });
+    initializeDatabase(db);
+    assert.deepEqual(migration.migratedGridReferenceIds(db), [
+      { reference_id: "field-unused" },
+      { reference_id: "field-used" },
+      { reference_id: "message" },
+      { reference_id: "missing-reference" },
+      { reference_id: "reference" },
+      { reference_id: "unused-reference" },
     ]);
     assert.deepEqual(migration.foreignKeyViolations(db), []);
   } finally {

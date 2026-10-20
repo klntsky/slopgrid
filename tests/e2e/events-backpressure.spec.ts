@@ -10,7 +10,9 @@ for (const size of [1024, 1024 * 1024]) {
     context,
   }, testInfo) => {
     const f = await runtimeFixture();
-    const grid = f.grid({ rows: { kind: "variable", values: ["cat"] } });
+    const grid = f.grid({
+      rows: { kind: "variable", values: [[{ text: "cat" }]] },
+    });
     const initial = await f.engine.api.getGrid(grid.id);
     let current: GenerationSnapshot = {
       ...initial,

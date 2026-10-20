@@ -27,6 +27,7 @@ function isImageParameter(kind: Axis["kind"]): kind is ScalarImageKind {
 }
 
 function moveAxisToFixed(input: GridInput, axis: Axis): void {
+  if (axis.kind === "variable") return;
   if (isFixedParameter(axis.kind)) {
     const { owner, field } = fixedParameters[axis.kind];
     let settings: ModelParameters;
@@ -52,6 +53,7 @@ function moveAxisToFixed(input: GridInput, axis: Axis): void {
 }
 
 function moveFixedToAxis(input: GridInput, axis: Axis): Axis {
+  if (axis.kind === "variable") return axis;
   if (isFixedParameter(axis.kind)) {
     const { owner, field } = fixedParameters[axis.kind];
     const settings = owner === "generator" ? input : input.judge;

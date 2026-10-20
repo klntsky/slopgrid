@@ -7,12 +7,12 @@ test("chat completion accepts optional blanks after a prefix and preserves expan
   const source = {
     format: "chat-template",
     messages: [
-      { role: "user", content: "Question $ROW" },
+      { role: "user", content: "Question $ROW1" },
       { role: "unfilled", content: "" },
       { role: "unfilled", content: "" },
       { role: "user", content: "Trailing text" },
     ],
-    rows: { kind: "variable", values: ["one"] },
+    rows: { kind: "variable", values: [[{ text: "one" }]] },
     columns: { kind: "model", values: ["test/model"] },
     model: "",
     effort: "default",
@@ -41,12 +41,12 @@ test("chat histories preserve roles and whitespace while expanding variables", (
   const source = {
     format: "chat-template",
     messages: [
-      { role: "system", content: "Use $ROW" },
-      { role: "user", content: "Ask $COLUMN" },
+      { role: "system", content: "Use $ROW1" },
+      { role: "user", content: "Ask $COLUMN1" },
       { role: "assistant", content: "  My answer: " },
     ],
-    rows: { kind: "variable", values: ["Markdown"] },
-    columns: { kind: "variable", values: ["why"] },
+    rows: { kind: "variable", values: [[{ text: "Markdown" }]] },
+    columns: { kind: "variable", values: [[{ text: "why" }]] },
     model: "test/model",
     effort: "default",
     budgetUsd: 3,
@@ -94,11 +94,11 @@ test("chat images belong to supplied user messages, including image-only turns",
   const varied = gridSchema.parse({
     ...source,
     model: "vision",
-    rows: { kind: "variable", values: ["one", "two"] },
+    rows: { kind: "variable", values: [[{ text: "one" }], [{ text: "two" }]] },
     messages: [
       source.messages[0],
       source.messages[1],
-      { ...source.messages[2], content: "Compare $ROW" },
+      { ...source.messages[2], content: "Compare $ROW1" },
       source.messages[3],
     ],
   });
@@ -174,9 +174,15 @@ test("chat images belong to supplied user messages, including image-only turns",
 test("two prompt variables are replaced literally, including dollar signs in values", () => {
   const cells = expandGrid({
     format: "markdown",
-    prompt: "Draw $ROW with $COLUMN. $ROW",
-    rows: { kind: "variable", values: ["a $& cat", "dog"] },
-    columns: { kind: "variable", values: ["hat", "cape"] },
+    prompt: "Draw $ROW1 with $COLUMN1. $ROW1",
+    rows: {
+      kind: "variable",
+      values: [[{ text: "a $& cat" }], [{ text: "dog" }]],
+    },
+    columns: {
+      kind: "variable",
+      values: [[{ text: "hat" }], [{ text: "cape" }]],
+    },
     model: "test/model",
     effort: "medium",
     budgetUsd: 5,
@@ -232,23 +238,23 @@ test("rejects ambiguous axes, unresolved variables, and image reasoning", () => 
 test("every enabled variable must be used before a grid can generate", () => {
   const input = {
     format: "markdown",
-    prompt: "$ROW $COLUMN",
-    rows: { kind: "variable", values: ["cat"] },
-    columns: { kind: "variable", values: ["hat"] },
+    prompt: "$ROW1 $COLUMN1",
+    rows: { kind: "variable", values: [[{ text: "cat" }]] },
+    columns: { kind: "variable", values: [[{ text: "hat" }]] },
     model: "fixture/text",
     effort: "none",
     budgetUsd: 5,
   };
   assert.equal(gridSchema.safeParse(input).success, true);
-  for (const prompt of ["Draw a cat", "$ROW", "$COLUMN"])
+  for (const prompt of ["Draw a cat", "$ROW1", "$COLUMN1"])
     assert.equal(gridSchema.safeParse({ ...input, prompt }).success, false);
 });
 
 test("only text grids require a valid budget, while image grids normalize an unused invalid budget", () => {
   const input = {
-    prompt: "$ROW $COLUMN",
-    rows: { kind: "variable", values: ["cat"] },
-    columns: { kind: "variable", values: ["hat"] },
+    prompt: "$ROW1 $COLUMN1",
+    rows: { kind: "variable", values: [[{ text: "cat" }]] },
+    columns: { kind: "variable", values: [[{ text: "hat" }]] },
     model: "fixture/image",
     effort: "default",
   };
@@ -272,11 +278,11 @@ test("only text grids require a valid budget, while image grids normalize an unu
 test("generation requires an explicit fixed model or selected model axis", () => {
   const input = {
     format: "markdown",
-    prompt: "$ROW",
+    prompt: "$ROW1",
     model: "",
     effort: "default",
     budgetUsd: 5,
-    rows: { kind: "variable", values: ["cat"] },
+    rows: { kind: "variable", values: [[{ text: "cat" }]] },
     columns: { kind: "effort", values: ["none"] },
   };
   assert.equal(gridSchema.safeParse(input).success, false);
@@ -297,9 +303,9 @@ test("large grids preserve every axis combination and requested parallelism", ()
   const values = Array.from({ length: 9 }, (_, i) => String(i));
   const input = gridSchema.parse({
     format: "markdown",
-    prompt: "$ROW/$COLUMN",
-    rows: { kind: "variable", values },
-    columns: { kind: "variable", values },
+    prompt: "$ROW1/$COLUMN1",
+    rows: { kind: "variable", values: values.map((text) => [{ text }]) },
+    columns: { kind: "variable", values: values.map((text) => [{ text }]) },
     model: "fixture/text",
     effort: "none",
     budgetUsd: 5,
@@ -389,8 +395,8 @@ test("shared image settings combine with axes and omit Auto defaults", () => {
     assert.equal(
       gridSchema.safeParse({
         ...input,
-        rows: { kind: "variable", values: ["cat"] },
-        prompt: "$ROW",
+        rows: { kind: "variable", values: [[{ text: "cat" }]] },
+        prompt: "$ROW1",
         imageSettings,
       }).success,
       false,

@@ -1,14 +1,15 @@
 import type Database from "better-sqlite3";
 import { expandGrid, type Cell, type GridInput } from "./domain.js";
 import { generationGroupKey } from "../shared/generation-key.js";
+import { migrateVariableInput } from "../shared/variable-migration.js";
 
-const schemaVersion = 16;
+const schemaVersion = 17;
 export function initializeDatabase(db: Database.Database) {
   const version = db.pragma("user_version", { simple: true });
   if (version === schemaVersion) return;
   if (
     typeof version !== "number" ||
-    ![0, 8, 9, 10, 11, 12, 13, 14, 15].includes(version)
+    ![0, 8, 9, 10, 11, 12, 13, 14, 15, 16].includes(version)
   )
     throw new Error("Unsupported database version");
   db.transaction(() => {
@@ -153,15 +154,46 @@ export function initializeDatabase(db: Database.Database) {
       ALTER TABLE reference_images ADD COLUMN sha256 TEXT REFERENCES reference_blobs(sha256);
       CREATE INDEX reference_images_sha256 ON reference_images(sha256,id);
     `);
-    db.exec(`
-      ALTER TABLE reference_blobs ADD COLUMN width INTEGER
-        CHECK (width IS NULL OR width > 0);
-      ALTER TABLE reference_blobs ADD COLUMN height INTEGER
-        CHECK ((width IS NULL AND height IS NULL) OR
-          (width IS NOT NULL AND height IS NOT NULL AND height > 0));
-    `);
+    if (version < 16)
+      db.exec(`
+        ALTER TABLE reference_blobs ADD COLUMN width INTEGER
+          CHECK (width IS NULL OR width > 0);
+        ALTER TABLE reference_blobs ADD COLUMN height INTEGER
+          CHECK ((width IS NULL AND height IS NULL) OR
+            (width IS NOT NULL AND height IS NOT NULL AND height > 0));
+      `);
+    migrateVariables(db);
     db.pragma(`user_version = ${schemaVersion}`);
   }).immediate();
+}
+
+function migrateVariables(db: Database.Database) {
+  const grids = db
+    .prepare("SELECT id,data FROM grids ORDER BY rowid")
+    .all() as {
+    id: string;
+    data: string;
+  }[];
+  const save = db.prepare("UPDATE grids SET data=? WHERE id=?");
+  const link = db.prepare(
+    "INSERT OR IGNORE INTO grid_reference_images (grid_id,reference_id) VALUES (?,?)",
+  );
+  for (const grid of grids) {
+    const data = JSON.parse(grid.data) as { input: GridInput };
+    const input = migrateVariableInput(data.input) as GridInput;
+    if (input !== data.input)
+      save.run(JSON.stringify({ ...data, input }), grid.id);
+    // Backfill configured attachments without removing existing links, including
+    // historical links retained for accepted workflow payloads.
+    for (const message of input.messages ?? [])
+      for (const image of message.images ?? []) link.run(grid.id, image.id);
+    for (const axis of [input.rows, input.columns]) {
+      if (axis.kind !== "variable") continue;
+      for (const fields of axis.values)
+        for (const field of fields)
+          for (const image of field.images ?? []) link.run(grid.id, image.id);
+    }
+  }
 }
 
 type LegacyCell = Cell & {
@@ -196,7 +228,8 @@ function migrateWorkflow(db: Database.Database) {
     data: string;
   }[];
   for (const grid of grids) {
-    const { input } = JSON.parse(grid.data) as { input: GridInput };
+    const savedGrid = JSON.parse(grid.data) as { input: GridInput };
+    const input = migrateVariableInput(savedGrid.input) as GridInput;
     const rows = db
       .prepare(
         "SELECT id,position,data FROM cells WHERE grid_id=? ORDER BY position",
@@ -323,7 +356,11 @@ function migrateWorkflow(db: Database.Database) {
             null,
             null,
             JSON.stringify({
-              input: { model, effort, criteria: input.judge?.criteria ?? [] },
+              input: {
+                model,
+                effort,
+                criteria: savedGrid.input.judge?.criteria ?? [],
+              },
               attemptId,
               error,
               errorCode,

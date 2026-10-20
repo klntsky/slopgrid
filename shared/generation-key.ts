@@ -12,7 +12,14 @@ export function generationGroupKey(
       model: cell.model,
       effort: format === "image" ? undefined : cell.effort,
       prompt: cell.prompt,
-      messages: cell.messages,
+      messages: cell.messages?.map(({ role, content, images }) => ({
+        role,
+        content,
+        images: images?.length ? images.map(({ id }) => ({ id })) : undefined,
+      })),
+      images: cell.images?.length
+        ? cell.images.map(({ id }) => ({ id }))
+        : undefined,
       budgetUsd: format === "image" ? undefined : cell.budgetUsd,
       imageSettings:
         format === "image"

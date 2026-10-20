@@ -8,6 +8,10 @@ import { ExpandButton } from "../components/expand-button";
 import { ContainedImage } from "../contained-image";
 import { OutputCell, type CellView } from "./output-cell";
 import { useItemScrollSync } from "./use-item-scroll-sync";
+import {
+  selectedReferences,
+  type ReferenceImage,
+} from "../../server/image-settings";
 function ResizeHandle({
   axis,
   index,
@@ -52,9 +56,7 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
   );
   const reference =
     selection?.kind === "reference"
-      ? Object.values(g.input.referenceGroups ?? {})
-          .flat()
-          .find((image) => image.id === selection.id)
+      ? selectedReferences(g.input).find((image) => image.id === selection.id)
       : undefined;
   const expandedId = expanded?.id ?? reference?.id;
   const expandedView = useRef<HTMLElement>(null);
@@ -113,12 +115,51 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
     };
   }, [expandedId]);
   const title = (cell: ViewGrid["cells"][number]) =>
-    `${g.input.rows.values[cell.row]} / ${g.input.columns.values[cell.column]}`;
-  function axisLabel(value: string, axis: "rows" | "columns") {
-    const kind = g.input[axis].kind;
+    `${displayValue(g.input.rows.values[cell.row], g.input.rows.kind)} / ${displayValue(g.input.columns.values[cell.column], g.input.columns.kind)}`;
+  function referencePreviews(images: readonly ReferenceImage[] = []) {
+    return (
+      <span className="axis-reference-previews">
+        {images.map((image, index) => (
+          <button
+            type="button"
+            className="text-button"
+            key={`${image.id}-${index}`}
+            aria-label={`Expand reference image: ${image.name}`}
+            onClick={(event) =>
+              expand("reference", image.id, event.currentTarget)
+            }
+          >
+            <img
+              src={`/api/references/${image.id}`}
+              alt={image.name}
+              loading="lazy"
+            />
+          </button>
+        ))}
+      </span>
+    );
+  }
+  function axisLabel(index: number, side: "rows" | "columns") {
+    const axis = g.input[side];
+    if (axis.kind === "variable")
+      return (
+        <span className="variable-axis-fields">
+          {axis.values[index].map((field, column) => (
+            <span className="variable-axis-field" key={column}>
+              <span>
+                ${side === "rows" ? "ROW" : "COLUMN"}
+                {column + 1}: {field.text}
+              </span>
+              {!!field.images?.length && referencePreviews(field.images)}
+            </span>
+          ))}
+        </span>
+      );
+    const { kind } = axis;
+    const value = axis.values[index];
     return (
       <>
-        <span className={axis === "rows" ? "row-label" : undefined}>
+        <span className={side === "rows" ? "row-label" : undefined}>
           {kind === "model" || kind === "judge_model" ? (
             <>
               {kind === "judge_model" && "judge model: "}
@@ -128,33 +169,12 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
             `references: ${value}`
           ) : kind === "effort" || kind === "judge_effort" ? (
             `${kind === "judge_effort" ? "judge thinking" : "thinking"}: ${displayValue(value, kind)}`
-          ) : kind !== "variable" ? (
-            `${dimensionNames[kind].toLowerCase()}: ${value}`
           ) : (
-            displayValue(value, kind)
+            `${dimensionNames[kind].toLowerCase()}: ${value}`
           )}
         </span>
-        {kind === "input_references" && (
-          <span className="axis-reference-previews">
-            {g.input.referenceGroups?.[value]?.map((image, index) => (
-              <button
-                type="button"
-                className="text-button"
-                key={`${image.id}-${index}`}
-                aria-label={`Expand reference image: ${image.name}`}
-                onClick={(event) =>
-                  expand("reference", image.id, event.currentTarget)
-                }
-              >
-                <img
-                  src={`/api/references/${image.id}`}
-                  alt={image.name}
-                  loading="lazy"
-                />
-              </button>
-            ))}
-          </span>
-        )}
+        {kind === "input_references" &&
+          referencePreviews(g.input.referenceGroups?.[value])}
       </>
     );
   }
@@ -170,26 +190,26 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
           <table className="output-grid">
             <colgroup>
               <col />
-              {g.input.columns.values.map((c) => (
-                <col key={c} />
+              {g.input.columns.values.map((_, column) => (
+                <col key={column} />
               ))}
             </colgroup>
             <thead inert={!!expandedId}>
               <tr>
                 <th className="corner" />
-                {g.input.columns.values.map((c, column) => (
-                  <th scope="col" key={c}>
-                    {axisLabel(c, "columns")}
+                {g.input.columns.values.map((_, column) => (
+                  <th scope="col" key={column}>
+                    {axisLabel(column, "columns")}
                     <ResizeHandle axis="columns" index={column} />
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {g.input.rows.values.map((r, row) => (
-                <tr key={r}>
+              {g.input.rows.values.map((_, row) => (
+                <tr key={row}>
                   <th scope="row" inert={!!expandedId}>
-                    {axisLabel(r, "rows")}
+                    {axisLabel(row, "rows")}
                     <ResizeHandle axis="rows" index={row} />
                   </th>
                   {g.input.columns.values.map((_, column) => {

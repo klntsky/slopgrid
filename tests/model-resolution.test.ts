@@ -4,12 +4,17 @@ import assert from "node:assert/strict";
 import { Provider, type Model } from "../server/provider.js";
 import { resolveGridModels } from "../server/model-resolution.js";
 import type { Cell, GridInput } from "../server/domain.js";
+import {
+  generatorReferences,
+  judgeReferences,
+  selectedReferences,
+} from "../server/image-settings.js";
 
 const input: GridInput = {
   format: "markdown",
-  prompt: "Draw $ROW with $COLUMN",
-  rows: { kind: "variable", values: ["cat"] },
-  columns: { kind: "variable", values: ["hat"] },
+  prompt: "Draw $ROW1 with $COLUMN1",
+  rows: { kind: "variable", values: ["cat"].map((text) => [{ text }]) },
+  columns: { kind: "variable", values: ["hat"].map((text) => [{ text }]) },
   model: "~fixture/latest",
   effort: "default",
   budgetUsd: 5,
@@ -35,7 +40,7 @@ test("published alias targets resolve in both axis orientations and duplicate ta
   for (const axis of ["rows", "columns"] as const) {
     const setup = {
       ...input,
-      prompt: axis === "rows" ? "Draw $COLUMN" : "Draw $ROW",
+      prompt: axis === "rows" ? "Draw $COLUMN1" : "Draw $ROW1",
       [axis]: {
         kind: "model",
         values: ["~fixture/latest", "fixture/v1", "fixture/v2"],
@@ -223,6 +228,79 @@ test("future chat images require image-capable fixed and axis judges", () => {
     catalog,
   );
   assert.equal(withoutImages.judge?.model, "fixture/v2");
+});
+
+test("variable image admission follows generator and judge consumption, not field ownership", () => {
+  const expected = { id: "expected", name: "answer.png" };
+  const unused = { id: "unused", name: "unused.png" };
+  const catalog = judgeModels().map((model) => ({
+    ...model,
+    imageInput: model.id !== "fixture/v2",
+  }));
+  for (const side of ["rows", "columns"] as const) {
+    const token = side === "rows" ? "$ROW2" : "$COLUMN2";
+    const source: GridInput = {
+      ...input,
+      prompt: "Describe a shape.",
+      model: "fixture/v2",
+      rows: { kind: "model", values: ["fixture/v2"] },
+      columns: { kind: "model", values: ["fixture/v2"] },
+      [side]: {
+        kind: "variable",
+        values: [
+          [
+            { text: "unused", images: [unused] },
+            { text: "Expected shape", images: [expected] },
+          ],
+        ],
+      },
+      judge: {
+        model: "fixture/v1",
+        effort: "default",
+        criteria: [{ text: `Matches ${token}?`, correctAnswer: false }],
+      },
+    };
+    assert.deepEqual(selectedReferences(source), [unused, expected]);
+    assert.deepEqual(generatorReferences(source), []);
+    assert.deepEqual(judgeReferences(source), [expected]);
+    assert.doesNotThrow(() => resolveGridModels(source, catalog));
+    assert.throws(
+      () =>
+        resolveGridModels(
+          {
+            ...source,
+            judge: { ...source.judge!, model: "fixture/v2" },
+          },
+          catalog,
+        ),
+      /judge model must support image inputs/,
+    );
+    assert.throws(
+      () => resolveGridModels({ ...source, prompt: token }, catalog),
+      /selected model does not support image inputs/,
+    );
+    const visionGenerator: GridInput = {
+      ...source,
+      prompt: token,
+      [side === "rows" ? "columns" : "rows"]: {
+        kind: "model",
+        values: ["fixture/v1"],
+      },
+      judge: {
+        ...source.judge!,
+        model: "fixture/v2",
+        criteria: [{ text: "A shape?", correctAnswer: true }],
+      },
+    };
+    assert.throws(
+      () => resolveGridModels(visionGenerator, catalog),
+      /judge model must support image inputs/,
+    );
+    assert.deepEqual(
+      generatorReferences({ ...source, prompt: "$ROW999 $COLUMN0 $ROW" }),
+      [],
+    );
+  }
 });
 
 test("judge aliases resolve in fixed settings and both axes, collapsing duplicate targets", () => {

@@ -6,6 +6,7 @@ import {
   create,
   expectProgress,
   finishPublishing,
+  setVariableValues,
 } from "./helpers";
 
 async function readGrid(
@@ -49,7 +50,7 @@ test("reuse selection survives Edit, reload, OAuth and Fork, and unchecked draft
   await expect(reuse).not.toBeChecked();
   await reuse.check();
   await page.getByLabel("Budget limit per cell", { exact: true }).fill("0.5");
-  await page.getByLabel("Row values").fill("dog\ncat");
+  await setVariableValues(page, "Rows", ["dog", "cat"]);
   await request.post("/fixture/reset", {
     data: { holdGenerations: true, textCost: 0.25 },
   });
@@ -202,11 +203,11 @@ for (const [kind, initial, changed] of [
     await connectOpenRouter(page);
     const config = {
       format: "image",
-      prompt: "Draw $ROW",
+      prompt: "Draw $ROW1",
       model: "fixture/image",
       effort: "default",
       budgetUsd: 5,
-      rows: { kind: "variable", values: ["landscape"] },
+      rows: { kind: "variable", values: [[{ text: "landscape" }]] },
       columns: { kind, values: [initial] },
     };
     const source = await generate(page, config);

@@ -1,6 +1,6 @@
 import type { GenerationTask } from "./domain.js";
 import type { Store } from "./store.js";
-import type { ReferenceContent } from "./image-references.js";
+import type { ReferenceContent, ReferenceInputs } from "./image-references.js";
 import { readChatOutput, withChatImages } from "../shared/chat-output.js";
 import { rasterizeSvg } from "./svg-raster.js";
 import { chatMessages, type ChatInputMessage } from "./chat-messages.js";
@@ -16,6 +16,7 @@ export async function loadJudgeMessages(
   store: Store,
   generation: GenerationTask,
   signal?: AbortSignal,
+  inputReferences?: ReferenceInputs,
 ): Promise<ChatInputMessage[]> {
   signal?.throwIfAborted();
   const { format } = generation.input;
@@ -42,9 +43,9 @@ export async function loadJudgeMessages(
     throw new Error("The generated output is unavailable for judging.");
   const bytes = Buffer.from(data.buffer, data.byteOffset, data.byteLength);
   const ids = referenceIds(generation.input);
-  const references = ids.length
-    ? await store.references.loader()(ids)
-    : undefined;
+  const references =
+    inputReferences ??
+    (ids.length ? await store.references.loader()(ids) : undefined);
   signal?.throwIfAborted();
   if (format === "chat-template")
     return chatMessages(
@@ -54,8 +55,23 @@ export async function loadJudgeMessages(
       ),
       references,
     );
+  const sourceMessages = ids.length
+    ? chatMessages(
+        [
+          {
+            role: "user",
+            content: generation.input.prompt,
+            images: ids.map((id) => ({ id, name: id })),
+          },
+        ],
+        references,
+      )
+    : [];
   if (format === "markdown")
-    return [{ role: "assistant", content: bytes.toString("utf8") }];
+    return [
+      ...sourceMessages,
+      { role: "assistant", content: bytes.toString("utf8") },
+    ];
   const mediaType =
     format === "svg"
       ? "image/svg+xml"
@@ -79,22 +95,7 @@ export async function loadJudgeMessages(
   // AI SDK 7 uses file parts for images; OpenRouter 3.1.0 encodes user image
   // files as image_url but drops assistant file parts.
   return [
-    ...(ids.length
-      ? [
-          {
-            role: "user" as const,
-            content: ids.map((id) => {
-              const reference = references?.get(id);
-              if (!reference) throw new Error("Reference image is unavailable");
-              return {
-                type: "file" as const,
-                data: reference.bytes,
-                mediaType: reference.mediaType,
-              };
-            }),
-          },
-        ]
-      : []),
+    ...sourceMessages,
     {
       role: "user",
       content: [

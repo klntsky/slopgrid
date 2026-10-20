@@ -1,5 +1,10 @@
 import { test, expect } from "./fixtures";
-import { connectOpenRouter, expectProgress, selectModel } from "./helpers";
+import {
+  connectOpenRouter,
+  expectProgress,
+  selectModel,
+  setVariableValues,
+} from "./helpers";
 import { rasterizeSvg } from "../../server/svg-raster";
 
 test.use({ serviceWorkers: "block" });
@@ -56,7 +61,7 @@ test("chat images reserve their proportions through delayed loads and failures",
     await connectOpenRouter(page);
     await page
       .getByLabel("Message 1", { exact: true })
-      .fill("Compare these images $ROW $COLUMN");
+      .fill("Compare these images $ROW1 $COLUMN1");
     await page
       .getByLabel("Add images to message 1", { exact: true })
       .setInputFiles([
@@ -88,11 +93,11 @@ test("chat images reserve their proportions through delayed loads and failures",
     await page
       .getByRole("combobox", { name: "Rows", exact: true })
       .selectOption("variable");
-    await page.getByLabel("Row values", { exact: true }).fill("one");
+    await setVariableValues(page, "Rows", ["one"]);
     await page
       .getByRole("combobox", { name: "Columns", exact: true })
       .selectOption("variable");
-    await page.getByLabel("Column values", { exact: true }).fill("two");
+    await setVariableValues(page, "Columns", ["two"]);
     await selectModel(page, "fixture/text");
     const uploaded = (name: string) =>
       page

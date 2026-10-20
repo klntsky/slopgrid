@@ -18,9 +18,9 @@ test("public slug claims validate, serialize, persist and preserve existing link
   const lateSlug = `late-${token()}`;
   const input: Grid["input"] = {
     format: "markdown",
-    prompt: "$ROW",
+    prompt: "$ROW1",
     model: "fixture/text",
-    rows: { kind: "variable", values: ["cat"] },
+    rows: { kind: "variable", values: [[{ text: "cat" }]] },
     columns: { kind: "effort", values: ["none"] },
     effort: "none",
     budgetUsd: 5,
@@ -86,14 +86,8 @@ test("public slug claims validate, serialize, persist and preserve existing link
     );
     assert.equal(store.get(first)!.visibility, "private");
   }
-  assert.equal(
-    (await publish(first, slug, "public", false)).status,
-    404,
-  );
-  assert.equal(
-    (await publish(first, slug, "unlisted")).status,
-    409,
-  );
+  assert.equal((await publish(first, slug, "public", false)).status, 404);
+  assert.equal((await publish(first, slug, "unlisted")).status, 409);
   assert.equal((await resolve(slug)).status, 404);
   const claims = await Promise.all([
     publish(first, slug),

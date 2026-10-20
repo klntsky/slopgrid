@@ -1,6 +1,11 @@
 import { test, expect } from "./fixtures";
 import type { Page } from "@playwright/test";
-import { connectOpenRouter, expectProgress, selectModel } from "./helpers";
+import {
+  connectOpenRouter,
+  expectProgress,
+  selectModel,
+  setVariableValues,
+} from "./helpers";
 
 async function history(page: Page) {
   return page
@@ -69,7 +74,7 @@ test("chat editing, ordering, persistence and completion without explicit blanks
   await page.setViewportSize({ width: 1280, height: 720 });
   await page
     .getByLabel("Message 1", { exact: true })
-    .fill("Question $ROW $COLUMN");
+    .fill("Question $ROW1 $COLUMN1");
   await page.locator(".chat-append").hover();
   await page.getByRole("button", { name: "Add message", exact: true }).click();
   await setMessageRole(page, 2, "assistant");
@@ -126,11 +131,11 @@ test("chat editing, ordering, persistence and completion without explicit blanks
   await page
     .getByRole("combobox", { name: "Rows", exact: true })
     .selectOption("variable");
-  await page.getByLabel("Row values").fill("cat");
+  await setVariableValues(page, "Rows", ["cat"]);
   await page
     .getByRole("combobox", { name: "Columns", exact: true })
     .selectOption("variable");
-  await page.getByLabel("Column values").fill("hat");
+  await setVariableValues(page, "Columns", ["hat"]);
   await selectModel(page, "fixture/text");
   await connectOpenRouter(page);
   await expect(page.getByLabel("Message 3", { exact: true })).toHaveValue(

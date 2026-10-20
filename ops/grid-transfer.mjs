@@ -179,8 +179,8 @@ export function transferGrid(Database, options) {
   try {
     for (const db of [source, target]) {
       check(
-        db.pragma("user_version", { simple: true }) === 16,
-        "Grid transfer requires database schema 16",
+        db.pragma("user_version", { simple: true }) === 17,
+        "Grid transfer requires database schema 17",
       );
       db.pragma("foreign_keys=ON");
       db.exec(apply ? "BEGIN IMMEDIATE" : "BEGIN");

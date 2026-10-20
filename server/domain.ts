@@ -7,7 +7,14 @@ import {
   type ScalarImageKind,
   referenceImageSchema,
   type ImageSettings,
+  type ReferenceImage,
 } from "./image-settings.js";
+import {
+  interpolateVariables,
+  mergeVariableImages,
+  promptVariableIssue,
+} from "./prompt-variables.js";
+export type { VariableField } from "./prompt-variables.js";
 export const efforts = [
   "default",
   "none",
@@ -26,13 +33,29 @@ export const kinds = [
   "variable",
   ...imageKinds,
 ] as const;
-const axis = z.object({
-  kind: z.enum(kinds),
+const variableFieldSchema = z.object({
+  text: z.string(),
+  images: z.array(referenceImageSchema).optional(),
+});
+const variableAxis = z.object({
+  kind: z.literal("variable"),
+  values: z
+    .array(z.array(variableFieldSchema).min(1))
+    .min(1)
+    .refine(
+      (values) => values.every((fields) => fields.length === values[0].length),
+      "Variable values must have the same number of fields.",
+    ),
+});
+const scalarAxis = z.object({
+  kind: z.enum(kinds.filter((kind) => kind !== "variable")),
   values: z
     .array(z.string().trim().min(1))
     .min(1)
     .refine((v) => new Set(v).size === v.length, "Values must be distinct"),
 });
+const axis = z.discriminatedUnion("kind", [variableAxis, scalarAxis]);
+export type GridAxis = z.infer<typeof axis>;
 const budgetSchema = z.number().finite().positive();
 const chatMessageSchema = z
   .object({
@@ -120,20 +143,21 @@ const gridFields = {
     .optional(),
   parallelWorkers: z.number().int().min(1).optional(),
 };
-export const gridSchema = z
-  .discriminatedUnion("format", [
-    z.object({
-      ...gridFields,
-      format: z.enum(["svg", "markdown", "html", "chat-template"]),
-      budgetUsd: budgetSchema,
-    }),
-    z.object({
-      ...gridFields,
-      format: z.literal("image"),
-      // Keep numeric metadata for saved grids; image inference ignores it.
-      budgetUsd: budgetSchema.catch(3),
-    }),
-  ])
+const gridInputSchema = z.discriminatedUnion("format", [
+  z.object({
+    ...gridFields,
+    format: z.enum(["svg", "markdown", "html", "chat-template"]),
+    budgetUsd: budgetSchema,
+  }),
+  z.object({
+    ...gridFields,
+    format: z.literal("image"),
+    // Keep numeric metadata for saved grids; image inference ignores it.
+    budgetUsd: budgetSchema.catch(3),
+  }),
+]);
+export type GridInput = z.infer<typeof gridInputSchema>;
+export const gridSchema = gridInputSchema
   .transform((g) => {
     if (isChatFormat(g.format)) g.prompt = chatText(g.messages ?? []);
     else delete g.messages;
@@ -184,6 +208,7 @@ export const gridSchema = z
       if (imageKinds.some((kind) => kind === axis.kind) && g.format !== "image")
         issue("Image settings require Image output");
       if (
+        axis.kind !== "variable" &&
         imageKinds.some((kind) => kind === axis.kind) &&
         axis.kind !== "input_references" &&
         axis.values.some(
@@ -201,12 +226,8 @@ export const gridSchema = z
       )
         issue("Add images to every reference group");
     }
-    const variableIssue = unusedVariableIssue(g);
+    const variableIssue = promptVariableIssue(g);
     if (variableIssue) issue(variableIssue);
-    if (g.prompt.includes("$ROW") && g.rows.kind !== "variable")
-      issue("Choose prompt variables for rows to use $ROW");
-    if (g.prompt.includes("$COLUMN") && g.columns.kind !== "variable")
-      issue("Choose prompt variables for columns to use $COLUMN");
   })
   .transform((g) => {
     const dimensions = [g.rows.kind, g.columns.kind];
@@ -221,9 +242,9 @@ export const gridSchema = z
       !g.inputReferences?.length
     )
       delete g.inputReferences;
-    const groups = [g.rows, g.columns]
-      .filter((axis) => axis.kind === "input_references")
-      .flatMap((axis) => axis.values);
+    const groups = [g.rows, g.columns].flatMap((axis) =>
+      axis.kind === "input_references" ? axis.values : [],
+    );
     if (groups.length)
       g.referenceGroups = Object.fromEntries(
         groups.map((name) => [name, g.referenceGroups![name]]),
@@ -231,17 +252,6 @@ export const gridSchema = z
     else delete g.referenceGroups;
     return g;
   });
-export type GridInput = z.infer<typeof gridSchema>;
-export function unusedVariableIssue(
-  input: Pick<GridInput, "prompt" | "rows" | "columns">,
-): string | undefined {
-  for (const [axis, token, label] of [
-    [input.rows, "$ROW", "row"],
-    [input.columns, "$COLUMN", "column"],
-  ] as const)
-    if (axis.kind === "variable" && !input.prompt.includes(token))
-      return `Include ${token} in the prompt for ${label} variables.`;
-}
 export type Completion = {
   phase: "direct" | "image" | "judge";
   finishReason?: string;
@@ -263,6 +273,7 @@ export type Cell = {
   effort: string;
   prompt: string;
   messages?: ChatMessage[];
+  images?: ReferenceImage[];
   budgetUsd: number;
   imageSettings?: ImageSettings;
   status: "pending" | "running" | "complete" | "error";
@@ -313,7 +324,13 @@ export type Task<Input, Output> = WorkflowState & {
 };
 export type GenerationParameters = Pick<
   Cell,
-  "model" | "effort" | "prompt" | "messages" | "budgetUsd" | "imageSettings"
+  | "model"
+  | "effort"
+  | "prompt"
+  | "messages"
+  | "images"
+  | "budgetUsd"
+  | "imageSettings"
 >;
 export type GenerationInput = GenerationParameters & {
   format: GridInput["format"];
@@ -344,6 +361,7 @@ export type JudgmentInput = {
   model: string;
   effort: string;
   criteria: NonNullable<GridInput["judge"]>["criteria"];
+  images?: ReferenceImage[];
 };
 export type JudgmentTask = Task<JudgmentInput, { results: JudgeResult[] }> & {
   kind: "judge";
@@ -390,8 +408,8 @@ export type Grid = {
 };
 export type StoredGrid = Grid & { expanded_prompt_for_title: string };
 export function expandGrid(input: GridInput): Omit<Cell, "id">[] {
-  return input.rows.values.flatMap((r, row) =>
-    input.columns.values.map((c, column) => {
+  return input.rows.values.flatMap((_, row) =>
+    input.columns.values.map((_, column) => {
       const selections: Record<string, string> = {
         model: input.model,
         effort: input.effort,
@@ -408,10 +426,12 @@ export function expandGrid(input: GridInput): Omit<Cell, "id">[] {
         imageSettings.input_references = input.inputReferences.map(
           (image) => image.id,
         );
-      for (const [a, v] of [
-        [input.rows, r],
-        [input.columns, c],
-      ] as const)
+      for (const [a, index] of [
+        [input.rows, row],
+        [input.columns, column],
+      ] as const) {
+        if (a.kind === "variable") continue;
+        const v = a.values[index];
         if (a.kind === "model" || a.kind === "effort") selections[a.kind] = v;
         else if (a.kind === "judge_model" || a.kind === "judge_effort") {
           if (judge) {
@@ -421,25 +441,42 @@ export function expandGrid(input: GridInput): Omit<Cell, "id">[] {
         } else if (a.kind === "input_references")
           imageSettings.input_references =
             input.referenceGroups?.[v]?.map((image) => image.id) ?? [];
-        else if (a.kind !== "variable") imageSettings[a.kind] = v;
+        else imageSettings[a.kind] = v;
+      }
+      const messages = input.messages?.map((message) => {
+        const content = interpolateVariables(
+          message.content,
+          input,
+          row,
+          column,
+        );
+        const images = mergeVariableImages(message.images, content.images);
+        return {
+          ...message,
+          content: content.text,
+          ...(images ? { images } : {}),
+        };
+      });
+      const expanded = messages
+        ? { text: chatText(messages), images: undefined }
+        : interpolateVariables(input.prompt, input, row, column);
+      if (input.format === "image" && expanded.images)
+        imageSettings.input_references = [
+          ...new Set([
+            ...(imageSettings.input_references ?? []),
+            ...expanded.images.map((image) => image.id),
+          ]),
+        ];
       return {
         row,
         column,
         ...selections,
         model: selections.model,
         effort: selections.effort,
-        prompt: input.prompt
-          .replaceAll("$ROW", () => r)
-          .replaceAll("$COLUMN", () => c),
-        ...(input.messages
-          ? {
-              messages: input.messages?.map((message) => ({
-                ...message,
-                content: message.content
-                  .replaceAll("$ROW", () => r)
-                  .replaceAll("$COLUMN", () => c),
-              })),
-            }
+        prompt: expanded.text,
+        ...(messages ? { messages } : {}),
+        ...(input.format !== "image" && !messages && expanded.images
+          ? { images: expanded.images }
           : {}),
         budgetUsd: input.budgetUsd,
         ...(input.format === "image"

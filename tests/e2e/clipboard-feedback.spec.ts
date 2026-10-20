@@ -43,5 +43,5 @@ test("clipboard pending and failed output loads recover with the actual output",
   await page.getByRole("button", { name: "Copy prompt", exact: true }).click();
   await expect
     .poll(() => page.evaluate(() => navigator.clipboard.readText()))
-    .toBe("Draw $ROW wearing a $COLUMN");
+    .toBe("Draw $ROW1 wearing a $COLUMN1");
 });

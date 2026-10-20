@@ -159,9 +159,7 @@ export class Store {
   // Creation is the only operation that writes both metadata and generation state.
   insert(grid: Grid, tasks = createWorkflow(grid.input, grid.cells)) {
     grid.input = this.references.input(grid.input);
-    for (const task of tasks)
-      if (task.kind === "generation")
-        task.input.messages = this.references.messages(task.input.messages);
+    for (const task of tasks) this.references.task(task);
     projectWorkflow(grid, tasks);
     const {
       id,
@@ -227,8 +225,8 @@ export class Store {
       .all(gridId) as WorkflowRow[];
     return rows.map((row) => {
       const task = readTask(row);
+      this.references.task(task);
       if (task.kind === "generation") {
-        task.input.messages = this.references.messages(task.input.messages);
         if (task.input.format === "chat-template" && task.progress?.draft)
           task.progress.draft = this.references.draft(task.progress.draft);
       }
@@ -260,6 +258,7 @@ export class Store {
           WHERE workflow_tasks.grid_id=excluded.grid_id`,
       );
       for (const task of tasks) {
+        this.references.task(task);
         let output: unknown = task.output;
         let artifactId: string | undefined;
         let thinkingSourceId: string | undefined;
@@ -305,13 +304,7 @@ export class Store {
           artifactId ?? null,
           thinkingSourceId ?? null,
           JSON.stringify({
-            input:
-              task.kind === "generation"
-                ? {
-                    ...task.input,
-                    messages: this.references.messages(task.input.messages),
-                  }
-                : task.input,
+            input: task.input,
             output,
             attemptId: task.attemptId,
             error: task.error,

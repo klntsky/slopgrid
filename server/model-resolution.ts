@@ -1,7 +1,7 @@
 import type { GridInput } from "./domain.js";
 import type { Model } from "./provider.js";
 import { imageInputIssue, judgeModelIssue } from "./compatibility.js";
-import { selectedReferences } from "./image-settings.js";
+import { judgeReferences } from "./image-settings.js";
 
 export class ModelResolutionError extends Error {}
 
@@ -17,7 +17,7 @@ export function resolveGridModels(
   models: readonly Model[],
 ): GridInput {
   const catalog = new Map(models.map((model) => [model.id, model]));
-  const imageInputs = selectedReferences(input).length > 0;
+  const imageInputs = judgeReferences(input).length > 0;
   function resolve(id: string): string {
     const seen = new Set<string>();
     while (true) {
@@ -64,7 +64,9 @@ export function resolveGridModels(
             ),
           ],
         }
-      : { ...value, values: [...value.values] };
+      : value.kind === "variable"
+        ? { ...value, values: value.values.map((fields) => [...fields]) }
+        : { ...value, values: [...value.values] };
   };
   if (input.judge && input.format === "html")
     throw new ModelResolutionError("Websites do not support a judge yet.");

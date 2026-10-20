@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { imageSize } from "image-size";
-import type { ChatMessage, GridInput } from "./domain.js";
+import type { ChatMessage, GridInput, WorkflowTask } from "./domain.js";
 import type { ReferenceImage } from "./image-settings.js";
 import { readChatOutput } from "../shared/chat-output.js";
 
@@ -193,6 +193,32 @@ export function createImageReferences(
   function input(input: GridInput): GridInput {
     return {
       ...input,
+      rows:
+        input.rows.kind === "variable"
+          ? {
+              ...input.rows,
+              values: input.rows.values.map((fields) =>
+                fields.map((field) =>
+                  field.images
+                    ? { ...field, images: field.images.map(hydrate) }
+                    : field,
+                ),
+              ),
+            }
+          : input.rows,
+      columns:
+        input.columns.kind === "variable"
+          ? {
+              ...input.columns,
+              values: input.columns.values.map((fields) =>
+                fields.map((field) =>
+                  field.images
+                    ? { ...field, images: field.images.map(hydrate) }
+                    : field,
+                ),
+              ),
+            }
+          : input.columns,
       ...(input.messages ? { messages: messages(input.messages) } : {}),
       ...(input.inputReferences
         ? { inputReferences: input.inputReferences.map(hydrate) }
@@ -215,6 +241,11 @@ export function createImageReferences(
     hydrate,
     messages,
     input,
+    task(task: WorkflowTask) {
+      if (task.input.images) task.input.images = task.input.images.map(hydrate);
+      if (task.kind === "generation")
+        task.input.messages = messages(task.input.messages);
+    },
     draft(draft: string | undefined) {
       return draft
         ? JSON.stringify(messages(readChatOutput(draft)), null, 2)

@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  unusedVariableIssue,
   isChatFormat,
   chatInputIssue,
   type GridInput,
@@ -11,7 +10,11 @@ import { useConnection, useInferenceCapacity } from "../queries";
 import { useCreateDraft } from "./draft";
 import { useCreateSubmission } from "./use-create-submission";
 import { canJudge, imageInputIssue } from "../../server/compatibility";
-import { selectedReferences } from "../../server/image-settings";
+import {
+  generatorReferences,
+  judgeReferences,
+} from "../../server/image-settings";
+import { promptVariableIssue } from "../../server/prompt-variables";
 
 function useBudgetEstimate(input: GridInput) {
   const [minute, setMinute] = useState(() => Math.floor(Date.now() / 60000));
@@ -24,7 +27,7 @@ function useBudgetEstimate(input: GridInput) {
   }, []);
   return useMemo(
     () =>
-      input.format === "image"
+      input.format === "image" || promptVariableIssue(input)
         ? undefined
         : estimateGrid(input, modelCatalog, new Date(minute * 60000)),
     [input, minute],
@@ -58,7 +61,8 @@ export function useCreateForm() {
   const commonJudgeEffort =
     !!input.judge &&
     ![input.rows.kind, input.columns.kind].includes("judge_effort");
-  const imageInputs = selectedReferences(input).length > 0;
+  const imageInputs = judgeReferences(input).length > 0;
+  const generatorImageInputs = generatorReferences(input).length > 0;
   const judgeModels = modelCatalog
     .filter((model) => canJudge(model, input.format, imageInputs))
     .sort(
@@ -93,9 +97,15 @@ export function useCreateForm() {
       ? "Add a judge to use judge dimensions."
       : undefined;
   const imageIssue = imageInputIssue(input, modelCatalog);
+  const variableIssue = promptVariableIssue(input);
   const submission = useCreateSubmission({
     draft,
-    blocked: modelMissing || !!judgeIssue || !!imageIssue || workersPending,
+    blocked:
+      modelMissing ||
+      !!judgeIssue ||
+      !!imageIssue ||
+      !!variableIssue ||
+      workersPending,
     parallelWorkers,
     onReferenceUploaded: editing.replaceReference,
   });
@@ -108,7 +118,11 @@ export function useCreateForm() {
     editing.selectFormat(format);
   }
   const models = modelCatalog
-    .filter((m) => (input.format === "image" ? m.image : m.text))
+    .filter(
+      (m) =>
+        (input.format === "image" ? m.image : m.text) &&
+        (!generatorImageInputs || m.imageInput === true),
+    )
     .sort(
       (a, b) =>
         a.name.localeCompare(b.name, "en", { sensitivity: "base" }) ||
@@ -131,7 +145,7 @@ export function useCreateForm() {
     isChatFormat(input.format)
       ? chatInputIssue(input.messages)
       : !input.prompt.trim() && "Enter a prompt.",
-    unusedVariableIssue(input),
+    variableIssue,
     input.format !== "image" &&
       (!Number.isFinite(input.budgetUsd) || input.budgetUsd <= 0) &&
       "Enter a positive per-cell budget.",
@@ -143,6 +157,10 @@ export function useCreateForm() {
     draft,
     update,
     selectFormat,
+    swapAxes: () => {
+      editing.swapAxes();
+      submission.reset();
+    },
     setReuseArtifacts: editing.setReuseArtifacts,
     connection,
     capacity,

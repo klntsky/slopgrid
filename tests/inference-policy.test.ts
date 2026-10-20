@@ -42,8 +42,11 @@ test("admission sums individual costs, preserves automatic selection, and skips 
   });
   const input = {
     format: "markdown",
-    prompt: "$ROW",
-    rows: { kind: "variable", values: ["first", "second"] },
+    prompt: "$ROW1",
+    rows: {
+      kind: "variable",
+      values: [[{ text: "first" }], [{ text: "second" }]],
+    },
     columns: { kind: "model", values: ["cheap", "unknown"] },
     model: "",
     effort: "none",

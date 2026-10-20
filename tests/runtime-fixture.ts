@@ -351,8 +351,11 @@ export async function runtimeFixture(
     grid(overrides: Partial<GridInput> = {}) {
       const input: GridInput = {
         format: "markdown",
-        prompt: "Draw $ROW",
-        rows: { kind: "variable", values: ["cat", "dog"] },
+        prompt: "Draw $ROW1",
+        rows: {
+          kind: "variable",
+          values: [[{ text: "cat" }], [{ text: "dog" }]],
+        },
         columns: { kind: "model", values: ["fixture/text"] },
         model: "",
         effort: "none",

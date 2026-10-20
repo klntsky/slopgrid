@@ -53,19 +53,34 @@ export function createWorkflowExecutor(store: Store, provider: Provider) {
         const generation = context.generation(task.generationId);
         if (!generation?.output)
           throw new Error("The generated output is unavailable for judging.");
+        const ids = [
+          ...new Set([
+            ...referenceIds(generation.input),
+            ...(task.input.images?.map((image) => image.id) ?? []),
+          ]),
+        ];
+        const references = ids.length
+          ? await context.retryStorage(() => store.references.loader()(ids))
+          : undefined;
         const messages = await context.retryStorage(() =>
-          loadJudgeMessages(store, generation, context.signal),
+          loadJudgeMessages(store, generation, context.signal, references),
         );
         context.signal.throwIfAborted();
         if (!context.current()) throw new DOMException("Paused", "AbortError");
-        const result = await provider.judge(context.key, task.input, messages, {
-          signal: context.signal,
-          observe: store.billing.observe(context.cellId, context.attemptId, {
-            model: task.input.model,
-            effort: task.input.effort,
-          }),
-          beforeRequest: context.beforeRequest,
-        });
+        const result = await provider.judge(
+          context.key,
+          task.input,
+          messages,
+          {
+            signal: context.signal,
+            observe: store.billing.observe(context.cellId, context.attemptId, {
+              model: task.input.model,
+              effort: task.input.effort,
+            }),
+            beforeRequest: context.beforeRequest,
+          },
+          references,
+        );
         return () => ({ results: result.results });
       }
       const artifactId = token();

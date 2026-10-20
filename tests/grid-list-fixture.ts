@@ -31,7 +31,7 @@ export function seedGridLists(
       format: "markdown",
       prompt: `Grid ${i}`,
       model: "fixture/text",
-      rows: { kind: "variable", values: ["row"] },
+      rows: { kind: "variable", values: [[{ text: "row" }]] },
       columns: { kind: "effort", values: ["default"] },
       effort: "default",
       budgetUsd: 3,

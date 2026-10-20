@@ -1,5 +1,9 @@
 import { z } from "zod";
 import type { GenerationParameters, GridInput } from "./domain.js";
+import {
+  mergeVariableImages,
+  referencedVariableImages,
+} from "./prompt-variables.js";
 
 import {
   ImageGenerationRequestAspectRatio,
@@ -111,22 +115,87 @@ export function selectedReferences(
     | "inputReferences"
   >,
 ): ReferenceImage[] {
+  return (
+    mergeVariableImages(
+      explicitReferences(input),
+      ...[input.rows, input.columns].flatMap((axis) =>
+        axis.kind === "variable"
+          ? axis.values.flatMap((fields) => fields.map((field) => field.images))
+          : [],
+      ),
+    ) ?? []
+  );
+}
+
+type ReferenceSelectionInput = Pick<
+  GridInput,
+  | "format"
+  | "prompt"
+  | "messages"
+  | "rows"
+  | "columns"
+  | "referenceGroups"
+  | "inputReferences"
+>;
+
+function explicitReferences(
+  input: Pick<
+    ReferenceSelectionInput,
+    | "format"
+    | "messages"
+    | "rows"
+    | "columns"
+    | "referenceGroups"
+    | "inputReferences"
+  >,
+): ReferenceImage[] {
   if (input.format === "chat-template")
     return input.messages?.flatMap((message) => message.images ?? []) ?? [];
   const axis = [input.rows, input.columns].find(
     (axis) => axis.kind === "input_references",
   );
-  return axis
+  return axis?.kind === "input_references"
     ? axis.values.flatMap((value) => input.referenceGroups?.[value] ?? [])
     : (input.inputReferences ?? []);
 }
 
+export function generatorReferences(
+  input: ReferenceSelectionInput,
+): ReferenceImage[] {
+  const templates =
+    input.format === "chat-template"
+      ? (input.messages?.map((message) => message.content) ?? [])
+      : [input.prompt];
+  return (
+    mergeVariableImages(
+      explicitReferences(input),
+      ...templates.map((text) => referencedVariableImages(text, input)),
+    ) ?? []
+  );
+}
+
+export function judgeReferences(
+  input: ReferenceSelectionInput & Pick<GridInput, "judge">,
+): ReferenceImage[] {
+  return (
+    mergeVariableImages(
+      generatorReferences(input),
+      ...(input.judge?.criteria.map((criterion) =>
+        referencedVariableImages(criterion.text, input),
+      ) ?? []),
+    ) ?? []
+  );
+}
+
 export function referenceIds(
-  input: Pick<GenerationParameters, "messages" | "imageSettings">,
+  input: Pick<GenerationParameters, "messages" | "images" | "imageSettings">,
 ): readonly string[] {
   return input.messages
     ? input.messages.flatMap(
         (message) => message.images?.map((image) => image.id) ?? [],
       )
-    : (input.imageSettings?.input_references ?? []);
+    : [
+        ...(input.images?.map((image) => image.id) ?? []),
+        ...(input.imageSettings?.input_references ?? []),
+      ];
 }
