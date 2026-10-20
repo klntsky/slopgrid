@@ -422,7 +422,8 @@ export function expandGrid(input: GridInput): Omit<Cell, "id">[] {
             }
           : {}),
         budgetUsd: input.budgetUsd,
-        ...(input.format === "image" || isChatFormat(input.format)
+        ...(input.format === "image" ||
+        (isChatFormat(input.format) && imageSettings.input_references?.length)
           ? { imageSettings: normalizeImageSettings(imageSettings) }
           : {}),
         status: "pending" as const,

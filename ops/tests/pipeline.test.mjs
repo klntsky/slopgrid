@@ -8,11 +8,14 @@ import {
   rmSync,
   symlinkSync,
   chmodSync,
+  lstatSync,
+  readdirSync,
 } from "node:fs";
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import { createHash } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
 import { parseEnv } from "node:util";
@@ -49,7 +52,10 @@ function directory(t) {
 test("argument policy resolves revisions separately and requires deliberate production validation", () => {
   assert.equal(parseArgs(["staging"]).revision, "HEAD");
   assert.equal(parseArgs(["validate"]).target, "validate");
-  assert.throws(() => parseArgs(["validate", "--skip-tests"]), /requires tests/);
+  assert.throws(
+    () => parseArgs(["validate", "--skip-tests"]),
+    /requires tests/,
+  );
   assert.equal(
     parseArgs(["production", "release/next", "--skip-tests"]).tests,
     "skip",
@@ -211,7 +217,18 @@ test("artifact manifests reject source, executable mode and output changes", (t)
 test("one isolated build validates before single production promotion, with failure gates", async (t) => {
   const repository = directory(t);
   capture("git", ["init", "--initial-branch=master", repository]);
-  capture("git", ["-C", repository, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "--allow-empty", "-m", "master"]);
+  capture("git", [
+    "-C",
+    repository,
+    "-c",
+    "user.name=Fixture",
+    "-c",
+    "user.email=fixture@example.invalid",
+    "commit",
+    "--allow-empty",
+    "-m",
+    "master",
+  ]);
   const request = {
     target: "production",
     tests: "full",
@@ -249,54 +266,42 @@ test("one isolated build validates before single production promotion, with fail
   ]);
   calls.length = 0;
   await assert.rejects(
-    executePlan(
-      request,
-      {
-        ...operations,
-        validate: async () => ({ status: "failed", policy: "full" }),
-      },
-    ),
+    executePlan(request, {
+      ...operations,
+      validate: async () => ({ status: "failed", policy: "full" }),
+    }),
     /Validation/,
   );
   assert.deepEqual(calls, ["build"]);
   calls.length = 0;
   await assert.rejects(
-    executePlan(
-      request,
-      {
-        ...operations,
-        prepare: async (name) => {
-          if (name === "production") throw new Error("incompatible");
-          return name;
-        },
+    executePlan(request, {
+      ...operations,
+      prepare: async (name) => {
+        if (name === "production") throw new Error("incompatible");
+        return name;
       },
-    ),
+    }),
     /incompatible/,
   );
   assert.deepEqual(calls, ["build", "validate"]);
   calls.length = 0;
   await assert.rejects(
-    executePlan(
-      request,
-      {
-        ...operations,
-        deploy: async (name) => {
-          calls.push(`deploy:${name}`);
-          throw new Error("production failed");
-        },
+    executePlan(request, {
+      ...operations,
+      deploy: async (name) => {
+        calls.push(`deploy:${name}`);
+        throw new Error("production failed");
       },
-    ),
+    }),
     /production failed/,
   );
   assert.equal(calls.filter((name) => name === "deploy:production").length, 1);
   await assert.rejects(
-    executePlan(
-      request,
-      {
-        ...operations,
-        validate: async () => ({ status: "skipped", policy: "skip" }),
-      },
-    ),
+    executePlan(request, {
+      ...operations,
+      validate: async () => ({ status: "skipped", policy: "skip" }),
+    }),
     /Unrequested/,
   );
 });
@@ -388,6 +393,14 @@ function discardFixture(t, version = 14) {
     removedArtifact = "d".repeat(48);
   const sharedTrace = "4".repeat(48),
     removedTrace = "5".repeat(48);
+  const sharedUpload = Buffer.from("shared reference upload");
+  const selectedUpload = Buffer.from("selected-only reference upload");
+  const sharedUploadSha256 = createHash("sha256")
+    .update(sharedUpload)
+    .digest("hex");
+  const selectedUploadSha256 = createHash("sha256")
+    .update(selectedUpload)
+    .digest("hex");
   const makeEnvironment = (name) => {
     const env = {
       DATABASE_PATH: join(root, `${name}.sqlite`),
@@ -420,13 +433,36 @@ function discardFixture(t, version = 14) {
       ALTER TABLE inference_calls ADD COLUMN cost_usd REAL;
       CREATE TABLE grid_reference_images(grid_id TEXT REFERENCES grids(id) ON DELETE CASCADE,reference_id TEXT);
     `);
-    if (version === 14)
+    if (version >= 14)
       db.exec(`
       CREATE TABLE workflow_tasks(id TEXT PRIMARY KEY,grid_id TEXT REFERENCES grids(id) ON DELETE CASCADE,kind TEXT,status TEXT,dependency_id TEXT REFERENCES workflow_tasks(id),artifact_id TEXT,thinking_source_id TEXT,data TEXT);
       ALTER TABLE cells ADD COLUMN generation_id TEXT REFERENCES workflow_tasks(id);
       ALTER TABLE cells ADD COLUMN judgment_id TEXT REFERENCES workflow_tasks(id);
       ALTER TABLE inference_calls ADD COLUMN task_id TEXT REFERENCES workflow_tasks(id);
     `);
+    if (version >= 15) {
+      db.exec(`
+        CREATE TABLE reference_blobs(sha256 TEXT PRIMARY KEY CHECK(length(sha256)=64)) STRICT;
+        CREATE TABLE reference_images(id TEXT PRIMARY KEY,owner TEXT NOT NULL,owner_user_id TEXT,name TEXT NOT NULL,media_type TEXT NOT NULL,sha256 TEXT REFERENCES reference_blobs(sha256)) STRICT;
+        CREATE INDEX reference_images_sha256 ON reference_images(sha256,id);
+      `);
+      mkdirSync(join(env.OUTPUTS_PATH, ".references"));
+      for (const [id, sha256, bytes] of [
+        ["retained-reference", sharedUploadSha256, sharedUpload],
+        ["selected-only-reference", selectedUploadSha256, selectedUpload],
+      ]) {
+        db.prepare("INSERT INTO reference_blobs VALUES (?)").run(sha256);
+        db.prepare("INSERT INTO reference_images VALUES (?,?,?,?,?,?)").run(
+          id,
+          "upload-session",
+          "upload-user",
+          `${id}.png`,
+          "image/png",
+          sha256,
+        );
+        writeFileSync(join(env.OUTPUTS_PATH, ".references", sha256), bytes);
+      }
+    }
     db.prepare(
       "INSERT INTO sessions (id,data) VALUES ('browser','retained-key')",
     ).run();
@@ -448,6 +484,11 @@ function discardFixture(t, version = 14) {
           "INSERT INTO grid_reference_images VALUES (?,'retained-reference')",
         ).run(grid);
     }
+    if (version >= 15)
+      db.prepare("INSERT INTO grid_reference_images VALUES (?,?)").run(
+        selected,
+        "selected-only-reference",
+      );
     for (const [gridId, cell, position] of [
       [selected, "1", 0],
       [selected, "3", 1],
@@ -455,25 +496,25 @@ function discardFixture(t, version = 14) {
     ]) {
       const cellId = cell.repeat(48);
       const artifact =
-        version === 14
+        version >= 14
           ? cell === "3"
             ? removedArtifact
             : sharedArtifact
           : cellId;
       const trace =
-        version === 14 ? (cell === "3" ? removedTrace : sharedTrace) : cellId;
+        version >= 14 ? (cell === "3" ? removedTrace : sharedTrace) : cellId;
       db.prepare(
         "INSERT INTO cells (id,grid_id,position,data) VALUES (?,?,?,?)",
       ).run(
         cellId,
         gridId,
         position,
-        version === 14 ? "{}" : JSON.stringify({ status: "complete" }),
+        version >= 14 ? "{}" : JSON.stringify({ status: "complete" }),
       );
       db.prepare(
         "INSERT INTO inference_calls (id,cell_id,started_at,data) VALUES (?,?,?,?)",
       ).run(`call-${cell}`, cellId, position, `charge-${cell}`);
-      if (version === 14) {
+      if (version >= 14) {
         db.prepare(
           "INSERT INTO workflow_tasks VALUES (?,?,'generation','complete',NULL,?,?,?)",
         ).run(
@@ -527,7 +568,8 @@ function discardFixture(t, version = 14) {
         "sessions",
       ];
       if (version >= 13) tables.push("grid_reference_images");
-      if (version === 14) tables.push("workflow_tasks");
+      if (version >= 14) tables.push("workflow_tasks");
+      if (version >= 15) tables.push("reference_images", "reference_blobs");
       return Object.fromEntries(
         tables.map((table) => [
           table,
@@ -550,6 +592,10 @@ function discardFixture(t, version = 14) {
     removedArtifact,
     sharedTrace,
     removedTrace,
+    sharedUpload,
+    selectedUpload,
+    sharedUploadSha256,
+    selectedUploadSha256,
   };
 }
 
@@ -836,7 +882,7 @@ test("grid discard rejects production aliases and rolls back failed deletion bef
 });
 
 test("discard refuses unknown schemas and symlinked trace ancestors without changing history", async (t) => {
-  for (const reason of ["schema11", "schema15", "symlink"])
+  for (const reason of ["schema11", "schema999", "symlink"])
     await t.test(reason, (child) => {
       const f = discardFixture(child),
         before = f.read(f.env);
@@ -848,7 +894,7 @@ test("discard refuses unknown schemas and symlinked trace ancestors without chan
         );
       } else {
         const db = new f.Database(f.env.DATABASE_PATH);
-        db.pragma(`user_version=${reason === "schema11" ? 11 : 15}`);
+        db.pragma(`user_version=${reason === "schema11" ? 11 : 999}`);
         db.close();
       }
       const productionBefore = f.read(f.production);
@@ -958,4 +1004,93 @@ test("real PM2 startup uses fresh logs and detects a failing replacement", async
     else process.env.PM2_HOME = oldHome;
     rmSync(path, { recursive: true, force: true });
   }
+});
+
+test("v15 discard keeps shared and unreferenced upload metadata and hash files without changing prior task cleanup", async (t) => {
+  for (const all of [false, true])
+    await t.test(all ? "all grids" : "selected grid", (child) => {
+      const f = discardFixture(child, 15);
+      const before = f.read(f.env);
+      const productionBefore = f.read(f.production);
+      const ids = all ? [f.selected, f.surviving] : [f.selected];
+      assert.deepEqual(
+        discardStagingGrids(
+          "staging",
+          process.env.SLOPGRID_TEST_APP,
+          f.env,
+          f.production,
+          ids,
+        ),
+        { grids: ids.length, cells: all ? 3 : 2 },
+      );
+      const saved = f.read(f.env);
+      for (const table of ["reference_images", "reference_blobs", "sessions"])
+        assert.deepEqual(saved[table], before[table]);
+      for (const table of [
+        "grids",
+        "cells",
+        "workflow_tasks",
+        "creation_requests",
+      ])
+        assert.deepEqual(
+          saved[table],
+          before[table].filter((row) =>
+            table === "grids"
+              ? !ids.includes(row.id)
+              : !ids.includes(row.grid_id),
+          ),
+        );
+      assert.deepEqual(
+        saved.grid_reference_images,
+        before.grid_reference_images.filter(
+          (row) => !ids.includes(row.grid_id),
+        ),
+      );
+      assert.deepEqual(
+        saved.inference_calls,
+        all
+          ? []
+          : before.inference_calls.filter(
+              (row) => row.cell_id === "2".repeat(48),
+            ),
+      );
+      assert.deepEqual(f.read(f.production), productionBefore);
+      for (const env of [f.env, f.production]) {
+        assert.deepEqual(
+          readdirSync(join(env.OUTPUTS_PATH, ".references")).sort(),
+          [f.sharedUploadSha256, f.selectedUploadSha256].sort(),
+        );
+        for (const [sha256, bytes] of [
+          [f.sharedUploadSha256, f.sharedUpload],
+          [f.selectedUploadSha256, f.selectedUpload],
+        ]) {
+          const path = join(env.OUTPUTS_PATH, ".references", sha256);
+          assert.equal(lstatSync(path).isFile(), true);
+          assert.deepEqual(readFileSync(path), bytes);
+        }
+      }
+      for (const relative of [
+        join(f.removedArtifact, "index.svg"),
+        join(".thinking", f.removedTrace, "trace.txt"),
+      ])
+        assert.throws(
+          () => readFileSync(join(f.env.OUTPUTS_PATH, relative)),
+          /ENOENT/,
+        );
+      for (const relative of [
+        join(f.sharedArtifact, "index.svg"),
+        join(".thinking", f.sharedTrace, "trace.txt"),
+      ]) {
+        if (all)
+          assert.throws(
+            () => readFileSync(join(f.env.OUTPUTS_PATH, relative)),
+            /ENOENT/,
+          );
+        else assert.ok(readFileSync(join(f.env.OUTPUTS_PATH, relative)).length);
+      }
+      const db = new f.Database(f.env.DATABASE_PATH);
+      assert.equal(db.pragma("user_version", { simple: true }), 15);
+      assert.deepEqual(db.pragma("foreign_key_check"), []);
+      db.close();
+    });
 });

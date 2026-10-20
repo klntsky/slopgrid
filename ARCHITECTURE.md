@@ -138,10 +138,11 @@ existing grid without starting inference twice.
   grids, snapshots, output files, and billing records; Resume after an engine
   restart needs a new submission of a manual key.
 
-Image references are uploaded before grid creation. SQLite stores ownership and
-metadata, while separate files hold the bytes. The engine loads authorized
-references for each generation attempt; loaded bytes are scoped to that attempt
-and never enter grid snapshots.
+Image uploads have independent names and ownership records. Their bytes are
+SHA-256-addressed and shared across uploads and grids. SQLite links each grid to
+its uploads and each upload to its content, keeping access control and shared
+usage separate from physical storage. The engine loads image bytes within
+generation or judging attempts; bytes never enter grid snapshots.
 
 Committed generation can be reused by Edit/Fork when a source is accessible and
 its prepared request matches the destination. A signature captures request
@@ -169,8 +170,9 @@ provider request signature.
 - Artifact and thinking-trace deletion checks remaining task references. The
   operations repository owns offline transfer and administrative deletion using
   the same shared-ownership boundary.
-- The judge adapter owns strict structured results independently of generation
-  parsing and reads committed content rather than browser previews.
+- The artifact loader projects committed outputs and their input images into chat
+  input messages. The judge adapter appends evaluation prompts and parses strict
+  structured results.
 - SVG rasterization uses cancellable Node workers with local WASM and bundled
   font bytes. Workers have no browser or host-resource resolver. Rendered content
   is shared within a generation task; the content executor manages its lifetime.
@@ -193,8 +195,9 @@ requirements are defined in
 Chat completion retains the `chat-template` storage identifier and stores and
 streams the completed message array as a JSON artifact. Chat inputs retain
 ordered messages, and grid expansion substitutes variables in each message body.
-Inference sends structured messages without an additional system instruction,
-and request signatures include the history.
+Request preparation and artifact loading share the input-only chat message
+representation. Provider-specific cache annotations stay at the request
+preparation boundary.
 
 Generation attempts are the shared content-execution boundary for every output
 format. The content executor coordinates provider calls and progress within the

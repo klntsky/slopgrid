@@ -2,13 +2,13 @@ import type Database from "better-sqlite3";
 import { expandGrid, type Cell, type GridInput } from "./domain.js";
 import { generationGroupKey } from "../shared/generation-key.js";
 
-const schemaVersion = 14;
+const schemaVersion = 15;
 export function initializeDatabase(db: Database.Database) {
   const version = db.pragma("user_version", { simple: true });
   if (version === schemaVersion) return;
   if (
     typeof version !== "number" ||
-    ![0, 8, 9, 10, 11, 12, 13].includes(version)
+    ![0, 8, 9, 10, 11, 12, 13, 14].includes(version)
   )
     throw new Error("Unsupported database version");
   db.transaction(() => {
@@ -122,7 +122,8 @@ export function initializeDatabase(db: Database.Database) {
           json_each(reference_group.value) r;
       `);
     }
-    db.exec(`
+    if (version < 14) {
+      db.exec(`
       CREATE TABLE workflow_tasks (
         id TEXT PRIMARY KEY,
         grid_id TEXT NOT NULL REFERENCES grids(id) ON DELETE CASCADE,
@@ -141,8 +142,16 @@ export function initializeDatabase(db: Database.Database) {
       DROP INDEX inference_calls_attempt;
       CREATE INDEX inference_calls_attempt ON inference_calls(task_id,attempt_id,started_at);
       CREATE INDEX inference_calls_task ON inference_calls(task_id,started_at);
+      `);
+      if (version !== 0) migrateWorkflow(db);
+    }
+    db.exec(`
+      CREATE TABLE reference_blobs (
+        sha256 TEXT PRIMARY KEY CHECK (length(sha256)=64)
+      ) STRICT;
+      ALTER TABLE reference_images ADD COLUMN sha256 TEXT REFERENCES reference_blobs(sha256);
+      CREATE INDEX reference_images_sha256 ON reference_images(sha256,id);
     `);
-    if (version !== 0) migrateWorkflow(db);
     db.pragma(`user_version = ${schemaVersion}`);
   }).immediate();
 }

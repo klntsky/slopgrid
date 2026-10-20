@@ -13,6 +13,8 @@ import {
   copyFileSync,
   rmSync,
   realpathSync,
+  constants,
+  linkSync,
 } from "node:fs";
 
 function check(condition, message) {
@@ -99,6 +101,54 @@ function inventory(root, relative) {
   return JSON.stringify(files);
 }
 
+function referenceInventory(root, sha256) {
+  check(/^[a-f0-9]{64}$/.test(sha256), "Invalid reference SHA-256");
+  const directory = join(root, ".references");
+  const parent = lstatSync(directory, { throwIfNoEntry: false });
+  if (!parent) return false;
+  check(
+    !parent.isSymbolicLink() && parent.isDirectory(),
+    "Reference storage is not a regular directory",
+  );
+  const path = join(directory, sha256);
+  const stat = lstatSync(path, { throwIfNoEntry: false });
+  if (!stat) return false;
+  check(
+    !stat.isSymbolicLink() && stat.isFile(),
+    "Reference blob is not a regular file",
+  );
+  check(hash(path) === sha256, "Reference blob checksum mismatch");
+  return true;
+}
+
+function copyReference(source, target, sha256) {
+  const directory = join(target, ".references");
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  const temporary = join(
+    directory,
+    `.${sha256}-${randomBytes(12).toString("hex")}`,
+  );
+  try {
+    copyFileSync(
+      join(source, ".references", sha256),
+      temporary,
+      constants.COPYFILE_EXCL,
+    );
+    check(hash(temporary) === sha256, "Copied reference checksum mismatch");
+    try {
+      linkSync(temporary, join(directory, sha256));
+    } catch (error) {
+      if (error.code !== "EEXIST") throw error;
+      check(
+        referenceInventory(target, sha256),
+        "Destination reference is missing",
+      );
+    }
+  } finally {
+    rmSync(temporary, { force: true });
+  }
+}
+
 // Target commit precedes source removal. A crash between them leaves both copies,
 // and a subsequent run refuses to overwrite the destination.
 export function transferGrid(Database, options) {
@@ -127,8 +177,8 @@ export function transferGrid(Database, options) {
   try {
     for (const db of [source, target]) {
       check(
-        db.pragma("user_version", { simple: true }) === 14,
-        "Grid transfer requires database schema 14",
+        db.pragma("user_version", { simple: true }) === 15,
+        "Grid transfer requires database schema 15",
       );
       db.pragma("foreign_keys=ON");
       db.exec(apply ? "BEGIN IMMEDIATE" : "BEGIN");
@@ -325,6 +375,37 @@ export function transferGrid(Database, options) {
       );
       if (existing === undefined) toCopy.add(relative);
     }
+    const references = source
+      .prepare("SELECT reference_id FROM grid_reference_images WHERE grid_id=?")
+      .all(grid);
+    const referenceImages = source
+      .prepare(
+        `SELECT r.* FROM reference_images r
+        JOIN grid_reference_images g ON g.reference_id=r.id
+        WHERE g.grid_id=? ORDER BY r.id`,
+      )
+      .all(grid);
+    for (const reference of referenceImages)
+      check(
+        !target
+          .prepare("SELECT 1 FROM reference_images WHERE id=?")
+          .get(reference.id),
+        "Destination reference metadata already exists",
+      );
+    const referenceBlobs = new Map();
+    for (const reference of referenceImages) {
+      if (reference.sha256 === null || referenceBlobs.has(reference.sha256))
+        continue;
+      const available = referenceInventory(
+        options.sourceOutputs,
+        reference.sha256,
+      );
+      const existing = referenceInventory(
+        options.targetOutputs,
+        reference.sha256,
+      );
+      referenceBlobs.set(reference.sha256, { available, existing });
+    }
     for (const call of retainedCalls)
       check(
         !target
@@ -349,12 +430,17 @@ export function transferGrid(Database, options) {
     const receipts = source
       .prepare("SELECT * FROM creation_requests WHERE grid_id=?")
       .all(grid);
-    const references = source
-      .prepare("SELECT reference_id FROM grid_reference_images WHERE grid_id=?")
-      .all(grid);
     writeFileSync(
       join(options.backupDir, "source.json"),
-      JSON.stringify({ grid: row, cells, tasks, calls, receipts, references }),
+      JSON.stringify({
+        grid: row,
+        cells,
+        tasks,
+        calls,
+        receipts,
+        references,
+        referenceImages,
+      }),
       { mode: 0o600 },
     );
     for (const relative of paths) {
@@ -368,6 +454,19 @@ export function transferGrid(Database, options) {
       mkdirSync(dirname(to), { recursive: true, mode: 0o700 });
       copied.push(to);
       copyTree(from, to);
+    }
+    for (const [sha256, { available, existing }] of referenceBlobs) {
+      if (!available) continue;
+      const backup = join(options.backupDir, "outputs", ".references", sha256);
+      mkdirSync(dirname(backup), { recursive: true, mode: 0o700 });
+      copyFileSync(
+        join(options.sourceOutputs, ".references", sha256),
+        backup,
+        constants.COPYFILE_EXCL,
+      );
+      check(hash(backup) === sha256, "Backed-up reference checksum mismatch");
+      if (!existing)
+        copyReference(options.sourceOutputs, options.targetOutputs, sha256);
     }
     data.status = "complete";
     delete data.interruption;
@@ -387,6 +486,23 @@ export function transferGrid(Database, options) {
         row.visibility,
         row.slug,
         row.created_at,
+      );
+    const addBlob = target.prepare(
+      "INSERT INTO reference_blobs (sha256) VALUES (?) ON CONFLICT DO NOTHING",
+    );
+    for (const sha256 of referenceBlobs.keys()) addBlob.run(sha256);
+    const addReferenceImage = target.prepare(
+      `INSERT INTO reference_images
+      (id,owner,owner_user_id,name,media_type,sha256) VALUES (?,?,?,?,?,?)`,
+    );
+    for (const reference of referenceImages)
+      addReferenceImage.run(
+        reference.id,
+        randomBytes(24).toString("hex"),
+        owner,
+        reference.name,
+        reference.media_type,
+        reference.sha256,
       );
     const addReference = target.prepare(
       "INSERT INTO grid_reference_images (grid_id,reference_id) VALUES (?,?)",

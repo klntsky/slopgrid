@@ -304,6 +304,7 @@ test("chat images reach every sequential SDK call without changing the transcrip
         references,
       );
       for (const request of h.requests.slice(start)) {
+        assert.deepEqual(request.modalities, ["text"]);
         const wire = request.messages as {
           role: string;
           content: string | { type: string; image_url?: { url: string } }[];
@@ -342,30 +343,6 @@ test("chat images reach every sequential SDK call without changing the transcrip
         templateSignature(parameters, [references[0]]),
       );
     }
-    const parameters = {
-      ...cell("required", "default"),
-      messages: [{ role: "user" as const, content: "Describe the image" }],
-      imageSettings: { input_references: ["image"] },
-    };
-    const before = h.requests.length;
-    await assert.rejects(
-      generateAttempt(
-        h.provider,
-        "key",
-        "chat-template",
-        parameters,
-        "unsupported",
-        () => {},
-        {},
-        references,
-      ),
-      /does not support image inputs/,
-    );
-    await assert.rejects(
-      h.provider.prepare("image", parameters, references),
-      /does not support image inputs/,
-    );
-    assert.equal(h.requests.length, before);
   } finally {
     await h.close();
   }

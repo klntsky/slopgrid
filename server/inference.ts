@@ -10,7 +10,6 @@ import {
   type Cell,
   type Completion,
   type InferenceProgress,
-  type FilledChatMessage,
 } from "./domain.js";
 const costUsage = z.object({
   cost: z.number().finite().nonnegative().optional(),
@@ -107,11 +106,6 @@ export async function generateInference(
 }> {
   const { format } = prepared;
   const { signal } = context;
-  if (
-    prepared.format !== "image" &&
-    prepared.text.messages?.some((m) => m.role === "unfilled")
-  )
-    throw new Error("Unfilled messages must be expanded before inference.");
   const phase: Completion["phase"] = format === "image" ? "image" : "direct";
   let call: CallRecorder | undefined;
   let imageFinishReason: string | undefined;
@@ -203,7 +197,7 @@ export async function generateInference(
       includeRawChunks: true,
       ...(prepared.text.messages
         ? {
-            messages: prepared.text.messages as FilledChatMessage[],
+            messages: prepared.text.messages,
             allowSystemInMessages: true,
           }
         : { system, prompt: prepared.prompt }),

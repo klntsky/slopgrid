@@ -1,11 +1,18 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+} from "node:fs";
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { token } from "../server/ids.js";
 import { Store } from "../server/store.js";
-import { expandGrid, type Grid } from "../server/domain.js";
+import { expandGrid, gridSchema, type Grid } from "../server/domain.js";
 import { createWorkflow } from "../server/workflow.js";
 
 test("an initialized store opens for reads while another connection holds the write lock", () => {
@@ -313,3 +320,184 @@ test("shared artifact and independent trace references survive deletion until th
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+for (const available of [true, false])
+  test(`v14 uploads migrate without replaying workflows and tolerate missing artifacts (available=${available})`, async () => {
+    const dir = mkdtempSync(join(tmpdir(), "slopgrid-reference-migration-"));
+    const database = join(dir, "app.sqlite");
+    const secret = Buffer.alloc(32, 1);
+    let store = new Store(database, secret);
+    try {
+      const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 1]);
+      const changed = Buffer.concat([png, Buffer.from([2])]);
+      const owner = { id: "anonymous-owner", created: 0 };
+      const first = store.references.add(png, "first.png", owner)!;
+      const second = store.references.add(png, "renamed.png", {
+        id: "other-owner",
+        userId: "other-account",
+        created: 0,
+      })!;
+      const different = store.references.add(changed, "different.png", owner)!;
+      const unavailable = store.references.add(png, "unavailable.png", owner)!;
+      const input = gridSchema.parse({
+        format: "chat-template",
+        messages: [{ role: "user", content: "Describe these images" }],
+        rows: { kind: "effort", values: ["none"] },
+        columns: { kind: "model", values: ["fixture/text"] },
+        model: "fixture/text",
+        effort: "none",
+        budgetUsd: 1,
+        inputReferences: [first, second, unavailable],
+      });
+      const grid: Grid = {
+        id: token(),
+        owner: owner.id,
+        ownerUserId: "claimed-account",
+        input,
+        status: "paused",
+        published: false,
+        visibility: "private",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        cells: expandGrid(input).map((cell) => ({ ...cell, id: token() })),
+      };
+      store.insert(grid);
+      store.claim(owner.id, "claimed-account");
+      store.saveSession({
+        id: "saved-session",
+        created: 17,
+        userId: "claimed-account",
+      });
+      const tasks = store.workflow(grid.id);
+      const links = store.db
+        .prepare("SELECT * FROM grid_reference_images ORDER BY reference_id")
+        .all();
+      // Rebuild only reference storage as the deployed v14 schema. Workflows,
+      // grid identities and ownership are already in their production format.
+      store.db.exec(`
+        ALTER TABLE reference_images RENAME TO cas_reference_images;
+        CREATE TABLE reference_images (
+          id TEXT PRIMARY KEY, owner TEXT NOT NULL, owner_user_id TEXT,
+          name TEXT NOT NULL, media_type TEXT NOT NULL
+        ) STRICT;
+        INSERT INTO reference_images
+          SELECT id,owner,owner_user_id,name,media_type FROM cas_reference_images;
+        DROP TABLE cas_reference_images;
+        DROP TABLE reference_blobs;
+        PRAGMA user_version=14;
+      `);
+      rmSync(join(store.files.root, ".references"), { recursive: true });
+      if (available) {
+        store.files.write(`reference-${first.id}`, { image: png });
+        store.files.write(`reference-${second.id}`, { image: png });
+        store.files.write(`reference-${different.id}`, { image: changed });
+      }
+      store.db.close();
+      store = new Store(database, secret);
+      assert.equal(store.db.pragma("user_version", { simple: true }), 15);
+      assert.deepEqual(store.workflow(grid.id), tasks);
+      assert.deepEqual(store.get(grid.id)!.input, input);
+      assert.equal(store.get(grid.id)!.ownerUserId, "claimed-account");
+      assert.deepEqual(
+        store.db
+          .prepare("SELECT * FROM grid_reference_images ORDER BY reference_id")
+          .all(),
+        links,
+      );
+      assert.deepEqual(store.session("saved-session"), {
+        id: "saved-session",
+        created: 17,
+        userId: "claimed-account",
+      });
+      assert.equal(
+        store.references.get(first.id)!.ownerUserId,
+        "claimed-account",
+      );
+      assert.equal(
+        store.references.get(second.id)!.ownerUserId,
+        "other-account",
+      );
+      assert.equal(store.references.get(second.id)!.name, "renamed.png");
+      assert.equal(store.references.path(unavailable.id), undefined);
+      await assert.rejects(
+        store.references.loader()([unavailable.id]),
+        /unavailable/,
+      );
+      if (available) {
+        const path = store.references.path(first.id)!;
+        assert.equal(path, store.references.path(second.id));
+        assert.notEqual(path, store.references.path(different.id));
+        assert.deepEqual(readFileSync(path), png);
+        assert.equal(
+          readdirSync(join(store.files.root, ".references")).length,
+          2,
+        );
+        for (const reference of [first, second, different])
+          assert.equal(
+            existsSync(join(store.files.root, `reference-${reference.id}`)),
+            false,
+          );
+        // Recreate a legacy copy as if migration stopped after committing its
+        // hash. Restart must finish cleanup rather than retain duplicate bytes.
+        store.files.write(`reference-${first.id}`, { image: png });
+        store.db.close();
+        store = new Store(database, secret);
+        assert.equal(store.references.path(first.id), path);
+        assert.equal(
+          existsSync(join(store.files.root, `reference-${first.id}`)),
+          false,
+        );
+      } else {
+        assert.equal(store.references.path(first.id), undefined);
+        await assert.rejects(
+          store.references.loader()([first.id]),
+          /unavailable/,
+        );
+        assert.deepEqual(
+          store.db.prepare("SELECT * FROM reference_blobs").all(),
+          [],
+        );
+      }
+      // Unavailable historical metadata stays valid, and bytes restored later
+      // can be backfilled on startup; runtime reads never fall back to ID paths.
+      store.files.write(`reference-${unavailable.id}`, { image: png });
+      assert.equal(store.references.path(unavailable.id), undefined);
+      store.db.close();
+      store = new Store(database, secret);
+      assert.deepEqual(await store.references.loader()([unavailable.id]), [
+        {
+          bytes: png,
+          mediaType: "image/png",
+          sha256: createHash("sha256").update(png).digest("hex"),
+        },
+      ]);
+      assert.equal(
+        existsSync(join(store.files.root, `reference-${unavailable.id}`)),
+        false,
+      );
+      assert.deepEqual(store.db.pragma("foreign_key_check"), []);
+      // A current-schema validation snapshot also has hash metadata but no
+      // copied artifacts. Opening it must not require or manufacture the bytes.
+      store.db.close();
+      rmSync(join(store.files.root, ".references"), { recursive: true });
+      store = new Store(database, secret);
+      assert.equal(
+        store.references.get(unavailable.id)!.sha256,
+        createHash("sha256").update(png).digest("hex"),
+      );
+      assert.equal(store.references.path(unavailable.id), undefined);
+      await assert.rejects(
+        store.references.loader()([unavailable.id]),
+        /unavailable/,
+      );
+      assert.deepEqual(store.workflow(grid.id), tasks);
+      assert.deepEqual(
+        store.db
+          .prepare("SELECT * FROM grid_reference_images ORDER BY reference_id")
+          .all(),
+        links,
+      );
+    } finally {
+      store.db.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });

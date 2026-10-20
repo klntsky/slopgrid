@@ -14,14 +14,15 @@ import { generateInference, type InferenceContext } from "./inference.js";
 import { parsePricing, type ModelPricing } from "./model-pricing.js";
 import type { CallObserver } from "./billing.js";
 import { upstreamFetch } from "./http.js";
-import { judgeInference, type PreparedJudgeInference } from "./judge.js";
-import { judgeModelIssue } from "./compatibility.js";
+import { judgeInference } from "./judge.js";
+import type { ChatInputMessage } from "./chat-messages.js";
 import {
   efforts,
   type Cell,
   type GenerationParameters,
   type GridInput,
   type InferenceProgress,
+  type JudgmentInput,
 } from "./domain.js";
 export type Model = {
   id: string;
@@ -238,21 +239,13 @@ export class Provider {
     }
   }
 
-  async judge(
+  judge(
     key: string,
-    prepared: PreparedJudgeInference,
+    input: JudgmentInput,
+    messages: ChatInputMessage[],
     context: InferenceContext = {},
   ) {
-    const model = (await this.models()).find(
-      (candidate) => candidate.id === prepared.model,
-    );
-    const issue = judgeModelIssue(
-      model,
-      prepared.format,
-      prepared.imageInputs,
-    );
-    if (issue) throw new PreparationError(issue);
-    return judgeInference(this.baseURL, key, prepared, context);
+    return judgeInference(this.baseURL, key, input, messages, context);
   }
   async generate(
     key: string,
@@ -297,17 +290,10 @@ export class Provider {
     cell: GenerationParameters,
     references: ReferenceContent[] = [],
   ) {
-    const models = await this.models();
-    const selectedModel = models.find((model) => model.id === cell.model);
-    if (
-      (references.length || cell.imageSettings?.input_references?.length) &&
-      selectedModel?.imageInput !== true
-    )
-      throw new PreparationError(
-        "The selected model does not support image inputs.",
-      );
     if (format === "image") return prepareImageInference(cell, references);
-    const pricedModel = selectedModel;
+    const pricedModel = (await this.models()).find(
+      (model) => model.id === cell.model,
+    );
     if (!pricedModel)
       throw new PreparationError(`Pricing is unavailable for ${cell.model}.`);
     const budget = generationBudget(

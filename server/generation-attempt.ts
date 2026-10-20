@@ -48,13 +48,6 @@ export async function generateAttempt(
   );
   if (!model)
     throw new PreparationError(`Pricing is unavailable for ${cell.model}.`);
-  if (
-    (references?.length || cell.imageSettings?.input_references?.length) &&
-    model.imageInput !== true
-  )
-    throw new PreparationError(
-      "The selected model does not support image inputs.",
-    );
   let previousPrefixLength = 0;
   const result = await fillChatTemplate(
     cell,

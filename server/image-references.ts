@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3";
 import { readFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 
 export type ReferenceContent = {
@@ -13,14 +14,53 @@ import { anonymousOwner } from "./session.js";
 import { token } from "./ids.js";
 import { ownsGrid } from "./grid-policy.js";
 
+function migrateReferences(db: Database.Database, files: OutputFiles) {
+  const references = db
+    .prepare("SELECT id,sha256 FROM reference_images")
+    .all() as { id: string; sha256: string | null }[];
+  for (const reference of references) {
+    let bytes: Buffer;
+    try {
+      const legacy = files.path(`reference-${reference.id}`, "image");
+      if (!legacy) continue;
+      bytes = readFileSync(legacy);
+    } catch (error) {
+      // Validation snapshots and historical uploads may not include artifacts.
+      if (
+        ["ENOENT", "ENOTDIR", "EACCES"].includes(
+          (error as NodeJS.ErrnoException).code ?? "",
+        )
+      )
+        continue;
+      throw error;
+    }
+    const sha256 = createHash("sha256").update(bytes).digest("hex");
+    if (reference.sha256 && reference.sha256 !== sha256)
+      throw new Error("Legacy reference content does not match its hash");
+    files.writeReference(sha256, bytes);
+    db.transaction(() => {
+      db.prepare(
+        "INSERT OR IGNORE INTO reference_blobs (sha256) VALUES (?)",
+      ).run(sha256);
+      db.prepare("UPDATE reference_images SET sha256=? WHERE id=?").run(
+        sha256,
+        reference.id,
+      );
+    }).immediate();
+    // Metadata is durable before removing the old copy. A restart also finishes
+    // cleanup if an earlier migration stopped between these two operations.
+    files.removeArtifact(`reference-${reference.id}`);
+  }
+}
 export function createImageReferences(
   db: Database.Database,
   files: OutputFiles,
 ) {
+  migrateReferences(db, files);
   function get(id: string) {
     return db
       .prepare(
-        "SELECT id, owner, owner_user_id AS ownerUserId, name, media_type AS mediaType FROM reference_images WHERE id=?",
+        "SELECT id, owner, owner_user_id AS ownerUserId, name, media_type AS mediaType, sha256 FROM reference_images WHERE id=?",
       )
       .get(id) as
       | {
@@ -29,6 +69,7 @@ export function createImageReferences(
           ownerUserId?: string;
           name: string;
           mediaType: string;
+          sha256: string | null;
         }
       | undefined;
   }
@@ -69,33 +110,45 @@ export function createImageReferences(
             : undefined;
       if (!mediaType) return;
       const id = token();
-      files.write(`reference-${id}`, { image: data });
-      db.prepare(
-        "INSERT INTO reference_images (id, owner, owner_user_id, name, media_type) VALUES (?,?,?,?,?)",
-      ).run(
-        id,
-        anonymousOwner(session),
-        session.userId ?? null,
-        name,
-        mediaType,
-      );
+      const sha256 = createHash("sha256").update(data).digest("hex");
+      files.writeReference(sha256, data);
+      db.transaction(() => {
+        db.prepare(
+          "INSERT OR IGNORE INTO reference_blobs (sha256) VALUES (?)",
+        ).run(sha256);
+        db.prepare(
+          "INSERT INTO reference_images (id, owner, owner_user_id, name, media_type, sha256) VALUES (?,?,?,?,?,?)",
+        ).run(
+          id,
+          anonymousOwner(session),
+          session.userId ?? null,
+          name,
+          mediaType,
+          sha256,
+        );
+      }).immediate();
       return { id, name };
     },
     path(id: string) {
-      return files.path(`reference-${id}`, "image");
+      const reference = get(id);
+      return reference?.sha256
+        ? files.referencePath(reference.sha256)
+        : undefined;
     },
     loader() {
       const cache = new Map<string, Promise<ReferenceContent>>();
       async function read(id: string): Promise<ReferenceContent> {
         const reference = get(id),
-          path = files.path(`reference-${id}`, "image");
-        if (!reference || !path)
+          path = reference?.sha256
+            ? files.referencePath(reference.sha256)
+            : undefined;
+        if (!reference?.sha256 || !path)
           throw new Error("Reference image is unavailable");
         const bytes = await readFile(path);
         return {
           bytes,
           mediaType: reference.mediaType,
-          sha256: createHash("sha256").update(bytes).digest("hex"),
+          sha256: reference.sha256,
         };
       }
       return (ids: readonly string[]) =>

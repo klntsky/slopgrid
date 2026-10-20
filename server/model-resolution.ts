@@ -17,6 +17,7 @@ export function resolveGridModels(
   models: readonly Model[],
 ): GridInput {
   const catalog = new Map(models.map((model) => [model.id, model]));
+  const imageInputs = selectedReferences(input).length > 0;
   function resolve(id: string): string {
     const seen = new Set<string>();
     while (true) {
@@ -43,7 +44,7 @@ export function resolveGridModels(
     const issue = judgeModelIssue(
       catalog.get(resolved),
       input.format,
-      selectedReferences(input).length > 0,
+      imageInputs,
     );
     if (issue) throw new ModelResolutionError(issue);
     return resolved;

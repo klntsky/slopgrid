@@ -3,10 +3,11 @@ import type { ReferenceContent } from "./image-references.js";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { z } from "zod";
-import type { ChatMessage, GenerationParameters, GridInput } from "./domain.js";
+import type { GenerationParameters, GridInput } from "./domain.js";
 import type { TextBudget } from "./generation-budget.js";
 import { instruction, websiteSchema } from "./output-format.js";
 import { canonical } from "../shared/canonical.js";
+import { chatMessages } from "./chat-messages.js";
 
 const dependencies = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf8"),
@@ -37,49 +38,6 @@ export function prepareImageInference(
     },
   };
 }
-type ChatWireMessage = {
-  role: ChatMessage["role"];
-  content:
-    | string
-    | (
-        | { type: "text"; text: string; cache_control?: { type: "ephemeral" } }
-        | {
-            type: "image_url";
-            image_url: { url: string };
-            cache_control?: { type: "ephemeral" };
-          }
-      )[];
-};
-
-export function prepareChatMessages(
-  history: readonly ChatMessage[],
-  references: readonly ReferenceContent[] = [],
-): ChatWireMessage[] {
-  const messages: ChatWireMessage[] = history.map(({ role, content }) => ({
-    role,
-    content,
-  }));
-  if (references.length) {
-    let index = messages.findIndex((message) => message.role === "user");
-    if (index < 0) {
-      messages.unshift({ role: "user", content: "" });
-      index = 0;
-    }
-    messages[index].content = [
-      ...(messages[index].content
-        ? [{ type: "text" as const, text: messages[index].content as string }]
-        : []),
-      ...references.map(({ bytes, mediaType }) => ({
-        type: "image_url" as const,
-        image_url: {
-          url: `data:${mediaType};base64,${bytes.toString("base64")}`,
-        },
-      })),
-    ];
-  }
-  return messages;
-}
-
 export function prepareTextInference(
   format: Exclude<SingleOutputFormat, "image">,
   cell: GenerationParameters,
@@ -88,39 +46,69 @@ export function prepareTextInference(
   cache?: { sessionId: string; previousPrefixLength: number },
   references: ReferenceContent[] = [],
 ) {
-  let messages: ChatWireMessage[] | undefined;
-  if (cell.messages && (cache || references.length)) {
-    messages = prepareChatMessages(cell.messages, references);
-    if (cache) {
-      const offset = messages.length - cell.messages.length;
-      for (const index of new Set([
-        messages.length - 1,
-        cache.previousPrefixLength - 1 + offset,
-      ])) {
-        const message = messages[index];
-        if (!message) continue;
-        if (typeof message.content === "string")
-          message.content = [{ type: "text", text: message.content }];
-        const last = message.content.at(-1);
-        if (last) last.cache_control = { type: "ephemeral" };
-      }
-    }
-  }
+  const messages = cell.messages
+    ? chatMessages(cell.messages, references)
+    : undefined;
+  // The adapter puts assistant cache controls on the message, not its text
+  // block. Keep this OpenRouter wire workaround separate from chat history.
+  const cachedMessages =
+    cache &&
+    messages?.map((message, index) => {
+      const content =
+        typeof message.content === "string"
+          ? message.content
+          : message.content.map((part) =>
+              part.type === "text"
+                ? part
+                : {
+                    type: "image_url" as const,
+                    image_url: {
+                      url: `data:${part.mediaType};base64,${part.data.toString("base64")}`,
+                    },
+                  },
+            );
+      const boundary =
+        index === messages.length - 1 ||
+        index ===
+          cache.previousPrefixLength -
+            1 +
+            messages.length -
+            cell.messages!.length;
+      return {
+        role: message.role,
+        content: !boundary
+          ? content
+          : typeof content === "string"
+            ? [
+                {
+                  type: "text" as const,
+                  text: content,
+                  cache_control: { type: "ephemeral" as const },
+                },
+              ]
+            : content.map((part, i) =>
+                i === content.length - 1
+                  ? { ...part, cache_control: { type: "ephemeral" as const } }
+                  : part,
+              ),
+      };
+    });
   return {
     ...common(cell),
     format,
     pricing: budget.pricing,
     text: {
-      messages: cell.messages,
+      messages,
       system: cell.messages ? "" : instruction(format),
       maxOutputTokens: budget.maxOutputTokens,
       schema: structured ? z.toJSONSchema(websiteSchema) : undefined,
       options: {
         extraBody: {
+          modalities: ["text"],
           ...(cache && {
             session_id: cache.sessionId,
           }),
-          ...(messages && { messages }),
+          ...(cachedMessages && { messages: cachedMessages }),
           ...(cell.effort !== "default"
             ? {
                 reasoning:

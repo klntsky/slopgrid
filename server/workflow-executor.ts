@@ -2,14 +2,12 @@ import { join } from "node:path";
 import type {
   GenerationOutput,
   GenerationTask,
-  GridInput,
   WorkflowTask,
 } from "./domain.js";
 import type { Store } from "./store.js";
 import type { Provider } from "./provider.js";
 import { generateAttempt } from "./generation-attempt.js";
-import { prepareJudgeInference } from "./judge.js";
-import { loadJudgeArtifact, releaseJudgeArtifact } from "./judge-artifact.js";
+import { loadJudgeMessages, releaseJudgeArtifact } from "./judge-artifact.js";
 import { WebsitePreviews } from "./website-previews.js";
 import { token } from "./ids.js";
 
@@ -54,35 +52,19 @@ export function createWorkflowExecutor(store: Store, provider: Provider) {
         const generation = context.generation(task.generationId);
         if (!generation?.output)
           throw new Error("The generated output is unavailable for judging.");
-        const artifact = await context.retryStorage(() =>
-          loadJudgeArtifact(store, generation, context.signal),
+        const messages = await context.retryStorage(() =>
+          loadJudgeMessages(store, generation, context.signal),
         );
         context.signal.throwIfAborted();
-        const inputReferences = await context.retryStorage(() =>
-          store.references.loader()(
-            generation.input.imageSettings?.input_references ?? [],
-          ),
-        );
         if (!context.current()) throw new DOMException("Paused", "AbortError");
-        const result = await provider.judge(
-          context.key,
-          prepareJudgeInference({
-            format: generation.input.format,
+        const result = await provider.judge(context.key, task.input, messages, {
+          signal: context.signal,
+          observe: store.billing.observe(context.cellId, context.attemptId, {
             model: task.input.model,
-            effort: task.input.effort as GridInput["effort"],
-            criteria: task.input.criteria.map((criterion) => criterion.text),
-            artifact,
-            inputReferences,
+            effort: task.input.effort,
           }),
-          {
-            signal: context.signal,
-            observe: store.billing.observe(context.cellId, context.attemptId, {
-              model: task.input.model,
-              effort: task.input.effort,
-            }),
-            beforeRequest: context.beforeRequest,
-          },
-        );
+          beforeRequest: context.beforeRequest,
+        });
         return () => ({ results: result.results });
       }
       const artifactId = token();

@@ -2,7 +2,10 @@ import { token } from "../server/ids.js";
 import { createHash } from "node:crypto";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { renameSync, writeFileSync, unlinkSync } from "node:fs";
+import { readdirSync, renameSync, writeFileSync, unlinkSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { Worker } from "node:worker_threads";
 import { appFixture } from "./app-fixture.js";
 import { Provider } from "../server/provider.js";
 import { Store } from "../server/store.js";
@@ -349,4 +352,190 @@ test("grid creation records every selected reference atomically and keeps member
   store.insert(grid);
   assert.equal(store.references.allowed(second.id, owner), false);
   assert.equal(store.references.allowed(spare.id, owner), true);
+});
+
+test("identical uploads share one blob across private owners and grids without sharing metadata access", async (t) => {
+  const { store, database, secret } = await appFixture(t);
+  const alice = { id: token(), created: 0 };
+  const bob = { id: token(), userId: "bob-account", created: 0 };
+  const first = store.references.add(png, "alice.png", alice)!;
+  const second = store.references.add(png, "bob.png", bob)!;
+  const changed = store.references.add(
+    Buffer.concat([png, Buffer.from("different bytes")]),
+    "changed.png",
+    bob,
+  )!;
+  assert.notEqual(first.id, second.id);
+  assert.equal(store.references.get(first.id)!.name, "alice.png");
+  assert.equal(store.references.get(second.id)!.name, "bob.png");
+  assert.equal(store.references.allowed(first.id, bob), false);
+  assert.equal(store.references.allowed(second.id, alice), false);
+  const firstPath = store.references.path(first.id)!;
+  assert.equal(store.references.path(second.id), firstPath);
+  assert.notEqual(store.references.path(changed.id), firstPath);
+  assert.equal(store.files.path(`reference-${first.id}`, "image"), undefined);
+  const grids = [first, second].map((reference, index) => {
+    const owner = index ? bob : alice;
+    const input = gridSchema.parse({
+      format: "chat-template",
+      messages: [{ role: "user", content: "Describe it" }],
+      model: "fixture/text",
+      effort: "none",
+      budgetUsd: 1,
+      rows: { kind: "effort", values: ["none"] },
+      columns: { kind: "model", values: ["fixture/text"] },
+      inputReferences: [reference],
+    });
+    const grid: Grid = {
+      id: token(),
+      owner: owner.id,
+      ownerUserId: index ? bob.userId : undefined,
+      input,
+      status: "paused",
+      published: false,
+      visibility: "private",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      cells: expandGrid(input).map((cell) => ({ ...cell, id: token() })),
+    };
+    store.insert(grid);
+    return grid;
+  });
+  const sha256 = createHash("sha256").update(png).digest("hex");
+  const sharing = store.db.prepare(
+    `SELECT g.grid_id,r.id FROM grid_reference_images g
+     JOIN reference_images r ON r.id=g.reference_id
+     WHERE r.sha256=? AND r.id IN (?,?)
+     ORDER BY g.grid_id`,
+  );
+  assert.deepEqual(
+    sharing.all(sha256, first.id, second.id),
+    grids
+      .map((grid, index) => ({
+        grid_id: grid.id,
+        id: index ? second.id : first.id,
+      }))
+      .sort((a, b) => a.grid_id.localeCompare(b.grid_id)),
+  );
+  assert.equal(store.references.allowed(first.id, bob), false);
+  assert.equal(store.references.allowed(second.id, alice), false);
+  assert.equal(readdirSync(join(store.files.root, ".references")).length, 2);
+  assert.deepEqual(
+    await store.references.loader()([
+      second.id,
+      changed.id,
+      first.id,
+      second.id,
+    ]),
+    [png, Buffer.concat([png, Buffer.from("different bytes")]), png, png].map(
+      (bytes) => ({
+        bytes,
+        mediaType: "image/png",
+        sha256: createHash("sha256").update(bytes).digest("hex"),
+      }),
+    ),
+  );
+  store.db.prepare("DELETE FROM grids WHERE id=?").run(grids[0].id);
+  assert.deepEqual(sharing.all(sha256, first.id, second.id), [
+    { grid_id: grids[1].id, id: second.id },
+  ]);
+  const reopened = new Store(database, secret);
+  try {
+    assert.equal(reopened.references.path(first.id), firstPath);
+    assert.equal(reopened.references.path(second.id), firstPath);
+    assert.equal(reopened.references.allowed(first.id, bob), false);
+    assert.equal(reopened.references.allowed(second.id, bob), true);
+    assert.deepEqual(
+      reopened.db
+        .prepare("SELECT sha256 FROM reference_blobs WHERE sha256=?")
+        .get(sha256),
+      { sha256 },
+    );
+  } finally {
+    reopened.db.close();
+  }
+});
+
+test("concurrent identical uploads atomically install one shared blob", async (t) => {
+  const { store, database, secret } = await appFixture(t);
+  const gate = new SharedArrayBuffer(4);
+  const workers = Array.from(
+    { length: 4 },
+    (_, index) =>
+      new Worker(
+        `
+    const { parentPort, workerData } = require("node:worker_threads");
+    const { require: tsxRequire } = require("tsx/cjs/api");
+    const { Store } = tsxRequire(workerData.module, workerData.module);
+    const store = new Store(workerData.database, Buffer.from(workerData.secret));
+    parentPort.postMessage("ready");
+    Atomics.wait(new Int32Array(workerData.gate), 0, 0);
+    try {
+      const reference = store.references.add(
+        Buffer.from(workerData.png), "concurrent.png",
+        { id: "worker-" + workerData.index, created: 0 },
+      );
+      parentPort.postMessage(reference);
+    } finally {
+      store.db.close();
+    }
+  `,
+        {
+          eval: true,
+          workerData: {
+            module: fileURLToPath(
+              new URL("../server/store.ts", import.meta.url),
+            ),
+            database,
+            secret,
+            png,
+            gate,
+            index,
+          },
+        },
+      ),
+  );
+  t.after(async () => {
+    await Promise.all(workers.map((worker) => worker.terminate()));
+  });
+  const results = workers.map(
+    (worker) =>
+      new Promise<{ id: string }>((resolve, reject) => {
+        worker.on("error", reject);
+        worker.on("message", (message) => {
+          if (message !== "ready") resolve(message);
+        });
+      }),
+  );
+  await Promise.all(
+    workers.map(
+      (worker) =>
+        new Promise<void>((resolve, reject) => {
+          worker.once("error", reject);
+          worker.once("message", () => resolve());
+        }),
+    ),
+  );
+  Atomics.store(new Int32Array(gate), 0, 1);
+  Atomics.notify(new Int32Array(gate), 0);
+  const references = await Promise.all(results);
+  assert.equal(new Set(references.map((reference) => reference.id)).size, 4);
+  assert.equal(
+    new Set(references.map((reference) => store.references.path(reference.id)))
+      .size,
+    1,
+  );
+  assert.equal(readdirSync(join(store.files.root, ".references")).length, 1);
+  assert.equal(
+    readdirSync(store.files.root).filter((name) => name.startsWith(".pending-"))
+      .length,
+    0,
+  );
+  assert.deepEqual(
+    (
+      await store.references.loader()(
+        references.map((reference) => reference.id),
+      )
+    ).map((reference) => reference.bytes),
+    references.map(() => png),
+  );
 });

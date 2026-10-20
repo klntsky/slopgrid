@@ -278,7 +278,7 @@ test("production v12 migrates ownership, sessions, references and billing withou
         db.prepare(`SELECT rowid,id FROM ${table} ORDER BY rowid`).all(),
     );
     initializeDatabase(db);
-    assert.equal(db.pragma("user_version", { simple: true }), 14);
+    assert.equal(db.pragma("user_version", { simple: true }), 15);
     assert.deepEqual(
       ["grids", "sessions", "cells", "inference_calls"].map((table) =>
         db.prepare(`SELECT rowid,id FROM ${table} ORDER BY rowid`).all(),
@@ -355,6 +355,7 @@ test("production v12 migrates ownership, sessions, references and billing withou
         owner_user_id: "account",
         name: "photo.png",
         media_type: "image/png",
+        sha256: null,
       },
     ]);
     assert.equal(field(db, "SELECT epoch FROM generation_clock", "epoch"), 37);
@@ -442,12 +443,12 @@ test("production v12 migrates ownership, sessions, references and billing withou
 });
 
 for (const version of [8, 9, 10, 11, 13]) {
-  test(`production v${version} upgrades directly to v14 with historical metadata intact`, () => {
+  test(`production v${version} upgrades directly to v15 with historical metadata intact`, () => {
     const db = legacyDatabase(version);
     try {
       seedLegacy(db, version);
       initializeDatabase(db);
-      assert.equal(db.pragma("user_version", { simple: true }), 14);
+      assert.equal(db.pragma("user_version", { simple: true }), 15);
       const data = storedData(db, "grid");
       assert.equal(data.expanded_prompt_for_title, input.prompt);
       assert.equal(data.revision, undefined);
@@ -504,7 +505,7 @@ test("fresh databases use the canonical schema and reject invalid published flag
   const db = new Database(":memory:");
   try {
     initializeDatabase(db);
-    assert.equal(db.pragma("user_version", { simple: true }), 14);
+    assert.equal(db.pragma("user_version", { simple: true }), 15);
     const insert = db.prepare(
       "INSERT INTO grids (id,data,owner,published,visibility,created_at) VALUES (?,?,?,?,?,?)",
     );
@@ -527,7 +528,7 @@ test("fresh databases use the canonical schema and reject invalid published flag
 });
 
 test("unsupported versions leave stored data untouched", () => {
-  for (const version of [7, 15]) {
+  for (const version of [7, 16]) {
     const db = legacyDatabase(version);
     try {
       seedLegacy(db, version);
@@ -551,6 +552,8 @@ test("v13 judged groups preserve generation artifacts, independent judgments and
       ...input,
       format: "chat-template",
       prompt: "Answer $COLUMN",
+      inputReferences: undefined,
+      referenceGroups: undefined,
       messages: [
         { role: "user", content: "Answer $COLUMN" },
         { role: "unfilled", content: "" },
@@ -806,7 +809,7 @@ test("v14 workflow backfill failure restores a production v13 database atomicall
     assert.deepEqual(snapshot(db), before);
     db.exec("DROP TRIGGER reject_cell_link");
     initializeDatabase(db);
-    assert.equal(db.pragma("user_version", { simple: true }), 14);
+    assert.equal(db.pragma("user_version", { simple: true }), 15);
   } finally {
     db.close();
   }
