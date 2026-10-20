@@ -2,6 +2,10 @@
 
 This document defines Slopgrid's product behavior and user experience.
 
+## Website metadata
+
+1. Provide Open Graph link previews using `slopgrid` as the title and site name, the site description, and the same grid screenshot shown in the README. Use the exact site description as the preview image alt text.
+
 ## Presentation and interaction requirements
 
 The following numbered requirements define the visible layout and interaction contract.
