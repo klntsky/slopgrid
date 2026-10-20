@@ -180,6 +180,70 @@ test("chat judging loads the cell's selected image bytes alongside its completed
     await fixture.close();
   }
 });
+
+test("chat image history stays fixed when the first supplied user follows a blank", async () => {
+  const fixture = await runtimeFixture();
+  try {
+    const image = fixture.store.references.add(png, "input.png", {
+      id: fixture.owner,
+      created: 0,
+    })!;
+    const id = await create(fixture, {
+      ...single,
+      format: "chat-template",
+      budgetUsd: 1,
+      inputReferences: [image],
+      messages: [
+        { role: "system", content: "Describe the supplied image." },
+        { role: "unfilled", content: "" },
+        { role: "user", content: "Describe another detail." },
+        { role: "unfilled", content: "" },
+      ],
+    });
+    const history = (call: RuntimeCall) =>
+      call.request.messages.map((message) => ({
+        role: message.role,
+        text: messageText(message.content),
+        images:
+          typeof message.content === "string"
+            ? []
+            : message.content
+                .filter((part) => part.type === "image_url")
+                .map((part) => part.image_url!.url),
+      }));
+    const first = await fixture.nextCall();
+    const initial = history(first);
+    assert.deepEqual(initial, [
+      {
+        role: "user",
+        text: "",
+        images: [`data:image/png;base64,${png.toString("base64")}`],
+      },
+      { role: "system", text: "Describe the supplied image.", images: [] },
+    ]);
+    finish(first, "First image-based answer.", 0.1);
+    const second = await fixture.nextCall();
+    const next = history(second);
+    assert.deepEqual(next, [
+      ...initial,
+      { role: "assistant", text: "First image-based answer.", images: [] },
+      { role: "user", text: "Describe another detail.", images: [] },
+    ]);
+    finish(second, "Second image-based answer.", 0.1);
+    const judge = await fixture.nextCall();
+    assert.deepEqual(history(judge).slice(0, -2), [
+      ...next,
+      { role: "assistant", text: "Second image-based answer.", images: [] },
+    ]);
+    finish(judge, JSON.stringify(verdicts), 0.25);
+    const grid = await settled(fixture, id);
+    assert.equal(grid.cells[0].judge?.status, "complete");
+    assert.deepEqual(grid.cells[0].judge?.results, verdicts.results);
+    assert.equal(fixture.calls.length, 3);
+  } finally {
+    await fixture.close();
+  }
+});
 test("two judge models by two efforts generate once, judge four times, and include all judge charges in spent", async () => {
   const fixture = await runtimeFixture({ workers: 4, judges: true });
   try {

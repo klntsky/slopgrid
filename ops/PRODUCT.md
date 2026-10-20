@@ -45,3 +45,5 @@
    history, generated outputs, and thinking traces. Source removal keeps bytes
    required by other grids. The destination account identity must already
    exist; sessions and credentials stay in their original environment.
+   Reuse an existing upload ID only when its destination account, filename,
+   media type, and content hash match; retain a separate usage link for each grid.

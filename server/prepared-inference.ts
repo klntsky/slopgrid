@@ -3,7 +3,7 @@ import type { ReferenceContent } from "./image-references.js";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { z } from "zod";
-import type { GenerationParameters, GridInput } from "./domain.js";
+import type { ChatMessage, GenerationParameters, GridInput } from "./domain.js";
 import type { TextBudget } from "./generation-budget.js";
 import { instruction, websiteSchema } from "./output-format.js";
 import { canonical } from "../shared/canonical.js";
@@ -45,9 +45,10 @@ export function prepareTextInference(
   structured: boolean,
   cache?: { sessionId: string; previousPrefixLength: number },
   references: ReferenceContent[] = [],
+  template?: readonly ChatMessage[],
 ) {
   const messages = cell.messages
-    ? chatMessages(cell.messages, references)
+    ? chatMessages(cell.messages, references, template)
     : undefined;
   // The adapter puts assistant cache controls on the message, not its text
   // block. Keep this OpenRouter wire workaround separate from chat history.
@@ -156,7 +157,7 @@ export function templateSignature(
   return digest({
     ...common(cell),
     format: "chat-template",
-    templateVersion: 2,
+    templateVersion: 3,
     effort: cell.effort,
     messages: cell.messages,
     references: references.length

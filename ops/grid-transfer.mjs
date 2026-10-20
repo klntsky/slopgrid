@@ -385,13 +385,21 @@ export function transferGrid(Database, options) {
         WHERE g.grid_id=? ORDER BY r.id`,
       )
       .all(grid);
-    for (const reference of referenceImages)
+    const findReference = target.prepare(
+      "SELECT owner_user_id,name,media_type,sha256 FROM reference_images WHERE id=?",
+    );
+    const newReferenceImages = referenceImages.filter((reference) => {
+      const existing = findReference.get(reference.id);
+      if (!existing) return true;
       check(
-        !target
-          .prepare("SELECT 1 FROM reference_images WHERE id=?")
-          .get(reference.id),
-        "Destination reference metadata already exists",
+        existing.owner_user_id === owner &&
+          existing.name === reference.name &&
+          existing.media_type === reference.media_type &&
+          existing.sha256 === reference.sha256,
+        "Destination reference metadata already exists with different contents or ownership",
       );
+      return false;
+    });
     const referenceBlobs = new Map();
     for (const reference of referenceImages) {
       if (reference.sha256 === null || referenceBlobs.has(reference.sha256))
@@ -495,7 +503,7 @@ export function transferGrid(Database, options) {
       `INSERT INTO reference_images
       (id,owner,owner_user_id,name,media_type,sha256) VALUES (?,?,?,?,?,?)`,
     );
-    for (const reference of referenceImages)
+    for (const reference of newReferenceImages)
       addReferenceImage.run(
         reference.id,
         randomBytes(24).toString("hex"),

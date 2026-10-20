@@ -14,6 +14,7 @@ export type ChatInputMessage =
 export function chatMessages(
   history: readonly ChatMessage[],
   images: readonly ReferenceContent[] = [],
+  template: readonly ChatMessage[] = history,
 ): ChatInputMessage[] {
   const messages: ChatInputMessage[] = history.map(({ role, content }) => {
     if (role === "unfilled")
@@ -21,7 +22,14 @@ export function chatMessages(
     return { role, content };
   });
   if (!images.length) return messages;
-  const index = history.findIndex((message) => message.role === "user");
+  let index = -1;
+  for (let i = 0; i < template.length; i++) {
+    if (template[i].role === "unfilled") break;
+    if (template[i].role === "user") {
+      index = i;
+      break;
+    }
+  }
   const text = index < 0 ? "" : history[index].content;
   const user: ChatInputMessage = {
     role: "user",

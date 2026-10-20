@@ -719,6 +719,134 @@ test("source removal failure leaves source DB and bytes safe after destination c
   );
 });
 
+test("successive grid transfers reuse matching upload metadata and retain both usage links", (t) => {
+  const f = fixture(t);
+  const secondGrid = "f".repeat(48);
+  const grid = f.source
+    .prepare("SELECT * FROM grids WHERE id=?")
+    .get(f.options.grid);
+  f.source
+    .prepare("INSERT INTO grids VALUES (?,?,?,?,?,?,?,?)")
+    .run(
+      secondGrid,
+      grid.data,
+      grid.owner,
+      grid.owner_user_id,
+      grid.published,
+      grid.visibility,
+      grid.slug,
+      grid.created_at,
+    );
+  const taskIds = new Map();
+  const tasks = f.source
+    .prepare("SELECT * FROM workflow_tasks WHERE grid_id=? ORDER BY rowid")
+    .all(f.options.grid);
+  for (const task of tasks) taskIds.set(task.id, `second:${task.id}`);
+  for (const task of tasks)
+    f.source
+      .prepare("INSERT INTO workflow_tasks VALUES (?,?,?,?,?,?,?,?)")
+      .run(
+        taskIds.get(task.id),
+        secondGrid,
+        task.kind,
+        task.status,
+        task.dependency_id ? taskIds.get(task.dependency_id) : null,
+        task.artifact_id,
+        task.thinking_source_id,
+        task.data,
+      );
+  const cells = f.source
+    .prepare("SELECT * FROM cells WHERE grid_id=? ORDER BY position")
+    .all(f.options.grid);
+  for (const cell of cells)
+    f.source
+      .prepare("INSERT INTO cells VALUES (?,?,?,?,?,?)")
+      .run(
+        String(cell.position + 4).repeat(48),
+        secondGrid,
+        cell.position,
+        cell.data,
+        taskIds.get(cell.generation_id),
+        taskIds.get(cell.judgment_id),
+      );
+  f.source
+    .prepare("INSERT INTO grid_reference_images VALUES (?,'reference-image')")
+    .run(secondGrid);
+  transferGrid(Database, { ...f.options, apply: true });
+  const metadata = f.target
+    .prepare("SELECT * FROM reference_images WHERE id='reference-image'")
+    .get();
+  const blob = join(f.options.targetOutputs, ".references", f.referenceSha256);
+  const inode = lstatSync(blob).ino;
+  transferGrid(Database, {
+    ...f.options,
+    grid: secondGrid,
+    backupDir: f.options.backupDir + "-second",
+    apply: true,
+  });
+  assert.deepEqual(f.target.prepare("SELECT * FROM reference_images").all(), [
+    metadata,
+  ]);
+  assert.deepEqual(
+    f.target
+      .prepare(
+        "SELECT grid_id,reference_id FROM grid_reference_images ORDER BY grid_id",
+      )
+      .all(),
+    [
+      { grid_id: f.options.grid, reference_id: "reference-image" },
+      { grid_id: secondGrid, reference_id: "reference-image" },
+    ],
+  );
+  assert.equal(lstatSync(blob).ino, inode);
+  assert.deepEqual(readFileSync(blob), f.referenceBytes);
+  assert.equal(f.source.prepare("SELECT count(*) n FROM grids").get().n, 0);
+  for (const db of [f.source, f.target])
+    assert.deepEqual(db.pragma("foreign_key_check"), []);
+});
+
+test("shared upload metadata reuse rejects each ownership or content mismatch", async (t) => {
+  for (const [field, value] of [
+    ["owner_user_id", "another-account"],
+    ["name", "different.png"],
+    ["media_type", "image/webp"],
+    ["sha256", "0".repeat(64)],
+  ])
+    await t.test(field, (child) => {
+      const f = fixture(child);
+      const metadata = f.source.prepare("SELECT * FROM reference_images").get();
+      const existing = {
+        ...metadata,
+        owner_user_id: "target-owner",
+        [field]: value,
+      };
+      f.target
+        .prepare("INSERT INTO reference_blobs VALUES (?)")
+        .run(existing.sha256);
+      f.target
+        .prepare("INSERT INTO reference_images VALUES (?,?,?,?,?,?)")
+        .run(
+          existing.id,
+          existing.owner,
+          existing.owner_user_id,
+          existing.name,
+          existing.media_type,
+          existing.sha256,
+        );
+      assert.throws(() =>
+        transferGrid(Database, { ...f.options, apply: true }),
+      );
+      assert.deepEqual(
+        f.target.prepare("SELECT * FROM reference_images").get(),
+        existing,
+      );
+      assert.ok(
+        f.source.prepare("SELECT 1 FROM grids WHERE id=?").get(f.options.grid),
+      );
+      assert.equal(existsSync(f.options.backupDir), false);
+    });
+});
+
 test("shared uploads copy once or reuse target bytes without merging metadata or collecting source bytes", async (t) => {
   for (const existing of [false, true])
     await t.test(existing ? "reuse target blob" : "copy blob once", (child) => {

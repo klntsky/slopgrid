@@ -60,6 +60,7 @@ export async function generateAttempt(
         false,
         { sessionId: taskId, previousPrefixLength },
         references,
+        cell.messages,
       );
       previousPrefixLength = messages.length;
       return provider.request(key, prepared, progress, context);

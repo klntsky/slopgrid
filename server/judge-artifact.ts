@@ -45,7 +45,11 @@ export async function loadJudgeMessages(
   );
   signal?.throwIfAborted();
   if (format === "chat-template")
-    return chatMessages(readChatOutput(bytes.toString("utf8")), references);
+    return chatMessages(
+      readChatOutput(bytes.toString("utf8")),
+      references,
+      generation.input.messages,
+    );
   if (format === "markdown")
     return chatMessages(
       [{ role: "assistant", content: bytes.toString("utf8") }],
