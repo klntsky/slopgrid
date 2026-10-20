@@ -83,6 +83,57 @@ test("unknown or cyclic aliases fail explicitly", () => {
   );
 });
 
+test("image input admission checks every resolved generator in fixed and axis selections", () => {
+  for (const format of ["chat-template", "image"] as const) {
+    const source: GridInput = {
+      ...input,
+      format,
+      inputReferences: [{ id: "image", name: "image.png" }],
+    };
+    const catalog = models().map((model) => ({
+      ...model,
+      imageInput: model.id !== "fixture/v2",
+    }));
+    assert.equal(resolveGridModels(source, catalog).model, "fixture/v1");
+    assert.throws(
+      () => resolveGridModels({ ...source, model: "fixture/v2" }, catalog),
+      /does not support image inputs/,
+    );
+    for (const side of ["rows", "columns"] as const) {
+      const selected: GridInput = {
+        ...source,
+        inputReferences: undefined,
+        referenceGroups: { group: [{ id: "image", name: "image.png" }] },
+        [side]: { kind: "model", values: ["~fixture/latest", "fixture/v2"] },
+        [side === "rows" ? "columns" : "rows"]: {
+          kind: "input_references",
+          values: ["group"],
+        },
+      };
+      assert.throws(
+        () => resolveGridModels(selected, catalog),
+        /does not support image inputs/,
+      );
+      const withoutImages = resolveGridModels(
+        { ...selected, referenceGroups: undefined },
+        catalog,
+      );
+      assert.deepEqual(withoutImages[side].values, [
+        "fixture/v1",
+        "fixture/v2",
+      ]);
+    }
+    const unsupportedTarget = catalog.map((model) => ({
+      ...model,
+      imageInput: model.id !== "fixture/v1",
+    }));
+    assert.throws(
+      () => resolveGridModels(source, unsupportedTarget),
+      /does not support image inputs/,
+    );
+  }
+});
+
 const judgedInput: GridInput = {
   ...input,
   judge: {
@@ -98,6 +149,48 @@ function judgeModels(): Model[] {
     imageInput: true,
   }));
 }
+
+test("chat images require image-capable fixed and axis judges, ignoring inactive reference groups", () => {
+  const catalog = judgeModels().map((model) => ({
+    ...model,
+    imageInput: model.id !== "fixture/v2",
+  }));
+  const source: GridInput = {
+    ...judgedInput,
+    format: "chat-template",
+    inputReferences: [{ id: "image", name: "image.png" }],
+    judge: { ...judgedInput.judge!, model: "fixture/v2" },
+  };
+  assert.throws(
+    () => resolveGridModels(source, catalog),
+    /judge model must support image inputs/,
+  );
+  for (const side of ["rows", "columns"] as const) {
+    assert.throws(
+      () =>
+        resolveGridModels(
+          {
+            ...source,
+            [side]: {
+              kind: "judge_model",
+              values: ["fixture/v1", "fixture/v2"],
+            },
+          },
+          catalog,
+        ),
+      /judge model must support image inputs/,
+    );
+  }
+  const withoutImages = resolveGridModels(
+    {
+      ...source,
+      inputReferences: undefined,
+      referenceGroups: { unused: [{ id: "image", name: "image.png" }] },
+    },
+    catalog,
+  );
+  assert.equal(withoutImages.judge?.model, "fixture/v2");
+});
 
 test("judge aliases resolve in fixed settings and both axes, collapsing duplicate targets", () => {
   const resolved = resolveGridModels(judgedInput, judgeModels());

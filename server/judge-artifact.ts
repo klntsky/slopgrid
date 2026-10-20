@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
-import type { GenerationTask } from "./domain.js";
+import type { FilledChatMessage, GenerationTask } from "./domain.js";
 import type { Store } from "./store.js";
 import type { ReferenceContent } from "./image-references.js";
 import { readChatOutput } from "../shared/chat-output.js";
 import { rasterizeSvg } from "./svg-raster.js";
 
+export type JudgeArtifact = string | ReferenceContent | FilledChatMessage[];
 const artifacts = new WeakMap<Store, Map<string, Promise<ReferenceContent>>>();
 
 export function releaseJudgeArtifact(store: Store, generationId: string): void {
@@ -15,7 +16,7 @@ export async function loadJudgeArtifact(
   store: Store,
   generation: GenerationTask,
   signal?: AbortSignal,
-): Promise<string | ReferenceContent> {
+): Promise<JudgeArtifact> {
   signal?.throwIfAborted();
   const { format } = generation.input;
   const output = generation.output;
@@ -41,8 +42,7 @@ export async function loadJudgeArtifact(
     throw new Error("The generated output is unavailable for judging.");
   const bytes = Buffer.from(data.buffer, data.byteOffset, data.byteLength);
   if (format === "markdown") return bytes.toString("utf8");
-  if (format === "chat-template")
-    return JSON.stringify(readChatOutput(bytes.toString("utf8")));
+  if (format === "chat-template") return readChatOutput(bytes.toString("utf8"));
   const artifact = {
     bytes,
     mediaType:

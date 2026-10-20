@@ -1,6 +1,7 @@
 import type { GridInput } from "./domain.js";
 import type { Model } from "./provider.js";
-import { judgeModelIssue } from "./compatibility.js";
+import { imageInputIssue, judgeModelIssue } from "./compatibility.js";
+import { selectedReferences } from "./image-settings.js";
 
 export class ModelResolutionError extends Error {}
 
@@ -39,7 +40,11 @@ export function resolveGridModels(
   function resolveJudge(id: string): string {
     if (!id) throw new ModelResolutionError("Select a judge model.");
     const resolved = resolve(id);
-    const issue = judgeModelIssue(catalog.get(resolved), input.format);
+    const issue = judgeModelIssue(
+      catalog.get(resolved),
+      input.format,
+      selectedReferences(input).length > 0,
+    );
     if (issue) throw new ModelResolutionError(issue);
     return resolved;
   }
@@ -74,5 +79,14 @@ export function resolveGridModels(
           : resolveJudge(input.judge.model),
       }
     : undefined;
-  return { ...input, model, rows, columns, ...(judge ? { judge } : {}) };
+  const resolved = {
+    ...input,
+    model,
+    rows,
+    columns,
+    ...(judge ? { judge } : {}),
+  };
+  const issue = imageInputIssue(resolved, models);
+  if (issue) throw new ModelResolutionError(issue);
+  return resolved;
 }

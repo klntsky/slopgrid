@@ -54,6 +54,75 @@ function finish(call: RuntimeCall, text = "Artifact") {
   call.finish();
 }
 
+test("chat reference content controls reuse and distinct image groups stay independent", async () => {
+  const f = await runtimeFixture();
+  try {
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
+      "base64",
+    );
+    const session = { id: f.owner, created: 0 };
+    const first = f.store.references.add(png, "first.png", session)!;
+    const renamed = f.store.references.add(png, "renamed.png", session)!;
+    const second = f.store.references.add(
+      Buffer.concat([png, Buffer.from("different")]),
+      "second.png",
+      session,
+    )!;
+    const template = {
+      ...input,
+      format: "chat-template",
+      rows: { kind: "effort", values: ["none"] },
+      columns: { kind: "input_references", values: ["first", "second"] },
+      referenceGroups: { first: [first], second: [second] },
+      messages: [{ role: "user", content: "Describe the image" }],
+    };
+    const source = await create(f, template);
+    const firstCall = await f.nextCall();
+    finish(firstCall, "First image");
+    const secondCall = await f.nextCall();
+    finish(secondCall, "Second image");
+    const original = await settled(f, source.id);
+    assert.notEqual(original.cells[0].artifactId, original.cells[1].artifactId);
+    assert.notDeepEqual(
+      firstCall.request.messages,
+      secondCall.request.messages,
+    );
+    const copy = await create(f, {
+      ...template,
+      referenceGroups: { first: [renamed], second: [second] },
+      sourceGridId: source.id,
+      reuseArtifacts: true,
+    });
+    assert.equal(copy.status, "complete");
+    assert.deepEqual(
+      f.store.get(copy.id)!.cells.map((cell) => cell.artifactId),
+      original.cells.map((cell) => cell.artifactId),
+    );
+    assert.equal(f.calls.length, 2);
+    const changed = await create(f, {
+      ...template,
+      columns: { kind: "input_references", values: ["first"] },
+      referenceGroups: { first: [first, second] },
+      sourceGridId: source.id,
+      reuseArtifacts: true,
+    });
+    finish(await f.nextCall(), "Both images");
+    const complete = await settled(f, changed.id);
+    assert.equal(complete.status, "complete");
+    assert.notEqual(complete.cells[0].artifactId, original.cells[0].artifactId);
+    assert.equal(f.calls.length, 3);
+    const denied = await f.request("/api/grids", {
+      ...template,
+      model: "unknown/text",
+    });
+    assert.equal(denied.status, 400);
+    assert.equal(f.calls.length, 3);
+  } finally {
+    await f.close();
+  }
+});
+
 test("template usage and per-call reuse survive storage reopening", async () => {
   const f = await runtimeFixture();
   try {

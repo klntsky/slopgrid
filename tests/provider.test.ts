@@ -4,6 +4,8 @@ import { createServer } from "node:http";
 import { once } from "node:events";
 import { Provider } from "../server/provider.js";
 import { generateAttempt } from "../server/generation-attempt.js";
+import { templateSignature } from "../server/prepared-inference.js";
+import { createHash } from "node:crypto";
 import { failureDetails } from "../server/failures.js";
 import type { Cell, InferenceProgress } from "../server/domain.js";
 
@@ -45,7 +47,10 @@ async function upstream(streamError?: Record<string, unknown>) {
           },
     context_length: 1000000,
     top_provider: { max_completion_tokens: 128000 },
-    architecture: { input_modalities: ["text"], output_modalities: ["text"] },
+    architecture: {
+      input_modalities: m.id === "all" ? ["text", "image"] : ["text"],
+      output_modalities: ["text"],
+    },
   }));
   const server = createServer(async (req, res) => {
     if (req.url === "/models" || req.url === "/images/models") {
@@ -264,6 +269,103 @@ test("chat templates fill blanks sequentially and complete trailing history", as
       Number(h.requests[0].max_tokens) < Number(h.requests[1].max_tokens),
     );
     assert.equal(messages[1].role, "unfilled");
+  } finally {
+    await h.close();
+  }
+});
+
+test("chat images reach every sequential SDK call without changing the transcript", async () => {
+  const h = await upstream();
+  const references = ["first image", "second image"].map((text) => {
+    const bytes = Buffer.from(text);
+    return {
+      bytes,
+      mediaType: "image/png",
+      sha256: createHash("sha256").update(bytes).digest("hex"),
+    };
+  });
+  try {
+    for (const role of ["user", "system", "assistant"] as const) {
+      const messages: NonNullable<Cell["messages"]> = [
+        { role, content: "Describe these images" },
+        { role: "unfilled", content: "" },
+        { role: "unfilled", content: "" },
+      ];
+      const parameters = { ...cell("all", "default"), messages };
+      const start = h.requests.length;
+      const result = await generateAttempt(
+        h.provider,
+        "key",
+        "chat-template",
+        parameters,
+        "image-template",
+        () => {},
+        {},
+        references,
+      );
+      for (const request of h.requests.slice(start)) {
+        const wire = request.messages as {
+          role: string;
+          content: string | { type: string; image_url?: { url: string } }[];
+        }[];
+        const imageMessage = wire[0];
+        assert.equal(imageMessage.role, "user");
+        assert.deepEqual(
+          (
+            imageMessage.content as {
+              type: string;
+              image_url?: { url: string };
+            }[]
+          )
+            .filter((part) => part.type === "image_url")
+            .map((part) => part.image_url?.url),
+          references.map(
+            (r) => `data:${r.mediaType};base64,${r.bytes.toString("base64")}`,
+          ),
+        );
+        if (role !== "user") assert.equal(wire[1].role, role);
+      }
+      assert.equal(h.requests.length - start, 2);
+      assert.deepEqual(JSON.parse(result.files["messages.json"] as string), [
+        messages[0],
+        { role: "assistant", content: "# Output" },
+        { role: "assistant", content: "# Output" },
+      ]);
+      assert.equal(result.signature, templateSignature(parameters, references));
+      assert.notEqual(result.signature, templateSignature(parameters));
+      assert.notEqual(
+        result.signature,
+        templateSignature(parameters, [...references].reverse()),
+      );
+      assert.notEqual(
+        result.signature,
+        templateSignature(parameters, [references[0]]),
+      );
+    }
+    const parameters = {
+      ...cell("required", "default"),
+      messages: [{ role: "user" as const, content: "Describe the image" }],
+      imageSettings: { input_references: ["image"] },
+    };
+    const before = h.requests.length;
+    await assert.rejects(
+      generateAttempt(
+        h.provider,
+        "key",
+        "chat-template",
+        parameters,
+        "unsupported",
+        () => {},
+        {},
+        references,
+      ),
+      /does not support image inputs/,
+    );
+    await assert.rejects(
+      h.provider.prepare("image", parameters, references),
+      /does not support image inputs/,
+    );
+    assert.equal(h.requests.length, before);
   } finally {
     await h.close();
   }

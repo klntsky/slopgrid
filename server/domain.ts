@@ -157,7 +157,11 @@ export const gridSchema = z
         issue("Unknown thinking effort");
     }
     for (const axis of [g.rows, g.columns]) {
-      if (imageKinds.some((kind) => kind === axis.kind) && g.format !== "image")
+      if (
+        imageKinds.some((kind) => kind === axis.kind) &&
+        g.format !== "image" &&
+        !(isChatFormat(g.format) && axis.kind === "input_references")
+      )
         issue("Image settings require Image output");
       if (
         imageKinds.some((kind) => kind === axis.kind) &&
@@ -192,7 +196,7 @@ export const gridSchema = z
       g.imageSettings = settings;
     else delete g.imageSettings;
     if (
-      g.format !== "image" ||
+      (g.format !== "image" && !isChatFormat(g.format)) ||
       dimensions.includes("input_references") ||
       !g.inputReferences?.length
     )
@@ -418,7 +422,7 @@ export function expandGrid(input: GridInput): Omit<Cell, "id">[] {
             }
           : {}),
         budgetUsd: input.budgetUsd,
-        ...(input.format === "image"
+        ...(input.format === "image" || isChatFormat(input.format)
           ? { imageSettings: normalizeImageSettings(imageSettings) }
           : {}),
         status: "pending" as const,

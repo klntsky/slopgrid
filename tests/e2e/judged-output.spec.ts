@@ -480,6 +480,88 @@ test("removing a judge preserves ordinary axes and generation settings", async (
   }
 });
 
+test("chat input images require a vision judge and removing them restores text-only judges", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "Chat completion", exact: true })
+    .click();
+  await connectOpenRouter(page);
+  await mockModels(page, (models) =>
+    models.map((model) =>
+      model.id === "fixture/other" ? { ...model, imageInput: false } : model,
+    ),
+  );
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "Chat completion", exact: true })
+    .click();
+  await page
+    .getByLabel("Message 1", { exact: true })
+    .fill("Describe this image. $ROW $COLUMN");
+  await page
+    .getByRole("combobox", { name: "Rows", exact: true })
+    .selectOption("variable");
+  await page.getByLabel("Row values", { exact: true }).fill("one");
+  await page
+    .getByRole("combobox", { name: "Columns", exact: true })
+    .selectOption("variable");
+  await page.getByLabel("Column values", { exact: true }).fill("one");
+  await selectModel(page, "fixture/text");
+  await page
+    .getByRole("checkbox", { name: "Add a LLM judge", exact: true })
+    .check();
+  await page
+    .getByLabel("Criterion 1", { exact: true })
+    .fill("Does the answer describe the image?");
+  const judge = page.getByRole("radiogroup", {
+    name: "Judge model",
+    exact: true,
+  });
+  const search = judge.getByRole("searchbox", {
+    name: "Search judge models",
+    exact: true,
+  });
+  const textJudge = judge.locator('input[type="radio"][value="fixture/other"]');
+  const visionJudge = judge.locator(
+    'input[type="radio"][value="fixture/text"]',
+  );
+  await search.fill("fixture");
+  await textJudge.check();
+  const generate = page.getByRole("button", { name: "Generate", exact: true });
+  await expect(generate).toBeEnabled();
+  await page.getByLabel("Add input references", { exact: true }).setInputFiles({
+    name: "judge-input.png",
+    mimeType: "image/png",
+    buffer: Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
+      "base64",
+    ),
+  });
+  await expect(
+    page.getByRole("img", { name: "judge-input.png", exact: true }),
+  ).toBeVisible();
+  await expect(textJudge).toHaveCount(0);
+  await expect(generate).toBeDisabled();
+  await page.reload();
+  await search.fill("fixture");
+  await expect(textJudge).toHaveCount(0);
+  await expect(generate).toBeDisabled();
+  await visionJudge.check();
+  await expect(generate).toBeEnabled();
+  await page
+    .getByRole("button", {
+      name: "Remove judge-input.png from Input references",
+      exact: true,
+    })
+    .click();
+  await expect(textJudge).toBeVisible();
+  await textJudge.check();
+  await expect(textJudge).toBeChecked();
+  await expect(generate).toBeEnabled();
+});
+
 test("format changes retain criteria and judge effort, clear incompatible models, and remove Website judging", async ({
   page,
 }) => {

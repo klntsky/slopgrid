@@ -28,58 +28,64 @@ export function ImageOptions({
   }
   return (
     <>
-      <div className="image-options">
-        {(["size", "aspect_ratio", "background", "quality"] as const)
-          .filter((kind) => !dimensions.includes(kind))
-          .map((kind) => {
-            const value = input.imageSettings?.[kind] || "auto";
-            const custom =
-              kind === "size" && !imageChoices.size.includes(value);
-            return (
-              <div
-                key={kind}
-                className={
-                  kind === "quality" ? "image-quality-option" : undefined
-                }
-              >
-                <label>
-                  <span className="parameter-name">{dimensionNames[kind]}</span>
-                  <select
-                    value={custom ? "custom" : value}
-                    onChange={(event) =>
-                      select(
-                        kind,
-                        event.target.value === "custom"
-                          ? "x"
-                          : event.target.value,
-                      )
-                    }
-                  >
-                    {[
-                      ...new Set([
-                        ...imageChoices[kind],
-                        ...(custom ? [] : [value]),
-                      ]),
-                    ].map((choice) => (
-                      <option key={choice} value={choice}>
-                        {choice === "auto" ? "Auto" : choice}
-                      </option>
-                    ))}
-                    {kind === "size" && <option value="custom">Custom</option>}
-                  </select>
-                </label>
-                {custom && (
-                  <CustomImageSize
-                    label="Custom size"
-                    value={value}
-                    onChange={(size) => select(kind, size)}
-                  />
-                )}
-                {compatibility[kind]}
-              </div>
-            );
-          })}
-      </div>
+      {input.format === "image" && (
+        <div className="image-options">
+          {(["size", "aspect_ratio", "background", "quality"] as const)
+            .filter((kind) => !dimensions.includes(kind))
+            .map((kind) => {
+              const value = input.imageSettings?.[kind] || "auto";
+              const custom =
+                kind === "size" && !imageChoices.size.includes(value);
+              return (
+                <div
+                  key={kind}
+                  className={
+                    kind === "quality" ? "image-quality-option" : undefined
+                  }
+                >
+                  <label>
+                    <span className="parameter-name">
+                      {dimensionNames[kind]}
+                    </span>
+                    <select
+                      value={custom ? "custom" : value}
+                      onChange={(event) =>
+                        select(
+                          kind,
+                          event.target.value === "custom"
+                            ? "x"
+                            : event.target.value,
+                        )
+                      }
+                    >
+                      {[
+                        ...new Set([
+                          ...imageChoices[kind],
+                          ...(custom ? [] : [value]),
+                        ]),
+                      ].map((choice) => (
+                        <option key={choice} value={choice}>
+                          {choice === "auto" ? "Auto" : choice}
+                        </option>
+                      ))}
+                      {kind === "size" && (
+                        <option value="custom">Custom</option>
+                      )}
+                    </select>
+                  </label>
+                  {custom && (
+                    <CustomImageSize
+                      label="Custom size"
+                      value={value}
+                      onChange={(size) => select(kind, size)}
+                    />
+                  )}
+                  {compatibility[kind]}
+                </div>
+              );
+            })}
+        </div>
+      )}
       {!dimensions.includes("input_references") && (
         <div>
           <span className="parameter-name parameter-name-standalone">

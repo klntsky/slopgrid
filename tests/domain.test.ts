@@ -69,6 +69,47 @@ test("chat histories preserve roles and whitespace while expanding variables", (
   );
 });
 
+test("chat image inputs survive normalization and expand common and grouped references", () => {
+  const source = {
+    format: "chat-template",
+    messages: [{ role: "user", content: "Describe the images" }],
+    rows: { kind: "model", values: ["vision"] },
+    columns: { kind: "effort", values: ["default"] },
+    model: "",
+    effort: "default",
+    budgetUsd: 1,
+    inputReferences: [{ id: "first", name: "first.png" }],
+  };
+  const common = gridSchema.parse(source);
+  assert.deepEqual(expandGrid(common)[0].imageSettings, {
+    input_references: ["first"],
+  });
+  const grouped = gridSchema.parse({
+    ...source,
+    columns: { kind: "input_references", values: ["pair", "single"] },
+    referenceGroups: {
+      pair: [
+        { id: "second", name: "second.png" },
+        { id: "first", name: "first.png" },
+      ],
+      single: [{ id: "first", name: "first.png" }],
+    },
+  });
+  assert.equal(grouped.inputReferences, undefined);
+  assert.deepEqual(
+    expandGrid(grouped).map((cell) => cell.imageSettings?.input_references),
+    [["second", "first"], ["first"]],
+  );
+  for (const kind of ["size", "quality", "background", "aspect_ratio"])
+    assert.equal(
+      gridSchema.safeParse({
+        ...source,
+        columns: { kind, values: ["auto"] },
+      }).success,
+      false,
+    );
+});
+
 test("two prompt variables are replaced literally, including dollar signs in values", () => {
   const cells = expandGrid({
     format: "markdown",

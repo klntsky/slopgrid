@@ -6,6 +6,7 @@ import {
   type GridInput,
 } from "../../server/domain";
 import type { ReferenceImage } from "../../server/image-settings";
+import { selectedReferences } from "../../server/image-settings";
 import { canJudge } from "../../server/compatibility";
 import { modelCatalog } from "../model-catalog";
 import { removeJudge } from "./change-axis";
@@ -79,6 +80,9 @@ function selectDraftFormat(d: Draft, format: GridInput["format"]): Draft {
       ?.values[0] ??
     d.input.judge?.effort ??
     "default";
+  const supportsReferences = format === "image" || isChatFormat(format);
+  const imageInputs =
+    supportsReferences && selectedReferences(d.input).length > 0;
   return {
     ...d,
     formatSelected: true,
@@ -92,7 +96,9 @@ function selectDraftFormat(d: Draft, format: GridInput["format"]): Draft {
               ...d.input.judge,
               effort: judgeEffort as GridInput["effort"],
               model: modelCatalog.some(
-                (model) => model.id === judgeModel && canJudge(model, format),
+                (model) =>
+                  model.id === judgeModel &&
+                  canJudge(model, format, imageInputs),
               )
                 ? judgeModel
                 : "",
@@ -100,18 +106,23 @@ function selectDraftFormat(d: Draft, format: GridInput["format"]): Draft {
       messages: isChatFormat(format) ? messages : undefined,
       prompt: isChatFormat(format) ? chatText(messages) : d.input.prompt,
       imageSettings: undefined,
-      inputReferences: undefined,
+      inputReferences: supportsReferences ? d.input.inputReferences : undefined,
       model: "",
       effort: "default",
-      rows: isMarkdownFormat(format)
-        ? { kind: "effort", values: ["default"] }
-        : { kind: "model", values: [] },
-      columns:
-        format === "image"
-          ? { kind: "quality", values: ["auto"] }
+      rows:
+        supportsReferences && d.input.rows.kind === "input_references"
+          ? d.input.rows
           : isMarkdownFormat(format)
-            ? { kind: "model", values: [] }
-            : { kind: "effort", values: ["default"] },
+            ? { kind: "effort", values: ["default"] }
+            : { kind: "model", values: [] },
+      columns:
+        supportsReferences && d.input.columns.kind === "input_references"
+          ? d.input.columns
+          : format === "image"
+            ? { kind: "quality", values: ["auto"] }
+            : isMarkdownFormat(format)
+              ? { kind: "model", values: [] }
+              : { kind: "effort", values: ["default"] },
     },
   };
 }

@@ -15,7 +15,7 @@ import { parsePricing, type ModelPricing } from "./model-pricing.js";
 import type { CallObserver } from "./billing.js";
 import { upstreamFetch } from "./http.js";
 import { judgeInference, type PreparedJudgeInference } from "./judge.js";
-import { canJudge, judgeModelIssue } from "./compatibility.js";
+import { judgeModelIssue } from "./compatibility.js";
 import {
   efforts,
   type Cell,
@@ -246,11 +246,12 @@ export class Provider {
     const model = (await this.models()).find(
       (candidate) => candidate.id === prepared.model,
     );
-    if (!model || !canJudge(model, prepared.format))
-      throw new PreparationError(
-        judgeModelIssue(model, prepared.format) ??
-          "The judge model must support structured outputs.",
-      );
+    const issue = judgeModelIssue(
+      model,
+      prepared.format,
+      prepared.imageInputs,
+    );
+    if (issue) throw new PreparationError(issue);
     return judgeInference(this.baseURL, key, prepared, context);
   }
   async generate(
@@ -296,10 +297,17 @@ export class Provider {
     cell: GenerationParameters,
     references: ReferenceContent[] = [],
   ) {
+    const models = await this.models();
+    const selectedModel = models.find((model) => model.id === cell.model);
+    if (
+      (references.length || cell.imageSettings?.input_references?.length) &&
+      selectedModel?.imageInput !== true
+    )
+      throw new PreparationError(
+        "The selected model does not support image inputs.",
+      );
     if (format === "image") return prepareImageInference(cell, references);
-    const pricedModel = (await this.models()).find(
-      (model) => model.id === cell.model,
-    );
+    const pricedModel = selectedModel;
     if (!pricedModel)
       throw new PreparationError(`Pricing is unavailable for ${cell.model}.`);
     const budget = generationBudget(

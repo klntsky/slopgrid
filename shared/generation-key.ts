@@ -15,7 +15,7 @@ export function generationGroupKey(
       messages: cell.messages,
       budgetUsd: format === "image" ? undefined : cell.budgetUsd,
       imageSettings:
-        format === "image"
+        format === "image" || format === "chat-template"
           ? normalizeImageSettings(cell.imageSettings)
           : undefined,
     }),

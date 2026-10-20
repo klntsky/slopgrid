@@ -22,7 +22,7 @@ for (const shared of [false, true])
         id: "fixture/image",
         name: "Image",
         image: true,
-        imageInput: false,
+        imageInput: true,
         text: false,
         reasoning: false,
         reasoningMandatory: false,
@@ -175,9 +175,7 @@ for (const shared of [false, true])
     assert.equal((await read(image.id)).status, 404);
     assert.deepEqual(
       Buffer.from(
-        await (
-          await read(image.id, `slopgrid=${forkOwner}`)
-        ).arrayBuffer(),
+        await (await read(image.id, `slopgrid=${forkOwner}`)).arrayBuffer(),
       ),
       png,
     );

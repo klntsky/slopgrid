@@ -79,7 +79,10 @@ export function Create() {
   const compatibility = compatibilityTables({ input, models });
   const commonFixedParameters =
     commonModel || commonEffort || commonJudgeModel || commonJudgeEffort;
-  const commonParameters = input.format === "image" || commonFixedParameters;
+  const commonParameters =
+    input.format === "image" ||
+    isChatFormat(input.format) ||
+    commonFixedParameters;
   const promptVariables = (["rows", "columns"] as const)
     .filter((axis) => input[axis].kind === "variable")
     .map((axis) => (axis === "rows" ? "$ROW" : "$COLUMN"));
@@ -286,7 +289,7 @@ export function Create() {
               )}
             </div>
           )}
-          {input.format === "image" && (
+          {(input.format === "image" || isChatFormat(input.format)) && (
             <ImageOptions
               compatibility={compatibility}
               input={input}

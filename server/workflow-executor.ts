@@ -58,6 +58,11 @@ export function createWorkflowExecutor(store: Store, provider: Provider) {
           loadJudgeArtifact(store, generation, context.signal),
         );
         context.signal.throwIfAborted();
+        const inputReferences = await context.retryStorage(() =>
+          store.references.loader()(
+            generation.input.imageSettings?.input_references ?? [],
+          ),
+        );
         if (!context.current()) throw new DOMException("Paused", "AbortError");
         const result = await provider.judge(
           context.key,
@@ -67,6 +72,7 @@ export function createWorkflowExecutor(store: Store, provider: Provider) {
             effort: task.input.effort as GridInput["effort"],
             criteria: task.input.criteria.map((criterion) => criterion.text),
             artifact,
+            inputReferences,
           }),
           {
             signal: context.signal,

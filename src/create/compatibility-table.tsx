@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { tooltipRef } from "../components/use-tooltip";
 import { Check, TriangleAlert } from "lucide-react";
-import { expandGrid, type GridInput } from "../../server/domain";
+import { expandGrid, isChatFormat, type GridInput } from "../../server/domain";
 import { imageKinds } from "../../server/image-settings";
 import {
   effortLabel,
@@ -68,6 +68,34 @@ export function compatibilityTables({
     ).filter((effort) => effort !== "default");
     return {
       ...judgeCompatibility,
+      input_references: isChatFormat(input.format) ? (
+        <CompatibilityGrid
+          caption={`${imageParameterNames.input_references} compatibility`}
+          rows={modelNames}
+          columns={
+            axes.find((axis) => axis.kind === "input_references")?.values ?? [
+              `${input.inputReferences?.length ?? 0} images`,
+            ]
+          }
+          cells={selectedModels.map(({ info }) =>
+            (
+              axes.find((axis) => axis.kind === "input_references")?.values ?? [
+                undefined,
+              ]
+            ).map((group) => ({
+              support: !(group
+                ? input.referenceGroups?.[group]?.length
+                : input.inputReferences?.length)
+                ? "supported"
+                : !info
+                  ? "unknown"
+                  : info.imageInput
+                    ? "supported"
+                    : "unsupported",
+            })),
+          )}
+        />
+      ) : undefined,
       effort: (
         <CompatibilityGrid
           caption="Thinking effort compatibility"

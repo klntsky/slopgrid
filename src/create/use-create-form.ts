@@ -10,7 +10,8 @@ import { modelCatalog } from "../model-catalog";
 import { useConnection, useInferenceCapacity } from "../queries";
 import { useCreateDraft } from "./draft";
 import { useCreateSubmission } from "./use-create-submission";
-import { canJudge } from "../../server/compatibility";
+import { canJudge, imageInputIssue } from "../../server/compatibility";
+import { selectedReferences } from "../../server/image-settings";
 
 function useBudgetEstimate(input: GridInput) {
   const [minute, setMinute] = useState(() => Math.floor(Date.now() / 60000));
@@ -57,8 +58,9 @@ export function useCreateForm() {
   const commonJudgeEffort =
     !!input.judge &&
     ![input.rows.kind, input.columns.kind].includes("judge_effort");
+  const imageInputs = selectedReferences(input).length > 0;
   const judgeModels = modelCatalog
-    .filter((model) => canJudge(model, input.format))
+    .filter((model) => canJudge(model, input.format, imageInputs))
     .sort(
       (a, b) =>
         a.name.localeCompare(b.name, "en", { sensitivity: "base" }) ||
@@ -90,9 +92,10 @@ export function useCreateForm() {
         )
       ? "Add a judge to use judge dimensions."
       : undefined;
+  const imageIssue = imageInputIssue(input, modelCatalog);
   const submission = useCreateSubmission({
     draft,
-    blocked: modelMissing || !!judgeIssue || workersPending,
+    blocked: modelMissing || !!judgeIssue || !!imageIssue || workersPending,
     parallelWorkers,
     onReferenceUploaded: editing.replaceReference,
   });
@@ -121,6 +124,7 @@ export function useCreateForm() {
         : "Checking the automatic worker count."),
     modelMissing && "Select a model.",
     judgeIssue,
+    imageIssue,
     !input.rows.values.length && "Select row values.",
     !input.columns.values.length && "Select column values.",
     !connection.data?.connected && "Connect OpenRouter.",

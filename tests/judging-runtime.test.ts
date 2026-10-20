@@ -72,14 +72,7 @@ const png = Buffer.from(
 const svg =
   '<svg xmlns="http://www.w3.org/2000/svg" width="80" height="40"><rect x="10" y="10" width="20" height="20" fill="red"/></svg>';
 function judgeArtifact(call: RuntimeCall): string {
-  const content = call.request.messages
-    .filter((message) => message.role === "user")
-    .map((message) => messageText(message.content))
-    .join("");
-  const separator = "\n\nCompleted artifact:\n";
-  const offset = content.indexOf(separator);
-  assert.notEqual(offset, -1);
-  return content.slice(offset + separator.length);
+  return messageText(call.request.messages.at(-3)!.content);
 }
 function judgeImage(call: RuntimeCall) {
   const parts = call.request.messages.flatMap((message) =>
@@ -128,6 +121,65 @@ function committed(
   projectWorkflow(grid, tasks);
   return grid;
 }
+
+test("chat judging loads the cell's selected image bytes alongside its completed conversation", async () => {
+  const fixture = await runtimeFixture();
+  try {
+    const session = { id: fixture.owner, created: 0 };
+    const first = fixture.store.references.add(png, "first.png", session)!;
+    const secondBytes = Buffer.concat([png, Buffer.from("other image")]);
+    const second = fixture.store.references.add(
+      secondBytes,
+      "second.png",
+      session,
+    )!;
+    const id = await create(fixture, {
+      ...single,
+      format: "chat-template",
+      messages: [{ role: "user", content: "Describe the selected images." }],
+      rows: { kind: "input_references", values: ["chosen"] },
+      referenceGroups: { chosen: [second, first, second], unused: [first] },
+      judge: { ...single.judge, model: "fixture/text" },
+    });
+    const generation = await fixture.nextCall();
+    finish(generation, "The images show a shape.", 0.1);
+    const judge = await fixture.nextCall();
+    const urls = judge.request.messages.flatMap((message) =>
+      typeof message.content === "string"
+        ? []
+        : message.content
+            .filter((part) => part.type === "image_url")
+            .map((part) => part.image_url!.url),
+    );
+    assert.deepEqual(
+      urls,
+      [secondBytes, png, secondBytes].map(
+        (bytes) => `data:image/png;base64,${bytes.toString("base64")}`,
+      ),
+    );
+    assert.deepEqual(
+      judge.request.messages.slice(0, -2).map((message) => ({
+        role: message.role,
+        content: messageText(message.content),
+      })),
+      [
+        { role: "user", content: "Describe the selected images." },
+        { role: "assistant", content: "The images show a shape." },
+      ],
+    );
+    assert.deepEqual(
+      judge.request.messages.map((message) => message.role),
+      ["user", "assistant", "system", "user"],
+    );
+    finish(judge, JSON.stringify(verdicts), 0.25);
+    const grid = await settled(fixture, id);
+    assert.equal(grid.cells[0].status, "complete");
+    assert.equal(grid.cells[0].judge?.status, "complete");
+    assert.deepEqual(grid.cells[0].judge?.results, verdicts.results);
+  } finally {
+    await fixture.close();
+  }
+});
 test("two judge models by two efforts generate once, judge four times, and include all judge charges in spent", async () => {
   const fixture = await runtimeFixture({ workers: 4, judges: true });
   try {
@@ -330,7 +382,13 @@ test("chat judgments share the complete saved message sequence, including litera
       Array.from({ length: 4 }, () => fixture.nextCall()),
     );
     for (const judge of judges) {
-      assert.deepEqual(JSON.parse(judgeArtifact(judge)), expected);
+      assert.deepEqual(
+        judge.request.messages.slice(0, -2).map((message) => ({
+          role: message.role,
+          content: messageText(message.content),
+        })),
+        expected,
+      );
       finish(judge, JSON.stringify(verdicts), 0.25);
     }
     const grid = await settled(fixture, id);

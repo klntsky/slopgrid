@@ -1,5 +1,6 @@
 import {
   imageKinds,
+  selectedReferences,
   normalizeImageSettings,
   type ImageCapabilities,
   type ImageSettings,
@@ -7,19 +8,41 @@ import {
 import type { GridInput } from "./domain.js";
 import type { Model } from "./provider.js";
 
-export function canJudge(model: Model, format: GridInput["format"]): boolean {
-  return judgeModelIssue(model, format) === undefined;
+export function imageInputIssue(
+  input: GridInput,
+  models: readonly Model[],
+): string | undefined {
+  if (!selectedReferences(input).length) return undefined;
+  const ids = [input.rows, input.columns].find((axis) => axis.kind === "model")
+    ?.values ?? [input.model];
+  if (
+    ids.some(
+      (id) => models.find((model) => model.id === id)?.imageInput !== true,
+    )
+  )
+    return "The selected model does not support image inputs.";
+}
+
+export function canJudge(
+  model: Model,
+  format: GridInput["format"],
+  imageInputs = false,
+): boolean {
+  return judgeModelIssue(model, format, imageInputs) === undefined;
 }
 
 export function judgeModelIssue(
   model: Model | undefined,
   format: GridInput["format"],
+  imageInputs = false,
 ): string | undefined {
   if (format === "html") return "Websites do not support a judge yet.";
   if (!model?.text || model.structuredOutputs !== true)
     return "The judge model must support structured outputs.";
   if ((format === "svg" || format === "image") && model.imageInput !== true)
     return "The judge model must support image inputs for SVG and Image outputs.";
+  if (imageInputs && model.imageInput !== true)
+    return "The judge model must support image inputs.";
   return undefined;
 }
 

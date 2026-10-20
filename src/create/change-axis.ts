@@ -1,4 +1,8 @@
-import { isMarkdownFormat, type GridInput } from "../../server/domain";
+import {
+  isChatFormat,
+  isMarkdownFormat,
+  type GridInput,
+} from "../../server/domain";
 import {
   imageChoices,
   type ScalarImageKind,
@@ -37,15 +41,17 @@ function moveAxisToFixed(input: GridInput, axis: Axis): void {
     }
     if (field === "model") settings.model = axis.values[0] ?? "";
     else settings.effort = (axis.values[0] ?? "default") as GridInput["effort"];
+  } else if (axis.kind === "input_references") {
+    delete input.inputReferences;
   } else if (input.format === "image") {
-    // Image axes return to Auto/no references, not their first selected value.
+    // Image axes return to Auto, not their first selected value.
     if (
       isImageParameter(axis.kind) &&
       input.imageSettings?.[axis.kind] !== undefined
     ) {
       input.imageSettings = { ...input.imageSettings };
       delete input.imageSettings[axis.kind];
-    } else if (axis.kind === "input_references") delete input.inputReferences;
+    }
   }
 }
 
@@ -57,15 +63,18 @@ function moveFixedToAxis(input: GridInput, axis: Axis): Axis {
     const value = settings[field];
     return { ...axis, values: value ? [value] : [] };
   }
-  if (input.format !== "image") return axis;
-  if (isImageParameter(axis.kind)) {
+  if (input.format === "image" && isImageParameter(axis.kind)) {
     const value = input.imageSettings?.[axis.kind];
     if (value === undefined) return axis;
     input.imageSettings = { ...input.imageSettings };
     delete input.imageSettings[axis.kind];
     return value ? { ...axis, values: [value] } : axis;
   }
-  if (axis.kind === "input_references" && input.inputReferences?.length) {
+  if (
+    (input.format === "image" || isChatFormat(input.format)) &&
+    axis.kind === "input_references" &&
+    input.inputReferences?.length
+  ) {
     let index = 1;
     while (
       input.referenceGroups &&

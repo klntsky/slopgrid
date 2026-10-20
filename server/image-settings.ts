@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { GridInput } from "./domain.js";
 
 import {
   ImageGenerationRequestAspectRatio,
@@ -92,12 +93,16 @@ export function normalizeImageSettings(
     ),
   );
 }
-export function selectedReferences(input: {
-  referenceGroups?: ReferenceGroups;
-  inputReferences?: ReferenceImage[];
-}) {
-  return [
-    ...Object.values(input.referenceGroups ?? {}).flat(),
-    ...(input.inputReferences ?? []),
-  ];
+export function selectedReferences(
+  input: Pick<
+    GridInput,
+    "rows" | "columns" | "referenceGroups" | "inputReferences"
+  >,
+): ReferenceImage[] {
+  const axis = [input.rows, input.columns].find(
+    (axis) => axis.kind === "input_references",
+  );
+  return axis
+    ? axis.values.flatMap((value) => input.referenceGroups?.[value] ?? [])
+    : (input.inputReferences ?? []);
 }

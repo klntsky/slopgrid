@@ -48,6 +48,13 @@ export async function generateAttempt(
   );
   if (!model)
     throw new PreparationError(`Pricing is unavailable for ${cell.model}.`);
+  if (
+    (references?.length || cell.imageSettings?.input_references?.length) &&
+    model.imageInput !== true
+  )
+    throw new PreparationError(
+      "The selected model does not support image inputs.",
+    );
   let previousPrefixLength = 0;
   const result = await fillChatTemplate(
     cell,
@@ -59,6 +66,7 @@ export async function generateAttempt(
         budget,
         false,
         { sessionId: taskId, previousPrefixLength },
+        references,
       );
       previousPrefixLength = messages.length;
       return provider.request(key, prepared, progress, context);
@@ -66,5 +74,5 @@ export async function generateAttempt(
     onChunk,
     context.signal,
   );
-  return { ...result, signature: templateSignature(cell) };
+  return { ...result, signature: templateSignature(cell, references) };
 }

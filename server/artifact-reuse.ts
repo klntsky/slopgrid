@@ -34,7 +34,14 @@ export async function reuseArtifacts(
     let fits: (candidate: GenerationTask) => boolean = () => true;
     try {
       if (format === "chat-template") {
-        matching = candidates.get(templateSignature(parameters));
+        matching = candidates.get(
+          templateSignature(
+            parameters,
+            await readReferences(
+              parameters.imageSettings?.input_references ?? [],
+            ),
+          ),
+        );
         if (!matching) continue;
         const model = (await provider.models()).find(
           (model) => model.id === parameters.model,

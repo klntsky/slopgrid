@@ -3,7 +3,7 @@ import type { ReferenceContent } from "./image-references.js";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { z } from "zod";
-import type { GenerationParameters, GridInput } from "./domain.js";
+import type { ChatMessage, GenerationParameters, GridInput } from "./domain.js";
 import type { TextBudget } from "./generation-budget.js";
 import { instruction, websiteSchema } from "./output-format.js";
 import { canonical } from "../shared/canonical.js";
@@ -37,13 +37,75 @@ export function prepareImageInference(
     },
   };
 }
+type ChatWireMessage = {
+  role: ChatMessage["role"];
+  content:
+    | string
+    | (
+        | { type: "text"; text: string; cache_control?: { type: "ephemeral" } }
+        | {
+            type: "image_url";
+            image_url: { url: string };
+            cache_control?: { type: "ephemeral" };
+          }
+      )[];
+};
+
+export function prepareChatMessages(
+  history: readonly ChatMessage[],
+  references: readonly ReferenceContent[] = [],
+): ChatWireMessage[] {
+  const messages: ChatWireMessage[] = history.map(({ role, content }) => ({
+    role,
+    content,
+  }));
+  if (references.length) {
+    let index = messages.findIndex((message) => message.role === "user");
+    if (index < 0) {
+      messages.unshift({ role: "user", content: "" });
+      index = 0;
+    }
+    messages[index].content = [
+      ...(messages[index].content
+        ? [{ type: "text" as const, text: messages[index].content as string }]
+        : []),
+      ...references.map(({ bytes, mediaType }) => ({
+        type: "image_url" as const,
+        image_url: {
+          url: `data:${mediaType};base64,${bytes.toString("base64")}`,
+        },
+      })),
+    ];
+  }
+  return messages;
+}
+
 export function prepareTextInference(
   format: Exclude<SingleOutputFormat, "image">,
   cell: GenerationParameters,
   budget: TextBudget,
   structured: boolean,
   cache?: { sessionId: string; previousPrefixLength: number },
+  references: ReferenceContent[] = [],
 ) {
+  let messages: ChatWireMessage[] | undefined;
+  if (cell.messages && (cache || references.length)) {
+    messages = prepareChatMessages(cell.messages, references);
+    if (cache) {
+      const offset = messages.length - cell.messages.length;
+      for (const index of new Set([
+        messages.length - 1,
+        cache.previousPrefixLength - 1 + offset,
+      ])) {
+        const message = messages[index];
+        if (!message) continue;
+        if (typeof message.content === "string")
+          message.content = [{ type: "text", text: message.content }];
+        const last = message.content.at(-1);
+        if (last) last.cache_control = { type: "ephemeral" };
+      }
+    }
+  }
   return {
     ...common(cell),
     format,
@@ -57,23 +119,8 @@ export function prepareTextInference(
         extraBody: {
           ...(cache && {
             session_id: cache.sessionId,
-            // Use wire content blocks: the SDK otherwise puts assistant cache
-            // controls on the message rather than on its text block.
-            messages: cell.messages?.map((message, index, messages) => ({
-              role: message.role,
-              content:
-                index === messages.length - 1 ||
-                index === cache.previousPrefixLength - 1
-                  ? [
-                      {
-                        type: "text",
-                        text: message.content,
-                        cache_control: { type: "ephemeral" },
-                      },
-                    ]
-                  : message.content,
-            })),
           }),
+          ...(messages && { messages }),
           ...(cell.effort !== "default"
             ? {
                 reasoning:
@@ -114,12 +161,18 @@ function digest(request: unknown) {
     .digest("hex");
 }
 
-export function templateSignature(cell: GenerationParameters): string {
+export function templateSignature(
+  cell: GenerationParameters,
+  references: ReferenceContent[] = [],
+): string {
   return digest({
     ...common(cell),
     format: "chat-template",
     templateVersion: 2,
     effort: cell.effort,
     messages: cell.messages,
+    references: references.length
+      ? references.map(({ mediaType, sha256 }) => ({ mediaType, sha256 }))
+      : undefined,
   });
 }
