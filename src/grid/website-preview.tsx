@@ -54,7 +54,9 @@ export function WebsitePreview({
   streaming: boolean;
   offline?: boolean;
 }) {
-  const [frames, setFrames] = useState<{ url: string; ready: boolean }[]>([]);
+  const [frames, setFrames] = useState<
+    { url: string; ready: boolean; offline: boolean }[]
+  >([]);
   const container = useRef<HTMLDivElement>(null);
   const [offlinePath, setOfflinePath] = useState<string>();
   useEffect(() => {
@@ -81,18 +83,24 @@ export function WebsitePreview({
     window.addEventListener("message", navigate);
     return () => window.removeEventListener("message", navigate);
   }, [offline, url]);
+  const retainedFrame = offline
+    ? frames.find((frame) => frame.ready && !frame.offline)
+    : undefined;
   const source = offline ? (offlinePath ?? url) : url;
-  // Finish the in-flight frame before taking the latest snapshot, so frequent
-  // updates cannot keep restarting a slow load. Completion replaces any pending
-  // preview because its temporary files are removed. Keep at most two frames mounted.
+  // Retain live documents during disconnection, including their local state.
+  // Discard pending loads so a failed request cannot replace the visible frame.
+  // Otherwise finish the in-flight frame before taking the latest snapshot.
+  // Completion replaces temporary previews. Keep at most two frames mounted.
+  if (retainedFrame && frames.length > 1) setFrames([retainedFrame]);
   if (
+    !retainedFrame &&
     source &&
     frames.at(-1)?.url !== source &&
     (frames.every((frame) => frame.ready) || !streaming)
   )
     setFrames([
       ...frames.filter((frame) => frame.ready),
-      { url: source, ready: false },
+      { url: source, ready: false, offline },
     ]);
   const visible = frames.some((frame) => frame.ready);
   return (
@@ -106,9 +114,11 @@ export function WebsitePreview({
             inert={!frame.ready}
             // Offline navigation must reach the worker. Its response CSP applies
             // the opaque sandbox before generated code executes.
-            sandbox={offline ? "allow-scripts allow-same-origin" : undefined}
-            allow={offline ? undefined : outputPermissions}
-            allowFullScreen={!offline}
+            sandbox={
+              frame.offline ? "allow-scripts allow-same-origin" : undefined
+            }
+            allow={frame.offline ? undefined : outputPermissions}
+            allowFullScreen={!frame.offline}
             src={frame.url}
             style={{ visibility: frame.ready ? "visible" : "hidden" }}
             onLoad={async (event) => {
@@ -119,8 +129,7 @@ export function WebsitePreview({
                     'iframe[aria-hidden="false"]',
                   );
                 if (previous) await syncFrameScroll(previous, element);
-                if (element.isConnected)
-                  setFrames([{ url: frame.url, ready: true }]);
+                if (element.isConnected) setFrames([{ ...frame, ready: true }]);
               }
             }}
           />
