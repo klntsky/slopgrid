@@ -121,3 +121,93 @@ test("open browsers reconnect to a replaced web process while markdown, thinking
     await fixture.close();
   }
 });
+
+test("running chat output stays readable offline and catches up after reconnecting", async ({
+  playwright,
+}) => {
+  const fixture = await runtimeFixture();
+  const browser = await playwright.chromium.launch();
+  const context = await browser.newContext({ ignoreHTTPSErrors: true });
+  try {
+    await context.addCookies([
+      {
+        name: fixture.cookieName,
+        secure: true,
+        httpOnly: true,
+        sameSite: "Lax",
+        value: fixture.owner,
+        url: fixture.origin,
+      },
+    ]);
+    const grid = fixture.grid({
+      format: "chat-template",
+      rows: { kind: "variable", values: ["chat"] },
+      messages: [
+        { role: "user", content: "Keep this conversation visible." },
+        { role: "unfilled", content: "" },
+      ],
+    });
+    await fixture.engine.api.startGrid({
+      gridId: grid.id,
+      sessionId: fixture.owner,
+    });
+    const call = await fixture.nextCall();
+    call.write({ content: "Before disconnect. " });
+    const page = await context.newPage();
+    await page.goto(`${fixture.origin}/grid/${grid.id}`);
+    const preview = page.locator(".conversation-preview");
+    await expect(preview.locator('[data-role="assistant"]')).toHaveText(
+      "Before disconnect.",
+    );
+    const document = await preview.elementHandle();
+
+    await context.setOffline(true);
+    await expect(preview).toBeVisible();
+    await expect(preview.locator('[data-role="user"]')).toHaveText(
+      "Keep this conversation visible.",
+    );
+    await expect(preview.locator('[data-role="assistant"]')).toHaveText(
+      "Before disconnect.",
+    );
+    await expect(page.locator(".connection-status")).toContainText(
+      "Connection lost. Reconnecting",
+    );
+    expect(await document!.evaluate((element) => element.isConnected)).toBe(
+      true,
+    );
+    await page.getByRole("button", { name: "View raw", exact: true }).click();
+    await expect(page.locator(".markdown-raw")).toContainText(
+      "Before disconnect.",
+    );
+    await page.getByRole("button", { name: "View raw", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Expand Chat completion", exact: true })
+      .click();
+    await expect(
+      page.getByRole("region", { name: /^Expanded output:/ }),
+    ).toContainText("Before disconnect.");
+    await page
+      .getByRole("button", { name: "Collapse Chat completion", exact: true })
+      .click();
+
+    call.write({ content: "During disconnect. " });
+    await context.setOffline(false);
+    await expect(preview.locator('[data-role="assistant"]')).toHaveText(
+      "Before disconnect. During disconnect.",
+    );
+    await expect(page.locator(".connection-status")).toHaveCount(0);
+    call.write({ content: "After reconnect." });
+    call.finish();
+    await expect(preview.locator('[data-role="assistant"]')).toHaveText(
+      "Before disconnect. During disconnect. After reconnect.",
+    );
+    await expect(
+      page.getByRole("link", { name: "Open output", exact: true }),
+    ).toBeVisible();
+    expect(fixture.calls).toHaveLength(1);
+    expect(call.aborted).toBe(false);
+  } finally {
+    await browser.close();
+    await fixture.close();
+  }
+});

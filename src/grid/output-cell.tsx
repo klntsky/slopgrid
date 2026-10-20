@@ -99,7 +99,7 @@ export function OutputCell({
         aria-hidden={thinking || judging}
         inert={thinking || judging}
       >
-        {offline && !complete ? (
+        {offline && !complete && !(markdown && hasOutput) ? (
           <p>This output isn't available offline.</p>
         ) : markdown ? (
           <MarkdownPreview
