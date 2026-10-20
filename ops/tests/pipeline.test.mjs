@@ -777,90 +777,100 @@ test("real PM2 startup uses fresh logs and detects a failing replacement", async
   }
 });
 
-test("v15 discard keeps shared and unreferenced upload metadata and hash files without changing prior task cleanup", async (t) => {
-  for (const all of [false, true])
-    await t.test(all ? "all grids" : "selected grid", (child) => {
-      const f = discardFixture(child, 15);
-      const before = f.read(f.env);
-      const productionBefore = f.read(f.production);
-      const ids = all ? [f.selected, f.surviving] : [f.selected];
-      assert.deepEqual(
-        discardStagingGrids(
-          "staging",
-          process.env.SLOPGRID_TEST_APP,
-          f.env,
-          f.production,
-          ids,
-        ),
-        { grids: ids.length, cells: all ? 3 : 2 },
-      );
-      const saved = f.read(f.env);
-      for (const table of ["reference_images", "reference_blobs", "sessions"])
-        assert.deepEqual(saved[table], before[table]);
-      for (const table of [
-        "grids",
-        "cells",
-        "workflow_tasks",
-        "creation_requests",
-      ])
+test("v15/v16 discard keeps shared and unreferenced upload metadata and hash files without changing prior task cleanup", async (t) => {
+  for (const [version, all] of [
+    [15, false],
+    [15, true],
+    [16, false],
+    [16, true],
+  ])
+    await t.test(
+      `schema ${version}: ${all ? "all grids" : "selected grid"}`,
+      (child) => {
+        const f = discardFixture(child, version);
+        const before = f.read(f.env);
+        const productionBefore = f.read(f.production);
+        const ids = all ? [f.selected, f.surviving] : [f.selected];
         assert.deepEqual(
-          saved[table],
-          before[table].filter((row) =>
-            table === "grids"
-              ? !ids.includes(row.id)
-              : !ids.includes(row.grid_id),
+          discardStagingGrids(
+            "staging",
+            process.env.SLOPGRID_TEST_APP,
+            f.env,
+            f.production,
+            ids,
+          ),
+          { grids: ids.length, cells: all ? 3 : 2 },
+        );
+        const saved = f.read(f.env);
+        for (const table of ["reference_images", "reference_blobs", "sessions"])
+          assert.deepEqual(saved[table], before[table]);
+        for (const table of [
+          "grids",
+          "cells",
+          "workflow_tasks",
+          "creation_requests",
+        ])
+          assert.deepEqual(
+            saved[table],
+            before[table].filter((row) =>
+              table === "grids"
+                ? !ids.includes(row.id)
+                : !ids.includes(row.grid_id),
+            ),
+          );
+        assert.deepEqual(
+          saved.grid_reference_images,
+          before.grid_reference_images.filter(
+            (row) => !ids.includes(row.grid_id),
           ),
         );
-      assert.deepEqual(
-        saved.grid_reference_images,
-        before.grid_reference_images.filter(
-          (row) => !ids.includes(row.grid_id),
-        ),
-      );
-      assert.deepEqual(
-        saved.inference_calls,
-        all
-          ? []
-          : before.inference_calls.filter(
-              (row) => row.cell_id === "2".repeat(48),
-            ),
-      );
-      assert.deepEqual(f.read(f.production), productionBefore);
-      for (const env of [f.env, f.production]) {
         assert.deepEqual(
-          readdirSync(join(env.OUTPUTS_PATH, ".references")).sort(),
-          [f.sharedUploadSha256, f.selectedUploadSha256].sort(),
+          saved.inference_calls,
+          all
+            ? []
+            : before.inference_calls.filter(
+                (row) => row.cell_id === "2".repeat(48),
+              ),
         );
-        for (const [sha256, bytes] of [
-          [f.sharedUploadSha256, f.sharedUpload],
-          [f.selectedUploadSha256, f.selectedUpload],
-        ]) {
-          const path = join(env.OUTPUTS_PATH, ".references", sha256);
-          assert.equal(lstatSync(path).isFile(), true);
-          assert.deepEqual(readFileSync(path), bytes);
+        assert.deepEqual(f.read(f.production), productionBefore);
+        for (const env of [f.env, f.production]) {
+          assert.deepEqual(
+            readdirSync(join(env.OUTPUTS_PATH, ".references")).sort(),
+            [f.sharedUploadSha256, f.selectedUploadSha256].sort(),
+          );
+          for (const [sha256, bytes] of [
+            [f.sharedUploadSha256, f.sharedUpload],
+            [f.selectedUploadSha256, f.selectedUpload],
+          ]) {
+            const path = join(env.OUTPUTS_PATH, ".references", sha256);
+            assert.equal(lstatSync(path).isFile(), true);
+            assert.deepEqual(readFileSync(path), bytes);
+          }
         }
-      }
-      for (const relative of [
-        join(f.removedArtifact, "index.svg"),
-        join(".thinking", f.removedTrace, "trace.txt"),
-      ])
-        assert.throws(
-          () => readFileSync(join(f.env.OUTPUTS_PATH, relative)),
-          /ENOENT/,
-        );
-      for (const relative of [
-        join(f.sharedArtifact, "index.svg"),
-        join(".thinking", f.sharedTrace, "trace.txt"),
-      ]) {
-        if (all)
+        for (const relative of [
+          join(f.removedArtifact, "index.svg"),
+          join(".thinking", f.removedTrace, "trace.txt"),
+        ])
           assert.throws(
             () => readFileSync(join(f.env.OUTPUTS_PATH, relative)),
             /ENOENT/,
           );
-        else assert.ok(readFileSync(join(f.env.OUTPUTS_PATH, relative)).length);
-      }
-      const db = new f.Database(f.env.DATABASE_PATH);
-      assert.deepEqual(referenceForeignKeyViolations(db), []);
-      db.close();
-    });
+        for (const relative of [
+          join(f.sharedArtifact, "index.svg"),
+          join(".thinking", f.sharedTrace, "trace.txt"),
+        ]) {
+          if (all)
+            assert.throws(
+              () => readFileSync(join(f.env.OUTPUTS_PATH, relative)),
+              /ENOENT/,
+            );
+          else
+            assert.ok(readFileSync(join(f.env.OUTPUTS_PATH, relative)).length);
+        }
+        const db = new f.Database(f.env.DATABASE_PATH);
+        assert.deepEqual(referenceForeignKeyViolations(db), []);
+        assert.equal(discardSchemaVersion(db), version);
+        db.close();
+      },
+    );
 });

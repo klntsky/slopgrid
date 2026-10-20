@@ -18,8 +18,15 @@ import {
   storedReferenceCount,
   rejectReferenceUploads,
   rejectReferenceGridCells,
+  removeStoredReferenceDimensions,
 } from "./reference-storage-fixture.js";
 import { storedGridCount } from "./grid-storage-fixture.js";
+import {
+  referencePng,
+  referenceJpeg,
+  referenceWebp,
+  orientedReferenceJpeg,
+} from "./reference-image-fixture.js";
 
 const png = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
@@ -57,6 +64,10 @@ for (const shared of [false, true])
     const uploaded = await upload(png);
     assert.equal(uploaded.status, 201);
     const image = await uploaded.json();
+    assert.deepEqual(
+      { width: image.width, height: image.height },
+      { width: 1, height: 1 },
+    );
     const ownerCookie = uploaded.headers.get("set-cookie")!.split(";")[0];
     const owner = ownerCookie.split("=")[1];
     const spare = await (await upload(png, ownerCookie)).json();
@@ -90,11 +101,14 @@ for (const shared of [false, true])
       budgetUsd: 5,
       rows: { kind: "input_references", values: ["Pair"] },
       columns: { kind: "size", values: ["1K"] },
-      referenceGroups: { Pair: [image], Unused: [spare] },
+      referenceGroups: {
+        Pair: [{ id: image.id, name: image.name }],
+        Unused: [spare],
+      },
       ...(shared
         ? {
             rows: { kind: "quality", values: ["auto"] },
-            inputReferences: [image],
+            inputReferences: [{ ...image, width: 900, height: 2 }],
           }
         : {}),
     });
@@ -136,6 +150,12 @@ for (const shared of [false, true])
     }
     store.files.write(artifactId, { image: png });
     store.insert(grid, tasks);
+    assert.deepEqual(
+      shared
+        ? store.get(grid.id)!.input.inputReferences
+        : store.get(grid.id)!.input.referenceGroups!.Pair,
+      [image],
+    );
     const user = store.identify("github", `reference-owner-${token()}`, {
       provider: "github",
       username: "owner",
@@ -186,8 +206,14 @@ for (const shared of [false, true])
       ),
       png,
     );
+    removeStoredReferenceDimensions(store.db);
     const reopened = new Store(database, secret);
     try {
+      const fork = reopened.all().find((saved) => saved.owner === forkOwner)!;
+      assert.deepEqual(
+        shared ? fork.input.inputReferences : fork.input.referenceGroups!.Pair,
+        [image],
+      );
       assert.deepEqual(
         (await reopened.references.loader()([image.id, image.id])).get(
           image.id,
@@ -472,7 +498,11 @@ test("identical uploads share one blob across private owners and grids without s
     assert.equal(reopened.references.path(second.id), firstPath);
     assert.equal(reopened.references.allowed(first.id, bob), false);
     assert.equal(reopened.references.allowed(second.id, bob), true);
-    assert.deepEqual(referenceBlob(reopened.db, sha256), { sha256 });
+    assert.deepEqual(referenceBlob(reopened.db, sha256), {
+      sha256,
+      width: 1,
+      height: 1,
+    });
   } finally {
     reopened.db.close();
   }
@@ -560,4 +590,141 @@ test("concurrent identical uploads atomically install one shared blob", async (t
     references.map((reference) => loaded.get(reference.id)!.bytes),
     references.map(() => png),
   );
+});
+
+test("uploads report stored display proportions for PNG, JPEG, WebP and EXIF axis boundaries", async (t) => {
+  const { origin, store, database, secret } = await appFixture(t);
+  const cases = [
+    { bytes: referencePng, name: "wide.png", width: 7, height: 3 },
+    { bytes: referenceJpeg, name: "wide.jpg", width: 7, height: 3 },
+    { bytes: referenceWebp, name: "wide.webp", width: 7, height: 3 },
+    ...[1, 4, 5, 6, 7, 8, 9].map((orientation) => ({
+      bytes: orientedReferenceJpeg(orientation),
+      name: `oriented-${orientation}.jpg`,
+      width: orientation >= 5 && orientation <= 8 ? 3 : 7,
+      height: orientation >= 5 && orientation <= 8 ? 7 : 3,
+    })),
+  ];
+  const uploaded = [];
+  for (const { bytes, name, width, height } of cases) {
+    const response = await fetch(
+      `${origin}/api/references?name=${encodeURIComponent(name)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream", Origin: origin },
+        body: new Uint8Array(bytes),
+      },
+    );
+    assert.equal(response.status, 201);
+    const image = await response.json();
+    assert.deepEqual(image, { id: image.id, name, width, height });
+    const sha256 = createHash("sha256").update(bytes).digest("hex");
+    assert.deepEqual(referenceBlob(store.db, sha256), {
+      sha256,
+      width,
+      height,
+    });
+    uploaded.push(image);
+  }
+  const reopened = new Store(database, secret);
+  try {
+    for (const image of uploaded) {
+      const metadata = reopened.references.get(image.id)!;
+      assert.equal(metadata.width, image.width);
+      assert.equal(metadata.height, image.height);
+      unlinkSync(reopened.references.path(image.id)!);
+      assert.deepEqual(reopened.references.hydrate(image), image);
+    }
+  } finally {
+    reopened.db.close();
+  }
+});
+
+test("truncated image headers and zero dimensions are invalid uploads without metadata commits", async (t) => {
+  const { origin, store } = await appFixture(t);
+  const before = storedReferenceCount(store.db);
+  const zeroWidth = Buffer.from(referencePng);
+  zeroWidth.writeUInt32BE(0, 16);
+  for (const bytes of [
+    referencePng.subarray(0, 8),
+    referenceJpeg.subarray(0, 3),
+    referenceWebp.subarray(0, 12),
+    zeroWidth,
+  ]) {
+    const response = await fetch(`${origin}/api/references?name=invalid.png`, {
+      method: "POST",
+      headers: { "Content-Type": "application/octet-stream", Origin: origin },
+      body: new Uint8Array(bytes),
+    });
+    assert.equal(response.status, 400);
+    assert.deepEqual(storedReferenceCount(store.db), before);
+    assert.equal(
+      referenceBlob(store.db, createHash("sha256").update(bytes).digest("hex")),
+      undefined,
+    );
+  }
+});
+
+test("legacy workflow inputs and live chat histories project authoritative dimensions without reading image files", async (t) => {
+  const { store, origin } = await appFixture(t);
+  const session = { id: token(), created: 0 };
+  store.saveSession(session);
+  const image = store.references.add(
+    referencePng,
+    "Keep this input name",
+    session,
+  )!;
+  const legacy = { id: image.id, name: image.name };
+  const input = gridSchema.parse({
+    format: "chat-template",
+    messages: [
+      {
+        role: "user",
+        content: "Describe",
+        images: [{ ...legacy, width: 2, height: 900 }],
+      },
+      { role: "unfilled", content: "" },
+    ],
+    rows: { kind: "effort", values: ["none"] },
+    columns: { kind: "model", values: ["fixture/text"] },
+    model: "fixture/text",
+    effort: "none",
+    budgetUsd: 1,
+  });
+  const grid: Grid = {
+    id: token(),
+    owner: session.id,
+    input,
+    status: "running",
+    published: false,
+    visibility: "private",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    cells: expandGrid(input).map((cell) => ({ ...cell, id: token() })),
+  };
+  const tasks = createWorkflow(input, grid.cells);
+  const task = tasks[0];
+  if (task.kind !== "generation") throw new Error("Expected generation");
+  task.status = "running";
+  const history = [
+    { role: "user", content: "Describe", images: [legacy] },
+    { role: "assistant", content: "Progressive answer" },
+  ];
+  task.progress = { draft: JSON.stringify(history) };
+  store.insert(grid, tasks);
+  assert.deepEqual(store.get(grid.id)!.input.messages![0].images, [image]);
+  removeStoredReferenceDimensions(store.db);
+  unlinkSync(store.references.path(image.id)!);
+  const restored = store.workflow(grid.id)[0];
+  if (restored.kind !== "generation") throw new Error("Expected generation");
+  assert.deepEqual(restored.input.messages![0].images, [image]);
+  const expectedHistory = [{ ...history[0], images: [image] }, history[1]];
+  assert.deepEqual(JSON.parse(restored.progress!.draft!), expectedHistory);
+  const response = await fetch(`${origin}/api/grids/${grid.id}`, {
+    headers: { Cookie: `slopgrid=${session.id}` },
+  });
+  assert.equal(response.status, 200);
+  const view = await response.json();
+  assert.deepEqual(view.input.messages[0].images, [image]);
+  assert.deepEqual(JSON.parse(view.cells[0].draft), expectedHistory);
+  assert.equal(view.input.messages[0].images[0].name, legacy.name);
 });

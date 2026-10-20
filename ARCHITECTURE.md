@@ -144,6 +144,12 @@ its uploads and each upload to its content, keeping access control and shared
 usage separate from physical storage. The engine loads image bytes within
 generation or judging attempts; bytes never enter grid snapshots.
 
+Content metadata owns orientation-aware image proportions, read once at upload
+and backfilled from available historical bytes when storage opens. Authorized
+read projections enrich references from this metadata without rewriting
+immutable conversation artifacts. The shared conversation renderer uses those
+proportions to reserve image frames before loading.
+
 Committed generation can be reused by Edit/Fork when a source is accessible and
 its prepared request matches the destination. A signature captures request
 semantics, including message position and ordered reference content, while a
@@ -294,6 +300,12 @@ API requests from other origins, including same-site sibling hosts, are rejected
 before session handlers run. Top-level OAuth callback GET navigations remain
 available and require the session's pending state and verifier. The application
 page's own CSP prevents other pages from framing it.
+
+Reference delivery authorizes requests before applying content-hash validators.
+Public bytes can be cached immutably. The service worker owns session-partitioned
+offline image storage, reuses retained bytes after successful conditional
+validation, and invalidates denied or stale-session responses. Account changes
+and logout clear private cached content.
 
 Private HTML uses a scoped authorization redirect:
 

@@ -39,40 +39,75 @@ test("visited pages and completed outputs survive offline reload without retaini
   try {
     const owner = token();
     store.saveSession({ id: owner, created: Date.now() });
-    const grids = (["markdown", "svg", "image", "html"] as const).map(
-      (format) => {
-        const input: GridInput = {
-          format,
-          prompt: `Offline ${format}`,
-          rows: { kind: "model", values: ["fixture/text"] },
-          columns: { kind: "variable", values: ["one"] },
-          model: "fixture/text",
-          effort: "none",
-          budgetUsd: 1,
-        };
-        const grid: Grid = {
+    const bytes = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
+      "base64",
+    );
+    const chatImages = ["first.png", "later.png"].map((name) =>
+      store.references.add(Buffer.concat([bytes, Buffer.from(name)]), name, {
+        id: owner,
+        created: Date.now(),
+      })!,
+    );
+    const unusedImage = store.references.add(bytes, "unused.png", {
+      id: owner,
+      created: Date.now(),
+    })!;
+    const grids = (
+      ["markdown", "svg", "image", "html", "chat-template"] as const
+    ).map((format) => {
+      const input: GridInput = {
+        format,
+        prompt: `Offline ${format}`,
+        ...(format === "chat-template"
+          ? {
+              messages: [
+                {
+                  role: "user" as const,
+                  content: "First image",
+                  images: [chatImages[0]],
+                },
+                { role: "unfilled" as const, content: "" },
+                {
+                  role: "user" as const,
+                  content: "Later image",
+                  images: [chatImages[1]],
+                },
+                { role: "unfilled" as const, content: "" },
+              ],
+            }
+          : {}),
+        rows: { kind: "model", values: ["fixture/text"] },
+        columns: { kind: "variable", values: ["one"] },
+        model: "fixture/text",
+        effort: "none",
+        budgetUsd: 1,
+      };
+      const grid: Grid = {
+        id: token(),
+        owner,
+        input,
+        status: "complete",
+        published: false,
+        visibility: "private",
+        createdAt: new Date().toISOString(),
+        cells: expandGrid(input).map((cell) => ({
+          ...cell,
           id: token(),
-          owner,
-          input,
-          status: "complete",
-          published: false,
-          visibility: "private",
-          createdAt: new Date().toISOString(),
-          cells: expandGrid(input).map((cell) => ({
-            ...cell,
-            id: token(),
-          })),
-        };
-        const tasks = createWorkflow(input, grid.cells);
-        const task = tasks.find((task) => task.kind === "generation")!;
-        task.status = "complete";
-        task.output = {
-          artifactId: token(),
-          mediaType: format === "image" ? "image/png" : undefined,
-          provenance: {
-            signature: "offline-output",
-            files:
-              format === "markdown"
+        })),
+      };
+      const tasks = createWorkflow(input, grid.cells);
+      const task = tasks.find((task) => task.kind === "generation")!;
+      task.status = "complete";
+      task.output = {
+        artifactId: token(),
+        mediaType: format === "image" ? "image/png" : undefined,
+        provenance: {
+          signature: "offline-output",
+          files:
+            format === "chat-template"
+              ? ["messages.json"]
+              : format === "markdown"
                 ? ["index.md"]
                 : format === "svg"
                   ? ["index.svg"]
@@ -86,19 +121,28 @@ test("visited pages and completed outputs survive offline reload without retaini
                         "message.js",
                         "nested/page.html",
                       ],
-          },
-          thinkingId: token(),
-          thinkingSourceId: token(),
-        };
-        store.insert(grid, tasks);
-        store.files.appendThinking(
-          task.output.thinkingSourceId!,
-          task.output.thinkingId!,
-          `Saved ${format} thinking`,
-        );
-        store.files.write(
-          task.output.artifactId,
-          format === "markdown"
+        },
+        thinkingId: token(),
+        thinkingSourceId: token(),
+      };
+      store.insert(grid, tasks);
+      store.files.appendThinking(
+        task.output.thinkingSourceId!,
+        task.output.thinkingId!,
+        `Saved ${format} thinking`,
+      );
+      store.files.write(
+        task.output.artifactId,
+        format === "chat-template"
+          ? {
+              "messages.json": JSON.stringify([
+                { role: "user", content: "First image" },
+                { role: "assistant", content: "First answer" },
+                { role: "user", content: "Later image" },
+                { role: "assistant", content: "Later answer" },
+              ]),
+            }
+          : format === "markdown"
             ? { "index.md": "# Cached markdown\n\nSaved content" }
             : format === "svg"
               ? {
@@ -125,10 +169,9 @@ test("visited pages and completed outputs survive offline reload without retaini
                     "nested/page.html":
                       '<h1>Nested cached page</h1><a href="../index.html">Back</a>',
                   },
-        );
-        return grid;
-      },
-    );
+      );
+      return grid;
+    });
     // Finished generation must remain cacheable while judging is pending or fails.
     // Overall cell status includes judging, so it cannot determine output readiness.
     for (const status of ["pending", "error", "complete"] as const) {
@@ -229,6 +272,82 @@ test("visited pages and completed outputs survive offline reload without retaini
         )
         .toBe(true);
     }
+    for (const image of chatImages) {
+      await expect
+        .poll(() =>
+          page.evaluate(async (id) => {
+            for (const name of await caches.keys()) {
+              if (
+                await (await caches.open(name)).match(`/api/references/${id}`)
+              )
+                return true;
+            }
+            return false;
+          }, image.id),
+        )
+        .toBe(true);
+    }
+    expect(
+      await page.evaluate(async (id) => {
+        for (const name of await caches.keys()) {
+          if (await (await caches.open(name)).match(`/api/references/${id}`))
+            return true;
+        }
+        return false;
+      }, unusedImage.id),
+    ).toBe(false);
+    const worker = context.serviceWorkers()[0];
+    await worker.evaluate(() => {
+      const state = globalThis as typeof globalThis & {
+        referenceTrace?: { url: string; status: number }[];
+        originalReferenceFetch?: typeof fetch;
+      };
+      state.referenceTrace = [];
+      state.originalReferenceFetch = fetch;
+      state.fetch = async (...args: Parameters<typeof fetch>) => {
+        const response = await state.originalReferenceFetch!(...args);
+        const url = args[0] instanceof Request ? args[0].url : String(args[0]);
+        if (url.includes("cache-probe=conditional"))
+          state.referenceTrace!.push({ url, status: response.status });
+        return response;
+      };
+    });
+    const probe = `/api/references/${chatImages[0].id}?cache-probe=conditional`;
+    try {
+      const reused = await page.evaluate(async (url) => {
+        const first = await fetch(url, { mode: "no-cors", cache: "reload" });
+        const firstBytes = Array.from(
+          new Uint8Array(await first.arrayBuffer()),
+        );
+        const second = await fetch(url, { mode: "no-cors", cache: "reload" });
+        return {
+          firstBytes,
+          secondBytes: Array.from(new Uint8Array(await second.arrayBuffer())),
+        };
+      }, probe);
+      expect(Buffer.from(reused.firstBytes)).toEqual(
+        Buffer.concat([bytes, Buffer.from(chatImages[0].name)]),
+      );
+      expect(reused.secondBytes).toEqual(reused.firstBytes);
+      const statuses = await worker.evaluate(() =>
+        (
+          globalThis as typeof globalThis & {
+            referenceTrace: { url: string; status: number }[];
+          }
+        ).referenceTrace.map(({ status }) => status),
+      );
+      expect(statuses).toEqual([200, 304]);
+    } finally {
+      await worker.evaluate(() => {
+        const state = globalThis as typeof globalThis & {
+          referenceTrace?: { url: string; status: number }[];
+          originalReferenceFetch?: typeof fetch;
+        };
+        state.fetch = state.originalReferenceFetch!;
+        delete state.originalReferenceFetch;
+        delete state.referenceTrace;
+      });
+    }
     for (const grid of grids.filter((grid) => grid.input.judge)) {
       const savedCell = await page.evaluate(async (id) => {
         for (const name of await caches.keys()) {
@@ -286,6 +405,21 @@ test("visited pages and completed outputs survive offline reload without retaini
               .evaluate((el) => (el as HTMLImageElement).naturalWidth),
           )
           .toBe(1);
+      if (grid.input.format === "chat-template") {
+        await expect(
+          page.getByText("Later answer", { exact: true }),
+        ).toBeVisible();
+        for (const image of chatImages)
+          await expect
+            .poll(() =>
+              page
+                .getByRole("img", { name: image.name, exact: true })
+                .evaluate(
+                  (element) => (element as HTMLImageElement).naturalWidth,
+                ),
+            )
+            .toBe(1);
+      }
       if (grid.input.format === "html") {
         const frame = page.frameLocator('iframe[aria-hidden="false"]');
         await expect(frame.getByText("Cached module loaded")).toBeVisible();
@@ -314,6 +448,18 @@ test("visited pages and completed outputs survive offline reload without retaini
       }
       await page.reload();
       await expect(page.locator("article.cell")).toHaveCount(1);
+      if (grid.input.format === "chat-template") {
+        for (const image of chatImages)
+          await expect
+            .poll(() =>
+              page
+                .getByRole("img", { name: image.name, exact: true })
+                .evaluate(
+                  (element) => (element as HTMLImageElement).naturalWidth,
+                ),
+            )
+            .toBe(1);
+      }
       if (grid.input.judge) {
         const snapshot = await page.evaluate(
           async (id) => (await fetch(`/api/grids/${id}`)).json(),
@@ -337,6 +483,13 @@ test("visited pages and completed outputs survive offline reload without retaini
     await context.setOffline(true);
     await page.goto(`${web.origin}/grid/${grids[0].id}`);
     await expect(page.getByText("Saved content")).toHaveCount(0);
+    for (const image of chatImages)
+      expect(
+        await page.evaluate(
+          async (id) => (await fetch(`/api/references/${id}`)).status,
+          image.id,
+        ),
+      ).toBe(503);
   } finally {
     await browser.close();
     await web.close();

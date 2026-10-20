@@ -73,12 +73,24 @@ function discardFixture(t, version = 14) {
         CREATE TABLE reference_images(id TEXT PRIMARY KEY,owner TEXT NOT NULL,owner_user_id TEXT,name TEXT NOT NULL,media_type TEXT NOT NULL,sha256 TEXT REFERENCES reference_blobs(sha256)) STRICT;
         CREATE INDEX reference_images_sha256 ON reference_images(sha256,id);
       `);
+      if (version >= 16)
+        db.exec(`
+          ALTER TABLE reference_blobs ADD COLUMN width INTEGER CHECK(width IS NULL OR width > 0);
+          ALTER TABLE reference_blobs ADD COLUMN height INTEGER CHECK((width IS NULL AND height IS NULL) OR (width IS NOT NULL AND height IS NOT NULL AND height > 0));
+        `);
       mkdirSync(join(env.OUTPUTS_PATH, ".references"));
       for (const [id, sha256, bytes] of [
         ["retained-reference", sharedUploadSha256, sharedUpload],
         ["selected-only-reference", selectedUploadSha256, selectedUpload],
       ]) {
-        db.prepare("INSERT INTO reference_blobs VALUES (?)").run(sha256);
+        if (version >= 16)
+          db.prepare(
+            "INSERT INTO reference_blobs (sha256,width,height) VALUES (?,?,?)",
+          ).run(sha256, 640, 480);
+        else
+          db.prepare("INSERT INTO reference_blobs (sha256) VALUES (?)").run(
+            sha256,
+          );
         db.prepare("INSERT INTO reference_images VALUES (?,?,?,?,?,?)").run(
           id,
           "upload-session",

@@ -2,13 +2,13 @@ import type Database from "better-sqlite3";
 import { expandGrid, type Cell, type GridInput } from "./domain.js";
 import { generationGroupKey } from "../shared/generation-key.js";
 
-const schemaVersion = 15;
+const schemaVersion = 16;
 export function initializeDatabase(db: Database.Database) {
   const version = db.pragma("user_version", { simple: true });
   if (version === schemaVersion) return;
   if (
     typeof version !== "number" ||
-    ![0, 8, 9, 10, 11, 12, 13, 14].includes(version)
+    ![0, 8, 9, 10, 11, 12, 13, 14, 15].includes(version)
   )
     throw new Error("Unsupported database version");
   db.transaction(() => {
@@ -145,12 +145,20 @@ export function initializeDatabase(db: Database.Database) {
       `);
       if (version !== 0) migrateWorkflow(db);
     }
-    db.exec(`
+    if (version < 15)
+      db.exec(`
       CREATE TABLE reference_blobs (
         sha256 TEXT PRIMARY KEY CHECK (length(sha256)=64)
       ) STRICT;
       ALTER TABLE reference_images ADD COLUMN sha256 TEXT REFERENCES reference_blobs(sha256);
       CREATE INDEX reference_images_sha256 ON reference_images(sha256,id);
+    `);
+    db.exec(`
+      ALTER TABLE reference_blobs ADD COLUMN width INTEGER
+        CHECK (width IS NULL OR width > 0);
+      ALTER TABLE reference_blobs ADD COLUMN height INTEGER
+        CHECK ((width IS NULL AND height IS NULL) OR
+          (width IS NOT NULL AND height IS NOT NULL AND height > 0));
     `);
     db.pragma(`user_version = ${schemaVersion}`);
   }).immediate();

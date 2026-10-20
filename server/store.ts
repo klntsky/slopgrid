@@ -136,6 +136,7 @@ export class Store {
     if (row.slug === null) delete grid.slug;
     if (!grid.title) delete grid.title;
     if (!grid.interruption) delete grid.interruption;
+    grid.input = this.references.input(grid.input);
     const cells = this.db
       .prepare(
         "SELECT id, generation_id, judgment_id FROM cells WHERE grid_id=? ORDER BY position",
@@ -157,6 +158,10 @@ export class Store {
   }
   // Creation is the only operation that writes both metadata and generation state.
   insert(grid: Grid, tasks = createWorkflow(grid.input, grid.cells)) {
+    grid.input = this.references.input(grid.input);
+    for (const task of tasks)
+      if (task.kind === "generation")
+        task.input.messages = this.references.messages(task.input.messages);
     projectWorkflow(grid, tasks);
     const {
       id,
@@ -222,6 +227,11 @@ export class Store {
       .all(gridId) as WorkflowRow[];
     return rows.map((row) => {
       const task = readTask(row);
+      if (task.kind === "generation") {
+        task.input.messages = this.references.messages(task.input.messages);
+        if (task.input.format === "chat-template" && task.progress?.draft)
+          task.progress.draft = this.references.draft(task.progress.draft);
+      }
       if (task.kind === "generation" && (task.attemptId || !task.output)) {
         const billing = this.billing.task(task.id, task.attemptId);
         if (billing) {
@@ -295,7 +305,13 @@ export class Store {
           artifactId ?? null,
           thinkingSourceId ?? null,
           JSON.stringify({
-            input: task.input,
+            input:
+              task.kind === "generation"
+                ? {
+                    ...task.input,
+                    messages: this.references.messages(task.input.messages),
+                  }
+                : task.input,
             output,
             attemptId: task.attemptId,
             error: task.error,
@@ -407,7 +423,7 @@ export class Store {
       published: row.published === 1,
       format: input.format,
       generationId: row.generationId,
-      messages: generation.input.messages,
+      messages: this.references.messages(generation.input.messages),
       thinkingId:
         generation.progress?.thinkingId ?? generation.output?.thinkingId,
       thinkingSourceId: row.thinkingSourceId ?? undefined,

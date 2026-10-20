@@ -28,8 +28,17 @@ export function gridReferenceImages(db, gridId) {
 export function referenceBlobs(db) {
   return db.prepare("SELECT * FROM reference_blobs").all();
 }
-export function seedReferenceBlob(db, sha256) {
-  db.prepare("INSERT INTO reference_blobs VALUES (?)").run(sha256);
+export function seedReferenceBlob(db, sha256, width = null, height = null) {
+  db.prepare(
+    "INSERT INTO reference_blobs (sha256,width,height) VALUES (?,?,?)",
+  ).run(sha256, width, height);
+}
+export function setReferenceBlobDimensions(db, sha256, width, height) {
+  db.prepare("UPDATE reference_blobs SET width=?,height=? WHERE sha256=?").run(
+    width,
+    height,
+    sha256,
+  );
 }
 export function seedReferenceImage(
   db,

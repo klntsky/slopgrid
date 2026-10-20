@@ -5,6 +5,11 @@ import { Billing } from "../server/billing.js";
 import { initializeDatabase } from "../server/database.js";
 
 import * as migration from "./database-migration-fixture.js";
+import {
+  insertReferenceBlobDimensions,
+  referenceBlobs,
+  restoreV15ReferenceSchema,
+} from "./reference-storage-fixture.js";
 
 const { legacyDatabase, seedLegacy, storedData, snapshot, input, createdAt } =
   migration;
@@ -15,7 +20,7 @@ test("production v12 migrates ownership, sessions, references and billing withou
     seedLegacy(db, 12);
     const before = migration.migratedRecordIdentities(db);
     initializeDatabase(db);
-    assert.equal(migration.databaseVersion(db), 15);
+    assert.equal(migration.databaseVersion(db), 16);
     assert.deepEqual(migration.migratedRecordIdentities(db), before);
     assert.deepEqual(migration.migratedGridOwnership(db), {
       owner: "anonymous",
@@ -135,12 +140,12 @@ test("production v12 migrates ownership, sessions, references and billing withou
 });
 
 for (const version of [8, 9, 10, 11, 13]) {
-  test(`production v${version} upgrades directly to v15 with historical metadata intact`, () => {
+  test(`production v${version} upgrades directly to v16 with historical metadata intact`, () => {
     const db = legacyDatabase(version);
     try {
       seedLegacy(db, version);
       initializeDatabase(db);
-      assert.equal(migration.databaseVersion(db), 15);
+      assert.equal(migration.databaseVersion(db), 16);
       const data = storedData(db, "grid");
       assert.equal(data.expanded_prompt_for_title, input.prompt);
       assert.equal(data.revision, undefined);
@@ -186,7 +191,7 @@ test("fresh databases use the canonical schema and reject invalid published flag
   const db = new Database(":memory:");
   try {
     initializeDatabase(db);
-    assert.equal(migration.databaseVersion(db), 15);
+    assert.equal(migration.databaseVersion(db), 16);
     migration.insertPublicationBoundaryGrid(db, "grid", 0, "private");
     assert.throws(
       () =>
@@ -203,7 +208,7 @@ test("fresh databases use the canonical schema and reject invalid published flag
 });
 
 test("unsupported versions leave stored data untouched", () => {
-  for (const version of [7, 16]) {
+  for (const version of [7, 17]) {
     const db = legacyDatabase(version);
     try {
       seedLegacy(db, version);
@@ -432,7 +437,7 @@ test("v14 workflow backfill failure restores a production v13 database atomicall
     assert.deepEqual(snapshot(db), before);
     allowCellBackfill();
     initializeDatabase(db);
-    assert.equal(migration.databaseVersion(db), 15);
+    assert.equal(migration.databaseVersion(db), 16);
   } finally {
     db.close();
   }
@@ -589,6 +594,40 @@ test("legacy completed output without an attempt retains its own reported usage"
       costUsd: 0,
     });
     assert.equal(task.attemptId, undefined);
+    assert.deepEqual(migration.foreignKeyViolations(db), []);
+  } finally {
+    db.close();
+  }
+});
+
+test("v15 blob migration preserves content identity and enforces paired positive integer proportions", () => {
+  const db = new Database(":memory:");
+  try {
+    initializeDatabase(db);
+    insertReferenceBlobDimensions(db, "a".repeat(64), 7, 3);
+    restoreV15ReferenceSchema(db);
+    initializeDatabase(db);
+    assert.equal(migration.databaseVersion(db), 16);
+    assert.deepEqual(referenceBlobs(db), [
+      { sha256: "a".repeat(64), width: null, height: null },
+    ]);
+    insertReferenceBlobDimensions(db, "b".repeat(64), 3, 7);
+    for (const [width, height] of [
+      [null, 3],
+      [7, null],
+      [0, 3],
+      [7, -1],
+      [1.5, 3],
+      [7, 2.5],
+    ] as const)
+      assert.throws(
+        () => insertReferenceBlobDimensions(db, "c".repeat(64), width, height),
+        /CHECK constraint failed|cannot store REAL value/,
+      );
+    assert.deepEqual(referenceBlobs(db), [
+      { sha256: "a".repeat(64), width: null, height: null },
+      { sha256: "b".repeat(64), width: 3, height: 7 },
+    ]);
     assert.deepEqual(migration.foreignKeyViolations(db), []);
   } finally {
     db.close();

@@ -96,7 +96,7 @@ function fixture(t, { shared = false } = {}) {
   });
   for (const db of [source, target])
     db.exec(`
-    PRAGMA user_version=15; PRAGMA foreign_keys=ON;
+    PRAGMA user_version=16; PRAGMA foreign_keys=ON;
     CREATE TABLE grids(id TEXT PRIMARY KEY,data TEXT,owner TEXT,owner_user_id TEXT,published INTEGER,visibility TEXT,slug TEXT,created_at TEXT);
     CREATE TABLE workflow_tasks(id TEXT PRIMARY KEY,grid_id TEXT REFERENCES grids(id) ON DELETE CASCADE,kind TEXT,status TEXT,dependency_id TEXT REFERENCES workflow_tasks(id),artifact_id TEXT,thinking_source_id TEXT,data TEXT);
     CREATE TABLE cells(id TEXT PRIMARY KEY,grid_id TEXT REFERENCES grids(id) ON DELETE CASCADE,position INTEGER,data TEXT,generation_id TEXT REFERENCES workflow_tasks(id),judgment_id TEXT REFERENCES workflow_tasks(id),UNIQUE(grid_id,position));
@@ -105,7 +105,7 @@ function fixture(t, { shared = false } = {}) {
     CREATE TABLE oauth_identities(provider TEXT,subject TEXT,user_id TEXT REFERENCES users(id));
     CREATE TABLE creation_requests(owner TEXT,request_id TEXT,fingerprint TEXT,grid_id TEXT REFERENCES grids(id));
     CREATE TABLE sessions(id TEXT PRIMARY KEY,data TEXT);
-    CREATE TABLE reference_blobs(sha256 TEXT PRIMARY KEY CHECK(length(sha256)=64)) STRICT;
+    CREATE TABLE reference_blobs(sha256 TEXT PRIMARY KEY CHECK(length(sha256)=64),width INTEGER CHECK(width IS NULL OR width > 0),height INTEGER CHECK((width IS NULL AND height IS NULL) OR (width IS NOT NULL AND height IS NOT NULL AND height > 0))) STRICT;
     CREATE TABLE reference_images(id TEXT PRIMARY KEY,owner TEXT NOT NULL,owner_user_id TEXT,name TEXT NOT NULL,media_type TEXT NOT NULL,sha256 TEXT REFERENCES reference_blobs(sha256)) STRICT;
     CREATE INDEX reference_images_sha256 ON reference_images(sha256,id);
     CREATE TABLE grid_reference_images(grid_id TEXT REFERENCES grids(id) ON DELETE CASCADE,reference_id TEXT,PRIMARY KEY(grid_id,reference_id));
@@ -252,7 +252,13 @@ function fixture(t, { shared = false } = {}) {
   const referenceSha256 = createHash("sha256")
     .update(referenceBytes)
     .digest("hex");
-  seedReferenceBlob(source, referenceSha256);
+  const referenceDimensions = { width: 640, height: 480 };
+  seedReferenceBlob(
+    source,
+    referenceSha256,
+    referenceDimensions.width,
+    referenceDimensions.height,
+  );
   seedReferenceImage(
     source,
     "reference-image",
@@ -281,6 +287,7 @@ function fixture(t, { shared = false } = {}) {
     thinking,
     referenceBytes,
     referenceSha256,
+    referenceDimensions,
   };
 }
 

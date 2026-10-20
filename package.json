@@ -32,6 +32,7 @@
     "es-module-lexer": "^3.0.3",
     "express": "5.2.1",
     "fflate": "^0.8.3",
+    "image-size": "2.0.4",
     "lucide-react": "1.55.0",
     "oauth4webapi": "3.8.8",
     "parse5": "8.0.0",

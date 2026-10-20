@@ -137,12 +137,14 @@ function copyReference(source, target, sha256) {
     check(hash(temporary) === sha256, "Copied reference checksum mismatch");
     try {
       linkSync(temporary, join(directory, sha256));
+      return true;
     } catch (error) {
       if (error.code !== "EEXIST") throw error;
       check(
         referenceInventory(target, sha256),
         "Destination reference is missing",
       );
+      return false;
     }
   } finally {
     rmSync(temporary, { force: true });
@@ -177,8 +179,8 @@ export function transferGrid(Database, options) {
   try {
     for (const db of [source, target]) {
       check(
-        db.pragma("user_version", { simple: true }) === 15,
-        "Grid transfer requires database schema 15",
+        db.pragma("user_version", { simple: true }) === 16,
+        "Grid transfer requires database schema 16",
       );
       db.pragma("foreign_keys=ON");
       db.exec(apply ? "BEGIN IMMEDIATE" : "BEGIN");
@@ -401,9 +403,26 @@ export function transferGrid(Database, options) {
       return false;
     });
     const referenceBlobs = new Map();
+    const findSourceBlob = source.prepare(
+      "SELECT sha256,width,height FROM reference_blobs WHERE sha256=?",
+    );
+    const findTargetBlob = target.prepare(
+      "SELECT width,height FROM reference_blobs WHERE sha256=?",
+    );
     for (const reference of referenceImages) {
       if (reference.sha256 === null || referenceBlobs.has(reference.sha256))
         continue;
+      const blob = findSourceBlob.get(reference.sha256);
+      check(blob, "Source reference blob metadata is missing");
+      const targetBlob = findTargetBlob.get(reference.sha256);
+      check(
+        !targetBlob ||
+          blob.width === null ||
+          targetBlob.width === null ||
+          (targetBlob.width === blob.width &&
+            targetBlob.height === blob.height),
+        "Destination reference blob dimensions already exist with different contents",
+      );
       const available = referenceInventory(
         options.sourceOutputs,
         reference.sha256,
@@ -412,7 +431,7 @@ export function transferGrid(Database, options) {
         options.targetOutputs,
         reference.sha256,
       );
-      referenceBlobs.set(reference.sha256, { available, existing });
+      referenceBlobs.set(reference.sha256, { blob, available, existing });
     }
     for (const call of retainedCalls)
       check(
@@ -448,6 +467,7 @@ export function transferGrid(Database, options) {
         receipts,
         references,
         referenceImages,
+        referenceBlobs: [...referenceBlobs.values()].map(({ blob }) => blob),
       }),
       { mode: 0o600 },
     );
@@ -473,8 +493,11 @@ export function transferGrid(Database, options) {
         constants.COPYFILE_EXCL,
       );
       check(hash(backup) === sha256, "Backed-up reference checksum mismatch");
-      if (!existing)
-        copyReference(options.sourceOutputs, options.targetOutputs, sha256);
+      if (
+        !existing &&
+        copyReference(options.sourceOutputs, options.targetOutputs, sha256)
+      )
+        copied.push(join(options.targetOutputs, ".references", sha256));
     }
     data.status = "complete";
     delete data.interruption;
@@ -496,9 +519,12 @@ export function transferGrid(Database, options) {
         row.created_at,
       );
     const addBlob = target.prepare(
-      "INSERT INTO reference_blobs (sha256) VALUES (?) ON CONFLICT DO NOTHING",
+      `INSERT INTO reference_blobs (sha256,width,height) VALUES (?,?,?)
+      ON CONFLICT (sha256) DO UPDATE SET width=excluded.width,height=excluded.height
+      WHERE reference_blobs.width IS NULL AND excluded.width IS NOT NULL`,
     );
-    for (const sha256 of referenceBlobs.keys()) addBlob.run(sha256);
+    for (const { blob } of referenceBlobs.values())
+      addBlob.run(blob.sha256, blob.width, blob.height);
     const addReferenceImage = target.prepare(
       `INSERT INTO reference_images
       (id,owner,owner_user_id,name,media_type,sha256) VALUES (?,?,?,?,?,?)`,

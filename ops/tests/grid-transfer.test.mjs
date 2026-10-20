@@ -24,6 +24,7 @@ import {
   referenceForeignKeyViolations,
   setReferenceSchemaVersion,
   seedReferenceBlob,
+  setReferenceBlobDimensions,
   seedReferenceImage,
   seedReferenceLink,
   seedSurvivingReferenceGrid,
@@ -134,6 +135,9 @@ test("preview is read-only; move preserves canonical tasks, links, accounts, fil
   assert.equal(reference.name, "horse.png");
   assert.equal(reference.media_type, "image/png");
   assert.equal(reference.sha256, f.referenceSha256);
+  assert.deepEqual(referenceBlobs(f.target), [
+    { sha256: f.referenceSha256, ...f.referenceDimensions },
+  ]);
   for (const root of [f.options.sourceOutputs, f.options.targetOutputs])
     assert.deepEqual(
       readFileSync(join(root, ".references", f.referenceSha256)),
@@ -176,6 +180,9 @@ test("preview is read-only; move preserves canonical tasks, links, accounts, fil
   );
   assert.equal(backup.calls.length, 5);
   assert.equal(backup.referenceImages[0].sha256, f.referenceSha256);
+  assert.deepEqual(backup.referenceBlobs, [
+    { sha256: f.referenceSha256, ...f.referenceDimensions },
+  ]);
   assert.deepEqual(
     readFileSync(
       join(f.options.backupDir, "outputs", ".references", f.referenceSha256),
@@ -324,6 +331,8 @@ test("unsafe transfers leave both databases and source files untouched", async (
     ["target schema13", (f) => setReferenceSchemaVersion(f.target, 13)],
     ["source schema14", (f) => setReferenceSchemaVersion(f.source, 14)],
     ["target schema14", (f) => setReferenceSchemaVersion(f.target, 14)],
+    ["source schema15", (f) => setReferenceSchemaVersion(f.source, 15)],
+    ["target schema15", (f) => setReferenceSchemaVersion(f.target, 15)],
   ])
     await t.test(name, (child) => {
       const f = fixture(child);
@@ -415,6 +424,9 @@ test("successive grid transfers reuse matching upload metadata and retain both u
     apply: true,
   });
   assert.deepEqual(referenceImages(f.target), [metadata]);
+  assert.deepEqual(referenceBlobs(f.target), [
+    { sha256: f.referenceSha256, ...f.referenceDimensions },
+  ]);
   assert.deepEqual(orderedReferenceLinks(f.target), [
     { grid_id: f.options.grid, reference_id: "reference-image" },
     { grid_id: secondGrid, reference_id: "reference-image" },
@@ -461,8 +473,9 @@ test("shared upload metadata reuse rejects each ownership or content mismatch", 
 });
 
 test("shared uploads copy once or reuse target bytes without merging metadata or collecting source bytes", async (t) => {
-  for (const existing of [false, true])
-    await t.test(existing ? "reuse target blob" : "copy blob once", (child) => {
+  for (const blobState of ["absent", "unknown dimensions", "known dimensions"])
+    await t.test(blobState, (child) => {
+      const existing = blobState !== "absent";
       const f = fixture(child);
       const survivor = "f".repeat(48);
       seedReferenceImage(
@@ -491,7 +504,14 @@ test("shared uploads copy once or reuse target bytes without merging metadata or
       const sourceInode = lstatSync(sourcePath).ino;
       let targetInode, targetMetadata;
       if (existing) {
-        seedReferenceBlob(f.target, f.referenceSha256);
+        seedReferenceBlob(
+          f.target,
+          f.referenceSha256,
+          blobState === "known dimensions" ? f.referenceDimensions.width : null,
+          blobState === "known dimensions"
+            ? f.referenceDimensions.height
+            : null,
+        );
         seedReferenceImage(
           f.target,
           "target-existing-reference",
@@ -536,7 +556,7 @@ test("shared uploads copy once or reuse target bytes without merging metadata or
         { grid_id: survivor, reference_id: "reference-image" },
       ]);
       assert.deepEqual(referenceBlobs(f.target), [
-        { sha256: f.referenceSha256 },
+        { sha256: f.referenceSha256, ...f.referenceDimensions },
       ]);
       for (const root of [f.options.sourceOutputs, f.options.targetOutputs]) {
         assert.deepEqual(readdirSync(join(root, ".references")), [
@@ -613,36 +633,135 @@ test("unavailable historical references preserve links and metadata without read
     });
 });
 
-test("upload metadata and bytes remain safe across destination rollback and source removal failure", async (t) => {
+test("upload dimensions and bytes remain safe across destination rollback and source removal failure", async (t) => {
   for (const failure of ["target", "source"])
-    await t.test(failure, (child) => {
-      const f = fixture(child);
-      const db = failure === "target" ? f.target : f.source;
-      rejectUploadTransfer(db, failure);
-      assert.throws(
-        () => transferGrid(Database, { ...f.options, apply: true }),
-        /controlled upload failure/,
+    for (const existing of [false, true])
+      await t.test(
+        `${failure}: ${existing ? "existing blob" : "new blob"}`,
+        (child) => {
+          const f = fixture(child);
+          const sourcePath = join(
+            f.options.sourceOutputs,
+            ".references",
+            f.referenceSha256,
+          );
+          const targetPath = join(
+            f.options.targetOutputs,
+            ".references",
+            f.referenceSha256,
+          );
+          let targetInode;
+          if (existing) {
+            seedReferenceBlob(f.target, f.referenceSha256);
+            mkdirSync(join(f.options.targetOutputs, ".references"));
+            writeFileSync(targetPath, f.referenceBytes);
+            targetInode = lstatSync(targetPath).ino;
+          }
+          rejectUploadTransfer(
+            failure === "target" ? f.target : f.source,
+            failure,
+          );
+          assert.throws(
+            () => transferGrid(Database, { ...f.options, apply: true }),
+            /controlled upload failure/,
+          );
+          assert.equal(referenceImages(f.source).length, 1);
+          assert.deepEqual(referenceBlobs(f.source), [
+            { sha256: f.referenceSha256, ...f.referenceDimensions },
+          ]);
+          assert.equal(
+            referenceImages(f.target).length,
+            failure === "target" ? 0 : 1,
+          );
+          assert.equal(
+            referenceLinks(f.target).length,
+            failure === "target" ? 0 : 1,
+          );
+          assert.deepEqual(
+            referenceBlobs(f.target),
+            failure === "source"
+              ? [{ sha256: f.referenceSha256, ...f.referenceDimensions }]
+              : existing
+                ? [{ sha256: f.referenceSha256, width: null, height: null }]
+                : [],
+          );
+          assert.deepEqual(readFileSync(sourcePath), f.referenceBytes);
+          assert.equal(
+            existsSync(targetPath),
+            failure === "source" || existing,
+          );
+          if (existsSync(targetPath))
+            assert.deepEqual(readFileSync(targetPath), f.referenceBytes);
+          if (existing) assert.equal(lstatSync(targetPath).ino, targetInode);
+          for (const db of [f.source, f.target])
+            assert.deepEqual(referenceForeignKeyViolations(db), []);
+        },
       );
-      assert.equal(referenceImages(f.source).length, 1);
-      assert.equal(
-        referenceImages(f.target).length,
-        failure === "target" ? 0 : 1,
-      );
-      assert.equal(
-        referenceLinks(f.target).length,
-        failure === "target" ? 0 : 1,
-      );
-      for (const root of [f.options.sourceOutputs, f.options.targetOutputs]) {
-        assert.deepEqual(readdirSync(join(root, ".references")), [
-          f.referenceSha256,
+});
+
+test("unknown source dimensions preserve known target dimensions or remain unavailable", async (t) => {
+  for (const targetDimensions of [undefined, null, { width: 640, height: 480 }])
+    await t.test(
+      targetDimensions === undefined
+        ? "new blob"
+        : targetDimensions === null
+          ? "unknown target dimensions"
+          : "known target dimensions",
+      (child) => {
+        const f = fixture(child);
+        setReferenceBlobDimensions(f.source, f.referenceSha256, null, null);
+        if (targetDimensions !== undefined)
+          seedReferenceBlob(
+            f.target,
+            f.referenceSha256,
+            targetDimensions?.width ?? null,
+            targetDimensions?.height ?? null,
+          );
+        transferGrid(Database, { ...f.options, apply: true });
+        assert.deepEqual(referenceBlobs(f.target), [
+          {
+            sha256: f.referenceSha256,
+            width: targetDimensions?.width ?? null,
+            height: targetDimensions?.height ?? null,
+          },
         ]);
-        assert.deepEqual(
-          readFileSync(join(root, ".references", f.referenceSha256)),
-          f.referenceBytes,
+        assert.deepEqual(referenceBlobs(f.source), [
+          { sha256: f.referenceSha256, width: null, height: null },
+        ]);
+      },
+    );
+});
+
+test("incompatible shared blob dimensions reject preview and apply before side effects", async (t) => {
+  for (const dimensions of [
+    { width: 641, height: 480 },
+    { width: 640, height: 481 },
+    { width: 480, height: 640 },
+  ])
+    await t.test(`${dimensions.width}x${dimensions.height}`, (child) => {
+      const f = fixture(child);
+      seedReferenceBlob(
+        f.target,
+        f.referenceSha256,
+        dimensions.width,
+        dimensions.height,
+      );
+      const before = referenceBlobs(f.target);
+      for (const apply of [false, true])
+        assert.throws(
+          () => transferGrid(Database, { ...f.options, apply }),
+          /Destination reference blob dimensions/,
         );
-      }
-      for (const db of [f.source, f.target])
-        assert.deepEqual(referenceForeignKeyViolations(db), []);
+      assert.deepEqual(referenceBlobs(f.target), before);
+      assert.deepEqual(referenceImages(f.target), []);
+      assert.equal(transferGridCount(f.target), 1);
+      assert.equal(transferCellCount(f.source), 3);
+      assert.equal(existsSync(f.options.backupDir), false);
+      assert.equal(
+        existsSync(join(f.options.targetOutputs, ".references")),
+        false,
+      );
+      assert.ok(transferredGridExists(f.source, f.options.grid));
     });
 });
 

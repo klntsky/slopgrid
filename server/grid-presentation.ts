@@ -25,6 +25,7 @@ export function createGridPresenter(store: Store, origin: URL) {
     const canEdit = ownsGrid(g, s);
     return {
       ...grid,
+      input: store.references.input(g.input),
       author: gridAuthor(g, store),
       canEdit,
       canPublish: canEdit && !publicationError(g, "public"),
@@ -57,7 +58,12 @@ export function createGridPresenter(store: Store, origin: URL) {
         thinkingURL: c.thinkingId
           ? `/outputs/${c.id}/thinking/${c.thinkingId}`
           : undefined,
-        draft: g.input.format === "html" ? undefined : c.draft,
+        draft:
+          g.input.format === "html"
+            ? undefined
+            : g.input.format === "chat-template"
+              ? store.references.draft(c.draft)
+              : c.draft,
         previewURL:
           g.input.format === "html" && c.status === "running" && c.preview
             ? `${origin.origin}/outputs/${c.id}/website?path=${encodeURIComponent(`__preview/${c.preview.attempt}/index.html`)}&revision=${c.preview.revision}`

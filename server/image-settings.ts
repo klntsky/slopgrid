@@ -27,10 +27,17 @@ export const imageKinds = [
 export type ImageSettings = Partial<
   Record<Exclude<(typeof imageKinds)[number], "input_references">, string>
 > & { input_references?: string[] };
-export const referenceImageSchema = z.object({
-  id: z.string().min(1).max(80),
-  name: z.string().min(1).max(255),
-});
+export const referenceImageSchema = z
+  .object({
+    id: z.string().min(1).max(80),
+    name: z.string().min(1).max(255),
+    width: z.number().finite().int().positive().optional(),
+    height: z.number().finite().int().positive().optional(),
+  })
+  .refine(
+    (image) => (image.width === undefined) === (image.height === undefined),
+    "Image dimensions must include both width and height.",
+  );
 export type ReferenceImage = z.infer<typeof referenceImageSchema>;
 export type ReferenceGroups = Record<string, ReferenceImage[]>;
 export const imageCapabilitiesSchema = z.record(

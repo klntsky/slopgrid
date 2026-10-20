@@ -193,6 +193,7 @@ export function createGridRoutes({
       return res
         .status(400)
         .json({ error: "A reference image is unavailable." });
+    input = store.references.input(input);
     const cells = expandGrid(input).map((c) => ({ ...c, id: token() }));
     const tasks = createWorkflow(input, cells);
     if (!rate(`create:${s.id}`, 10) || !rate(`create-ip:${req.ip}`, 30))

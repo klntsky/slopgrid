@@ -24,7 +24,16 @@ export function readChatOutput(json: string): FilledChatMessage[] {
                 !image.id ||
                 !("name" in image) ||
                 typeof image.name !== "string" ||
-                !image.name,
+                !image.name ||
+                (("width" in image || "height" in image) &&
+                  (!("width" in image) ||
+                    !("height" in image) ||
+                    typeof image.width !== "number" ||
+                    typeof image.height !== "number" ||
+                    !Number.isInteger(image.width) ||
+                    !Number.isInteger(image.height) ||
+                    image.width <= 0 ||
+                    image.height <= 0)),
             ))),
     )
   )

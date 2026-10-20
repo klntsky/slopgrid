@@ -16,6 +16,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { ChatConversation } from "../shared/chat-conversation.js";
 import { writeChatOutput } from "../shared/chat-output.js";
 import type { Store } from "../server/store.js";
+import { referencePng } from "./reference-image-fixture.js";
+import { removeStoredReferenceDimensions } from "./reference-storage-fixture.js";
 
 function completedChatGrid(
   store: Store,
@@ -599,10 +601,7 @@ test("reused chat outputs render and download destination-owned per-message atta
   const stranger = token();
   for (const id of [sourceOwner, destinationOwner, stranger])
     store.saveSession({ id, created: Date.now() });
-  const png = Buffer.from(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
-    "base64",
-  );
+  const png = referencePng;
   const sourceImage = store.references.add(png, "Source photo", {
     id: sourceOwner,
     created: Date.now(),
@@ -651,6 +650,7 @@ test("reused chat outputs render and download destination-owned per-message atta
     destinationTemplate,
     artifactId,
   );
+  removeStoredReferenceDimensions(store.db);
   const id = destination.cells[0].id;
   const paths = [
     `/outputs/${id}`,

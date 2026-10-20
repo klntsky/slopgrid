@@ -21,7 +21,7 @@ export function removeReferenceGrid(db: Database.Database, gridId: string) {
 
 export function referenceBlob(db: Database.Database, sha256: string) {
   return db
-    .prepare("SELECT sha256 FROM reference_blobs WHERE sha256=?")
+    .prepare("SELECT sha256,width,height FROM reference_blobs WHERE sha256=?")
     .get(sha256);
 }
 
@@ -73,4 +73,46 @@ export function rejectReferenceGridCells(db: Database.Database) {
       SELECT RAISE(ABORT, 'Injected grid failure');
     END`);
   return () => db.exec("DROP TRIGGER fail_reference_grid");
+}
+
+export function restoreV15ReferenceSchema(db: Database.Database) {
+  db.exec(`
+    ALTER TABLE reference_blobs DROP COLUMN height;
+    ALTER TABLE reference_blobs DROP COLUMN width;
+    PRAGMA user_version=15;
+  `);
+}
+
+export function insertReferenceBlobDimensions(
+  db: Database.Database,
+  sha256: string,
+  width: number | null,
+  height: number | null,
+) {
+  db.prepare(
+    "INSERT INTO reference_blobs (sha256,width,height) VALUES (?,?,?)",
+  ).run(sha256, width, height);
+}
+
+export function removeStoredReferenceDimensions(db: Database.Database) {
+  const grids = db.prepare("SELECT id,data FROM grids").all() as {
+    id: string;
+    data: string;
+  }[];
+  const tasks = db.prepare("SELECT id,data FROM workflow_tasks").all() as {
+    id: string;
+    data: string;
+  }[];
+  for (const [table, rows] of [
+    ["grids", grids],
+    ["workflow_tasks", tasks],
+  ] as const) {
+    const update = db.prepare(`UPDATE ${table} SET data=? WHERE id=?`);
+    for (const row of rows) {
+      const data = JSON.parse(row.data, (key, value) =>
+        key === "width" || key === "height" ? undefined : value,
+      );
+      update.run(JSON.stringify(data), row.id);
+    }
+  }
 }

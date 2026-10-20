@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { efforts, expandGrid, gridSchema } from "../server/domain.js";
+import { readChatOutput } from "../shared/chat-output.js";
 
 test("chat completion accepts optional blanks after a prefix and preserves expanded history", () => {
   const source = {
@@ -70,7 +71,7 @@ test("chat histories preserve roles and whitespace while expanding variables", (
 });
 
 test("chat images belong to supplied user messages, including image-only turns", () => {
-  const first = { id: "first", name: "first.png" };
+  const first = { id: "first", name: "first.png", width: 7, height: 3 };
   const second = { id: "second", name: "second.png" };
   const source = {
     format: "chat-template",
@@ -146,6 +147,28 @@ test("chat images belong to supplied user messages, including image-only turns",
     }).success,
     false,
   );
+  const history = [{ role: "user", content: "", images: [first, second] }];
+  assert.deepEqual(readChatOutput(JSON.stringify(history)), history);
+  for (const dimensions of [
+    { width: 7 },
+    { height: 3 },
+    { width: 0, height: 3 },
+    { width: 7, height: -1 },
+    { width: 1.5, height: 3 },
+    { width: 7, height: Infinity },
+    { width: NaN, height: 3 },
+    { width: "7", height: 3 },
+    { width: null, height: null },
+  ]) {
+    const messages = [
+      { role: "user", content: "", images: [{ ...second, ...dimensions }] },
+    ];
+    assert.equal(gridSchema.safeParse({ ...source, messages }).success, false);
+    assert.throws(
+      () => readChatOutput(JSON.stringify(messages)),
+      /Invalid chat output/,
+    );
+  }
 });
 
 test("two prompt variables are replaced literally, including dollar signs in values", () => {

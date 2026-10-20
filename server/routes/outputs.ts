@@ -255,7 +255,7 @@ export function createOutputRoutes(
         hr,th,td{border-color:light-dark(#d1cabd,#45423e)}
         img{max-width:100%}
         ${messages ? conversationStyle : ""}
-      </style></head><body>${renderToStaticMarkup(messages ? createElement(ChatConversation, { messages, imageSource: (image) => imageSources.get(image.id)! }) : createElement(MarkdownContent, { markdown: readFileSync(file, "utf8") }))}</body></html>`,
+      </style></head><body>${renderToStaticMarkup(messages ? createElement(ChatConversation, { messages, imageSource: (image) => imageSources.get(image.id)!, showImageLoader: false }) : createElement(MarkdownContent, { markdown: readFileSync(file, "utf8") }))}</body></html>`,
     );
   });
   return app;

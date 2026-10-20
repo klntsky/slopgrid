@@ -83,7 +83,11 @@ test("chat reuse matches attachment content across uploads but not moved attachm
       format: "chat-template",
       rows: { kind: "variable", values: ["cat"] },
       messages: [
-        { role: "user", content: "Describe $ROW $COLUMN", images: [first] },
+        {
+          role: "user",
+          content: "Describe $ROW $COLUMN",
+          images: [{ id: first.id, name: first.name }],
+        },
         { role: "assistant", content: "A supplied answer." },
         { role: "user", content: "Describe the next image.", images: [second] },
       ],
@@ -94,7 +98,10 @@ test("chat reuse matches attachment content across uploads but not moved attachm
     const copy = await create(f, {
       ...template,
       messages: [
-        { ...template.messages[0], images: [renamed] },
+        {
+          ...template.messages[0],
+          images: [{ ...renamed, width: 900, height: 2 }],
+        },
         ...template.messages.slice(1),
       ],
       sourceGridId: source.id,
@@ -106,6 +113,7 @@ test("chat reuse matches attachment content across uploads but not moved attachm
       f.store.outputMetadata(original.cells[0].id)!.artifactId,
     );
     assert.equal(f.calls.length, 1);
+    assert.deepEqual(copy.input.messages![0].images, [renamed]);
     const changed = await create(f, {
       ...template,
       messages: [

@@ -19,12 +19,19 @@ import {
   referenceBlobs,
   referenceForeignKeyViolations,
   restoreV14ReferenceSchema,
+  restoreV15ReferenceSchema,
+  removeStoredReferenceDimensions,
 } from "./reference-storage-fixture.js";
 import { holdDatabaseWrites } from "./database-lock.js";
 import {
   removeStoredGrid,
   rejectStoredGridUpdates,
 } from "./grid-storage-fixture.js";
+import {
+  referencePng,
+  orientedReferenceJpeg,
+  referenceWebp,
+} from "./reference-image-fixture.js";
 
 test("an initialized store opens for reads while another connection holds the write lock", () => {
   const dir = mkdtempSync(join(tmpdir(), "slopgrid-store-lock-"));
@@ -338,7 +345,7 @@ for (const available of [true, false])
     const secret = Buffer.alloc(32, 1);
     let store = new Store(database, secret);
     try {
-      const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 1]);
+      const png = referencePng;
       const changed = Buffer.concat([png, Buffer.from([2])]);
       const owner = { id: "anonymous-owner", created: 0 };
       const first = store.references.add(png, "first.png", owner)!;
@@ -383,7 +390,30 @@ for (const available of [true, false])
         userId: "claimed-account",
       });
       const tasks = store.workflow(grid.id);
+      const expectedReferences = [first, second, unavailable].map(
+        ({ id, name }) => ({
+          id,
+          name,
+          ...(available && id !== unavailable.id
+            ? { width: 7, height: 3 }
+            : {}),
+        }),
+      );
+      const expectedTasks = tasks.map((task) =>
+        task.kind === "generation"
+          ? {
+              ...task,
+              input: {
+                ...task.input,
+                messages: [
+                  { ...task.input.messages![0], images: expectedReferences },
+                ],
+              },
+            }
+          : task,
+      );
       const links = referenceUsageLinks(store.db);
+      removeStoredReferenceDimensions(store.db);
       restoreV14ReferenceSchema(store.db);
       rmSync(join(store.files.root, ".references"), { recursive: true });
       if (available) {
@@ -393,8 +423,11 @@ for (const available of [true, false])
       }
       store.db.close();
       store = new Store(database, secret);
-      assert.deepEqual(store.workflow(grid.id), tasks);
-      assert.deepEqual(store.get(grid.id)!.input, input);
+      assert.deepEqual(store.workflow(grid.id), expectedTasks);
+      assert.deepEqual(store.get(grid.id)!.input, {
+        ...input,
+        messages: [{ ...input.messages![0], images: expectedReferences }],
+      });
       assert.equal(store.get(grid.id)!.ownerUserId, "claimed-account");
       assert.deepEqual(referenceUsageLinks(store.db), links);
       assert.deepEqual(store.session("saved-session"), {
@@ -454,6 +487,7 @@ for (const available of [true, false])
       assert.equal(store.references.path(unavailable.id), undefined);
       store.db.close();
       store = new Store(database, secret);
+      expectedReferences[2] = unavailable;
       assert.deepEqual(
         (await store.references.loader()([unavailable.id])).get(unavailable.id),
         {
@@ -481,10 +515,61 @@ for (const available of [true, false])
         store.references.loader()([unavailable.id]),
         /unavailable/,
       );
-      assert.deepEqual(store.workflow(grid.id), tasks);
+      assert.deepEqual(store.workflow(grid.id), expectedTasks);
       assert.deepEqual(referenceUsageLinks(store.db), links);
     } finally {
       store.db.close();
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+test("v15 CAS metadata backfills once per SHA, keeps missing images usable as metadata and survives restarts", () => {
+  const dir = mkdtempSync(join(tmpdir(), "slopgrid-dimension-migration-"));
+  const database = join(dir, "app.sqlite");
+  const secret = Buffer.alloc(32, 1);
+  let store = new Store(database, secret);
+  try {
+    const owner = { id: "owner", created: 0 };
+    const first = store.references.add(referencePng, "wide.png", owner)!;
+    const duplicate = store.references.add(referencePng, "renamed.png", owner)!;
+    const rotatedBytes = orientedReferenceJpeg(6);
+    const rotated = store.references.add(rotatedBytes, "rotated.jpg", owner)!;
+    const missing = store.references.add(referenceWebp, "missing.webp", owner)!;
+    const restoredPath = store.references.path(missing.id)!;
+    const firstPath = store.references.path(first.id)!;
+    rmSync(restoredPath);
+    restoreV15ReferenceSchema(store.db);
+    store.db.close();
+    store = new Store(database, secret);
+    assert.equal(referenceBlobs(store.db).length, 3);
+    for (const reference of [first, duplicate, rotated])
+      assert.deepEqual(
+        store.references.hydrate({ id: reference.id, name: reference.name }),
+        reference,
+      );
+    assert.deepEqual(store.references.hydrate(missing), {
+      id: missing.id,
+      name: missing.name,
+    });
+    assert.equal(store.references.path(duplicate.id), firstPath);
+    // Once recorded, proportions do not depend on reading the image on open or
+    // view. A validation snapshot may intentionally omit all physical bytes.
+    rmSync(join(store.files.root, ".references"), { recursive: true });
+    store.db.close();
+    store = new Store(database, secret);
+    assert.deepEqual(store.references.hydrate(first), first);
+    assert.deepEqual(store.references.hydrate(rotated), rotated);
+    store.files.writeReference(
+      createHash("sha256").update(referenceWebp).digest("hex"),
+      referenceWebp,
+    );
+    store.db.close();
+    store = new Store(database, secret);
+    assert.deepEqual(store.references.hydrate(missing), missing);
+    assert.equal(referenceBlobs(store.db).length, 3);
+    assert.deepEqual(referenceForeignKeyViolations(store.db), []);
+  } finally {
+    store.db.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
