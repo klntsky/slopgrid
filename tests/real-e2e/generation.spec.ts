@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 
-const model = "nvidia/nemotron-3-super-120b-a12b:free";
+const model = "minimax/minimax-m3.1-flash:free";
 const prompts = {
   Markdown:
     "Return a Markdown document containing only a level-one heading with the text OK.",
@@ -47,7 +47,7 @@ for (const [format, prompt] of Object.entries(prompts)) {
       .getByRole("checkbox", { name: "Model default", exact: true })
       .uncheck();
     await columnValues
-      .getByRole("checkbox", { name: "None", exact: true })
+      .getByRole("checkbox", { name: "low", exact: true })
       .check();
     await page.getByLabel("Prompt", { exact: true }).fill(prompt);
     await page
