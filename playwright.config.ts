@@ -21,6 +21,7 @@ export default defineConfig({
       name: "real",
       testDir: "tests/real-e2e",
       timeout: 90000,
+      retries: Number(process.env.SLOPGRID_REAL_TEST_RETRIES ?? 0),
       use: { trace: "off", screenshot: "off", video: "off" },
     },
   ],
