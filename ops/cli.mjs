@@ -19,13 +19,16 @@ const args = process.argv.slice(2);
 if (!args.length || args.includes("--help")) {
   console.log(`Usage:
   ./deploy.sh validate [REV] [--unit FILE --browser FILE]
+  ./deploy.sh rehearse [REV] [--skip-tests | --unit FILE --browser FILE]
   ./deploy.sh staging [REV] [--skip-tests | --unit FILE --browser FILE] [--mode auto|soft|machinery] [--discard-grid ID] [--recover-failed-start]
   ./deploy.sh production [REV] [--skip-tests] [--mode auto|soft|machinery]
-  ./deploy.sh validate|staging|production [REV] --plan
+  ./deploy.sh validate|rehearse|staging|production [REV] --plan
   ./deploy.sh status RUN_ID
 
 The default validation is the complete suite in an isolated per-run workspace.
 Use validate for independent worktree candidates without changing any runtime.
+Use rehearse to migrate a private full copy of production data on staging without
+changing either runtime. It defaults to the full suite; --skip-tests still migrates.
 Production accepts only the authoritative master tip and promotes only production.
 Repeat --unit or --browser for more files; --suite mock|real and --grep PATTERN
 select browsers. Production never changes staging.
@@ -102,15 +105,20 @@ try {
             target: options.target,
             validation: options.tests,
             stages: [
-              "build in isolated run",
-              "validate in isolated run",
-              ...(options.target === "validate" ? [] : [`deploy ${options.target}`]),
+              "build committed candidate in isolated remote run",
+              ...(options.target === "production" || options.target === "rehearse"
+                ? ["copy production SQLite backup and all outputs into private workspace", "run candidate Store migrations and check database integrity"]
+                : ["validate fresh data in isolated run"]),
+              options.tests === "skip" ? "skip test suites explicitly" : `run ${options.tests} test suites in isolated run`,
+              ...(["validate", "rehearse"].includes(options.target) ? [] : [`deploy ${options.target}`]),
             ],
             mode: options.mode,
             discardGrids: options.discardGrids,
             recoverFailedStart: options.recoverFailedStart,
             config: { host: config.host, remoteRoot: config.remoteRoot },
-            note: "No files uploaded or runtime processes changed. Production plans query authoritative master. Auto mode compares engine dependencies at deployment time.",
+            note: ["validate", "rehearse"].includes(options.target)
+              ? "No deployment lock, persistent runtime preparation, promotion or PM2 operations. Plan uploads no files and changes no runtime processes."
+              : "No files uploaded or runtime processes changed. Production plans query authoritative master. Auto mode compares engine dependencies at deployment time.",
           },
           null,
           2,

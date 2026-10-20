@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync, cpSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -27,6 +27,7 @@ function commit(repository, message) {
 function fixture(t) {
   const path = directory(t), repository = join(path, "app");
   capture("git", ["init", "--initial-branch=master", repository]);
+  cpSync(root, join(repository, "ops"), { recursive: true });
   const master = commit(repository, "master");
   const authority = join(path, "authority.git");
   capture("git", ["clone", "--bare", repository, authority]);
@@ -97,12 +98,98 @@ test("production rechecks master after validation before promotion", async (t) =
   assert.deepEqual(calls, ["build", "validate"]);
 });
 
+test("rehearsal accepts candidate revisions and never prepares or promotes a runtime", async (t) => {
+  const f = fixture(t);
+  for (const flags of [[], ["--skip-tests"], ["--unit", "tests/fixture.test.ts"]]) {
+    const request = { ...parseArgs(["rehearse", ...flags]), revision: f.candidate, config: f.config };
+    const calls = [];
+    await executePlan(request, {
+      build: () => { calls.push("build"); return {}; },
+      validate: () => {
+        calls.push("validate");
+        return { status: request.tests === "skip" ? "skipped" : "passed", policy: request.tests, migration: "passed" };
+      },
+      prepare: () => assert.fail("Rehearsal prepared a persistent runtime"),
+      deploy: () => assert.fail("Rehearsal promoted a persistent runtime"),
+    });
+    assert.deepEqual(calls, ["build", "validate"]);
+  }
+});
+
+test("rehearsal propagates build and validation failures without deployment", async () => {
+  for (const failure of ["build", "validate", "status", "skip"]) {
+    const calls = [];
+    await assert.rejects(executePlan(parseArgs(["rehearse"]), {
+      build: () => {
+        calls.push("build");
+        if (failure === "build") throw new Error("build failure");
+        return {};
+      },
+      validate: () => {
+        calls.push("validate");
+        if (failure === "validate") throw new Error("migration failure");
+        return { status: failure === "skip" ? "skipped" : "failed" };
+      },
+      prepare: () => assert.fail("Failure prepared a runtime"),
+      deploy: () => assert.fail("Failure promoted a runtime"),
+    }), /build failure|migration failure|Validation did not succeed|Unrequested validation skip/);
+    assert.deepEqual(calls, failure === "build" ? ["build"] : ["build", "validate"]);
+  }
+});
+
+test("rehearsal argument boundaries reject deployment controls and unsafe test selections", () => {
+  for (const flags of [
+    ["--mode", "auto"], ["--mode", "soft"], ["--mode", "machinery"],
+    ["--discard-grid", "a".repeat(48)], ["--recover-failed-start"],
+    ["--skip-tests", "--unit", "tests/fixture.test.ts"],
+    ["--grep", "case"], ["--unit", "tests/../secret.test.ts"],
+  ]) assert.throws(() => parseArgs(["rehearse", ...flags]));
+});
+
+test("CLI rehearsal plan resolves a candidate without production authority or runtime access", (t) => {
+  const f = fixture(t);
+  const result = spawnSync(process.execPath, [join(f.repository, "ops/cli.mjs"), "rehearse", "candidate", "--skip-tests", "--plan"], {
+    cwd: f.repository,
+    env: { ...process.env, ...fixtureEnvironment({ ...f.config, masterRepository: join(f.path, "absent.git") }) },
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const plan = JSON.parse(result.stdout);
+  assert.equal(plan.target, "rehearse");
+  assert.equal(plan.revision, f.candidate);
+});
+
+test("remote rehearsal worker bypasses a held deployment lock and records the pipeline exit status", async (t) => {
+  const path = directory(t), tools = join(path, "tools");
+  mkdirSync(join(tools, "lib"), { recursive: true });
+  writeFileSync(join(tools, "remote-run.sh"), readFileSync(join(root, "remote-run.sh")));
+  // Adapt only the worker's pipeline boundary: orchestration itself is covered above.
+  writeFileSync(join(tools, "lib/pipeline.mjs"), `
+import { readFileSync } from "node:fs";
+const request = JSON.parse(readFileSync(process.argv[2], "utf8"));
+console.log("isolated rehearsal reached");
+process.exitCode = request.fixtureExit;
+`);
+  const lock = spawn("flock", [join(path, "deployment.lock"), "sh", "-c", "echo locked; cat"], { stdio: ["pipe", "pipe", "inherit"] });
+  t.after(() => lock.stdin.end());
+  await once(lock.stdout, "data");
+  for (const code of [0, 17]) {
+    const run = join(path, `run-${code}`);
+    mkdirSync(run);
+    writeFileSync(join(run, "request.json"), JSON.stringify({ target: "rehearse", fixtureExit: code }));
+    const result = spawnSync("bash", [join(tools, "remote-run.sh"), run, path], { encoding: "utf8" });
+    assert.equal(result.status, code, result.stderr);
+    assert.equal(readFileSync(join(run, "exit"), "utf8").trim(), String(code));
+    assert.match(readFileSync(join(run, "run.log"), "utf8"), /isolated rehearsal reached/);
+  }
+});
+
 test("CLI rejects a locally named master before SSH, even with skipped tests", (t) => {
   const f = fixture(t), bin = join(f.path, "bin"), marker = join(f.path, "ssh-called");
   git(f.repository, "update-ref", "refs/heads/master", f.candidate);
   mkdirSync(bin);
   writeFileSync(join(bin, "ssh"), `#!/bin/sh\nprintf touched > '${marker}'\nexit 99\n`, { mode: 0o700 });
-  const result = spawnSync(process.execPath, [join(root, "cli.mjs"), "production", "master", "--skip-tests"], {
+  const result = spawnSync(process.execPath, [join(f.repository, "ops/cli.mjs"), "production", "master", "--skip-tests"], {
     env: { ...process.env, ...fixtureEnvironment(f.config), PATH: `${bin}:${process.env.PATH}` }, encoding: "utf8",
   });
   assert.equal(result.status, 1);
@@ -115,7 +202,7 @@ test("CLI defaults to invoking application worktree rather than configured check
   const worktree = join(f.path, "worktree");
   git(f.repository, "worktree", "add", "--detach", worktree, f.master);
   for (const [cwd, revision] of [[worktree, f.master], [root, f.candidate]]) {
-    const result = spawnSync(process.execPath, [join(root, "cli.mjs"), "validate", "--plan"], {
+    const result = spawnSync(process.execPath, [join(f.repository, "ops/cli.mjs"), "validate", "--plan"], {
       cwd,
       env: { ...process.env, ...fixtureEnvironment(f.config) },
       encoding: "utf8",

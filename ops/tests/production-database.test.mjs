@@ -7,7 +7,9 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  renameSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -21,17 +23,19 @@ import { fixtureConfig } from "./config-fixture.mjs";
 const application = process.env.SLOPGRID_TEST_APP;
 const Database = createRequire(join(application, "package.json"))("better-sqlite3");
 const validationModule = new URL("../lib/validate.mjs", import.meta.url).href;
+const artifact = "private production artifact must stay in place\n";
+const binaryArtifact = Buffer.from([0, 255, 128, 1]);
 const expectedRows = [
-  { id: 1, value: "checkpointed", migrated: "candidate:checkpointed" },
-  { id: 2, value: "wal-only", migrated: "candidate:wal-only" },
+  { id: 1, value: "checkpointed", migrated: "candidate:checkpointed:" + artifact },
+  { id: 2, value: "wal-only", migrated: "candidate:wal-only:" + artifact },
 ];
 
 // These are archived candidate sources, not replacements for the validation
 // orchestrator. Migration and both suite commands execute real SQLite queries.
 const storeSource = `
 import assert from "node:assert/strict";
-import { appendFileSync, existsSync, readdirSync } from "node:fs";
-import { basename, dirname } from "node:path";
+import { appendFileSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import Database from "better-sqlite3";
 export class Store {
   db;
@@ -40,11 +44,22 @@ export class Store {
       phase: "migration-start", databasePath, outputsPath,
     }) + "\\n");
     assert.equal(key.length, 32);
-    assert.equal(existsSync(outputsPath), false, "production artifacts must not be copied");
-    const filename = basename(databasePath);
-    const databaseFiles = [filename, filename + "-wal", filename + "-shm", filename + "-journal"];
-    assert.ok(readdirSync(dirname(databasePath)).every(name => databaseFiles.includes(name)),
-      "runtime may contain the SQLite snapshot only");
+    assert.notEqual(key.toString("hex"), "${"ab".repeat(32)}");
+    assert.notEqual(process.env.GITHUB_CLIENT_ID, "production-client");
+    assert.notEqual(process.env.GITHUB_CLIENT_SECRET, "production-secret");
+    assert.equal(process.env.PRODUCTION_ONLY_SECRET, undefined);
+    assert.notEqual(process.env.APP_ORIGIN, "https://production.invalid");
+    const artifactPath = join(outputsPath, "nested/production-only.html");
+    const original = readFileSync(artifactPath, "utf8");
+    assert.equal(original, ${JSON.stringify(artifact)});
+    assert.deepEqual(readFileSync(join(outputsPath, ".binary")), Buffer.from([0, 255, 128, 1]));
+    assert.equal(statSync(join(outputsPath, "empty")).isDirectory(), true);
+    const outputStat = statSync(artifactPath);
+    const databaseStat = statSync(databasePath);
+    writeFileSync(artifactPath, "transformed:" + original);
+    writeFileSync(join(outputsPath, ".binary"), "transformed binary");
+    if (process.env.SLOPGRID_FIXTURE_FILE_MIGRATION_FAILURE === "1")
+      throw new Error("file-dependent migration failed");
     this.db = new Database(databasePath, { fileMustExist: true });
     assert.equal(this.db.pragma("user_version", { simple: true }), 1);
     assert.deepEqual(this.db.prepare("SELECT id, value FROM records ORDER BY id").all(), [
@@ -53,11 +68,19 @@ export class Store {
     this.db.exec("ALTER TABLE records ADD COLUMN migrated TEXT");
     if (process.env.SLOPGRID_FIXTURE_MIGRATION_FAILURE === "1")
       this.db.exec("ALTER TABLE missing_migration_table ADD COLUMN broken TEXT");
-    this.db.exec("UPDATE records SET migrated = 'candidate:' || value; PRAGMA user_version=2");
+    this.db.prepare("UPDATE records SET migrated = 'candidate:' || value || ':' || ?").run(original);
+    this.db.pragma("user_version=2");
+    if (process.env.SLOPGRID_FIXTURE_FOREIGN_KEY_FAILURE === "1")
+      this.db.exec("PRAGMA foreign_keys=OFF; CREATE TABLE parents(id INTEGER PRIMARY KEY); CREATE TABLE children(parent INTEGER REFERENCES parents(id)); INSERT INTO children VALUES (999)");
+    if (process.env.SLOPGRID_FIXTURE_INTEGRITY_FAILURE === "1")
+      this.db.exec("CREATE TABLE checked(value INTEGER CHECK(value > 0)); PRAGMA ignore_check_constraints=ON; INSERT INTO checked VALUES (-1); PRAGMA ignore_check_constraints=OFF");
     appendFileSync(process.env.SLOPGRID_FIXTURE_EVENTS, JSON.stringify({
       phase: "migration-passed", databasePath,
       version: this.db.pragma("user_version", { simple: true }),
       rows: this.db.prepare("SELECT * FROM records ORDER BY id").all(),
+      outputInode: outputStat.ino, outputDevice: outputStat.dev,
+      databaseInode: databaseStat.ino, databaseDevice: databaseStat.dev,
+      output: readFileSync(artifactPath, "utf8"),
     }) + "\\n");
   }
 }
@@ -65,7 +88,8 @@ export class Store {
 
 const databaseAssertionsSource = `
 import assert from "node:assert/strict";
-import { appendFileSync } from "node:fs";
+import { appendFileSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import Database from "better-sqlite3";
 export function assertCandidateDatabase(phase) {
   assert.equal(process.env.NODE_ENV, "test");
@@ -75,6 +99,9 @@ export function assertCandidateDatabase(phase) {
     assert.equal(db.pragma("user_version", { simple: true }), 2);
     const rows = db.prepare("SELECT * FROM records ORDER BY id").all();
     assert.deepEqual(rows, ${JSON.stringify(expectedRows)});
+    assert.equal(readFileSync(join(process.env.OUTPUTS_PATH, "nested/production-only.html"), "utf8"),
+      ${JSON.stringify("transformed:" + artifact)});
+    assert.equal(readFileSync(join(process.env.OUTPUTS_PATH, ".binary"), "utf8"), "transformed binary");
     appendFileSync(process.env.SLOPGRID_FIXTURE_EVENTS, JSON.stringify({
       phase, databasePath: process.env.SLOPGRID_TEST_DATABASE, rows,
     }) + "\\n");
@@ -124,6 +151,19 @@ test("candidate tests read migrated production data", () => assertCandidateDatab
 import { assertCandidateDatabase } from "./assert-database.ts";
 assertCandidateDatabase("e2e");
 `);
+  if (options.target === "validate")
+    writeFileSync(join(candidate, "tests/assert-database.ts"), `
+import assert from "node:assert/strict";
+import { appendFileSync, existsSync } from "node:fs";
+export function assertCandidateDatabase(phase) {
+  assert.equal(process.env.SLOPGRID_TEST_DATABASE, undefined);
+  assert.equal(existsSync(process.env.DATABASE_PATH), false);
+  assert.equal(existsSync(process.env.OUTPUTS_PATH), false);
+  appendFileSync(process.env.SLOPGRID_FIXTURE_EVENTS, JSON.stringify({
+    phase, databasePath: process.env.DATABASE_PATH,
+  }) + "\\n");
+}
+`);
   const archive = spawnSync("tar", ["-czf", join(run, "source.tar.gz"), "-C", candidate, "package.json", "server", "tests"], { encoding: "utf8" });
   assert.equal(archive.status, 0, archive.stderr);
   symlinkSync(join(application, "node_modules"), join(buildPath, "node_modules"));
@@ -149,8 +189,9 @@ process.exit(result.status ?? 1);
   const sourcePath = join(production.applicationRoot, "live.sqlite");
   const outputsPath = join(production.applicationRoot, "outputs");
   mkdirSync(join(outputsPath, "nested"), { recursive: true });
+  mkdirSync(join(outputsPath, "empty"));
   const artifactPath = join(outputsPath, "nested/production-only.html");
-  const artifact = "private production artifact must stay in place\n";
+  writeFileSync(join(outputsPath, ".binary"), binaryArtifact);
   writeFileSync(artifactPath, artifact);
   writeFileSync(production.envFile, [
     "DATABASE_PATH=live.sqlite",
@@ -162,6 +203,7 @@ process.exit(result.status ?? 1);
     "GITHUB_CLIENT_ID=production-client",
     "GITHUB_CLIENT_SECRET=production-secret",
     "",
+    "PRODUCTION_ONLY_SECRET=must-not-reach-the-candidate",
   ].join("\n"));
   if (!options.missingSource) {
     source = new Database(sourcePath);
@@ -181,15 +223,34 @@ process.exit(result.status ?? 1);
       withoutWal.close();
     }
   }
+  if (options.missingOutputs) rmSync(outputsPath, { recursive: true });
+  if (options.symlink === "file")
+    symlinkSync(artifactPath, join(outputsPath, "z-live-file"));
+  if (options.symlink === "directory")
+    symlinkSync(production.applicationRoot, join(outputsPath, "z-live-directory"));
+  if (options.symlink === "root") {
+    const linkedOutputs = join(production.applicationRoot, "linked-outputs");
+    renameSync(outputsPath, linkedOutputs);
+    symlinkSync(linkedOutputs, outputsPath);
+  }
+  if (options.symlink === "database") {
+    const linkedDatabase = join(production.applicationRoot, "linked.sqlite");
+    renameSync(sourcePath, linkedDatabase);
+    symlinkSync(linkedDatabase, sourcePath);
+  }
+  if (options.specialFile) {
+    const special = spawnSync("mkfifo", [join(outputsPath, "z-pipe")], { encoding: "utf8" });
+    assert.equal(special.status, 0, special.stderr);
+  }
   const originalState = source && sourceState(source);
   const originalFiles = source && [sourcePath, sourcePath + "-wal"].map(path => [path, readFileSync(path)]);
   const request = {
-    target: "production",
+    target: options.target ?? "production",
     revision: "1".repeat(40),
     sourceHash: "2".repeat(64),
     opsRevision: "3".repeat(40),
     tests: options.tests ?? "full",
-    units: [],
+    units: options.tests === "scoped" ? ["tests/candidate.test.ts"] : [],
     browsers: [],
     suite: "mock",
     config,
@@ -225,6 +286,9 @@ try {
           SLOPGRID_FIXTURE_EVENTS: eventsPath,
           SLOPGRID_FIXTURE_MIGRATION_FAILURE: options.migrationFailure ? "1" : "0",
           SLOPGRID_FIXTURE_TEST_FAILURE: options.testFailure ? "1" : "0",
+          SLOPGRID_FIXTURE_FILE_MIGRATION_FAILURE: options.fileMigrationFailure ? "1" : "0",
+          SLOPGRID_FIXTURE_FOREIGN_KEY_FAILURE: options.foreignKeyFailure ? "1" : "0",
+          SLOPGRID_FIXTURE_INTEGRITY_FAILURE: options.integrityFailure ? "1" : "0",
         },
       });
     },
@@ -238,7 +302,17 @@ try {
       } else {
         assert.equal(existsSync(sourcePath), false, "missing production database must not be created");
       }
-      assert.equal(readFileSync(artifactPath, "utf8"), artifact);
+      if (!options.missingOutputs) {
+        assert.equal(readFileSync(artifactPath, "utf8"), artifact);
+        assert.deepEqual(readFileSync(join(outputsPath, ".binary")), binaryArtifact);
+      }
+    },
+    assertIndependentCopies(event) {
+      const outputStat = statSync(artifactPath);
+      const databaseStat = statSync(sourcePath);
+      assert.notDeepEqual([event.outputDevice, event.outputInode], [outputStat.dev, outputStat.ino]);
+      assert.notDeepEqual([event.databaseDevice, event.databaseInode], [databaseStat.dev, databaseStat.ino]);
+      assert.equal(event.output, "transformed:" + artifact);
     },
     assertRuntimeRemoved() {
       assert.deepEqual(readdirSync(runtimeRoot).filter(name => name.startsWith("sg-validation-")), [],
@@ -264,14 +338,22 @@ function assertMigrated(event) {
   assert.deepEqual(event.rows, expectedRows);
 }
 
-test("production online backup includes WAL-only data, migrates before real suites, and excludes artifacts", (t) => {
+test("production copies every output and WAL-only row, migrates file-dependent data before suites, and records aggregates", (t) => {
   const f = fixture(t);
   assertExit(f.execute(), 0);
   assert.deepEqual(f.events().map(event => event.phase), ["migration-start", "migration-passed", "unit", "e2e"]);
   assertMigrated(f.events()[1]);
+  f.assertIndependentCopies(f.events()[1]);
   for (const event of f.events().slice(2)) assert.deepEqual(event.rows, expectedRows);
   assert.equal(f.result().status, "passed");
   assert.equal(f.result().migration, "passed");
+  const { files, bytes, schemaBefore, schemaAfter } = f.result().productionData;
+  assert.deepEqual({ files, bytes, schemaBefore, schemaAfter }, {
+    files: 2,
+    bytes: Buffer.byteLength(artifact) + binaryArtifact.length,
+    schemaBefore: 1,
+    schemaAfter: 2,
+  });
   f.assertUnchangedSource();
   f.assertRuntimeRemoved();
 });
@@ -281,6 +363,7 @@ test("production test skips still migrate the populated snapshot and remove it",
   assertExit(f.execute(), 0);
   assert.deepEqual(f.events().map(event => event.phase), ["migration-start", "migration-passed"]);
   assertMigrated(f.events()[1]);
+  f.assertIndependentCopies(f.events()[1]);
   assert.equal(f.result().status, "skipped");
   assert.equal(f.result().migration, "passed");
   f.assertUnchangedSource();
@@ -321,3 +404,81 @@ test("a missing production database fails closed without creating it or running 
   f.assertUnchangedSource();
   f.assertRuntimeRemoved();
 });
+
+for (const tests of ["full", "scoped", "skip"]) {
+  test(`rehearse ${tests} migrates independent complete production copies`, (t) => {
+    const f = fixture(t, { target: "rehearse", tests });
+    assertExit(f.execute(), 0);
+    const phases = ["migration-start", "migration-passed"];
+    if (tests !== "skip") phases.push("unit");
+    if (tests === "full") phases.push("e2e");
+    assert.deepEqual(f.events().map(event => event.phase), phases);
+    assertMigrated(f.events()[1]);
+    f.assertIndependentCopies(f.events()[1]);
+    assert.equal(f.result().migration, "passed");
+    assert.equal(f.result().productionData.schemaBefore, 1);
+    assert.equal(f.result().productionData.schemaAfter, 2);
+    assert.equal(f.result().status, tests === "skip" ? "skipped" : "passed");
+    f.assertUnchangedSource();
+    f.assertRuntimeRemoved();
+  });
+}
+
+test("validate remains fresh-data validation without opening production sources", (t) => {
+  const f = fixture(t, { target: "validate", missingSource: true, missingOutputs: true });
+  assertExit(f.execute(), 0);
+  assert.deepEqual(f.events().map(event => event.phase), ["unit", "e2e"]);
+  assert.equal(f.result().status, "passed");
+  assert.equal(f.result().migration, undefined);
+  assert.equal(f.result().productionData, undefined);
+  f.assertUnchangedSource();
+  f.assertRuntimeRemoved();
+});
+
+test("a file-dependent migration failure removes modified copied outputs without changing production", (t) => {
+  const f = fixture(t, { target: "rehearse", tests: "skip", fileMigrationFailure: true });
+  const child = f.execute();
+  assertExit(child, 1);
+  assert.match(child.stdout + child.stderr, /file-dependent migration failed/);
+  assert.deepEqual(f.events().map(event => event.phase), ["migration-start"]);
+  assert.equal(f.result().status, "failed");
+  assert.equal(f.result().migration, undefined);
+  f.assertUnchangedSource();
+  f.assertRuntimeRemoved();
+});
+
+for (const [option, message] of [
+  ["foreignKeyFailure", /failed SQLite foreign key check/],
+  ["integrityFailure", /failed SQLite integrity check/],
+]) {
+  test(`${option} fails the migration gate even when suites are skipped`, (t) => {
+    const f = fixture(t, { tests: "skip", [option]: true });
+    const child = f.execute();
+    assertExit(child, 1);
+    assert.match(child.stdout + child.stderr, message);
+    assert.deepEqual(f.events().map(event => event.phase), ["migration-start", "migration-passed"]);
+    assert.equal(f.result().status, "failed");
+    assert.equal(f.result().migration, undefined);
+    f.assertUnchangedSource();
+    f.assertRuntimeRemoved();
+  });
+}
+
+for (const options of [
+  { missingOutputs: true },
+  { symlink: "file" },
+  { symlink: "directory" },
+  { symlink: "root" },
+  { symlink: "database" },
+  { specialFile: true },
+]) {
+  test(`unsafe or absent production data fails closed before candidate startup: ${JSON.stringify(options)}`, (t) => {
+    const f = fixture(t, { target: "rehearse", tests: "skip", ...options });
+    assertExit(f.execute(), 1);
+    assert.deepEqual(f.events(), []);
+    assert.equal(f.result().status, "failed");
+    assert.equal(f.result().migration, undefined);
+    f.assertUnchangedSource();
+    f.assertRuntimeRemoved();
+  });
+}

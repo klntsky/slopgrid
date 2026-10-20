@@ -117,8 +117,8 @@ export function validateConfig(config) {
 
 export function parseArgs(args) {
   const target = args.shift();
-  if (!["validate", "staging", "production"].includes(target))
-    throw new Error("Target must be validate, staging or production");
+  if (!["validate", "rehearse", "staging", "production"].includes(target))
+    throw new Error("Target must be validate, rehearse, staging or production");
   const options = {
     target,
     revision: "HEAD",
@@ -148,6 +148,8 @@ export function parseArgs(args) {
         "--discard-grid",
       ].includes(value)
     ) {
+      if (target === "rehearse" && value === "--mode")
+        throw new Error("Rehearsal does not accept deployment modes");
       const argument = args.shift();
       if (!argument || argument.startsWith("--"))
         throw new Error(`Missing argument for ${value}`);

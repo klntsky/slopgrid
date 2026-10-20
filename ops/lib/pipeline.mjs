@@ -41,6 +41,8 @@ function validateRecoveryRequest(request) {
     typeof request.recoverFailedStart !== "boolean"
   )
     throw new Error("recoverFailedStart must be a boolean");
+  if (request.target === "rehearse" && request.mode !== undefined && request.mode !== "auto")
+    throw new Error("Rehearsal does not accept deployment modes");
   if (!request.recoverFailedStart) return;
   if (request.target !== "staging")
     throw new Error("Failed-start recovery is only permitted on staging");
@@ -65,7 +67,7 @@ export async function executePlan(request, operations) {
     throw new Error("Production requires full validation or explicit skip");
   assertProductionRevision(request);
   // Reject incompatible forced modes before touching any selected runtime.
-  const names = request.target === "validate" ? [] : [request.target];
+  const names = ["validate", "rehearse"].includes(request.target) ? [] : [request.target];
   const plans = [];
   for (const name of names) plans.push(await operations.prepare(name, build));
   for (const plan of plans) {
@@ -83,7 +85,7 @@ export async function pipeline(request, run) {
   )
     throw new Error("Invalid revision");
   if (
-    !["validate", "staging", "production"].includes(request.target) ||
+    !["validate", "rehearse", "staging", "production"].includes(request.target) ||
     !["full", "scoped", "skip"].includes(request.tests)
   )
     throw new Error("Invalid deployment request");
@@ -93,12 +95,13 @@ export async function pipeline(request, run) {
     throw new Error("Validation requires tests");
   assertProductionRevision(request);
   const config = request.config;
-  const programs = request.target === "validate"
+  const nonDeploying = ["validate", "rehearse"].includes(request.target);
+  const programs = nonDeploying
     ? ["pnpm", "tar"]
     : ["pnpm", "pm2", "rsync", "tar"];
   for (const program of programs) capture("which", [program]);
   const environments = {};
-  if (request.target !== "validate") {
+  if (!nonDeploying) {
     command("pm2", ["ping"], { stdio: "ignore" });
     environments[request.target] = environment(config.targets[request.target]);
   }
@@ -269,13 +272,13 @@ export async function pipeline(request, run) {
     });
     state.status = "succeeded";
     console.log(
-      `${request.target === "validate" ? "Validated" : "Deployed"} ${request.revision}${request.target === "validate" ? "" : ` to ${request.target}`}. No production HTTP verification requests were made.`,
+      `${request.target === "rehearse" ? "Rehearsed" : nonDeploying ? "Validated" : "Deployed"} ${request.revision}${nonDeploying ? " without changing any persistent runtime" : ` to ${request.target}`}. No production HTTP verification requests were made.`,
     );
   } catch (error) {
     state.status = "failed";
     state.error = error.message;
     console.error(
-      `Deployment failed: ${error.message}. Inspect ${run}/result.json and the recorded process logs. Retry the same command after correcting the cause; no automatic database rollback is attempted.`,
+      `${request.target === "rehearse" ? "Rehearsal" : nonDeploying ? "Validation" : "Deployment"} failed: ${error.message}. Inspect ${run}/result.json and the recorded process logs. Retry the same command after correcting the cause; no automatic database rollback is attempted.`,
     );
     throw error;
   } finally {
