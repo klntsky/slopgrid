@@ -88,7 +88,19 @@ test("image input admission checks every resolved generator in fixed and axis se
     const source: GridInput = {
       ...input,
       format,
-      inputReferences: [{ id: "image", name: "image.png" }],
+      ...(format === "image"
+        ? { inputReferences: [{ id: "image", name: "image.png" }] }
+        : {
+            messages: [
+              { role: "user" as const, content: "First question." },
+              { role: "unfilled" as const, content: "" },
+              {
+                role: "user" as const,
+                content: "",
+                images: [{ id: "image", name: "image.png" }],
+              },
+            ],
+          }),
     };
     const catalog = models().map((model) => ({
       ...model,
@@ -102,20 +114,31 @@ test("image input admission checks every resolved generator in fixed and axis se
     for (const side of ["rows", "columns"] as const) {
       const selected: GridInput = {
         ...source,
-        inputReferences: undefined,
-        referenceGroups: { group: [{ id: "image", name: "image.png" }] },
+        ...(format === "image"
+          ? {
+              inputReferences: undefined,
+              referenceGroups: { group: [{ id: "image", name: "image.png" }] },
+              [side === "rows" ? "columns" : "rows"]: {
+                kind: "input_references",
+                values: ["group"],
+              },
+            }
+          : {}),
         [side]: { kind: "model", values: ["~fixture/latest", "fixture/v2"] },
-        [side === "rows" ? "columns" : "rows"]: {
-          kind: "input_references",
-          values: ["group"],
-        },
       };
       assert.throws(
         () => resolveGridModels(selected, catalog),
         /does not support image inputs/,
       );
       const withoutImages = resolveGridModels(
-        { ...selected, referenceGroups: undefined },
+        {
+          ...selected,
+          referenceGroups: undefined,
+          messages: selected.messages?.map(({ role, content }) => ({
+            role,
+            content,
+          })),
+        },
         catalog,
       );
       assert.deepEqual(withoutImages[side].values, [
@@ -150,7 +173,7 @@ function judgeModels(): Model[] {
   }));
 }
 
-test("chat images require image-capable fixed and axis judges, ignoring inactive reference groups", () => {
+test("future chat images require image-capable fixed and axis judges", () => {
   const catalog = judgeModels().map((model) => ({
     ...model,
     imageInput: model.id !== "fixture/v2",
@@ -158,7 +181,15 @@ test("chat images require image-capable fixed and axis judges, ignoring inactive
   const source: GridInput = {
     ...judgedInput,
     format: "chat-template",
-    inputReferences: [{ id: "image", name: "image.png" }],
+    messages: [
+      { role: "user", content: "First question." },
+      { role: "unfilled", content: "" },
+      {
+        role: "user",
+        content: "",
+        images: [{ id: "image", name: "image.png" }],
+      },
+    ],
     judge: { ...judgedInput.judge!, model: "fixture/v2" },
   };
   assert.throws(
@@ -184,8 +215,10 @@ test("chat images require image-capable fixed and axis judges, ignoring inactive
   const withoutImages = resolveGridModels(
     {
       ...source,
-      inputReferences: undefined,
-      referenceGroups: { unused: [{ id: "image", name: "image.png" }] },
+      messages: source.messages?.map(({ role, content }) => ({
+        role,
+        content,
+      })),
     },
     catalog,
   );

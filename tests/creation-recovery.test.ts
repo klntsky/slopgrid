@@ -1,6 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { runtimeFixture, until, kill } from "./runtime-fixture.js";
+import { storedOwnerGridIds } from "./grid-storage-fixture.js";
+import {
+  rejectCreationReceipts,
+  storedOwnerCreationReceipts,
+  moveCreatedGridToAnotherAccount,
+} from "./creation-receipt-fixture.js";
 
 const input = {
   format: "markdown",
@@ -31,10 +37,9 @@ test("concurrent creation retries and lost responses converge on one grid and on
       }),
     );
     assert.equal(grids[0].id, grids[1].id);
-    assert.deepEqual(
-      f.store.db.prepare("SELECT id FROM grids WHERE owner=?").all(f.owner),
-      [{ id: grids[0].id }],
-    );
+    assert.deepEqual(storedOwnerGridIds(f.store.db, f.owner), [
+      { id: grids[0].id },
+    ]);
     const call = await f.nextCall();
     call.write({ content: "Saved" });
     call.finish();
@@ -73,10 +78,9 @@ test("creation saved during drain opens the paused grid and replay does not star
     const replay = await f.request("/api/grids", body);
     assert.equal((await replay.json()).id, created.id);
     assert.equal(f.calls.length, 0);
-    assert.deepEqual(
-      f.store.db.prepare("SELECT id FROM grids WHERE owner=?").all(f.owner),
-      [{ id: created.id }],
-    );
+    assert.deepEqual(storedOwnerGridIds(f.store.db, f.owner), [
+      { id: created.id },
+    ]);
   } finally {
     await f.close();
   }
@@ -100,10 +104,9 @@ test("a saved creation survives web replacement and an unavailable engine", asyn
     await f.startWeb();
     const replay = await f.request("/api/grids", body);
     assert.equal((await replay.json()).id, created.id);
-    assert.deepEqual(
-      f.store.db.prepare("SELECT id FROM grids WHERE owner=?").all(f.owner),
-      [{ id: created.id }],
-    );
+    assert.deepEqual(storedOwnerGridIds(f.store.db, f.owner), [
+      { id: created.id },
+    ]);
     assert.equal(f.calls.length, 0);
   } finally {
     await f.close();
@@ -119,29 +122,18 @@ test("creation receipt failure rolls back the grid and retry rechecks current ow
       prompt: "$ROW",
       creationRequestId: "recovery-request-004",
     };
-    f.store.db.exec(
-      "CREATE TRIGGER reject_receipt BEFORE INSERT ON creation_requests BEGIN SELECT RAISE(ABORT, 'receipt failure'); END",
-    );
+    const allowReceipts = rejectCreationReceipts(f.store.db);
     assert.equal((await f.request("/api/grids", body)).status, 500);
-    assert.deepEqual(
-      f.store.db.prepare("SELECT id FROM grids WHERE owner=?").all(f.owner),
-      [],
-    );
-    assert.deepEqual(
-      f.store.db.prepare("SELECT * FROM creation_requests WHERE owner=?").all(f.owner),
-      [],
-    );
-    f.store.db.exec("DROP TRIGGER reject_receipt");
+    assert.deepEqual(storedOwnerGridIds(f.store.db, f.owner), []);
+    assert.deepEqual(storedOwnerCreationReceipts(f.store.db, f.owner), []);
+    allowReceipts();
     const saved = await (await f.request("/api/grids", body)).json();
     assert.equal(f.store.get(saved.id)!.status, "paused");
-    f.store.db
-      .prepare("UPDATE grids SET owner_user_id='another-account' WHERE id=?")
-      .run(saved.id);
+    moveCreatedGridToAnotherAccount(f.store.db, saved.id);
     assert.equal((await f.request("/api/grids", body)).status, 404);
-    assert.deepEqual(
-      f.store.db.prepare("SELECT id FROM grids WHERE owner=?").all(f.owner),
-      [{ id: saved.id }],
-    );
+    assert.deepEqual(storedOwnerGridIds(f.store.db, f.owner), [
+      { id: saved.id },
+    ]);
     assert.equal(f.calls.length, 0);
   } finally {
     await f.close();

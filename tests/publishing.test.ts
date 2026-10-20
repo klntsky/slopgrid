@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { expandGrid, type Grid, type GridSummary } from "../server/domain.js";
 import { Store } from "../server/store.js";
 import { createWorkflow } from "../server/workflow.js";
+import { storedPublicGridCreationTimes } from "./grid-storage-fixture.js";
 
 // Exercise the real session, ownership, persistence, and publishing routes.
 test("publishing is permanent, link grids are unlisted, and public summaries omit private data", async (t) => {
@@ -87,11 +88,7 @@ test("publishing is permanent, link grids are unlisted, and public summaries omi
   }
   const baselinePublic = await publicGrids();
   async function assertPublic(added: string[]) {
-    const inventory = store.db
-      .prepare(
-        "SELECT id, created_at AS createdAt FROM grids WHERE visibility='public'",
-      )
-      .all() as { id: string; createdAt: string }[];
+    const inventory = storedPublicGridCreationTimes(store.db);
     const createdAt = new Map(
       inventory.map((grid) => [grid.id, grid.createdAt]),
     );
@@ -101,7 +98,10 @@ test("publishing is permanent, link grids are unlisted, and public summaries omi
         (a < b ? -1 : a > b ? 1 : 0),
     );
     const summaries = await publicGrids();
-    assert.deepEqual(summaries.map((grid) => grid.id), expected);
+    assert.deepEqual(
+      summaries.map((grid) => grid.id),
+      expected,
+    );
     assert.deepEqual(
       summaries.filter((grid) => !added.includes(grid.id)),
       baselinePublic,
@@ -114,7 +114,10 @@ test("publishing is permanent, link grids are unlisted, and public summaries omi
   grid(ids.pending, "pending");
   grid(ids.running, "running");
   assert.equal((await fetch(`${origin}/api/grids/${ids.private}`)).status, 404);
-  assert.equal((await fetch(`${origin}/api/grids/${ids.private}/events`)).status, 404);
+  assert.equal(
+    (await fetch(`${origin}/api/grids/${ids.private}/events`)).status,
+    404,
+  );
   assert.equal(
     (await publish(ids.private, { visibility: "public" }, false)).status,
     404,
@@ -128,7 +131,10 @@ test("publishing is permanent, link grids are unlisted, and public summaries omi
   assert.equal(store.get(ids.private)!.published, false);
   for (const id of [ids.pending, ids.running])
     assert.equal((await publish(id, { visibility: "public" })).status, 409);
-  assert.equal((await publish(ids.link, { visibility: "unlisted" })).status, 200);
+  assert.equal(
+    (await publish(ids.link, { visibility: "unlisted" })).status,
+    200,
+  );
   const billed = store.billing.observe(`${ids.link}-cell`)("direct");
   billed.complete(
     { phase: "direct", finishReason: "stop" },
@@ -168,7 +174,10 @@ test("publishing is permanent, link grids are unlisted, and public summaries omi
     }
   }
   await assertPublic([]);
-  assert.equal((await publish(ids.listed, { visibility: "public" })).status, 200);
+  assert.equal(
+    (await publish(ids.listed, { visibility: "public" })).status,
+    200,
+  );
   assert.equal((await fetch(`${origin}/api/grids/public`)).status, 200);
   const summaries = await assertPublic([ids.listed]);
   const listed = summaries.find((grid) => grid.id === ids.listed)!;

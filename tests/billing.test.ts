@@ -6,6 +6,11 @@ import { join } from "node:path";
 import { Store } from "../server/store.js";
 import { expandGrid, type Cell, type GridInput } from "../server/domain.js";
 import { createWorkflow } from "../server/workflow.js";
+import {
+  storedInferenceCallPayloads,
+  giveInferenceCallsEqualTimestamps,
+  inferenceCallIdsNewestInsertedFirst,
+} from "./billing-storage-fixture.js";
 
 test("generation usage follows the latest call while billing preserves earlier attempts and finish reasons", () => {
   const directory = mkdtempSync(join(tmpdir(), "slopgrid-billing-"));
@@ -72,9 +77,7 @@ test("generation usage follows the latest call while billing preserves earlier a
       history.calls.map((c) => c.status),
       ["succeeded", "failed"],
     );
-    const stored = store.db
-      .prepare("SELECT data FROM inference_calls ORDER BY started_at, rowid")
-      .all() as { data: string }[];
+    const stored = storedInferenceCallPayloads(store.db);
     assert.equal(
       JSON.parse(stored[0].data).completion.rawFinishReason,
       "max_tokens",
@@ -345,10 +348,8 @@ test("canonical billing survives reopening and recovery with free and unavailabl
       store.billing
         .observe("cell")("direct")
         .complete({ phase: "direct", finishReason: "stop" }, { costUsd: 0 });
-    store.db.prepare("UPDATE inference_calls SET started_at=100").run();
-    const ordered = store.db
-      .prepare("SELECT id FROM inference_calls ORDER BY rowid DESC")
-      .all() as { id: string }[];
+    giveInferenceCallsEqualTimestamps(store.db);
+    const ordered = inferenceCallIdsNewestInsertedFirst(store.db);
     const first = store.billing.page("anonymous", 0, "account");
     const second = store.billing.page("anonymous", 50, "account");
     assert.equal(first.total, 55);

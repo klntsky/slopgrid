@@ -13,37 +13,18 @@ import {
   assertProductionRevision,
 } from "./lib/common.mjs";
 import { loadConfig } from "./lib/config.mjs";
+import { parseCommandLine, showHelp } from "./lib/cli-options.mjs";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
-if (!args.length || args.includes("--help")) {
-  console.log(`Usage:
-  ./deploy.sh validate [REV] [--unit FILE --browser FILE]
-  ./deploy.sh rehearse [REV] [--skip-tests | --unit FILE --browser FILE]
-  ./deploy.sh staging [REV] [--skip-tests | --unit FILE --browser FILE] [--mode auto|soft|machinery] [--discard-grid ID] [--recover-failed-start]
-  ./deploy.sh production [REV] [--skip-tests] [--mode auto|soft|machinery]
-  ./deploy.sh validate|rehearse|staging|production [REV] --plan
-  ./deploy.sh status RUN_ID
-
-The default validation is the complete suite in an isolated per-run workspace.
-Use validate for independent worktree candidates without changing any runtime.
-Use rehearse to migrate a private full copy of production data on staging without
-changing either runtime. It defaults to the full suite; --skip-tests still migrates.
-Production accepts only the authoritative master tip and promotes only production.
-Repeat --unit or --browser for more files; --suite mock|real and --grep PATTERN
-select browsers. Production never changes staging.
-Repeat --discard-grid to delete selected staging grids after draining and backup,
-before migration. Deletion forces machinery mode and is rejected for production.
-Use --recover-failed-start only to recover an unpromoted staging engine that
-failed before readiness. Recovery requires runtime safety checks, forces machinery
-mode, and cannot be combined with --mode soft or used for production.
-The command waits for completion and returns the remote exit status. Work runs
-in remote tmux bg and survives an SSH disconnect. --plan changes nothing.
-Config: OPS_* values in the application repository root .env (environment overrides allowed).`);
-  process.exit(0);
-}
 process.umask(0o077);
-try {
+async function main() {
+  const invocation = parseCommandLine(args);
+  if (invocation.help) {
+    await showHelp(invocation.target);
+    return;
+  }
+  const options = invocation.target === "status" ? null : parseArgs(args);
   const config = loadConfig();
   const remote = (words) => capture("ssh", [config.host, shell(words)]);
   const remoteNode = (words) => [
@@ -52,10 +33,8 @@ try {
     "node",
     ...words,
   ];
-  if (args[0] === "status") {
-    const id = args[1];
-    if (!/^[a-zA-Z0-9-]+$/.test(id ?? "") || args.length !== 2)
-      throw new Error("Invalid run ID");
+  if (invocation.target === "status") {
+    const id = invocation.argument;
     const run = join(config.remoteRoot, "runs", id);
     const request = JSON.parse(remote(["cat", join(run, "request.json")]));
     await follow(remote, remoteNode, request.tools, run);
@@ -63,18 +42,26 @@ try {
     // Prefer the invoking application worktree, never an unrelated checkout.
     const caller = spawnSync(
       "git",
-      ["rev-parse", "--path-format=absolute", "--git-common-dir", "--show-toplevel"],
+      [
+        "rev-parse",
+        "--path-format=absolute",
+        "--git-common-dir",
+        "--show-toplevel",
+      ],
       { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
     );
     if (caller.status === 0) {
       const [common, checkout] = caller.stdout.trim().split("\n");
       const configuredCommon = capture("git", [
-        "-C", config.repository, "rev-parse", "--path-format=absolute", "--git-common-dir",
+        "-C",
+        config.repository,
+        "rev-parse",
+        "--path-format=absolute",
+        "--git-common-dir",
       ]);
       if (realpathSync(common) === realpathSync(configuredCommon))
         config.repository = checkout;
     }
-    const options = parseArgs([...args]);
     const revision = capture("git", [
       "-C",
       config.repository,
@@ -93,7 +80,10 @@ try {
       "HEAD",
     ]);
     const operationsRepository = capture("git", [
-      "-C", root, "rev-parse", "--show-toplevel",
+      "-C",
+      root,
+      "rev-parse",
+      "--show-toplevel",
     ]);
     const tools = join(config.remoteRoot, "tools", opsRevision);
     if (options.plan) {
@@ -106,11 +96,19 @@ try {
             validation: options.tests,
             stages: [
               "build committed candidate in isolated remote run",
-              ...(options.target === "production" || options.target === "rehearse"
-                ? ["copy production SQLite backup and all outputs into private workspace", "run candidate Store migrations and check database integrity"]
+              ...(options.target === "production" ||
+              options.target === "rehearse"
+                ? [
+                    "copy production SQLite backup and all outputs into private workspace",
+                    "run candidate Store migrations and check database integrity",
+                  ]
                 : ["validate fresh data in isolated run"]),
-              options.tests === "skip" ? "skip test suites explicitly" : `run ${options.tests} test suites in isolated run`,
-              ...(["validate", "rehearse"].includes(options.target) ? [] : [`deploy ${options.target}`]),
+              options.tests === "skip"
+                ? "skip test suites explicitly"
+                : `run ${options.tests} test suites in isolated run`,
+              ...(["validate", "rehearse"].includes(options.target)
+                ? []
+                : [`deploy ${options.target}`]),
             ],
             mode: options.mode,
             discardGrids: options.discardGrids,
@@ -140,13 +138,7 @@ try {
     const archive = (directory, tree) => {
       const result = spawnSync(
         "git",
-        [
-          "-C",
-          directory,
-          "archive",
-          "--format=tar.gz",
-          tree,
-        ],
+        ["-C", directory, "archive", "--format=tar.gz", tree],
         { maxBuffer: 256 * 1024 * 1024 },
       );
       if (result.status !== 0)
@@ -216,10 +208,12 @@ try {
     console.log(`Reconnect with: ./deploy.sh status ${id}`);
     await follow(remote, remoteNode, tools, run);
   }
-} catch (error) {
+}
+
+await main().catch((error) => {
   console.error(error.message);
   process.exitCode = 1;
-}
+});
 
 async function follow(remote, remoteNode, tools, run) {
   let offset = 0;

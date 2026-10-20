@@ -500,6 +500,22 @@ test("chat input images require a vision judge and removing them restores text-o
   await page
     .getByLabel("Message 1", { exact: true })
     .fill("Describe this image. $ROW $COLUMN");
+  for (let index = 2; index <= 4; index++) {
+    await page.locator(".chat-append").hover();
+    await page
+      .getByRole("button", { name: "Add message", exact: true })
+      .click();
+    if (index % 2 === 0)
+      await page
+        .getByRole("button", {
+          name: `Message ${index} role: assistant`,
+          exact: true,
+        })
+        .click();
+  }
+  await page
+    .getByLabel("Message 3", { exact: true })
+    .fill("Describe the later image.");
   await page
     .getByRole("combobox", { name: "Rows", exact: true })
     .selectOption("variable");
@@ -531,14 +547,16 @@ test("chat input images require a vision judge and removing them restores text-o
   await textJudge.check();
   const generate = page.getByRole("button", { name: "Generate", exact: true });
   await expect(generate).toBeEnabled();
-  await page.getByLabel("Add input references", { exact: true }).setInputFiles({
-    name: "judge-input.png",
-    mimeType: "image/png",
-    buffer: Buffer.from(
-      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
-      "base64",
-    ),
-  });
+  await page
+    .getByLabel("Add images to message 3", { exact: true })
+    .setInputFiles({
+      name: "judge-input.png",
+      mimeType: "image/png",
+      buffer: Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
+        "base64",
+      ),
+    });
   await expect(
     page.getByRole("img", { name: "judge-input.png", exact: true }),
   ).toBeVisible();
@@ -552,7 +570,7 @@ test("chat input images require a vision judge and removing them restores text-o
   await expect(generate).toBeEnabled();
   await page
     .getByRole("button", {
-      name: "Remove judge-input.png from Input references",
+      name: "Remove judge-input.png from message 3",
       exact: true,
     })
     .click();

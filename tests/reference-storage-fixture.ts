@@ -54,3 +54,23 @@ export function restoreV14ReferenceSchema(db: Database.Database) {
 export function referenceForeignKeyViolations(db: Database.Database) {
   return db.pragma("foreign_key_check");
 }
+
+export function storedReferenceCount(db: Database.Database) {
+  return db.prepare("SELECT COUNT(*) AS count FROM reference_images").get();
+}
+
+export function rejectReferenceUploads(db: Database.Database) {
+  db.exec(`CREATE TEMP TRIGGER fail_reference_upload
+    BEFORE INSERT ON reference_images BEGIN
+      SELECT RAISE(FAIL, 'Injected database failure');
+    END`);
+  return () => db.exec("DROP TRIGGER fail_reference_upload");
+}
+
+export function rejectReferenceGridCells(db: Database.Database) {
+  db.exec(`CREATE TEMP TRIGGER fail_reference_grid
+    BEFORE INSERT ON cells BEGIN
+      SELECT RAISE(ABORT, 'Injected grid failure');
+    END`);
+  return () => db.exec("DROP TRIGGER fail_reference_grid");
+}

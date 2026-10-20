@@ -10,6 +10,7 @@ import {
   readlinkSync,
 } from "node:fs";
 import { dirname, join, isAbsolute } from "node:path";
+import { parseCommandLine } from "./cli-options.mjs";
 
 export function command(program, args = [], options = {}) {
   const result = spawnSync(program, args, {
@@ -67,7 +68,9 @@ export function assertProductionRevision(request) {
     repository.startsWith("-") ||
     /[\n\r\0]/.test(repository)
   )
-    throw new Error("Production requires authoritative masterRepository configuration");
+    throw new Error(
+      "Production requires authoritative masterRepository configuration",
+    );
   const output = capture("git", [
     "ls-remote",
     "--exit-code",
@@ -76,7 +79,9 @@ export function assertProductionRevision(request) {
   ]);
   const match = /^([a-f0-9]{40})\trefs\/heads\/master$/.exec(output);
   if (!match || request.revision !== match[1])
-    throw new Error("Production revision must equal the authoritative master tip");
+    throw new Error(
+      "Production revision must equal the authoritative master tip",
+    );
 }
 
 export function validateConfig(config) {
@@ -116,52 +121,27 @@ export function validateConfig(config) {
 }
 
 export function parseArgs(args) {
-  const target = args.shift();
-  if (!["validate", "rehearse", "staging", "production"].includes(target))
+  const { target, argument, values, help } = parseCommandLine(args);
+  if (
+    help ||
+    !["validate", "rehearse", "staging", "production"].includes(target)
+  )
     throw new Error("Target must be validate, rehearse, staging or production");
   const options = {
     target,
-    revision: "HEAD",
-    mode: "auto",
-    tests: "full",
-    units: [],
-    browsers: [],
-    suite: "mock",
-    discardGrids: [],
-    plan: false,
-    recoverFailedStart: false,
+    revision: argument ?? "HEAD",
+    mode: values.mode ?? "auto",
+    tests: values["skip-tests"] ? "skip" : "full",
+    units: values.unit ?? [],
+    browsers: values.browser ?? [],
+    suite: values.suite ?? "mock",
+    discardGrids: values["discard-grid"] ?? [],
+    plan: values.plan ?? false,
+    recoverFailedStart: values["recover-failed-start"] ?? false,
+    ...(values.grep === undefined ? {} : { grep: values.grep }),
   };
-  let revisionSeen = false;
-  while (args.length) {
-    const value = args.shift();
-    if (value === "--skip-tests") options.tests = "skip";
-    else if (value === "--recover-failed-start")
-      options.recoverFailedStart = true;
-    else if (value === "--plan") options.plan = true;
-    else if (
-      [
-        "--mode",
-        "--unit",
-        "--browser",
-        "--suite",
-        "--grep",
-        "--discard-grid",
-      ].includes(value)
-    ) {
-      if (target === "rehearse" && value === "--mode")
-        throw new Error("Rehearsal does not accept deployment modes");
-      const argument = args.shift();
-      if (!argument || argument.startsWith("--"))
-        throw new Error(`Missing argument for ${value}`);
-      if (value === "--unit") options.units.push(argument);
-      else if (value === "--browser") options.browsers.push(argument);
-      else if (value === "--discard-grid") options.discardGrids.push(argument);
-      else options[value.slice(2)] = argument;
-    } else if (!value.startsWith("-") && !revisionSeen) {
-      options.revision = value;
-      revisionSeen = true;
-    } else throw new Error(`Unknown argument: ${value}`);
-  }
+  if (target === "rehearse" && values.mode !== undefined)
+    throw new Error("Rehearsal does not accept deployment modes");
   if (!["auto", "soft", "machinery"].includes(options.mode))
     throw new Error("Invalid deployment mode");
   if (options.recoverFailedStart) {
@@ -170,8 +150,13 @@ export function parseArgs(args) {
     if (options.mode === "soft")
       throw new Error("--recover-failed-start requires a machinery deployment");
   }
-  if (target === "validate" && (options.mode !== "auto" || options.tests === "skip"))
-    throw new Error("Validation requires tests and does not accept deployment modes");
+  if (
+    target === "validate" &&
+    (options.mode !== "auto" || options.tests === "skip")
+  )
+    throw new Error(
+      "Validation requires tests and does not accept deployment modes",
+    );
   if (!["mock", "real"].includes(options.suite))
     throw new Error("Invalid browser suite");
   const scoped = options.units.length + options.browsers.length > 0;

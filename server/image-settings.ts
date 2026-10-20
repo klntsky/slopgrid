@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { GridInput } from "./domain.js";
+import type { GenerationParameters, GridInput } from "./domain.js";
 
 import {
   ImageGenerationRequestAspectRatio,
@@ -96,13 +96,30 @@ export function normalizeImageSettings(
 export function selectedReferences(
   input: Pick<
     GridInput,
-    "rows" | "columns" | "referenceGroups" | "inputReferences"
+    | "format"
+    | "messages"
+    | "rows"
+    | "columns"
+    | "referenceGroups"
+    | "inputReferences"
   >,
 ): ReferenceImage[] {
+  if (input.format === "chat-template")
+    return input.messages?.flatMap((message) => message.images ?? []) ?? [];
   const axis = [input.rows, input.columns].find(
     (axis) => axis.kind === "input_references",
   );
   return axis
     ? axis.values.flatMap((value) => input.referenceGroups?.[value] ?? [])
     : (input.inputReferences ?? []);
+}
+
+export function referenceIds(
+  input: Pick<GenerationParameters, "messages" | "imageSettings">,
+): readonly string[] {
+  return input.messages
+    ? input.messages.flatMap(
+        (message) => message.images?.map((image) => image.id) ?? [],
+      )
+    : (input.imageSettings?.input_references ?? []);
 }

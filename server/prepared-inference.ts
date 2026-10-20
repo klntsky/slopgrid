@@ -1,9 +1,9 @@
 import { normalizeImageSettings } from "./image-settings.js";
-import type { ReferenceContent } from "./image-references.js";
+import type { ReferenceInputs } from "./image-references.js";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { z } from "zod";
-import type { ChatMessage, GenerationParameters, GridInput } from "./domain.js";
+import type { GenerationParameters, GridInput } from "./domain.js";
 import type { TextBudget } from "./generation-budget.js";
 import { instruction, websiteSchema } from "./output-format.js";
 import { canonical } from "../shared/canonical.js";
@@ -24,17 +24,20 @@ function common(cell: GenerationParameters) {
 }
 export function prepareImageInference(
   cell: GenerationParameters,
-  references: ReferenceContent[],
+  references?: ReferenceInputs,
 ) {
   const { input_references: _ids, ...imageSettings } = normalizeImageSettings(
     cell.imageSettings,
+  );
+  const images = cell.imageSettings?.input_references?.map((id) =>
+    referenceContent(references, id),
   );
   return {
     ...common(cell),
     format: "image" as const,
     image: {
       ...imageSettings,
-      input_references: references.length ? references : undefined,
+      input_references: images?.length ? images : undefined,
     },
   };
 }
@@ -44,11 +47,10 @@ export function prepareTextInference(
   budget: TextBudget,
   structured: boolean,
   cache?: { sessionId: string; previousPrefixLength: number },
-  references: ReferenceContent[] = [],
-  template?: readonly ChatMessage[],
+  references?: ReferenceInputs,
 ) {
   const messages = cell.messages
-    ? chatMessages(cell.messages, references, template)
+    ? chatMessages(cell.messages, references)
     : undefined;
   // OpenRouter 3.1.0's convertToOpenRouterChatMessages flattens assistant text
   // parts (dropping part providerOptions) and puts message cacheControl beside
@@ -57,6 +59,17 @@ export function prepareTextInference(
   // request-level automatic caching does not express both explicit boundaries.
   // extraBody.messages replaces the whole SDK message array, so encode image
   // parts here too. Keep this wire-only adaptation out of the saved transcript.
+  let firstImage = -1;
+  let lastImage = -1;
+  if (cache && messages)
+    for (const [index, message] of messages.entries())
+      if (
+        Array.isArray(message.content) &&
+        message.content.some((part) => part.type === "file")
+      ) {
+        if (firstImage < 0) firstImage = index;
+        lastImage = index;
+      }
   const cachedMessages =
     cache &&
     messages?.map((message, index) => {
@@ -71,19 +84,16 @@ export function prepareTextInference(
                     image_url: {
                       url: `data:${part.mediaType};base64,${part.data.toString("base64")}`,
                     },
-                    // Retain image caching beyond the prefix lookback window.
-                    ...(parts[i + 1]?.type !== "file" && {
-                      cache_control: { type: "ephemeral" as const },
-                    }),
+                    // Two image checkpoints leave room for both text boundaries.
+                    ...((index === firstImage || index === lastImage) &&
+                      parts[i + 1]?.type !== "file" && {
+                        cache_control: { type: "ephemeral" as const },
+                      }),
                   },
             );
       const boundary =
         index === messages.length - 1 ||
-        index ===
-          cache.previousPrefixLength -
-            1 +
-            messages.length -
-            cell.messages!.length;
+        index === cache.previousPrefixLength - 1;
       return {
         role: message.role,
         content: !boundary
@@ -161,16 +171,28 @@ function digest(request: unknown) {
 
 export function templateSignature(
   cell: GenerationParameters,
-  references: ReferenceContent[] = [],
+  references?: ReferenceInputs,
 ): string {
   return digest({
     ...common(cell),
     format: "chat-template",
     templateVersion: 4,
     effort: cell.effort,
-    messages: cell.messages,
-    references: references.length
-      ? references.map(({ mediaType, sha256 }) => ({ mediaType, sha256 }))
-      : undefined,
+    messages: cell.messages?.map(({ role, content, images }) => ({
+      role,
+      content,
+      images: images?.length
+        ? images.map(({ id }) => {
+            const { mediaType, sha256 } = referenceContent(references, id);
+            return { mediaType, sha256 };
+          })
+        : undefined,
+    })),
   });
+}
+
+function referenceContent(references: ReferenceInputs | undefined, id: string) {
+  const image = references?.get(id);
+  if (!image) throw new Error("Reference image is unavailable");
+  return image;
 }

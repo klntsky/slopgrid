@@ -9,6 +9,7 @@ export function ReorderHandle({
   count,
   onMove,
   onDragChange,
+  disabled = false,
 }: {
   index: number;
   label: string;
@@ -17,6 +18,7 @@ export function ReorderHandle({
   count: number;
   onMove: (from: number, to: number) => void;
   onDragChange?: (dragging?: number, target?: number) => void;
+  disabled?: boolean;
 }) {
   const drag = useRef<{ pointerId: number; from: number } | undefined>(
     undefined,
@@ -52,7 +54,14 @@ export function ReorderHandle({
   }
 
   function move(from: number, to: number) {
-    if (from < 0 || from >= count || to < 0 || to >= count || from === to)
+    if (
+      disabled ||
+      from < 0 ||
+      from >= count ||
+      to < 0 ||
+      to >= count ||
+      from === to
+    )
       return;
     onMove(from, to);
   }
@@ -68,6 +77,7 @@ export function ReorderHandle({
       type="button"
       className="text-button reorder-handle"
       aria-label={label}
+      disabled={disabled}
       onPointerDown={(event) => {
         event.currentTarget.setPointerCapture(event.pointerId);
         drag.current = { pointerId: event.pointerId, from: index };

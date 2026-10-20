@@ -8,12 +8,12 @@ For work on the operations implementation, see [DEVELOPMENT.md](DEVELOPMENT.md).
 
 ## Shell scripts
 
-| Script | Purpose |
-| --- | --- |
-| `deploy.sh` | Command entrypoint for candidate validation, full-data migration rehearsal, deployment, and status. |
-| `check.sh` | Run operations regression checks on the configured host in tmux bg and stream their result. |
+| Script          | Purpose                                                                                                                                  |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `deploy.sh`     | Command entrypoint for candidate validation, full-data migration rehearsal, deployment, and status.                                      |
+| `check.sh`      | Run operations regression checks on the configured host in tmux bg and stream their result.                                              |
 | `remote-run.sh` | Internal remote pipeline worker; records logs and status and locks deployments while allowing independent validation and rehearsal runs. |
-| `test-run.sh` | Internal remote check worker; runs selected Node tests or the full operations suite and records logs and status. |
+| `test-run.sh`   | Internal remote check worker; runs selected Node tests or the full operations suite and records logs and status.                         |
 
 Run the commands below from `ops/`.
 
@@ -26,20 +26,20 @@ No machine-specific JSON configuration or separate operations checkout is used.
 
 Configure these variables without committing their values:
 
-| Variables | Purpose |
-| --- | --- |
-| `OPS_HOST` | SSH destination, including an account or alias when required |
-| `OPS_REPOSITORY` | Local application checkout, relative to the repository root or absolute; defaults to the current repository root |
-| `OPS_MASTER_REPOSITORY` | Authoritative application's Git repository URL |
-| `OPS_REMOTE_ROOT` | Absolute remote directory for tools, runs, and checks |
-| `OPS_NODE_PATH` | Complete remote executable search path |
-| `OPS_TEST_ENV_FILE` | Optional private remote test-credential file |
-| `OPS_STAGING_STATE`, `OPS_PRODUCTION_STATE` | Absolute runtime state directories |
-| `OPS_STAGING_CONFIG`, `OPS_PRODUCTION_CONFIG` | Absolute generated configuration directories |
-| `OPS_STAGING_APPLICATION_ROOT`, `OPS_PRODUCTION_APPLICATION_ROOT` | Absolute roots for relative runtime storage paths |
-| `OPS_STAGING_ENV_FILE`, `OPS_PRODUCTION_ENV_FILE` | Private deployed runtime environment files |
-| `OPS_STAGING_WEB_PROCESS`, `OPS_PRODUCTION_WEB_PROCESS` | Distinct web process names |
-| `OPS_STAGING_ENGINE_PROCESS`, `OPS_PRODUCTION_ENGINE_PROCESS` | Distinct engine process names |
+| Variables                                                         | Purpose                                                                                                          |
+| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `OPS_HOST`                                                        | SSH destination, including an account or alias when required                                                     |
+| `OPS_REPOSITORY`                                                  | Local application checkout, relative to the repository root or absolute; defaults to the current repository root |
+| `OPS_MASTER_REPOSITORY`                                           | Authoritative application's Git repository URL                                                                   |
+| `OPS_REMOTE_ROOT`                                                 | Absolute remote directory for tools, runs, and checks                                                            |
+| `OPS_NODE_PATH`                                                   | Complete remote executable search path                                                                           |
+| `OPS_TEST_ENV_FILE`                                               | Optional private remote test-credential file                                                                     |
+| `OPS_STAGING_STATE`, `OPS_PRODUCTION_STATE`                       | Absolute runtime state directories                                                                               |
+| `OPS_STAGING_CONFIG`, `OPS_PRODUCTION_CONFIG`                     | Absolute generated configuration directories                                                                     |
+| `OPS_STAGING_APPLICATION_ROOT`, `OPS_PRODUCTION_APPLICATION_ROOT` | Absolute roots for relative runtime storage paths                                                                |
+| `OPS_STAGING_ENV_FILE`, `OPS_PRODUCTION_ENV_FILE`                 | Private deployed runtime environment files                                                                       |
+| `OPS_STAGING_WEB_PROCESS`, `OPS_PRODUCTION_WEB_PROCESS`           | Distinct web process names                                                                                       |
+| `OPS_STAGING_ENGINE_PROCESS`, `OPS_PRODUCTION_ENGINE_PROCESS`     | Distinct engine process names                                                                                    |
 
 Both the initiating machine and remote host need Git read access to
 `OPS_MASTER_REPOSITORY`. There is no fallback to a local branch, cached tracking
@@ -64,6 +64,13 @@ Fresh split deployments start with machinery mode and create runtime directories
 host networking and runtime credentials must already exist.
 
 ## Commands
+
+Use `./deploy.sh --help` for all commands and options, or
+`./deploy.sh help rehearse` (equivalently `./deploy.sh rehearse --help`) for a
+command-specific topic. Help requires no `.env`, Git repository, SSH access, or
+infrastructure. In an interactive terminal, choose a command name or `all` to
+browse help, then enter `q` or an empty line to exit. Piped help prints and exits.
+Running `./deploy.sh` without arguments opens help, never a deployment.
 
 ```sh
 ./deploy.sh validate

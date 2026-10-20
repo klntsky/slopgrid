@@ -11,6 +11,7 @@ import { expandGrid, type Grid, type GridInput } from "../server/domain.js";
 import { createWorkflow } from "../server/workflow.js";
 import { createWorkflowExecutor } from "../server/workflow-executor.js";
 import { token } from "../server/ids.js";
+import { firstStoredSessionPayload } from "./session-storage-fixture.js";
 
 test("a restart preserves finished outputs and pauses interrupted work until an explicit retry", async () => {
   const dir = mkdtempSync(join(tmpdir(), "slopgrid-recovery-")),
@@ -76,9 +77,7 @@ test("a restart preserves finished outputs and pauses interrupted work until an 
       "index.md": "Saved output",
     });
     store.insert(g, tasks);
-    const raw = store.db.prepare("SELECT data FROM sessions").get() as {
-      data: string;
-    };
+    const raw = firstStoredSessionPayload(store.db);
     assert.ok(
       !raw.data.includes("private-openrouter-key"),
       "credentials must not be readable in SQLite",

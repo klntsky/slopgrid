@@ -38,14 +38,24 @@ const chatMessageSchema = z
   .object({
     role: z.enum(["system", "user", "assistant", "unfilled"]),
     content: z.string(),
+    images: z.array(referenceImageSchema).optional(),
   })
+  .refine(
+    (message) => !message.images?.length || message.role === "user",
+    "Images can only be attached to user messages.",
+  )
   .refine(
     (message) =>
       message.role === "unfilled"
         ? message.content === ""
-        : message.content.trim().length > 0,
+        : !!message.content.trim() ||
+          (message.role === "user" && !!message.images?.length),
     "Enter a message, or leave an unfilled message empty.",
-  );
+  )
+  .transform((message) => {
+    if (!message.images?.length) delete message.images;
+    return message;
+  });
 export type ChatMessage = z.infer<typeof chatMessageSchema>;
 export type FilledChatMessage = ChatMessage & {
   role: "system" | "user" | "assistant";
@@ -60,8 +70,17 @@ export function chatInputIssue(
   messages: ChatMessage[] = [],
 ): string | undefined {
   if (!messages.length) return "Add a message.";
-  if (messages.some((m) => m.role !== "unfilled" && !m.content.trim()))
-    return "Enter a message.";
+  if (messages.some((m) => m.images?.length && m.role !== "user"))
+    return "Images can only be attached to user messages.";
+  if (
+    messages.some(
+      (m) =>
+        m.role !== "unfilled" &&
+        !m.content.trim() &&
+        !(m.role === "user" && m.images?.length),
+    )
+  )
+    return "Enter a message or attach an image.";
   if (messages[0].role === "unfilled")
     return "Add a message before the first unfilled message.";
 }
@@ -125,6 +144,11 @@ export const gridSchema = z
     if (isChatFormat(g.format)) {
       const message = chatInputIssue(g.messages);
       if (message) issue(message);
+      if (
+        g.inputReferences?.length ||
+        Object.keys(g.referenceGroups ?? {}).length
+      )
+        issue("Attach images to individual user messages.");
     }
     if (!g.prompt.trim()) issue("Enter a prompt.");
     if (![g.rows.kind, g.columns.kind].includes("model") && !g.model)
@@ -157,11 +181,7 @@ export const gridSchema = z
         issue("Unknown thinking effort");
     }
     for (const axis of [g.rows, g.columns]) {
-      if (
-        imageKinds.some((kind) => kind === axis.kind) &&
-        g.format !== "image" &&
-        !(isChatFormat(g.format) && axis.kind === "input_references")
-      )
+      if (imageKinds.some((kind) => kind === axis.kind) && g.format !== "image")
         issue("Image settings require Image output");
       if (
         imageKinds.some((kind) => kind === axis.kind) &&
@@ -196,7 +216,7 @@ export const gridSchema = z
       g.imageSettings = settings;
     else delete g.imageSettings;
     if (
-      (g.format !== "image" && !isChatFormat(g.format)) ||
+      g.format !== "image" ||
       dimensions.includes("input_references") ||
       !g.inputReferences?.length
     )
@@ -384,7 +404,7 @@ export function expandGrid(input: GridInput): Omit<Cell, "id">[] {
           }
         : undefined;
       const imageSettings: ImageSettings = { ...input.imageSettings };
-      if (input.inputReferences?.length)
+      if (input.format === "image" && input.inputReferences?.length)
         imageSettings.input_references = input.inputReferences.map(
           (image) => image.id,
         );
@@ -422,8 +442,7 @@ export function expandGrid(input: GridInput): Omit<Cell, "id">[] {
             }
           : {}),
         budgetUsd: input.budgetUsd,
-        ...(input.format === "image" ||
-        (isChatFormat(input.format) && imageSettings.input_references?.length)
+        ...(input.format === "image"
           ? { imageSettings: normalizeImageSettings(imageSettings) }
           : {}),
         status: "pending" as const,

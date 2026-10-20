@@ -9,6 +9,7 @@ import { setImmediate as immediate } from "node:timers/promises";
 import { expandGrid, type Grid } from "../server/domain.js";
 import { githubCredentials, oauthReturnTo } from "../server/oauth.js";
 import { ControlledProvider } from "./controlled-provider.js";
+import { hasGithubIdentity } from "./session-storage-fixture.js";
 
 test("GitHub credentials are mandatory and OAuth return paths stay local", () => {
   for (const [id, secret] of [
@@ -48,11 +49,7 @@ test("account ownership, frozen authors, browser credentials, and OAuth callback
   let aliceSubject: number;
   do {
     aliceSubject = randomInt(2 ** 47, 2 ** 48 - 1);
-  } while (
-    store.db
-      .prepare("SELECT 1 FROM oauth_identities WHERE provider='github' AND subject=?")
-      .get(String(aliceSubject))
-  );
+  } while (hasGithubIdentity(store.db, String(aliceSubject)));
   const alice = store.identify("github", String(aliceSubject), {
     provider: "github",
     username: "alice",
@@ -195,16 +192,23 @@ test("account ownership, frozen authors, browser credentials, and OAuth callback
   assert.equal((await (await request("/api/billing", second)).json()).total, 1);
   assert.equal((await (await request("/api/billing", other)).json()).total, 0);
   assert.equal(
-    (await (await request(`/api/grids/${draft.id}`, second)).json()).author.username,
+    (await (await request(`/api/grids/${draft.id}`, second)).json()).author
+      .username,
     "alice",
   );
   assert.equal(
-    (await (await request(`/api/grids/${historical.id}`, second)).json()).author,
+    (await (await request(`/api/grids/${historical.id}`, second)).json())
+      .author,
     null,
   );
-  const published = await request(`/api/grids/${draft.id}/publish`, second, "POST", {
-    visibility: "public",
-  });
+  const published = await request(
+    `/api/grids/${draft.id}/publish`,
+    second,
+    "POST",
+    {
+      visibility: "public",
+    },
+  );
   assert.equal(published.status, 200);
   assert.equal((await published.json()).author.username, "alice");
   const renamed = store.identify("github", String(aliceSubject), {

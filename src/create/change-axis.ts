@@ -1,8 +1,4 @@
-import {
-  isChatFormat,
-  isMarkdownFormat,
-  type GridInput,
-} from "../../server/domain";
+import { isMarkdownFormat, type GridInput } from "../../server/domain";
 import {
   imageChoices,
   type ScalarImageKind,
@@ -71,7 +67,7 @@ function moveFixedToAxis(input: GridInput, axis: Axis): Axis {
     return value ? { ...axis, values: [value] } : axis;
   }
   if (
-    (input.format === "image" || isChatFormat(input.format)) &&
+    input.format === "image" &&
     axis.kind === "input_references" &&
     input.inputReferences?.length
   ) {

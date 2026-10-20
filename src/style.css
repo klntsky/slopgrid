@@ -286,6 +286,12 @@ section {
   text-align: center;
 }
 
+.create-format-selection {
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
 .chat-editor {
   --chat-role-width: 90px;
   --chat-column-gap: 8px;
@@ -306,6 +312,17 @@ section {
   display: flex;
   align-items: flex-start;
   gap: 4px;
+}
+.chat-message-images {
+  grid-column: 2;
+  min-width: 0;
+  margin-top: 8px;
+}
+.chat-message-images .reference-images:empty {
+  display: none;
+}
+.chat-message-images .hint {
+  margin-bottom: 0;
 }
 .deletable-input {
   position: relative;

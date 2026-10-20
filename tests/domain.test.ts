@@ -69,45 +69,83 @@ test("chat histories preserve roles and whitespace while expanding variables", (
   );
 });
 
-test("chat image inputs survive normalization and expand common and grouped references", () => {
+test("chat images belong to supplied user messages, including image-only turns", () => {
+  const first = { id: "first", name: "first.png" };
+  const second = { id: "second", name: "second.png" };
   const source = {
     format: "chat-template",
-    messages: [{ role: "user", content: "Describe the images" }],
+    messages: [
+      { role: "user", content: "", images: [first] },
+      { role: "unfilled", content: "" },
+      { role: "user", content: "Compare these.", images: [second, first] },
+      { role: "unfilled", content: "" },
+    ],
     rows: { kind: "model", values: ["vision"] },
     columns: { kind: "effort", values: ["default"] },
     model: "",
     effort: "default",
     budgetUsd: 1,
-    inputReferences: [{ id: "first", name: "first.png" }],
   };
-  const common = gridSchema.parse(source);
-  assert.deepEqual(expandGrid(common)[0].imageSettings, {
-    input_references: ["first"],
-  });
-  const grouped = gridSchema.parse({
+  const input = gridSchema.parse(source);
+  const cell = expandGrid(input)[0];
+  assert.deepEqual(cell.messages, source.messages);
+  assert.equal(cell.imageSettings, undefined);
+  const varied = gridSchema.parse({
     ...source,
-    columns: { kind: "input_references", values: ["pair", "single"] },
-    referenceGroups: {
-      pair: [
-        { id: "second", name: "second.png" },
-        { id: "first", name: "first.png" },
-      ],
-      single: [{ id: "first", name: "first.png" }],
-    },
+    model: "vision",
+    rows: { kind: "variable", values: ["one", "two"] },
+    messages: [
+      source.messages[0],
+      source.messages[1],
+      { ...source.messages[2], content: "Compare $ROW" },
+      source.messages[3],
+    ],
   });
-  assert.equal(grouped.inputReferences, undefined);
   assert.deepEqual(
-    expandGrid(grouped).map((cell) => cell.imageSettings?.input_references),
-    [["second", "first"], ["first"]],
+    expandGrid(varied).map((cell) => cell.messages![2]),
+    ["one", "two"].map((value) => ({
+      role: "user",
+      content: `Compare ${value}`,
+      images: [second, first],
+    })),
   );
-  for (const kind of ["size", "quality", "background", "aspect_ratio"])
+  for (const role of ["system", "assistant", "unfilled"])
     assert.equal(
       gridSchema.safeParse({
         ...source,
-        columns: { kind, values: ["auto"] },
+        messages: [
+          source.messages[0],
+          {
+            role,
+            content: role === "unfilled" ? "" : "Supplied text",
+            images: [second],
+          },
+        ],
       }).success,
       false,
     );
+  assert.equal(
+    gridSchema.safeParse({
+      ...source,
+      messages: [{ role: "user", content: "", images: [] }],
+    }).success,
+    false,
+  );
+  assert.equal(
+    gridSchema.safeParse({
+      ...source,
+      inputReferences: [first],
+    }).success,
+    false,
+  );
+  assert.equal(
+    gridSchema.safeParse({
+      ...source,
+      columns: { kind: "input_references", values: ["pair"] },
+      referenceGroups: { pair: [first, second] },
+    }).success,
+    false,
+  );
 });
 
 test("two prompt variables are replaced literally, including dollar signs in values", () => {
@@ -361,28 +399,22 @@ test("Auto and omitted image settings prepare identical requests and artifact si
     })[0],
     id: "cell",
   };
-  const omitted = prepareImageInference(cell, []);
-  const automatic = prepareImageInference(
-    {
-      ...cell,
-      imageSettings: {
-        size: "auto",
-        quality: "auto",
-        aspect_ratio: "auto",
-        background: "auto",
-        input_references: [],
-      },
+  const omitted = prepareImageInference(cell);
+  const automatic = prepareImageInference({
+    ...cell,
+    imageSettings: {
+      size: "auto",
+      quality: "auto",
+      aspect_ratio: "auto",
+      background: "auto",
+      input_references: [],
     },
-    [],
-  );
+  });
   assert.deepEqual(automatic, omitted);
   assert.equal(inferenceSignature(automatic), inferenceSignature(omitted));
   assert.notEqual(
     inferenceSignature(
-      prepareImageInference(
-        { ...cell, imageSettings: { quality: "high" } },
-        [],
-      ),
+      prepareImageInference({ ...cell, imageSettings: { quality: "high" } }),
     ),
     inferenceSignature(omitted),
   );

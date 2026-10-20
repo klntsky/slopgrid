@@ -7,6 +7,8 @@ import type { Store } from "./store.js";
 import type { Provider } from "./provider.js";
 import { inferenceSignature, templateSignature } from "./prepared-inference.js";
 import { templateFits, templateSequence } from "./chat-template.js";
+import { referenceIds } from "./image-settings.js";
+import type { ReferenceInputs } from "./image-references.js";
 
 export async function reuseArtifacts(
   store: Store,
@@ -24,7 +26,8 @@ export async function reuseArtifacts(
     candidates.set(key, group);
   }
   if (!candidates.size) return;
-  const readReferences = store.references.loader();
+  let readReferences:
+    ((ids: readonly string[]) => Promise<ReferenceInputs>) | undefined;
   const available = new Map<string, Promise<boolean>>();
   for (const task of tasks) {
     if (task.kind !== "generation") continue;
@@ -33,15 +36,12 @@ export async function reuseArtifacts(
     let matching: GenerationTask[] | undefined;
     let fits: (candidate: GenerationTask) => boolean = () => true;
     try {
+      const ids = referenceIds(parameters);
+      const references = ids.length
+        ? await (readReferences ??= store.references.loader())(ids)
+        : undefined;
       if (format === "chat-template") {
-        matching = candidates.get(
-          templateSignature(
-            parameters,
-            await readReferences(
-              parameters.imageSettings?.input_references ?? [],
-            ),
-          ),
-        );
+        matching = candidates.get(templateSignature(parameters, references));
         if (!matching) continue;
         const model = (await provider.models()).find(
           (model) => model.id === parameters.model,
@@ -66,13 +66,7 @@ export async function reuseArtifacts(
           }
         };
       } else {
-        const prepared = await provider.prepare(
-          format,
-          parameters,
-          await readReferences(
-            parameters.imageSettings?.input_references ?? [],
-          ),
-        );
+        const prepared = await provider.prepare(format, parameters, references);
         matching = candidates.get(inferenceSignature(prepared));
         fits = (candidate) => {
           if (

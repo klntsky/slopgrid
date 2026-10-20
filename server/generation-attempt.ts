@@ -6,7 +6,7 @@ import {
   type TemplateStep,
 } from "./domain.js";
 import type { Provider } from "./provider.js";
-import type { ReferenceContent } from "./image-references.js";
+import type { ReferenceInputs } from "./image-references.js";
 import type { InferenceContext } from "./inference.js";
 import { generationBudget, PreparationError } from "./generation-budget.js";
 import {
@@ -29,7 +29,7 @@ export async function generateAttempt(
   taskId: string,
   onChunk: (progress: InferenceProgress) => void,
   context: InferenceContext,
-  references?: ReferenceContent[],
+  references?: ReferenceInputs,
 ): Promise<AttemptResult> {
   if (format !== "chat-template")
     return provider.generate(
@@ -60,7 +60,6 @@ export async function generateAttempt(
         false,
         { sessionId: taskId, previousPrefixLength },
         references,
-        cell.messages,
       );
       previousPrefixLength = messages.length;
       return provider.request(key, prepared, progress, context);

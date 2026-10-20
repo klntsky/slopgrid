@@ -10,7 +10,7 @@ import {
 import type { GridInput } from "../server/domain.js";
 import { projectWorkflow } from "../server/workflow.js";
 import { token } from "../server/ids.js";
-import { rmSync } from "node:fs";
+import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { holdDatabaseWrites } from "./database-lock.js";
 import { crashCheckpoint } from "./crash-checkpoint.js";
@@ -122,7 +122,7 @@ function committed(
   return grid;
 }
 
-test("chat judging loads the cell's selected image bytes alongside its completed conversation", async () => {
+test("chat judging restores each turn's image bytes to the completed conversation", async () => {
   const fixture = await runtimeFixture();
   try {
     const session = { id: fixture.owner, created: 0 };
@@ -136,9 +136,16 @@ test("chat judging loads the cell's selected image bytes alongside its completed
     const id = await create(fixture, {
       ...single,
       format: "chat-template",
-      messages: [{ role: "user", content: "Describe the selected images." }],
-      rows: { kind: "input_references", values: ["chosen"] },
-      referenceGroups: { chosen: [second, first, second], unused: [first] },
+      messages: [
+        {
+          role: "user",
+          content: "Describe the first image.",
+          images: [second],
+        },
+        { role: "assistant", content: "A supplied answer." },
+        { role: "user", content: "", images: [first, second] },
+      ],
+      rows: { kind: "judge_model", values: ["fixture/text"] },
       judge: { ...single.judge, model: "fixture/text" },
     });
     const generation = await fixture.nextCall();
@@ -163,13 +170,34 @@ test("chat judging loads the cell's selected image bytes alongside its completed
         content: messageText(message.content),
       })),
       [
-        { role: "user", content: "Describe the selected images." },
+        { role: "user", content: "Describe the first image." },
+        { role: "assistant", content: "A supplied answer." },
+        { role: "user", content: "" },
         { role: "assistant", content: "The images show a shape." },
       ],
     );
     assert.deepEqual(
       judge.request.messages.map((message) => message.role),
-      ["user", "assistant", "system", "user"],
+      ["user", "assistant", "user", "assistant", "system", "user"],
+    );
+    assert.deepEqual(
+      judge.request.messages
+        .slice(0, -2)
+        .map((message) =>
+          typeof message.content === "string"
+            ? []
+            : message.content.flatMap((part) =>
+                part.type === "image_url" ? [part.image_url!.url] : [],
+              ),
+        ),
+      [
+        [`data:image/png;base64,${secondBytes.toString("base64")}`],
+        [],
+        [png, secondBytes].map(
+          (bytes) => `data:image/png;base64,${bytes.toString("base64")}`,
+        ),
+        [],
+      ],
     );
     finish(judge, JSON.stringify(verdicts), 0.25);
     const grid = await settled(fixture, id);
@@ -181,7 +209,7 @@ test("chat judging loads the cell's selected image bytes alongside its completed
   }
 });
 
-test("chat image history stays fixed when the first supplied user follows a blank", async () => {
+test("future user images are absent from earlier calls and remain on their turn for judging", async () => {
   const fixture = await runtimeFixture();
   try {
     const image = fixture.store.references.add(png, "input.png", {
@@ -192,11 +220,10 @@ test("chat image history stays fixed when the first supplied user follows a blan
       ...single,
       format: "chat-template",
       budgetUsd: 1,
-      inputReferences: [image],
       messages: [
         { role: "system", content: "Describe the supplied image." },
         { role: "unfilled", content: "" },
-        { role: "user", content: "Describe another detail." },
+        { role: "user", content: "Describe another detail.", images: [image] },
         { role: "unfilled", content: "" },
       ],
     });
@@ -214,21 +241,25 @@ test("chat image history stays fixed when the first supplied user follows a blan
     const first = await fixture.nextCall();
     const initial = history(first);
     assert.deepEqual(initial, [
-      {
-        role: "user",
-        text: "",
-        images: [`data:image/png;base64,${png.toString("base64")}`],
-      },
       { role: "system", text: "Describe the supplied image.", images: [] },
     ]);
+    // Future attachments were loaded before the first request, not on demand
+    // for the next prefix. The attempt keeps those bytes without re-reading.
+    const imagePath = fixture.store.references.path(image.id)!;
+    rmSync(imagePath);
     finish(first, "First image-based answer.", 0.1);
     const second = await fixture.nextCall();
     const next = history(second);
     assert.deepEqual(next, [
       ...initial,
       { role: "assistant", text: "First image-based answer.", images: [] },
-      { role: "user", text: "Describe another detail.", images: [] },
+      {
+        role: "user",
+        text: "Describe another detail.",
+        images: [`data:image/png;base64,${png.toString("base64")}`],
+      },
     ]);
+    writeFileSync(imagePath, png);
     finish(second, "Second image-based answer.", 0.1);
     const judge = await fixture.nextCall();
     assert.deepEqual(history(judge).slice(0, -2), [
@@ -512,6 +543,65 @@ test("malformed saved chat messages fail judging without making a provider reque
       assert.equal(fixture.calls.length, 0);
       assert.equal(fixture.store.billing.page(fixture.owner, 0).total, 0);
     }
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("Image judging keeps ordered duplicate source references separate from the generated artifact", async () => {
+  const fixture = await runtimeFixture({ judges: true, images: true });
+  try {
+    const session = { id: fixture.owner, created: 0 };
+    const secondBytes = Buffer.concat([png, Buffer.from("second")]);
+    const outputBytes = Buffer.concat([png, Buffer.from("output")]);
+    const first = fixture.store.references.add(png, "first.png", session)!;
+    const second = fixture.store.references.add(
+      secondBytes,
+      "second.png",
+      session,
+    )!;
+    const grid = committed(
+      fixture,
+      {
+        ...single,
+        format: "image",
+        model: "fixture/image",
+        effort: "default",
+        inputReferences: [second, first, second],
+      },
+      { image: outputBytes },
+      "image/png",
+    );
+    assert.equal(
+      (await fixture.request(`/api/grids/${grid.id}/retry`, {})).status,
+      200,
+    );
+    const judge = await fixture.nextCall();
+    assert.deepEqual(
+      judge.request.messages.map((message) => message.role),
+      ["user", "user", "system", "user"],
+    );
+    const urls = (index: number) => {
+      const content = judge.request.messages[index].content;
+      assert.ok(Array.isArray(content));
+      return content.flatMap((part) =>
+        part.type === "image_url" ? [part.image_url!.url] : [],
+      );
+    };
+    assert.deepEqual(
+      urls(0),
+      [secondBytes, png, secondBytes].map(
+        (bytes) => `data:image/png;base64,${bytes.toString("base64")}`,
+      ),
+    );
+    assert.deepEqual(urls(1), [
+      `data:image/png;base64,${outputBytes.toString("base64")}`,
+    ]);
+    finish(judge, JSON.stringify(verdicts), 0.25);
+    assert.equal(
+      (await settled(fixture, grid.id)).cells[0].judge?.status,
+      "complete",
+    );
   } finally {
     await fixture.close();
   }

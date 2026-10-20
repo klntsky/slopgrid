@@ -3,10 +3,14 @@ import {
   chatText,
   isChatFormat,
   isMarkdownFormat,
+  type ChatMessage,
   type GridInput,
 } from "../../server/domain";
-import type { ReferenceImage } from "../../server/image-settings";
-import { selectedReferences } from "../../server/image-settings";
+import {
+  imageKinds,
+  selectedReferences,
+  type ReferenceImage,
+} from "../../server/image-settings";
 import { canJudge } from "../../server/compatibility";
 import { modelCatalog } from "../model-catalog";
 import { removeJudge } from "./change-axis";
@@ -15,6 +19,14 @@ export type Draft = {
   input: GridInput;
   sourceGridId?: string;
   reuseArtifacts?: boolean;
+  inactiveChatMessages?: ChatMessage[];
+  inactiveImageReferences?: Pick<
+    GridInput,
+    "inputReferences" | "referenceGroups"
+  > & {
+    rows?: GridInput["rows"];
+    columns?: GridInput["columns"];
+  };
 };
 const storageKey = "slopgrid-draft";
 const submissionKey = "slopgrid-creation";
@@ -48,6 +60,39 @@ function readDraft(): Draft {
   try {
     const draft: Draft =
       JSON.parse(sessionStorage.getItem(storageKey) ?? "null") ?? initial;
+    if (isChatFormat(draft.input.format)) {
+      const input = draft.input;
+      const referenceAxis = [input.rows, input.columns].find(
+        (axis) => axis.kind === "input_references",
+      );
+      const images = referenceAxis
+        ? referenceAxis.values.flatMap(
+            (name) => input.referenceGroups?.[name] ?? [],
+          )
+        : (input.inputReferences ?? []);
+      if (images.length) {
+        const messages = [...(input.messages ?? [])];
+        const user = messages.findIndex((message) => message.role === "user");
+        if (user < 0) messages.push({ role: "user", content: "", images });
+        else
+          messages[user] = {
+            ...messages[user],
+            images: [...(messages[user].images ?? []), ...images],
+          };
+        input.messages = messages;
+        input.prompt = chatText(messages);
+      }
+      delete input.inputReferences;
+      delete input.referenceGroups;
+      if (
+        [input.rows, input.columns].some((axis) =>
+          imageKinds.some((kind) => kind === axis.kind),
+        )
+      ) {
+        input.rows = { kind: "effort", values: ["default"] };
+        input.columns = { kind: "model", values: [] };
+      }
+    }
     if (draft.input.judge && !draft.input.judge.criteria.length) {
       Object.assign(draft.input, removeJudge(draft.input));
     }
@@ -67,9 +112,48 @@ export function startDraft(format: GridInput["format"]) {
   saveDraft(selectDraftFormat(readDraft(), format));
 }
 function selectDraftFormat(d: Draft, format: GridInput["format"]): Draft {
-  const messages = d.input.messages ?? [
-    { role: "user" as const, content: d.input.prompt },
-  ];
+  const messages = d.input.messages ??
+    d.inactiveChatMessages ?? [
+      { role: "user" as const, content: d.input.prompt },
+    ];
+  const imageReferences =
+    d.input.format === "image"
+      ? {
+          inputReferences: d.input.inputReferences,
+          referenceGroups: d.input.referenceGroups,
+          rows:
+            d.input.rows.kind === "input_references" ? d.input.rows : undefined,
+          columns:
+            d.input.columns.kind === "input_references"
+              ? d.input.columns
+              : undefined,
+        }
+      : d.inactiveImageReferences;
+  const rows: GridInput["rows"] =
+    format === "image" && imageReferences?.rows
+      ? imageReferences.rows
+      : isMarkdownFormat(format)
+        ? { kind: "effort", values: ["default"] }
+        : { kind: "model", values: [] };
+  const columns: GridInput["columns"] =
+    format === "image" && imageReferences?.columns
+      ? imageReferences.columns
+      : format === "image"
+        ? { kind: "quality", values: ["auto"] }
+        : isMarkdownFormat(format)
+          ? { kind: "model", values: [] }
+          : { kind: "effort", values: ["default"] };
+  const referenceInput = {
+    ...d.input,
+    format,
+    rows,
+    columns,
+    messages: isChatFormat(format) ? messages : undefined,
+    inputReferences:
+      format === "image" ? imageReferences?.inputReferences : undefined,
+    referenceGroups:
+      format === "image" ? imageReferences?.referenceGroups : undefined,
+  };
   const judgeModel =
     [d.input.rows, d.input.columns].find((axis) => axis.kind === "judge_model")
       ?.values[0] ??
@@ -80,15 +164,16 @@ function selectDraftFormat(d: Draft, format: GridInput["format"]): Draft {
       ?.values[0] ??
     d.input.judge?.effort ??
     "default";
-  const supportsReferences = format === "image" || isChatFormat(format);
-  const imageInputs =
-    supportsReferences && selectedReferences(d.input).length > 0;
+  const imageInputs = selectedReferences(referenceInput).length > 0;
   return {
     ...d,
     formatSelected: true,
+    inactiveChatMessages: isChatFormat(format)
+      ? undefined
+      : (d.input.messages ?? d.inactiveChatMessages),
+    inactiveImageReferences: format === "image" ? undefined : imageReferences,
     input: {
-      ...d.input,
-      format,
+      ...referenceInput,
       judge:
         format === "html"
           ? undefined
@@ -103,26 +188,12 @@ function selectDraftFormat(d: Draft, format: GridInput["format"]): Draft {
                 ? judgeModel
                 : "",
             },
-      messages: isChatFormat(format) ? messages : undefined,
       prompt: isChatFormat(format) ? chatText(messages) : d.input.prompt,
       imageSettings: undefined,
-      inputReferences: supportsReferences ? d.input.inputReferences : undefined,
       model: "",
       effort: "default",
-      rows:
-        supportsReferences && d.input.rows.kind === "input_references"
-          ? d.input.rows
-          : isMarkdownFormat(format)
-            ? { kind: "effort", values: ["default"] }
-            : { kind: "model", values: [] },
-      columns:
-        supportsReferences && d.input.columns.kind === "input_references"
-          ? d.input.columns
-          : format === "image"
-            ? { kind: "quality", values: ["auto"] }
-            : isMarkdownFormat(format)
-              ? { kind: "model", values: [] }
-              : { kind: "effort", values: ["default"] },
+      rows,
+      columns,
     },
   };
 }
@@ -156,22 +227,39 @@ export function useCreateDraft() {
     setDraft((d) => selectDraftFormat(d, format));
   }
   function replaceReference(localId: string, image: ReferenceImage) {
+    const replaceImages = (images: readonly ReferenceImage[] | undefined) =>
+      images?.map((candidate) =>
+        candidate.id === localId ? image : candidate,
+      );
+    const replaceMessages = (messages: ChatMessage[] | undefined) =>
+      messages?.map((message) => ({
+        ...message,
+        ...(message.images && { images: replaceImages(message.images) }),
+      }));
+    const replaceGroups = (groups: GridInput["referenceGroups"]) =>
+      groups &&
+      Object.fromEntries(
+        Object.entries(groups).map(([name, images]) => [
+          name,
+          replaceImages(images)!,
+        ]),
+      );
     setDraft((d) => ({
       ...d,
       input: {
         ...d.input,
-        inputReferences: d.input.inputReferences?.map((candidate) =>
-          candidate.id === localId ? image : candidate,
+        messages: replaceMessages(d.input.messages),
+        inputReferences: replaceImages(d.input.inputReferences),
+        referenceGroups: replaceGroups(d.input.referenceGroups),
+      },
+      inactiveChatMessages: replaceMessages(d.inactiveChatMessages),
+      inactiveImageReferences: d.inactiveImageReferences && {
+        ...d.inactiveImageReferences,
+        inputReferences: replaceImages(
+          d.inactiveImageReferences.inputReferences,
         ),
-        referenceGroups: Object.fromEntries(
-          Object.entries(d.input.referenceGroups ?? {}).map(
-            ([name, images]) => [
-              name,
-              images.map((candidate) =>
-                candidate.id === localId ? image : candidate,
-              ),
-            ],
-          ),
+        referenceGroups: replaceGroups(
+          d.inactiveImageReferences.referenceGroups,
         ),
       },
     }));

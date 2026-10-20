@@ -7,7 +7,7 @@ import {
 import { ReferenceGroups } from "./reference-groups";
 import { ModelSelector } from "./model-selector";
 import { CustomAxisSizes } from "./custom-image-size";
-import { efforts, isChatFormat, type GridInput } from "../../server/domain";
+import { efforts, type GridInput } from "../../server/domain";
 import { effortLabel } from "../../server/compatibility";
 import type { Model } from "../../server/provider";
 import { dimensionNames } from "../format";
@@ -38,7 +38,6 @@ export function AxisEditor({
     ...(format === "image"
       ? (["model", "variable", ...imageKinds] as const)
       : (["model", "effort", "variable"] as const)),
-    ...(isChatFormat(format) ? (["input_references"] as const) : []),
     "judge_model",
     "judge_effort",
   ];

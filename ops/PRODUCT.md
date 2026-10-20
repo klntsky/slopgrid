@@ -52,3 +52,9 @@
    exist; sessions and credentials stay in their original environment.
    Reuse an existing upload ID only when its destination account, filename,
    media type, and content hash match; retain a separate usage link for each grid.
+10. Command and option help must cover validation, rehearsal, staging, production,
+    and run status without requiring configuration, Git, SSH, or infrastructure.
+    `--help` and `help [COMMAND]` show general or command-specific guidance.
+    Interactive terminals support selecting help topics and exiting without
+    running commands; non-interactive help prints and exits. Invoking the CLI
+    without a command shows help and never starts a deployment.

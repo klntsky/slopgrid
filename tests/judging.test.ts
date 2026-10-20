@@ -257,23 +257,57 @@ test("judge SDK continues native conversations with images in place and trailing
   const upstream = await fixture(
     '{"results":[{"verdict":true,"explanation":"Matches the images."}]}',
   );
-  const references = ["first", "second"].map((text) => ({
-    bytes: Buffer.from(text),
-    mediaType: "image/png",
-    sha256: text,
-  }));
+  const references = new Map(
+    ["second", "first"].map(
+      (text) =>
+        [
+          text,
+          {
+            bytes: Buffer.from(text),
+            mediaType: "image/png",
+            sha256: text,
+          },
+        ] as const,
+    ),
+  );
   try {
     for (const format of ["chat-template", "image"] as const) {
       const transcript = [
         { role: "system" as const, content: "Be concise." },
-        { role: "user" as const, content: "Describe the images." },
-        { role: "assistant" as const, content: "The images show shapes." },
+        {
+          role: "user" as const,
+          content: "Describe this image.",
+          images: [{ id: "first", name: "first.png" }],
+        },
+        {
+          role: "assistant" as const,
+          content: "The first image shows a shape.",
+        },
+        {
+          role: "user" as const,
+          content: "",
+          images: [
+            { id: "second", name: "second.png" },
+            { id: "first", name: "first.png" },
+          ],
+        },
+        {
+          role: "assistant" as const,
+          content: "The images show different shapes.",
+        },
       ];
       const history =
         format === "chat-template"
           ? chatMessages(transcript, references)
           : [
-              ...chatMessages([], references),
+              {
+                role: "user" as const,
+                content: ["first", "second", "first"].map((id) => ({
+                  type: "file" as const,
+                  data: references.get(id)!.bytes,
+                  mediaType: "image/png",
+                })),
+              },
               {
                 role: "user" as const,
                 content: [
@@ -305,7 +339,15 @@ test("judge SDK continues native conversations with images in place and trailing
       assert.deepEqual(
         messages.map((message) => message.role),
         format === "chat-template"
-          ? ["system", "user", "assistant", "system", "user"]
+          ? [
+              "system",
+              "user",
+              "assistant",
+              "user",
+              "assistant",
+              "system",
+              "user",
+            ]
           : ["user", "user", "system", "user"],
       );
       const content = messages.flatMap((message) =>
@@ -315,8 +357,9 @@ test("judge SDK continues native conversations with images in place and trailing
         .filter((part) => part.image_url)
         .map((part) => part.image_url!.url);
       assert.deepEqual(images, [
-        ...references.map(
-          (r) => `data:image/png;base64,${r.bytes.toString("base64")}`,
+        ...["first", "second", "first"].map(
+          (id) =>
+            `data:image/png;base64,${references.get(id)!.bytes.toString("base64")}`,
         ),
         ...(format === "image"
           ? [
@@ -335,6 +378,29 @@ test("judge SDK continues native conversations with images in place and trailing
           (messages[1].content as { text?: string }[]).some(
             (part) => part.text === transcript[1].content,
           ),
+        );
+        assert.deepEqual(
+          messages
+            .slice(0, -2)
+            .map((message) =>
+              typeof message.content === "string"
+                ? []
+                : message.content.flatMap((part) =>
+                    part.image_url ? [part.image_url.url] : [],
+                  ),
+            ),
+          [
+            [],
+            [
+              `data:image/png;base64,${references.get("first")!.bytes.toString("base64")}`,
+            ],
+            [],
+            ["second", "first"].map(
+              (id) =>
+                `data:image/png;base64,${references.get(id)!.bytes.toString("base64")}`,
+            ),
+            [],
+          ],
         );
       }
       assert.equal(messages.at(-2)!.role, "system");

@@ -15,7 +15,11 @@ import {
   sharedReferenceUsage,
   removeReferenceGrid,
   referenceBlob,
+  storedReferenceCount,
+  rejectReferenceUploads,
+  rejectReferenceGridCells,
 } from "./reference-storage-fixture.js";
+import { storedGridCount } from "./grid-storage-fixture.js";
 
 const png = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
@@ -39,9 +43,7 @@ for (const shared of [false, true])
     const { origin, store, database, secret } = await appFixture(t, {
       provider,
     });
-    const initialGrids = store.db
-      .prepare("SELECT COUNT(*) AS count FROM grids")
-      .get();
+    const initialGrids = storedGridCount(store.db);
     const upload = (data: Buffer, cookie?: string, requestOrigin = origin) =>
       fetch(`${origin}/api/references?name=photo.png`, {
         method: "POST",
@@ -106,10 +108,7 @@ for (const shared of [false, true])
     });
     assert.equal(forged.status, 400);
     assert.match((await forged.json()).error, /reference image is unavailable/);
-    assert.deepEqual(
-      store.db.prepare("SELECT COUNT(*) AS count FROM grids").get(),
-      initialGrids,
-    );
+    assert.deepEqual(storedGridCount(store.db), initialGrids);
     const grid: Grid = {
       id: token(),
       owner,
@@ -178,7 +177,7 @@ for (const shared of [false, true])
       status: "paused",
       cells: grid.cells.map((c) => ({ ...c, id: token() })),
     });
-    store.db.prepare("DELETE FROM grids WHERE id=?").run(grid.id);
+    removeReferenceGrid(store.db, grid.id);
     store.saveSession({ id: forkOwner, created: Date.now() });
     assert.equal((await read(image.id)).status, 404);
     assert.deepEqual(
@@ -190,23 +189,72 @@ for (const shared of [false, true])
     const reopened = new Store(database, secret);
     try {
       assert.deepEqual(
-        await reopened.references.loader()([image.id, image.id]),
-        [1, 2].map(() => ({
+        (await reopened.references.loader()([image.id, image.id])).get(
+          image.id,
+        ),
+        {
           bytes: png,
           mediaType: "image/png",
           sha256: createHash("sha256").update(png).digest("hex"),
-        })),
+        },
       );
     } finally {
       reopened.db.close();
     }
   });
 
+test("chat admission authorizes attachments on future user turns before creating a grid", async (t) => {
+  const provider = new Provider();
+  t.mock.method(provider, "models", async () => [
+    {
+      id: "fixture/text",
+      name: "Vision text",
+      text: true,
+      image: false,
+      imageInput: true,
+      reasoning: false,
+      reasoningMandatory: false,
+    },
+  ]);
+  const { origin, store } = await appFixture(t, { provider });
+  const owner = token();
+  const session = { id: owner, created: Date.now() };
+  store.saveSession(session);
+  const image = store.references.add(png, "private.png", session)!;
+  const input = gridSchema.parse({
+    format: "chat-template",
+    messages: [
+      { role: "user", content: "Answer before seeing the private image." },
+      { role: "unfilled", content: "" },
+      { role: "user", content: "", images: [image] },
+      { role: "unfilled", content: "" },
+    ],
+    rows: { kind: "model", values: ["fixture/text"] },
+    columns: { kind: "effort", values: ["none"] },
+    model: "",
+    effort: "none",
+    budgetUsd: 1,
+  });
+  const before = store.all().map((grid) => grid.id);
+  const response = await fetch(`${origin}/api/grids`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer fixture-key",
+    },
+    body: JSON.stringify(input),
+  });
+  assert.equal(response.status, 400);
+  assert.match((await response.json()).error, /reference image is unavailable/);
+  assert.deepEqual(
+    store.all().map((grid) => grid.id),
+    before,
+  );
+});
+
 test("reference uploads distinguish invalid files from storage failures and recover on retry", async (t) => {
   const { origin, store } = await appFixture(t);
-  const initialReferences = store.db
-    .prepare("SELECT COUNT(*) AS count FROM reference_images")
-    .get();
+  const initialReferences = storedReferenceCount(store.db);
   const upload = (data = png) =>
     fetch(`${origin}/api/references?name=photo.png`, {
       method: "POST",
@@ -229,34 +277,29 @@ test("reference uploads distinguish invalid files from storage failures and reco
     unlinkSync(root);
     renameSync(`${root}.backup`, root);
   }
-  store.db.exec(`CREATE TEMP TRIGGER fail_reference_upload
-    BEFORE INSERT ON reference_images BEGIN
-      SELECT RAISE(FAIL, 'Injected database failure');
-    END`);
+  const allowReferenceUploads = rejectReferenceUploads(store.db);
   try {
     const failed = await upload();
     assert.equal(failed.status, 500);
     assert.deepEqual(await failed.json(), { error: "Could not upload image." });
-    assert.deepEqual(
-      store.db.prepare("SELECT COUNT(*) AS count FROM reference_images").get(),
-      initialReferences,
-    );
+    assert.deepEqual(storedReferenceCount(store.db), initialReferences);
   } finally {
-    store.db.exec("DROP TRIGGER fail_reference_upload");
+    allowReferenceUploads();
   }
   const recovered = await upload();
   assert.equal(recovered.status, 201);
   const image = await recovered.json();
-  assert.deepEqual(await store.references.loader()([image.id]), [
+  assert.deepEqual(
+    (await store.references.loader()([image.id])).get(image.id),
     {
       bytes: png,
       mediaType: "image/png",
       sha256: createHash("sha256").update(png).digest("hex"),
     },
-  ]);
+  );
 });
 
-test("reference loaders share exact bytes and hashes while retaining order and execution boundaries", async (t) => {
+test("reference loaders retain exact content by ID within each execution", async (t) => {
   const { store } = await appFixture(t);
   const session = { id: token(), created: Date.now() };
   const other = Buffer.concat([png, Buffer.from("different")]);
@@ -268,29 +311,21 @@ test("reference loaders share exact bytes and hashes while retaining order and e
     load([first.id]),
   ]);
   assert.deepEqual(
-    a.map((ref) => ref.bytes),
-    [png, other, png],
-  );
-  assert.deepEqual(
-    a.map((ref) => ref.sha256),
-    [png, other, png].map((bytes) =>
-      createHash("sha256").update(bytes).digest("hex"),
-    ),
-  );
-  assert.deepEqual(b, [
-    {
-      bytes: png,
+    [a.get(first.id), a.get(second.id)],
+    [png, other].map((bytes) => ({
+      bytes,
       mediaType: "image/png",
-      sha256: createHash("sha256").update(png).digest("hex"),
-    },
-  ]);
+      sha256: createHash("sha256").update(bytes).digest("hex"),
+    })),
+  );
+  assert.deepEqual(b.get(first.id)?.bytes, png);
   const file = store.references.path(first.id)!;
   renameSync(file, file + ".held");
-  assert.deepEqual((await load([first.id]))[0].bytes, png);
+  assert.deepEqual((await load([first.id])).get(first.id)!.bytes, png);
   const fresh = store.references.loader();
   await assert.rejects(fresh([first.id]), /unavailable/);
   renameSync(file + ".held", file);
-  assert.deepEqual((await fresh([first.id]))[0].bytes, png);
+  assert.deepEqual((await fresh([first.id])).get(first.id)!.bytes, png);
 });
 
 test("grid creation records every selected reference atomically and keeps membership tied to immutable configuration", async (t) => {
@@ -327,16 +362,13 @@ test("grid creation records every selected reference atomically and keeps member
       id: token(),
     })),
   };
-  store.db.exec(`CREATE TEMP TRIGGER fail_reference_grid
-    BEFORE INSERT ON cells BEGIN
-      SELECT RAISE(ABORT, 'Injected grid failure');
-    END`);
+  const allowGridCells = rejectReferenceGridCells(store.db);
   try {
     assert.throws(() => store.insert(grid), /Injected grid failure/);
     assert.equal(store.get(grid.id), undefined);
     assert.equal(store.references.allowed(first.id, owner), false);
   } finally {
-    store.db.exec("DROP TRIGGER fail_reference_grid");
+    allowGridCells();
   }
   store.insert(grid);
   assert.equal(store.references.allowed(first.id, owner), true);
@@ -352,7 +384,7 @@ test("grid creation records every selected reference atomically and keeps member
   assert.deepEqual(store.get(grid.id)!.input, input);
   assert.equal(store.references.allowed(second.id, owner), true);
   assert.equal(store.references.allowed(spare.id, owner), false);
-  store.db.prepare("DELETE FROM grids WHERE id=?").run(grid.id);
+  removeReferenceGrid(store.db, grid.id);
   assert.equal(store.references.allowed(first.id, owner), false);
   store.insert(grid);
   assert.equal(store.references.allowed(second.id, owner), false);
@@ -383,13 +415,12 @@ test("identical uploads share one blob across private owners and grids without s
     const owner = index ? bob : alice;
     const input = gridSchema.parse({
       format: "chat-template",
-      messages: [{ role: "user", content: "Describe it" }],
+      messages: [{ role: "user", content: "Describe it", images: [reference] }],
       model: "fixture/text",
       effort: "none",
       budgetUsd: 1,
       rows: { kind: "effort", values: ["none"] },
       columns: { kind: "model", values: ["fixture/text"] },
-      inputReferences: [reference],
     });
     const grid: Grid = {
       id: token(),
@@ -418,20 +449,17 @@ test("identical uploads share one blob across private owners and grids without s
   assert.equal(store.references.allowed(first.id, bob), false);
   assert.equal(store.references.allowed(second.id, alice), false);
   assert.equal(readdirSync(join(store.files.root, ".references")).length, 2);
+  const loaded = await store.references.loader()([
+    second.id,
+    changed.id,
+    first.id,
+    second.id,
+  ]);
   assert.deepEqual(
-    await store.references.loader()([
-      second.id,
-      changed.id,
-      first.id,
-      second.id,
-    ]),
-    [png, Buffer.concat([png, Buffer.from("different bytes")]), png, png].map(
-      (bytes) => ({
-        bytes,
-        mediaType: "image/png",
-        sha256: createHash("sha256").update(bytes).digest("hex"),
-      }),
+    [second, changed, first, second].map(
+      (reference) => loaded.get(reference.id)!.bytes,
     ),
+    [png, Buffer.concat([png, Buffer.from("different bytes")]), png, png],
   );
   removeReferenceGrid(store.db, grids[0].id);
   assert.deepEqual(
@@ -525,12 +553,11 @@ test("concurrent identical uploads atomically install one shared blob", async (t
       .length,
     0,
   );
+  const loaded = await store.references.loader()(
+    references.map((reference) => reference.id),
+  );
   assert.deepEqual(
-    (
-      await store.references.loader()(
-        references.map((reference) => reference.id),
-      )
-    ).map((reference) => reference.bytes),
+    references.map((reference) => loaded.get(reference.id)!.bytes),
     references.map(() => png),
   );
 });

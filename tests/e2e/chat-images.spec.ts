@@ -3,6 +3,7 @@ import { test, expect } from "./fixtures";
 import {
   connectOpenRouter,
   expectProgress,
+  finishPublishing,
   mockModels,
   selectModel,
 } from "./helpers";
@@ -11,37 +12,57 @@ const png = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
   "base64",
 );
-const image = { name: "chat.png", mimeType: "image/png", buffer: png };
+const firstImage = { name: "first.png", mimeType: "image/png", buffer: png };
+const laterImage = {
+  name: "later.png",
+  mimeType: "image/png",
+  buffer: Buffer.concat([png, Buffer.from("later image")]),
+};
+type WireMessage = {
+  role: string;
+  content:
+    string | { type: string; text?: string; image_url?: { url: string } }[];
+};
+function userTurns(request: { messages: WireMessage[] }) {
+  return request.messages
+    .filter((message) => message.role === "user")
+    .map((message) => ({
+      text:
+        typeof message.content === "string"
+          ? message.content
+          : message.content
+              .filter((part) => part.type === "text")
+              .map((part) => part.text)
+              .join("\n"),
+      images:
+        typeof message.content === "string"
+          ? []
+          : message.content
+              .filter((part) => part.type === "image_url")
+              .map((part) => part.image_url!.url),
+    }));
+}
+const dataURL = (image: typeof firstImage) =>
+  `data:image/png;base64,${image.buffer.toString("base64")}`;
 
 async function appendMessage(page: Page) {
   await page.locator(".chat-append").hover();
   await page.getByRole("button", { name: "Add message", exact: true }).click();
 }
-
-async function unsupportedOtherModel(page: Page) {
-  await page.goto("/create");
-  await connectOpenRouter(page);
-  await mockModels(page, (models) =>
-    models.map((model) =>
-      model.id === "fixture/other" ? { ...model, imageInput: false } : model,
-    ),
-  );
-}
-
-test("chat image uploads block unsupported fixed and axis models and persist across completion calls", async ({
-  page,
-  request,
-}) => {
-  await unsupportedOtherModel(page);
-  const answer = "An image answer.";
-  await request.post("/fixture/reset", { data: { markdownOutput: answer } });
-  await page.goto("/");
+async function appendCompletionAndUser(page: Page) {
+  await appendMessage(page);
   await page
-    .getByRole("button", { name: "Chat completion", exact: true })
+    .getByRole("button", { name: "Message 2 role: assistant", exact: true })
     .click();
+  await appendMessage(page);
+}
+async function appendFinalCompletion(page: Page) {
+  await appendMessage(page);
   await page
-    .getByLabel("Message 1", { exact: true })
-    .fill("Describe this image. $ROW $COLUMN");
+    .getByRole("button", { name: "Message 4 role: assistant", exact: true })
+    .click();
+}
+async function variableAxes(page: Page) {
   await page
     .getByRole("combobox", { name: "Rows", exact: true })
     .selectOption("variable");
@@ -50,30 +71,61 @@ test("chat image uploads block unsupported fixed and axis models and persist acr
     .getByRole("combobox", { name: "Columns", exact: true })
     .selectOption("variable");
   await page.getByLabel("Column values", { exact: true }).fill("one");
+}
+async function unsupportedOtherModel(page: Page) {
+  await page.goto("/create");
+  await connectOpenRouter(page);
+  await mockModels(page, (models) =>
+    models.map((model) =>
+      model.id === "fixture/other" ? { ...model, imageInput: false } : model,
+    ),
+  );
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "Chat completion", exact: true })
+    .click();
+}
+
+test("message attachments gate every model and reach only their own completion turns", async ({
+  page,
+  request,
+}) => {
+  await unsupportedOtherModel(page);
+  const answer = "An image answer.";
+  await request.post("/fixture/reset", { data: { markdownOutput: answer } });
+  await page
+    .getByLabel("Message 1", { exact: true })
+    .fill("Describe the first image. $ROW $COLUMN");
+  await appendCompletionAndUser(page);
+  await page
+    .getByLabel("Message 3", { exact: true })
+    .fill("Describe the later image.");
+  await appendFinalCompletion(page);
+  await variableAxes(page);
   await selectModel(page, "fixture/other");
   const generate = page.getByRole("button", { name: "Generate", exact: true });
   await expect(generate).toBeEnabled();
   await page
-    .getByLabel("Add input references", { exact: true })
-    .setInputFiles(image);
+    .getByLabel("Add images to message 3", { exact: true })
+    .setInputFiles(laterImage);
   await expect(
-    page.getByRole("img", { name: image.name, exact: true }),
+    page.getByRole("img", { name: laterImage.name, exact: true }),
   ).toBeVisible();
   await expect(generate).toBeDisabled();
   await page
     .getByRole("button", {
-      name: "Remove chat.png from Input references",
+      name: `Remove ${laterImage.name} from message 3`,
       exact: true,
     })
     .click();
   await expect(generate).toBeEnabled();
   await page
-    .getByLabel("Add input references", { exact: true })
-    .setInputFiles(image);
+    .getByLabel("Add images to message 3", { exact: true })
+    .setInputFiles(laterImage);
   await expect(generate).toBeDisabled();
   await page.reload();
   await expect(
-    page.getByRole("img", { name: image.name, exact: true }),
+    page.getByRole("img", { name: laterImage.name, exact: true }),
   ).toBeVisible();
   await expect(generate).toBeDisabled();
   await selectModel(page, "fixture/text");
@@ -83,13 +135,12 @@ test("chat image uploads block unsupported fixed and axis models and persist acr
     .selectOption("model");
   await page
     .getByLabel("Message 1", { exact: true })
-    .fill("Describe this image. $ROW");
+    .fill("Describe the first image. $ROW");
   const models = page.getByRole("group", {
     name: "Column values",
     exact: true,
   });
   await models.getByRole("searchbox").fill("");
-  await expect(generate).toBeEnabled();
   await models
     .getByRole("checkbox", { name: "Second model", exact: true })
     .check();
@@ -97,166 +148,177 @@ test("chat image uploads block unsupported fixed and axis models and persist acr
   await models
     .getByRole("checkbox", { name: "Second model", exact: true })
     .uncheck();
+  await page
+    .getByLabel("Add images to message 1", { exact: true })
+    .setInputFiles(firstImage);
   await expect(generate).toBeEnabled();
-  await appendMessage(page);
-  await page
-    .getByRole("button", { name: "Message 2 role: assistant", exact: true })
-    .click();
-  await appendMessage(page);
-  await page
-    .getByLabel("Message 3", { exact: true })
-    .fill("Describe another detail.");
-  await appendMessage(page);
-  await page
-    .getByRole("button", { name: "Message 4 role: assistant", exact: true })
-    .click();
-  const uploading = page.waitForResponse(
-    (response) =>
-      response.request().method() === "POST" &&
-      new URL(response.url()).pathname === "/api/references",
-  );
   await generate.click();
-  const reference = await (await uploading).json();
-  expect(
-    await (await page.request.get(`/api/references/${reference.id}`)).body(),
-  ).toEqual(png);
   await expectProgress(page, 1, 1);
   const sent = await (await request.get("/fixture/chat-requests")).json();
   expect(sent).toHaveLength(2);
-  const firstUser = sent[0].messages.find(
-    (message: { role: string }) => message.role === "user",
-  );
-  expect(firstUser.content).toEqual(
-    expect.arrayContaining([
-      { type: "text", text: "Describe this image. one" },
-      expect.objectContaining({
-        type: "image_url",
-        image_url: { url: `data:image/png;base64,${png.toString("base64")}` },
-      }),
-    ]),
-  );
-  expect(sent[1].messages).toEqual(
-    expect.arrayContaining([
-      firstUser,
-      { role: "assistant", content: answer },
-      {
-        role: "user",
-        content: expect.arrayContaining([
-          expect.objectContaining({
-            type: "text",
-            text: "Describe another detail.",
-          }),
-        ]),
-      },
-    ]),
-  );
-  await page.getByRole("button", { name: "EDIT", exact: true }).click();
-  await expect(
-    page.getByRole("img", { name: image.name, exact: true }),
-  ).toBeVisible();
-  await page.reload();
-  await expect(
-    page.getByRole("img", { name: image.name, exact: true }),
-  ).toBeVisible();
-  await expect(generate).toBeEnabled();
-});
-
-test("chat input-reference dimensions survive image format transitions and grid editing", async ({
-  page,
-  request,
-}) => {
-  await unsupportedOtherModel(page);
-  await page.goto("/");
-  await page
-    .getByRole("button", { name: "Chat completion", exact: true })
-    .click();
-  await page
-    .getByLabel("Message 1", { exact: true })
-    .fill("Describe the reference.");
-  await page
-    .getByRole("combobox", { name: "Rows", exact: true })
-    .selectOption("input_references");
-  await page
-    .getByLabel("Add reference group", { exact: true })
-    .setInputFiles(image);
-  await expect(
-    page.getByRole("img", { name: image.name, exact: true }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "Image", exact: true }).click();
-  await expect(
-    page.getByRole("combobox", { name: "Rows", exact: true }),
-  ).toHaveValue("input_references");
-  await expect(
-    page.getByRole("img", { name: image.name, exact: true }),
-  ).toBeVisible();
-  await page
-    .getByRole("button", { name: "Chat completion", exact: true })
-    .click();
-  await expect(
-    page.getByRole("combobox", { name: "Rows", exact: true }),
-  ).toHaveValue("input_references");
-  await expect(
-    page.getByRole("img", { name: image.name, exact: true }),
-  ).toBeVisible();
-  await expect(
-    page.getByLabel("Add input references", { exact: true }),
-  ).toHaveCount(0);
-  await expect(
-    page.getByRole("combobox", { name: "Quality", exact: true }),
-  ).toHaveCount(0);
-  const models = page.getByRole("group", {
-    name: "Column values",
-    exact: true,
+  const initialTurn = {
+    text: "Describe the first image. one",
+    images: [dataURL(firstImage)],
+  };
+  expect(userTurns(sent[0])).toEqual([initialTurn]);
+  expect(userTurns(sent[1])).toEqual([
+    initialTurn,
+    { text: "Describe the later image.", images: [dataURL(laterImage)] },
+  ]);
+  expect(sent[1].messages).toContainEqual({
+    role: "assistant",
+    content: answer,
   });
-  await models.getByRole("searchbox").fill("");
-  await models
-    .getByRole("checkbox", { name: "Fixture text", exact: true })
-    .check();
-  await models
-    .getByRole("checkbox", { name: "Second model", exact: true })
-    .check();
-  const generate = page.getByRole("button", { name: "Generate", exact: true });
-  await expect(generate).toBeDisabled();
-  await models
-    .getByRole("checkbox", { name: "Second model", exact: true })
-    .uncheck();
-  await expect(generate).toBeEnabled();
-  await page.reload();
-  await expect(
-    page.getByRole("img", { name: image.name, exact: true }),
-  ).toBeVisible();
-  await generate.click();
-  await expectProgress(page, 1, 1);
   const grid = await (
     await page.request.get(
       `/api/grids/${new URL(page.url()).pathname.split("/").pop()}`,
     )
   ).json();
-  expect(grid.input.rows).toEqual({
-    kind: "input_references",
-    values: ["Group 1"],
-  });
-  expect(grid.input.referenceGroups["Group 1"]).toEqual([
-    { id: expect.not.stringMatching(/^local-/), name: image.name },
-  ]);
-  const sent = await (await request.get("/fixture/chat-requests")).json();
   expect(
-    sent[0].messages.find(
-      (message: { role: string }) => message.role === "user",
-    ).content,
-  ).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({
-        type: "image_url",
-        image_url: { url: `data:image/png;base64,${png.toString("base64")}` },
-      }),
-    ]),
-  );
+    await (
+      await page.request.get(
+        `/api/references/${grid.input.messages[0].images[0].id}`,
+      )
+    ).body(),
+  ).toEqual(firstImage.buffer);
+  expect(
+    await (
+      await page.request.get(
+        `/api/references/${grid.input.messages[2].images[0].id}`,
+      )
+    ).body(),
+  ).toEqual(laterImage.buffer);
+  await page.getByRole("button", { name: "EDIT", exact: true }).click();
+  await expect(page).toHaveURL("/create");
+  await page.reload();
+  await expect(
+    page
+      .locator(".chat-message")
+      .nth(0)
+      .getByRole("img", { name: firstImage.name, exact: true }),
+  ).toBeVisible();
+  await expect(
+    page
+      .locator(".chat-message")
+      .nth(2)
+      .getByRole("img", { name: laterImage.name, exact: true }),
+  ).toBeVisible();
+  await expect(generate).toBeEnabled();
+});
+
+test("image-only message attachments follow reorder, format switches, Edit and Fork", async ({
+  page,
+  request,
+}) => {
+  await unsupportedOtherModel(page);
+  await request.post("/fixture/reset", {
+    data: { markdownOutput: "Image understood." },
+  });
+  await page
+    .getByLabel("Message 1", { exact: true })
+    .fill("First question $ROW $COLUMN");
+  await page
+    .getByLabel("Add images to message 1", { exact: true })
+    .setInputFiles(firstImage);
+  await expect(
+    page.getByRole("img", { name: firstImage.name, exact: true }),
+  ).toBeVisible();
+  await appendCompletionAndUser(page);
+  await page
+    .getByLabel("Add images to message 3", { exact: true })
+    .setInputFiles(laterImage);
+  await expect(
+    page.getByRole("img", { name: laterImage.name, exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Message 3 role: user", exact: true }),
+  ).toBeDisabled();
+  await appendFinalCompletion(page);
+  await page
+    .getByRole("button", { name: "Move message 3", exact: true })
+    .press("ArrowUp");
+  await page
+    .getByRole("button", { name: "Move message 2", exact: true })
+    .press("ArrowUp");
+  await page.reload();
+  await expect(page.getByLabel("Message 1", { exact: true })).toHaveValue("");
+  await expect(
+    page
+      .locator(".chat-message")
+      .nth(0)
+      .getByRole("img", { name: laterImage.name, exact: true }),
+  ).toBeVisible();
+  await expect(
+    page
+      .locator(".chat-message")
+      .nth(1)
+      .getByRole("img", { name: firstImage.name, exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Image", exact: true }).click();
+  await expect(
+    page
+      .getByRole("combobox", { name: "Rows", exact: true })
+      .locator('option[value="input_references"]'),
+  ).toHaveCount(1);
+  await page
+    .getByRole("button", { name: "Chat completion", exact: true })
+    .click();
+  await expect(
+    page
+      .getByRole("combobox", { name: "Rows", exact: true })
+      .locator('option[value="input_references"]'),
+  ).toHaveCount(0);
+  await expect(
+    page
+      .locator(".chat-message")
+      .nth(0)
+      .getByRole("img", { name: laterImage.name, exact: true }),
+  ).toBeVisible();
+  await expect(
+    page
+      .locator(".chat-message")
+      .nth(1)
+      .getByRole("img", { name: firstImage.name, exact: true }),
+  ).toBeVisible();
+  await variableAxes(page);
+  await selectModel(page, "fixture/text");
+  await page.getByRole("button", { name: "Generate", exact: true }).click();
+  await expectProgress(page, 1, 1);
+  const sent = await (await request.get("/fixture/chat-requests")).json();
+  expect(userTurns(sent[0])).toEqual([
+    { text: "", images: [dataURL(laterImage)] },
+    { text: "First question one one", images: [dataURL(firstImage)] },
+  ]);
+  const gridURL = page.url();
   await page.getByRole("button", { name: "EDIT", exact: true }).click();
   await expect(
-    page.getByRole("combobox", { name: "Rows", exact: true }),
-  ).toHaveValue("input_references");
+    page
+      .locator(".chat-message")
+      .nth(0)
+      .getByRole("img", { name: laterImage.name, exact: true }),
+  ).toBeVisible();
   await expect(
-    page.getByRole("img", { name: image.name, exact: true }),
+    page
+      .locator(".chat-message")
+      .nth(1)
+      .getByRole("img", { name: firstImage.name, exact: true }),
+  ).toBeVisible();
+  await page.goto(gridURL);
+  await page.getByRole("button", { name: "PUBLISH", exact: true }).click();
+  await finishPublishing(page);
+  await page.getByRole("button", { name: "FORK", exact: true }).click();
+  await page.reload();
+  await expect(page.getByLabel("Message 1", { exact: true })).toHaveValue("");
+  await expect(
+    page
+      .locator(".chat-message")
+      .nth(0)
+      .getByRole("img", { name: laterImage.name, exact: true }),
+  ).toBeVisible();
+  await expect(
+    page
+      .locator(".chat-message")
+      .nth(1)
+      .getByRole("img", { name: firstImage.name, exact: true }),
   ).toBeVisible();
 });

@@ -18,6 +18,7 @@ import { OutputFiles } from "./files.js";
 import { token } from "./ids.js";
 import { initializeDatabase } from "./database.js";
 import { expandPromptForTitle } from "./grid-title.js";
+import { selectedReferences } from "./image-settings.js";
 import { createWorkflow, projectWorkflow } from "./workflow.js";
 export type Session = {
   id: string;
@@ -188,12 +189,10 @@ export class Store {
           slug ?? null,
           createdAt,
         );
-      if (grid.input.inputReferences || grid.input.referenceGroups) {
-        const referenceIds = new Set<string>();
-        for (const reference of grid.input.inputReferences ?? [])
-          referenceIds.add(reference.id);
-        for (const group of Object.values(grid.input.referenceGroups ?? {}))
-          for (const reference of group) referenceIds.add(reference.id);
+      const referenceIds = new Set(
+        selectedReferences(grid.input).map((reference) => reference.id),
+      );
+      if (referenceIds.size) {
         const insertReference = this.db.prepare(
           "INSERT INTO grid_reference_images (grid_id, reference_id) VALUES (?,?)",
         );
@@ -400,7 +399,7 @@ export class Store {
     const { input } = JSON.parse(row.grid) as Pick<Grid, "input">;
     const generation = JSON.parse(row.generation) as Pick<
       Extract<WorkflowTask, { kind: "generation" }>,
-      "output" | "progress"
+      "input" | "output" | "progress"
     >;
     return {
       owner: row.owner,
@@ -408,6 +407,7 @@ export class Store {
       published: row.published === 1,
       format: input.format,
       generationId: row.generationId,
+      messages: generation.input.messages,
       thinkingId:
         generation.progress?.thinkingId ?? generation.output?.thinkingId,
       thinkingSourceId: row.thinkingSourceId ?? undefined,
@@ -439,6 +439,7 @@ export class Store {
       format: input.format,
       mediaType: output.mediaType,
       artifactId: output.artifactId!,
+      messages: output.messages,
       thinkingSourceId: output.thinkingSourceId,
     };
   }

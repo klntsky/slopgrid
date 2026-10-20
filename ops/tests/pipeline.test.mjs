@@ -15,7 +15,6 @@ import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
-import { createHash } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
 import { parseEnv } from "node:util";
@@ -42,6 +41,17 @@ import {
 } from "../lib/runtime.mjs";
 import { fixtureConfig } from "./config-fixture.mjs";
 import { referenceForeignKeyViolations } from "./reference-fixture.mjs";
+import {
+  discardFixture,
+  seedRetainedBackupSession,
+  backupSessions,
+  failDiscardGeneration,
+  discardSchemaVersion,
+  discardWorkflowTable,
+  discardCallColumns,
+  rejectGridDiscard,
+  setDiscardSchemaVersion,
+} from "./staging-grid-fixture.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 function directory(t) {
@@ -348,9 +358,7 @@ test("private environment and backups preserve sessions and outputs without shel
     Database = require("better-sqlite3");
   mkdirSync(dirname(env.DATABASE_PATH), { recursive: true });
   const db = new Database(env.DATABASE_PATH);
-  db.exec(
-    "CREATE TABLE sessions (id TEXT); INSERT INTO sessions VALUES ('retained');",
-  );
+  seedRetainedBackupSession(db);
   db.close();
   mkdirSync(join(env.OUTPUTS_PATH, ".previews"), { recursive: true });
   writeFileSync(join(env.OUTPUTS_PATH, "result.svg"), "<svg/>");
@@ -359,9 +367,7 @@ test("private environment and backups preserve sessions and outputs without shel
   const restored = new Database(join(saved, "slopgrid.sqlite"), {
     readonly: true,
   });
-  assert.deepEqual(restored.prepare("SELECT * FROM sessions").all(), [
-    { id: "retained" },
-  ]);
+  assert.deepEqual(backupSessions(restored), [{ id: "retained" }]);
   restored.close();
   assert.equal(
     readFileSync(join(saved, "outputs/result.svg"), "utf8"),
@@ -382,223 +388,6 @@ test("private environment and backups preserve sessions and outputs without shel
   );
   assert.equal(quoted.stdout, "space ' quote $(false)");
 });
-
-function discardFixture(t, version = 14) {
-  const root = directory(t);
-  const Database = createRequire(
-    join(process.env.SLOPGRID_TEST_APP, "package.json"),
-  )("better-sqlite3");
-  const selected = "a".repeat(48),
-    surviving = "b".repeat(48);
-  const sharedArtifact = "c".repeat(48),
-    removedArtifact = "d".repeat(48);
-  const sharedTrace = "4".repeat(48),
-    removedTrace = "5".repeat(48);
-  const sharedUpload = Buffer.from("shared reference upload");
-  const selectedUpload = Buffer.from("selected-only reference upload");
-  const sharedUploadSha256 = createHash("sha256")
-    .update(sharedUpload)
-    .digest("hex");
-  const selectedUploadSha256 = createHash("sha256")
-    .update(selectedUpload)
-    .digest("hex");
-  const makeEnvironment = (name) => {
-    const env = {
-      DATABASE_PATH: join(root, `${name}.sqlite`),
-      OUTPUTS_PATH: join(root, name),
-    };
-    mkdirSync(env.OUTPUTS_PATH);
-    const db = new Database(env.DATABASE_PATH);
-    db.pragma("foreign_keys=ON");
-    db.pragma(`user_version=${version}`);
-    db.exec(`
-      CREATE TABLE grids(id TEXT PRIMARY KEY,data TEXT NOT NULL);
-      CREATE TABLE cells(id TEXT PRIMARY KEY,grid_id TEXT REFERENCES grids(id) ON DELETE CASCADE,position INTEGER,data TEXT);
-      CREATE TABLE inference_calls(id TEXT PRIMARY KEY,cell_id TEXT REFERENCES cells(id),started_at INTEGER,data TEXT);
-      CREATE TABLE creation_requests(grid_id TEXT REFERENCES grids(id) ON DELETE CASCADE,request_id TEXT);
-      CREATE TABLE sessions(id TEXT PRIMARY KEY,data TEXT);
-    `);
-    if (version >= 13)
-      db.exec(`
-      ALTER TABLE grids ADD COLUMN owner TEXT;
-      ALTER TABLE grids ADD COLUMN owner_user_id TEXT;
-      ALTER TABLE grids ADD COLUMN published INTEGER;
-      ALTER TABLE grids ADD COLUMN visibility TEXT;
-      ALTER TABLE grids ADD COLUMN slug TEXT;
-      ALTER TABLE grids ADD COLUMN created_at TEXT;
-      ALTER TABLE sessions ADD COLUMN anonymous_id TEXT;
-      ALTER TABLE sessions ADD COLUMN created_at INTEGER;
-      ALTER TABLE inference_calls ADD COLUMN attempt_id TEXT;
-      ALTER TABLE inference_calls ADD COLUMN phase TEXT;
-      ALTER TABLE inference_calls ADD COLUMN status TEXT;
-      ALTER TABLE inference_calls ADD COLUMN cost_usd REAL;
-      CREATE TABLE grid_reference_images(grid_id TEXT REFERENCES grids(id) ON DELETE CASCADE,reference_id TEXT);
-    `);
-    if (version >= 14)
-      db.exec(`
-      CREATE TABLE workflow_tasks(id TEXT PRIMARY KEY,grid_id TEXT REFERENCES grids(id) ON DELETE CASCADE,kind TEXT,status TEXT,dependency_id TEXT REFERENCES workflow_tasks(id),artifact_id TEXT,thinking_source_id TEXT,data TEXT);
-      ALTER TABLE cells ADD COLUMN generation_id TEXT REFERENCES workflow_tasks(id);
-      ALTER TABLE cells ADD COLUMN judgment_id TEXT REFERENCES workflow_tasks(id);
-      ALTER TABLE inference_calls ADD COLUMN task_id TEXT REFERENCES workflow_tasks(id);
-    `);
-    if (version >= 15) {
-      db.exec(`
-        CREATE TABLE reference_blobs(sha256 TEXT PRIMARY KEY CHECK(length(sha256)=64)) STRICT;
-        CREATE TABLE reference_images(id TEXT PRIMARY KEY,owner TEXT NOT NULL,owner_user_id TEXT,name TEXT NOT NULL,media_type TEXT NOT NULL,sha256 TEXT REFERENCES reference_blobs(sha256)) STRICT;
-        CREATE INDEX reference_images_sha256 ON reference_images(sha256,id);
-      `);
-      mkdirSync(join(env.OUTPUTS_PATH, ".references"));
-      for (const [id, sha256, bytes] of [
-        ["retained-reference", sharedUploadSha256, sharedUpload],
-        ["selected-only-reference", selectedUploadSha256, selectedUpload],
-      ]) {
-        db.prepare("INSERT INTO reference_blobs VALUES (?)").run(sha256);
-        db.prepare("INSERT INTO reference_images VALUES (?,?,?,?,?,?)").run(
-          id,
-          "upload-session",
-          "upload-user",
-          `${id}.png`,
-          "image/png",
-          sha256,
-        );
-        writeFileSync(join(env.OUTPUTS_PATH, ".references", sha256), bytes);
-      }
-    }
-    db.prepare(
-      "INSERT INTO sessions (id,data) VALUES ('browser','retained-key')",
-    ).run();
-    for (const grid of [selected, surviving]) {
-      db.prepare("INSERT INTO grids (id,data) VALUES (?,?)").run(
-        grid,
-        JSON.stringify({
-          status: "complete",
-          owner: "owner",
-          ownerUserId: "user",
-          published: false,
-          visibility: "private",
-          createdAt: "2026-10-01",
-          input: { format: "svg" },
-        }),
-      );
-      if (version >= 13)
-        db.prepare(
-          "INSERT INTO grid_reference_images VALUES (?,'retained-reference')",
-        ).run(grid);
-    }
-    if (version >= 15)
-      db.prepare("INSERT INTO grid_reference_images VALUES (?,?)").run(
-        selected,
-        "selected-only-reference",
-      );
-    for (const [gridId, cell, position] of [
-      [selected, "1", 0],
-      [selected, "3", 1],
-      [surviving, "2", 0],
-    ]) {
-      const cellId = cell.repeat(48);
-      const artifact =
-        version >= 14
-          ? cell === "3"
-            ? removedArtifact
-            : sharedArtifact
-          : cellId;
-      const trace =
-        version >= 14 ? (cell === "3" ? removedTrace : sharedTrace) : cellId;
-      db.prepare(
-        "INSERT INTO cells (id,grid_id,position,data) VALUES (?,?,?,?)",
-      ).run(
-        cellId,
-        gridId,
-        position,
-        version >= 14 ? "{}" : JSON.stringify({ status: "complete" }),
-      );
-      db.prepare(
-        "INSERT INTO inference_calls (id,cell_id,started_at,data) VALUES (?,?,?,?)",
-      ).run(`call-${cell}`, cellId, position, `charge-${cell}`);
-      if (version >= 14) {
-        db.prepare(
-          "INSERT INTO workflow_tasks VALUES (?,?,'generation','complete',NULL,?,?,?)",
-        ).run(
-          `g:${cellId}`,
-          gridId,
-          artifact,
-          trace,
-          JSON.stringify({ output: { thinkingId: "trace" } }),
-        );
-        db.prepare(
-          "INSERT INTO workflow_tasks VALUES (?,?,'judge','complete',?,NULL,NULL,'{}')",
-        ).run(`j:${cellId}`, gridId, `g:${cellId}`);
-        db.prepare(
-          "UPDATE cells SET generation_id=?,judgment_id=? WHERE id=?",
-        ).run(`g:${cellId}`, `j:${cellId}`, cellId);
-        db.prepare("UPDATE inference_calls SET task_id=? WHERE cell_id=?").run(
-          `g:${cellId}`,
-          cellId,
-        );
-      }
-      db.prepare("INSERT INTO creation_requests VALUES (?,?)").run(
-        gridId,
-        `receipt-${cell}`,
-      );
-      mkdirSync(join(env.OUTPUTS_PATH, artifact), { recursive: true });
-      mkdirSync(join(env.OUTPUTS_PATH, ".thinking", trace), {
-        recursive: true,
-      });
-      writeFileSync(
-        join(env.OUTPUTS_PATH, artifact, "index.svg"),
-        `output-${artifact}`,
-      );
-      writeFileSync(
-        join(env.OUTPUTS_PATH, ".thinking", trace, "trace.txt"),
-        `thinking-${trace}`,
-      );
-    }
-    db.close();
-    return env;
-  };
-  const env = makeEnvironment("staging"),
-    production = makeEnvironment("production");
-  const read = (source) => {
-    const db = new Database(source.DATABASE_PATH, { readonly: true });
-    try {
-      const tables = [
-        "grids",
-        "cells",
-        "inference_calls",
-        "creation_requests",
-        "sessions",
-      ];
-      if (version >= 13) tables.push("grid_reference_images");
-      if (version >= 14) tables.push("workflow_tasks");
-      if (version >= 15) tables.push("reference_images", "reference_blobs");
-      return Object.fromEntries(
-        tables.map((table) => [
-          table,
-          db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all(),
-        ]),
-      );
-    } finally {
-      db.close();
-    }
-  };
-  return {
-    root,
-    env,
-    production,
-    read,
-    Database,
-    selected,
-    surviving,
-    sharedArtifact,
-    removedArtifact,
-    sharedTrace,
-    removedTrace,
-    sharedUpload,
-    selectedUpload,
-    sharedUploadSha256,
-    selectedUploadSha256,
-  };
-}
 
 test("v14 discard removes selected tasks and ledger while preserving shared artifacts, traces, sessions and production", (t) => {
   const f = discardFixture(t);
@@ -669,26 +458,16 @@ test("v14 discard removes selected tasks and ledger while preserving shared arti
       /ENOENT/,
     );
   const db = new f.Database(f.env.DATABASE_PATH);
-  assert.equal(db.pragma("user_version", { simple: true }), 14);
-  assert.deepEqual(db.pragma("foreign_key_check"), []);
+  assert.equal(discardSchemaVersion(db), 14);
+  assert.deepEqual(referenceForeignKeyViolations(db), []);
   db.close();
 });
 
 test("v14 discard collects failed generation traces even without committed artifacts", (t) => {
   const f = discardFixture(t),
     db = new f.Database(f.env.DATABASE_PATH);
-  db.prepare(
-    "UPDATE workflow_tasks SET status='error',artifact_id=NULL,data=? WHERE id=?",
-  ).run(
-    JSON.stringify({ progress: { thinkingId: "trace" } }),
-    `g:${"3".repeat(48)}`,
-  );
-  db.prepare(
-    "UPDATE workflow_tasks SET status='error',artifact_id=NULL,data=? WHERE id=?",
-  ).run(
-    JSON.stringify({ progress: { thinkingId: "trace" } }),
-    `g:${"2".repeat(48)}`,
-  );
+  failDiscardGeneration(db, `g:${"3".repeat(48)}`);
+  failDiscardGeneration(db, `g:${"2".repeat(48)}`);
   db.close();
   discardStagingGrids(
     "staging",
@@ -785,20 +564,13 @@ test("pre-migration v12/v13 discard follows backup without migrating or fabricat
         before,
       );
       const db = new f.Database(f.env.DATABASE_PATH);
-      assert.equal(db.pragma("user_version", { simple: true }), version);
+      assert.equal(discardSchemaVersion(db), version);
+      assert.equal(discardWorkflowTable(db), undefined);
       assert.equal(
-        db
-          .prepare("SELECT 1 FROM sqlite_master WHERE name='workflow_tasks'")
-          .get(),
-        undefined,
-      );
-      assert.equal(
-        db
-          .pragma("table_info(inference_calls)")
-          .some((column) => column.name === "task_id"),
+        discardCallColumns(db).some((column) => column.name === "task_id"),
         false,
       );
-      assert.deepEqual(db.pragma("foreign_key_check"), []);
+      assert.deepEqual(referenceForeignKeyViolations(db), []);
       db.close();
       const remaining = f.read(f.env);
       assert.deepEqual(
@@ -864,9 +636,7 @@ test("grid discard rejects production aliases and rolls back failed deletion bef
     /not found/,
   );
   const db = new f.Database(f.env.DATABASE_PATH);
-  db.exec(
-    "CREATE TRIGGER reject BEFORE DELETE ON grids BEGIN SELECT RAISE(ABORT,'controlled deletion failure'); END",
-  );
+  rejectGridDiscard(db);
   db.close();
   assert.throws(
     () => invoke("staging", f.production),
@@ -895,7 +665,7 @@ test("discard refuses unknown schemas and symlinked trace ancestors without chan
         );
       } else {
         const db = new f.Database(f.env.DATABASE_PATH);
-        db.pragma(`user_version=${reason === "schema11" ? 11 : 999}`);
+        setDiscardSchemaVersion(db, reason === "schema11" ? 11 : 999);
         db.close();
       }
       const productionBefore = f.read(f.production);

@@ -260,6 +260,10 @@ test("every chat control works from the keyboard, including an empty history", a
     page.getByRole("button", { name: "Remove message 1", exact: true }),
   ).toBeFocused();
   await page.keyboard.press("Tab");
+  await expect(
+    page.getByLabel("Add images to message 1", { exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("Tab");
   await expect(page.locator(".chat-append")).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(page.getByLabel("Message 2", { exact: true })).toBeFocused();

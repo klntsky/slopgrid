@@ -146,9 +146,10 @@ generation or judging attempts; bytes never enter grid snapshots.
 
 Committed generation can be reused by Edit/Fork when a source is accessible and
 its prepared request matches the destination. A signature captures request
-semantics, including ordered reference content, while a token ceiling check
-protects text reuse. Reuse creates a new generation task referencing the same
-immutable artifact and saved usage. Judgment tasks are always independent.
+semantics, including message position and ordered reference content, while a
+token ceiling check protects text reuse. Reuse creates a new generation task
+referencing the same immutable artifact and saved usage. Judgment tasks are
+always independent.
 
 ## Workflow and content execution
 
@@ -192,11 +193,17 @@ streaming preview generation and committed output storage. Content-preservation
 requirements are defined in
 [PRODUCT.md](PRODUCT.md#51-shared-controls-and-output-preservation).
 
-Chat completion retains the `chat-template` storage identifier and stores and
-streams the completed message array as a JSON artifact. Chat inputs retain
-ordered messages, and grid expansion substitutes variables in each message body.
-Request preparation and artifact loading share the input-only chat message
-representation. Provider-specific cache annotations stay at the request
+Chat completion retains the `chat-template` storage identifier. Ordered input
+messages own their user-message attachment references, and grid expansion
+substitutes variables in message bodies. Generation retains attachments in live
+progress but writes only roles and text into immutable conversation artifacts.
+Output projection and judge artifact loading combine the artifact with the
+current task's input attachments, so reused artifacts do not carry another
+grid's upload IDs or filenames.
+
+Request preparation resolves attachment IDs into input-only file parts at their
+original message positions. Request preparation and artifact loading share this
+chat representation. Provider-specific cache annotations stay at the request
 preparation boundary.
 
 Generation attempts are the shared content-execution boundary for every output

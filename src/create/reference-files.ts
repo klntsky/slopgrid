@@ -1,4 +1,4 @@
-import type { GridInput } from "../../server/domain";
+import { isChatFormat, type GridInput } from "../../server/domain";
 import type { ReferenceImage } from "../../server/image-settings";
 
 // Files stay in this browser across reloads and OAuth redirects until Generate.
@@ -47,15 +47,28 @@ export async function uploadReferences(
   uploaded: (localId: string, image: ReferenceImage) => void,
   signal: AbortSignal,
 ): Promise<GridInput> {
-  const names = [input.rows, input.columns]
-    .filter((axis) => axis.kind === "input_references")
-    .flatMap((axis) => axis.values);
+  const names =
+    input.format === "image"
+      ? [input.rows, input.columns]
+          .filter((axis) => axis.kind === "input_references")
+          .flatMap((axis) => axis.values)
+      : [];
   const groups = Object.fromEntries(
     names.map((name) => [name, [...input.referenceGroups![name]]]),
   );
-  const inputReferences = [...(input.inputReferences ?? [])];
+  const inputReferences =
+    input.format === "image" ? [...(input.inputReferences ?? [])] : undefined;
+  const messages = input.messages?.map((message) => ({
+    ...message,
+    ...(message.images && { images: [...message.images] }),
+  }));
+  const references = isChatFormat(input.format)
+    ? (messages ?? []).flatMap((message) =>
+        message.images ? [message.images] : [],
+      )
+    : [...Object.values(groups), ...(inputReferences ? [inputReferences] : [])];
   const replacements = new Map<string, ReferenceImage>();
-  for (const images of [...Object.values(groups), inputReferences]) {
+  for (const images of references) {
     for (let index = 0; index < images.length; index++) {
       const image = images[index];
       if (!image.id.startsWith("local-")) continue;
@@ -90,5 +103,10 @@ export async function uploadReferences(
       images[index] = saved;
     }
   }
-  return { ...input, referenceGroups: groups, inputReferences };
+  return {
+    ...input,
+    messages,
+    referenceGroups: input.format === "image" ? groups : undefined,
+    inputReferences,
+  };
 }

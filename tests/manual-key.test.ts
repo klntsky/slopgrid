@@ -6,6 +6,10 @@ import { once } from "node:events";
 import { Provider } from "../server/provider.js";
 import { token } from "../server/ids.js";
 import type { Cell, GridInput, InferenceProgress } from "../server/domain.js";
+import {
+  storedSessionIds,
+  storedSessionPayloads,
+} from "./session-storage-fixture.js";
 
 for (const format of ["markdown", "image"] as const) {
   test(`manual keys for ${format} stay out of SQLite, serve queued cells, and require resending after Pause`, async (t) => {
@@ -72,8 +76,7 @@ for (const format of ["markdown", "image"] as const) {
       created: 1,
     });
     const existingSessions = new Set(
-      (store.db.prepare("SELECT id FROM sessions").all() as { id: string }[])
-        .map((row) => row.id),
+      storedSessionIds(store.db).map((row) => row.id),
     );
     let gridId: string | undefined;
     try {
@@ -144,13 +147,11 @@ for (const format of ["markdown", "image"] as const) {
         headers: { Cookie: cookie },
       });
       assert.deepEqual(await session.json(), { connected: false, user: null });
-      const rows = store.db.prepare("SELECT id, data FROM sessions").all() as {
-        id: string;
-        data: string;
-      }[];
+      const rows = storedSessionPayloads(store.db);
       assert.equal(
         rows.some(
-          (row) => !existingSessions.has(row.id) &&
+          (row) =>
+            !existingSessions.has(row.id) &&
             Object.hasOwn(JSON.parse(row.data), "key"),
         ),
         false,

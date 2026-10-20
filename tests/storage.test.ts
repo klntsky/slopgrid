@@ -20,6 +20,11 @@ import {
   referenceForeignKeyViolations,
   restoreV14ReferenceSchema,
 } from "./reference-storage-fixture.js";
+import { holdDatabaseWrites } from "./database-lock.js";
+import {
+  removeStoredGrid,
+  rejectStoredGridUpdates,
+} from "./grid-storage-fixture.js";
 
 test("an initialized store opens for reads while another connection holds the write lock", () => {
   const dir = mkdtempSync(join(tmpdir(), "slopgrid-store-lock-"));
@@ -27,14 +32,15 @@ test("an initialized store opens for reads while another connection holds the wr
   const secret = Buffer.alloc(32, 1);
   const writer = new Store(database, secret);
   let reader: Store | undefined;
+  let unlock = () => {};
   try {
     writer.saveSession({ id: "browser", created: 1 });
-    writer.db.exec("BEGIN IMMEDIATE");
+    unlock = holdDatabaseWrites(writer);
     reader = new Store(database, secret);
     assert.deepEqual(reader.session("browser"), { id: "browser", created: 1 });
   } finally {
     reader?.db.close();
-    if (writer.db.inTransaction) writer.db.exec("ROLLBACK");
+    unlock();
     writer.db.close();
     rmSync(dir, { recursive: true, force: true });
   }
@@ -117,9 +123,7 @@ test("list prompts are expanded and truncated once, then persist independently o
         store.get(`grid-${index}`)!.expanded_prompt_for_title,
         scenario.expected,
       );
-    store.db.exec(
-      "CREATE TRIGGER no_recompute BEFORE UPDATE ON grids BEGIN SELECT RAISE(ABORT, 'must not recompute'); END",
-    );
+    rejectStoredGridUpdates(store.db);
     store.db.close();
     store = new Store(database, secret);
     assert.equal(
@@ -298,7 +302,7 @@ test("shared artifact and independent trace references survive deletion until th
     }
     assert.equal(store.files.removeArtifact(artifactId), false);
     assert.equal(store.files.removeArtifact(thinkingSourceId), false);
-    store.db.prepare("DELETE FROM grids WHERE id=?").run(grids[0].id);
+    removeStoredGrid(store.db, grids[0].id);
     assert.equal(store.removeUnreferencedArtifact(artifactId), false);
     assert.equal(store.removeUnreferencedArtifact(thinkingSourceId), false);
     assert.deepEqual({ ...(await store.files.bundle(artifactId)) }, expected);
@@ -313,7 +317,7 @@ test("shared artifact and independent trace references survive deletion until th
       store.outputMetadata(grids[1].cells[0].id)?.artifactId,
       artifactId,
     );
-    store.db.prepare("DELETE FROM grids WHERE id=?").run(grids[1].id);
+    removeStoredGrid(store.db, grids[1].id);
     assert.equal(store.removeUnreferencedArtifact(artifactId), true);
     assert.equal(store.removeUnreferencedArtifact(thinkingSourceId), true);
     assert.equal(await store.files.hasArtifact(artifactId, inventory), false);
@@ -347,13 +351,18 @@ for (const available of [true, false])
       const unavailable = store.references.add(png, "unavailable.png", owner)!;
       const input = gridSchema.parse({
         format: "chat-template",
-        messages: [{ role: "user", content: "Describe these images" }],
+        messages: [
+          {
+            role: "user",
+            content: "Describe these images",
+            images: [first, second, unavailable],
+          },
+        ],
         rows: { kind: "effort", values: ["none"] },
         columns: { kind: "model", values: ["fixture/text"] },
         model: "fixture/text",
         effort: "none",
         budgetUsd: 1,
-        inputReferences: [first, second, unavailable],
       });
       const grid: Grid = {
         id: token(),
@@ -445,13 +454,14 @@ for (const available of [true, false])
       assert.equal(store.references.path(unavailable.id), undefined);
       store.db.close();
       store = new Store(database, secret);
-      assert.deepEqual(await store.references.loader()([unavailable.id]), [
+      assert.deepEqual(
+        (await store.references.loader()([unavailable.id])).get(unavailable.id),
         {
           bytes: png,
           mediaType: "image/png",
           sha256: createHash("sha256").update(png).digest("hex"),
         },
-      ]);
+      );
       assert.equal(
         existsSync(join(store.files.root, `reference-${unavailable.id}`)),
         false,

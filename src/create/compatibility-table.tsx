@@ -174,29 +174,22 @@ function ChatImageCompatibility({
   input: GridInput;
   models: readonly SelectedModel[];
 }) {
-  const groups = [input.rows, input.columns].find(
-    (axis) => axis.kind === "input_references",
-  )?.values;
-  const columns = (groups ?? [undefined]).map((group) => ({
-    label: group ?? `${input.inputReferences?.length ?? 0} images`,
-    hasImages: Boolean(
-      group
-        ? input.referenceGroups?.[group]?.length
-        : input.inputReferences?.length,
-    ),
-  }));
-  const cells = models.map(({ info }) =>
-    columns.map<Compatibility>(({ hasImages }) => {
-      if (!hasImages) return { support: "supported" };
-      if (!info) return { support: "unknown" };
-      return { support: info.imageInput ? "supported" : "unsupported" };
-    }),
+  const count = (input.messages ?? []).reduce(
+    (total, message) => total + (message.images?.length ?? 0),
+    0,
   );
+  const cells = models.map<Compatibility[]>(({ info }) => [
+    count === 0
+      ? { support: "supported" }
+      : !info
+        ? { support: "unknown" }
+        : { support: info.imageInput ? "supported" : "unsupported" },
+  ]);
   return (
     <CompatibilityGrid
-      caption={`${imageParameterNames.input_references} compatibility`}
+      caption="Chat image attachment compatibility"
       rows={models.map(({ id, info }) => info?.name ?? id)}
-      columns={columns.map(({ label }) => label)}
+      columns={[`${count} attached images`]}
       cells={cells}
     />
   );

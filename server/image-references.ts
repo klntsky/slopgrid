@@ -8,6 +8,7 @@ export type ReferenceContent = {
   mediaType: string;
   sha256: string;
 };
+export type ReferenceInputs = ReadonlyMap<string, ReferenceContent>;
 import type { OutputFiles } from "./files.js";
 import type { Session } from "./store.js";
 import { anonymousOwner } from "./session.js";
@@ -151,9 +152,10 @@ export function createImageReferences(
           sha256: reference.sha256,
         };
       }
-      return (ids: readonly string[]) =>
-        Promise.all(
-          ids.map((id) => {
+      return async (ids: readonly string[]): Promise<ReferenceInputs> => {
+        const images = new Map<string, ReferenceContent>();
+        await Promise.all(
+          ids.map(async (id) => {
             let pending = cache.get(id);
             if (!pending) {
               pending = read(id).catch((error) => {
@@ -162,9 +164,11 @@ export function createImageReferences(
               });
               cache.set(id, pending);
             }
-            return pending;
+            images.set(id, await pending);
           }),
         );
+        return images;
+      };
     },
   };
 }

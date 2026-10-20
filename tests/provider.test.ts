@@ -274,9 +274,9 @@ test("chat templates fill blanks sequentially and complete trailing history", as
   }
 });
 
-test("chat images reach every sequential SDK call without changing the transcript", async () => {
+test("chat images stay on their user turns through long sequential SDK requests", async () => {
   const h = await upstream();
-  const references = Array.from({ length: 5 }, (_, index) => {
+  const images = Array.from({ length: 6 }, (_, index) => {
     const bytes = Buffer.from(`image ${index}`);
     return {
       bytes,
@@ -284,88 +284,206 @@ test("chat images reach every sequential SDK call without changing the transcrip
       sha256: createHash("sha256").update(bytes).digest("hex"),
     };
   });
+  const attachments = images.map((_, index) => ({
+    id: `image-${index}`,
+    name: `${index}.png`,
+  }));
+  // Loader completion order is unrelated to message or attachment order.
+  const references = new Map(
+    images
+      .map((image, index) => [attachments[index].id, image] as const)
+      .reverse(),
+  );
   try {
-    for (const role of ["user", "system", "assistant"] as const) {
-      const messages: NonNullable<Cell["messages"]> = [
-        { role, content: "Describe these images" },
-        { role: "unfilled", content: "" },
-        ...Array.from({ length: 25 }, (_, index) => ({
-          role: "user" as const,
-          content: `Follow-up ${index}`,
-        })),
-        { role: "unfilled", content: "" },
-      ];
-      const parameters = { ...cell("all", "default"), messages };
-      const start = h.requests.length;
-      const result = await generateAttempt(
-        h.provider,
-        "key",
-        "chat-template",
-        parameters,
-        "image-template",
-        () => {},
-        {},
-        references,
-      );
-      for (const request of h.requests.slice(start)) {
-        assert.deepEqual(request.modalities, ["text"]);
-        const wire = request.messages as {
-          role: string;
-          content: string | { type: string; image_url?: { url: string } }[];
-        }[];
-        const imageMessage = wire[0];
-        assert.equal(imageMessage.role, "user");
-        assert.deepEqual(
-          (
-            imageMessage.content as {
+    const messages: NonNullable<Cell["messages"]> = [
+      { role: "system", content: "Keep the supplied conversation." },
+      { role: "user", content: "", images: [attachments[0]] },
+      { role: "assistant", content: "A supplied answer." },
+      { role: "user", content: "First question." },
+      { role: "unfilled", content: "" },
+      ...Array.from({ length: 25 }, (_, index) => ({
+        role: "user" as const,
+        content: `Follow-up ${index}`,
+        ...(index < 5 ? { images: [attachments[index + 1]] } : {}),
+      })),
+      { role: "unfilled", content: "" },
+    ];
+    const parameters = { ...cell("all", "default"), messages };
+    const updates: InferenceProgress[] = [];
+    const result = await generateAttempt(
+      h.provider,
+      "key",
+      "chat-template",
+      parameters,
+      "image-template",
+      (progress) => updates.push(progress),
+      {},
+      references,
+    );
+    assert.equal(h.requests.length, 2);
+    const histories: NonNullable<Cell["messages"]>[] = [
+      messages.slice(0, 4),
+      [
+        ...messages.slice(0, 4),
+        { role: "assistant", content: "# Output" },
+        ...messages.slice(5, -1),
+      ],
+    ];
+    for (const [requestIndex, request] of h.requests.entries()) {
+      assert.deepEqual(request.modalities, ["text"]);
+      assert.equal(request.session_id, "image-template");
+      const wire = request.messages as {
+        role: string;
+        content:
+          | string
+          | {
               type: string;
+              text?: string;
               image_url?: { url: string };
-            }[]
-          )
-            .filter((part) => part.type === "image_url")
-            .map((part) => part.image_url?.url),
-          references.map(
-            (r) => `data:${r.mediaType};base64,${r.bytes.toString("base64")}`,
-          ),
+              cache_control?: { type: string };
+            }[];
+      }[];
+      const expected = histories[requestIndex];
+      assert.equal(wire.length, expected.length);
+      const imageCheckpoints: number[] = [];
+      const boundaries: number[] = [];
+      let markers = 0;
+      for (const [index, message] of wire.entries()) {
+        assert.equal(message.role, expected[index].role);
+        const parts =
+          typeof message.content === "string" ? [] : message.content;
+        const files = parts.filter((part) => part.type === "image_url");
+        assert.deepEqual(
+          files.map((part) => part.image_url!.url),
+          expected[index].images?.map(({ id }) => {
+            const image = references.get(id)!;
+            return `data:${image.mediaType};base64,${image.bytes.toString("base64")}`;
+          }) ?? [],
         );
-        const imageParts = (
-          imageMessage.content as {
-            type: string;
-            cache_control?: { type: string };
-          }[]
-        ).filter((part) => part.type === "image_url");
-        assert.deepEqual(imageParts.at(-1)!.cache_control, {
-          type: "ephemeral",
-        });
-        let breakpoints = 0;
-        for (const message of wire)
-          if (Array.isArray(message.content))
-            for (const part of message.content)
-              if ("cache_control" in part) breakpoints++;
-        assert.ok(
-          breakpoints <= 4,
-          "OpenRouter allows at most four breakpoints",
+        assert.equal(
+          typeof message.content === "string"
+            ? message.content
+            : parts.map((part) => part.text ?? "").join(""),
+          expected[index].content,
         );
-        if (role !== "user") assert.equal(wire[1].role, role);
+        for (const part of parts)
+          if (part.cache_control) {
+            markers++;
+            (part.type === "image_url" ? imageCheckpoints : boundaries).push(
+              index,
+            );
+          }
       }
-      assert.equal(h.requests.length - start, 2);
-      assert.deepEqual(JSON.parse(result.files["messages.json"] as string), [
-        messages[0],
-        { role: "assistant", content: "# Output" },
-        ...messages.slice(2, -1),
-        { role: "assistant", content: "# Output" },
-      ]);
-      assert.equal(result.signature, templateSignature(parameters, references));
-      assert.notEqual(result.signature, templateSignature(parameters));
-      assert.notEqual(
-        result.signature,
-        templateSignature(parameters, [...references].reverse()),
-      );
-      assert.notEqual(
-        result.signature,
-        templateSignature(parameters, [references[0]]),
-      );
+      assert.deepEqual(imageCheckpoints, requestIndex ? [1, 9] : [1]);
+      assert.deepEqual(boundaries, requestIndex ? [3, 29] : [3]);
+      assert.ok(markers <= 4, "OpenRouter allows at most four block markers");
     }
+    const completed = [
+      ...histories[1],
+      { role: "assistant", content: "# Output" },
+    ];
+    assert.deepEqual(JSON.parse(updates.at(-1)!.text), completed);
+    assert.deepEqual(
+      JSON.parse(result.files["messages.json"] as string),
+      completed.map(({ role, content }) => ({ role, content })),
+    );
+    assert.equal(result.signature, templateSignature(parameters, references));
+  } finally {
+    await h.close();
+  }
+});
+
+test("chat reuse signatures use attachment positions and ordered content, not upload metadata", () => {
+  const first = {
+    bytes: Buffer.from("first"),
+    mediaType: "image/png",
+    sha256: "first",
+  };
+  const second = {
+    bytes: Buffer.from("second"),
+    mediaType: "image/jpeg",
+    sha256: "second",
+  };
+  const references = new Map([
+    ["first", first],
+    ["copy", first],
+    ["second", second],
+  ]);
+  const parameters = {
+    ...cell("all", "default"),
+    messages: [
+      {
+        role: "user" as const,
+        content: "Inspect.",
+        images: [
+          { id: "first", name: "first.png" },
+          { id: "second", name: "second.jpg" },
+        ],
+      },
+      { role: "assistant" as const, content: "Supplied answer." },
+      { role: "user" as const, content: "Inspect." },
+    ],
+  };
+  const signature = templateSignature(parameters, references);
+  const renamed = structuredClone(parameters);
+  renamed.messages[0].images![0] = { id: "copy", name: "renamed.png" };
+  assert.equal(templateSignature(renamed, references), signature);
+  assert.equal(
+    templateSignature(parameters, new Map([...references].reverse())),
+    signature,
+  );
+  const reordered = structuredClone(parameters);
+  reordered.messages[0].images!.reverse();
+  assert.notEqual(templateSignature(reordered, references), signature);
+  const moved = structuredClone(parameters);
+  moved.messages[2].images = moved.messages[0].images;
+  delete moved.messages[0].images;
+  assert.notEqual(templateSignature(moved, references), signature);
+  assert.notEqual(
+    templateSignature(
+      parameters,
+      new Map([
+        ...references,
+        ["first", { ...first, mediaType: "image/jpeg" }],
+      ]),
+    ),
+    signature,
+  );
+  assert.throws(() => templateSignature(parameters), /unavailable/);
+});
+
+test("Image preparation follows selected IDs in order and preserves duplicates", async () => {
+  const h = await upstream();
+  try {
+    const first = {
+      bytes: Buffer.from("first"),
+      mediaType: "image/png",
+      sha256: "first",
+    };
+    const second = {
+      bytes: Buffer.from("second"),
+      mediaType: "image/png",
+      sha256: "second",
+    };
+    const prepared = await h.provider.prepare(
+      "image",
+      {
+        ...cell("image", "default"),
+        imageSettings: { input_references: ["second", "first", "second"] },
+      },
+      new Map([
+        ["first", first],
+        ["second", second],
+      ]),
+    );
+    assert.equal(prepared.format, "image");
+    if (prepared.format !== "image")
+      throw new Error("Expected Image preparation");
+    assert.deepEqual(prepared.image.input_references, [second, first, second]);
+    assert.equal(
+      prepared.image.input_references![0],
+      prepared.image.input_references![2],
+    );
   } finally {
     await h.close();
   }
@@ -374,13 +492,16 @@ test("chat images reach every sequential SDK call without changing the transcrip
 test("different user questions share an explicitly cached image prefix", async () => {
   const h = await upstream();
   const bytes = Buffer.from("shared image");
-  const references = [
-    {
-      bytes,
-      mediaType: "image/png",
-      sha256: createHash("sha256").update(bytes).digest("hex"),
-    },
-  ];
+  const references = new Map([
+    [
+      "shared",
+      {
+        bytes,
+        mediaType: "image/png",
+        sha256: createHash("sha256").update(bytes).digest("hex"),
+      },
+    ],
+  ]);
   try {
     for (const question of ["Describe the colors.", "Describe the shapes."])
       await generateAttempt(
@@ -391,7 +512,11 @@ test("different user questions share an explicitly cached image prefix", async (
           ...cell("all", "default"),
           messages: [
             { role: "system", content: "Inspect the supplied image." },
-            { role: "user", content: question },
+            {
+              role: "user",
+              content: question,
+              images: [{ id: "shared", name: "shared.png" }],
+            },
           ],
         },
         question,

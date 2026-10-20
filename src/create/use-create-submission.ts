@@ -20,6 +20,7 @@ export function useCreateSubmission({
 }) {
   const [validationError, setError] = useState("");
   const [uploads, setUploads] = useState(0);
+  const pendingUploads = useRef(0);
   const uploading = uploads > 0;
   const uploadController = useRef<AbortController | undefined>(undefined);
   useEffect(() => () => uploadController.current?.abort(), []);
@@ -35,14 +36,16 @@ export function useCreateSubmission({
   const busy = inference.isPending;
 
   function onUploading(busy: boolean) {
-    setUploads((count) => count + (busy ? 1 : -1));
+    pendingUploads.current += busy ? 1 : -1;
+    setUploads(pendingUploads.current);
   }
   function reset() {
     setError("");
     inference.reset();
   }
   async function generate(continueWithLowBalance = false) {
-    if (blocked || uploading || busy || uploadController.current) return;
+    if (blocked || pendingUploads.current || busy || uploadController.current)
+      return;
     const parsed = gridSchema.safeParse({
       ...draft.input,
       parallelWorkers,

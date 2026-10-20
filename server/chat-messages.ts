@@ -1,5 +1,5 @@
 import type { ChatMessage, FilledChatMessage } from "./domain.js";
-import type { ReferenceContent } from "./image-references.js";
+import type { ReferenceInputs } from "./image-references.js";
 
 export type ChatInputMessage =
   | FilledChatMessage
@@ -13,36 +13,28 @@ export type ChatInputMessage =
 
 export function chatMessages(
   history: readonly ChatMessage[],
-  images: readonly ReferenceContent[] = [],
-  template: readonly ChatMessage[] = history,
+  references?: ReferenceInputs,
 ): ChatInputMessage[] {
-  const messages: ChatInputMessage[] = history.map(({ role, content }) => {
+  return history.map(({ role, content, images }) => {
     if (role === "unfilled")
       throw new Error("Unfilled messages must be expanded before inference.");
-    return { role, content };
+    if (!images?.length) return { role, content };
+    if (role !== "user")
+      throw new Error("Only user messages support image inputs.");
+    return {
+      role,
+      content: [
+        ...images.map(({ id }) => {
+          const image = references?.get(id);
+          if (!image) throw new Error("Reference image is unavailable");
+          return {
+            type: "file" as const,
+            data: image.bytes,
+            mediaType: image.mediaType,
+          };
+        }),
+        ...(content ? [{ type: "text" as const, text: content }] : []),
+      ],
+    };
   });
-  if (!images.length) return messages;
-  let index = -1;
-  for (let i = 0; i < template.length; i++) {
-    if (template[i].role === "unfilled") break;
-    if (template[i].role === "user") {
-      index = i;
-      break;
-    }
-  }
-  const text = index < 0 ? "" : history[index].content;
-  const user: ChatInputMessage = {
-    role: "user",
-    content: [
-      ...images.map(({ bytes, mediaType }) => ({
-        type: "file" as const,
-        data: bytes,
-        mediaType,
-      })),
-      ...(text ? [{ type: "text" as const, text }] : []),
-    ],
-  };
-  if (index < 0) messages.unshift(user);
-  else messages[index] = user;
-  return messages;
 }

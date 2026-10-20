@@ -21,61 +21,34 @@ export function ReferenceGroups({
   onChange: (values: string[], groups?: Groups) => void;
   onBusy: (busy: boolean) => void;
 }) {
-  const [busy, setBusy] = useState(false),
-    [error, setError] = useState("");
-  const mounted = useRef(true);
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
-  async function select(files: FileList | null, group?: string) {
-    if (!files?.length) return;
-    const selected = Array.from(files);
-    setBusy(true);
-    onBusy(true);
-    setError("");
-    try {
-      const images = await Promise.all(selected.map(saveReferenceFile));
-      if (!mounted.current) return;
-      let index = 1;
-      while (Object.hasOwn(groups, `Group ${index}`)) index++;
-      const name = group ?? `Group ${index}`;
-      onChange(group ? values : [...values, name], {
-        [name]: [...(group ? groups[group] : []), ...images],
-      });
-    } catch {
-      if (mounted.current)
-        setError("Could not keep these files in browser storage.");
-    } finally {
-      setBusy(false);
-      onBusy(false);
-    }
+  const [busy, setBusy] = useState(false);
+  function reading(busy: boolean) {
+    setBusy(busy);
+    onBusy(busy);
   }
   function picker(group?: string) {
     return (
-      <label className="button secondary reference-upload">
-        {group && <Paperclip aria-hidden="true" />}
-        {group ? "Add images" : "Add reference group"}
-        <input
-          type="file"
-          multiple
-          accept="image/png,image/jpeg,image/webp"
-          aria-label={
-            shared
-              ? "Add input references"
-              : group
-                ? `Add images to ${group}`
-                : "Add reference group"
-          }
-          disabled={busy}
-          onChange={(event) => {
-            void select(event.target.files, group);
-            event.target.value = "";
-          }}
-        />
-      </label>
+      <ReferencePicker
+        label={group ? "Add images" : "Add reference group"}
+        accessibleLabel={
+          shared
+            ? "Add input references"
+            : group
+              ? `Add images to ${group}`
+              : "Add reference group"
+        }
+        icon={!!group}
+        disabled={busy}
+        onBusy={reading}
+        onSelect={(images) => {
+          let index = 1;
+          while (Object.hasOwn(groups, `Group ${index}`)) index++;
+          const name = group ?? `Group ${index}`;
+          onChange(group ? values : [...values, name], {
+            [name]: [...(group ? groups[group] : []), ...images],
+          });
+        }}
+      />
     );
   }
   return (
@@ -118,34 +91,122 @@ export function ReferenceGroups({
               </button>
             </div>
           )}
-          <div className="reference-images">
-            {(groups[name] ?? []).map((image, index) => (
-              <div className="reference-image" key={`${image.id}-${index}`}>
-                <ReferencePreview image={image} />
-                <span>{image.name}</span>
-                <button
-                  type="button"
-                  className="text-button"
-                  disabled={busy}
-                  aria-label={`Remove ${image.name} from ${name}`}
-                  onClick={() => {
-                    const remaining = groups[name].filter(
-                      (_, position) => position !== index,
-                    );
-                    onChange(values, { [name]: remaining });
-                  }}
-                >
-                  <X aria-hidden="true" />
-                </button>
-              </div>
-            ))}
-          </div>
+          <ReferenceImageList
+            images={groups[name] ?? []}
+            disabled={busy}
+            removeLabel={(image) => `Remove ${image.name} from ${name}`}
+            onRemove={(index) =>
+              onChange(values, {
+                [name]: groups[name].filter(
+                  (_, position) => position !== index,
+                ),
+              })
+            }
+          />
           {picker(name)}
         </div>
       ))}
       {!shared && picker()}
+    </div>
+  );
+}
+
+export function ReferencePicker({
+  label = "Add images",
+  accessibleLabel = label,
+  icon = true,
+  disabled = false,
+  onSelect,
+  onBusy,
+}: {
+  label?: string;
+  accessibleLabel?: string;
+  icon?: boolean;
+  disabled?: boolean;
+  onSelect: (images: ReferenceImage[]) => void;
+  onBusy: (busy: boolean) => void;
+}) {
+  const [busy, setBusy] = useState(false),
+    [error, setError] = useState("");
+  const mounted = useRef(true);
+  const reading = useRef(false);
+  const selected = useRef(onSelect);
+  selected.current = onSelect;
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  async function select(files: FileList | null) {
+    if (!files?.length || reading.current || disabled) return;
+    reading.current = true;
+    setBusy(true);
+    onBusy(true);
+    setError("");
+    try {
+      const images = await Promise.all(Array.from(files, saveReferenceFile));
+      if (mounted.current) selected.current(images);
+    } catch {
+      if (mounted.current)
+        setError("Could not keep these files in browser storage.");
+    } finally {
+      reading.current = false;
+      if (mounted.current) setBusy(false);
+      onBusy(false);
+    }
+  }
+  return (
+    <>
+      <label className="button secondary reference-upload">
+        {icon && <Paperclip aria-hidden="true" />}
+        {label}
+        <input
+          type="file"
+          multiple
+          accept="image/png,image/jpeg,image/webp"
+          aria-label={accessibleLabel}
+          disabled={disabled || busy}
+          onChange={(event) => {
+            void select(event.target.files);
+            event.target.value = "";
+          }}
+        />
+      </label>
       {busy && <span role="status">Reading images...</span>}
       <ErrorMessage error={error} />
+    </>
+  );
+}
+
+export function ReferenceImageList({
+  images,
+  disabled = false,
+  removeLabel,
+  onRemove,
+}: {
+  images: readonly ReferenceImage[];
+  disabled?: boolean;
+  removeLabel: (image: ReferenceImage) => string;
+  onRemove: (index: number) => void;
+}) {
+  return (
+    <div className="reference-images">
+      {images.map((image, index) => (
+        <div className="reference-image" key={`${image.id}-${index}`}>
+          <ReferencePreview image={image} />
+          <span>{image.name}</span>
+          <button
+            type="button"
+            className="text-button"
+            disabled={disabled}
+            aria-label={removeLabel(image)}
+            onClick={() => onRemove(index)}
+          >
+            <X aria-hidden="true" />
+          </button>
+        </div>
+      ))}
     </div>
   );
 }

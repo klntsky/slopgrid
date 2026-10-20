@@ -10,6 +10,7 @@ import { generateAttempt } from "./generation-attempt.js";
 import { loadJudgeMessages, releaseJudgeArtifact } from "./judge-artifact.js";
 import { WebsitePreviews } from "./website-previews.js";
 import { token } from "./ids.js";
+import { referenceIds } from "./image-settings.js";
 
 export type WorkflowExecutionContext = {
   key?: string;
@@ -69,10 +70,10 @@ export function createWorkflowExecutor(store: Store, provider: Provider) {
       }
       const artifactId = token();
       const thinkingId = token();
-      const references = store.references.loader();
-      const inputReferences = await references(
-        task.input.imageSettings?.input_references ?? [],
-      );
+      const ids = referenceIds(task.input);
+      const inputReferences = ids.length
+        ? await store.references.loader()(ids)
+        : undefined;
       context.signal.throwIfAborted();
       if (!context.current()) throw new DOMException("Paused", "AbortError");
       const result = await generateAttempt(

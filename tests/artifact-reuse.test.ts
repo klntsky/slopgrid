@@ -21,6 +21,15 @@ import {
   type RuntimeFixture,
   type RuntimeCall,
 } from "./runtime-fixture.js";
+import {
+  removeTemplateInputTokenUsage,
+  removeSecondTemplateStep,
+  removeGenerationProvenance,
+  removeGridGenerationProvenance,
+  removeInferenceOutputTokenUsage,
+  staleGenerationProvenance,
+  removeArtifactSourceGrid,
+} from "./artifact-reuse-fixture.js";
 
 const input: GridInput = {
   format: "markdown",
@@ -54,7 +63,7 @@ function finish(call: RuntimeCall, text = "Artifact") {
   call.finish();
 }
 
-test("chat reference content controls reuse and distinct image groups stay independent", async () => {
+test("chat reuse matches attachment content across uploads but not moved attachments", async () => {
   const f = await runtimeFixture();
   try {
     const png = Buffer.from(
@@ -72,52 +81,55 @@ test("chat reference content controls reuse and distinct image groups stay indep
     const template = {
       ...input,
       format: "chat-template",
-      rows: { kind: "effort", values: ["none"] },
-      columns: { kind: "input_references", values: ["first", "second"] },
-      referenceGroups: { first: [first], second: [second] },
-      messages: [{ role: "user", content: "Describe the image" }],
+      rows: { kind: "variable", values: ["cat"] },
+      messages: [
+        { role: "user", content: "Describe $ROW $COLUMN", images: [first] },
+        { role: "assistant", content: "A supplied answer." },
+        { role: "user", content: "Describe the next image.", images: [second] },
+      ],
     };
     const source = await create(f, template);
-    const firstCall = await f.nextCall();
-    finish(firstCall, "First image");
-    const secondCall = await f.nextCall();
-    finish(secondCall, "Second image");
+    finish(await f.nextCall(), "Both images");
     const original = await settled(f, source.id);
-    assert.notEqual(original.cells[0].artifactId, original.cells[1].artifactId);
-    assert.notDeepEqual(
-      firstCall.request.messages,
-      secondCall.request.messages,
-    );
     const copy = await create(f, {
       ...template,
-      referenceGroups: { first: [renamed], second: [second] },
+      messages: [
+        { ...template.messages[0], images: [renamed] },
+        ...template.messages.slice(1),
+      ],
       sourceGridId: source.id,
       reuseArtifacts: true,
     });
     assert.equal(copy.status, "complete");
-    assert.deepEqual(
-      f.store.get(copy.id)!.cells.map((cell) => cell.artifactId),
-      original.cells.map((cell) => cell.artifactId),
+    assert.equal(
+      f.store.outputMetadata(copy.cells[0].id)!.artifactId,
+      f.store.outputMetadata(original.cells[0].id)!.artifactId,
     );
-    assert.equal(f.calls.length, 2);
+    assert.equal(f.calls.length, 1);
     const changed = await create(f, {
       ...template,
-      columns: { kind: "input_references", values: ["first"] },
-      referenceGroups: { first: [first, second] },
+      messages: [
+        { ...template.messages[0], images: undefined },
+        template.messages[1],
+        { ...template.messages[2], images: [first, second] },
+      ],
       sourceGridId: source.id,
       reuseArtifacts: true,
     });
-    finish(await f.nextCall(), "Both images");
+    finish(await f.nextCall(), "Moved image");
     const complete = await settled(f, changed.id);
     assert.equal(complete.status, "complete");
-    assert.notEqual(complete.cells[0].artifactId, original.cells[0].artifactId);
-    assert.equal(f.calls.length, 3);
+    assert.notEqual(
+      f.store.outputMetadata(complete.cells[0].id)!.artifactId,
+      f.store.outputMetadata(original.cells[0].id)!.artifactId,
+    );
+    assert.equal(f.calls.length, 2);
     const denied = await f.request("/api/grids", {
       ...template,
       model: "unknown/text",
     });
     assert.equal(denied.status, 400);
-    assert.equal(f.calls.length, 3);
+    assert.equal(f.calls.length, 2);
   } finally {
     await f.close();
   }
@@ -183,11 +195,7 @@ test("template usage and per-call reuse survive storage reopening", async () => 
       (await f.fetch(f.origin + `/outputs/${copy.cells[0].id}?raw=1`)).status,
       404,
     );
-    f.store.db
-      .prepare(
-        "UPDATE workflow_tasks SET data=json_remove(data,'$.output.provenance.templateSteps[1].usage.inputTokens') WHERE id=?",
-      )
-      .run(copy.cells[0].generationId);
+    removeTemplateInputTokenUsage(f.store.db, copy.cells[0].generationId);
     const regenerated = await create(f, {
       ...template,
       sourceGridId: copy.id,
@@ -240,11 +248,7 @@ test("template reuse requires the final completion after supplied trailing histo
     });
     assert.equal(copy.status, "complete");
     assert.equal(f.calls.length, 2);
-    f.store.db
-      .prepare(
-        "UPDATE workflow_tasks SET data=json_remove(data,'$.output.provenance.templateSteps[1]') WHERE id=?",
-      )
-      .run(source.cells[0].generationId);
+    removeSecondTemplateStep(f.store.db, source.cells[0].generationId);
     const regenerated = await create(f, {
       ...template,
       sourceGridId: source.id,
@@ -410,11 +414,7 @@ test("reuse requires intact content and retains shared artifacts while either gr
         completed.cells[2].thinkingId!,
       )!,
     );
-    f.store.db
-      .prepare(
-        "UPDATE workflow_tasks SET data=json_remove(data,'$.output.provenance') WHERE id=?",
-      )
-      .run(completed.cells[3].generationId);
+    removeGenerationProvenance(f.store.db, completed.cells[3].generationId!);
     chmodSync(
       f.store.files.path(completed.cells[4].artifactId!, "index.html")!,
       0,
@@ -439,14 +439,7 @@ test("reuse requires intact content and retains shared artifacts while either gr
     const first = f.store.get(copied.id)!.cells[0];
     assert.equal(first.artifactId, completed.cells[0].artifactId);
     assert.equal(f.store.removeUnreferencedArtifact(first.artifactId!), false);
-    f.store.db.transaction(() => {
-      f.store.db
-        .prepare(
-          "DELETE FROM inference_calls WHERE cell_id IN (SELECT id FROM cells WHERE grid_id=?)",
-        )
-        .run(source.id);
-      f.store.db.prepare("DELETE FROM grids WHERE id=?").run(source.id);
-    })();
+    removeArtifactSourceGrid(f.store.db, source.id);
     assert.equal(f.store.removeUnreferencedArtifact(first.artifactId!), false);
     assert.deepEqual(
       { ...(await f.store.files.bundle(first.artifactId!)) },
@@ -809,11 +802,7 @@ test("missing token usage reuses only when the original ceiling fits, including 
     const source = await create(f, config);
     finish(await f.nextCall());
     await settled(f, source.id);
-    f.store.db
-      .prepare(
-        "UPDATE inference_calls SET data=json_remove(data,'$.usage.outputTokens') WHERE cell_id=?",
-      )
-      .run(source.cells[0].id);
+    removeInferenceOutputTokenUsage(f.store.db, source.cells[0].id);
     let previous = source;
     for (const budgetUsd of [0.5, 1, 0.75]) {
       previous = await create(f, {
@@ -852,11 +841,7 @@ test("stored artifacts with stale request signatures regenerate instead of reusi
     const source = await create(f, config);
     finish(await f.nextCall(), "Old output");
     const saved = await settled(f, source.id);
-    f.store.db
-      .prepare(
-        "UPDATE workflow_tasks SET data=json_set(data,'$.output.provenance.signature','stale-adapter-policy') WHERE id=?",
-      )
-      .run(saved.cells[0].generationId);
+    staleGenerationProvenance(f.store.db, saved.cells[0].generationId!);
     const regenerated = await create(f, {
       ...config,
       sourceGridId: source.id,
@@ -986,11 +971,7 @@ test("reuse leaves preparation failures on individual cells and skips unsigned s
       (await settled(f, small.id)).cells[0].error!,
       /budget is too small/,
     );
-    f.store.db
-      .prepare(
-        "UPDATE workflow_tasks SET data=json_remove(data,'$.output.provenance') WHERE grid_id=? AND kind='generation'",
-      )
-      .run(source.id);
+    removeGridGenerationProvenance(f.store.db, source.id);
     const unsigned = await create(f, {
       ...config,
       budgetUsd: 0.000001,

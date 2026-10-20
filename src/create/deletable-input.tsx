@@ -6,11 +6,13 @@ export function DeletableInput({
   content,
   label,
   onRemove,
+  disabled = false,
 }: {
   children: ReactNode;
   content: string;
   label: string;
   onRemove: () => void;
+  disabled?: boolean;
 }) {
   const [confirmingContent, setConfirmingContent] = useState<string>();
   function remove() {
@@ -34,6 +36,7 @@ export function DeletableInput({
         <button
           type="button"
           className="deletable-input-confirm-delete"
+          disabled={disabled}
           onClick={remove}
         >
           Delete
@@ -43,6 +46,7 @@ export function DeletableInput({
         type="button"
         className="text-button deletable-input-remove"
         aria-label={label}
+        disabled={disabled}
         onClick={() => {
           if (content.trim().split(/\s+/).length > 5)
             setConfirmingContent(content);

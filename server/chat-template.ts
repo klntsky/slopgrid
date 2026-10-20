@@ -9,6 +9,7 @@ import {
 } from "./domain.js";
 import type { TextBudget } from "./generation-budget.js";
 import { sumUsage } from "./usage.js";
+import { writeChatOutput } from "../shared/chat-output.js";
 
 export function templateSequence(messages: ChatMessage[]): ChatMessage[] {
   return messages.length && messages.at(-1)!.role !== "unfilled"
@@ -90,7 +91,11 @@ export async function fillChatTemplate(
   const text = JSON.stringify(history, null, 2);
   const usage = sumUsage(templateSteps.map((step) => step.usage));
   onChunk({ text, thinking, estimatedUsage: usage, currentCallCostUsd: 0 });
-  return { files: { "messages.json": text }, usage, templateSteps };
+  return {
+    files: { "messages.json": writeChatOutput(history) },
+    usage,
+    templateSteps,
+  };
 }
 
 export function templateFits(

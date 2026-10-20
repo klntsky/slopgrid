@@ -79,10 +79,7 @@ export function Create() {
   const compatibility = compatibilityTables({ input, models });
   const commonFixedParameters =
     commonModel || commonEffort || commonJudgeModel || commonJudgeEffort;
-  const commonParameters =
-    input.format === "image" ||
-    isChatFormat(input.format) ||
-    commonFixedParameters;
+  const commonParameters = input.format === "image" || commonFixedParameters;
   const promptVariables = (["rows", "columns"] as const)
     .filter((axis) => input[axis].kind === "variable")
     .map((axis) => (axis === "rows" ? "$ROW" : "$COLUMN"));
@@ -107,15 +104,21 @@ export function Create() {
       <div className="page-heading">
         <h1>Create your own AI model benchmark</h1>
       </div>
-      <FormatPicker
-        selected={input.format}
-        onSelect={(format) => {
-          if (format === input.format) {
-            saveDraft({ ...draft, formatSelected: false });
-            void navigate({ to: "/" });
-          } else selectFormat(format);
-        }}
-      />
+      <fieldset
+        className="create-format-selection"
+        disabled={submission.uploading || busy}
+      >
+        <FormatPicker
+          selected={input.format}
+          onSelect={(format) => {
+            if (submission.uploading || busy) return;
+            if (format === input.format) {
+              saveDraft({ ...draft, formatSelected: false });
+              void navigate({ to: "/" });
+            } else selectFormat(format);
+          }}
+        />
+      </fieldset>
       {formatSelected && (
         <section>
           <div className="section-heading">
@@ -289,7 +292,7 @@ export function Create() {
               )}
             </div>
           )}
-          {(input.format === "image" || isChatFormat(input.format)) && (
+          {input.format === "image" && (
             <ImageOptions
               compatibility={compatibility}
               input={input}
@@ -313,7 +316,12 @@ export function Create() {
           {isChatFormat(input.format) ? (
             <ChatEditor
               messages={input.messages ?? []}
-              onChange={(messages) => update({ messages })}
+              onBusy={onUploading}
+              onChange={(change) =>
+                update((current) => ({
+                  messages: change(current.messages ?? []),
+                }))
+              }
             />
           ) : (
             <textarea
@@ -325,6 +333,7 @@ export function Create() {
               placeholder="Describe what you want to generate"
             />
           )}
+          {isChatFormat(input.format) && compatibility.input_references}
           <ErrorMessage
             error={input.prompt.trim() ? unusedVariableIssue(input) : undefined}
           />
@@ -380,7 +389,9 @@ export function Create() {
             <span className="number">{commonParameters ? "06" : "05"}</span>
             <h2>Inference provider setup</h2>
           </div>
-          <Connection returnTo="/create" />
+          <div inert={submission.uploading || busy}>
+            <Connection returnTo="/create" />
+          </div>
           <div className="generation-limits">
             {input.format !== "image" && (
               <label
