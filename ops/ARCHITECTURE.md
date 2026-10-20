@@ -12,9 +12,9 @@ archive never contain the ignored root `.env`.
 
 Each invocation gets a fresh run directory and executes in tmux with an atomic
 exit status. Runtime deployments acquire the exclusive deployment lock; independent
-`validate` runs do not. The local command streams the log and waits. The status
-command reconnects using the exact implementation recorded for that run. A lost
-worker is reported as failure rather than interpreted as a successful deployment.
+`validate` and `rehearse` runs do not. The initiating command streams the log and
+waits. Status reconnects using the exact implementation recorded for that run.
+A lost worker is reported as failure rather than successful deployment.
 
 Production eligibility is the resolved candidate commit's equality with the
 authoritative `OPS_MASTER_REPOSITORY` `refs/heads/master` tip, queried live with Git.
@@ -35,20 +35,25 @@ Validation runs in a separate run-owned source workspace with that run's fronten
 build and read-only dependency link. A short temporary directory supplies isolated
 SQLite/output paths, a generation socket and PM2 home. These override inherited
 and private test settings; fixture servers use OS-assigned ports (`E2E_PORT=0`).
-Production validation snapshots the live SQLite database through its online backup
-API, then runs candidate storage initialization on the copy. Test service fixtures
-receive independent copies of that migrated database; schema-specific unit fixtures
-retain their own databases. Output artifacts and production runtime credentials
-remain outside the validation boundary. Migration rehearsal is required even when
-tests are explicitly skipped. Temporary runtime data is removed after success or
-failure. The result explicitly records passed, failed, or skipped for this run,
-not a historical status file.
+Full-data rehearsal belongs to candidate validation, not the shared runtime
+lifecycle. Production validation and `rehearse` take a live SQLite online backup
+and independent copies of the complete production output tree. Candidate storage
+initialization owns SQL and file migrations; operations owns safe copying,
+post-migration integrity checks, and unconditional temporary-data cleanup.
+Production storage is read-only to the snapshotter, and copied files share no
+writable links with live files. Production runtime credentials remain outside
+the validation boundary.
 
-`validate` never prepares or deploys a persistent runtime and can run concurrently
-with other candidates or a production deployment. Production prepares and promotes
-only its one configured runtime after isolated validation. Explicit staging
-deployment is an administrative operation, not a common worktree testing or
-promotion gate.
+Test service fixtures receive independent copies of the migrated database;
+schema-specific unit fixtures retain their own databases. Rehearsal remains
+required when suites are skipped. Results retain aggregate copy size and schema
+transitions, not copied production records.
+
+`validate` uses fresh data. `rehearse` uses a private staging workspace with full
+production data. Neither prepares or deploys a persistent runtime, and both can
+run independently of other candidates or deployments. Production prepares and
+promotes only its configured runtime after isolated validation. Explicit shared
+staging deployment remains an administrative operation, not a promotion gate.
 
 ## Runtime lifecycle
 

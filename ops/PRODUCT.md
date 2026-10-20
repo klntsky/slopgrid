@@ -13,17 +13,22 @@
 3. Build once per run and promote that exact frontend artifact to production.
    Production defaults to the complete unit, mock browser, and real-provider
    browser suites; an explicit `--skip-tests` records the decision and skips tests,
-   but still requires the production database migration rehearsal.
+   but still requires the full production-data migration rehearsal.
    `validate` also supports scoped tests and never deploys a persistent runtime.
    Production promotes only its configured runtime after authoritative-master
    authorization, independent of staging.
-   - Before production promotion, take a consistent read-only snapshot of the real
-     production database without copying output artifacts.
-   - Run the candidate's database migrations on the isolated snapshot, then seed
-     database-backed service tests from the migrated data. Keep schema-specific
-     unit fixtures independent.
-   - Missing production data, migration failure, or test failure must prevent
-     promotion. Delete the temporary database copies after success or failure.
+   - `rehearse` accepts any committed candidate and checks it against an isolated
+     full production-data copy on staging, preserving both shared runtimes.
+   - Before production promotion, take a transaction-consistent read-only SQLite
+     backup and independent copies of all production output files.
+   - Run the candidate's storage initialization against those copies, exercising
+     SQL and file migrations before database-backed service tests. Keep
+     schema-specific unit fixtures independent.
+   - Missing or unsafe source data, migration failure, failed SQLite integrity or
+     foreign key checks, or test failure must prevent promotion.
+   - Keep production runtime credentials out of validation services. Remove the
+     private database and output copies after success or failure, retaining only
+     aggregate migration evidence in the run result.
 4. Choose soft updates when engine dependencies, package configuration, runtime
    configuration, and the Node executable are compatible. Otherwise drain
    accepted work without a timeout, back up retained data, and replace the engine.

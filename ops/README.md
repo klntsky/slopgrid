@@ -1,8 +1,8 @@
 # Slopgrid operations
 
-Slopgrid operations builds, validates, and deploys committed Slopgrid releases
-through one command. It owns the complete deployment implementation, including
-remote installation, engine draining, backups, process startup, and final status.
+Slopgrid operations builds, validates, rehearses migrations, and deploys committed
+Slopgrid releases through one command. It owns the complete deployment
+implementation, including remote installation, draining, backups, and final status.
 
 For work on the operations implementation, see [DEVELOPMENT.md](DEVELOPMENT.md).
 
@@ -10,9 +10,9 @@ For work on the operations implementation, see [DEVELOPMENT.md](DEVELOPMENT.md).
 
 | Script | Purpose |
 | --- | --- |
-| `deploy.sh` | Command entrypoint for candidate validation, deployment, and deployment status. |
+| `deploy.sh` | Command entrypoint for candidate validation, full-data migration rehearsal, deployment, and status. |
 | `check.sh` | Run operations regression checks on the configured host in tmux bg and stream their result. |
-| `remote-run.sh` | Internal remote pipeline worker; records logs and status and locks deployments while allowing independent validation runs. |
+| `remote-run.sh` | Internal remote pipeline worker; records logs and status and locks deployments while allowing independent validation and rehearsal runs. |
 | `test-run.sh` | Internal remote check worker; runs selected Node tests or the full operations suite and records logs and status. |
 
 Run the commands below from `ops/`.
@@ -68,6 +68,8 @@ host networking and runtime credentials must already exist.
 ```sh
 ./deploy.sh validate
 ./deploy.sh validate HEAD --unit tests/publishing.test.ts --browser tests/e2e/grid-slugs.spec.ts
+./deploy.sh rehearse HEAD --skip-tests
+./deploy.sh rehearse HEAD --unit tests/storage.test.ts
 ./deploy.sh production HEAD
 ./deploy.sh production HEAD --skip-tests
 ./deploy.sh production HEAD --plan
@@ -92,15 +94,26 @@ before runtime operations, after tests, and immediately before promotion.
 `--skip-tests` never bypasses it. Production deploys only the single configured
 production runtime; it never deploys or depends on staging.
 
-Before production promotion, validation takes a consistent snapshot of the live
-production database on the configured host, without copying output artifacts.
-The candidate migrates that temporary copy before the test suites run.
-Database-backed service fixtures use independent copies of the migrated data;
-schema-specific unit fixtures retain their own databases. The production database
-is opened read-only, and its credentials are not passed to test services.
-Missing production data, failed migrations, or failed tests prevent promotion.
-Temporary database copies are deleted after success or failure. `--skip-tests`
-skips the suites, not the migration rehearsal.
+`rehearse [REV]` builds a committed candidate on the configured staging host and
+checks its migrations against a private full copy of live production data. It
+does not replace shared staging, prepare a persistent runtime, acquire the
+deployment lock, or promote production. The default runs the complete suites;
+`--skip-tests` runs the migration rehearsal alone. Normal `validate` uses fresh data.
+
+Production promotion always requires the same full-data rehearsal, including
+with `--skip-tests`. SQLite's read-only online backup includes committed WAL
+data. The complete output directory is copied independently before candidate
+storage initialization runs SQL and file migrations. Missing sources, symlinks,
+special files, migration errors, and failed SQLite integrity or foreign key
+checks fail the run.
+
+Production stays online. The database backup is transaction-consistent; the
+live filesystem copy is not an atomic cross-storage checkpoint. Database-backed
+service fixtures use independent copies of the migrated database, while
+schema-specific fixtures retain their own databases. Production runtime
+credentials are not passed to validation services. Private database and output
+copies are deleted after success or failure; the validation result retains
+aggregate copy size and schema versions.
 
 `--plan` uploads nothing and changes no runtime; production plans query master.
 `--mode soft` rejects incompatible engine changes; `--mode machinery` drains
@@ -111,8 +124,8 @@ Each remote run retains its request, source archive, log, validation result,
 phase record, and exit status. A disconnected client can reconnect with the
 printed status command. A nonzero result is a failed deployment, even when a
 previous run succeeded. Concurrent runtime deployments fail with an explicit lock
-error; independent `validate` runs do not acquire the production deployment lock.
-Correct the reported cause and repeat the same command; do not fabricate status
+error; independent `validate` and `rehearse` runs do not acquire the deployment
+lock. Correct the reported cause and repeat the same command; do not fabricate status
 files or patch installed code. If startup fails after migration, use the recorded
 backup and phase to assess recovery before changing live data.
 
