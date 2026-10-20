@@ -322,6 +322,85 @@ test("large grids preserve every axis combination and requested parallelism", ()
   );
 });
 
+for (const format of ["markdown", "svg", "html"] as const) {
+  test(`${format} retains common prompt images and merges referenced variable images in order`, () => {
+    const common = { id: "common", name: "common.png", width: 7, height: 3 };
+    const row = { id: "row", name: "row.png" };
+    const column = { id: "column", name: "column.png" };
+    const unused = { id: "unused", name: "unused.png" };
+    const input = gridSchema.parse({
+      format,
+      prompt: "$COLUMN1 $ROW1 $COLUMN1",
+      inputReferences: [common, row, common],
+      rows: {
+        kind: "variable",
+        values: [
+          [
+            { text: "first", images: [row, common] },
+            { text: "unused", images: [unused] },
+          ],
+          [{ text: "second" }, { text: "unused", images: [unused] }],
+        ],
+      },
+      columns: {
+        kind: "variable",
+        values: [[{ text: "column", images: [column, row] }]],
+      },
+      model: "fixture/text",
+      effort: "default",
+      budgetUsd: 3,
+      imageSettings: { size: "2K" },
+      referenceGroups: { unused: [unused] },
+    });
+    assert.deepEqual(input.inputReferences, [common, row, common]);
+    assert.equal(input.referenceGroups, undefined);
+    assert.equal(input.imageSettings, undefined);
+    const cells = expandGrid(input);
+    assert.deepEqual(
+      cells.map((cell) => cell.prompt),
+      ["column first column", "column second column"],
+    );
+    for (const cell of cells) {
+      assert.deepEqual(cell.images, [common, row, column]);
+      assert.equal(cell.imageSettings, undefined);
+      assert.equal(cell.messages, undefined);
+    }
+  });
+
+  test(`${format} accepts image-only prompts without admitting empty text-only prompts`, () => {
+    const image = { id: "input", name: "input.png" };
+    const source = {
+      format,
+      prompt: " \n ",
+      inputReferences: [image],
+      rows: { kind: "model", values: ["fixture/text"] },
+      columns: { kind: "effort", values: ["default"] },
+      model: "",
+      effort: "default",
+      budgetUsd: 3,
+    };
+    const input = gridSchema.parse(source);
+    assert.equal(input.prompt, "");
+    assert.deepEqual(expandGrid(input)[0].images, [image]);
+    for (const inputReferences of [undefined, []])
+      assert.equal(
+        gridSchema.safeParse({ ...source, inputReferences }).success,
+        false,
+      );
+    assert.equal(
+      gridSchema.safeParse({ ...source, format: "image" }).success,
+      false,
+    );
+    const plain = gridSchema.parse({
+      ...source,
+      prompt: "Describe it",
+      inputReferences: [],
+    });
+    assert.equal(plain.inputReferences, undefined);
+    assert.equal(expandGrid(plain)[0].images, undefined);
+  });
+}
+
 test("image axes expand settings and reference groups per cell without substituting them into the prompt", () => {
   const reference = { id: "a".repeat(48), name: "reference.png" };
   const input = gridSchema.parse({

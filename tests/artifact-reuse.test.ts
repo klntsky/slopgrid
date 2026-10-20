@@ -72,6 +72,7 @@ test("generator grouping ignores judge-only fields and attachment display metada
   const setup: GridInput = {
     ...input,
     prompt: "$ROW1",
+    inputReferences: [image],
     rows: {
       kind: "variable",
       values: [
@@ -93,6 +94,10 @@ test("generator grouping ignores judge-only fields and attachment display metada
     },
   };
   const cells = expandGrid(setup).map((cell) => ({ ...cell, id: token() }));
+  assert.deepEqual(
+    cells.map((cell) => cell.images),
+    [[image], [image]],
+  );
   assert.equal(
     generationGroupKey(setup.format, cells[0]),
     generationGroupKey(setup.format, cells[1]),
@@ -108,6 +113,80 @@ test("generator grouping ignores judge-only fields and attachment display metada
     generationGroupKey(setup.format, cells[0]),
   );
 });
+
+for (const format of ["markdown", "svg", "html"] as const)
+  test(`${format} common input image reuse follows bytes rather than upload ids or display metadata`, async () => {
+    const f = await runtimeFixture();
+    try {
+      const png = Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
+        "base64",
+      );
+      const session = { id: f.owner, created: 0 };
+      const original = f.store.references.add(png, "original.png", session)!;
+      const copied = f.store.references.add(png, "renamed.png", session)!;
+      const changed = f.store.references.add(
+        Buffer.concat([png, Buffer.from("changed")]),
+        "changed.png",
+        session,
+      )!;
+      const setup: GridInput = {
+        ...input,
+        format,
+        prompt: "Describe the shape.",
+        inputReferences: [original],
+        rows: { kind: "model", values: ["fixture/text"] },
+        columns: { kind: "effort", values: ["none"] },
+      };
+      const output =
+        format === "html"
+          ? '{"files":[{"path":"index.html","content":"<h1>Shape</h1>"}]}'
+          : format === "svg"
+            ? '<svg xmlns="http://www.w3.org/2000/svg"><text>Shape</text></svg>'
+            : "Shape";
+      const source = await create(f, setup);
+      const call = await f.nextCall();
+      const user = call.request.messages.find(
+        (message) => message.role === "user",
+      )!;
+      assert.ok(Array.isArray(user.content));
+      assert.equal(
+        user.content.filter((part) => part.type === "image_url").length,
+        1,
+      );
+      finish(call, output);
+      await settled(f, source.id);
+      const copy = await create(f, {
+        ...setup,
+        inputReferences: [{ ...copied, width: 900, height: 2 }],
+        sourceGridId: source.id,
+        reuseArtifacts: true,
+      });
+      const savedCopy = await settled(f, copy.id);
+      assert.deepEqual(savedCopy.input.inputReferences, [copied]);
+      assert.deepEqual(savedCopy.cells[0].images, [copied]);
+      assert.equal(f.calls.length, 1);
+      assert.equal(
+        f.store.outputMetadata(copy.cells[0].id)!.artifactId,
+        f.store.outputMetadata(source.cells[0].id)!.artifactId,
+      );
+      const different = await create(f, {
+        ...setup,
+        inputReferences: [changed],
+        sourceGridId: source.id,
+        reuseArtifacts: true,
+      });
+      finish(await f.nextCall(), output.replace("Shape", "Different shape"));
+      await settled(f, different.id);
+      assert.equal(f.calls.length, 2);
+      assert.notEqual(
+        f.store.outputMetadata(different.cells[0].id)!.artifactId,
+        f.store.outputMetadata(source.cells[0].id)!.artifactId,
+      );
+    } finally {
+      await f.close();
+    }
+  });
 
 test("non-chat image reuse follows content and ignores changed judge-only fields", async () => {
   const f = await runtimeFixture();

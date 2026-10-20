@@ -10,7 +10,12 @@ import {
 } from "../server/prepared-inference.js";
 import { createHash } from "node:crypto";
 import { failureDetails } from "../server/failures.js";
-import type { Cell, InferenceProgress } from "../server/domain.js";
+import {
+  expandGrid,
+  gridSchema,
+  type Cell,
+  type InferenceProgress,
+} from "../server/domain.js";
 
 async function upstream(streamError?: Record<string, unknown>) {
   const requests: Record<string, unknown>[] = [];
@@ -120,7 +125,9 @@ async function upstream(streamError?: Record<string, unknown>) {
             content,
           })),
         })
-      : "# Output";
+      : JSON.stringify(request.messages).includes("SVG generation request")
+        ? '<svg xmlns="http://www.w3.org/2000/svg"><text>Output</text></svg>'
+        : "# Output";
     res.write(
       `data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: { reasoning: "Private reasoning before the answer." }, finish_reason: null }] })}\n\n`,
     );
@@ -194,63 +201,88 @@ test("non-chat prompt images preserve output instructions and text-only requests
     ],
   ]);
   try {
-    const parameters = {
-      ...cell("all", "default"),
-      prompt: "Describe the shape without changing $ROW1.",
-      images: [{ id: "input", name: "shape.png" }],
-    };
     const instructionPatterns = {
       markdown: /markdown/i,
       svg: /<svg\b/,
       html: /JSON[\s\S]*index\.html/i,
     };
     for (const format of ["markdown", "svg", "html"] as const) {
-      const prepared = await h.provider.prepare(format, parameters, references);
-      if (prepared.format === "image")
-        throw new Error("Expected text preparation");
-      assert.match(prepared.text.system, instructionPatterns[format]);
-      if (format === "svg") continue;
-      const result = await h.provider.generate(
-        "key",
-        format,
-        parameters,
-        () => {},
-        undefined,
-        undefined,
-        references,
-      );
-      assert.equal(
-        result.files[format === "html" ? "index.html" : "index.md"],
-        format === "html" ? "<h1>Output</h1>" : "# Output",
-      );
-      const request = h.requests.at(-1)!;
-      assert.deepEqual(request.modalities, ["text"]);
-      const messages = request.messages as {
-        role: string;
-        content:
-          | string
-          | { type: string; text?: string; image_url?: { url: string } }[];
-      }[];
-      assert.equal(messages[0].role, "system");
-      assert.match(
-        typeof messages[0].content === "string"
-          ? messages[0].content
-          : messages[0].content.map((part) => part.text ?? "").join(""),
-        instructionPatterns[format],
-      );
-      assert.equal(messages[1].role, "user");
-      assert.ok(Array.isArray(messages[1].content));
-      assert.deepEqual(
-        messages[1].content.flatMap((part) =>
-          part.type === "image_url" ? [part.image_url!.url] : [],
-        ),
-        [`data:image/png;base64,${bytes.toString("base64")}`],
-      );
-      assert.equal(
-        messages[1].content.map((part) => part.text ?? "").join(""),
-        parameters.prompt,
-      );
-      assert.equal(JSON.stringify(request).includes("shape.png"), false);
+      for (const prompt of ["Describe the shape.", ""]) {
+        const input = gridSchema.parse({
+          format,
+          prompt,
+          inputReferences: [{ id: "input", name: "shape.png" }],
+          rows: { kind: "model", values: ["all"] },
+          columns: { kind: "effort", values: ["default"] },
+          model: "",
+          effort: "default",
+          budgetUsd: 5,
+        });
+        const parameters = {
+          ...cell("all", "default"),
+          ...expandGrid(input)[0],
+        };
+        const prepared = await h.provider.prepare(
+          format,
+          parameters,
+          references,
+        );
+        if (prepared.format === "image")
+          throw new Error("Expected text preparation");
+        assert.match(prepared.text.system, instructionPatterns[format]);
+        const result = await h.provider.generate(
+          "key",
+          format,
+          parameters,
+          () => {},
+          undefined,
+          undefined,
+          references,
+        );
+        const output =
+          result.files[
+            format === "html"
+              ? "index.html"
+              : format === "svg"
+                ? "index.svg"
+                : "index.md"
+          ];
+        if (format === "svg")
+          assert.match(String(output), /<svg\b[\s\S]*<text>Output<\/text>/);
+        else
+          assert.equal(
+            output,
+            format === "html" ? "<h1>Output</h1>" : "# Output",
+          );
+        const request = h.requests.at(-1)!;
+        assert.deepEqual(request.modalities, ["text"]);
+        const messages = request.messages as {
+          role: string;
+          content:
+            | string
+            | { type: string; text?: string; image_url?: { url: string } }[];
+        }[];
+        assert.equal(messages[0].role, "system");
+        assert.match(
+          typeof messages[0].content === "string"
+            ? messages[0].content
+            : messages[0].content.map((part) => part.text ?? "").join(""),
+          instructionPatterns[format],
+        );
+        assert.equal(messages[1].role, "user");
+        assert.ok(Array.isArray(messages[1].content));
+        assert.deepEqual(
+          messages[1].content.flatMap((part) =>
+            part.type === "image_url" ? [part.image_url!.url] : [],
+          ),
+          [`data:image/png;base64,${bytes.toString("base64")}`],
+        );
+        assert.equal(
+          messages[1].content.map((part) => part.text ?? "").join(""),
+          parameters.prompt,
+        );
+        assert.equal(JSON.stringify(request).includes("shape.png"), false);
+      }
     }
   } finally {
     await h.close();
@@ -276,26 +308,30 @@ test("non-chat image signatures use content and keep empty-image requests unchan
   ]);
   try {
     const base = cell("all", "default");
-    const prepare = (images?: Cell["images"]) =>
-      h.provider.prepare("markdown", { ...base, images }, references);
-    const plain = inferenceSignature(await prepare());
-    assert.equal(inferenceSignature(await prepare([])), plain);
-    const signature = inferenceSignature(
-      await prepare([{ id: "first", name: "first.png" }]),
-    );
-    assert.equal(
-      inferenceSignature(
-        await prepare([
-          { id: "copy", name: "renamed.png", width: 100, height: 200 },
-        ]),
-      ),
-      signature,
-    );
-    assert.notEqual(signature, plain);
-    assert.notEqual(
-      inferenceSignature(await prepare([{ id: "changed", name: "first.png" }])),
-      signature,
-    );
+    for (const format of ["markdown", "svg", "html"] as const) {
+      const prepare = (images?: Cell["images"]) =>
+        h.provider.prepare(format, { ...base, images }, references);
+      const plain = inferenceSignature(await prepare());
+      assert.equal(inferenceSignature(await prepare([])), plain);
+      const signature = inferenceSignature(
+        await prepare([{ id: "first", name: "first.png" }]),
+      );
+      assert.equal(
+        inferenceSignature(
+          await prepare([
+            { id: "copy", name: "renamed.png", width: 100, height: 200 },
+          ]),
+        ),
+        signature,
+      );
+      assert.notEqual(signature, plain);
+      assert.notEqual(
+        inferenceSignature(
+          await prepare([{ id: "changed", name: "first.png" }]),
+        ),
+        signature,
+      );
+    }
   } finally {
     await h.close();
   }

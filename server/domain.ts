@@ -174,7 +174,15 @@ export const gridSchema = gridInputSchema
       )
         issue("Attach images to individual user messages.");
     }
-    if (!g.prompt.trim()) issue("Enter a prompt.");
+    if (
+      !g.prompt.trim() &&
+      !(
+        g.format !== "image" &&
+        !isChatFormat(g.format) &&
+        g.inputReferences?.length
+      )
+    )
+      issue("Enter a prompt.");
     if (![g.rows.kind, g.columns.kind].includes("model") && !g.model)
       issue("Select a model.");
     if (g.rows.kind === g.columns.kind && g.rows.kind !== "variable")
@@ -237,7 +245,7 @@ export const gridSchema = gridInputSchema
       g.imageSettings = settings;
     else delete g.imageSettings;
     if (
-      g.format !== "image" ||
+      isChatFormat(g.format) ||
       dimensions.includes("input_references") ||
       !g.inputReferences?.length
     )
@@ -467,6 +475,12 @@ export function expandGrid(input: GridInput): Omit<Cell, "id">[] {
             ...expanded.images.map((image) => image.id),
           ]),
         ];
+      const images =
+        input.format !== "image" && !messages
+          ? input.inputReferences?.length
+            ? mergeVariableImages(input.inputReferences, expanded.images)
+            : expanded.images
+          : undefined;
       return {
         row,
         column,
@@ -475,9 +489,7 @@ export function expandGrid(input: GridInput): Omit<Cell, "id">[] {
         effort: selections.effort,
         prompt: expanded.text,
         ...(messages ? { messages } : {}),
-        ...(input.format !== "image" && !messages && expanded.images
-          ? { images: expanded.images }
-          : {}),
+        ...(images ? { images } : {}),
         budgetUsd: input.budgetUsd,
         ...(input.format === "image"
           ? { imageSettings: normalizeImageSettings(imageSettings) }

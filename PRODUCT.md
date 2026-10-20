@@ -30,6 +30,7 @@ The following numbered requirements define the visible layout and interaction co
 22. For Image output, show reference uploads in a bordered group with a shared Input references label, thumbnails, visible filenames, compact remove icons, and a paperclip Add images action.
 23. Present the prompt and chat editors as follows:
     - For prompt-based output, use a six-row textarea with the placeholder Describe what you want to generate and the section heading Enter your prompt. The heading serves as its visible label.
+    - For Markdown, SVG, and Static website, place an icon-only image file picker inside the prompt textarea. Use the existing attachment styling, previews, individual removal controls, and image paste behavior.
     - For Chat completion, show a two-column editor headed Enter chat history. The first column contains the drag handle and role badge; the second contains the message input.
     - Keep the role column compact and fixed-width so changing roles preserves input alignment. Give badges equal widths, equal left and right padding, the established badge styling, and persistent role colors on hover. Use a smaller font for assistant while preserving badge height.
     - Align the top edges of badges, drag handles, and inputs, including expanded messages. Match drag-handle height to badge height.
@@ -158,6 +159,7 @@ Show a small-text footer on every page except the grid page, with "source code" 
 6. Grid creation has no application limit on prompt length, axis-value length, model-ID length, submission size, number of axis values, cells, or requested parallel workers. Accept these inputs subject to OpenRouter's limits. Actual concurrency follows the shared worker allocation policy.
 7. Arrange short axis choices, including aspect ratios, size presets, quality, background, and thinking efforts, as inline checkboxes that wrap onto additional rows as needed. Keep each checkbox and its label together.
 8. Clear the creation draft after successful grid creation so the next format selection starts a fresh setup. Preserve drafts through failed or unacknowledged creation attempts. Edit and Fork explicitly restore the selected grid's setup.
+9. Markdown, SVG, and Static website prompts accept common image inputs, including image-only prompts. Preserve these attachments through reload, authorization, switches among these three formats, Edit, and Fork. Retain them separately while Image or Chat completion is selected, without automatically adding them to Chat messages or Image reference groups. Merge common prompt images with referenced variable images for generation, and include the resulting input context when judging supported output types.
 
 ### 3.2. Model and thinking-effort selection
 

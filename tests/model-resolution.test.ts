@@ -89,11 +89,17 @@ test("unknown or cyclic aliases fail explicitly", () => {
 });
 
 test("image input admission checks every resolved generator in fixed and axis selections", () => {
-  for (const format of ["chat-template", "image"] as const) {
+  for (const format of [
+    "chat-template",
+    "image",
+    "markdown",
+    "svg",
+    "html",
+  ] as const) {
     const source: GridInput = {
       ...input,
       format,
-      ...(format === "image"
+      ...(format !== "chat-template"
         ? { inputReferences: [{ id: "image", name: "image.png" }] }
         : {
             messages: [
@@ -138,6 +144,7 @@ test("image input admission checks every resolved generator in fixed and axis se
       const withoutImages = resolveGridModels(
         {
           ...selected,
+          inputReferences: undefined,
           referenceGroups: undefined,
           messages: selected.messages?.map(({ role, content }) => ({
             role,
@@ -229,6 +236,136 @@ test("future chat images require image-capable fixed and axis judges", () => {
   );
   assert.equal(withoutImages.judge?.model, "fixture/v2");
 });
+
+for (const format of ["markdown", "svg"] as const)
+  test(`${format} common prompt images require image-capable fixed and axis judges`, () => {
+    const common = { id: "common", name: "common.png" };
+    const variable = { id: "variable", name: "variable.png" };
+    const unused = { id: "unused", name: "unused.png" };
+    const source: GridInput = {
+      ...judgedInput,
+      format,
+      prompt: "$ROW1",
+      inputReferences: [common],
+      rows: {
+        kind: "variable",
+        values: [
+          [
+            { text: "Describe it.", images: [variable, common] },
+            { text: "Unused.", images: [unused] },
+          ],
+        ],
+      },
+      judge: { ...judgedInput.judge!, model: "fixture/v2" },
+    };
+    assert.deepEqual(selectedReferences(source), [common, variable, unused]);
+    assert.deepEqual(generatorReferences(source), [common, variable]);
+    assert.deepEqual(judgeReferences(source), [common, variable]);
+    const catalog = judgeModels().map((model) => ({
+      ...model,
+      imageInput: model.id !== "fixture/v2",
+    }));
+    assert.throws(
+      () => resolveGridModels(source, catalog),
+      /judge model must support image inputs/,
+    );
+    assert.equal(
+      resolveGridModels(
+        { ...source, judge: { ...source.judge!, model: "fixture/v1" } },
+        catalog,
+      ).judge?.model,
+      "fixture/v1",
+    );
+    for (const side of ["rows", "columns"] as const)
+      assert.throws(
+        () =>
+          resolveGridModels(
+            {
+              ...source,
+              prompt: "Describe it.",
+              [side]: {
+                kind: "judge_model",
+                values: ["fixture/v1", "fixture/v2"],
+              },
+            },
+            catalog,
+          ),
+        /judge model must support image inputs/,
+      );
+    const textOnly = {
+      ...source,
+      prompt: "Describe it.",
+      inputReferences: undefined,
+    };
+    assert.deepEqual(generatorReferences(textOnly), []);
+    assert.deepEqual(judgeReferences(textOnly), []);
+    if (format === "markdown")
+      assert.equal(
+        resolveGridModels(textOnly, catalog).judge?.model,
+        "fixture/v2",
+      );
+    else
+      assert.throws(
+        () => resolveGridModels(textOnly, catalog),
+        /image inputs for SVG and Image outputs/,
+      );
+  });
+
+for (const format of ["markdown", "svg", "html"] as const)
+  test(`${format} rejects unsupported prompt-image models once at setup without creating cells`, async (t) => {
+    const provider = new Provider();
+    const catalog = judgeModels().map((model) => ({
+      ...model,
+      imageInput: model.id !== "fixture/v2",
+    }));
+    t.mock.method(provider, "models", async () => catalog);
+    t.mock.method(provider, "generate", async () => {
+      throw new Error("Generation must not start for an unsupported model");
+    });
+    const { origin, store } = await appFixture(t, { provider });
+    const source: GridInput = {
+      ...input,
+      format,
+      prompt: "",
+      inputReferences: [{ id: "private-image", name: "private.png" }],
+      model: "fixture/v2",
+      rows: { kind: "model", values: ["fixture/v2"] },
+      columns: { kind: "effort", values: ["none"] },
+    };
+    const cases = [
+      { input: source, error: /selected model does not support image inputs/ },
+      ...(format === "html"
+        ? []
+        : [
+            {
+              input: {
+                ...source,
+                model: "fixture/v1",
+                rows: { kind: "model" as const, values: ["fixture/v1"] },
+                judge: { ...judgedInput.judge!, model: "fixture/v2" },
+              },
+              error: /judge model must support image inputs/,
+            },
+          ]),
+    ];
+    const before = store.all().map((grid) => grid.id);
+    for (const scenario of cases) {
+      const response = await fetch(`${origin}/api/grids`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer fixture-key",
+        },
+        body: JSON.stringify(scenario.input),
+      });
+      assert.equal(response.status, 400);
+      assert.match((await response.json()).error, scenario.error);
+    }
+    assert.deepEqual(
+      store.all().map((grid) => grid.id),
+      before,
+    );
+  });
 
 test("variable image admission follows generator and judge consumption, not field ownership", () => {
   const expected = { id: "expected", name: "answer.png" };

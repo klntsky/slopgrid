@@ -22,6 +22,7 @@ import { ErrorMessage } from "../components/error-message";
 import { LowBalanceDialog } from "../components/inference-dialogs";
 import { useTooltip } from "../components/use-tooltip";
 import { promptVariableIssue } from "../../server/prompt-variables";
+import { PromptEditor } from "../create/prompt-editor";
 
 export function Create() {
   useGrids();
@@ -316,6 +317,18 @@ export function Create() {
                   messages: change(current.messages ?? []),
                 }))
               }
+            />
+          ) : input.format !== "image" ? (
+            <PromptEditor
+              prompt={input.prompt}
+              images={input.inputReferences ?? []}
+              onPromptChange={(prompt) => update({ prompt })}
+              onImagesChange={(change) =>
+                update((current) => ({
+                  inputReferences: change(current.inputReferences ?? []),
+                }))
+              }
+              onBusy={onUploading}
             />
           ) : (
             <textarea

@@ -21,6 +21,7 @@ export type Draft = {
   sourceGridId?: string;
   reuseArtifacts?: boolean;
   inactiveChatMessages?: ChatMessage[];
+  inactivePromptReferences?: ReferenceImage[];
   inactiveImageReferences?: Pick<
     GridInput,
     "inputReferences" | "referenceGroups"
@@ -149,6 +150,10 @@ function selectDraftFormat(d: Draft, format: GridInput["format"]): Draft {
               : undefined,
         }
       : d.inactiveImageReferences;
+  const promptReferences =
+    d.input.format !== "image" && !isChatFormat(d.input.format)
+      ? d.input.inputReferences
+      : d.inactivePromptReferences;
   const rows: GridInput["rows"] =
     d.input.rows.kind === "variable"
       ? d.input.rows
@@ -174,7 +179,11 @@ function selectDraftFormat(d: Draft, format: GridInput["format"]): Draft {
     columns,
     messages: isChatFormat(format) ? messages : undefined,
     inputReferences:
-      format === "image" ? imageReferences?.inputReferences : undefined,
+      format === "image"
+        ? imageReferences?.inputReferences
+        : isChatFormat(format)
+          ? undefined
+          : promptReferences,
     referenceGroups:
       format === "image" ? imageReferences?.referenceGroups : undefined,
   };
@@ -197,6 +206,8 @@ function selectDraftFormat(d: Draft, format: GridInput["format"]): Draft {
       ? undefined
       : (d.input.messages ?? d.inactiveChatMessages),
     inactiveImageReferences: format === "image" ? undefined : imageReferences,
+    inactivePromptReferences:
+      format === "image" || isChatFormat(format) ? promptReferences : undefined,
     input: {
       ...referenceInput,
       judge:
@@ -292,6 +303,7 @@ export function useCreateDraft() {
         referenceGroups: replaceGroups(d.input.referenceGroups),
       },
       inactiveChatMessages: replaceMessages(d.inactiveChatMessages),
+      inactivePromptReferences: replaceImages(d.inactivePromptReferences),
       inactiveImageReferences: d.inactiveImageReferences && {
         ...d.inactiveImageReferences,
         inputReferences: replaceImages(

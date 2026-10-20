@@ -11,6 +11,7 @@ import { Provider } from "../server/provider.js";
 import { Store } from "../server/store.js";
 import { expandGrid, gridSchema, type Grid } from "../server/domain.js";
 import { createWorkflow } from "../server/workflow.js";
+import { referenceIds } from "../server/image-settings.js";
 import {
   sharedReferenceUsage,
   removeReferenceGrid,
@@ -229,54 +230,137 @@ for (const shared of [false, true])
     }
   });
 
-test("chat admission authorizes attachments on future user turns before creating a grid", async (t) => {
-  const provider = new Provider();
-  t.mock.method(provider, "models", async () => [
-    {
-      id: "fixture/text",
-      name: "Vision text",
-      text: true,
-      image: false,
-      imageInput: true,
-      reasoning: false,
-      reasoningMandatory: false,
-    },
-  ]);
-  const { origin, store } = await appFixture(t, { provider });
-  const owner = token();
-  const session = { id: owner, created: Date.now() };
-  store.saveSession(session);
-  const image = store.references.add(png, "private.png", session)!;
-  const input = gridSchema.parse({
-    format: "chat-template",
-    messages: [
-      { role: "user", content: "Answer before seeing the private image." },
-      { role: "unfilled", content: "" },
-      { role: "user", content: "", images: [image] },
-      { role: "unfilled", content: "" },
-    ],
-    rows: { kind: "model", values: ["fixture/text"] },
-    columns: { kind: "effort", values: ["none"] },
-    model: "",
-    effort: "none",
-    budgetUsd: 1,
+for (const format of ["chat-template", "markdown", "svg", "html"] as const)
+  test(`${format} admission authorizes every explicit input image before creating a grid`, async (t) => {
+    const provider = new Provider();
+    t.mock.method(provider, "models", async () => [
+      {
+        id: "fixture/text",
+        name: "Vision text",
+        text: true,
+        image: false,
+        imageInput: true,
+        reasoning: false,
+        reasoningMandatory: false,
+      },
+    ]);
+    const { origin, store } = await appFixture(t, { provider });
+    const owner = token();
+    const session = { id: owner, created: Date.now() };
+    store.saveSession(session);
+    const image = store.references.add(png, "private.png", session)!;
+    const input = gridSchema.parse({
+      format,
+      ...(format === "chat-template"
+        ? {
+            messages: [
+              {
+                role: "user",
+                content: "Answer before seeing the private image.",
+              },
+              { role: "unfilled", content: "" },
+              { role: "user", content: "", images: [image] },
+              { role: "unfilled", content: "" },
+            ],
+          }
+        : { prompt: "", inputReferences: [image] }),
+      rows: { kind: "model", values: ["fixture/text"] },
+      columns: { kind: "effort", values: ["none"] },
+      model: "",
+      effort: "none",
+      budgetUsd: 1,
+    });
+    const before = store.all().map((grid) => grid.id);
+    const response = await fetch(`${origin}/api/grids`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer fixture-key",
+      },
+      body: JSON.stringify(input),
+    });
+    assert.equal(response.status, 400);
+    assert.match(
+      (await response.json()).error,
+      /reference image is unavailable/,
+    );
+    assert.deepEqual(
+      store.all().map((grid) => grid.id),
+      before,
+    );
   });
-  const before = store.all().map((grid) => grid.id);
-  const response = await fetch(`${origin}/api/grids`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: "Bearer fixture-key",
-    },
-    body: JSON.stringify(input),
+
+for (const format of ["markdown", "svg", "html"] as const)
+  test(`${format} common and variable references hydrate, persist and inherit grid access`, async (t) => {
+    const { store, database, secret } = await appFixture(t);
+    const uploader = { id: token(), created: 0 };
+    const owner = { id: token(), created: 0 };
+    const common = store.references.add(referencePng, "common.png", uploader)!;
+    const variable = store.references.add(
+      referenceWebp,
+      "variable.webp",
+      uploader,
+    )!;
+    const spare = store.references.add(png, "spare.png", uploader)!;
+    const forged = { ...common, width: 900, height: 2 };
+    const input = gridSchema.parse({
+      format,
+      prompt: "$ROW1",
+      inputReferences: [forged],
+      rows: {
+        kind: "variable",
+        values: [[{ text: "Describe it", images: [variable, forged] }]],
+      },
+      columns: { kind: "model", values: ["fixture/text"] },
+      model: "",
+      effort: "none",
+      budgetUsd: 1,
+    });
+    const grid: Grid = {
+      id: token(),
+      owner: owner.id,
+      input,
+      status: "paused",
+      published: false,
+      visibility: "private",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      cells: expandGrid(input).map((cell) => ({ ...cell, id: token() })),
+    };
+    assert.equal(store.references.allowed(common.id, owner), false);
+    store.insert(grid);
+    const reopened = new Store(database, secret);
+    try {
+      const saved = reopened.get(grid.id)!;
+      assert.deepEqual(saved.input.inputReferences, [common]);
+      assert.equal(saved.input.rows.kind, "variable");
+      if (saved.input.rows.kind !== "variable")
+        throw new Error("Expected variable rows");
+      assert.deepEqual(saved.input.rows.values[0][0].images, [
+        variable,
+        common,
+      ]);
+      assert.deepEqual(saved.cells[0].images, [common, variable]);
+      const generation = reopened
+        .workflow(grid.id)
+        .find((task) => task.kind === "generation")!;
+      assert.deepEqual(generation.input.images, [common, variable]);
+      const ids = referenceIds(generation.input);
+      assert.deepEqual(ids, [common.id, variable.id]);
+      const references = await reopened.references.loader()(ids);
+      assert.deepEqual(references.get(common.id)!.bytes, referencePng);
+      assert.deepEqual(references.get(variable.id)!.bytes, referenceWebp);
+      assert.equal(reopened.references.allowed(common.id, owner), true);
+      assert.equal(reopened.references.allowed(variable.id, owner), true);
+      assert.equal(reopened.references.allowed(spare.id, owner), false);
+      assert.equal(reopened.references.allowed(common.id), false);
+      removeReferenceGrid(reopened.db, grid.id);
+      assert.equal(reopened.references.allowed(common.id, owner), false);
+      assert.equal(reopened.references.allowed(variable.id, owner), false);
+      assert.equal(reopened.references.allowed(common.id, uploader), true);
+    } finally {
+      reopened.db.close();
+    }
   });
-  assert.equal(response.status, 400);
-  assert.match((await response.json()).error, /reference image is unavailable/);
-  assert.deepEqual(
-    store.all().map((grid) => grid.id),
-    before,
-  );
-});
 
 test("reference uploads distinguish invalid files from storage failures and recover on retry", async (t) => {
   const { origin, store } = await appFixture(t);

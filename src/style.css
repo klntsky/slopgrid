@@ -582,6 +582,22 @@ section {
 .variable-table .reference-images {
   margin-block: 8px 0;
 }
+.prompt-input {
+  position: relative;
+  min-width: 0;
+}
+.prompt-input textarea {
+  display: block;
+  padding-right: 46px;
+}
+.prompt-input .reference-upload-compact {
+  right: 3px;
+  opacity: 1;
+  pointer-events: auto;
+}
+.prompt-editor > .reference-images {
+  margin-top: 10px;
+}
 .variable-table-actions {
   display: flex;
   flex-wrap: wrap;

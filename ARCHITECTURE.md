@@ -145,6 +145,11 @@ execution. The runtime receives expanded text and referenced images rather than
 templates. Model admission checks only the images each consumer receives;
 storage authorization tracks all configured field attachments.
 
+Prompt-based text formats combine common image references and variable-derived
+attachments into one expanded user input. Provider preparation keeps format
+instructions separate from that multimodal input; judging reuses the same
+expanded input context.
+
 Storage upgrades and browser draft migration convert historical single-value
 axes into one-field records. Accepted workflow inputs and immutable artifacts
 keep their original payloads; presentation metadata and current-grid references

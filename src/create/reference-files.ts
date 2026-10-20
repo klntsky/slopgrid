@@ -56,8 +56,9 @@ export async function uploadReferences(
   const groups = Object.fromEntries(
     names.map((name) => [name, [...input.referenceGroups![name]]]),
   );
-  const inputReferences =
-    input.format === "image" ? [...(input.inputReferences ?? [])] : undefined;
+  const inputReferences = !isChatFormat(input.format)
+    ? [...(input.inputReferences ?? [])]
+    : undefined;
   const messages = input.messages?.map((message) => ({
     ...message,
     ...(message.images && { images: [...message.images] }),

@@ -144,7 +144,9 @@ export function useCreateForm() {
     !connection.data?.connected && "Connect OpenRouter.",
     isChatFormat(input.format)
       ? chatInputIssue(input.messages)
-      : !input.prompt.trim() && "Enter a prompt.",
+      : !input.prompt.trim() &&
+        (input.format === "image" || !input.inputReferences?.length) &&
+        "Enter a prompt.",
     variableIssue,
     input.format !== "image" &&
       (!Number.isFinite(input.budgetUsd) || input.budgetUsd <= 0) &&
