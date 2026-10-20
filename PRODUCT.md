@@ -87,7 +87,7 @@ Status: high level product goal that is not a requirement (not achieved yet).
 
    The editor always offers the unfilled role. Selecting unfilled clears the body and replaces its input with "The model will fill this message with an assistant response." Switching back restores an empty editable input. Require a supplied message before the first blank; supplied messages require nonempty bodies. Allow histories without explicit blanks, consecutive blanks, and supplied messages after the final blank.
 
-   Enable provider prompt caching for Chat completion requests, with stable routing per cell and explicit reusable history boundaries for providers that require them. Cache availability remains provider-controlled.
+   Enable provider prompt caching for Chat completion requests. Keep unchanged input images in a stable prefix ahead of their associated user text so that different questions can reuse that prefix. Preserve reusable image and history prefixes as conversations grow, including long runs of supplied messages. Keep stable routing per cell. Cache availability remains provider-controlled.
 
    Chat completion accepts common input images or input-reference groups as a grid dimension. Attach the selected images to the first supplied user message before the first unfilled message, or prepend an image-only user message when that initial history has no user message. Preserve that image-bearing turn across sequential completion calls and judging. Block generation when any selected generator model does not support image inputs.
    Chat completion accepts images only as inputs and produces text responses.

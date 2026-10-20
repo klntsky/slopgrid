@@ -34,12 +34,12 @@ export function chatMessages(
   const user: ChatInputMessage = {
     role: "user",
     content: [
-      ...(text ? [{ type: "text" as const, text }] : []),
       ...images.map(({ bytes, mediaType }) => ({
         type: "file" as const,
         data: bytes,
         mediaType,
       })),
+      ...(text ? [{ type: "text" as const, text }] : []),
     ],
   };
   if (index < 0) messages.unshift(user);

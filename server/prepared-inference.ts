@@ -63,7 +63,7 @@ export function prepareTextInference(
       const content =
         typeof message.content === "string"
           ? message.content
-          : message.content.map((part) =>
+          : message.content.map((part, i, parts) =>
               part.type === "text"
                 ? part
                 : {
@@ -71,6 +71,10 @@ export function prepareTextInference(
                     image_url: {
                       url: `data:${part.mediaType};base64,${part.data.toString("base64")}`,
                     },
+                    // Retain image caching beyond the prefix lookback window.
+                    ...(parts[i + 1]?.type !== "file" && {
+                      cache_control: { type: "ephemeral" as const },
+                    }),
                   },
             );
       const boundary =
@@ -162,7 +166,7 @@ export function templateSignature(
   return digest({
     ...common(cell),
     format: "chat-template",
-    templateVersion: 3,
+    templateVersion: 4,
     effort: cell.effort,
     messages: cell.messages,
     references: references.length

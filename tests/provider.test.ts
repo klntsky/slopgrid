@@ -276,8 +276,8 @@ test("chat templates fill blanks sequentially and complete trailing history", as
 
 test("chat images reach every sequential SDK call without changing the transcript", async () => {
   const h = await upstream();
-  const references = ["first image", "second image"].map((text) => {
-    const bytes = Buffer.from(text);
+  const references = Array.from({ length: 5 }, (_, index) => {
+    const bytes = Buffer.from(`image ${index}`);
     return {
       bytes,
       mediaType: "image/png",
@@ -289,6 +289,10 @@ test("chat images reach every sequential SDK call without changing the transcrip
       const messages: NonNullable<Cell["messages"]> = [
         { role, content: "Describe these images" },
         { role: "unfilled", content: "" },
+        ...Array.from({ length: 25 }, (_, index) => ({
+          role: "user" as const,
+          content: `Follow-up ${index}`,
+        })),
         { role: "unfilled", content: "" },
       ];
       const parameters = { ...cell("all", "default"), messages };
@@ -324,12 +328,31 @@ test("chat images reach every sequential SDK call without changing the transcrip
             (r) => `data:${r.mediaType};base64,${r.bytes.toString("base64")}`,
           ),
         );
+        const imageParts = (
+          imageMessage.content as {
+            type: string;
+            cache_control?: { type: string };
+          }[]
+        ).filter((part) => part.type === "image_url");
+        assert.deepEqual(imageParts.at(-1)!.cache_control, {
+          type: "ephemeral",
+        });
+        let breakpoints = 0;
+        for (const message of wire)
+          if (Array.isArray(message.content))
+            for (const part of message.content)
+              if ("cache_control" in part) breakpoints++;
+        assert.ok(
+          breakpoints <= 4,
+          "OpenRouter allows at most four breakpoints",
+        );
         if (role !== "user") assert.equal(wire[1].role, role);
       }
       assert.equal(h.requests.length - start, 2);
       assert.deepEqual(JSON.parse(result.files["messages.json"] as string), [
         messages[0],
         { role: "assistant", content: "# Output" },
+        ...messages.slice(2, -1),
         { role: "assistant", content: "# Output" },
       ]);
       assert.equal(result.signature, templateSignature(parameters, references));
@@ -347,6 +370,63 @@ test("chat images reach every sequential SDK call without changing the transcrip
     await h.close();
   }
 });
+
+test("different user questions share an explicitly cached image prefix", async () => {
+  const h = await upstream();
+  const bytes = Buffer.from("shared image");
+  const references = [
+    {
+      bytes,
+      mediaType: "image/png",
+      sha256: createHash("sha256").update(bytes).digest("hex"),
+    },
+  ];
+  try {
+    for (const question of ["Describe the colors.", "Describe the shapes."])
+      await generateAttempt(
+        h.provider,
+        "key",
+        "chat-template",
+        {
+          ...cell("all", "default"),
+          messages: [
+            { role: "system", content: "Inspect the supplied image." },
+            { role: "user", content: question },
+          ],
+        },
+        question,
+        () => {},
+        {},
+        references,
+      );
+    const imagePrefix = (request: Record<string, unknown>) => {
+      const messages = request.messages as {
+        role: string;
+        content:
+          | string
+          | {
+              type: string;
+              cache_control?: { type: string };
+            }[];
+      }[];
+      const user = messages.findIndex((message) => message.role === "user");
+      const parts = messages[user].content;
+      assert.ok(Array.isArray(parts));
+      let end = parts.length - 1;
+      while (end >= 0 && parts[end].type !== "image_url") end--;
+      assert.ok(end >= 0);
+      assert.equal(parts[end].cache_control?.type, "ephemeral");
+      return [
+        ...messages.slice(0, user),
+        { role: "user", content: parts.slice(0, end + 1) },
+      ];
+    };
+    assert.deepEqual(imagePrefix(h.requests[0]), imagePrefix(h.requests[1]));
+  } finally {
+    await h.close();
+  }
+});
+
 test("template caching preserves long prefixes and isolates generation routing", async () => {
   const h = await upstream();
   try {
