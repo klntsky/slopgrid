@@ -74,6 +74,9 @@ export async function loadJudgeMessages(
     }
     image = await prepared;
   }
+  // This is input to a separate judge call, not image output from the judge.
+  // AI SDK 7 uses file parts for images; OpenRouter 3.1.0 encodes user image
+  // files as image_url but drops assistant file parts.
   return [
     ...chatMessages([], references),
     {

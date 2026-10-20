@@ -14,6 +14,12 @@ import { token } from "../server/ids.js";
 import { Store } from "../server/store.js";
 import { expandGrid, gridSchema, type Grid } from "../server/domain.js";
 import { createWorkflow } from "../server/workflow.js";
+import {
+  referenceUsageLinks,
+  referenceBlobs,
+  referenceForeignKeyViolations,
+  restoreV14ReferenceSchema,
+} from "./reference-storage-fixture.js";
 
 test("an initialized store opens for reads while another connection holds the write lock", () => {
   const dir = mkdtempSync(join(tmpdir(), "slopgrid-store-lock-"));
@@ -368,23 +374,8 @@ for (const available of [true, false])
         userId: "claimed-account",
       });
       const tasks = store.workflow(grid.id);
-      const links = store.db
-        .prepare("SELECT * FROM grid_reference_images ORDER BY reference_id")
-        .all();
-      // Rebuild only reference storage as the deployed v14 schema. Workflows,
-      // grid identities and ownership are already in their production format.
-      store.db.exec(`
-        ALTER TABLE reference_images RENAME TO cas_reference_images;
-        CREATE TABLE reference_images (
-          id TEXT PRIMARY KEY, owner TEXT NOT NULL, owner_user_id TEXT,
-          name TEXT NOT NULL, media_type TEXT NOT NULL
-        ) STRICT;
-        INSERT INTO reference_images
-          SELECT id,owner,owner_user_id,name,media_type FROM cas_reference_images;
-        DROP TABLE cas_reference_images;
-        DROP TABLE reference_blobs;
-        PRAGMA user_version=14;
-      `);
+      const links = referenceUsageLinks(store.db);
+      restoreV14ReferenceSchema(store.db);
       rmSync(join(store.files.root, ".references"), { recursive: true });
       if (available) {
         store.files.write(`reference-${first.id}`, { image: png });
@@ -393,16 +384,10 @@ for (const available of [true, false])
       }
       store.db.close();
       store = new Store(database, secret);
-      assert.equal(store.db.pragma("user_version", { simple: true }), 15);
       assert.deepEqual(store.workflow(grid.id), tasks);
       assert.deepEqual(store.get(grid.id)!.input, input);
       assert.equal(store.get(grid.id)!.ownerUserId, "claimed-account");
-      assert.deepEqual(
-        store.db
-          .prepare("SELECT * FROM grid_reference_images ORDER BY reference_id")
-          .all(),
-        links,
-      );
+      assert.deepEqual(referenceUsageLinks(store.db), links);
       assert.deepEqual(store.session("saved-session"), {
         id: "saved-session",
         created: 17,
@@ -452,10 +437,7 @@ for (const available of [true, false])
           store.references.loader()([first.id]),
           /unavailable/,
         );
-        assert.deepEqual(
-          store.db.prepare("SELECT * FROM reference_blobs").all(),
-          [],
-        );
+        assert.deepEqual(referenceBlobs(store.db), []);
       }
       // Unavailable historical metadata stays valid, and bytes restored later
       // can be backfilled on startup; runtime reads never fall back to ID paths.
@@ -474,7 +456,7 @@ for (const available of [true, false])
         existsSync(join(store.files.root, `reference-${unavailable.id}`)),
         false,
       );
-      assert.deepEqual(store.db.pragma("foreign_key_check"), []);
+      assert.deepEqual(referenceForeignKeyViolations(store.db), []);
       // A current-schema validation snapshot also has hash metadata but no
       // copied artifacts. Opening it must not require or manufacture the bytes.
       store.db.close();
@@ -490,12 +472,7 @@ for (const available of [true, false])
         /unavailable/,
       );
       assert.deepEqual(store.workflow(grid.id), tasks);
-      assert.deepEqual(
-        store.db
-          .prepare("SELECT * FROM grid_reference_images ORDER BY reference_id")
-          .all(),
-        links,
-      );
+      assert.deepEqual(referenceUsageLinks(store.db), links);
     } finally {
       store.db.close();
       rmSync(dir, { recursive: true, force: true });

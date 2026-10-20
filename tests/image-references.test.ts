@@ -11,6 +11,11 @@ import { Provider } from "../server/provider.js";
 import { Store } from "../server/store.js";
 import { expandGrid, gridSchema, type Grid } from "../server/domain.js";
 import { createWorkflow } from "../server/workflow.js";
+import {
+  sharedReferenceUsage,
+  removeReferenceGrid,
+  referenceBlob,
+} from "./reference-storage-fixture.js";
 
 const png = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
@@ -401,14 +406,8 @@ test("identical uploads share one blob across private owners and grids without s
     return grid;
   });
   const sha256 = createHash("sha256").update(png).digest("hex");
-  const sharing = store.db.prepare(
-    `SELECT g.grid_id,r.id FROM grid_reference_images g
-     JOIN reference_images r ON r.id=g.reference_id
-     WHERE r.sha256=? AND r.id IN (?,?)
-     ORDER BY g.grid_id`,
-  );
   assert.deepEqual(
-    sharing.all(sha256, first.id, second.id),
+    sharedReferenceUsage(store.db, sha256, first.id, second.id),
     grids
       .map((grid, index) => ({
         grid_id: grid.id,
@@ -434,22 +433,18 @@ test("identical uploads share one blob across private owners and grids without s
       }),
     ),
   );
-  store.db.prepare("DELETE FROM grids WHERE id=?").run(grids[0].id);
-  assert.deepEqual(sharing.all(sha256, first.id, second.id), [
-    { grid_id: grids[1].id, id: second.id },
-  ]);
+  removeReferenceGrid(store.db, grids[0].id);
+  assert.deepEqual(
+    sharedReferenceUsage(store.db, sha256, first.id, second.id),
+    [{ grid_id: grids[1].id, id: second.id }],
+  );
   const reopened = new Store(database, secret);
   try {
     assert.equal(reopened.references.path(first.id), firstPath);
     assert.equal(reopened.references.path(second.id), firstPath);
     assert.equal(reopened.references.allowed(first.id, bob), false);
     assert.equal(reopened.references.allowed(second.id, bob), true);
-    assert.deepEqual(
-      reopened.db
-        .prepare("SELECT sha256 FROM reference_blobs WHERE sha256=?")
-        .get(sha256),
-      { sha256 },
-    );
+    assert.deepEqual(referenceBlob(reopened.db, sha256), { sha256 });
   } finally {
     reopened.db.close();
   }

@@ -50,8 +50,13 @@ export function prepareTextInference(
   const messages = cell.messages
     ? chatMessages(cell.messages, references, template)
     : undefined;
-  // The adapter puts assistant cache controls on the message, not its text
-  // block. Keep this OpenRouter wire workaround separate from chat history.
+  // OpenRouter 3.1.0's convertToOpenRouterChatMessages flattens assistant text
+  // parts (dropping part providerOptions) and puts message cacheControl beside
+  // content, not on a content block. Native providerOptions therefore cannot
+  // mark our previous-prefix and final boundaries as documented content blocks;
+  // request-level automatic caching does not express both explicit boundaries.
+  // extraBody.messages replaces the whole SDK message array, so encode image
+  // parts here too. Keep this wire-only adaptation out of the saved transcript.
   const cachedMessages =
     cache &&
     messages?.map((message, index) => {

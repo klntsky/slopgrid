@@ -15,6 +15,7 @@ import type { ModelInfo } from "../../server/model-catalog";
 import { modelCatalog } from "../model-catalog";
 
 type Props = { input: GridInput; models: readonly ModelInfo[] };
+type SelectedModel = { id: string; info: ModelInfo | undefined };
 export type CompatibilityTables = Partial<
   Record<GridInput["rows"]["kind"], ReactNode>
 >;
@@ -69,32 +70,7 @@ export function compatibilityTables({
     return {
       ...judgeCompatibility,
       input_references: isChatFormat(input.format) ? (
-        <CompatibilityGrid
-          caption={`${imageParameterNames.input_references} compatibility`}
-          rows={modelNames}
-          columns={
-            axes.find((axis) => axis.kind === "input_references")?.values ?? [
-              `${input.inputReferences?.length ?? 0} images`,
-            ]
-          }
-          cells={selectedModels.map(({ info }) =>
-            (
-              axes.find((axis) => axis.kind === "input_references")?.values ?? [
-                undefined,
-              ]
-            ).map((group) => ({
-              support: !(group
-                ? input.referenceGroups?.[group]?.length
-                : input.inputReferences?.length)
-                ? "supported"
-                : !info
-                  ? "unknown"
-                  : info.imageInput
-                    ? "supported"
-                    : "unsupported",
-            })),
-          )}
-        />
+        <ChatImageCompatibility input={input} models={selectedModels} />
       ) : undefined,
       effort: (
         <CompatibilityGrid
@@ -189,6 +165,41 @@ export function compatibilityTables({
       }),
     ),
   };
+}
+
+function ChatImageCompatibility({
+  input,
+  models,
+}: {
+  input: GridInput;
+  models: readonly SelectedModel[];
+}) {
+  const groups = [input.rows, input.columns].find(
+    (axis) => axis.kind === "input_references",
+  )?.values;
+  const columns = (groups ?? [undefined]).map((group) => ({
+    label: group ?? `${input.inputReferences?.length ?? 0} images`,
+    hasImages: Boolean(
+      group
+        ? input.referenceGroups?.[group]?.length
+        : input.inputReferences?.length,
+    ),
+  }));
+  const cells = models.map(({ info }) =>
+    columns.map<Compatibility>(({ hasImages }) => {
+      if (!hasImages) return { support: "supported" };
+      if (!info) return { support: "unknown" };
+      return { support: info.imageInput ? "supported" : "unsupported" };
+    }),
+  );
+  return (
+    <CompatibilityGrid
+      caption={`${imageParameterNames.input_references} compatibility`}
+      rows={models.map(({ id, info }) => info?.name ?? id)}
+      columns={columns.map(({ label }) => label)}
+      cells={cells}
+    />
+  );
 }
 
 function CompatibilityGrid({

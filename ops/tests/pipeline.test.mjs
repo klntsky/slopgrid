@@ -41,6 +41,7 @@ import {
   currentEngine,
 } from "../lib/runtime.mjs";
 import { fixtureConfig } from "./config-fixture.mjs";
+import { referenceForeignKeyViolations } from "./reference-fixture.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 function directory(t) {
@@ -1089,8 +1090,7 @@ test("v15 discard keeps shared and unreferenced upload metadata and hash files w
         else assert.ok(readFileSync(join(f.env.OUTPUTS_PATH, relative)).length);
       }
       const db = new f.Database(f.env.DATABASE_PATH);
-      assert.equal(db.pragma("user_version", { simple: true }), 15);
-      assert.deepEqual(db.pragma("foreign_key_check"), []);
+      assert.deepEqual(referenceForeignKeyViolations(db), []);
       db.close();
     });
 });
