@@ -505,13 +505,6 @@ test("chat input images require a vision judge and removing them restores text-o
     await page
       .getByRole("button", { name: "Add message", exact: true })
       .click();
-    if (index % 2 === 0)
-      await page
-        .getByRole("button", {
-          name: `Message ${index} role: assistant`,
-          exact: true,
-        })
-        .click();
   }
   await page
     .getByLabel("Message 3", { exact: true })

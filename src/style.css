@@ -313,16 +313,16 @@ section {
   align-items: flex-start;
   gap: 4px;
 }
+.chat-role-hint {
+  display: inline-flex;
+}
+.chat-role-hint .chat-role:disabled {
+  pointer-events: none;
+}
 .chat-message-images {
   grid-column: 2;
   min-width: 0;
   margin-top: 8px;
-}
-.chat-message-images .reference-images:empty {
-  display: none;
-}
-.chat-message-images .hint {
-  margin-bottom: 0;
 }
 .deletable-input {
   position: relative;
@@ -337,7 +337,8 @@ section {
   overflow: hidden;
   overflow-wrap: anywhere;
 }
-.deletable-input-remove {
+.deletable-input-remove,
+.reference-upload.reference-upload-compact {
   height: calc(1.6rem + 24px);
   color: var(--muted);
   padding: 5px;
@@ -347,8 +348,20 @@ section {
   opacity: 0.5;
   pointer-events: none;
 }
+.reference-upload.reference-upload-compact {
+  right: 40px;
+}
+.deletable-input:has(.reference-upload-compact) textarea {
+  padding-right: 74px;
+}
+.deletable-input:has(.deletable-input-confirm-delete)
+  .reference-upload-compact {
+  visibility: hidden;
+}
 .deletable-input:hover .deletable-input-remove,
-.deletable-input-remove:focus-visible {
+.deletable-input-remove:focus-visible,
+.deletable-input:hover .reference-upload-compact,
+.reference-upload-compact:focus-within {
   opacity: 1;
   pointer-events: auto;
 }
@@ -367,7 +380,8 @@ section {
   border-color: #a92f36;
 }
 @media (hover: none), (pointer: coarse) {
-  .deletable-input:focus-within .deletable-input-remove {
+  .deletable-input:focus-within .deletable-input-remove,
+  .deletable-input:focus-within .reference-upload-compact {
     opacity: 1;
     pointer-events: auto;
   }

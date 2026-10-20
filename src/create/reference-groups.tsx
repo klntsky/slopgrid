@@ -116,6 +116,8 @@ export function ReferencePicker({
   accessibleLabel = label,
   icon = true,
   disabled = false,
+  compact = false,
+  pasteTarget,
   onSelect,
   onBusy,
 }: {
@@ -123,6 +125,8 @@ export function ReferencePicker({
   accessibleLabel?: string;
   icon?: boolean;
   disabled?: boolean;
+  compact?: boolean;
+  pasteTarget?: string;
   onSelect: (images: ReferenceImage[]) => void;
   onBusy: (busy: boolean) => void;
 }) {
@@ -138,7 +142,7 @@ export function ReferencePicker({
       mounted.current = false;
     };
   }, []);
-  async function select(files: FileList | null) {
+  async function select(files: FileList | File[] | null) {
     if (!files?.length || reading.current || disabled) return;
     reading.current = true;
     setBusy(true);
@@ -156,11 +160,35 @@ export function ReferencePicker({
       onBusy(false);
     }
   }
+  const intake = useRef(select);
+  intake.current = select;
+  useEffect(() => {
+    if (!pasteTarget) return;
+    const target = document.getElementById(pasteTarget);
+    if (!target) return;
+    const paste = (event: ClipboardEvent) => {
+      const images = Array.from(event.clipboardData?.files ?? []).filter(
+        (file) => file.type.startsWith("image/"),
+      );
+      if (!images.length) return;
+      event.preventDefault();
+      void intake.current(images);
+    };
+    target.addEventListener("paste", paste);
+    return () => target.removeEventListener("paste", paste);
+  }, [pasteTarget]);
   return (
     <>
-      <label className="button secondary reference-upload">
+      <label
+        className={
+          compact
+            ? "button text-button reference-upload reference-upload-compact"
+            : "button secondary reference-upload"
+        }
+        title={compact ? accessibleLabel : undefined}
+      >
         {icon && <Paperclip aria-hidden="true" />}
-        {label}
+        {!compact && label}
         <input
           type="file"
           multiple

@@ -4,6 +4,9 @@ import { useId, useLayoutEffect, useRef, useState } from "react";
 import { DeletableInput } from "./deletable-input";
 import { ReorderHandle } from "./reorder-handle";
 import { ReferenceImageList, ReferencePicker } from "./reference-groups";
+import { tooltipRef } from "../components/use-tooltip";
+
+const imageRoleHint = "Remove images before changing this message’s role.";
 
 export function ChatEditor({
   messages,
@@ -32,11 +35,13 @@ export function ChatEditor({
   }
   useLayoutEffect(() => {
     if (inserted.current === undefined) return;
-    root.current
-      ?.querySelector<HTMLTextAreaElement>(
-        `[data-message-index="${inserted.current}"] textarea`,
-      )
-      ?.focus();
+    const row = root.current?.querySelector(
+      `[data-message-index="${inserted.current}"]`,
+    );
+    (
+      row?.querySelector<HTMLTextAreaElement>("textarea") ??
+      row?.querySelector<HTMLButtonElement>(".chat-role")
+    )?.focus();
     inserted.current = undefined;
   }, [messages]);
   const [dragTarget, setDragTarget] = useState<number>();
@@ -70,7 +75,7 @@ export function ChatEditor({
     onChange((current) => {
       const next = [...current];
       next.splice(index, 0, {
-        role: current[index - 1]?.role === "user" ? "assistant" : "user",
+        role: current[index - 1]?.role === "user" ? "unfilled" : "user",
         content: "",
       });
       return next;
@@ -109,28 +114,42 @@ export function ChatEditor({
                 setDragTarget(target);
               }}
             />
-            <button
-              type="button"
-              className={`model-badge chat-role chat-role-${message.role}`}
-              aria-label={`Message ${index + 1} role: ${message.role}`}
-              disabled={reading || !!message.images?.length}
-              aria-describedby={
-                message.images?.length ? `${descriptionId}-${index}` : undefined
-              }
-              onClick={() => {
-                if (reads.current || message.images?.length) return;
-                update(index, (current) => {
-                  const role =
-                    roles[(roles.indexOf(current.role) + 1) % roles.length];
-                  return {
-                    role,
-                    ...(role === "unfilled" && { content: "" }),
-                  };
-                });
-              }}
+            <span
+              className="chat-role-hint"
+              ref={tooltipRef}
+              data-tooltip={message.images?.length ? imageRoleHint : undefined}
+              tabIndex={message.images?.length ? 0 : undefined}
             >
-              {message.role}
-            </button>
+              <button
+                type="button"
+                className={`model-badge chat-role chat-role-${message.role}`}
+                aria-label={`Message ${index + 1} role: ${message.role}`}
+                disabled={reading || !!message.images?.length}
+                aria-describedby={
+                  message.images?.length
+                    ? `${descriptionId}-${index}`
+                    : undefined
+                }
+                onClick={() => {
+                  if (reads.current || message.images?.length) return;
+                  update(index, (current) => {
+                    const role =
+                      roles[(roles.indexOf(current.role) + 1) % roles.length];
+                    return {
+                      role,
+                      ...(role === "unfilled" && { content: "" }),
+                    };
+                  });
+                }}
+              >
+                {message.role}
+              </button>
+              {!!message.images?.length && (
+                <span className="sr-only" id={`${descriptionId}-${index}`}>
+                  {imageRoleHint}
+                </span>
+              )}
+            </span>
           </div>
           <DeletableInput
             content={message.content}
@@ -144,6 +163,7 @@ export function ChatEditor({
               </span>
             ) : (
               <textarea
+                id={`${descriptionId}-message-${index}`}
                 aria-label={`Message ${index + 1}`}
                 rows={1}
                 value={message.content}
@@ -153,11 +173,25 @@ export function ChatEditor({
                 }}
               />
             )}
+            {message.role === "user" && (
+              <ReferencePicker
+                compact
+                pasteTarget={`${descriptionId}-message-${index}`}
+                accessibleLabel={`Add images to message ${index + 1}`}
+                disabled={reading}
+                onBusy={onReading}
+                onSelect={(images) =>
+                  update(index, (current) => ({
+                    images: [...(current.images ?? []), ...images],
+                  }))
+                }
+              />
+            )}
           </DeletableInput>
-          {message.role === "user" && (
+          {message.role === "user" && !!message.images?.length && (
             <div className="chat-message-images">
               <ReferenceImageList
-                images={message.images ?? []}
+                images={message.images}
                 disabled={reading}
                 removeLabel={(image) =>
                   `Remove ${image.name} from message ${index + 1}`
@@ -169,21 +203,6 @@ export function ChatEditor({
                   }));
                 }}
               />
-              <ReferencePicker
-                accessibleLabel={`Add images to message ${index + 1}`}
-                disabled={reading}
-                onBusy={onReading}
-                onSelect={(images) =>
-                  update(index, (current) => ({
-                    images: [...(current.images ?? []), ...images],
-                  }))
-                }
-              />
-              {!!message.images?.length && (
-                <p className="hint" id={`${descriptionId}-${index}`}>
-                  Remove images before changing this message’s role.
-                </p>
-              )}
             </div>
           )}
         </div>

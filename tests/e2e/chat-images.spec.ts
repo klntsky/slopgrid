@@ -51,16 +51,10 @@ async function appendMessage(page: Page) {
 }
 async function appendCompletionAndUser(page: Page) {
   await appendMessage(page);
-  await page
-    .getByRole("button", { name: "Message 2 role: assistant", exact: true })
-    .click();
   await appendMessage(page);
 }
 async function appendFinalCompletion(page: Page) {
   await appendMessage(page);
-  await page
-    .getByRole("button", { name: "Message 4 role: assistant", exact: true })
-    .click();
 }
 async function variableAxes(page: Page) {
   await page
@@ -321,4 +315,76 @@ test("image-only message attachments follow reorder, format switches, Edit and F
       .nth(1)
       .getByRole("img", { name: firstImage.name, exact: true }),
   ).toBeVisible();
+});
+
+test("clipboard images attach to their user turn and disabled role badges retain tooltips", async ({
+  page,
+  request,
+  context,
+}) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await unsupportedOtherModel(page);
+  await request.post("/fixture/reset", {
+    data: { markdownOutput: "Clipboard answer." },
+  });
+  const first = page.getByLabel("Message 1", { exact: true });
+  await first.fill("Earlier $ROW $COLUMN");
+  await page.evaluate(() => navigator.clipboard.writeText("\nNotes"));
+  await first.press("End");
+  await first.press("ControlOrMeta+V");
+  await expect(first).toHaveValue("Earlier $ROW $COLUMN\nNotes");
+  await appendCompletionAndUser(page);
+  const clipboardBytes = await page.evaluate(async () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 120;
+    canvas.height = 80;
+    const paint = canvas.getContext("2d")!;
+    paint.fillStyle = "red";
+    paint.fillRect(0, 0, canvas.width, canvas.height);
+    const image = await new Promise<Blob>((resolve) =>
+      canvas.toBlob((blob) => resolve(blob!), "image/png"),
+    );
+    await navigator.clipboard.write([
+      new ClipboardItem({ "image/png": image }),
+    ]);
+    const items = await navigator.clipboard.read();
+    return Array.from(
+      new Uint8Array(await (await items[0].getType("image/png")).arrayBuffer()),
+    );
+  });
+  await page.getByLabel("Message 3", { exact: true }).press("ControlOrMeta+V");
+  const later = page.locator(".chat-message").nth(2);
+  await expect(later.locator(".reference-image img")).toBeVisible();
+  await expect(
+    later.getByRole("button", { name: "Message 3 role: user", exact: true }),
+  ).toBeDisabled();
+  await later.locator(".chat-role-hint").hover();
+  await expect(page.getByRole("tooltip")).toBeVisible();
+  await first.hover();
+  await expect(page.getByRole("tooltip")).toBeHidden();
+  await later.locator(".chat-role-hint").focus();
+  await expect(page.getByRole("tooltip")).toBeVisible();
+  await appendFinalCompletion(page);
+  await page.reload();
+  await expect(later.locator(".reference-image img")).toBeVisible();
+  await expect(page.getByLabel("Message 3", { exact: true })).toHaveValue("");
+  await variableAxes(page);
+  await selectModel(page, "fixture/other");
+  const generate = page.getByRole("button", { name: "Generate", exact: true });
+  await expect(generate).toBeDisabled();
+  await selectModel(page, "fixture/text");
+  await generate.click();
+  await expectProgress(page, 1, 1);
+  const sent = await (await request.get("/fixture/chat-requests")).json();
+  const initial = { text: "Earlier one one\nNotes", images: [] };
+  expect(userTurns(sent[0])).toEqual([initial]);
+  expect(userTurns(sent[1])).toEqual([
+    initial,
+    {
+      text: "",
+      images: [
+        `data:image/png;base64,${Buffer.from(clipboardBytes).toString("base64")}`,
+      ],
+    },
+  ]);
 });
