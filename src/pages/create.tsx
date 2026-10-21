@@ -14,7 +14,7 @@ import { generationGroupKey } from "../../shared/generation-key";
 import { expandGrid } from "../../server/domain";
 import { effortLabel } from "../../server/compatibility";
 import { useCreateForm } from "../create/use-create-form";
-import { AxisEditor } from "../create/axis-editor";
+import { AxisEditor, AxisValues } from "../create/axis-editor";
 import { compatibilityTables } from "../create/compatibility-table";
 import { BudgetWarnings } from "../create/budget-warnings";
 import { Connection } from "../components/connection";
@@ -24,6 +24,7 @@ import { useTooltip } from "../components/use-tooltip";
 import { promptVariableIssue } from "../../server/prompt-variables";
 import { PromptEditor } from "../create/prompt-editor";
 import { VariableTable } from "../create/variable-table";
+import { JudgeCaseTable } from "../create/judge-case-table";
 import {
   makeJudgeVariable,
   makeJudgeShared,
@@ -114,8 +115,7 @@ export function Create() {
   const { generate, onUploading, lowBalance, setLowBalance, busy, error } =
     submission;
   const compatibility = compatibilityTables({ input: candidate, models });
-  const commonFixedParameters =
-    commonModel || commonEffort || commonJudgeModel || commonJudgeEffort;
+  const commonFixedParameters = commonModel || commonEffort;
   const commonParameters = input.format === "image" || commonFixedParameters;
   const promptVariables = (["rows", "columns"] as const).flatMap((side) => {
     const axis = input[side];
@@ -243,43 +243,6 @@ export function Create() {
                       removeVariableCase(current, side, index),
                     )
                   }
-                  caseCriteria={
-                    criteriaSource &&
-                    !Array.isArray(criteriaSource) &&
-                    criteriaSource.axis === side
-                      ? criteriaSource.cases
-                      : undefined
-                  }
-                  onCriteriaChange={(index, criteria) =>
-                    update((current) => {
-                      const source = current.judge?.criteria;
-                      if (
-                        !source ||
-                        Array.isArray(source) ||
-                        source.axis !== side
-                      )
-                        return current;
-                      return {
-                        judge: {
-                          ...current.judge!,
-                          criteria: {
-                            ...source,
-                            cases: source.cases.map((rubric, i) =>
-                              i === index ? criteria : rubric,
-                            ),
-                          },
-                        },
-                      };
-                    })
-                  }
-                  onMakeShared={(index) => {
-                    if (
-                      window.confirm(
-                        "Use this judge for all cases? This replaces all per-case judge criteria with this case’s criteria.",
-                      )
-                    )
-                      update((current) => makeJudgeShared(current, index));
-                  }}
                   onChange={(values) =>
                     update((current) =>
                       changeAxis(current, side, { kind: "variable", values }),
@@ -341,56 +304,6 @@ export function Create() {
                     </select>
                   </label>
                   {compatibility.effort}
-                </div>
-              )}
-              {commonJudgeModel && input.judge && (
-                <fieldset role="radiogroup" aria-label="Judge model">
-                  <legend className="parameter-name">Judge model</legend>
-                  <ModelSelector
-                    judge
-                    models={judgeModels}
-                    format={input.format}
-                    values={input.judge.model ? [input.judge.model] : []}
-                    onChange={(values) =>
-                      update({
-                        judge: { ...input.judge!, model: values[0] ?? "" },
-                      })
-                    }
-                  />
-                  {!judgeModels.length && (
-                    <p className="hint">
-                      No compatible judge models are available for this output
-                      type.
-                    </p>
-                  )}
-                </fieldset>
-              )}
-              {commonJudgeEffort && input.judge && (
-                <div>
-                  <label>
-                    <span className="parameter-name">
-                      Judge thinking effort
-                    </span>
-                    <select
-                      aria-label="Judge thinking effort"
-                      value={input.judge.effort}
-                      onChange={(event) =>
-                        update({
-                          judge: {
-                            ...input.judge!,
-                            effort: event.target.value as GridInput["effort"],
-                          },
-                        })
-                      }
-                    >
-                      {efforts.map((effort) => (
-                        <option key={effort} value={effort}>
-                          {effortLabel(effort)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  {compatibility.judge_effort}
                 </div>
               )}
             </div>
@@ -459,7 +372,7 @@ export function Create() {
         </section>
       )}
       {formatSelected && (
-        <section>
+        <section aria-label="Judge">
           <div className="section-heading" ref={judgeHeader}>
             <span className="number">{commonParameters ? "05" : "04"}</span>
             <h2>
@@ -480,6 +393,87 @@ export function Create() {
             <p className="hint">Websites do not support a judge.</p>
           ) : input.judge ? (
             <>
+              <div className="fixed-options">
+                {commonJudgeModel && input.judge && (
+                  <fieldset role="radiogroup" aria-label="Judge model">
+                    <legend className="parameter-name">Judge model</legend>
+                    <ModelSelector
+                      judge
+                      models={judgeModels}
+                      format={input.format}
+                      values={input.judge.model ? [input.judge.model] : []}
+                      onChange={(values) =>
+                        update({
+                          judge: { ...input.judge!, model: values[0] ?? "" },
+                        })
+                      }
+                    />
+                    {!judgeModels.length && (
+                      <p className="hint">
+                        No compatible judge models are available for this output
+                        type.
+                      </p>
+                    )}
+                  </fieldset>
+                )}
+                {commonJudgeEffort && input.judge && (
+                  <div>
+                    <label>
+                      <span className="parameter-name">
+                        Judge thinking effort
+                      </span>
+                      <select
+                        aria-label="Judge thinking effort"
+                        value={input.judge.effort}
+                        onChange={(event) =>
+                          update({
+                            judge: {
+                              ...input.judge!,
+                              effort: event.target.value as GridInput["effort"],
+                            },
+                          })
+                        }
+                      >
+                        {efforts.map((effort) => (
+                          <option key={effort} value={effort}>
+                            {effortLabel(effort)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    {compatibility.judge_effort}
+                  </div>
+                )}
+              </div>
+              {(["rows", "columns"] as const).map((side) => {
+                const axis = input[side];
+                if (axis.kind !== "judge_model" && axis.kind !== "judge_effort")
+                  return null;
+                return (
+                  <div className="axis" key={side}>
+                    <div className="parameter-name">
+                      {axis.kind === "judge_model"
+                        ? "Judge model"
+                        : "Judge thinking effort"}
+                      {" · "}
+                      {side === "rows" ? "Rows" : "Columns"}
+                    </div>
+                    <AxisValues
+                      label={side === "rows" ? "Rows" : "Columns"}
+                      axis={axis}
+                      format={input.format}
+                      models={models}
+                      judgeModels={judgeModels}
+                      onUploading={onUploading}
+                      onChange={(values) =>
+                        update((current) => changeAxis(current, side, values))
+                      }
+                    >
+                      {compatibility[axis.kind]}
+                    </AxisValues>
+                  </div>
+                );
+              })}
               {Array.isArray(input.judge.criteria) ? (
                 <>
                   <CriteriaEditor
@@ -514,11 +508,40 @@ export function Create() {
                   </div>
                 </>
               ) : (
-                <p className="hint">
-                  Judge criteria vary by{" "}
-                  {input.judge.criteria.axis === "rows" ? "row" : "column"}{" "}
-                  case. Edit them in the variable table above.
-                </p>
+                <JudgeCaseTable
+                  axis={input.judge.criteria.axis}
+                  cases={input.judge.criteria.cases}
+                  onChange={(index, criteria) =>
+                    update((current) => {
+                      const source = current.judge?.criteria;
+                      if (
+                        !source ||
+                        Array.isArray(source) ||
+                        source.axis !== criteriaAxis
+                      )
+                        return current;
+                      return {
+                        judge: {
+                          ...current.judge!,
+                          criteria: {
+                            ...source,
+                            cases: source.cases.map((rubric, i) =>
+                              i === index ? criteria : rubric,
+                            ),
+                          },
+                        },
+                      };
+                    })
+                  }
+                  onMakeShared={(index) => {
+                    if (
+                      window.confirm(
+                        "Use this judge for all cases? This replaces all per-case judge criteria with this case’s criteria.",
+                      )
+                    )
+                      update((current) => makeJudgeShared(current, index));
+                  }}
+                />
               )}
               <ErrorMessage error={criteriaIssue} />
               <p className="hint">

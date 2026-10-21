@@ -891,9 +891,10 @@ test("incomplete chat, criteria and raw budget survive reload and OAuth before c
   await page
     .getByRole("checkbox", { name: "Add a LLM judge", exact: true })
     .check();
-  const criterion = page.getByLabel("Criterion 1", { exact: true });
+  const judgeSection = page.getByRole("region", { name: "Judge", exact: true });
+  const criterion = judgeSection.getByLabel("Criterion 1", { exact: true });
   await criterion.fill("  ");
-  const judge = page.getByRole("radiogroup", {
+  const judge = judgeSection.getByRole("radiogroup", {
     name: "Judge model",
     exact: true,
   });

@@ -2,8 +2,6 @@ import { useId, useLayoutEffect, useRef, useState } from "react";
 import { Plus, X } from "lucide-react";
 import type { VariableField } from "../../server/prompt-variables";
 import { ReferenceImageList, ReferencePicker } from "./reference-groups";
-import type { Criterion } from "../../server/judge-criteria";
-import { CriteriaEditor } from "./criteria-editor";
 
 function fitTextarea(input: HTMLTextAreaElement) {
   input.style.height = "auto";
@@ -56,9 +54,6 @@ export function VariableTable({
   onBusy,
   onAddCase,
   onRemoveCase,
-  caseCriteria,
-  onCriteriaChange,
-  onMakeShared,
 }: {
   label: "Rows" | "Columns";
   values: VariableField[][];
@@ -66,9 +61,6 @@ export function VariableTable({
   onBusy: (busy: boolean) => void;
   onAddCase?: () => void;
   onRemoveCase?: (index: number) => void;
-  caseCriteria?: Criterion[][];
-  onCriteriaChange?: (index: number, criteria: Criterion[]) => void;
-  onMakeShared?: (index: number) => void;
 }) {
   const id = useId();
   const reads = useRef(0);
@@ -127,27 +119,13 @@ export function VariableTable({
       </>
     );
   }
-  function rubric(caseIndex: number) {
-    const label = `${casesAcross ? "Column" : "Row"} case ${caseIndex + 1} judge criteria`;
-    return (
-      <div role="group" aria-label={label}>
-        <CriteriaEditor
-          criteria={caseCriteria?.[caseIndex] ?? []}
-          onChange={(criteria) => onCriteriaChange?.(caseIndex, criteria)}
-        />
-        <button type="button" onClick={() => onMakeShared?.(caseIndex)}>
-          Use this judge for all cases
-        </button>
-      </div>
-    );
-  }
   return (
     <div className="variable-editor" aria-busy={reading}>
       <div className="variable-table-scroll">
         <table
           className="variable-table"
           style={{
-            minWidth: `${columnCount * (caseCriteria && casesAcross ? 360 : 192) + 58 + (caseCriteria && !casesAcross ? 360 : 0)}px`,
+            minWidth: `${columnCount * 192 + 58}px`,
           }}
           aria-label={`${label === "Rows" ? "Row" : "Column"} variables`}
         >
@@ -156,7 +134,6 @@ export function VariableTable({
             {Array.from({ length: columnCount }, (_, column) => (
               <col key={column} />
             ))}
-            {caseCriteria && !casesAcross && <col style={{ width: 360 }} />}
           </colgroup>
           <thead>
             <tr>
@@ -166,9 +143,6 @@ export function VariableTable({
                   {header(casesAcross ? "case" : "variable", column)}
                 </th>
               ))}
-              {caseCriteria && !casesAcross && (
-                <th scope="col">Judge criteria</th>
-              )}
             </tr>
           </thead>
           <tbody>
@@ -226,17 +200,8 @@ export function VariableTable({
                     </td>
                   );
                 })}
-                {caseCriteria && !casesAcross && <td>{rubric(row)}</td>}
               </tr>
             ))}
-            {caseCriteria && casesAcross && (
-              <tr>
-                <th scope="row">Judge criteria</th>
-                {values.map((_, index) => (
-                  <td key={index}>{rubric(index)}</td>
-                ))}
-              </tr>
-            )}
           </tbody>
         </table>
       </div>

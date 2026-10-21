@@ -8,8 +8,14 @@ import {
   setVariableValues,
 } from "./helpers";
 
+const judgeSection = (page: Page) =>
+  page.getByRole("region", { name: "Judge", exact: true });
+
 const rubric = (page: Page, side: "Row" | "Column", index: number) =>
-  page.locator(`[aria-label="${side} case ${index} judge criteria"]`);
+  judgeSection(page).getByRole("group", {
+    name: `${side} case ${index} judge criteria`,
+    exact: true,
+  });
 
 async function confirm(
   page: Page,
@@ -29,13 +35,13 @@ async function start(page: Page) {
   await page
     .getByRole("checkbox", { name: "Add a LLM judge", exact: true })
     .check();
-  await page
+  await judgeSection(page)
     .getByLabel("Criterion 1", { exact: true })
     .fill("Does the output answer the question?");
 }
 
 async function selectJudge(page: Page) {
-  const selector = page.getByRole("radiogroup", {
+  const selector = judgeSection(page).getByRole("radiogroup", {
     name: "Judge model",
     exact: true,
   });
@@ -73,11 +79,11 @@ test("judge conversion is confirmed, single-source and reversible from a chosen 
   page,
 }) => {
   await start(page);
-  const rowButton = page.getByRole("button", {
+  const rowButton = judgeSection(page).getByRole("button", {
     name: "Make the judge a row variable",
     exact: true,
   });
-  const columnButton = page.getByRole("button", {
+  const columnButton = judgeSection(page).getByRole("button", {
     name: "Make the judge a column variable",
     exact: true,
   });
@@ -98,9 +104,9 @@ test("judge conversion is confirmed, single-source and reversible from a chosen 
   await expect(rowButton).toBeEnabled();
   await expect(columnButton).toBeEnabled();
   await confirm(page, false, () => rowButton.click());
-  await expect(page.getByLabel("Criterion 1", { exact: true })).toHaveValue(
-    "Does the output answer the question?",
-  );
+  await expect(
+    judgeSection(page).getByLabel("Criterion 1", { exact: true }),
+  ).toHaveValue("Does the output answer the question?");
   await expect(rubric(page, "Row", 1)).toHaveCount(0);
   await confirm(page, true, () => rowButton.click());
   await expect(
@@ -137,11 +143,11 @@ test("judge conversion is confirmed, single-source and reversible from a chosen 
   await expect(rubric(page, "Row", 1)).toBeVisible();
   await confirm(page, true, () => makeShared.click());
   await expect(rubric(page, "Row", 1)).toHaveCount(0);
-  await expect(page.getByLabel("Criterion 2", { exact: true })).toHaveValue(
-    "Does the output contain a blue circle?",
-  );
   await expect(
-    page.getByLabel("Correct answer", { exact: true }).nth(1),
+    judgeSection(page).getByLabel("Criterion 2", { exact: true }),
+  ).toHaveValue("Does the output contain a blue circle?");
+  await expect(
+    judgeSection(page).getByLabel("Correct answer", { exact: true }).nth(1),
   ).toHaveAttribute("aria-pressed", "false");
   await expect(rowButton).toBeEnabled();
   await expect(columnButton).toBeEnabled();
@@ -188,13 +194,26 @@ test("different case rubrics judge one reused generation independently and survi
     .getByLabel("Prompt", { exact: true })
     .fill("Answer independently of judge-only reference material.");
   await confirm(page, true, () =>
-    page
+    judgeSection(page)
       .getByRole("button", {
         name: "Make the judge a row variable",
         exact: true,
       })
       .click(),
   );
+  await page.getByRole("button", { name: "Add row case", exact: true }).click();
+  await expect(rubric(page, "Row", 3)).toBeVisible();
+  await rubric(page, "Row", 3)
+    .getByLabel("Criterion 1", { exact: true })
+    .fill("Does the temporary case stay independent?");
+  await expect(
+    rubric(page, "Row", 1).getByLabel("Criterion 1", { exact: true }),
+  ).toHaveValue("Does the output answer the question?");
+  await page
+    .getByRole("button", { name: "Remove row case 3", exact: true })
+    .click();
+  await expect(rubric(page, "Row", 3)).toHaveCount(0);
+  await expect(page.getByLabel("Criterion 1", { exact: true })).toHaveCount(2);
   await rubric(page, "Row", 1)
     .getByLabel("Criterion 1", { exact: true })
     .fill("Does the answer match $ROW1?");
@@ -212,6 +231,38 @@ test("different case rubrics judge one reused generation independently and survi
     .fill("Does the answer respect $ROW1?");
   await selectModel(page, "fixture/text");
   await selectJudge(page);
+  await judgeSection(page)
+    .getByLabel("Judge thinking effort", { exact: true })
+    .selectOption("high");
+  const swap = page.getByRole("button", {
+    name: "Swap rows and columns",
+    exact: true,
+  });
+  await swap.click();
+  await expect(rubric(page, "Row", 1)).toHaveCount(0);
+  await expect(
+    rubric(page, "Column", 1).getByLabel("Criterion 1", { exact: true }),
+  ).toHaveValue("Does the answer match $COLUMN1?");
+  await expect(
+    rubric(page, "Column", 2).getByLabel("Criterion 2", { exact: true }),
+  ).toHaveValue("Does the answer respect $COLUMN1?");
+  await swap.click();
+  await page.reload();
+  await judgeSection(page)
+    .getByRole("radiogroup", { name: "Judge model", exact: true })
+    .getByRole("searchbox")
+    .fill("fixture/text");
+  await expect(
+    judgeSection(page)
+      .getByRole("radiogroup", { name: "Judge model", exact: true })
+      .locator('input[type="radio"][value="fixture/text"]'),
+  ).toBeChecked();
+  await expect(
+    judgeSection(page).getByLabel("Judge thinking effort", { exact: true }),
+  ).toHaveValue("high");
+  await expect(
+    rubric(page, "Row", 2).getByLabel("Criterion 2", { exact: true }),
+  ).toHaveValue("Does the answer respect $ROW1?");
   await connectOpenRouter(page);
   const originalId = await generate(page);
   await expectProgress(page, 2, 2);
@@ -257,6 +308,9 @@ test("different case rubrics judge one reused generation independently and survi
   await expect(
     rubric(page, "Row", 2).getByLabel("Criterion 2", { exact: true }),
   ).toHaveValue("Does the answer respect $ROW1?");
+  await expect(
+    judgeSection(page).getByLabel("Judge thinking effort", { exact: true }),
+  ).toHaveValue("high");
   await rubric(page, "Row", 2)
     .getByLabel("Criterion 2", { exact: true })
     .fill("Does the answer agree with $ROW1?");

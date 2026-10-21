@@ -12,19 +12,7 @@ import { effortLabel } from "../../server/compatibility";
 import type { Model } from "../../server/provider";
 import { dimensionNames } from "../format";
 import { useTooltip } from "../components/use-tooltip";
-export function AxisEditor({
-  label,
-  axis,
-  format,
-  models,
-  judgeModels,
-  judgeEnabled = false,
-  onChange,
-  referenceGroups = {},
-  onUploading,
-  children,
-  criteriaOwner = false,
-}: {
+type AxisEditorProps = {
   children?: ReactNode;
   label: "Rows" | "Columns";
   axis: GridInput["rows"];
@@ -36,7 +24,18 @@ export function AxisEditor({
   referenceGroups?: Groups;
   onUploading: (busy: boolean) => void;
   criteriaOwner?: boolean;
-}) {
+};
+
+export function AxisEditor({
+  label,
+  axis,
+  format,
+  judgeEnabled = false,
+  onChange,
+  criteriaOwner = false,
+  children,
+  ...valueProps
+}: AxisEditorProps) {
   const selectorHint = useTooltip<HTMLLabelElement>(
     criteriaOwner
       ? "Use a case’s judge for all cases before changing this variable axis."
@@ -49,20 +48,6 @@ export function AxisEditor({
     "judge_model",
     "judge_effort",
   ];
-  const choices =
-    axis.kind === "effort" || axis.kind === "judge_effort"
-      ? efforts.map((e) => ({ id: e, name: effortLabel(e) }))
-      : [
-          ...new Set([
-            ...(imageChoices[axis.kind as keyof typeof imageChoices] ?? []),
-            ...(axis.kind === "size" || axis.kind === "variable"
-              ? []
-              : axis.values),
-          ]),
-        ].map((value) => ({
-          id: value,
-          name: value === "auto" ? "Auto" : value,
-        }));
   return (
     <div className="axis">
       <label
@@ -98,6 +83,48 @@ export function AxisEditor({
           ))}
         </select>
       </label>
+      {axis.kind !== "judge_model" && axis.kind !== "judge_effort" && (
+        <AxisValues
+          {...valueProps}
+          label={label}
+          axis={axis}
+          format={format}
+          onChange={onChange}
+        >
+          {children}
+        </AxisValues>
+      )}
+    </div>
+  );
+}
+
+export function AxisValues({
+  label,
+  axis,
+  format,
+  models,
+  judgeModels,
+  onChange,
+  referenceGroups = {},
+  onUploading,
+  children,
+}: Omit<AxisEditorProps, "judgeEnabled" | "criteriaOwner">) {
+  const choices =
+    axis.kind === "effort" || axis.kind === "judge_effort"
+      ? efforts.map((e) => ({ id: e, name: effortLabel(e) }))
+      : [
+          ...new Set([
+            ...(imageChoices[axis.kind as keyof typeof imageChoices] ?? []),
+            ...(axis.kind === "size" || axis.kind === "variable"
+              ? []
+              : axis.values),
+          ]),
+        ].map((value) => ({
+          id: value,
+          name: value === "auto" ? "Auto" : value,
+        }));
+  return (
+    <>
       {axis.kind === "input_references" ? (
         <ReferenceGroups
           values={axis.values}
@@ -156,6 +183,6 @@ export function AxisEditor({
         </fieldset>
       ) : null}
       {children}
-    </div>
+    </>
   );
 }

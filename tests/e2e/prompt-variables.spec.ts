@@ -40,10 +40,12 @@ async function image(name: string, color: string) {
 const imageURL = (file: { buffer: Buffer }) =>
   `data:image/png;base64,${file.buffer.toString("base64")}`;
 async function selectJudge(page: Page, model: string) {
-  const selector = page.getByRole("radiogroup", {
-    name: "Judge model",
-    exact: true,
-  });
+  const selector = page
+    .getByRole("region", { name: "Judge", exact: true })
+    .getByRole("radiogroup", {
+      name: "Judge model",
+      exact: true,
+    });
   await selector.getByRole("searchbox").fill(model);
   await selector
     .locator(`input[type="radio"][value=${JSON.stringify(model)}]`)
@@ -142,7 +144,8 @@ test("variable records merge images per message, interpolate judge references an
   await page
     .getByRole("checkbox", { name: "Add a LLM judge", exact: true })
     .check();
-  await page
+  const judgeSection = page.getByRole("region", { name: "Judge", exact: true });
+  await judgeSection
     .getByLabel("Criterion 1", { exact: true })
     .fill("Does the response match $ROW2? Check again: $ROW2");
   const swap = page.getByRole("button", {
@@ -156,9 +159,9 @@ test("variable records merge images per message, interpolate judge references an
   await expect(page.getByLabel("Message 1", { exact: true })).toHaveValue(
     "$COLUMN1 / $COLUMN1 / $ROW1",
   );
-  await expect(page.getByLabel("Criterion 1", { exact: true })).toHaveValue(
-    "Does the response match $COLUMN2? Check again: $COLUMN2",
-  );
+  await expect(
+    judgeSection.getByLabel("Criterion 1", { exact: true }),
+  ).toHaveValue("Does the response match $COLUMN2? Check again: $COLUMN2");
   await swap.click();
   await page.reload();
   await expect(page.getByLabel("$ROW1, case 1", { exact: true })).toHaveValue(
@@ -336,10 +339,11 @@ test("judge-only variable images allow a text-only generator and require a visio
   await page
     .getByRole("checkbox", { name: "Add a LLM judge", exact: true })
     .check();
-  await page
+  const judgeSection = page.getByRole("region", { name: "Judge", exact: true });
+  await judgeSection
     .getByLabel("Criterion 1", { exact: true })
     .fill("Does the response match $ROW2?");
-  const judge = page.getByRole("radiogroup", {
+  const judge = judgeSection.getByRole("radiogroup", {
     name: "Judge model",
     exact: true,
   });
