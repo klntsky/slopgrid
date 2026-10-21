@@ -1,5 +1,5 @@
 import { test, expect } from "./fixtures";
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import {
   connectOpenRouter,
   finishPublishing,
@@ -7,6 +7,13 @@ import {
   selectModel,
   mockModels,
 } from "./helpers";
+
+async function tooltipFor(page: Page, trigger: Locator) {
+  await expect(trigger).toHaveAttribute("aria-describedby", /\S+/);
+  return page.locator(
+    `[id="${await trigger.getAttribute("aria-describedby")}"]`,
+  );
+}
 
 async function setup(page: Page, connect = true) {
   await page.goto("/");
@@ -735,7 +742,7 @@ test("parameter compatibility grids isolate simultaneous warnings, unknown model
     exact: true,
   });
   await low.hover();
-  await expect(page.getByRole("tooltip")).toContainText("low");
+  await expect(await tooltipFor(page, low)).toContainText("low");
   await expect(
     table("Quality").getByRole("cell", {
       name: "Fixture megapixels / high: Support unknown",
@@ -782,8 +789,9 @@ test("parameter compatibility grids isolate simultaneous warnings, unknown model
     exact: true,
   });
   await mismatch.hover();
-  await expect(page.getByRole("tooltip")).toContainText("1536x1024");
-  await expect(page.getByRole("tooltip")).toContainText("1:1");
+  const mismatchDetails = await tooltipFor(page, mismatch);
+  await expect(mismatchDetails).toContainText("1536x1024");
+  await expect(mismatchDetails).toContainText("1:1");
   await expect(
     table("Size").getByRole("cell", {
       name: "Fixture image / 1536x1024: Unsupported",
@@ -848,8 +856,9 @@ test("a model/value pair reports mixed support when its actual cases use differe
   });
   await expect(mixed).toBeVisible();
   await mixed.hover();
-  await expect(page.getByRole("tooltip")).toContainText("Row 1");
-  await expect(page.getByRole("tooltip")).toContainText("Row 2");
+  const mixedDetails = await tooltipFor(page, mixed);
+  await expect(mixedDetails).toContainText("Row 1");
+  await expect(mixedDetails).toContainText("Row 2");
   await page
     .getByRole("checkbox", { name: "transparent", exact: true })
     .uncheck();
