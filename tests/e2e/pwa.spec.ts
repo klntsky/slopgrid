@@ -351,7 +351,11 @@ test("visited pages and completed outputs survive offline reload without retaini
           page.getByRole("button", { name: "Set Title", exact: true }),
         ).toBeVisible();
         expect(
-          (await page.request.post(`/api/grids/${grid.id}/edit`)).status(),
+          await page.evaluate(
+            async (id) =>
+              (await fetch(`/api/grids/${id}/edit`, { method: "POST" })).status,
+            grid.id,
+          ),
         ).toBe(409);
       }
       // Completion is observable through CacheStorage rather than a timing delay.

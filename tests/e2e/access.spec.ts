@@ -709,10 +709,7 @@ test("titles are independent owner-editable metadata and collapsed prompts expan
       await heading.focus();
       await page.setViewportSize({ width, height: 900 });
       await heading.hover();
-      await expect(heading).toHaveAttribute("aria-describedby", /\S+/);
-      const tooltip = page.locator(
-        `#${await heading.getAttribute("aria-describedby")}`,
-      );
+      const tooltip = page.getByRole("tooltip").filter({ hasText: prompt });
       await expect(tooltip).toHaveText(prompt);
       await page.keyboard.press("Escape");
       await expect(tooltip).toHaveCount(0);
