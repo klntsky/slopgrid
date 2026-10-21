@@ -257,11 +257,43 @@ for (const format of ["markdown", "chat-template", "image", "svg"] as const) {
           ? "A single solid red rectangle centered on a plain white background. Flat geometric diagram. No circles, letters, or other objects."
           : "Respond with only this short sentence: A red rectangle is shown.";
     const input: GridInput = {
+      inputVersion: 2,
       format,
       prompt,
-      model: format === "image" ? imageGenerator : textGenerator,
-      effort: "default",
+      promptImages: [],
       budgetUsd: 0.03,
+      judge: true,
+      parameters: {
+        model:
+          format === "svg" || format === "chat-template"
+            ? { kind: "rows" }
+            : {
+                kind: "common",
+                value: format === "image" ? imageGenerator : textGenerator,
+              },
+        ...(format === "image"
+          ? {
+              size: { kind: "common" as const, value: "auto" },
+              aspect_ratio: { kind: "common" as const, value: "auto" },
+              quality: { kind: "common" as const, value: "auto" },
+              background: { kind: "common" as const, value: "auto" },
+            }
+          : {
+              effort:
+                format === "svg" || format === "chat-template"
+                  ? { kind: "columns" as const }
+                  : { kind: "common" as const, value: "default" as const },
+            }),
+        judge_model:
+          format === "svg" || format === "chat-template"
+            ? { kind: "common", value: judges[0] }
+            : { kind: "rows" },
+        judge_effort:
+          format === "svg" || format === "chat-template"
+            ? { kind: "common", value: "low" }
+            : { kind: "columns" },
+        judge_criteria: { kind: "common", value: criteria },
+      },
       ...(format === "chat-template"
         ? {
             messages: [
@@ -272,23 +304,23 @@ for (const format of ["markdown", "chat-template", "image", "svg"] as const) {
         : {}),
       rows:
         format === "svg" || format === "chat-template"
-          ? { kind: "model", values: [textGenerator] }
-          : {
-              kind: "judge_model",
-              values: format === "markdown" ? judges : [judges[0]],
-            },
+          ? [{ id: "row-generator", model: textGenerator }]
+          : (format === "markdown" ? judges : [judges[0]]).map(
+              (judge_model, index) => ({
+                id: `row-judge-${index + 1}`,
+                judge_model,
+              }),
+            ),
       columns:
         format === "svg" || format === "chat-template"
-          ? { kind: "effort", values: ["default"] }
-          : {
-              kind: "judge_effort",
-              values: format === "markdown" ? ["low", "high"] : ["low"],
-            },
-      judge: {
-        criteria,
-        model: format === "svg" || format === "chat-template" ? judges[0] : "",
-        effort: "low",
-      },
+          ? [{ id: "column-default", effort: "default" }]
+          : (format === "markdown"
+              ? (["low", "high"] as const)
+              : (["low"] as const)
+            ).map((judge_effort) => ({
+              id: `column-${judge_effort}`,
+              judge_effort,
+            })),
     };
     const grid = await create(page, input, headers);
     expect(new Set(grid.cells.map((cell) => cell.judge!.effort))).toEqual(
@@ -301,9 +333,12 @@ for (const format of ["markdown", "chat-template", "image", "svg"] as const) {
         page,
         {
           ...input,
-          judge: {
-            ...input.judge!,
-            criteria: [criteria[0], { ...criteria[1], correctAnswer: false }],
+          parameters: {
+            ...input.parameters,
+            judge_criteria: {
+              kind: "common",
+              value: [criteria[0], { ...criteria[1], correctAnswer: false }],
+            },
           },
         },
         headers,

@@ -3,10 +3,11 @@ import { createHash } from "node:crypto";
 import { unlinkSync } from "node:fs";
 import { test } from "node:test";
 import { token } from "../server/ids.js";
-import { expandGrid, type Grid, type GridInput } from "../server/domain.js";
+import { expandGrid, type Grid } from "../server/domain.js";
 import { appFixture } from "./app-fixture.js";
 import { serviceWorkerFixture } from "./service-worker-fixture.js";
 import { validatedGrid } from "./grid-storage-fixture.js";
+import { currentInput } from "./current-grid-fixture.js";
 
 const png = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
@@ -66,18 +67,20 @@ test("reference SHA validators reuse bytes only after authorization, including a
   store.deleteSession(alice.id);
   assert.equal((await read(image.id, alice.id, etag)).status, 404);
   store.saveSession(alice);
-  const input: GridInput = {
+  const input = currentInput({
     format: "chat-template",
     prompt: "Describe this image",
     messages: [
       { role: "user", content: "Describe this image", images: [image] },
     ],
-    model: "fixture/text",
-    effort: "none",
     budgetUsd: 1,
-    rows: { kind: "model", values: ["fixture/text"] },
-    columns: { kind: "effort", values: ["none"] },
-  };
+    parameters: {
+      model: { kind: "rows" },
+      effort: { kind: "columns" },
+    },
+    rows: [{ model: "fixture/text" }],
+    columns: [{ effort: "none" }],
+  });
   const grid: Grid = {
     id: token(),
     owner: alice.id,

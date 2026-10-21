@@ -1,12 +1,12 @@
 import type Database from "better-sqlite3";
-import { expandGrid, type Cell, type GridInput } from "./domain.js";
+import type { Cell } from "./domain.js";
 import { generationGroupKey } from "../shared/generation-key.js";
 import { migrateVariableInput } from "../shared/variable-migration.js";
-import { criteriaForCell } from "./judge-criteria.js";
 import {
-  interpolateVariables,
-  mergeVariableImages,
-} from "./prompt-variables.js";
+  expandLegacyGrid,
+  resolveLegacyCriteriaForCell,
+  type LegacyGridInput,
+} from "./legacy-grid-input.js";
 
 const schemaVersion = 17;
 export function initializeDatabase(db: Database.Database) {
@@ -184,8 +184,8 @@ function migrateVariables(db: Database.Database) {
     "INSERT OR IGNORE INTO grid_reference_images (grid_id,reference_id) VALUES (?,?)",
   );
   for (const grid of grids) {
-    const data = JSON.parse(grid.data) as { input: GridInput };
-    const input = migrateVariableInput(data.input) as GridInput;
+    const data = JSON.parse(grid.data) as { input: LegacyGridInput };
+    const input = migrateVariableInput(data.input) as LegacyGridInput;
     if (input !== data.input)
       save.run(JSON.stringify({ ...data, input }), grid.id);
     // Backfill configured attachments without removing existing links, including
@@ -206,7 +206,7 @@ type LegacyCell = Cell & {
   generationStatus?: Cell["status"];
 };
 
-function legacyInventory(format: GridInput["format"]): string[] {
+function legacyInventory(format: LegacyGridInput["format"]): string[] {
   if (format === "image") return ["image"];
   if (format === "svg") return ["index.svg"];
   if (format === "html") return ["index.html"];
@@ -233,15 +233,15 @@ function migrateWorkflow(db: Database.Database) {
     data: string;
   }[];
   for (const grid of grids) {
-    const savedGrid = JSON.parse(grid.data) as { input: GridInput };
-    const input = migrateVariableInput(savedGrid.input) as GridInput;
+    const savedGrid = JSON.parse(grid.data) as { input: LegacyGridInput };
+    const input = migrateVariableInput(savedGrid.input) as LegacyGridInput;
     const rows = db
       .prepare(
         "SELECT id,position,data FROM cells WHERE grid_id=? ORDER BY position",
       )
       .all(grid.id) as { id: string; position: number; data: string }[];
     if (!rows.length) continue;
-    const expanded = expandGrid(input);
+    const expanded = expandLegacyGrid(input);
     const groups = new Map<string, LegacyCell[]>();
     for (const row of rows) {
       const saved = JSON.parse(row.data) as Partial<LegacyCell>;
@@ -352,18 +352,10 @@ function migrateWorkflow(db: Database.Database) {
             errorCode,
             results,
           } = cell.judge;
-          let images: Cell["images"];
-          const criteria = criteriaForCell(input, cell.row, cell.column).map(
-            (criterion) => {
-              const expanded = interpolateVariables(
-                criterion.text,
-                input,
-                cell.row,
-                cell.column,
-              );
-              images = mergeVariableImages(images, expanded.images);
-              return { ...criterion, text: expanded.text };
-            },
+          const { criteria, images } = resolveLegacyCriteriaForCell(
+            input,
+            cell.row,
+            cell.column,
           );
           insertTask.run(
             judgmentId,

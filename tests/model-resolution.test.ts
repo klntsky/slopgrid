@@ -3,22 +3,25 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Provider, type Model } from "../server/provider.js";
 import { resolveGridModels } from "../server/model-resolution.js";
-import type { Cell, GridInput } from "../server/domain.js";
+import {
+  expandGrid,
+  gridSchema,
+  type Cell,
+  type GridInput,
+} from "../server/domain.js";
+import { parameterValue, isCurrentGridInput } from "../server/parameters.js";
+import { currentDefinition } from "./current-grid-fixture.js";
 import {
   generatorReferences,
   judgeReferences,
   selectedReferences,
 } from "../server/image-settings.js";
 
-const input: GridInput = {
-  format: "markdown",
-  prompt: "Draw $ROW1 with $COLUMN1",
-  rows: { kind: "variable", values: ["cat"].map((text) => [{ text }]) },
-  columns: { kind: "variable", values: ["hat"].map((text) => [{ text }]) },
-  model: "~fixture/latest",
-  effort: "default",
+const input = currentDefinition({
+  prompt: "Draw a cat with a hat",
+  parameters: { model: { kind: "common", value: "~fixture/latest" } },
   budgetUsd: 5,
-};
+});
 function models(target = "fixture/v1"): Model[] {
   return [
     { id: "~fixture/latest", aliasTarget: target },
@@ -36,50 +39,78 @@ function models(target = "fixture/v1"): Model[] {
   }));
 }
 test("published alias targets resolve in both axis orientations and duplicate targets collapse", () => {
-  assert.equal(resolveGridModels(input, models()).model, "fixture/v1");
+  assert.equal(
+    parameterValue(resolveGridModels(input, models()), "model", 0, 0),
+    "fixture/v1",
+  );
   for (const axis of ["rows", "columns"] as const) {
-    const setup = {
+    const setup = currentDefinition({
       ...input,
-      prompt: axis === "rows" ? "Draw $COLUMN1" : "Draw $ROW1",
-      [axis]: {
-        kind: "model",
-        values: ["~fixture/latest", "fixture/v1", "fixture/v2"],
-      },
-    } as GridInput;
+      parameters: { ...input.parameters, model: { kind: axis } },
+      [axis]: ["~fixture/latest", "fixture/v1", "fixture/v2"].map((model) => ({
+        model,
+      })),
+    });
     const resolved = resolveGridModels(setup, models());
-    assert.deepEqual(resolved[axis].values, ["fixture/v1", "fixture/v2"]);
-    assert.equal(resolved.model, "");
+    assert.deepEqual(
+      resolved[axis].map((record) => record.model),
+      ["fixture/v1", "fixture/v2"],
+    );
+    assert.deepEqual(resolved.parameters.model, { kind: axis });
   }
-  assert.equal(input.model, "~fixture/latest");
+  assert.equal(parameterValue(input, "model", 0, 0), "~fixture/latest");
 });
 test("catalog aliases without published targets remain unchanged in fixed and axis selections", () => {
   const catalog = models();
   assert.equal(
-    resolveGridModels({ ...input, model: "fixture/chat-latest" }, catalog)
-      .model,
+    parameterValue(
+      resolveGridModels(
+        currentDefinition({
+          ...input,
+          parameters: {
+            ...input.parameters,
+            model: { kind: "common", value: "fixture/chat-latest" },
+          },
+        }),
+        catalog,
+      ),
+      "model",
+      0,
+      0,
+    ),
     "fixture/chat-latest",
   );
   for (const side of ["rows", "columns"] as const) {
-    const resolved: GridInput = resolveGridModels(
-      {
+    const resolved = resolveGridModels(
+      currentDefinition({
         ...input,
-        [side]: {
-          kind: "model",
-          values: ["fixture/chat-latest", "~fixture/latest"],
-        },
-      },
+        parameters: { ...input.parameters, model: { kind: side } },
+        [side]: ["fixture/chat-latest", "~fixture/latest"].map((model) => ({
+          model,
+        })),
+      }),
       catalog,
     );
-    assert.deepEqual(resolved[side].values, [
-      "fixture/chat-latest",
-      "fixture/v1",
-    ]);
+    assert.deepEqual(
+      resolved[side].map((record) => record.model),
+      ["fixture/chat-latest", "fixture/v1"],
+    );
   }
 });
 test("unknown or cyclic aliases fail explicitly", () => {
   for (const id of ["fixture/model:latest", "~fixture/unknown-latest"])
     assert.throws(
-      () => resolveGridModels({ ...input, model: id }, models()),
+      () =>
+        resolveGridModels(
+          currentDefinition({
+            ...input,
+            parameters: {
+              ...input.parameters,
+              model: { kind: "common", value: id },
+            },
+          }),
+          models(),
+        ),
       /concrete model/i,
     );
   assert.throws(
@@ -96,12 +127,15 @@ test("image input admission checks every resolved generator in fixed and axis se
     "svg",
     "html",
   ] as const) {
-    const source: GridInput = {
-      ...input,
+    const source = currentDefinition({
       format,
-      ...(format !== "chat-template"
-        ? { inputReferences: [{ id: "image", name: "image.png" }] }
-        : {
+      parameters: {
+        model: { kind: "common", value: "~fixture/latest" },
+      },
+      promptImages:
+        format === "chat-template" ? [] : [{ id: "image", name: "image.png" }],
+      ...(format === "chat-template"
+        ? {
             messages: [
               { role: "user" as const, content: "First question." },
               { role: "unfilled" as const, content: "" },
@@ -111,52 +145,86 @@ test("image input admission checks every resolved generator in fixed and axis se
                 images: [{ id: "image", name: "image.png" }],
               },
             ],
-          }),
-    };
+          }
+        : {}),
+    });
     const catalog = models().map((model) => ({
       ...model,
       imageInput: model.id !== "fixture/v2",
     }));
-    assert.equal(resolveGridModels(source, catalog).model, "fixture/v1");
+    assert.equal(
+      parameterValue(resolveGridModels(source, catalog), "model", 0, 0),
+      "fixture/v1",
+    );
     assert.throws(
-      () => resolveGridModels({ ...source, model: "fixture/v2" }, catalog),
+      () =>
+        resolveGridModels(
+          currentDefinition({
+            ...source,
+            parameters: {
+              ...source.parameters,
+              model: { kind: "common", value: "fixture/v2" },
+            },
+          }),
+          catalog,
+        ),
       /does not support image inputs/,
     );
     for (const side of ["rows", "columns"] as const) {
-      const selected: GridInput = {
+      const opposite = side === "rows" ? "columns" : "rows";
+      const selected = currentDefinition({
         ...source,
+        prompt:
+          format === "image"
+            ? `$${opposite === "rows" ? "ROW" : "COLUMN"}1`
+            : source.prompt,
+        promptImages: format === "image" ? [] : source.promptImages,
+        parameters: {
+          ...source.parameters,
+          model: { kind: side },
+          ...(format === "image" ? { variable: { kind: opposite } } : {}),
+        },
+        [side]: ["~fixture/latest", "fixture/v2"].map((model) => ({ model })),
         ...(format === "image"
           ? {
-              inputReferences: undefined,
-              referenceGroups: { group: [{ id: "image", name: "image.png" }] },
-              [side === "rows" ? "columns" : "rows"]: {
-                kind: "input_references",
-                values: ["group"],
-              },
+              [opposite]: [
+                {
+                  variable: [
+                    {
+                      text: "Describe it",
+                      images: [{ id: "image", name: "image.png" }],
+                    },
+                  ],
+                },
+              ],
             }
           : {}),
-        [side]: { kind: "model", values: ["~fixture/latest", "fixture/v2"] },
-      };
+      });
       assert.throws(
         () => resolveGridModels(selected, catalog),
         /does not support image inputs/,
       );
-      const withoutImages: GridInput = resolveGridModels(
-        {
+      const withoutImages = resolveGridModels(
+        currentDefinition({
           ...selected,
-          inputReferences: undefined,
-          referenceGroups: undefined,
+          prompt: "Text only.",
+          promptImages: [],
+          parameters: {
+            ...source.parameters,
+            model: { kind: side },
+          },
+          [opposite]: [{}],
           messages: selected.messages?.map(({ role, content }) => ({
             role,
-            content,
+            content: role === "user" && !content ? "Text only." : content,
           })),
-        },
+        }),
         catalog,
       );
-      assert.deepEqual(withoutImages[side].values, [
-        "fixture/v1",
-        "fixture/v2",
-      ]);
+      assert.deepEqual(
+        withoutImages[side].map((record) => record.model),
+        ["fixture/v1", "fixture/v2"],
+      );
     }
     const unsupportedTarget = catalog.map((model) => ({
       ...model,
@@ -169,14 +237,19 @@ test("image input admission checks every resolved generator in fixed and axis se
   }
 });
 
-const judgedInput: GridInput = {
+const judgedInput = currentDefinition({
   ...input,
-  judge: {
-    criteria: [{ text: "Is there a cat?", correctAnswer: false }],
-    model: "~fixture/latest",
-    effort: "default",
+  judge: true,
+  parameters: {
+    ...input.parameters,
+    judge_model: { kind: "common", value: "~fixture/latest" },
+    judge_effort: { kind: "common", value: "default" },
+    judge_criteria: {
+      kind: "common",
+      value: [{ text: "Is there a cat?", correctAnswer: false }],
+    },
   },
-};
+});
 function judgeModels(): Model[] {
   return models().map((model) => ({
     ...model,
@@ -190,9 +263,13 @@ test("future chat images require image-capable fixed and axis judges", () => {
     ...model,
     imageInput: model.id !== "fixture/v2",
   }));
-  const source: GridInput = {
-    ...judgedInput,
+  const source = currentDefinition({
     format: "chat-template",
+    judge: true,
+    parameters: {
+      model: { kind: "common", value: "~fixture/latest" },
+      judge_model: { kind: "common", value: "fixture/v2" },
+    },
     messages: [
       { role: "user", content: "First question." },
       { role: "unfilled", content: "" },
@@ -202,8 +279,7 @@ test("future chat images require image-capable fixed and axis judges", () => {
         images: [{ id: "image", name: "image.png" }],
       },
     ],
-    judge: { ...judgedInput.judge!, model: "fixture/v2" },
-  };
+  });
   assert.throws(
     () => resolveGridModels(source, catalog),
     /judge model must support image inputs/,
@@ -212,29 +288,32 @@ test("future chat images require image-capable fixed and axis judges", () => {
     assert.throws(
       () =>
         resolveGridModels(
-          {
+          currentDefinition({
             ...source,
-            [side]: {
-              kind: "judge_model",
-              values: ["fixture/v1", "fixture/v2"],
-            },
-          },
+            parameters: { ...source.parameters, judge_model: { kind: side } },
+            [side]: ["fixture/v1", "fixture/v2"].map((judge_model) => ({
+              judge_model,
+            })),
+          }),
           catalog,
         ),
       /judge model must support image inputs/,
     );
   }
   const withoutImages = resolveGridModels(
-    {
+    currentDefinition({
       ...source,
       messages: source.messages?.map(({ role, content }) => ({
         role,
-        content,
+        content: role === "user" && !content ? "Text only." : content,
       })),
-    },
+    }),
     catalog,
   );
-  assert.equal(withoutImages.judge?.model, "fixture/v2");
+  assert.equal(
+    parameterValue(withoutImages, "judge_model", 0, 0),
+    "fixture/v2",
+  );
 });
 
 for (const format of ["markdown", "svg"] as const)
@@ -242,22 +321,25 @@ for (const format of ["markdown", "svg"] as const)
     const common = { id: "common", name: "common.png" };
     const variable = { id: "variable", name: "variable.png" };
     const unused = { id: "unused", name: "unused.png" };
-    const source: GridInput = {
+    const source = currentDefinition({
       ...judgedInput,
       format,
       prompt: "$ROW1",
-      inputReferences: [common],
-      rows: {
-        kind: "variable",
-        values: [
-          [
+      promptImages: [common],
+      parameters: {
+        ...judgedInput.parameters,
+        variable: { kind: "rows" },
+        judge_model: { kind: "common", value: "fixture/v2" },
+      },
+      rows: [
+        {
+          variable: [
             { text: "Describe it.", images: [variable, common] },
             { text: "Unused.", images: [unused] },
           ],
-        ],
-      },
-      judge: { ...judgedInput.judge!, model: "fixture/v2" },
-    };
+        },
+      ],
+    });
     assert.deepEqual(selectedReferences(source), [common, variable, unused]);
     assert.deepEqual(generatorReferences(source), [common, variable]);
     assert.deepEqual(judgeReferences(source), [common, variable]);
@@ -270,38 +352,59 @@ for (const format of ["markdown", "svg"] as const)
       /judge model must support image inputs/,
     );
     assert.equal(
-      resolveGridModels(
-        { ...source, judge: { ...source.judge!, model: "fixture/v1" } },
-        catalog,
-      ).judge?.model,
+      parameterValue(
+        resolveGridModels(
+          currentDefinition({
+            ...source,
+            parameters: {
+              ...source.parameters,
+              judge_model: { kind: "common", value: "fixture/v1" },
+            },
+          }),
+          catalog,
+        ),
+        "judge_model",
+        0,
+        0,
+      ),
       "fixture/v1",
     );
     for (const side of ["rows", "columns"] as const)
       assert.throws(
         () =>
           resolveGridModels(
-            {
+            currentDefinition({
               ...source,
               prompt: "Describe it.",
-              [side]: {
-                kind: "judge_model",
-                values: ["fixture/v1", "fixture/v2"],
+              parameters: {
+                ...source.parameters,
+                variable: undefined,
+                judge_model: { kind: side },
               },
-            },
+              rows: [{}],
+              [side]: ["fixture/v1", "fixture/v2"].map((judge_model) => ({
+                judge_model,
+              })),
+            }),
             catalog,
           ),
         /judge model must support image inputs/,
       );
-    const textOnly = {
+    const textOnly = currentDefinition({
       ...source,
       prompt: "Describe it.",
-      inputReferences: undefined,
-    };
+      promptImages: [],
+    });
     assert.deepEqual(generatorReferences(textOnly), []);
     assert.deepEqual(judgeReferences(textOnly), []);
     if (format === "markdown")
       assert.equal(
-        resolveGridModels(textOnly, catalog).judge?.model,
+        parameterValue(
+          resolveGridModels(textOnly, catalog),
+          "judge_model",
+          0,
+          0,
+        ),
         "fixture/v2",
       );
     else
@@ -323,27 +426,32 @@ for (const format of ["markdown", "svg", "html"] as const)
       throw new Error("Generation must not start for an unsupported model");
     });
     const { origin, store } = await appFixture(t, { provider });
-    const source: GridInput = {
-      ...input,
+    const source = currentDefinition({
       format,
       prompt: "",
-      inputReferences: [{ id: "private-image", name: "private.png" }],
-      model: "fixture/v2",
-      rows: { kind: "model", values: ["fixture/v2"] },
-      columns: { kind: "effort", values: ["none"] },
-    };
+      promptImages: [{ id: "private-image", name: "private.png" }],
+      parameters: {
+        model: { kind: "rows" },
+        effort: { kind: "columns" },
+      },
+      rows: [{ model: "fixture/v2" }],
+      columns: [{ effort: "none" }],
+    });
     const cases = [
       { input: source, error: /selected model does not support image inputs/ },
       ...(format === "html"
         ? []
         : [
             {
-              input: {
+              input: currentDefinition({
                 ...source,
-                model: "fixture/v1",
-                rows: { kind: "model" as const, values: ["fixture/v1"] },
-                judge: { ...judgedInput.judge!, model: "fixture/v2" },
-              },
+                judge: true,
+                parameters: {
+                  ...source.parameters,
+                  judge_model: { kind: "common", value: "fixture/v2" },
+                },
+                rows: [{ model: "fixture/v1" }],
+              }),
               error: /judge model must support image inputs/,
             },
           ]),
@@ -376,27 +484,29 @@ test("variable image admission follows generator and judge consumption, not fiel
   }));
   for (const side of ["rows", "columns"] as const) {
     const token = side === "rows" ? "$ROW2" : "$COLUMN2";
-    const source: GridInput = {
-      ...input,
+    const opposite = side === "rows" ? "columns" : "rows";
+    const source = currentDefinition({
       prompt: "Describe a shape.",
-      model: "fixture/v2",
-      rows: { kind: "model", values: ["fixture/v2"] },
-      columns: { kind: "model", values: ["fixture/v2"] },
-      [side]: {
-        kind: "variable",
-        values: [
-          [
+      judge: true,
+      parameters: {
+        model: { kind: opposite },
+        variable: { kind: side },
+        judge_model: { kind: "common", value: "fixture/v1" },
+        judge_criteria: {
+          kind: "common",
+          value: [{ text: `Matches ${token}?`, correctAnswer: false }],
+        },
+      },
+      [opposite]: [{ model: "fixture/v2" }],
+      [side]: [
+        {
+          variable: [
             { text: "unused", images: [unused] },
             { text: "Expected shape", images: [expected] },
           ],
-        ],
-      },
-      judge: {
-        model: "fixture/v1",
-        effort: "default",
-        criteria: [{ text: `Matches ${token}?`, correctAnswer: false }],
-      },
-    };
+        },
+      ],
+    });
     assert.deepEqual(selectedReferences(source), [unused, expected]);
     assert.deepEqual(generatorReferences(source), []);
     assert.deepEqual(judgeReferences(source), [expected]);
@@ -404,10 +514,13 @@ test("variable image admission follows generator and judge consumption, not fiel
     assert.throws(
       () =>
         resolveGridModels(
-          {
+          currentDefinition({
             ...source,
-            judge: { ...source.judge!, model: "fixture/v2" },
-          },
+            parameters: {
+              ...source.parameters,
+              judge_model: { kind: "common", value: "fixture/v2" },
+            },
+          }),
           catalog,
         ),
       /judge model must support image inputs/,
@@ -416,19 +529,19 @@ test("variable image admission follows generator and judge consumption, not fiel
       () => resolveGridModels({ ...source, prompt: token }, catalog),
       /selected model does not support image inputs/,
     );
-    const visionGenerator: GridInput = {
+    const visionGenerator = currentDefinition({
       ...source,
       prompt: token,
-      [side === "rows" ? "columns" : "rows"]: {
-        kind: "model",
-        values: ["fixture/v1"],
+      [opposite]: [{ model: "fixture/v1" }],
+      parameters: {
+        ...source.parameters,
+        judge_model: { kind: "common", value: "fixture/v2" },
+        judge_criteria: {
+          kind: "common",
+          value: [{ text: "A shape?", correctAnswer: true }],
+        },
       },
-      judge: {
-        ...source.judge!,
-        model: "fixture/v2",
-        criteria: [{ text: "A shape?", correctAnswer: true }],
-      },
-    };
+    });
     assert.throws(
       () => resolveGridModels(visionGenerator, catalog),
       /judge model must support image inputs/,
@@ -449,59 +562,52 @@ for (const side of ["rows", "columns"] as const)
       ...model,
       imageInput: model.id !== "fixture/v2",
     }));
-    const source: GridInput = {
-      ...input,
+    const source = currentDefinition({
       prompt: "Describe a shape.",
-      model: "fixture/v2",
-      rows: { kind: "model", values: ["fixture/v2"] },
-      columns: { kind: "effort", values: ["none"] },
-      [side]: {
-        kind: "variable",
-        values: [
-          [{ text: "first text" }, { text: "unused", images: [first] }],
-          [{ text: "unused", images: [second] }, { text: "second text" }],
-        ],
+      judge: true,
+      parameters: {
+        model: { kind: "common", value: "fixture/v2" },
+        variable: { kind: side },
+        judge_model: { kind: "common", value: "fixture/v2" },
+        judge_effort: { kind: "common", value: "none" },
+        judge_criteria: { kind: side },
       },
-      judge: {
-        model: "fixture/v2",
-        effort: "none",
-        criteria: {
-          axis: side,
-          cases: [
-            [{ text: `Matches ${token}1?`, correctAnswer: false }],
-            [{ text: `Matches ${token}2?`, correctAnswer: true }],
+      [side]: [
+        {
+          variable: [
+            { text: "first text" },
+            { text: "unused", images: [first] },
+          ],
+          judge_criteria: [
+            { text: `Matches ${token}1?`, correctAnswer: false },
           ],
         },
-      },
-    };
+        {
+          variable: [
+            { text: "unused", images: [second] },
+            { text: "second text" },
+          ],
+          judge_criteria: [{ text: `Matches ${token}2?`, correctAnswer: true }],
+        },
+      ],
+    });
     assert.deepEqual(selectedReferences(source), [first, second]);
     assert.deepEqual(generatorReferences(source), []);
     assert.deepEqual(judgeReferences(source), []);
     assert.doesNotThrow(() => resolveGridModels(source, catalog));
     for (const index of [0, 1]) {
-      const changed: GridInput = {
+      const changed = currentDefinition({
         ...source,
-        judge: {
-          ...source.judge!,
-          criteria: {
-            axis: side,
-            cases: [
-              [
-                {
-                  text: `Matches ${token}${index === 0 ? 2 : 1}?`,
-                  correctAnswer: false,
-                },
-              ],
-              [
-                {
-                  text: `Matches ${token}${index === 1 ? 1 : 2}?`,
-                  correctAnswer: true,
-                },
-              ],
-            ],
-          },
-        },
-      };
+        [side]: source[side].map((record, caseIndex) => ({
+          ...record,
+          judge_criteria: [
+            {
+              text: `Matches ${token}${caseIndex === index ? (caseIndex === 0 ? 2 : 1) : caseIndex === 0 ? 1 : 2}?`,
+              correctAnswer: caseIndex === 1,
+            },
+          ],
+        })),
+      });
       assert.deepEqual(judgeReferences(changed), [
         index === 0 ? first : second,
       ]);
@@ -511,22 +617,33 @@ for (const side of ["rows", "columns"] as const)
       );
       assert.doesNotThrow(() =>
         resolveGridModels(
-          {
+          currentDefinition({
             ...changed,
-            judge: { ...changed.judge!, model: "fixture/v1" },
-          },
+            parameters: {
+              ...changed.parameters,
+              judge_model: { kind: "common", value: "fixture/v1" },
+            },
+          }),
           catalog,
         ),
       );
     }
     assert.deepEqual(
-      judgeReferences({
-        ...source,
-        judge: {
-          ...source.judge!,
-          criteria: [{ text: `Matches ${token}1?`, correctAnswer: true }],
-        },
-      }),
+      judgeReferences(
+        currentDefinition({
+          ...source,
+          parameters: {
+            ...source.parameters,
+            judge_criteria: {
+              kind: "common",
+              value: [{ text: `Matches ${token}1?`, correctAnswer: true }],
+            },
+          },
+          [side]: source[side].map(
+            ({ judge_criteria: _criteria, ...record }) => record,
+          ),
+        }),
+      ),
       [second],
       "shared rubrics still consume the referenced field in every case",
     );
@@ -534,33 +651,46 @@ for (const side of ["rows", "columns"] as const)
 
 test("judge aliases resolve in fixed settings and both axes, collapsing duplicate targets", () => {
   const resolved = resolveGridModels(judgedInput, judgeModels());
-  assert.equal(resolved.judge?.model, "fixture/v1");
-  assert.deepEqual(resolved.judge?.criteria, judgedInput.judge?.criteria);
-  assert.equal(judgedInput.judge?.model, "~fixture/latest");
+  assert.equal(parameterValue(resolved, "judge_model", 0, 0), "fixture/v1");
+  assert.deepEqual(
+    resolved.parameters.judge_criteria,
+    judgedInput.parameters.judge_criteria,
+  );
+  assert.equal(
+    parameterValue(judgedInput, "judge_model", 0, 0),
+    "~fixture/latest",
+  );
   for (const side of ["rows", "columns"] as const) {
-    const setup = {
+    const setup = currentDefinition({
       ...judgedInput,
-      [side]: {
-        kind: "judge_model",
-        values: ["~fixture/latest", "fixture/v1", "fixture/v2"],
-      },
-    } as GridInput;
+      parameters: { ...judgedInput.parameters, judge_model: { kind: side } },
+      [side]: ["~fixture/latest", "fixture/v1", "fixture/v2"].map(
+        (judge_model) => ({ judge_model }),
+      ),
+    });
     const axisResult = resolveGridModels(setup, judgeModels());
-    assert.deepEqual(axisResult[side].values, ["fixture/v1", "fixture/v2"]);
-    assert.equal(axisResult.judge?.model, "");
-    assert.equal(axisResult.model, "fixture/v1");
+    assert.deepEqual(
+      axisResult[side].map((record) => record.judge_model),
+      ["fixture/v1", "fixture/v2"],
+    );
+    assert.deepEqual(axisResult.parameters.judge_model, { kind: side });
+    assert.equal(parameterValue(axisResult, "model", 0, 0), "fixture/v1");
   }
 });
 
 test("judge validation checks resolved target capabilities, not alias metadata", () => {
   for (const side of ["fixed", "rows", "columns"] as const) {
-    const setup: GridInput =
+    const setup =
       side === "fixed"
         ? judgedInput
-        : {
+        : currentDefinition({
             ...judgedInput,
-            [side]: { kind: "judge_model", values: ["~fixture/latest"] },
-          };
+            parameters: {
+              ...judgedInput.parameters,
+              judge_model: { kind: side },
+            },
+            [side]: [{ judge_model: "~fixture/latest" }],
+          });
     const eligibleTarget = judgeModels().map((model) => ({
       ...model,
       structuredOutputs: model.id !== "~fixture/latest",
@@ -578,17 +708,20 @@ test("judge validation checks resolved target capabilities, not alias metadata",
 
 test("judge selections retain catalog moving aliases but reject missing and cyclic targets", () => {
   for (const side of ["fixed", "rows", "columns"] as const) {
-    const setup = (id: string): GridInput =>
-      side === "fixed"
-        ? { ...judgedInput, judge: { ...judgedInput.judge!, model: id } }
-        : {
-            ...judgedInput,
-            [side]: { kind: "judge_model", values: [id] },
-          };
+    const setup = (id: string) =>
+      currentDefinition({
+        ...judgedInput,
+        parameters: {
+          ...judgedInput.parameters,
+          judge_model:
+            side === "fixed" ? { kind: "common", value: id } : { kind: side },
+        },
+        ...(side === "fixed" ? {} : { [side]: [{ judge_model: id }] }),
+      });
     const catalog = judgeModels();
     const retained = resolveGridModels(setup("fixture/chat-latest"), catalog);
     assert.equal(
-      side === "fixed" ? retained.judge?.model : retained[side].values[0],
+      parameterValue(retained, "judge_model", 0, 0),
       "fixture/chat-latest",
     );
     for (const id of ["fixture/model:latest", "~fixture/unknown-latest"])
@@ -607,23 +740,43 @@ test("judge selections retain catalog moving aliases but reject missing and cycl
     );
     assert.throws(
       () => resolveGridModels(setup("fixture/unknown-version"), catalog),
-      { message: "The judge model must support structured outputs." },
+      {
+        message: "The judge model must support structured outputs.",
+      },
     );
-    assert.throws(() => resolveGridModels(setup(""), catalog), {
-      message: "Select a judge model.",
-    });
+    assert.throws(() => gridSchema.parse(setup("")), /Select a judge model/);
   }
   // Concrete generator IDs keep their existing permissive resolution.
   assert.equal(
-    resolveGridModels({ ...input, model: "fixture/unknown-version" }, models())
-      .model,
+    parameterValue(
+      resolveGridModels(
+        currentDefinition({
+          ...input,
+          parameters: {
+            ...input.parameters,
+            model: { kind: "common", value: "fixture/unknown-version" },
+          },
+        }),
+        models(),
+      ),
+      "model",
+      0,
+      0,
+    ),
     "fixture/unknown-version",
   );
 });
 
 test("judge validation requires explicit capabilities for each supported output format", () => {
   for (const format of ["markdown", "chat-template", "svg", "image"] as const) {
-    const setup = { ...judgedInput, format };
+    const setup = currentDefinition({
+      format,
+      judge: true,
+      parameters: {
+        model: { kind: "common", value: "~fixture/latest" },
+        judge_model: { kind: "common", value: "~fixture/latest" },
+      },
+    });
     assert.doesNotThrow(() => resolveGridModels(setup, judgeModels()));
     for (const structuredOutputs of [undefined, false])
       assert.throws(
@@ -659,14 +812,14 @@ test("judge validation requires explicit capabilities for each supported output 
   );
   assert.throws(
     () =>
-      resolveGridModels(
-        {
+      gridSchema.parse(
+        currentDefinition({
           ...input,
-          rows: { kind: "judge_model", values: ["fixture/v1"] },
-        },
-        judgeModels(),
+          parameters: { ...input.parameters, judge_model: { kind: "rows" } },
+          rows: [{ judge_model: "fixture/v1" }],
+        }),
       ),
-    { message: "Add a judge to use judge dimensions." },
+    /judge_model is not applicable/,
   );
 });
 
@@ -679,19 +832,22 @@ test("judge alias chains resolve fully and judge effort axes retain their values
       aliasTarget: "~fixture/latest",
     },
   ];
-  const setup: GridInput = {
+  const setup = currentDefinition({
     ...judgedInput,
-    judge: {
-      ...judgedInput.judge!,
-      model: "fixture/judge-alias",
-      effort: "high",
+    parameters: {
+      ...judgedInput.parameters,
+      judge_model: { kind: "common", value: "fixture/judge-alias" },
+      judge_effort: { kind: "rows" },
     },
-    rows: { kind: "judge_effort", values: ["low", "high"] },
-  };
+    rows: [{ judge_effort: "low" }, { judge_effort: "high" }],
+  });
   const result = resolveGridModels(setup, catalog);
-  assert.equal(result.judge?.model, "fixture/v1");
-  assert.equal(result.judge?.effort, "high");
+  assert.equal(parameterValue(result, "judge_model", 0, 0), "fixture/v1");
   assert.deepEqual(result.rows, setup.rows);
+  assert.deepEqual(
+    expandGrid(result).map((cell) => cell.judge?.effort),
+    ["low", "high"],
+  );
   assert.throws(
     () =>
       resolveGridModels(
@@ -701,8 +857,15 @@ test("judge alias chains resolve fully and judge effort axes retain their values
     { message: "The judge model must support structured outputs." },
   );
   assert.throws(
-    () => resolveGridModels({ ...input, rows: setup.rows }, catalog),
-    { message: "Add a judge to use judge dimensions." },
+    () =>
+      gridSchema.parse(
+        currentDefinition({
+          ...input,
+          parameters: { ...input.parameters, judge_effort: { kind: "rows" } },
+          rows: setup.rows,
+        }),
+      ),
+    /judge_effort is not applicable/,
   );
 });
 
@@ -752,22 +915,35 @@ for (const moving of [false, true])
       return response.json();
     }
     const settle = () => new Promise<void>((resolve) => setImmediate(resolve));
-    const selected = moving ? "fixture/chat-latest" : input.model;
+    const selected = moving
+      ? "fixture/chat-latest"
+      : parameterValue(input, "model", 0, 0)!;
     const expected = moving ? selected : "fixture/v1";
-    const created = await post("/grids", { ...input, model: selected });
+    const created = await post(
+      "/grids",
+      currentDefinition({
+        ...input,
+        parameters: {
+          ...input.parameters,
+          model: { kind: "common", value: selected },
+        },
+      }),
+    );
     await settle();
-    assert.equal(store.get(created.id)!.input.model, expected);
+    const storedInput = store.get(created.id)!.input;
+    assert.ok(isCurrentGridInput(storedInput));
+    assert.equal(parameterValue(storedInput, "model", 0, 0), expected);
     provider.target = "fixture/v2";
     await post(`/grids/${created.id}/retry`);
     await settle();
     const edited = await post(`/grids/${created.id}/edit`);
-    assert.equal(edited.input.model, expected);
+    assert.equal(parameterValue(edited.input, "model", 0, 0), expected);
     await post("/grids", edited.input);
     await post(`/grids/${created.id}/publish`, { visibility: "unlisted" });
     const published = await (
       await fetch(`${origin}/api/grids/${created.id}`)
     ).json();
-    assert.equal(published.input.model, expected);
+    assert.equal(parameterValue(published.input, "model", 0, 0), expected);
     await post("/grids", published.input);
     await settle();
     assert.deepEqual(provider.called, [expected, expected, expected, expected]);

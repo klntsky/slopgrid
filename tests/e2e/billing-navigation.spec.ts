@@ -13,12 +13,9 @@ test("billing navigates persisted call pages and preserves the current page whil
   await expect(
     page.getByRole("button", { name: "Next", exact: true }),
   ).toHaveCount(0);
-  await create(
-    page,
-    "SVG",
-    Array.from({ length: 51 }, (_, i) => `cat${i}`).join("\n"),
-    "hat",
-  );
+  await create(page, {
+    rowValues: Array.from({ length: 51 }, (_, i) => `cat${i}`),
+  });
   await expectProgress(page, 51, 51);
   await page.goto("/billing");
   await expect(page.locator("tbody tr")).toHaveCount(50);

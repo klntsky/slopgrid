@@ -1,26 +1,30 @@
 import type { Locator, Page } from "@playwright/test";
 import type { GridInput } from "../../server/domain";
+import { currentDefinition } from "../current-grid-fixture";
 import { test, expect } from "./fixtures";
 import { connectOpenRouter, expectProgress, scrollToRest } from "./helpers";
 
-const historyInput: GridInput = {
+const historyInput: GridInput = currentDefinition({
   format: "chat-template",
-  prompt: "History $ROW1 $COLUMN1",
-  model: "fixture/text",
-  effort: "none",
+  prompt: "History $ROW1 one",
   budgetUsd: 1,
-  rows: { kind: "variable", values: [[{ text: "top" }], [{ text: "bottom" }]] },
-  columns: { kind: "variable", values: [[{ text: "one" }]] },
+  parameters: {
+    model: { kind: "common", value: "fixture/text" },
+    variable: { kind: "rows" },
+    effort: { kind: "columns" },
+  },
+  rows: [{ variable: [{ text: "top" }] }, { variable: [{ text: "bottom" }] }],
+  columns: [{ effort: "none" }],
   messages: [
     {
       role: "user",
-      content: "Earlier $ROW1 $COLUMN1. " + "History detail. ".repeat(40),
+      content: "Earlier $ROW1 one. " + "History detail. ".repeat(40),
     },
     { role: "assistant", content: "OK" },
     { role: "user", content: "Later history detail. ".repeat(80) },
     { role: "unfilled", content: "" },
   ],
-};
+});
 
 async function openHistories(
   page: Page,
@@ -43,7 +47,7 @@ async function openHistories(
     { id: grid.id, sizes },
   );
   await page.goto(`/grid/${grid.id}`);
-  const count = input.rows.values.length * input.columns.values.length;
+  const count = input.rows.length * input.columns.length;
   await expectProgress(page, count, count);
   const panels = page.locator(".conversation-preview");
   await panels.nth(count - 1).waitFor({ state: "visible" });
@@ -401,9 +405,9 @@ test("a streamed peer highlights a newly arrived message under the active compar
     data: {
       ...historyInput,
       messages: [
-        { role: "user", content: "Start $ROW1 $COLUMN1" },
+        { role: "user", content: "Start $ROW1 one" },
         { role: "unfilled", content: "" },
-        { role: "user", content: "Continue $ROW1 $COLUMN1" },
+        { role: "user", content: "Continue $ROW1 one" },
         { role: "unfilled", content: "" },
       ],
     },
@@ -895,10 +899,10 @@ test("native wheel preserves full-area landmarks seeded at matching viewport per
     page,
     {
       ...historyInput,
-      columns: {
-        kind: "variable",
-        values: [[{ text: "left" }], [{ text: "right" }]],
-      },
+      columns: [
+        { id: "column-none", effort: "none" },
+        { id: "column-low", effort: "low" },
+      ],
     },
     { columns: [200, 320], rows: [500, 300] },
   );
@@ -1023,10 +1027,10 @@ test.describe("mobile chat histories", () => {
       page,
       {
         ...historyInput,
-        columns: {
-          kind: "variable",
-          values: [[{ text: "left" }], [{ text: "right" }]],
-        },
+        columns: [
+          { id: "column-none", effort: "none" },
+          { id: "column-low", effort: "low" },
+        ],
       },
       { columns: [180, 240], rows: [500, 300] },
     );
@@ -1129,10 +1133,10 @@ test.describe("mobile chat histories", () => {
       page,
       {
         ...historyInput,
-        columns: {
-          kind: "variable",
-          values: [[{ text: "left" }], [{ text: "right" }]],
-        },
+        columns: [
+          { id: "column-none", effort: "none" },
+          { id: "column-low", effort: "low" },
+        ],
       },
       { columns: [180, 240], rows: [500, 300] },
     );

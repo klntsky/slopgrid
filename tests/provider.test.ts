@@ -12,10 +12,10 @@ import { createHash } from "node:crypto";
 import { failureDetails } from "../server/failures.js";
 import {
   expandGrid,
-  gridSchema,
   type Cell,
   type InferenceProgress,
 } from "../server/domain.js";
+import { currentInput } from "./current-grid-fixture.js";
 
 async function upstream(streamError?: Record<string, unknown>) {
   const requests: Record<string, unknown>[] = [];
@@ -208,14 +208,16 @@ test("non-chat prompt images preserve output instructions and text-only requests
     };
     for (const format of ["markdown", "svg", "html"] as const) {
       for (const prompt of ["Describe the shape.", ""]) {
-        const input = gridSchema.parse({
+        const input = currentInput({
           format,
           prompt,
-          inputReferences: [{ id: "input", name: "shape.png" }],
-          rows: { kind: "model", values: ["all"] },
-          columns: { kind: "effort", values: ["default"] },
-          model: "",
-          effort: "default",
+          parameters: {
+            model: { kind: "rows" },
+            effort: { kind: "columns" },
+          },
+          promptImages: [{ id: "input", name: "shape.png" }],
+          rows: [{ model: "all" }],
+          columns: [{ effort: "default" }],
           budgetUsd: 5,
         });
         const parameters = {

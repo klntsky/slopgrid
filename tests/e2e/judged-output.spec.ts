@@ -9,6 +9,15 @@ import {
   selectModel,
   setVariableValues,
 } from "./helpers";
+import { currentDefinition, currentInput } from "../current-grid-fixture";
+
+async function acceptDrop(page: Page, action: () => Promise<unknown>) {
+  page.once("dialog", async (dialog) => {
+    expect(dialog.message()).toContain("Drop these values?");
+    await dialog.accept();
+  });
+  await action();
+}
 
 type JudgmentScrollGeometry = {
   limit: number;
@@ -58,12 +67,16 @@ function expectJudgmentAlignment(
   expectJudgmentFocus(source, views[1 - leader], start / 2, focusFraction);
 }
 
-test("judge criteria preserve boolean answers and judge axes restore fixed settings", async ({
+test("judge criteria preserve boolean answers and differing judge axes reset only after confirmation", async ({
   page,
 }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Markdown", exact: true }).click();
   const judgeSection = page.getByRole("region", { name: "Judge", exact: true });
+  const layoutTable = page.getByRole("table", {
+    name: "Grid layout parameters",
+    exact: true,
+  });
   await page
     .getByRole("checkbox", { name: "Add a LLM judge", exact: true })
     .check();
@@ -125,7 +138,7 @@ test("judge criteria preserve boolean answers and judge axes restore fixed setti
     .getByRole("combobox", { name: "Rows", exact: true })
     .selectOption("judge_effort");
   await expect(
-    judgeSection
+    layoutTable
       .getByRole("group", { name: "Row values", exact: true })
       .getByRole("checkbox", { name: "high", exact: true }),
   ).toBeChecked();
@@ -133,13 +146,13 @@ test("judge criteria preserve boolean answers and judge axes restore fixed setti
     .getByRole("combobox", { name: "Columns", exact: true })
     .selectOption("judge_model");
   await expect(
-    judgeSection.getByRole("searchbox", { name: "Search judge models" }),
+    layoutTable.getByRole("searchbox", { name: "Search judge models" }),
   ).toBeVisible();
-  const rowValues = judgeSection.getByRole("group", {
+  const rowValues = layoutTable.getByRole("group", {
     name: "Row values",
     exact: true,
   });
-  const columnValues = judgeSection.getByRole("group", {
+  const columnValues = layoutTable.getByRole("group", {
     name: "Column values",
     exact: true,
   });
@@ -183,21 +196,23 @@ test("judge criteria preserve boolean answers and judge axes restore fixed setti
   await expect(
     columnValues.getByRole("checkbox", { name: "high", exact: true }),
   ).toBeChecked();
-  await page
-    .getByRole("combobox", { name: "Rows", exact: true })
-    .selectOption("variable");
+  await acceptDrop(page, () =>
+    page
+      .getByRole("combobox", { name: "Rows", exact: true })
+      .selectOption("variable"),
+  );
   await fixedJudge
     .getByRole("searchbox", { name: "Search judge models", exact: true })
     .fill("fixture");
-  await expect(
-    fixedJudge.locator('input[type="radio"][value="fixture/text"]'),
-  ).toBeChecked();
-  await page
-    .getByRole("combobox", { name: "Columns", exact: true })
-    .selectOption("variable");
+  await expect(fixedJudge.getByRole("radio", { checked: true })).toHaveCount(0);
+  await acceptDrop(page, () =>
+    page
+      .getByRole("combobox", { name: "Columns", exact: true })
+      .selectOption("effort"),
+  );
   await expect(
     judgeSection.getByLabel("Judge thinking effort", { exact: true }),
-  ).toHaveValue("none");
+  ).toHaveValue("default");
   await page
     .getByRole("combobox", { name: "Rows", exact: true })
     .selectOption("judge_model");
@@ -323,13 +338,21 @@ test("criterion deletion uses confirmation boundaries and disables the last judg
   await expect(
     judgeSection.getByLabel("Correct answer", { exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
-  await page.evaluate(() => {
-    const draft = JSON.parse(sessionStorage.getItem("slopgrid-draft")!);
-    draft.input.judge.criteria = [];
-    draft.input.rows = { kind: "judge_model", values: ["fixture/text"] };
-    draft.input.columns = { kind: "judge_effort", values: ["high"] };
-    sessionStorage.setItem("slopgrid-draft", JSON.stringify(draft));
+  const emptyCriteriaInput = currentDefinition({
+    judge: true,
+    parameters: {
+      judge_model: { kind: "rows" },
+      judge_effort: { kind: "columns" },
+      judge_criteria: { kind: "common", value: [] },
+    },
+    rows: [{ judge_model: "fixture/text" }],
+    columns: [{ judge_effort: "high" }],
   });
+  await page.evaluate((input) => {
+    const draft = JSON.parse(sessionStorage.getItem("slopgrid-draft")!);
+    draft.input = { ...input, budgetUsd: String(input.budgetUsd) };
+    sessionStorage.setItem("slopgrid-draft", JSON.stringify(draft));
+  }, emptyCriteriaInput);
   await page.reload();
   await expect(first).toHaveCount(0);
   await expect(enabled).toBeChecked();
@@ -437,18 +460,13 @@ test("removing a judge preserves ordinary axes and generation settings", async (
   await page.goto("/");
   await page.getByRole("button", { name: "Markdown", exact: true }).click();
   await page
-    .getByRole("combobox", { name: "Rows", exact: true })
-    .selectOption("variable");
-  await setVariableValues(page, "Rows", ["cat", "dog"]);
-  await page
     .getByRole("combobox", { name: "Columns", exact: true })
     .selectOption("variable");
   await setVariableValues(page, "Columns", ["hat"]);
   await selectModel(page, "fixture/text");
-  await page.getByLabel("Thinking effort", { exact: true }).selectOption("low");
   await page
     .getByLabel("Prompt", { exact: true })
-    .fill("Describe $ROW1 wearing a $COLUMN1");
+    .fill("Describe a cat wearing a $COLUMN1");
   await page
     .getByRole("checkbox", { name: "Add a LLM judge", exact: true })
     .check();
@@ -473,11 +491,12 @@ test("removing a judge preserves ordinary axes and generation settings", async (
   ).toBeChecked();
   await expect(
     page
+      .getByRole("table", { name: "Grid layout parameters", exact: true })
       .getByRole("group", { name: "Row values", exact: true })
       .getByRole("checkbox", { name: "Model default", exact: true }),
   ).toBeChecked();
   await expect(page.getByLabel("Prompt", { exact: true })).toHaveValue(
-    "Describe $ROW1 wearing a $COLUMN1",
+    "Describe a cat wearing a $COLUMN1",
   );
   await expect(
     page
@@ -521,7 +540,7 @@ test("chat input images block text-only judges and removing them restores eligib
     .click();
   await page
     .getByLabel("Message 1", { exact: true })
-    .fill("Describe this image. $ROW1 $COLUMN1");
+    .fill("Describe this image. $ROW1 one");
   for (let index = 2; index <= 4; index++) {
     await page.locator(".chat-append").hover();
     await page
@@ -537,8 +556,7 @@ test("chat input images block text-only judges and removing them restores eligib
   await setVariableValues(page, "Rows", ["one"]);
   await page
     .getByRole("combobox", { name: "Columns", exact: true })
-    .selectOption("variable");
-  await setVariableValues(page, "Columns", ["one"]);
+    .selectOption("effort");
   await selectModel(page, "fixture/text");
   await page
     .getByRole("checkbox", { name: "Add a LLM judge", exact: true })
@@ -704,23 +722,24 @@ test("format changes retain criteria and judge effort, clear incompatible models
   await expect(judge.getByRole("radio", { checked: true })).toHaveCount(0);
 });
 
-const judgedInput = {
+const judgedCriteria = [
+  { text: "Is there a blue circle?", correctAnswer: false },
+  { text: "Is there a red rectangle?", correctAnswer: true },
+];
+const judgedInput = currentInput({
   format: "markdown",
   prompt: "Describe a red rectangle",
-  model: "fixture/text",
-  effort: "none",
   budgetUsd: 0.1,
-  rows: { kind: "judge_model", values: ["fixture/text", "fixture/other"] },
-  columns: { kind: "judge_effort", values: ["none", "high"] },
-  judge: {
-    criteria: [
-      { text: "Is there a blue circle?", correctAnswer: false },
-      { text: "Is there a red rectangle?", correctAnswer: true },
-    ],
-    model: "",
-    effort: "default",
+  judge: true,
+  parameters: {
+    effort: { kind: "common", value: "none" },
+    judge_model: { kind: "rows" },
+    judge_effort: { kind: "columns" },
+    judge_criteria: { kind: "common", value: judgedCriteria },
   },
-} satisfies GridInput;
+  rows: [{ judge_model: "fixture/text" }, { judge_model: "fixture/other" }],
+  columns: [{ judge_effort: "none" }, { judge_effort: "high" }],
+});
 
 async function createJudged(page: Page, input: GridInput = judgedInput) {
   await page.goto("/create");
@@ -763,14 +782,17 @@ test("judgments open automatically on completion and reload as a scrollable full
   await createJudged(page, {
     ...judgedInput,
     format: "svg",
-    rows: { kind: "judge_model", values: ["fixture/text"] },
-    columns: { kind: "judge_effort", values: ["none"] },
-    judge: {
-      ...judgedInput.judge!,
-      criteria: [
-        { text: "Is it blue?", correctAnswer: false },
-        { text: "Is it red?", correctAnswer: true },
-      ],
+    rows: [{ id: "row-1", judge_model: "fixture/text" }],
+    columns: [{ id: "column-1", judge_effort: "none" }],
+    parameters: {
+      ...judgedInput.parameters,
+      judge_criteria: {
+        kind: "common",
+        value: [
+          { text: "Is it blue?", correctAnswer: false },
+          { text: "Is it red?", correctAnswer: true },
+        ],
+      },
     },
   });
   await expect
@@ -938,14 +960,12 @@ test("shared generation stays usable across judgment views and persists expanded
     items.nth(1).getByRole("img", { name: "Incorrect", exact: true }),
   ).toBeVisible();
   await expect(
-    items.nth(0).getByText(`not(${judgedInput.judge!.criteria[0].text})`, {
+    items.nth(0).getByText(`not(${judgedCriteria[0].text})`, {
       exact: true,
     }),
   ).toBeVisible();
   await expect(
-    items
-      .nth(1)
-      .getByText(judgedInput.judge!.criteria[1].text, { exact: true }),
+    items.nth(1).getByText(judgedCriteria[1].text, { exact: true }),
   ).toBeVisible();
   await expect(
     items.nth(0).getByText("No blue circle.", { exact: true }),
@@ -1060,8 +1080,8 @@ test("failed judging shows unresolved criteria without hiding generation or its 
   });
   const id = await createJudged(page, {
     ...judgedInput,
-    rows: { kind: "judge_model", values: ["fixture/text"] },
-    columns: { kind: "judge_effort", values: ["high"] },
+    rows: [{ id: "row-1", judge_model: "fixture/text" }],
+    columns: [{ id: "column-1", judge_effort: "high" }],
   });
   const score = page.getByRole("button", { name: /^Judging failed:/ });
   await expect(score).toHaveText("-/2");
@@ -1137,8 +1157,8 @@ test("closing the page during judging does not stop completed judgments", async 
   await page.request.post("/fixture/reset", { data: { holdJudges: true } });
   const id = await createJudged(page, {
     ...judgedInput,
-    rows: { kind: "judge_model", values: ["fixture/text"] },
-    columns: { kind: "judge_effort", values: ["none"] },
+    rows: [{ id: "row-1", judge_model: "fixture/text" }],
+    columns: [{ id: "column-1", judge_effort: "none" }],
   });
   await expect(
     page.getByRole("button", { name: "Judging...", exact: true }),
@@ -1171,20 +1191,24 @@ test("judge answers and axes survive draft reload, OAuth, Edit, and Fork", async
     .getByRole("checkbox", { name: "Add a LLM judge", exact: true })
     .check();
   const judgeSection = page.getByRole("region", { name: "Judge", exact: true });
+  const layoutTable = page.getByRole("table", {
+    name: "Grid layout parameters",
+    exact: true,
+  });
   await judgeSection
     .getByLabel("Criterion 1", { exact: true })
-    .fill(judgedInput.judge!.criteria[0].text);
+    .fill(judgedCriteria[0].text);
   await judgeSection.getByLabel("Correct answer", { exact: true }).click();
   await judgeSection
     .getByRole("button", { name: "Add criterion", exact: true })
     .click();
   await judgeSection
     .getByLabel("Criterion 2", { exact: true })
-    .fill(judgedInput.judge!.criteria[1].text);
+    .fill(judgedCriteria[1].text);
   await page
     .getByRole("combobox", { name: "Rows", exact: true })
     .selectOption("judge_model");
-  const rowModels = judgeSection.getByRole("group", {
+  const rowModels = layoutTable.getByRole("group", {
     name: "Row values",
     exact: true,
   });
@@ -1200,7 +1224,7 @@ test("judge answers and axes survive draft reload, OAuth, Edit, and Fork", async
   await page
     .getByRole("combobox", { name: "Columns", exact: true })
     .selectOption("judge_effort");
-  const columnEfforts = judgeSection.getByRole("group", {
+  const columnEfforts = layoutTable.getByRole("group", {
     name: "Column values",
     exact: true,
   });
@@ -1225,10 +1249,10 @@ test("judge answers and axes survive draft reload, OAuth, Edit, and Fork", async
     ).toHaveValue("0.1");
     await expect(
       judgeSection.getByLabel("Criterion 1", { exact: true }),
-    ).toHaveValue(judgedInput.judge!.criteria[0].text);
+    ).toHaveValue(judgedCriteria[0].text);
     await expect(
       judgeSection.getByLabel("Criterion 2", { exact: true }),
-    ).toHaveValue(judgedInput.judge!.criteria[1].text);
+    ).toHaveValue(judgedCriteria[1].text);
     await expect(
       judgeSection.getByLabel("Correct answer", { exact: true }).nth(0),
     ).toHaveAttribute("aria-pressed", "false");
@@ -1281,7 +1305,10 @@ test("judge answers and axes survive draft reload, OAuth, Edit, and Fork", async
       `/api/grids/${new URL(original).pathname.split("/").pop()}`,
     )
   ).json();
-  expect(saved.input.judge.criteria).toEqual(judgedInput.judge!.criteria);
+  expect(saved.input.parameters.judge_criteria).toEqual({
+    kind: "common",
+    value: judgedCriteria,
+  });
   expect(saved.input.budgetUsd).toBe(0.1);
   expect((await (await page.request.get("/fixture/calls")).json()).length).toBe(
     5,
@@ -1325,24 +1352,34 @@ for (const format of ["svg", "image"] as const) {
     const svg =
       '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><rect width="40" height="20" fill="red"/></svg>';
     await page.request.post("/fixture/reset", { data: { svgOutput: svg } });
-    const input: GridInput = {
-      ...judgedInput,
+    const input = currentInput({
       format,
-      model: format === "image" ? "fixture/image" : "fixture/text",
-      judge: {
-        ...judgedInput.judge!,
-        criteria: [
-          { text: "Is there a blue circle?", correctAnswer: false },
-          {
-            text:
-              format === "svg"
-                ? "Is there a red rectangle?"
-                : "Is an image supplied?",
-            correctAnswer: true,
-          },
-        ],
+      prompt: judgedInput.prompt,
+      budgetUsd: judgedInput.budgetUsd,
+      judge: true,
+      rows: judgedInput.rows,
+      columns: judgedInput.columns,
+      parameters: {
+        ...(format === "svg"
+          ? { effort: { kind: "common" as const, value: "none" as const } }
+          : {}),
+        judge_model: { kind: "rows" },
+        judge_effort: { kind: "columns" },
+        judge_criteria: {
+          kind: "common",
+          value: [
+            { text: "Is there a blue circle?", correctAnswer: false },
+            {
+              text:
+                format === "svg"
+                  ? "Is there a red rectangle?"
+                  : "Is an image supplied?",
+              correctAnswer: true,
+            },
+          ],
+        },
       },
-    };
+    });
     const id = await createJudged(page, input);
     const scores = page.getByRole("button", {
       name: "Judgment: 2 of 2 correct",
@@ -1484,8 +1521,8 @@ test("output modes are exclusive and expansion retains the selected view", async
   });
   await createJudged(page, {
     ...judgedInput,
-    rows: { kind: "judge_model", values: ["fixture/text"] },
-    columns: { kind: "judge_effort", values: ["none"] },
+    rows: [{ id: "row-1", judge_model: "fixture/text" }],
+    columns: [{ id: "column-1", judge_effort: "none" }],
   });
   const cell = page.locator(".cell");
   const rawButton = cell.getByRole("button", { name: "View raw", exact: true });
@@ -1599,9 +1636,15 @@ test("judgment hover retains synchronized positions across exit and source chang
   });
   await createJudged(page, {
     ...judgedInput,
-    rows: { kind: "judge_model", values: ["fixture/text"] },
-    columns: { kind: "judge_effort", values: ["none", "high"] },
-    judge: { ...judgedInput.judge!, criteria },
+    rows: [{ id: "row-1", judge_model: "fixture/text" }],
+    columns: [
+      { id: "column-1", judge_effort: "none" },
+      { id: "column-2", judge_effort: "high" },
+    ],
+    parameters: {
+      ...judgedInput.parameters,
+      judge_criteria: { kind: "common", value: criteria },
+    },
   });
   const results = page.getByRole("region", {
     name: "Judgment details",
@@ -1831,12 +1874,20 @@ test("judgment hover aligns short criteria fractionally even when unequal views 
   const id = await createJudged(page, {
     ...judgedInput,
     prompt: "Draw a red $ROW1 rectangle",
-    rows: {
-      kind: "variable",
-      values: [[{ text: "top" }], [{ text: "bottom" }]],
+    parameters: {
+      ...judgedInput.parameters,
+      variable: { kind: "rows" },
+      judge_model: { kind: "common", value: "fixture/text" },
+      judge_criteria: { kind: "common", value: criteria },
     },
-    columns: { kind: "judge_effort", values: ["none", "high"] },
-    judge: { ...judgedInput.judge!, model: "fixture/text", criteria },
+    rows: [
+      { id: "row-1", variable: [{ text: "top" }] },
+      { id: "row-2", variable: [{ text: "bottom" }] },
+    ],
+    columns: [
+      { id: "column-1", judge_effort: "none" },
+      { id: "column-2", judge_effort: "high" },
+    ],
   });
   await page.evaluate((id) => {
     localStorage.setItem(
@@ -2091,12 +2142,20 @@ test("native judgment wheel aligns the criterion under a stationary cursor in un
   const id = await createJudged(page, {
     ...judgedInput,
     prompt: "Draw a red $ROW1 rectangle",
-    rows: {
-      kind: "variable",
-      values: [[{ text: "top" }], [{ text: "bottom" }]],
+    parameters: {
+      ...judgedInput.parameters,
+      variable: { kind: "rows" },
+      judge_model: { kind: "common", value: "fixture/text" },
+      judge_criteria: { kind: "common", value: criteria },
     },
-    columns: { kind: "judge_effort", values: ["none", "high"] },
-    judge: { ...judgedInput.judge!, model: "fixture/text", criteria },
+    rows: [
+      { id: "row-1", variable: [{ text: "top" }] },
+      { id: "row-2", variable: [{ text: "bottom" }] },
+    ],
+    columns: [
+      { id: "column-1", judge_effort: "none" },
+      { id: "column-2", judge_effort: "high" },
+    ],
   });
   await page.evaluate((id) => {
     localStorage.setItem(
@@ -2258,12 +2317,20 @@ test("judgment layout changes after desktop scrollend refresh a stationary curso
   const id = await createJudged(page, {
     ...judgedInput,
     prompt: "Draw a red $ROW1 rectangle",
-    rows: {
-      kind: "variable",
-      values: [[{ text: "top" }], [{ text: "bottom" }]],
+    parameters: {
+      ...judgedInput.parameters,
+      variable: { kind: "rows" },
+      judge_model: { kind: "common", value: "fixture/text" },
+      judge_criteria: { kind: "common", value: criteria },
     },
-    columns: { kind: "judge_effort", values: ["none", "high"] },
-    judge: { ...judgedInput.judge!, model: "fixture/text", criteria },
+    rows: [
+      { id: "row-1", variable: [{ text: "top" }] },
+      { id: "row-2", variable: [{ text: "bottom" }] },
+    ],
+    columns: [
+      { id: "column-1", judge_effort: "none" },
+      { id: "column-2", judge_effort: "high" },
+    ],
   });
   await page.evaluate((id) => {
     localStorage.setItem(
@@ -2457,8 +2524,11 @@ test.describe("touch judgment following", () => {
     });
     const id = await createJudged(page, {
       ...judgedInput,
-      rows: { kind: "judge_model", values: ["fixture/text"] },
-      judge: { ...judgedInput.judge!, criteria },
+      rows: [{ id: "row-1", judge_model: "fixture/text" }],
+      parameters: {
+        ...judgedInput.parameters,
+        judge_criteria: { kind: "common", value: criteria },
+      },
     });
     await page.evaluate((id) => {
       localStorage.setItem(
@@ -2538,9 +2608,15 @@ test.describe("touch judgment following", () => {
     });
     const id = await createJudged(page, {
       ...judgedInput,
-      rows: { kind: "judge_model", values: ["fixture/text"] },
-      columns: { kind: "judge_effort", values: ["none", "high"] },
-      judge: { ...judgedInput.judge!, criteria },
+      rows: [{ id: "row-1", judge_model: "fixture/text" }],
+      columns: [
+        { id: "column-1", judge_effort: "none" },
+        { id: "column-2", judge_effort: "high" },
+      ],
+      parameters: {
+        ...judgedInput.parameters,
+        judge_criteria: { kind: "common", value: criteria },
+      },
     });
     await page.evaluate((id) => {
       localStorage.setItem(
@@ -2868,9 +2944,15 @@ test.describe("touch judgment following", () => {
     });
     const id = await createJudged(page, {
       ...judgedInput,
-      rows: { kind: "judge_model", values: ["fixture/text"] },
-      columns: { kind: "judge_effort", values: ["none", "high"] },
-      judge: { ...judgedInput.judge!, criteria },
+      rows: [{ id: "row-1", judge_model: "fixture/text" }],
+      columns: [
+        { id: "column-1", judge_effort: "none" },
+        { id: "column-2", judge_effort: "high" },
+      ],
+      parameters: {
+        ...judgedInput.parameters,
+        judge_criteria: { kind: "common", value: criteria },
+      },
     });
     await page.evaluate((id) => {
       localStorage.setItem(

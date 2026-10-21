@@ -2,8 +2,6 @@ import { z } from "zod";
 import {
   imageKinds,
   validImageSetting,
-  sharedImageSettingsSchema,
-  draftImageSettingsSchema,
   normalizeImageSettings,
   type ScalarImageKind,
   referenceImageSchema,
@@ -17,11 +15,13 @@ import {
   type VariableInterpolationOptions,
 } from "./prompt-variables.js";
 import {
-  judgeCriteriaSchema,
   draftJudgeCriteriaSchema,
   judgeCriteriaIssue,
+  criteriaSets,
   type Criterion,
 } from "./judge-criteria.js";
+import { parameterValue, axisParameters } from "./parameters.js";
+import type { LegacyGridInput } from "./legacy-grid-input.js";
 export type { VariableField } from "./prompt-variables.js";
 export const efforts = [
   "default",
@@ -33,44 +33,73 @@ export const efforts = [
   "xhigh",
   "max",
 ] as const;
+export type Effort = (typeof efforts)[number];
 export const kinds = [
   "model",
   "effort",
   "judge_model",
   "judge_effort",
+  "judge_criteria",
   "variable",
   ...imageKinds,
 ] as const;
-const variableFieldSchema = z.object({
-  text: z.string(),
-  images: z.array(referenceImageSchema).optional(),
-});
-const draftVariableAxis = z.object({
-  kind: z.literal("variable"),
-  values: z.array(z.array(variableFieldSchema)),
-});
-const variableAxis = draftVariableAxis.extend({
-  values: draftVariableAxis.shape.values.element
-    .min(1)
-    .array()
-    .min(1)
-    .refine(
-      (values) => values.every((fields) => fields.length === values[0].length),
-      "Variable values must have the same number of fields.",
-    ),
-});
-const draftScalarAxis = z.object({
-  kind: z.enum(kinds.filter((kind) => kind !== "variable")),
-  values: z.array(z.string()),
-});
-const scalarAxis = draftScalarAxis.extend({
-  values: z
-    .array(draftScalarAxis.shape.values.element.trim().min(1))
-    .min(1)
-    .refine((v) => new Set(v).size === v.length, "Values must be distinct"),
-});
-const axis = z.discriminatedUnion("kind", [variableAxis, scalarAxis]);
-export type GridAxis = z.infer<typeof axis>;
+const variableFieldSchema = z
+  .object({
+    text: z.string(),
+    images: z.array(referenceImageSchema).optional(),
+  })
+  .strict();
+export const parameterValueSchemas = {
+  model: z.string(),
+  effort: z.enum(efforts),
+  size: z.string(),
+  aspect_ratio: z.string(),
+  quality: z.string(),
+  background: z.string(),
+  judge_model: z.string(),
+  judge_effort: z.enum(efforts),
+  judge_criteria: draftJudgeCriteriaSchema,
+  variable: z.array(variableFieldSchema),
+};
+const parameterValuesSchema = z.object(parameterValueSchemas);
+export type ParameterValues = z.infer<typeof parameterValuesSchema>;
+const caseSchema = parameterValuesSchema
+  .partial()
+  .extend({
+    id: z
+      .string()
+      .min(1)
+      .default(() => globalThis.crypto.randomUUID()),
+  })
+  .strict();
+export type CaseRecord = z.infer<typeof caseSchema>;
+function source<T extends z.ZodType>(value: T) {
+  return z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("common"), value }).strict(),
+    z.object({ kind: z.literal("rows") }).strict(),
+    z.object({ kind: z.literal("columns") }).strict(),
+  ]);
+}
+const parameterSourcesSchema = z
+  .object({
+    model: source(parameterValueSchemas.model),
+    effort: source(parameterValueSchemas.effort).optional(),
+    size: source(parameterValueSchemas.size).optional(),
+    aspect_ratio: source(parameterValueSchemas.aspect_ratio).optional(),
+    quality: source(parameterValueSchemas.quality).optional(),
+    background: source(parameterValueSchemas.background).optional(),
+    judge_model: source(parameterValueSchemas.judge_model).optional(),
+    judge_effort: source(parameterValueSchemas.judge_effort).optional(),
+    judge_criteria: source(parameterValueSchemas.judge_criteria).optional(),
+    variable: z
+      .discriminatedUnion("kind", [
+        z.object({ kind: z.literal("rows") }).strict(),
+        z.object({ kind: z.literal("columns") }).strict(),
+      ])
+      .optional(),
+  })
+  .strict();
+export type ParameterSources = z.infer<typeof parameterSourcesSchema>;
 const budgetSchema = z.number().finite().positive();
 const draftChatMessageSchema = z.object({
   role: z.enum(["system", "user", "assistant", "unfilled"]),
@@ -127,169 +156,187 @@ export function chatText(messages: ChatMessage[]): string {
     .map(({ role, content }) => `${role}: ${content}`)
     .join("\n\n");
 }
-const draftAxis = z.discriminatedUnion("kind", [
-  draftVariableAxis,
-  draftScalarAxis,
-]);
-const draftJudgeSchema = z.object({
-  criteria: draftJudgeCriteriaSchema,
-  model: z.string(),
-  effort: z.enum(efforts),
-});
 const draftGridFields = {
+  inputVersion: z.literal(2),
+  format: z.enum(["svg", "markdown", "html", "chat-template", "image"]),
   prompt: z.string().default(""),
+  promptImages: z.array(referenceImageSchema).default([]),
   messages: z.array(draftChatMessageSchema).optional(),
-  rows: draftAxis,
-  columns: draftAxis,
-  imageSettings: draftImageSettingsSchema.optional(),
-  inputReferences: z.array(referenceImageSchema).optional(),
-  referenceGroups: z
-    .record(z.string(), z.array(referenceImageSchema))
-    .optional(),
-  model: z.string(),
-  effort: z.enum(efforts),
-  judge: draftJudgeSchema.optional(),
+  rows: z.array(caseSchema),
+  columns: z.array(caseSchema),
+  parameters: parameterSourcesSchema,
+  judge: z.boolean().default(false),
   parallelWorkers: z.number().int().min(1).optional(),
 };
-export const gridDraftSchema = z.object({
-  ...draftGridFields,
-  format: z.enum(["svg", "markdown", "html", "chat-template", "image"]),
-  budgetUsd: z.string(),
-});
+export const gridDraftSchema = z
+  .object({
+    ...draftGridFields,
+    budgetUsd: z.string(),
+  })
+  .strict()
+  .refine(
+    (input) => input.format !== "chat-template" || !input.promptImages.length,
+    "Attach Chat images to individual user messages.",
+  );
 export type GridDraftInput = z.infer<typeof gridDraftSchema>;
-const gridFields = {
+const acceptedGridFields = {
   ...draftGridFields,
-  prompt: draftGridFields.prompt.unwrap().trim().default(""),
   messages: z.array(chatMessageSchema).min(1).optional(),
-  rows: axis,
-  columns: axis,
-  imageSettings: sharedImageSettingsSchema.optional(),
-  model: draftGridFields.model.trim(),
-  judge: draftJudgeSchema
-    .extend({
-      criteria: judgeCriteriaSchema,
-      model: draftJudgeSchema.shape.model.trim(),
-    })
-    .optional(),
+  rows: draftGridFields.rows.min(1),
+  columns: draftGridFields.columns.min(1),
 };
 const gridInputSchema = z.discriminatedUnion("format", [
-  z.object({
-    ...gridFields,
-    format: z.enum(["svg", "markdown", "html", "chat-template"]),
-    budgetUsd: budgetSchema,
-  }),
-  z.object({
-    ...gridFields,
-    format: z.literal("image"),
-    // Keep numeric metadata for saved grids; image inference ignores it.
-    budgetUsd: budgetSchema.catch(3),
-  }),
+  z
+    .object({
+      ...acceptedGridFields,
+      format: z.enum(["svg", "markdown", "html", "chat-template"]),
+      budgetUsd: budgetSchema,
+    })
+    .strict(),
+  z
+    .object({
+      ...acceptedGridFields,
+      format: z.literal("image"),
+      budgetUsd: budgetSchema.catch(3),
+    })
+    .strict(),
 ]);
 export type GridInput = z.infer<typeof gridInputSchema>;
+export type StoredGridInput = GridInput | LegacyGridInput;
 export const gridSchema = gridInputSchema
   .transform((g) => {
+    for (const kind of [
+      "model",
+      "judge_model",
+      "size",
+      "aspect_ratio",
+      "quality",
+      "background",
+    ] as const) {
+      const source = g.parameters[kind];
+      if (source?.kind === "common") source.value = source.value.trim();
+      for (const record of [...g.rows, ...g.columns]) {
+        const value = record[kind];
+        if (value !== undefined) record[kind] = value.trim();
+      }
+    }
+    for (const criteria of criteriaSets(g))
+      for (const criterion of criteria) criterion.text = criterion.text.trim();
     if (isChatFormat(g.format)) g.prompt = chatText(g.messages ?? []);
-    else delete g.messages;
+    else {
+      g.prompt = g.prompt.trim();
+      delete g.messages;
+    }
     return g;
   })
   .superRefine((g, c) => {
     const issue = (message: string) => c.addIssue({ code: "custom", message });
-    if (isChatFormat(g.format)) {
-      const message = chatInputIssue(g.messages);
-      if (message) issue(message);
-      if (
-        g.inputReferences?.length ||
-        Object.keys(g.referenceGroups ?? {}).length
-      )
-        issue("Attach images to individual user messages.");
-    }
-    if (
-      !g.prompt.trim() &&
-      !(
-        g.format !== "image" &&
-        !isChatFormat(g.format) &&
-        g.inputReferences?.length
-      )
-    )
-      issue("Enter a prompt.");
-    if (![g.rows.kind, g.columns.kind].includes("model") && !g.model)
-      issue("Select a model.");
-    if (g.rows.kind === g.columns.kind && g.rows.kind !== "variable")
-      issue("Choose different row and column dimensions");
-    const dimensions = [g.rows.kind, g.columns.kind];
-    if (
-      !g.judge &&
-      dimensions.some(
-        (kind) => kind === "judge_model" || kind === "judge_effort",
-      )
-    )
-      issue("Add a judge to use judge dimensions.");
+    const applicable = new Set<keyof ParameterValues>(["model", "variable"]);
+    if (g.format === "image")
+      for (const kind of imageKinds) applicable.add(kind);
+    else applicable.add("effort");
     if (g.judge) {
       if (g.format === "html") issue("Websites do not support a judge yet.");
-      if (!dimensions.includes("judge_model") && !g.judge.model)
-        issue("Select a judge model.");
-      const message = judgeCriteriaIssue(g);
+      applicable.add("judge_model");
+      applicable.add("judge_effort");
+      applicable.add("judge_criteria");
+    }
+    for (const kind of kinds) {
+      const source = g.parameters[kind];
+      if (!applicable.has(kind)) {
+        if (source) issue(`${kind} is not applicable to this grid.`);
+        continue;
+      }
+      if (!source) {
+        if (kind !== "variable") issue(`Choose a source for ${kind}.`);
+        continue;
+      }
+      const values =
+        source.kind === "common"
+          ? [source.value]
+          : g[source.kind].map((record) => record[kind]);
+      for (const value of values) {
+        if (value === undefined) {
+          issue(`Add ${kind} to every ${source.kind} case.`);
+          continue;
+        }
+        if (
+          (kind === "model" || kind === "judge_model") &&
+          (typeof value !== "string" || !value.trim())
+        )
+          issue(kind === "model" ? "Select a model." : "Select a judge model.");
+        if (
+          imageKinds.includes(kind as (typeof imageKinds)[number]) &&
+          (typeof value !== "string" ||
+            !validImageSetting(kind as ScalarImageKind, value))
+        )
+          issue(
+            kind === "size"
+              ? "Use a resolution or a size such as 1536x1024"
+              : "Unknown image setting",
+          );
+      }
+    }
+    for (const side of ["rows", "columns"] as const) {
+      const owned = new Set(axisParameters(g, side));
+      const ids = new Set<string>();
+      for (const record of g[side]) {
+        if (ids.has(record.id))
+          issue("Case IDs must be distinct within an axis.");
+        ids.add(record.id);
+        for (const key of Object.keys(record))
+          if (key !== "id" && !owned.has(key as keyof ParameterValues))
+            issue(`${key} is not owned by ${side}.`);
+      }
+    }
+    if (isChatFormat(g.format)) {
+      if (g.promptImages.length)
+        issue("Attach Chat images to individual user messages.");
+      const message = chatInputIssue(g.messages);
       if (message) issue(message);
     }
-    if (
-      g.format === "image" &&
-      [g.rows.kind, g.columns.kind].includes("effort")
-    )
-      issue("Images do not support thinking effort dimensions");
-    for (const a of [g.rows, g.columns]) {
-      if (
-        (a.kind === "effort" || a.kind === "judge_effort") &&
-        a.values.some((v) => !efforts.includes(v as (typeof efforts)[number]))
-      )
-        issue("Unknown thinking effort");
-    }
-    for (const axis of [g.rows, g.columns]) {
-      if (imageKinds.some((kind) => kind === axis.kind) && g.format !== "image")
-        issue("Image settings require Image output");
-      if (
-        axis.kind !== "variable" &&
-        imageKinds.some((kind) => kind === axis.kind) &&
-        axis.kind !== "input_references" &&
-        axis.values.some(
-          (value) => !validImageSetting(axis.kind as ScalarImageKind, value),
-        )
-      )
-        issue(
-          axis.kind === "size"
-            ? "Use a resolution or a size such as 1536x1024"
-            : "Unknown image setting",
-        );
-      if (
-        axis.kind === "input_references" &&
-        axis.values.some((value) => !g.referenceGroups?.[value]?.length)
-      )
-        issue("Add images to every reference group");
-    }
+    const criterionIssue = judgeCriteriaIssue(g);
+    if (criterionIssue) issue(criterionIssue);
     const variableIssue = promptVariableIssue(g);
     if (variableIssue) issue(variableIssue);
-  })
-  .transform((g) => {
-    const dimensions = [g.rows.kind, g.columns.kind];
-    const settings = normalizeImageSettings(g.imageSettings);
-    for (const kind of dimensions) delete settings[kind as ScalarImageKind];
-    if (g.format === "image" && Object.keys(settings).length)
-      g.imageSettings = settings;
-    else delete g.imageSettings;
-    if (
-      isChatFormat(g.format) ||
-      dimensions.includes("input_references") ||
-      !g.inputReferences?.length
-    )
-      delete g.inputReferences;
-    const groups = [g.rows, g.columns].flatMap((axis) =>
-      axis.kind === "input_references" ? axis.values : [],
-    );
-    if (groups.length)
-      g.referenceGroups = Object.fromEntries(
-        groups.map((name) => [name, g.referenceGroups![name]]),
-      );
-    else delete g.referenceGroups;
-    return g;
+    // Only numbered fields vary message content; scalar case owners do not.
+    const variableSide = g.parameters.variable?.kind;
+    const contentRows =
+      variableSide === "rows" ? g.rows.length : Math.min(1, g.rows.length);
+    const contentColumns =
+      variableSide === "columns"
+        ? g.columns.length
+        : Math.min(1, g.columns.length);
+    if (!variableIssue && isChatFormat(g.format))
+      for (let row = 0; row < contentRows; row++)
+        for (let column = 0; column < contentColumns; column++) {
+          const messages = g.messages?.map((message) => {
+            const expanded = interpolateVariables(
+              message.content,
+              g,
+              row,
+              column,
+            );
+            const images = mergeVariableImages(message.images, expanded.images);
+            return {
+              ...message,
+              content: expanded.text,
+              ...(images ? { images } : {}),
+            };
+          });
+          const message = chatInputIssue(messages);
+          if (message) issue(message);
+        }
+    if (!variableIssue && !isChatFormat(g.format))
+      for (let row = 0; row < contentRows; row++)
+        for (let column = 0; column < contentColumns; column++) {
+          const expanded = interpolateVariables(g.prompt, g, row, column);
+          if (!expanded.text.trim()) {
+            if (g.format === "image") issue("Enter a prompt.");
+            else if (!g.promptImages.length && !expanded.images?.length)
+              issue("Enter a prompt or attach an image for every case.");
+          }
+        }
   })
   .brand<"ValidatedGridInput">();
 export type ValidatedGridInput = z.infer<typeof gridSchema>;
@@ -325,6 +372,7 @@ export type Cell = {
   judge?: {
     model: string;
     effort: string;
+    criteria?: Criterion[];
     status: Cell["status"];
     attemptId?: string;
     results?: JudgeResult[];
@@ -439,7 +487,7 @@ export type Grid = {
   owner: string;
   ownerUserId?: string;
   author?: Identity | null;
-  input: GridInput;
+  input: StoredGridInput;
   status: "running" | "paused" | "complete";
   published: boolean;
   visibility: GridVisibility;
@@ -452,41 +500,23 @@ export function expandGrid(
   input: GridInput,
   options: VariableInterpolationOptions = {},
 ): Omit<Cell, "id">[] {
-  return input.rows.values.flatMap((_, row) =>
-    input.columns.values.map((_, column) => {
-      const selections: Record<string, string> = {
-        model: input.model,
-        effort: input.effort,
-      };
+  return input.rows.flatMap((_, row) =>
+    input.columns.map((_, column) => {
+      const model = parameterValue(input, "model", row, column) ?? "";
+      const effort = parameterValue(input, "effort", row, column) ?? "default";
       const judge: Cell["judge"] = input.judge
         ? {
-            model: input.judge.model,
-            effort: input.judge.effort,
+            model: parameterValue(input, "judge_model", row, column) ?? "",
+            effort:
+              parameterValue(input, "judge_effort", row, column) ?? "default",
             status: "pending",
           }
         : undefined;
-      const imageSettings: ImageSettings = { ...input.imageSettings };
-      if (input.format === "image" && input.inputReferences?.length)
-        imageSettings.input_references = input.inputReferences.map(
-          (image) => image.id,
-        );
-      for (const [a, index] of [
-        [input.rows, row],
-        [input.columns, column],
-      ] as const) {
-        if (a.kind === "variable") continue;
-        const v = a.values[index];
-        if (a.kind === "model" || a.kind === "effort") selections[a.kind] = v;
-        else if (a.kind === "judge_model" || a.kind === "judge_effort") {
-          if (judge) {
-            if (a.kind === "judge_model") judge.model = v;
-            else judge.effort = v;
-          }
-        } else if (a.kind === "input_references")
-          imageSettings.input_references =
-            input.referenceGroups?.[v]?.map((image) => image.id) ?? [];
-        else imageSettings[a.kind] = v;
-      }
+      const imageSettings: ImageSettings = {};
+      if (input.format === "image")
+        for (const kind of imageKinds) {
+          imageSettings[kind] = parameterValue(input, kind, row, column);
+        }
       const messages = input.messages?.map((message) => {
         const content = interpolateVariables(
           message.content,
@@ -505,25 +535,17 @@ export function expandGrid(
       const expanded = messages
         ? { text: chatText(messages), images: undefined }
         : interpolateVariables(input.prompt, input, row, column, options);
-      if (input.format === "image" && expanded.images)
-        imageSettings.input_references = [
-          ...new Set([
-            ...(imageSettings.input_references ?? []),
-            ...expanded.images.map((image) => image.id),
-          ]),
-        ];
-      const images =
-        input.format !== "image" && !messages
-          ? input.inputReferences?.length
-            ? mergeVariableImages(input.inputReferences, expanded.images)
-            : expanded.images
-          : undefined;
+      const attachments = messages
+        ? undefined
+        : mergeVariableImages(input.promptImages, expanded.images);
+      if (input.format === "image" && attachments)
+        imageSettings.input_references = attachments.map((image) => image.id);
+      const images = input.format !== "image" ? attachments : undefined;
       return {
         row,
         column,
-        ...selections,
-        model: selections.model,
-        effort: selections.effort,
+        model,
+        effort,
         prompt: expanded.text,
         ...(messages ? { messages } : {}),
         ...(images ? { images } : {}),

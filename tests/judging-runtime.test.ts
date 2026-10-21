@@ -7,35 +7,59 @@ import {
   type RuntimeCall,
   type RuntimeFixture,
 } from "./runtime-fixture.js";
-import type { GridInput } from "../server/domain.js";
+import type {
+  Grid,
+  GridInput,
+  ParameterSources,
+  WorkflowTask,
+} from "../server/domain.js";
+import { isCurrentGridInput } from "../server/parameters.js";
+import {
+  currentDefinition,
+  type CurrentGridOverrides,
+} from "./current-grid-fixture.js";
 import { projectWorkflow } from "../server/workflow.js";
 import { token } from "../server/ids.js";
 import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { holdDatabaseWrites } from "./database-lock.js";
 import { crashCheckpoint } from "./crash-checkpoint.js";
+import { arrangeHistoricalGrid } from "./grid-storage-fixture.js";
+import {
+  expandLegacyGrid,
+  type LegacyGridInput,
+} from "../server/legacy-grid-input.js";
 
-const input: GridInput = {
-  format: "markdown",
-  prompt: "Draw a red rectangle",
-  model: "fixture/text",
-  effort: "none",
-  budgetUsd: 0.1,
-  rows: {
-    kind: "judge_model",
-    values: ["fixture/text", "fixture/judge-other"],
-  },
-  columns: { kind: "judge_effort", values: ["none", "high"] },
-  judge: {
-    criteria: [
+const judgeParameters: Partial<ParameterSources> = {
+  judge_model: { kind: "rows" },
+  judge_effort: { kind: "columns" },
+  judge_criteria: {
+    kind: "common",
+    value: [
       { text: "Is there a blue circle?", correctAnswer: false },
       { text: "Is there a red rectangle?", correctAnswer: true },
     ],
-    model: "",
-    effort: "default",
   },
+};
+const judging: CurrentGridOverrides = {
+  prompt: "Draw a red rectangle",
+  budgetUsd: 0.1,
+  judge: true,
+  parameters: judgeParameters,
+  rows: [
+    { judge_model: "fixture/text" },
+    { judge_model: "fixture/judge-other" },
+  ],
+  columns: [{ judge_effort: "none" }, { judge_effort: "high" }],
   parallelWorkers: 4,
 };
+const input: GridInput = currentDefinition({
+  ...judging,
+  parameters: {
+    ...judgeParameters,
+    effort: { kind: "common", value: "none" },
+  },
+});
 const verdicts = {
   results: [
     { verdict: false, explanation: "No blue circle." },
@@ -52,19 +76,19 @@ async function create(fixture: RuntimeFixture, body: unknown = input) {
   return (await response.json()).id as string;
 }
 
-const single: GridInput = {
+const single: GridInput = currentDefinition({
   ...input,
-  rows: { kind: "judge_model", values: ["fixture/text"] },
-  columns: { kind: "judge_effort", values: ["none"] },
+  rows: [{ judge_model: "fixture/text" }],
+  columns: [{ judge_effort: "none" }],
   parallelWorkers: 1,
-};
-const pair: GridInput = {
+});
+const pair: GridInput = currentDefinition({
   ...single,
-  rows: {
-    kind: "judge_model",
-    values: ["fixture/text", "fixture/judge-other"],
-  },
-};
+  rows: [
+    { judge_model: "fixture/text" },
+    { judge_model: "fixture/judge-other" },
+  ],
+});
 const png = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
   "base64",
@@ -134,25 +158,36 @@ test("non-chat variable images isolate judge-only answers and merge criterion im
         session,
       )!,
     );
-    const id = await create(fixture, {
-      ...single,
-      prompt: "Describe $ROW1.",
-      rows: {
-        kind: "variable",
-        values: expected.map((image, index) => [
-          { text: "the supplied shape", images: [source] },
-          { text: `secret answer ${index}`, images: [image] },
-        ]),
-      },
-      columns: { kind: "judge_model", values: ["fixture/text"] },
-      judge: {
-        ...single.judge!,
-        criteria: [
-          { text: "Does $ROW1 match $ROW2 and $ROW2?", correctAnswer: false },
-          { text: "Is $ROW2 present?", correctAnswer: true },
-        ],
-      },
-    });
+    const id = await create(
+      fixture,
+      currentDefinition({
+        ...single,
+        prompt: "Describe $ROW1.",
+        parameters: {
+          ...single.parameters,
+          variable: { kind: "rows" },
+          judge_model: { kind: "columns" },
+          judge_effort: { kind: "common", value: "default" },
+          judge_criteria: {
+            kind: "common",
+            value: [
+              {
+                text: "Does $ROW1 match $ROW2 and $ROW2?",
+                correctAnswer: false,
+              },
+              { text: "Is $ROW2 present?", correctAnswer: true },
+            ],
+          },
+        },
+        rows: expected.map((image, index) => ({
+          variable: [
+            { text: "the supplied shape", images: [source] },
+            { text: `secret answer ${index}`, images: [image] },
+          ],
+        })),
+        columns: [{ judge_model: "fixture/text" }],
+      }),
+    );
     const generation = await fixture.nextCall();
     assert.equal(
       JSON.stringify(generation.request).includes("secret answer"),
@@ -209,30 +244,26 @@ test("per-case rubrics persist as one source while resolved judgments and reused
     const images = bytes.map((data, index) =>
       fixture.store.references.add(data, `case-${index}.png`, session)!,
     );
-    const source: GridInput = {
+    const source: GridInput = currentDefinition({
       ...single,
       prompt: "Describe a shape.",
-      rows: {
-        kind: "variable",
-        values: images.map((image, index) => [
-          { text: `secret answer ${index}`, images: [image] },
-        ]),
+      parameters: {
+        ...single.parameters,
+        variable: { kind: "rows" },
+        judge_model: { kind: "common", value: "fixture/text" },
+        judge_criteria: { kind: "rows" },
       },
-      judge: {
-        ...single.judge!,
-        model: "fixture/text",
-        criteria: {
-          axis: "rows",
-          cases: [
-            [{ text: "Does $ROW1 match?", correctAnswer: false }],
-            [
-              { text: "Is this red?", correctAnswer: true },
-              { text: "Does $ROW1 match?", correctAnswer: false },
-            ],
-          ],
-        },
-      },
-    };
+      rows: images.map((image, index) => ({
+        variable: [{ text: `secret answer ${index}`, images: [image] }],
+        judge_criteria:
+          index === 0
+            ? [{ text: "Does $ROW1 match?", correctAnswer: false }]
+            : [
+                { text: "Is this red?", correctAnswer: true },
+                { text: "Does $ROW1 match?", correctAnswer: false },
+              ],
+      })),
+    });
     const results = [
       [{ verdict: false, explanation: "Not the first answer." }],
       [
@@ -276,7 +307,14 @@ test("per-case rubrics persist as one source while resolved judgments and reused
       complete.cells.map((cell) => cell.judge?.results),
       results,
     );
-    assert.deepEqual(complete.input.judge!.criteria, source.judge!.criteria);
+    assert.ok(isCurrentGridInput(complete.input));
+    assert.deepEqual(complete.input.parameters.judge_criteria, {
+      kind: "rows",
+    });
+    assert.deepEqual(
+      complete.input.rows.map((record) => record.judge_criteria),
+      source.rows.map((record) => record.judge_criteria),
+    );
     const artifactId = complete.cells[0].artifactId;
     assert.ok(complete.cells.every((cell) => cell.artifactId === artifactId));
     const attempts = complete.cells.map((cell) => cell.judge!.attemptId);
@@ -284,7 +322,14 @@ test("per-case rubrics persist as one source while resolved judgments and reused
     await fixture.startEngine();
     await fixture.startWeb();
     const restored = fixture.store.get(id)!;
-    assert.deepEqual(restored.input.judge!.criteria, source.judge!.criteria);
+    assert.ok(isCurrentGridInput(restored.input));
+    assert.deepEqual(restored.input.parameters.judge_criteria, {
+      kind: "rows",
+    });
+    assert.deepEqual(
+      restored.input.rows.map((record) => record.judge_criteria),
+      source.rows.map((record) => record.judge_criteria),
+    );
     assert.deepEqual(
       restored.cells.map((cell) => cell.judge?.results),
       results,
@@ -307,22 +352,16 @@ test("per-case rubrics persist as one source while resolved judgments and reused
       images.map((image) => [image]),
     );
     assert.equal(fixture.calls.length, 3);
-    const changed: GridInput = {
+    const changed: GridInput = currentDefinition({
       ...source,
-      judge: {
-        ...source.judge!,
-        criteria: {
-          axis: "rows",
-          cases: [
-            [{ text: "Could $ROW1 be correct?", correctAnswer: false }],
-            [
-              { text: "Is this red?", correctAnswer: true },
-              { text: "Does $ROW1 match?", correctAnswer: false },
-            ],
-          ],
-        },
-      },
-    };
+      rows: source.rows.map((record, index) => ({
+        ...record,
+        judge_criteria:
+          index === 0
+            ? [{ text: "Could $ROW1 be correct?", correctAnswer: false }]
+            : record.judge_criteria,
+      })),
+    });
     const reusedId = await create(fixture, {
       ...changed,
       sourceGridId: id,
@@ -344,7 +383,12 @@ test("per-case rubrics persist as one source while resolved judgments and reused
       5,
       "criteria-only edits run fresh judgments, not generation",
     );
-    assert.deepEqual(reused.input.judge!.criteria, changed.judge!.criteria);
+    assert.ok(isCurrentGridInput(reused.input));
+    assert.deepEqual(reused.input.parameters.judge_criteria, { kind: "rows" });
+    assert.deepEqual(
+      reused.input.rows.map((record) => record.judge_criteria),
+      changed.rows.map((record) => record.judge_criteria),
+    );
     assert.deepEqual(
       reused.cells.map((cell) => cell.judge?.results),
       results,
@@ -369,21 +413,26 @@ test("chat judging restores each turn's image bytes to the completed conversatio
       "second.png",
       session,
     )!;
-    const id = await create(fixture, {
-      ...single,
-      format: "chat-template",
-      messages: [
-        {
-          role: "user",
-          content: "Describe the first image.",
-          images: [second],
+    const id = await create(
+      fixture,
+      currentDefinition({
+        ...single,
+        format: "chat-template",
+        parameters: {
+          ...judgeParameters,
+          effort: { kind: "common", value: "none" },
         },
-        { role: "assistant", content: "A supplied answer." },
-        { role: "user", content: "", images: [first, second] },
-      ],
-      rows: { kind: "judge_model", values: ["fixture/text"] },
-      judge: { ...single.judge, model: "fixture/text" },
-    });
+        messages: [
+          {
+            role: "user",
+            content: "Describe the first image.",
+            images: [second],
+          },
+          { role: "assistant", content: "A supplied answer." },
+          { role: "user", content: "", images: [first, second] },
+        ],
+      }),
+    );
     const generation = await fixture.nextCall();
     finish(generation, "The images show a shape.", 0.1);
     const judge = await fixture.nextCall();
@@ -452,17 +501,28 @@ test("future user images are absent from earlier calls and remain on their turn 
       id: fixture.owner,
       created: 0,
     })!;
-    const id = await create(fixture, {
-      ...single,
-      format: "chat-template",
-      budgetUsd: 1,
-      messages: [
-        { role: "system", content: "Describe the supplied image." },
-        { role: "unfilled", content: "" },
-        { role: "user", content: "Describe another detail.", images: [image] },
-        { role: "unfilled", content: "" },
-      ],
-    });
+    const id = await create(
+      fixture,
+      currentDefinition({
+        ...single,
+        format: "chat-template",
+        parameters: {
+          ...judgeParameters,
+          effort: { kind: "common", value: "none" },
+        },
+        budgetUsd: 1,
+        messages: [
+          { role: "system", content: "Describe the supplied image." },
+          { role: "unfilled", content: "" },
+          {
+            role: "user",
+            content: "Describe another detail.",
+            images: [image],
+          },
+          { role: "unfilled", content: "" },
+        ],
+      }),
+    );
     const history = (call: RuntimeCall) =>
       call.request.messages.map((message) => ({
         role: message.role,
@@ -585,15 +645,10 @@ test("two judge models by two efforts generate once, judge four times, and inclu
 test("pause and engine restart preserve generation and settled judgments; reused grids judge afresh", async () => {
   const fixture = await runtimeFixture({ judges: true });
   try {
-    const body = {
-      ...input,
-      rows: {
-        kind: "judge_model",
-        values: ["fixture/text", "fixture/judge-other"],
-      },
-      columns: { kind: "judge_effort", values: ["none"] },
+    const body = currentDefinition({
+      ...pair,
       parallelWorkers: 1,
-    };
+    });
     const id = await create(fixture, body);
     finish(await fixture.nextCall(), "# Durable artifact", 0.1);
     finish(await fixture.nextCall(), JSON.stringify(verdicts), 0.2);
@@ -643,12 +698,7 @@ test("pause and engine restart preserve generation and settled judgments; reused
 test("invalid judgment keeps the committed generation and retry never regenerates", async () => {
   const fixture = await runtimeFixture({ judges: true });
   try {
-    const id = await create(fixture, {
-      ...input,
-      rows: { kind: "judge_model", values: ["fixture/text"] },
-      columns: { kind: "judge_effort", values: ["none"] },
-      parallelWorkers: 1,
-    });
+    const id = await create(fixture, single);
     finish(await fixture.nextCall(), "# Kept artifact", 0.1);
     finish(await fixture.nextCall(), '{"results":[]}', 0.2);
     const failed = await until(
@@ -699,12 +749,19 @@ test("chat judgments share the complete saved message sequence, including litera
       messages[3],
       { role: "assistant", content: "Final answer" },
     ];
-    const id = await create(fixture, {
-      ...input,
-      format: "chat-template",
-      messages,
-      budgetUsd: 1,
-    });
+    const id = await create(
+      fixture,
+      currentDefinition({
+        ...input,
+        format: "chat-template",
+        parameters: {
+          ...judgeParameters,
+          effort: { kind: "common", value: "none" },
+        },
+        messages,
+        budgetUsd: 1,
+      }),
+    );
     finish(await fixture.nextCall(), answer, 0.1);
     const final = await fixture.nextCall();
     assert.equal(final.request.messages[2].content, answer);
@@ -752,14 +809,18 @@ test("malformed saved chat messages fail judging without making a provider reque
     ]) {
       const grid = committed(
         fixture,
-        {
+        currentDefinition({
           ...single,
           format: "chat-template",
+          parameters: {
+            ...judgeParameters,
+            effort: { kind: "common", value: "none" },
+          },
           messages: [
             { role: "user", content: "Question" },
             { role: "unfilled", content: "" },
           ],
-        },
+        }),
         { "messages.json": json },
       );
       assert.equal(
@@ -784,64 +845,159 @@ test("malformed saved chat messages fail judging without making a provider reque
   }
 });
 
-test("Image judging keeps ordered duplicate source references separate from the generated artifact", async () => {
-  const fixture = await runtimeFixture({ judges: true, images: true });
-  try {
-    const session = { id: fixture.owner, created: 0 };
-    const secondBytes = Buffer.concat([png, Buffer.from("second")]);
-    const outputBytes = Buffer.concat([png, Buffer.from("output")]);
-    const first = fixture.store.references.add(png, "first.png", session)!;
-    const second = fixture.store.references.add(
-      secondBytes,
-      "second.png",
-      session,
-    )!;
-    const grid = committed(
-      fixture,
-      {
-        ...single,
-        format: "image",
-        model: "fixture/image",
-        effort: "default",
-        inputReferences: [second, first, second],
-      },
-      { image: outputBytes },
-      "image/png",
-    );
-    assert.equal(
-      (await fixture.request(`/api/grids/${grid.id}/retry`, {})).status,
-      200,
-    );
-    const judge = await fixture.nextCall();
-    assert.deepEqual(
-      judge.request.messages.map((message) => message.role),
-      ["user", "user", "system", "user"],
-    );
-    const urls = (index: number) => {
-      const content = judge.request.messages[index].content;
-      assert.ok(Array.isArray(content));
-      return content.flatMap((part) =>
-        part.type === "image_url" ? [part.image_url!.url] : [],
+for (const accepted of [false, true])
+  test(`Image judging preserves source order separately from the generated artifact (accepted legacy=${accepted})`, async () => {
+    const fixture = await runtimeFixture({ judges: true, images: true });
+    try {
+      const session = { id: fixture.owner, created: 0 };
+      const secondBytes = Buffer.concat([png, Buffer.from("second")]);
+      const outputBytes = Buffer.concat([png, Buffer.from("output")]);
+      const first = fixture.store.references.add(png, "first.png", session)!;
+      const second = fixture.store.references.add(
+        secondBytes,
+        "second.png",
+        session,
+      )!;
+      let grid: Grid;
+      if (accepted) {
+        const legacyInput: LegacyGridInput = {
+          format: "image",
+          prompt: "Draw a red rectangle",
+          inputReferences: [second, first, second],
+          model: "fixture/image",
+          effort: "default",
+          rows: { kind: "judge_model", values: ["fixture/text"] },
+          columns: { kind: "judge_effort", values: ["none"] },
+          judge: {
+            model: "fixture/text",
+            effort: "none",
+            criteria: [
+              { text: "Is there a blue circle?", correctAnswer: false },
+              { text: "Is there a red rectangle?", correctAnswer: true },
+            ],
+          },
+          budgetUsd: 0.1,
+          parallelWorkers: 1,
+        };
+        const generationId = token();
+        const judgmentId = token();
+        const artifactId = token();
+        const historical: Grid & { input: LegacyGridInput } = {
+          id: token(),
+          owner: fixture.owner,
+          input: legacyInput,
+          status: "paused",
+          published: false,
+          visibility: "private",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          cells: expandLegacyGrid(legacyInput).map((cell) => ({
+            ...cell,
+            id: token(),
+            generationId,
+            judgmentId,
+          })),
+        };
+        const tasks: WorkflowTask[] = [
+          {
+            id: generationId,
+            kind: "generation",
+            status: "complete",
+            input: {
+              format: "image",
+              model: "fixture/image",
+              effort: "default",
+              prompt: legacyInput.prompt,
+              imageSettings: {
+                input_references: [second.id, first.id, second.id],
+              },
+              budgetUsd: legacyInput.budgetUsd,
+            },
+            output: {
+              artifactId,
+              mediaType: "image/png",
+              provenance: {
+                signature: "accepted-ordered-reference-artifact",
+                files: ["image"],
+              },
+            },
+          },
+          {
+            id: judgmentId,
+            kind: "judge",
+            status: "pending",
+            generationId,
+            input: {
+              model: legacyInput.judge!.model,
+              effort: legacyInput.judge!.effort,
+              criteria: [
+                { text: "Is there a blue circle?", correctAnswer: false },
+                { text: "Is there a red rectangle?", correctAnswer: true },
+              ],
+            },
+          },
+        ];
+        fixture.store.files.write(artifactId, { image: outputBytes });
+        arrangeHistoricalGrid(fixture.store, historical, tasks);
+        grid = historical;
+      } else {
+        grid = committed(
+          fixture,
+          currentDefinition({
+            ...judging,
+            format: "image",
+            promptImages: [second, first, second],
+            rows: single.rows,
+            columns: single.columns,
+            parallelWorkers: single.parallelWorkers,
+            parameters: judgeParameters,
+          }),
+          { image: outputBytes },
+          "image/png",
+        );
+      }
+      assert.equal(
+        (await fixture.request(`/api/grids/${grid.id}/retry`, {})).status,
+        200,
       );
-    };
-    assert.deepEqual(
-      urls(0),
-      [secondBytes, png, secondBytes].map(
-        (bytes) => `data:image/png;base64,${bytes.toString("base64")}`,
-      ),
-    );
-    assert.deepEqual(urls(1), [
-      `data:image/png;base64,${outputBytes.toString("base64")}`,
-    ]);
-    finish(judge, JSON.stringify(verdicts), 0.25);
-    assert.equal(
-      (await settled(fixture, grid.id)).cells[0].judge?.status,
-      "complete",
-    );
-  } finally {
-    await fixture.close();
-  }
-});
+      const judge = await fixture.nextCall();
+      assert.deepEqual(
+        judge.request.messages.map((message) => message.role),
+        ["user", "user", "system", "user"],
+      );
+      const urls = (index: number) => {
+        const content = judge.request.messages[index].content;
+        assert.ok(Array.isArray(content));
+        return content.flatMap((part) =>
+          part.type === "image_url" ? [part.image_url!.url] : [],
+        );
+      };
+      assert.deepEqual(
+        urls(0),
+        (accepted ? [secondBytes, png, secondBytes] : [secondBytes, png]).map(
+          (bytes) => `data:image/png;base64,${bytes.toString("base64")}`,
+        ),
+      );
+      assert.deepEqual(urls(1), [
+        `data:image/png;base64,${outputBytes.toString("base64")}`,
+      ]);
+      finish(judge, JSON.stringify(verdicts), 0.25);
+      const saved = await settled(fixture, grid.id);
+      assert.equal(saved.cells[0].judge?.status, "complete");
+      assert.equal(isCurrentGridInput(saved.input), !accepted);
+      if (accepted) {
+        const generation = fixture.store
+          .workflow(grid.id)
+          .find((task) => task.kind === "generation")!;
+        assert.deepEqual(generation.input.imageSettings?.input_references, [
+          second.id,
+          first.id,
+          second.id,
+        ]);
+      }
+    } finally {
+      await fixture.close();
+    }
+  });
 
 test("image generation is saved byte-for-byte and every judge receives those bytes rather than a URL or prompt", async () => {
   const fixture = await runtimeFixture({
@@ -850,12 +1006,13 @@ test("image generation is saved byte-for-byte and every judge receives those byt
     images: true,
   });
   try {
-    const id = await create(fixture, {
-      ...input,
-      format: "image",
-      model: "fixture/image",
-      effort: "default",
-    });
+    const id = await create(
+      fixture,
+      currentDefinition({
+        ...judging,
+        format: "image",
+      }),
+    );
     const generation = await fixture.nextImageCall();
     generation.finish(png, 0.04);
     const judges = await Promise.all(
@@ -899,7 +1056,10 @@ test("image generation is saved byte-for-byte and every judge receives those byt
 test("SVG comparisons receive the same rendered PNG of the committed normalized SVG and preserve the original", async () => {
   const fixture = await runtimeFixture({ workers: 4, judges: true });
   try {
-    const id = await create(fixture, { ...input, format: "svg" });
+    const id = await create(
+      fixture,
+      currentDefinition({ ...input, format: "svg" }),
+    );
     finish(
       await fixture.nextCall(),
       `\`\`\`svg\n${svg.replace(' xmlns="http://www.w3.org/2000/svg"', "")}\n\`\`\``,
@@ -941,12 +1101,10 @@ test("an image artifact with SVG media type follows the renderer path while its 
   try {
     const grid = committed(
       fixture,
-      {
-        ...input,
+      currentDefinition({
+        ...judging,
         format: "image",
-        model: "fixture/image",
-        effort: "default",
-      },
+      }),
       { image: svg },
       "image/svg+xml",
     );
@@ -986,7 +1144,10 @@ test("a render failure never calls the judge or loses the immutable SVG, includi
   const fixture = await runtimeFixture({ judges: true });
   try {
     const invalid = `<svg xmlns="http://www.w3.org/2000/svg" width="80" height="40"><image href="${fixture.providerURL}/unresolved.png" width="80" height="40"/></svg>`;
-    const id = await create(fixture, { ...single, format: "svg" });
+    const id = await create(
+      fixture,
+      currentDefinition({ ...single, format: "svg" }),
+    );
     finish(await fixture.nextCall(), invalid, 0.1);
     const failed = await settled(fixture, id, "paused");
     assert.match(
@@ -1069,7 +1230,11 @@ test("a restart judges one shared immutable artifact and preserves every stored 
       "index.md": "Durable shared output",
       "companion.txt": "All inventory files must survive",
     };
-    const grid = committed(fixture, { ...pair, parallelWorkers: 2 }, files);
+    const grid = committed(
+      fixture,
+      currentDefinition({ ...pair, parallelWorkers: 2 }),
+      files,
+    );
     await fixture.engine.close();
     await fixture.startEngine();
     assert.equal(
@@ -1358,7 +1523,12 @@ test("duplicate creation replay while judging and after restart never repeats ge
     const restored = await completedReplay.json();
     assert.equal(restored.id, id);
     assert.equal(restored.status, "complete");
-    assert.equal(restored.input.judge.criteria[0].correctAnswer, false);
+    assert.equal(restored.input.judge, true);
+    assert.equal(restored.input.parameters.judge_criteria.kind, "common");
+    assert.equal(
+      restored.input.parameters.judge_criteria.value[0].correctAnswer,
+      false,
+    );
     assert.deepEqual(
       restored.cells.map(
         (cell: { judge: { attemptId: string } }) => cell.judge.attemptId,

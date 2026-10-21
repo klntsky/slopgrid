@@ -4,14 +4,10 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "../server/store.js";
-import {
-  expandGrid,
-  gridSchema,
-  type Cell,
-  type GridInput,
-} from "../server/domain.js";
+import { expandGrid, gridSchema, type Cell } from "../server/domain.js";
 import { validatedGrid } from "./grid-storage-fixture.js";
 import { createWorkflow } from "../server/workflow.js";
+import { currentInput } from "./current-grid-fixture.js";
 import {
   storedInferenceCallPayloads,
   giveInferenceCallsEqualTimestamps,
@@ -22,15 +18,16 @@ test("generation usage follows the latest call while billing preserves earlier a
   const directory = mkdtempSync(join(tmpdir(), "slopgrid-billing-"));
   const store = new Store(join(directory, "db.sqlite"), Buffer.alloc(32, 1));
   try {
-    const input: GridInput = {
-      format: "markdown",
+    const input = currentInput({
       prompt: "Make a heading",
-      model: "example/model",
-      effort: "default",
       budgetUsd: 5,
-      rows: { kind: "model", values: ["example/model"] },
-      columns: { kind: "effort", values: ["default"] },
-    };
+      parameters: {
+        model: { kind: "rows" },
+        effort: { kind: "columns" },
+      },
+      rows: [{ model: "example/model" }],
+      columns: [{ effort: "default" }],
+    });
     store.insert(
       validatedGrid({
         id: "grid",
@@ -119,20 +116,23 @@ test("judge charges enter spent without changing generation usage or duplicating
   const directory = mkdtempSync(join(tmpdir(), "slopgrid-judge-billing-"));
   const store = new Store(join(directory, "db.sqlite"), Buffer.alloc(32, 1));
   try {
-    const input: GridInput = {
-      format: "markdown",
+    const input = currentInput({
       prompt: "An output",
-      model: "generator",
-      effort: "none",
       budgetUsd: 1,
-      rows: { kind: "judge_model", values: ["judge-a", "judge-b"] },
-      columns: { kind: "judge_effort", values: ["high"] },
-      judge: {
-        criteria: [{ text: "Is it correct?", correctAnswer: false }],
-        model: "",
-        effort: "default",
+      judge: true,
+      parameters: {
+        model: { kind: "common", value: "generator" },
+        effort: { kind: "common", value: "none" },
+        judge_model: { kind: "rows" },
+        judge_effort: { kind: "columns" },
+        judge_criteria: {
+          kind: "common",
+          value: [{ text: "Is it correct?", correctAnswer: false }],
+        },
       },
-    };
+      rows: [{ judge_model: "judge-a" }, { judge_model: "judge-b" }],
+      columns: [{ judge_effort: "high" }],
+    });
     const cells: Cell[] = expandGrid(input).map((cell, index) => ({
       ...cell,
       id: index ? "member" : "source",
@@ -247,20 +247,23 @@ test("canonical billing survives reopening and recovery with free and unavailabl
   const path = join(directory, "db.sqlite");
   let store = new Store(path, Buffer.alloc(32, 1));
   try {
-    const input: GridInput = {
-      format: "markdown",
+    const input = currentInput({
       prompt: "Saved billing",
-      model: "generator",
-      effort: "none",
       budgetUsd: 1,
-      rows: { kind: "model", values: ["generator"] },
-      columns: { kind: "effort", values: ["none"] },
-      judge: {
-        model: "actual-judge",
-        effort: "high",
-        criteria: [{ text: "Correct?", correctAnswer: true }],
+      judge: true,
+      parameters: {
+        model: { kind: "rows" },
+        effort: { kind: "columns" },
+        judge_model: { kind: "common", value: "actual-judge" },
+        judge_effort: { kind: "common", value: "high" },
+        judge_criteria: {
+          kind: "common",
+          value: [{ text: "Correct?", correctAnswer: true }],
+        },
       },
-    };
+      rows: [{ model: "generator" }],
+      columns: [{ effort: "none" }],
+    });
     store.insert(
       validatedGrid({
         id: "grid",
@@ -380,20 +383,23 @@ test("shared generation calls aggregate across ledger cells without duplicating 
   const directory = mkdtempSync(join(tmpdir(), "slopgrid-shared-billing-"));
   const store = new Store(join(directory, "db.sqlite"), Buffer.alloc(32, 1));
   try {
-    const input: GridInput = {
-      format: "markdown",
+    const input = currentInput({
       prompt: "Shared output",
-      model: "generator",
-      effort: "none",
       budgetUsd: 1,
-      rows: { kind: "judge_model", values: ["judge-a", "judge-b"] },
-      columns: { kind: "judge_effort", values: ["high"] },
-      judge: {
-        model: "",
-        effort: "high",
-        criteria: [{ text: "Correct?", correctAnswer: true }],
+      judge: true,
+      parameters: {
+        model: { kind: "common", value: "generator" },
+        effort: { kind: "common", value: "none" },
+        judge_model: { kind: "rows" },
+        judge_effort: { kind: "columns" },
+        judge_criteria: {
+          kind: "common",
+          value: [{ text: "Correct?", correctAnswer: true }],
+        },
       },
-    };
+      rows: [{ judge_model: "judge-a" }, { judge_model: "judge-b" }],
+      columns: [{ judge_effort: "high" }],
+    });
     const cells = expandGrid(input).map((cell, index) => ({
       ...cell,
       id: `cell-${index}`,

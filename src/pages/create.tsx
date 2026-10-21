@@ -2,19 +2,19 @@ import { ModelSelector } from "../create/model-selector";
 import { ChatEditor } from "../create/chat-editor";
 import { CriteriaEditor } from "../create/criteria-editor";
 import { ImageOptions } from "../create/image-options";
-import { changeAxis, removeJudge } from "../create/change-axis";
 import { FormatPicker } from "../components/format-picker";
 import { useNavigate } from "@tanstack/react-router";
 import { saveDraft } from "../create/draft";
 import { useGrids, usePublicGrids } from "../queries";
 import { ArrowUpRight, DollarSign, ArrowLeftRight } from "lucide-react";
 import { useLayoutEffect, useRef } from "react";
-import { efforts, isChatFormat, type GridInput } from "../../server/domain";
+import { efforts, isChatFormat, type Effort } from "../../server/domain";
+import { imageKinds } from "../../server/image-settings";
+import { type CommonParameterId, type AxisSide } from "../../server/parameters";
 import { generationGroupKey } from "../../shared/generation-key";
-import { expandGrid } from "../../server/domain";
 import { effortLabel } from "../../server/compatibility";
 import { useCreateForm } from "../create/use-create-form";
-import { AxisEditor, AxisValues } from "../create/axis-editor";
+import { AxisEditor, CommonParameterActions } from "../create/axis-editor";
 import {
   CompatibilityFeedback,
   compatibilityTables,
@@ -26,44 +26,8 @@ import { LowBalanceDialog } from "../components/inference-dialogs";
 import { useTooltip } from "../components/use-tooltip";
 import { promptVariableIssue } from "../../server/prompt-variables";
 import { PromptEditor } from "../create/prompt-editor";
-import { VariableTable } from "../create/variable-table";
-import { JudgeCaseTable } from "../create/judge-case-table";
-import {
-  makeJudgeVariable,
-  makeJudgeShared,
-  addVariableCase,
-  removeVariableCase,
-} from "../create/judge-mode";
+import { GridLayoutTable } from "../create/case-table";
 import { judgeCriteriaIssue } from "../../server/judge-criteria";
-
-function JudgeVariableButton({
-  side,
-  enabled,
-  onClick,
-}: {
-  side: "rows" | "columns";
-  enabled: boolean;
-  onClick: () => void;
-}) {
-  const name = side === "rows" ? "row" : "column";
-  const hint = useTooltip<HTMLSpanElement>(
-    enabled
-      ? `Give each ${name} case its own judge criteria. Judge model and thinking effort stay unchanged.`
-      : `Choose prompt variables for ${side} to give each ${name} case its own judge criteria.`,
-  );
-  return (
-    <span ref={hint} tabIndex={0}>
-      <button
-        type="button"
-        disabled={!enabled}
-        style={!enabled ? { pointerEvents: "none" } : undefined}
-        onClick={onClick}
-      >
-        Make the judge a {name} variable
-      </button>
-    </span>
-  );
-}
 
 export function Create() {
   useGrids();
@@ -75,6 +39,7 @@ export function Create() {
     compatibilityIssues,
     compatibilityCells,
     update,
+    dispatch,
     selectFormat,
     swapAxes,
     setReuseArtifacts,
@@ -105,17 +70,7 @@ export function Create() {
   }, [judgeEnabled]);
   function setJudgeEnabled(enabled: boolean) {
     judgeHeaderTop.current = judgeHeader.current?.getBoundingClientRect().top;
-    if (enabled) {
-      update({
-        judge: {
-          criteria: [{ text: "", correctAnswer: true }],
-          model: "",
-          effort: "default",
-        },
-      });
-    } else {
-      update(removeJudge);
-    }
+    dispatch({ type: "judge", enabled });
   }
   const { generate, onUploading, lowBalance, setLowBalance, busy, error } =
     submission;
@@ -139,22 +94,35 @@ export function Create() {
     }),
   };
   const commonFixedParameters = commonModel || commonEffort;
-  const commonParameters = input.format === "image" || commonFixedParameters;
-  const promptVariables = (["rows", "columns"] as const).flatMap((side) => {
-    const axis = input[side];
-    return axis.kind === "variable"
-      ? (axis.values[0] ?? []).map(
-          (_, index) => `$${side === "rows" ? "ROW" : "COLUMN"}${index + 1}`,
-        )
-      : [];
-  });
+  const commonParameters =
+    commonFixedParameters ||
+    (input.format === "image" &&
+      imageKinds.some(
+        (parameter) => input.parameters[parameter]?.kind === "common",
+      ));
+  const variableSource = input.parameters.variable;
+  const promptVariables = variableSource
+    ? (input[variableSource.kind][0]?.variable ?? []).map(
+        (_, index) =>
+          `$${variableSource.kind === "rows" ? "ROW" : "COLUMN"}${index + 1}`,
+      )
+    : [];
   const variableIssue = promptVariableIssue(input);
   const criteriaIssue = judgeCriteriaIssue(input);
-  const criteriaSource = input.judge?.criteria;
-  const criteriaAxis =
-    criteriaSource && !Array.isArray(criteriaSource)
-      ? criteriaSource.axis
-      : undefined;
+  const criteriaSource = input.parameters.judge_criteria;
+  const modelSource = input.parameters.model;
+  const effortSource = input.parameters.effort;
+  const judgeModelSource = input.parameters.judge_model;
+  const judgeEffortSource = input.parameters.judge_effort;
+  function toAxis(parameter: CommonParameterId, side: AxisSide) {
+    if (!dispatch({ type: "to-axis", parameter, side })) return;
+    requestAnimationFrame(() => {
+      document
+        .querySelector(`[data-case-parameter="${side}-${parameter}"]`)
+        ?.querySelector<HTMLElement>("input:not([type=file]), select, textarea")
+        ?.focus();
+    });
+  }
   const budgetHint = useTooltip<HTMLLabelElement>(
     "Used to calculate each output’s token limit.",
   );
@@ -166,11 +134,11 @@ export function Create() {
   const generatedOutputs =
     input.judge && !variableIssue && !criteriaIssue
       ? new Set(
-          expandGrid(candidate).map((cell) =>
+          compatibilityCells.map((cell) =>
             generationGroupKey(input.format, { ...cell, id: "" }),
           ),
         ).size
-      : input.rows.values.length * input.columns.values.length;
+      : input.rows.length * input.columns.length;
 
   return (
     <main className="create-page">
@@ -206,27 +174,7 @@ export function Create() {
             key={input.format}
             disabled={submission.uploading || busy}
           >
-            <AxisEditor
-              label="Rows"
-              children={
-                input.rows.kind === "variable"
-                  ? undefined
-                  : axisCompatibility.rows[input.rows.kind]
-              }
-              axis={input.rows}
-              format={input.format}
-              models={models}
-              judgeModels={judgeModels}
-              judgeEnabled={!!input.judge}
-              criteriaOwner={criteriaAxis === "rows"}
-              referenceGroups={input.referenceGroups}
-              onUploading={onUploading}
-              onChange={(rows, referenceGroups) =>
-                update((current) =>
-                  changeAxis(current, "rows", rows, referenceGroups),
-                )
-              }
-            />
+            <AxisEditor input={input} side="rows" onAction={dispatch} />
             <button
               type="button"
               className="text-button axis-swap"
@@ -236,72 +184,33 @@ export function Create() {
             >
               <ArrowLeftRight aria-hidden="true" />
             </button>
-            <AxisEditor
-              label="Columns"
-              children={
-                input.columns.kind === "variable"
-                  ? undefined
-                  : axisCompatibility.columns[input.columns.kind]
-              }
-              axis={input.columns}
-              format={input.format}
+            <AxisEditor input={input} side="columns" onAction={dispatch} />
+            <GridLayoutTable
+              input={input}
               models={models}
               judgeModels={judgeModels}
-              judgeEnabled={!!input.judge}
-              criteriaOwner={criteriaAxis === "columns"}
-              referenceGroups={input.referenceGroups}
-              onUploading={onUploading}
-              onChange={(columns, referenceGroups) =>
-                update((current) =>
-                  changeAxis(current, "columns", columns, referenceGroups),
+              onAction={dispatch}
+              onBusy={onUploading}
+              compatibility={(side, parameter, caseIndex, fieldIndex) =>
+                caseIndex === undefined ? (
+                  axisCompatibility[side][parameter]
+                ) : (
+                  <CompatibilityFeedback
+                    input={candidate}
+                    issues={compatibilityIssues}
+                    origin={{ parameter, source: side, caseIndex, fieldIndex }}
+                  />
                 )
               }
             />
-            {(["rows", "columns"] as const).map((side) => {
-              const axis = input[side];
-              if (axis.kind !== "variable") return null;
-              return (
-                <VariableTable
-                  key={side}
-                  label={side === "rows" ? "Rows" : "Columns"}
-                  values={axis.values}
-                  onBusy={onUploading}
-                  compatibility={(caseIndex, fieldIndex) => (
-                    <CompatibilityFeedback
-                      input={candidate}
-                      issues={compatibilityIssues}
-                      origin={{
-                        parameter: "variable",
-                        source: side,
-                        caseIndex,
-                        fieldIndex,
-                      }}
-                    />
-                  )}
-                  onAddCase={() =>
-                    update((current) => addVariableCase(current, side))
-                  }
-                  onRemoveCase={(index) =>
-                    update((current) =>
-                      removeVariableCase(current, side, index),
-                    )
-                  }
-                  onChange={(values) =>
-                    update((current) =>
-                      changeAxis(current, side, { kind: "variable", values }),
-                    )
-                  }
-                />
-              );
-            })}
           </fieldset>
           <p className="hint">
             {input.judge ? (
-              `${input.rows.values.length} rows x ${input.columns.values.length} columns - ${generatedOutputs} generated outputs`
+              `${input.rows.length} rows x ${input.columns.length} columns - ${generatedOutputs} generated outputs`
             ) : (
               <>
-                {input.rows.values.length} rows × {input.columns.values.length}{" "}
-                columns · {generatedOutputs} outputs
+                {input.rows.length} rows × {input.columns.length} columns ·{" "}
+                {generatedOutputs} outputs
               </>
             )}
           </p>
@@ -321,10 +230,25 @@ export function Create() {
                   <ModelSelector
                     models={models}
                     format={input.format}
-                    values={input.model ? [input.model] : []}
-                    onChange={(values) => update({ model: values[0] ?? "" })}
+                    values={
+                      modelSource.kind === "common" && modelSource.value
+                        ? [modelSource.value]
+                        : []
+                    }
+                    onChange={(values) =>
+                      dispatch({
+                        type: "common",
+                        parameter: "model",
+                        value: values[0] ?? "",
+                      })
+                    }
                   />
                   {compatibility.model}
+                  <CommonParameterActions
+                    input={input}
+                    parameter="model"
+                    onMove={toAxis}
+                  />
                 </fieldset>
               )}
               {commonEffort && (
@@ -333,10 +257,16 @@ export function Create() {
                     <span className="parameter-name">Thinking effort</span>
                     <select
                       aria-label="Thinking effort"
-                      value={input.effort}
+                      value={
+                        effortSource?.kind === "common"
+                          ? effortSource.value
+                          : "default"
+                      }
                       onChange={(e) =>
-                        update({
-                          effort: e.target.value as GridInput["effort"],
+                        dispatch({
+                          type: "common",
+                          parameter: "effort",
+                          value: e.target.value as Effort,
                         })
                       }
                     >
@@ -348,6 +278,11 @@ export function Create() {
                     </select>
                   </label>
                   {compatibility.effort}
+                  <CommonParameterActions
+                    input={input}
+                    parameter="effort"
+                    onMove={toAxis}
+                  />
                 </div>
               )}
             </div>
@@ -356,8 +291,8 @@ export function Create() {
             <ImageOptions
               compatibility={compatibility}
               input={input}
-              onChange={update}
-              onBusy={onUploading}
+              onAction={dispatch}
+              onMove={toAxis}
             />
           )}
         </section>
@@ -394,26 +329,15 @@ export function Create() {
                 }))
               }
             />
-          ) : input.format !== "image" ? (
+          ) : (
             <PromptEditor
               prompt={input.prompt}
-              images={input.inputReferences ?? []}
               onPromptChange={(prompt) => update({ prompt })}
-              onImagesChange={(change) =>
-                update((current) => ({
-                  inputReferences: change(current.inputReferences ?? []),
-                }))
-              }
-              onBusy={onUploading}
-            />
-          ) : (
-            <textarea
-              id="grid-prompt"
-              aria-label="Prompt"
-              rows={6}
-              value={input.prompt}
-              onChange={(e) => update({ prompt: e.target.value })}
-              placeholder="Describe what you want to generate"
+              attachments={{
+                images: input.promptImages,
+                onChange: (promptImages) => update({ promptImages }),
+                onBusy: onUploading,
+              }}
             />
           )}
           {compatibility.prompt}
@@ -449,24 +373,36 @@ export function Create() {
           ) : input.judge ? (
             <>
               <div className="fixed-options">
-                {commonJudgeModel && input.judge && (
+                {commonJudgeModel && (
                   <fieldset role="radiogroup" aria-label="Judge model">
                     <legend className="parameter-name">Judge model</legend>
                     <ModelSelector
                       judge
                       models={judgeModels}
                       format={input.format}
-                      values={input.judge.model ? [input.judge.model] : []}
+                      values={
+                        judgeModelSource?.kind === "common" &&
+                        judgeModelSource.value
+                          ? [judgeModelSource.value]
+                          : []
+                      }
                       onChange={(values) =>
-                        update({
-                          judge: { ...input.judge!, model: values[0] ?? "" },
+                        dispatch({
+                          type: "common",
+                          parameter: "judge_model",
+                          value: values[0] ?? "",
                         })
                       }
                     />
                     {compatibility.judge_model}
+                    <CommonParameterActions
+                      input={input}
+                      parameter="judge_model"
+                      onMove={toAxis}
+                    />
                   </fieldset>
                 )}
-                {commonJudgeEffort && input.judge && (
+                {commonJudgeEffort && (
                   <div>
                     <label>
                       <span className="parameter-name">
@@ -474,13 +410,16 @@ export function Create() {
                       </span>
                       <select
                         aria-label="Judge thinking effort"
-                        value={input.judge.effort}
+                        value={
+                          judgeEffortSource?.kind === "common"
+                            ? judgeEffortSource.value
+                            : "default"
+                        }
                         onChange={(event) =>
-                          update({
-                            judge: {
-                              ...input.judge!,
-                              effort: event.target.value as GridInput["effort"],
-                            },
+                          dispatch({
+                            type: "common",
+                            parameter: "judge_effort",
+                            value: event.target.value as Effort,
                           })
                         }
                       >
@@ -492,118 +431,35 @@ export function Create() {
                       </select>
                     </label>
                     {compatibility.judge_effort}
+                    <CommonParameterActions
+                      input={input}
+                      parameter="judge_effort"
+                      onMove={toAxis}
+                    />
                   </div>
                 )}
               </div>
-              {(["rows", "columns"] as const).map((side) => {
-                const axis = input[side];
-                if (axis.kind !== "judge_model" && axis.kind !== "judge_effort")
-                  return null;
-                return (
-                  <div className="axis" key={side}>
-                    <div className="parameter-name">
-                      {axis.kind === "judge_model"
-                        ? "Judge model"
-                        : "Judge thinking effort"}
-                      {" · "}
-                      {side === "rows" ? "Rows" : "Columns"}
-                    </div>
-                    <AxisValues
-                      label={side === "rows" ? "Rows" : "Columns"}
-                      axis={axis}
-                      format={input.format}
-                      models={models}
-                      judgeModels={judgeModels}
-                      onUploading={onUploading}
-                      onChange={(values) =>
-                        update((current) => changeAxis(current, side, values))
-                      }
-                    >
-                      {axisCompatibility[side][axis.kind]}
-                    </AxisValues>
-                  </div>
-                );
-              })}
-              {Array.isArray(input.judge.criteria) ? (
+              {criteriaSource?.kind === "common" && (
                 <>
                   <CriteriaEditor
-                    criteria={input.judge.criteria}
-                    onChange={(criteria) => {
-                      if (!criteria.length) setJudgeEnabled(false);
+                    criteria={criteriaSource.value}
+                    onChange={(value) => {
+                      if (!value.length) setJudgeEnabled(false);
                       else
-                        update((current) => ({
-                          judge: { ...current.judge!, criteria },
-                        }));
+                        dispatch({
+                          type: "common",
+                          parameter: "judge_criteria",
+                          value,
+                        });
                     }}
                   />
                   {compatibility.judge_criteria}
-                  <div className="variable-table-actions">
-                    {(["rows", "columns"] as const).map((side) => (
-                      <JudgeVariableButton
-                        key={side}
-                        side={side}
-                        enabled={input[side].kind === "variable"}
-                        onClick={() => {
-                          const name = side === "rows" ? "row" : "column";
-                          if (
-                            window.confirm(
-                              `Make the judge a ${name} variable? Each ${name} case starts with a copy of the shared criteria. The shared criteria will be replaced.`,
-                            )
-                          )
-                            update((current) =>
-                              makeJudgeVariable(current, side),
-                            );
-                        }}
-                      />
-                    ))}
-                  </div>
+                  <CommonParameterActions
+                    input={input}
+                    parameter="judge_criteria"
+                    onMove={toAxis}
+                  />
                 </>
-              ) : (
-                <JudgeCaseTable
-                  axis={input.judge.criteria.axis}
-                  cases={input.judge.criteria.cases}
-                  compatibility={(caseIndex) => (
-                    <CompatibilityFeedback
-                      input={candidate}
-                      issues={compatibilityIssues}
-                      origin={{
-                        parameter: "judge_criteria",
-                        source: criteriaAxis ?? "common",
-                        caseIndex,
-                      }}
-                    />
-                  )}
-                  onChange={(index, criteria) =>
-                    update((current) => {
-                      const source = current.judge?.criteria;
-                      if (
-                        !source ||
-                        Array.isArray(source) ||
-                        source.axis !== criteriaAxis
-                      )
-                        return current;
-                      return {
-                        judge: {
-                          ...current.judge!,
-                          criteria: {
-                            ...source,
-                            cases: source.cases.map((rubric, i) =>
-                              i === index ? criteria : rubric,
-                            ),
-                          },
-                        },
-                      };
-                    })
-                  }
-                  onMakeShared={(index) => {
-                    if (
-                      window.confirm(
-                        "Use this judge for all cases? This replaces all per-case judge criteria with this case’s criteria.",
-                      )
-                    )
-                      update((current) => makeJudgeShared(current, index));
-                  }}
-                />
               )}
               <ErrorMessage error={criteriaIssue} />
               <p className="hint">

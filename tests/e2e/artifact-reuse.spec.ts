@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test";
 import type { ViewGrid } from "../../src/api";
+import { currentDefinition } from "../current-grid-fixture";
 import { test, expect } from "./fixtures";
 import {
   connectOpenRouter,
@@ -35,7 +36,7 @@ test("reuse selection survives Edit, reload, OAuth and Fork, and unchecked draft
   await request.post("/fixture/reset", { data: { textCost: 0.25 } });
   await page.goto("/");
   await expect(page.getByRole("checkbox", { name: label })).toHaveCount(0);
-  await create(page, "Markdown", "dog", "hat");
+  await create(page, { format: "Markdown", rowValues: ["dog"] });
   await expectProgress(page, 1, 1);
   const source = await readGrid(page);
   await page.getByRole("button", { name: "EDIT", exact: true }).click();
@@ -132,27 +133,43 @@ test("image reuse follows ordered reference bytes and effective image settings t
       Buffer.concat([png, Buffer.from("different")]),
       "second.png",
     );
-  const input = {
+  const input = currentDefinition({
     format: "image",
-    prompt: "Draw a landscape",
-    model: "fixture/image",
-    effort: "default",
+    prompt: "Draw a landscape $ROW1",
     budgetUsd: 5,
     parallelWorkers: 2,
-    rows: { kind: "input_references", values: ["A", "B"] },
-    columns: { kind: "size", values: ["1K"] },
-    referenceGroups: { A: [first, different], B: [same, different] },
-  };
+    parameters: {
+      variable: { kind: "rows" },
+      size: { kind: "columns" },
+    },
+    rows: [
+      { variable: [{ text: "", images: [first, different] }] },
+      { variable: [{ text: "", images: [same, different] }] },
+    ],
+    columns: [{ size: "1K" }],
+  });
   const source = await generate(page, input);
   let count = 2;
   const copied = await createGrid(page, {
     ...input,
     budgetUsd: 1,
-    effort: "high",
+    parameters: {
+      ...input.parameters,
+      size: { kind: "common", value: "1K" },
+    },
+    columns: [{ id: "column-1" }],
     sourceGridId: source.id,
     reuseArtifacts: true,
-    rows: { kind: "input_references", values: ["Renamed", "Again"] },
-    referenceGroups: { Renamed: [same, different], Again: [first, different] },
+    rows: [
+      {
+        id: "row-1",
+        variable: [{ text: "", images: [same, different] }],
+      },
+      {
+        id: "row-2",
+        variable: [{ text: "", images: [first, different] }],
+      },
+    ],
   });
   expect(
     (await (await request.get("/fixture/image-requests")).json()).length,
@@ -166,13 +183,22 @@ test("image reuse follows ordered reference bytes and effective image settings t
     expect(cell.outputURL).toBeDefined();
     expect(await (await page.request.get(cell.outputURL!)).body()).toEqual(png);
   }
-  for (const change of [
-    { referenceGroups: { A: [different, first], B: [different, same] } },
-    { referenceGroups: { A: [first, first], B: [same, same] } },
+  for (const images of [
+    [
+      [different, first],
+      [different, same],
+    ],
+    [
+      [first, first],
+      [same, same],
+    ],
   ]) {
     await generate(page, {
       ...input,
-      ...change,
+      rows: input.rows.map((row, index) => ({
+        ...row,
+        variable: [{ text: "", images: images[index] }],
+      })),
       sourceGridId: source.id,
       reuseArtifacts: true,
     });
@@ -201,15 +227,17 @@ for (const [kind, initial, changed] of [
     await page.goto("/");
     await page.getByRole("button", { name: "Image", exact: true }).click();
     await connectOpenRouter(page);
-    const config = {
+    const config = currentDefinition({
       format: "image",
       prompt: "Draw $ROW1",
-      model: "fixture/image",
-      effort: "default",
       budgetUsd: 5,
-      rows: { kind: "variable", values: [[{ text: "landscape" }]] },
-      columns: { kind, values: [initial] },
-    };
+      parameters: {
+        variable: { kind: "rows" },
+        [kind]: { kind: "columns" },
+      },
+      rows: [{ variable: [{ text: "landscape" }] }],
+      columns: [{ [kind]: initial }],
+    });
     const source = await generate(page, config);
     const reuse = { ...config, sourceGridId: source.id, reuseArtifacts: true };
     const copy = await createGrid(page, reuse);
@@ -217,7 +245,10 @@ for (const [kind, initial, changed] of [
     expect(
       await (await request.get("/fixture/image-requests")).json(),
     ).toHaveLength(1);
-    await generate(page, { ...reuse, columns: { kind, values: [changed] } });
+    await generate(page, {
+      ...reuse,
+      columns: [{ id: "column-1", [kind]: changed }],
+    });
     const sent = await (await request.get("/fixture/image-requests")).json();
     expect(sent).toHaveLength(2);
     expect(sent[0][kind]).toBe(initial);

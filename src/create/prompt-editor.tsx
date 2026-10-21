@@ -1,21 +1,19 @@
 import { useState } from "react";
 import type { ReferenceImage } from "../../server/image-settings";
-import { ReferenceImageList, ReferencePicker } from "./reference-groups";
+import { ImageList, ImagePicker } from "./image-input";
 
 export function PromptEditor({
   prompt,
-  images,
   onPromptChange,
-  onImagesChange,
-  onBusy,
+  attachments,
 }: {
   prompt: string;
-  images: readonly ReferenceImage[];
   onPromptChange: (prompt: string) => void;
-  onImagesChange: (
-    change: (images: readonly ReferenceImage[]) => ReferenceImage[],
-  ) => void;
-  onBusy: (busy: boolean) => void;
+  attachments?: {
+    images: readonly ReferenceImage[];
+    onChange: (images: ReferenceImage[]) => void;
+    onBusy: (busy: boolean) => void;
+  };
 }) {
   const [reading, setReading] = useState(false);
   return (
@@ -29,27 +27,32 @@ export function PromptEditor({
           onChange={(event) => onPromptChange(event.target.value)}
           placeholder="Describe what you want to generate"
         />
-        <ReferencePicker
-          compact
-          pasteTarget="grid-prompt"
-          accessibleLabel="Add images to prompt"
-          disabled={reading}
-          onBusy={(busy) => {
-            setReading(busy);
-            onBusy(busy);
-          }}
-          onSelect={(selected) =>
-            onImagesChange((current) => [...current, ...selected])
-          }
-        />
+        {attachments && (
+          <ImagePicker
+            pasteTarget="grid-prompt"
+            accessibleLabel="Add images to prompt"
+            disabled={reading}
+            onBusy={(busy) => {
+              setReading(busy);
+              attachments.onBusy(busy);
+            }}
+            onSelect={(selected) =>
+              attachments.onChange([...attachments.images, ...selected])
+            }
+          />
+        )}
       </div>
-      {!!images.length && (
-        <ReferenceImageList
-          images={images}
+      {!!attachments?.images.length && (
+        <ImageList
+          images={attachments.images}
           disabled={reading}
           removeLabel={(image) => `Remove ${image.name} from prompt`}
           onRemove={(index) =>
-            onImagesChange((current) => current.filter((_, i) => i !== index))
+            attachments.onChange(
+              attachments.images.filter(
+                (_, imageIndex) => imageIndex !== index,
+              ),
+            )
           }
         />
       )}

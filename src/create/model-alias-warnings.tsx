@@ -1,5 +1,5 @@
 import type { ModelInfo } from "../../server/model-catalog";
-import { isMovingModelAlias } from "../../server/model-resolution";
+import { isMovingModelAlias } from "../../server/model-alias";
 
 export function ModelAliasWarnings({
   models,

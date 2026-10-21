@@ -7,17 +7,13 @@ import { Store } from "../server/store.js";
 import { recoverInterruptedGrids } from "../server/recovery.js";
 import { Jobs } from "../server/jobs.js";
 import { Provider } from "../server/provider.js";
-import {
-  expandGrid,
-  gridSchema,
-  type Grid,
-  type GridInput,
-} from "../server/domain.js";
+import { expandGrid, gridSchema, type Grid } from "../server/domain.js";
 import { validatedGrid } from "./grid-storage-fixture.js";
 import { createWorkflow } from "../server/workflow.js";
 import { createWorkflowExecutor } from "../server/workflow-executor.js";
 import { token } from "../server/ids.js";
 import { firstStoredSessionPayload } from "./session-storage-fixture.js";
+import { currentInput } from "./current-grid-fixture.js";
 
 test("a restart preserves finished outputs and pauses interrupted work until an explicit retry", async () => {
   const dir = mkdtempSync(join(tmpdir(), "slopgrid-recovery-")),
@@ -37,18 +33,18 @@ test("a restart preserves finished outputs and pauses interrupted work until an 
       visibility: "private",
       createdAt: new Date().toISOString(),
       status: "running",
-      input: {
-        format: "markdown",
-        prompt: "$ROW1 $COLUMN1",
-        rows: {
-          kind: "variable",
-          values: [[{ text: "cat" }], [{ text: "dog" }]],
+      input: currentInput({
+        prompt: "$ROW1 hat",
+        parameters: {
+          variable: { kind: "rows" },
+          effort: { kind: "common", value: "none" },
         },
-        columns: { kind: "variable", values: [[{ text: "hat" }]] },
-        model: "fixture/text",
-        effort: "none",
+        rows: [
+          { variable: [{ text: "cat" }] },
+          { variable: [{ text: "dog" }] },
+        ],
         budgetUsd: 5,
-      },
+      }),
       cells: [
         {
           id: "finished",
@@ -151,20 +147,22 @@ test("recovery preserves a shared generation and settled judgment while requeuin
   const dir = mkdtempSync(join(tmpdir(), "slopgrid-task-recovery-"));
   const store = new Store(":memory:", Buffer.alloc(32, 2), dir);
   try {
-    const input: GridInput = {
-      format: "markdown",
+    const input = currentInput({
       prompt: "Shared output",
-      rows: { kind: "judge_model", values: ["fixture/one", "fixture/two"] },
-      columns: { kind: "judge_effort", values: ["none"] },
-      model: "fixture/text",
-      effort: "none",
       budgetUsd: 1,
-      judge: {
-        model: "fixture/one",
-        effort: "none",
-        criteria: [{ text: "Is this shared?", correctAnswer: true }],
+      judge: true,
+      parameters: {
+        judge_model: { kind: "rows" },
+        judge_effort: { kind: "columns" },
+        judge_criteria: {
+          kind: "common",
+          value: [{ text: "Is this shared?", correctAnswer: true }],
+        },
+        effort: { kind: "common", value: "none" },
       },
-    };
+      rows: [{ judge_model: "fixture/one" }, { judge_model: "fixture/two" }],
+      columns: [{ judge_effort: "none" }],
+    });
     const grid: Grid = {
       id: "shared-recovery",
       owner: "owner",

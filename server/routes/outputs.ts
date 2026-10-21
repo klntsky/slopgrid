@@ -13,8 +13,8 @@ import { zip } from "fflate";
 import { downloadFilename } from "../download-filename.js";
 import { canViewGrid } from "../grid-policy.js";
 import type { SessionReader } from "../session.js";
-import type { VariableField } from "../prompt-variables.js";
 import { offlineWebsite, offlineWebsitePolicy } from "../offline-website.js";
+import { ReferenceImageUnavailableError } from "../image-references.js";
 
 const markdownFont = readFileSync(
   new URL("../../public/fonts/DejaVuSansMono.woff2", import.meta.url),
@@ -23,14 +23,6 @@ const conversationStyle = readFileSync(
   new URL("../../shared/chat-conversation.css", import.meta.url),
   "utf8",
 );
-
-function downloadAxisLabel(value: string | VariableField[]): string {
-  if (typeof value === "string") return value;
-  const first = value[0];
-  return (
-    first?.text || first?.images?.map((image) => image.name).join(" ") || ""
-  );
-}
 
 function outputFile(output: NonNullable<ReturnType<Store["outputMetadata"]>>) {
   if (output.format !== "image")
@@ -144,8 +136,8 @@ export function createOutputRoutes(
       downloadFilename(
         output.prompt,
         output.gridId,
-        downloadAxisLabel(output.row),
-        downloadAxisLabel(output.column),
+        output.row,
+        output.column,
         extension,
       ),
     );
@@ -236,20 +228,31 @@ export function createOutputRoutes(
     );
     const imageSources = new Map<string, string>();
     if (messages) {
-      const references = await store.references.loader()(
+      const load = store.references.loader();
+      const ids = new Set(
         messages.flatMap(
           (message) => message.images?.map((image) => image.id) ?? [],
         ),
       );
       const encoded = new Map<string, string>();
-      for (const [id, reference] of references) {
-        let source = encoded.get(reference.sha256);
-        if (!source) {
-          source = `data:${reference.mediaType};base64,${reference.bytes.toString("base64")}`;
-          encoded.set(reference.sha256, source);
-        }
-        imageSources.set(id, source);
-      }
+      await Promise.all(
+        [...ids].map(async (id) => {
+          let reference;
+          try {
+            reference = (await load([id])).get(id)!;
+          } catch (error) {
+            if (!(error instanceof ReferenceImageUnavailableError)) throw error;
+            imageSources.set(id, `/api/references/${encodeURIComponent(id)}`);
+            return;
+          }
+          let source = encoded.get(reference.sha256);
+          if (!source) {
+            source = `data:${reference.mediaType};base64,${reference.bytes.toString("base64")}`;
+            encoded.set(reference.sha256, source);
+          }
+          imageSources.set(id, source);
+        }),
+      );
     }
     return res.type("html").send(
       `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>

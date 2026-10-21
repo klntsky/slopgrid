@@ -12,7 +12,10 @@ test.describe("touch expansion", () => {
     request,
   }) => {
     await request.post("/fixture/reset", { data: { billing: false } });
-    await create(page, "SVG", "cat\ndog", "hat\ncape");
+    await create(page, {
+      rowValues: ["cat", "dog"],
+      columns: { kind: "effort", values: ["none", "low"] },
+    });
     await expectProgress(page, 4, 4);
     const menu = page.getByRole("button", { name: "Navigation menu" });
     await menu.tap();
@@ -54,7 +57,7 @@ test("column dragging changes the visible width of a viewport-fitted grid and pe
   request,
 }) => {
   await request.post("/fixture/reset", { data: { billing: false } });
-  await create(page, "SVG", "cat", "hat");
+  await create(page, { rowValues: ["cat"] });
   await expectProgress(page, 1, 1);
   const cell = page.locator("article.cell").first();
   const before = (await cell.boundingBox())!;

@@ -15,7 +15,7 @@ for (const size of [1024, 1024 * 1024]) {
       let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
       let publish: ((grid: GenerationSnapshot) => void) | undefined;
       const grid = f.grid({
-        rows: { kind: "variable", values: [[{ text: "cat" }]] },
+        rows: [{ variable: [{ text: "cat" }] }],
       });
       let current: GenerationSnapshot = {
         ...(await f.engine.api.getGrid(grid.id)),

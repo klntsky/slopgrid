@@ -4,9 +4,13 @@ import tippy, { type Instance } from "tippy.js";
 import { Info, X } from "lucide-react";
 import type { ViewGrid } from "../api";
 import type { ReferenceImage } from "../../server/image-settings";
-import { dimensionNames } from "../format";
+import { dimensionNames, displayValue } from "../format";
 import { ModelName } from "../model-name";
 import "./grid-parameters.css";
+import {
+  gridDisplay,
+  type ParameterDisplayPart,
+} from "../../shared/grid-display";
 
 function References({ images }: { images: ReferenceImage[] }) {
   return images.length ? (
@@ -32,9 +36,31 @@ function References({ images }: { images: ReferenceImage[] }) {
   );
 }
 
+function ParameterValue({ part }: { part: ParameterDisplayPart }) {
+  if (part.kind === "model" || part.kind === "judge_model")
+    return <ModelName model={part.value} />;
+  if (part.kind === "images")
+    return (
+      <>
+        {part.value.name && <span>{part.value.name}</span>}
+        <References images={part.value.images} />
+      </>
+    );
+  if (part.kind === "judge_criteria")
+    return (
+      <ol>
+        {part.value.map((criterion, index) => (
+          <li key={index}>
+            {criterion.text} (expected {criterion.correctAnswer ? "YES" : "NO"})
+          </li>
+        ))}
+      </ol>
+    );
+  return displayValue(part);
+}
+
 export function GridParameters({ grid }: { grid: ViewGrid }) {
-  const { input } = grid;
-  const axes = [input.rows.kind, input.columns.kind];
+  const display = grid.display ?? gridDisplay(grid.input);
   const button = useRef<HTMLButtonElement>(null);
   const popup = useRef<Instance | null>(null);
   const [container, setContainer] = useState<HTMLDivElement | null>(null);
@@ -133,36 +159,21 @@ export function GridParameters({ grid }: { grid: ViewGrid }) {
               </button>
             </div>
             <dl>
-              {!axes.includes("model") && (
-                <div>
-                  <dt>Model</dt>
+              {display.common.map((part) => (
+                <div key={part.kind}>
+                  <dt>{dimensionNames[part.kind]}</dt>
                   <dd>
-                    <ModelName model={input.model} />
+                    <ParameterValue part={part} />
                   </dd>
                 </div>
-              )}
-              {(["size", "aspect_ratio", "quality", "background"] as const)
-                .filter((kind) => !axes.includes(kind))
-                .map((kind) => (
-                  <div key={kind}>
-                    <dt>{dimensionNames[kind]}</dt>
-                    <dd>
-                      {!input.imageSettings?.[kind] ||
-                      input.imageSettings[kind] === "auto"
-                        ? "Auto"
-                        : input.imageSettings[kind]}
-                    </dd>
-                  </div>
-                ))}
-              {!axes.includes("input_references") && (
-                <div>
-                  <dt>Input references</dt>
-                  <dd>
-                    <References images={input.inputReferences ?? []} />
-                  </dd>
-                </div>
-              )}
+              ))}
             </dl>
+            {!!display.promptImages.length && (
+              <section aria-label="Prompt images">
+                <h3>Prompt images</h3>
+                <References images={display.promptImages} />
+              </section>
+            )}
           </section>,
           container,
         )}

@@ -2,10 +2,23 @@ import {
   gridSchema,
   type GridDraftInput,
   type GridInput,
+  type StoredGridInput,
 } from "../../server/domain";
+import {
+  axisParameters,
+  isCurrentGridInput,
+  newCase,
+  parameterDefault,
+} from "../../server/parameters";
 
-export function draftInputFromGridInput(input: GridInput): GridDraftInput {
-  return { ...input, budgetUsd: String(input.budgetUsd) };
+export function draftInputFromGridInput(
+  input: StoredGridInput,
+): GridDraftInput {
+  if (!isCurrentGridInput(input))
+    throw new Error(
+      "This grid uses an older configuration and cannot be edited or forked.",
+    );
+  return structuredClone({ ...input, budgetUsd: String(input.budgetUsd) });
 }
 
 export function validateDraftInput(draft: GridDraftInput) {
@@ -17,22 +30,13 @@ export function validateDraftInput(draft: GridDraftInput) {
 }
 
 export function compatibilityPreviewInput(input: GridInput): GridInput {
-  function withPlaceholder(axis: GridInput["rows"]): GridInput["rows"] {
-    if (axis.values.length) return axis;
-    return axis.kind === "variable"
-      ? { ...axis, values: [[{ text: "" }]] }
-      : {
-          ...axis,
-          values: [
-            axis.kind === "effort" || axis.kind === "judge_effort"
-              ? "default"
-              : "",
-          ],
-        };
+  const preview = { ...input };
+  for (const side of ["rows", "columns"] as const) {
+    if (input[side].length) continue;
+    const entry = newCase();
+    for (const parameter of axisParameters(input, side))
+      Object.assign(entry, { [parameter]: parameterDefault(parameter) });
+    preview[side] = [entry];
   }
-  return {
-    ...input,
-    rows: withPlaceholder(input.rows),
-    columns: withPlaceholder(input.columns),
-  };
+  return preview;
 }

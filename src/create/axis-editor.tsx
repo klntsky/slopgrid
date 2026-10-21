@@ -1,123 +1,136 @@
 import type { ReactNode } from "react";
+import { imageKinds, imageChoices } from "../../server/image-settings";
 import {
-  imageKinds,
-  imageChoices,
-  type ReferenceGroups as Groups,
-} from "../../server/image-settings";
-import { ReferenceGroups } from "./reference-groups";
-import { ModelSelector } from "./model-selector";
-import { CustomAxisSizes } from "./custom-image-size";
-import { efforts, type GridInput } from "../../server/domain";
+  efforts,
+  type GridDraftInput,
+  type ParameterValues,
+} from "../../server/domain";
+import {
+  axisParameters,
+  parameterNames,
+  type AxisSide,
+  type ParameterId,
+  type CommonParameterId,
+} from "../../server/parameters";
 import { effortLabel } from "../../server/compatibility";
 import type { Model } from "../../server/provider";
-import { dimensionNames } from "../format";
-import { useTooltip } from "../components/use-tooltip";
-type AxisEditorProps = {
-  children?: ReactNode;
-  label: "Rows" | "Columns";
-  axis: GridInput["rows"];
-  format: GridInput["format"];
+import { ModelSelector } from "./model-selector";
+import { CustomAxisSizes } from "./custom-image-size";
+import { caseValuesAction, type InputAction } from "./change-axis";
+
+type AxisProps = {
+  input: GridDraftInput;
+  side: AxisSide;
   models: Model[];
   judgeModels: Model[];
-  judgeEnabled?: boolean;
-  onChange: (axis: GridInput["rows"], groups?: Groups) => void;
-  referenceGroups?: Groups;
+  onAction: (action: InputAction) => void;
   onUploading: (busy: boolean) => void;
-  criteriaOwner?: boolean;
+  children?: ReactNode;
 };
 
+export function usesBulkAxis(input: GridDraftInput, side: AxisSide): boolean {
+  const members = axisParameters(input, side);
+  if (
+    members.length !== 1 ||
+    members[0] === "variable" ||
+    members[0] === "judge_criteria"
+  )
+    return false;
+  const parameter = members[0];
+  const values = input[side].map((entry) => entry[parameter]);
+  if (
+    (parameter === "model" || parameter === "judge_model") &&
+    values.some((value) => !value)
+  )
+    return false;
+  return new Set(values).size === values.length;
+}
+
 export function AxisEditor({
-  label,
-  axis,
-  format,
-  judgeEnabled = false,
-  onChange,
-  criteriaOwner = false,
-  children,
-  ...valueProps
-}: AxisEditorProps) {
-  const selectorHint = useTooltip<HTMLLabelElement>(
-    criteriaOwner
-      ? "Use a case’s judge for all cases before changing this variable axis."
-      : undefined,
-  );
-  const kinds: GridInput["rows"]["kind"][] = [
-    ...(format === "image"
+  input,
+  side,
+  onAction,
+}: Pick<AxisProps, "input" | "side" | "onAction">) {
+  const members = axisParameters(input, side);
+  const kinds: ParameterId[] = [
+    ...(input.format === "image"
       ? (["model", "variable", ...imageKinds] as const)
       : (["model", "effort", "variable"] as const)),
     "judge_model",
     "judge_effort",
   ];
+  const label = side === "rows" ? "Rows" : "Columns";
+  const summary = members.length !== 1 || !kinds.includes(members[0]);
   return (
     <div className="axis">
-      <label
-        className="axis-selector"
-        ref={selectorHint}
-        tabIndex={criteriaOwner ? 0 : undefined}
-      >
+      <label className="axis-selector">
         <span className="axis-name">{label}:</span>
         <select
           aria-label={label}
-          value={axis.kind}
-          disabled={criteriaOwner}
-          style={criteriaOwner ? { pointerEvents: "none" } : undefined}
-          onChange={(e) => {
-            const kind = e.target.value as GridInput["rows"]["kind"];
-            onChange(
-              kind === "variable"
-                ? { kind, values: [[{ text: "" }]] }
-                : { kind, values: [] },
-            );
-          }}
+          value={summary ? "summary" : members[0]}
+          onChange={(event) =>
+            onAction({
+              type: "dimension",
+              side,
+              parameter: event.target.value as ParameterId,
+            })
+          }
         >
-          {kinds.map((k) => (
+          {summary && (
+            <option value="summary" disabled>
+              {members.length
+                ? members.map((kind) => parameterNames[kind]).join(" + ")
+                : "Cases"}
+            </option>
+          )}
+          {kinds.map((kind) => (
             <option
-              key={k}
-              value={k}
+              key={kind}
+              value={kind}
               disabled={
-                !judgeEnabled && (k === "judge_model" || k === "judge_effort")
+                input.parameters[kind]?.kind ===
+                  (side === "rows" ? "columns" : "rows") ||
+                (!input.judge &&
+                  (kind === "judge_model" || kind === "judge_effort"))
               }
             >
-              {dimensionNames[k]}
+              {parameterNames[kind]}
             </option>
           ))}
         </select>
       </label>
-      {axis.kind !== "judge_model" && axis.kind !== "judge_effort" && (
-        <AxisValues
-          {...valueProps}
-          label={label}
-          axis={axis}
-          format={format}
-          onChange={onChange}
-        >
-          {children}
-        </AxisValues>
-      )}
     </div>
   );
 }
 
 export function AxisValues({
-  label,
-  axis,
-  format,
+  input,
+  side,
   models,
   judgeModels,
-  onChange,
-  referenceGroups = {},
+  onAction,
   onUploading,
   children,
-}: Omit<AxisEditorProps, "judgeEnabled" | "criteriaOwner">) {
+}: AxisProps) {
+  const parameter = axisParameters(input, side)[0];
+  const label = side === "rows" ? "Rows" : "Columns";
+  if (!parameter || parameter === "variable" || parameter === "judge_criteria")
+    return null;
+  const values = input[side].map((entry) => entry[parameter]);
+  function change<K extends ParameterId>(
+    parameter: K,
+    values: ParameterValues[NoInfer<K>][],
+  ) {
+    onAction(caseValuesAction(side, parameter, values));
+  }
+  const strings = values as string[];
   const choices =
-    axis.kind === "effort" || axis.kind === "judge_effort"
-      ? efforts.map((e) => ({ id: e, name: effortLabel(e) }))
+    parameter === "effort" || parameter === "judge_effort"
+      ? efforts.map((effort) => ({ id: effort, name: effortLabel(effort) }))
       : [
           ...new Set([
-            ...(imageChoices[axis.kind as keyof typeof imageChoices] ?? []),
-            ...(axis.kind === "size" || axis.kind === "variable"
-              ? []
-              : axis.values),
+            ...(imageChoices[parameter as keyof typeof imageChoices] ?? []),
+            ...(parameter === "size" ? [] : strings),
           ]),
         ].map((value) => ({
           id: value,
@@ -125,64 +138,88 @@ export function AxisValues({
         }));
   return (
     <>
-      {axis.kind === "input_references" ? (
-        <ReferenceGroups
-          values={axis.values}
-          groups={referenceGroups}
-          onBusy={onUploading}
-          onChange={(values, groups) => onChange({ ...axis, values }, groups)}
-        />
-      ) : axis.kind !== "variable" ? (
-        <fieldset
-          aria-label={label === "Rows" ? "Row values" : "Column values"}
-        >
-          {axis.kind === "model" || axis.kind === "judge_model" ? (
-            <ModelSelector
-              multiple
-              label={label}
-              models={axis.kind === "judge_model" ? judgeModels : models}
-              judge={axis.kind === "judge_model"}
-              format={format}
-              values={axis.values}
-              onChange={(values) => onChange({ ...axis, values })}
-            />
-          ) : (
-            <div className="value-list">
-              {choices.map((c) => (
-                <label className="checkbox" key={c.id}>
-                  <input
-                    type="checkbox"
-                    aria-label={c.name}
-                    checked={axis.values.includes(c.id)}
-                    onChange={(e) => {
-                      const selected = new Set(axis.values);
-                      for (const choice of [c])
-                        if (e.target.checked) selected.add(choice.id);
-                        else selected.delete(choice.id);
-                      onChange({
-                        ...axis,
-                        values:
-                          axis.kind === "effort" || axis.kind === "judge_effort"
-                            ? efforts.filter((effort) => selected.has(effort))
-                            : [...selected],
-                      });
-                    }}
-                  />
-                  <span>{c.name}</span>
-                </label>
-              ))}
-            </div>
-          )}
-          {axis.kind === "size" && (
-            <CustomAxisSizes
-              label={label}
-              values={axis.values}
-              onChange={(values) => onChange({ ...axis, values })}
-            />
-          )}
-        </fieldset>
-      ) : null}
+      <fieldset
+        aria-label={side === "rows" ? "Row values" : "Column values"}
+        data-case-parameter={`${side}-${parameter}`}
+      >
+        {parameter === "model" || parameter === "judge_model" ? (
+          <ModelSelector
+            multiple
+            label={label}
+            models={parameter === "judge_model" ? judgeModels : models}
+            judge={parameter === "judge_model"}
+            format={input.format}
+            values={strings}
+            onChange={(values) => change(parameter, values)}
+          />
+        ) : (
+          <div className="value-list">
+            {choices.map((choice) => (
+              <label className="checkbox" key={choice.id}>
+                <input
+                  type="checkbox"
+                  aria-label={choice.name}
+                  checked={strings.includes(choice.id)}
+                  onChange={(event) => {
+                    const selected = new Set(strings);
+                    if (event.target.checked) selected.add(choice.id);
+                    else selected.delete(choice.id);
+                    if (parameter === "effort" || parameter === "judge_effort")
+                      change(
+                        parameter,
+                        efforts.filter((effort) => selected.has(effort)),
+                      );
+                    else change(parameter, [...selected]);
+                  }}
+                />
+                <span>{choice.name}</span>
+              </label>
+            ))}
+          </div>
+        )}
+        {parameter === "size" && (
+          <CustomAxisSizes
+            label={label}
+            values={strings}
+            onChange={(values) => change(parameter, values)}
+          />
+        )}
+      </fieldset>
       {children}
     </>
+  );
+}
+
+export function CommonParameterActions({
+  input,
+  parameter,
+  onMove,
+}: {
+  input: GridDraftInput;
+  parameter: CommonParameterId;
+  onMove: (parameter: CommonParameterId, side: AxisSide) => void;
+}) {
+  return (
+    <div className="variable-table-actions">
+      {(["rows", "columns"] as const).map((side) => (
+        <span
+          key={side}
+          title={
+            !input[side].length
+              ? `Add a ${side === "rows" ? "row" : "column"} case first.`
+              : undefined
+          }
+        >
+          <button
+            type="button"
+            disabled={!input[side].length}
+            onClick={() => onMove(parameter, side)}
+          >
+            Make {parameterNames[parameter]} a{" "}
+            {side === "rows" ? "row" : "column"} variable
+          </button>
+        </span>
+      ))}
+    </div>
   );
 }

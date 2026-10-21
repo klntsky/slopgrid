@@ -74,7 +74,7 @@ test("chat editing, ordering, persistence and completion without explicit blanks
   await page.setViewportSize({ width: 1280, height: 720 });
   await page
     .getByLabel("Message 1", { exact: true })
-    .fill("Question $ROW1 $COLUMN1");
+    .fill("Question $ROW1 hat");
   await page.locator(".chat-append").hover();
   await page.getByRole("button", { name: "Add message", exact: true }).click();
   await setMessageRole(page, 2, "assistant");
@@ -134,8 +134,7 @@ test("chat editing, ordering, persistence and completion without explicit blanks
   await setVariableValues(page, "Rows", ["cat"]);
   await page
     .getByRole("combobox", { name: "Columns", exact: true })
-    .selectOption("variable");
-  await setVariableValues(page, "Columns", ["hat"]);
+    .selectOption("effort");
   await selectModel(page, "fixture/text");
   await connectOpenRouter(page);
   await expect(page.getByLabel("Message 3", { exact: true })).toHaveValue(

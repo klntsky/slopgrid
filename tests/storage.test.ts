@@ -12,8 +12,19 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { token } from "../server/ids.js";
 import { Store } from "../server/store.js";
-import { expandGrid, gridSchema, type Grid } from "../server/domain.js";
+import {
+  expandGrid,
+  gridSchema,
+  type Grid,
+  type GenerationTask,
+} from "../server/domain.js";
 import { createWorkflow } from "../server/workflow.js";
+import {
+  expandLegacyGrid,
+  type LegacyGridInput,
+} from "../server/legacy-grid-input.js";
+import { isCurrentGridInput } from "../server/parameters.js";
+import { currentInput } from "./current-grid-fixture.js";
 import {
   referenceUsageLinks,
   referenceBlobs,
@@ -27,6 +38,7 @@ import {
   removeStoredGrid,
   rejectStoredGridUpdates,
   validatedGrid,
+  arrangeHistoricalGrid,
 } from "./grid-storage-fixture.js";
 import { restoreV16VariableInputs } from "./database-migration-fixture.js";
 import {
@@ -63,56 +75,54 @@ test("list prompts are expanded and truncated once, then persist independently o
   try {
     const cases = [
       {
-        prompt: "Draw $ROW1 wearing $COLUMN1; repeat $ROW1.",
-        rows: ["cat", "dog"],
-        columns: ["hat", "cape"],
+        prompt: "Draw $ROW1 wearing $ROW2; repeat $ROW1.",
+        rows: [
+          ["cat", "hat"],
+          ["dog", "cape"],
+        ],
         expected: "Draw (cat|dog) wearing (hat|cape); repeat (cat|dog).",
       },
       {
-        prompt: "$ROW1 $COLUMN1",
-        rows: ["$COLUMN", "$&"],
-        columns: ["$ROW"],
-        expected: "($COLUMN|$&) ($ROW)",
+        prompt: "$ROW1 $ROW2",
+        rows: [
+          ["$COLUMN", "$ROW"],
+          ["$&", "$ROW2"],
+        ],
+        expected: "($COLUMN|$&) ($ROW|$ROW2)",
       },
       {
         prompt: "x".repeat(160),
-        rows: ["cat"],
-        columns: ["hat"],
+        rows: [["cat"]],
         expected: "x".repeat(160),
       },
       {
         prompt: "x".repeat(161),
-        rows: ["cat"],
-        columns: ["hat"],
+        rows: [["cat"]],
         expected: "x".repeat(157) + "...",
       },
       {
         prompt: "$ROW1",
-        rows: ["\u{1f431}".repeat(160)],
-        columns: ["hat"],
+        rows: [["\u{1f431}".repeat(160)]],
         expected: "(" + "\u{1f431}".repeat(156) + "...",
       },
     ];
     for (const [index, scenario] of cases.entries()) {
-      const input: Grid["input"] = {
-        format: "markdown",
+      const input = currentInput({
         prompt: scenario.prompt,
-        rows: scenario.prompt.includes("$ROW1")
-          ? {
-              kind: "variable",
-              values: scenario.rows.map((text) => [{ text }]),
-            }
-          : { kind: "model", values: ["fixture/text"] },
-        columns: scenario.prompt.includes("$COLUMN1")
-          ? {
-              kind: "variable",
-              values: scenario.columns.map((text) => [{ text }]),
-            }
-          : { kind: "effort", values: ["none"] },
-        model: "fixture/text",
-        effort: "none",
         budgetUsd: 1,
-      };
+        parameters: {
+          ...(scenario.prompt.includes("$ROW1")
+            ? { variable: { kind: "rows" as const } }
+            : { model: { kind: "rows" as const } }),
+          effort: { kind: "columns" },
+        },
+        rows: scenario.prompt.includes("$ROW1")
+          ? scenario.rows.map((fields) => ({
+              variable: fields.map((text) => ({ text })),
+            }))
+          : [{ model: "fixture/text" }],
+        columns: [{ effort: "none" }],
+      });
       const grid: Grid = {
         id: `grid-${index}`,
         owner: "owner",
@@ -159,15 +169,14 @@ test("saved outputs and traces remain readable after publication and reject arti
   const dir = mkdtempSync(join(tmpdir(), "slopgrid-storage-"));
   const store = new Store(join(dir, "app.sqlite"), Buffer.alloc(32, 1));
   try {
-    const input: Grid["input"] = {
+    const input = currentInput({
       format: "html",
       prompt: "Draw $ROW1",
-      rows: { kind: "variable", values: [[{ text: "cat" }]] },
-      columns: { kind: "effort", values: ["none"] },
-      model: "fixture/text",
-      effort: "none",
       budgetUsd: 5,
-    };
+      parameters: { variable: { kind: "rows" }, effort: { kind: "columns" } },
+      rows: [{ variable: [{ text: "cat" }] }],
+      columns: [{ effort: "none" }],
+    });
     const grid: Grid = {
       id: "grid",
       owner: "owner",
@@ -250,15 +259,14 @@ test("shared artifact and independent trace references survive deletion until th
   const dir = mkdtempSync(join(tmpdir(), "slopgrid-shared-"));
   const store = new Store(join(dir, "app.sqlite"), Buffer.alloc(32, 1));
   try {
-    const input: Grid["input"] = {
+    const input = currentInput({
       format: "html",
       prompt: "Shared website",
-      rows: { kind: "model", values: ["fixture/text"] },
-      columns: { kind: "effort", values: ["none"] },
-      model: "fixture/text",
-      effort: "none",
       budgetUsd: 1,
-    };
+      parameters: { model: { kind: "rows" }, effort: { kind: "columns" } },
+      rows: [{ model: "fixture/text" }],
+      columns: [{ effort: "none" }],
+    });
     const artifactId = token();
     const thinkingSourceId = token();
     const thinkingId = token();
@@ -368,8 +376,9 @@ for (const available of [true, false])
       })!;
       const different = store.references.add(changed, "different.png", owner)!;
       const unavailable = store.references.add(png, "unavailable.png", owner)!;
-      const input = gridSchema.parse({
+      const input: LegacyGridInput = {
         format: "chat-template",
+        prompt: "",
         messages: [
           {
             role: "user",
@@ -382,8 +391,8 @@ for (const available of [true, false])
         model: "fixture/text",
         effort: "none",
         budgetUsd: 1,
-      });
-      const grid: Grid = {
+      };
+      const grid: Grid & { input: LegacyGridInput } = {
         id: token(),
         owner: owner.id,
         ownerUserId: "claimed-account",
@@ -392,9 +401,27 @@ for (const available of [true, false])
         published: false,
         visibility: "private",
         createdAt: "2026-01-01T00:00:00.000Z",
-        cells: expandGrid(input).map((cell) => ({ ...cell, id: token() })),
+        cells: expandLegacyGrid(input).map((cell) => ({
+          ...cell,
+          id: token(),
+          generationId: "accepted-reference-generation",
+        })),
       };
-      store.insert(validatedGrid(grid));
+      const cell = grid.cells[0];
+      const acceptedTask: GenerationTask = {
+        id: cell.generationId!,
+        kind: "generation",
+        status: "pending",
+        input: {
+          format: "chat-template",
+          model: cell.model,
+          effort: cell.effort,
+          prompt: cell.prompt,
+          messages: cell.messages,
+          budgetUsd: cell.budgetUsd,
+        },
+      };
+      arrangeHistoricalGrid(store, grid, [acceptedTask]);
       store.claim(owner.id, "claimed-account");
       store.saveSession({
         id: "saved-session",
@@ -586,13 +613,13 @@ test("v15 CAS metadata backfills once per SHA, keeps missing images usable as me
   }
 });
 
-test("v16 saved variable grids reopen with accepted payloads intact and can be edited and forked", () => {
+test("v16 saved variable grids reopen read-only with accepted payloads intact", () => {
   const dir = mkdtempSync(join(tmpdir(), "slopgrid-variable-migration-"));
   const database = join(dir, "app.sqlite");
   const secret = Buffer.alloc(32, 1);
   let store = new Store(database, secret);
   try {
-    const input = gridSchema.parse({
+    const input: LegacyGridInput = {
       format: "markdown",
       prompt: "Draw $ROW1",
       rows: { kind: "variable", values: [[{ text: "literal $COLUMN" }]] },
@@ -600,8 +627,8 @@ test("v16 saved variable grids reopen with accepted payloads intact and can be e
       model: "fixture/text",
       effort: "none",
       budgetUsd: 1,
-    });
-    const grid: Grid = {
+    };
+    const grid: Grid & { input: LegacyGridInput } = {
       id: token(),
       owner: "owner",
       input,
@@ -609,12 +636,26 @@ test("v16 saved variable grids reopen with accepted payloads intact and can be e
       published: false,
       visibility: "private",
       createdAt: "2026-01-01T00:00:00.000Z",
-      cells: expandGrid(input).map((cell) => ({ ...cell, id: token() })),
+      cells: expandLegacyGrid(input).map((cell) => ({
+        ...cell,
+        id: token(),
+        generationId: "accepted-variable-generation",
+      })),
     };
-    const tasks = createWorkflow(gridSchema.parse(input), grid.cells);
-    tasks[0].status = "running";
-    tasks[0].attemptId = "accepted-attempt";
-    store.insert(validatedGrid(grid), tasks);
+    const task: GenerationTask = {
+      id: "accepted-variable-generation",
+      kind: "generation",
+      status: "running",
+      attemptId: "accepted-attempt",
+      input: {
+        format: "markdown",
+        model: "fixture/text",
+        effort: "none",
+        prompt: "Draw literal $COLUMN",
+        budgetUsd: 1,
+      },
+    };
+    arrangeHistoricalGrid(store, grid, [task]);
     const accepted = store.workflow(grid.id);
     const title = store.get(grid.id)!.expanded_prompt_for_title;
     restoreV16VariableInputs(store.db, {
@@ -629,30 +670,11 @@ test("v16 saved variable grids reopen with accepted payloads intact and can be e
     assert.equal(saved.cells[0].prompt, "Draw literal $COLUMN");
     assert.equal(saved.expanded_prompt_for_title, title);
     assert.deepEqual(store.workflow(grid.id), accepted);
-    const edited = gridSchema.parse({
-      ...saved.input,
-      rows: {
-        kind: "variable",
-        values: [[{ text: "edited $ROW1" }, { text: "second field" }]],
-      },
-      prompt: "Draw $ROW1 with $ROW2",
-    });
-    const fork: Grid = {
-      ...saved,
-      id: token(),
-      input: edited,
-      status: "paused",
-      cells: expandGrid(edited).map((cell) => ({ ...cell, id: token() })),
-    };
-    store.insert(validatedGrid(fork));
-    assert.equal(
-      store.get(fork.id)!.cells[0].prompt,
-      "Draw edited $ROW1 with second field",
-    );
-    assert.deepEqual(store.get(grid.id)!.input, input);
+    assert.equal(isCurrentGridInput(saved.input), false);
+    assert.equal(gridSchema.safeParse(saved.input).success, false);
     store.db.close();
     store = new Store(database, secret);
-    assert.deepEqual(store.get(fork.id)!.input, edited);
+    assert.deepEqual(store.get(grid.id)!.input, input);
     assert.deepEqual(store.workflow(grid.id), accepted);
   } finally {
     store.db.close();
@@ -689,9 +711,10 @@ for (const format of ["markdown", "chat-template", "image"] as const)
         width: 999,
         height: 999,
       });
-      const input = gridSchema.parse({
+      const input = currentInput({
         format,
         prompt: "Describe $ROW1",
+        promptImages: format === "chat-template" ? [] : [forged(explicit)],
         ...(format === "chat-template"
           ? {
               messages: [
@@ -702,30 +725,31 @@ for (const format of ["markdown", "chat-template", "image"] as const)
                 },
               ],
             }
-          : format === "image"
-            ? { inputReferences: [forged(explicit)] }
+          : {}),
+        budgetUsd: 1,
+        judge: true,
+        parameters: {
+          variable: { kind: "rows" },
+          ...(format !== "image"
+            ? { effort: { kind: "common" as const, value: "none" as const } }
             : {}),
-        rows: {
-          kind: "variable",
-          values: [
-            [
+          judge_model: { kind: "columns" },
+          judge_effort: { kind: "common", value: "none" },
+          judge_criteria: {
+            kind: "common",
+            value: [{ text: "Matches $ROW3?", correctAnswer: false }],
+          },
+        },
+        rows: [
+          {
+            variable: [
               { text: "generator", images: [forged(generator)] },
               { text: "unused", images: [forged(unused)] },
+              { text: "criterion", images: [forged(criterion)] },
             ],
-          ],
-        },
-        columns: {
-          kind: "variable",
-          values: [[{ text: "criterion", images: [forged(criterion)] }]],
-        },
-        model: "fixture/text",
-        effort: "none",
-        budgetUsd: 1,
-        judge: {
-          model: "fixture/judge",
-          effort: "none",
-          criteria: [{ text: "Matches $COLUMN1?", correctAnswer: false }],
-        },
+          },
+        ],
+        columns: [{ judge_model: "fixture/judge" }],
       });
       const grid: Grid = {
         id: token(),
@@ -742,15 +766,16 @@ for (const format of ["markdown", "chat-template", "image"] as const)
       store.db.close();
       store = new Store(database, secret);
       const saved = store.get(grid.id)!;
-      assert.equal(saved.input.rows.kind, "variable");
-      if (saved.input.rows.kind !== "variable")
-        throw new Error("Expected variable rows");
-      assert.deepEqual(saved.input.rows.values[0][0].images, [generator]);
-      assert.deepEqual(saved.input.rows.values[0][1].images, [unused]);
-      assert.equal(saved.input.columns.kind, "variable");
-      if (saved.input.columns.kind !== "variable")
-        throw new Error("Expected variable columns");
-      assert.deepEqual(saved.input.columns.values[0][0].images, [criterion]);
+      assert.equal(isCurrentGridInput(saved.input), true);
+      if (!isCurrentGridInput(saved.input))
+        throw new Error("Expected current saved input");
+      assert.deepEqual(saved.input.parameters.variable, { kind: "rows" });
+      assert.deepEqual(saved.input.rows[0].variable![0].images, [generator]);
+      if (format === "chat-template")
+        assert.deepEqual(saved.input.messages![0].images, [explicit]);
+      else assert.deepEqual(saved.input.promptImages, [explicit]);
+      assert.deepEqual(saved.input.rows[0].variable![1].images, [unused]);
+      assert.deepEqual(saved.input.rows[0].variable![2].images, [criterion]);
       const tasks = store.workflow(grid.id);
       const generation = tasks.find((task) => task.kind === "generation")!;
       const judgment = tasks.find((task) => task.kind === "judge")!;
@@ -765,22 +790,15 @@ for (const format of ["markdown", "chat-template", "image"] as const)
           generator.id,
         ]);
       else {
-        assert.deepEqual(generation.input.images, [generator]);
-        assert.deepEqual(saved.cells[0].images, [generator]);
+        assert.deepEqual(generation.input.images, [explicit, generator]);
+        assert.deepEqual(saved.cells[0].images, [explicit, generator]);
       }
       assert.deepEqual(judgment.input.images, [criterion]);
       assert.deepEqual(
         referenceUsageLinks(store.db)
           .map((link) => link.reference_id)
           .sort(),
-        [
-          generator,
-          criterion,
-          unused,
-          ...(format === "markdown" ? [] : [explicit]),
-        ]
-          .map(({ id }) => id)
-          .sort(),
+        [generator, criterion, unused, explicit].map(({ id }) => id).sort(),
       );
       assert.equal(
         store.references.path(generator.id),
@@ -798,7 +816,7 @@ for (const format of ["markdown", "chat-template", "image"] as const)
       };
       store.insert(validatedGrid(fork));
       removeStoredGrid(store.db, grid.id);
-      for (const image of [generator, criterion, unused])
+      for (const image of [generator, criterion, unused, explicit])
         assert.equal(
           store.references.allowed(image.id, { id: "fork-owner", created: 0 }),
           true,

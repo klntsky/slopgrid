@@ -9,7 +9,7 @@ import {
   gridSchema,
   hasCompletedOutput,
   type Grid,
-  type GridInput,
+  type ChatMessage,
 } from "../server/domain.js";
 import { createWorkflow, projectWorkflow } from "../server/workflow.js";
 import { reuseArtifacts } from "../server/artifact-reuse.js";
@@ -33,20 +33,25 @@ import {
   removeArtifactSourceGrid,
 } from "./artifact-reuse-fixture.js";
 import { validatedGrid } from "./grid-storage-fixture.js";
+import {
+  currentDefinition,
+  currentInput,
+  type CurrentGridOverrides,
+} from "./current-grid-fixture.js";
+import { parameterValue } from "../server/parameters.js";
 
-const input: GridInput = {
+const input = currentDefinition({
   format: "markdown",
-  prompt: "$ROW1 $COLUMN1",
-  rows: {
-    kind: "variable",
-    values: ["cat", "dog", "owl", "fox"].map((text) => [{ text }]),
+  prompt: "$ROW1 one",
+  parameters: {
+    variable: { kind: "rows" },
+    effort: { kind: "columns" },
   },
-  columns: { kind: "variable", values: ["one"].map((text) => [{ text }]) },
-  model: "fixture/text",
-  effort: "none",
+  rows: ["cat", "dog", "owl", "fox"].map((text) => ({ variable: [{ text }] })),
+  columns: [{ effort: "none" }],
   budgetUsd: 0.1,
   parallelWorkers: 1,
-};
+});
 async function create(f: RuntimeFixture, value: object) {
   const response = await f.request("/api/grids", value);
   assert.equal(response.status, 201, await response.clone().text());
@@ -71,30 +76,37 @@ function finish(call: RuntimeCall, text = "Artifact") {
 
 test("generator grouping ignores judge-only fields and attachment display metadata", () => {
   const image = { id: "source", name: "source.png", width: 10, height: 20 };
-  const setup: GridInput = {
+  const setup = currentDefinition({
     ...input,
     prompt: "$ROW1",
-    inputReferences: [image],
-    rows: {
-      kind: "variable",
-      values: [
-        [{ text: "same", images: [image] }, { text: "first answer" }],
-        [
+    judge: true,
+    promptImages: [image],
+    parameters: {
+      ...input.parameters,
+      effort: { kind: "common", value: "none" },
+      judge_model: { kind: "columns" },
+      judge_effort: { kind: "common", value: "default" },
+      judge_criteria: {
+        kind: "common",
+        value: [{ text: "Matches $ROW2?", correctAnswer: false }],
+      },
+    },
+    rows: [
+      {
+        variable: [{ text: "same", images: [image] }, { text: "first answer" }],
+      },
+      {
+        variable: [
           {
             text: "same",
             images: [{ ...image, name: "renamed.png", width: 30, height: 40 }],
           },
           { text: "second answer" },
         ],
-      ],
-    },
-    columns: { kind: "judge_model", values: ["fixture/text"] },
-    judge: {
-      model: "",
-      effort: "default",
-      criteria: [{ text: "Matches $ROW2?", correctAnswer: false }],
-    },
-  };
+      },
+    ],
+    columns: [{ judge_model: "fixture/text" }],
+  });
   const cells = expandGrid(setup).map((cell) => ({ ...cell, id: token() }));
   assert.deepEqual(
     cells.map((cell) => cell.images),
@@ -132,14 +144,19 @@ for (const format of ["markdown", "svg", "html"] as const)
         "changed.png",
         session,
       )!;
-      const setup: GridInput = {
-        ...input,
+      const setup = currentDefinition({
         format,
         prompt: "Describe the shape.",
-        inputReferences: [original],
-        rows: { kind: "model", values: ["fixture/text"] },
-        columns: { kind: "effort", values: ["none"] },
-      };
+        promptImages: [original],
+        budgetUsd: input.budgetUsd,
+        parallelWorkers: input.parallelWorkers,
+        parameters: {
+          model: { kind: "rows" },
+          effort: { kind: "columns" },
+        },
+        rows: [{ model: "fixture/text" }],
+        columns: [{ effort: "none" }],
+      });
       const output =
         format === "html"
           ? '{"files":[{"path":"index.html","content":"<h1>Shape</h1>"}]}'
@@ -160,12 +177,14 @@ for (const format of ["markdown", "svg", "html"] as const)
       await settled(f, source.id);
       const copy = await create(f, {
         ...setup,
-        inputReferences: [{ ...copied, width: 900, height: 2 }],
+        promptImages: [{ ...copied, width: 900, height: 2 }],
         sourceGridId: source.id,
         reuseArtifacts: true,
       });
       const savedCopy = await settled(f, copy.id);
-      assert.deepEqual(savedCopy.input.inputReferences, [copied]);
+      assert.deepEqual(gridSchema.parse(savedCopy.input).promptImages, [
+        copied,
+      ]);
       assert.deepEqual(savedCopy.cells[0].images, [copied]);
       assert.equal(f.calls.length, 1);
       assert.equal(
@@ -174,7 +193,7 @@ for (const format of ["markdown", "svg", "html"] as const)
       );
       const different = await create(f, {
         ...setup,
-        inputReferences: [changed],
+        promptImages: [changed],
         sourceGridId: source.id,
         reuseArtifacts: true,
       });
@@ -205,25 +224,30 @@ test("non-chat image reuse follows content and ignores changed judge-only fields
       "changed.png",
       session,
     )!;
-    const setup: GridInput = {
+    const setup = currentDefinition({
       ...input,
       prompt: "$ROW1",
-      rows: {
-        kind: "variable",
-        values: [
-          [
+      judge: true,
+      parameters: {
+        ...input.parameters,
+        effort: { kind: "common", value: "none" },
+        judge_model: { kind: "columns" },
+        judge_effort: { kind: "common", value: "none" },
+        judge_criteria: {
+          kind: "common",
+          value: [{ text: "Matches $ROW2?", correctAnswer: false }],
+        },
+      },
+      rows: [
+        {
+          variable: [
             { text: "Describe this shape.", images: [originalImage] },
             { text: "first expected answer", images: [changedImage] },
           ],
-        ],
-      },
-      columns: { kind: "judge_model", values: ["fixture/text"] },
-      judge: {
-        model: "",
-        effort: "none",
-        criteria: [{ text: "Matches $ROW2?", correctAnswer: false }],
-      },
-    };
+        },
+      ],
+      columns: [{ judge_model: "fixture/text" }],
+    });
     const source = await create(f, setup);
     finish(await f.nextCall(), "Shared shape");
     finish(
@@ -233,15 +257,15 @@ test("non-chat image reuse follows content and ignores changed judge-only fields
     await settled(f, source.id);
     const copy = await create(f, {
       ...setup,
-      rows: {
-        kind: "variable",
-        values: [
-          [
+      rows: [
+        {
+          id: "row-1",
+          variable: [
             { text: "Describe this shape.", images: [copiedImage] },
             { text: "changed expected answer", images: [originalImage] },
           ],
-        ],
-      },
+        },
+      ],
       sourceGridId: source.id,
       reuseArtifacts: true,
     });
@@ -259,15 +283,15 @@ test("non-chat image reuse follows content and ignores changed judge-only fields
     );
     const changed = await create(f, {
       ...setup,
-      rows: {
-        kind: "variable",
-        values: [
-          [
+      rows: [
+        {
+          id: "row-1",
+          variable: [
             { text: "Describe this shape.", images: [changedImage] },
             { text: "first expected answer", images: [changedImage] },
           ],
-        ],
-      },
+        },
+      ],
       sourceGridId: source.id,
       reuseArtifacts: true,
     });
@@ -302,20 +326,26 @@ test("chat reuse matches attachment content across uploads but not moved attachm
       "second.png",
       session,
     )!;
-    const template = {
+    const messages: ChatMessage[] = [
+      {
+        role: "user",
+        content: "Describe $ROW1 one",
+        images: [{ id: first.id, name: first.name }],
+      },
+      { role: "assistant", content: "A supplied answer." },
+      { role: "user", content: "Describe the next image.", images: [second] },
+    ];
+    const template = currentDefinition({
       ...input,
       format: "chat-template",
-      rows: { kind: "variable", values: ["cat"].map((text) => [{ text }]) },
-      messages: [
-        {
-          role: "user",
-          content: "Describe $ROW1 $COLUMN1",
-          images: [{ id: first.id, name: first.name }],
-        },
-        { role: "assistant", content: "A supplied answer." },
-        { role: "user", content: "Describe the next image.", images: [second] },
-      ],
-    };
+      parameters: {
+        variable: { kind: "rows" },
+        model: { kind: "common", value: "fixture/text" },
+        effort: { kind: "columns" },
+      },
+      rows: [{ variable: [{ text: "cat" }] }],
+      messages,
+    });
     const source = await create(f, template);
     finish(await f.nextCall(), "Both images");
     const original = await settled(f, source.id);
@@ -323,10 +353,10 @@ test("chat reuse matches attachment content across uploads but not moved attachm
       ...template,
       messages: [
         {
-          ...template.messages[0],
+          ...messages[0],
           images: [{ ...renamed, width: 900, height: 2 }],
         },
-        ...template.messages.slice(1),
+        ...messages.slice(1),
       ],
       sourceGridId: source.id,
       reuseArtifacts: true,
@@ -341,9 +371,9 @@ test("chat reuse matches attachment content across uploads but not moved attachm
     const changed = await create(f, {
       ...template,
       messages: [
-        { ...template.messages[0], images: undefined },
-        template.messages[1],
-        { ...template.messages[2], images: [first, second] },
+        { ...messages[0], images: undefined },
+        messages[1],
+        { ...messages[2], images: [first, second] },
       ],
       sourceGridId: source.id,
       reuseArtifacts: true,
@@ -358,7 +388,10 @@ test("chat reuse matches attachment content across uploads but not moved attachm
     assert.equal(f.calls.length, 2);
     const denied = await f.request("/api/grids", {
       ...template,
-      model: "unknown/text",
+      parameters: {
+        ...template.parameters,
+        model: { kind: "common", value: "unknown/text" },
+      },
     });
     assert.equal(denied.status, 400);
     assert.equal(f.calls.length, 2);
@@ -370,17 +403,22 @@ test("chat reuse matches attachment content across uploads but not moved attachm
 test("template usage and per-call reuse survive storage reopening", async () => {
   const f = await runtimeFixture();
   try {
-    const template = {
+    const template = currentDefinition({
       ...input,
       format: "chat-template",
+      parameters: {
+        variable: { kind: "rows" },
+        model: { kind: "common", value: "fixture/text" },
+        effort: { kind: "columns" },
+      },
       budgetUsd: 1,
-      rows: { kind: "variable", values: ["cat"].map((text) => [{ text }]) },
+      rows: [{ variable: [{ text: "cat" }] }],
       messages: [
-        { role: "user", content: "$ROW1 $COLUMN1" },
+        { role: "user", content: "$ROW1 one" },
         { role: "unfilled", content: "" },
         { role: "unfilled", content: "" },
       ],
-    };
+    });
     const source = await create(f, template);
     finish(await f.nextCall(), "First answer");
     const second = await f.nextCall();
@@ -446,17 +484,22 @@ test("template usage and per-call reuse survive storage reopening", async () => 
 test("template reuse requires the final completion after supplied trailing history", async () => {
   const f = await runtimeFixture();
   try {
-    const template = {
+    const template = currentDefinition({
       ...input,
       format: "chat-template",
+      parameters: {
+        variable: { kind: "rows" },
+        model: { kind: "common", value: "fixture/text" },
+        effort: { kind: "columns" },
+      },
       budgetUsd: 1,
-      rows: { kind: "variable", values: ["cat"].map((text) => [{ text }]) },
+      rows: [{ variable: [{ text: "cat" }] }],
       messages: [
-        { role: "user", content: "$ROW1 $COLUMN1" },
+        { role: "user", content: "$ROW1 one" },
         { role: "unfilled", content: "" },
         { role: "user", content: "Final question" },
       ],
-    };
+    });
     const source = await create(f, template);
     finish(await f.nextCall(), "First answer");
     const last = await f.nextCall();
@@ -499,17 +542,25 @@ test("template reuse requires the final completion after supplied trailing histo
 test("failed templates retain the partial transcript and aggregate charged usage", async () => {
   const f = await runtimeFixture();
   try {
-    const source = await create(f, {
-      ...input,
-      format: "chat-template",
-      budgetUsd: 1,
-      rows: { kind: "variable", values: ["cat"].map((text) => [{ text }]) },
-      messages: [
-        { role: "user", content: "$ROW1 $COLUMN1" },
-        { role: "unfilled", content: "" },
-        { role: "unfilled", content: "" },
-      ],
-    });
+    const source = await create(
+      f,
+      currentDefinition({
+        ...input,
+        format: "chat-template",
+        parameters: {
+          variable: { kind: "rows" },
+          model: { kind: "common", value: "fixture/text" },
+          effort: { kind: "columns" },
+        },
+        budgetUsd: 1,
+        rows: [{ variable: [{ text: "cat" }] }],
+        messages: [
+          { role: "user", content: "$ROW1 one" },
+          { role: "unfilled", content: "" },
+          { role: "unfilled", content: "" },
+        ],
+      }),
+    );
     finish(await f.nextCall(), "First answer");
     const second = await f.nextCall();
     second.write({ content: "Partial answer" });
@@ -541,17 +592,13 @@ test("edit shares exact completed artifacts through reorder, cancellation, web r
       (s) => s.runningCalls === 0,
     );
     const sourceCell = f.store.get(source.id)!.cells[0];
-    const changed = {
+    const changed = currentDefinition({
       ...input,
-      rows: {
-        kind: "variable",
-        values: ["fox", "cat", "dog", "owl", "new"].map((text) => [{ text }]),
-      },
-      columns: {
-        kind: "variable",
-        values: ["two", "one"].map((text) => [{ text }]),
-      },
-    };
+      rows: ["fox", "cat", "dog", "owl", "new"].map((text) => ({
+        variable: [{ text }],
+      })),
+      columns: [{ effort: "low" }, { effort: "none" }],
+    });
     const callsBeforeEdit = f.calls.length;
     const next = await create(f, {
       ...changed,
@@ -578,28 +625,30 @@ test("edit shares exact completed artifacts through reorder, cancellation, web r
     );
     cancelled.write({ content: "Late" });
     cancelled.finish();
-    const expectedPrompts = [
-      "fox two",
-      "fox one",
-      "cat two",
-      "dog two",
-      "dog one",
-      "owl two",
-      "owl one",
-      "new two",
-      "new one",
+    const expectedRequests = [
+      ["fox one", "low"],
+      ["fox one", "none"],
+      ["cat one", "low"],
+      ["dog one", "low"],
+      ["dog one", "none"],
+      ["owl one", "low"],
+      ["owl one", "none"],
+      ["new one", "low"],
+      ["new one", "none"],
     ];
     const pending = await f.nextCall();
     pending.write({ content: "Before restart. " });
     await kill(f.web);
     await f.startWeb();
     finish(pending, "After restart.");
-    for (const prompt of expectedPrompts.slice(1))
+    for (const [prompt] of expectedRequests.slice(1))
       finish(await f.nextCall(), prompt);
     assert.equal((await settled(f, next.id)).status, "complete");
     assert.deepEqual(
-      f.calls.slice(callsBeforeEdit).map((call) => call.prompt),
-      expectedPrompts,
+      f.calls
+        .slice(callsBeforeEdit)
+        .map((call) => [call.prompt, call.request.reasoning?.effort ?? "none"]),
+      expectedRequests,
     );
     await f.engine.close();
     await f.startEngine();
@@ -609,7 +658,7 @@ test("edit shares exact completed artifacts through reorder, cancellation, web r
       reuseArtifacts: true,
     });
     assert.equal(again.status, "complete");
-    assert.equal(f.calls.length, callsBeforeEdit + expectedPrompts.length);
+    assert.equal(f.calls.length, callsBeforeEdit + expectedRequests.length);
     assert.equal((await f.engine.api.getGrid(again.id)).spentUsd, 0);
     assertCost(
       again.cells.reduce((sum, c) => sum + (c.usage?.costUsd ?? 0), 0),
@@ -623,18 +672,16 @@ test("edit shares exact completed artifacts through reorder, cancellation, web r
 test("reuse requires intact content and retains shared artifacts while either grid references them", async () => {
   const f = await runtimeFixture();
   try {
-    const config = {
+    const config = currentDefinition({
       ...input,
       format: "html",
-      rows: {
-        kind: "variable",
-        values: ["intact", "asset", "thinking", "unsigned", "unreadable"].map(
-          (text) => [{ text }],
-        ),
-      },
-    };
+      rows: ["intact", "asset", "thinking", "unsigned", "unreadable"].map(
+        (text) => ({ variable: [{ text }] }),
+      ),
+    });
     const source = await create(f, config);
-    for (const [{ text: name }] of config.rows.values)
+    for (const { variable } of config.rows) {
+      const name = variable![0].text;
       finish(
         await f.nextCall(),
         JSON.stringify({
@@ -644,6 +691,7 @@ test("reuse requires intact content and retains shared artifacts while either gr
           ],
         }),
       );
+    }
     const completed = await settled(f, source.id);
     rmSync(
       f.store.files.path(completed.cells[1].artifactId!, "nested/style.css")!,
@@ -704,10 +752,10 @@ test("reuse requires intact content and retains shared artifacts while either gr
 test("forks isolate access and billing while preserving artifact costs and admission prerequisites", async () => {
   const f = await runtimeFixture();
   try {
-    const config = {
+    const config = currentDefinition({
       ...input,
-      rows: { kind: "variable", values: ["cat"].map((text) => [{ text }]) },
-    };
+      rows: [{ variable: [{ text: "cat" }] }],
+    });
     const source = await create(f, config);
     finish(await f.nextCall());
     await settled(f, source.id);
@@ -732,10 +780,10 @@ test("forks isolate access and billing while preserving artifact costs and admis
     assert.equal(f.store.publish(source.id, "public", null), undefined);
     const destination = await create(f, {
       ...config,
-      rows: {
-        kind: "variable",
-        values: ["cat", "dog"].map((text) => [{ text }]),
-      },
+      rows: ["cat", "dog"].map((text, index) => ({
+        id: `row-${index + 1}`,
+        variable: [{ text }],
+      })),
       sourceGridId: source.id,
       reuseArtifacts: true,
     });
@@ -827,10 +875,10 @@ test("forks isolate access and billing while preserving artifact costs and admis
       (
         await f.request("/api/grids", {
           ...config,
-          rows: {
-            kind: "variable",
-            values: ["cat", "new"].map((text) => [{ text }]),
-          },
+          rows: ["cat", "new"].map((text, index) => ({
+            id: `row-${index + 1}`,
+            variable: [{ text }],
+          })),
           sourceGridId: source.id,
           reuseArtifacts: true,
         })
@@ -854,31 +902,36 @@ test("effective model, prompt, effort and format determine actual reuse", async 
   const f = await runtimeFixture();
   try {
     f.catalog.data.push({ ...f.catalog.data[0], id: "fixture/other" });
-    const config: GridInput = {
+    const config = currentDefinition({
       ...input,
-      rows: { kind: "variable", values: ["cat"].map((text) => [{ text }]) },
-    };
+      rows: [{ variable: [{ text: "cat" }] }],
+    });
     const source = await create(f, config);
     finish(await f.nextCall());
     await settled(f, source.id);
     const cases: {
       name: string;
-      input: Partial<GridInput>;
+      input: CurrentGridOverrides;
       verify: (call: RuntimeCall) => void;
     }[] = [
       {
         name: "model",
-        input: { model: "fixture/other" },
+        input: {
+          parameters: {
+            ...config.parameters,
+            model: { kind: "common", value: "fixture/other" },
+          },
+        },
         verify: (call) => assert.equal(call.request.model, "fixture/other"),
       },
       {
         name: "prompt",
-        input: { prompt: "Changed $ROW1 $COLUMN1" },
+        input: { prompt: "Changed $ROW1 one" },
         verify: (call) => assert.equal(call.prompt, "Changed cat one"),
       },
       {
         name: "effort",
-        input: { effort: "high" },
+        input: { columns: [{ effort: "high" }] },
         verify: (call) => assert.equal(call.request.reasoning?.effort, "high"),
       },
       {
@@ -893,8 +946,7 @@ test("effective model, prompt, effort and format determine actual reuse", async 
     ];
     for (const scenario of cases) {
       const next = await create(f, {
-        ...config,
-        ...scenario.input,
+        ...currentDefinition({ ...config, ...scenario.input }),
         sourceGridId: source.id,
         reuseArtifacts: true,
       });
@@ -942,11 +994,11 @@ test("budget and token ceiling changes reuse outputs that fit through copies and
     f.catalog.data[0].pricing = { prompt: "0", completion: "0.001" };
     await kill(f.web);
     await f.startWeb();
-    const config: GridInput = {
+    const config = currentDefinition({
       ...input,
       budgetUsd: 2,
-      rows: { kind: "variable", values: ["cat"].map((text) => [{ text }]) },
-    };
+      rows: [{ variable: [{ text: "cat" }] }],
+    });
     const source = await create(f, config);
     const call = await f.nextCall();
     assert.equal(call.request.max_tokens, 1000);
@@ -996,16 +1048,17 @@ test("reuse selects the first matching source whose actual usage fits the new li
     f.catalog.data[0].pricing = { prompt: "0", completion: "0.001" };
     await kill(f.web);
     await f.startWeb();
-    const config: GridInput = {
+    const config = currentDefinition({
       ...input,
       budgetUsd: 1,
-      prompt: "$ROW1$COLUMN1",
-      rows: { kind: "variable", values: ["a", "ab"].map((text) => [{ text }]) },
-      columns: {
-        kind: "variable",
-        values: ["bc", "c"].map((text) => [{ text }]),
-      },
-    };
+      prompt: "$ROW1$ROW2",
+      rows: [
+        ["a", "bc"],
+        ["a", "c"],
+        ["ab", "bc"],
+        ["ab", "c"],
+      ].map((fields) => ({ variable: fields.map((text) => ({ text })) })),
+    });
     const source = await create(f, config);
     const first = await f.nextCall();
     first.write({ content: "Large" });
@@ -1046,11 +1099,11 @@ test("missing token usage reuses only when the original ceiling fits, including 
     f.catalog.data[0].pricing = { prompt: "0", completion: "0.001" };
     await kill(f.web);
     await f.startWeb();
-    const config: GridInput = {
+    const config = currentDefinition({
       ...input,
       budgetUsd: 0.5,
-      rows: { kind: "variable", values: ["cat"].map((text) => [{ text }]) },
-    };
+      rows: [{ variable: [{ text: "cat" }] }],
+    });
     const source = await create(f, config);
     finish(await f.nextCall());
     await settled(f, source.id);
@@ -1086,10 +1139,10 @@ test("missing token usage reuses only when the original ceiling fits, including 
 test("stored artifacts with stale request signatures regenerate instead of reusing incompatible output", async () => {
   const f = await runtimeFixture();
   try {
-    const config = {
+    const config = currentDefinition({
       ...input,
-      rows: { kind: "variable", values: ["cat"].map((text) => [{ text }]) },
-    };
+      rows: [{ variable: [{ text: "cat" }] }],
+    });
     const source = await create(f, config);
     finish(await f.nextCall(), "Old output");
     const saved = await settled(f, source.id);
@@ -1124,16 +1177,20 @@ test("duplicate effective prompts choose the first source cell and model alias r
     // The web process caches the catalog while preparing its frontend.
     await kill(f.web);
     await f.startWeb();
-    const config = {
+    const config = currentDefinition({
       ...input,
-      prompt: "$ROW1$COLUMN1",
-      model: "fixture/latest",
-      rows: { kind: "variable", values: ["a", "ab"].map((text) => [{ text }]) },
-      columns: {
-        kind: "variable",
-        values: ["bc", "c"].map((text) => [{ text }]),
+      prompt: "$ROW1$ROW2",
+      parameters: {
+        ...input.parameters,
+        model: { kind: "common", value: "fixture/latest" },
       },
-    };
+      rows: [
+        ["a", "bc"],
+        ["a", "c"],
+        ["ab", "bc"],
+        ["ab", "c"],
+      ].map((fields) => ({ variable: fields.map((text) => ({ text })) })),
+    });
     const source = await create(f, config);
     for (let i = 0; i < 4; i++) finish(await f.nextCall(), `Output ${i}`);
     await settled(f, source.id);
@@ -1186,18 +1243,26 @@ test("reuse leaves preparation failures on individual cells and skips unsigned s
       top_provider: { max_completion_tokens: 0 },
     });
     await f.startWeb();
-    const config: GridInput = {
+    const config = currentDefinition({
       ...input,
       prompt: "$ROW1",
-      rows: { kind: "variable", values: ["cat"].map((text) => [{ text }]) },
-      columns: { kind: "model", values: ["fixture/text"] },
-    };
+      parameters: {
+        variable: { kind: "rows" },
+        model: { kind: "columns" },
+        effort: { kind: "common", value: "none" },
+      },
+      rows: [{ variable: [{ text: "cat" }] }],
+      columns: [{ model: "fixture/text" }],
+    });
     const source = await create(f, config);
     finish(await f.nextCall());
     await settled(f, source.id);
     const mixed = await create(f, {
       ...config,
-      columns: { kind: "model", values: ["fixture/text", "fixture/unpriced"] },
+      columns: ["fixture/text", "fixture/unpriced"].map((model, index) => ({
+        id: `column-${index + 1}`,
+        model,
+      })),
       sourceGridId: source.id,
       reuseArtifacts: true,
     });
@@ -1210,7 +1275,7 @@ test("reuse leaves preparation failures on individual cells and skips unsigned s
     assert.equal(f.calls.length, 2);
     const copied = await create(f, {
       ...config,
-      columns: { kind: "model", values: ["fixture/unpriced"] },
+      columns: [{ id: "column-1", model: "fixture/unpriced" }],
       sourceGridId: mixed.id,
       reuseArtifacts: true,
     });
@@ -1244,17 +1309,21 @@ test("reuse leaves preparation failures on individual cells and skips unsigned s
 });
 
 test("generation failures reach every judged group member while ordinary cells remain independent", () => {
-  const judged: GridInput = {
-    ...input,
+  const judged = currentInput({
     prompt: "Same output",
-    rows: { kind: "judge_model", values: ["judge-a", "judge-b"] },
-    columns: { kind: "judge_effort", values: ["none", "low"] },
-    judge: {
-      criteria: [{ text: "Is this empty?", correctAnswer: false }],
-      model: "",
-      effort: "default",
+    judge: true,
+    parameters: {
+      effort: { kind: "common", value: "none" },
+      judge_model: { kind: "rows" },
+      judge_effort: { kind: "columns" },
+      judge_criteria: {
+        kind: "common",
+        value: [{ text: "Is this empty?", correctAnswer: false }],
+      },
     },
-  };
+    rows: [{ judge_model: "judge-a" }, { judge_model: "judge-b" }],
+    columns: [{ judge_effort: "none" }, { judge_effort: "low" }],
+  });
   const cells = expandGrid(judged).map((cell, index) => ({
     ...cell,
     id: `group-${index}`,
@@ -1278,12 +1347,12 @@ test("generation failures reach every judged group member while ordinary cells r
     cells.map((cell) => [cell.status, cell.error]),
     Array.from({ length: 4 }, () => ["error", "Generation failed"]),
   );
-  const unjudged: GridInput = {
-    ...judged,
-    judge: undefined,
-    rows: { kind: "model", values: ["judge-a", "judge-b"] },
-    columns: { kind: "effort", values: ["none", "low"] },
-  };
+  const unjudged = currentInput({
+    prompt: judged.prompt,
+    parameters: { model: { kind: "rows" }, effort: { kind: "columns" } },
+    rows: [{ model: "judge-a" }, { model: "judge-b" }],
+    columns: [{ effort: "none" }, { effort: "low" }],
+  });
   const ordinary = expandGrid(unjudged).map((cell, index) => ({
     ...cell,
     id: `unjudged-${index}`,
@@ -1306,17 +1375,23 @@ test("generation failures reach every judged group member while ordinary cells r
 test("reuse shares one generation per judge group without copying judgments or attempts", async () => {
   const f = await runtimeFixture();
   try {
-    const config: GridInput = {
+    const config = currentDefinition({
       ...input,
       prompt: "Reusable output",
-      rows: { kind: "model", values: ["fixture/text"] },
-      columns: { kind: "effort", values: ["none"] },
-      judge: {
-        criteria: [{ text: "Is this empty?", correctAnswer: false }],
-        model: "fixture/text",
-        effort: "none",
+      judge: true,
+      parameters: {
+        model: { kind: "rows" },
+        effort: { kind: "columns" },
+        judge_model: { kind: "common", value: "fixture/text" },
+        judge_effort: { kind: "common", value: "none" },
+        judge_criteria: {
+          kind: "common",
+          value: [{ text: "Is this empty?", correctAnswer: false }],
+        },
       },
-    };
+      rows: [{ model: "fixture/text" }],
+      columns: [{ effort: "none" }],
+    });
     const created = await create(f, config);
     finish(await f.nextCall(), "Shared artifact");
     (await f.nextCall()).fail(400);
@@ -1324,12 +1399,18 @@ test("reuse shares one generation per judge group without copying judgments or a
     const source = f.store.get(created.id)!;
     const original = source.cells[0];
     assert.equal(original.judge?.status, "error");
-    const judged: GridInput = {
+    const judged = currentDefinition({
       ...config,
-      rows: { kind: "judge_model", values: ["judge-a", "judge-b"] },
-      columns: { kind: "judge_effort", values: ["none", "low"] },
-      judge: { ...config.judge!, model: "", effort: "default" },
-    };
+      parameters: {
+        ...config.parameters,
+        model: { kind: "common", value: "fixture/text" },
+        effort: { kind: "common", value: "none" },
+        judge_model: { kind: "rows" },
+        judge_effort: { kind: "columns" },
+      },
+      rows: [{ judge_model: "judge-a" }, { judge_model: "judge-b" }],
+      columns: [{ judge_effort: "none" }, { judge_effort: "low" }],
+    });
     const destination: Grid = {
       ...source,
       id: token(),
@@ -1349,8 +1430,11 @@ test("reuse shares one generation per judge group without copying judgments or a
       assert.equal(cell.artifactId, original.artifactId);
       assert.equal(cell.thinkingId, original.thinkingId);
       assert.equal(cell.thinkingSourceId, original.thinkingSourceId);
-      assert.equal(cell.judge?.model, judged.rows.values[cell.row]);
-      assert.equal(cell.judge?.effort, judged.columns.values[cell.column]);
+      assert.equal(cell.judge?.model, judged.rows[cell.row].judge_model);
+      assert.equal(
+        cell.judge?.effort,
+        judged.columns[cell.column].judge_effort,
+      );
       assert.equal(cell.judge?.status, "pending");
       assert.equal(cell.attemptId, undefined);
       assert.deepEqual(cell.usage, original.usage);
@@ -1377,8 +1461,14 @@ test("reuse shares one generation per judge group without copying judgments or a
       judgments[0].output.results,
     );
     assert.equal(restored.cells[1].judge?.error, "Temporary error");
-    assert.ok(Array.isArray(restored.input.judge!.criteria));
-    assert.equal(restored.input.judge!.criteria[0].correctAnswer, false);
+    const criteria = parameterValue(
+      gridSchema.parse(restored.input),
+      "judge_criteria",
+      0,
+      0,
+    )!;
+    assert.ok(Array.isArray(criteria));
+    assert.equal(criteria[0].correctAnswer, false);
     assert.ok(
       restored.cells.every((cell) => cell.artifactId === original.artifactId),
     );

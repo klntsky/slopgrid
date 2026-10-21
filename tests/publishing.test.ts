@@ -7,13 +7,20 @@ import {
   gridSchema,
   type Grid,
   type GridSummary,
+  type GenerationTask,
 } from "../server/domain.js";
 import { Store } from "../server/store.js";
 import { createWorkflow } from "../server/workflow.js";
 import {
   storedPublicGridCreationTimes,
   validatedGrid,
+  arrangeHistoricalGrid,
 } from "./grid-storage-fixture.js";
+import { currentInput } from "./current-grid-fixture.js";
+import {
+  expandLegacyGrid,
+  type LegacyGridInput,
+} from "../server/legacy-grid-input.js";
 
 // Exercise the real session, ownership, persistence, and publishing routes.
 test("publishing is permanent, link grids are unlisted, and public summaries omit private data", async (t) => {
@@ -34,15 +41,19 @@ test("publishing is permanent, link grids are unlisted, and public summaries omi
     status: Grid["cells"][number]["status"] = "complete",
     format: Grid["input"]["format"] = "markdown",
   ) {
-    const input: Grid["input"] = {
+    const input = currentInput({
       format,
       prompt: "Draw $ROW1",
-      rows: { kind: "variable", values: [[{ text: "cat" }]] },
-      columns: { kind: "effort", values: ["none"] },
-      model: "fixture/text",
-      effort: "none",
       budgetUsd: 5,
-    };
+      parameters: {
+        variable: { kind: "rows" },
+        ...(format === "image"
+          ? { size: { kind: "columns" as const } }
+          : { effort: { kind: "columns" as const } }),
+      },
+      rows: [{ variable: [{ text: "cat" }] }],
+      columns: [format === "image" ? { size: "auto" } : { effort: "none" }],
+    });
     const grid: Grid = {
       id,
       owner,
@@ -264,18 +275,16 @@ test("publishing a paused grid exposes unfinished cells as Not generated and loc
   const { origin, store, database, secret } = await appFixture(t);
   const owner = token();
   store.saveSession({ id: owner, created: Date.now() });
-  const input: Grid["input"] = {
-    format: "markdown",
+  const input = currentInput({
     prompt: "Draw $ROW1",
-    rows: {
-      kind: "variable",
-      values: [[{ text: "cat" }], [{ text: "dog" }], [{ text: "owl" }]],
-    },
-    columns: { kind: "effort", values: ["none"] },
-    model: "fixture/text",
-    effort: "none",
     budgetUsd: 5,
-  };
+    parameters: {
+      variable: { kind: "rows" },
+      effort: { kind: "columns" },
+    },
+    rows: ["cat", "dog", "owl"].map((text) => ({ variable: [{ text }] })),
+    columns: [{ effort: "none" }],
+  });
   const grid: Grid = {
     id: token(),
     owner,
@@ -354,6 +363,160 @@ test("publishing a paused grid exposes unfinished cells as Not generated and loc
   try {
     assert.equal(reopened.get(grid.id)!.published, true);
     assert.equal(reopened.get(grid.id)!.visibility, "public");
+  } finally {
+    reopened.db.close();
+  }
+});
+
+test("historical accepted outputs retain owner controls and publication but never configuration access", async (t) => {
+  const { origin, store, database, secret } = await appFixture(t);
+  const owner = token();
+  const stranger = token();
+  store.saveSession({ id: owner, created: Date.now() });
+  store.saveSession({ id: stranger, created: Date.now() });
+  const input: LegacyGridInput = {
+    format: "markdown",
+    prompt: "Historical $ROW1 and $ROW2",
+    model: "metadata-model",
+    effort: "none",
+    budgetUsd: 1,
+    rows: {
+      kind: "variable",
+      values: [[{ text: "cat" }, { text: "second-field" }]],
+    },
+    columns: { kind: "effort", values: ["none"] },
+  };
+  const task: GenerationTask = {
+    id: token(),
+    kind: "generation",
+    status: "complete",
+    attemptId: "accepted-historical-attempt",
+    input: {
+      format: "markdown",
+      model: "accepted-model",
+      effort: "high",
+      prompt: "Concrete accepted prompt, not reconstructed metadata",
+      budgetUsd: 1,
+    },
+    output: {
+      artifactId: token(),
+      thinkingId: token(),
+      thinkingSourceId: token(),
+      provenance: {
+        signature: "accepted-historical-signature",
+        files: ["index.md"],
+      },
+    },
+  };
+  const grid: Grid & { input: LegacyGridInput } = {
+    id: token(),
+    owner,
+    input,
+    status: "complete",
+    published: false,
+    visibility: "private",
+    createdAt: "2025-01-01T00:00:00.000Z",
+    cells: expandLegacyGrid(input).map((cell) => ({
+      ...cell,
+      id: token(),
+      generationId: task.id,
+    })),
+  };
+  arrangeHistoricalGrid(store, grid, [task]);
+  store.files.write(task.output!.artifactId, {
+    "index.md": "Historical accepted output",
+  });
+  store.files.appendThinking(
+    task.output!.thinkingSourceId!,
+    task.output!.thinkingId!,
+    "Historical trace",
+  );
+  store.billing
+    .observe(
+      grid.cells[0].id,
+      task.attemptId,
+    )("direct")
+    .complete(
+      { phase: "direct", finishReason: "stop" },
+      { costUsd: 0.25, outputTokens: 7 },
+    );
+  const accepted = store.workflow(grid.id);
+  const ownerHeaders = { origin, cookie: `slopgrid=${owner}` };
+  const path = `/api/grids/${grid.id}`;
+  const before = store.get(grid.id);
+  assert.equal(
+    (
+      await fetch(origin + path + "/edit", {
+        method: "POST",
+        headers: { origin, cookie: `slopgrid=${stranger}` },
+      })
+    ).status,
+    404,
+  );
+  assert.equal(
+    (
+      await fetch(origin + path + "/edit", {
+        method: "POST",
+        headers: ownerHeaders,
+      })
+    ).status,
+    409,
+  );
+  assert.deepEqual(store.get(grid.id), before);
+  const privateView = await (
+    await fetch(origin + path, { headers: ownerHeaders })
+  ).json();
+  assert.equal(privateView.canEdit, true);
+  assert.equal(privateView.canConfigure, false);
+  assert.equal(privateView.canPublish, true);
+  assert.equal(privateView.spentUsd, 0.25);
+  assert.equal(privateView.input.inputVersion, undefined);
+  assert.equal(privateView.cells[0].model, "accepted-model");
+  assert.equal(privateView.cells[0].prompt, task.input.prompt);
+  assert.equal(privateView.cells[0].outputReady, true);
+  store.setTitle(grid.id, "Historical custom title");
+  const publication = await fetch(origin + path + "/publish", {
+    method: "POST",
+    headers: { ...ownerHeaders, "content-type": "application/json" },
+    body: JSON.stringify({ visibility: "unlisted" }),
+  });
+  assert.equal(publication.status, 200);
+  const publishedOwner = await publication.json();
+  assert.equal(publishedOwner.canEdit, true);
+  assert.equal(publishedOwner.canConfigure, false);
+  const publicView = await (await fetch(origin + path)).json();
+  assert.equal(publicView.canEdit, false);
+  assert.equal(publicView.canConfigure, false);
+  assert.equal(publicView.spentUsd, undefined);
+  assert.equal(publicView.title, "Historical custom title");
+  assert.equal(publicView.cells[0].prompt, task.input.prompt);
+  for (const [outputPath, expected] of [
+    [`/outputs/${grid.cells[0].id}`, "Historical accepted output"],
+    [`/outputs/${grid.cells[0].id}/download`, "Historical accepted output"],
+    [
+      `/outputs/${grid.cells[0].id}/thinking/${task.output!.thinkingId}`,
+      "Historical trace",
+    ],
+  ]) {
+    const output = await fetch(origin + outputPath);
+    assert.equal(output.status, 200);
+    if (outputPath.endsWith("/download")) {
+      assert.match(
+        output.headers.get("content-disposition")!,
+        /\.cat\.none\.md/,
+      );
+      assert.doesNotMatch(
+        output.headers.get("content-disposition")!,
+        /second-field/,
+      );
+    }
+    assert.match(await output.text(), new RegExp(expected));
+  }
+  const reopened = new Store(database, secret);
+  try {
+    assert.deepEqual(reopened.get(grid.id)!.input, input);
+    assert.deepEqual(reopened.workflow(grid.id), accepted);
+    assert.equal(reopened.billing.page(owner, 0).costUsd, 0.25);
   } finally {
     reopened.db.close();
   }

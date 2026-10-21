@@ -1,9 +1,4 @@
-import {
-  expandGrid,
-  type GridInput,
-  type GridAxis,
-  type Cell,
-} from "./domain.js";
+import { expandGrid, type GridInput, type Cell } from "./domain.js";
 import {
   effortLabel,
   imageSettingsSupport,
@@ -13,10 +8,11 @@ import {
 import { criteriaForCell, resolveCriteriaForCell } from "./judge-criteria.js";
 import { variableToken } from "./prompt-variables.js";
 import type { Model } from "./provider.js";
+import { type CommonParameterId, type ParameterId } from "./parameters.js";
+import { ModelResolutionError, modelAliasResolver } from "./model-alias.js";
 
-type ScalarParameter = Exclude<GridAxis["kind"], "variable">;
-export type CompatibilityParameter =
-  ScalarParameter | "judge_criteria" | "variable" | "prompt" | "messages";
+type ScalarParameter = CommonParameterId;
+export type CompatibilityParameter = ParameterId | "prompt" | "messages";
 export type CompatibilityOrigin = {
   parameter: CompatibilityParameter;
   source: "common" | "rows" | "columns";
@@ -56,28 +52,16 @@ function scalarOrigin(
   cell: ExpandedCell,
   parameter: ScalarParameter,
 ): CompatibilityOrigin {
-  for (const source of ["rows", "columns"] as const)
-    if (input[source].kind === parameter)
-      return {
-        parameter,
-        source,
-        caseIndex: source === "rows" ? cell.row : cell.column,
-      };
-  return { parameter, source: "common" };
-}
-
-function criteriaOrigin(
-  input: GridInput,
-  cell: ExpandedCell,
-): CompatibilityOrigin {
-  const criteria = input.judge?.criteria;
-  return criteria && !Array.isArray(criteria)
-    ? {
-        parameter: "judge_criteria",
-        source: criteria.axis,
-        caseIndex: criteria.axis === "rows" ? cell.row : cell.column,
-      }
-    : { parameter: "judge_criteria", source: "common" };
+  const source = input.parameters[parameter]?.kind ?? "common";
+  return {
+    parameter,
+    source,
+    ...(source === "common"
+      ? {}
+      : {
+          caseIndex: source === "rows" ? cell.row : cell.column,
+        }),
+  };
 }
 
 // Origins are mapped only after expansion has identified consumed images.
@@ -95,8 +79,8 @@ function variableImageOrigins(
     const caseIndex = source === "rows" ? cell.row : cell.column;
     const fieldIndex = Number(number) - 1;
     if (
-      axis.kind === "variable" &&
-      axis.values[caseIndex]?.[fieldIndex]?.images?.some((image) =>
+      input.parameters.variable?.kind === source &&
+      axis[caseIndex]?.variable?.[fieldIndex]?.images?.some((image) =>
         consumed.has(image.id),
       )
     )
@@ -131,18 +115,8 @@ function generatorImageContext(
       );
     });
   } else {
-    const origin = scalarOrigin(input, cell, "input_references");
-    const source = origin.source;
-    const axis = source === "common" ? undefined : input[source];
-    const references =
-      axis?.kind === "input_references"
-        ? input.referenceGroups?.[axis.values[origin.caseIndex ?? 0]]
-        : input.inputReferences;
-    if (references?.some((image) => consumed.has(image.id))) {
-      origins.push(origin);
-      if (input.format !== "image")
-        origins.push({ parameter: "prompt", source: "common" });
-    }
+    if (input.promptImages.some((image) => consumed.has(image.id)))
+      origins.push({ parameter: "prompt", source: "common" });
     const variables = variableImageOrigins(input.prompt, input, cell, consumed);
     if (variables.length)
       origins.push({ parameter: "prompt", source: "common" }, ...variables);
@@ -155,13 +129,21 @@ export function analyzeGridCompatibility(
   models: readonly Model[],
 ): GridCompatibilityAnalysis {
   const catalog = new Map(models.map((model) => [model.id, model]));
+  const resolve = modelAliasResolver(catalog);
   const issues: GridCompatibilityIssue[] = [];
   // Canonical admission validates tokens strictly. Advisory previews must still
   // expose known cell settings while unrelated draft templates are unfinished.
   const options = { allowUnresolvedVariables: true };
   const cells = expandGrid(input, options);
   for (const cell of cells) {
-    const model = catalog.get(cell.model);
+    let model: Model | undefined;
+    let modelFailure: ModelResolutionError | undefined;
+    try {
+      model = catalog.get(resolve(cell.model));
+    } catch (error) {
+      if (!(error instanceof ModelResolutionError)) throw error;
+      modelFailure = error;
+    }
     const generator = generatorImageContext(input, cell);
     function issue(
       origins: CompatibilityOrigin[],
@@ -203,7 +185,14 @@ export function analyzeGridCompatibility(
           : `${selected?.name ?? "The selected model"} does not support thinking effort ${effortLabel(effort)}.`,
       );
     }
-    if (cell.model) {
+    if (modelFailure)
+      issue(
+        [scalarOrigin(input, cell, "model")],
+        "unknown",
+        true,
+        modelFailure.message,
+      );
+    if (cell.model && !modelFailure) {
       if (generator.consumed.size && model?.imageInput !== true)
         issue(
           [scalarOrigin(input, cell, "model"), ...generator.origins],
@@ -216,7 +205,7 @@ export function analyzeGridCompatibility(
       if (input.format !== "image")
         effortIssue(model, cell.effort, "model", "effort");
     }
-    if (input.format === "image") {
+    if (input.format === "image" && !modelFailure) {
       const compatibility = imageSettingsSupport(
         model?.imageEndpoints?.map((endpoint) => endpoint.supported_parameters),
         cell.imageSettings ?? {},
@@ -227,23 +216,33 @@ export function analyzeGridCompatibility(
           : [];
         for (const parameter of conflict.parameters)
           if (parameter === "input_references")
-            origins.push(
-              ...(generator.origins.length
-                ? generator.origins
-                : [scalarOrigin(input, cell, parameter)]),
-            );
+            origins.push(...generator.origins);
           else origins.push(scalarOrigin(input, cell, parameter));
         issue(
           origins,
           conflict.support,
           false,
           conflict.reason,
-          conflict.parameters,
+          conflict.parameters.filter(
+            (parameter) => parameter !== "input_references",
+          ),
         );
       }
     }
     if (!cell.judge?.model) continue;
-    const judge = catalog.get(cell.judge.model);
+    let judge: Model | undefined;
+    try {
+      judge = catalog.get(resolve(cell.judge.model));
+    } catch (error) {
+      if (!(error instanceof ModelResolutionError)) throw error;
+      issue(
+        [scalarOrigin(input, cell, "judge_model")],
+        "unknown",
+        true,
+        error.message,
+      );
+      continue;
+    }
     const resolvedCriteria = resolveCriteriaForCell(
       input,
       cell.row,
@@ -264,10 +263,10 @@ export function analyzeGridCompatibility(
         input.format !== "html" &&
         judge?.text === true &&
         judge.structuredOutputs === true;
-      if (needsVision) {
+      if (needsVision && input.format !== "svg" && input.format !== "image") {
         origins.push(...generator.origins);
         if (criterionImages.size) {
-          origins.push(criteriaOrigin(input, cell));
+          origins.push(scalarOrigin(input, cell, "judge_criteria"));
           for (const criterion of criteriaForCell(input, cell.row, cell.column))
             origins.push(
               ...variableImageOrigins(

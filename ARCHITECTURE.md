@@ -120,6 +120,16 @@ durable creation and workflow construction require that result. Stored metadata
 and draft hydration do not confer validation. Advisory previews may inspect an
 unvalidated candidate without granting generation admission.
 
+Current definitions give each parameter one ownership source, with aligned
+case values on rows or columns. Budget remains an inference setting outside
+that ownership model. The form and canonical schemas share field types but
+have separate admission responsibilities.
+
+Historical configuration has a read-only boundary. Stored accepted task inputs
+drive cell projection, billing, and output access independently of editor
+definitions. Configuration compatibility is separate from ownership permission;
+old grids retain ordinary owner controls without entering current admission.
+
 - Model catalogs are loaded by the web process for forms. Provider adapters own
   catalog interpretation, credit lookup, and request preparation; they remain
   separate from HTTP routes and scheduling policy.
@@ -154,21 +164,23 @@ execution. The runtime receives expanded text and referenced images rather than
 templates. Model admission checks only the images each consumer receives;
 storage authorization tracks all configured field attachments.
 
-Judge configuration has one criteria source: a shared rubric or case rubrics
-owned by one variable axis. Setup resolves that source for each cell into the
+Judge configuration has one criteria source: a shared rubric or case-owned
+rubrics on one dimension. Setup resolves that source for each cell into the
 ordinary judgment task input. The scheduler and provider adapter do not interpret
 criteria modes. Frontend case transitions preserve rubric association, and result
 projection selects the same cell-specific criteria for scoring and display.
 
-Prompt-based text formats combine common image references and variable-derived
-attachments into one expanded user input. Provider preparation keeps format
-instructions separate from that multimodal input; judging reuses the same
-expanded input context.
+Non-Chat formats combine common prompt images and variable-derived attachments
+into one expanded user input. Attachment membership belongs to the prompt,
+message, or numbered field rather than an independent parameter. Provider
+preparation keeps format instructions separate from that multimodal input;
+judging reuses the same expanded context.
 
-Storage upgrades and browser draft migration convert historical single-value
-axes into one-field records. Accepted workflow inputs and immutable artifacts
-keep their original payloads; presentation metadata and current-grid references
-remain independent of reusable generated content.
+Storage upgrades and historical read projections interpret old variable records.
+Browser drafts and configuration editing accept only current definitions.
+Accepted workflow inputs and immutable artifacts keep their original payloads;
+presentation metadata and current-grid references remain independent of reusable
+generated content.
 
 Image uploads have independent names and ownership records. Their bytes are
 SHA-256-addressed and shared across uploads and grids. SQLite links each grid to

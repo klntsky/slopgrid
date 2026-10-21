@@ -16,7 +16,7 @@ for (const billed of [false, true])
       let debug: Awaited<ReturnType<typeof crashCheckpoint>> | undefined;
       try {
         const grid = f.grid({
-          rows: { kind: "variable", values: [[{ text: "cat" }]] },
+          rows: [{ variable: [{ text: "cat" }] }],
         });
         await f.engine.api.startGrid({ gridId: grid.id, sessionId: f.owner });
         const call = await f.call(0);

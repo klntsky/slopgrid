@@ -1,4 +1,5 @@
 import type { Page } from "@playwright/test";
+import type { Cell } from "../../server/domain";
 import { test, expect } from "./fixtures";
 import {
   connectOpenRouter,
@@ -11,8 +12,11 @@ import {
 const judgeSection = (page: Page) =>
   page.getByRole("region", { name: "Judge", exact: true });
 
+const layoutTable = (page: Page) =>
+  page.getByRole("table", { name: "Grid layout parameters", exact: true });
+
 const rubric = (page: Page, side: "Row" | "Column", index: number) =>
-  judgeSection(page).getByRole("group", {
+  layoutTable(page).getByRole("group", {
     name: `${side} case ${index} judge criteria`,
     exact: true,
   });
@@ -75,40 +79,29 @@ async function generate(page: Page) {
   return id as string;
 }
 
-test("judge conversion is confirmed, single-source and reversible from a chosen case", async ({
+test("judge criteria have one owner and differing cases reset only after confirmation", async ({
   page,
 }) => {
   await start(page);
   const rowButton = judgeSection(page).getByRole("button", {
-    name: "Make the judge a row variable",
+    name: "Make Judge criteria a row variable",
     exact: true,
   });
   const columnButton = judgeSection(page).getByRole("button", {
-    name: "Make the judge a column variable",
+    name: "Make Judge criteria a column variable",
     exact: true,
   });
-  await expect(rowButton).toBeDisabled();
+  await expect(rowButton).toBeEnabled();
   await expect(columnButton).toBeDisabled();
-  await rowButton.locator("..").hover();
-  await expect(page.getByRole("tooltip")).toContainText(/row/i);
-  await expect(page.getByRole("tooltip")).toContainText(/variable/i);
-  await page.keyboard.press("Escape");
   await page
     .getByRole("combobox", { name: "Rows", exact: true })
     .selectOption("variable");
   await setVariableValues(page, "Rows", ["Alpha", "Beta"]);
   await page
     .getByRole("combobox", { name: "Columns", exact: true })
-    .selectOption("variable");
-  await setVariableValues(page, "Columns", ["Context"]);
-  await expect(rowButton).toBeEnabled();
+    .selectOption("effort");
   await expect(columnButton).toBeEnabled();
-  await confirm(page, false, () => rowButton.click());
-  await expect(
-    judgeSection(page).getByLabel("Criterion 1", { exact: true }),
-  ).toHaveValue("Does the output answer the question?");
-  await expect(rubric(page, "Row", 1)).toHaveCount(0);
-  await confirm(page, true, () => rowButton.click());
+  await rowButton.click();
   await expect(
     rubric(page, "Row", 1).getByLabel("Criterion 1", { exact: true }),
   ).toHaveValue("Does the output answer the question?");
@@ -117,7 +110,7 @@ test("judge conversion is confirmed, single-source and reversible from a chosen 
   ).toHaveValue("Does the output answer the question?");
   await expect(
     page.getByRole("combobox", { name: "Rows", exact: true }),
-  ).toBeDisabled();
+  ).toBeEnabled();
   await expect(columnButton).toHaveCount(0);
   await rubric(page, "Row", 1)
     .getByLabel("Criterion 1", { exact: true })
@@ -135,8 +128,8 @@ test("judge conversion is confirmed, single-source and reversible from a chosen 
     .getByLabel("Correct answer", { exact: true })
     .nth(1)
     .click();
-  const makeShared = rubric(page, "Row", 2).getByRole("button", {
-    name: "Use this judge for all cases",
+  const makeShared = layoutTable(page).getByRole("button", {
+    name: "Make judge criteria common",
     exact: true,
   });
   await confirm(page, false, () => makeShared.click());
@@ -144,32 +137,38 @@ test("judge conversion is confirmed, single-source and reversible from a chosen 
   await confirm(page, true, () => makeShared.click());
   await expect(rubric(page, "Row", 1)).toHaveCount(0);
   await expect(
-    judgeSection(page).getByLabel("Criterion 2", { exact: true }),
-  ).toHaveValue("Does the output contain a blue circle?");
+    judgeSection(page).getByLabel("Criterion 1", { exact: true }),
+  ).toHaveValue("");
   await expect(
-    judgeSection(page).getByLabel("Correct answer", { exact: true }).nth(1),
-  ).toHaveAttribute("aria-pressed", "false");
+    judgeSection(page).getByLabel("Criterion 2", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    judgeSection(page).getByLabel("Correct answer", { exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await judgeSection(page)
+    .getByLabel("Criterion 1", { exact: true })
+    .fill("Does the output retain equal criteria?");
   await expect(rowButton).toBeEnabled();
   await expect(columnButton).toBeEnabled();
-  await confirm(page, true, () => columnButton.click());
-  await expect(
-    rubric(page, "Column", 1).getByLabel("Criterion 2", { exact: true }),
-  ).toHaveValue("Does the output contain a blue circle?");
-  await expect(
-    rubric(page, "Column", 1)
-      .getByLabel("Correct answer", { exact: true })
-      .nth(1),
-  ).toHaveAttribute("aria-pressed", "false");
   await page
     .getByRole("button", { name: "Swap rows and columns", exact: true })
     .click();
+  await columnButton.click();
+  await expect(
+    rubric(page, "Column", 1).getByLabel("Criterion 1", { exact: true }),
+  ).toHaveValue("Does the output retain equal criteria?");
+  await expect(
+    rubric(page, "Column", 2).getByLabel("Criterion 1", { exact: true }),
+  ).toHaveValue("Does the output retain equal criteria?");
+  await makeShared.click();
+  await expect(
+    judgeSection(page).getByLabel("Criterion 1", { exact: true }),
+  ).toHaveValue("Does the output retain equal criteria?");
+  await columnButton.click();
   await page.reload();
   await expect(
-    rubric(page, "Row", 1).getByLabel("Criterion 2", { exact: true }),
-  ).toHaveValue("Does the output contain a blue circle?");
-  await expect(
-    page.getByRole("combobox", { name: "Rows", exact: true }),
-  ).toBeDisabled();
+    rubric(page, "Column", 2).getByLabel("Criterion 1", { exact: true }),
+  ).toHaveValue("Does the output retain equal criteria?");
   await expect(
     page.getByRole("combobox", { name: "Columns", exact: true }),
   ).toBeEnabled();
@@ -193,14 +192,12 @@ test("different case rubrics judge one reused generation independently and survi
   await page
     .getByLabel("Prompt", { exact: true })
     .fill("Answer independently of judge-only reference material.");
-  await confirm(page, true, () =>
-    judgeSection(page)
-      .getByRole("button", {
-        name: "Make the judge a row variable",
-        exact: true,
-      })
-      .click(),
-  );
+  await judgeSection(page)
+    .getByRole("button", {
+      name: "Make Judge criteria a row variable",
+      exact: true,
+    })
+    .click();
   await page.getByRole("button", { name: "Add row case", exact: true }).click();
   await expect(rubric(page, "Row", 3)).toBeVisible();
   await rubric(page, "Row", 3)
@@ -357,3 +354,141 @@ test("different case rubrics judge one reused generation independently and survi
     rubric(page, "Row", 2).getByLabel("Correct answer", { exact: true }).nth(0),
   ).toHaveAttribute("aria-pressed", "false");
 });
+
+for (const side of ["Rows", "Columns"] as const) {
+  test(`one layout table keeps ${side.toLowerCase()} prompt fields and rubrics associated through orientation edits`, async ({
+    page,
+    request,
+  }) => {
+    await request.post("/fixture/reset", {
+      data: { markdownOutput: "Unified layout answer." },
+    });
+    await start(page);
+    await page
+      .getByRole("combobox", { name: side, exact: true })
+      .selectOption("variable");
+    await setVariableValues(page, side, ["Alpha", "Beta"]);
+    await page
+      .getByRole("combobox", {
+        name: side === "Rows" ? "Columns" : "Rows",
+        exact: true,
+      })
+      .selectOption("effort");
+    const token = side === "Rows" ? "$ROW1" : "$COLUMN1";
+    const axis = side === "Rows" ? "Row" : "Column";
+    await page.getByLabel("Prompt", { exact: true }).fill(`Answer ${token}.`);
+    await judgeSection(page)
+      .getByRole("button", {
+        name: `Make Judge criteria a ${axis.toLowerCase()} variable`,
+        exact: true,
+      })
+      .click();
+    const table = layoutTable(page);
+    await table
+      .getByLabel(`${token}, case 1`, { exact: true })
+      .fill("Alpha edited");
+    await rubric(page, axis, 1)
+      .getByLabel("Criterion 1", { exact: true })
+      .fill(`Does the answer match ${token}?`);
+    await rubric(page, axis, 2)
+      .getByLabel("Criterion 1", { exact: true })
+      .fill(`Does ${token} contain a blue circle?`);
+    await page
+      .getByRole("button", { name: "Swap rows and columns", exact: true })
+      .click();
+    const swappedAxis = side === "Rows" ? "Column" : "Row";
+    const swappedToken = side === "Rows" ? "$COLUMN1" : "$ROW1";
+    await expect(
+      table.getByLabel(`${swappedToken}, case 1`, { exact: true }),
+    ).toHaveValue("Alpha edited");
+    await expect(
+      rubric(page, swappedAxis, 1).getByLabel("Criterion 1", { exact: true }),
+    ).toHaveValue(`Does the answer match ${swappedToken}?`);
+    await table
+      .getByLabel(`${swappedToken}, case 2`, { exact: true })
+      .fill("Beta revised");
+    await rubric(page, swappedAxis, 1)
+      .getByLabel("Criterion 1", { exact: true })
+      .fill(`Does the answer respect ${swappedToken}?`);
+    await table
+      .getByRole("button", {
+        name: `Move ${swappedAxis.toLowerCase()} case 2 earlier`,
+        exact: true,
+      })
+      .click();
+    await table
+      .getByRole("button", {
+        name: `Add ${swappedAxis.toLowerCase()} case`,
+        exact: true,
+      })
+      .click();
+    await table
+      .getByRole("button", {
+        name: `Remove ${swappedAxis.toLowerCase()} case 3`,
+        exact: true,
+      })
+      .click();
+    for (const [index, value, criterion] of [
+      [1, "Beta revised", `Does ${swappedToken} contain a blue circle?`],
+      [2, "Alpha edited", `Does the answer respect ${swappedToken}?`],
+    ] as const) {
+      await expect(
+        table.getByLabel(`${swappedToken}, case ${index}`, { exact: true }),
+      ).toHaveValue(value);
+      await expect(
+        rubric(page, swappedAxis, index).getByLabel("Criterion 1", {
+          exact: true,
+        }),
+      ).toHaveValue(criterion);
+    }
+    await selectModel(page, "fixture/text");
+    await selectJudge(page);
+    await connectOpenRouter(page);
+    const id = await generate(page);
+    await expectProgress(page, 2, 2);
+    const grid: { cells: Cell[] } = await (
+      await page.request.get(`/api/grids/${id}`)
+    ).json();
+    expect(grid.cells).toHaveLength(2);
+    for (const cell of grid.cells) {
+      const index = swappedAxis === "Row" ? cell.row : cell.column;
+      const value = index === 0 ? "Beta revised" : "Alpha edited";
+      expect(cell.prompt).toBe(`Answer ${value}.`);
+      expect(cell.judge?.criteria).toEqual([
+        {
+          text:
+            index === 0
+              ? "Does Beta revised contain a blue circle?"
+              : "Does the answer respect Alpha edited?",
+          correctAnswer: true,
+        },
+      ]);
+      expect(cell.judge?.results?.map(({ verdict }) => verdict)).toEqual([
+        index !== 0,
+      ]);
+      const output = await page.request.get(`/outputs/${cell.id}/download`);
+      expect(output.status()).toBe(200);
+      expect(await output.text()).toContain("Unified layout answer.");
+    }
+    const generations = (
+      await (await request.get("/fixture/chat-requests")).json()
+    ).map(requestText);
+    expect(generations).toHaveLength(2);
+    expect(generations).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("Answer Beta revised."),
+        expect.stringContaining("Answer Alpha edited."),
+      ]),
+    );
+    const judgments = (
+      await (await request.get("/fixture/judge-requests")).json()
+    ).map(requestText);
+    expect(judgments).toHaveLength(2);
+    expect(judgments).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("Does Beta revised contain a blue circle?"),
+        expect.stringContaining("Does the answer respect Alpha edited?"),
+      ]),
+    );
+  });
+}

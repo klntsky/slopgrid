@@ -20,6 +20,7 @@ import type { Store } from "../server/store.js";
 import { referencePng } from "./reference-image-fixture.js";
 import { removeStoredReferenceDimensions } from "./reference-storage-fixture.js";
 import { validatedGrid } from "./grid-storage-fixture.js";
+import { currentInput } from "./current-grid-fixture.js";
 
 function completedChatGrid(
   store: Store,
@@ -27,16 +28,18 @@ function completedChatGrid(
   messages: ChatMessage[],
   artifactId: string,
 ) {
-  const input: Grid["input"] = {
+  const input = currentInput({
     format: "chat-template",
     messages,
     prompt: "",
-    rows: { kind: "model", values: ["fixture/text"] },
-    columns: { kind: "effort", values: ["none"] },
-    model: "fixture/text",
-    effort: "none",
     budgetUsd: 1,
-  };
+    parameters: {
+      model: { kind: "rows" },
+      effort: { kind: "columns" },
+    },
+    rows: [{ model: "fixture/text" }],
+    columns: [{ effort: "none" }],
+  });
   const grid: Grid = {
     id: token(),
     owner,
@@ -71,18 +74,19 @@ test("private outputs require ownership, isolated grants are scoped and revoked 
     store.saveSession({ id, created: Date.now() });
   const cookie = `slopgrid=${owner}`;
   function makeGrid(format: Grid["input"]["format"], running = false) {
-    const input: Grid["input"] = {
+    const input = currentInput({
       format,
       prompt: "$ROW1",
-      rows: { kind: "variable", values: [[{ text: "cat" }]] },
-      columns:
-        format === "image"
-          ? { kind: "size", values: ["auto"] }
-          : { kind: "effort", values: ["none"] },
-      model: "fixture/text",
-      effort: "none",
       budgetUsd: 1,
-    };
+      parameters: {
+        variable: { kind: "rows" },
+        ...(format === "image"
+          ? { size: { kind: "columns" as const } }
+          : { effort: { kind: "columns" as const } }),
+      },
+      rows: [{ variable: [{ text: "cat" }] }],
+      columns: [format === "image" ? { size: "auto" } : { effort: "none" }],
+    });
     const g: Grid = {
       id: token(),
       owner,
@@ -376,7 +380,7 @@ test("committed judged outputs stay readable and downloadable without weakening 
   const ownerHeaders = { cookie: `slopgrid=${owner}` };
   for (const format of ["markdown", "chat-template", "svg", "image"] as const) {
     for (const status of ["pending", "running", "error", "complete"] as const) {
-      const input: Grid["input"] = {
+      const input = currentInput({
         format,
         prompt: "A saved artifact",
         ...(format === "chat-template"
@@ -386,20 +390,25 @@ test("committed judged outputs stay readable and downloadable without weakening 
               ],
             }
           : {}),
-        rows: { kind: "model", values: ["fixture/text"] },
-        columns:
-          format === "image"
-            ? { kind: "size", values: ["auto"] }
-            : { kind: "effort", values: ["none"] },
-        model: "fixture/text",
-        effort: "none",
         budgetUsd: 1,
-        judge: {
-          criteria: [{ text: "Is this saved?", correctAnswer: false }],
-          model: "fixture/judge",
-          effort: "default",
+        judge: true,
+        parameters: {
+          model: { kind: "rows" },
+          ...(format === "image"
+            ? { size: { kind: "columns" as const } }
+            : { effort: { kind: "columns" as const } }),
+          judge_model: { kind: "common", value: "fixture/judge" },
+          judge_effort: { kind: "common", value: "default" },
+          judge_criteria: {
+            kind: "common",
+            value: [{ text: "Is this saved?", correctAnswer: false }],
+          },
         },
-      };
+        rows: [
+          { model: format === "image" ? "fixture/image" : "fixture/text" },
+        ],
+        columns: [format === "image" ? { size: "auto" } : { effort: "none" }],
+      });
       const cell = {
         ...expandGrid(input)[0],
         id: token(),
@@ -499,7 +508,7 @@ test("committed judged outputs stay readable and downloadable without weakening 
       assert.equal(view.cells[0].outputReady, true);
       assert.equal(view.cells[0].outputURL, `${origin}/outputs/${cell.id}`);
       assert.equal(view.cells[0].status, status);
-      assert.equal(view.input.judge.criteria[0].correctAnswer, false);
+      assert.equal(view.cells[0].judge.criteria[0].correctAnswer, false);
       const publicationError = store.publish(grid.id, "unlisted", null);
       if (status === "running") {
         assert.equal(typeof publicationError, "string");
@@ -525,20 +534,23 @@ test("uncommitted judged files are not exposed before generation commits", async
   const { origin, store } = await appFixture(t);
   const owner = token();
   store.saveSession({ id: owner, created: Date.now() });
-  const input: Grid["input"] = {
-    format: "markdown",
+  const input = currentInput({
     prompt: "Uncommitted artifact",
-    rows: { kind: "model", values: ["fixture/text"] },
-    columns: { kind: "effort", values: ["none"] },
-    model: "fixture/text",
-    effort: "none",
     budgetUsd: 1,
-    judge: {
-      criteria: [{ text: "Is this saved?", correctAnswer: true }],
-      model: "fixture/judge",
-      effort: "default",
+    judge: true,
+    parameters: {
+      model: { kind: "rows" },
+      effort: { kind: "columns" },
+      judge_model: { kind: "common", value: "fixture/judge" },
+      judge_effort: { kind: "common", value: "default" },
+      judge_criteria: {
+        kind: "common",
+        value: [{ text: "Is this saved?", correctAnswer: true }],
+      },
     },
-  };
+    rows: [{ model: "fixture/text" }],
+    columns: [{ effort: "none" }],
+  });
   const cellId = token();
   const grid: Grid = {
     id: token(),
@@ -748,4 +760,66 @@ test("reused chat outputs render and download destination-owned per-message atta
     artifact,
   );
   assert.doesNotMatch(artifact, /"images"|"id"|"name"|data:image/);
+});
+
+test("missing input image bytes do not hide a completed conversation or weaken inference loading", async (t) => {
+  const { origin, store } = await appFixture(t);
+  const owner = token();
+  store.saveSession({ id: owner, created: Date.now() });
+  const session = { id: owner, created: Date.now() };
+  const available = store.references.add(
+    referencePng,
+    "available.png",
+    session,
+  )!;
+  const missing = store.references.add(
+    Buffer.concat([referencePng, Buffer.from("different")]),
+    "missing.png",
+    session,
+  )!;
+  const artifactId = token();
+  const artifact = writeChatOutput([
+    { role: "user", content: "Saved question" },
+    { role: "assistant", content: "Durable answer" },
+  ]);
+  store.files.write(artifactId, { "messages.json": artifact });
+  const grid = completedChatGrid(
+    store,
+    owner,
+    [
+      { role: "user", content: "Saved question", images: [available, missing] },
+      { role: "unfilled", content: "" },
+    ],
+    artifactId,
+  );
+  rmSync(store.references.path(missing.id)!);
+  await assert.rejects(
+    store.references.loader()([missing.id]),
+    /Reference image is unavailable/,
+  );
+  const headers = { cookie: `slopgrid=${owner}` };
+  const output = await fetch(`${origin}/outputs/${grid.cells[0].id}`, {
+    headers,
+  });
+  assert.equal(output.status, 200);
+  const html = await output.text();
+  assert.match(html, /Saved question/);
+  assert.match(html, /Durable answer/);
+  assert.ok(
+    html.includes(`data:image/png;base64,${referencePng.toString("base64")}`),
+  );
+  assert.match(html, /alt="missing.png"/);
+  const raw = await fetch(`${origin}/outputs/${grid.cells[0].id}?raw=1`, {
+    headers,
+  });
+  assert.equal(raw.status, 200);
+  assert.equal((await raw.json())[1].content, "Durable answer");
+  assert.equal(
+    (await fetch(`${origin}/outputs/${grid.cells[0].id}`)).status,
+    404,
+  );
+  assert.equal(
+    readFileSync(store.files.path(artifactId, "messages.json")!, "utf8"),
+    artifact,
+  );
 });

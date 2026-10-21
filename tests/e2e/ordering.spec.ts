@@ -19,7 +19,7 @@ test("delayed HTTP snapshots cannot replace newer streamed drafts", async ({
       { name: f.cookieName, value: f.owner, url: f.origin },
     ]);
     const grid = f.grid({
-      rows: { kind: "variable", values: [[{ text: "cat" }]] },
+      rows: [{ variable: [{ text: "cat" }] }],
     });
     await f.engine.api.startGrid({ gridId: grid.id, sessionId: f.owner });
     const call = await f.call(0);
@@ -94,7 +94,7 @@ test("late HTTP and reconnected stream snapshots cannot roll back content, think
       { name: f.cookieName, value: f.owner, url: f.origin },
     ]);
     const grid = f.grid({
-      rows: { kind: "variable", values: [[{ text: "cat" }]] },
+      rows: [{ variable: [{ text: "cat" }] }],
     });
     const endpoint = `${f.origin}/api/grids/${grid.id}`;
     await f.engine.api.startGrid({ gridId: grid.id, sessionId: f.owner });

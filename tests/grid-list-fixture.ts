@@ -3,6 +3,7 @@ import { expandGrid, gridSchema, type Grid } from "../server/domain.js";
 import { validatedGrid } from "./grid-storage-fixture.js";
 import type { Store } from "../server/store.js";
 import { createWorkflow } from "../server/workflow.js";
+import { currentInput } from "./current-grid-fixture.js";
 
 export function seedGridLists(
   store: Store,
@@ -28,15 +29,15 @@ export function seedGridLists(
           : i === listed
             ? "unlisted"
             : "private";
-    const input: Grid["input"] = {
-      format: "markdown",
+    const input = currentInput({
       prompt: `Grid ${i}`,
-      model: "fixture/text",
-      rows: { kind: "model", values: ["fixture/text"] },
-      columns: { kind: "effort", values: ["default"] },
-      effort: "default",
-      budgetUsd: 3,
-    };
+      parameters: {
+        model: { kind: "rows" },
+        effort: { kind: "columns" },
+      },
+      rows: [{ model: "fixture/text" }],
+      columns: [{ effort: "default" }],
+    });
     const grid: Grid = {
       id,
       owner: i < counts.owned ? owner : otherOwner,

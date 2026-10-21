@@ -14,7 +14,7 @@ function template(f: RuntimeFixture) {
   return f.grid({
     format: "chat-template",
     budgetUsd: 1,
-    rows: { kind: "variable", values: [[{ text: "one" }]] },
+    rows: [{ variable: [{ text: "one" }] }],
     messages: [
       { role: "user", content: "Question $ROW1" },
       { role: "unfilled", content: "" },

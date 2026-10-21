@@ -14,6 +14,7 @@ import { canJudge } from "../../server/compatibility";
 import { promptVariableIssue } from "../../server/prompt-variables";
 import { judgeCriteriaIssue } from "../../server/judge-criteria";
 import { compatibilityPreviewInput, validateDraftInput } from "./draft-input";
+import type { InputAction } from "./change-axis";
 
 function useBudgetEstimate(input: GridInput) {
   const [minute, setMinute] = useState(() => Math.floor(Date.now() / 60000));
@@ -43,24 +44,21 @@ export function useCreateForm() {
     formatSelected && connection.data?.connected === true,
     input.format,
   );
-  const cellCount = input.rows.values.length * input.columns.values.length;
+  const cellCount = input.rows.length * input.columns.length;
   const estimated = useBudgetEstimate(validation.candidate);
   const parallelWorkers =
     input.format === "image"
       ? Math.max(1, Math.min(cellCount, capacity.data?.parallelWorkers ?? 1))
       : undefined;
   const workersPending = !capacity.isSuccess || capacity.isFetching;
-  const commonModel = ![input.rows.kind, input.columns.kind].includes("model");
-  const commonEffort =
-    input.format !== "image" &&
-    ![input.rows.kind, input.columns.kind].includes("effort");
-  const modelMissing = commonModel && !input.model;
+  const commonModel = input.parameters.model.kind === "common";
+  const commonEffort = input.parameters.effort?.kind === "common";
+  const modelMissing =
+    input.parameters.model.kind === "common" && !input.parameters.model.value;
   const commonJudgeModel =
-    !!input.judge &&
-    ![input.rows.kind, input.columns.kind].includes("judge_model");
+    input.judge && input.parameters.judge_model?.kind === "common";
   const commonJudgeEffort =
-    !!input.judge &&
-    ![input.rows.kind, input.columns.kind].includes("judge_effort");
+    input.judge && input.parameters.judge_effort?.kind === "common";
   const compatibilityAnalysis = useMemo(
     () =>
       analyzeGridCompatibility(
@@ -83,14 +81,11 @@ export function useCreateForm() {
     );
   const judgeIssue = input.judge
     ? (judgeCriteriaIssue(input) ??
-      (commonJudgeModel && !input.judge.model
+      (input.parameters.judge_model?.kind === "common" &&
+      !input.parameters.judge_model.value
         ? "Select a judge model."
         : undefined))
-    : [input.rows, input.columns].some(
-          (axis) => axis.kind === "judge_model" || axis.kind === "judge_effort",
-        )
-      ? "Add a judge to use judge dimensions."
-      : undefined;
+    : undefined;
   const variableIssue = promptVariableIssue(input);
   const submission = useCreateSubmission({
     draft,
@@ -107,6 +102,11 @@ export function useCreateForm() {
   function update(change: Parameters<typeof editing.update>[0]) {
     editing.update(change);
     submission.reset();
+  }
+  function dispatch(action: InputAction) {
+    const applied = editing.dispatch(action);
+    if (applied) submission.reset();
+    return applied;
   }
   function selectFormat(format: GridInput["format"]) {
     submission.reset();
@@ -131,13 +131,13 @@ export function useCreateForm() {
       modelMissing && "Select a model.",
       judgeIssue,
       ...new Set(blockingCompatibilityIssues.map((issue) => issue.reason)),
-      !input.rows.values.length && "Select row values.",
-      !input.columns.values.length && "Select column values.",
+      !input.rows.length && "Select row values.",
+      !input.columns.length && "Select column values.",
       !connection.data?.connected && "Connect OpenRouter.",
       isChatFormat(input.format)
         ? chatInputIssue(input.messages)
         : !input.prompt.trim() &&
-          (input.format === "image" || !input.inputReferences?.length) &&
+          (input.format === "image" || !input.promptImages.length) &&
           "Enter a prompt.",
       variableIssue,
       input.format !== "image" &&
@@ -157,11 +157,9 @@ export function useCreateForm() {
     compatibilityIssues,
     compatibilityCells,
     update,
+    dispatch,
     selectFormat,
-    swapAxes: () => {
-      editing.swapAxes();
-      submission.reset();
-    },
+    swapAxes: () => dispatch({ type: "swap" }),
     setReuseArtifacts: editing.setReuseArtifacts,
     connection,
     capacity,

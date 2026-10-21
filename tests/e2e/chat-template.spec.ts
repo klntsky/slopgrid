@@ -83,11 +83,8 @@ test("chat template editing, persistence, sequential output and exports", async 
   await setVariableValues(page, "Rows", ["one"]);
   await page
     .getByRole("combobox", { name: "Columns", exact: true })
-    .selectOption("variable");
-  await setVariableValues(page, "Columns", ["two"]);
-  await page
-    .getByLabel("Message 3", { exact: true })
-    .fill("Next question $COLUMN1");
+    .selectOption("effort");
+  await page.getByLabel("Message 3", { exact: true }).fill("Next question two");
   await selectModel(page, "fixture/text");
   await connectOpenRouter(page);
   await page.getByRole("button", { name: "Generate", exact: true }).click();

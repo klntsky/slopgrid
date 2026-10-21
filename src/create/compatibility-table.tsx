@@ -118,9 +118,7 @@ export function CompatibilityFeedback({
     return null;
   const caption = `${sourceLabel(origin)} compatibility`;
   function caseLabel(side: "rows" | "columns", index: number) {
-    return input[side].values.length
-      ? `Case ${index + 1}`
-      : "Not selected (preview)";
+    return input[side].length ? `Case ${index + 1}` : "Not selected (preview)";
   }
   return (
     <div className="compatibility-table-scroll">
@@ -174,8 +172,7 @@ type MatrixParameter =
   | "size"
   | "aspect_ratio"
   | "quality"
-  | "background"
-  | "input_references";
+  | "background";
 
 function isMatrixParameter(
   parameter: CompatibilityParameter,
@@ -186,8 +183,7 @@ function isMatrixParameter(
     parameter === "size" ||
     parameter === "aspect_ratio" ||
     parameter === "quality" ||
-    parameter === "background" ||
-    parameter === "input_references"
+    parameter === "background"
   );
 }
 
@@ -215,17 +211,6 @@ function ParameterCompatibilityGrid({
   function value(cell: GridCompatibilityAnalysis["cells"][number]) {
     if (parameter === "effort") return cell.effort;
     if (parameter === "judge_effort") return cell.judge?.effort ?? "default";
-    if (parameter === "input_references") {
-      const axis =
-        origin.source === "common" ? undefined : input[origin.source];
-      if (axis?.kind === "input_references")
-        return axis.values[origin.source === "rows" ? cell.row : cell.column];
-      const count =
-        cell.imageSettings?.input_references?.length ??
-        cell.images?.length ??
-        0;
-      return `${count} images`;
-    }
     return cell.imageSettings?.[parameter] || "auto";
   }
   const relevant = cells.filter(

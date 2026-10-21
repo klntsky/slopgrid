@@ -1,6 +1,6 @@
 import {
   gridSchema,
-  isChatFormat,
+  type GridDraftInput,
   type GridInput,
   type ValidatedGridInput,
 } from "../../server/domain";
@@ -15,32 +15,34 @@ function localFile(
   file?: File,
   remove = false,
 ): Promise<File | undefined> {
-  return new Promise((resolve, reject) => {
-    const opening = indexedDB.open("slopgrid-reference-files", 1);
-    opening.onupgradeneeded = () => opening.result.createObjectStore("files");
-    opening.onerror = () => reject(opening.error);
-    opening.onsuccess = () => {
-      const db = opening.result;
-      const transaction = db.transaction(
-        "files",
-        file || remove ? "readwrite" : "readonly",
-      );
-      const store = transaction.objectStore("files");
-      const request = file
-        ? store.put(file, id)
-        : remove
-          ? store.delete(id)
-          : store.get(id);
-      transaction.oncomplete = () => {
-        db.close();
-        resolve(file ?? (remove ? undefined : request.result));
-      };
-      transaction.onabort = transaction.onerror = () => {
-        db.close();
-        reject(transaction.error);
-      };
+  const { promise, resolve, reject } = Promise.withResolvers<
+    File | undefined
+  >();
+  const opening = indexedDB.open("slopgrid-reference-files", 1);
+  opening.onupgradeneeded = () => opening.result.createObjectStore("files");
+  opening.onerror = () => reject(opening.error);
+  opening.onsuccess = () => {
+    const db = opening.result;
+    const transaction = db.transaction(
+      "files",
+      file || remove ? "readwrite" : "readonly",
+    );
+    const store = transaction.objectStore("files");
+    const request = file
+      ? store.put(file, id)
+      : remove
+        ? store.delete(id)
+        : store.get(id);
+    transaction.oncomplete = () => {
+      db.close();
+      resolve(file ?? (remove ? undefined : request.result));
     };
-  });
+    transaction.onabort = transaction.onerror = () => {
+      db.close();
+      reject(transaction.error);
+    };
+  };
+  return promise;
 }
 export const readReferenceFile = (id: string) => localFile(id);
 export const removeReferenceFile = (id: string) =>
@@ -50,60 +52,34 @@ export async function saveReferenceFile(file: File): Promise<ReferenceImage> {
   await localFile(id, file);
   return { id, name: file.name };
 }
+
+export function referenceLists(
+  input: Pick<
+    GridInput | GridDraftInput,
+    "promptImages" | "rows" | "columns" | "messages"
+  >,
+): ReferenceImage[][] {
+  return [
+    input.promptImages,
+    ...(input.messages ?? []).flatMap((message) =>
+      message.images ? [message.images] : [],
+    ),
+    ...[...input.rows, ...input.columns].flatMap((entry) => [
+      ...(entry.variable ?? []).flatMap((field) =>
+        field.images ? [field.images] : [],
+      ),
+    ]),
+  ];
+}
+
 export async function uploadReferences(
   input: ValidatedGridInput,
   uploaded: (localId: string, image: ReferenceImage) => void,
   signal: AbortSignal,
 ): Promise<ValidatedGridInput> {
-  const names =
-    input.format === "image"
-      ? [input.rows, input.columns].flatMap((axis) =>
-          axis.kind === "input_references" ? axis.values : [],
-        )
-      : [];
-  const groups = Object.fromEntries(
-    names.map((name) => [name, [...input.referenceGroups![name]]]),
-  );
-  const inputReferences = !isChatFormat(input.format)
-    ? [...(input.inputReferences ?? [])]
-    : undefined;
-  const messages = input.messages?.map((message) => ({
-    ...message,
-    ...(message.images && { images: [...message.images] }),
-  }));
-  const cloneAxis = (axis: GridInput["rows"]): GridInput["rows"] =>
-    axis.kind === "variable"
-      ? {
-          ...axis,
-          values: axis.values.map((entry) =>
-            entry.map((field) => ({
-              ...field,
-              ...(field.images && { images: [...field.images] }),
-            })),
-          ),
-        }
-      : axis;
-  const rows = cloneAxis(input.rows);
-  const columns = cloneAxis(input.columns);
-  const references = [
-    ...(isChatFormat(input.format)
-      ? (messages ?? []).flatMap((message) =>
-          message.images ? [message.images] : [],
-        )
-      : [
-          ...Object.values(groups),
-          ...(inputReferences ? [inputReferences] : []),
-        ]),
-    ...[rows, columns].flatMap((axis) =>
-      axis.kind === "variable"
-        ? axis.values.flatMap((entry) =>
-            entry.flatMap((field) => (field.images ? [field.images] : [])),
-          )
-        : [],
-    ),
-  ];
+  const prepared: GridInput = structuredClone(input);
   const replacements = new Map<string, ReferenceImage>();
-  for (const images of references) {
+  for (const images of referenceLists(prepared)) {
     for (let index = 0; index < images.length; index++) {
       const image = images[index];
       if (!image.id.startsWith("local-")) continue;
@@ -138,12 +114,5 @@ export async function uploadReferences(
       images[index] = saved;
     }
   }
-  return gridSchema.parse({
-    ...input,
-    rows,
-    columns,
-    messages,
-    referenceGroups: input.format === "image" ? groups : undefined,
-    inputReferences,
-  });
+  return gridSchema.parse(prepared);
 }

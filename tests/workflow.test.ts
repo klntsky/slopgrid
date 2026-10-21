@@ -7,6 +7,7 @@ import {
   type GridInput,
 } from "../server/domain.js";
 import { createWorkflow } from "../server/workflow.js";
+import { currentDefinition } from "./current-grid-fixture.js";
 
 const reference = { id: "reference", name: "answer.png" };
 const second = { id: "second", name: "second.png" };
@@ -19,31 +20,37 @@ function workflow(source: GridInput) {
   return { input, cells, tasks: createWorkflow(input, cells) };
 }
 function base(): GridInput {
-  return {
-    format: "markdown",
-    prompt: "Solve $ROW1",
-    rows: { kind: "variable", values: [[{ text: "question" }]] },
-    columns: {
-      kind: "variable",
-      values: [
-        [{ text: "first answer", images: [reference] }],
-        [{ text: "second answer", images: [second] }],
-      ],
+  return currentDefinition({
+    prompt: "Solve $COLUMN2",
+    parameters: {
+      variable: { kind: "columns" },
+      judge_model: { kind: "common", value: "fixture/judge" },
+      judge_criteria: {
+        kind: "common",
+        value: [
+          {
+            text: "Does the solution to $COLUMN2 equal $COLUMN1?",
+            correctAnswer: true,
+          },
+        ],
+      },
     },
-    model: "fixture/text",
-    effort: "default",
-    budgetUsd: 3,
-    judge: {
-      model: "fixture/judge",
-      effort: "default",
-      criteria: [
-        {
-          text: "Does the solution to $ROW1 equal $COLUMN1?",
-          correctAnswer: true,
-        },
-      ],
-    },
-  };
+    columns: [
+      {
+        variable: [
+          { text: "first answer", images: [reference] },
+          { text: "question" },
+        ],
+      },
+      {
+        variable: [
+          { text: "second answer", images: [second] },
+          { text: "question" },
+        ],
+      },
+    ],
+    judge: true,
+  });
 }
 
 test("judge-only variable dimensions expand criteria without leaking answer text or images into generation", () => {
@@ -89,23 +96,23 @@ test("judge-only variable dimensions expand criteria without leaking answer text
 
 test("criteria expand all fields nonrecursively and deduplicate attachments across the combined criteria message", () => {
   const source = base();
-  source.rows = {
-    kind: "variable",
-    values: [
-      [
+  source.columns = [
+    {
+      id: "fields",
+      variable: [
+        { text: "answer", images: [reference] },
         { text: "question" },
         { text: "$COLUMN1 literal", images: [second, reference] },
       ],
+    },
+  ];
+  source.parameters.judge_criteria = {
+    kind: "common",
+    value: [
+      { text: "$COLUMN3 $COLUMN1 $COLUMN3", correctAnswer: false },
+      { text: "$COLUMN1 $COLUMN3", correctAnswer: true },
     ],
   };
-  source.columns = {
-    kind: "variable",
-    values: [[{ text: "answer", images: [reference] }]],
-  };
-  source.judge!.criteria = [
-    { text: "$ROW2 $COLUMN1 $ROW2", correctAnswer: false },
-    { text: "$COLUMN1 $ROW2", correctAnswer: true },
-  ];
   const { tasks } = workflow(source);
   const judgment = tasks.find((task) => task.kind === "judge")!;
   assert.deepEqual(judgment.input.criteria, [
@@ -117,10 +124,10 @@ test("criteria expand all fields nonrecursively and deduplicate attachments acro
 
 test("non-chat generator images are copied into generation tasks but criterion-only images remain separate", () => {
   const source = base();
-  source.rows = {
-    kind: "variable",
-    values: [[{ text: "question", images: [second] }]],
-  };
+  source.columns = source.columns.map((record) => ({
+    ...record,
+    variable: [record.variable![0], { text: "question", images: [second] }],
+  }));
   const { tasks } = workflow(source);
   const generation = tasks.find((task) => task.kind === "generation")!;
   assert.deepEqual(generation.input.images, [second]);
@@ -133,11 +140,17 @@ test("non-chat generator images are copied into generation tasks but criterion-o
 
 test("judge criteria participate in setup validation including numbered fields and scalar-axis references", () => {
   const source = base();
-  for (const text of ["$COLUMN", "$COLUMN0", "$COLUMN2", "$ROW2"]) {
+  for (const text of ["$COLUMN", "$COLUMN0", "$COLUMN3", "$ROW1"]) {
     assert.equal(
       gridSchema.safeParse({
         ...source,
-        judge: { ...source.judge, criteria: [{ text, correctAnswer: true }] },
+        parameters: {
+          ...source.parameters,
+          judge_criteria: {
+            kind: "common",
+            value: [{ text, correctAnswer: true }],
+          },
+        },
       }).success,
       false,
       text,
@@ -146,33 +159,34 @@ test("judge criteria participate in setup validation including numbered fields a
   assert.equal(
     gridSchema.safeParse({
       ...source,
-      columns: { kind: "effort", values: ["default"] },
+      parameters: { ...source.parameters, variable: { kind: "rows" } },
+      rows: [{ id: "question", variable: [{ text: "question" }] }],
+      columns: [{}],
     }).success,
     false,
   );
   assert.equal(
-    gridSchema.safeParse({ ...source, judge: undefined }).success,
+    gridSchema.safeParse({ ...source, judge: false }).success,
     false,
   );
 });
 
-test("judge-only row variables and double-digit column fields preserve independent per-cell expansion", () => {
+test("row criteria and double-digit column fields preserve independent per-cell expansion", () => {
   const source = base();
-  source.rows = {
-    kind: "variable",
-    values: [[{ text: "yes" }], [{ text: "no" }]],
-  };
-  source.columns = {
-    kind: "variable",
-    values: [
-      Array.from({ length: 10 }, (_, index) => ({ text: `A${index + 1}` })),
-      Array.from({ length: 10 }, (_, index) => ({ text: `B${index + 1}` })),
+  source.parameters.judge_criteria = { kind: "rows" };
+  source.rows = ["yes", "no"].map((answer) => ({
+    id: answer,
+    judge_criteria: [
+      { text: `${answer} $COLUMN10 $COLUMN1`, correctAnswer: false },
     ],
-  };
+  }));
+  source.columns = ["A", "B"].map((prefix) => ({
+    id: prefix,
+    variable: Array.from({ length: 10 }, (_, index) => ({
+      text: `${prefix}${index + 1}`,
+    })),
+  }));
   source.prompt = "Question $COLUMN10 $COLUMN1";
-  source.judge!.criteria = [
-    { text: "$ROW1 $COLUMN10 $COLUMN1", correctAnswer: false },
-  ];
   const { tasks } = workflow(source);
   assert.deepEqual(
     tasks
@@ -195,39 +209,51 @@ test("judge-only row variables and double-digit column fields preserve independe
 
 for (const side of ["rows", "columns"] as const)
   test(`${side} case rubrics resolve independently without changing generation grouping`, () => {
-    const source = base();
-    const token = side === "rows" ? "$ROW" : "$COLUMN";
-    source.prompt = side === "rows" ? "Solve $COLUMN1" : "Solve $ROW1";
-    source.rows = {
-      kind: "variable",
-      values: [[{ text: "A" }], [{ text: "B" }]],
-    };
-    source.columns = source.rows;
-    source[side] = {
-      kind: "variable",
-      values: [
-        [{ text: "unused" }, { text: "first secret", images: [reference] }],
-        [{ text: "unused image", images: [second] }, { text: "second secret" }],
+    const source = currentDefinition({
+      prompt: "Solve question",
+      judge: true,
+      parameters: {
+        variable: { kind: side },
+        judge_criteria: { kind: side },
+        effort: { kind: side === "rows" ? "columns" : "rows" },
+      },
+      [side === "rows" ? "columns" : "rows"]: [
+        { effort: "none" },
+        { effort: "high" },
       ],
-    };
-    source.judge!.criteria = {
-      axis: side,
-      cases: [
-        [{ text: `Does ${token}2 match?`, correctAnswer: false }],
-        [
+    });
+    const token = side === "rows" ? "$ROW" : "$COLUMN";
+    source[side] = [
+      {
+        id: "first",
+        variable: [
+          { text: "unused" },
+          { text: "first secret", images: [reference] },
+        ],
+        judge_criteria: [
+          { text: `Does ${token}2 match?`, correctAnswer: false },
+        ],
+      },
+      {
+        id: "second",
+        variable: [
+          { text: "unused image", images: [second] },
+          { text: "second secret" },
+        ],
+        judge_criteria: [
           { text: `Does ${token}2 match?`, correctAnswer: true },
           { text: "Is this red?", correctAnswer: false },
         ],
-      ],
-    };
+      },
+    ];
     const { input, cells, tasks } = workflow(source);
     const generations = tasks.filter((task) => task.kind === "generation");
     const judgments = tasks.filter((task) => task.kind === "judge");
     assert.equal(generations.length, 2);
     assert.equal(judgments.length, 4);
     assert.deepEqual(
-      generations.map((task) => task.input.prompt),
-      ["Solve A", "Solve B"],
+      generations.map((task) => task.input.effort),
+      ["none", "high"],
     );
     for (const generation of generations) {
       assert.equal(generation.input.images, undefined);
@@ -251,5 +277,8 @@ for (const side of ["rows", "columns"] as const)
         index === 0 ? [reference] : undefined,
       );
     }
-    assert.deepEqual(input.judge!.criteria, source.judge!.criteria);
+    assert.deepEqual(
+      input[side].map((record) => record.judge_criteria),
+      source[side].map((record) => record.judge_criteria),
+    );
   });

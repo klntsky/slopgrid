@@ -115,6 +115,7 @@ export function projectWorkflow(
       ? {
           model: judge.input.model,
           effort: judge.input.effort,
+          criteria: judge.input.criteria,
           status: judge.status,
           attemptId: judge.attemptId,
           error: judge.error,

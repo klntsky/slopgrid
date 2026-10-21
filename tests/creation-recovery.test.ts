@@ -7,16 +7,15 @@ import {
   storedOwnerCreationReceipts,
   moveCreatedGridToAnotherAccount,
 } from "./creation-receipt-fixture.js";
+import { currentDefinition } from "./current-grid-fixture.js";
 
-const input = {
-  format: "markdown",
+const input = currentDefinition({
   prompt: "Recovery",
-  model: "fixture/text",
-  effort: "none",
   budgetUsd: 0.1,
-  rows: { kind: "variable", values: [[{ text: "one" }]] },
-  columns: { kind: "effort", values: ["none"] },
-};
+  parameters: { variable: { kind: "rows" }, effort: { kind: "columns" } },
+  rows: [{ variable: [{ text: "one" }] }],
+  columns: [{ effort: "none" }],
+});
 
 test("concurrent creation retries and lost responses converge on one grid and one inference", async () => {
   const f = await runtimeFixture();

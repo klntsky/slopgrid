@@ -78,11 +78,10 @@ for (const format of ["Markdown", "SVG", "Static website"] as const) {
     await setVariableValues(page, "Rows", ["shape"]);
     await page
       .getByRole("combobox", { name: "Columns", exact: true })
-      .selectOption("variable");
-    await setVariableValues(page, "Columns", ["context"]);
+      .selectOption("effort");
     await page
       .getByLabel("Prompt", { exact: true })
-      .fill("Recreate $ROW1 under $COLUMN1");
+      .fill("Recreate $ROW1 under context");
     await selectModel(
       page,
       format === "Markdown" ? "fixture/other" : "fixture/text",
@@ -163,24 +162,27 @@ for (const format of ["Markdown", "SVG", "Static website"] as const) {
       page.getByRole("img", { name: common.name, exact: true }),
     ).toBeVisible();
     if (format === "Markdown") {
-      for (const other of ["SVG", "Static website", "Markdown"] as const) {
+      for (const other of [
+        "SVG",
+        "Static website",
+        "Image",
+        "Markdown",
+      ] as const) {
         await page.getByRole("button", { name: other, exact: true }).click();
         await expect(
           page.getByRole("img", { name: common.name, exact: true }),
         ).toBeVisible();
       }
-      for (const other of ["Image", "Chat completion"] as const) {
-        await page.getByRole("button", { name: other, exact: true }).click();
-        await expect(
-          page.getByRole("img", { name: common.name, exact: true }),
-        ).toHaveCount(0);
-        await page
-          .getByRole("button", { name: "Markdown", exact: true })
-          .click();
-        await expect(
-          page.getByRole("img", { name: common.name, exact: true }),
-        ).toBeVisible();
-      }
+      await page
+        .getByRole("button", { name: "Chat completion", exact: true })
+        .click();
+      await expect(
+        page.getByRole("img", { name: common.name, exact: true }),
+      ).toHaveCount(0);
+      await page.getByRole("button", { name: "Markdown", exact: true }).click();
+      await expect(
+        page.getByRole("img", { name: common.name, exact: true }),
+      ).toBeVisible();
     }
     await page
       .getByRole("button", {
@@ -218,6 +220,7 @@ test("a pasted image can be the entire Markdown prompt", async ({
   await page.goto("/create");
   await page.getByRole("button", { name: "Markdown", exact: true }).click();
   await connectOpenRouter(page);
+  await page.getByRole("button", { name: "Swap rows and columns" }).click();
   await page
     .getByRole("combobox", { name: "Rows", exact: true })
     .selectOption("model");

@@ -6,11 +6,15 @@ import { join } from "node:path";
 import express from "express";
 import { startGenerationFixture } from "./generation-fixture.js";
 import { Store } from "../server/store.js";
-import { expandGrid, type GridInput, type Grid } from "../server/domain.js";
+import { expandGrid, type Grid } from "../server/domain.js";
 import { token } from "../server/ids.js";
 import { webFixture } from "./web-fixture.js";
 import { seedTestDatabase } from "./database-fixture.js";
 import { validatedGrid } from "./grid-storage-fixture.js";
+import {
+  currentInput,
+  type CurrentGridOverrides,
+} from "./current-grid-fixture.js";
 
 export type CapturedRequest = {
   model: string;
@@ -349,21 +353,28 @@ export async function runtimeFixture(
         },
         body: body === undefined ? undefined : JSON.stringify(body),
       }),
-    grid(overrides: Partial<GridInput> = {}) {
-      const input: GridInput = {
-        format: "markdown",
-        prompt: "Draw $ROW1",
-        rows: {
-          kind: "variable",
-          values: [[{ text: "cat" }], [{ text: "dog" }]],
-        },
-        columns: { kind: "model", values: ["fixture/text"] },
-        model: "",
-        effort: "none",
-        budgetUsd: 0.1,
-        parallelWorkers: 1,
-        ...overrides,
-      };
+    grid(overrides: CurrentGridOverrides = {}) {
+      // A complete current definition must not inherit this helper's variable axis.
+      const input =
+        overrides.inputVersion === 2
+          ? currentInput(overrides)
+          : currentInput({
+              prompt: "Draw $ROW1",
+              rows: [
+                { variable: [{ text: "cat" }] },
+                { variable: [{ text: "dog" }] },
+              ],
+              columns: [{ model: "fixture/text" }],
+              budgetUsd: 0.1,
+              parallelWorkers: 1,
+              ...overrides,
+              parameters: {
+                variable: { kind: "rows" },
+                model: { kind: "columns" },
+                effort: { kind: "common", value: "none" },
+                ...overrides.parameters,
+              },
+            });
       const grid: Grid = {
         id: token(),
         owner,

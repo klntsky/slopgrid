@@ -71,9 +71,7 @@ export function GridTitle({ grid }: { grid: ViewGrid }) {
         label="Copy prompt"
         copy={() => navigator.clipboard.writeText(grid.input.prompt)}
       />
-      {grid.input.format === "image" && (
-        <GridParameters key={grid.id} grid={grid} />
-      )}
+      <GridParameters key={grid.id} grid={grid} />
     </div>
   );
 }

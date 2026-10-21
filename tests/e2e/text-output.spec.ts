@@ -9,7 +9,7 @@ test("displayed Markdown remains copyable when output requests are unavailable",
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   const markdown = "# Cached output\n\nKeep **all** source formatting.\n";
   await request.post("/fixture/reset", { data: { markdownOutput: markdown } });
-  await create(page, "Markdown", "cat", "hat");
+  await create(page, { format: "Markdown", rowValues: ["cat"] });
   await expectProgress(page, 1, 1);
   await expect(page.locator(".markdown-preview h1")).toHaveText(
     "Cached output",

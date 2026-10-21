@@ -20,7 +20,7 @@ test("a later failed upload preserves earlier references across reload and retry
     buffer: Buffer.concat([png, Buffer.from(name)]),
   }));
   await page
-    .getByLabel("Add input references", { exact: true })
+    .getByLabel("Add images to prompt", { exact: true })
     .setInputFiles(files);
   await expect(
     page.getByRole("img", { name: "second.png", exact: true }),

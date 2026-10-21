@@ -4,7 +4,7 @@ import {
   type ImageCapabilities,
   type ImageSettings,
 } from "./image-settings.js";
-import type { GridInput } from "./domain.js";
+import type { Effort, GridInput } from "./domain.js";
 import type { Model } from "./provider.js";
 
 export function canJudge(
@@ -46,7 +46,7 @@ export function thinkingEffortSupport(
   if (!model) return "unknown";
   if (effort === "none" && model.reasoningMandatory) return "unsupported";
   if (model.reasoningEfforts === undefined) return "unknown";
-  return model.reasoningEfforts.includes(effort as GridInput["effort"])
+  return model.reasoningEfforts.includes(effort as Effort)
     ? "supported"
     : "unsupported";
 }
@@ -56,9 +56,10 @@ export const imageParameterNames = {
   aspect_ratio: "Aspect ratio",
   quality: "Quality",
   background: "Background",
-  input_references: "Input references",
+  input_references: "Input images",
 };
-export type ImageParameter = (typeof imageKinds)[number];
+const providerImageKinds = [...imageKinds, "input_references"] as const;
+export type ImageParameter = (typeof providerImageKinds)[number];
 export type Compatibility = {
   support: "supported" | "unsupported" | "unknown";
   reason?: string;
@@ -129,7 +130,7 @@ export function imageSettingsSupport(
   settings = normalizeImageSettings(settings);
   const conflicts: ImageParameterConflict[] = [];
   const parameters = Object.fromEntries(
-    imageKinds.map((kind) => [
+    providerImageKinds.map((kind) => [
       kind,
       {
         support: endpoints?.length ? "supported" : "unknown",
@@ -141,7 +142,9 @@ export function imageSettingsSupport(
   ) as Record<ImageParameter, Compatibility>;
   const endpointStates =
     endpoints?.map((endpoint) =>
-      imageKinds.map((kind) => parameterSupport(endpoint, kind, settings)),
+      providerImageKinds.map((kind) =>
+        parameterSupport(endpoint, kind, settings),
+      ),
     ) ?? [];
   let support: Support = endpointStates.length
     ? providerSupport(endpointStates.map(combinationSupport))
@@ -161,7 +164,7 @@ export function imageSettingsSupport(
           : reason,
     };
   }
-  const activeKinds = imageKinds.filter(
+  const activeKinds = providerImageKinds.filter(
     (kind, index) =>
       settings[kind] !== undefined ||
       (kind === "input_references" &&
@@ -193,15 +196,15 @@ export function imageSettingsSupport(
       uncertain: number[] = [];
     // Five parameter types give at most 31 subsets. Keep minimal conflicts so
     // an unrelated setting does not inherit another parameter's warning.
-    for (let mask = 1; mask < 1 << imageKinds.length; mask++) {
+    for (let mask = 1; mask < 1 << providerImageKinds.length; mask++) {
       if (incompatible.some((subset) => (mask & subset) === subset)) continue;
       if (
-        imageKinds.some(
+        providerImageKinds.some(
           (kind, index) => mask & (1 << index) && !activeKinds.includes(kind),
         )
       )
         continue;
-      const indices = imageKinds
+      const indices = providerImageKinds
         .map((_, index) => index)
         .filter((index) => mask & (1 << index));
       const state = providerSupport(
@@ -216,7 +219,7 @@ export function imageSettingsSupport(
       )
         continue;
       (state === "unsupported" ? incompatible : uncertain).push(mask);
-      const kinds = indices.map((index) => imageKinds[index]);
+      const kinds = indices.map((index) => providerImageKinds[index]);
       const description = kinds.map(describe).join("; ");
       const reason =
         state === "unknown"

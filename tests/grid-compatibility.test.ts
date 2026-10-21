@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import type { GridInput } from "../server/domain.js";
 import type { Model } from "../server/provider.js";
 import { analyzeGridCompatibility } from "../server/grid-compatibility.js";
+import { currentDefinition } from "./current-grid-fixture.js";
 
 const plain: Model = {
   id: "plain",
@@ -14,37 +15,33 @@ const plain: Model = {
   reasoningMandatory: false,
   structuredOutputs: true,
 };
-const base: GridInput = {
+const base: GridInput = currentDefinition({
   format: "markdown",
   prompt: "Answer the question.",
-  model: plain.id,
-  effort: "default",
-  budgetUsd: 3,
-  rows: { kind: "effort", values: ["default"] },
-  columns: { kind: "model", values: [plain.id] },
-};
+  parameters: { model: { kind: "columns" }, effort: { kind: "rows" } },
+  rows: [{ effort: "default" }],
+  columns: [{ model: plain.id }],
+});
 const image = { id: "reference", name: "answer.png" };
 
 test("only the rubric that consumes an image requires a vision judge", () => {
-  const input: GridInput = {
-    ...base,
+  const input: GridInput = currentDefinition({
     prompt: "Answer the case $ROW1.",
-    rows: {
-      kind: "variable",
-      values: [
-        [{ text: "first" }, { text: "answer", images: [image] }],
-        [{ text: "second" }, { text: "answer" }],
-      ],
+    parameters: {
+      model: { kind: "common", value: plain.id },
+      variable: { kind: "rows" },
+      judge_model: { kind: "common", value: plain.id },
+      judge_criteria: {
+        kind: "common",
+        value: [{ text: "Compare the answer with $ROW2", correctAnswer: true }],
+      },
     },
-    columns: { kind: "effort", values: ["default"] },
-    judge: {
-      model: plain.id,
-      effort: "default",
-      criteria: [
-        { text: "Compare the answer with $ROW2", correctAnswer: true },
-      ],
-    },
-  };
+    rows: [
+      { variable: [{ text: "first" }, { text: "answer", images: [image] }] },
+      { variable: [{ text: "second" }, { text: "answer" }] },
+    ],
+    judge: true,
+  });
   const { issues } = analyzeGridCompatibility(input, [plain]);
   const blocked = issues.filter((issue) => issue.blocking);
   assert.deepEqual(
@@ -61,9 +58,12 @@ test("only the rubric that consumes an image requires a vision judge", () => {
   );
   const unused = {
     ...input,
-    judge: {
-      ...input.judge!,
-      criteria: [{ text: "Is the answer correct?", correctAnswer: true }],
+    parameters: {
+      ...input.parameters,
+      judge_criteria: {
+        kind: "common" as const,
+        value: [{ text: "Is the answer correct?", correctAnswer: true }],
+      },
     },
   };
   assert.deepEqual(
@@ -75,15 +75,16 @@ test("only the rubric that consumes an image requires a vision judge", () => {
 });
 
 test("future supplied Chat images block admission at their message, not an earlier text-only turn", () => {
-  const input: GridInput = {
-    ...base,
+  const input: GridInput = currentDefinition({
     format: "chat-template",
+    parameters: { model: { kind: "columns" } },
+    columns: [{ model: plain.id }],
     messages: [
       { role: "user", content: "First question" },
       { role: "unfilled", content: "" },
       { role: "user", content: "", images: [image] },
     ],
-  };
+  });
   const { issues } = analyzeGridCompatibility(input, [plain]);
   assert.deepEqual(
     issues
@@ -128,14 +129,17 @@ test("provider tuple conflicts mark only the real failing case and involved sett
       },
     ],
   };
-  const input: GridInput = {
-    ...base,
+  const input: GridInput = currentDefinition({
     format: "image",
-    model: model.id,
-    rows: { kind: "background", values: ["transparent", "opaque"] },
-    columns: { kind: "quality", values: ["high"] },
-    imageSettings: { size: "1K" },
-  };
+    parameters: {
+      model: { kind: "common", value: model.id },
+      background: { kind: "rows" },
+      quality: { kind: "columns" },
+      size: { kind: "common", value: "1K" },
+    },
+    rows: [{ background: "transparent" }, { background: "opaque" }],
+    columns: [{ quality: "high" }],
+  });
   const { issues } = analyzeGridCompatibility(input, [model]);
   assert.deepEqual(
     issues.map(({ row, column, parameters, support, blocking }) => ({
@@ -161,14 +165,39 @@ test("provider tuple conflicts mark only the real failing case and involved sett
     ),
     false,
   );
+  const paired = currentDefinition({
+    format: "image",
+    parameters: {
+      model: { kind: "common", value: model.id },
+      background: { kind: "rows" },
+      quality: { kind: "rows" },
+      size: { kind: "common", value: "1K" },
+    },
+    rows: [
+      { background: "transparent", quality: "low" },
+      { background: "opaque", quality: "high" },
+    ],
+  });
+  // Paired settings are two actual cases, not the four combinations of two axes.
+  assert.deepEqual(analyzeGridCompatibility(paired, [model]).issues, []);
+  const transposed = {
+    ...paired,
+    parameters: {
+      ...paired.parameters,
+      background: { kind: "columns" as const },
+      quality: { kind: "columns" as const },
+    },
+    rows: paired.columns,
+    columns: paired.rows,
+  };
+  assert.deepEqual(analyzeGridCompatibility(transposed, [model]).issues, []);
 });
 
 test("unverified required vision blocks but missing ordinary effort metadata stays advisory", () => {
   const input: GridInput = {
     ...base,
-    columns: { kind: "model", values: ["unknown"] },
-    effort: "high",
-    rows: { kind: "effort", values: ["high"] },
+    rows: [{ id: "high", effort: "high" }],
+    columns: [{ id: "unknown", model: "unknown" }],
   };
   const { issues: advisory } = analyzeGridCompatibility(input, []);
   assert.deepEqual(
@@ -180,7 +209,10 @@ test("unverified required vision blocks but missing ordinary effort metadata sta
     [{ support: "unknown", blocking: false, parameters: ["model", "effort"] }],
   );
   const { issues: required } = analyzeGridCompatibility(
-    { ...input, inputReferences: [image] },
+    {
+      ...input,
+      promptImages: [image],
+    },
     [],
   );
   assert.deepEqual(
@@ -190,21 +222,24 @@ test("unverified required vision blocks but missing ordinary effort metadata sta
     [
       {
         support: "unknown",
-        parameters: ["model", "input_references", "prompt"],
+        parameters: ["model", "prompt"],
       },
     ],
   );
 });
 
 test("an unfinished model selection does not hide a known size/aspect conflict or blame the model", () => {
-  const input: GridInput = {
-    ...base,
+  const input: GridInput = currentDefinition({
     format: "image",
-    model: "",
-    rows: { kind: "model", values: [""] },
-    columns: { kind: "quality", values: ["auto"] },
-    imageSettings: { size: "1024x512", aspect_ratio: "1:1" },
-  };
+    parameters: {
+      model: { kind: "rows" },
+      quality: { kind: "columns" },
+      size: { kind: "common", value: "1024x512" },
+      aspect_ratio: { kind: "common", value: "1:1" },
+    },
+    rows: [{ model: "" }],
+    columns: [{ quality: "auto" }],
+  });
   const { issues } = analyzeGridCompatibility(input, []);
   const conflicts = issues.filter((issue) => issue.support === "unsupported");
   assert.deepEqual(

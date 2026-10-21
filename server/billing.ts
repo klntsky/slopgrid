@@ -1,6 +1,5 @@
 import type Database from "better-sqlite3";
 import type { Cell, Completion } from "./domain.js";
-import { expandGrid } from "./domain.js";
 import { token } from "./ids.js";
 import {
   completionFailure,
@@ -229,7 +228,10 @@ export class Billing {
   }
   page(owner: string, offset: number, userId?: string): BillingPage {
     const join = `FROM inference_calls b JOIN cells c ON c.id=b.cell_id
-      JOIN grids g ON g.id=c.grid_id WHERE ${userId ? "g.owner_user_id=?" : "g.owner=? AND g.owner_user_id IS NULL"}`;
+      JOIN grids g ON g.id=c.grid_id
+      JOIN workflow_tasks t ON t.id=COALESCE(b.task_id,
+        CASE WHEN b.phase='judge' THEN c.judgment_id ELSE c.generation_id END)
+      WHERE ${userId ? "g.owner_user_id=?" : "g.owner=? AND g.owner_user_id IS NULL"}`;
     const summary = this.db
       .prepare(
         `SELECT COUNT(*) total,
@@ -240,15 +242,15 @@ export class Billing {
       .get(userId ?? owner) as Omit<BillingPage, "calls">;
     const rows = this.db
       .prepare(
-        `SELECT b.id,b.started_at,b.data,b.attempt_id,b.phase,b.status,b.cost_usd,c.grid_id,c.position,
-      g.data grid_data ${join} ORDER BY b.started_at DESC,b.rowid DESC LIMIT 50 OFFSET ?`,
+        `SELECT b.id,b.started_at,b.data,b.attempt_id,b.phase,b.status,b.cost_usd,c.grid_id,
+      g.data grid_data,t.data task_data ${join} ORDER BY b.started_at DESC,b.rowid DESC LIMIT 50 OFFSET ?`,
       )
       .all(userId ?? owner, offset) as (CallRow & {
       id: string;
       started_at: number;
       grid_id: string;
-      position: number;
       grid_data: string;
+      task_data: string;
     })[];
     return {
       ...summary,
@@ -261,15 +263,17 @@ export class Billing {
           ...details
         } = readCall(row);
         const grid = JSON.parse(row.grid_data);
-        const cell = expandGrid(grid.input)[row.position];
+        const task = JSON.parse(row.task_data) as {
+          input: { model: string; effort: string };
+        };
         return {
           ...details,
           id: row.id,
           startedAt: row.started_at,
           gridId: row.grid_id,
           gridPrompt: grid.input.prompt,
-          model: details.model ?? cell.model,
-          effort: details.effort ?? cell.effort,
+          model: details.model ?? task.input.model,
+          effort: details.effort ?? task.input.effort,
         };
       }),
     };

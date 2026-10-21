@@ -6,7 +6,7 @@ test("publishing a paused grid labels unfinished outputs Not generated across re
   request,
 }) => {
   await request.post("/fixture/reset", { data: { holdGenerations: true } });
-  await create(page, "Image", "cat\ndog\nowl", "hat");
+  await create(page, { format: "Image", rowValues: ["cat", "dog", "owl"] });
   await expect
     .poll(
       async () =>
@@ -108,7 +108,7 @@ for (const format of ["Image", "SVG"])
     await request.post("/fixture/reset", {
       data: { billing: true, streamBilling: format === "SVG" },
     });
-    await create(page, format);
+    await create(page, { format });
     await expect(page.getByRole("dialog")).toBeVisible();
     await expectProgress(page, 1, 2);
     await expect(
@@ -138,10 +138,13 @@ test("parallel generation queues users and gives freed slots to users with fewer
   const calls = async (): Promise<string[]> =>
     (await request.get("/fixture/calls")).json();
   try {
-    await create(page, "Image", "A0\nA1\nA2\nA3", "hat");
+    await create(page, {
+      format: "Image",
+      rowValues: ["A0", "A1", "A2", "A3"],
+    });
     await expect.poll(async () => (await calls()).length).toBe(2);
-    await create(bob, "Image", "B0\nB1\nB2", "hat");
-    await create(carol, "Image", "C0\nC1\nC2", "hat");
+    await create(bob, { format: "Image", rowValues: ["B0", "B1", "B2"] });
+    await create(carol, { format: "Image", rowValues: ["C0", "C1", "C2"] });
     await expectProgress(bob, 0, 3);
     await expectProgress(carol, 0, 3);
     await request.post("/fixture/release", {
@@ -172,7 +175,7 @@ test("Pause aborts active inference and releases slots; Resume preserves complet
 }) => {
   await request.post("/fixture/reset", { data: { holdGenerations: true } });
   try {
-    await create(page, "Image", "cat\ndog\nowl", "hat");
+    await create(page, { format: "Image", rowValues: ["cat", "dog", "owl"] });
     const calls = async (): Promise<string[]> =>
       (await request.get("/fixture/calls")).json();
     await expect.poll(async () => (await calls()).length).toBe(2);
@@ -236,7 +239,7 @@ test("pausing a streamed SVG discards its partial image and Resume generates it 
 }) => {
   await request.post("/fixture/reset", { data: { svgStreaming: true } });
   try {
-    await create(page, "SVG", "cat", "hat");
+    await create(page, { rowValues: ["cat"] });
     const preview = page.getByRole("img", { name: "SVG preview", exact: true });
     await expect(preview).toBeVisible();
     await page.getByRole("button", { name: "Pause generation" }).click();
@@ -273,7 +276,7 @@ for (const action of ["publish", "resume"] as const)
     await request.post("/fixture/reset", {
       data: { holdGenerations: true, generationError: true },
     });
-    await create(page, "Image", "cat\ndog\nowl", "hat");
+    await create(page, { format: "Image", rowValues: ["cat", "dog", "owl"] });
     await expect
       .poll(
         async () =>
@@ -356,7 +359,7 @@ test("a dropped event stream reconnects and receives completed generation", asyn
   request,
 }) => {
   await request.post("/fixture/reset", { data: { holdGenerations: true } });
-  await create(page, "Image", "cat", "hat");
+  await create(page, { format: "Image", rowValues: ["cat"] });
   await expectProgress(page, 0, 1);
   let failStream!: () => void;
   const failure = new Promise<void>((resolve) => {
@@ -384,7 +387,7 @@ test("a grid with only failed outputs can be published and viewed publicly", asy
 }) => {
   await page.setExtraHTTPHeaders({ "X-Forwarded-For": "192.0.2.50" });
   await request.post("/fixture/reset", { data: { generationError: true } });
-  await create(page, "Image", "dog", "hat");
+  await create(page, { format: "Image", rowValues: ["dog"] });
   await expectProgress(page, 1, 1);
   await expect(
     page.locator('.progress-segment[data-status="error"]'),
@@ -432,7 +435,7 @@ test("live updates close when generation settles and reopen after Resume, includ
     data: { holdGenerations: true, billing: true },
   });
   try {
-    await create(page, "Image", "cat\ndog\nowl", "hat");
+    await create(page, { format: "Image", rowValues: ["cat", "dog", "owl"] });
     await expect.poll(() => streams.size).toBe(1);
     await expect
       .poll(
@@ -515,7 +518,7 @@ for (const [index, mode] of [
         transientStream: mode.stream,
       },
     });
-    await create(page, mode.format, "cat\ndog", "hat");
+    await create(page, { format: mode.format, rowValues: ["cat", "dog"] });
     await expectProgress(page, 0, 2);
     await expect
       .poll(
@@ -565,14 +568,12 @@ for (const model of ["fixture/text", "fixture/other"])
       }),
     );
     await request.post("/fixture/reset", { data: { websiteStreaming: true } });
-    await create(
-      page,
-      "Static website",
-      "cat",
-      "hat",
-      "Draw $ROW1 wearing a $COLUMN1",
+    await create(page, {
+      format: "Static website",
+      rowValues: ["cat"],
+      prompt: "Draw $ROW1 wearing a hat",
       model,
-    );
+    });
     const frame = page.frameLocator("iframe:visible").first();
     const iframe = page.locator("iframe:visible").first();
     const scrollTo = (position: number[]) =>
@@ -738,7 +739,7 @@ test("OpenRouter balance sets automatic parallel capacity and Resume recalculate
   const calls = async (): Promise<string[]> =>
     (await request.get("/fixture/calls")).json();
   try {
-    await create(page, "SVG", "cat\ndog\nowl", "hat");
+    await create(page, { rowValues: ["cat", "dog", "owl"] });
     await expect(page.getByText("Generating…", { exact: true })).toHaveCount(1);
     await expect(page.getByText("Queued", { exact: true })).toHaveCount(2);
     await expect.poll(calls).toHaveLength(1);
@@ -768,7 +769,7 @@ test("cost excludes failed attempts while owner spending retains them through st
     data: { costStreaming: true, holdGenerations: true },
   });
   try {
-    await create(page, "Markdown", "cat\ndog", "hat");
+    await create(page, { format: "Markdown", rowValues: ["cat", "dog"] });
     const cells = page.locator("article.cell");
     const total = page.locator(".grid-cost");
     const spent = page.locator(".grid-spent");
@@ -952,7 +953,7 @@ test("Markdown streams into its preview and preserves content and scroll while c
   });
   let releaseOutput: () => void = () => {};
   try {
-    await create(page, "Markdown", "cat", "hat");
+    await create(page, { format: "Markdown", rowValues: ["cat"] });
     const cell = page.locator("article.cell");
     const preview = cell.locator(".markdown-preview");
     await expect

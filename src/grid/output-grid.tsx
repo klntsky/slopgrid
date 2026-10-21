@@ -8,11 +8,12 @@ import { ExpandButton } from "../components/expand-button";
 import { ContainedImage } from "../contained-image";
 import { OutputCell, type CellView } from "./output-cell";
 import { useItemScrollSync } from "./use-item-scroll-sync";
+import type { ReferenceImage } from "../../server/image-settings";
 import {
-  selectedReferences,
-  type ReferenceImage,
-} from "../../server/image-settings";
-import { criteriaForCell } from "../../server/judge-criteria";
+  gridDisplay,
+  readGridCriteria,
+  type ParameterDisplayPart,
+} from "../../shared/grid-display";
 function ResizeHandle({
   axis,
   index,
@@ -33,6 +34,7 @@ function ResizeHandle({
   );
 }
 export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
+  const display = g.display ?? gridDisplay(g.input);
   const [views, setViews] = useState<
     Record<string, { mode?: CellView; judgeComplete?: boolean }>
   >({});
@@ -57,7 +59,7 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
   );
   const reference =
     selection?.kind === "reference"
-      ? selectedReferences(g.input).find((image) => image.id === selection.id)
+      ? display.references.find((image) => image.id === selection.id)
       : undefined;
   const expandedId = expanded?.id ?? reference?.id;
   const expandedView = useRef<HTMLElement>(null);
@@ -115,8 +117,15 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
       window.removeEventListener("message", frameEscape);
     };
   }, [expandedId]);
-  const title = (cell: ViewGrid["cells"][number]) =>
-    `${displayValue(g.input.rows.values[cell.row], g.input.rows.kind)} / ${displayValue(g.input.columns.values[cell.column], g.input.columns.kind)}`;
+  const title = (cell: ViewGrid["cells"][number]) => {
+    const row =
+      display.rows[cell.row].parts.map(displayValue).join(" · ") ||
+      `Case ${cell.row + 1}`;
+    const column =
+      display.columns[cell.column].parts.map(displayValue).join(" · ") ||
+      `Case ${cell.column + 1}`;
+    return `${row} / ${column}`;
+  };
   function referencePreviews(images: readonly ReferenceImage[] = []) {
     return (
       <span className="axis-reference-previews">
@@ -125,7 +134,7 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
             type="button"
             className="text-button"
             key={`${image.id}-${index}`}
-            aria-label={`Expand reference image: ${image.name}`}
+            aria-label={`Expand image: ${image.name}`}
             onClick={(event) =>
               expand("reference", image.id, event.currentTarget)
             }
@@ -140,43 +149,57 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
       </span>
     );
   }
-  function axisLabel(index: number, side: "rows" | "columns") {
-    const axis = g.input[side];
-    if (axis.kind === "variable")
+  function parameterLabel(
+    part: ParameterDisplayPart,
+    side: "rows" | "columns",
+  ) {
+    if (part.kind === "variable")
       return (
         <span className="variable-axis-fields">
-          {axis.values[index].map((field, column) => (
-            <span className="variable-axis-field" key={column}>
+          {part.value.map((field, index) => (
+            <span className="variable-axis-field" key={index}>
               <span>
                 ${side === "rows" ? "ROW" : "COLUMN"}
-                {column + 1}: {field.text}
+                {index + 1}: {field.text}
               </span>
               {!!field.images?.length && referencePreviews(field.images)}
             </span>
           ))}
         </span>
       );
-    const { kind } = axis;
-    const value = axis.values[index];
     return (
       <>
         <span className={side === "rows" ? "row-label" : undefined}>
-          {kind === "model" || kind === "judge_model" ? (
+          {part.kind === "model" || part.kind === "judge_model" ? (
             <>
-              {kind === "judge_model" && "judge model: "}
-              <ModelName model={value} />
+              {part.kind === "judge_model" && "judge model: "}
+              <ModelName model={part.value} />
             </>
-          ) : kind === "input_references" ? (
-            `references: ${value}`
-          ) : kind === "effort" || kind === "judge_effort" ? (
-            `${kind === "judge_effort" ? "judge thinking" : "thinking"}: ${displayValue(value, kind)}`
           ) : (
-            `${dimensionNames[kind].toLowerCase()}: ${value}`
+            `${dimensionNames[part.kind].toLowerCase()}: ${displayValue(part)}`
           )}
         </span>
-        {kind === "input_references" &&
-          referencePreviews(g.input.referenceGroups?.[value])}
+        {part.kind === "images" && referencePreviews(part.value.images)}
       </>
+    );
+  }
+  function axisLabel(index: number, side: "rows" | "columns") {
+    const { parts } = display[side][index];
+    if (!parts.length)
+      return (
+        <span className={side === "rows" ? "row-label" : undefined}>
+          Case {index + 1}
+        </span>
+      );
+    if (parts.length === 1) return parameterLabel(parts[0], side);
+    return (
+      <span className="variable-axis-fields">
+        {parts.map((part) => (
+          <span className="variable-axis-field" key={part.kind}>
+            {parameterLabel(part, side)}
+          </span>
+        ))}
+      </span>
     );
   }
   return (
@@ -185,20 +208,20 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
         <GridViewport
           key={g.id}
           gridId={g.id}
-          columns={g.input.columns.values.length}
+          columns={display.columns.length}
           expanded={!!expandedId}
         >
           <table className="output-grid">
             <colgroup>
               <col />
-              {g.input.columns.values.map((_, column) => (
+              {display.columns.map((_, column) => (
                 <col key={column} />
               ))}
             </colgroup>
             <thead inert={!!expandedId}>
               <tr>
                 <th className="corner" />
-                {g.input.columns.values.map((_, column) => (
+                {display.columns.map((_, column) => (
                   <th scope="col" key={column}>
                     {axisLabel(column, "columns")}
                     <ResizeHandle axis="columns" index={column} />
@@ -207,13 +230,13 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
               </tr>
             </thead>
             <tbody>
-              {g.input.rows.values.map((_, row) => (
+              {display.rows.map((_, row) => (
                 <tr key={row}>
                   <th scope="row" inert={!!expandedId}>
                     {axisLabel(row, "rows")}
                     <ResizeHandle axis="rows" index={row} />
                   </th>
-                  {g.input.columns.values.map((_, column) => {
+                  {display.columns.map((_, column) => {
                     const cell = g.cells.find(
                       (c) => c.row === row && c.column === column,
                     )!;
@@ -227,8 +250,9 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
                           format={g.input.format}
                           gridStatus={g.status}
                           criteria={
-                            g.input.judge
-                              ? criteriaForCell(g.input, row, column)
+                            cell.judge
+                              ? (cell.judge.criteria ??
+                                readGridCriteria(g.input, row, column))
                               : undefined
                           }
                           title={title(cell)}

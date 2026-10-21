@@ -272,6 +272,43 @@ test("retaining shared execution keeps one ledger call and reattributes only a r
   );
 });
 
+test("selective model removal rejects versioned case records without changing either grid", (t) => {
+  const f = fixture(t);
+  const row = transferGridRow(f.source, f.options.grid);
+  const data = JSON.parse(row.data);
+  data.input = {
+    inputVersion: 2,
+    format: "svg",
+    prompt: "horse",
+    budgetUsd: 3,
+    judge: false,
+    parameters: {
+      model: { kind: "rows" },
+      effort: { kind: "common", value: "default" },
+      input_references: { kind: "common", value: { name: "", images: [] } },
+    },
+    rows: ["first/model", "broken/model", "last/model"].map((model, index) => ({
+      id: `row-${index + 1}`,
+      model,
+    })),
+    columns: [{ id: "column-1" }],
+  };
+  f.source
+    .prepare("UPDATE grids SET data=? WHERE id=?")
+    .run(JSON.stringify(data), f.options.grid);
+  const source = transferGrids(f.source);
+  const target = transferGrids(f.target);
+  for (const apply of [false, true])
+    assert.throws(
+      () => transferGrid(Database, { ...f.options, apply }),
+      /does not support this grid input version/,
+    );
+  assert.deepEqual(transferGrids(f.source), source);
+  assert.deepEqual(transferGrids(f.target), target);
+  assert.equal(transferCellCount(f.source), 3);
+  assert.equal(existsSync(f.options.backupDir), false);
+});
+
 test("unsafe transfers leave both databases and source files untouched", async (t) => {
   for (const [name, change] of [
     ["running", markTransferGridRunning],

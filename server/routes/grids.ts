@@ -21,10 +21,8 @@ import {
   type Grid,
   type ValidatedGridInput,
 } from "../domain.js";
-import {
-  ModelResolutionError,
-  resolveGridModels,
-} from "../model-resolution.js";
+import { resolveGridModels } from "../model-resolution.js";
+import { ModelResolutionError } from "../model-alias.js";
 import {
   createInferenceGuard,
   inferenceCapacity,
@@ -32,6 +30,7 @@ import {
 import { token } from "../ids.js";
 import { creationRequest } from "../creation-request.js";
 import { isGridSlug, slugNamingError } from "../../shared/grid-slug.js";
+import { isCurrentGridInput } from "../parameters.js";
 
 export function createGridRoutes({
   store,
@@ -174,7 +173,12 @@ export function createGridRoutes({
       : undefined;
     if (reuse.data.sourceGridId && (!source || !canViewGrid(source, s)))
       return res.status(404).json({ error: "Grid not found" });
-    const parsed = gridSchema.safeParse(req.body);
+    const definition = { ...req.body };
+    delete definition.creationRequestId;
+    delete definition.sourceGridId;
+    delete definition.reuseArtifacts;
+    delete definition.continueWithLowBalance;
+    const parsed = gridSchema.safeParse(definition);
     if (!parsed.success)
       return res.status(400).json({ error: parsed.error.issues[0].message });
     let input: ValidatedGridInput;
@@ -327,6 +331,11 @@ export function createGridRoutes({
     const found = readGrid(req, res);
     if (!found) return;
     const { g, s } = found;
+    if (!isCurrentGridInput(g.input))
+      return res.status(409).json({
+        error:
+          "This grid uses an older configuration and cannot be edited or forked.",
+      });
     if (g.published)
       return res
         .status(409)

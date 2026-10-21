@@ -1,5 +1,6 @@
 import { test, expect } from "./fixtures";
 import { create, expectProgress } from "./helpers";
+import { currentDefinition } from "../current-grid-fixture";
 
 for (const limit of ["grid creation", "API traffic"] as const) {
   test(`${limit} 429 preserves the draft, shows the server message and allows retry`, async ({
@@ -37,15 +38,13 @@ for (const limit of ["grid creation", "API traffic"] as const) {
           if (limit === "grid creation") {
             for (let grid = 0; grid < 10; grid++) {
               const response = await client.post("/api/grids", {
-                data: {
+                data: currentDefinition({
                   format: "image",
-                  model: "fixture/image",
-                  effort: "default",
-                  prompt: "Draw $ROW1 wearing a $COLUMN1",
-                  rows: { kind: "variable", values: [[{ text: "cat" }]] },
-                  columns: { kind: "variable", values: [[{ text: "hat" }]] },
+                  prompt: "Draw $ROW1 wearing a hat",
+                  parameters: { variable: { kind: "rows" } },
+                  rows: [{ variable: [{ text: "cat" }] }],
                   budgetUsd: 5,
-                },
+                }),
               });
               expect(response.status(), await response.text()).toBe(201);
             }
@@ -70,7 +69,7 @@ for (const limit of ["grid creation", "API traffic"] as const) {
         response.url().endsWith("/api/grids") &&
         response.request().method() === "POST",
     );
-    await create(page, "Markdown", "cat", "hat");
+    await create(page, { format: "Markdown", rowValues: ["cat"] });
     expect((await blocked).status()).toBe(429);
     const generate = page.getByRole("button", {
       name: "Generate",
@@ -79,14 +78,19 @@ for (const limit of ["grid creation", "API traffic"] as const) {
     await expect(page.getByRole("alert")).toHaveText(message);
     await expect(generate).toBeEnabled();
     await expect(page.getByLabel("Prompt", { exact: true })).toHaveValue(
-      "Draw $ROW1 wearing a $COLUMN1",
+      "Draw $ROW1 wearing a hat",
     );
     await expect(page.getByLabel("$ROW1, case 1", { exact: true })).toHaveValue(
       "cat",
     );
     await expect(
-      page.getByLabel("$COLUMN1, case 1", { exact: true }),
-    ).toHaveValue("hat");
+      page.getByRole("combobox", { name: "Columns", exact: true }),
+    ).toHaveValue("effort");
+    await expect(
+      page
+        .getByRole("group", { name: "Column values", exact: true })
+        .getByRole("checkbox", { name: "Model default", exact: true }),
+    ).toBeChecked();
     await expect(page.getByRole("progressbar")).toHaveCount(0);
     const rejected = page.waitForResponse(
       (response) =>
@@ -101,14 +105,19 @@ for (const limit of ["grid creation", "API traffic"] as const) {
     clientIP = "192.0.2.81";
     await page.reload();
     await expect(page.getByLabel("Prompt", { exact: true })).toHaveValue(
-      "Draw $ROW1 wearing a $COLUMN1",
+      "Draw $ROW1 wearing a hat",
     );
     await expect(page.getByLabel("$ROW1, case 1", { exact: true })).toHaveValue(
       "cat",
     );
     await expect(
-      page.getByLabel("$COLUMN1, case 1", { exact: true }),
-    ).toHaveValue("hat");
+      page.getByRole("combobox", { name: "Columns", exact: true }),
+    ).toHaveValue("effort");
+    await expect(
+      page
+        .getByRole("group", { name: "Column values", exact: true })
+        .getByRole("checkbox", { name: "Model default", exact: true }),
+    ).toBeChecked();
     await generate.click();
     await expectProgress(page, 1, 1);
     await expect(page.getByRole("alert")).toHaveCount(0);

@@ -11,6 +11,7 @@ import { validatedGrid } from "./grid-storage-fixture.js";
 import { githubCredentials, oauthReturnTo } from "../server/oauth.js";
 import { ControlledProvider } from "./controlled-provider.js";
 import { hasGithubIdentity } from "./session-storage-fixture.js";
+import { currentInput } from "./current-grid-fixture.js";
 
 test("GitHub credentials are mandatory and OAuth return paths stay local", () => {
   for (const [id, secret] of [
@@ -72,15 +73,16 @@ test("account ownership, frozen authors, browser credentials, and OAuth callback
   });
   store.saveSession({ id: second, userId: alice.id, created: Date.now() });
   store.saveSession({ id: other, userId: bob.id, created: Date.now() });
-  const input: Grid["input"] = {
-    format: "markdown",
+  const input = currentInput({
     prompt: "test",
-    model: "unused",
-    effort: "none",
     budgetUsd: 5,
-    rows: { kind: "model", values: ["unused"] },
-    columns: { kind: "effort", values: ["none"] },
-  };
+    parameters: {
+      model: { kind: "rows" },
+      effort: { kind: "columns" },
+    },
+    rows: [{ model: "unused" }],
+    columns: [{ effort: "none" }],
+  });
   function grid(id: string, published = false) {
     const g: Grid = {
       id,

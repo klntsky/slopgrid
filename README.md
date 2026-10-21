@@ -22,7 +22,6 @@ The user defines what columns and rows of a grid mean;
 - Aspect ratios
 - Quality levels
 - Backgrounds: automatic, transparent, or opaque
-- Groups of input reference images
 
 ### SVG, Markdown, Website, and Chat completion outputs
 

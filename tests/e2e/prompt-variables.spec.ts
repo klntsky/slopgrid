@@ -51,15 +51,29 @@ async function selectJudge(page: Page, model: string) {
     .locator(`input[type="radio"][value=${JSON.stringify(model)}]`)
     .check();
 }
-async function variableAxes(page: Page, values: string[]) {
+async function variableAxis(
+  page: Page,
+  values: string[],
+  side: "Rows" | "Columns" = "Rows",
+) {
   await page
-    .getByRole("combobox", { name: "Rows", exact: true })
+    .getByRole("combobox", { name: side, exact: true })
     .selectOption("variable");
-  await setVariableValues(page, "Rows", values);
+  await setVariableValues(page, side, values);
+  await expect(
+    page
+      .getByRole("combobox", {
+        name: side === "Rows" ? "Columns" : "Rows",
+        exact: true,
+      })
+      .locator('option[value="variable"]'),
+  ).toHaveJSProperty("disabled", true);
   await page
-    .getByRole("combobox", { name: "Columns", exact: true })
-    .selectOption("variable");
-  await setVariableValues(page, "Columns", ["Context"]);
+    .getByRole("combobox", {
+      name: side === "Rows" ? "Columns" : "Rows",
+      exact: true,
+    })
+    .selectOption("effort");
 }
 
 async function generateGrid(page: Page): Promise<string> {
@@ -94,7 +108,7 @@ test("variable records merge images per message, interpolate judge references an
     .click();
   await page
     .getByLabel("Message 1", { exact: true })
-    .fill("$ROW1 / $ROW1 / $COLUMN1");
+    .fill("$ROW1 / $ROW1 / Context");
   for (let index = 0; index < 3; index++) {
     await page.locator(".chat-append").hover();
     await page
@@ -104,7 +118,7 @@ test("variable records merge images per message, interpolate judge references an
   await page
     .getByLabel("Message 3", { exact: true })
     .fill("Second turn: $ROW1");
-  await variableAxes(page, ["Alpha literal $ROW2", "Beta"]);
+  await variableAxis(page, ["Alpha literal $ROW2", "Beta"]);
   await page
     .getByRole("button", { name: "Add row variable", exact: true })
     .click();
@@ -157,7 +171,7 @@ test("variable records merge images per message, interpolate judge references an
     page.getByLabel("$COLUMN2, case 1", { exact: true }),
   ).toHaveValue("Secret alpha reference");
   await expect(page.getByLabel("Message 1", { exact: true })).toHaveValue(
-    "$COLUMN1 / $COLUMN1 / $ROW1",
+    "$COLUMN1 / $COLUMN1 / Context",
   );
   await expect(
     judgeSection.getByLabel("Criterion 1", { exact: true }),
@@ -172,13 +186,13 @@ test("variable records merge images per message, interpolate judge references an
   );
   await expect(
     page
-      .getByRole("table", { name: "Row variables", exact: true })
+      .getByRole("table", { name: "Grid layout parameters", exact: true })
       .getByRole("img", { name: blue.name, exact: true }),
   ).toHaveCount(2);
   const originalViewport = page.viewportSize()!;
   await page.setViewportSize({ width: 390, height: 844 });
   const tableScroll = await page
-    .getByRole("table", { name: "Row variables", exact: true })
+    .getByRole("table", { name: "Grid layout parameters", exact: true })
     .evaluate((table) => {
       const scroll = table.parentElement!;
       scroll.scrollLeft = scroll.scrollWidth;
@@ -305,76 +319,92 @@ test("variable records merge images per message, interpolate judge references an
   );
   await expect(
     page
-      .getByRole("table", { name: "Row variables", exact: true })
+      .getByRole("table", { name: "Grid layout parameters", exact: true })
       .getByRole("img", { name: blue.name, exact: true }),
   ).toHaveCount(2);
 });
 
-test("judge-only variable images allow a text-only generator and require a vision judge", async ({
-  page,
-  request,
-}) => {
-  const reference = await image("judge-only.png", "blue");
-  await request.post("/fixture/reset", {
-    data: { markdownOutput: "Text response." },
+for (const side of ["Rows", "Columns"] as const) {
+  test(`judge-only ${side.toLowerCase()} variable images allow a text-only generator and require a vision judge`, async ({
+    page,
+    request,
+  }) => {
+    const token = side === "Rows" ? "$ROW" : "$COLUMN";
+    const reference = await image("judge-only.png", "blue");
+    await request.post("/fixture/reset", {
+      data: { markdownOutput: "Text response." },
+    });
+    await page.goto("/create");
+    await connectOpenRouter(page);
+    await mockModels(page, (models) =>
+      models.map((model) =>
+        model.id === "fixture/other" ? { ...model, imageInput: false } : model,
+      ),
+    );
+    await page.reload();
+    await page.getByRole("button", { name: "Markdown", exact: true }).click();
+    await variableAxis(page, ["Question"], side);
+    await page
+      .getByRole("button", {
+        name: side === "Rows" ? "Add row variable" : "Add column variable",
+        exact: true,
+      })
+      .click();
+    await page
+      .getByLabel(`Add images to ${token}2, case 1`, { exact: true })
+      .setInputFiles(reference);
+    await page.getByLabel("Prompt", { exact: true }).fill(`${token}1 Context`);
+    await selectModel(page, "fixture/other");
+    await page
+      .getByRole("checkbox", { name: "Add a LLM judge", exact: true })
+      .check();
+    const judgeSection = page.getByRole("region", {
+      name: "Judge",
+      exact: true,
+    });
+    await judgeSection
+      .getByLabel("Criterion 1", { exact: true })
+      .fill(`Does the response match ${token}2?`);
+    const judge = judgeSection.getByRole("radiogroup", {
+      name: "Judge model",
+      exact: true,
+    });
+    await judge.getByRole("searchbox").fill("fixture");
+    const generate = page.getByRole("button", {
+      name: "Generate",
+      exact: true,
+    });
+    await judge.locator('input[type="radio"][value="fixture/other"]').check();
+    await expect(generate).toBeDisabled();
+    await expect(
+      judge.getByRole("cell", { name: /Unsupported/ }),
+    ).toBeVisible();
+    await selectJudge(page, "fixture/text");
+    await expect(generate).toBeEnabled();
+    await page
+      .getByLabel("Prompt", { exact: true })
+      .fill(`${token}1 ${token}2 Context`);
+    await expect(generate).toBeDisabled();
+    await page.getByLabel("Prompt", { exact: true }).fill(`${token}1 Context`);
+    await expect(generate).toBeEnabled();
+    await generate.click();
+    await expectProgress(page, 1, 1);
+    const sent: WireRequest[] = await (
+      await request.get("/fixture/chat-requests")
+    ).json();
+    expect(
+      sent.map((call) =>
+        call.messages.filter((message) => message.role === "user").map(content),
+      ),
+    ).toEqual([[{ text: "Question Context", images: [] }]]);
+    const judged: WireRequest[] = await (
+      await request.get("/fixture/judge-requests")
+    ).json();
+    expect(judged.map((call) => content(call.messages.at(-1)!))).toEqual([
+      {
+        text: expect.stringContaining("Does the response match ?"),
+        images: [imageURL(reference)],
+      },
+    ]);
   });
-  await page.goto("/create");
-  await connectOpenRouter(page);
-  await mockModels(page, (models) =>
-    models.map((model) =>
-      model.id === "fixture/other" ? { ...model, imageInput: false } : model,
-    ),
-  );
-  await page.reload();
-  await page.getByRole("button", { name: "Markdown", exact: true }).click();
-  await variableAxes(page, ["Question"]);
-  await page
-    .getByRole("button", { name: "Add row variable", exact: true })
-    .click();
-  await page
-    .getByLabel("Add images to $ROW2, case 1", { exact: true })
-    .setInputFiles(reference);
-  await page.getByLabel("Prompt", { exact: true }).fill("$ROW1 $COLUMN1");
-  await selectModel(page, "fixture/other");
-  await page
-    .getByRole("checkbox", { name: "Add a LLM judge", exact: true })
-    .check();
-  const judgeSection = page.getByRole("region", { name: "Judge", exact: true });
-  await judgeSection
-    .getByLabel("Criterion 1", { exact: true })
-    .fill("Does the response match $ROW2?");
-  const judge = judgeSection.getByRole("radiogroup", {
-    name: "Judge model",
-    exact: true,
-  });
-  await judge.getByRole("searchbox").fill("fixture");
-  const generate = page.getByRole("button", { name: "Generate", exact: true });
-  await judge.locator('input[type="radio"][value="fixture/other"]').check();
-  await expect(generate).toBeDisabled();
-  await expect(judge.getByRole("cell", { name: /Unsupported/ })).toBeVisible();
-  await selectJudge(page, "fixture/text");
-  await expect(generate).toBeEnabled();
-  await page.getByLabel("Prompt", { exact: true }).fill("$ROW1 $ROW2 $COLUMN1");
-  await expect(generate).toBeDisabled();
-  await page.getByLabel("Prompt", { exact: true }).fill("$ROW1 $COLUMN1");
-  await expect(generate).toBeEnabled();
-  await generate.click();
-  await expectProgress(page, 1, 1);
-  const sent: WireRequest[] = await (
-    await request.get("/fixture/chat-requests")
-  ).json();
-  expect(
-    sent.map((call) =>
-      call.messages.filter((message) => message.role === "user").map(content),
-    ),
-  ).toEqual([[{ text: "Question Context", images: [] }]]);
-  const judged: WireRequest[] = await (
-    await request.get("/fixture/judge-requests")
-  ).json();
-  expect(judged.map((call) => content(call.messages.at(-1)!))).toEqual([
-    {
-      text: expect.stringContaining("Does the response match ?"),
-      images: [imageURL(reference)],
-    },
-  ]);
-});
+}

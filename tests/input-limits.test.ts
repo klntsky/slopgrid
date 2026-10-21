@@ -3,8 +3,9 @@ import assert from "node:assert/strict";
 import { appFixture } from "./app-fixture.js";
 import { Provider } from "../server/provider.js";
 import type { Cell, GridInput } from "../server/domain.js";
+import { currentDefinition } from "./current-grid-fixture.js";
 
-test("large prompts, variables, and model IDs reach inference through grid creation", async (t) => {
+test("large current prompts, variables, and model IDs reach inference without relaxing ownership admission", async (t) => {
   const received: Cell[] = [];
   class FixtureProvider extends Provider {
     override async balanceUsd() {
@@ -30,15 +31,18 @@ test("large prompts, variables, and model IDs reach inference through grid creat
   const prompt = "x".repeat(110_000) + "$ROW1";
   const value = "v".repeat(1000);
   const model = "fixture/" + "m".repeat(300);
-  const input: GridInput = {
+  const input = currentDefinition({
     format: "markdown",
     prompt,
-    model,
-    effort: "none",
     budgetUsd: 5,
-    rows: { kind: "variable", values: [[{ text: value }]] },
-    columns: { kind: "effort", values: ["none"] },
-  };
+    parameters: {
+      model: { kind: "common", value: model },
+      effort: { kind: "columns" },
+      variable: { kind: "rows" },
+    },
+    rows: [{ id: "long-variable", variable: [{ text: value }] }],
+    columns: [{ id: "effort-none", effort: "none" }],
+  });
   const response = await fetch(`${origin}/api/grids`, {
     method: "POST",
     headers: {
@@ -53,4 +57,71 @@ test("large prompts, variables, and model IDs reach inference through grid creat
   assert.deepEqual(store.get(grid.id)!.input, input);
   assert.equal(received[0].prompt, "x".repeat(110_000) + value);
   assert.equal(received[0].model, model);
+  for (const invalid of [
+    { ...input, inputVersion: undefined },
+    { ...input, inputVersion: 1 },
+    { ...input, model },
+    { ...input, inputReferences: [] },
+    { ...input, referenceGroups: {} },
+    {
+      ...input,
+      parameters: {
+        ...input.parameters,
+        input_references: { kind: "common", value: { name: "", images: [] } },
+      },
+    },
+    {
+      ...input,
+      parameters: {
+        ...input.parameters,
+        input_references: { kind: "columns" },
+      },
+      columns: [
+        {
+          id: "removed-axis",
+          effort: "none",
+          input_references: { name: "", images: [] },
+        },
+      ],
+    },
+    { ...input, rows: { kind: "variable", values: [[{ text: value }]] } },
+    {
+      ...input,
+      parameters: {
+        ...input.parameters,
+        model: { kind: "common", value: model, values: [model] },
+      },
+    },
+    {
+      ...input,
+      rows: [{ id: "shadow-common", variable: [{ text: value }], model }],
+    },
+    {
+      ...input,
+      rows: [{ id: "wrong-axis", variable: [{ text: value }], effort: "none" }],
+    },
+    {
+      ...input,
+      columns: [
+        {
+          id: "second-variable-owner",
+          effort: "none",
+          variable: [{ text: value }],
+        },
+      ],
+    },
+    { ...input, rows: [{ id: "missing-owned-value" }] },
+  ]) {
+    const rejected = await fetch(`${origin}/api/grids`, {
+      method: "POST",
+      headers: {
+        cookie: `slopgrid=${owner}`,
+        origin,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(invalid),
+    });
+    assert.equal(rejected.status, 400, await rejected.clone().text());
+  }
+  assert.equal(received.length, 1);
 });

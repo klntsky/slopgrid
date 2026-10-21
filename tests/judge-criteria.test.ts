@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { gridSchema, type GridInput } from "../server/domain.js";
+import { gridSchema } from "../server/domain.js";
 import {
   criteriaForCell,
   criteriaSets,
@@ -9,6 +9,7 @@ import {
   type Criterion,
 } from "../server/judge-criteria.js";
 import { promptVariableIssue } from "../server/prompt-variables.js";
+import { currentDefinition } from "./current-grid-fixture.js";
 
 const first: Criterion[] = [
   { text: "Is the answer blue?", correctAnswer: false },
@@ -17,38 +18,41 @@ const second: Criterion[] = [
   { text: "Is the answer red?", correctAnswer: true },
   { text: "Is the answer round?", correctAnswer: false },
 ];
-function input(side: "rows" | "columns"): GridInput {
-  return {
-    format: "markdown",
+function input(side: "rows" | "columns") {
+  return currentDefinition({
     prompt: "Describe a shape.",
-    model: "fixture/text",
-    effort: "default",
-    budgetUsd: 3,
-    rows: { kind: "model", values: ["fixture/text"] },
-    columns: { kind: "effort", values: ["none"] },
-    [side]: {
-      kind: "variable",
-      values: [[{ text: "unused first" }], [{ text: "unused second" }]],
+    judge: true,
+    parameters: {
+      judge_criteria: { kind: side },
+      judge_model: { kind: "common", value: "fixture/judge" },
+      judge_effort: { kind: "common", value: "high" },
     },
-    judge: {
-      model: "fixture/judge",
-      effort: "high",
-      criteria: { axis: side, cases: [first, second] },
-    },
-  };
+    [side]: [{ judge_criteria: first }, { judge_criteria: second }],
+  });
 }
 
 test("shared criteria retain their stored array shape and cell-independent behavior", () => {
-  const source = { ...input("rows"), prompt: "$ROW1" };
-  source.judge!.criteria = first;
+  const source = input("rows");
+  source.prompt = "$ROW1";
+  source.parameters.judge_criteria = { kind: "common", value: first };
+  source.rows = source.rows.map(
+    ({ judge_criteria: _criteria, ...record }) => record,
+  );
+  source.parameters.variable = { kind: "rows" };
+  source.rows = source.rows.map((record, index) => ({
+    ...record,
+    variable: [{ text: `case ${index + 1}` }],
+  }));
   const parsed = gridSchema.parse(source);
-  assert.deepEqual(parsed.judge!.criteria, first);
-  assert.ok(Array.isArray(parsed.judge!.criteria));
-  assert.deepEqual(criteriaSets(first), [first]);
-  assert.deepEqual(criteriaSets(undefined), []);
+  assert.deepEqual(parsed.parameters.judge_criteria, {
+    kind: "common",
+    value: first,
+  });
+  assert.deepEqual(criteriaSets(parsed), [first]);
+  assert.deepEqual(criteriaSets(currentDefinition()), []);
   assert.equal(criteriaForCell(source, 0, 0), first);
   assert.equal(criteriaForCell(source, 1, 0), first);
-  assert.deepEqual(criteriaForCell({ judge: undefined }, 0, 0), []);
+  assert.deepEqual(criteriaForCell(currentDefinition(), 0, 0), []);
 });
 
 for (const side of ["rows", "columns"] as const) {
@@ -57,7 +61,7 @@ for (const side of ["rows", "columns"] as const) {
     assert.equal(judgeCriteriaIssue(source), undefined);
     assert.equal(promptVariableIssue(source), undefined);
     const parsed = gridSchema.parse(source);
-    assert.deepEqual(criteriaSets(parsed.judge!.criteria), [first, second]);
+    assert.deepEqual(criteriaSets(parsed), [first, second]);
     assert.deepEqual(criteriaForCell(parsed, 0, 0), first);
     assert.deepEqual(
       criteriaForCell(
@@ -70,92 +74,104 @@ for (const side of ["rows", "columns"] as const) {
     assert.equal(
       gridSchema.safeParse({
         ...source,
-        judge: { ...source.judge!, criteria: first },
+        parameters: {
+          ...source.parameters,
+          variable: { kind: side },
+          judge_criteria: { kind: "common", value: first },
+        },
+        [side]: source[side].map(
+          ({ judge_criteria: _criteria, ...record }) => ({
+            ...record,
+            variable: [{ text: "unused" }],
+          }),
+        ),
       }).success,
       false,
       "switching to shared requires the formerly judge-owned variable axis to be referenced",
     );
   });
 
-  test(`${side} reject scalar owners, misaligned cases, and invalid questions`, () => {
+  test(`${side} allow rubric ownership alongside scalar parameters and reject missing or invalid rubrics`, () => {
     const source = input(side);
-    const scalarOwner = {
-      ...source,
-      [side]: { kind: "model", values: ["fixture/text"] },
-    } as GridInput;
-    assert.match(judgeCriteriaIssue(scalarOwner)!, /prompt variable dimension/);
-    assert.equal(gridSchema.safeParse(scalarOwner).success, false);
-    for (const cases of [
+    const scalarOwner = currentDefinition({
+      judge: true,
+      parameters: { model: { kind: side }, judge_criteria: { kind: side } },
+      [side]: [
+        { model: "fixture/text", judge_criteria: first },
+        { model: "fixture/other", judge_criteria: second },
+      ],
+    });
+    assert.equal(judgeCriteriaIssue(scalarOwner), undefined);
+    assert.equal(gridSchema.safeParse(scalarOwner).success, true);
+    for (const rubric of [
+      undefined,
       [],
-      [first],
-      [first, second, first],
-      [[], second],
-      [first, []],
-    ]) {
-      const malformed: GridInput = {
-        ...source,
-        judge: { ...source.judge!, criteria: { axis: side, cases } },
-      };
-      assert.equal(gridSchema.safeParse(malformed).success, false);
-      assert.equal(typeof judgeCriteriaIssue(malformed), "string");
-    }
-    for (const criterion of [
-      { text: "   ", correctAnswer: true },
-      { text: "Valid?", correctAnswer: "no" },
-      { text: "Valid?" },
-      { correctAnswer: false },
+      [{ text: "   ", correctAnswer: true }],
+      [{ text: "Valid?", correctAnswer: "no" }],
+      [{ text: "Valid?" }],
+      [{ correctAnswer: false }],
     ]) {
       assert.equal(
         gridSchema.safeParse({
           ...source,
-          judge: {
-            ...source.judge,
-            criteria: { axis: side, cases: [first, [criterion]] },
-          },
+          [side]: [
+            source[side][0],
+            { ...source[side][1], judge_criteria: rubric },
+          ],
         }).success,
         false,
       );
     }
-    for (const text of ["$ROW", "$COLUMN0", "$ROW2", "$COLUMN99"]) {
+    for (const text of ["$ROW", "$COLUMN0", "$ROW2", "$COLUMN99"])
       assert.equal(
         gridSchema.safeParse({
           ...source,
-          judge: {
-            ...source.judge,
-            criteria: {
-              axis: side,
-              cases: [first, [{ text, correctAnswer: false }]],
+          [side]: [
+            source[side][0],
+            {
+              ...source[side][1],
+              judge_criteria: [{ text, correctAnswer: false }],
             },
-          },
+          ],
         }).success,
         false,
         text,
       );
-    }
+    const opposite = side === "rows" ? "columns" : "rows";
+    assert.equal(
+      gridSchema.safeParse({
+        ...source,
+        [opposite]: [{ id: "shadow", judge_criteria: first }],
+      }).success,
+      false,
+      "rubrics cannot shadow the owning axis",
+    );
   });
 }
 
 test("the criteria source rejects competing modes and malformed source objects", () => {
-  for (const source of [
+  const source = input("rows");
+  for (const criteriaSource of [
     undefined,
     null,
     {},
-    { axis: "both", cases: [first, second] },
-    { axis: "rows", cases: first },
-    { axis: "rows", cases: [first, second], shared: first },
-    { axis: "rows", cases: [first, second], columns: [second, first] },
-    { rows: [first, second], columns: [second, first] },
+    { kind: "both" },
+    { kind: "rows", value: first },
+    { kind: "common", value: first, rows: [second] },
+    { axis: "rows", cases: [first, second] },
   ])
-    assert.equal(judgeCriteriaSchema.safeParse(source).success, false);
+    assert.equal(
+      gridSchema.safeParse({
+        ...source,
+        parameters: { ...source.parameters, judge_criteria: criteriaSource },
+      }).success,
+      false,
+    );
   assert.deepEqual(
-    judgeCriteriaSchema.parse({
-      axis: "rows",
-      cases: [[{ text: "  Is this blue?  ", correctAnswer: false }]],
-    }),
-    {
-      axis: "rows",
-      cases: [[{ text: "Is this blue?", correctAnswer: false }]],
-    },
+    judgeCriteriaSchema.parse([
+      { text: "  Is this blue?  ", correctAnswer: false },
+    ]),
+    [{ text: "Is this blue?", correctAnswer: false }],
   );
 });
 
@@ -171,17 +187,20 @@ test("criteria validation retains actionable empty-rubric and empty-question mes
     assert.equal(
       judgeCriteriaIssue({
         ...source,
-        judge: { ...source.judge!, criteria: rubric },
+        parameters: {
+          ...source.parameters,
+          judge_criteria: { kind: "common", value: rubric },
+        },
+        rows: source.rows.map(
+          ({ judge_criteria: _criteria, ...record }) => record,
+        ),
       }),
       message,
     );
     assert.equal(
       judgeCriteriaIssue({
         ...source,
-        judge: {
-          ...source.judge!,
-          criteria: { axis: "rows", cases: [first, rubric] },
-        },
+        rows: [source.rows[0], { ...source.rows[1], judge_criteria: rubric }],
       }),
       message,
     );

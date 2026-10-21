@@ -61,7 +61,7 @@ test("chat images reserve their proportions through delayed loads and failures",
     await connectOpenRouter(page);
     await page
       .getByLabel("Message 1", { exact: true })
-      .fill("Compare these images $ROW1 $COLUMN1");
+      .fill("Compare these images $ROW1 two");
     await page
       .getByLabel("Add images to message 1", { exact: true })
       .setInputFiles([
@@ -96,8 +96,18 @@ test("chat images reserve their proportions through delayed loads and failures",
     await setVariableValues(page, "Rows", ["one"]);
     await page
       .getByRole("combobox", { name: "Columns", exact: true })
-      .selectOption("variable");
-    await setVariableValues(page, "Columns", ["two"]);
+      .selectOption("effort");
+    const columns = page.getByRole("group", {
+      name: "Column values",
+      exact: true,
+    });
+    for (const checkbox of await columns
+      .locator('input[type="checkbox"]:checked')
+      .all())
+      await checkbox.uncheck();
+    await columns
+      .getByRole("checkbox", { name: "Model default", exact: true })
+      .check();
     await selectModel(page, "fixture/text");
     const uploaded = (name: string) =>
       page

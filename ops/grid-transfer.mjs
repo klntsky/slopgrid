@@ -189,6 +189,10 @@ export function transferGrid(Database, options) {
     check(row, "Source grid not found");
     const data = JSON.parse(row.data);
     check(
+      data.input?.inputVersion === undefined,
+      "Selective grid transfer does not support this grid input version",
+    );
+    check(
       ["paused", "complete"].includes(data.status) &&
         !row.published &&
         row.visibility === "private",

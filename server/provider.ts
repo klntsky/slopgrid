@@ -20,7 +20,7 @@ import {
   efforts,
   type Cell,
   type GenerationParameters,
-  type GridInput,
+  type Effort,
   type InferenceProgress,
   type JudgmentInput,
 } from "./domain.js";
@@ -35,7 +35,7 @@ export type Model = {
   reasoning: boolean;
   reasoningMandatory: boolean;
   structuredOutputs?: boolean;
-  reasoningEfforts?: GridInput["effort"][];
+  reasoningEfforts?: Effort[];
   pricing?: ModelPricing;
   contextLength?: number;
   maxCompletionTokens?: number;
@@ -155,7 +155,7 @@ export class Provider {
         !!m.reasoning ||
         parameters.some((p) => p === "reasoning" || p === "reasoning_effort");
       const mandatory = m.reasoning?.mandatory === true;
-      let reasoningEfforts: GridInput["effort"][] | undefined;
+      let reasoningEfforts: Effort[] | undefined;
       if (!reasoning) reasoningEfforts = ["none"];
       else if (m.reasoning) {
         const supported =

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { GridInput } from "./domain.js";
+import { parameterValue, type ParameterConfiguration } from "./parameters.js";
 import {
   interpolateVariables,
   mergeVariableImages,
@@ -7,61 +8,44 @@ import {
 } from "./prompt-variables.js";
 import type { ReferenceImage } from "./image-settings.js";
 
-const draftCriterionSchema = z.object({
-  text: z.string(),
-  correctAnswer: z.boolean(),
-});
+const draftCriterionSchema = z
+  .object({
+    text: z.string(),
+    correctAnswer: z.boolean(),
+  })
+  .strict();
 const criterionSchema = draftCriterionSchema.extend({
   text: draftCriterionSchema.shape.text
     .trim()
     .min(1, "Enter a yes-or-no question for each criterion."),
 });
-const rubricSchema = z
+export const judgeCriteriaSchema = z
   .array(criterionSchema)
   .min(1, "Add at least one criterion.");
+export const draftJudgeCriteriaSchema = z.array(draftCriterionSchema);
 export type Criterion = z.infer<typeof criterionSchema>;
-const variableCriteriaSchema = z
-  .object({
-    axis: z.enum(["rows", "columns"]),
-    cases: z
-      .array(rubricSchema)
-      .min(1, "Add criteria for every variable case."),
-  })
-  .strict();
-export const judgeCriteriaSchema = z.union([
-  rubricSchema,
-  variableCriteriaSchema,
-]);
-export type JudgeCriteria = z.infer<typeof judgeCriteriaSchema>;
-export const draftJudgeCriteriaSchema = z.union([
-  z.array(draftCriterionSchema),
-  variableCriteriaSchema.extend({
-    cases: z.array(z.array(draftCriterionSchema)),
-  }),
-]);
 
-export function criteriaSets(source: JudgeCriteria | undefined): Criterion[][] {
-  return source === undefined
-    ? []
-    : Array.isArray(source)
-      ? [source]
-      : source.cases;
+export function criteriaSets(
+  input: Pick<GridInput, "parameters" | "rows" | "columns" | "judge">,
+): Criterion[][] {
+  if (!input.judge) return [];
+  const source = input.parameters.judge_criteria;
+  if (!source) return [];
+  return source.kind === "common"
+    ? [source.value]
+    : input[source.kind].map((record) => record.judge_criteria ?? []);
 }
 
 export function criteriaForCell(
-  input: Pick<GridInput, "judge">,
+  input: ParameterConfiguration,
   row: number,
   column: number,
 ): Criterion[] {
-  const source = input.judge?.criteria;
-  if (!source) return [];
-  return Array.isArray(source)
-    ? source
-    : (source.cases[source.axis === "rows" ? row : column] ?? []);
+  return parameterValue(input, "judge_criteria", row, column) ?? [];
 }
 
 export function resolveCriteriaForCell(
-  input: Pick<GridInput, "judge" | "rows" | "columns">,
+  input: ParameterConfiguration,
   row: number,
   column: number,
   options: VariableInterpolationOptions = {},
@@ -82,18 +66,10 @@ export function resolveCriteriaForCell(
 }
 
 export function judgeCriteriaIssue(
-  input: Pick<GridInput, "judge" | "rows" | "columns">,
+  input: Pick<GridInput, "parameters" | "rows" | "columns" | "judge">,
 ): string | undefined {
-  if (!input.judge) return;
-  const result = (
-    Array.isArray(input.judge.criteria) ? rubricSchema : variableCriteriaSchema
-  ).safeParse(input.judge.criteria);
-  if (!result.success) return result.error.issues[0]?.message;
-  const source = result.data;
-  if (Array.isArray(source)) return;
-  const axis = input[source.axis];
-  if (axis.kind !== "variable")
-    return "The judge criteria axis must be a prompt variable dimension.";
-  if (source.cases.length !== axis.values.length)
-    return "Add one judge rubric for every case in the selected variable dimension.";
+  for (const criteria of criteriaSets(input)) {
+    const result = judgeCriteriaSchema.safeParse(criteria);
+    if (!result.success) return result.error.issues[0]?.message;
+  }
 }

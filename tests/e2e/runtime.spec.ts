@@ -23,11 +23,11 @@ test("open browsers reconnect to a replaced web process while markdown, thinking
       },
     ]);
     const markdown = fixture.grid({
-      rows: { kind: "variable", values: [[{ text: "markdown" }]] },
+      rows: [{ variable: [{ text: "markdown" }] }],
     });
     const website = fixture.grid({
       format: "html",
-      rows: { kind: "variable", values: [[{ text: "website" }]] },
+      rows: [{ variable: [{ text: "website" }] }],
     });
     const pages = [await context.newPage(), await context.newPage()];
     for (const [index, grid] of [markdown, website].entries()) {

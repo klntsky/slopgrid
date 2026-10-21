@@ -1,9 +1,10 @@
 import type { GridInput } from "./domain.js";
 import type { ReferenceImage } from "./image-settings.js";
 import { criteriaSets } from "./judge-criteria.js";
+import { type ParameterConfiguration } from "./parameters.js";
 
 export type VariableField = { text: string; images?: ReferenceImage[] };
-type VariableInput = Pick<GridInput, "rows" | "columns">;
+type VariableInput = ParameterConfiguration;
 type TemplateInput = VariableInput &
   Pick<GridInput, "prompt" | "messages" | "judge" | "format">;
 
@@ -34,12 +35,12 @@ export function referencedVariableImages(
   for (const [, name, number] of text.matchAll(variableToken)) {
     const side = name === "ROW" ? "rows" : "columns";
     const axis = input[side];
-    if (axis.kind !== "variable" || !/^[1-9]\d*$/.test(number)) continue;
+    if (input.parameters.variable?.kind !== side || !/^[1-9]\d*$/.test(number))
+      continue;
     const index = selection?.[side];
-    const values =
-      index === undefined ? axis.values : [axis.values[index] ?? []];
-    for (const fields of values)
-      for (const image of fields[Number(number) - 1]?.images ?? [])
+    const values = index === undefined ? axis : [axis[index]];
+    for (const record of values)
+      for (const image of record?.variable?.[Number(number) - 1]?.images ?? [])
         if (!seen.has(image.id)) {
           seen.add(image.id);
           images.push(image);
@@ -64,13 +65,17 @@ export function interpolateVariables(
   const expanded = text.replace(
     variableToken,
     (token, name: string, number: string) => {
-      const axis = name === "ROW" ? input.rows : input.columns;
+      const side = name === "ROW" ? "rows" : "columns";
+      const axis = input[side];
       const index = name === "ROW" ? row : column;
-      if (axis.kind !== "variable" || !/^[1-9]\d*$/.test(number)) {
+      if (
+        input.parameters.variable?.kind !== side ||
+        !/^[1-9]\d*$/.test(number)
+      ) {
         if (options.allowUnresolvedVariables) return token;
         throw new Error(`Invalid prompt variable ${token}.`);
       }
-      const field = axis.values[index]?.[Number(number) - 1];
+      const field = axis[index]?.variable?.[Number(number) - 1];
       if (!field) {
         if (options.allowUnresolvedVariables) return token;
         throw new Error(`Missing prompt variable ${token}.`);
@@ -87,14 +92,17 @@ export function interpolateVariables(
 }
 
 export function promptVariableIssue(input: TemplateInput): string | undefined {
-  for (const axis of [input.rows, input.columns])
+  for (const side of ["rows", "columns"] as const) {
+    if (input.parameters.variable?.kind !== side) continue;
+    const cases = input[side];
+    const count = cases[0]?.variable?.length;
     if (
-      axis.kind === "variable" &&
-      (!axis.values.length ||
-        !axis.values[0].length ||
-        axis.values.some((fields) => fields.length !== axis.values[0].length))
+      !cases.length ||
+      !count ||
+      cases.some((record) => record.variable?.length !== count)
     )
       return "Variable values must have the same nonzero number of fields.";
+  }
   const templates: { text: string; role: string }[] =
     input.format === "chat-template"
       ? (input.messages ?? []).map((message) => ({
@@ -103,7 +111,7 @@ export function promptVariableIssue(input: TemplateInput): string | undefined {
         }))
       : [{ text: input.prompt, role: "user" }];
   templates.push(
-    ...criteriaSets(input.judge?.criteria)
+    ...criteriaSets(input)
       .flat()
       .map(({ text }) => ({
         text,
@@ -111,28 +119,31 @@ export function promptVariableIssue(input: TemplateInput): string | undefined {
       })),
   );
   const used = new Set<string>();
-  const source = input.judge?.criteria;
-  if (source && !Array.isArray(source))
-    used.add(source.axis === "rows" ? "ROW" : "COLUMN");
   for (const { text, role } of templates)
     for (const match of text.matchAll(variableToken)) {
       const [token, name, number] = match;
-      const axis = name === "ROW" ? input.rows : input.columns;
-      if (axis.kind !== "variable")
+      const side = name === "ROW" ? "rows" : "columns";
+      const axis = input[side];
+      if (input.parameters.variable?.kind !== side)
         return `Choose prompt variables for ${name === "ROW" ? "rows" : "columns"} to use ${token}.`;
-      if (!/^[1-9]\d*$/.test(number) || Number(number) > axis.values[0].length)
+      if (
+        !/^[1-9]\d*$/.test(number) ||
+        Number(number) > (axis[0]?.variable?.length ?? 0)
+      )
         return `Unknown prompt variable ${token}.`;
       if (
         role !== "user" &&
-        axis.values.some((fields) => fields[Number(number) - 1]?.images?.length)
+        axis.some(
+          (record) => record.variable?.[Number(number) - 1]?.images?.length,
+        )
       )
         return "Variable images can only be attached to user messages.";
       used.add(name);
     }
-  for (const [name, axis] of [
-    ["ROW", input.rows],
-    ["COLUMN", input.columns],
+  for (const [name, side] of [
+    ["ROW", "rows"],
+    ["COLUMN", "columns"],
   ] as const)
-    if (axis.kind === "variable" && !used.has(name))
+    if (input.parameters.variable?.kind === side && !used.has(name))
       return `Include $${name}1 in the prompt or judge criteria for ${name === "ROW" ? "row" : "column"} variables.`;
 }

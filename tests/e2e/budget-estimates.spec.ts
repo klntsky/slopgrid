@@ -23,6 +23,7 @@ test("budget warnings group models across thinking efforts and axis swaps", asyn
   );
   await page.goto("/");
   await page.getByRole("button", { name: "Markdown", exact: true }).click();
+  await page.getByRole("button", { name: "Swap rows and columns" }).click();
   await page
     .getByRole("combobox", { name: "Rows", exact: true })
     .selectOption("model");
@@ -95,11 +96,10 @@ test("budget estimates follow expanded prompts, warn without blocking, and prese
     .selectOption("variable");
   await page
     .getByRole("combobox", { name: "Columns", exact: true })
-    .selectOption("variable");
+    .selectOption("effort");
   await setVariableValues(page, "Rows", ["a", "b", "c"]);
-  await setVariableValues(page, "Columns", ["d"]);
   await selectModel(page, "fixture/text");
-  await page.getByLabel("Prompt", { exact: true }).fill("$ROW1 $COLUMN1");
+  await page.getByLabel("Prompt", { exact: true }).fill("$ROW1 d");
   const budget = page.getByLabel("Budget limit per cell", { exact: true });
   const warnings = page.locator(".budget-warnings");
   await expect(warnings).toHaveCount(0);

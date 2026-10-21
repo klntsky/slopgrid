@@ -22,6 +22,7 @@ import {
   removeStoredReferenceDimensions,
 } from "./reference-storage-fixture.js";
 import { storedGridCount, validatedGrid } from "./grid-storage-fixture.js";
+import { currentDefinition, currentInput } from "./current-grid-fixture.js";
 import {
   referencePng,
   referenceJpeg,
@@ -94,24 +95,27 @@ for (const shared of [false, true])
       (await upload(png, ownerCookie, "https://other.example")).status,
       403,
     );
-    const input = gridSchema.parse({
+    const input = currentInput({
       format: "image",
-      prompt: "Draw it",
-      model: "fixture/image",
-      effort: "default",
+      prompt: shared ? "Draw it" : "Draw it$ROW1",
       budgetUsd: 5,
-      rows: { kind: "input_references", values: ["Pair"] },
-      columns: { kind: "size", values: ["1K"] },
-      referenceGroups: {
-        Pair: [{ id: image.id, name: image.name }],
-        Unused: [spare],
+      promptImages: shared ? [{ ...image, width: 900, height: 2 }] : [],
+      parameters: {
+        ...(shared
+          ? { quality: { kind: "rows" as const } }
+          : { variable: { kind: "rows" as const } }),
+        size: { kind: "columns" },
       },
-      ...(shared
-        ? {
-            rows: { kind: "quality", values: ["auto"] },
-            inputReferences: [{ ...image, width: 900, height: 2 }],
-          }
-        : {}),
+      rows: shared
+        ? [{ quality: "auto" }]
+        : [
+            {
+              variable: [
+                { text: "", images: [{ id: image.id, name: image.name }] },
+              ],
+            },
+          ],
+      columns: [{ size: "1K" }],
     });
     const forged = await fetch(`${origin}/api/grids`, {
       method: "POST",
@@ -151,10 +155,9 @@ for (const shared of [false, true])
     }
     store.files.write(artifactId, { image: png });
     store.insert(validatedGrid(grid), tasks);
+    const savedInput = gridSchema.parse(store.get(grid.id)!.input);
     assert.deepEqual(
-      shared
-        ? store.get(grid.id)!.input.inputReferences
-        : store.get(grid.id)!.input.referenceGroups!.Pair,
+      shared ? savedInput.promptImages : savedInput.rows[0].variable![0].images,
       [image],
     );
     const user = store.identify("github", `reference-owner-${token()}`, {
@@ -213,8 +216,9 @@ for (const shared of [false, true])
     const reopened = new Store(database, secret);
     try {
       const fork = reopened.all().find((saved) => saved.owner === forkOwner)!;
+      const forkInput = gridSchema.parse(fork.input);
       assert.deepEqual(
-        shared ? fork.input.inputReferences : fork.input.referenceGroups!.Pair,
+        shared ? forkInput.promptImages : forkInput.rows[0].variable![0].images,
         [image],
       );
       assert.deepEqual(
@@ -251,7 +255,7 @@ for (const format of ["chat-template", "markdown", "svg", "html"] as const)
     const session = { id: owner, created: Date.now() };
     store.saveSession(session);
     const image = store.references.add(png, "private.png", session)!;
-    const input = gridSchema.parse({
+    const input = currentInput({
       format,
       ...(format === "chat-template"
         ? {
@@ -265,11 +269,24 @@ for (const format of ["chat-template", "markdown", "svg", "html"] as const)
               { role: "unfilled", content: "" },
             ],
           }
-        : { prompt: "", inputReferences: [image] }),
-      rows: { kind: "model", values: ["fixture/text"] },
-      columns: { kind: "effort", values: ["none"] },
-      model: "",
-      effort: "none",
+        : {
+            prompt: "",
+            promptImages: [image],
+            parameters: {
+              model: { kind: "rows" },
+              effort: { kind: "columns" },
+            },
+          }),
+      ...(format === "chat-template"
+        ? {
+            parameters: {
+              model: { kind: "rows" },
+              effort: { kind: "columns" },
+            },
+          }
+        : {}),
+      rows: [{ model: "fixture/text" }],
+      columns: [{ effort: "none" }],
       budgetUsd: 1,
     });
     const before = store.all().map((grid) => grid.id);
@@ -305,17 +322,19 @@ for (const format of ["markdown", "svg", "html"] as const)
     )!;
     const spare = store.references.add(png, "spare.png", uploader)!;
     const forged = { ...common, width: 900, height: 2 };
-    const input = gridSchema.parse({
+    const input = currentInput({
       format,
       prompt: "$ROW1",
-      inputReferences: [forged],
-      rows: {
-        kind: "variable",
-        values: [[{ text: "Describe it", images: [variable, forged] }]],
+      promptImages: [forged],
+      parameters: {
+        variable: { kind: "rows" },
+        model: { kind: "columns" },
+        effort: { kind: "common", value: "none" },
       },
-      columns: { kind: "model", values: ["fixture/text"] },
-      model: "",
-      effort: "none",
+      rows: [
+        { variable: [{ text: "Describe it", images: [variable, forged] }] },
+      ],
+      columns: [{ model: "fixture/text" }],
       budgetUsd: 1,
     });
     const grid: Grid = {
@@ -333,11 +352,10 @@ for (const format of ["markdown", "svg", "html"] as const)
     const reopened = new Store(database, secret);
     try {
       const saved = reopened.get(grid.id)!;
-      assert.deepEqual(saved.input.inputReferences, [common]);
-      assert.equal(saved.input.rows.kind, "variable");
-      if (saved.input.rows.kind !== "variable")
-        throw new Error("Expected variable rows");
-      assert.deepEqual(saved.input.rows.values[0][0].images, [
+      const savedInput = gridSchema.parse(saved.input);
+      assert.deepEqual(savedInput.promptImages, [common]);
+      assert.deepEqual(savedInput.parameters.variable, { kind: "rows" });
+      assert.deepEqual(savedInput.rows[0].variable![0].images, [
         variable,
         common,
       ]);
@@ -440,7 +458,7 @@ test("reference loaders retain exact content by ID within each execution", async
   assert.deepEqual((await fresh([first.id])).get(first.id)!.bytes, png);
 });
 
-test("grid creation records every selected reference atomically and keeps membership tied to immutable configuration", async (t) => {
+test("grid creation records every configured field image atomically and keeps membership tied to immutable configuration", async (t) => {
   const { store } = await appFixture(t);
   const uploader = { id: token(), created: 0 };
   const owner = { id: token(), created: 0 };
@@ -448,19 +466,20 @@ test("grid creation records every selected reference atomically and keeps member
   const second = store.references.add(png, "second.png", uploader)!;
   const spare = store.references.add(png, "spare.png", uploader)!;
   const missing = { id: token(), name: "missing.png" };
-  const input: Grid["input"] = {
+  const input = currentDefinition({
     format: "image",
-    prompt: "Use the selected references",
-    model: "fixture/image",
-    effort: "default",
+    prompt: "Use the selected references$ROW1",
     budgetUsd: 1,
-    rows: { kind: "input_references", values: ["Pair", "Other"] },
-    columns: { kind: "size", values: ["1K"] },
-    referenceGroups: {
-      Pair: [first, first],
-      Other: [second, missing],
+    parameters: {
+      variable: { kind: "rows" },
+      size: { kind: "columns" },
     },
-  };
+    rows: [
+      { variable: [{ text: "", images: [first, first] }] },
+      { variable: [{ text: "", images: [second, missing] }] },
+    ],
+    columns: [{ size: "1K" }],
+  });
   const grid: Grid = {
     id: token(),
     owner: owner.id,
@@ -493,7 +512,10 @@ test("grid creation records every selected reference atomically and keeps member
   assert.equal(store.references.allowed(first.id), false);
   grid.input = {
     ...input,
-    referenceGroups: { Pair: [first], Other: [spare] },
+    rows: [
+      { id: "row-1", variable: [{ text: "", images: [first] }] },
+      { id: "row-2", variable: [{ text: "", images: [spare] }] },
+    ],
   };
   store.saveWorkflow(grid, store.workflow(grid.id));
   assert.deepEqual(store.get(grid.id)!.input, input);
@@ -528,14 +550,13 @@ test("identical uploads share one blob across private owners and grids without s
   assert.equal(store.files.path(`reference-${first.id}`, "image"), undefined);
   const grids = [first, second].map((reference, index) => {
     const owner = index ? bob : alice;
-    const input = gridSchema.parse({
+    const input = currentInput({
       format: "chat-template",
       messages: [{ role: "user", content: "Describe it", images: [reference] }],
-      model: "fixture/text",
-      effort: "none",
       budgetUsd: 1,
-      rows: { kind: "effort", values: ["none"] },
-      columns: { kind: "model", values: ["fixture/text"] },
+      parameters: { effort: { kind: "rows" }, model: { kind: "columns" } },
+      rows: [{ effort: "none" }],
+      columns: [{ model: "fixture/text" }],
     });
     const grid: Grid = {
       id: token(),
@@ -764,7 +785,7 @@ test("legacy workflow inputs and live chat histories project authoritative dimen
     session,
   )!;
   const legacy = { id: image.id, name: image.name };
-  const input = gridSchema.parse({
+  const input = currentInput({
     format: "chat-template",
     messages: [
       {
@@ -774,10 +795,9 @@ test("legacy workflow inputs and live chat histories project authoritative dimen
       },
       { role: "unfilled", content: "" },
     ],
-    rows: { kind: "effort", values: ["none"] },
-    columns: { kind: "model", values: ["fixture/text"] },
-    model: "fixture/text",
-    effort: "none",
+    parameters: { effort: { kind: "rows" }, model: { kind: "columns" } },
+    rows: [{ effort: "none" }],
+    columns: [{ model: "fixture/text" }],
     budgetUsd: 1,
   });
   const grid: Grid = {

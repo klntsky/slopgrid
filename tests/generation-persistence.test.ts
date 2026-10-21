@@ -18,7 +18,7 @@ test(
     let unlock = () => {};
     try {
       const grid = f.grid({
-        rows: { kind: "variable", values: [[{ text: "one" }]] },
+        rows: [{ variable: [{ text: "one" }] }],
       });
       unlock = holdDatabaseWrites(f.store);
       await assert.rejects(
@@ -65,7 +65,7 @@ test(
     let unsubscribe = () => {};
     try {
       const grid = f.grid({
-        rows: { kind: "variable", values: [[{ text: "one" }]] },
+        rows: [{ variable: [{ text: "one" }] }],
       });
       const snapshots: string[] = [];
       unsubscribe = f.engine.api.subscribeGrid(

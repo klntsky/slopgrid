@@ -23,7 +23,7 @@ test(
       assert.equal(drained.runningCalls, 0);
       assert.equal(drained.activeGrids, 1);
       const extra = f.grid({
-        rows: { kind: "variable", values: [[{ text: "extra" }]] },
+        rows: [{ variable: [{ text: "extra" }] }],
       });
       await assert.rejects(
         f.engine.api.startGrid({ gridId: extra.id, sessionId: f.owner }),
@@ -65,7 +65,7 @@ test(
     let unlock = () => {};
     try {
       const grid = f.grid({
-        rows: { kind: "variable", values: [[{ text: "one" }]] },
+        rows: [{ variable: [{ text: "one" }] }],
       });
       await f.engine.api.startGrid({ gridId: grid.id, sessionId: f.owner });
       const first = await f.nextCall();

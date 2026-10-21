@@ -1,7 +1,8 @@
 import { expandGrid, type Cell, type GridInput } from "./domain.js";
 import { generationBudget, PreparationError } from "./generation-budget.js";
 import { instruction } from "./generation-instructions.js";
-import { resolveGridModels, ModelResolutionError } from "./model-resolution.js";
+import { resolveGridModels } from "./model-resolution.js";
+import { ModelResolutionError } from "./model-alias.js";
 import type { Model } from "./provider.js";
 
 export type CostEstimate = {

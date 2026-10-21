@@ -57,15 +57,14 @@ async function appendCompletionAndUser(page: Page) {
 async function appendFinalCompletion(page: Page) {
   await appendMessage(page);
 }
-async function variableAxes(page: Page) {
+async function variableAxis(page: Page) {
   await page
     .getByRole("combobox", { name: "Rows", exact: true })
     .selectOption("variable");
   await setVariableValues(page, "Rows", ["one"]);
   await page
     .getByRole("combobox", { name: "Columns", exact: true })
-    .selectOption("variable");
-  await setVariableValues(page, "Columns", ["one"]);
+    .selectOption("effort");
 }
 async function unsupportedOtherModel(page: Page) {
   await page.goto("/create");
@@ -90,13 +89,13 @@ test("message attachments gate every model and reach only their own completion t
   await request.post("/fixture/reset", { data: { markdownOutput: answer } });
   await page
     .getByLabel("Message 1", { exact: true })
-    .fill("Describe the first image. $ROW1 $COLUMN1");
+    .fill("Describe the first image. $ROW1 one");
   await appendCompletionAndUser(page);
   await page
     .getByLabel("Message 3", { exact: true })
     .fill("Describe the later image.");
   await appendFinalCompletion(page);
-  await variableAxes(page);
+  await variableAxis(page);
   await selectModel(page, "fixture/other");
   const generate = page.getByRole("button", { name: "Generate", exact: true });
   await expect(generate).toBeEnabled();
@@ -223,7 +222,7 @@ test("image-only message attachments follow reorder, format switches, Edit and F
   });
   await page
     .getByLabel("Message 1", { exact: true })
-    .fill("First question $ROW1 $COLUMN1");
+    .fill("First question $ROW1 one");
   await page
     .getByLabel("Add images to message 1", { exact: true })
     .setInputFiles(firstImage);
@@ -263,17 +262,19 @@ test("image-only message attachments follow reorder, format switches, Edit and F
   ).toBeVisible();
   await page.getByRole("button", { name: "Image", exact: true }).click();
   await expect(
-    page
-      .getByRole("combobox", { name: "Rows", exact: true })
-      .locator('option[value="input_references"]'),
-  ).toHaveCount(1);
+    page.getByLabel("Add images to prompt", { exact: true }),
+  ).toBeEnabled();
+  await expect(
+    page.getByRole("img", { name: laterImage.name, exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("img", { name: firstImage.name, exact: true }),
+  ).toHaveCount(0);
   await page
     .getByRole("button", { name: "Chat completion", exact: true })
     .click();
   await expect(
-    page
-      .getByRole("combobox", { name: "Rows", exact: true })
-      .locator('option[value="input_references"]'),
+    page.getByLabel("Add images to prompt", { exact: true }),
   ).toHaveCount(0);
   await expect(
     page
@@ -287,7 +288,7 @@ test("image-only message attachments follow reorder, format switches, Edit and F
       .nth(1)
       .getByRole("img", { name: firstImage.name, exact: true }),
   ).toBeVisible();
-  await variableAxes(page);
+  await variableAxis(page);
   await selectModel(page, "fixture/text");
   await page.getByRole("button", { name: "Generate", exact: true }).click();
   await expectProgress(page, 1, 1);
@@ -337,17 +338,17 @@ test("clipboard images attach to their user turn and disabled role badges retain
 }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await unsupportedOtherModel(page);
-  await variableAxes(page);
+  await variableAxis(page);
   await selectModel(page, "fixture/other");
   await request.post("/fixture/reset", {
     data: { markdownOutput: "Clipboard answer." },
   });
   const first = page.getByLabel("Message 1", { exact: true });
-  await first.fill("Earlier $ROW1 $COLUMN1");
+  await first.fill("Earlier $ROW1 one");
   await page.evaluate(() => navigator.clipboard.writeText("\nNotes"));
   await first.press("End");
   await first.press("ControlOrMeta+V");
-  await expect(first).toHaveValue("Earlier $ROW1 $COLUMN1\nNotes");
+  await expect(first).toHaveValue("Earlier $ROW1 one\nNotes");
   await appendCompletionAndUser(page);
   const clipboardBytes = await page.evaluate(async () => {
     const canvas = document.createElement("canvas");

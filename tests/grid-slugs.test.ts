@@ -6,6 +6,7 @@ import { expandGrid, gridSchema, type Grid } from "../server/domain.js";
 import { validatedGrid } from "./grid-storage-fixture.js";
 import { Store } from "../server/store.js";
 import { createWorkflow } from "../server/workflow.js";
+import { currentInput } from "./current-grid-fixture.js";
 
 test("public slug claims validate, serialize, persist and preserve existing links", async (t) => {
   const { origin, store, database, secret } = await appFixture(t);
@@ -17,15 +18,16 @@ test("public slug claims validate, serialize, persist and preserve existing link
   const slug = `my-cool-grid-${token()}`;
   const differentSlug = `different-${token()}`;
   const lateSlug = `late-${token()}`;
-  const input: Grid["input"] = {
-    format: "markdown",
+  const input = currentInput({
     prompt: "$ROW1",
-    model: "fixture/text",
-    rows: { kind: "variable", values: [[{ text: "cat" }]] },
-    columns: { kind: "effort", values: ["none"] },
-    effort: "none",
     budgetUsd: 5,
-  };
+    parameters: {
+      variable: { kind: "rows" },
+      effort: { kind: "columns" },
+    },
+    rows: [{ variable: [{ text: "cat" }] }],
+    columns: [{ effort: "none" }],
+  });
   for (const id of [first, second, third]) {
     const grid: Grid = {
       id,

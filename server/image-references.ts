@@ -3,7 +3,8 @@ import { readFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { imageSize } from "image-size";
-import type { ChatMessage, GridInput, WorkflowTask } from "./domain.js";
+import type { ChatMessage, StoredGridInput, WorkflowTask } from "./domain.js";
+import { mapLegacyReferences } from "./legacy-grid-input.js";
 import type { ReferenceImage } from "./image-settings.js";
 import { readChatOutput } from "../shared/chat-output.js";
 
@@ -18,6 +19,13 @@ import type { Session } from "./store.js";
 import { anonymousOwner } from "./session.js";
 import { token } from "./ids.js";
 import { ownsGrid } from "./grid-policy.js";
+
+export class ReferenceImageUnavailableError extends Error {
+  constructor(options?: ErrorOptions) {
+    super("Reference image is unavailable", options);
+    this.name = "ReferenceImageUnavailableError";
+  }
+}
 
 type Dimensions = { width: number; height: number };
 
@@ -190,50 +198,21 @@ export function createImageReferences(
         : message,
     );
   }
-  function input<T extends GridInput>(input: T) {
-    return {
-      ...input,
-      rows:
-        input.rows.kind === "variable"
-          ? {
-              ...input.rows,
-              values: input.rows.values.map((fields) =>
-                fields.map((field) =>
-                  field.images
-                    ? { ...field, images: field.images.map(hydrate) }
-                    : field,
-                ),
-              ),
-            }
-          : input.rows,
-      columns:
-        input.columns.kind === "variable"
-          ? {
-              ...input.columns,
-              values: input.columns.values.map((fields) =>
-                fields.map((field) =>
-                  field.images
-                    ? { ...field, images: field.images.map(hydrate) }
-                    : field,
-                ),
-              ),
-            }
-          : input.columns,
-      ...(input.messages ? { messages: messages(input.messages) } : {}),
-      ...(input.inputReferences
-        ? { inputReferences: input.inputReferences.map(hydrate) }
-        : {}),
-      ...(input.referenceGroups
-        ? {
-            referenceGroups: Object.fromEntries(
-              Object.entries(input.referenceGroups).map(([name, images]) => [
-                name,
-                images.map(hydrate),
-              ]),
-            ),
-          }
-        : {}),
-    };
+  function input<T extends StoredGridInput>(input: T): T {
+    // Cloning the already-admitted value preserves its opaque admission type.
+    // Hydration changes metadata only, never ownership or reference identity.
+    const hydrated = structuredClone(input);
+    if (hydrated.inputVersion !== 2) {
+      Object.assign(hydrated, mapLegacyReferences(hydrated, hydrate));
+      return hydrated;
+    }
+    hydrated.promptImages = hydrated.promptImages.map(hydrate);
+    for (const record of [...hydrated.rows, ...hydrated.columns]) {
+      for (const field of record.variable ?? [])
+        if (field.images) field.images = field.images.map(hydrate);
+    }
+    if (hydrated.messages) hydrated.messages = messages(hydrated.messages);
+    return hydrated;
   }
   return {
     get,
@@ -300,8 +279,19 @@ export function createImageReferences(
             ? files.referencePath(reference.sha256)
             : undefined;
         if (!reference?.sha256 || !path)
-          throw new Error("Reference image is unavailable");
-        const bytes = await readFile(path);
+          throw new ReferenceImageUnavailableError();
+        let bytes: Buffer;
+        try {
+          bytes = await readFile(path);
+        } catch (error) {
+          if (
+            ["ENOENT", "ENOTDIR", "EACCES"].includes(
+              (error as NodeJS.ErrnoException).code ?? "",
+            )
+          )
+            throw new ReferenceImageUnavailableError({ cause: error });
+          throw error;
+        }
         return {
           bytes,
           mediaType: reference.mediaType,

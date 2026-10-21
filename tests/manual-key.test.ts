@@ -10,6 +10,7 @@ import {
   storedSessionIds,
   storedSessionPayloads,
 } from "./session-storage-fixture.js";
+import { currentDefinition } from "./current-grid-fixture.js";
 
 for (const format of ["markdown", "image"] as const) {
   test(`manual keys for ${format} stay out of SQLite, serve queued cells, and require resending after Pause`, async (t) => {
@@ -122,18 +123,22 @@ for (const format of ["markdown", "image"] as const) {
         parallelWorkers: 1,
       });
       remaining = 12;
-      const input: GridInput = {
+      const input: GridInput = currentDefinition({
         format,
-        prompt: "$ROW1 $COLUMN1",
-        rows: {
-          kind: "variable",
-          values: [[{ text: "cat" }], [{ text: "dog" }]],
+        prompt: "$ROW1 hat",
+        parameters: {
+          model: { kind: "common", value: "fixture/text" },
+          ...(format === "image"
+            ? {}
+            : { effort: { kind: "common", value: "default" } }),
+          variable: { kind: "rows" },
         },
-        columns: { kind: "variable", values: [[{ text: "hat" }]] },
-        model: "fixture/text",
-        effort: "default",
+        rows: [
+          { variable: [{ text: "cat" }] },
+          { variable: [{ text: "dog" }] },
+        ],
         budgetUsd: 5,
-      };
+      });
       const response = await fetch(`${origin}/api/grids`, {
         method: "POST",
         headers: {

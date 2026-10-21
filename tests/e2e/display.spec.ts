@@ -7,7 +7,7 @@ test("SVG images grow during generation without exposing markup or running SVG s
 }) => {
   await request.post("/fixture/reset", { data: { svgStreaming: true } });
   try {
-    await create(page, "SVG", "cat", "hat");
+    await create(page, { rowValues: ["cat"] });
     const preview = page.getByRole("img", { name: "SVG preview", exact: true });
     const centerColor = () =>
       preview.evaluate((img) => {
@@ -83,7 +83,7 @@ for (const format of ["Image", "SVG"])
     browser,
   }) => {
     await request.post("/fixture/reset", { data: {} });
-    await create(page, format, "cat", "hat");
+    await create(page, { format, rowValues: ["cat"] });
     await expectProgress(page, 1, 1);
     const gridURL = page.url();
     const source = await page
@@ -158,7 +158,14 @@ for (const format of ["Image", "SVG", "Markdown", "Static website"])
   }) => {
     await page.setViewportSize({ width: 800, height: 650 });
     await request.post("/fixture/reset", { data: {} });
-    await create(page, format, "cat\ndog\nowl", "hat\ncape\nscarf");
+    await create(page, {
+      format,
+      rowValues: ["cat", "dog", "owl"],
+      columns:
+        format === "Image"
+          ? { kind: "quality", values: ["low", "medium", "high"] }
+          : { kind: "effort", values: ["none", "low", "high"] },
+    });
     await expectProgress(page, 9, 9);
     const grid = page.getByLabel("Generated output grid");
     const cell = page.locator("article.cell").first();
@@ -351,16 +358,23 @@ test.describe("mobile grid interaction", () => {
     hasTouch: true,
   });
 
-  for (const { layout, columns, total } of [
-    { layout: "wide grid", columns: "hat\ncape\nscarf", total: 9 },
-    { layout: "tall grid", columns: "hat", total: 3 },
+  for (const { layout, columnCount, total } of [
+    { layout: "wide grid", columnCount: 3, total: 9 },
+    { layout: "tall grid", columnCount: 1, total: 3 },
   ])
     test(`pinching changes grid scale and one-finger scrolling still works (${layout})`, async ({
       page,
       request,
     }) => {
       await request.post("/fixture/reset", { data: { billing: false } });
-      await create(page, "Static website", "cat\ndog\nowl", columns);
+      await create(page, {
+        format: "Static website",
+        rowValues: ["cat", "dog", "owl"],
+        columns: {
+          kind: "effort",
+          values: columnCount === 3 ? ["none", "low", "high"] : ["default"],
+        },
+      });
       await expectProgress(page, total, total);
       await expect(
         page
@@ -436,7 +450,7 @@ test("keyboard resizing updates saved dimensions and restores them after reload"
   request,
 }) => {
   await request.post("/fixture/reset", { data: { billing: false } });
-  await create(page, "SVG", "cat", "hat");
+  await create(page, { rowValues: ["cat"] });
   await expectProgress(page, 1, 1);
   const id = new URL(page.url()).pathname.split("/").pop()!;
   const storageKey = `slopgrid:grid:${id}:sizes`;
@@ -499,7 +513,7 @@ test("Markdown preserves raw content and rendered structure across toggles and e
   const code = Array(300).fill(line).join("\n") + "\n";
   const markdown = "```js\n" + code + "```\n\nA paragraph after the code.";
   await request.post("/fixture/reset", { data: { markdownOutput: markdown } });
-  await create(page, "Markdown", "cat", "hat");
+  await create(page, { format: "Markdown", rowValues: ["cat"] });
   await expectProgress(page, 1, 1);
   const viewRaw = page.getByRole("button", { name: "View raw", exact: true });
   const checkRaw = async () => {

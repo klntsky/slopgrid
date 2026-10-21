@@ -1,8 +1,73 @@
 import type Database from "better-sqlite3";
-import { gridSchema, type Grid } from "../server/domain.js";
+import { gridSchema, type Grid, type WorkflowTask } from "../server/domain.js";
+import type { LegacyGridInput } from "../server/legacy-grid-input.js";
+import { legacySelectedReferences } from "../server/legacy-grid-input.js";
+import { expandPromptForTitle } from "../server/grid-title.js";
+import type { Store } from "../server/store.js";
+import { projectWorkflow } from "../server/workflow.js";
 
 export function validatedGrid(grid: Grid) {
   return Object.assign(grid, { input: gridSchema.parse(grid.input) });
+}
+
+// Arrange already-accepted historical storage, never current API admission.
+// Callers supply concrete task inputs and cell/task links; no workflow is rebuilt.
+export function arrangeHistoricalGrid(
+  store: Store,
+  grid: Grid & { input: LegacyGridInput },
+  tasks: readonly WorkflowTask[],
+) {
+  projectWorkflow(grid, tasks);
+  const {
+    id,
+    owner,
+    ownerUserId,
+    published,
+    visibility,
+    slug,
+    createdAt,
+    cells,
+    ...data
+  } = grid;
+  store.db.transaction(() => {
+    store.db
+      .prepare(
+        `INSERT INTO grids
+        (id,data,owner,owner_user_id,published,visibility,slug,created_at)
+        VALUES (?,?,?,?,?,?,?,?)`,
+      )
+      .run(
+        id,
+        JSON.stringify({
+          ...data,
+          expanded_prompt_for_title: expandPromptForTitle(grid.input),
+        }),
+        owner,
+        ownerUserId ?? null,
+        published ? 1 : 0,
+        visibility,
+        slug ?? null,
+        createdAt,
+      );
+    store.saveWorkflow(grid, tasks);
+    const insertCell = store.db.prepare(
+      "INSERT INTO cells (id,grid_id,position,data,generation_id,judgment_id) VALUES (?,?,?,'{}',?,?)",
+    );
+    cells.forEach((cell, position) =>
+      insertCell.run(
+        cell.id,
+        id,
+        position,
+        cell.generationId,
+        cell.judgmentId ?? null,
+      ),
+    );
+    const insertReference = store.db.prepare(
+      "INSERT INTO grid_reference_images (grid_id,reference_id) VALUES (?,?)",
+    );
+    for (const reference of legacySelectedReferences(grid.input))
+      insertReference.run(id, reference.id);
+  })();
 }
 
 export function storedGridCount(db: Database.Database) {

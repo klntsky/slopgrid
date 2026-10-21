@@ -22,7 +22,7 @@ test("a supported large reference survives reload, authorization and generation"
   );
   const buffer = Buffer.concat([png, Buffer.alloc(6 * 1024 * 1024)]);
   await page
-    .getByLabel("Add input references", { exact: true })
+    .getByLabel("Add images to prompt", { exact: true })
     .setInputFiles({ name: "large.png", mimeType: "image/png", buffer });
   await expect(
     page.getByRole("img", { name: "large.png", exact: true }),

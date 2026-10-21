@@ -5,7 +5,6 @@ import { Billing } from "./billing.js";
 import Database from "better-sqlite3";
 import { encrypt, decrypt } from "./encryption.js";
 import {
-  expandGrid,
   type Grid,
   type StoredGrid,
   type ValidatedGridInput,
@@ -21,6 +20,7 @@ import { initializeDatabase } from "./database.js";
 import { expandPromptForTitle } from "./grid-title.js";
 import { selectedReferences } from "./image-settings.js";
 import { createWorkflow, projectWorkflow } from "./workflow.js";
+import { gridDimensions, gridDisplay } from "../shared/grid-display.js";
 export type Session = {
   id: string;
   anonymousId?: string;
@@ -140,20 +140,32 @@ export class Store {
     grid.input = this.references.input(grid.input);
     const cells = this.db
       .prepare(
-        "SELECT id, generation_id, judgment_id FROM cells WHERE grid_id=? ORDER BY position",
+        "SELECT id, position, generation_id, judgment_id FROM cells WHERE grid_id=? ORDER BY position",
       )
       .all(id) as {
       id: string;
+      position: number;
       generation_id: string;
       judgment_id: string | null;
     }[];
-    grid.cells = expandGrid(grid.input).map((cell, index) => ({
-      ...cell,
-      id: cells[index].id,
-      generationId: cells[index].generation_id,
-      judgmentId: cells[index].judgment_id ?? undefined,
-    }));
     const tasks = this.workflow(id);
+    const byId = new Map(tasks.map((task) => [task.id, task]));
+    const { columns } = gridDimensions(grid.input);
+    grid.cells = cells.map((cell) => {
+      const generation = byId.get(cell.generation_id);
+      if (generation?.kind !== "generation")
+        throw new Error("A cell must reference its generation task.");
+      const { format: _format, ...parameters } = generation.input;
+      return {
+        ...parameters,
+        id: cell.id,
+        row: Math.floor(cell.position / columns),
+        column: cell.position % columns,
+        generationId: cell.generation_id,
+        judgmentId: cell.judgment_id ?? undefined,
+        status: generation.status,
+      };
+    });
     projectWorkflow(grid, tasks);
     return grid;
   }
@@ -443,12 +455,13 @@ export class Store {
       )
       .get(id) as { gridId: string; data: string; position: number };
     const { input } = JSON.parse(row.data) as Pick<Grid, "input">;
-    const columns = input.columns.values.length;
+    const { columns } = gridDimensions(input);
+    const display = gridDisplay(input);
     return {
       gridId: row.gridId,
       prompt: input.prompt,
-      row: input.rows.values[Math.floor(row.position / columns)],
-      column: input.columns.values[row.position % columns],
+      row: display.rows[Math.floor(row.position / columns)].downloadLabel,
+      column: display.columns[row.position % columns].downloadLabel,
       format: input.format,
       mediaType: output.mediaType,
       artifactId: output.artifactId!,

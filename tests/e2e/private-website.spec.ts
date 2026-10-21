@@ -5,9 +5,10 @@ import { join } from "node:path";
 import { startGenerationFixture } from "../generation-fixture";
 import { webFixture } from "../web-fixture";
 import { Store } from "../../server/store";
-import { expandGrid, gridSchema, type Grid } from "../../server/domain";
+import { expandGrid, type Grid } from "../../server/domain";
 import { token } from "../../server/ids";
 import { createWorkflow } from "../../server/workflow";
+import { currentInput } from "../current-grid-fixture";
 
 test("private websites load in frames and direct tabs for the owning user across sessions", async ({
   playwright,
@@ -35,13 +36,15 @@ test("private websites load in frames and direct tabs for the owning user across
   try {
     const owner = token();
     store.saveSession({ id: owner, created: 0 });
-    const input = gridSchema.parse({
+    const input = currentInput({
       format: "html",
       prompt: "A website",
-      rows: { kind: "model", values: ["fixture/text"] },
-      columns: { kind: "effort", values: ["none"] },
-      model: "fixture/text",
-      effort: "none",
+      parameters: {
+        model: { kind: "rows" },
+        effort: { kind: "columns" },
+      },
+      rows: [{ model: "fixture/text" }],
+      columns: [{ effort: "none" }],
       budgetUsd: 1,
     });
     const grid = {
