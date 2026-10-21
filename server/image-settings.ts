@@ -104,7 +104,7 @@ export function selectedReferences(
       input.messages?.flatMap((message) => message.images ?? []),
       input.promptImages,
       ...[...input.rows, ...input.columns].flatMap(
-        (record) => record.variable?.map((field) => field.images) ?? [],
+        (record) => record.variable?.map((field) => field?.images) ?? [],
       ),
     ) ?? []
   );

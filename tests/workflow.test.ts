@@ -171,17 +171,22 @@ test("judge criteria participate in setup validation including numbered fields a
   );
 });
 
-test("row criteria and double-digit column fields preserve independent per-cell expansion", () => {
+test("case criteria and double-digit column fields expand independently across ordinary judge efforts", () => {
   const source = base();
-  source.parameters.judge_criteria = { kind: "rows" };
-  source.rows = ["yes", "no"].map((answer) => ({
-    id: answer,
-    judge_criteria: [
-      { text: `${answer} $COLUMN10 $COLUMN1`, correctAnswer: false },
-    ],
+  source.parameters.judge_criteria = { kind: "columns" };
+  source.parameters.judge_effort = { kind: "rows" };
+  source.rows = ["none", "high"].map((effort) => ({
+    id: effort,
+    judge_effort: effort as "none" | "high",
   }));
   source.columns = ["A", "B"].map((prefix) => ({
     id: prefix,
+    judge_criteria: [
+      {
+        text: `${prefix === "A" ? "yes" : "no"} $COLUMN10 $COLUMN1`,
+        correctAnswer: false,
+      },
+    ],
     variable: Array.from({ length: 10 }, (_, index) => ({
       text: `${prefix}${index + 1}`,
     })),
@@ -200,8 +205,8 @@ test("row criteria and double-digit column fields preserve independent per-cell 
       .map((task) => task.input.criteria[0]),
     [
       { text: "yes A10 A1", correctAnswer: false },
-      { text: "yes B10 B1", correctAnswer: false },
-      { text: "no A10 A1", correctAnswer: false },
+      { text: "no B10 B1", correctAnswer: false },
+      { text: "yes A10 A1", correctAnswer: false },
       { text: "no B10 B1", correctAnswer: false },
     ],
   );

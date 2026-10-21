@@ -43,6 +43,25 @@ export function axisParameters(
   );
 }
 
+export function parameterLayoutIssue(
+  input: ParameterConfiguration,
+): string | undefined {
+  for (const side of ["rows", "columns"] as const) {
+    const owned = axisParameters(input, side);
+    if (input.parameters.variable?.kind === side) continue;
+    if (owned.length > 1)
+      return "Only prompt-variable axes can own multiple parameters.";
+    if (owned.includes("judge_criteria"))
+      return "Per-case judge criteria require prompt variables on that axis.";
+    if (!owned.length && input[side].length !== 1)
+      return `An axis with no parameters must have one neutral ${side} case.`;
+  }
+}
+
+export function isEditableGridInput(input: unknown): input is GridInput {
+  return isCurrentGridInput(input) && !parameterLayoutIssue(input);
+}
+
 const defaultValues: ParameterValues = {
   model: "",
   effort: "default",

@@ -66,7 +66,7 @@ export function referenceLists(
     ),
     ...[...input.rows, ...input.columns].flatMap((entry) => [
       ...(entry.variable ?? []).flatMap((field) =>
-        field.images ? [field.images] : [],
+        field?.images ? [field.images] : [],
       ),
     ]),
   ];

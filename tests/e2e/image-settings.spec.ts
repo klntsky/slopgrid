@@ -105,9 +105,6 @@ test("image warning grids compare models with parameter values and remain adviso
   await page.getByRole("button", { name: "EDIT", exact: true }).click();
   await acceptDrop(page, () => rows.selectOption("size"));
   await page
-    .getByRole("button", { name: "Remove row case 2", exact: true })
-    .click();
-  await page
     .getByRole("group", { name: "Row values", exact: true })
     .getByRole("checkbox", { name: "Auto", exact: true })
     .uncheck();

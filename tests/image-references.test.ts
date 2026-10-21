@@ -157,7 +157,9 @@ for (const shared of [false, true])
     store.insert(validatedGrid(grid), tasks);
     const savedInput = gridSchema.parse(store.get(grid.id)!.input);
     assert.deepEqual(
-      shared ? savedInput.promptImages : savedInput.rows[0].variable![0].images,
+      shared
+        ? savedInput.promptImages
+        : savedInput.rows[0].variable![0]!.images,
       [image],
     );
     const user = store.identify("github", `reference-owner-${token()}`, {
@@ -218,7 +220,9 @@ for (const shared of [false, true])
       const fork = reopened.all().find((saved) => saved.owner === forkOwner)!;
       const forkInput = gridSchema.parse(fork.input);
       assert.deepEqual(
-        shared ? forkInput.promptImages : forkInput.rows[0].variable![0].images,
+        shared
+          ? forkInput.promptImages
+          : forkInput.rows[0].variable![0]!.images,
         [image],
       );
       assert.deepEqual(
@@ -355,7 +359,7 @@ for (const format of ["markdown", "svg", "html"] as const)
       const savedInput = gridSchema.parse(saved.input);
       assert.deepEqual(savedInput.promptImages, [common]);
       assert.deepEqual(savedInput.parameters.variable, { kind: "rows" });
-      assert.deepEqual(savedInput.rows[0].variable![0].images, [
+      assert.deepEqual(savedInput.rows[0].variable![0]!.images, [
         variable,
         common,
       ]);

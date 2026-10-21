@@ -3,7 +3,7 @@ import { hasCompletedOutput, type Grid, type Identity } from "./domain.js";
 import type { Store, Session } from "./store.js";
 import type { GenerationSnapshot } from "./generation-api.js";
 import { gridDisplay } from "../shared/grid-display.js";
-import { isCurrentGridInput } from "./parameters.js";
+import { isEditableGridInput } from "./parameters.js";
 
 export function presentIdentity(user?: Identity): Identity | null {
   return user
@@ -31,7 +31,7 @@ export function createGridPresenter(store: Store, origin: URL) {
       input,
       author: gridAuthor(g, store),
       canEdit,
-      canConfigure: isCurrentGridInput(g.input) && (canEdit || g.published),
+      canConfigure: isEditableGridInput(g.input) && (canEdit || g.published),
       display: gridDisplay(input),
       canPublish: canEdit && !publicationError(g, "public"),
       spentUsd: canEdit ? spentUsd : undefined,

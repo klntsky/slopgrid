@@ -681,7 +681,7 @@ test("reuse requires intact content and retains shared artifacts while either gr
     });
     const source = await create(f, config);
     for (const { variable } of config.rows) {
-      const name = variable![0].text;
+      const name = variable![0]!.text;
       finish(
         await f.nextCall(),
         JSON.stringify({

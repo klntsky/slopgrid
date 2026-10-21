@@ -5,7 +5,6 @@ import type {
 } from "../../server/domain";
 import {
   axisParameters,
-  defaultGridDraft,
   newCase,
   parameterDefault,
   parameterNames,
@@ -54,6 +53,8 @@ export type InputAction =
   | { type: "add-case"; side: AxisSide }
   | { type: "remove-case"; side: AxisSide; index: number }
   | { type: "move-case"; side: AxisSide; index: number; to: number }
+  | { type: "add-variable"; side: AxisSide }
+  | { type: "remove-variable"; side: AxisSide; index: number }
   | { type: "swap" }
   | { type: "judge"; enabled: boolean };
 
@@ -107,15 +108,30 @@ export function droppedParameters(
   input: GridDraftInput,
   action: InputAction,
 ): ParameterId[] {
+  const replacement =
+    action.type === "dimension"
+      ? action
+      : action.type === "to-axis" &&
+          input.parameters.variable?.kind !== action.side
+        ? action
+        : undefined;
   const removed =
     action.type === "to-common"
       ? [action.parameter]
-      : action.type === "dimension"
-        ? axisParameters(input, action.side).filter(
-            (kind) => kind !== action.parameter,
+      : replacement
+        ? axisParameters(input, replacement.side).filter(
+            (kind) => kind !== replacement.parameter,
           )
         : [];
-  return removed.filter((kind) => differing(input, kind));
+  return removed.filter((kind) =>
+    kind === "variable"
+      ? input[input.parameters.variable!.kind].some((entry) =>
+          entry.variable?.some(
+            (field) => field && (field.text.trim() || field.images?.length),
+          ),
+        )
+      : differing(input, kind),
+  );
 }
 
 export function confirmInputAction(
@@ -126,14 +142,25 @@ export function confirmInputAction(
   if (!dropped.length) return true;
   const restored = dropped.filter((kind) => kind !== "variable");
   return window.confirm(
-    `The ${dropped.map((kind) => parameterNames[kind]).join(", ")} values differ between cases. Drop these values?` +
+    `Changing the ${dropped.map((kind) => parameterNames[kind]).join(", ")} setup will discard values. Drop these values?` +
       (dropped.includes("variable")
-        ? " The differing prompt-variable fields and images will be discarded."
+        ? " The prompt-variable text and images will be discarded."
         : "") +
       (restored.length
         ? ` ${restored.map((kind) => parameterNames[kind]).join(", ")} will return to their common defaults.`
         : ""),
   );
+}
+
+function neutralDimension(
+  input: GridDraftInput,
+  side: AxisSide,
+): GridDraftInput {
+  if (axisParameters(input, side).length) return input;
+  return {
+    ...input,
+    [side]: [input[side][0] ? { id: input[side][0].id } : newCase()],
+  };
 }
 
 function collapse(
@@ -154,15 +181,18 @@ function collapse(
       [parameter]: { kind: "common", value: structuredClone(value) },
     });
   }
-  return {
-    ...input,
-    parameters,
-    [source.kind]: entries.map((entry) => {
-      const next = { ...entry };
-      delete next[parameter];
-      return next;
-    }),
-  };
+  return neutralDimension(
+    {
+      ...input,
+      parameters,
+      [source.kind]: entries.map((entry) => {
+        const next = { ...entry };
+        delete next[parameter];
+        return next;
+      }),
+    },
+    source.kind,
+  );
 }
 
 function own(
@@ -178,7 +208,10 @@ function own(
   return {
     ...input,
     parameters: { ...input.parameters, [parameter]: { kind: side } },
-    [side]: input[side].map((entry) => ({
+    [side]: (input[side].length
+      ? input[side]
+      : [newCase(caseDefaults(input, side))]
+    ).map((entry) => ({
       ...entry,
       [parameter]: structuredClone(value),
     })),
@@ -193,9 +226,9 @@ function caseDefaults(
   for (const parameter of axisParameters(input, side)) {
     const value =
       parameter === "variable"
-        ? Array.from({ length: input[side][0]?.variable?.length ?? 1 }, () => ({
-            text: "",
-          }))
+        ? (input[side][0]?.variable ?? [{ text: "" }]).map((field) =>
+            field === null ? null : { text: "" },
+          )
         : parameterDefault(parameter);
     Object.assign(values, { [parameter]: value });
   }
@@ -217,12 +250,11 @@ export function reduceInput(
         },
       };
     case "to-axis":
-      if (
-        !input[action.side].length ||
-        input.parameters[action.parameter]?.kind !== "common"
-      )
-        return input;
-      return own(input, action.parameter, action.side);
+      if (input.parameters[action.parameter]?.kind !== "common") return input;
+      if (input.parameters.variable?.kind === action.side)
+        return own(input, action.parameter, action.side);
+      if (action.parameter === "judge_criteria") return input;
+      return reduceInput(input, { ...action, type: "dimension" });
     case "to-common":
       return collapse(input, action.parameter);
     case "dimension": {
@@ -230,27 +262,60 @@ export function reduceInput(
       const other = action.side === "rows" ? "columns" : "rows";
       if (
         source?.kind === other ||
-        (!source && action.parameter !== "variable")
+        (!source && action.parameter !== "variable") ||
+        action.parameter === "judge_criteria"
       )
         return input;
+      if (
+        source?.kind === action.side &&
+        input.parameters.variable?.kind !== action.side
+      )
+        return input;
+      if (action.parameter === "variable" && source?.kind === action.side)
+        return input;
+      const retained =
+        source?.kind === action.side
+          ? input[action.side].map((entry) => ({
+              id: entry.id,
+              [action.parameter]: entry[action.parameter],
+            }))
+          : undefined;
       let next = input;
       for (const parameter of axisParameters(input, action.side))
-        if (parameter !== action.parameter) next = collapse(next, parameter);
-      if (source?.kind === action.side) return next;
+        next = collapse(next, parameter);
+      if (retained) {
+        const seen = new Set<unknown>();
+        return {
+          ...next,
+          parameters: {
+            ...next.parameters,
+            [action.parameter]: { kind: action.side },
+          },
+          [action.side]: retained.filter((entry) => {
+            const value = entry[action.parameter];
+            if (seen.has(value)) return false;
+            seen.add(value);
+            return true;
+          }),
+        };
+      }
       const value =
         source?.kind === "common"
           ? source.value
           : parameterDefault(action.parameter);
-      // Replace ownership, not the aligned case records that remain on this axis.
-      if (!next[action.side].length)
-        next = { ...next, [action.side]: [newCase()] };
-      next = own(next, action.parameter, action.side);
-      if (
+      const unselectedModel =
         (action.parameter === "model" || action.parameter === "judge_model") &&
-        !value
-      )
-        next = { ...next, [action.side]: [] };
-      return next;
+        !value;
+      return {
+        ...next,
+        parameters: {
+          ...next.parameters,
+          [action.parameter]: { kind: action.side },
+        },
+        [action.side]: unselectedModel
+          ? []
+          : [newCase({ [action.parameter]: structuredClone(value) })],
+      };
     }
     case "case-value":
       if (input.parameters[action.parameter]?.kind !== action.side)
@@ -290,6 +355,7 @@ export function reduceInput(
       return { ...input, [action.side]: entries };
     }
     case "add-case":
+      if (input.parameters.variable?.kind !== action.side) return input;
       return {
         ...input,
         [action.side]: [
@@ -298,14 +364,49 @@ export function reduceInput(
         ],
       };
     case "remove-case":
-      if (input[action.side].length <= 1) return input;
+      if (
+        input.parameters.variable?.kind !== action.side ||
+        input[action.side].length <= 1
+      )
+        return input;
       return {
         ...input,
         [action.side]: input[action.side].filter(
           (_, index) => index !== action.index,
         ),
       };
+    case "add-variable":
+      if (
+        input.parameters.variable?.kind !== action.side ||
+        !input[action.side].length
+      )
+        return input;
+      return {
+        ...input,
+        [action.side]: input[action.side].map((entry) => ({
+          ...entry,
+          variable: [...(entry.variable ?? []), { text: "" }],
+        })),
+      };
+    case "remove-variable":
+      if (
+        input.parameters.variable?.kind !== action.side ||
+        !input[action.side][0]?.variable?.[action.index] ||
+        input[action.side][0].variable!.filter((field) => field !== null)
+          .length <= 1
+      )
+        return input;
+      return {
+        ...input,
+        [action.side]: input[action.side].map((entry) => ({
+          ...entry,
+          variable: entry.variable!.map((field, index) =>
+            index === action.index ? null : field,
+          ),
+        })),
+      };
     case "move-case": {
+      if (input.parameters.variable?.kind !== action.side) return input;
       const entries = [...input[action.side]];
       if (
         !entries[action.index] ||
@@ -385,40 +486,8 @@ export function reduceInput(
         rows: strip(input.rows),
         columns: strip(input.columns),
       };
-      const defaults = defaultGridDraft(input.format);
-      for (const side of ["rows", "columns"] as const) {
-        if (
-          !axisParameters(input, side).some((kind) =>
-            kind.startsWith("judge_"),
-          ) ||
-          axisParameters(next, side).length
-        )
-          continue;
-        const other = side === "rows" ? "columns" : "rows";
-        const parameter = [
-          ...axisParameters(defaults, side),
-          ...axisParameters(defaults, other),
-        ].find((kind) => next.parameters[kind]?.kind === "common");
-        if (!parameter) continue;
-        const source = next.parameters[parameter];
-        const fallback = defaults.parameters[parameter];
-        if (
-          source?.kind !== "common" ||
-          !fallback ||
-          fallback.kind === "common"
-        )
-          continue;
-        const values = equal(source.value, parameterDefault(parameter))
-          ? defaults[fallback.kind].map((entry) => entry[parameter])
-          : [source.value];
-        next = {
-          ...next,
-          parameters: { ...next.parameters, [parameter]: { kind: side } },
-          [side]: values.map((value) =>
-            newCase({ [parameter]: structuredClone(value) }),
-          ),
-        };
-      }
+      for (const side of ["rows", "columns"] as const)
+        next = neutralDimension(next, side);
       return next;
     }
   }

@@ -43,7 +43,7 @@ test("image-only admission requires image context in every case", () => {
         gridSchema.safeParse({ ...input, prompt: `Describe ${token}` }).success,
         true,
       );
-      input[side][1].variable![0].images = [image];
+      input[side][1].variable![0]!.images = [image];
       assert.equal(gridSchema.safeParse(input).success, true);
     }
 });

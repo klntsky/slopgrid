@@ -157,9 +157,10 @@ export async function create(page: Page, options: CreateOptions = {}) {
   await page
     .getByRole("combobox", { name: "Columns", exact: true })
     .selectOption(columns.kind);
-  const columnValues = page
-    .getByRole("table", { name: "Grid layout parameters", exact: true })
-    .getByRole("group", { name: "Column values", exact: true });
+  const columnValues = page.getByRole("group", {
+    name: "Column values",
+    exact: true,
+  });
   const checked = columnValues.locator('input[type="checkbox"]:checked');
   for (const checkbox of await checked.all()) await checkbox.uncheck();
   for (const value of columns.values)

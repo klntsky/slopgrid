@@ -20,7 +20,11 @@ import {
   criteriaSets,
   type Criterion,
 } from "./judge-criteria.js";
-import { parameterValue, axisParameters } from "./parameters.js";
+import {
+  parameterValue,
+  axisParameters,
+  parameterLayoutIssue,
+} from "./parameters.js";
 import type { LegacyGridInput } from "./legacy-grid-input.js";
 export type { VariableField } from "./prompt-variables.js";
 export const efforts = [
@@ -59,7 +63,7 @@ export const parameterValueSchemas = {
   judge_model: z.string(),
   judge_effort: z.enum(efforts),
   judge_criteria: draftJudgeCriteriaSchema,
-  variable: z.array(variableFieldSchema),
+  variable: z.array(variableFieldSchema.nullable()),
 };
 const parameterValuesSchema = z.object(parameterValueSchemas);
 export type ParameterValues = z.infer<typeof parameterValuesSchema>;
@@ -277,6 +281,8 @@ export const gridSchema = gridInputSchema
           );
       }
     }
+    const layoutIssue = parameterLayoutIssue(g);
+    if (layoutIssue) issue(layoutIssue);
     for (const side of ["rows", "columns"] as const) {
       const owned = new Set(axisParameters(g, side));
       const ids = new Set<string>();

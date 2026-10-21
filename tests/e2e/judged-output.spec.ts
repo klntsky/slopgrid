@@ -491,7 +491,6 @@ test("removing a judge preserves ordinary axes and generation settings", async (
   ).toBeChecked();
   await expect(
     page
-      .getByRole("table", { name: "Grid layout parameters", exact: true })
       .getByRole("group", { name: "Row values", exact: true })
       .getByRole("checkbox", { name: "Model default", exact: true }),
   ).toBeChecked();

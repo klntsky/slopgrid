@@ -24,13 +24,14 @@ export function expandPromptForTitle(
             ? input[side].values
             : undefined;
       const index = Number(number) - 1;
-      if (!values || index >= (values[0]?.length ?? 0)) return token;
+      if (!values?.length || values.some((fields) => !fields[index]))
+        return token;
       return `(${values
         .map((fields) => {
           const field = fields[index];
           return (
-            field.text ||
-            field.images?.map((image) => image.name).join(", ") ||
+            field?.text ||
+            field?.images?.map((image) => image.name).join(", ") ||
             ""
           );
         })

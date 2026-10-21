@@ -770,12 +770,12 @@ for (const format of ["markdown", "chat-template", "image"] as const)
       if (!isCurrentGridInput(saved.input))
         throw new Error("Expected current saved input");
       assert.deepEqual(saved.input.parameters.variable, { kind: "rows" });
-      assert.deepEqual(saved.input.rows[0].variable![0].images, [generator]);
+      assert.deepEqual(saved.input.rows[0].variable![0]!.images, [generator]);
       if (format === "chat-template")
         assert.deepEqual(saved.input.messages![0].images, [explicit]);
       else assert.deepEqual(saved.input.promptImages, [explicit]);
-      assert.deepEqual(saved.input.rows[0].variable![1].images, [unused]);
-      assert.deepEqual(saved.input.rows[0].variable![2].images, [criterion]);
+      assert.deepEqual(saved.input.rows[0].variable![1]!.images, [unused]);
+      assert.deepEqual(saved.input.rows[0].variable![2]!.images, [criterion]);
       const tasks = store.workflow(grid.id);
       const generation = tasks.find((task) => task.kind === "generation")!;
       const judgment = tasks.find((task) => task.kind === "judge")!;

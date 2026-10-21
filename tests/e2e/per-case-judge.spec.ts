@@ -91,7 +91,7 @@ test("judge criteria have one owner and differing cases reset only after confirm
     name: "Make Judge criteria a column variable",
     exact: true,
   });
-  await expect(rowButton).toBeEnabled();
+  await expect(rowButton).toBeDisabled();
   await expect(columnButton).toBeDisabled();
   await page
     .getByRole("combobox", { name: "Rows", exact: true })
@@ -100,7 +100,7 @@ test("judge criteria have one owner and differing cases reset only after confirm
   await page
     .getByRole("combobox", { name: "Columns", exact: true })
     .selectOption("effort");
-  await expect(columnButton).toBeEnabled();
+  await expect(columnButton).toBeDisabled();
   await rowButton.click();
   await expect(
     rubric(page, "Row", 1).getByLabel("Criterion 1", { exact: true }),
@@ -149,7 +149,7 @@ test("judge criteria have one owner and differing cases reset only after confirm
     .getByLabel("Criterion 1", { exact: true })
     .fill("Does the output retain equal criteria?");
   await expect(rowButton).toBeEnabled();
-  await expect(columnButton).toBeEnabled();
+  await expect(columnButton).toBeDisabled();
   await page
     .getByRole("button", { name: "Swap rows and columns", exact: true })
     .click();

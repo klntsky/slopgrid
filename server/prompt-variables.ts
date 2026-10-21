@@ -95,13 +95,19 @@ export function promptVariableIssue(input: TemplateInput): string | undefined {
   for (const side of ["rows", "columns"] as const) {
     if (input.parameters.variable?.kind !== side) continue;
     const cases = input[side];
-    const count = cases[0]?.variable?.length;
+    const fields = cases[0]?.variable;
     if (
-      !cases.length ||
-      !count ||
-      cases.some((record) => record.variable?.length !== count)
+      !fields?.some((field) => field !== null) ||
+      cases.some(
+        ({ variable }) =>
+          !variable ||
+          variable.length !== fields.length ||
+          variable.some(
+            (field, index) => (field === null) !== (fields[index] === null),
+          ),
+      )
     )
-      return "Variable values must have the same nonzero number of fields.";
+      return "Variable values must have the same active numbered fields, with at least one active field.";
   }
   const templates: { text: string; role: string }[] =
     input.format === "chat-template"
@@ -128,7 +134,7 @@ export function promptVariableIssue(input: TemplateInput): string | undefined {
         return `Choose prompt variables for ${name === "ROW" ? "rows" : "columns"} to use ${token}.`;
       if (
         !/^[1-9]\d*$/.test(number) ||
-        Number(number) > (axis[0]?.variable?.length ?? 0)
+        !axis[0]?.variable?.[Number(number) - 1]
       )
         return `Unknown prompt variable ${token}.`;
       if (
@@ -144,6 +150,10 @@ export function promptVariableIssue(input: TemplateInput): string | undefined {
     ["ROW", "rows"],
     ["COLUMN", "columns"],
   ] as const)
-    if (input.parameters.variable?.kind === side && !used.has(name))
-      return `Include $${name}1 in the prompt or judge criteria for ${name === "ROW" ? "row" : "column"} variables.`;
+    if (input.parameters.variable?.kind === side && !used.has(name)) {
+      const index = input[side][0]!.variable!.findIndex(
+        (field) => field !== null,
+      );
+      return `Include $${name}${index + 1} in the prompt or judge criteria for ${name === "ROW" ? "row" : "column"} variables.`;
+    }
 }

@@ -209,7 +209,7 @@ export function createImageReferences(
     hydrated.promptImages = hydrated.promptImages.map(hydrate);
     for (const record of [...hydrated.rows, ...hydrated.columns]) {
       for (const field of record.variable ?? [])
-        if (field.images) field.images = field.images.map(hydrate);
+        if (field?.images) field.images = field.images.map(hydrate);
     }
     if (hydrated.messages) hydrated.messages = messages(hydrated.messages);
     return hydrated;

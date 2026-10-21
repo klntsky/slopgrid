@@ -10,11 +10,19 @@ import { ArrowUpRight, DollarSign, ArrowLeftRight } from "lucide-react";
 import { useLayoutEffect, useRef } from "react";
 import { efforts, isChatFormat, type Effort } from "../../server/domain";
 import { imageKinds } from "../../server/image-settings";
-import { type CommonParameterId, type AxisSide } from "../../server/parameters";
+import {
+  axisParameters,
+  type CommonParameterId,
+  type AxisSide,
+} from "../../server/parameters";
 import { generationGroupKey } from "../../shared/generation-key";
 import { effortLabel } from "../../server/compatibility";
 import { useCreateForm } from "../create/use-create-form";
-import { AxisEditor, CommonParameterActions } from "../create/axis-editor";
+import {
+  AxisEditor,
+  AxisValues,
+  CommonParameterActions,
+} from "../create/axis-editor";
 import {
   CompatibilityFeedback,
   compatibilityTables,
@@ -93,6 +101,10 @@ export function Create() {
       source: "columns",
     }),
   };
+  function ordinaryAxisCompatibility(side: AxisSide) {
+    const parameter = axisParameters(input, side)[0];
+    return parameter ? axisCompatibility[side][parameter] : null;
+  }
   const commonFixedParameters = commonModel || commonEffort;
   const commonParameters =
     commonFixedParameters ||
@@ -102,9 +114,12 @@ export function Create() {
       ));
   const variableSource = input.parameters.variable;
   const promptVariables = variableSource
-    ? (input[variableSource.kind][0]?.variable ?? []).map(
-        (_, index) =>
-          `$${variableSource.kind === "rows" ? "ROW" : "COLUMN"}${index + 1}`,
+    ? (input[variableSource.kind][0]?.variable ?? []).flatMap((field, index) =>
+        field === null
+          ? []
+          : [
+              `$${variableSource.kind === "rows" ? "ROW" : "COLUMN"}${index + 1}`,
+            ],
       )
     : [];
   const variableIssue = promptVariableIssue(input);
@@ -115,8 +130,14 @@ export function Create() {
   const judgeModelSource = input.parameters.judge_model;
   const judgeEffortSource = input.parameters.judge_effort;
   function toAxis(parameter: CommonParameterId, side: AxisSide) {
+    const previousFocus = document.activeElement;
     if (!dispatch({ type: "to-axis", parameter, side })) return;
     requestAnimationFrame(() => {
+      if (
+        document.activeElement !== document.body &&
+        document.activeElement !== previousFocus
+      )
+        return;
       document
         .querySelector(`[data-case-parameter="${side}-${parameter}"]`)
         ?.querySelector<HTMLElement>("input:not([type=file]), select, textarea")
@@ -174,7 +195,18 @@ export function Create() {
             key={input.format}
             disabled={submission.uploading || busy}
           >
-            <AxisEditor input={input} side="rows" onAction={dispatch} />
+            <AxisEditor input={input} side="rows" onAction={dispatch}>
+              <AxisValues
+                input={input}
+                side="rows"
+                models={models}
+                judgeModels={judgeModels}
+                onAction={dispatch}
+                onUploading={onUploading}
+              >
+                {ordinaryAxisCompatibility("rows")}
+              </AxisValues>
+            </AxisEditor>
             <button
               type="button"
               className="text-button axis-swap"
@@ -184,24 +216,36 @@ export function Create() {
             >
               <ArrowLeftRight aria-hidden="true" />
             </button>
-            <AxisEditor input={input} side="columns" onAction={dispatch} />
+            <AxisEditor input={input} side="columns" onAction={dispatch}>
+              <AxisValues
+                input={input}
+                side="columns"
+                models={models}
+                judgeModels={judgeModels}
+                onAction={dispatch}
+                onUploading={onUploading}
+              >
+                {ordinaryAxisCompatibility("columns")}
+              </AxisValues>
+            </AxisEditor>
+          </fieldset>
+          <fieldset
+            className="case-layout"
+            disabled={submission.uploading || busy}
+          >
             <GridLayoutTable
               input={input}
               models={models}
               judgeModels={judgeModels}
               onAction={dispatch}
               onBusy={onUploading}
-              compatibility={(side, parameter, caseIndex, fieldIndex) =>
-                caseIndex === undefined ? (
-                  axisCompatibility[side][parameter]
-                ) : (
-                  <CompatibilityFeedback
-                    input={candidate}
-                    issues={compatibilityIssues}
-                    origin={{ parameter, source: side, caseIndex, fieldIndex }}
-                  />
-                )
-              }
+              compatibility={(side, parameter, caseIndex, fieldIndex) => (
+                <CompatibilityFeedback
+                  input={candidate}
+                  issues={compatibilityIssues}
+                  origin={{ parameter, source: side, caseIndex, fieldIndex }}
+                />
+              )}
             />
           </fieldset>
           <p className="hint">

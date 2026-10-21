@@ -30,10 +30,14 @@ export function displayValue(part: ParameterDisplayPart): string {
   switch (part.kind) {
     case "variable":
       return part.value
-        .map((field) =>
-          [field.text, ...(field.images ?? []).map((image) => image.name)]
-            .filter(Boolean)
-            .join(" · "),
+        .flatMap((field) =>
+          field === null
+            ? []
+            : [
+                [field.text, ...(field.images ?? []).map((image) => image.name)]
+                  .filter(Boolean)
+                  .join(" · "),
+              ],
         )
         .join(" | ");
     case "images":

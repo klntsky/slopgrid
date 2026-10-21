@@ -534,8 +534,8 @@ section {
 .fixed-options > * {
   min-width: 0;
 }
+.case-layout,
 .variable-editor {
-  grid-column: 1 / -1;
   min-width: 0;
 }
 .variable-table-scroll {
@@ -587,15 +587,11 @@ section {
   margin-bottom: 8px;
 }
 .layout-parameter-table
-  > thead
+  > tbody
   > tr
   > th[scope="row"]
   .layout-parameter-heading {
   align-items: center;
-}
-.layout-parameter-table > tbody > tr > .layout-intersection {
-  padding: 0;
-  border: 0;
 }
 .variable-cell-input {
   position: relative;
@@ -637,6 +633,9 @@ section {
   flex-wrap: wrap;
   gap: 12px;
   margin-top: 8px;
+}
+.axis > .axis-selector {
+  margin-bottom: 12px;
 }
 .axis-selector {
   flex-direction: row;

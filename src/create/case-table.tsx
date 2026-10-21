@@ -24,7 +24,6 @@ import {
   type InputAction,
   type ParameterSetter,
 } from "./change-axis";
-import { AxisValues, usesBulkAxis } from "./axis-editor";
 import { VariableInput } from "./variable-input";
 
 type LayoutField =
@@ -34,9 +33,8 @@ function fieldsFor(input: GridDraftInput, side: AxisSide): LayoutField[] {
   const fields: LayoutField[] = [];
   for (const parameter of axisParameters(input, side)) {
     if (parameter === "variable") {
-      const count = input[side][0]?.variable?.length ?? 1;
-      for (let index = 0; index < count; index++)
-        fields.push({ parameter, index });
+      for (const [index, field] of (input[side][0]?.variable ?? []).entries())
+        if (field !== null) fields.push({ parameter, index });
     } else fields.push({ parameter });
   }
   return fields;
@@ -152,14 +150,15 @@ export function GridLayoutTable({
     fieldIndex?: number,
   ) => ReactNode;
 }) {
-  const rowFields = fieldsFor(input, "rows");
-  const columnFields = fieldsFor(input, "columns");
-  const columnCount = Math.max(1, input.columns.length);
-  const headerWidth = rowFields.length ? 58 : 256;
-  const bulk = {
-    rows: usesBulkAxis(input, "rows"),
-    columns: usesBulkAxis(input, "columns"),
-  };
+  const side = input.parameters.variable?.kind;
+  if (!side) return null;
+  const fields = fieldsFor(input, side);
+  let variableFieldCount = 0;
+  for (const field of fields)
+    if (field.parameter === "variable") variableFieldCount++;
+  const entries = input[side];
+  const rowCases = side === "rows";
+  const headerWidth = rowCases ? 58 : 92;
   function token(side: AxisSide, index: number) {
     return `$${side === "rows" ? "ROW" : "COLUMN"}${index + 1}`;
   }
@@ -223,20 +222,10 @@ export function GridLayoutTable({
               type="button"
               className="text-button"
               aria-label={`Remove ${label}`}
-              disabled={(input[side][0]?.variable?.length ?? 1) <= 1}
-              onClick={() => {
-                const index = field.index;
-                onAction({
-                  type: "case-values",
-                  side,
-                  parameter: "variable",
-                  values: input[side].map((entry) =>
-                    (entry.variable ?? []).filter(
-                      (_, fieldIndex) => fieldIndex !== index,
-                    ),
-                  ),
-                });
-              }}
+              disabled={variableFieldCount <= 1}
+              onClick={() =>
+                onAction({ type: "remove-variable", side, index: field.index })
+              }
             >
               <X aria-hidden="true" />
             </button>
@@ -252,18 +241,6 @@ export function GridLayoutTable({
             </button>
           )}
         </div>
-        {bulk[side] && (
-          <AxisValues
-            input={input}
-            side={side}
-            models={models}
-            judgeModels={judgeModels}
-            onAction={onAction}
-            onUploading={onBusy}
-          >
-            {compatibility(side, field.parameter)}
-          </AxisValues>
-        )}
       </>
     );
   }
@@ -300,169 +277,119 @@ export function GridLayoutTable({
         role="group"
         aria-label={`${side === "rows" ? "Row" : "Column"} case ${caseIndex + 1} ${parameter === "judge_criteria" ? "judge criteria" : parameterNames[parameter]}`}
       >
-        {bulk[side] ? (
-          <span>
-            {parameter === "effort" || parameter === "judge_effort"
-              ? effortLabel(entry[parameter] ?? "default")
-              : entry[parameter] === "auto"
-                ? "Auto"
-                : String(entry[parameter] ?? "")}
-          </span>
-        ) : (
-          <CaseValue
-            input={input}
-            entry={entry}
-            parameter={parameter}
-            models={models}
-            judgeModels={judgeModels}
-            onChange={(parameter, value) =>
-              onAction(caseValueAction(side, caseIndex, parameter, value))
-            }
-          />
-        )}
-        {!bulk[side] && compatibility(side, parameter, caseIndex)}
+        <CaseValue
+          input={input}
+          entry={entry}
+          parameter={parameter}
+          models={models}
+          judgeModels={judgeModels}
+          onChange={(parameter, value) =>
+            onAction(caseValueAction(side, caseIndex, parameter, value))
+          }
+        />
+        {compatibility(side, parameter, caseIndex)}
       </div>
     );
   }
+  const actions = (
+    <div className="variable-table-actions">
+      <button
+        type="button"
+        className="text-button"
+        aria-label={`Add ${sideName(side)} case`}
+        onClick={() => onAction({ type: "add-case", side })}
+      >
+        <Plus aria-hidden="true" /> Add {sideName(side)} case
+      </button>
+      <button
+        type="button"
+        className="text-button"
+        aria-label={`Add ${sideName(side)} variable`}
+        disabled={!entries.length}
+        onClick={() => onAction({ type: "add-variable", side })}
+      >
+        <Plus aria-hidden="true" /> Add variable
+      </button>
+    </div>
+  );
+  const columns = rowCases ? fields.length : entries.length;
   return (
     <div className="variable-editor">
-      <div className="variable-table-scroll">
-        <table
-          className="variable-table layout-parameter-table"
-          aria-label="Grid layout parameters"
-          style={{
-            minWidth: `${headerWidth + (rowFields.length + columnCount) * 256}px`,
-          }}
-        >
-          <colgroup>
-            <col
-              className="variable-row-header"
-              style={{ width: headerWidth }}
-            />
-            {rowFields.map((field) => (
-              <col key={fieldKey(field)} />
-            ))}
-            {Array.from({ length: columnCount }, (_, index) => (
-              <col key={`case-${index}`} />
-            ))}
-          </colgroup>
-          <thead>
-            <tr>
-              <td className="variable-corner" />
-              {rowFields.map((field) => (
-                <th
-                  scope="col"
-                  key={fieldKey(field)}
-                  data-case-parameter={
-                    bulk.rows ? `rows-${field.parameter}` : undefined
-                  }
-                >
-                  {header("rows", field)}
-                </th>
-              ))}
-              {input.columns.map((entry, index) => (
-                <th scope="col" key={entry.id}>
-                  {caseHeader("columns", index)}
-                </th>
-              ))}
-              {!input.columns.length && <td className="variable-corner" />}
-            </tr>
-            {columnFields.map((field) => (
-              <tr key={fieldKey(field)}>
-                <th
-                  scope="row"
-                  colSpan={rowFields.length + 1}
-                  data-case-parameter={
-                    bulk.columns ? `columns-${field.parameter}` : undefined
-                  }
-                >
-                  {header("columns", field)}
-                </th>
-                {input.columns.map((entry, index) => (
-                  <td
-                    key={entry.id}
-                    data-case-parameter={`columns-${field.parameter}`}
-                  >
-                    {editor("columns", field, index)}
-                  </td>
-                ))}
-                {!input.columns.length && <td className="variable-corner" />}
+      {entries.length ? (
+        <div className="variable-table-scroll">
+          <table
+            className="variable-table layout-parameter-table"
+            aria-label="Grid layout parameters"
+            style={{ minWidth: `${headerWidth + columns * 256}px` }}
+          >
+            <colgroup>
+              <col
+                className="variable-row-header"
+                style={{ width: headerWidth }}
+              />
+              {rowCases
+                ? fields.map((field) => <col key={fieldKey(field)} />)
+                : entries.map((entry) => <col key={entry.id} />)}
+            </colgroup>
+            <thead>
+              <tr>
+                <td className="variable-corner" />
+                {rowCases
+                  ? fields.map((field) => (
+                      <th scope="col" key={fieldKey(field)}>
+                        {header(side, field)}
+                      </th>
+                    ))
+                  : entries.map((entry, index) => (
+                      <th scope="col" key={entry.id}>
+                        {caseHeader(side, index)}
+                      </th>
+                    ))}
               </tr>
-            ))}
-          </thead>
-          <tbody>
-            {input.rows.map((entry, index) => (
-              <tr key={entry.id}>
-                <th scope="row">{caseHeader("rows", index)}</th>
-                {rowFields.map((field) => (
-                  <td
-                    key={fieldKey(field)}
-                    data-case-parameter={`rows-${field.parameter}`}
-                  >
-                    {editor("rows", field, index)}
-                  </td>
-                ))}
-                {index === 0 && (
-                  <td
-                    className="layout-intersection"
-                    aria-hidden="true"
-                    rowSpan={input.rows.length}
-                    colSpan={columnCount}
-                  />
-                )}
-              </tr>
-            ))}
-          </tbody>
-          <tfoot>
-            <tr>
-              <td colSpan={rowFields.length + columnCount + 1}>
-                <div className="variable-table-actions">
-                  {(["rows", "columns"] as const).map((side) => (
-                    <button
-                      type="button"
-                      className="text-button"
-                      key={side}
-                      aria-label={`Add ${sideName(side)} case`}
-                      onClick={() => onAction({ type: "add-case", side })}
-                    >
-                      <Plus aria-hidden="true" /> Add {sideName(side)} case
-                    </button>
+            </thead>
+            <tbody>
+              {rowCases
+                ? entries.map((entry, index) => (
+                    <tr key={entry.id}>
+                      <th scope="row">{caseHeader(side, index)}</th>
+                      {fields.map((field) => (
+                        <td
+                          key={fieldKey(field)}
+                          data-case-parameter={`${side}-${field.parameter}`}
+                        >
+                          {editor(side, field, index)}
+                        </td>
+                      ))}
+                    </tr>
+                  ))
+                : fields.map((field) => (
+                    <tr key={fieldKey(field)}>
+                      <th scope="row">{header(side, field)}</th>
+                      {entries.map((entry, index) => (
+                        <td
+                          key={entry.id}
+                          data-case-parameter={`${side}-${field.parameter}`}
+                        >
+                          {editor(side, field, index)}
+                        </td>
+                      ))}
+                    </tr>
                   ))}
-                  {input.parameters.variable && (
-                    <button
-                      type="button"
-                      className="text-button"
-                      aria-label={`Add ${sideName(input.parameters.variable.kind)} variable`}
-                      disabled={!input[input.parameters.variable.kind].length}
-                      onClick={() => {
-                        const side = input.parameters.variable!.kind;
-                        onAction({
-                          type: "case-values",
-                          side,
-                          parameter: "variable",
-                          values: input[side].map((entry) => [
-                            ...(entry.variable ?? []),
-                            { text: "" },
-                          ]),
-                        });
-                      }}
-                    >
-                      <Plus aria-hidden="true" /> Add variable
-                    </button>
-                  )}
-                </div>
-              </td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
-      {input.parameters.variable && (
-        <p className="hint">
-          Each case is one {sideName(input.parameters.variable.kind)}. Reference
-          numbered variables in the prompt or judge criteria. Text and images
-          are optional in each field.
-        </p>
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colSpan={columns + 1}>{actions}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      ) : (
+        actions
       )}
+      <p className="hint">
+        Each case is one {sideName(side)}. Reference numbered variables in the
+        prompt or judge criteria. Text and images are optional in each field.
+      </p>
     </div>
   );
 }

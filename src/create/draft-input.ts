@@ -6,7 +6,7 @@ import {
 } from "../../server/domain";
 import {
   axisParameters,
-  isCurrentGridInput,
+  isEditableGridInput,
   newCase,
   parameterDefault,
 } from "../../server/parameters";
@@ -14,7 +14,7 @@ import {
 export function draftInputFromGridInput(
   input: StoredGridInput,
 ): GridDraftInput {
-  if (!isCurrentGridInput(input))
+  if (!isEditableGridInput(input))
     throw new Error(
       "This grid uses an older configuration and cannot be edited or forked.",
     );

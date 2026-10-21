@@ -6,7 +6,7 @@ import { Author } from "../components/identity";
 import { Square, Play, Pencil, GitBranch, Link2 } from "lucide-react";
 import type { ViewGrid } from "../api";
 import { useTooltip, tooltipRef } from "../components/use-tooltip";
-import { isCurrentGridInput } from "../../server/parameters";
+import { isEditableGridInput } from "../../server/parameters";
 const totalUsd = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
@@ -26,7 +26,7 @@ export function GridHeader({
   onConfigure: () => void;
 }) {
   const canConfigure =
-    isCurrentGridInput(g.input) &&
+    isEditableGridInput(g.input) &&
     (g.canConfigure ?? (g.canEdit || g.published));
   const complete = g.cells.filter((c) => c.status === "complete").length,
     failed = g.cells.filter((c) => c.status === "error").length,

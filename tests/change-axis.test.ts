@@ -15,14 +15,24 @@ import { criteriaForCell } from "../server/judge-criteria.js";
 import { validateDraftInput } from "../src/create/draft-input.js";
 import { currentDefinition } from "./current-grid-fixture.js";
 
-function initial(format: GridDraftInput["format"] = "svg"): GridDraftInput {
+function initial(
+  format: GridDraftInput["format"] = "svg",
+  caseSide?: "rows" | "columns",
+): GridDraftInput {
+  const prompt = caseSide
+    ? `Draw $${caseSide === "rows" ? "ROW" : "COLUMN"}1`
+    : "Draw a rectangle";
   return {
     ...currentDefinition({
       format,
-      prompt: "Draw a rectangle",
+      prompt,
+      ...(format === "chat-template"
+        ? { messages: [{ role: "user", content: prompt }] }
+        : {}),
       judge: format !== "html",
       parameters: {
         model: { kind: "common", value: "generator/fixed" },
+        ...(caseSide ? { variable: { kind: caseSide } } : {}),
         ...(format !== "image"
           ? { effort: { kind: "common" as const, value: "high" as const } }
           : {}),
@@ -40,8 +50,20 @@ function initial(format: GridDraftInput["format"] = "svg"): GridDraftInput {
             }
           : {}),
       },
-      rows: [{ id: "r1" }, { id: "r2" }],
-      columns: [{ id: "c1" }, { id: "c2" }],
+      rows:
+        caseSide === "rows"
+          ? [
+              { id: "r1", variable: [{ text: "first" }] },
+              { id: "r2", variable: [{ text: "second" }] },
+            ]
+          : [{ id: "r1" }],
+      columns:
+        caseSide === "columns"
+          ? [
+              { id: "c1", variable: [{ text: "first" }] },
+              { id: "c2", variable: [{ text: "second" }] },
+            ]
+          : [{ id: "c1" }],
     }),
     budgetUsd: "3",
   };
@@ -75,7 +97,7 @@ function parameterTests<K extends CommonParameterId>(
 ) {
   for (const side of ["rows", "columns"] as const) {
     test(`${parameter} copies common values to ${side}; differing collapse confirms and restores the default`, () => {
-      const input = initial(format);
+      const input = initial(format, side);
       input.parameters = {
         ...input.parameters,
         [parameter]: { kind: "common", value: first },
@@ -119,7 +141,7 @@ function parameterTests<K extends CommonParameterId>(
     });
 
     test(`${parameter} preserves equal ${side} values without confirmation and cannot be stolen`, () => {
-      const input = initial(format);
+      const input = initial(format, side);
       input.parameters = {
         ...input.parameters,
         [parameter]: { kind: "common", value: first },
@@ -191,10 +213,6 @@ test("empty common model selections remain unselected when choosing a dimension"
     assert.deepEqual(next.rows, []);
     assert.deepEqual(next.parameters[parameter], { kind: "rows" });
     assert.equal(validateDraftInput(next).parsed.success, false);
-    assert.equal(
-      reduceInput(next, { type: "to-axis", side: "rows", parameter: "effort" }),
-      next,
-    );
     const collapsed = reduceInput(next, { type: "to-common", parameter });
     assert.deepEqual(collapsed.parameters[parameter], {
       kind: "common",
@@ -203,8 +221,8 @@ test("empty common model selections remain unselected when choosing a dimension"
   }
 });
 
-test("dimension replacement keeps case IDs, collapses all former members, and preserves the other axis", () => {
-  let input = initial();
+test("leaving prompt variables collapses former members and preserves the other axis", () => {
+  let input = initial("svg", "rows");
   input = reduceInput(input, {
     type: "to-axis",
     side: "rows",
@@ -224,15 +242,14 @@ test("dimension replacement keeps case IDs, collapses all former members, and pr
     side: "rows" as const,
     parameter: "judge_model" as const,
   };
-  assert.deepEqual(droppedParameters(input, action), ["model"]);
+  assert.deepEqual(droppedParameters(input, action), ["model", "variable"]);
   const next = reduceInput(input, action);
   assert.deepEqual(next.parameters.model, { kind: "common", value: "" });
   assert.deepEqual(next.parameters.effort, { kind: "common", value: "high" });
   assert.deepEqual(next.parameters.judge_model, { kind: "rows" });
-  assert.deepEqual(next.rows, [
-    { id: "r1", judge_model: "judge/fixed" },
-    { id: "r2", judge_model: "judge/fixed" },
-  ]);
+  assert.equal(next.rows.length, 1);
+  assert.equal(next.rows[0].judge_model, "judge/fixed");
+  assert.equal(next.parameters.variable, undefined);
   assert.deepEqual(next.columns, input.columns);
 });
 
@@ -254,7 +271,16 @@ test("bulk model edits preserve matching case identity and do not resize multi-p
     reordered.rows.map((entry) => entry.id),
     [input.rows[1].id, input.rows[0].id],
   );
-  const combined = reduceInput(reordered, {
+  let caseInput = reduceInput(initial("svg", "rows"), {
+    type: "to-axis",
+    side: "rows",
+    parameter: "model",
+  });
+  caseInput = reduceInput(
+    caseInput,
+    caseValuesAction("rows", "model", ["second", "first"]),
+  );
+  const combined = reduceInput(caseInput, {
     type: "to-axis",
     side: "rows",
     parameter: "judge_effort",
@@ -281,7 +307,7 @@ for (const format of [
   "image",
 ] as const) {
   test(`removing a judge preserves aligned generator cases for ${format}`, () => {
-    let input = initial(format);
+    let input = initial(format, "rows");
     if (format !== "html") {
       input = reduceInput(input, {
         type: "to-axis",
@@ -319,27 +345,26 @@ for (const format of [
         ),
       );
     }
-    assert.deepEqual(next.rows, [
-      { id: "r1", model: "generator/fixed" },
-      { id: "r2", model: "generator/fixed" },
-    ]);
-    if (format === "html")
-      assert.deepEqual(next.columns, [{ id: "c1" }, { id: "c2" }]);
-    else {
-      const parameter = format === "image" ? "quality" : "effort";
-      assert.deepEqual(next.parameters[parameter], { kind: "columns" });
-      assert.deepEqual(
-        next.columns.map((entry) => entry[parameter]),
-        [format === "image" ? "auto" : "high"],
-      );
-    }
+    assert.deepEqual(
+      next.rows.map((entry) => entry.id),
+      ["r1", "r2"],
+    );
+    assert.deepEqual(
+      next.rows.map((entry) => entry.model),
+      ["generator/fixed", "generator/fixed"],
+    );
+    assert.deepEqual(
+      next.rows.map((entry) => entry.variable),
+      original.rows.map((entry) => entry.variable),
+    );
+    assert.deepEqual(next.columns, [{ id: original.columns[0].id }]);
     assert.equal(validateDraftInput(next).parsed.success, true);
     assert.deepEqual(input, original);
   });
 }
 
 for (const format of ["svg", "markdown", "chat-template", "image"] as const) {
-  test(`removing sole judge dimensions restores selected generator defaults for ${format}`, () => {
+  test(`removing sole judge dimensions leaves neutral positions and common generator settings for ${format}`, () => {
     let input = initial(format);
     input = reduceInput(input, {
       type: "to-axis",
@@ -352,25 +377,28 @@ for (const format of ["svg", "markdown", "chat-template", "image"] as const) {
       side: "columns",
     });
     const next = reduceInput(input, { type: "judge", enabled: false });
-    const modelSide =
-      format === "markdown" || format === "chat-template" ? "columns" : "rows";
-    assert.deepEqual(next.parameters.model, { kind: modelSide });
+    assert.deepEqual(next.parameters.model, {
+      kind: "common",
+      value: "generator/fixed",
+    });
     assert.deepEqual(
-      next[modelSide].map((entry) => entry.model),
-      ["generator/fixed"],
+      next.rows.map(({ id, ...value }) => value),
+      [{}],
     );
-    const other = modelSide === "rows" ? "columns" : "rows";
-    const parameter = format === "image" ? "quality" : "effort";
-    assert.deepEqual(next.parameters[parameter], { kind: other });
     assert.deepEqual(
-      next[other].map((entry) => entry[parameter]),
-      [format === "image" ? "auto" : "high"],
+      next.columns.map(({ id, ...value }) => value),
+      [{}],
     );
+    if (format !== "image")
+      assert.deepEqual(next.parameters.effort, {
+        kind: "common",
+        value: "high",
+      });
     assert.equal(validateDraftInput(next).parsed.success, true);
   });
 }
 
-test("removing a sole judge axis uses the free default without duplicating the opposite owner", () => {
+test("removing a sole judge axis preserves the opposite owner and leaves one neutral row", () => {
   let input = initial();
   input = reduceInput(input, {
     type: "to-axis",
@@ -386,10 +414,10 @@ test("removing a sole judge axis uses the free default without duplicating the o
   const next = reduceInput(input, { type: "judge", enabled: false });
   assert.deepEqual(next.columns, columns);
   assert.deepEqual(next.parameters.model, { kind: "columns" });
-  assert.deepEqual(next.parameters.effort, { kind: "rows" });
+  assert.deepEqual(next.parameters.effort, { kind: "common", value: "high" });
   assert.deepEqual(
-    next.rows.map((entry) => entry.effort),
-    ["high"],
+    next.rows.map(({ id, ...value }) => value),
+    [{}],
   );
   assert.equal(validateDraftInput(next).parsed.success, true);
 });
@@ -397,8 +425,8 @@ test("removing a sole judge axis uses the free default without duplicating the o
 for (const side of ["rows", "columns"] as const) {
   test(`edited generator and judge ${side} cases resolve together for consumers`, () => {
     const other = side === "rows" ? "columns" : "rows";
-    let input = reduceInput(initial(), {
-      type: "dimension",
+    let input = reduceInput(initial("svg", side), {
+      type: "to-axis",
       side,
       parameter: "model",
     });
@@ -490,11 +518,138 @@ for (const side of ["rows", "columns"] as const) {
     const next = reduceInput(input, action);
     assert.equal(next.parameters.variable, undefined);
     assert.ok(next[side].every((entry) => !Object.hasOwn(entry, "variable")));
-    assert.deepEqual(
-      next[side].map((entry) => entry.id),
-      input[side].map((entry) => entry.id),
-    );
+    assert.equal(next[side].length, 1);
     assert.equal(next.prompt, token);
     assert.equal(validateDraftInput(next).parsed.success, false);
   });
 }
+
+test("ordinary parameter moves replace the axis and return its former parameter to common", () => {
+  let input = reduceInput(initial(), {
+    type: "dimension",
+    side: "rows",
+    parameter: "model",
+  });
+  input = reduceInput(
+    input,
+    caseValuesAction("rows", "model", ["generator/a", "generator/b"]),
+  );
+  const action = {
+    type: "to-axis" as const,
+    side: "rows" as const,
+    parameter: "effort" as const,
+  };
+  assert.deepEqual(droppedParameters(input, action), ["model"]);
+  withConfirmation(false, () =>
+    assert.equal(confirmInputAction(input, action), false),
+  );
+  const moved = reduceInput(input, action);
+  assert.deepEqual(moved.parameters.model, { kind: "common", value: "" });
+  assert.deepEqual(moved.parameters.effort, { kind: "rows" });
+  assert.deepEqual(
+    moved.rows.map(({ id, ...value }) => value),
+    [{ effort: "high" }],
+  );
+  const common = reduceInput(moved, { type: "to-common", parameter: "effort" });
+  assert.equal(common.rows.length, 1);
+  assert.deepEqual(
+    common.rows.map(({ id, ...value }) => value),
+    [{}],
+  );
+  assert.deepEqual(common.columns, input.columns);
+});
+
+test("returning an unselected ordinary model to common restores one neutral position", () => {
+  let input = initial();
+  input.parameters.model = { kind: "common", value: "" };
+  input = reduceInput(input, {
+    type: "dimension",
+    side: "rows",
+    parameter: "model",
+  });
+  assert.equal(input.rows.length, 0);
+  const next = reduceInput(input, { type: "to-common", parameter: "model" });
+  assert.equal(next.rows.length, 1);
+  assert.deepEqual(
+    next.rows.map(({ id, ...value }) => value),
+    [{}],
+  );
+  assert.equal(next.parameters.model.kind, "common");
+});
+
+test("single-case and identical-case variable text or images require confirmation before leaving variables", () => {
+  for (const field of [
+    { text: "Answer" },
+    { text: "", images: [{ id: "answer-image", name: "answer.png" }] },
+  ]) {
+    for (const count of [1, 2]) {
+      let input = initial("svg", "rows");
+      input = reduceInput(
+        input,
+        caseValuesAction(
+          "rows",
+          "variable",
+          Array.from({ length: count }, () => [structuredClone(field)]),
+        ),
+      );
+      const action = {
+        type: "dimension" as const,
+        side: "rows" as const,
+        parameter: "effort" as const,
+      };
+      assert.deepEqual(droppedParameters(input, action), ["variable"]);
+      withConfirmation(false, () =>
+        assert.equal(confirmInputAction(input, action), false),
+      );
+      const next = reduceInput(input, action);
+      assert.equal(next.parameters.variable, undefined);
+      assert.equal(next.rows.length, 1);
+      assert.deepEqual(
+        next.rows.map(({ id, ...value }) => value),
+        [{ effort: "high" }],
+      );
+    }
+  }
+});
+
+test("deleted variable slots preserve later values and image identity through append, new cases and swaps", () => {
+  let input = initial("svg", "rows");
+  input.prompt = "Draw $ROW2";
+  input = reduceInput(
+    input,
+    caseValuesAction("rows", "variable", [
+      [
+        { text: "question A" },
+        { text: "answer A", images: [{ id: "a", name: "a.png" }] },
+      ],
+      [
+        { text: "question B" },
+        { text: "answer B", images: [{ id: "b", name: "b.png" }] },
+      ],
+    ]),
+  );
+  const before = validateDraftInput(input).parsed;
+  assert.ok(before.success);
+  const expected = expandGrid(before.data);
+  input = reduceInput(input, {
+    type: "remove-variable",
+    side: "rows",
+    index: 0,
+  });
+  input = reduceInput(input, { type: "add-variable", side: "rows" });
+  const after = validateDraftInput(input).parsed;
+  assert.ok(after.success);
+  assert.deepEqual(expandGrid(after.data), expected);
+  const removed = validateDraftInput({ ...input, prompt: "Draw $ROW1" }).parsed;
+  assert.equal(removed.success, false);
+  const added = reduceInput(input, { type: "add-case", side: "rows" });
+  assert.deepEqual(added.rows[2].variable, [null, { text: "" }, { text: "" }]);
+  const swapped = reduceInput(input, { type: "swap" });
+  const parsedSwap = validateDraftInput(swapped).parsed;
+  assert.ok(parsedSwap.success);
+  assert.equal(swapped.prompt, "Draw $COLUMN2");
+  assert.deepEqual(
+    expandGrid(parsedSwap.data).map((cell) => [cell.prompt, cell.images]),
+    expected.map((cell) => [cell.prompt, cell.images]),
+  );
+});

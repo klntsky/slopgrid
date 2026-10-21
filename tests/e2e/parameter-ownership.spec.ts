@@ -16,10 +16,10 @@ test("column parameter actions remain usable without a row-owned parameter and p
     name: "Grid layout parameters",
     exact: true,
   });
-  const models = table.getByRole("group", { name: "Row values", exact: true });
+  const models = page.getByRole("group", { name: "Row values", exact: true });
   await models.getByRole("searchbox").fill("fixture/text");
   await models.locator('input[type="checkbox"][value="fixture/text"]').check();
-  await table
+  await page
     .getByRole("button", { name: "Make model common", exact: true })
     .click();
   await page

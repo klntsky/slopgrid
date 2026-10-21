@@ -7,9 +7,17 @@ import {
   type GridDraftInput,
 } from "../../server/domain";
 import { type ReferenceImage } from "../../server/image-settings";
-import { defaultGridDraft, axisParameters } from "../../server/parameters";
+import {
+  defaultGridDraft,
+  axisParameters,
+  newCase,
+  parameterDefault,
+  parameterNames,
+  type ParameterId,
+} from "../../server/parameters";
 import {
   confirmInputAction,
+  droppedParameters,
   reduceInput,
   type InputAction,
 } from "./change-axis";
@@ -63,40 +71,44 @@ export function clearDraft() {
   sessionStorage.removeItem(submissionKey);
 }
 export function startDraft(format: GridDraftInput["format"]) {
-  const draft = readDraft();
-  if (confirmFormatChange(draft, format))
-    saveDraft(selectDraftFormat(draft, format));
+  const change = selectDraftFormat(readDraft(), format);
+  if (confirmFormatChange(change)) saveDraft(change.draft);
 }
 
-function confirmFormatChange(
-  draft: Draft,
-  format: GridDraftInput["format"],
-): boolean {
-  if (draft.input.format === format) return true;
-  // Format changes reset non-variable dimensions, never silently choosing a case's judge values.
-  for (const parameter of [
-    "judge_model",
-    "judge_effort",
-    "judge_criteria",
-  ] as const) {
-    const source = draft.input.parameters[parameter];
-    if (
-      source &&
-      source.kind !== "common" &&
-      source.kind !== draft.input.parameters.variable?.kind &&
-      !confirmInputAction(draft.input, { type: "to-common", parameter })
+type FormatChange = { draft: Draft; dropped: ParameterId[] };
+
+function confirmFormatChange({ dropped }: FormatChange): boolean {
+  return (
+    !dropped.length ||
+    window.confirm(
+      `Changing format will discard incompatible or differing ${dropped
+        .map((parameter) => parameterNames[parameter])
+        .join(
+          ", ",
+        )} settings and case values. Differing values that become common will return to their defaults. Continue?`,
     )
-      return false;
-  }
-  return true;
+  );
 }
 
 function selectDraftFormat(
   draft: Draft,
   format: GridDraftInput["format"],
-): Draft {
-  if (draft.input.format === format) return { ...draft, formatSelected: true };
+): FormatChange {
+  if (draft.input.format === format)
+    return { draft: { ...draft, formatSelected: true }, dropped: [] };
   const previous = draft.input;
+  const defaults = defaultGridDraft(format);
+  // An untouched starting form uses the chosen format's ordinary defaults.
+  const withoutCaseIds = (key: string, value: unknown) =>
+    key === "id" ? undefined : value;
+  if (
+    JSON.stringify(previous, withoutCaseIds) ===
+    JSON.stringify(defaultGridDraft(previous.format), withoutCaseIds)
+  )
+    return {
+      draft: { ...draft, input: defaults, formatSelected: true },
+      dropped: [],
+    };
   const messages = previous.messages ??
     draft.inactiveChatMessages ?? [
       { role: "user" as const, content: previous.prompt },
@@ -104,76 +116,115 @@ function selectDraftFormat(
   const promptImages = isChatFormat(previous.format)
     ? (draft.inactivePromptImages ?? [])
     : previous.promptImages;
-  let input = {
-    ...defaultGridDraft(format),
-    budgetUsd: previous.budgetUsd,
-    prompt: previous.prompt,
+  const dropped = new Set<ParameterId>();
+  const applicable = new Set<ParameterId>([
+    ...(Object.keys(defaults.parameters) as ParameterId[]),
+    "variable",
+    ...(previous.judge && format !== "html"
+      ? (["judge_model", "judge_effort", "judge_criteria"] as const)
+      : []),
+  ]);
+  let input: GridDraftInput = {
+    ...previous,
+    format,
+    judge: previous.judge && format !== "html",
+    parameters: { ...previous.parameters },
+    rows: previous.rows.map((entry) => ({ ...entry })),
+    columns: previous.columns.map((entry) => ({ ...entry })),
     promptImages: isChatFormat(format) ? [] : promptImages,
   };
-  const variable = previous.parameters.variable;
-  if (variable) {
-    // Keep numbered fields, not a hidden copy of the previous format's settings.
-    for (const parameter of axisParameters(input, variable.kind))
-      if (parameter !== "variable")
-        input = reduceInput(input, { type: "to-common", parameter });
-    input = {
-      ...input,
-      parameters: { ...input.parameters, variable },
-      [variable.kind]: previous[variable.kind].map((entry) => ({
-        id: entry.id,
-        variable: entry.variable,
-      })),
-    };
+  const filled = (parameter: ParameterId, value: unknown) =>
+    value !== undefined &&
+    JSON.stringify(value) !== JSON.stringify(parameterDefault(parameter));
+  for (const parameter of Object.keys(input.parameters) as ParameterId[]) {
+    if (applicable.has(parameter)) continue;
+    const source = input.parameters[parameter];
+    if (source?.kind === "common" && filled(parameter, source.value))
+      dropped.add(parameter);
+    delete input.parameters[parameter];
   }
-  if (previous.judge && format !== "html") {
-    input = reduceInput(input, { type: "judge", enabled: true });
-    for (const parameter of [
-      "judge_model",
-      "judge_effort",
-      "judge_criteria",
-    ] as const) {
-      const source = previous.parameters[parameter];
-      if (!source) continue;
-      if (source.kind !== "common" && variable?.kind === source.kind) {
-        input = {
-          ...input,
-          parameters: { ...input.parameters, [parameter]: source },
-          [source.kind]: input[source.kind].map((entry, index) => ({
-            ...entry,
-            [parameter]: previous[source.kind][index][parameter],
-          })),
-        };
-      } else {
-        const collapsed = reduceInput(previous, {
-          type: "to-common",
-          parameter,
-        });
-        Object.assign(input.parameters, {
-          [parameter]: collapsed.parameters[parameter],
-        });
+  // Strip removed and unowned fields, including values from the case axis.
+  // Keeping the records themselves preserves compatible cases' identities.
+  for (const side of ["rows", "columns"] as const) {
+    input[side] = input[side].map((entry) => {
+      const next = { ...entry };
+      for (const key of Object.keys(entry)) {
+        if (key === "id") continue;
+        const parameter = key as ParameterId;
+        if (input.parameters[parameter]?.kind === side) continue;
+        if (filled(parameter, entry[parameter])) dropped.add(parameter);
+        delete next[parameter];
       }
+      return next;
+    });
+  }
+  for (const parameter of applicable) {
+    if (parameter === "variable" || input.parameters[parameter]) continue;
+    Object.assign(input.parameters, {
+      [parameter]: { kind: "common", value: parameterDefault(parameter) },
+    });
+  }
+  for (const parameter of ["model", "judge_model"] as const) {
+    const source = input.parameters[parameter];
+    const compatible = (value: string | undefined) => {
+      if (!value) return true;
+      const model = modelCatalog.find((model) => model.id === value);
+      if (!model) return true;
+      // Missing structured-output metadata is not evidence of incompatibility.
+      if (parameter === "judge_model" && model.structuredOutputs === undefined)
+        return (
+          model.text &&
+          ((format !== "svg" && format !== "image") || model.imageInput)
+        );
+      return parameter === "judge_model"
+        ? canJudge(model, format)
+        : format === "image"
+          ? model.image
+          : model.text;
+    };
+    if (source?.kind === "common") {
+      if (!compatible(source.value)) {
+        dropped.add(parameter);
+        input.parameters[parameter] = { kind: "common", value: "" };
+      }
+    } else if (source) {
+      input[source.kind] = input[source.kind].map((entry) => {
+        if (compatible(entry[parameter])) return entry;
+        dropped.add(parameter);
+        return { ...entry, [parameter]: "" };
+      });
     }
+  }
+  const collapse = (parameter: Exclude<ParameterId, "variable">) => {
+    const action = { type: "to-common", parameter } as const;
+    for (const lost of droppedParameters(input, action)) dropped.add(lost);
+    input = reduceInput(input, action);
+  };
+  for (const side of ["rows", "columns"] as const) {
+    if (input.parameters.variable?.kind === side) continue;
+    const owned = axisParameters(input, side);
+    const native = owned.find((parameter) => parameter !== "judge_criteria");
+    for (const parameter of owned)
+      if (parameter !== native && parameter !== "variable") collapse(parameter);
+    if (native) continue;
+    // A removed ordinary dimension becomes one neutral position. Do not
+    // transfer unrelated common settings or duplicate the opposite owner.
+    input[side] = [{ id: input[side][0]?.id ?? newCase().id }];
   }
   if (isChatFormat(format))
     input = { ...input, messages, prompt: chatText(messages) };
-  const judgeModel = input.parameters.judge_model;
-  if (judgeModel?.kind === "common" && judgeModel.value) {
-    const model = modelCatalog.find((model) => model.id === judgeModel.value);
-    if (!model || !canJudge(model, format))
-      input = reduceInput(input, {
-        type: "common",
-        parameter: "judge_model",
-        value: "",
-      });
-  }
+  else delete input.messages;
   return {
-    ...draft,
-    formatSelected: true,
-    input,
-    inactiveChatMessages: isChatFormat(format)
-      ? undefined
-      : (previous.messages ?? draft.inactiveChatMessages),
-    inactivePromptImages: isChatFormat(format) ? promptImages : undefined,
+    dropped: [...dropped],
+    draft: {
+      ...draft,
+      formatSelected: true,
+      input,
+      inactiveChatMessages: isChatFormat(format)
+        ? undefined
+        : (previous.messages ?? draft.inactiveChatMessages),
+      inactivePromptImages: isChatFormat(format) ? promptImages : undefined,
+    },
   };
 }
 
@@ -218,8 +269,8 @@ export function useCreateDraft() {
     return true;
   }
   function selectFormat(format: GridDraftInput["format"]) {
-    if (!confirmFormatChange(draft, format)) return;
-    setDraft((draft) => selectDraftFormat(draft, format));
+    const change = selectDraftFormat(draft, format);
+    if (confirmFormatChange(change)) setDraft(change.draft);
   }
   function replaceReference(localId: string, image: ReferenceImage) {
     setDraft((draft) => {

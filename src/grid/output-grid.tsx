@@ -156,15 +156,17 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
     if (part.kind === "variable")
       return (
         <span className="variable-axis-fields">
-          {part.value.map((field, index) => (
-            <span className="variable-axis-field" key={index}>
-              <span>
-                ${side === "rows" ? "ROW" : "COLUMN"}
-                {index + 1}: {field.text}
+          {part.value.map((field, index) =>
+            field === null ? null : (
+              <span className="variable-axis-field" key={index}>
+                <span>
+                  ${side === "rows" ? "ROW" : "COLUMN"}
+                  {index + 1}: {field.text}
+                </span>
+                {!!field.images?.length && referencePreviews(field.images)}
               </span>
-              {!!field.images?.length && referencePreviews(field.images)}
-            </span>
-          ))}
+            ),
+          )}
         </span>
       );
     return (

@@ -20,6 +20,7 @@ function input(): GridDraftInput {
       judge: true,
       parameters: {
         model: { kind: "common", value: "generator" },
+        effort: { kind: "columns" },
         variable: { kind: "rows" },
         judge_model: { kind: "common", value: "judge" },
         judge_effort: { kind: "common", value: "high" },
@@ -35,7 +36,10 @@ function input(): GridDraftInput {
         { id: "r1", variable: [{ text: "$ROW1 literal" }, { text: "a" }] },
         { id: "r2", variable: [{ text: "b" }, { text: "c" }] },
       ],
-      columns: [{ id: "c1" }, { id: "c2" }],
+      columns: [
+        { id: "c1", effort: "none" },
+        { id: "c2", effort: "high" },
+      ],
     }),
     budgetUsd: "3",
   };
@@ -83,10 +87,8 @@ for (const side of ["rows", "columns"] as const) {
       kind: "common",
       value: parameterDefault("judge_criteria"),
     });
-    assert.deepEqual(
-      replaced[side].map((entry) => entry.id),
-      original[side].map((entry) => entry.id),
-    );
+    assert.equal(replaced[side].length, 1);
+    assert.equal(replaced[side][0].model, "generator");
   });
 }
 
@@ -238,7 +240,7 @@ test("swapping moves all owners and numbered template tokens atomically, not lit
     "Is $COLUMN12 blue?",
   );
   assert.equal(swapped.columns[0].judge_criteria![0].correctAnswer, false);
-  assert.equal(swapped.columns[0].variable![0].text, "$ROW1 literal");
+  assert.equal(swapped.columns[0].variable![0]!.text, "$ROW1 literal");
   assert.equal(swapped.prompt, "$COLUMN1 $COLUMN2");
   const restored = reduceInput(swapped, { type: "swap" });
   assert.deepEqual(restored.parameters, original.parameters);
@@ -263,7 +265,7 @@ for (const side of ["rows", "columns"] as const) {
       { text: "cat", images: [images[0]] },
       { text: "blue" },
     ];
-    draft.rows[1].variable![0].images = [images[1]];
+    draft.rows[1].variable![0]!.images = [images[1]];
     draft = reduceInput(draft, {
       type: "to-axis",
       parameter: "judge_criteria",
@@ -344,7 +346,7 @@ test("draft reload and format changes retain the active case source until Websit
   );
   Object.defineProperty(globalThis, "window", {
     configurable: true,
-    value: {},
+    value: { confirm: () => true },
   });
   Object.defineProperty(globalThis, "sessionStorage", {
     configurable: true,

@@ -157,12 +157,14 @@ old grids retain ordinary owner controls without entering current admission.
   grids, snapshots, output files, and billing records; Resume after an engine
   restart needs a new submission of a manual key.
 
-Variable axes store positional records of text and attachment references.
-Setup validation and grid expansion own token interpretation: they resolve
-generator messages and per-cell judge criteria independently before workflow
-execution. The runtime receives expanded text and referenced images rather than
-templates. Model admission checks only the images each consumer receives;
-storage authorization tracks all configured field attachments.
+Ordinary dimensions own one independent parameter; prompt-variable dimensions
+own aligned case records containing fields and optional parameter overrides.
+The editor presents these separately, while both feed the same validated
+cell-expansion boundary. Variable token identities survive field deletion.
+Setup validation and expansion resolve generator messages and judge criteria
+independently; execution receives concrete inputs rather than form ownership
+or templates. Model admission checks consumed images, while storage authorization
+tracks all configured field attachments.
 
 Judge configuration has one criteria source: a shared rubric or case-owned
 rubrics on one dimension. Setup resolves that source for each cell into the

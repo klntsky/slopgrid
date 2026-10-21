@@ -369,6 +369,134 @@ test("rejects ambiguous ownership, unresolved variables, and image reasoning", (
     assert.equal(gridSchema.safeParse(invalid).success, false);
 });
 
+test("ordinary axes own one parameter and correlated case settings require prompt variables", () => {
+  for (const side of ["rows", "columns"] as const) {
+    const ordinary = currentDefinition({
+      judge: true,
+      parameters: { model: { kind: side } },
+      [side]: [{ model: "first" }, { model: "second" }],
+    });
+    assert.equal(gridSchema.safeParse(ordinary).success, true);
+    const multiple = {
+      ...ordinary,
+      parameters: {
+        ...ordinary.parameters,
+        effort: { kind: side },
+      },
+      [side]: ordinary[side].map((record) => ({
+        ...record,
+        effort: "high",
+      })),
+    };
+    assert.equal(
+      gridDraftSchema.safeParse({ ...multiple, budgetUsd: "3" }).success,
+      true,
+    );
+    assert.equal(gridSchema.safeParse(multiple).success, false);
+    const criteria = [{ text: "Is the answer correct?", correctAnswer: true }];
+    const criteriaOnly = currentDefinition({
+      judge: true,
+      parameters: { judge_criteria: { kind: side } },
+      [side]: [{ judge_criteria: criteria }],
+    });
+    assert.equal(gridSchema.safeParse(criteriaOnly).success, false);
+    const token = side === "rows" ? "$ROW2" : "$COLUMN2";
+    const correlated = currentDefinition({
+      judge: true,
+      prompt: token,
+      parameters: {
+        variable: { kind: side },
+        model: { kind: side },
+        effort: { kind: side },
+        judge_criteria: { kind: side },
+      },
+      [side]: [
+        {
+          variable: [null, { text: "first" }],
+          model: "first",
+          effort: "low",
+          judge_criteria: criteria,
+        },
+        {
+          variable: [null, { text: "second" }],
+          model: "second",
+          effort: "high",
+          judge_criteria: criteria,
+        },
+      ],
+    });
+    assert.equal(gridSchema.safeParse(correlated).success, true);
+    const other = side === "rows" ? "columns" : "rows";
+    assert.equal(
+      gridSchema.safeParse({
+        ...correlated,
+        parameters: {
+          ...correlated.parameters,
+          judge_criteria: { kind: other },
+        },
+        [side]: correlated[side].map(({ judge_criteria, ...record }) => record),
+        [other]: [{ id: "criteria-only", judge_criteria: criteria }],
+      }).success,
+      false,
+    );
+  }
+});
+
+test("unowned sides have exactly one neutral record while drafts retain unfinished layouts", () => {
+  const source = currentDefinition();
+  assert.equal(gridSchema.safeParse(source).success, true);
+  for (const side of ["rows", "columns"] as const)
+    for (const records of [
+      [],
+      [{ id: "first" }, { id: "second" }],
+      [{ id: "not-neutral", effort: "high" }],
+    ]) {
+      const input = { ...source, [side]: records };
+      assert.equal(
+        gridDraftSchema.safeParse({ ...input, budgetUsd: "3" }).success,
+        true,
+      );
+      assert.equal(gridSchema.safeParse(input).success, false);
+    }
+});
+
+test("draft and canonical variable schemas preserve deleted slots and raw field content", () => {
+  const source = currentDefinition({
+    prompt: "$ROW2",
+    parameters: { variable: { kind: "rows" } },
+    rows: [
+      {
+        id: "stable-case",
+        variable: [
+          null,
+          {
+            text: "  answer  ",
+            images: [{ id: "answer", name: "answer.png", width: 7, height: 3 }],
+          },
+          null,
+        ],
+      },
+    ],
+  });
+  const draft = gridDraftSchema.parse({ ...source, budgetUsd: "3" });
+  const parsed = gridSchema.parse(source);
+  assert.deepEqual(draft.rows, source.rows);
+  assert.deepEqual(parsed.rows, source.rows);
+  assert.deepEqual(
+    gridSchema.parse(JSON.parse(JSON.stringify(parsed))).rows,
+    source.rows,
+  );
+  const deleted = {
+    ...source,
+    rows: [{ id: "stable-case", variable: [null, null, null] }],
+  };
+  assert.equal(
+    gridDraftSchema.safeParse({ ...deleted, budgetUsd: "3" }).success,
+    true,
+  );
+  assert.equal(gridSchema.safeParse(deleted).success, false);
+});
+
 test("current admission rejects old axis definitions and simultaneous variable ownership", () => {
   const base = currentDefinition({
     prompt: "$ROW1",
@@ -603,7 +731,7 @@ test("Image generation requires a nonempty expanded instruction even with attach
     rows: [{ variable: [{ text: "", images: [image] }] }],
   });
   assert.equal(gridSchema.safeParse(source).success, false);
-  source.rows[0].variable![0].text = "Describe the attachment";
+  source.rows[0].variable![0]!.text = "Describe the attachment";
   assert.equal(gridSchema.safeParse(source).success, true);
 });
 
@@ -990,4 +1118,40 @@ test("every supported judge effort is accepted common and on an axis", () => {
     });
     assert.equal(expandGrid(axis)[0].judge?.effort, effort);
   }
+});
+
+test("older current-version compound axes remain readable but cannot enter the new editor", async () => {
+  const { isCurrentGridInput, isEditableGridInput } =
+    await import("../server/parameters.js");
+  const { gridDisplay } = await import("../shared/grid-display.js");
+  const { draftInputFromGridInput } =
+    await import("../src/create/draft-input.js");
+  const accepted = currentDefinition({
+    parameters: { model: { kind: "rows" }, effort: { kind: "rows" } },
+    rows: [
+      { model: "model/a", effort: "low" },
+      { model: "model/b", effort: "high" },
+    ],
+    columns: [{}],
+  });
+  assert.equal(isCurrentGridInput(accepted), true);
+  assert.equal(isEditableGridInput(accepted), false);
+  assert.equal(gridSchema.safeParse(accepted).success, false);
+  assert.throws(
+    () => draftInputFromGridInput(accepted),
+    /cannot be edited or forked/,
+  );
+  assert.deepEqual(
+    gridDisplay(accepted).rows.map((row) => row.parts),
+    [
+      [
+        { kind: "model", value: "model/a" },
+        { kind: "effort", value: "low" },
+      ],
+      [
+        { kind: "model", value: "model/b" },
+        { kind: "effort", value: "high" },
+      ],
+    ],
+  );
 });

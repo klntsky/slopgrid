@@ -47,11 +47,14 @@ function downloadPart(part: ParameterDisplayPart): string {
   switch (part.kind) {
     case "variable":
       return part.value
-        .map(
-          (field) =>
-            field.text ||
-            field.images?.map((image) => image.name).join(" ") ||
-            "",
+        .flatMap((field) =>
+          field === null
+            ? []
+            : [
+                field.text ||
+                  field.images?.map((image) => image.name).join(" ") ||
+                  "",
+              ],
         )
         .join(" ");
     case "images":
