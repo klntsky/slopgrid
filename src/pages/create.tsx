@@ -23,6 +23,7 @@ import { LowBalanceDialog } from "../components/inference-dialogs";
 import { useTooltip } from "../components/use-tooltip";
 import { promptVariableIssue } from "../../server/prompt-variables";
 import { PromptEditor } from "../create/prompt-editor";
+import { VariableTable } from "../create/variable-table";
 
 export function Create() {
   useGrids();
@@ -180,6 +181,23 @@ export function Create() {
                 )
               }
             />
+            {(["rows", "columns"] as const).map((side) => {
+              const axis = input[side];
+              if (axis.kind !== "variable") return null;
+              return (
+                <VariableTable
+                  key={side}
+                  label={side === "rows" ? "Rows" : "Columns"}
+                  values={axis.values}
+                  onBusy={onUploading}
+                  onChange={(values) =>
+                    update((current) =>
+                      changeAxis(current, side, { kind: "variable", values }),
+                    )
+                  }
+                />
+              );
+            })}
           </fieldset>
           <p className="hint">
             {input.judge ? (

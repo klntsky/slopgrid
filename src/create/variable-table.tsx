@@ -1,7 +1,51 @@
-import { useId, useRef, useState } from "react";
+import { useId, useLayoutEffect, useRef, useState } from "react";
 import { Plus, X } from "lucide-react";
 import type { VariableField } from "../../server/prompt-variables";
 import { ReferenceImageList, ReferencePicker } from "./reference-groups";
+
+function fitTextarea(input: HTMLTextAreaElement) {
+  input.style.height = "auto";
+  input.style.height = `${input.scrollHeight + input.offsetHeight - input.clientHeight}px`;
+}
+
+function VariableInput({
+  id,
+  label,
+  text,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  text: string;
+  onChange: (text: string) => void;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    if (ref.current) fitTextarea(ref.current);
+  }, [text]);
+  useLayoutEffect(() => {
+    const input = ref.current!;
+    let width = input.getBoundingClientRect().width;
+    const observer = new ResizeObserver(() => {
+      const nextWidth = input.getBoundingClientRect().width;
+      if (nextWidth === width) return;
+      width = nextWidth;
+      fitTextarea(input);
+    });
+    observer.observe(input);
+    return () => observer.disconnect();
+  }, []);
+  return (
+    <textarea
+      ref={ref}
+      id={id}
+      aria-label={label}
+      rows={1}
+      value={text}
+      onChange={(event) => onChange(event.target.value)}
+    />
+  );
+}
 
 export function VariableTable({
   label,
@@ -20,6 +64,9 @@ export function VariableTable({
   const side = label === "Rows" ? "row" : "column";
   const prefix = label === "Rows" ? "$ROW" : "$COLUMN";
   const fields = values[0]?.length || 1;
+  const casesAcross = label === "Columns";
+  const columnCount = casesAcross ? values.length : fields;
+  const rowCount = casesAcross ? fields : values.length;
   function onReading(busy: boolean) {
     reads.current += busy ? 1 : -1;
     setReading(reads.current > 0);
@@ -36,58 +83,81 @@ export function VariableTable({
       ),
     );
   }
+  function header(kind: "case" | "variable", index: number, vertical = false) {
+    const name =
+      kind === "case" ? `Case ${index + 1}` : `${prefix}${index + 1}`;
+    return (
+      <>
+        <span className={vertical ? "row-label" : undefined}>{name}</span>
+        <button
+          type="button"
+          className="text-button"
+          aria-label={
+            kind === "case"
+              ? `Remove ${side} case ${index + 1}`
+              : `Remove ${name}`
+          }
+          disabled={reading || (kind === "case" ? values.length : fields) === 1}
+          onClick={() =>
+            onChange(
+              kind === "case"
+                ? values.filter((_, caseIndex) => caseIndex !== index)
+                : values.map((entry) =>
+                    entry.filter((_, fieldIndex) => fieldIndex !== index),
+                  ),
+            )
+          }
+        >
+          <X aria-hidden="true" />
+        </button>
+      </>
+    );
+  }
   return (
     <div className="variable-editor" aria-busy={reading}>
       <div className="variable-table-scroll">
         <table
           className="variable-table"
-          style={{ minWidth: `${fields * 192 + 32}px` }}
+          style={{ minWidth: `${columnCount * 192 + 58}px` }}
           aria-label={`${label === "Rows" ? "Row" : "Column"} variables`}
         >
+          <colgroup>
+            <col className="variable-row-header" />
+            {Array.from({ length: columnCount }, (_, column) => (
+              <col key={column} />
+            ))}
+          </colgroup>
           <thead>
             <tr>
-              {Array.from({ length: fields }, (_, column) => (
+              <td className="variable-corner" />
+              {Array.from({ length: columnCount }, (_, column) => (
                 <th scope="col" key={column}>
-                  <span>
-                    {prefix}
-                    {column + 1}
-                  </span>
-                  <button
-                    type="button"
-                    className="text-button"
-                    aria-label={`Remove ${prefix}${column + 1}`}
-                    disabled={reading || fields === 1}
-                    onClick={() =>
-                      onChange(
-                        values.map((entry) =>
-                          entry.filter((_, c) => c !== column),
-                        ),
-                      )
-                    }
-                  >
-                    <X aria-hidden="true" />
-                  </button>
+                  {header(casesAcross ? "case" : "variable", column)}
                 </th>
               ))}
-              <td />
             </tr>
           </thead>
           <tbody>
-            {values.map((entry, row) => (
+            {Array.from({ length: rowCount }, (_, row) => (
               <tr key={row}>
-                {entry.map((field, column) => {
-                  const cellLabel = `${prefix}${column + 1}, case ${row + 1}`;
-                  const cellId = `${id}-${row}-${column}`;
+                <th scope="row">
+                  {header(casesAcross ? "variable" : "case", row, true)}
+                </th>
+                {Array.from({ length: columnCount }, (_, column) => {
+                  const caseIndex = casesAcross ? column : row;
+                  const fieldIndex = casesAcross ? row : column;
+                  const field = values[caseIndex][fieldIndex];
+                  const cellLabel = `${prefix}${fieldIndex + 1}, case ${caseIndex + 1}`;
+                  const cellId = `${id}-${caseIndex}-${fieldIndex}`;
                   return (
                     <td key={column}>
                       <div className="variable-cell-input">
-                        <textarea
+                        <VariableInput
                           id={cellId}
-                          aria-label={cellLabel}
-                          rows={2}
-                          value={field.text}
-                          onChange={(event) =>
-                            update(row, column, { text: event.target.value })
+                          label={cellLabel}
+                          text={field.text}
+                          onChange={(text) =>
+                            update(caseIndex, fieldIndex, { text })
                           }
                         />
                         <ReferencePicker
@@ -97,7 +167,7 @@ export function VariableTable({
                           disabled={reading}
                           onBusy={onReading}
                           onSelect={(images) =>
-                            update(row, column, {
+                            update(caseIndex, fieldIndex, {
                               images: [...(field.images ?? []), ...images],
                             })
                           }
@@ -111,7 +181,7 @@ export function VariableTable({
                             `Remove ${image.name} from ${cellLabel}`
                           }
                           onRemove={(index) =>
-                            update(row, column, {
+                            update(caseIndex, fieldIndex, {
                               images: field.images?.filter(
                                 (_, i) => i !== index,
                               ),
@@ -122,17 +192,6 @@ export function VariableTable({
                     </td>
                   );
                 })}
-                <td className="variable-case-remove">
-                  <button
-                    type="button"
-                    className="text-button"
-                    aria-label={`Remove ${side} case ${row + 1}`}
-                    disabled={reading || values.length === 1}
-                    onClick={() => onChange(values.filter((_, r) => r !== row))}
-                  >
-                    <X aria-hidden="true" />
-                  </button>
-                </td>
               </tr>
             ))}
           </tbody>

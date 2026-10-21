@@ -534,6 +534,10 @@ section {
 .fixed-options > * {
   min-width: 0;
 }
+.variable-editor {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
 .variable-table-scroll {
   overflow-x: auto;
 }
@@ -544,7 +548,6 @@ section {
 }
 .variable-table th,
 .variable-table td {
-  min-width: 180px;
   padding: 6px;
   vertical-align: top;
   border: 1px solid var(--line);
@@ -557,11 +560,19 @@ section {
   float: right;
   padding: 0;
 }
-.variable-table .variable-case-remove,
-.variable-table thead td {
-  width: 32px;
-  min-width: 32px;
-  padding: 6px 0;
+.variable-table .variable-row-header {
+  width: 58px;
+}
+.variable-table th[scope="row"] {
+  text-align: center;
+  vertical-align: middle;
+}
+.variable-table th[scope="row"] .text-button {
+  display: block;
+  float: none;
+  margin: 6px auto 0;
+}
+.variable-table .variable-corner {
   border: 0;
 }
 .variable-cell-input {
@@ -572,7 +583,8 @@ section {
   display: block;
   min-height: 72px;
   padding-right: 34px;
-  resize: vertical;
+  overflow-y: hidden;
+  resize: none;
 }
 .variable-cell-input .reference-upload-compact {
   right: 3px;

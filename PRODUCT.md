@@ -179,7 +179,11 @@ Show a small-text footer on every page except the grid page, with "source code" 
 ### 3.3. Prompt variables
 
 1. Support either or both axes as prompt variables. Each axis value is one case containing any number of fields, referenced as `$ROW1`, `$ROW2`, and so on, or `$COLUMN1`, `$COLUMN2`, and so on. Fields belong to the same case; adding a field does not add grid cells.
-2. Edit each variable axis as a table with numbered token headers and no field titles. Every cell has an editable text input and a compact image file chooser, with attachment previews and individual removal. Accept text, images, or both, including pasted images.
+2. Show each variable axis table across the full creation-form width, with numbered token headers and no field titles.
+   - Row cases occupy rows, with "Case 1", "Case 2", and so on as row headers and `$ROW1`, `$ROW2`, and so on as column headers.
+   - Column cases occupy columns, with numbered case headers above them and `$COLUMN1`, `$COLUMN2`, and so on as row headers.
+   - Rotate row headers 90 degrees, matching the result grid.
+   - Each cell has a text input that grows and shrinks to fit its contents and available width, without manual resize handles. Include a compact image file chooser, attachment previews, and individual removal. Accept text, images, or both, including pasted images.
 3. Offer "Add case" and "Add variable", with controls to remove cases and fields while retaining at least one of each. Keep table overflow locally scrollable on narrow screens. Start with one empty case and one empty field; impose no application limit on either count.
 4. Use "Each case is one row. Reference numbered variables in the prompt or judge criteria. Text and images are optional in each field." beneath row tables, with "column" for column tables.
 5. Replace each numbered token with that field's text at its exact position. Treat inserted field text literally rather than expanding it recursively. Attach a referenced field's images once to the merged message, even when its token occurs repeatedly. Keep attachments on their referencing messages.

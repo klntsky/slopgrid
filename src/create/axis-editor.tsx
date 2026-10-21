@@ -7,7 +7,6 @@ import {
 import { ReferenceGroups } from "./reference-groups";
 import { ModelSelector } from "./model-selector";
 import { CustomAxisSizes } from "./custom-image-size";
-import { VariableTable } from "./variable-table";
 import { efforts, type GridInput } from "../../server/domain";
 import { effortLabel } from "../../server/compatibility";
 import type { Model } from "../../server/provider";
@@ -92,14 +91,7 @@ export function AxisEditor({
           onBusy={onUploading}
           onChange={(values, groups) => onChange({ ...axis, values }, groups)}
         />
-      ) : axis.kind === "variable" ? (
-        <VariableTable
-          label={label}
-          values={axis.values}
-          onChange={(values) => onChange({ ...axis, values })}
-          onBusy={onUploading}
-        />
-      ) : (
+      ) : axis.kind !== "variable" ? (
         <fieldset
           aria-label={label === "Rows" ? "Row values" : "Column values"}
         >
@@ -148,7 +140,7 @@ export function AxisEditor({
             />
           )}
         </fieldset>
-      )}
+      ) : null}
       {children}
     </div>
   );
