@@ -9,7 +9,7 @@ import {
 } from "react";
 import { DeletableInput } from "./deletable-input";
 import { ReorderHandle } from "./reorder-handle";
-import { ReferenceImageList, ReferencePicker } from "./reference-groups";
+import { ImageList, ImagePicker } from "./image-input";
 import { tooltipRef } from "../components/use-tooltip";
 
 const imageRoleHint = "Remove images before changing this message’s role.";
@@ -182,8 +182,7 @@ export function ChatEditor({
               />
             )}
             {message.role === "user" && (
-              <ReferencePicker
-                compact
+              <ImagePicker
                 pasteTarget={`${descriptionId}-message-${index}`}
                 accessibleLabel={`Add images to message ${index + 1}`}
                 disabled={reading}
@@ -198,7 +197,7 @@ export function ChatEditor({
           </DeletableInput>
           {message.role === "user" && !!message.images?.length && (
             <div className="chat-message-images">
-              <ReferenceImageList
+              <ImageList
                 images={message.images}
                 disabled={reading}
                 removeLabel={(image) =>
