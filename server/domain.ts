@@ -14,6 +14,11 @@ import {
   mergeVariableImages,
   promptVariableIssue,
 } from "./prompt-variables.js";
+import {
+  judgeCriteriaSchema,
+  judgeCriteriaIssue,
+  type Criterion,
+} from "./judge-criteria.js";
 export type { VariableField } from "./prompt-variables.js";
 export const efforts = [
   "default",
@@ -126,17 +131,7 @@ const gridFields = {
   effort: z.enum(efforts),
   judge: z
     .object({
-      criteria: z
-        .array(
-          z.object({
-            text: z
-              .string()
-              .trim()
-              .min(1, "Enter a yes-or-no question for each criterion."),
-            correctAnswer: z.boolean(),
-          }),
-        )
-        .min(1, "Add at least one criterion."),
+      criteria: judgeCriteriaSchema,
       model: z.string().trim(),
       effort: z.enum(efforts),
     })
@@ -199,6 +194,8 @@ export const gridSchema = gridInputSchema
       if (g.format === "html") issue("Websites do not support a judge yet.");
       if (!dimensions.includes("judge_model") && !g.judge.model)
         issue("Select a judge model.");
+      const message = judgeCriteriaIssue(g);
+      if (message) issue(message);
     }
     if (
       g.format === "image" &&
@@ -368,7 +365,7 @@ export type GenerationTask = Task<GenerationInput, GenerationOutput> & {
 export type JudgmentInput = {
   model: string;
   effort: string;
-  criteria: NonNullable<GridInput["judge"]>["criteria"];
+  criteria: Criterion[];
   images?: ReferenceImage[];
 };
 export type JudgmentTask = Task<JudgmentInput, { results: JudgeResult[] }> & {

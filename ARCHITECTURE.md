@@ -145,6 +145,12 @@ execution. The runtime receives expanded text and referenced images rather than
 templates. Model admission checks only the images each consumer receives;
 storage authorization tracks all configured field attachments.
 
+Judge configuration has one criteria source: a shared rubric or case rubrics
+owned by one variable axis. Setup resolves that source for each cell into the
+ordinary judgment task input. The scheduler and provider adapter do not interpret
+criteria modes. Frontend case transitions preserve rubric association, and result
+projection selects the same cell-specific criteria for scoring and display.
+
 Prompt-based text formats combine common image references and variable-derived
 attachments into one expanded user input. Provider preparation keeps format
 instructions separate from that multimodal input; judging reuses the same

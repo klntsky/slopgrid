@@ -4,6 +4,7 @@ import {
   mergeVariableImages,
   referencedVariableImages,
 } from "./prompt-variables.js";
+import { criteriaSets } from "./judge-criteria.js";
 
 import {
   ImageGenerationRequestAspectRatio,
@@ -177,12 +178,21 @@ export function generatorReferences(
 export function judgeReferences(
   input: ReferenceSelectionInput & Pick<GridInput, "judge">,
 ): ReferenceImage[] {
+  const source = input.judge?.criteria;
   return (
     mergeVariableImages(
       generatorReferences(input),
-      ...(input.judge?.criteria.map((criterion) =>
-        referencedVariableImages(criterion.text, input),
-      ) ?? []),
+      ...criteriaSets(source).flatMap((criteria, index) =>
+        criteria.map((criterion) =>
+          referencedVariableImages(
+            criterion.text,
+            input,
+            source && !Array.isArray(source)
+              ? { [source.axis]: index }
+              : undefined,
+          ),
+        ),
+      ),
     ) ?? []
   );
 }

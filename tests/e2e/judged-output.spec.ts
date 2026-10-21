@@ -678,7 +678,7 @@ test("format changes retain criteria and judge effort, clear incompatible models
   await expect(judge.getByRole("radio", { checked: true })).toHaveCount(0);
 });
 
-const judgedInput: GridInput = {
+const judgedInput = {
   format: "markdown",
   prompt: "Describe a red rectangle",
   model: "fixture/text",
@@ -694,7 +694,7 @@ const judgedInput: GridInput = {
     model: "",
     effort: "default",
   },
-};
+} satisfies GridInput;
 
 async function createJudged(page: Page, input: GridInput = judgedInput) {
   await page.goto("/create");

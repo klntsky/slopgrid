@@ -1,5 +1,6 @@
 import type { GridInput } from "./domain.js";
 import type { ReferenceImage } from "./image-settings.js";
+import { criteriaSets } from "./judge-criteria.js";
 
 export type VariableField = { text: string; images?: ReferenceImage[] };
 type VariableInput = Pick<GridInput, "rows" | "columns">;
@@ -26,13 +27,18 @@ export function mergeVariableImages(
 export function referencedVariableImages(
   text: string,
   input: VariableInput,
+  selection?: Partial<Record<"rows" | "columns", number>>,
 ): ReferenceImage[] {
   const images: ReferenceImage[] = [];
   const seen = new Set<string>();
   for (const [, name, number] of text.matchAll(variableToken)) {
-    const axis = name === "ROW" ? input.rows : input.columns;
+    const side = name === "ROW" ? "rows" : "columns";
+    const axis = input[side];
     if (axis.kind !== "variable" || !/^[1-9]\d*$/.test(number)) continue;
-    for (const fields of axis.values)
+    const index = selection?.[side];
+    const values =
+      index === undefined ? axis.values : [axis.values[index] ?? []];
+    for (const fields of values)
       for (const image of fields[Number(number) - 1]?.images ?? [])
         if (!seen.has(image.id)) {
           seen.add(image.id);
@@ -87,12 +93,17 @@ export function promptVariableIssue(input: TemplateInput): string | undefined {
         }))
       : [{ text: input.prompt, role: "user" }];
   templates.push(
-    ...(input.judge?.criteria ?? []).map(({ text }) => ({
-      text,
-      role: "user",
-    })),
+    ...criteriaSets(input.judge?.criteria)
+      .flat()
+      .map(({ text }) => ({
+        text,
+        role: "user",
+      })),
   );
   const used = new Set<string>();
+  const source = input.judge?.criteria;
+  if (source && !Array.isArray(source))
+    used.add(source.axis === "rows" ? "ROW" : "COLUMN");
   for (const { text, role } of templates)
     for (const match of text.matchAll(variableToken)) {
       const [token, name, number] = match;

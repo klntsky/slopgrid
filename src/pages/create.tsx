@@ -24,6 +24,42 @@ import { useTooltip } from "../components/use-tooltip";
 import { promptVariableIssue } from "../../server/prompt-variables";
 import { PromptEditor } from "../create/prompt-editor";
 import { VariableTable } from "../create/variable-table";
+import {
+  makeJudgeVariable,
+  makeJudgeShared,
+  addVariableCase,
+  removeVariableCase,
+} from "../create/judge-mode";
+import { judgeCriteriaIssue } from "../../server/judge-criteria";
+
+function JudgeVariableButton({
+  side,
+  enabled,
+  onClick,
+}: {
+  side: "rows" | "columns";
+  enabled: boolean;
+  onClick: () => void;
+}) {
+  const name = side === "rows" ? "row" : "column";
+  const hint = useTooltip<HTMLSpanElement>(
+    enabled
+      ? `Give each ${name} case its own judge criteria. Judge model and thinking effort stay unchanged.`
+      : `Choose prompt variables for ${side} to give each ${name} case its own judge criteria.`,
+  );
+  return (
+    <span ref={hint} tabIndex={0}>
+      <button
+        type="button"
+        disabled={!enabled}
+        style={!enabled ? { pointerEvents: "none" } : undefined}
+        onClick={onClick}
+      >
+        Make the judge a {name} variable
+      </button>
+    </span>
+  );
+}
 
 export function Create() {
   useGrids();
@@ -89,6 +125,12 @@ export function Create() {
       : [];
   });
   const variableIssue = promptVariableIssue(input);
+  const criteriaIssue = judgeCriteriaIssue(input);
+  const criteriaSource = input.judge?.criteria;
+  const criteriaAxis =
+    criteriaSource && !Array.isArray(criteriaSource)
+      ? criteriaSource.axis
+      : undefined;
   const budgetHint = useTooltip<HTMLLabelElement>(
     "Used to calculate each output’s token limit.",
   );
@@ -98,7 +140,7 @@ export function Create() {
   const swapHint = useTooltip<HTMLButtonElement>("Swap rows and columns");
   const generateHint = useTooltip<HTMLDivElement>(generateReasons || undefined);
   const generatedOutputs =
-    input.judge && !variableIssue
+    input.judge && !variableIssue && !criteriaIssue
       ? new Set(
           expandGrid(input).map((cell) =>
             generationGroupKey(input.format, { ...cell, id: "" }),
@@ -148,6 +190,7 @@ export function Create() {
               models={models}
               judgeModels={judgeModels}
               judgeEnabled={!!input.judge}
+              criteriaOwner={criteriaAxis === "rows"}
               referenceGroups={input.referenceGroups}
               onUploading={onUploading}
               onChange={(rows, referenceGroups) =>
@@ -173,6 +216,7 @@ export function Create() {
               models={models}
               judgeModels={judgeModels}
               judgeEnabled={!!input.judge}
+              criteriaOwner={criteriaAxis === "columns"}
               referenceGroups={input.referenceGroups}
               onUploading={onUploading}
               onChange={(columns, referenceGroups) =>
@@ -190,6 +234,51 @@ export function Create() {
                   label={side === "rows" ? "Rows" : "Columns"}
                   values={axis.values}
                   onBusy={onUploading}
+                  onAddCase={() =>
+                    update((current) => addVariableCase(current, side))
+                  }
+                  onRemoveCase={(index) =>
+                    update((current) =>
+                      removeVariableCase(current, side, index),
+                    )
+                  }
+                  caseCriteria={
+                    criteriaSource &&
+                    !Array.isArray(criteriaSource) &&
+                    criteriaSource.axis === side
+                      ? criteriaSource.cases
+                      : undefined
+                  }
+                  onCriteriaChange={(index, criteria) =>
+                    update((current) => {
+                      const source = current.judge?.criteria;
+                      if (
+                        !source ||
+                        Array.isArray(source) ||
+                        source.axis !== side
+                      )
+                        return current;
+                      return {
+                        judge: {
+                          ...current.judge!,
+                          criteria: {
+                            ...source,
+                            cases: source.cases.map((rubric, i) =>
+                              i === index ? criteria : rubric,
+                            ),
+                          },
+                        },
+                      };
+                    })
+                  }
+                  onMakeShared={(index) => {
+                    if (
+                      window.confirm(
+                        "Use this judge for all cases? This replaces all per-case judge criteria with this case’s criteria.",
+                      )
+                    )
+                      update((current) => makeJudgeShared(current, index));
+                  }}
                   onChange={(values) =>
                     update((current) =>
                       changeAxis(current, side, { kind: "variable", values }),
@@ -390,16 +479,47 @@ export function Create() {
             <p className="hint">Websites do not support a judge.</p>
           ) : input.judge ? (
             <>
-              <CriteriaEditor
-                criteria={input.judge.criteria}
-                onChange={(criteria) => {
-                  if (!criteria.length) setJudgeEnabled(false);
-                  else
-                    update((current) => ({
-                      judge: { ...current.judge!, criteria },
-                    }));
-                }}
-              />
+              {Array.isArray(input.judge.criteria) ? (
+                <>
+                  <CriteriaEditor
+                    criteria={input.judge.criteria}
+                    onChange={(criteria) => {
+                      if (!criteria.length) setJudgeEnabled(false);
+                      else
+                        update((current) => ({
+                          judge: { ...current.judge!, criteria },
+                        }));
+                    }}
+                  />
+                  <div className="variable-table-actions">
+                    {(["rows", "columns"] as const).map((side) => (
+                      <JudgeVariableButton
+                        key={side}
+                        side={side}
+                        enabled={input[side].kind === "variable"}
+                        onClick={() => {
+                          const name = side === "rows" ? "row" : "column";
+                          if (
+                            window.confirm(
+                              `Make the judge a ${name} variable? Each ${name} case starts with a copy of the shared criteria. The shared criteria will be replaced.`,
+                            )
+                          )
+                            update((current) =>
+                              makeJudgeVariable(current, side),
+                            );
+                        }}
+                      />
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <p className="hint">
+                  Judge criteria vary by{" "}
+                  {input.judge.criteria.axis === "rows" ? "row" : "column"}{" "}
+                  case. Edit them in the variable table above.
+                </p>
+              )}
+              <ErrorMessage error={criteriaIssue} />
               <p className="hint">
                 Judge calls are not counted towards the generation budget.
               </p>

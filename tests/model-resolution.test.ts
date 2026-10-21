@@ -440,6 +440,98 @@ test("variable image admission follows generator and judge consumption, not fiel
   }
 });
 
+for (const side of ["rows", "columns"] as const)
+  test(`${side} rubric image admission includes only fields consumed by that exact case`, () => {
+    const first = { id: "first-unused", name: "first.png" };
+    const second = { id: "second-unused", name: "second.png" };
+    const token = side === "rows" ? "$ROW" : "$COLUMN";
+    const catalog = judgeModels().map((model) => ({
+      ...model,
+      imageInput: model.id !== "fixture/v2",
+    }));
+    const source: GridInput = {
+      ...input,
+      prompt: "Describe a shape.",
+      model: "fixture/v2",
+      rows: { kind: "model", values: ["fixture/v2"] },
+      columns: { kind: "effort", values: ["none"] },
+      [side]: {
+        kind: "variable",
+        values: [
+          [{ text: "first text" }, { text: "unused", images: [first] }],
+          [{ text: "unused", images: [second] }, { text: "second text" }],
+        ],
+      },
+      judge: {
+        model: "fixture/v2",
+        effort: "none",
+        criteria: {
+          axis: side,
+          cases: [
+            [{ text: `Matches ${token}1?`, correctAnswer: false }],
+            [{ text: `Matches ${token}2?`, correctAnswer: true }],
+          ],
+        },
+      },
+    };
+    assert.deepEqual(selectedReferences(source), [first, second]);
+    assert.deepEqual(generatorReferences(source), []);
+    assert.deepEqual(judgeReferences(source), []);
+    assert.doesNotThrow(() => resolveGridModels(source, catalog));
+    for (const index of [0, 1]) {
+      const changed: GridInput = {
+        ...source,
+        judge: {
+          ...source.judge!,
+          criteria: {
+            axis: side,
+            cases: [
+              [
+                {
+                  text: `Matches ${token}${index === 0 ? 2 : 1}?`,
+                  correctAnswer: false,
+                },
+              ],
+              [
+                {
+                  text: `Matches ${token}${index === 1 ? 1 : 2}?`,
+                  correctAnswer: true,
+                },
+              ],
+            ],
+          },
+        },
+      };
+      assert.deepEqual(judgeReferences(changed), [
+        index === 0 ? first : second,
+      ]);
+      assert.throws(
+        () => resolveGridModels(changed, catalog),
+        /judge model must support image inputs/,
+      );
+      assert.doesNotThrow(() =>
+        resolveGridModels(
+          {
+            ...changed,
+            judge: { ...changed.judge!, model: "fixture/v1" },
+          },
+          catalog,
+        ),
+      );
+    }
+    assert.deepEqual(
+      judgeReferences({
+        ...source,
+        judge: {
+          ...source.judge!,
+          criteria: [{ text: `Matches ${token}1?`, correctAnswer: true }],
+        },
+      }),
+      [second],
+      "shared rubrics still consume the referenced field in every case",
+    );
+  });
+
 test("judge aliases resolve in fixed settings and both axes, collapsing duplicate targets", () => {
   const resolved = resolveGridModels(judgedInput, judgeModels());
   assert.equal(resolved.judge?.model, "fixture/v1");

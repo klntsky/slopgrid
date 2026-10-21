@@ -1,18 +1,20 @@
 import { useRef, useState } from "react";
 import { Plus } from "lucide-react";
-import type { GridInput } from "../../server/domain";
+import type { Criterion } from "../../server/judge-criteria";
 import { DeletableInput } from "./deletable-input";
 import { ReorderHandle } from "./reorder-handle";
 import "./criteria-editor.css";
 
-type Criteria = NonNullable<GridInput["judge"]>["criteria"];
+type Criteria = Criterion[];
 
 export function CriteriaEditor({
   criteria,
   onChange,
+  label,
 }: {
   criteria: Criteria;
   onChange: (criteria: Criteria) => void;
+  label?: string;
 }) {
   const root = useRef<HTMLTableElement>(null);
   const [dragging, setDragging] = useState<number>();
@@ -39,7 +41,11 @@ export function CriteriaEditor({
   }
 
   return (
-    <div className="criteria-editor">
+    <div
+      className="criteria-editor"
+      role={label ? "group" : undefined}
+      aria-label={label}
+    >
       <table className="criteria-table" ref={root}>
         <colgroup>
           <col className="criteria-handle-column" />

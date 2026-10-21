@@ -2,6 +2,11 @@ import type Database from "better-sqlite3";
 import { expandGrid, type Cell, type GridInput } from "./domain.js";
 import { generationGroupKey } from "../shared/generation-key.js";
 import { migrateVariableInput } from "../shared/variable-migration.js";
+import { criteriaForCell } from "./judge-criteria.js";
+import {
+  interpolateVariables,
+  mergeVariableImages,
+} from "./prompt-variables.js";
 
 const schemaVersion = 17;
 export function initializeDatabase(db: Database.Database) {
@@ -347,6 +352,19 @@ function migrateWorkflow(db: Database.Database) {
             errorCode,
             results,
           } = cell.judge;
+          let images: Cell["images"];
+          const criteria = criteriaForCell(input, cell.row, cell.column).map(
+            (criterion) => {
+              const expanded = interpolateVariables(
+                criterion.text,
+                input,
+                cell.row,
+                cell.column,
+              );
+              images = mergeVariableImages(images, expanded.images);
+              return { ...criterion, text: expanded.text };
+            },
+          );
           insertTask.run(
             judgmentId,
             grid.id,
@@ -359,7 +377,8 @@ function migrateWorkflow(db: Database.Database) {
               input: {
                 model,
                 effort,
-                criteria: savedGrid.input.judge?.criteria ?? [],
+                criteria,
+                ...(images ? { images } : {}),
               },
               attemptId,
               error,

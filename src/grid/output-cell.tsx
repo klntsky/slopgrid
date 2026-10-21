@@ -10,6 +10,7 @@ import {
 import { ExpandButton } from "../components/expand-button";
 import { CopyButton } from "../components/copy-button";
 import type { GridInput } from "../../server/domain";
+import type { Criterion } from "../../server/judge-criteria";
 import type { ViewGrid } from "../api";
 import { useTheme } from "../theme";
 import { formatCost, cellError, formatNames } from "../format";
@@ -41,7 +42,7 @@ export function OutputCell({
   cell: ViewGrid["cells"][number];
   format: GridInput["format"];
   gridStatus: ViewGrid["status"];
-  criteria?: NonNullable<GridInput["judge"]>["criteria"];
+  criteria?: Criterion[];
   title: string;
   expanded?: boolean;
   view?: CellView;

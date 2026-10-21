@@ -15,6 +15,7 @@ import { canJudge } from "../../server/compatibility";
 import { modelCatalog } from "../model-catalog";
 import { removeJudge } from "./change-axis";
 import { migrateVariableInput } from "../../shared/variable-migration";
+import { swapJudgeAxes, swapVariableTokens } from "./judge-mode";
 export type Draft = {
   formatSelected: boolean;
   input: GridInput;
@@ -30,13 +31,6 @@ export type Draft = {
     columns?: GridInput["columns"];
   };
 };
-function swapVariableTokens(text: string): string {
-  return text.replace(
-    /\$(ROW|COLUMN)([1-9]\d*)(?![\p{L}\p{N}_])/gu,
-    (_, axis: string, number: string) =>
-      `$${axis === "ROW" ? "COLUMN" : "ROW"}${number}`,
-  );
-}
 const storageKey = "slopgrid-draft";
 const submissionKey = "slopgrid-creation";
 export function creationSubmission(body: Record<string, unknown>) {
@@ -114,7 +108,11 @@ function readDraft(): Draft {
           input.columns = { kind: "model", values: [] };
       }
     }
-    if (draft.input.judge && !draft.input.judge.criteria.length) {
+    if (
+      draft.input.judge &&
+      Array.isArray(draft.input.judge.criteria) &&
+      !draft.input.judge.criteria.length
+    ) {
       Object.assign(draft.input, removeJudge(draft.input));
     }
     return draft;
@@ -327,13 +325,7 @@ export function useCreateDraft() {
           ...message,
           content: swapVariableTokens(message.content),
         })),
-        judge: d.input.judge && {
-          ...d.input.judge,
-          criteria: d.input.judge.criteria.map((criterion) => ({
-            ...criterion,
-            text: swapVariableTokens(criterion.text),
-          })),
-        },
+        judge: swapJudgeAxes(d.input.judge),
       },
       inactiveChatMessages: d.inactiveChatMessages?.map((message) => ({
         ...message,

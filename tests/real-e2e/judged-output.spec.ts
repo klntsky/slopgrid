@@ -2,6 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import type { Cell, GridInput } from "../../server/domain";
 import type { Model } from "../../server/provider";
 import type { BillingPage } from "../../server/billing";
+import { criteriaForCell } from "../../server/judge-criteria";
 
 const judges = ["openai/gpt-5-mini", "openai/gpt-5-nano"];
 const textGenerator = "openai/gpt-4.1-mini";
@@ -134,10 +135,10 @@ async function create(
 async function inspect(page: Page, grid: Snapshot) {
   expect(new Set(grid.cells.map((cell) => cell.generationId)).size).toBe(1);
   const outputs: Buffer[] = [];
-  const expected = grid.input.judge!.criteria;
   const scores = page.locator(".judge-result-button");
   await expect(scores).toHaveCount(grid.cells.length);
   for (const [index, cell] of grid.cells.entries()) {
+    const expected = criteriaForCell(grid.input, cell.row, cell.column);
     expect(cell.outputReady).toBe(true);
     expect(cell.judge?.status).toBe("complete");
     expect(cell.judge?.results).toHaveLength(expected.length);
@@ -167,6 +168,11 @@ async function inspect(page: Page, grid: Snapshot) {
   await expect(details).toBeVisible();
   await expect(cell.locator(".cell-view").first()).toBeHidden();
   const items = details.getByRole("listitem");
+  const expected = criteriaForCell(
+    grid.input,
+    grid.cells[0].row,
+    grid.cells[0].column,
+  );
   for (const [index, result] of grid.cells[0].judge!.results!.entries()) {
     const matched = result.verdict === expected[index].correctAnswer;
     await expect(

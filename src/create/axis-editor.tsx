@@ -11,6 +11,7 @@ import { efforts, type GridInput } from "../../server/domain";
 import { effortLabel } from "../../server/compatibility";
 import type { Model } from "../../server/provider";
 import { dimensionNames } from "../format";
+import { useTooltip } from "../components/use-tooltip";
 export function AxisEditor({
   label,
   axis,
@@ -22,6 +23,7 @@ export function AxisEditor({
   referenceGroups = {},
   onUploading,
   children,
+  criteriaOwner = false,
 }: {
   children?: ReactNode;
   label: "Rows" | "Columns";
@@ -33,7 +35,13 @@ export function AxisEditor({
   onChange: (axis: GridInput["rows"], groups?: Groups) => void;
   referenceGroups?: Groups;
   onUploading: (busy: boolean) => void;
+  criteriaOwner?: boolean;
 }) {
+  const selectorHint = useTooltip<HTMLLabelElement>(
+    criteriaOwner
+      ? "Use a case’s judge for all cases before changing this variable axis."
+      : undefined,
+  );
   const kinds: GridInput["rows"]["kind"][] = [
     ...(format === "image"
       ? (["model", "variable", ...imageKinds] as const)
@@ -57,11 +65,17 @@ export function AxisEditor({
         }));
   return (
     <div className="axis">
-      <label className="axis-selector">
+      <label
+        className="axis-selector"
+        ref={selectorHint}
+        tabIndex={criteriaOwner ? 0 : undefined}
+      >
         <span className="axis-name">{label}:</span>
         <select
           aria-label={label}
           value={axis.kind}
+          disabled={criteriaOwner}
+          style={criteriaOwner ? { pointerEvents: "none" } : undefined}
           onChange={(e) => {
             const kind = e.target.value as GridInput["rows"]["kind"];
             onChange(

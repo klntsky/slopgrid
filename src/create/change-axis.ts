@@ -141,6 +141,15 @@ export function changeAxis(
   axis: Axis,
   groups?: ReferenceGroups,
 ): GridInput {
+  const source = input.judge?.criteria;
+  // The owning variable dimension cannot be removed while it owns the rubric.
+  if (
+    source &&
+    !Array.isArray(source) &&
+    source.axis === side &&
+    axis.kind !== "variable"
+  )
+    return input;
   const next = {
     ...input,
     [side]: axis,

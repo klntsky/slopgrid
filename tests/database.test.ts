@@ -751,3 +751,80 @@ test("v17 backfills variable field and chat references while retaining historica
     db.close();
   }
 });
+
+test("legacy workflow restoration resolves the active rubric and images rather than storing a criteria source in tasks", () => {
+  const images = [
+    { id: "first-answer", name: "first.png" },
+    { id: "second-answer", name: "second.png" },
+  ];
+  for (const criteria of [
+    [{ text: "Does $ROW1 match?", correctAnswer: false }],
+    {
+      axis: "rows",
+      cases: [
+        [{ text: "Does $ROW1 match?", correctAnswer: false }],
+        [
+          { text: "Does $ROW1 match?", correctAnswer: true },
+          { text: "Is this red?", correctAnswer: false },
+        ],
+      ],
+    },
+  ]) {
+    const db = legacyDatabase(13);
+    try {
+      seedLegacy(db, 13);
+      const source = {
+        ...input,
+        prompt: "Describe a shape.",
+        inputReferences: undefined,
+        referenceGroups: undefined,
+        rows: {
+          kind: "variable",
+          values: images.map((image, index) => [
+            { text: `answer ${index}`, images: [image] },
+          ]),
+        },
+        columns: { kind: "effort", values: ["none"] },
+        judge: { model: "judge", effort: "high", criteria },
+      };
+      migration.replaceLegacyGridData(db, {
+        ...storedData(db, "grid"),
+        input: source,
+      });
+      migration.replaceLegacyCellData(db, { status: "pending" });
+      migration.insertLegacyGridCell(db, "second-case", 1, {
+        status: "pending",
+      });
+      initializeDatabase(db);
+      assert.equal(migration.databaseVersion(db), 17);
+      assert.deepEqual(storedData(db, "grid").input.judge.criteria, criteria);
+      const tasks = Object.fromEntries(
+        migration
+          .migratedTaskPayloads(db)
+          .map((row) => [row.id, JSON.parse(row.data)]),
+      );
+      assert.deepEqual(tasks["j:cell"].input, {
+        model: "judge",
+        effort: "high",
+        criteria: [{ text: "Does answer 0 match?", correctAnswer: false }],
+        images: [images[0]],
+      });
+      assert.deepEqual(tasks["j:second-case"].input, {
+        model: "judge",
+        effort: "high",
+        criteria: Array.isArray(criteria)
+          ? [{ text: "Does answer 1 match?", correctAnswer: false }]
+          : [
+              { text: "Does answer 1 match?", correctAnswer: true },
+              { text: "Is this red?", correctAnswer: false },
+            ],
+        images: [images[1]],
+      });
+      assert.equal(migration.migratedTaskCount(db, "generation"), 1);
+      assert.equal(tasks["g:cell"].input.prompt, source.prompt);
+      assert.equal(tasks["g:cell"].input.images, undefined);
+    } finally {
+      db.close();
+    }
+  }
+});

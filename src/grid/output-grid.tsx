@@ -12,6 +12,7 @@ import {
   selectedReferences,
   type ReferenceImage,
 } from "../../server/image-settings";
+import { criteriaForCell } from "../../server/judge-criteria";
 function ResizeHandle({
   axis,
   index,
@@ -225,7 +226,11 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
                           cell={cell}
                           format={g.input.format}
                           gridStatus={g.status}
-                          criteria={g.input.judge?.criteria}
+                          criteria={
+                            g.input.judge
+                              ? criteriaForCell(g.input, row, column)
+                              : undefined
+                          }
                           title={title(cell)}
                           expanded={expanded?.id === cell.id}
                           view={

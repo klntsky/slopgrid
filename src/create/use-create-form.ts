@@ -15,6 +15,7 @@ import {
   judgeReferences,
 } from "../../server/image-settings";
 import { promptVariableIssue } from "../../server/prompt-variables";
+import { judgeCriteriaIssue } from "../../server/judge-criteria";
 
 function useBudgetEstimate(input: GridInput) {
   const [minute, setMinute] = useState(() => Math.floor(Date.now() / 60000));
@@ -74,23 +75,16 @@ export function useCreateForm() {
     (axis) => axis.kind === "judge_model",
   )?.values ?? [input.judge?.model ?? ""];
   const judgeIssue = input.judge
-    ? !input.judge.criteria.length
-      ? "Add at least one criterion."
-      : input.judge.criteria.some(
-            (criterion) =>
-              !criterion.text.trim() ||
-              typeof criterion.correctAnswer !== "boolean",
-          )
-        ? "Enter a yes-or-no question for each criterion."
-        : !judgeModels.length
-          ? "No compatible judge models are available for this output type."
-          : !judgeModelIds.length || judgeModelIds.some((id) => !id)
+    ? (judgeCriteriaIssue(input) ??
+      (!judgeModels.length
+        ? "No compatible judge models are available for this output type."
+        : !judgeModelIds.length || judgeModelIds.some((id) => !id)
+          ? "Select a judge model."
+          : judgeModelIds.some(
+                (id) => !judgeModels.some((model) => model.id === id),
+              )
             ? "Select a judge model."
-            : judgeModelIds.some(
-                  (id) => !judgeModels.some((model) => model.id === id),
-                )
-              ? "Select a judge model."
-              : undefined
+            : undefined))
     : [input.rows, input.columns].some(
           (axis) => axis.kind === "judge_model" || axis.kind === "judge_effort",
         )

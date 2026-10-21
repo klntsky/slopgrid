@@ -192,3 +192,64 @@ test("judge-only row variables and double-digit column fields preserve independe
     ],
   );
 });
+
+for (const side of ["rows", "columns"] as const)
+  test(`${side} case rubrics resolve independently without changing generation grouping`, () => {
+    const source = base();
+    const token = side === "rows" ? "$ROW" : "$COLUMN";
+    source.prompt = side === "rows" ? "Solve $COLUMN1" : "Solve $ROW1";
+    source.rows = {
+      kind: "variable",
+      values: [[{ text: "A" }], [{ text: "B" }]],
+    };
+    source.columns = source.rows;
+    source[side] = {
+      kind: "variable",
+      values: [
+        [{ text: "unused" }, { text: "first secret", images: [reference] }],
+        [{ text: "unused image", images: [second] }, { text: "second secret" }],
+      ],
+    };
+    source.judge!.criteria = {
+      axis: side,
+      cases: [
+        [{ text: `Does ${token}2 match?`, correctAnswer: false }],
+        [
+          { text: `Does ${token}2 match?`, correctAnswer: true },
+          { text: "Is this red?", correctAnswer: false },
+        ],
+      ],
+    };
+    const { input, cells, tasks } = workflow(source);
+    const generations = tasks.filter((task) => task.kind === "generation");
+    const judgments = tasks.filter((task) => task.kind === "judge");
+    assert.equal(generations.length, 2);
+    assert.equal(judgments.length, 4);
+    assert.deepEqual(
+      generations.map((task) => task.input.prompt),
+      ["Solve A", "Solve B"],
+    );
+    for (const generation of generations) {
+      assert.equal(generation.input.images, undefined);
+      assert.equal(JSON.stringify(generation.input).includes("secret"), false);
+    }
+    for (const cell of cells) {
+      const index = side === "rows" ? cell.row : cell.column;
+      const judgment = judgments.find((task) => task.id === cell.judgmentId)!;
+      assert.ok(Array.isArray(judgment.input.criteria));
+      assert.deepEqual(
+        judgment.input.criteria,
+        index === 0
+          ? [{ text: "Does first secret match?", correctAnswer: false }]
+          : [
+              { text: "Does second secret match?", correctAnswer: true },
+              { text: "Is this red?", correctAnswer: false },
+            ],
+      );
+      assert.deepEqual(
+        judgment.input.images,
+        index === 0 ? [reference] : undefined,
+      );
+    }
+    assert.deepEqual(input.judge!.criteria, source.judge!.criteria);
+  });

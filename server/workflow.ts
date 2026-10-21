@@ -12,6 +12,7 @@ import {
   interpolateVariables,
   mergeVariableImages,
 } from "./prompt-variables.js";
+import { criteriaForCell } from "./judge-criteria.js";
 
 export function createWorkflow(
   input: GridInput,
@@ -44,16 +45,18 @@ export function createWorkflow(
     cell.generationId = generation.id;
     if (cell.judge && input.judge) {
       let images: JudgmentTask["input"]["images"];
-      const criteria = input.judge.criteria.map((criterion) => {
-        const expanded = interpolateVariables(
-          criterion.text,
-          input,
-          cell.row,
-          cell.column,
-        );
-        images = mergeVariableImages(images, expanded.images);
-        return { ...criterion, text: expanded.text };
-      });
+      const criteria = criteriaForCell(input, cell.row, cell.column).map(
+        (criterion) => {
+          const expanded = interpolateVariables(
+            criterion.text,
+            input,
+            cell.row,
+            cell.column,
+          );
+          images = mergeVariableImages(images, expanded.images);
+          return { ...criterion, text: expanded.text };
+        },
+      );
       const judgment: JudgmentTask = {
         id: token(),
         kind: "judge",

@@ -1370,6 +1370,7 @@ test("reuse shares one generation per judge group without copying judgments or a
       judgments[0].output.results,
     );
     assert.equal(restored.cells[1].judge?.error, "Temporary error");
+    assert.ok(Array.isArray(restored.input.judge!.criteria));
     assert.equal(restored.input.judge!.criteria[0].correctAnswer, false);
     assert.ok(
       restored.cells.every((cell) => cell.artifactId === original.artifactId),

@@ -546,33 +546,37 @@ section {
   border-collapse: collapse;
   table-layout: fixed;
 }
-.variable-table th,
-.variable-table td {
+.variable-table > thead > tr > th,
+.variable-table > thead > tr > td,
+.variable-table > tbody > tr > th,
+.variable-table > tbody > tr > td {
   padding: 6px;
   vertical-align: top;
   border: 1px solid var(--line);
 }
-.variable-table th {
+.variable-table > thead > tr > th,
+.variable-table > tbody > tr > th {
   text-align: left;
   font-weight: 500;
 }
-.variable-table th .text-button {
+.variable-table > thead > tr > th > .text-button,
+.variable-table > tbody > tr > th > .text-button {
   float: right;
   padding: 0;
 }
-.variable-table .variable-row-header {
+.variable-table > colgroup > .variable-row-header {
   width: 58px;
 }
-.variable-table th[scope="row"] {
+.variable-table > tbody > tr > th[scope="row"] {
   text-align: center;
   vertical-align: middle;
 }
-.variable-table th[scope="row"] .text-button {
+.variable-table > tbody > tr > th[scope="row"] > .text-button {
   display: block;
   float: none;
   margin: 6px auto 0;
 }
-.variable-table .variable-corner {
+.variable-table > thead > tr > .variable-corner {
   border: 0;
 }
 .variable-cell-input {

@@ -4,6 +4,7 @@ import type { GridInput } from "../server/domain.js";
 import { expandGrid, gridSchema } from "../server/domain.js";
 import type { ScalarImageKind } from "../server/image-settings.js";
 import { changeAxis, removeJudge } from "../src/create/change-axis.js";
+import { criteriaForCell } from "../server/judge-criteria.js";
 
 const initial: GridInput = {
   format: "svg",
@@ -351,5 +352,5 @@ test("edited generator and judge axes produce the selected consumer parameters",
       ["generation/two", "judge/fixed", "high"],
     ],
   );
-  assert.equal(input.judge?.criteria[0].correctAnswer, false);
+  assert.equal(criteriaForCell(input, 0, 0)[0].correctAnswer, false);
 });
