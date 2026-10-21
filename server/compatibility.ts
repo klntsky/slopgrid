@@ -1,37 +1,11 @@
 import {
   imageKinds,
-  generatorReferences,
   normalizeImageSettings,
   type ImageCapabilities,
   type ImageSettings,
 } from "./image-settings.js";
 import type { GridInput } from "./domain.js";
 import type { Model } from "./provider.js";
-
-export function imageInputIssue(
-  input: Pick<
-    GridInput,
-    | "format"
-    | "prompt"
-    | "messages"
-    | "rows"
-    | "columns"
-    | "referenceGroups"
-    | "inputReferences"
-    | "model"
-  >,
-  models: readonly Model[],
-): string | undefined {
-  if (!generatorReferences(input).length) return undefined;
-  const ids = [input.rows, input.columns].find((axis) => axis.kind === "model")
-    ?.values ?? [input.model];
-  if (
-    ids.some(
-      (id) => models.find((model) => model.id === id)?.imageInput !== true,
-    )
-  )
-    return "The selected model does not support image inputs.";
-}
 
 export function canJudge(
   model: Model,
@@ -67,8 +41,9 @@ export function thinkingEffortSupport(
   model: Model | undefined,
   effort: string,
 ): "supported" | "unsupported" | "unknown" {
-  if (!model?.text) return "unsupported";
+  if (model && !model.text) return "unsupported";
   if (effort === "default") return "supported";
+  if (!model) return "unknown";
   if (effort === "none" && model.reasoningMandatory) return "unsupported";
   if (model.reasoningEfforts === undefined) return "unknown";
   return model.reasoningEfforts.includes(effort as GridInput["effort"])
@@ -89,6 +64,12 @@ export type Compatibility = {
   reason?: string;
 };
 type Support = Compatibility["support"];
+export type ImageParameterConflict = {
+  parameters: ImageParameter[];
+  support: Exclude<Support, "supported">;
+  reason: string;
+  modelDependent: boolean;
+};
 
 function providerSupport(states: Support[]): Support {
   return states.includes("supported")
@@ -143,8 +124,10 @@ export function imageSettingsSupport(
 ): {
   support: Support;
   parameters: Record<ImageParameter, Compatibility>;
+  conflicts: ImageParameterConflict[];
 } {
   settings = normalizeImageSettings(settings);
+  const conflicts: ImageParameterConflict[] = [];
   const parameters = Object.fromEntries(
     imageKinds.map((kind) => [
       kind,
@@ -178,13 +161,46 @@ export function imageSettingsSupport(
           : reason,
     };
   }
-  if (endpointStates.length) {
+  const activeKinds = imageKinds.filter(
+    (kind, index) =>
+      settings[kind] !== undefined ||
+      (kind === "input_references" &&
+        endpointStates.some((states) => states[index] !== "supported")),
+  );
+  function conflict(
+    kinds: ImageParameter[],
+    state: Exclude<Support, "supported">,
+    reason: string,
+    modelDependent = true,
+  ) {
+    conflicts.push({
+      parameters: kinds,
+      support: state,
+      reason,
+      modelDependent,
+    });
+    for (const kind of kinds) mark(kind, state, reason);
+  }
+  if (!endpointStates.length)
+    for (const kind of activeKinds)
+      conflict(
+        [kind],
+        "unknown",
+        `${imageParameterNames[kind]} support is unknown.`,
+      );
+  else {
     const incompatible: number[] = [],
       uncertain: number[] = [];
     // Five parameter types give at most 31 subsets. Keep minimal conflicts so
     // an unrelated setting does not inherit another parameter's warning.
     for (let mask = 1; mask < 1 << imageKinds.length; mask++) {
       if (incompatible.some((subset) => (mask & subset) === subset)) continue;
+      if (
+        imageKinds.some(
+          (kind, index) => mask & (1 << index) && !activeKinds.includes(kind),
+        )
+      )
+        continue;
       const indices = imageKinds
         .map((_, index) => index)
         .filter((index) => mask & (1 << index));
@@ -208,7 +224,7 @@ export function imageSettingsSupport(
           : kinds.length === 1
             ? `Unsupported ${description.charAt(0).toLowerCase()}${description.slice(1)}.`
             : `${description} cannot be used together on one provider.`;
-      for (const kind of kinds) mark(kind, state, reason);
+      conflict(kinds, state, reason);
     }
   }
   const pixels = settings.size?.match(/^(\d+)x(\d+)$/);
@@ -220,9 +236,8 @@ export function imageSettingsSupport(
       Number(pixels[2]) * Number(ratio[1])
   ) {
     const reason = `Size ${settings.size} does not match aspect ratio ${settings.aspect_ratio}.`;
-    mark("size", "unsupported", reason);
-    mark("aspect_ratio", "unsupported", reason);
+    conflict(["size", "aspect_ratio"], "unsupported", reason, false);
     support = "unsupported";
   }
-  return { support, parameters };
+  return { support, parameters, conflicts };
 }

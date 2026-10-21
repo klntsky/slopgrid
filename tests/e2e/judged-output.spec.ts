@@ -502,7 +502,7 @@ test("removing a judge preserves ordinary axes and generation settings", async (
   }
 });
 
-test("chat input images require a vision judge and removing them restores text-only judges", async ({
+test("chat input images block text-only judges and removing them restores eligibility", async ({
   page,
 }) => {
   await page.goto("/");
@@ -576,11 +576,10 @@ test("chat input images require a vision judge and removing them restores text-o
   await expect(
     page.getByRole("img", { name: "judge-input.png", exact: true }),
   ).toBeVisible();
-  await expect(textJudge).toHaveCount(0);
   await expect(generate).toBeDisabled();
+  await expect(judge.getByRole("cell", { name: /Unsupported/ })).toBeVisible();
   await page.reload();
   await search.fill("fixture");
-  await expect(textJudge).toHaveCount(0);
   await expect(generate).toBeDisabled();
   await visionJudge.check();
   await expect(generate).toBeEnabled();

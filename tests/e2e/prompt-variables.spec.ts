@@ -348,11 +348,11 @@ test("judge-only variable images allow a text-only generator and require a visio
     exact: true,
   });
   await judge.getByRole("searchbox").fill("fixture");
-  await expect(
-    judge.locator('input[type="radio"][value="fixture/other"]'),
-  ).toHaveCount(0);
-  await selectJudge(page, "fixture/text");
   const generate = page.getByRole("button", { name: "Generate", exact: true });
+  await judge.locator('input[type="radio"][value="fixture/other"]').check();
+  await expect(generate).toBeDisabled();
+  await expect(judge.getByRole("cell", { name: /Unsupported/ })).toBeVisible();
+  await selectJudge(page, "fixture/text");
   await expect(generate).toBeEnabled();
   await page.getByLabel("Prompt", { exact: true }).fill("$ROW1 $ROW2 $COLUMN1");
   await expect(generate).toBeDisabled();

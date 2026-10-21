@@ -14,6 +14,7 @@ import {
   interpolateVariables,
   mergeVariableImages,
   promptVariableIssue,
+  type VariableInterpolationOptions,
 } from "./prompt-variables.js";
 import {
   judgeCriteriaSchema,
@@ -447,7 +448,10 @@ export type Grid = {
   createdAt: string;
 };
 export type StoredGrid = Grid & { expanded_prompt_for_title: string };
-export function expandGrid(input: GridInput): Omit<Cell, "id">[] {
+export function expandGrid(
+  input: GridInput,
+  options: VariableInterpolationOptions = {},
+): Omit<Cell, "id">[] {
   return input.rows.values.flatMap((_, row) =>
     input.columns.values.map((_, column) => {
       const selections: Record<string, string> = {
@@ -489,6 +493,7 @@ export function expandGrid(input: GridInput): Omit<Cell, "id">[] {
           input,
           row,
           column,
+          options,
         );
         const images = mergeVariableImages(message.images, content.images);
         return {
@@ -499,7 +504,7 @@ export function expandGrid(input: GridInput): Omit<Cell, "id">[] {
       });
       const expanded = messages
         ? { text: chatText(messages), images: undefined }
-        : interpolateVariables(input.prompt, input, row, column);
+        : interpolateVariables(input.prompt, input, row, column, options);
       if (input.format === "image" && expanded.images)
         imageSettings.input_references = [
           ...new Set([

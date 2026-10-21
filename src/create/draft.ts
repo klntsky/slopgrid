@@ -8,15 +8,12 @@ import {
   type ChatMessage,
   type GridDraftInput,
 } from "../../server/domain";
-import {
-  imageKinds,
-  judgeReferences,
-  type ReferenceImage,
-} from "../../server/image-settings";
-import { canJudge } from "../../server/compatibility";
-import { modelCatalog } from "../model-catalog";
+import { imageKinds, type ReferenceImage } from "../../server/image-settings";
 import { migrateVariableInput } from "../../shared/variable-migration";
 import { swapJudgeAxes, swapVariableTokens } from "./judge-mode";
+import { analyzeGridCompatibility } from "../../server/grid-compatibility";
+import { modelCatalog } from "../model-catalog";
+import { compatibilityPreviewInput, validateDraftInput } from "./draft-input";
 export type Draft = {
   formatSelected: boolean;
   input: GridDraftInput;
@@ -222,8 +219,7 @@ function selectDraftFormat(d: Draft, format: GridDraftInput["format"]): Draft {
     scalarAxes.find((axis) => axis.kind === "judge_effort")?.values[0] ??
     d.input.judge?.effort ??
     "default";
-  const imageInputs = judgeReferences(referenceInput).length > 0;
-  return {
+  const next: Draft = {
     ...d,
     formatSelected: true,
     inactiveChatMessages: isChatFormat(format)
@@ -240,13 +236,7 @@ function selectDraftFormat(d: Draft, format: GridDraftInput["format"]): Draft {
           : d.input.judge && {
               ...d.input.judge,
               effort: judgeEffort as GridDraftInput["effort"],
-              model: modelCatalog.some(
-                (model) =>
-                  model.id === judgeModel &&
-                  canJudge(model, format, imageInputs),
-              )
-                ? judgeModel
-                : "",
+              model: judgeModel,
             },
       prompt: isChatFormat(format) ? chatText(messages) : d.input.prompt,
       imageSettings: undefined,
@@ -256,6 +246,19 @@ function selectDraftFormat(d: Draft, format: GridDraftInput["format"]): Draft {
       columns,
     },
   };
+  if (
+    next.input.judge?.model &&
+    analyzeGridCompatibility(
+      compatibilityPreviewInput(validateDraftInput(next.input).candidate),
+      modelCatalog,
+    ).issues.some(
+      (issue) =>
+        issue.blocking &&
+        issue.origins.some((origin) => origin.parameter === "judge_model"),
+    )
+  )
+    next.input.judge = { ...next.input.judge, model: "" };
+  return next;
 }
 export function useCreateDraft() {
   const [draft, setDraft] = useState(() => ({

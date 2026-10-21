@@ -57,7 +57,8 @@ test("thinking effort support distinguishes supported, unsupported, and unknown 
   assert.equal(thinkingEffortSupport(models[2], "high"), "unsupported");
   assert.equal(thinkingEffortSupport(models[3], "high"), "unknown");
   assert.equal(thinkingEffortSupport(models[3], "default"), "supported");
-  assert.equal(thinkingEffortSupport(undefined, "default"), "unsupported");
+  assert.equal(thinkingEffortSupport(undefined, "default"), "supported");
+  assert.equal(thinkingEffortSupport(undefined, "high"), "unknown");
 });
 
 test("judges require explicit structured text output, never response_format alone", () => {

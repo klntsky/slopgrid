@@ -1,6 +1,12 @@
 import type { ChatMessage } from "../../server/domain";
 import { Plus } from "lucide-react";
-import { useId, useLayoutEffect, useRef, useState } from "react";
+import {
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { DeletableInput } from "./deletable-input";
 import { ReorderHandle } from "./reorder-handle";
 import { ReferenceImageList, ReferencePicker } from "./reference-groups";
@@ -12,10 +18,12 @@ export function ChatEditor({
   messages,
   onChange,
   onBusy,
+  compatibility,
 }: {
   messages: ChatMessage[];
   onChange: (change: (messages: ChatMessage[]) => ChatMessage[]) => void;
   onBusy: (busy: boolean) => void;
+  compatibility?: (messageIndex: number) => ReactNode;
 }) {
   const roles: ChatMessage["role"][] = [
     "system",
@@ -205,6 +213,7 @@ export function ChatEditor({
               />
             </div>
           )}
+          {compatibility?.(index)}
         </div>
       ))}
       <button

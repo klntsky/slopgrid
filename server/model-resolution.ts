@@ -1,7 +1,6 @@
 import type { GridInput, ValidatedGridInput } from "./domain.js";
 import type { Model } from "./provider.js";
-import { imageInputIssue, judgeModelIssue } from "./compatibility.js";
-import { judgeReferences } from "./image-settings.js";
+import { analyzeGridCompatibility } from "./grid-compatibility.js";
 
 export class ModelResolutionError extends Error {}
 
@@ -25,7 +24,6 @@ export function resolveGridModels(
   models: readonly Model[],
 ): GridInput {
   const catalog = new Map(models.map((model) => [model.id, model]));
-  const imageInputs = judgeReferences(input).length > 0;
   function resolve(id: string): string {
     const seen = new Set<string>();
     while (true) {
@@ -48,14 +46,7 @@ export function resolveGridModels(
   }
   function resolveJudge(id: string): string {
     if (!id) throw new ModelResolutionError("Select a judge model.");
-    const resolved = resolve(id);
-    const issue = judgeModelIssue(
-      catalog.get(resolved),
-      input.format,
-      imageInputs,
-    );
-    if (issue) throw new ModelResolutionError(issue);
-    return resolved;
+    return resolve(id);
   }
   const axis = (value: GridInput["rows"]): GridInput["rows"] => {
     if (
@@ -76,8 +67,6 @@ export function resolveGridModels(
         ? { ...value, values: value.values.map((fields) => [...fields]) }
         : { ...value, values: [...value.values] };
   };
-  if (input.judge && input.format === "html")
-    throw new ModelResolutionError("Websites do not support a judge yet.");
   const rows = axis(input.rows),
     columns = axis(input.columns);
   const dimensions = [rows.kind, columns.kind];
@@ -97,7 +86,9 @@ export function resolveGridModels(
     columns,
     ...(judge ? { judge } : {}),
   };
-  const issue = imageInputIssue(resolved, models);
-  if (issue) throw new ModelResolutionError(issue);
+  const issue = analyzeGridCompatibility(resolved, models).issues.find(
+    (issue) => issue.blocking,
+  );
+  if (issue) throw new ModelResolutionError(issue.reason);
   return resolved;
 }

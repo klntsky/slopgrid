@@ -1,4 +1,10 @@
-import { useId, useLayoutEffect, useRef, useState } from "react";
+import {
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { Plus, X } from "lucide-react";
 import type { VariableField } from "../../server/prompt-variables";
 import { ReferenceImageList, ReferencePicker } from "./reference-groups";
@@ -54,6 +60,7 @@ export function VariableTable({
   onBusy,
   onAddCase,
   onRemoveCase,
+  compatibility,
 }: {
   label: "Rows" | "Columns";
   values: VariableField[][];
@@ -61,6 +68,7 @@ export function VariableTable({
   onBusy: (busy: boolean) => void;
   onAddCase?: () => void;
   onRemoveCase?: (index: number) => void;
+  compatibility?: (caseIndex: number, fieldIndex: number) => ReactNode;
 }) {
   const id = useId();
   const reads = useRef(0);
@@ -197,6 +205,7 @@ export function VariableTable({
                           }
                         />
                       )}
+                      {compatibility?.(caseIndex, fieldIndex)}
                     </td>
                   );
                 })}

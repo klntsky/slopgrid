@@ -39,6 +39,7 @@ export type Model = {
   pricing?: ModelPricing;
   contextLength?: number;
   maxCompletionTokens?: number;
+  imageEndpoints?: ImageEndpoint[];
 };
 export class InvalidKey extends Error {}
 

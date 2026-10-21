@@ -8,11 +8,7 @@ import type {
 } from "./domain.js";
 import { token } from "./ids.js";
 import { generationGroupKey } from "../shared/generation-key.js";
-import {
-  interpolateVariables,
-  mergeVariableImages,
-} from "./prompt-variables.js";
-import { criteriaForCell } from "./judge-criteria.js";
+import { resolveCriteriaForCell } from "./judge-criteria.js";
 
 export function createWorkflow(
   input: ValidatedGridInput,
@@ -44,18 +40,10 @@ export function createWorkflow(
     }
     cell.generationId = generation.id;
     if (cell.judge && input.judge) {
-      let images: JudgmentTask["input"]["images"];
-      const criteria = criteriaForCell(input, cell.row, cell.column).map(
-        (criterion) => {
-          const expanded = interpolateVariables(
-            criterion.text,
-            input,
-            cell.row,
-            cell.column,
-          );
-          images = mergeVariableImages(images, expanded.images);
-          return { ...criterion, text: expanded.text };
-        },
+      const { criteria, images } = resolveCriteriaForCell(
+        input,
+        cell.row,
+        cell.column,
       );
       const judgment: JudgmentTask = {
         id: token(),

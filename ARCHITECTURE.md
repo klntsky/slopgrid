@@ -123,10 +123,13 @@ unvalidated candidate without granting generation admission.
 - Model catalogs are loaded by the web process for forms. Provider adapters own
   catalog interpretation, credit lookup, and request preparation; they remain
   separate from HTTP routes and scheduling policy.
-- Input expansion turns axes into cells. Model aliases are resolved before
-  saving inputs, and shared normalization gives equivalent image settings the
-  same prepared request. Compatibility rendering and inference admission use
-  separate policy paths.
+- Input expansion resolves the final parameters of each cell. Model aliases are
+  resolved before saving inputs, and shared normalization gives equivalent image
+  settings the same prepared request.
+- One compatibility engine checks resolved cells. Its results supply form
+  warnings and validity, with source locations identifying the affected controls.
+  The API applies the same checks before admission; execution consumes concrete
+  tasks without interpreting form ownership or repeating compatibility checks.
 - Request preparation applies format instructions, model capabilities, pricing,
   token limits, and routing. Text calls stream through the AI SDK; image calls
   use its dedicated image path. The engine budgets generation and schedules

@@ -15,7 +15,10 @@ import { expandGrid } from "../../server/domain";
 import { effortLabel } from "../../server/compatibility";
 import { useCreateForm } from "../create/use-create-form";
 import { AxisEditor, AxisValues } from "../create/axis-editor";
-import { compatibilityTables } from "../create/compatibility-table";
+import {
+  CompatibilityFeedback,
+  compatibilityTables,
+} from "../create/compatibility-table";
 import { BudgetWarnings } from "../create/budget-warnings";
 import { Connection } from "../components/connection";
 import { ErrorMessage } from "../components/error-message";
@@ -69,6 +72,8 @@ export function Create() {
   const {
     draft,
     candidate,
+    compatibilityIssues,
+    compatibilityCells,
     update,
     selectFormat,
     swapAxes,
@@ -114,7 +119,25 @@ export function Create() {
   }
   const { generate, onUploading, lowBalance, setLowBalance, busy, error } =
     submission;
-  const compatibility = compatibilityTables({ input: candidate, models });
+  const compatibility = compatibilityTables({
+    input: candidate,
+    issues: compatibilityIssues,
+    cells: compatibilityCells,
+  });
+  const axisCompatibility = {
+    rows: compatibilityTables({
+      input: candidate,
+      issues: compatibilityIssues,
+      cells: compatibilityCells,
+      source: "rows",
+    }),
+    columns: compatibilityTables({
+      input: candidate,
+      issues: compatibilityIssues,
+      cells: compatibilityCells,
+      source: "columns",
+    }),
+  };
   const commonFixedParameters = commonModel || commonEffort;
   const commonParameters = input.format === "image" || commonFixedParameters;
   const promptVariables = (["rows", "columns"] as const).flatMap((side) => {
@@ -185,7 +208,11 @@ export function Create() {
           >
             <AxisEditor
               label="Rows"
-              children={compatibility[input.rows.kind]}
+              children={
+                input.rows.kind === "variable"
+                  ? undefined
+                  : axisCompatibility.rows[input.rows.kind]
+              }
               axis={input.rows}
               format={input.format}
               models={models}
@@ -211,7 +238,11 @@ export function Create() {
             </button>
             <AxisEditor
               label="Columns"
-              children={compatibility[input.columns.kind]}
+              children={
+                input.columns.kind === "variable"
+                  ? undefined
+                  : axisCompatibility.columns[input.columns.kind]
+              }
               axis={input.columns}
               format={input.format}
               models={models}
@@ -235,6 +266,18 @@ export function Create() {
                   label={side === "rows" ? "Rows" : "Columns"}
                   values={axis.values}
                   onBusy={onUploading}
+                  compatibility={(caseIndex, fieldIndex) => (
+                    <CompatibilityFeedback
+                      input={candidate}
+                      issues={compatibilityIssues}
+                      origin={{
+                        parameter: "variable",
+                        source: side,
+                        caseIndex,
+                        fieldIndex,
+                      }}
+                    />
+                  )}
                   onAddCase={() =>
                     update((current) => addVariableCase(current, side))
                   }
@@ -281,6 +324,7 @@ export function Create() {
                     values={input.model ? [input.model] : []}
                     onChange={(values) => update({ model: values[0] ?? "" })}
                   />
+                  {compatibility.model}
                 </fieldset>
               )}
               {commonEffort && (
@@ -333,6 +377,17 @@ export function Create() {
             <ChatEditor
               messages={input.messages ?? []}
               onBusy={onUploading}
+              compatibility={(messageIndex) => (
+                <CompatibilityFeedback
+                  input={candidate}
+                  issues={compatibilityIssues}
+                  origin={{
+                    parameter: "messages",
+                    source: "common",
+                    messageIndex,
+                  }}
+                />
+              )}
               onChange={(change) =>
                 update((current) => ({
                   messages: change(current.messages ?? []),
@@ -361,7 +416,7 @@ export function Create() {
               placeholder="Describe what you want to generate"
             />
           )}
-          {isChatFormat(input.format) && compatibility.input_references}
+          {compatibility.prompt}
           <ErrorMessage error={variableIssue} />
           {promptVariables.map((variable) => (
             <p className="hint" key={variable}>
@@ -408,12 +463,7 @@ export function Create() {
                         })
                       }
                     />
-                    {!judgeModels.length && (
-                      <p className="hint">
-                        No compatible judge models are available for this output
-                        type.
-                      </p>
-                    )}
+                    {compatibility.judge_model}
                   </fieldset>
                 )}
                 {commonJudgeEffort && input.judge && (
@@ -469,7 +519,7 @@ export function Create() {
                         update((current) => changeAxis(current, side, values))
                       }
                     >
-                      {compatibility[axis.kind]}
+                      {axisCompatibility[side][axis.kind]}
                     </AxisValues>
                   </div>
                 );
@@ -486,6 +536,7 @@ export function Create() {
                         }));
                     }}
                   />
+                  {compatibility.judge_criteria}
                   <div className="variable-table-actions">
                     {(["rows", "columns"] as const).map((side) => (
                       <JudgeVariableButton
@@ -511,6 +562,17 @@ export function Create() {
                 <JudgeCaseTable
                   axis={input.judge.criteria.axis}
                   cases={input.judge.criteria.cases}
+                  compatibility={(caseIndex) => (
+                    <CompatibilityFeedback
+                      input={candidate}
+                      issues={compatibilityIssues}
+                      origin={{
+                        parameter: "judge_criteria",
+                        source: criteriaAxis ?? "common",
+                        caseIndex,
+                      }}
+                    />
+                  )}
                   onChange={(index, criteria) =>
                     update((current) => {
                       const source = current.judge?.criteria;

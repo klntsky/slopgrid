@@ -1,5 +1,11 @@
 import { z } from "zod";
 import type { GridInput } from "./domain.js";
+import {
+  interpolateVariables,
+  mergeVariableImages,
+  type VariableInterpolationOptions,
+} from "./prompt-variables.js";
+import type { ReferenceImage } from "./image-settings.js";
 
 const draftCriterionSchema = z.object({
   text: z.string(),
@@ -52,6 +58,27 @@ export function criteriaForCell(
   return Array.isArray(source)
     ? source
     : (source.cases[source.axis === "rows" ? row : column] ?? []);
+}
+
+export function resolveCriteriaForCell(
+  input: Pick<GridInput, "judge" | "rows" | "columns">,
+  row: number,
+  column: number,
+  options: VariableInterpolationOptions = {},
+): { criteria: Criterion[]; images?: ReferenceImage[] } {
+  let images: ReferenceImage[] | undefined;
+  const criteria = criteriaForCell(input, row, column).map((criterion) => {
+    const expanded = interpolateVariables(
+      criterion.text,
+      input,
+      row,
+      column,
+      options,
+    );
+    images = mergeVariableImages(images, expanded.images);
+    return { ...criterion, text: expanded.text };
+  });
+  return { criteria, ...(images ? { images } : {}) };
 }
 
 export function judgeCriteriaIssue(

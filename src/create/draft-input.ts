@@ -15,3 +15,24 @@ export function validateDraftInput(draft: GridDraftInput) {
   };
   return { candidate, parsed: gridSchema.safeParse(candidate) };
 }
+
+export function compatibilityPreviewInput(input: GridInput): GridInput {
+  function withPlaceholder(axis: GridInput["rows"]): GridInput["rows"] {
+    if (axis.values.length) return axis;
+    return axis.kind === "variable"
+      ? { ...axis, values: [[{ text: "" }]] }
+      : {
+          ...axis,
+          values: [
+            axis.kind === "effort" || axis.kind === "judge_effort"
+              ? "default"
+              : "",
+          ],
+        };
+  }
+  return {
+    ...input,
+    rows: withPlaceholder(input.rows),
+    columns: withPlaceholder(input.columns),
+  };
+}

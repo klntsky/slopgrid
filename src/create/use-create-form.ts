@@ -9,14 +9,11 @@ import { modelCatalog } from "../model-catalog";
 import { useConnection, useInferenceCapacity } from "../queries";
 import { useCreateDraft } from "./draft";
 import { useCreateSubmission } from "./use-create-submission";
-import { canJudge, imageInputIssue } from "../../server/compatibility";
-import {
-  generatorReferences,
-  judgeReferences,
-} from "../../server/image-settings";
+import { analyzeGridCompatibility } from "../../server/grid-compatibility";
+import { canJudge } from "../../server/compatibility";
 import { promptVariableIssue } from "../../server/prompt-variables";
 import { judgeCriteriaIssue } from "../../server/judge-criteria";
-import { validateDraftInput } from "./draft-input";
+import { compatibilityPreviewInput, validateDraftInput } from "./draft-input";
 
 function useBudgetEstimate(input: GridInput) {
   const [minute, setMinute] = useState(() => Math.floor(Date.now() / 60000));
@@ -64,35 +61,36 @@ export function useCreateForm() {
   const commonJudgeEffort =
     !!input.judge &&
     ![input.rows.kind, input.columns.kind].includes("judge_effort");
-  const imageInputs = judgeReferences(input).length > 0;
-  const generatorImageInputs = generatorReferences(input).length > 0;
+  const compatibilityAnalysis = useMemo(
+    () =>
+      analyzeGridCompatibility(
+        compatibilityPreviewInput(validation.candidate),
+        modelCatalog,
+      ),
+    [validation.candidate],
+  );
+  const { cells: compatibilityCells, issues: compatibilityIssues } =
+    compatibilityAnalysis;
+  const blockingCompatibilityIssues = compatibilityIssues.filter(
+    (issue) => issue.blocking,
+  );
   const judgeModels = modelCatalog
-    .filter((model) => canJudge(model, input.format, imageInputs))
+    .filter((model) => canJudge(model, input.format))
     .sort(
       (a, b) =>
         a.name.localeCompare(b.name, "en", { sensitivity: "base" }) ||
         a.id.localeCompare(b.id, "en"),
     );
-  const judgeModelIds = [input.rows, input.columns].find(
-    (axis) => axis.kind === "judge_model",
-  )?.values ?? [input.judge?.model ?? ""];
   const judgeIssue = input.judge
     ? (judgeCriteriaIssue(input) ??
-      (!judgeModels.length
-        ? "No compatible judge models are available for this output type."
-        : !judgeModelIds.length || judgeModelIds.some((id) => !id)
-          ? "Select a judge model."
-          : judgeModelIds.some(
-                (id) => !judgeModels.some((model) => model.id === id),
-              )
-            ? "Select a judge model."
-            : undefined))
+      (commonJudgeModel && !input.judge.model
+        ? "Select a judge model."
+        : undefined))
     : [input.rows, input.columns].some(
           (axis) => axis.kind === "judge_model" || axis.kind === "judge_effort",
         )
       ? "Add a judge to use judge dimensions."
       : undefined;
-  const imageIssue = imageInputIssue(input, modelCatalog);
   const variableIssue = promptVariableIssue(input);
   const submission = useCreateSubmission({
     draft,
@@ -100,7 +98,7 @@ export function useCreateForm() {
       !validation.parsed.success ||
       modelMissing ||
       !!judgeIssue ||
-      !!imageIssue ||
+      blockingCompatibilityIssues.length > 0 ||
       !!variableIssue ||
       workersPending,
     parallelWorkers,
@@ -115,11 +113,7 @@ export function useCreateForm() {
     editing.selectFormat(format);
   }
   const models = modelCatalog
-    .filter(
-      (m) =>
-        (input.format === "image" ? m.image : m.text) &&
-        (!generatorImageInputs || m.imageInput === true),
-    )
+    .filter((model) => (input.format === "image" ? model.image : model.text))
     .sort(
       (a, b) =>
         a.name.localeCompare(b.name, "en", { sensitivity: "base" }) ||
@@ -136,7 +130,7 @@ export function useCreateForm() {
           : "Checking the automatic worker count."),
       modelMissing && "Select a model.",
       judgeIssue,
-      imageIssue,
+      ...new Set(blockingCompatibilityIssues.map((issue) => issue.reason)),
       !input.rows.values.length && "Select row values.",
       !input.columns.values.length && "Select column values.",
       !connection.data?.connected && "Connect OpenRouter.",
@@ -160,6 +154,8 @@ export function useCreateForm() {
   return {
     draft,
     candidate: validation.candidate,
+    compatibilityIssues,
+    compatibilityCells,
     update,
     selectFormat,
     swapAxes: () => {

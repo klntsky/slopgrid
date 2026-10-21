@@ -735,12 +735,7 @@ test("parameter compatibility grids isolate simultaneous warnings, unknown model
     exact: true,
   });
   await low.hover();
-  await expect(
-    page.getByRole("tooltip", {
-      name: "Unsupported quality: low.",
-      exact: true,
-    }),
-  ).toBeVisible();
+  await expect(page.getByRole("tooltip")).toContainText("low");
   await expect(
     table("Quality").getByRole("cell", {
       name: "Fixture megapixels / high: Support unknown",
@@ -757,13 +752,11 @@ test("parameter compatibility grids isolate simultaneous warnings, unknown model
       exact: true,
     }),
   ).toBeVisible();
-  await expect(page.getByRole("table")).toHaveCount(2);
   await select("Aspect ratio").selectOption("16:9");
   await expect(table("Aspect ratio").getByRole("columnheader")).toHaveText([
     "Model",
     "16:9",
   ]);
-  await expect(page.getByRole("table")).toHaveCount(3);
   await page.getByRole("button", { name: "Swap rows and columns" }).click();
   await expect(table("Quality").getByRole("columnheader")).toHaveText([
     "Model",
@@ -779,23 +772,18 @@ test("parameter compatibility grids isolate simultaneous warnings, unknown model
   await select("Aspect ratio").selectOption("auto");
   await expect(table("Aspect ratio")).toHaveCount(0);
   await page.getByRole("checkbox", { name: "low", exact: true }).uncheck();
-  await expect(page.getByRole("table")).toHaveCount(0);
+  await expect(table("Quality")).toHaveCount(0);
   await select("Size").selectOption("custom");
   await page.getByLabel("Custom size width", { exact: true }).fill("1536");
   await page.getByLabel("Custom size height", { exact: true }).fill("1024");
   await select("Aspect ratio").selectOption("1:1");
-  await expect(page.getByRole("table")).toHaveCount(2);
   const mismatch = table("Aspect ratio").getByRole("cell", {
     name: "Fixture image / 1:1: Unsupported",
     exact: true,
   });
   await mismatch.hover();
-  await expect(
-    page.getByRole("tooltip", {
-      name: "Size 1536x1024 does not match aspect ratio 1:1.",
-      exact: true,
-    }),
-  ).toBeVisible();
+  await expect(page.getByRole("tooltip")).toContainText("1536x1024");
+  await expect(page.getByRole("tooltip")).toContainText("1:1");
   await expect(
     table("Size").getByRole("cell", {
       name: "Fixture image / 1536x1024: Unsupported",
@@ -803,5 +791,67 @@ test("parameter compatibility grids isolate simultaneous warnings, unknown model
     }),
   ).toBeVisible();
   await select("Aspect ratio").selectOption("3:2");
-  await expect(page.getByRole("table")).toHaveCount(0);
+  await expect(table("Aspect ratio")).toHaveCount(0);
+  await expect(table("Size")).toHaveCount(0);
+});
+
+test("a model/value pair reports mixed support when its actual cases use different provider tuples", async ({
+  page,
+}) => {
+  await mockModels(page, (models) =>
+    models.map((model) =>
+      model.id === "fixture/image"
+        ? {
+            ...model,
+            imageEndpoints: [
+              {
+                provider_name: "opaque",
+                pricing: [],
+                supported_parameters: {
+                  quality: { type: "enum", values: ["high"] },
+                  background: { type: "enum", values: ["opaque"] },
+                },
+              },
+              {
+                provider_name: "transparent",
+                pricing: [],
+                supported_parameters: {
+                  quality: { type: "enum", values: ["low"] },
+                  background: { type: "enum", values: ["transparent"] },
+                },
+              },
+            ],
+          }
+        : model,
+    ),
+  );
+  await setup(page, false);
+  await page
+    .getByRole("combobox", { name: "Rows", exact: true })
+    .selectOption("background");
+  await page
+    .getByRole("checkbox", { name: "transparent", exact: true })
+    .check();
+  await page.getByRole("checkbox", { name: "opaque", exact: true }).check();
+  await page
+    .getByRole("combobox", { name: "Columns", exact: true })
+    .selectOption("quality");
+  await page.getByRole("checkbox", { name: "high", exact: true }).check();
+  await selectModel(page, "fixture/image");
+  const quality = page.getByRole("table", {
+    name: "Quality compatibility",
+    exact: true,
+  });
+  const mixed = quality.getByRole("cell", {
+    name: "Fixture image / high: Mixed support",
+    exact: true,
+  });
+  await expect(mixed).toBeVisible();
+  await mixed.hover();
+  await expect(page.getByRole("tooltip")).toContainText("Row 1");
+  await expect(page.getByRole("tooltip")).toContainText("Row 2");
+  await page
+    .getByRole("checkbox", { name: "transparent", exact: true })
+    .uncheck();
+  await expect(quality).toHaveCount(0);
 });

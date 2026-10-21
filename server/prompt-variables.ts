@@ -48,11 +48,16 @@ export function referencedVariableImages(
   return images;
 }
 
+export type VariableInterpolationOptions = {
+  allowUnresolvedVariables?: boolean;
+};
+
 export function interpolateVariables(
   text: string,
   input: VariableInput,
   row: number,
   column: number,
+  options: VariableInterpolationOptions = {},
 ): { text: string; images?: ReferenceImage[] } {
   const images: ReferenceImage[] = [];
   const seen = new Set<string>();
@@ -61,10 +66,15 @@ export function interpolateVariables(
     (token, name: string, number: string) => {
       const axis = name === "ROW" ? input.rows : input.columns;
       const index = name === "ROW" ? row : column;
-      if (axis.kind !== "variable" || !/^[1-9]\d*$/.test(number))
+      if (axis.kind !== "variable" || !/^[1-9]\d*$/.test(number)) {
+        if (options.allowUnresolvedVariables) return token;
         throw new Error(`Invalid prompt variable ${token}.`);
+      }
       const field = axis.values[index]?.[Number(number) - 1];
-      if (!field) throw new Error(`Missing prompt variable ${token}.`);
+      if (!field) {
+        if (options.allowUnresolvedVariables) return token;
+        throw new Error(`Missing prompt variable ${token}.`);
+      }
       for (const image of field.images ?? [])
         if (!seen.has(image.id)) {
           seen.add(image.id);

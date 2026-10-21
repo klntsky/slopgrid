@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { Criterion } from "../../server/judge-criteria";
 import { CriteriaEditor } from "./criteria-editor";
 
@@ -6,11 +7,13 @@ export function JudgeCaseTable({
   cases,
   onChange,
   onMakeShared,
+  compatibility,
 }: {
   axis: "rows" | "columns";
   cases: Criterion[][];
   onChange: (index: number, criteria: Criterion[]) => void;
   onMakeShared: (index: number) => void;
+  compatibility?: (caseIndex: number) => ReactNode;
 }) {
   const casesAcross = axis === "columns";
   const side = casesAcross ? "Column" : "Row";
@@ -21,6 +24,7 @@ export function JudgeCaseTable({
           criteria={cases[index]}
           onChange={(criteria) => onChange(index, criteria)}
         />
+        {compatibility?.(index)}
         <button type="button" onClick={() => onMakeShared(index)}>
           Use this judge for all cases
         </button>

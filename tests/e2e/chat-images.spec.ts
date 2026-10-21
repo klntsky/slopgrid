@@ -150,10 +150,10 @@ test("message attachments gate every model and reach only their own completion t
     .setInputFiles(laterImage);
   await expect(generate).toBeDisabled();
   await models
-    .getByRole("button", {
-      name: "Remove fixture/other from columns",
-      exact: true,
-    })
+    .getByRole("list", { name: "Selected column models", exact: true })
+    .getByRole("listitem")
+    .filter({ hasText: "Second model" })
+    .getByRole("button", { name: /^Remove / })
     .click();
   await page
     .getByLabel("Add images to message 1", { exact: true })
