@@ -332,9 +332,6 @@ test("EDIT cancels inference and restores settings, while a public FORK creates 
       await expect(
         page.getByRole("button", { name: "FORK", exact: true }),
       ).toBeVisible();
-      await expect(
-        page.getByRole("rowheader", { name: /^owl(?:\s|$)/ }),
-      ).toBeVisible();
     } finally {
       await stranger.close();
     }

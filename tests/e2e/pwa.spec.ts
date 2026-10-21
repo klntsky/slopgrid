@@ -5,7 +5,12 @@ import { join } from "node:path";
 import { startGenerationFixture } from "../generation-fixture";
 import { webFixture } from "../web-fixture";
 import { Store } from "../../server/store";
-import { expandGrid, type GridInput, type Grid } from "../../server/domain";
+import {
+  expandGrid,
+  gridSchema,
+  type Grid,
+  type ValidatedGridInput,
+} from "../../server/domain";
 import { token } from "../../server/ids";
 import { createWorkflow } from "../../server/workflow";
 import { startTestServer } from "../test-server";
@@ -53,10 +58,10 @@ test("visited pages and completed outputs survive offline reload without retaini
       id: owner,
       created: Date.now(),
     })!;
-    const grids = (
+    const grids: (Grid & { input: ValidatedGridInput })[] = (
       ["markdown", "svg", "image", "html", "chat-template"] as const
     ).map((format) => {
-      const input: GridInput = {
+      const input = gridSchema.parse({
         format,
         prompt: `Offline ${format}`,
         ...(format === "chat-template"
@@ -78,12 +83,15 @@ test("visited pages and completed outputs survive offline reload without retaini
             }
           : {}),
         rows: { kind: "model", values: ["fixture/text"] },
-        columns: { kind: "variable", values: [[{ text: "one" }]] },
+        columns:
+          format === "image"
+            ? { kind: "quality", values: ["auto"] }
+            : { kind: "effort", values: ["none"] },
         model: "fixture/text",
         effort: "none",
         budgetUsd: 1,
-      };
-      const grid: Grid = {
+      });
+      const grid = {
         id: token(),
         owner,
         input,
@@ -95,7 +103,7 @@ test("visited pages and completed outputs survive offline reload without retaini
           ...cell,
           id: token(),
         })),
-      };
+      } satisfies Grid;
       const tasks = createWorkflow(input, grid.cells);
       const task = tasks.find((task) => task.kind === "generation")!;
       task.status = "complete";
@@ -178,10 +186,10 @@ test("visited pages and completed outputs survive offline reload without retaini
       const template = grids[0];
       const cellId = token();
       const filename = "index.md";
-      const grid: Grid = {
+      const grid = {
         ...template,
         id: token(),
-        input: {
+        input: gridSchema.parse({
           ...template.input,
           prompt: `Offline judgment ${status}`,
           judge: {
@@ -189,7 +197,7 @@ test("visited pages and completed outputs survive offline reload without retaini
             model: "fixture/text",
             effort: "default",
           },
-        },
+        }),
         status: "paused",
         cells: [
           {
@@ -214,7 +222,7 @@ test("visited pages and completed outputs survive offline reload without retaini
             },
           },
         ],
-      };
+      } satisfies Grid;
       const tasks = createWorkflow(grid.input, grid.cells);
       const task = tasks.find((task) => task.kind === "generation")!;
       const judgment = tasks.find((task) => task.kind === "judge")!;
@@ -365,11 +373,7 @@ test("visited pages and completed outputs survive offline reload without retaini
     await context.setOffline(true);
     await page.reload();
     for (const grid of grids) {
-      await page
-        .getByRole("link", {
-          name: new RegExp(`${grid.input.prompt}$`),
-        })
-        .click();
+      await page.locator(`a[href="/grid/${grid.id}"]`).click();
       if (grid.cells[0].judge?.status === "complete") {
         const judgment = page.getByRole("region", {
           name: "Judgment details",

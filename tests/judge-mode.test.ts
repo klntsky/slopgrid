@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import type { GridInput } from "../server/domain.js";
+import type { GridDraftInput } from "../server/domain.js";
 import { changeAxis, removeJudge } from "../src/create/change-axis.js";
 import {
   addVariableCase,
@@ -10,13 +10,13 @@ import {
   swapJudgeAxes,
 } from "../src/create/judge-mode.js";
 
-function input(): GridInput {
+function input(): GridDraftInput {
   return {
     format: "svg",
     prompt: "$ROW1 $COLUMN2",
     model: "model",
     effort: "default",
-    budgetUsd: 3,
+    budgetUsd: "3",
     rows: {
       kind: "variable",
       values: [
@@ -173,10 +173,47 @@ test("draft reload and format changes retain the only active source until Websit
       input: { ...input(), judge: { ...input().judge!, criteria: [] } },
     });
     startDraft("svg");
-    assert.equal(
-      JSON.parse(storage.get("slopgrid-draft")!).input.judge,
-      undefined,
+    assert.deepEqual(
+      JSON.parse(storage.get("slopgrid-draft")!).input.judge.criteria,
+      [],
     );
+    for (const [budget, expected] of [
+      [3, "3"],
+      [null, ""],
+      ["", ""],
+      ["0.125", "0.125"],
+    ] as const) {
+      storage.set(
+        "slopgrid-draft",
+        JSON.stringify({
+          formatSelected: true,
+          sourceGridId: "saved-source",
+          input: {
+            ...input(),
+            prompt: "  Draw $ROW with $COLUMN  ",
+            rows: { kind: "variable", values: ["  cat  ", ""] },
+            columns: { kind: "variable", values: ["hat"] },
+            budgetUsd: budget,
+            judge: {
+              ...input().judge!,
+              criteria: [{ text: "  unfinished $ROW  ", correctAnswer: false }],
+            },
+          },
+          inactiveChatMessages: [{ role: "user", content: "  $ROW $COLUMN  " }],
+        }),
+      );
+      startDraft("svg");
+      const saved = JSON.parse(storage.get("slopgrid-draft")!);
+      assert.equal(saved.input.budgetUsd, expected);
+      assert.equal(saved.input.prompt, "  Draw $ROW1 with $COLUMN1  ");
+      assert.deepEqual(saved.input.rows.values, [
+        [{ text: "  cat  " }],
+        [{ text: "" }],
+      ]);
+      assert.equal(saved.input.judge.criteria[0].text, "  unfinished $ROW1  ");
+      assert.equal(saved.inactiveChatMessages[0].content, "  $ROW1 $COLUMN1  ");
+      assert.equal(saved.sourceGridId, "saved-source");
+    }
   } finally {
     if (oldWindow) Object.defineProperty(globalThis, "window", oldWindow);
     else Reflect.deleteProperty(globalThis, "window");

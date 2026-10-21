@@ -1,10 +1,12 @@
 import { useState, useEffect } from "react";
+import { z } from "zod";
 import {
   chatText,
   isChatFormat,
   isMarkdownFormat,
+  gridDraftSchema,
   type ChatMessage,
-  type GridInput,
+  type GridDraftInput,
 } from "../../server/domain";
 import {
   imageKinds,
@@ -13,24 +15,39 @@ import {
 } from "../../server/image-settings";
 import { canJudge } from "../../server/compatibility";
 import { modelCatalog } from "../model-catalog";
-import { removeJudge } from "./change-axis";
 import { migrateVariableInput } from "../../shared/variable-migration";
 import { swapJudgeAxes, swapVariableTokens } from "./judge-mode";
 export type Draft = {
   formatSelected: boolean;
-  input: GridInput;
+  input: GridDraftInput;
   sourceGridId?: string;
   reuseArtifacts?: boolean;
   inactiveChatMessages?: ChatMessage[];
   inactivePromptReferences?: ReferenceImage[];
   inactiveImageReferences?: Pick<
-    GridInput,
+    GridDraftInput,
     "inputReferences" | "referenceGroups"
   > & {
-    rows?: GridInput["rows"];
-    columns?: GridInput["columns"];
+    rows?: GridDraftInput["rows"];
+    columns?: GridDraftInput["columns"];
   };
 };
+const savedDraftSchema = z.object({
+  formatSelected: z.boolean(),
+  input: gridDraftSchema,
+  sourceGridId: z.string().optional(),
+  reuseArtifacts: z.boolean().optional(),
+  inactiveChatMessages: gridDraftSchema.shape.messages,
+  inactivePromptReferences: gridDraftSchema.shape.inputReferences,
+  inactiveImageReferences: z
+    .object({
+      inputReferences: gridDraftSchema.shape.inputReferences,
+      referenceGroups: gridDraftSchema.shape.referenceGroups,
+      rows: gridDraftSchema.shape.rows.optional(),
+      columns: gridDraftSchema.shape.columns.optional(),
+    })
+    .optional(),
+});
 const storageKey = "slopgrid-draft";
 const submissionKey = "slopgrid-creation";
 export function creationSubmission(body: Record<string, unknown>) {
@@ -56,22 +73,38 @@ const initial: Draft = {
     columns: { kind: "effort", values: ["default"] },
     model: "",
     effort: "default",
-    budgetUsd: 3,
+    budgetUsd: "3",
   },
 };
 function readDraft(): Draft {
   try {
-    const draft: Draft =
-      JSON.parse(sessionStorage.getItem(storageKey) ?? "null") ?? initial;
-    const originalInput = draft.input;
-    draft.input = migrateVariableInput(originalInput) as GridInput;
-    if (draft.inactiveChatMessages)
-      draft.inactiveChatMessages = (
-        migrateVariableInput({
-          ...originalInput,
-          messages: draft.inactiveChatMessages,
-        }) as GridInput
-      ).messages;
+    const saved = JSON.parse(sessionStorage.getItem(storageKey) ?? "null");
+    if (!saved) return initial;
+    const originalInput = saved.input;
+    const budget = originalInput.budgetUsd;
+    const normalizedInput = {
+      ...originalInput,
+      budgetUsd:
+        typeof budget === "number"
+          ? Number.isFinite(budget)
+            ? String(budget)
+            : ""
+          : budget === null
+            ? ""
+            : budget,
+    };
+    const draft: Draft = savedDraftSchema.parse({
+      ...saved,
+      input: migrateVariableInput(normalizedInput),
+      inactiveChatMessages: saved.inactiveChatMessages
+        ? gridDraftSchema.parse(
+            migrateVariableInput({
+              ...normalizedInput,
+              messages: saved.inactiveChatMessages,
+            }),
+          ).messages
+        : undefined,
+    });
     if (isChatFormat(draft.input.format)) {
       const input = draft.input;
       const referenceAxis = [input.rows, input.columns].find(
@@ -108,13 +141,6 @@ function readDraft(): Draft {
           input.columns = { kind: "model", values: [] };
       }
     }
-    if (
-      draft.input.judge &&
-      Array.isArray(draft.input.judge.criteria) &&
-      !draft.input.judge.criteria.length
-    ) {
-      Object.assign(draft.input, removeJudge(draft.input));
-    }
     return draft;
   } catch {
     return initial;
@@ -127,10 +153,10 @@ export function clearDraft() {
   sessionStorage.removeItem(storageKey);
   sessionStorage.removeItem(submissionKey);
 }
-export function startDraft(format: GridInput["format"]) {
+export function startDraft(format: GridDraftInput["format"]) {
   saveDraft(selectDraftFormat(readDraft(), format));
 }
-function selectDraftFormat(d: Draft, format: GridInput["format"]): Draft {
+function selectDraftFormat(d: Draft, format: GridDraftInput["format"]): Draft {
   const messages = d.input.messages ??
     d.inactiveChatMessages ?? [
       { role: "user" as const, content: d.input.prompt },
@@ -152,7 +178,7 @@ function selectDraftFormat(d: Draft, format: GridInput["format"]): Draft {
     d.input.format !== "image" && !isChatFormat(d.input.format)
       ? d.input.inputReferences
       : d.inactivePromptReferences;
-  const rows: GridInput["rows"] =
+  const rows: GridDraftInput["rows"] =
     d.input.rows.kind === "variable"
       ? d.input.rows
       : format === "image" && imageReferences?.rows
@@ -160,7 +186,7 @@ function selectDraftFormat(d: Draft, format: GridInput["format"]): Draft {
         : isMarkdownFormat(format)
           ? { kind: "effort", values: ["default"] }
           : { kind: "model", values: [] };
-  const columns: GridInput["columns"] =
+  const columns: GridDraftInput["columns"] =
     d.input.columns.kind === "variable"
       ? d.input.columns
       : format === "image" && imageReferences?.columns
@@ -213,7 +239,7 @@ function selectDraftFormat(d: Draft, format: GridInput["format"]): Draft {
           ? undefined
           : d.input.judge && {
               ...d.input.judge,
-              effort: judgeEffort as GridInput["effort"],
+              effort: judgeEffort as GridDraftInput["effort"],
               model: modelCatalog.some(
                 (model) =>
                   model.id === judgeModel &&
@@ -240,7 +266,9 @@ export function useCreateDraft() {
     saveDraft(draft);
   }, [draft]);
   function update(
-    change: Partial<GridInput> | ((input: GridInput) => Partial<GridInput>),
+    change:
+      | Partial<GridDraftInput>
+      | ((input: GridDraftInput) => Partial<GridDraftInput>),
   ) {
     setDraft((d) => {
       const partial = typeof change === "function" ? change(d.input) : change;
@@ -257,7 +285,7 @@ export function useCreateDraft() {
       };
     });
   }
-  function selectFormat(format: GridInput["format"]) {
+  function selectFormat(format: GridDraftInput["format"]) {
     setDraft((d) => selectDraftFormat(d, format));
   }
   function replaceReference(localId: string, image: ReferenceImage) {
@@ -270,7 +298,7 @@ export function useCreateDraft() {
         ...message,
         ...(message.images && { images: replaceImages(message.images) }),
       }));
-    const replaceGroups = (groups: GridInput["referenceGroups"]) =>
+    const replaceGroups = (groups: GridDraftInput["referenceGroups"]) =>
       groups &&
       Object.fromEntries(
         Object.entries(groups).map(([name, images]) => [
@@ -278,7 +306,9 @@ export function useCreateDraft() {
           replaceImages(images)!,
         ]),
       );
-    const replaceAxis = (axis: GridInput["rows"]): GridInput["rows"] =>
+    const replaceAxis = (
+      axis: GridDraftInput["rows"],
+    ): GridDraftInput["rows"] =>
       axis.kind === "variable"
         ? {
             ...axis,

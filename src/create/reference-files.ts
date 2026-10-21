@@ -1,5 +1,13 @@
-import { isChatFormat, type GridInput } from "../../server/domain";
-import type { ReferenceImage } from "../../server/image-settings";
+import {
+  gridSchema,
+  isChatFormat,
+  type GridInput,
+  type ValidatedGridInput,
+} from "../../server/domain";
+import {
+  referenceImageSchema,
+  type ReferenceImage,
+} from "../../server/image-settings";
 
 // Files stay in this browser across reloads and OAuth redirects until Generate.
 function localFile(
@@ -43,10 +51,10 @@ export async function saveReferenceFile(file: File): Promise<ReferenceImage> {
   return { id, name: file.name };
 }
 export async function uploadReferences(
-  input: GridInput,
+  input: ValidatedGridInput,
   uploaded: (localId: string, image: ReferenceImage) => void,
   signal: AbortSignal,
-): Promise<GridInput> {
+): Promise<ValidatedGridInput> {
   const names =
     input.format === "image"
       ? [input.rows, input.columns].flatMap((axis) =>
@@ -123,19 +131,19 @@ export async function uploadReferences(
                 ? `Could not upload ${image.name}. Use PNG, JPEG, or WebP.`
                 : `Could not upload ${image.name}.`,
           );
-        saved = (await response.json()) as ReferenceImage;
+        saved = referenceImageSchema.parse(await response.json());
         replacements.set(image.id, saved);
         uploaded(image.id, saved);
       }
       images[index] = saved;
     }
   }
-  return {
+  return gridSchema.parse({
     ...input,
     rows,
     columns,
     messages,
     referenceGroups: input.format === "image" ? groups : undefined,
     inputReferences,
-  };
+  });
 }

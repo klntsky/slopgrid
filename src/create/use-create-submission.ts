@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { gridSchema } from "../../server/domain";
+import { validateDraftInput } from "./draft-input";
 import type { ReferenceImage } from "../../server/image-settings";
 import { queryClient } from "../queries";
 import { useInferenceMutation } from "../use-inference-mutation";
@@ -46,7 +46,7 @@ export function useCreateSubmission({
   async function generate(continueWithLowBalance = false) {
     if (blocked || pendingUploads.current || busy || uploadController.current)
       return;
-    const parsed = gridSchema.safeParse({
+    const { parsed } = validateDraftInput({
       ...draft.input,
       parallelWorkers,
     });

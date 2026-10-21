@@ -8,6 +8,7 @@ import {
   expandGrid,
   type Grid,
   type StoredGrid,
+  type ValidatedGridInput,
   type Cell,
   type WorkflowTask,
   type User,
@@ -157,7 +158,10 @@ export class Store {
     return grid;
   }
   // Creation is the only operation that writes both metadata and generation state.
-  insert(grid: Grid, tasks = createWorkflow(grid.input, grid.cells)) {
+  insert(
+    grid: Grid & { input: ValidatedGridInput },
+    tasks = createWorkflow(grid.input, grid.cells),
+  ) {
     grid.input = this.references.input(grid.input);
     for (const task of tasks) this.references.task(task);
     projectWorkflow(grid, tasks);

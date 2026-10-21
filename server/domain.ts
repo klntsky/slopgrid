@@ -3,6 +3,7 @@ import {
   imageKinds,
   validImageSetting,
   sharedImageSettingsSchema,
+  draftImageSettingsSchema,
   normalizeImageSettings,
   type ScalarImageKind,
   referenceImageSchema,
@@ -16,6 +17,7 @@ import {
 } from "./prompt-variables.js";
 import {
   judgeCriteriaSchema,
+  draftJudgeCriteriaSchema,
   judgeCriteriaIssue,
   type Criterion,
 } from "./judge-criteria.js";
@@ -42,32 +44,39 @@ const variableFieldSchema = z.object({
   text: z.string(),
   images: z.array(referenceImageSchema).optional(),
 });
-const variableAxis = z.object({
+const draftVariableAxis = z.object({
   kind: z.literal("variable"),
-  values: z
-    .array(z.array(variableFieldSchema).min(1))
+  values: z.array(z.array(variableFieldSchema)),
+});
+const variableAxis = draftVariableAxis.extend({
+  values: draftVariableAxis.shape.values.element
+    .min(1)
+    .array()
     .min(1)
     .refine(
       (values) => values.every((fields) => fields.length === values[0].length),
       "Variable values must have the same number of fields.",
     ),
 });
-const scalarAxis = z.object({
+const draftScalarAxis = z.object({
   kind: z.enum(kinds.filter((kind) => kind !== "variable")),
+  values: z.array(z.string()),
+});
+const scalarAxis = draftScalarAxis.extend({
   values: z
-    .array(z.string().trim().min(1))
+    .array(draftScalarAxis.shape.values.element.trim().min(1))
     .min(1)
     .refine((v) => new Set(v).size === v.length, "Values must be distinct"),
 });
 const axis = z.discriminatedUnion("kind", [variableAxis, scalarAxis]);
 export type GridAxis = z.infer<typeof axis>;
 const budgetSchema = z.number().finite().positive();
-const chatMessageSchema = z
-  .object({
-    role: z.enum(["system", "user", "assistant", "unfilled"]),
-    content: z.string(),
-    images: z.array(referenceImageSchema).optional(),
-  })
+const draftChatMessageSchema = z.object({
+  role: z.enum(["system", "user", "assistant", "unfilled"]),
+  content: z.string(),
+  images: z.array(referenceImageSchema).optional(),
+});
+const chatMessageSchema = draftChatMessageSchema
   .refine(
     (message) => !message.images?.length || message.role === "user",
     "Images can only be attached to user messages.",
@@ -117,26 +126,50 @@ export function chatText(messages: ChatMessage[]): string {
     .map(({ role, content }) => `${role}: ${content}`)
     .join("\n\n");
 }
-const gridFields = {
-  prompt: z.string().trim().default(""),
-  messages: z.array(chatMessageSchema).min(1).optional(),
-  rows: axis,
-  columns: axis,
-  imageSettings: sharedImageSettingsSchema.optional(),
+const draftAxis = z.discriminatedUnion("kind", [
+  draftVariableAxis,
+  draftScalarAxis,
+]);
+const draftJudgeSchema = z.object({
+  criteria: draftJudgeCriteriaSchema,
+  model: z.string(),
+  effort: z.enum(efforts),
+});
+const draftGridFields = {
+  prompt: z.string().default(""),
+  messages: z.array(draftChatMessageSchema).optional(),
+  rows: draftAxis,
+  columns: draftAxis,
+  imageSettings: draftImageSettingsSchema.optional(),
   inputReferences: z.array(referenceImageSchema).optional(),
   referenceGroups: z
     .record(z.string(), z.array(referenceImageSchema))
     .optional(),
-  model: z.string().trim(),
+  model: z.string(),
   effort: z.enum(efforts),
-  judge: z
-    .object({
+  judge: draftJudgeSchema.optional(),
+  parallelWorkers: z.number().int().min(1).optional(),
+};
+export const gridDraftSchema = z.object({
+  ...draftGridFields,
+  format: z.enum(["svg", "markdown", "html", "chat-template", "image"]),
+  budgetUsd: z.string(),
+});
+export type GridDraftInput = z.infer<typeof gridDraftSchema>;
+const gridFields = {
+  ...draftGridFields,
+  prompt: draftGridFields.prompt.unwrap().trim().default(""),
+  messages: z.array(chatMessageSchema).min(1).optional(),
+  rows: axis,
+  columns: axis,
+  imageSettings: sharedImageSettingsSchema.optional(),
+  model: draftGridFields.model.trim(),
+  judge: draftJudgeSchema
+    .extend({
       criteria: judgeCriteriaSchema,
-      model: z.string().trim(),
-      effort: z.enum(efforts),
+      model: draftJudgeSchema.shape.model.trim(),
     })
     .optional(),
-  parallelWorkers: z.number().int().min(1).optional(),
 };
 const gridInputSchema = z.discriminatedUnion("format", [
   z.object({
@@ -256,7 +289,9 @@ export const gridSchema = gridInputSchema
       );
     else delete g.referenceGroups;
     return g;
-  });
+  })
+  .brand<"ValidatedGridInput">();
+export type ValidatedGridInput = z.infer<typeof gridSchema>;
 export type Completion = {
   phase: "direct" | "image" | "judge";
   finishReason?: string;

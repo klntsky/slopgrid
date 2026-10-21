@@ -190,7 +190,7 @@ export function createImageReferences(
         : message,
     );
   }
-  function input(input: GridInput): GridInput {
+  function input<T extends GridInput>(input: T) {
     return {
       ...input,
       rows:

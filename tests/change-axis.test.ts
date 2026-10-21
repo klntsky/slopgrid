@@ -1,19 +1,20 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import type { GridInput } from "../server/domain.js";
-import { expandGrid, gridSchema } from "../server/domain.js";
+import type { GridDraftInput } from "../server/domain.js";
+import { expandGrid } from "../server/domain.js";
 import type { ScalarImageKind } from "../server/image-settings.js";
 import { changeAxis, removeJudge } from "../src/create/change-axis.js";
 import { criteriaForCell } from "../server/judge-criteria.js";
+import { validateDraftInput } from "../src/create/draft-input.js";
 
-const initial: GridInput = {
+const initial: GridDraftInput = {
   format: "svg",
   prompt: "Draw a rectangle",
   rows: { kind: "variable", values: [[{ text: "row" }]] },
   columns: { kind: "variable", values: [[{ text: "column" }]] },
   model: "generator/fixed",
   effort: "high",
-  budgetUsd: 3,
+  budgetUsd: "3",
   judge: {
     criteria: [{ text: "Is it blue?", correctAnswer: false }],
     model: "judge/fixed",
@@ -30,8 +31,8 @@ const parameters = [
 for (const parameter of parameters) {
   test(`${parameter.kind} transfers fixed values, accepts axis edits, and restores its first value`, () => {
     for (const side of ["rows", "columns"] as const) {
-      const original: GridInput = structuredClone(initial);
-      const settings: Pick<GridInput, "model" | "effort"> =
+      const original: GridDraftInput = structuredClone(initial);
+      const settings: Pick<GridDraftInput, "model" | "effort"> =
         parameter.owner === "generator" ? initial : initial.judge!;
       const fixedValue: string = settings[parameter.field];
       const entered = changeAxis(initial, side, {
@@ -77,7 +78,7 @@ for (const parameter of parameters) {
   });
 
   test(`${parameter.kind} does not claim a fixed setting owned by the opposite axis`, () => {
-    const input: GridInput = {
+    const input: GridDraftInput = {
       ...initial,
       columns: { kind: parameter.kind, values: ["opposite selection"] },
     };
@@ -94,7 +95,7 @@ for (const parameter of parameters) {
 }
 
 test("empty fixed models enter axes without an empty model selection", () => {
-  const input: GridInput = {
+  const input: GridDraftInput = {
     ...initial,
     model: "",
     judge: { ...initial.judge!, model: "" },
@@ -110,7 +111,7 @@ test("empty fixed models enter axes without an empty model selection", () => {
 });
 
 test("changing parameter owners restores the old value before claiming the new one", () => {
-  const input: GridInput = {
+  const input: GridDraftInput = {
     ...initial,
     rows: { kind: "model", values: ["generator/first", "generator/second"] },
   };
@@ -129,7 +130,7 @@ const imageValues: Record<ScalarImageKind, string> = {
 };
 for (const kind of Object.keys(imageValues) as ScalarImageKind[]) {
   test(`${kind} transfers its shared image value and returns to Auto when leaving the axis`, () => {
-    const input: GridInput = {
+    const input: GridDraftInput = {
       ...initial,
       format: "image",
       imageSettings: imageValues,
@@ -148,7 +149,10 @@ for (const kind of Object.keys(imageValues) as ScalarImageKind[]) {
     assert.equal(left.imageSettings?.[kind], undefined);
     assert.deepEqual(left.imageSettings, entered.imageSettings);
 
-    const owned: GridInput = { ...input, columns: { kind, values: ["auto"] } };
+    const owned: GridDraftInput = {
+      ...input,
+      columns: { kind, values: ["auto"] },
+    };
     const supplied = { kind, values: ["supplied"] };
     const ownedOriginal = structuredClone(owned);
     const blocked = changeAxis(owned, "rows", supplied);
@@ -161,7 +165,7 @@ for (const kind of Object.keys(imageValues) as ScalarImageKind[]) {
 test("shared references enter a unique group including newly supplied group names", () => {
   const shared = [{ id: "shared", name: "shared.png" }];
   const existing = [{ id: "existing", name: "existing.png" }];
-  const input: GridInput = {
+  const input: GridDraftInput = {
     ...initial,
     format: "image",
     inputReferences: shared,
@@ -196,7 +200,7 @@ test("shared references enter a unique group including newly supplied group name
 
 test("reference ownership prevents stealing shared images and leaving clears stale shared images", () => {
   const shared = [{ id: "shared", name: "shared.png" }];
-  const input: GridInput = {
+  const input: GridDraftInput = {
     ...initial,
     format: "image",
     inputReferences: shared,
@@ -227,7 +231,7 @@ for (const format of [
   "image",
 ] as const) {
   test(`removing a judge resets only judge axes to ${format} defaults`, () => {
-    const input: GridInput = {
+    const input: GridDraftInput = {
       ...initial,
       format,
       rows: { kind: "judge_model", values: ["judge/selected"] },
@@ -279,11 +283,11 @@ for (const format of ["svg", "markdown", "chat-template", "image"] as const) {
               : "model",
       } as const;
       const other = side === "rows" ? "columns" : "rows";
-      const retained: GridInput["rows"] = {
+      const retained: GridDraftInput["rows"] = {
         kind: defaults[side],
         values: defaults[side] === "model" ? ["generator/selected"] : ["high"],
       };
-      const input: GridInput = {
+      const input: GridDraftInput = {
         ...initial,
         format,
         messages: [{ role: "user", content: "Draw a rectangle" }],
@@ -302,7 +306,7 @@ for (const format of ["svg", "markdown", "chat-template", "image"] as const) {
             ? input.effort
             : "high",
       ]);
-      assert.equal(gridSchema.safeParse(next).success, true);
+      assert.equal(validateDraftInput(next).parsed.success, true);
       assert.deepEqual(input, original);
     });
   }
@@ -310,7 +314,7 @@ for (const format of ["svg", "markdown", "chat-template", "image"] as const) {
 
 test("editing reference groups merges supplied groups without transferring fixed parameters", () => {
   const references = [{ id: "reference", name: "reference.png" }];
-  const input: GridInput = {
+  const input: GridDraftInput = {
     ...initial,
     format: "image",
     rows: { kind: "input_references", values: ["Original"] },
@@ -342,7 +346,9 @@ test("edited generator and judge axes produce the selected consumer parameters",
     kind: "judge_effort",
     values: ["none", "high"],
   });
-  const cells = expandGrid(input);
+  const { parsed } = validateDraftInput(input);
+  assert.ok(parsed.success);
+  const cells = expandGrid(parsed.data);
   assert.deepEqual(
     cells.map((cell) => [cell.model, cell.judge?.model, cell.judge?.effort]),
     [

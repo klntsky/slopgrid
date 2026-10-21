@@ -21,7 +21,7 @@ import {
   rejectReferenceGridCells,
   removeStoredReferenceDimensions,
 } from "./reference-storage-fixture.js";
-import { storedGridCount } from "./grid-storage-fixture.js";
+import { storedGridCount, validatedGrid } from "./grid-storage-fixture.js";
 import {
   referencePng,
   referenceJpeg,
@@ -138,7 +138,7 @@ for (const shared of [false, true])
         status: "complete",
       })),
     };
-    const tasks = createWorkflow(input, grid.cells);
+    const tasks = createWorkflow(gridSchema.parse(input), grid.cells);
     const artifactId = token();
     for (const task of tasks) {
       if (task.kind !== "generation") throw new Error("Expected generation");
@@ -150,7 +150,7 @@ for (const shared of [false, true])
       };
     }
     store.files.write(artifactId, { image: png });
-    store.insert(grid, tasks);
+    store.insert(validatedGrid(grid), tasks);
     assert.deepEqual(
       shared
         ? store.get(grid.id)!.input.inputReferences
@@ -188,16 +188,18 @@ for (const shared of [false, true])
     assert.equal((await read(spare.id)).status, 404);
     // A fork retains access independently of the original grid and uploader.
     const forkOwner = token();
-    store.insert({
-      ...grid,
-      id: token(),
-      owner: forkOwner,
-      ownerUserId: undefined,
-      published: false,
-      visibility: "private",
-      status: "paused",
-      cells: grid.cells.map((c) => ({ ...c, id: token() })),
-    });
+    store.insert(
+      validatedGrid({
+        ...grid,
+        id: token(),
+        owner: forkOwner,
+        ownerUserId: undefined,
+        published: false,
+        visibility: "private",
+        status: "paused",
+        cells: grid.cells.map((c) => ({ ...c, id: token() })),
+      }),
+    );
     removeReferenceGrid(store.db, grid.id);
     store.saveSession({ id: forkOwner, created: Date.now() });
     assert.equal((await read(image.id)).status, 404);
@@ -327,7 +329,7 @@ for (const format of ["markdown", "svg", "html"] as const)
       cells: expandGrid(input).map((cell) => ({ ...cell, id: token() })),
     };
     assert.equal(store.references.allowed(common.id, owner), false);
-    store.insert(grid);
+    store.insert(validatedGrid(grid));
     const reopened = new Store(database, secret);
     try {
       const saved = reopened.get(grid.id)!;
@@ -474,13 +476,16 @@ test("grid creation records every selected reference atomically and keeps member
   };
   const allowGridCells = rejectReferenceGridCells(store.db);
   try {
-    assert.throws(() => store.insert(grid), /Injected grid failure/);
+    assert.throws(
+      () => store.insert(validatedGrid(grid)),
+      /Injected grid failure/,
+    );
     assert.equal(store.get(grid.id), undefined);
     assert.equal(store.references.allowed(first.id, owner), false);
   } finally {
     allowGridCells();
   }
-  store.insert(grid);
+  store.insert(validatedGrid(grid));
   assert.equal(store.references.allowed(first.id, owner), true);
   assert.equal(store.references.allowed(second.id, owner), true);
   assert.equal(store.references.allowed(spare.id, owner), false);
@@ -496,7 +501,7 @@ test("grid creation records every selected reference atomically and keeps member
   assert.equal(store.references.allowed(spare.id, owner), false);
   removeReferenceGrid(store.db, grid.id);
   assert.equal(store.references.allowed(first.id, owner), false);
-  store.insert(grid);
+  store.insert(validatedGrid(grid));
   assert.equal(store.references.allowed(second.id, owner), false);
   assert.equal(store.references.allowed(spare.id, owner), true);
 });
@@ -543,7 +548,7 @@ test("identical uploads share one blob across private owners and grids without s
       createdAt: "2026-01-01T00:00:00.000Z",
       cells: expandGrid(input).map((cell) => ({ ...cell, id: token() })),
     };
-    store.insert(grid);
+    store.insert(validatedGrid(grid));
     return grid;
   });
   const sha256 = createHash("sha256").update(png).digest("hex");
@@ -785,7 +790,7 @@ test("legacy workflow inputs and live chat histories project authoritative dimen
     createdAt: "2026-01-01T00:00:00.000Z",
     cells: expandGrid(input).map((cell) => ({ ...cell, id: token() })),
   };
-  const tasks = createWorkflow(input, grid.cells);
+  const tasks = createWorkflow(gridSchema.parse(input), grid.cells);
   const task = tasks[0];
   if (task.kind !== "generation") throw new Error("Expected generation");
   task.status = "running";
@@ -794,7 +799,7 @@ test("legacy workflow inputs and live chat histories project authoritative dimen
     { role: "assistant", content: "Progressive answer" },
   ];
   task.progress = { draft: JSON.stringify(history) };
-  store.insert(grid, tasks);
+  store.insert(validatedGrid(grid), tasks);
   assert.deepEqual(store.get(grid.id)!.input.messages![0].images, [image]);
   removeStoredReferenceDimensions(store.db);
   unlinkSync(store.references.path(image.id)!);

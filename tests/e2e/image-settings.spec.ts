@@ -109,10 +109,16 @@ test("image warning grids compare models with parameter values and remain adviso
   await page
     .getByLabel("Custom rows size 3 width", { exact: true })
     .fill("256");
-  await page.getByRole("button", { name: "Generate", exact: true }).click();
-  await expect(page.getByRole("alert")).toHaveText(
-    "Use a resolution or a size such as 1536x1024",
-  );
+  const generate = page.getByRole("button", { name: "Generate", exact: true });
+  await expect(generate).toBeDisabled();
+  await page.reload();
+  await expect(
+    page.getByLabel("Custom rows size 3 width", { exact: true }),
+  ).toHaveValue("256");
+  await expect(
+    page.getByLabel("Custom rows size 3 height", { exact: true }),
+  ).toHaveValue("");
+  await expect(generate).toBeDisabled();
   expect(
     await (await request.get("/fixture/image-requests")).json(),
   ).toHaveLength(2);
@@ -211,8 +217,10 @@ test("renamed reference groups survive reload, Edit and Fork without mixing thei
   await page.reload();
   await expect(titles.nth(0)).toHaveText("Group 1");
   await connectOpenRouter(page);
-  await page.getByRole("button", { name: "Generate", exact: true }).click();
-  await expect(page.getByRole("alert")).toHaveText(
+  const generate = page.getByRole("button", { name: "Generate", exact: true });
+  await expect(generate).toBeDisabled();
+  await generate.locator("..").focus();
+  await expect(page.getByRole("tooltip")).toContainText(
     "Add images to every reference group",
   );
   await page
@@ -463,10 +471,20 @@ test("shared image settings transfer to axes, reset on removal, and preserve def
   ).toHaveCount(0);
   await field("Size").selectOption("custom");
   await page.getByLabel("Custom size width", { exact: true }).fill("1536");
-  await page.getByRole("button", { name: "Generate", exact: true }).click();
-  await expect(page.getByRole("alert")).toHaveText(
+  const generate = page.getByRole("button", { name: "Generate", exact: true });
+  await expect(generate).toBeDisabled();
+  await generate.locator("..").focus();
+  await expect(page.getByRole("tooltip")).toContainText(
     "Use a resolution or a size such as 1536x1024",
   );
+  await page.reload();
+  await expect(
+    page.getByLabel("Custom size width", { exact: true }),
+  ).toHaveValue("1536");
+  await expect(
+    page.getByLabel("Custom size height", { exact: true }),
+  ).toHaveValue("");
+  await expect(generate).toBeDisabled();
   expect(
     await (await request.get("/fixture/image-requests")).json(),
   ).toHaveLength(0);

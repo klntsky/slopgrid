@@ -866,3 +866,78 @@ for (const format of ["SVG", "Static website", "Markdown"]) {
     await expect(variableValues).toHaveValue("landscape");
   });
 }
+
+test("incomplete chat, criteria and raw budget survive reload and OAuth before canonical submission", async ({
+  page,
+  request,
+}) => {
+  await request.post("/fixture/reset", { data: {} });
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "Chat completion", exact: true })
+    .click();
+  await page
+    .getByRole("combobox", { name: "Rows", exact: true })
+    .selectOption("variable");
+  await page
+    .getByRole("combobox", { name: "Columns", exact: true })
+    .selectOption("effort");
+  await setVariableValues(page, "Rows", ["cat"]);
+  await selectModel(page, "fixture/text");
+  const message = page.getByLabel("Message 1", { exact: true });
+  const budget = page.getByLabel("Budget limit per cell", { exact: true });
+  const generate = page.getByRole("button", { name: "Generate", exact: true });
+  await budget.fill("");
+  await page
+    .getByRole("checkbox", { name: "Add a LLM judge", exact: true })
+    .check();
+  const criterion = page.getByLabel("Criterion 1", { exact: true });
+  await criterion.fill("  ");
+  const judge = page.getByRole("radiogroup", {
+    name: "Judge model",
+    exact: true,
+  });
+  await judge.getByRole("searchbox").fill("fixture/text");
+  await judge.locator('input[type="radio"][value="fixture/text"]').check();
+  await expect(generate).toBeDisabled();
+  await page.reload();
+  await expect(message).toHaveValue("");
+  await expect(criterion).toHaveValue("  ");
+  await expect(budget).toHaveValue("");
+  await connectOpenRouter(page);
+  await expect(message).toHaveValue("");
+  await expect(criterion).toHaveValue("  ");
+  await expect(budget).toHaveValue("");
+  expect(
+    await page.evaluate(() => {
+      const saved = JSON.parse(sessionStorage.getItem("slopgrid-draft")!);
+      return {
+        budget: saved.input.budgetUsd,
+        message: saved.input.messages[0].content,
+        criterion: saved.input.judge.criteria[0].text,
+      };
+    }),
+  ).toEqual({ budget: "", message: "", criterion: "  " });
+  await budget.fill("0.25");
+  await expect(generate).toBeDisabled();
+  await message.fill("  Draw $ROW1  ");
+  await expect(generate).toBeDisabled();
+  await criterion.fill("  Is it a cat?  ");
+  await expect(generate).toBeEnabled();
+  await message.fill("");
+  await expect(generate).toBeDisabled();
+  await message.fill("  Draw $ROW1  ");
+  await budget.fill("");
+  await expect(generate).toBeDisabled();
+  await budget.fill("0.25");
+  const sent = page.waitForRequest(
+    (r) => r.method() === "POST" && new URL(r.url()).pathname === "/api/grids",
+  );
+  await generate.click();
+  expect((await sent).postDataJSON().budgetUsd).toBe(0.25);
+  await expectProgress(page, 1, 1);
+  await page.getByRole("button", { name: "EDIT", exact: true }).click();
+  await expect(budget).toHaveValue("0.25");
+  await expect(message).toHaveValue("  Draw $ROW1  ");
+  await expect(criterion).toHaveValue("Is it a cat?");
+});

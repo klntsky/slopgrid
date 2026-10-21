@@ -1,4 +1,9 @@
 import type Database from "better-sqlite3";
+import { gridSchema, type Grid } from "../server/domain.js";
+
+export function validatedGrid(grid: Grid) {
+  return Object.assign(grid, { input: gridSchema.parse(grid.input) });
+}
 
 export function storedGridCount(db: Database.Database) {
   return db.prepare("SELECT COUNT(*) AS count FROM grids").get();

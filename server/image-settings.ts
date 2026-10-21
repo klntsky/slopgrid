@@ -90,7 +90,13 @@ function sharedSetting(kind: ScalarImageKind) {
     )
     .optional();
 }
-export const sharedImageSettingsSchema = z.object({
+export const draftImageSettingsSchema = z.object({
+  size: z.string().optional(),
+  aspect_ratio: z.string().optional(),
+  quality: z.string().optional(),
+  background: z.string().optional(),
+});
+export const sharedImageSettingsSchema = draftImageSettingsSchema.extend({
   size: sharedSetting("size"),
   aspect_ratio: sharedSetting("aspect_ratio"),
   quality: sharedSetting("quality"),

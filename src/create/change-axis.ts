@@ -1,13 +1,13 @@
-import { isMarkdownFormat, type GridInput } from "../../server/domain";
+import { isMarkdownFormat, type GridDraftInput } from "../../server/domain";
 import {
   imageChoices,
   type ScalarImageKind,
   type ReferenceGroups,
 } from "../../server/image-settings";
 
-type Axis = GridInput["rows"];
+type Axis = GridDraftInput["rows"];
 type Side = "rows" | "columns";
-type ModelParameters = Pick<GridInput, "model" | "effort">;
+type ModelParameters = Pick<GridDraftInput, "model" | "effort">;
 
 const fixedParameters = {
   model: { owner: "generator", field: "model" },
@@ -26,7 +26,7 @@ function isImageParameter(kind: Axis["kind"]): kind is ScalarImageKind {
   return Object.hasOwn(imageChoices, kind);
 }
 
-function moveAxisToFixed(input: GridInput, axis: Axis): void {
+function moveAxisToFixed(input: GridDraftInput, axis: Axis): void {
   if (axis.kind === "variable") return;
   if (isFixedParameter(axis.kind)) {
     const { owner, field } = fixedParameters[axis.kind];
@@ -37,7 +37,9 @@ function moveAxisToFixed(input: GridInput, axis: Axis): void {
       settings = input.judge = { ...input.judge };
     }
     if (field === "model") settings.model = axis.values[0] ?? "";
-    else settings.effort = (axis.values[0] ?? "default") as GridInput["effort"];
+    else
+      settings.effort = (axis.values[0] ??
+        "default") as GridDraftInput["effort"];
   } else if (axis.kind === "input_references") {
     delete input.inputReferences;
   } else if (input.format === "image") {
@@ -52,7 +54,7 @@ function moveAxisToFixed(input: GridInput, axis: Axis): void {
   }
 }
 
-function moveFixedToAxis(input: GridInput, axis: Axis): Axis {
+function moveFixedToAxis(input: GridDraftInput, axis: Axis): Axis {
   if (axis.kind === "variable") return axis;
   if (isFixedParameter(axis.kind)) {
     const { owner, field } = fixedParameters[axis.kind];
@@ -92,7 +94,7 @@ function moveFixedToAxis(input: GridInput, axis: Axis): Axis {
 
 function resetJudgeAxis(
   axis: Axis,
-  format: GridInput["format"],
+  format: GridDraftInput["format"],
   side: Side,
 ): Axis {
   if (
@@ -112,8 +114,8 @@ function resetJudgeAxis(
 }
 
 export function removeJudge(
-  input: GridInput,
-): Pick<GridInput, "judge" | "rows" | "columns"> {
+  input: GridDraftInput,
+): Pick<GridDraftInput, "judge" | "rows" | "columns"> {
   let rows = resetJudgeAxis(input.rows, input.format, "rows");
   let columns = resetJudgeAxis(input.columns, input.format, "columns");
   if (rows.kind === columns.kind) {
@@ -136,11 +138,11 @@ export function removeJudge(
 }
 
 export function changeAxis(
-  input: GridInput,
+  input: GridDraftInput,
   side: Side,
   axis: Axis,
   groups?: ReferenceGroups,
-): GridInput {
+): GridDraftInput {
   const source = input.judge?.criteria;
   // The owning variable dimension cannot be removed while it owns the rubric.
   if (

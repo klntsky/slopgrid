@@ -1,7 +1,96 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { efforts, expandGrid, gridSchema } from "../server/domain.js";
+import {
+  efforts,
+  expandGrid,
+  gridDraftSchema,
+  gridSchema,
+} from "../server/domain.js";
 import { readChatOutput } from "../shared/chat-output.js";
+import { appFixture } from "./app-fixture.js";
+
+test("incomplete editor states preserve raw text but cannot create a grid", async (t) => {
+  const { origin, store } = await appFixture(t);
+  const base = gridDraftSchema.parse({
+    format: "markdown",
+    prompt: "  Describe a shape. \n",
+    model: "fixture/text",
+    effort: "none",
+    budgetUsd: "1.25",
+    rows: { kind: "model", values: ["fixture/text"] },
+    columns: { kind: "effort", values: ["none"] },
+  });
+  assert.equal(base.prompt, "  Describe a shape. \n");
+  assert.equal(base.budgetUsd, "1.25");
+  const complete = gridSchema.parse({
+    ...base,
+    budgetUsd: Number(base.budgetUsd),
+  });
+  assert.equal(complete.prompt, "Describe a shape.");
+  assert.equal(complete.budgetUsd, 1.25);
+  const unfinished = [
+    { budgetUsd: "" },
+    { prompt: " \n" },
+    { rows: { kind: "model", values: [] } },
+    { rows: { kind: "model", values: [""] } },
+    { format: "chat-template", messages: [] },
+    { format: "chat-template", messages: [{ role: "user", content: "" }] },
+    { judge: { model: "fixture/judge", effort: "none", criteria: [] } },
+    {
+      judge: {
+        model: "fixture/judge",
+        effort: "none",
+        criteria: [{ text: "  \n", correctAnswer: true }],
+      },
+    },
+    {
+      judge: {
+        model: "fixture/judge",
+        effort: "none",
+        criteria: { axis: "rows", cases: [[]] },
+      },
+    },
+    {
+      format: "image",
+      columns: { kind: "quality", values: ["auto"] },
+      imageSettings: { size: "1536x" },
+    },
+    {
+      format: "image",
+      columns: { kind: "size", values: ["1536x"] },
+    },
+    { rows: { kind: "variable", values: [[]] } },
+  ];
+  const owner = "a".repeat(48);
+  store.saveSession({ id: owner, key: "fixture-key", created: Date.now() });
+  const before = store.all().map((grid) => grid.id);
+  for (const fields of unfinished) {
+    const draft = gridDraftSchema.parse({ ...base, ...fields });
+    assert.deepEqual(JSON.parse(JSON.stringify(draft)), draft);
+    if (
+      draft.judge &&
+      Array.isArray(draft.judge.criteria) &&
+      draft.judge.criteria.length
+    )
+      assert.equal(draft.judge.criteria[0].text, "  \n");
+    const candidate = { ...draft, budgetUsd: Number(draft.budgetUsd) };
+    assert.equal(gridSchema.safeParse(candidate).success, false);
+    const response = await fetch(`${origin}/api/grids`, {
+      method: "POST",
+      headers: {
+        cookie: `slopgrid=${owner}`,
+        origin,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(candidate),
+    });
+    assert.equal(response.status, 400, await response.text());
+  }
+  assert.deepEqual(
+    store.all().map((grid) => grid.id),
+    before,
+  );
+});
 
 test("chat completion accepts optional blanks after a prefix and preserves expanded history", () => {
   const source = {

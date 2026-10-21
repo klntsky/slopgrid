@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import type { Grid } from "../server/domain.js";
 import { runtimeFixture, until, kill } from "./runtime-fixture.js";
+import { validatedGrid } from "./grid-storage-fixture.js";
 
 test(
   "web replacement preserves live calls, thinking, billing and metadata; draining fences new work and finishes the queue",
@@ -97,7 +98,7 @@ test(
           status: "pending" as const,
         })),
       };
-      store.insert(blocked);
+      store.insert(validatedGrid(blocked));
       await assert.rejects(
         engine.api.startGrid({
           gridId: blocked.id,

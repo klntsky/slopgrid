@@ -6,6 +6,7 @@ import { token } from "../server/ids.js";
 import { expandGrid, type Grid, type GridInput } from "../server/domain.js";
 import { appFixture } from "./app-fixture.js";
 import { serviceWorkerFixture } from "./service-worker-fixture.js";
+import { validatedGrid } from "./grid-storage-fixture.js";
 
 const png = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
@@ -74,8 +75,8 @@ test("reference SHA validators reuse bytes only after authorization, including a
     model: "fixture/text",
     effort: "none",
     budgetUsd: 1,
-    rows: { kind: "variable", values: [[{ text: "one" }]] },
-    columns: { kind: "variable", values: [[{ text: "one" }]] },
+    rows: { kind: "model", values: ["fixture/text"] },
+    columns: { kind: "effort", values: ["none"] },
   };
   const grid: Grid = {
     id: token(),
@@ -87,7 +88,7 @@ test("reference SHA validators reuse bytes only after authorization, including a
     createdAt: new Date().toISOString(),
     cells: expandGrid(input).map((cell) => ({ ...cell, id: token() })),
   };
-  store.insert(grid);
+  store.insert(validatedGrid(grid));
   store.publish(grid.id, "unlisted", null);
   const publicImage = await read(image.id);
   assert.deepEqual(Buffer.from(await publicImage.arrayBuffer()), png);

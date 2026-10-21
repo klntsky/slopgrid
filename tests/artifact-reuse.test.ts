@@ -6,6 +6,7 @@ import { readFileSync, rmSync, chmodSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import {
   expandGrid,
+  gridSchema,
   hasCompletedOutput,
   type Grid,
   type GridInput,
@@ -31,6 +32,7 @@ import {
   staleGenerationProvenance,
   removeArtifactSourceGrid,
 } from "./artifact-reuse-fixture.js";
+import { validatedGrid } from "./grid-storage-fixture.js";
 
 const input: GridInput = {
   format: "markdown",
@@ -102,7 +104,7 @@ test("generator grouping ignores judge-only fields and attachment display metada
     generationGroupKey(setup.format, cells[0]),
     generationGroupKey(setup.format, cells[1]),
   );
-  const workflow = createWorkflow(setup, cells);
+  const workflow = createWorkflow(gridSchema.parse(setup), cells);
   assert.equal(workflow.filter((task) => task.kind === "generation").length, 1);
   assert.equal(workflow.filter((task) => task.kind === "judge").length, 2);
   assert.notEqual(
@@ -1257,7 +1259,7 @@ test("generation failures reach every judged group member while ordinary cells r
     ...cell,
     id: `group-${index}`,
   }));
-  const tasks = createWorkflow(judged, cells);
+  const tasks = createWorkflow(gridSchema.parse(judged), cells);
   const generation = tasks.find((task) => task.kind === "generation")!;
   generation.status = "error";
   generation.error = "Generation failed";
@@ -1276,12 +1278,17 @@ test("generation failures reach every judged group member while ordinary cells r
     cells.map((cell) => [cell.status, cell.error]),
     Array.from({ length: 4 }, () => ["error", "Generation failed"]),
   );
-  const unjudged = { ...judged, judge: undefined };
+  const unjudged: GridInput = {
+    ...judged,
+    judge: undefined,
+    rows: { kind: "model", values: ["judge-a", "judge-b"] },
+    columns: { kind: "effort", values: ["none", "low"] },
+  };
   const ordinary = expandGrid(unjudged).map((cell, index) => ({
     ...cell,
     id: `unjudged-${index}`,
   }));
-  const independent = createWorkflow(unjudged, ordinary);
+  const independent = createWorkflow(gridSchema.parse(unjudged), ordinary);
   independent[0].status = "error";
   independent[0].error = "Generation failed";
   projectWorkflow({ ...grid, input: unjudged, cells: ordinary }, independent);
@@ -1330,7 +1337,7 @@ test("reuse shares one generation per judge group without copying judgments or a
       status: "paused",
       cells: expandGrid(judged).map((cell) => ({ ...cell, id: token() })),
     };
-    const tasks = createWorkflow(judged, destination.cells);
+    const tasks = createWorkflow(gridSchema.parse(judged), destination.cells);
     const before = readdirSync(f.store.files.root).sort();
     await reuseArtifacts(f.store, new Provider(f.providerURL), source, tasks);
     projectWorkflow(destination, tasks);
@@ -1352,7 +1359,7 @@ test("reuse shares one generation per judge group without copying judgments or a
     const generation = tasks.find((task) => task.kind === "generation")!;
     assert.equal(generation.attemptId, undefined);
     assert.equal(generation.error, undefined);
-    f.store.insert(destination, tasks);
+    f.store.insert(validatedGrid(destination), tasks);
     const judgments = tasks.filter((task) => task.kind === "judge");
     judgments[0].status = "complete";
     judgments[0].attemptId = "fresh-judge-attempt";

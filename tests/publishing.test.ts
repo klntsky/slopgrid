@@ -2,10 +2,18 @@ import { token } from "../server/ids.js";
 import { appFixture } from "./app-fixture.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { expandGrid, type Grid, type GridSummary } from "../server/domain.js";
+import {
+  expandGrid,
+  gridSchema,
+  type Grid,
+  type GridSummary,
+} from "../server/domain.js";
 import { Store } from "../server/store.js";
 import { createWorkflow } from "../server/workflow.js";
-import { storedPublicGridCreationTimes } from "./grid-storage-fixture.js";
+import {
+  storedPublicGridCreationTimes,
+  validatedGrid,
+} from "./grid-storage-fixture.js";
 
 // Exercise the real session, ownership, persistence, and publishing routes.
 test("publishing is permanent, link grids are unlisted, and public summaries omit private data", async (t) => {
@@ -54,7 +62,7 @@ test("publishing is permanent, link grids are unlisted, and public summaries omi
         status,
       })),
     };
-    const tasks = createWorkflow(input, grid.cells);
+    const tasks = createWorkflow(gridSchema.parse(input), grid.cells);
     for (const task of tasks) {
       task.status = status;
       if (task.kind === "generation" && status === "complete")
@@ -63,7 +71,7 @@ test("publishing is permanent, link grids are unlisted, and public summaries omi
           provenance: { signature: "publishing-fixture", files: ["index.md"] },
         };
     }
-    store.insert(grid, tasks);
+    store.insert(validatedGrid(grid), tasks);
   }
   async function publish(id: string, body?: unknown, asOwner = true) {
     return fetch(`${origin}/api/grids/${id}/publish`, {
@@ -285,7 +293,7 @@ test("publishing a paused grid exposes unfinished cells as Not generated and loc
       ...(index === 2 ? { error: "Insufficient credits", errorCode: 402 } : {}),
     })),
   };
-  const tasks = createWorkflow(input, grid.cells);
+  const tasks = createWorkflow(gridSchema.parse(input), grid.cells);
   const states = ["complete", "error", "pending"] as const;
   tasks.forEach((task, index) => {
     task.status = states[index];
@@ -304,7 +312,7 @@ test("publishing a paused grid exposes unfinished cells as Not generated and loc
       task.errorCode = 402;
     }
   });
-  store.insert(grid, tasks);
+  store.insert(validatedGrid(grid), tasks);
   const publish = (visibility: string) =>
     fetch(`${origin}/api/grids/${grid.id}/publish`, {
       method: "POST",

@@ -10,6 +10,7 @@ import { expandGrid, type GridInput, type Grid } from "../server/domain.js";
 import { token } from "../server/ids.js";
 import { webFixture } from "./web-fixture.js";
 import { seedTestDatabase } from "./database-fixture.js";
+import { validatedGrid } from "./grid-storage-fixture.js";
 
 export type CapturedRequest = {
   model: string;
@@ -373,7 +374,7 @@ export async function runtimeFixture(
         createdAt: new Date().toISOString(),
         cells: expandGrid(input).map((c) => ({ ...c, id: token() })),
       };
-      store.insert(grid);
+      store.insert(validatedGrid(grid));
       return grid;
     },
     call: (index: number) => until(() => calls[index], Boolean),

@@ -5,7 +5,7 @@ import { ControlledProvider } from "./controlled-provider.js";
 import type { Model } from "../server/provider.js";
 import type { Request, Response } from "express";
 import { createInferenceGuard } from "../server/inference-policy.js";
-import { expandGrid, type GridInput } from "../server/domain.js";
+import { expandGrid, gridSchema, type GridInput } from "../server/domain.js";
 import { createWorkflow } from "../server/workflow.js";
 
 test("admission sums individual costs, preserves automatic selection, and skips completed cells on resume", async (t) => {
@@ -140,7 +140,7 @@ test("automatic judged admission reserves one generation per source and each unf
     ...cell,
     id: `reservation-${index}`,
   }));
-  createWorkflow(input, cells);
+  createWorkflow(gridSchema.parse(input), cells);
   assert.equal(
     await allow(req, res, session, undefined, input.format, cells),
     true,
@@ -172,7 +172,7 @@ test("automatic judged admission reserves one generation per source and each unf
       id: `image-reservation-${index}`,
     }),
   );
-  createWorkflow({ ...input, format: "image" }, images);
+  createWorkflow(gridSchema.parse({ ...input, format: "image" }), images);
   assert.equal(
     await allow(req, res, session, undefined, "image", images),
     true,

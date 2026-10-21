@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { startGenerationFixture } from "../generation-fixture";
 import { webFixture } from "../web-fixture";
 import { Store } from "../../server/store";
-import { expandGrid, type GridInput, type Grid } from "../../server/domain";
+import { expandGrid, gridSchema, type Grid } from "../../server/domain";
 import { token } from "../../server/ids";
 import { createWorkflow } from "../../server/workflow";
 
@@ -35,7 +35,7 @@ test("private websites load in frames and direct tabs for the owning user across
   try {
     const owner = token();
     store.saveSession({ id: owner, created: 0 });
-    const input: GridInput = {
+    const input = gridSchema.parse({
       format: "html",
       prompt: "A website",
       rows: { kind: "model", values: ["fixture/text"] },
@@ -43,8 +43,8 @@ test("private websites load in frames and direct tabs for the owning user across
       model: "fixture/text",
       effort: "none",
       budgetUsd: 1,
-    };
-    const grid: Grid = {
+    });
+    const grid = {
       id: token(),
       owner,
       input,
@@ -57,7 +57,7 @@ test("private websites load in frames and direct tabs for the owning user across
         id: token(),
         status: "complete",
       })),
-    };
+    } satisfies Grid;
     const cell = grid.cells[0];
     const artifactId = token();
     const files = {

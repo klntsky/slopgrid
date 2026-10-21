@@ -14,6 +14,7 @@ import type {
   WorkflowCommit,
   WorkflowExecutor,
 } from "../server/workflow-executor.js";
+import { validatedGrid } from "./grid-storage-fixture.js";
 
 const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
 function harness(limit?: number) {
@@ -57,7 +58,7 @@ function harness(limit?: number) {
         id: `${owner}/${name}/${i}`,
       })),
     };
-    store.insert(g);
+    store.insert(validatedGrid(g));
     for (const cell of g.cells) taskIds.set(cell.id, cell.generationId!);
     return g;
   }

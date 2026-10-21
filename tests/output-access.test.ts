@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { request } from "node:http";
 import {
   expandGrid,
+  gridSchema,
   type ChatMessage,
   type FilledChatMessage,
   type Grid,
@@ -18,6 +19,7 @@ import { writeChatOutput } from "../shared/chat-output.js";
 import type { Store } from "../server/store.js";
 import { referencePng } from "./reference-image-fixture.js";
 import { removeStoredReferenceDimensions } from "./reference-storage-fixture.js";
+import { validatedGrid } from "./grid-storage-fixture.js";
 
 function completedChatGrid(
   store: Store,
@@ -29,7 +31,7 @@ function completedChatGrid(
     format: "chat-template",
     messages,
     prompt: "",
-    rows: { kind: "variable", values: [[{ text: "one" }]] },
+    rows: { kind: "model", values: ["fixture/text"] },
     columns: { kind: "effort", values: ["none"] },
     model: "fixture/text",
     effort: "none",
@@ -49,7 +51,7 @@ function completedChatGrid(
       status: "complete",
     })),
   };
-  const tasks = createWorkflow(input, grid.cells);
+  const tasks = createWorkflow(gridSchema.parse(input), grid.cells);
   const generation = tasks.find((task) => task.kind === "generation")!;
   generation.status = "complete";
   generation.output = {
@@ -57,7 +59,7 @@ function completedChatGrid(
     provenance: { signature: "saved-chat", files: ["messages.json"] },
   };
   projectWorkflow(grid, tasks);
-  store.insert(grid, tasks);
+  store.insert(validatedGrid(grid), tasks);
   return grid;
 }
 
@@ -73,7 +75,10 @@ test("private outputs require ownership, isolated grants are scoped and revoked 
       format,
       prompt: "$ROW1",
       rows: { kind: "variable", values: [[{ text: "cat" }]] },
-      columns: { kind: "effort", values: ["none"] },
+      columns:
+        format === "image"
+          ? { kind: "size", values: ["auto"] }
+          : { kind: "effort", values: ["none"] },
       model: "fixture/text",
       effort: "none",
       budgetUsd: 1,
@@ -92,7 +97,7 @@ test("private outputs require ownership, isolated grants are scoped and revoked 
         status: running ? "running" : "complete",
       })),
     };
-    const tasks = createWorkflow(input, g.cells);
+    const tasks = createWorkflow(gridSchema.parse(input), g.cells);
     const generation = tasks.find((task) => task.kind === "generation")!;
     const artifactId = token();
     if (running) generation.status = "running";
@@ -115,7 +120,7 @@ test("private outputs require ownership, isolated grants are scoped and revoked 
       };
     }
     projectWorkflow(g, tasks);
-    store.insert(g, tasks);
+    store.insert(validatedGrid(g), tasks);
     if (running) {
       executor.previews.update(
         generation,
@@ -374,8 +379,18 @@ test("committed judged outputs stay readable and downloadable without weakening 
       const input: Grid["input"] = {
         format,
         prompt: "A saved artifact",
-        rows: { kind: "variable", values: [[{ text: "one" }]] },
-        columns: { kind: "effort", values: ["none"] },
+        ...(format === "chat-template"
+          ? {
+              messages: [
+                { role: "user" as const, content: "A saved artifact" },
+              ],
+            }
+          : {}),
+        rows: { kind: "model", values: ["fixture/text"] },
+        columns:
+          format === "image"
+            ? { kind: "size", values: ["auto"] }
+            : { kind: "effort", values: ["none"] },
         model: "fixture/text",
         effort: "none",
         budgetUsd: 1,
@@ -423,7 +438,7 @@ test("committed judged outputs stay readable and downloadable without weakening 
         createdAt: new Date().toISOString(),
         cells: [cell],
       };
-      const tasks = createWorkflow(input, grid.cells);
+      const tasks = createWorkflow(gridSchema.parse(input), grid.cells);
       const generation = tasks.find((task) => task.kind === "generation")!;
       const judgment = tasks.find((task) => task.kind === "judge")!;
       generation.status = "complete";
@@ -439,7 +454,7 @@ test("committed judged outputs stay readable and downloadable without weakening 
       if (status === "complete")
         judgment.output = { results: cell.judge.results! };
       projectWorkflow(grid, tasks);
-      store.insert(grid, tasks);
+      store.insert(validatedGrid(grid), tasks);
       store.files.appendThinking(
         generation.output.thinkingSourceId!,
         generation.output.thinkingId!,
@@ -513,7 +528,7 @@ test("uncommitted judged files are not exposed before generation commits", async
   const input: Grid["input"] = {
     format: "markdown",
     prompt: "Uncommitted artifact",
-    rows: { kind: "variable", values: [[{ text: "one" }]] },
+    rows: { kind: "model", values: ["fixture/text"] },
     columns: { kind: "effort", values: ["none"] },
     model: "fixture/text",
     effort: "none",
@@ -541,7 +556,7 @@ test("uncommitted judged files are not exposed before generation commits", async
       },
     ],
   };
-  store.insert(grid);
+  store.insert(validatedGrid(grid));
   store.files.write(token(), { "index.md": "Uncommitted artifact" });
   const headers = { cookie: `slopgrid=${owner}` };
   assert.equal(store.outputMetadata(cellId)?.outputReady, false);

@@ -1,5 +1,5 @@
 import type { CompatibilityTables } from "./compatibility-table";
-import type { GridInput } from "../../server/domain";
+import type { GridDraftInput } from "../../server/domain";
 import {
   imageChoices,
   type ScalarImageKind,
@@ -15,8 +15,8 @@ export function ImageOptions({
   compatibility,
 }: {
   compatibility: CompatibilityTables;
-  input: GridInput;
-  onChange: (input: Partial<GridInput>) => void;
+  input: GridDraftInput;
+  onChange: (input: Partial<GridDraftInput>) => void;
   onBusy: (busy: boolean) => void;
 }) {
   const dimensions = [input.rows.kind, input.columns.kind];

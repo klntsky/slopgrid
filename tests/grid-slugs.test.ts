@@ -2,7 +2,8 @@ import { token } from "../server/ids.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { appFixture } from "./app-fixture.js";
-import { expandGrid, type Grid } from "../server/domain.js";
+import { expandGrid, gridSchema, type Grid } from "../server/domain.js";
+import { validatedGrid } from "./grid-storage-fixture.js";
 import { Store } from "../server/store.js";
 import { createWorkflow } from "../server/workflow.js";
 
@@ -40,7 +41,7 @@ test("public slug claims validate, serialize, persist and preserve existing link
         status: "complete",
       })),
     };
-    const tasks = createWorkflow(input, grid.cells);
+    const tasks = createWorkflow(gridSchema.parse(input), grid.cells);
     for (const task of tasks) {
       if (task.kind !== "generation") throw new Error("Expected generation");
       task.status = "complete";
@@ -49,7 +50,7 @@ test("public slug claims validate, serialize, persist and preserve existing link
         provenance: { signature: "slug-fixture", files: ["index.md"] },
       };
     }
-    store.insert(grid, tasks);
+    store.insert(validatedGrid(grid), tasks);
   }
   const publish = (
     id: string,

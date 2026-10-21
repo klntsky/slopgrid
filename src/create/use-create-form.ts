@@ -16,6 +16,7 @@ import {
 } from "../../server/image-settings";
 import { promptVariableIssue } from "../../server/prompt-variables";
 import { judgeCriteriaIssue } from "../../server/judge-criteria";
+import { validateDraftInput } from "./draft-input";
 
 function useBudgetEstimate(input: GridInput) {
   const [minute, setMinute] = useState(() => Math.floor(Date.now() / 60000));
@@ -39,13 +40,14 @@ export function useCreateForm() {
   const editing = useCreateDraft();
   const { draft } = editing;
   const { formatSelected, input } = draft;
+  const validation = useMemo(() => validateDraftInput(input), [input]);
   const connection = useConnection();
   const capacity = useInferenceCapacity(
     formatSelected && connection.data?.connected === true,
     input.format,
   );
   const cellCount = input.rows.values.length * input.columns.values.length;
-  const estimated = useBudgetEstimate(input);
+  const estimated = useBudgetEstimate(validation.candidate);
   const parallelWorkers =
     input.format === "image"
       ? Math.max(1, Math.min(cellCount, capacity.data?.parallelWorkers ?? 1))
@@ -95,6 +97,7 @@ export function useCreateForm() {
   const submission = useCreateSubmission({
     draft,
     blocked:
+      !validation.parsed.success ||
       modelMissing ||
       !!judgeIssue ||
       !!imageIssue ||
@@ -122,35 +125,41 @@ export function useCreateForm() {
         a.name.localeCompare(b.name, "en", { sensitivity: "base" }) ||
         a.id.localeCompare(b.id, "en"),
     );
-  const generateReasons = [
-    submission.busy && "Starting generation.",
-    submission.uploading && "Uploading reference images.",
-    workersPending &&
-      connection.data?.connected &&
-      (capacity.isError
-        ? "Could not determine the automatic worker count."
-        : "Checking the automatic worker count."),
-    modelMissing && "Select a model.",
-    judgeIssue,
-    imageIssue,
-    !input.rows.values.length && "Select row values.",
-    !input.columns.values.length && "Select column values.",
-    !connection.data?.connected && "Connect OpenRouter.",
-    isChatFormat(input.format)
-      ? chatInputIssue(input.messages)
-      : !input.prompt.trim() &&
-        (input.format === "image" || !input.inputReferences?.length) &&
-        "Enter a prompt.",
-    variableIssue,
-    input.format !== "image" &&
-      (!Number.isFinite(input.budgetUsd) || input.budgetUsd <= 0) &&
-      "Enter a positive per-cell budget.",
-  ]
-    .filter(Boolean)
-    .join(" ");
+  const generateReasons =
+    [
+      submission.busy && "Starting generation.",
+      submission.uploading && "Uploading reference images.",
+      workersPending &&
+        connection.data?.connected &&
+        (capacity.isError
+          ? "Could not determine the automatic worker count."
+          : "Checking the automatic worker count."),
+      modelMissing && "Select a model.",
+      judgeIssue,
+      imageIssue,
+      !input.rows.values.length && "Select row values.",
+      !input.columns.values.length && "Select column values.",
+      !connection.data?.connected && "Connect OpenRouter.",
+      isChatFormat(input.format)
+        ? chatInputIssue(input.messages)
+        : !input.prompt.trim() &&
+          (input.format === "image" || !input.inputReferences?.length) &&
+          "Enter a prompt.",
+      variableIssue,
+      input.format !== "image" &&
+        (!Number.isFinite(validation.candidate.budgetUsd) ||
+          validation.candidate.budgetUsd <= 0) &&
+        "Enter a positive per-cell budget.",
+    ]
+      .filter(Boolean)
+      .join(" ") ||
+    (!validation.parsed.success
+      ? (validation.parsed.error.issues[0]?.message ?? "")
+      : "");
 
   return {
     draft,
+    candidate: validation.candidate,
     update,
     selectFormat,
     swapAxes: () => {

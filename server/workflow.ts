@@ -2,7 +2,7 @@ import type {
   Cell,
   GenerationTask,
   Grid,
-  GridInput,
+  ValidatedGridInput,
   JudgmentTask,
   WorkflowTask,
 } from "./domain.js";
@@ -15,7 +15,7 @@ import {
 import { criteriaForCell } from "./judge-criteria.js";
 
 export function createWorkflow(
-  input: GridInput,
+  input: ValidatedGridInput,
   cells: Cell[],
 ): WorkflowTask[] {
   const tasks: WorkflowTask[] = [];

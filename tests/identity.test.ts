@@ -6,7 +6,8 @@ import { gridAuthor } from "../server/grid-presentation.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { setImmediate as immediate } from "node:timers/promises";
-import { expandGrid, type Grid } from "../server/domain.js";
+import { expandGrid, gridSchema, type Grid } from "../server/domain.js";
+import { validatedGrid } from "./grid-storage-fixture.js";
 import { githubCredentials, oauthReturnTo } from "../server/oauth.js";
 import { ControlledProvider } from "./controlled-provider.js";
 import { hasGithubIdentity } from "./session-storage-fixture.js";
@@ -94,7 +95,7 @@ test("account ownership, frozen authors, browser credentials, and OAuth callback
         id: id + "-cell",
       })),
     };
-    const tasks = createWorkflow(input, g.cells);
+    const tasks = createWorkflow(gridSchema.parse(input), g.cells);
     if (published)
       for (const task of tasks) {
         if (task.kind !== "generation") throw new Error("Expected generation");
@@ -104,7 +105,7 @@ test("account ownership, frozen authors, browser credentials, and OAuth callback
           provenance: { signature: "identity-fixture", files: ["index.md"] },
         };
       }
-    store.insert(g, tasks);
+    store.insert(validatedGrid(g), tasks);
     return g;
   }
   const draft = grid(token());

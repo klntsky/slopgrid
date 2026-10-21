@@ -60,7 +60,7 @@ test("catalog aliases without published targets remain unchanged in fixed and ax
     "fixture/chat-latest",
   );
   for (const side of ["rows", "columns"] as const) {
-    const resolved = resolveGridModels(
+    const resolved: GridInput = resolveGridModels(
       {
         ...input,
         [side]: {
@@ -141,7 +141,7 @@ test("image input admission checks every resolved generator in fixed and axis se
         () => resolveGridModels(selected, catalog),
         /does not support image inputs/,
       );
-      const withoutImages = resolveGridModels(
+      const withoutImages: GridInput = resolveGridModels(
         {
           ...selected,
           inputReferences: undefined,

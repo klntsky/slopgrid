@@ -15,7 +15,12 @@ import type { GridPresenter } from "../grid-presentation.js";
 import { anonymousOwner } from "../session.js";
 import { presentIdentity } from "../grid-presentation.js";
 import { gridListPage } from "../grid-listing.js";
-import { gridSchema, expandGrid, type Grid } from "../domain.js";
+import {
+  gridSchema,
+  expandGrid,
+  type Grid,
+  type ValidatedGridInput,
+} from "../domain.js";
 import {
   ModelResolutionError,
   resolveGridModels,
@@ -172,7 +177,7 @@ export function createGridRoutes({
     const parsed = gridSchema.safeParse(req.body);
     if (!parsed.success)
       return res.status(400).json({ error: parsed.error.issues[0].message });
-    let input: Grid["input"];
+    let input: ValidatedGridInput;
     try {
       input = resolveGridModels(parsed.data, await provider.models());
     } catch (error) {
@@ -200,7 +205,7 @@ export function createGridRoutes({
       return res
         .status(429)
         .json({ error: "Grid limit reached. Try again in an hour." });
-    const g: Grid = {
+    const g: Grid & { input: ValidatedGridInput } = {
       id: token(),
       owner: anonymousOwner(s),
       ownerUserId: s.userId,
@@ -229,7 +234,7 @@ export function createGridRoutes({
       return;
     if (cells.every((cell) => cell.status === "complete"))
       g.status = "complete";
-    let savedGrid = g;
+    let savedGrid: Grid = g;
     if (creation) savedGrid = creation.insert(g, tasks);
     else store.insert(g, tasks);
     return saved(savedGrid, savedGrid.id === g.id);

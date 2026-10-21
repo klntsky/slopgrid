@@ -4,7 +4,13 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "../server/store.js";
-import { expandGrid, type Cell, type GridInput } from "../server/domain.js";
+import {
+  expandGrid,
+  gridSchema,
+  type Cell,
+  type GridInput,
+} from "../server/domain.js";
+import { validatedGrid } from "./grid-storage-fixture.js";
 import { createWorkflow } from "../server/workflow.js";
 import {
   storedInferenceCallPayloads,
@@ -22,19 +28,21 @@ test("generation usage follows the latest call while billing preserves earlier a
       model: "example/model",
       effort: "default",
       budgetUsd: 5,
-      rows: { kind: "variable", values: [[{ text: "cat" }]] },
-      columns: { kind: "variable", values: [[{ text: "hat" }]] },
+      rows: { kind: "model", values: ["example/model"] },
+      columns: { kind: "effort", values: ["default"] },
     };
-    store.insert({
-      id: "grid",
-      owner: "owner",
-      input,
-      status: "running",
-      published: false,
-      visibility: "private",
-      createdAt: new Date().toISOString(),
-      cells: expandGrid(input).map((c) => ({ ...c, id: "cell" })),
-    });
+    store.insert(
+      validatedGrid({
+        id: "grid",
+        owner: "owner",
+        input,
+        status: "running",
+        published: false,
+        visibility: "private",
+        createdAt: new Date().toISOString(),
+        cells: expandGrid(input).map((c) => ({ ...c, id: "cell" })),
+      }),
+    );
     const grid = store.get("grid")!;
     grid.cells[0].status = "running";
     grid.cells[0].estimatedUsage = { costUsd: 0.2 };
@@ -90,11 +98,13 @@ test("generation usage follows the latest call while billing preserves earlier a
     cancelled.fail(new Error("Cancelled"), true);
     grid.cells[0].status = "pending";
     assert.equal(store.billing.gridSpent(grid.id, grid.cells), 0.6);
-    store.insert({
-      ...grid,
-      id: "other-grid",
-      cells: [{ ...grid.cells[0], id: "other-cell" }],
-    });
+    store.insert(
+      validatedGrid({
+        ...grid,
+        id: "other-grid",
+        cells: [{ ...grid.cells[0], id: "other-cell" }],
+      }),
+    );
     store.billing
       .observe("other-cell")("direct")
       .complete({ phase: "direct", finishReason: "stop" }, { costUsd: 10 });
@@ -128,7 +138,7 @@ test("judge charges enter spent without changing generation usage or duplicating
       id: index ? "member" : "source",
       status: "pending" as const,
     }));
-    const tasks = createWorkflow(input, cells);
+    const tasks = createWorkflow(gridSchema.parse(input), cells);
     const generation = tasks.find((task) => task.kind === "generation")!;
     generation.status = "complete";
     generation.output = {
@@ -139,7 +149,7 @@ test("judge charges enter spent without changing generation usage or duplicating
     for (const task of tasks)
       if (task.kind === "judge") task.status = "running";
     store.insert(
-      {
+      validatedGrid({
         id: "grid",
         owner: "owner",
         input,
@@ -148,7 +158,7 @@ test("judge charges enter spent without changing generation usage or duplicating
         published: false,
         visibility: "private",
         createdAt: new Date().toISOString(),
-      },
+      }),
       tasks,
     );
     store.billing
@@ -243,7 +253,7 @@ test("canonical billing survives reopening and recovery with free and unavailabl
       model: "generator",
       effort: "none",
       budgetUsd: 1,
-      rows: { kind: "variable", values: [[{ text: "one" }]] },
+      rows: { kind: "model", values: ["generator"] },
       columns: { kind: "effort", values: ["none"] },
       judge: {
         model: "actual-judge",
@@ -251,17 +261,19 @@ test("canonical billing survives reopening and recovery with free and unavailabl
         criteria: [{ text: "Correct?", correctAnswer: true }],
       },
     };
-    store.insert({
-      id: "grid",
-      owner: "anonymous",
-      ownerUserId: "account",
-      input,
-      cells: expandGrid(input).map((cell) => ({ ...cell, id: "cell" })),
-      status: "paused",
-      published: false,
-      visibility: "private",
-      createdAt: "2025-03-04T05:06:07.000Z",
-    });
+    store.insert(
+      validatedGrid({
+        id: "grid",
+        owner: "anonymous",
+        ownerUserId: "account",
+        input,
+        cells: expandGrid(input).map((cell) => ({ ...cell, id: "cell" })),
+        status: "paused",
+        published: false,
+        visibility: "private",
+        createdAt: "2025-03-04T05:06:07.000Z",
+      }),
+    );
     const generationId = store.get("grid")!.cells[0].generationId!;
     const free = store.billing.observe("cell", "generation")("direct");
     free.update({ generationId: "provider-id", httpStatus: 200 });
@@ -386,7 +398,7 @@ test("shared generation calls aggregate across ledger cells without duplicating 
       ...cell,
       id: `cell-${index}`,
     }));
-    const tasks = createWorkflow(input, cells);
+    const tasks = createWorkflow(gridSchema.parse(input), cells);
     const generation = tasks.find((task) => task.kind === "generation")!;
     generation.status = "running";
     generation.attemptId = "shared-attempt";
@@ -401,7 +413,7 @@ test("shared generation calls aggregate across ledger cells without duplicating 
       visibility: "private" as const,
       createdAt: new Date().toISOString(),
     };
-    store.insert(grid, tasks);
+    store.insert(validatedGrid(grid), tasks);
     const sourceObserver = store.billing.observe("cell-0", "shared-attempt");
     const first = sourceObserver("direct");
     first.update({ generationId: "provider-generation-id" });

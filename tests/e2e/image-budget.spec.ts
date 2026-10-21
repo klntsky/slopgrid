@@ -1,7 +1,7 @@
 import { test, expect } from "./fixtures";
 import { connectOpenRouter, expectProgress } from "./helpers";
 
-for (const budgetValue of ["0", "-1", ""]) {
+for (const budgetValue of ["0", "-1", "", "0.125"]) {
   test(`image generation ignores a ${budgetValue || "cleared"} text budget through format changes and reload`, async ({
     page,
     request,
@@ -27,7 +27,15 @@ for (const budgetValue of ["0", "-1", ""]) {
     await expect(generate).toBeEnabled();
     await page.reload();
     await expect(generate).toBeEnabled();
+    const submitted = page.waitForRequest(
+      (request) =>
+        request.method() === "POST" &&
+        new URL(request.url()).pathname === "/api/grids",
+    );
     await generate.click();
+    expect((await submitted).postDataJSON().budgetUsd).toBe(
+      Number(budgetValue) > 0 ? Number(budgetValue) : 3,
+    );
     await expectProgress(page, 1, 1);
     const sent = await (await request.get("/fixture/image-requests")).json();
     expect(sent[0]).not.toHaveProperty("max_tokens");

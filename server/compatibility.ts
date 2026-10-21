@@ -9,7 +9,17 @@ import type { GridInput } from "./domain.js";
 import type { Model } from "./provider.js";
 
 export function imageInputIssue(
-  input: GridInput,
+  input: Pick<
+    GridInput,
+    | "format"
+    | "prompt"
+    | "messages"
+    | "rows"
+    | "columns"
+    | "referenceGroups"
+    | "inputReferences"
+    | "model"
+  >,
   models: readonly Model[],
 ): string | undefined {
   if (!generatorReferences(input).length) return undefined;

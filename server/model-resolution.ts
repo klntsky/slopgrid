@@ -1,4 +1,4 @@
-import type { GridInput } from "./domain.js";
+import type { GridInput, ValidatedGridInput } from "./domain.js";
 import type { Model } from "./provider.js";
 import { imageInputIssue, judgeModelIssue } from "./compatibility.js";
 import { judgeReferences } from "./image-settings.js";
@@ -12,6 +12,14 @@ export function isMovingModelAlias(model: Pick<Model, "id" | "aliasTarget">) {
   );
 }
 
+export function resolveGridModels(
+  input: ValidatedGridInput,
+  models: readonly Model[],
+): ValidatedGridInput;
+export function resolveGridModels(
+  input: GridInput,
+  models: readonly Model[],
+): GridInput;
 export function resolveGridModels(
   input: GridInput,
   models: readonly Model[],

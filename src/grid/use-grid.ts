@@ -4,6 +4,7 @@ import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { api, ApiError, type ViewGrid } from "../api";
 import { saveDraft } from "../create/draft";
+import { draftInputFromGridInput } from "../create/draft-input";
 import { cacheGrid, useOffline } from "../pwa";
 import { applyDelta, type GridStreamMessage } from "../../shared/grid-delta";
 export function useGrid(id: string) {
@@ -107,7 +108,7 @@ export function useGrid(id: string) {
       cache.setQueryData(["grid", id], grid);
       saveDraft({
         formatSelected: true,
-        input: grid.input,
+        input: draftInputFromGridInput(grid.input),
         sourceGridId: grid.id,
         reuseArtifacts: true,
       });

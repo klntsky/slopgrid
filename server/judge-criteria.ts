@@ -1,12 +1,14 @@
 import { z } from "zod";
 import type { GridInput } from "./domain.js";
 
-const criterionSchema = z.object({
-  text: z
-    .string()
+const draftCriterionSchema = z.object({
+  text: z.string(),
+  correctAnswer: z.boolean(),
+});
+const criterionSchema = draftCriterionSchema.extend({
+  text: draftCriterionSchema.shape.text
     .trim()
     .min(1, "Enter a yes-or-no question for each criterion."),
-  correctAnswer: z.boolean(),
 });
 const rubricSchema = z
   .array(criterionSchema)
@@ -25,6 +27,12 @@ export const judgeCriteriaSchema = z.union([
   variableCriteriaSchema,
 ]);
 export type JudgeCriteria = z.infer<typeof judgeCriteriaSchema>;
+export const draftJudgeCriteriaSchema = z.union([
+  z.array(draftCriterionSchema),
+  variableCriteriaSchema.extend({
+    cases: z.array(z.array(draftCriterionSchema)),
+  }),
+]);
 
 export function criteriaSets(source: JudgeCriteria | undefined): Criterion[][] {
   return source === undefined

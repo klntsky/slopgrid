@@ -7,7 +7,13 @@ import { Store } from "../server/store.js";
 import { recoverInterruptedGrids } from "../server/recovery.js";
 import { Jobs } from "../server/jobs.js";
 import { Provider } from "../server/provider.js";
-import { expandGrid, type Grid, type GridInput } from "../server/domain.js";
+import {
+  expandGrid,
+  gridSchema,
+  type Grid,
+  type GridInput,
+} from "../server/domain.js";
+import { validatedGrid } from "./grid-storage-fixture.js";
 import { createWorkflow } from "../server/workflow.js";
 import { createWorkflowExecutor } from "../server/workflow-executor.js";
 import { token } from "../server/ids.js";
@@ -33,7 +39,7 @@ test("a restart preserves finished outputs and pauses interrupted work until an 
       status: "running",
       input: {
         format: "markdown",
-        prompt: "Hello",
+        prompt: "$ROW1 $COLUMN1",
         rows: {
           kind: "variable",
           values: [[{ text: "cat" }], [{ text: "dog" }]],
@@ -66,7 +72,7 @@ test("a restart preserves finished outputs and pauses interrupted work until an 
         },
       ],
     };
-    const tasks = createWorkflow(g.input, g.cells);
+    const tasks = createWorkflow(gridSchema.parse(g.input), g.cells);
     const finished = tasks[0];
     if (finished.kind !== "generation") throw new Error("Expected generation");
     finished.status = "complete";
@@ -79,7 +85,7 @@ test("a restart preserves finished outputs and pauses interrupted work until an 
     store.files.write(finished.output.artifactId, {
       "index.md": "Saved output",
     });
-    store.insert(g, tasks);
+    store.insert(validatedGrid(g), tasks);
     const raw = firstStoredSessionPayload(store.db);
     assert.ok(
       !raw.data.includes("private-openrouter-key"),
@@ -172,7 +178,7 @@ test("recovery preserves a shared generation and settled judgment while requeuin
       status: "running",
       createdAt: new Date().toISOString(),
     };
-    const tasks = createWorkflow(input, grid.cells);
+    const tasks = createWorkflow(gridSchema.parse(input), grid.cells);
     const generation = tasks.find((task) => task.kind === "generation")!;
     const judgments = tasks.filter((task) => task.kind === "judge");
     const artifactId = token();
@@ -188,7 +194,7 @@ test("recovery preserves a shared generation and settled judgment while requeuin
     judgments[1].status = "running";
     judgments[1].attemptId = token();
     store.files.write(artifactId, { "index.md": "Shared output" });
-    store.insert(grid, tasks);
+    store.insert(validatedGrid(grid), tasks);
     recoverInterruptedGrids(store);
     const restored = store.get(grid.id)!;
     assert.equal(restored.status, "paused");

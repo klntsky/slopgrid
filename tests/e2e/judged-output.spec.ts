@@ -319,13 +319,16 @@ test("criterion deletion uses confirmation boundaries and disables the last judg
   });
   await page.reload();
   await expect(first).toHaveCount(0);
-  await expect(enabled).not.toBeChecked();
+  await expect(enabled).toBeChecked();
   await expect(
     page.getByRole("combobox", { name: "Rows", exact: true }),
-  ).toHaveValue("effort");
+  ).toHaveValue("judge_model");
   await expect(
     page.getByRole("combobox", { name: "Columns", exact: true }),
-  ).toHaveValue("model");
+  ).toHaveValue("judge_effort");
+  await expect(
+    page.getByRole("button", { name: "Generate", exact: true }),
+  ).toBeDisabled();
 });
 
 test("criterion handles reorder questions and their answers by keyboard and pointer", async ({
@@ -1193,6 +1196,9 @@ test("judge answers and axes survive draft reload, OAuth, Edit, and Fork", async
   await page.getByLabel("Prompt", { exact: true }).fill(judgedInput.prompt);
   await page.getByLabel("Budget limit per cell", { exact: true }).fill("0.1");
   const expectRestored = async () => {
+    await expect(
+      page.getByLabel("Budget limit per cell", { exact: true }),
+    ).toHaveValue("0.1");
     await expect(page.getByLabel("Criterion 1", { exact: true })).toHaveValue(
       judgedInput.judge!.criteria[0].text,
     );
@@ -1252,6 +1258,7 @@ test("judge answers and axes survive draft reload, OAuth, Edit, and Fork", async
     )
   ).json();
   expect(saved.input.judge.criteria).toEqual(judgedInput.judge!.criteria);
+  expect(saved.input.budgetUsd).toBe(0.1);
   expect((await (await page.request.get("/fixture/calls")).json()).length).toBe(
     5,
   );

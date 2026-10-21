@@ -114,6 +114,12 @@ The web process validates the input and commits a creation receipt, grid, and
 initial tasks and cell links together. Replaying the same request resolves to the
 existing grid without starting inference twice.
 
+The editor uses a structural draft schema that permits unfinished inputs and
+keeps budget entry as text. Canonical validation produces opaque accepted input;
+durable creation and workflow construction require that result. Stored metadata
+and draft hydration do not confer validation. Advisory previews may inspect an
+unvalidated candidate without granting generation admission.
+
 - Model catalogs are loaded by the web process for forms. Provider adapters own
   catalog interpretation, credit lookup, and request preparation; they remain
   separate from HTTP routes and scheduling policy.

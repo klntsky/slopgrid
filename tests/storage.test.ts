@@ -26,6 +26,7 @@ import { holdDatabaseWrites } from "./database-lock.js";
 import {
   removeStoredGrid,
   rejectStoredGridUpdates,
+  validatedGrid,
 } from "./grid-storage-fixture.js";
 import { restoreV16VariableInputs } from "./database-migration-fixture.js";
 import {
@@ -96,14 +97,18 @@ test("list prompts are expanded and truncated once, then persist independently o
       const input: Grid["input"] = {
         format: "markdown",
         prompt: scenario.prompt,
-        rows: {
-          kind: "variable",
-          values: scenario.rows.map((text) => [{ text }]),
-        },
-        columns: {
-          kind: "variable",
-          values: scenario.columns.map((text) => [{ text }]),
-        },
+        rows: scenario.prompt.includes("$ROW1")
+          ? {
+              kind: "variable",
+              values: scenario.rows.map((text) => [{ text }]),
+            }
+          : { kind: "model", values: ["fixture/text"] },
+        columns: scenario.prompt.includes("$COLUMN1")
+          ? {
+              kind: "variable",
+              values: scenario.columns.map((text) => [{ text }]),
+            }
+          : { kind: "effort", values: ["none"] },
         model: "fixture/text",
         effort: "none",
         budgetUsd: 1,
@@ -118,7 +123,7 @@ test("list prompts are expanded and truncated once, then persist independently o
         createdAt: new Date().toISOString(),
         cells: expandGrid(input).map((cell) => ({ ...cell, id: token() })),
       };
-      store.insert(grid);
+      store.insert(validatedGrid(grid));
       const saved = store.get(grid.id)!;
       assert.equal(saved.expanded_prompt_for_title, scenario.expected);
       assert.equal(saved.input.prompt, scenario.prompt);
@@ -173,7 +178,7 @@ test("saved outputs and traces remain readable after publication and reject arti
       createdAt: new Date().toISOString(),
       cells: expandGrid(input).map((cell) => ({ ...cell, id: "cell" })),
     };
-    store.insert(grid);
+    store.insert(validatedGrid(grid));
     const payload = "Unique generated website payload";
     const artifactId = token();
     store.files.write(artifactId, {
@@ -248,7 +253,7 @@ test("shared artifact and independent trace references survive deletion until th
     const input: Grid["input"] = {
       format: "html",
       prompt: "Shared website",
-      rows: { kind: "variable", values: [[{ text: "one" }]] },
+      rows: { kind: "model", values: ["fixture/text"] },
       columns: { kind: "effort", values: ["none"] },
       model: "fixture/text",
       effort: "none",
@@ -302,7 +307,7 @@ test("shared artifact and independent trace references survive deletion until th
         createdAt: new Date().toISOString(),
         cells: expandGrid(input).map((cell) => ({ ...cell, id: token() })),
       };
-      const tasks = createWorkflow(input, grid.cells);
+      const tasks = createWorkflow(gridSchema.parse(input), grid.cells);
       const generation = tasks.find((task) => task.kind === "generation")!;
       generation.status = "complete";
       generation.output = {
@@ -311,7 +316,7 @@ test("shared artifact and independent trace references survive deletion until th
         thinkingSourceId,
         provenance: { signature: "shared", files: inventory },
       };
-      store.insert(grid, tasks);
+      store.insert(validatedGrid(grid), tasks);
       grids.push(grid);
     }
     assert.equal(store.files.removeArtifact(artifactId), false);
@@ -389,7 +394,7 @@ for (const available of [true, false])
         createdAt: "2026-01-01T00:00:00.000Z",
         cells: expandGrid(input).map((cell) => ({ ...cell, id: token() })),
       };
-      store.insert(grid);
+      store.insert(validatedGrid(grid));
       store.claim(owner.id, "claimed-account");
       store.saveSession({
         id: "saved-session",
@@ -606,10 +611,10 @@ test("v16 saved variable grids reopen with accepted payloads intact and can be e
       createdAt: "2026-01-01T00:00:00.000Z",
       cells: expandGrid(input).map((cell) => ({ ...cell, id: token() })),
     };
-    const tasks = createWorkflow(input, grid.cells);
+    const tasks = createWorkflow(gridSchema.parse(input), grid.cells);
     tasks[0].status = "running";
     tasks[0].attemptId = "accepted-attempt";
-    store.insert(grid, tasks);
+    store.insert(validatedGrid(grid), tasks);
     const accepted = store.workflow(grid.id);
     const title = store.get(grid.id)!.expanded_prompt_for_title;
     restoreV16VariableInputs(store.db, {
@@ -639,7 +644,7 @@ test("v16 saved variable grids reopen with accepted payloads intact and can be e
       status: "paused",
       cells: expandGrid(edited).map((cell) => ({ ...cell, id: token() })),
     };
-    store.insert(fork);
+    store.insert(validatedGrid(fork));
     assert.equal(
       store.get(fork.id)!.cells[0].prompt,
       "Draw edited $ROW1 with second field",
@@ -732,7 +737,7 @@ for (const format of ["markdown", "chat-template", "image"] as const)
         createdAt: "2026-01-01T00:00:00.000Z",
         cells: expandGrid(input).map((cell) => ({ ...cell, id: token() })),
       };
-      store.insert(grid);
+      store.insert(validatedGrid(grid));
       removeStoredReferenceDimensions(store.db);
       store.db.close();
       store = new Store(database, secret);
@@ -791,7 +796,7 @@ for (const format of ["markdown", "chat-template", "image"] as const)
           id: token(),
         })),
       };
-      store.insert(fork);
+      store.insert(validatedGrid(fork));
       removeStoredGrid(store.db, grid.id);
       for (const image of [generator, criterion, unused])
         assert.equal(

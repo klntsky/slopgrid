@@ -1,11 +1,14 @@
-import type { GridInput } from "../../server/domain";
+import type { GridDraftInput } from "../../server/domain";
 import type { Criterion } from "../../server/judge-criteria";
 
 type Side = "rows" | "columns";
 const copyRubric = (criteria: Criterion[]): Criterion[] =>
   criteria.map((criterion) => ({ ...criterion }));
 
-export function makeJudgeVariable(input: GridInput, side: Side): GridInput {
+export function makeJudgeVariable(
+  input: GridDraftInput,
+  side: Side,
+): GridDraftInput {
   const axis = input[side];
   const judge = input.judge;
   if (!judge || axis.kind !== "variable" || !axis.values.length) return input;
@@ -24,9 +27,9 @@ export function makeJudgeVariable(input: GridInput, side: Side): GridInput {
 }
 
 export function makeJudgeShared(
-  input: GridInput,
+  input: GridDraftInput,
   caseIndex: number,
-): GridInput {
+): GridDraftInput {
   const judge = input.judge;
   if (!judge || Array.isArray(judge.criteria)) return input;
   const rubric = judge.criteria.cases[caseIndex];
@@ -37,7 +40,10 @@ export function makeJudgeShared(
   };
 }
 
-export function addVariableCase(input: GridInput, side: Side): GridInput {
+export function addVariableCase(
+  input: GridDraftInput,
+  side: Side,
+): GridDraftInput {
   const axis = input[side];
   if (axis.kind !== "variable") return input;
   const fields = axis.values[0]?.length ?? 1;
@@ -68,10 +74,10 @@ export function addVariableCase(input: GridInput, side: Side): GridInput {
 }
 
 export function removeVariableCase(
-  input: GridInput,
+  input: GridDraftInput,
   side: Side,
   index: number,
-): GridInput {
+): GridDraftInput {
   const axis = input[side];
   if (
     axis.kind !== "variable" ||
@@ -106,7 +112,9 @@ export function swapVariableTokens(text: string): string {
   );
 }
 
-export function swapJudgeAxes(judge: GridInput["judge"]): GridInput["judge"] {
+export function swapJudgeAxes(
+  judge: GridDraftInput["judge"],
+): GridDraftInput["judge"] {
   if (!judge) return judge;
   const swapRubric = (criteria: Criterion[]) =>
     criteria.map((criterion) => ({

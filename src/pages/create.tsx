@@ -67,6 +67,7 @@ export function Create() {
   const navigate = useNavigate();
   const {
     draft,
+    candidate,
     update,
     selectFormat,
     swapAxes,
@@ -112,7 +113,7 @@ export function Create() {
   }
   const { generate, onUploading, lowBalance, setLowBalance, busy, error } =
     submission;
-  const compatibility = compatibilityTables({ input, models });
+  const compatibility = compatibilityTables({ input: candidate, models });
   const commonFixedParameters =
     commonModel || commonEffort || commonJudgeModel || commonJudgeEffort;
   const commonParameters = input.format === "image" || commonFixedParameters;
@@ -142,7 +143,7 @@ export function Create() {
   const generatedOutputs =
     input.judge && !variableIssue && !criteriaIssue
       ? new Set(
-          expandGrid(input).map((cell) =>
+          expandGrid(candidate).map((cell) =>
             generationGroupKey(input.format, { ...cell, id: "" }),
           ),
         ).size
@@ -553,7 +554,7 @@ export function Create() {
                     step="0.01"
                     value={input.budgetUsd}
                     onChange={(event) =>
-                      update({ budgetUsd: event.target.valueAsNumber })
+                      update({ budgetUsd: event.target.value })
                     }
                   />
                 </span>
