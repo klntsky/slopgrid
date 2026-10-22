@@ -144,12 +144,14 @@ for (const orientation of ["Rows", "Columns"] as const) {
       .toHaveValue(`Source asks ${token}.`);
     await expect(group(3, "Model").getByRole("searchbox"))
       .toHaveValue(generatorFilter);
-    await expect(group(3, "Model").locator('input[value="fixture/text"]'))
-      .toBeChecked();
+    await expect(
+      group(3, "Model").locator('input[type="radio"][value="fixture/text"]'),
+    ).toBeChecked();
     await expect(group(3, "Judge model").getByRole("searchbox"))
       .toHaveValue(judgeFilter);
-    await expect(group(3, "Judge model").locator('input[value="fixture/other"]'))
-      .toBeChecked();
+    await expect(
+      group(3, "Judge model").locator('input[type="radio"][value="fixture/other"]'),
+    ).toBeChecked();
     await expect(group(3, "Thinking effort").getByRole("combobox"))
       .toHaveValue("high");
     await expect(group(3, "Judge thinking effort").getByRole("combobox"))
@@ -182,13 +184,17 @@ for (const orientation of ["Rows", "Columns"] as const) {
       .getByLabel("Criterion 1", { exact: true })
       .fill(`Copied criterion for ${token}?`);
     await group(3, "Model").getByRole("searchbox").fill("fixture/other");
-    await group(3, "Model").locator('input[value="fixture/other"]').check();
+    await group(3, "Model")
+      .locator('input[type="radio"][value="fixture/other"]')
+      .check();
     await group(3, "Thinking effort").getByRole("combobox").selectOption("low");
     await group(3, "Judge model")
       .getByRole("button", { name: "Clear judge model filter", exact: true })
       .click();
     await expect(group(3, "Judge model").getByRole("searchbox")).toHaveValue("");
-    await group(3, "Judge model").locator('input[value="fixture/text"]').check();
+    await group(3, "Judge model")
+      .locator('input[type="radio"][value="fixture/text"]')
+      .check();
     await group(3, "Judge thinking effort").getByRole("combobox").selectOption("high");
     await expect(group(1, "Model").getByRole("searchbox")).toHaveValue(generatorFilter);
     await expect(group(1, "Judge model").getByRole("searchbox")).toHaveValue(judgeFilter);
