@@ -23,7 +23,7 @@ import {
   expandLegacyGrid,
   type LegacyGridInput,
 } from "../server/legacy-grid-input.js";
-import { isCurrentGridInput } from "../server/parameters.js";
+import { isCurrentGridInput, parameterValue } from "../server/parameters.js";
 import { currentInput } from "./current-grid-fixture.js";
 import {
   referenceUsageLinks,
@@ -108,9 +108,13 @@ test("list prompts are expanded and truncated once, then persist independently o
     ];
     for (const [index, scenario] of cases.entries()) {
       const input = currentInput({
-        prompt: scenario.prompt,
+        caseAxis: scenario.prompt.includes("$ROW1") ? "rows" : undefined,
         budgetUsd: 1,
         parameters: {
+          input: {
+            kind: "common",
+            value: [{ role: "user", content: scenario.prompt }],
+          },
           ...(scenario.prompt.includes("$ROW1")
             ? { variable: { kind: "rows" as const } }
             : { model: { kind: "rows" as const } }),
@@ -136,7 +140,10 @@ test("list prompts are expanded and truncated once, then persist independently o
       store.insert(validatedGrid(grid));
       const saved = store.get(grid.id)!;
       assert.equal(saved.expanded_prompt_for_title, scenario.expected);
-      assert.equal(saved.input.prompt, scenario.prompt);
+      assert.deepEqual(gridSchema.parse(saved.input).parameters.input, {
+        kind: "common",
+        value: [{ role: "user", content: scenario.prompt }],
+      });
       store.setTitle(grid.id, "Custom title");
       store.saveWorkflow(grid, store.workflow(grid.id));
       assert.equal(
@@ -171,9 +178,16 @@ test("saved outputs and traces remain readable after publication and reject arti
   try {
     const input = currentInput({
       format: "html",
-      prompt: "Draw $ROW1",
+      caseAxis: "rows",
       budgetUsd: 5,
-      parameters: { variable: { kind: "rows" }, effort: { kind: "columns" } },
+      parameters: {
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: "Draw $ROW1" }],
+        },
+        variable: { kind: "rows" },
+        effort: { kind: "columns" },
+      },
       rows: [{ variable: [{ text: "cat" }] }],
       columns: [{ effort: "none" }],
     });
@@ -261,9 +275,15 @@ test("shared artifact and independent trace references survive deletion until th
   try {
     const input = currentInput({
       format: "html",
-      prompt: "Shared website",
       budgetUsd: 1,
-      parameters: { model: { kind: "rows" }, effort: { kind: "columns" } },
+      parameters: {
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: "Shared website" }],
+        },
+        model: { kind: "rows" },
+        effort: { kind: "columns" },
+      },
       rows: [{ model: "fixture/text" }],
       columns: [{ effort: "none" }],
     });
@@ -713,22 +733,20 @@ for (const format of ["markdown", "chat-template", "image"] as const)
       });
       const input = currentInput({
         format,
-        prompt: "Describe $ROW1",
-        promptImages: format === "chat-template" ? [] : [forged(explicit)],
-        ...(format === "chat-template"
-          ? {
-              messages: [
-                {
-                  role: "user",
-                  content: "Describe $ROW1",
-                  images: [forged(explicit)],
-                },
-              ],
-            }
-          : {}),
+        caseAxis: "rows",
         budgetUsd: 1,
         judge: true,
         parameters: {
+          input: {
+            kind: "common",
+            value: [
+              {
+                role: "user",
+                content: "Describe $ROW1",
+                images: [forged(explicit)],
+              },
+            ],
+          },
           variable: { kind: "rows" },
           ...(format !== "image"
             ? { effort: { kind: "common" as const, value: "none" as const } }
@@ -771,9 +789,9 @@ for (const format of ["markdown", "chat-template", "image"] as const)
         throw new Error("Expected current saved input");
       assert.deepEqual(saved.input.parameters.variable, { kind: "rows" });
       assert.deepEqual(saved.input.rows[0].variable![0]!.images, [generator]);
-      if (format === "chat-template")
-        assert.deepEqual(saved.input.messages![0].images, [explicit]);
-      else assert.deepEqual(saved.input.promptImages, [explicit]);
+      assert.deepEqual(parameterValue(saved.input, "input", 0, 0)![0].images, [
+        explicit,
+      ]);
       assert.deepEqual(saved.input.rows[0].variable![1]!.images, [unused]);
       assert.deepEqual(saved.input.rows[0].variable![2]!.images, [criterion]);
       const tasks = store.workflow(grid.id);

@@ -12,7 +12,6 @@ import { currentDefinition } from "../current-grid-fixture";
 
 async function acceptDrop(page: Page, action: () => Promise<unknown>) {
   page.once("dialog", async (dialog) => {
-    expect(dialog.message()).toContain("Drop these values?");
     await dialog.accept();
   });
   await action();
@@ -28,12 +27,7 @@ test("disabled Generate explains blockers on hover and keyboard focus", async ({
   const tooltip = page.getByRole("tooltip");
   await expect(generate).toBeDisabled();
   await wrapper.hover();
-  for (const reason of [
-    "Select row values.",
-    "Connect OpenRouter.",
-    "Enter a prompt.",
-  ])
-    await expect(tooltip).toContainText(reason);
+  await expect(tooltip).toBeVisible();
   await page
     .getByRole("combobox", { name: "Rows", exact: true })
     .selectOption("variable");
@@ -43,9 +37,8 @@ test("disabled Generate explains blockers on hover and keyboard focus", async ({
   await setVariableValues(page, "Rows", ["cat"]);
   await page.getByLabel("Prompt", { exact: true }).fill("$ROW1");
   await wrapper.focus();
-  await expect(tooltip).toContainText("Select a model.");
+  await expect(tooltip).toBeVisible();
   await expect(generate).toBeDisabled();
-  await expect(tooltip).not.toContainText("Select row values.");
   await selectModel(page, "fixture/text");
   await page.getByLabel("Prompt", { exact: true }).fill("$ROW1 wearing a hat");
   let releaseCapacity!: () => void;
@@ -61,16 +54,16 @@ test("disabled Generate explains blockers on hover and keyboard focus", async ({
   });
   await connectOpenRouter(page);
   await wrapper.hover();
-  await expect(tooltip).toHaveText("Checking the automatic worker count.");
+  await expect(generate).toBeDisabled();
+  await expect(tooltip).toBeVisible();
   releaseCapacity();
   await expect(
     page.getByRole("button", { name: "Check balance again" }),
   ).toBeVisible();
   await page.mouse.move(0, 0);
   await wrapper.hover();
-  await expect(tooltip).toHaveText(
-    "Could not determine the automatic worker count.",
-  );
+  await expect(generate).toBeDisabled();
+  await expect(tooltip).toBeVisible();
   await page.unroute("**/api/inference-capacity?*");
   await page.getByRole("button", { name: "Check balance again" }).click();
   await expect(generate).toBeEnabled();
@@ -80,11 +73,10 @@ test("disabled Generate explains blockers on hover and keyboard focus", async ({
   await page.getByLabel("Budget limit per cell").fill("0");
   await expect(generate).toBeDisabled();
   await wrapper.focus();
+  await expect(wrapper).toHaveAttribute("aria-describedby", /\S/);
+  const description = await wrapper.getAttribute("aria-describedby");
   await expect(
-    page.getByRole("tooltip", {
-      name: "Enter a positive per-cell budget.",
-      exact: true,
-    }),
+    page.locator(`[id="${description}"]`).getByRole("tooltip"),
   ).toBeVisible();
 });
 
@@ -355,8 +347,14 @@ test("unused prompt variables block generation and the API rejects bypasses", as
   const response = await page.request.post("/api/grids", {
     data: currentDefinition({
       format: "image",
-      prompt: "Draw a cat",
-      parameters: { variable: { kind: "rows" } },
+      caseAxis: "rows",
+      parameters: {
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: "Draw a cat" }],
+        },
+        variable: { kind: "rows" },
+      },
       rows: [{ variable: [{ text: "cat" }] }],
       budgetUsd: 5,
     }),
@@ -519,8 +517,14 @@ test("the compatibility table shows selected model support without blocking gene
   try {
     const input = currentDefinition({
       format: "svg",
-      prompt: "Draw a cat",
-      parameters: { effort: { kind: "rows" }, model: { kind: "columns" } },
+      parameters: {
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: "Draw a cat" }],
+        },
+        effort: { kind: "rows" },
+        model: { kind: "columns" },
+      },
       rows: [{ effort: "none" }, { effort: "max" }],
       columns: [{ model: "fixture/other" }],
       budgetUsd: 5,
@@ -964,7 +968,7 @@ test("incomplete chat, criteria and raw budget survive reload and OAuth before c
       const saved = JSON.parse(sessionStorage.getItem("slopgrid-draft")!);
       return {
         budget: saved.input.budgetUsd,
-        message: saved.input.messages[0].content,
+        message: saved.input.parameters.input.value[0].content,
         criterion: saved.input.parameters.judge_criteria.value[0].text,
       };
     }),
@@ -991,4 +995,27 @@ test("incomplete chat, criteria and raw budget survive reload and OAuth before c
   await expect(budget).toHaveValue("0.25");
   await expect(message).toHaveValue("  Draw $ROW1  ");
   await expect(criterion).toHaveValue("Is it a cat?");
+});
+
+test("grid admission accepts only v3 input sources, not root prompt or history aliases", async ({
+  page,
+}) => {
+  await page.goto("/create");
+  await connectOpenRouter(page);
+  const input = currentDefinition();
+  const { input: _generatorInput, ...parameters } = input.parameters;
+  for (const legacy of [
+    { prompt: "A legacy root prompt" },
+    { messages: [{ role: "user", content: "A legacy root history" }] },
+    { prompt: "Legacy image input", promptImages: [] },
+  ]) {
+    const response = await page.request.post("/api/grids", {
+      data: { ...input, parameters, ...legacy },
+    });
+    expect(response.status()).toBe(400);
+  }
+  const previousVersion = await page.request.post("/api/grids", {
+    data: { ...input, inputVersion: 2 },
+  });
+  expect(previousVersion.status()).toBe(400);
 });

@@ -20,8 +20,7 @@ const parameterNames: Record<CompatibilityParameter, string> = {
   ...dimensionNames,
   judge_criteria: "Judge criteria",
   variable: "Prompt variable",
-  prompt: "Prompt",
-  messages: "Chat message",
+  input: "Generator input",
 };
 
 function matchesOrigin(

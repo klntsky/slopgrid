@@ -4,15 +4,17 @@ import type {
   GridInput,
   ParameterValues,
 } from "./domain.js";
+import type { Version2GridInput } from "./legacy-grid-input.js";
 
 export type ParameterId = keyof ParameterValues;
 export type CommonParameterId = Exclude<ParameterId, "variable">;
 export type AxisSide = "rows" | "columns";
 export type ParameterConfiguration = Pick<
   GridInput,
-  "parameters" | "rows" | "columns"
+  "parameters" | "rows" | "columns" | "caseAxis"
 >;
 export const parameterNames: Record<ParameterId, string> = {
+  input: "Generator input",
   model: "Model",
   effort: "Thinking effort",
   size: "Size",
@@ -30,8 +32,50 @@ export function isCurrentGridInput(input: unknown): input is GridInput {
     typeof input === "object" &&
     input !== null &&
     "inputVersion" in input &&
-    input.inputVersion === 2
+    input.inputVersion === 3
   );
+}
+
+// Recognizing persisted metadata is separate from admitting an editable input.
+export function isParameterGridInput(
+  input: unknown,
+): input is GridInput | Version2GridInput {
+  return (
+    isCurrentGridInput(input) ||
+    (typeof input === "object" &&
+      input !== null &&
+      "inputVersion" in input &&
+      input.inputVersion === 2)
+  );
+}
+
+export function parameterReadConfiguration(
+  input: GridInput | Version2GridInput,
+): ParameterConfiguration {
+  if (input.inputVersion === 3) return input;
+  return {
+    rows: input.rows,
+    columns: input.columns,
+    caseAxis: input.parameters.variable?.kind,
+    parameters: {
+      ...input.parameters,
+      input: {
+        kind: "common",
+        value:
+          input.format === "chat-template"
+            ? (input.messages ?? [])
+            : [
+                {
+                  role: "user",
+                  content: input.prompt,
+                  ...(input.promptImages.length
+                    ? { images: input.promptImages }
+                    : {}),
+                },
+              ],
+      },
+    },
+  };
 }
 
 export function axisParameters(
@@ -46,13 +90,15 @@ export function axisParameters(
 export function parameterLayoutIssue(
   input: ParameterConfiguration,
 ): string | undefined {
+  const variableSide = input.parameters.variable?.kind;
+  if (variableSide && variableSide !== input.caseAxis)
+    return "Numbered fields must belong to the case axis.";
   for (const side of ["rows", "columns"] as const) {
     const owned = axisParameters(input, side);
-    if (input.parameters.variable?.kind === side) continue;
-    if (owned.length > 1)
-      return "Only prompt-variable axes can own multiple parameters.";
-    if (owned.includes("judge_criteria"))
-      return "Per-case judge criteria require prompt variables on that axis.";
+    if (input.caseAxis === side) continue;
+    if (owned.length > 1) return "Only case axes can own multiple parameters.";
+    if (owned.includes("judge_criteria") || owned.includes("input"))
+      return "Per-case input and judge criteria require a case axis.";
     if (!owned.length && input[side].length !== 1)
       return `An axis with no parameters must have one neutral ${side} case.`;
   }
@@ -63,6 +109,7 @@ export function isEditableGridInput(input: unknown): input is GridInput {
 }
 
 const defaultValues: ParameterValues = {
+  input: [{ role: "user", content: "" }],
   model: "",
   effort: "default",
   size: "auto",
@@ -104,16 +151,12 @@ export function defaultGridDraft(format: GridInput["format"]): GridDraftInput {
   const image = format === "image";
   const modelRows = image || format === "svg" || format === "html";
   return {
-    inputVersion: 2,
+    inputVersion: 3,
     format,
-    prompt: "",
-    promptImages: [],
     budgetUsd: "3",
     judge: false,
-    ...(format === "chat-template"
-      ? { messages: [{ role: "user", content: "" }] }
-      : {}),
     parameters: {
+      input: { kind: "common", value: parameterDefault("input") },
       model: { kind: modelRows ? "rows" : "columns" },
       ...(image
         ? {

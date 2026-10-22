@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import type { ReferenceImage } from "../../server/image-settings";
 import { ImageList, ImagePicker } from "./image-input";
 
@@ -16,11 +16,12 @@ export function PromptEditor({
   };
 }) {
   const [reading, setReading] = useState(false);
+  const id = useId();
   return (
     <div className="prompt-editor" aria-busy={reading}>
       <div className="prompt-input">
         <textarea
-          id="grid-prompt"
+          id={`${id}-prompt`}
           aria-label="Prompt"
           rows={6}
           value={prompt}
@@ -29,7 +30,7 @@ export function PromptEditor({
         />
         {attachments && (
           <ImagePicker
-            pasteTarget="grid-prompt"
+            pasteTarget={`${id}-prompt`}
             accessibleLabel="Add images to prompt"
             disabled={reading}
             onBusy={(busy) => {

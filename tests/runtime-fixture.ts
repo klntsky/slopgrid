@@ -356,10 +356,10 @@ export async function runtimeFixture(
     grid(overrides: CurrentGridOverrides = {}) {
       // A complete current definition must not inherit this helper's variable axis.
       const input =
-        overrides.inputVersion === 2
+        overrides.inputVersion === 3
           ? currentInput(overrides)
           : currentInput({
-              prompt: "Draw $ROW1",
+              caseAxis: "rows",
               rows: [
                 { variable: [{ text: "cat" }] },
                 { variable: [{ text: "dog" }] },
@@ -369,6 +369,10 @@ export async function runtimeFixture(
               parallelWorkers: 1,
               ...overrides,
               parameters: {
+                input: {
+                  kind: "common",
+                  value: [{ role: "user", content: "Draw $ROW1" }],
+                },
                 variable: { kind: "rows" },
                 model: { kind: "columns" },
                 effort: { kind: "common", value: "none" },

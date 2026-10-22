@@ -30,10 +30,9 @@ function completedChatGrid(
 ) {
   const input = currentInput({
     format: "chat-template",
-    messages,
-    prompt: "",
     budgetUsd: 1,
     parameters: {
+      input: { kind: "common", value: messages },
       model: { kind: "rows" },
       effort: { kind: "columns" },
     },
@@ -76,9 +75,10 @@ test("private outputs require ownership, isolated grants are scoped and revoked 
   function makeGrid(format: Grid["input"]["format"], running = false) {
     const input = currentInput({
       format,
-      prompt: "$ROW1",
+      caseAxis: "rows",
       budgetUsd: 1,
       parameters: {
+        input: { kind: "common", value: [{ role: "user", content: "$ROW1" }] },
         variable: { kind: "rows" },
         ...(format === "image"
           ? { size: { kind: "columns" as const } }
@@ -382,17 +382,13 @@ test("committed judged outputs stay readable and downloadable without weakening 
     for (const status of ["pending", "running", "error", "complete"] as const) {
       const input = currentInput({
         format,
-        prompt: "A saved artifact",
-        ...(format === "chat-template"
-          ? {
-              messages: [
-                { role: "user" as const, content: "A saved artifact" },
-              ],
-            }
-          : {}),
         budgetUsd: 1,
         judge: true,
         parameters: {
+          input: {
+            kind: "common",
+            value: [{ role: "user", content: "A saved artifact" }],
+          },
           model: { kind: "rows" },
           ...(format === "image"
             ? { size: { kind: "columns" as const } }
@@ -535,10 +531,13 @@ test("uncommitted judged files are not exposed before generation commits", async
   const owner = token();
   store.saveSession({ id: owner, created: Date.now() });
   const input = currentInput({
-    prompt: "Uncommitted artifact",
     budgetUsd: 1,
     judge: true,
     parameters: {
+      input: {
+        kind: "common",
+        value: [{ role: "user", content: "Uncommitted artifact" }],
+      },
       model: { kind: "rows" },
       effort: { kind: "columns" },
       judge_model: { kind: "common", value: "fixture/judge" },

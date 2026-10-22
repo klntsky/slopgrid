@@ -28,8 +28,12 @@ function harness(limit?: number) {
     store.saveSession({ id: owner, key: "fixture-key", created: Date.now() });
     const rows = Math.min(count, 8);
     const input = currentInput({
-      prompt: "$ROW1 $ROW2",
+      caseAxis: "rows",
       parameters: {
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: "$ROW1 $ROW2" }],
+        },
         variable: { kind: "rows" },
         effort: { kind: "common", value: "none" },
       },

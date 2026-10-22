@@ -1,3 +1,5 @@
+import { generatorInputForCell } from "../server/generator-input.js";
+import type { Version2GridInput } from "../server/legacy-grid-input.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -13,20 +15,48 @@ import { currentDefinition, currentInput } from "./current-grid-fixture.js";
 test("incomplete editor states preserve raw text but cannot create a grid", async (t) => {
   const { origin, store } = await appFixture(t);
   const base = gridDraftSchema.parse({
-    ...currentDefinition({ prompt: "  Describe a shape. \n" }),
+    ...currentDefinition({
+      parameters: {
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: "  Describe a shape. \n" }],
+        },
+      },
+    }),
     budgetUsd: "1.25",
   });
-  assert.equal(base.prompt, "  Describe a shape. \n");
+  assert.equal(
+    generatorInputForCell(base, 0, 0)[0].content,
+    "  Describe a shape. \n",
+  );
   assert.equal(base.budgetUsd, "1.25");
   const complete = gridSchema.parse({
     ...base,
     budgetUsd: Number(base.budgetUsd),
   });
-  assert.equal(complete.prompt, "Describe a shape.");
+  assert.equal(
+    generatorInputForCell(complete, 0, 0)[0].content,
+    "  Describe a shape. \n",
+  );
   assert.equal(complete.budgetUsd, 1.25);
   const unfinished = [
     { ...base, budgetUsd: "" },
-    { ...base, prompt: " \n" },
+    {
+      ...base,
+      parameters: {
+        ...base.parameters,
+        input: {
+          kind: "common",
+          value: [
+            {
+              ...generatorInputForCell(base, 0, 0)[0],
+              role: "user",
+              content: " \n",
+            },
+          ],
+        },
+      },
+    },
     { ...base, rows: [] },
     {
       ...base,
@@ -34,13 +64,18 @@ test("incomplete editor states preserve raw text but cannot create a grid", asyn
       rows: [{ id: "empty-model", model: "" }],
     },
     {
-      ...currentDefinition({ format: "chat-template", messages: [] }),
+      ...currentDefinition({
+        format: "chat-template",
+        parameters: { input: { kind: "common", value: [] } },
+      }),
       budgetUsd: "1.25",
     },
     {
       ...currentDefinition({
         format: "chat-template",
-        messages: [{ role: "user", content: "" }],
+        parameters: {
+          input: { kind: "common", value: [{ role: "user", content: "" }] },
+        },
       }),
       budgetUsd: "1.25",
     },
@@ -78,6 +113,7 @@ test("incomplete editor states preserve raw text but cannot create a grid", asyn
       ...currentDefinition({
         parameters: { variable: { kind: "rows" } },
         rows: [{ variable: [] }],
+        caseAxis: "rows",
       }),
       budgetUsd: "1.25",
     },
@@ -113,28 +149,58 @@ test("incomplete editor states preserve raw text but cannot create a grid", asyn
 test("chat completion accepts optional blanks after a prefix and preserves expanded history", () => {
   const source = currentDefinition({
     format: "chat-template",
-    messages: [
-      { role: "user", content: "Question $ROW1" },
-      { role: "unfilled", content: "" },
-      { role: "unfilled", content: "" },
-      { role: "user", content: "Trailing text" },
-    ],
-    parameters: { variable: { kind: "rows" }, model: { kind: "columns" } },
+    parameters: {
+      variable: { kind: "rows" },
+      model: { kind: "columns" },
+      input: {
+        kind: "common",
+        value: [
+          { role: "user", content: "Question $ROW1" },
+          { role: "unfilled", content: "" },
+          { role: "unfilled", content: "" },
+          { role: "user", content: "Trailing text" },
+        ],
+      },
+    },
     rows: [{ variable: [{ text: "one" }] }],
     columns: [{ model: "test/model" }],
+    caseAxis: "rows",
   });
   const parsed = gridSchema.parse(source);
   assert.equal(expandGrid(parsed)[0].messages![0].content, "Question one");
-  assert.deepEqual(parsed.messages, source.messages);
+  assert.deepEqual(
+    generatorInputForCell(parsed, 0, 0),
+    generatorInputForCell(source, 0, 0),
+  );
   for (const messages of [
-    source.messages!.slice(1),
-    [source.messages![0], { role: "unfilled", content: "hidden" }],
-    [{ role: "user", content: " " }, source.messages![1]],
+    generatorInputForCell(source, 0, 0)!.slice(1),
+    [
+      generatorInputForCell(source, 0, 0)![0],
+      { role: "unfilled", content: "hidden" },
+    ],
+    [{ role: "user", content: " " }, generatorInputForCell(source, 0, 0)![1]],
   ])
-    assert.equal(gridSchema.safeParse({ ...source, messages }).success, false);
+    assert.equal(
+      gridSchema.safeParse({
+        ...source,
+        parameters: {
+          ...source.parameters,
+          input: { kind: "common", value: messages },
+        },
+      }).success,
+      false,
+    );
   assert.equal(
-    gridSchema.safeParse({ ...source, messages: [source.messages![0]] })
-      .success,
+    gridSchema.safeParse({
+      ...source,
+      parameters: {
+        ...source.parameters,
+        input: {
+          kind: "common",
+          value: [generatorInputForCell(source, 0, 0)![0]],
+        },
+      },
+    }).success,
     true,
   );
   assert.equal(
@@ -146,13 +212,19 @@ test("chat completion accepts optional blanks after a prefix and preserves expan
 test("chat histories preserve roles and whitespace while expanding multiple variable fields", () => {
   const source = currentDefinition({
     format: "chat-template",
-    messages: [
-      { role: "system", content: "Use $ROW1" },
-      { role: "user", content: "Ask $ROW2" },
-      { role: "assistant", content: "  My answer: " },
-    ],
-    parameters: { variable: { kind: "rows" } },
+    parameters: {
+      variable: { kind: "rows" },
+      input: {
+        kind: "common",
+        value: [
+          { role: "system", content: "Use $ROW1" },
+          { role: "user", content: "Ask $ROW2" },
+          { role: "assistant", content: "  My answer: " },
+        ],
+      },
+    },
     rows: [{ variable: [{ text: "Markdown" }, { text: "why" }] }],
+    caseAxis: "rows",
   });
   assert.deepEqual(expandGrid(gridSchema.parse(source))[0].messages, [
     { role: "system", content: "Use Markdown" },
@@ -164,10 +236,24 @@ test("chat histories preserve roles and whitespace while expanding multiple vari
     [{ role: "tool", content: "x" }],
     [{ role: "user", content: " " }],
   ])
-    assert.equal(gridSchema.safeParse({ ...source, messages }).success, false);
+    assert.equal(
+      gridSchema.safeParse({
+        ...source,
+        parameters: {
+          ...source.parameters,
+          input: { kind: "common", value: messages },
+        },
+      }).success,
+      false,
+    );
   assert.equal(
-    gridSchema.safeParse({ ...source, messages: undefined, prompt: "ignored" })
-      .success,
+    gridSchema.safeParse({
+      ...source,
+      parameters: {
+        ...source.parameters,
+        input: { kind: "common", value: undefined },
+      },
+    }).success,
     false,
   );
 });
@@ -178,32 +264,45 @@ test("chat images belong to supplied user messages, including image-only turns",
   const source = currentDefinition({
     format: "chat-template",
     budgetUsd: 1,
-    messages: [
-      { role: "user", content: "", images: [first] },
-      { role: "unfilled", content: "" },
-      { role: "user", content: "Compare these.", images: [second, first] },
-      { role: "unfilled", content: "" },
-    ],
-    parameters: { model: { kind: "rows" }, effort: { kind: "columns" } },
+    parameters: {
+      model: { kind: "rows" },
+      effort: { kind: "columns" },
+      input: {
+        kind: "common",
+        value: [
+          { role: "user", content: "", images: [first] },
+          { role: "unfilled", content: "" },
+          { role: "user", content: "Compare these.", images: [second, first] },
+          { role: "unfilled", content: "" },
+        ],
+      },
+    },
     rows: [{ model: "vision" }],
     columns: [{ effort: "default" }],
   });
   const cell = expandGrid(gridSchema.parse(source))[0];
-  assert.deepEqual(cell.messages, source.messages);
+  assert.deepEqual(cell.messages, generatorInputForCell(source, 0, 0));
   assert.equal(cell.imageSettings, undefined);
   const varied = currentInput({
     format: "chat-template",
     parameters: {
       model: { kind: "common", value: "vision" },
       variable: { kind: "rows" },
+      input: {
+        kind: "common",
+        value: [
+          generatorInputForCell(source, 0, 0)![0],
+          generatorInputForCell(source, 0, 0)![1],
+          {
+            ...generatorInputForCell(source, 0, 0)![2],
+            content: "Compare $ROW1",
+          },
+          generatorInputForCell(source, 0, 0)![3],
+        ],
+      },
     },
     rows: [{ variable: [{ text: "one" }] }, { variable: [{ text: "two" }] }],
-    messages: [
-      source.messages![0],
-      source.messages![1],
-      { ...source.messages![2], content: "Compare $ROW1" },
-      source.messages![3],
-    ],
+    caseAxis: "rows",
   });
   assert.deepEqual(
     expandGrid(varied).map((cell) => cell.messages![2]),
@@ -217,21 +316,33 @@ test("chat images belong to supplied user messages, including image-only turns",
     assert.equal(
       gridSchema.safeParse({
         ...source,
-        messages: [
-          source.messages![0],
-          {
-            role,
-            content: role === "unfilled" ? "" : "Supplied text",
-            images: [second],
+        parameters: {
+          ...source.parameters,
+          input: {
+            kind: "common",
+            value: [
+              generatorInputForCell(source, 0, 0)![0],
+              {
+                role,
+                content: role === "unfilled" ? "" : "Supplied text",
+                images: [second],
+              },
+            ],
           },
-        ],
+        },
       }).success,
       false,
     );
   assert.equal(
     gridSchema.safeParse({
       ...source,
-      messages: [{ role: "user", content: "", images: [] }],
+      parameters: {
+        ...source.parameters,
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: "", images: [] }],
+        },
+      },
     }).success,
     false,
   );
@@ -289,7 +400,13 @@ test("chat images belong to supplied user messages, including image-only turns",
       },
     ];
     assert.equal(
-      gridSchema.safeParse({ ...source, messages: invalid }).success,
+      gridSchema.safeParse({
+        ...source,
+        parameters: {
+          ...source.parameters,
+          input: { kind: "common", value: invalid },
+        },
+      }).success,
       false,
     );
     assert.throws(
@@ -302,13 +419,20 @@ test("chat images belong to supplied user messages, including image-only turns",
 test("multiple prompt fields are replaced literally, including dollar signs in values", () => {
   const cells = expandGrid(
     currentInput({
-      prompt: "Draw $ROW1 with $ROW2. $ROW1",
-      parameters: { variable: { kind: "rows" }, model: { kind: "columns" } },
+      parameters: {
+        variable: { kind: "rows" },
+        model: { kind: "columns" },
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: "Draw $ROW1 with $ROW2. $ROW1" }],
+        },
+      },
       rows: [
         { variable: [{ text: "a $& cat" }, { text: "hat" }] },
         { variable: [{ text: "dog" }, { text: "cape" }] },
       ],
       columns: [{ model: "a/model" }, { model: "b/model" }],
+      caseAxis: "rows",
     }),
   );
   assert.equal(cells.length, 4);
@@ -320,9 +444,12 @@ test("model and thinking axes determine each request independently", () => {
   const cells = expandGrid(
     currentInput({
       format: "svg",
-      prompt: "A cat",
       budgetUsd: 5,
-      parameters: { effort: { kind: "rows" }, model: { kind: "columns" } },
+      parameters: {
+        effort: { kind: "rows" },
+        model: { kind: "columns" },
+        input: { kind: "common", value: [{ role: "user", content: "A cat" }] },
+      },
       rows: [{ effort: "low" }, { effort: "high" }],
       columns: [{ model: "a/model" }, { model: "b/model" }],
     }),
@@ -340,15 +467,33 @@ test("model and thinking axes determine each request independently", () => {
 
 test("rejects ambiguous ownership, unresolved variables, and image reasoning", () => {
   const base = currentDefinition({
-    prompt: "Hello",
-    parameters: { model: { kind: "rows" }, effort: { kind: "columns" } },
+    parameters: {
+      model: { kind: "rows" },
+      effort: { kind: "columns" },
+      input: { kind: "common", value: [{ role: "user", content: "Hello" }] },
+    },
     rows: [{ model: "a" }],
     columns: [{ effort: "low" }],
   });
   for (const invalid of [
     ...[0, -1, 1.5].map((parallelWorkers) => ({ ...base, parallelWorkers })),
     { ...base, columns: base.rows },
-    { ...base, prompt: "$ROW" },
+    {
+      ...base,
+      parameters: {
+        ...base.parameters,
+        input: {
+          kind: "common",
+          value: [
+            {
+              ...generatorInputForCell(base, 0, 0)[0],
+              role: "user",
+              content: "$ROW",
+            },
+          ],
+        },
+      },
+    },
     { ...base, format: "image" },
     {
       ...base,
@@ -369,7 +514,7 @@ test("rejects ambiguous ownership, unresolved variables, and image reasoning", (
     assert.equal(gridSchema.safeParse(invalid).success, false);
 });
 
-test("ordinary axes own one parameter and correlated case settings require prompt variables", () => {
+test("ordinary axes own one parameter while explicit case axes permit correlated settings without fields", () => {
   for (const side of ["rows", "columns"] as const) {
     const ordinary = currentDefinition({
       judge: true,
@@ -393,6 +538,10 @@ test("ordinary axes own one parameter and correlated case settings require promp
       true,
     );
     assert.equal(gridSchema.safeParse(multiple).success, false);
+    assert.equal(
+      gridSchema.safeParse({ ...multiple, caseAxis: side }).success,
+      true,
+    );
     const criteria = [{ text: "Is the answer correct?", correctAnswer: true }];
     const criteriaOnly = currentDefinition({
       judge: true,
@@ -400,15 +549,19 @@ test("ordinary axes own one parameter and correlated case settings require promp
       [side]: [{ judge_criteria: criteria }],
     });
     assert.equal(gridSchema.safeParse(criteriaOnly).success, false);
+    assert.equal(
+      gridSchema.safeParse({ ...criteriaOnly, caseAxis: side }).success,
+      true,
+    );
     const token = side === "rows" ? "$ROW2" : "$COLUMN2";
     const correlated = currentDefinition({
       judge: true,
-      prompt: token,
       parameters: {
         variable: { kind: side },
         model: { kind: side },
         effort: { kind: side },
         judge_criteria: { kind: side },
+        input: { kind: "common", value: [{ role: "user", content: token }] },
       },
       [side]: [
         {
@@ -424,6 +577,7 @@ test("ordinary axes own one parameter and correlated case settings require promp
           judge_criteria: criteria,
         },
       ],
+      caseAxis: side,
     });
     assert.equal(gridSchema.safeParse(correlated).success, true);
     const other = side === "rows" ? "columns" : "rows";
@@ -462,8 +616,10 @@ test("unowned sides have exactly one neutral record while drafts retain unfinish
 
 test("draft and canonical variable schemas preserve deleted slots and raw field content", () => {
   const source = currentDefinition({
-    prompt: "$ROW2",
-    parameters: { variable: { kind: "rows" } },
+    parameters: {
+      variable: { kind: "rows" },
+      input: { kind: "common", value: [{ role: "user", content: "$ROW2" }] },
+    },
     rows: [
       {
         id: "stable-case",
@@ -477,6 +633,7 @@ test("draft and canonical variable schemas preserve deleted slots and raw field 
         ],
       },
     ],
+    caseAxis: "rows",
   });
   const draft = gridDraftSchema.parse({ ...source, budgetUsd: "3" });
   const parsed = gridSchema.parse(source);
@@ -499,9 +656,12 @@ test("draft and canonical variable schemas preserve deleted slots and raw field 
 
 test("current admission rejects old axis definitions and simultaneous variable ownership", () => {
   const base = currentDefinition({
-    prompt: "$ROW1",
-    parameters: { variable: { kind: "rows" } },
+    parameters: {
+      variable: { kind: "rows" },
+      input: { kind: "common", value: [{ role: "user", content: "$ROW1" }] },
+    },
     rows: [{ variable: [{ text: "cat" }] }],
+    caseAxis: "rows",
   });
   for (const invalid of [
     { ...base, inputVersion: undefined },
@@ -515,8 +675,20 @@ test("current admission rejects old axis definitions and simultaneous variable o
     },
     {
       ...base,
-      prompt: "$ROW1 $COLUMN1",
       columns: [{ id: "shadow", variable: [{ text: "hat" }] }],
+      parameters: {
+        ...base.parameters,
+        input: {
+          kind: "common",
+          value: [
+            {
+              ...generatorInputForCell(base, 0, 0)[0],
+              role: "user",
+              content: "$ROW1 $COLUMN1",
+            },
+          ],
+        },
+      },
     },
   ])
     assert.equal(gridSchema.safeParse(invalid).success, false);
@@ -526,13 +698,34 @@ test("every enabled variable axis must be used before a grid can generate", () =
   for (const side of ["rows", "columns"] as const) {
     const token = side === "rows" ? "$ROW1" : "$COLUMN1";
     const input = currentDefinition({
-      prompt: token,
-      parameters: { variable: { kind: side } },
+      parameters: {
+        variable: { kind: side },
+        input: { kind: "common", value: [{ role: "user", content: token }] },
+      },
       [side]: [{ variable: [{ text: "cat" }] }],
+      caseAxis: side,
     });
     assert.equal(gridSchema.safeParse(input).success, true);
     for (const prompt of ["Draw a cat", side === "rows" ? "$COLUMN1" : "$ROW1"])
-      assert.equal(gridSchema.safeParse({ ...input, prompt }).success, false);
+      assert.equal(
+        gridSchema.safeParse({
+          ...input,
+          parameters: {
+            ...input.parameters,
+            input: {
+              kind: "common",
+              value: [
+                {
+                  ...generatorInputForCell(input, 0, 0)[0],
+                  role: "user",
+                  content: prompt,
+                },
+              ],
+            },
+          },
+        }).success,
+        false,
+      );
   }
 });
 
@@ -540,9 +733,15 @@ test("only text grids require a valid budget, while image grids normalize an unu
   for (const format of ["image", "markdown", "svg", "html"] as const) {
     const input = currentDefinition({
       format,
-      prompt: "$ROW1 $ROW2",
-      parameters: { variable: { kind: "rows" } },
+      parameters: {
+        variable: { kind: "rows" },
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: "$ROW1 $ROW2" }],
+        },
+      },
       rows: [{ variable: [{ text: "cat" }, { text: "hat" }] }],
+      caseAxis: "rows",
     });
     for (const budgetUsd of [
       undefined,
@@ -572,12 +771,13 @@ test("only text grids require a valid budget, while image grids normalize an unu
 
 test("generation requires an explicit common model or selected model cases", () => {
   const input = currentDefinition({
-    prompt: "$ROW1",
     parameters: {
       variable: { kind: "rows" },
       model: { kind: "common", value: "" },
+      input: { kind: "common", value: [{ role: "user", content: "$ROW1" }] },
     },
     rows: [{ variable: [{ text: "cat" }] }],
+    caseAxis: "rows",
   });
   assert.equal(gridSchema.safeParse(input).success, false);
   assert.equal(
@@ -603,11 +803,15 @@ test("generation requires an explicit common model or selected model cases", () 
 test("large grids preserve every case combination and requested parallelism", () => {
   const values = Array.from({ length: 9 }, (_, i) => String(i));
   const input = currentInput({
-    prompt: "$ROW1",
     parallelWorkers: 81,
-    parameters: { variable: { kind: "rows" }, model: { kind: "columns" } },
+    parameters: {
+      variable: { kind: "rows" },
+      model: { kind: "columns" },
+      input: { kind: "common", value: [{ role: "user", content: "$ROW1" }] },
+    },
     rows: values.map((text) => ({ variable: [{ text }] })),
     columns: values.map((value) => ({ model: `fixture/model-${value}` })),
+    caseAxis: "rows",
   });
   const cells = expandGrid(input);
   assert.equal(input.parallelWorkers, cells.length);
@@ -631,11 +835,19 @@ for (const format of ["markdown", "svg", "html"] as const) {
     const unused = { id: "unused", name: "unused.png" };
     const input = currentInput({
       format,
-      prompt: "$ROW1 $ROW2 $ROW1",
       parameters: {
         variable: { kind: "rows" },
+        input: {
+          kind: "common",
+          value: [
+            {
+              role: "user",
+              content: "$ROW1 $ROW2 $ROW1",
+              images: [common, row, common],
+            },
+          ],
+        },
       },
-      promptImages: [common, row, common],
       rows: [
         {
           variable: [
@@ -652,8 +864,13 @@ for (const format of ["markdown", "svg", "html"] as const) {
           ],
         },
       ],
+      caseAxis: "rows",
     });
-    assert.deepEqual(input.promptImages, [common, row, common]);
+    assert.deepEqual(generatorInputForCell(input, 0, 0)[0].images, [
+      common,
+      row,
+      common,
+    ]);
     const cells = expandGrid(input);
     assert.deepEqual(
       cells.map((cell) => cell.prompt),
@@ -662,7 +879,9 @@ for (const format of ["markdown", "svg", "html"] as const) {
     for (const cell of cells) {
       assert.deepEqual(cell.images, [common, row, column]);
       assert.equal(cell.imageSettings, undefined);
-      assert.equal(cell.messages, undefined);
+      assert.deepEqual(cell.messages, [
+        { role: "user", content: cell.prompt, images: cell.images },
+      ]);
     }
   });
 
@@ -670,34 +889,47 @@ for (const format of ["markdown", "svg", "html"] as const) {
     const image = { id: "input", name: "input.png" };
     const source = currentDefinition({
       format,
-      prompt: " \n ",
-      promptImages: [image],
+      parameters: {
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: " \n ", images: [image] }],
+        },
+      },
     });
     const input = gridSchema.parse(source);
-    assert.equal(input.prompt, "");
+    assert.equal(generatorInputForCell(input, 0, 0)[0].content, " \n ");
     assert.deepEqual(expandGrid(input)[0].images, [image]);
     for (const promptImages of [undefined, []])
       assert.equal(
         gridSchema.safeParse({
           ...source,
-          promptImages,
+          parameters: {
+            ...source.parameters,
+            input: {
+              kind: "common",
+              value: [
+                {
+                  role: "user",
+                  content: generatorInputForCell(source, 0, 0)[0].content,
+                  images: promptImages,
+                },
+              ],
+            },
+          },
         }).success,
         false,
       );
-    const plain = currentInput({
-      format,
-      prompt: "Describe it",
-      promptImages: [],
-    });
-    assert.equal(expandGrid(plain)[0].images, undefined);
     const variableSource = currentDefinition({
       format,
-      prompt: "$ROW1",
-      parameters: { variable: { kind: "rows" } },
+      parameters: {
+        variable: { kind: "rows" },
+        input: { kind: "common", value: [{ role: "user", content: "$ROW1" }] },
+      },
       rows: [
         { variable: [{ text: "", images: [image] }] },
         { variable: [{ text: " " }] },
       ],
+      caseAxis: "rows",
     });
     assert.equal(gridSchema.safeParse(variableSource).success, false);
     assert.equal(
@@ -718,17 +950,24 @@ test("Image generation requires a nonempty expanded instruction even with attach
     gridSchema.safeParse(
       currentDefinition({
         format: "image",
-        prompt: "",
-        promptImages: [image],
+        parameters: {
+          input: {
+            kind: "common",
+            value: [{ role: "user", content: "", images: [image] }],
+          },
+        },
       }),
     ).success,
     false,
   );
   const source = currentDefinition({
     format: "image",
-    prompt: "$ROW1",
-    parameters: { variable: { kind: "rows" } },
+    parameters: {
+      variable: { kind: "rows" },
+      input: { kind: "common", value: [{ role: "user", content: "$ROW1" }] },
+    },
     rows: [{ variable: [{ text: "", images: [image] }] }],
+    caseAxis: "rows",
   });
   assert.equal(gridSchema.safeParse(source).success, false);
   source.rows[0].variable![0]!.text = "Describe the attachment";
@@ -739,10 +978,13 @@ test("image cases expand settings and variable images in field order", () => {
   const reference = { id: "a".repeat(48), name: "reference.png" };
   const input = currentInput({
     format: "image",
-    prompt: "A landscape$COLUMN1",
     parameters: {
       size: { kind: "rows" },
       variable: { kind: "columns" },
+      input: {
+        kind: "common",
+        value: [{ role: "user", content: "A landscape$COLUMN1" }],
+      },
     },
     rows: [{ size: "2K" }, { size: "1536x1024" }],
     columns: [
@@ -756,6 +998,7 @@ test("image cases expand settings and variable images in field order", () => {
         ],
       },
     ],
+    caseAxis: "columns",
   });
   const cells = expandGrid(input);
   assert.deepEqual(
@@ -787,13 +1030,15 @@ test("shared image settings combine with cases and omit Auto defaults", () => {
   const reference = { id: "shared-image", name: "shared.png" };
   const input = currentInput({
     format: "image",
-    prompt: "Draw it",
     parameters: {
       quality: { kind: "rows" },
       size: { kind: "columns" },
       aspect_ratio: { kind: "common", value: "3:2" },
+      input: {
+        kind: "common",
+        value: [{ role: "user", content: "Draw it", images: [reference] }],
+      },
     },
-    promptImages: [reference],
     rows: [{ quality: "auto" }, { quality: "high" }],
     columns: [{ size: "auto" }, { size: "2K" }],
   });
@@ -824,8 +1069,10 @@ test("shared image settings combine with cases and omit Auto defaults", () => {
   }
   const caseImages = currentInput({
     format: "image",
-    prompt: "$ROW1",
-    parameters: { variable: { kind: "rows" } },
+    parameters: {
+      variable: { kind: "rows" },
+      input: { kind: "common", value: [{ role: "user", content: "$ROW1" }] },
+    },
     rows: [
       {
         variable: [
@@ -836,6 +1083,7 @@ test("shared image settings combine with cases and omit Auto defaults", () => {
         ],
       },
     ],
+    caseAxis: "rows",
   });
   assert.deepEqual(expandGrid(caseImages)[0].imageSettings?.input_references, [
     "case-image",
@@ -846,7 +1094,17 @@ test("Auto and omitted image settings prepare identical requests and artifact si
   const { prepareImageInference, inferenceSignature } =
     await import("../server/prepared-inference.js");
   const cell = {
-    ...expandGrid(currentInput({ format: "image", prompt: "Draw it" }))[0],
+    ...expandGrid(
+      currentInput({
+        format: "image",
+        parameters: {
+          input: {
+            kind: "common",
+            value: [{ role: "user", content: "Draw it" }],
+          },
+        },
+      }),
+    )[0],
     id: "cell",
   };
   const omitted = prepareImageInference(cell);
@@ -871,7 +1129,6 @@ test("Auto and omitted image settings prepare identical requests and artifact si
 });
 
 const judgedInput = currentDefinition({
-  prompt: "A cat",
   judge: true,
   parameters: {
     model: { kind: "rows" },
@@ -885,6 +1142,7 @@ const judgedInput = currentDefinition({
         { text: "Is there a cat?", correctAnswer: true },
       ],
     },
+    input: { kind: "common", value: [{ role: "user", content: "A cat" }] },
   },
   rows: [{ model: "fixture/generator" }],
   columns: [{ effort: "low" }],
@@ -1120,21 +1378,29 @@ test("every supported judge effort is accepted common and on an axis", () => {
   }
 });
 
-test("older current-version compound axes remain readable but cannot enter the new editor", async () => {
-  const { isCurrentGridInput, isEditableGridInput } =
+test("historical v2 compound axes remain readable but cannot enter the current editor", async () => {
+  const { isParameterGridInput, isCurrentGridInput, isEditableGridInput } =
     await import("../server/parameters.js");
   const { gridDisplay } = await import("../shared/grid-display.js");
   const { draftInputFromGridInput } =
     await import("../src/create/draft-input.js");
-  const accepted = currentDefinition({
+  const accepted: Version2GridInput = {
+    inputVersion: 2,
+    format: "markdown",
+    prompt: "Draw a cat",
+    promptImages: [],
+    judge: false,
+    parallelWorkers: 2,
+    budgetUsd: 3,
     parameters: { model: { kind: "rows" }, effort: { kind: "rows" } },
     rows: [
-      { model: "model/a", effort: "low" },
-      { model: "model/b", effort: "high" },
+      { id: "old-row-a", model: "model/a", effort: "low" },
+      { id: "old-row-b", model: "model/b", effort: "high" },
     ],
-    columns: [{}],
-  });
-  assert.equal(isCurrentGridInput(accepted), true);
+    columns: [{ id: "old-column" }],
+  };
+  assert.equal(isParameterGridInput(accepted), true);
+  assert.equal(isCurrentGridInput(accepted), false);
   assert.equal(isEditableGridInput(accepted), false);
   assert.equal(gridSchema.safeParse(accepted).success, false);
   assert.throws(
@@ -1155,3 +1421,147 @@ test("older current-version compound axes remain readable but cannot enter the n
     ],
   );
 });
+
+for (const side of ["rows", "columns"] as const) {
+  const other = side === "rows" ? "columns" : "rows";
+  const token = side === "rows" ? "$ROW1" : "$COLUMN1";
+
+  test(`${side} own complete prompt inputs without numbered fields and retain equal cases`, () => {
+    const image = { id: "case-image", name: "case.png" };
+    const source = currentDefinition({
+      caseAxis: side,
+      parameters: { input: { kind: side }, model: { kind: other } },
+      [side]: [
+        {
+          id: "first",
+          input: [
+            {
+              role: "user" as const,
+              content: "  First instruction\n",
+              images: [image],
+            },
+          ],
+        },
+        {
+          id: "second",
+          input: [
+            { role: "user" as const, content: "A different instruction" },
+          ],
+        },
+      ],
+      [other]: [{ model: "model/a" }, { model: "model/b" }],
+    });
+    const parsed = gridSchema.parse(source);
+    const cells = expandGrid(parsed);
+    for (const cell of cells) {
+      const index = side === "rows" ? cell.row : cell.column;
+      assert.deepEqual(cell.messages, source[side][index].input);
+      assert.equal(cell.prompt, source[side][index].input![0].content);
+    }
+    assert.equal(cells.length, 4);
+    assert.equal(parsed.parameters.variable, undefined);
+    const equal = {
+      ...source,
+      [side]: source[side].map((record) => ({
+        ...record,
+        input: source[side][0].input,
+      })),
+    };
+    assert.equal(expandGrid(gridSchema.parse(equal)).length, 4);
+    assert.deepEqual(
+      gridSchema.parse(equal)[side].map((record) => record.id),
+      ["first", "second"],
+    );
+    for (const input of [
+      [],
+      [{ role: "system", content: "Not a prompt user message" }],
+      [
+        { role: "user", content: "First" },
+        { role: "user", content: "Second" },
+      ],
+      [
+        { role: "user", content: "Prefix" },
+        { role: "unfilled", content: "" },
+      ],
+    ]) {
+      assert.equal(
+        gridSchema.safeParse({
+          ...source,
+          [side]: [source[side][0], { ...source[side][1], input }],
+        }).success,
+        false,
+      );
+    }
+  });
+
+  test(`${side} own structurally different histories with independent roles, counts and unfilled positions`, () => {
+    const source = currentDefinition({
+      format: "chat-template",
+      caseAxis: side,
+      parameters: { input: { kind: side }, variable: { kind: side } },
+      [side]: [
+        {
+          id: "short",
+          variable: [{ text: "one" }],
+          input: [
+            { role: "system" as const, content: `  Rules for ${token}\n` },
+            { role: "user" as const, content: `Ask ${token}` },
+            { role: "unfilled" as const, content: "" },
+          ],
+        },
+        {
+          id: "long",
+          variable: [{ text: "two" }],
+          input: [
+            { role: "user" as const, content: `First ${token}` },
+            { role: "assistant" as const, content: "  Supplied answer  " },
+            { role: "user" as const, content: "Continue" },
+            { role: "unfilled" as const, content: "" },
+            { role: "user" as const, content: `Last ${token}` },
+            { role: "unfilled" as const, content: "" },
+          ],
+        },
+      ],
+    });
+    const parsed = gridSchema.parse(JSON.parse(JSON.stringify(source)));
+    assert.deepEqual(parsed[side], source[side]);
+    assert.deepEqual(
+      expandGrid(parsed).map((cell) => cell.messages),
+      [
+        [
+          { role: "system", content: "  Rules for one\n" },
+          { role: "user", content: "Ask one" },
+          { role: "unfilled", content: "" },
+        ],
+        [
+          { role: "user", content: "First two" },
+          { role: "assistant", content: "  Supplied answer  " },
+          { role: "user", content: "Continue" },
+          { role: "unfilled", content: "" },
+          { role: "user", content: "Last two" },
+          { role: "unfilled", content: "" },
+        ],
+      ],
+    );
+    for (const input of [
+      [],
+      [{ role: "user", content: " \n " }],
+      [
+        { role: "unfilled", content: "" },
+        { role: "user", content: "No prefix" },
+      ],
+      [
+        { role: "user", content: "Prefix" },
+        { role: "unfilled", content: "Hidden text" },
+      ],
+    ]) {
+      assert.equal(
+        gridSchema.safeParse({
+          ...source,
+          [side]: [source[side][0], { ...source[side][1], input }],
+        }).success,
+        false,
+      );
+    }
+  });
+}

@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { migrateVariableInput } from "../shared/variable-migration.js";
+import { currentDefinition } from "./current-grid-fixture.js";
 
 test("legacy variable axes upgrade only whole template tokens, without interpolating field text", () => {
   const input = {
@@ -132,4 +133,32 @@ test("legacy numbered-token restoration visits every rubric in the active case s
     },
   });
   assert.equal(source.judge.criteria.cases[0][0].text, "Does $ROW match?");
+});
+
+test("v3 message inputs and literal numbered-field contents need no legacy migration", () => {
+  const input = currentDefinition({
+    format: "chat-template",
+    caseAxis: "rows",
+    parameters: {
+      input: {
+        kind: "common",
+        value: [
+          { role: "system", content: "  Rules for $ROW2\n" },
+          {
+            role: "user",
+            content: "$ROW2",
+            images: [{ id: "input", name: "input.png" }],
+          },
+          { role: "unfilled", content: "" },
+        ],
+      },
+      variable: { kind: "rows" },
+    },
+    rows: [
+      { id: "case", variable: [null, { text: "literal $ROW $COLUMN $ROW1" }] },
+    ],
+  });
+  const before = structuredClone(input);
+  assert.equal(migrateVariableInput(input), input);
+  assert.deepEqual(input, before);
 });

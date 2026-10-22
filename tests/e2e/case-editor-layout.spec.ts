@@ -1,5 +1,10 @@
 import { test, expect } from "./fixtures";
-import { connectOpenRouter, expectProgress, mockModels } from "./helpers";
+import {
+  connectOpenRouter,
+  expectProgress,
+  mockModels,
+  selectModel,
+} from "./helpers";
 import { referencePng } from "../reference-image-fixture";
 
 for (const format of ["SVG", "Image"]) {
@@ -44,17 +49,13 @@ for (const format of ["SVG", "Image"]) {
 
     await rows.selectOption("variable");
     await expect(table).toBeVisible();
-    await expect(table.getByRole("textbox")).toHaveCount(1);
-    await expect(
-      table.getByLabel("$ROW1, case 1", { exact: true }),
-    ).toHaveValue("");
+    await expect(table.getByRole("textbox")).toHaveCount(0);
+    await table
+      .getByRole("button", { name: "Add row variable", exact: true })
+      .click();
     await expect(
       table.getByRole("button", { name: "Remove row case 1", exact: true }),
     ).toBeDisabled();
-    await expect(page.locator(".axes table")).toHaveCount(0);
-    const axesBox = await page.locator(".axes").boundingBox();
-    const tableBox = await table.boundingBox();
-    expect(tableBox!.y).toBeGreaterThanOrEqual(axesBox!.y + axesBox!.height);
 
     await page
       .getByRole("button", {
@@ -75,8 +76,6 @@ for (const format of ["SVG", "Image"]) {
       .getByRole("checkbox", { name: "Layout model 2", exact: true })
       .check();
     await expect(table.getByRole("searchbox")).toHaveCount(0);
-    await expect(table.getByRole("columnheader")).toHaveCount(1);
-    await expect(table.getByRole("rowheader")).toHaveCount(1);
     await expect(table.getByRole("textbox")).toHaveCount(1);
 
     await table
@@ -116,6 +115,9 @@ test("a single case keeps field image associations and stable tokens in both ori
     name: "Grid layout parameters",
     exact: true,
   });
+  await table
+    .getByRole("button", { name: "Add row variable", exact: true })
+    .click();
   await table
     .getByRole("button", { name: "Add row variable", exact: true })
     .click();
@@ -164,17 +166,12 @@ test("a single case keeps field image associations and stable tokens in both ori
   await page
     .getByRole("button", { name: "Swap rows and columns", exact: true })
     .click();
-  await expect(table.getByRole("columnheader")).toHaveCount(1);
-  await expect(table.getByRole("rowheader")).toHaveCount(2);
   await expect(
     table.getByLabel("$COLUMN2, case 1", { exact: true }),
   ).toHaveValue("keep this field");
   await expect(
     table.getByLabel("$COLUMN3, case 1", { exact: true }),
   ).toHaveValue("");
-  await expect(
-    table.getByRole("rowheader").first().locator(".row-label"),
-  ).toHaveText("$COLUMN2");
   await expect(
     table
       .getByLabel("$COLUMN2, case 1", { exact: true })
@@ -233,7 +230,7 @@ test("case-owned model and judge controls stay with prompt fields while common j
   });
   await expect(table).toHaveCount(1);
   await expect(
-    table.getByLabel("$ROW1, case 1", { exact: true }),
+    table.getByRole("button", { name: "Add row variable", exact: true }),
   ).toBeVisible();
   await expect(
     table.getByRole("group", { name: "Row case 1 Model", exact: true }),
@@ -275,6 +272,9 @@ test("an empty restored case list hides only the table and can return to one edi
     .getByRole("combobox", { name: "Rows", exact: true })
     .selectOption("variable");
   await page
+    .getByRole("button", { name: "Add row variable", exact: true })
+    .click();
+  await page
     .getByLabel("$ROW1, case 1", { exact: true })
     .fill("unfinished question");
   await page.evaluate(() => {
@@ -296,6 +296,9 @@ test("an empty restored case list hides only the table and can return to one edi
   ).toBeVisible();
   await page.getByRole("button", { name: "Add row case", exact: true }).click();
   await expect(table).toBeVisible();
+  await table
+    .getByRole("button", { name: "Add row variable", exact: true })
+    .click();
   await table
     .getByLabel("$ROW1, case 1", { exact: true })
     .fill("restored question");
@@ -347,6 +350,9 @@ for (const side of ["Rows", "Columns"] as const) {
       name: "Grid layout parameters",
       exact: true,
     });
+    await table
+      .getByRole("button", { name: `Add ${direction} variable`, exact: true })
+      .click();
     await table.getByLabel(`${token}, case 1`, { exact: true }).fill("Alpha");
     await table
       .getByRole("button", { name: `Add ${direction} case`, exact: true })
@@ -436,5 +442,351 @@ for (const side of ["Rows", "Columns"] as const) {
         ],
       ),
     ).toEqual([["fixture/text", "default", "Draw a rectangle"]]);
+  });
+}
+
+for (const side of ["Rows", "Columns"] as const) {
+  test(`${side} own complete prompts without numbered fields and preserve promotion, cancellation, swap and reload`, async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await page.getByRole("button", { name: "SVG", exact: true }).click();
+    const direction = side === "Rows" ? "row" : "column";
+    const title = side === "Rows" ? "Row" : "Column";
+    const opposite = side === "Rows" ? "Columns" : "Rows";
+    const oppositeTitle = side === "Rows" ? "Column" : "Row";
+    const axis = page.getByRole("combobox", { name: side, exact: true });
+    await axis.selectOption("variable");
+    await page
+      .getByRole("combobox", { name: opposite, exact: true })
+      .selectOption("single");
+    await selectModel(page, "fixture/text");
+    const table = page.getByRole("table", {
+      name: "Grid layout parameters",
+      exact: true,
+    });
+    await expect(table.getByRole("textbox")).toHaveCount(0);
+    await table
+      .getByRole("button", { name: `Add ${direction} case`, exact: true })
+      .click();
+    const common = page.getByLabel("Prompt", { exact: true });
+    await common.fill("Draw a complete blue landscape");
+    await page
+      .getByLabel("Add images to prompt", { exact: true })
+      .setInputFiles({
+        name: "complete.png",
+        mimeType: "image/png",
+        buffer: referencePng,
+      });
+    await expect(
+      page.getByRole("img", { name: "complete.png", exact: true }),
+    ).toBeVisible();
+    const promote = page.getByRole("button", {
+      name: `Add prompt to ${direction} cases`,
+      exact: true,
+    });
+    await promote.click();
+    const first = table.getByRole("group", {
+      name: `${title} case 1 Prompt`,
+      exact: true,
+    });
+    await expect(first.getByLabel("Prompt", { exact: true })).toHaveValue(
+      "Draw a complete blue landscape",
+    );
+    await expect(
+      first.getByRole("img", { name: "complete.png", exact: true }),
+    ).toBeVisible();
+    const second = table.getByRole("group", {
+      name: `${title} case 2 Prompt`,
+      exact: true,
+    });
+    await expect(second.getByLabel("Prompt", { exact: true })).toHaveValue(
+      "Draw a complete blue landscape",
+    );
+    await expect(
+      second.getByRole("img", { name: "complete.png", exact: true }),
+    ).toBeVisible();
+    await expect(page.getByLabel("Prompt", { exact: true })).toHaveCount(2);
+    await table
+      .getByRole("button", { name: "Make generator input common", exact: true })
+      .click();
+    await expect(common).toHaveValue("Draw a complete blue landscape");
+    await expect(
+      page.getByRole("img", { name: "complete.png", exact: true }),
+    ).toBeVisible();
+    await promote.click();
+    await second
+      .getByLabel("Prompt", { exact: true })
+      .fill("Paint a distinct red portrait");
+    const snapshot = () =>
+      page.evaluate(
+        () => JSON.parse(sessionStorage.getItem("slopgrid-draft")!).input,
+      );
+    const before = await snapshot();
+    expect(before.caseAxis).toBe(side.toLowerCase());
+    expect(before.parameters.input).toEqual({ kind: side.toLowerCase() });
+    expect(before.parameters.variable).toBeUndefined();
+    for (const record of before[side.toLowerCase()])
+      expect(record.variable).toBeUndefined();
+    for (const action of [
+      () =>
+        table
+          .getByRole("button", {
+            name: "Make generator input common",
+            exact: true,
+          })
+          .click(),
+      () => axis.selectOption("single"),
+    ]) {
+      const dialog = page.waitForEvent("dialog");
+      const pending = action();
+      await (await dialog).dismiss();
+      await pending;
+      expect(await snapshot()).toEqual(before);
+    }
+    await page.reload();
+    await expect(second.getByLabel("Prompt", { exact: true })).toHaveValue(
+      "Paint a distinct red portrait",
+    );
+    await expect(
+      first.getByRole("img", { name: "complete.png", exact: true }),
+    ).toBeVisible();
+    await page
+      .getByRole("button", { name: "Swap rows and columns", exact: true })
+      .click();
+    const swapped = table.getByRole("group", {
+      name: `${oppositeTitle} case 1 Prompt`,
+      exact: true,
+    });
+    await expect(swapped.getByLabel("Prompt", { exact: true })).toHaveValue(
+      "Draw a complete blue landscape",
+    );
+    await expect(
+      swapped.getByRole("img", { name: "complete.png", exact: true }),
+    ).toBeVisible();
+    const afterSwap = await snapshot();
+    expect(afterSwap[opposite.toLowerCase()]).toEqual(
+      before[side.toLowerCase()],
+    );
+    await connectOpenRouter(page);
+    const created = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        new URL(response.url()).pathname === "/api/grids",
+    );
+    await page.getByRole("button", { name: "Generate", exact: true }).click();
+    const response = await created;
+    expect(response.status()).toBe(201);
+    const { id } = await response.json();
+    await expectProgress(page, 2, 2);
+    const grid = await (await page.request.get(`/api/grids/${id}`)).json();
+    expect(grid.input.inputVersion).toBe(3);
+    expect(grid.input.parameters.variable).toBeUndefined();
+    expect(grid.cells.map((cell: { prompt: string }) => cell.prompt)).toEqual([
+      "Draw a complete blue landscape",
+      "Paint a distinct red portrait",
+    ]);
+    await page.getByRole("button", { name: "EDIT", exact: true }).click();
+    const confirmation = page.waitForEvent("dialog");
+    const demote = table
+      .getByRole("button", { name: "Make generator input common", exact: true })
+      .click();
+    await (await confirmation).accept();
+    await demote;
+    await expect(common).toHaveValue("");
+    await expect(
+      page.getByRole("img", { name: "complete.png", exact: true }),
+    ).toHaveCount(0);
+  });
+}
+
+for (const side of ["Rows", "Columns"] as const) {
+  test(`${side} keep structurally distinct full chat histories, user attachments and empty field history`, async ({
+    page,
+  }) => {
+    await page.request.post("/fixture/reset", { data: {} });
+    await page.goto("/");
+    await page
+      .getByRole("button", { name: "Chat completion", exact: true })
+      .click();
+    const direction = side === "Rows" ? "row" : "column";
+    const title = side === "Rows" ? "Row" : "Column";
+    await page
+      .getByRole("combobox", { name: side, exact: true })
+      .selectOption("variable");
+    await page
+      .getByRole("combobox", {
+        name: side === "Rows" ? "Columns" : "Rows",
+        exact: true,
+      })
+      .selectOption("single");
+    await selectModel(page, "fixture/text");
+    await page
+      .getByLabel("Message 1", { exact: true })
+      .fill("First complete question");
+    await page
+      .getByLabel("Add images to message 1", { exact: true })
+      .setInputFiles({
+        name: "history.png",
+        mimeType: "image/png",
+        buffer: referencePng,
+      });
+    await expect(
+      page.getByRole("img", { name: "history.png", exact: true }),
+    ).toBeVisible();
+    await page
+      .getByRole("button", { name: "Add message", exact: true })
+      .click();
+    await page
+      .getByRole("button", {
+        name: `Add chat history to ${direction} cases`,
+        exact: true,
+      })
+      .click();
+    const table = page.getByRole("table", {
+      name: "Grid layout parameters",
+      exact: true,
+    });
+    const first = table.getByRole("group", {
+      name: `${title} case 1 Chat history`,
+      exact: true,
+    });
+    await expect(
+      first.getByRole("button", {
+        name: "Message 2 role: unfilled",
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(
+      first.getByRole("img", { name: "history.png", exact: true }),
+    ).toBeVisible();
+    await table
+      .getByRole("button", { name: "Make generator input common", exact: true })
+      .click();
+    await expect(page.getByLabel("Message 1", { exact: true })).toHaveValue(
+      "First complete question",
+    );
+    await expect(
+      page.getByRole("button", {
+        name: "Message 2 role: unfilled",
+        exact: true,
+      }),
+    ).toBeVisible();
+    await page
+      .getByRole("button", {
+        name: `Add chat history to ${direction} cases`,
+        exact: true,
+      })
+      .click();
+    await table
+      .getByRole("button", { name: `Add ${direction} case`, exact: true })
+      .click();
+    const second = table.getByRole("group", {
+      name: `${title} case 2 Chat history`,
+      exact: true,
+    });
+    await second
+      .getByLabel("Message 1", { exact: true })
+      .fill("Different final question");
+    await second
+      .getByRole("button", { name: "Insert message before 1", exact: true })
+      .click();
+    for (const role of ["user", "assistant", "unfilled"])
+      await second
+        .getByRole("button", { name: `Message 1 role: ${role}`, exact: true })
+        .click();
+    await second
+      .getByLabel("Message 1", { exact: true })
+      .fill("A separate system instruction");
+    await second
+      .getByRole("button", { name: "Add message", exact: true })
+      .click();
+    await expect(
+      second.getByRole("button", {
+        name: "Message 3 role: unfilled",
+        exact: true,
+      }),
+    ).toBeVisible();
+    await table
+      .getByRole("button", { name: `Add ${direction} variable`, exact: true })
+      .click();
+    const token = side === "Rows" ? "$ROW1" : "$COLUMN1";
+    await table
+      .getByRole("button", { name: `Remove ${token}`, exact: true })
+      .click();
+    await expect(
+      table.getByLabel(`${token}, case 1`, { exact: true }),
+    ).toHaveCount(0);
+    await table
+      .getByRole("button", { name: `Add ${direction} variable`, exact: true })
+      .click();
+    const next = side === "Rows" ? "$ROW2" : "$COLUMN2";
+    await expect(
+      table.getByLabel(`${next}, case 1`, { exact: true }),
+    ).toHaveValue("");
+    await table
+      .getByRole("button", { name: `Remove ${next}`, exact: true })
+      .click();
+    await page.reload();
+    await expect(
+      first.getByRole("img", { name: "history.png", exact: true }),
+    ).toBeVisible();
+    await expect(second.getByLabel("Message 1", { exact: true })).toHaveValue(
+      "A separate system instruction",
+    );
+    const before = await page.evaluate(
+      () => JSON.parse(sessionStorage.getItem("slopgrid-draft")!).input,
+    );
+    expect(
+      before[side.toLowerCase()].map(
+        (record: { variable: unknown }) => record.variable,
+      ),
+    ).toEqual([
+      [null, null],
+      [null, null],
+    ]);
+    const cancellation = page.waitForEvent("dialog");
+    const pending = table
+      .getByRole("button", { name: "Make generator input common", exact: true })
+      .click();
+    await (await cancellation).dismiss();
+    await pending;
+    expect(
+      await page.evaluate(
+        () => JSON.parse(sessionStorage.getItem("slopgrid-draft")!).input,
+      ),
+    ).toEqual(before);
+    await connectOpenRouter(page);
+    await page.getByRole("button", { name: "Generate", exact: true }).click();
+    await expectProgress(page, 2, 2);
+    const requests = await (
+      await page.request.get("/fixture/chat-requests")
+    ).json();
+    expect(requests).toHaveLength(2);
+    const histories = requests.map(
+      (request: {
+        messages: {
+          role: string;
+          content: string | { type: string; text?: string }[];
+        }[];
+      }) =>
+        request.messages.map((message) => ({
+          role: message.role,
+          content:
+            typeof message.content === "string"
+              ? message.content
+              : message.content
+                  .filter((part) => part.type === "text")
+                  .map((part) => part.text)
+                  .join(""),
+        })),
+    );
+    expect(histories).toContainEqual([
+      { role: "user", content: "First complete question" },
+    ]);
+    expect(histories).toContainEqual([
+      { role: "system", content: "A separate system instruction" },
+      { role: "user", content: "Different final question" },
+    ]);
   });
 }

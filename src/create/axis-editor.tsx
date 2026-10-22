@@ -43,8 +43,7 @@ export function AxisEditor({
     "judge_effort",
   ];
   const label = side === "rows" ? "Rows" : "Columns";
-  const dimension =
-    input.parameters.variable?.kind === side ? "variable" : members[0];
+  const dimension = input.caseAxis === side ? "variable" : members[0];
   return (
     <div className="axis">
       <label className="axis-selector">
@@ -69,6 +68,9 @@ export function AxisEditor({
               key={kind}
               value={kind}
               disabled={
+                (kind === "variable" &&
+                  !!input.caseAxis &&
+                  input.caseAxis !== side) ||
                 input.parameters[kind]?.kind ===
                   (side === "rows" ? "columns" : "rows") ||
                 (!input.judge &&
@@ -98,10 +100,11 @@ export function AxisValues({
   const parameter = axisParameters(input, side)[0];
   const label = side === "rows" ? "Rows" : "Columns";
   if (
-    input.parameters.variable?.kind === side ||
+    input.caseAxis === side ||
     !parameter ||
     parameter === "variable" ||
-    parameter === "judge_criteria"
+    parameter === "judge_criteria" ||
+    parameter === "input"
   )
     return null;
   const values = input[side].map((entry) => entry[parameter]);
@@ -199,10 +202,10 @@ export function CommonParameterActions({
     <div className="variable-table-actions">
       {(["rows", "columns"] as const).map((side) => {
         const disabled =
-          parameter === "judge_criteria" &&
-          input.parameters.variable?.kind !== side;
+          (parameter === "judge_criteria" || parameter === "input") &&
+          input.caseAxis !== side;
         const explanation = disabled
-          ? `Select Prompt variables for ${side === "rows" ? "Rows" : "Columns"} to use per-case judge criteria.`
+          ? `Select Multiple variable cases for ${side === "rows" ? "Rows" : "Columns"} to use per-case ${parameter === "input" ? "generator input" : "judge criteria"}.`
           : undefined;
         return (
           <span key={side}>
@@ -210,15 +213,16 @@ export function CommonParameterActions({
               type="button"
               disabled={disabled}
               aria-describedby={
-                disabled ? `judge-criteria-${side}-explanation` : undefined
+                disabled ? `${parameter}-${side}-explanation` : undefined
               }
               onClick={() => onMove(parameter, side)}
             >
-              Make {parameterNames[parameter]} a{" "}
-              {side === "rows" ? "row" : "column"} variable
+              {parameter === "input"
+                ? `Add ${input.format === "chat-template" ? "chat history" : "prompt"} to ${side === "rows" ? "row" : "column"} cases`
+                : `Make ${parameterNames[parameter]} a ${side === "rows" ? "row" : "column"} variable`}
             </button>
             {explanation && (
-              <span className="hint" id={`judge-criteria-${side}-explanation`}>
+              <span className="hint" id={`${parameter}-${side}-explanation`}>
                 {explanation}
               </span>
             )}

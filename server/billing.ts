@@ -9,6 +9,7 @@ import {
 } from "./failures.js";
 import type { Persistence } from "./persistence.js";
 import { sumUsage } from "./usage.js";
+import { gridInputText } from "../shared/grid-display.js";
 
 export type CallDetails = {
   attemptId?: string;
@@ -271,7 +272,7 @@ export class Billing {
           id: row.id,
           startedAt: row.started_at,
           gridId: row.grid_id,
-          gridPrompt: grid.input.prompt,
+          gridPrompt: gridInputText(grid.input),
           model: details.model ?? task.input.model,
           effort: details.effort ?? task.input.effort,
         };

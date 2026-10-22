@@ -19,9 +19,10 @@ test("public slug claims validate, serialize, persist and preserve existing link
   const differentSlug = `different-${token()}`;
   const lateSlug = `late-${token()}`;
   const input = currentInput({
-    prompt: "$ROW1",
+    caseAxis: "rows",
     budgetUsd: 5,
     parameters: {
+      input: { kind: "common", value: [{ role: "user", content: "$ROW1" }] },
       variable: { kind: "rows" },
       effort: { kind: "columns" },
     },

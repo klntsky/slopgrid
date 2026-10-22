@@ -12,6 +12,7 @@ import {
 import { criteriaForCell } from "./judge-criteria.js";
 import { type ParameterConfiguration } from "./parameters.js";
 import { legacySelectedReferences } from "./legacy-grid-input.js";
+import { generatorInputEntries } from "./generator-input.js";
 
 import {
   ImageGenerationRequestAspectRatio,
@@ -92,17 +93,24 @@ export function normalizeImageSettings(
     ),
   );
 }
-type ReferenceSelectionInput = ParameterConfiguration &
-  Pick<GridInput, "format" | "prompt" | "messages" | "promptImages">;
+type ReferenceSelectionInput = ParameterConfiguration;
 
 export function selectedReferences(
   input: StoredGridInput | GridDraftInput,
 ): ReferenceImage[] {
-  if (input.inputVersion !== 2) return legacySelectedReferences(input);
+  if (input.inputVersion === undefined) return legacySelectedReferences(input);
+  const attachments =
+    input.inputVersion === 3
+      ? generatorInputEntries(input).flatMap(({ messages }) =>
+          messages.flatMap((message) => message.images ?? []),
+        )
+      : [
+          ...input.promptImages,
+          ...(input.messages ?? []).flatMap((message) => message.images ?? []),
+        ];
   return (
     mergeVariableImages(
-      input.messages?.flatMap((message) => message.images ?? []),
-      input.promptImages,
+      attachments,
       ...[...input.rows, ...input.columns].flatMap(
         (record) => record.variable?.map((field) => field?.images) ?? [],
       ),
@@ -110,25 +118,19 @@ export function selectedReferences(
   );
 }
 
-function explicitReferences(input: ReferenceSelectionInput): ReferenceImage[] {
-  if (input.format === "chat-template")
-    return input.messages?.flatMap((message) => message.images ?? []) ?? [];
-  return input.promptImages;
-}
-
 export function generatorReferences(
   input: ReferenceSelectionInput,
 ): ReferenceImage[] {
-  const templates =
-    input.format === "chat-template"
-      ? (input.messages?.map((message) => message.content) ?? [])
-      : [input.prompt];
-  return (
-    mergeVariableImages(
-      explicitReferences(input),
-      ...templates.map((text) => referencedVariableImages(text, input)),
-    ) ?? []
-  );
+  const groups: (ReferenceImage[] | undefined)[] = [];
+  for (const { source, caseIndex, messages } of generatorInputEntries(input)) {
+    const selection =
+      source === "common" ? undefined : { [source]: caseIndex! };
+    for (const message of messages) {
+      groups.push(message.images);
+      groups.push(referencedVariableImages(message.content, input, selection));
+    }
+  }
+  return mergeVariableImages(...groups) ?? [];
 }
 
 export function judgeReferences(

@@ -12,6 +12,7 @@ import { Store } from "../server/store.js";
 import { expandGrid, gridSchema, type Grid } from "../server/domain.js";
 import { createWorkflow } from "../server/workflow.js";
 import { referenceIds } from "../server/image-settings.js";
+import { parameterValue } from "../server/parameters.js";
 import {
   sharedReferenceUsage,
   removeReferenceGrid,
@@ -20,6 +21,7 @@ import {
   rejectReferenceUploads,
   rejectReferenceGridCells,
   removeStoredReferenceDimensions,
+  referenceUsageLinks,
 } from "./reference-storage-fixture.js";
 import { storedGridCount, validatedGrid } from "./grid-storage-fixture.js";
 import { currentDefinition, currentInput } from "./current-grid-fixture.js";
@@ -97,10 +99,19 @@ for (const shared of [false, true])
     );
     const input = currentInput({
       format: "image",
-      prompt: shared ? "Draw it" : "Draw it$ROW1",
+      caseAxis: shared ? undefined : "rows",
       budgetUsd: 5,
-      promptImages: shared ? [{ ...image, width: 900, height: 2 }] : [],
       parameters: {
+        input: {
+          kind: "common",
+          value: [
+            {
+              role: "user",
+              content: shared ? "Draw it" : "Draw it$ROW1",
+              images: shared ? [{ ...image, width: 900, height: 2 }] : [],
+            },
+          ],
+        },
         ...(shared
           ? { quality: { kind: "rows" as const } }
           : { variable: { kind: "rows" as const } }),
@@ -158,7 +169,7 @@ for (const shared of [false, true])
     const savedInput = gridSchema.parse(store.get(grid.id)!.input);
     assert.deepEqual(
       shared
-        ? savedInput.promptImages
+        ? parameterValue(savedInput, "input", 0, 0)![0].images
         : savedInput.rows[0].variable![0]!.images,
       [image],
     );
@@ -221,7 +232,7 @@ for (const shared of [false, true])
       const forkInput = gridSchema.parse(fork.input);
       assert.deepEqual(
         shared
-          ? forkInput.promptImages
+          ? parameterValue(forkInput, "input", 0, 0)![0].images
           : forkInput.rows[0].variable![0]!.images,
         [image],
       );
@@ -261,34 +272,25 @@ for (const format of ["chat-template", "markdown", "svg", "html"] as const)
     const image = store.references.add(png, "private.png", session)!;
     const input = currentInput({
       format,
-      ...(format === "chat-template"
-        ? {
-            messages: [
-              {
-                role: "user",
-                content: "Answer before seeing the private image.",
-              },
-              { role: "unfilled", content: "" },
-              { role: "user", content: "", images: [image] },
-              { role: "unfilled", content: "" },
-            ],
-          }
-        : {
-            prompt: "",
-            promptImages: [image],
-            parameters: {
-              model: { kind: "rows" },
-              effort: { kind: "columns" },
-            },
-          }),
-      ...(format === "chat-template"
-        ? {
-            parameters: {
-              model: { kind: "rows" },
-              effort: { kind: "columns" },
-            },
-          }
-        : {}),
+      parameters: {
+        input: {
+          kind: "common",
+          value:
+            format === "chat-template"
+              ? [
+                  {
+                    role: "user",
+                    content: "Answer before seeing the private image.",
+                  },
+                  { role: "unfilled", content: "" },
+                  { role: "user", content: "", images: [image] },
+                  { role: "unfilled", content: "" },
+                ]
+              : [{ role: "user", content: "", images: [image] }],
+        },
+        model: { kind: "rows" },
+        effort: { kind: "columns" },
+      },
       rows: [{ model: "fixture/text" }],
       columns: [{ effort: "none" }],
       budgetUsd: 1,
@@ -328,9 +330,12 @@ for (const format of ["markdown", "svg", "html"] as const)
     const forged = { ...common, width: 900, height: 2 };
     const input = currentInput({
       format,
-      prompt: "$ROW1",
-      promptImages: [forged],
+      caseAxis: "rows",
       parameters: {
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: "$ROW1", images: [forged] }],
+        },
         variable: { kind: "rows" },
         model: { kind: "columns" },
         effort: { kind: "common", value: "none" },
@@ -357,7 +362,9 @@ for (const format of ["markdown", "svg", "html"] as const)
     try {
       const saved = reopened.get(grid.id)!;
       const savedInput = gridSchema.parse(saved.input);
-      assert.deepEqual(savedInput.promptImages, [common]);
+      assert.deepEqual(parameterValue(savedInput, "input", 0, 0)![0].images, [
+        common,
+      ]);
       assert.deepEqual(savedInput.parameters.variable, { kind: "rows" });
       assert.deepEqual(savedInput.rows[0].variable![0]!.images, [
         variable,
@@ -383,6 +390,118 @@ for (const format of ["markdown", "svg", "html"] as const)
       assert.equal(reopened.references.allowed(common.id, uploader), true);
     } finally {
       reopened.db.close();
+    }
+  });
+
+for (const side of ["rows", "columns"] as const)
+  test(`${side} input attachments hydrate every case and track unused fields without leaking them into generation`, async (t) => {
+    const { store, database, secret } = await appFixture(t);
+    const uploader = { id: token(), created: 0 };
+    const first = store.references.add(referencePng, "first.png", uploader)!;
+    const second = store.references.add(
+      referenceWebp,
+      "second.webp",
+      uploader,
+    )!;
+    const unused = store.references.add(png, "unused.png", uploader)!;
+    const spare = store.references.add(referenceJpeg, "spare.jpg", uploader)!;
+    for (const format of ["markdown", "chat-template", "image"] as const) {
+      const owner = { id: token(), created: 0 };
+      const opposite = side === "rows" ? "columns" : "rows";
+      const input = currentInput({
+        format,
+        caseAxis: side,
+        parameters: {
+          input: { kind: side },
+          variable: { kind: side },
+          model: { kind: opposite },
+        },
+        [side]: [first, second].map((image, index) => ({
+          input:
+            format === "chat-template" && index === 1
+              ? [
+                  { role: "system", content: "Keep the supplied roles." },
+                  {
+                    role: "user",
+                    content: "Describe second",
+                    images: [{ ...image, width: 900, height: 2 }],
+                  },
+                  { role: "assistant", content: "Supplied answer" },
+                  { role: "user", content: "Continue" },
+                ]
+              : [
+                  {
+                    role: "user",
+                    content: `Describe ${index === 0 ? "first" : "second"}`,
+                    images: [{ ...image, width: 900, height: 2 }],
+                  },
+                ],
+          variable: [null, { text: "Unused field", images: [unused] }],
+        })),
+        [opposite]: [
+          { model: format === "image" ? "fixture/image" : "fixture/text" },
+        ],
+      });
+      const grid: Grid = {
+        id: token(),
+        owner: owner.id,
+        input,
+        status: "paused",
+        published: false,
+        visibility: "private",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        cells: expandGrid(input).map((cell) => ({ ...cell, id: token() })),
+      };
+      assert.equal(store.references.allowed(first.id, owner), false);
+      assert.equal(store.references.allowed(second.id, owner), false);
+      store.insert(validatedGrid(grid));
+      const reopened = new Store(database, secret);
+      try {
+        const saved = gridSchema.parse(reopened.get(grid.id)!.input);
+        assert.equal(saved.caseAxis, side);
+        assert.equal(saved[side].length, 2);
+        assert.deepEqual(saved[side][0].variable, [
+          null,
+          { text: "Unused field", images: [unused] },
+        ]);
+        assert.deepEqual(parameterValue(saved, "input", 0, 0)![0].images, [
+          first,
+        ]);
+        const secondInput = parameterValue(
+          saved,
+          "input",
+          side === "rows" ? 1 : 0,
+          side === "columns" ? 1 : 0,
+        );
+        assert.deepEqual(
+          secondInput![format === "chat-template" ? 1 : 0].images,
+          [second],
+        );
+        const generations = reopened
+          .workflow(grid.id)
+          .filter((task) => task.kind === "generation");
+        assert.deepEqual(
+          generations.map((task) => referenceIds(task.input)),
+          [[first.id], [second.id]],
+        );
+        assert.deepEqual(
+          referenceUsageLinks(reopened.db)
+            .filter((link) => link.grid_id === grid.id)
+            .map((link) => link.reference_id)
+            .sort(),
+          [first.id, second.id, unused.id].sort(),
+        );
+        for (const image of [first, second, unused]) {
+          assert.equal(reopened.references.allowed(image.id, owner), true);
+          assert.equal(reopened.references.allowed(image.id), false);
+        }
+        assert.equal(reopened.references.allowed(spare.id, owner), false);
+        removeReferenceGrid(reopened.db, grid.id);
+        for (const image of [first, second, unused])
+          assert.equal(reopened.references.allowed(image.id, owner), false);
+      } finally {
+        reopened.db.close();
+      }
     }
   });
 
@@ -472,9 +591,13 @@ test("grid creation records every configured field image atomically and keeps me
   const missing = { id: token(), name: "missing.png" };
   const input = currentDefinition({
     format: "image",
-    prompt: "Use the selected references$ROW1",
+    caseAxis: "rows",
     budgetUsd: 1,
     parameters: {
+      input: {
+        kind: "common",
+        value: [{ role: "user", content: "Use the selected references$ROW1" }],
+      },
       variable: { kind: "rows" },
       size: { kind: "columns" },
     },
@@ -556,9 +679,17 @@ test("identical uploads share one blob across private owners and grids without s
     const owner = index ? bob : alice;
     const input = currentInput({
       format: "chat-template",
-      messages: [{ role: "user", content: "Describe it", images: [reference] }],
       budgetUsd: 1,
-      parameters: { effort: { kind: "rows" }, model: { kind: "columns" } },
+      parameters: {
+        input: {
+          kind: "common",
+          value: [
+            { role: "user", content: "Describe it", images: [reference] },
+          ],
+        },
+        effort: { kind: "rows" },
+        model: { kind: "columns" },
+      },
       rows: [{ effort: "none" }],
       columns: [{ model: "fixture/text" }],
     });
@@ -791,15 +922,21 @@ test("legacy workflow inputs and live chat histories project authoritative dimen
   const legacy = { id: image.id, name: image.name };
   const input = currentInput({
     format: "chat-template",
-    messages: [
-      {
-        role: "user",
-        content: "Describe",
-        images: [{ ...legacy, width: 2, height: 900 }],
+    parameters: {
+      input: {
+        kind: "common",
+        value: [
+          {
+            role: "user",
+            content: "Describe",
+            images: [{ ...legacy, width: 2, height: 900 }],
+          },
+          { role: "unfilled", content: "" },
+        ],
       },
-      { role: "unfilled", content: "" },
-    ],
-    parameters: { effort: { kind: "rows" }, model: { kind: "columns" } },
+      effort: { kind: "rows" },
+      model: { kind: "columns" },
+    },
     rows: [{ effort: "none" }],
     columns: [{ model: "fixture/text" }],
     budgetUsd: 1,
@@ -824,7 +961,15 @@ test("legacy workflow inputs and live chat histories project authoritative dimen
   ];
   task.progress = { draft: JSON.stringify(history) };
   store.insert(validatedGrid(grid), tasks);
-  assert.deepEqual(store.get(grid.id)!.input.messages![0].images, [image]);
+  assert.deepEqual(
+    parameterValue(
+      gridSchema.parse(store.get(grid.id)!.input),
+      "input",
+      0,
+      0,
+    )![0].images,
+    [image],
+  );
   removeStoredReferenceDimensions(store.db);
   unlinkSync(store.references.path(image.id)!);
   const restored = store.workflow(grid.id)[0];
@@ -837,7 +982,10 @@ test("legacy workflow inputs and live chat histories project authoritative dimen
   });
   assert.equal(response.status, 200);
   const view = await response.json();
-  assert.deepEqual(view.input.messages[0].images, [image]);
+  assert.deepEqual(view.input.parameters.input.value[0].images, [image]);
   assert.deepEqual(JSON.parse(view.cells[0].draft), expectedHistory);
-  assert.equal(view.input.messages[0].images[0].name, legacy.name);
+  assert.equal(
+    view.input.parameters.input.value[0].images[0].name,
+    legacy.name,
+  );
 });

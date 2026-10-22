@@ -69,12 +69,14 @@ test("reference SHA validators reuse bytes only after authorization, including a
   store.saveSession(alice);
   const input = currentInput({
     format: "chat-template",
-    prompt: "Describe this image",
-    messages: [
-      { role: "user", content: "Describe this image", images: [image] },
-    ],
     budgetUsd: 1,
     parameters: {
+      input: {
+        kind: "common",
+        value: [
+          { role: "user", content: "Describe this image", images: [image] },
+        ],
+      },
       model: { kind: "rows" },
       effort: { kind: "columns" },
     },
@@ -181,11 +183,27 @@ test("completed chat retention deduplicates image downloads and respects denial,
       return Response.json(
         {
           input: {
+            inputVersion: 3,
             format: "chat-template",
-            messages: [
-              { role: "user", images: [{ id: image }, { id: image }] },
-              { role: "user", images: [{ id: later }] },
+            caseAxis: "rows",
+            parameters: { input: { kind: "rows" } },
+            rows: [
+              {
+                id: "first",
+                input: [
+                  {
+                    role: "user",
+                    content: "",
+                    images: [{ id: image }, { id: image }],
+                  },
+                ],
+              },
+              {
+                id: "second",
+                input: [{ role: "user", content: "", images: [{ id: later }] }],
+              },
             ],
+            columns: [{ id: "neutral" }],
           },
           cells: [
             {

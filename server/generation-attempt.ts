@@ -54,7 +54,7 @@ export async function generateAttempt(
     (prompt, dollars) => generationBudget(model, prompt, "", dollars),
     (messages, budget, progress) => {
       const prepared = prepareTextInference(
-        "markdown",
+        "chat-template",
         { ...cell, prompt: chatText(messages), messages },
         budget,
         false,

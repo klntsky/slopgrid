@@ -8,6 +8,7 @@ import {
   referenceImageSchema,
   type ReferenceImage,
 } from "../../server/image-settings";
+import { generatorInputEntries } from "../../server/generator-input";
 
 // Files stay in this browser across reloads and OAuth redirects until Generate.
 function localFile(
@@ -56,13 +57,12 @@ export async function saveReferenceFile(file: File): Promise<ReferenceImage> {
 export function referenceLists(
   input: Pick<
     GridInput | GridDraftInput,
-    "promptImages" | "rows" | "columns" | "messages"
+    "parameters" | "rows" | "columns" | "caseAxis"
   >,
 ): ReferenceImage[][] {
   return [
-    input.promptImages,
-    ...(input.messages ?? []).flatMap((message) =>
-      message.images ? [message.images] : [],
+    ...generatorInputEntries(input).flatMap(({ messages }) =>
+      messages.flatMap((message) => (message.images ? [message.images] : [])),
     ),
     ...[...input.rows, ...input.columns].flatMap((entry) => [
       ...(entry.variable ?? []).flatMap((field) =>

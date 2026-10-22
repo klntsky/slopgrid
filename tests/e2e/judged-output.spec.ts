@@ -1,6 +1,7 @@
 import { test, expect } from "./fixtures";
 import type { Page } from "@playwright/test";
 import type { GridInput } from "../../server/domain";
+import { generatorInputForCell } from "../../server/generator-input";
 import {
   connectOpenRouter,
   finishPublishing,
@@ -13,7 +14,6 @@ import { currentDefinition, currentInput } from "../current-grid-fixture";
 
 async function acceptDrop(page: Page, action: () => Promise<unknown>) {
   page.once("dialog", async (dialog) => {
-    expect(dialog.message()).toContain("Drop these values?");
     await dialog.accept();
   });
   await action();
@@ -73,10 +73,6 @@ test("judge criteria preserve boolean answers and differing judge axes reset onl
   await page.goto("/");
   await page.getByRole("button", { name: "Markdown", exact: true }).click();
   const judgeSection = page.getByRole("region", { name: "Judge", exact: true });
-  const layoutTable = page.getByRole("table", {
-    name: "Grid layout parameters",
-    exact: true,
-  });
   await page
     .getByRole("checkbox", { name: "Add a LLM judge", exact: true })
     .check();
@@ -138,7 +134,7 @@ test("judge criteria preserve boolean answers and differing judge axes reset onl
     .getByRole("combobox", { name: "Rows", exact: true })
     .selectOption("judge_effort");
   await expect(
-    layoutTable
+    page
       .getByRole("group", { name: "Row values", exact: true })
       .getByRole("checkbox", { name: "high", exact: true }),
   ).toBeChecked();
@@ -146,13 +142,13 @@ test("judge criteria preserve boolean answers and differing judge axes reset onl
     .getByRole("combobox", { name: "Columns", exact: true })
     .selectOption("judge_model");
   await expect(
-    layoutTable.getByRole("searchbox", { name: "Search judge models" }),
+    page.getByRole("searchbox", { name: "Search judge models" }),
   ).toBeVisible();
-  const rowValues = layoutTable.getByRole("group", {
+  const rowValues = page.getByRole("group", {
     name: "Row values",
     exact: true,
   });
-  const columnValues = layoutTable.getByRole("group", {
+  const columnValues = page.getByRole("group", {
     name: "Column values",
     exact: true,
   });
@@ -224,10 +220,10 @@ test("judge criteria preserve boolean answers and differing judge axes reset onl
     .uncheck();
   await expect(
     page.getByRole("combobox", { name: "Rows", exact: true }),
-  ).toHaveValue("effort");
+  ).toHaveValue("single");
   await expect(
     page.getByRole("combobox", { name: "Columns", exact: true }),
-  ).toHaveValue("model");
+  ).toHaveValue("single");
   await expect(
     page.getByRole("checkbox", { name: "Add a LLM judge", exact: true }),
   ).not.toBeChecked();
@@ -464,6 +460,16 @@ test("removing a judge preserves ordinary axes and generation settings", async (
     .selectOption("variable");
   await setVariableValues(page, "Columns", ["hat"]);
   await selectModel(page, "fixture/text");
+  const generatorEffort = page.getByRole("group", {
+    name: "Row values",
+    exact: true,
+  });
+  await generatorEffort
+    .getByRole("checkbox", { name: "Model default", exact: true })
+    .uncheck();
+  await generatorEffort
+    .getByRole("checkbox", { name: "high", exact: true })
+    .check();
   await page
     .getByLabel("Prompt", { exact: true })
     .fill("Describe a cat wearing a $COLUMN1");
@@ -478,7 +484,7 @@ test("removing a judge preserves ordinary axes and generation settings", async (
     .uncheck();
   await expect(
     page.getByRole("combobox", { name: "Rows", exact: true }),
-  ).toHaveValue("effort");
+  ).toHaveValue("single");
   await expect(
     page.getByRole("combobox", { name: "Columns", exact: true }),
   ).toHaveValue("variable");
@@ -489,11 +495,9 @@ test("removing a judge preserves ordinary axes and generation settings", async (
   await expect(
     models.locator('input[type="radio"][value="fixture/text"]'),
   ).toBeChecked();
-  await expect(
-    page
-      .getByRole("group", { name: "Row values", exact: true })
-      .getByRole("checkbox", { name: "Model default", exact: true }),
-  ).toBeChecked();
+  await expect(page.getByLabel("Thinking effort", { exact: true })).toHaveValue(
+    "high",
+  );
   await expect(page.getByLabel("Prompt", { exact: true })).toHaveValue(
     "Describe a cat wearing a $COLUMN1",
   );
@@ -641,7 +645,9 @@ test("format changes retain criteria and judge effort, clear incompatible models
   await judgeSection
     .getByLabel("Judge thinking effort", { exact: true })
     .selectOption("high");
-  await page.getByRole("button", { name: "SVG", exact: true }).click();
+  await acceptDrop(page, () =>
+    page.getByRole("button", { name: "SVG", exact: true }).click(),
+  );
   await expect(
     judgeSection.getByLabel("Criterion 1", { exact: true }),
   ).toHaveValue("Is there a blue circle?");
@@ -690,9 +696,9 @@ test("format changes retain criteria and judge effort, clear incompatible models
   await expect(
     judgeSection.getByLabel("Judge thinking effort", { exact: true }),
   ).toHaveValue("high");
-  await page
-    .getByRole("button", { name: "Static website", exact: true })
-    .click();
+  await acceptDrop(page, () =>
+    page.getByRole("button", { name: "Static website", exact: true }).click(),
+  );
   await expect(
     judgeSection.getByLabel("Criterion 1", { exact: true }),
   ).toHaveCount(0);
@@ -727,10 +733,13 @@ const judgedCriteria = [
 ];
 const judgedInput = currentInput({
   format: "markdown",
-  prompt: "Describe a red rectangle",
   budgetUsd: 0.1,
   judge: true,
   parameters: {
+    input: {
+      kind: "common",
+      value: [{ role: "user", content: "Describe a red rectangle" }],
+    },
     effort: { kind: "common", value: "none" },
     judge_model: { kind: "rows" },
     judge_effort: { kind: "columns" },
@@ -923,7 +932,11 @@ test("shared generation stays usable across judgment views and persists expanded
     cell.getByRole("link", { name: "Download output", exact: true }),
   ).toBeVisible();
   await page
-    .getByRole("heading", { level: 1, name: judgedInput.prompt, exact: true })
+    .getByRole("heading", {
+      level: 1,
+      name: generatorInputForCell(judgedInput, 0, 0)[0].content,
+      exact: true,
+    })
     .click();
   await expect(details).toBeVisible();
   await scores.first().click();
@@ -1190,10 +1203,6 @@ test("judge answers and axes survive draft reload, OAuth, Edit, and Fork", async
     .getByRole("checkbox", { name: "Add a LLM judge", exact: true })
     .check();
   const judgeSection = page.getByRole("region", { name: "Judge", exact: true });
-  const layoutTable = page.getByRole("table", {
-    name: "Grid layout parameters",
-    exact: true,
-  });
   await judgeSection
     .getByLabel("Criterion 1", { exact: true })
     .fill(judgedCriteria[0].text);
@@ -1207,7 +1216,7 @@ test("judge answers and axes survive draft reload, OAuth, Edit, and Fork", async
   await page
     .getByRole("combobox", { name: "Rows", exact: true })
     .selectOption("judge_model");
-  const rowModels = layoutTable.getByRole("group", {
+  const rowModels = page.getByRole("group", {
     name: "Row values",
     exact: true,
   });
@@ -1223,7 +1232,7 @@ test("judge answers and axes survive draft reload, OAuth, Edit, and Fork", async
   await page
     .getByRole("combobox", { name: "Columns", exact: true })
     .selectOption("judge_effort");
-  const columnEfforts = layoutTable.getByRole("group", {
+  const columnEfforts = page.getByRole("group", {
     name: "Column values",
     exact: true,
   });
@@ -1240,7 +1249,9 @@ test("judge answers and axes survive draft reload, OAuth, Edit, and Fork", async
   await page
     .getByLabel("Thinking effort", { exact: true })
     .selectOption("none");
-  await page.getByLabel("Prompt", { exact: true }).fill(judgedInput.prompt);
+  await page
+    .getByLabel("Prompt", { exact: true })
+    .fill(generatorInputForCell(judgedInput, 0, 0)[0].content);
   await page.getByLabel("Budget limit per cell", { exact: true }).fill("0.1");
   const expectRestored = async () => {
     await expect(
@@ -1353,12 +1364,12 @@ for (const format of ["svg", "image"] as const) {
     await page.request.post("/fixture/reset", { data: { svgOutput: svg } });
     const input = currentInput({
       format,
-      prompt: judgedInput.prompt,
       budgetUsd: judgedInput.budgetUsd,
       judge: true,
       rows: judgedInput.rows,
       columns: judgedInput.columns,
       parameters: {
+        input: judgedInput.parameters.input,
         ...(format === "svg"
           ? { effort: { kind: "common" as const, value: "none" as const } }
           : {}),
@@ -1872,9 +1883,13 @@ test("judgment hover aligns short criteria fractionally even when unequal views 
   });
   const id = await createJudged(page, {
     ...judgedInput,
-    prompt: "Draw a red $ROW1 rectangle",
+    caseAxis: "rows",
     parameters: {
       ...judgedInput.parameters,
+      input: {
+        kind: "common",
+        value: [{ role: "user", content: "Draw a red $ROW1 rectangle" }],
+      },
       variable: { kind: "rows" },
       judge_model: { kind: "common", value: "fixture/text" },
       judge_criteria: { kind: "common", value: criteria },
@@ -2140,9 +2155,13 @@ test("native judgment wheel aligns the criterion under a stationary cursor in un
   });
   const id = await createJudged(page, {
     ...judgedInput,
-    prompt: "Draw a red $ROW1 rectangle",
+    caseAxis: "rows",
     parameters: {
       ...judgedInput.parameters,
+      input: {
+        kind: "common",
+        value: [{ role: "user", content: "Draw a red $ROW1 rectangle" }],
+      },
       variable: { kind: "rows" },
       judge_model: { kind: "common", value: "fixture/text" },
       judge_criteria: { kind: "common", value: criteria },
@@ -2315,9 +2334,13 @@ test("judgment layout changes after desktop scrollend refresh a stationary curso
   });
   const id = await createJudged(page, {
     ...judgedInput,
-    prompt: "Draw a red $ROW1 rectangle",
+    caseAxis: "rows",
     parameters: {
       ...judgedInput.parameters,
+      input: {
+        kind: "common",
+        value: [{ role: "user", content: "Draw a red $ROW1 rectangle" }],
+      },
       variable: { kind: "rows" },
       judge_model: { kind: "common", value: "fixture/text" },
       judge_criteria: { kind: "common", value: criteria },

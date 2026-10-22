@@ -65,3 +65,13 @@ export function removeArtifactSourceGrid(
     db.prepare("DELETE FROM grids WHERE id=?").run(gridId);
   })();
 }
+
+export function restorePlainPromptGeneration(
+  db: Database.Database,
+  generationId: string,
+  signature: string,
+) {
+  db.prepare(
+    "UPDATE workflow_tasks SET data=json_set(json_remove(data,'$.input.messages'),'$.output.provenance.signature',?) WHERE id=?",
+  ).run(signature, generationId);
+}

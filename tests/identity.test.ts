@@ -74,9 +74,9 @@ test("account ownership, frozen authors, browser credentials, and OAuth callback
   store.saveSession({ id: second, userId: alice.id, created: Date.now() });
   store.saveSession({ id: other, userId: bob.id, created: Date.now() });
   const input = currentInput({
-    prompt: "test",
     budgetUsd: 5,
     parameters: {
+      input: { kind: "common", value: [{ role: "user", content: "test" }] },
       model: { kind: "rows" },
       effort: { kind: "columns" },
     },

@@ -33,9 +33,10 @@ test("large current prompts, variables, and model IDs reach inference without re
   const model = "fixture/" + "m".repeat(300);
   const input = currentDefinition({
     format: "markdown",
-    prompt,
     budgetUsd: 5,
+    caseAxis: "rows",
     parameters: {
+      input: { kind: "common", value: [{ role: "user", content: prompt }] },
       model: { kind: "common", value: model },
       effort: { kind: "columns" },
       variable: { kind: "rows" },
@@ -60,6 +61,10 @@ test("large current prompts, variables, and model IDs reach inference without re
   for (const invalid of [
     { ...input, inputVersion: undefined },
     { ...input, inputVersion: 1 },
+    { ...input, inputVersion: 2 },
+    { ...input, prompt },
+    { ...input, messages: [{ role: "user", content: prompt }] },
+    { ...input, promptImages: [] },
     { ...input, model },
     { ...input, inputReferences: [] },
     { ...input, referenceGroups: {} },

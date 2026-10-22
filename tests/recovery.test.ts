@@ -34,8 +34,12 @@ test("a restart preserves finished outputs and pauses interrupted work until an 
       createdAt: new Date().toISOString(),
       status: "running",
       input: currentInput({
-        prompt: "$ROW1 hat",
+        caseAxis: "rows",
         parameters: {
+          input: {
+            kind: "common",
+            value: [{ role: "user", content: "$ROW1 hat" }],
+          },
           variable: { kind: "rows" },
           effort: { kind: "common", value: "none" },
         },
@@ -148,10 +152,13 @@ test("recovery preserves a shared generation and settled judgment while requeuin
   const store = new Store(":memory:", Buffer.alloc(32, 2), dir);
   try {
     const input = currentInput({
-      prompt: "Shared output",
       budgetUsd: 1,
       judge: true,
       parameters: {
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: "Shared output" }],
+        },
         judge_model: { kind: "rows" },
         judge_effort: { kind: "columns" },
         judge_criteria: {

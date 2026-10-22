@@ -20,7 +20,11 @@ import { initializeDatabase } from "./database.js";
 import { expandPromptForTitle } from "./grid-title.js";
 import { selectedReferences } from "./image-settings.js";
 import { createWorkflow, projectWorkflow } from "./workflow.js";
-import { gridDimensions, gridDisplay } from "../shared/grid-display.js";
+import {
+  gridDimensions,
+  gridDisplay,
+  gridInputText,
+} from "../shared/grid-display.js";
 export type Session = {
   id: string;
   anonymousId?: string;
@@ -459,7 +463,7 @@ export class Store {
     const display = gridDisplay(input);
     return {
       gridId: row.gridId,
-      prompt: input.prompt,
+      prompt: gridInputText(input),
       row: display.rows[Math.floor(row.position / columns)].downloadLabel,
       column: display.columns[row.position % columns].downloadLabel,
       format: input.format,

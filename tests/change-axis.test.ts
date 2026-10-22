@@ -1,3 +1,4 @@
+import { generatorInputForCell } from "../server/generator-input.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { expandGrid } from "../server/domain.js";
@@ -25,10 +26,7 @@ function initial(
   return {
     ...currentDefinition({
       format,
-      prompt,
-      ...(format === "chat-template"
-        ? { messages: [{ role: "user", content: prompt }] }
-        : {}),
+      caseAxis: caseSide,
       judge: format !== "html",
       parameters: {
         model: { kind: "common", value: "generator/fixed" },
@@ -49,6 +47,7 @@ function initial(
               },
             }
           : {}),
+        input: { kind: "common", value: [{ role: "user", content: prompt }] },
       },
       rows:
         caseSide === "rows"
@@ -200,6 +199,37 @@ parameterTests("size", "1024x1024", "1536x1024", "image");
 parameterTests("aspect_ratio", "1:1", "16:9", "image");
 parameterTests("quality", "high", "low", "image");
 parameterTests("background", "transparent", "opaque", "image");
+parameterTests(
+  "input",
+  [
+    {
+      role: "user",
+      content: "First prompt",
+      images: [{ id: "prompt-image", name: "prompt.png" }],
+    },
+  ],
+  [{ role: "user", content: "Second prompt" }],
+);
+parameterTests(
+  "input",
+  [
+    { role: "system", content: "  Rules\n" },
+    {
+      role: "user",
+      content: "Question",
+      images: [{ id: "history-image", name: "history.png" }],
+    },
+    { role: "unfilled", content: "" },
+  ],
+  [
+    { role: "user", content: "First" },
+    { role: "assistant", content: "Answer" },
+    { role: "user", content: "Another" },
+    { role: "unfilled", content: "" },
+    { role: "user", content: "Last" },
+  ],
+  "chat-template",
+);
 
 test("empty common model selections remain unselected when choosing a dimension", () => {
   for (const parameter of ["model", "judge_model"] as const) {
@@ -478,12 +508,17 @@ for (const side of ["rows", "columns"] as const) {
 for (const side of ["rows", "columns"] as const) {
   test(`replacing ${side} prompt variables confirms field/image loss without creating a second variable owner`, () => {
     const token = side === "rows" ? "$ROW1" : "$COLUMN1";
-    let input = { ...initial(), prompt: token };
+    let input: GridDraftInput = initial();
+    input.parameters.input = {
+      kind: "common",
+      value: [{ role: "user", content: token }],
+    };
     input = reduceInput(input, {
       type: "dimension",
       side,
       parameter: "variable",
     });
+    input = reduceInput(input, { type: "add-variable", side });
     input = reduceInput(
       input,
       caseValueAction(side, 0, "variable", [
@@ -519,7 +554,7 @@ for (const side of ["rows", "columns"] as const) {
     assert.equal(next.parameters.variable, undefined);
     assert.ok(next[side].every((entry) => !Object.hasOwn(entry, "variable")));
     assert.equal(next[side].length, 1);
-    assert.equal(next.prompt, token);
+    assert.equal(generatorInputForCell(next, 0, 0)[0].content, token);
     assert.equal(validateDraftInput(next).parsed.success, false);
   });
 }
@@ -584,14 +619,10 @@ test("single-case and identical-case variable text or images require confirmatio
   ]) {
     for (const count of [1, 2]) {
       let input = initial("svg", "rows");
-      input = reduceInput(
-        input,
-        caseValuesAction(
-          "rows",
-          "variable",
-          Array.from({ length: count }, () => [structuredClone(field)]),
-        ),
-      );
+      input.rows = input.rows.slice(0, count).map((record) => ({
+        ...record,
+        variable: [structuredClone(field)],
+      }));
       const action = {
         type: "dimension" as const,
         side: "rows" as const,
@@ -614,7 +645,7 @@ test("single-case and identical-case variable text or images require confirmatio
 
 test("deleted variable slots preserve later values and image identity through append, new cases and swaps", () => {
   let input = initial("svg", "rows");
-  input.prompt = "Draw $ROW2";
+  generatorInputForCell(input, 0, 0)[0].content = "Draw $ROW2";
   input = reduceInput(
     input,
     caseValuesAction("rows", "variable", [
@@ -640,14 +671,32 @@ test("deleted variable slots preserve later values and image identity through ap
   const after = validateDraftInput(input).parsed;
   assert.ok(after.success);
   assert.deepEqual(expandGrid(after.data), expected);
-  const removed = validateDraftInput({ ...input, prompt: "Draw $ROW1" }).parsed;
+  const removed = validateDraftInput({
+    ...input,
+    parameters: {
+      ...input.parameters,
+      input: {
+        kind: "common",
+        value: [
+          {
+            ...generatorInputForCell(input, 0, 0)[0],
+            role: "user",
+            content: "Draw $ROW1",
+          },
+        ],
+      },
+    },
+  }).parsed;
   assert.equal(removed.success, false);
   const added = reduceInput(input, { type: "add-case", side: "rows" });
   assert.deepEqual(added.rows[2].variable, [null, { text: "" }, { text: "" }]);
   const swapped = reduceInput(input, { type: "swap" });
   const parsedSwap = validateDraftInput(swapped).parsed;
   assert.ok(parsedSwap.success);
-  assert.equal(swapped.prompt, "Draw $COLUMN2");
+  assert.equal(
+    generatorInputForCell(swapped, 0, 0)[0].content,
+    "Draw $COLUMN2",
+  );
   assert.deepEqual(
     expandGrid(parsedSwap.data).map((cell) => [cell.prompt, cell.images]),
     expected.map((cell) => [cell.prompt, cell.images]),
@@ -708,11 +757,26 @@ for (const side of ["rows", "columns"] as const) {
     assert.deepEqual(criteriaForCell(next, 0, 0), [
       { text: "Is it blue?", correctAnswer: false },
     ]);
-    assert.equal(next.prompt, input.prompt);
+    assert.equal(
+      generatorInputForCell(next, 0, 0)[0].content,
+      generatorInputForCell(input, 0, 0)[0].content,
+    );
     assert.equal(validateDraftInput(next).parsed.success, false);
     const corrected = validateDraftInput({
       ...next,
-      prompt: "Draw a rectangle",
+      parameters: {
+        ...next.parameters,
+        input: {
+          kind: "common",
+          value: [
+            {
+              ...generatorInputForCell(next, 0, 0)[0],
+              role: "user",
+              content: "Draw a rectangle",
+            },
+          ],
+        },
+      },
     }).parsed;
     assert.ok(corrected.success);
     assert.deepEqual(
@@ -781,15 +845,11 @@ for (const side of ["rows", "columns"] as const) {
   test(`empty or blank ${side} cases can return to a valid single cell without confirmation`, () => {
     for (const count of [0, 1, 2]) {
       let input = initial("svg", side);
-      input.prompt = "Draw a rectangle";
-      input = reduceInput(
-        input,
-        caseValuesAction(
-          side,
-          "variable",
-          Array.from({ length: count }, () => [{ text: "" }]),
-        ),
-      );
+      generatorInputForCell(input, 0, 0)[0].content = "Draw a rectangle";
+      input[side] = input[side].slice(0, count).map((record) => ({
+        ...record,
+        variable: [{ text: "" }],
+      }));
       const action = { type: "single" as const, side };
       withConfirmation(false, (calls) => {
         assert.equal(confirmInputAction(input, action), true);
@@ -807,3 +867,203 @@ for (const side of ["rows", "columns"] as const) {
     }
   });
 }
+
+for (const side of ["rows", "columns"] as const) {
+  const other = side === "rows" ? "columns" : "rows";
+  const token = side === "rows" ? "$ROW1" : "$COLUMN1";
+
+  test(`${side} case mode starts without fields, preserves the last deleted slot and appends a new number`, () => {
+    let input = reduceInput(initial(), {
+      type: "dimension",
+      side,
+      parameter: "variable",
+    });
+    assert.equal(input.caseAxis, side);
+    assert.equal(input.parameters.variable, undefined);
+    assert.equal(input[side].length, 1);
+    assert.deepEqual(
+      input[side].map(({ id, ...record }) => record),
+      [{}],
+    );
+    input = reduceInput(input, { type: "to-axis", side, parameter: "input" });
+    input = reduceInput(input, { type: "add-case", side });
+    const ids = input[side].map((record) => record.id);
+    input = reduceInput(input, { type: "add-variable", side });
+    assert.deepEqual(input.parameters.variable, { kind: side });
+    input = reduceInput(input, { type: "remove-variable", side, index: 0 });
+    assert.deepEqual(
+      input[side].map((record) => record.variable),
+      [[null], [null]],
+    );
+    assert.deepEqual(
+      input[side].map((record) => record.id),
+      ids,
+    );
+    assert.equal(validateDraftInput(input).parsed.success, false);
+    input = reduceInput(
+      input,
+      caseValueAction(side, 1, "input", [{ role: "user", content: "Second" }]),
+    );
+    assert.equal(validateDraftInput(input).parsed.success, true);
+    const added = reduceInput(input, { type: "add-variable", side });
+    assert.deepEqual(
+      added[side].map((record) => record.variable),
+      [
+        [null, { text: "" }],
+        [null, { text: "" }],
+      ],
+    );
+    assert.deepEqual(
+      added[side].map((record) => record.id),
+      ids,
+    );
+    assert.equal(added.caseAxis, side);
+  });
+
+  for (const format of ["svg", "chat-template"] as const) {
+    test(`${format} input in ${side} collapses atomically to Single with equal preservation and differing cancellation`, () => {
+      let input = initial(format);
+      const messages: ParameterValues["input"] =
+        format === "svg"
+          ? [
+              {
+                role: "user",
+                content: "  Prompt\n",
+                images: [{ id: "input-image", name: "input.png" }],
+              },
+            ]
+          : [
+              { role: "system", content: "  Rules\n" },
+              {
+                role: "user",
+                content: "Question",
+                images: [{ id: "input-image", name: "input.png" }],
+              },
+              { role: "unfilled", content: "" },
+            ];
+      input.parameters.input = { kind: "common", value: messages };
+      input = reduceInput(input, {
+        type: "dimension",
+        side: other,
+        parameter: "effort",
+      });
+      input = reduceInput(input, {
+        type: "dimension",
+        side,
+        parameter: "variable",
+      });
+      input = reduceInput(input, { type: "add-case", side });
+      input = reduceInput(input, { type: "to-axis", side, parameter: "input" });
+      const action = { type: "single" as const, side };
+      const before = structuredClone(input);
+      withConfirmation(false, (calls) => {
+        assert.equal(confirmInputAction(input, action), true);
+        assert.deepEqual(calls, []);
+      });
+      const equal = reduceInput(input, action);
+      assert.equal(equal.caseAxis, undefined);
+      assert.deepEqual(equal.parameters.input, {
+        kind: "common",
+        value: messages,
+      });
+      assert.deepEqual(equal[other], input[other]);
+      assert.deepEqual(equal[side], [{ id: input[side][0].id }]);
+      assert.deepEqual(input, before);
+      const changed = reduceInput(
+        input,
+        caseValueAction(side, 1, "input", [
+          { role: "user", content: "Different structure" },
+        ]),
+      );
+      const changedBefore = structuredClone(changed);
+      withConfirmation(false, (calls) => {
+        const next = confirmInputAction(changed, action)
+          ? reduceInput(changed, action)
+          : changed;
+        assert.equal(next, changed);
+        assert.equal(calls.length, 1);
+      });
+      assert.deepEqual(changed, changedBefore);
+      withConfirmation(true, (calls) => {
+        assert.equal(confirmInputAction(changed, action), true);
+        assert.equal(calls.length, 1);
+      });
+      const reset = reduceInput(changed, action);
+      assert.equal(reset.caseAxis, undefined);
+      assert.deepEqual(reset.parameters.input, {
+        kind: "common",
+        value: [{ role: "user", content: "" }],
+      });
+      assert.deepEqual(reset[other], changed[other]);
+      assert.deepEqual(reset[side], [{ id: changed[side][0].id }]);
+    });
+  }
+
+  test(`${side} swapping moves complete case histories and template tokens, not literal fields`, () => {
+    let input = initial("chat-template", side);
+    input = reduceInput(input, { type: "to-axis", side, parameter: "input" });
+    input = reduceInput(
+      input,
+      caseValueAction(side, 0, "input", [
+        { role: "system", content: `Rules ${token}` },
+        {
+          role: "user",
+          content: token,
+          images: [{ id: "history", name: "history.png" }],
+        },
+        { role: "unfilled", content: "" },
+      ]),
+    );
+    input = reduceInput(
+      input,
+      caseValueAction(side, 1, "input", [
+        { role: "user", content: `Other ${token}` },
+      ]),
+    );
+    input[side][0].variable![0]!.text = token;
+    const swapped = reduceInput(input, { type: "swap" });
+    const swappedToken = other === "rows" ? "$ROW1" : "$COLUMN1";
+    assert.equal(swapped.caseAxis, other);
+    assert.deepEqual(swapped.parameters.input, { kind: other });
+    assert.deepEqual(swapped[other][0].input, [
+      { role: "system", content: `Rules ${swappedToken}` },
+      {
+        role: "user",
+        content: swappedToken,
+        images: [{ id: "history", name: "history.png" }],
+      },
+      { role: "unfilled", content: "" },
+    ]);
+    assert.equal(swapped[other][0].variable![0]!.text, token);
+    assert.deepEqual(reduceInput(swapped, { type: "swap" }), input);
+  });
+}
+
+for (const side of ["rows", "columns"] as const)
+  test(`${side} identical inputs with absent or cleared images return to common without data loss`, () => {
+    let input = reduceInput(initial("svg", side), {
+      type: "to-axis",
+      side,
+      parameter: "input",
+    });
+    input = reduceInput(
+      input,
+      caseValuesAction(side, "input", [
+        [{ role: "user", content: "Keep this prompt", images: [] }],
+        [{ role: "user", content: "Keep this prompt" }],
+      ]),
+    );
+    const action = { type: "to-common" as const, parameter: "input" as const };
+    withConfirmation(false, (calls) => {
+      assert.equal(confirmInputAction(input, action), true);
+      assert.deepEqual(calls, []);
+    });
+    const common = reduceInput(input, action);
+    assert.deepEqual(
+      generatorInputForCell(common, 0, 0).map(({ role, content }) => [
+        role,
+        content,
+      ]),
+      [["user", "Keep this prompt"]],
+    );
+  });

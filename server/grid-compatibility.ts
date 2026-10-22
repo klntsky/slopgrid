@@ -10,9 +10,10 @@ import { variableToken } from "./prompt-variables.js";
 import type { Model } from "./provider.js";
 import { type CommonParameterId, type ParameterId } from "./parameters.js";
 import { ModelResolutionError, modelAliasResolver } from "./model-alias.js";
+import { generatorInputForCell } from "./generator-input.js";
 
 type ScalarParameter = CommonParameterId;
-export type CompatibilityParameter = ParameterId | "prompt" | "messages";
+export type CompatibilityParameter = ParameterId;
 export type CompatibilityOrigin = {
   parameter: CompatibilityParameter;
   source: "common" | "rows" | "columns";
@@ -103,24 +104,26 @@ function generatorImageContext(
         : (cell.images ?? []).map((image) => image.id),
   );
   const origins: CompatibilityOrigin[] = [];
-  if (cell.messages) {
-    input.messages?.forEach((message, messageIndex) => {
+  const source = input.parameters.input.kind;
+  generatorInputForCell(input, cell.row, cell.column).forEach(
+    (message, messageIndex) => {
       const images = new Set(
         cell.messages?.[messageIndex]?.images?.map((image) => image.id),
       );
       if (!images.size) return;
-      origins.push({ parameter: "messages", source: "common", messageIndex });
+      origins.push({
+        parameter: "input",
+        source,
+        ...(source === "common"
+          ? {}
+          : { caseIndex: source === "rows" ? cell.row : cell.column }),
+        messageIndex,
+      });
       origins.push(
         ...variableImageOrigins(message.content, input, cell, images),
       );
-    });
-  } else {
-    if (input.promptImages.some((image) => consumed.has(image.id)))
-      origins.push({ parameter: "prompt", source: "common" });
-    const variables = variableImageOrigins(input.prompt, input, cell, consumed);
-    if (variables.length)
-      origins.push({ parameter: "prompt", source: "common" }, ...variables);
-  }
+    },
+  );
   return { consumed, origins: distinctOrigins(origins) };
 }
 

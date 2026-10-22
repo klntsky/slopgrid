@@ -1,9 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import {
-  isChatFormat,
-  chatInputIssue,
-  type GridInput,
-} from "../../server/domain";
+import { type GridInput } from "../../server/domain";
 import { estimateGrid } from "../../server/cost-estimates";
 import { modelCatalog } from "../model-catalog";
 import { useConnection, useInferenceCapacity } from "../queries";
@@ -134,11 +130,6 @@ export function useCreateForm() {
       !input.rows.length && "Select row values.",
       !input.columns.length && "Select column values.",
       !connection.data?.connected && "Connect OpenRouter.",
-      isChatFormat(input.format)
-        ? chatInputIssue(input.messages)
-        : !input.prompt.trim() &&
-          (input.format === "image" || !input.promptImages.length) &&
-          "Enter a prompt.",
       variableIssue,
       input.format !== "image" &&
         (!Number.isFinite(validation.candidate.budgetUsd) ||

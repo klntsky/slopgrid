@@ -8,6 +8,7 @@ import {
   type RuntimeFixture,
 } from "./runtime-fixture.js";
 import type {
+  ChatMessage,
   Grid,
   GridInput,
   ParameterSources,
@@ -31,6 +32,10 @@ import {
 } from "../server/legacy-grid-input.js";
 
 const judgeParameters: Partial<ParameterSources> = {
+  input: {
+    kind: "common",
+    value: [{ role: "user", content: "Draw a red rectangle" }],
+  },
   judge_model: { kind: "rows" },
   judge_effort: { kind: "columns" },
   judge_criteria: {
@@ -42,7 +47,6 @@ const judgeParameters: Partial<ParameterSources> = {
   },
 };
 const judging: CurrentGridOverrides = {
-  prompt: "Draw a red rectangle",
   budgetUsd: 0.1,
   judge: true,
   parameters: judgeParameters,
@@ -162,9 +166,10 @@ test("non-chat variable images isolate judge-only answers and merge criterion im
       fixture,
       currentDefinition({
         ...single,
-        prompt: "Describe $ROW1.",
+        caseAxis: "rows",
         parameters: {
           ...single.parameters,
+          input: { kind: "rows" },
           variable: { kind: "rows" },
           judge_model: { kind: "columns" },
           judge_effort: { kind: "common", value: "default" },
@@ -180,6 +185,7 @@ test("non-chat variable images isolate judge-only answers and merge criterion im
           },
         },
         rows: expected.map((image, index) => ({
+          input: [{ role: "user", content: "Describe $ROW1." }],
           variable: [
             { text: "the supplied shape", images: [source] },
             { text: `secret answer ${index}`, images: [image] },
@@ -246,9 +252,13 @@ test("per-case rubrics persist as one source while resolved judgments and reused
     );
     const source: GridInput = currentDefinition({
       ...single,
-      prompt: "Describe a shape.",
+      caseAxis: "rows",
       parameters: {
         ...single.parameters,
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: "Describe a shape." }],
+        },
         variable: { kind: "rows" },
         judge_model: { kind: "common", value: "fixture/text" },
         judge_criteria: { kind: "rows" },
@@ -420,17 +430,20 @@ test("chat judging restores each turn's image bytes to the completed conversatio
         format: "chat-template",
         parameters: {
           ...judgeParameters,
+          input: {
+            kind: "common",
+            value: [
+              {
+                role: "user",
+                content: "Describe the first image.",
+                images: [second],
+              },
+              { role: "assistant", content: "A supplied answer." },
+              { role: "user", content: "", images: [first, second] },
+            ],
+          },
           effort: { kind: "common", value: "none" },
         },
-        messages: [
-          {
-            role: "user",
-            content: "Describe the first image.",
-            images: [second],
-          },
-          { role: "assistant", content: "A supplied answer." },
-          { role: "user", content: "", images: [first, second] },
-        ],
       }),
     );
     const generation = await fixture.nextCall();
@@ -508,19 +521,22 @@ test("future user images are absent from earlier calls and remain on their turn 
         format: "chat-template",
         parameters: {
           ...judgeParameters,
+          input: {
+            kind: "common",
+            value: [
+              { role: "system", content: "Describe the supplied image." },
+              { role: "unfilled", content: "" },
+              {
+                role: "user",
+                content: "Describe another detail.",
+                images: [image],
+              },
+              { role: "unfilled", content: "" },
+            ],
+          },
           effort: { kind: "common", value: "none" },
         },
         budgetUsd: 1,
-        messages: [
-          { role: "system", content: "Describe the supplied image." },
-          { role: "unfilled", content: "" },
-          {
-            role: "user",
-            content: "Describe another detail.",
-            images: [image],
-          },
-          { role: "unfilled", content: "" },
-        ],
       }),
     );
     const history = (call: RuntimeCall) =>
@@ -733,7 +749,7 @@ test("invalid judgment keeps the committed generation and retry never regenerate
 test("chat judgments share the complete saved message sequence, including literal role headings in answers", async () => {
   const fixture = await runtimeFixture({ workers: 4, judges: true });
   try {
-    const messages: NonNullable<GridInput["messages"]> = [
+    const messages: ChatMessage[] = [
       { role: "system", content: "Be concise." },
       { role: "user", content: "First question" },
       { role: "unfilled", content: "" },
@@ -756,9 +772,9 @@ test("chat judgments share the complete saved message sequence, including litera
         format: "chat-template",
         parameters: {
           ...judgeParameters,
+          input: { kind: "common", value: messages },
           effort: { kind: "common", value: "none" },
         },
-        messages,
         budgetUsd: 1,
       }),
     );
@@ -814,12 +830,15 @@ test("malformed saved chat messages fail judging without making a provider reque
           format: "chat-template",
           parameters: {
             ...judgeParameters,
+            input: {
+              kind: "common",
+              value: [
+                { role: "user", content: "Question" },
+                { role: "unfilled", content: "" },
+              ],
+            },
             effort: { kind: "common", value: "none" },
           },
-          messages: [
-            { role: "user", content: "Question" },
-            { role: "unfilled", content: "" },
-          ],
         }),
         { "messages.json": json },
       );
@@ -945,11 +964,22 @@ for (const accepted of [false, true])
           currentDefinition({
             ...judging,
             format: "image",
-            promptImages: [second, first, second],
             rows: single.rows,
             columns: single.columns,
             parallelWorkers: single.parallelWorkers,
-            parameters: judgeParameters,
+            parameters: {
+              ...judgeParameters,
+              input: {
+                kind: "common",
+                value: [
+                  {
+                    role: "user",
+                    content: "Draw a red rectangle",
+                    images: [second, first, second],
+                  },
+                ],
+              },
+            },
           }),
           { image: outputBytes },
           "image/png",

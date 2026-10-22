@@ -103,6 +103,10 @@ export async function setVariableValues(
     exact: true,
   });
   await expect(table).toBeVisible();
+  if (!(await table.getByLabel(`${token}, case 1`, { exact: true }).count()))
+    await table
+      .getByRole("button", { name: `Add ${axis} variable`, exact: true })
+      .click();
   const cases = table.getByRole("button", {
     name: new RegExp(`^Remove ${axis} case \\d+$`),
   });

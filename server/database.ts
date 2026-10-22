@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import type { Cell } from "./domain.js";
+import type { Cell, StoredGridInput } from "./domain.js";
 import { generationGroupKey } from "../shared/generation-key.js";
 import { migrateVariableInput } from "../shared/variable-migration.js";
 import {
@@ -7,6 +7,7 @@ import {
   resolveLegacyCriteriaForCell,
   type LegacyGridInput,
 } from "./legacy-grid-input.js";
+import { selectedReferences } from "./image-settings.js";
 
 const schemaVersion = 17;
 export function initializeDatabase(db: Database.Database) {
@@ -184,20 +185,13 @@ function migrateVariables(db: Database.Database) {
     "INSERT OR IGNORE INTO grid_reference_images (grid_id,reference_id) VALUES (?,?)",
   );
   for (const grid of grids) {
-    const data = JSON.parse(grid.data) as { input: LegacyGridInput };
-    const input = migrateVariableInput(data.input) as LegacyGridInput;
+    const data = JSON.parse(grid.data) as { input: StoredGridInput };
+    const input = migrateVariableInput(data.input) as StoredGridInput;
     if (input !== data.input)
       save.run(JSON.stringify({ ...data, input }), grid.id);
     // Backfill configured attachments without removing existing links, including
     // historical links retained for accepted workflow payloads.
-    for (const message of input.messages ?? [])
-      for (const image of message.images ?? []) link.run(grid.id, image.id);
-    for (const axis of [input.rows, input.columns]) {
-      if (axis.kind !== "variable") continue;
-      for (const fields of axis.values)
-        for (const field of fields)
-          for (const image of field.images ?? []) link.run(grid.id, image.id);
-    }
+    for (const image of selectedReferences(input)) link.run(grid.id, image.id);
   }
 }
 

@@ -125,8 +125,12 @@ for (const format of ["markdown", "image"] as const) {
       remaining = 12;
       const input: GridInput = currentDefinition({
         format,
-        prompt: "$ROW1 hat",
+        caseAxis: "rows",
         parameters: {
+          input: {
+            kind: "common",
+            value: [{ role: "user", content: "$ROW1 hat" }],
+          },
           model: { kind: "common", value: "fixture/text" },
           ...(format === "image"
             ? {}

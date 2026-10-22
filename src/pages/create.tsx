@@ -129,6 +129,7 @@ export function Create() {
   const effortSource = input.parameters.effort;
   const judgeModelSource = input.parameters.judge_model;
   const judgeEffortSource = input.parameters.judge_effort;
+  const inputSource = input.parameters.input;
   function toAxis(parameter: CommonParameterId, side: AxisSide) {
     const previousFocus = document.activeElement;
     if (!dispatch({ type: "to-axis", parameter, side })) return;
@@ -239,15 +240,30 @@ export function Create() {
               judgeModels={judgeModels}
               onAction={dispatch}
               onBusy={onUploading}
-              compatibility={(side, parameter, caseIndex, fieldIndex) => (
+              compatibility={(
+                side,
+                parameter,
+                caseIndex,
+                fieldIndex,
+                messageIndex,
+              ) => (
                 <CompatibilityFeedback
                   input={candidate}
                   issues={compatibilityIssues}
-                  origin={{ parameter, source: side, caseIndex, fieldIndex }}
+                  origin={{
+                    parameter,
+                    source: side,
+                    caseIndex,
+                    fieldIndex,
+                    messageIndex,
+                  }}
                 />
               )}
             />
           </fieldset>
+          {inputSource.kind !== "common" && (
+            <ErrorMessage error={variableIssue} />
+          )}
           <p className="hint">
             {input.judge ? (
               `${input.rows.length} rows x ${input.columns.length} columns - ${generatedOutputs} generated outputs`
@@ -341,7 +357,7 @@ export function Create() {
           )}
         </section>
       )}
-      {formatSelected && (
+      {formatSelected && inputSource.kind === "common" && (
         <section>
           <div className="section-heading">
             <span className="number">{commonParameters ? "04" : "03"}</span>
@@ -354,37 +370,60 @@ export function Create() {
 
           {isChatFormat(input.format) ? (
             <ChatEditor
-              messages={input.messages ?? []}
+              messages={inputSource.value}
               onBusy={onUploading}
               compatibility={(messageIndex) => (
                 <CompatibilityFeedback
                   input={candidate}
                   issues={compatibilityIssues}
                   origin={{
-                    parameter: "messages",
+                    parameter: "input",
                     source: "common",
                     messageIndex,
                   }}
                 />
               )}
               onChange={(change) =>
-                update((current) => ({
-                  messages: change(current.messages ?? []),
-                }))
+                dispatch({ type: "edit-input", source: "common", change })
               }
             />
           ) : (
             <PromptEditor
-              prompt={input.prompt}
-              onPromptChange={(prompt) => update({ prompt })}
+              prompt={inputSource.value[0]?.content ?? ""}
+              onPromptChange={(content) =>
+                dispatch({
+                  type: "edit-input",
+                  source: "common",
+                  change: (current) => [
+                    { ...current[0], role: "user", content },
+                  ],
+                })
+              }
               attachments={{
-                images: input.promptImages,
-                onChange: (promptImages) => update({ promptImages }),
+                images: inputSource.value[0]?.images ?? [],
+                onChange: (images) =>
+                  dispatch({
+                    type: "edit-input",
+                    source: "common",
+                    change: (current) => [
+                      {
+                        ...current[0],
+                        role: "user",
+                        content: current[0]?.content ?? "",
+                        images,
+                      },
+                    ],
+                  }),
                 onBusy: onUploading,
               }}
             />
           )}
-          {compatibility.prompt}
+          {!isChatFormat(input.format) && compatibility.input}
+          <CommonParameterActions
+            input={input}
+            parameter="input"
+            onMove={toAxis}
+          />
           <ErrorMessage error={variableIssue} />
           {promptVariables.map((variable) => (
             <p className="hint" key={variable}>
@@ -397,7 +436,13 @@ export function Create() {
       {formatSelected && (
         <section aria-label="Judge">
           <div className="section-heading" ref={judgeHeader}>
-            <span className="number">{commonParameters ? "05" : "04"}</span>
+            <span className="number">
+              {String(
+                3 +
+                  Number(!!commonParameters) +
+                  Number(inputSource.kind === "common"),
+              ).padStart(2, "0")}
+            </span>
             <h2>
               <label htmlFor="judge-enabled" className="checkbox judge-toggle">
                 <input
@@ -516,7 +561,13 @@ export function Create() {
       {formatSelected && (
         <section>
           <div className="section-heading">
-            <span className="number">{commonParameters ? "06" : "05"}</span>
+            <span className="number">
+              {String(
+                4 +
+                  Number(!!commonParameters) +
+                  Number(inputSource.kind === "common"),
+              ).padStart(2, "0")}
+            </span>
             <h2>Inference provider setup</h2>
           </div>
           <div inert={submission.uploading || busy}>

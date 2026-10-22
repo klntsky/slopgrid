@@ -38,6 +38,7 @@ export function currentDefinition(
 ): GridInput {
   const format = overrides.format ?? "markdown";
   const parameters: ParameterSources = {
+    input: common("input", [{ role: "user", content: "Draw a cat" }]),
     model: common(
       "model",
       format === "image" ? "fixture/image" : "fixture/text",
@@ -62,14 +63,9 @@ export function currentDefinition(
     ...overrides.parameters,
   };
   const definition = {
-    inputVersion: 2 as const,
-    prompt: "Draw a cat",
-    promptImages: [],
+    inputVersion: 3 as const,
     budgetUsd: 3,
     judge: false,
-    ...(format === "chat-template"
-      ? { messages: [{ role: "user" as const, content: "Draw a cat" }] }
-      : {}),
     ...overrides,
     parameters,
     rows: cases(overrides.rows, "row-"),

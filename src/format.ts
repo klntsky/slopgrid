@@ -28,6 +28,15 @@ export function cellError(cell: ViewGrid["cells"][number]) {
 }
 export function displayValue(part: ParameterDisplayPart): string {
   switch (part.kind) {
+    case "input":
+      return part.value
+        .map(
+          ({ role, content, images }) =>
+            `${role}: ${[content, ...(images ?? []).map((image) => image.name)]
+              .filter(Boolean)
+              .join(" · ")}`,
+        )
+        .join(" | ");
     case "variable":
       return part.value
         .flatMap((field) =>

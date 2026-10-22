@@ -5,7 +5,8 @@ import type { Criterion } from "../server/judge-criteria.js";
 import { resolveCriteriaForCell } from "../server/judge-criteria.js";
 import {
   axisParameters,
-  isCurrentGridInput,
+  isParameterGridInput,
+  parameterReadConfiguration,
   parameterValue,
   type AxisSide,
   type ParameterId,
@@ -15,6 +16,7 @@ import {
   type LegacyGridInput,
 } from "../server/legacy-grid-input.js";
 import { migrateVariableInput } from "./variable-migration.js";
+import { generatorInputEntries } from "../server/generator-input.js";
 
 export type ParameterDisplayPart =
   | {
@@ -45,6 +47,8 @@ function part<K extends ParameterId>(
 
 function downloadPart(part: ParameterDisplayPart): string {
   switch (part.kind) {
+    case "input":
+      return part.value.map((message) => message.content).join(" ");
     case "variable":
       return part.value
         .flatMap((field) =>
@@ -73,19 +77,20 @@ export function gridDimensions(input: StoredGridInput): {
   rows: number;
   columns: number;
 } {
-  return isCurrentGridInput(input)
+  return isParameterGridInput(input)
     ? { rows: input.rows.length, columns: input.columns.length }
     : { rows: input.rows.values.length, columns: input.columns.values.length };
 }
 
 export function gridDisplay(input: StoredGridInput): GridDisplay {
-  if (isCurrentGridInput(input)) {
+  if (isParameterGridInput(input)) {
+    const configuration = parameterReadConfiguration(input);
     const axis = (side: AxisSide): CaseDisplay[] => {
-      const kinds = axisParameters(input, side);
+      const kinds = axisParameters(configuration, side);
       return input[side].map((_, index) => {
         const parts = kinds.flatMap((kind) => {
           const value = parameterValue(
-            input,
+            configuration,
             kind,
             side === "rows" ? index : 0,
             side === "columns" ? index : 0,
@@ -101,15 +106,16 @@ export function gridDisplay(input: StoredGridInput): GridDisplay {
       });
     };
     const common: ParameterDisplayPart[] = [];
-    for (const kind of Object.keys(input.parameters) as ParameterId[]) {
-      const source = input.parameters[kind];
+    for (const kind of Object.keys(configuration.parameters) as ParameterId[]) {
+      if (input.inputVersion === 2 && kind === "input") continue;
+      const source = configuration.parameters[kind];
       if (source?.kind === "common") common.push(part(kind, source.value));
     }
     return {
       rows: axis("rows"),
       columns: axis("columns"),
       common,
-      promptImages: input.promptImages,
+      promptImages: input.inputVersion === 2 ? input.promptImages : [],
       references: selectedReferences(input),
     };
   }
@@ -190,8 +196,8 @@ export function readGridCriteria(
   row: number,
   column: number,
 ): Criterion[] {
-  return isCurrentGridInput(input)
-    ? resolveCriteriaForCell(input, row, column, {
+  return isParameterGridInput(input)
+    ? resolveCriteriaForCell(parameterReadConfiguration(input), row, column, {
         allowUnresolvedVariables: true,
       }).criteria
     : resolveLegacyCriteriaForCell(
@@ -200,4 +206,21 @@ export function readGridCriteria(
         column,
         { allowUnresolvedVariables: true },
       ).criteria;
+}
+
+export function gridInputText(input: StoredGridInput): string {
+  if (input.inputVersion !== 3) return input.prompt;
+  return generatorInputEntries(input)
+    .map(({ source, caseIndex, messages }) => {
+      const text =
+        input.format === "chat-template"
+          ? messages
+              .map(({ role, content }) => `${role}: ${content}`)
+              .join("\n\n")
+          : (messages[0]?.content ?? "");
+      return source === "common"
+        ? text
+        : `${source === "rows" ? "Row" : "Column"} case ${(caseIndex ?? 0) + 1}:\n${text}`;
+    })
+    .join("\n\n");
 }

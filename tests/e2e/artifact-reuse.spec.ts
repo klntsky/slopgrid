@@ -135,10 +135,14 @@ test("image reuse follows ordered reference bytes and effective image settings t
     );
   const input = currentDefinition({
     format: "image",
-    prompt: "Draw a landscape $ROW1",
+    caseAxis: "rows",
     budgetUsd: 5,
     parallelWorkers: 2,
     parameters: {
+      input: {
+        kind: "common",
+        value: [{ role: "user", content: "Draw a landscape $ROW1" }],
+      },
       variable: { kind: "rows" },
       size: { kind: "columns" },
     },
@@ -229,9 +233,13 @@ for (const [kind, initial, changed] of [
     await connectOpenRouter(page);
     const config = currentDefinition({
       format: "image",
-      prompt: "Draw $ROW1",
+      caseAxis: "rows",
       budgetUsd: 5,
       parameters: {
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: "Draw $ROW1" }],
+        },
         variable: { kind: "rows" },
         [kind]: { kind: "columns" },
       },

@@ -21,8 +21,12 @@ function workflow(source: GridInput) {
 }
 function base(): GridInput {
   return currentDefinition({
-    prompt: "Solve $COLUMN2",
+    caseAxis: "columns",
     parameters: {
+      input: {
+        kind: "common",
+        value: [{ role: "user", content: "Solve $COLUMN2" }],
+      },
       variable: { kind: "columns" },
       judge_model: { kind: "common", value: "fixture/judge" },
       judge_criteria: {
@@ -52,6 +56,76 @@ function base(): GridInput {
     judge: true,
   });
 }
+for (const side of ["rows", "columns"] as const)
+  test(`${side} chat cases validate only their paired roles and keep judge-only images out of generation`, () => {
+    const token = side === "rows" ? "$ROW" : "$COLUMN";
+    const source = currentDefinition({
+      format: "chat-template",
+      caseAxis: side,
+      judge: true,
+      parameters: {
+        input: { kind: side },
+        variable: { kind: side },
+        judge_criteria: {
+          kind: "common",
+          value: [{ text: `Matches ${token}2?`, correctAnswer: true }],
+        },
+      },
+      [side]: [
+        {
+          input: [
+            { role: "system", content: `Instructions ${token}1` },
+            { role: "user", content: "Question" },
+          ],
+          variable: [
+            { text: "text only" },
+            { text: "first secret", images: [reference] },
+          ],
+        },
+        {
+          input: [
+            { role: "user", content: `Question ${token}1` },
+            { role: "assistant", content: "Supplied answer" },
+            { role: "user", content: "Next question" },
+          ],
+          variable: [
+            { text: "image question", images: [second] },
+            { text: "second secret", images: [reference] },
+          ],
+        },
+      ],
+    });
+    const { cells, tasks } = workflow(source);
+    assert.deepEqual(cells[0].messages, [
+      { role: "system", content: "Instructions text only" },
+      { role: "user", content: "Question" },
+    ]);
+    assert.deepEqual(cells[1].messages, [
+      { role: "user", content: "Question image question", images: [second] },
+      { role: "assistant", content: "Supplied answer" },
+      { role: "user", content: "Next question" },
+    ]);
+    const generations = tasks.filter((task) => task.kind === "generation");
+    assert.equal(generations.length, 2);
+    assert.deepEqual(
+      generations.map((task) => task.input.messages),
+      cells.map((cell) => cell.messages),
+    );
+    assert.deepEqual(
+      tasks
+        .filter((task) => task.kind === "judge")
+        .map((task) => [task.input.criteria[0].text, task.input.images]),
+      [
+        ["Matches first secret?", [reference]],
+        ["Matches second secret?", [reference]],
+      ],
+    );
+    source[side][0].input = [
+      { role: "system", content: `Instructions ${token}2` },
+      { role: "user", content: "Question" },
+    ];
+    assert.equal(gridSchema.safeParse(source).success, false);
+  });
 
 test("judge-only variable dimensions expand criteria without leaking answer text or images into generation", () => {
   const { cells, tasks } = workflow(base());
@@ -159,6 +233,7 @@ test("judge criteria participate in setup validation including numbered fields a
   assert.equal(
     gridSchema.safeParse({
       ...source,
+      caseAxis: "rows",
       parameters: { ...source.parameters, variable: { kind: "rows" } },
       rows: [{ id: "question", variable: [{ text: "question" }] }],
       columns: [{}],
@@ -191,7 +266,10 @@ test("case criteria and double-digit column fields expand independently across o
       text: `${prefix}${index + 1}`,
     })),
   }));
-  source.prompt = "Question $COLUMN10 $COLUMN1";
+  source.parameters.input = {
+    kind: "common",
+    value: [{ role: "user", content: "Question $COLUMN10 $COLUMN1" }],
+  };
   const { tasks } = workflow(source);
   assert.deepEqual(
     tasks
@@ -215,9 +293,13 @@ test("case criteria and double-digit column fields expand independently across o
 for (const side of ["rows", "columns"] as const)
   test(`${side} case rubrics resolve independently without changing generation grouping`, () => {
     const source = currentDefinition({
-      prompt: "Solve question",
+      caseAxis: side,
       judge: true,
       parameters: {
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: "Solve question" }],
+        },
         variable: { kind: side },
         judge_criteria: { kind: side },
         effort: { kind: side === "rows" ? "columns" : "rows" },

@@ -183,14 +183,14 @@ test("message attachments gate every model and reach only their own completion t
   expect(
     await (
       await page.request.get(
-        `/api/references/${grid.input.messages[0].images[0].id}`,
+        `/api/references/${grid.input.parameters.input.value[0].images[0].id}`,
       )
     ).body(),
   ).toEqual(firstImage.buffer);
   expect(
     await (
       await page.request.get(
-        `/api/references/${grid.input.messages[2].images[0].id}`,
+        `/api/references/${grid.input.parameters.input.value[2].images[0].id}`,
       )
     ).body(),
   ).toEqual(laterImage.buffer);
@@ -212,7 +212,7 @@ test("message attachments gate every model and reach only their own completion t
   await expect(generate).toBeEnabled();
 });
 
-test("image-only message attachments follow reorder, format switches, Edit and Fork", async ({
+test("image-only message attachments follow reorder, cancelled format loss, Edit and Fork", async ({
   page,
   request,
 }) => {
@@ -260,19 +260,15 @@ test("image-only message attachments follow reorder, format switches, Edit and F
       .nth(1)
       .getByRole("img", { name: firstImage.name, exact: true }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Image", exact: true }).click();
-  await expect(
-    page.getByLabel("Add images to prompt", { exact: true }),
-  ).toBeEnabled();
-  await expect(
-    page.getByRole("img", { name: laterImage.name, exact: true }),
-  ).toHaveCount(0);
-  await expect(
-    page.getByRole("img", { name: firstImage.name, exact: true }),
-  ).toHaveCount(0);
-  await page
-    .getByRole("button", { name: "Chat completion", exact: true })
+  const cancellation = page.waitForEvent("dialog");
+  const formatChange = page
+    .getByRole("button", { name: "Image", exact: true })
     .click();
+  await (await cancellation).dismiss();
+  await formatChange;
+  await expect(
+    page.getByRole("button", { name: "Chat completion", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
   await expect(
     page.getByLabel("Add images to prompt", { exact: true }),
   ).toHaveCount(0);

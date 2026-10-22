@@ -42,7 +42,7 @@ export function prepareImageInference(
   };
 }
 export function prepareTextInference(
-  format: Exclude<SingleOutputFormat, "image">,
+  format: Exclude<GridInput["format"], "image">,
   cell: GenerationParameters,
   budget: TextBudget,
   structured: boolean,
@@ -120,11 +120,11 @@ export function prepareTextInference(
     });
   return {
     ...common(cell),
-    format,
+    format: format === "chat-template" ? ("markdown" as const) : format,
     pricing: budget.pricing,
     text: {
       messages,
-      system: cell.messages ? "" : instruction(format),
+      system: format === "chat-template" ? "" : instruction(format),
       maxOutputTokens: budget.maxOutputTokens,
       schema: structured ? z.toJSONSchema(websiteSchema) : undefined,
       options: {
@@ -155,24 +155,31 @@ export function inferenceSignature(prepared: PreparedInference): string {
   if (prepared.format !== "image") {
     const { pricing: _estimation, ...request } = prepared;
     const { maxOutputTokens: _limit, ...text } = request.text;
-    const messages = text.messages?.map((message) =>
-      typeof message.content === "string"
-        ? message
-        : {
-            ...message,
-            content: message.content.map((part) =>
-              part.type === "file"
-                ? {
-                    type: part.type,
-                    mediaType: part.mediaType,
-                    sha256: createHash("sha256")
-                      .update(part.data)
-                      .digest("hex"),
-                  }
-                : part,
-            ),
-          },
-    );
+    const history = text.messages;
+    // A single plain user message is the same request as the former prompt input.
+    const messages =
+      history?.length === 1 &&
+      history[0].role === "user" &&
+      history[0].content === request.prompt
+        ? undefined
+        : history?.map((message) =>
+            typeof message.content === "string"
+              ? message
+              : {
+                  ...message,
+                  content: message.content.map((part) =>
+                    part.type === "file"
+                      ? {
+                          type: part.type,
+                          mediaType: part.mediaType,
+                          sha256: createHash("sha256")
+                            .update(part.data)
+                            .digest("hex"),
+                        }
+                      : part,
+                  ),
+                },
+          );
     return digest({ ...request, text: { ...text, messages } });
   }
   const references = prepared.image.input_references?.map(

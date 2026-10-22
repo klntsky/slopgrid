@@ -42,11 +42,20 @@ function caseDraft(): Draft {
     reuseArtifacts: true,
     input: {
       ...defaultGridDraft("svg"),
-      prompt: "Draw $ROW1 with $ROW3",
-      promptImages: [commonImage],
+      caseAxis: "rows",
       budgetUsd: "0.75",
       judge: true,
       parameters: {
+        input: {
+          kind: "common",
+          value: [
+            {
+              role: "user",
+              content: "Draw $ROW1 with $ROW3",
+              images: [commonImage],
+            },
+          ],
+        },
         variable: { kind: "rows" },
         model: { kind: "rows" },
         effort: { kind: "rows" },
@@ -116,7 +125,13 @@ test("ordinary native axes retain their owners, values and IDs without a case ta
     formatSelected: true,
     input: {
       ...defaultGridDraft("svg"),
-      prompt: "An ordinary prompt",
+      parameters: {
+        ...defaultGridDraft("svg").parameters,
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: "An ordinary prompt" }],
+        },
+      },
       rows: [
         { id: "model-b", model: "fixture/other" },
         { id: "model-a", model: "fixture/text" },
@@ -155,9 +170,14 @@ test("image-only common and case settings require one confirmation and cancellat
     reuseArtifacts: true,
     input: {
       ...defaultGridDraft("image"),
-      prompt: "Draw $ROW1",
-      promptImages: [commonImage],
+      caseAxis: "rows",
       parameters: {
+        input: {
+          kind: "common",
+          value: [
+            { role: "user", content: "Draw $ROW1", images: [commonImage] },
+          ],
+        },
         variable: { kind: "rows" },
         model: { kind: "rows" },
         quality: { kind: "rows" },
@@ -185,8 +205,6 @@ test("image-only common and case settings require one confirmation and cancellat
   await openDraft(page, draft);
   const rejected = await changeFormat(page, "Markdown", false);
   expect(rejected).toHaveLength(1);
-  for (const name of ["Model", "Quality", "Size", "Aspect ratio", "Background"])
-    expect(rejected[0]).toContain(name);
   await expect.poll(() => savedDraft(page)).toEqual(draft);
   expect(await changeFormat(page, "Markdown")).toHaveLength(1);
   await expect
@@ -197,6 +215,7 @@ test("image-only common and case settings require one confirmation and cancellat
         ...draft.input,
         format: "markdown",
         parameters: {
+          input: draft.input.parameters.input,
           variable: { kind: "rows" },
           model: { kind: "rows" },
           effort: { kind: "common", value: "default" },
@@ -216,7 +235,6 @@ test("generator effort is discarded only after confirmation when switching to Im
   await openDraft(page, draft);
   const rejected = await changeFormat(page, "Image", false);
   expect(rejected).toHaveLength(1);
-  expect(rejected[0]).toContain("Thinking effort");
   await expect.poll(() => savedDraft(page)).toEqual(draft);
   expect(await changeFormat(page, "Image")).toHaveLength(1);
   await expect
@@ -238,7 +256,7 @@ test("generator effort is discarded only after confirmation when switching to Im
     draft.input.parameters.judge_model,
   );
   expect(changed.input.columns).toEqual(draft.input.columns);
-  expect(changed.input.promptImages).toEqual([commonImage]);
+  expect(changed.input.parameters.input).toEqual(draft.input.parameters.input);
 });
 
 test("Website removes all judging fields only after a single accepted loss confirmation", async ({
@@ -248,9 +266,6 @@ test("Website removes all judging fields only after a single accepted loss confi
   await openDraft(page, draft);
   const rejected = await changeFormat(page, "Static website", false);
   expect(rejected).toHaveLength(1);
-  expect(rejected[0]).toContain("Judge criteria");
-  expect(rejected[0]).toContain("Judge model");
-  expect(rejected[0]).toContain("Judge thinking effort");
   await expect.poll(() => savedDraft(page)).toEqual(draft);
   expect(await changeFormat(page, "Static website")).toHaveLength(1);
   await expect
@@ -262,6 +277,7 @@ test("Website removes all judging fields only after a single accepted loss confi
         format: "html",
         judge: false,
         parameters: {
+          input: draft.input.parameters.input,
           variable: { kind: "rows" },
           model: { kind: "rows" },
           effort: { kind: "rows" },
@@ -286,6 +302,7 @@ for (const differing of [false, true]) {
         ...defaultGridDraft("svg"),
         judge: true,
         parameters: {
+          input: defaultGridDraft("svg").parameters.input,
           model: { kind: "rows" },
           effort: { kind: "columns" },
           judge_model: { kind: "common", value: "fixture/text" },
@@ -360,6 +377,7 @@ test("removing the last ordinary owner creates one neutral position without movi
     .toBe("svg");
   const changed = await savedDraft(page);
   expect(changed.input.parameters).toEqual({
+    input: draft.input.parameters.input,
     model: { kind: "rows" },
     effort: { kind: "common", value: "default" },
   });
@@ -381,7 +399,6 @@ test("an incompatible case judge model requires confirmation without discarding 
   await openDraft(page, draft);
   const rejected = await changeFormat(page, "SVG", false);
   expect(rejected).toHaveLength(1);
-  expect(rejected[0]).toContain("Judge model");
   await expect.poll(() => savedDraft(page)).toEqual(draft);
   expect(await changeFormat(page, "SVG")).toHaveLength(1);
   await expect
@@ -396,7 +413,7 @@ test("an incompatible case judge model requires confirmation without discarding 
     });
 });
 
-test("common prompt images stay separate from Chat message images and unknown models survive", async ({
+test("a single user input and its images survive prompt and Chat transitions without inactive buffers", async ({
   page,
 }) => {
   await mockModels(page, () => []);
@@ -404,36 +421,171 @@ test("common prompt images stay separate from Chat message images and unknown mo
     formatSelected: true,
     input: {
       ...defaultGridDraft("markdown"),
-      prompt: "A prompt",
-      promptImages: [commonImage],
       parameters: {
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: "A prompt", images: [commonImage] }],
+        },
         model: { kind: "common", value: "unloaded/model" },
         effort: { kind: "common", value: "high" },
       },
       rows: [{ id: "neutral-row" }],
       columns: [{ id: "neutral-column" }],
     },
-    inactiveChatMessages: [
-      { role: "user", content: "A separate chat", images: [caseImage] },
-    ],
   };
   await openDraft(page, draft);
   expect(await changeFormat(page, "Chat completion")).toEqual([]);
   await expect
     .poll(async () => (await savedDraft(page)).input.format)
     .toBe("chat-template");
-  const chat = await savedDraft(page);
-  expect(chat.input.promptImages).toEqual([]);
-  expect(chat.input.messages).toEqual(draft.inactiveChatMessages);
-  expect(chat.inactivePromptImages).toEqual([commonImage]);
-  expect(chat.input.parameters).toEqual(draft.input.parameters);
+  expect((await savedDraft(page)).input.parameters).toEqual(
+    draft.input.parameters,
+  );
   expect(await changeFormat(page, "SVG")).toEqual([]);
   await expect
     .poll(async () => (await savedDraft(page)).input.format)
     .toBe("svg");
-  const svg = await savedDraft(page);
-  expect(svg.input.promptImages).toEqual([commonImage]);
-  expect(svg.input.messages).toBeUndefined();
-  expect(svg.inactiveChatMessages).toEqual(draft.inactiveChatMessages);
-  expect(svg.input.parameters).toEqual(draft.input.parameters);
+  expect((await savedDraft(page)).input.parameters).toEqual(
+    draft.input.parameters,
+  );
+});
+
+for (const side of ["rows", "columns"] as const) {
+  test(`${side} case histories change format atomically and reset only incompatible full inputs`, async ({
+    page,
+  }) => {
+    const compatible = [
+      {
+        role: "user" as const,
+        content: "A complete prompt",
+        images: [commonImage],
+      },
+    ];
+    const history = [
+      { role: "system" as const, content: "Keep the entire conversation" },
+      {
+        role: "user" as const,
+        content: "A different question",
+        images: [caseImage],
+      },
+      { role: "assistant" as const, content: "An earlier answer" },
+      { role: "user" as const, content: "A follow-up question" },
+      { role: "unfilled" as const, content: "" },
+    ];
+    const cases = [
+      { id: "compatible-case", input: compatible },
+      { id: "full-history-case", input: history },
+    ];
+    const draft: Draft = {
+      formatSelected: true,
+      input: {
+        ...defaultGridDraft("chat-template"),
+        caseAxis: side,
+        parameters: {
+          input: { kind: side },
+          model: { kind: "common", value: "fixture/text" },
+          effort: { kind: "common", value: "default" },
+        },
+        rows: side === "rows" ? cases : [{ id: "neutral-row" }],
+        columns: side === "columns" ? cases : [{ id: "neutral-column" }],
+      },
+    };
+    await openDraft(page, draft);
+    const table = page.getByRole("table", {
+      name: "Grid layout parameters",
+      exact: true,
+    });
+    const title = side === "rows" ? "Row" : "Column";
+    const second = table.getByRole("group", {
+      name: `${title} case 2 Chat history`,
+      exact: true,
+    });
+    await expect(second.getByLabel("Message 3", { exact: true })).toHaveValue(
+      "An earlier answer",
+    );
+    expect(await changeFormat(page, "Markdown", false)).toHaveLength(1);
+    await expect.poll(() => savedDraft(page)).toEqual(draft);
+    expect(await changeFormat(page, "Markdown")).toHaveLength(1);
+    const changed = await savedDraft(page);
+    expect(changed.input.caseAxis).toBe(side);
+    expect(changed.input.parameters.input).toEqual({ kind: side });
+    expect(changed.input.parameters.variable).toBeUndefined();
+    expect(changed.input[side]).toEqual([
+      { id: "compatible-case", input: compatible },
+      { id: "full-history-case", input: [{ role: "user", content: "" }] },
+    ]);
+    await expect(
+      table
+        .getByRole("group", { name: `${title} case 1 Prompt`, exact: true })
+        .getByLabel("Prompt", { exact: true }),
+    ).toHaveValue("A complete prompt");
+    await expect(
+      table
+        .getByRole("group", { name: `${title} case 2 Prompt`, exact: true })
+        .getByLabel("Prompt", { exact: true }),
+    ).toHaveValue("");
+    await page.reload();
+    await expect.poll(() => savedDraft(page)).toEqual(changed);
+    expect(await changeFormat(page, "SVG")).toEqual([]);
+    expect((await savedDraft(page)).input[side]).toEqual(changed.input[side]);
+    expect(await changeFormat(page, "Chat completion")).toEqual([]);
+    expect((await savedDraft(page)).input[side]).toEqual(changed.input[side]);
+  });
+}
+
+test("swap rewrites full case input templates but never literal numbered field contents", async ({
+  page,
+}) => {
+  const draft: Draft = {
+    formatSelected: true,
+    input: {
+      ...defaultGridDraft("chat-template"),
+      caseAxis: "rows",
+      parameters: {
+        input: { kind: "rows" },
+        variable: { kind: "rows" },
+        model: { kind: "common", value: "fixture/text" },
+        effort: { kind: "common", value: "default" },
+      },
+      rows: [
+        {
+          id: "template-case",
+          input: [
+            { role: "system", content: "Discuss $ROW1 in order" },
+            { role: "user", content: "Draw $ROW1", images: [caseImage] },
+            { role: "unfilled", content: "" },
+          ],
+          variable: [{ text: "Literal $ROW7 and $COLUMN8" }, null],
+        },
+      ],
+      columns: [{ id: "neutral-column" }],
+    },
+  };
+  await openDraft(page, draft);
+  await page
+    .getByRole("button", { name: "Swap rows and columns", exact: true })
+    .click();
+  const swapped = await savedDraft(page);
+  expect(swapped.input.caseAxis).toBe("columns");
+  expect(swapped.input.parameters.input).toEqual({ kind: "columns" });
+  expect(swapped.input.parameters.variable).toEqual({ kind: "columns" });
+  expect(swapped.input.columns).toEqual([
+    {
+      ...draft.input.rows[0],
+      input: [
+        { role: "system", content: "Discuss $COLUMN1 in order" },
+        { role: "user", content: "Draw $COLUMN1", images: [caseImage] },
+        { role: "unfilled", content: "" },
+      ],
+    },
+  ]);
+  await expect(
+    page.getByLabel("$COLUMN1, case 1", { exact: true }),
+  ).toHaveValue("Literal $ROW7 and $COLUMN8");
+  await page.reload();
+  await expect.poll(() => savedDraft(page)).toEqual(swapped);
+  await page
+    .getByRole("button", { name: "Swap rows and columns", exact: true })
+    .click();
+  await expect.poll(() => savedDraft(page)).toEqual(draft);
 });

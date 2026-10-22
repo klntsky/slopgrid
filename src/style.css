@@ -612,6 +612,9 @@ section {
 .variable-table .reference-images {
   margin-block: 8px 0;
 }
+.variable-table .chat-editor {
+  padding-top: 0;
+}
 .prompt-input {
   position: relative;
   min-width: 0;
@@ -619,6 +622,12 @@ section {
 .prompt-input textarea {
   display: block;
   padding-right: 46px;
+}
+.variable-table .prompt-input textarea {
+  field-sizing: content;
+  min-height: 72px;
+  resize: none;
+  overflow: hidden;
 }
 .prompt-input .reference-upload-compact {
   right: 3px;

@@ -1,4 +1,12 @@
-import type { Cell, ChatMessage, Effort, VariableField } from "./domain.js";
+import type {
+  Cell,
+  CaseRecord,
+  ChatMessage,
+  Effort,
+  GridInput,
+  ParameterSources,
+  VariableField,
+} from "./domain.js";
 import type { ImageSettings, ReferenceImage } from "./image-settings.js";
 import type { Criterion } from "./judge-criteria.js";
 
@@ -36,6 +44,21 @@ export type LegacyGridInput = {
   judge?: { criteria: LegacyJudgeCriteria; model: string; effort: Effort };
   parallelWorkers?: number;
   budgetUsd: number;
+};
+
+// Version 2 grids retain their accepted root-input metadata for read projections.
+// They are never parsed by the current admission or editor schemas.
+export type Version2GridInput = Omit<
+  GridInput,
+  "inputVersion" | "parameters" | "rows" | "columns" | "caseAxis"
+> & {
+  inputVersion: 2;
+  parameters: Omit<ParameterSources, "input">;
+  rows: Omit<CaseRecord, "input">[];
+  columns: Omit<CaseRecord, "input">[];
+  prompt: string;
+  promptImages: ReferenceImage[];
+  messages?: ChatMessage[];
 };
 
 export const legacyVariableToken = /\$(ROW|COLUMN)(\d*)(?![\p{L}\p{N}_])/gu;

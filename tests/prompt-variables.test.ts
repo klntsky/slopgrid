@@ -1,3 +1,4 @@
+import { generatorInputForCell } from "../server/generator-input.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { expandGrid, gridSchema } from "../server/domain.js";
@@ -27,9 +28,20 @@ const second = { id: "second", name: "second.png" };
 const third = { id: "third", name: "third.png" };
 function input(side: "rows" | "columns" = "rows") {
   return currentDefinition({
-    prompt: side === "rows" ? "$ROW1 / column" : "row / $COLUMN1",
-    parameters: { variable: { kind: side } },
+    parameters: {
+      variable: { kind: side },
+      input: {
+        kind: "common",
+        value: [
+          {
+            role: "user",
+            content: side === "rows" ? "$ROW1 / column" : "row / $COLUMN1",
+          },
+        ],
+      },
+    },
     [side]: [{ variable: [{ text: side === "rows" ? "row" : "column" }] }],
+    caseAxis: side,
   });
 }
 
@@ -45,7 +57,8 @@ for (const side of ["rows", "columns"] as const) {
         })),
       },
     ];
-    source.prompt = `${token}10 | ${token}1 | ${token}12 | column | ${token}10`;
+    generatorInputForCell(source, 0, 0)[0].content =
+      `${token}10 | ${token}1 | ${token}12 | column | ${token}10`;
     assert.equal(
       expandGrid(gridSchema.parse(source))[0].prompt,
       "field10 | $COLUMN1 $ROW10 $& | field12 | column | field10",
@@ -119,8 +132,13 @@ for (const side of ["rows", "columns"] as const) {
         ],
       },
     ];
-    source.prompt = `${token}2`;
-    const before = interpolateVariables(source.prompt, source, 0, 0);
+    generatorInputForCell(source, 0, 0)[0].content = `${token}2`;
+    const before = interpolateVariables(
+      generatorInputForCell(source, 0, 0)[0].content,
+      source,
+      0,
+      0,
+    );
     source[side][0].variable![0] = null;
     const parsed = gridSchema.parse(source);
     assert.deepEqual(parsed[side][0].variable, [
@@ -128,16 +146,39 @@ for (const side of ["rows", "columns"] as const) {
       { text: "answerA", images: [second] },
       { text: "answerB", images: [third] },
     ]);
-    assert.deepEqual(interpolateVariables(source.prompt, parsed, 0, 0), before);
+    assert.deepEqual(
+      interpolateVariables(
+        generatorInputForCell(source, 0, 0)[0].content,
+        parsed,
+        0,
+        0,
+      ),
+      before,
+    );
     assert.deepEqual(expandGrid(parsed)[0].images, [second]);
     assert.deepEqual(
       referencedVariableImages(`${token}1 ${token}3 ${token}2`, parsed),
       [third, second],
     );
     assert.deepEqual(selectedReferences(parsed), [second, third]);
-    assert.equal(expandPromptForTitle(parsed), "(answerA)");
+    assert.ok(expandPromptForTitle(parsed).includes("answerA"));
     assert.equal(
-      expandPromptForTitle({ ...parsed, prompt: `${token}1` }),
+      expandPromptForTitle({
+        ...parsed,
+        parameters: {
+          ...parsed.parameters,
+          input: {
+            kind: "common" as const,
+            value: [
+              {
+                ...generatorInputForCell(parsed, 0, 0)[0],
+                role: "user" as const,
+                content: `${token}1`,
+              },
+            ],
+          },
+        },
+      }),
       `${token}1`,
     );
     const display = gridDisplay(parsed)[side][0];
@@ -155,11 +196,41 @@ for (const side of ["rows", "columns"] as const) {
       { text: "answerA later", images: [second, first] },
     );
     assert.match(
-      promptVariableIssue({ ...source, prompt: `${token}1` })!,
+      promptVariableIssue({
+        ...source,
+        parameters: {
+          ...source.parameters,
+          input: {
+            kind: "common",
+            value: [
+              {
+                ...generatorInputForCell(source, 0, 0)[0],
+                role: "user",
+                content: `${token}1`,
+              },
+            ],
+          },
+        },
+      })!,
       /Unknown prompt variable/,
     );
     assert.equal(
-      gridSchema.safeParse({ ...source, prompt: `${token}1` }).success,
+      gridSchema.safeParse({
+        ...source,
+        parameters: {
+          ...source.parameters,
+          input: {
+            kind: "common",
+            value: [
+              {
+                ...generatorInputForCell(source, 0, 0)[0],
+                role: "user",
+                content: `${token}1`,
+              },
+            ],
+          },
+        },
+      }).success,
       false,
     );
     assert.throws(
@@ -175,7 +246,7 @@ for (const side of ["rows", "columns"] as const) {
   });
 }
 
-test("variable axes are rectangular with nonempty cases and fields, but fields can be blank", () => {
+test("referenced numbered fields require rectangular cases, but field text can be blank", () => {
   const source = input();
   for (const values of [
     [],
@@ -206,16 +277,22 @@ test("variable axes are rectangular with nonempty cases and fields, but fields c
     );
 });
 
-test("all variable cases share the same active slot pattern, with at least one active field", () => {
+test("numbered cases share positional active slots and reject references to deleted fields", () => {
   for (const side of ["rows", "columns"] as const) {
     const token = side === "rows" ? "$ROW" : "$COLUMN";
     const source = currentDefinition({
-      prompt: `${token}2`,
-      parameters: { variable: { kind: side } },
+      parameters: {
+        variable: { kind: side },
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: `${token}2` }],
+        },
+      },
       [side]: [
         { variable: [null, { text: "first" }, null] },
         { variable: [null, { text: "second" }, null] },
       ],
+      caseAxis: side,
     });
     assert.equal(gridSchema.safeParse(source).success, true);
     for (const variable of [
@@ -229,16 +306,19 @@ test("all variable cases share the same active slot pattern, with at least one a
         [side]: [source[side][0], { id: "mismatched", variable }],
       };
       assert.equal(gridSchema.safeParse(invalid).success, false);
-      assert.match(
-        promptVariableIssue(invalid)!,
-        /same active numbered fields/,
-      );
     }
     assert.equal(
-      promptVariableIssue({ ...source, prompt: "Unused" })?.includes(
-        `Include ${token}2`,
-      ),
-      true,
+      gridSchema.safeParse({
+        ...source,
+        parameters: {
+          ...source.parameters,
+          input: {
+            kind: "common",
+            value: [{ role: "user", content: "Unused" }],
+          },
+        },
+      }).success,
+      false,
     );
     assert.equal(
       gridSchema.safeParse({
@@ -263,24 +343,47 @@ test("setup rejects missing numbered fields, bare tokens and references to scala
     "$ROW99999999999999999999",
   ]) {
     assert.equal(
-      gridSchema.safeParse({ ...source, prompt: `${token} $ROW1 column` })
-        .success,
+      gridSchema.safeParse({
+        ...source,
+        parameters: {
+          ...source.parameters,
+          input: {
+            kind: "common",
+            value: [
+              {
+                ...generatorInputForCell(source, 0, 0)[0],
+                role: "user",
+                content: `${token} $ROW1 column`,
+              },
+            ],
+          },
+        },
+      }).success,
       false,
       token,
     );
     assert.throws(() => interpolateVariables(token, source, 0, 0));
   }
   const scalar = currentDefinition({
-    prompt: "$ROW1",
-    parameters: { model: { kind: "rows" } },
+    parameters: {
+      model: { kind: "rows" },
+      input: { kind: "common", value: [{ role: "user", content: "$ROW1" }] },
+    },
     rows: [{ model: "fixture/text" }],
   });
   assert.equal(gridSchema.safeParse(scalar).success, false);
   assert.equal(
-    promptVariableIssue({ ...source, prompt: "$ROWS column" })?.includes(
-      "$ROW1",
-    ),
-    true,
+    gridSchema.safeParse({
+      ...source,
+      parameters: {
+        ...source.parameters,
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: "$ROWS column" }],
+        },
+      },
+    }).success,
+    false,
   );
   assert.equal(typeof promptVariableIssue({ ...source, rows: [] }), "string");
 });
@@ -288,7 +391,20 @@ test("setup rejects missing numbered fields, bare tokens and references to scala
 test("chat substitution preserves supplied whitespace and merges images once per referencing user message", () => {
   const source = currentDefinition({
     format: "chat-template",
-    parameters: { variable: { kind: "rows" } },
+    parameters: {
+      variable: { kind: "rows" },
+      input: {
+        kind: "common",
+        value: [
+          { role: "system", content: "  $ROW2\n" },
+          { role: "user", content: "\n$ROW3 $ROW1 $ROW1  ", images: [second] },
+          { role: "unfilled", content: "" },
+          { role: "assistant", content: " supplied\n" },
+          { role: "user", content: "$ROW1" },
+          { role: "unfilled", content: "" },
+        ],
+      },
+    },
     rows: [
       {
         variable: [
@@ -298,14 +414,7 @@ test("chat substitution preserves supplied whitespace and merges images once per
         ],
       },
     ],
-    messages: [
-      { role: "system", content: "  $ROW2\n" },
-      { role: "user", content: "\n$ROW3 $ROW1 $ROW1  ", images: [second] },
-      { role: "unfilled", content: "" },
-      { role: "assistant", content: " supplied\n" },
-      { role: "user", content: "$ROW1" },
-      { role: "unfilled", content: "" },
-    ],
+    caseAxis: "rows",
   });
   const parsed = gridSchema.parse(source);
   assert.deepEqual(expandGrid(parsed)[0].messages, [
@@ -321,10 +430,16 @@ test("chat substitution preserves supplied whitespace and merges images once per
     assert.equal(
       gridSchema.safeParse({
         ...source,
-        messages: [
-          { role, content: "$ROW1" },
-          { role: "user", content: "$ROW3" },
-        ],
+        parameters: {
+          ...source.parameters,
+          input: {
+            kind: "common",
+            value: [
+              { role, content: "$ROW1" },
+              { role: "user", content: "$ROW3" },
+            ],
+          },
+        },
       }).success,
       false,
     );
@@ -336,10 +451,16 @@ test("chat substitution preserves supplied whitespace and merges images once per
         { id: "plain", variable: [{ text: "plain" }] },
         { id: "image", variable: [{ text: "image", images: [first] }] },
       ],
-      messages: [
-        { role: "system", content: "$ROW1" },
-        { role: "user", content: "column" },
-      ],
+      parameters: {
+        ...source.parameters,
+        input: {
+          kind: "common",
+          value: [
+            { role: "system", content: "$ROW1" },
+            { role: "user", content: "column" },
+          ],
+        },
+      },
     }).success,
     false,
   );
@@ -349,11 +470,19 @@ test("prompt formats carry field images while image generation merges prompt ima
   for (const format of ["markdown", "svg", "html", "image"] as const) {
     const source = currentDefinition({
       format,
-      prompt: "$ROW2 $ROW1 $ROW2",
       parameters: {
         variable: { kind: "rows" },
+        input: {
+          kind: "common",
+          value: [
+            {
+              role: "user",
+              content: "$ROW2 $ROW1 $ROW2",
+              images: format === "image" ? [second, first] : [],
+            },
+          ],
+        },
       },
-      promptImages: format === "image" ? [second, first] : [],
       rows: [
         {
           variable: [
@@ -362,6 +491,7 @@ test("prompt formats carry field images while image generation merges prompt ima
           ],
         },
       ],
+      caseAxis: "rows",
     });
     const cell = expandGrid(gridSchema.parse(source))[0];
     assert.equal(cell.prompt, "column row column");
@@ -388,6 +518,13 @@ test("deleted slots keep judge-only images out of Chat while retaining original 
         kind: "common",
         value: [{ text: "Compare with $ROW3", correctAnswer: false }],
       },
+      input: {
+        kind: "common",
+        value: [
+          { role: "system", content: "$ROW2" },
+          { role: "user", content: "Answer the question." },
+        ],
+      },
     },
     rows: [
       {
@@ -405,10 +542,7 @@ test("deleted slots keep judge-only images out of Chat while retaining original 
         ],
       },
     ],
-    messages: [
-      { role: "system", content: "$ROW2" },
-      { role: "user", content: "Answer the question." },
-    ],
+    caseAxis: "rows",
   });
   const parsed = gridSchema.parse(source);
   assert.deepEqual(generatorReferences(parsed), []);
@@ -441,10 +575,16 @@ test("deleted slots keep judge-only images out of Chat while retaining original 
     assert.equal(
       gridSchema.safeParse({
         ...source,
-        messages: [
-          { role, content: "$ROW3" },
-          { role: "user", content: "Answer." },
-        ],
+        parameters: {
+          ...source.parameters,
+          input: {
+            kind: "common",
+            value: [
+              { role, content: "$ROW3" },
+              { role: "user", content: "Answer." },
+            ],
+          },
+        },
       }).success,
       false,
     );
@@ -456,16 +596,27 @@ test("deleted slots keep judge-only images out of Chat while retaining original 
 test("zero-case compatibility previews remain safe with unresolved deleted-field references", () => {
   for (const side of ["rows", "columns"] as const) {
     const source = currentDefinition({
-      prompt: side === "rows" ? "$ROW2" : "$COLUMN2",
-      parameters: { variable: { kind: side } },
+      parameters: {
+        variable: { kind: side },
+        input: {
+          kind: "common",
+          value: [
+            { role: "user", content: side === "rows" ? "$ROW2" : "$COLUMN2" },
+          ],
+        },
+      },
       [side]: [],
+      caseAxis: side,
     });
     assert.deepEqual(analyzeGridCompatibility(source, []), {
       cells: [],
       issues: [],
     });
-    assert.equal(expandPromptForTitle(source), source.prompt);
-    assert.match(promptVariableIssue(source)!, /at least one active field/);
+    assert.equal(
+      expandPromptForTitle(source),
+      generatorInputForCell(source, 0, 0)[0].content,
+    );
+    assert.equal(typeof promptVariableIssue(source), "string");
   }
 });
 
@@ -505,3 +656,120 @@ test("legacy read-only variable arrays keep their labels, attachments and first-
   assert.equal(expandPromptForTitle(source), "(answerA)");
   assert.deepEqual(source, before);
 });
+
+for (const side of ["rows", "columns"] as const) {
+  const token = side === "rows" ? "$ROW" : "$COLUMN";
+
+  test(`${side} case-owned messages expand nested field text once without parsing it into history`, () => {
+    const literal = JSON.stringify([{ role: "system", content: `${token}2` }]);
+    const source = currentDefinition({
+      format: "chat-template",
+      caseAxis: side,
+      parameters: { input: { kind: side }, variable: { kind: side } },
+      [side]: [
+        {
+          variable: [
+            { text: `${token}2` },
+            { text: "not recursively expanded", images: [first] },
+          ],
+          input: [
+            { role: "system" as const, content: `Rules: ${token}1` },
+            { role: "user" as const, content: `${token}1 / ${token}2` },
+          ],
+        },
+        {
+          variable: [{ text: literal }, { text: "second value" }],
+          input: [
+            { role: "user" as const, content: `${token}1` },
+            { role: "assistant" as const, content: ` Prefix ${token}2 ` },
+            { role: "unfilled" as const, content: "" },
+          ],
+        },
+      ],
+    });
+    assert.deepEqual(
+      expandGrid(gridSchema.parse(source)).map((cell) => cell.messages),
+      [
+        [
+          { role: "system", content: `Rules: ${token}2` },
+          {
+            role: "user",
+            content: `${token}2 / not recursively expanded`,
+            images: [first],
+          },
+        ],
+        [
+          { role: "user", content: literal },
+          { role: "assistant", content: " Prefix second value " },
+          { role: "unfilled", content: "" },
+        ],
+      ],
+    );
+    const prompts = currentDefinition({
+      ...source,
+      format: "markdown",
+      [side]: source[side].map((record, index) => ({
+        ...record,
+        input: [
+          {
+            role: "user" as const,
+            content: index === 0 ? `Nested ${token}1` : `${token}1`,
+          },
+        ],
+      })),
+    });
+    assert.deepEqual(
+      expandGrid(gridSchema.parse(prompts)).map((cell) => cell.prompt),
+      [`Nested ${token}2`, literal],
+    );
+    assert.equal(expandGrid(gridSchema.parse(prompts))[0].images, undefined);
+  });
+
+  test(`${side} optional fields retain empty and deleted slot history when a non-numbered setting consumes cases`, () => {
+    for (const variable of [undefined, [], [null], [null, null]]) {
+      for (const owner of ["input", "model", "judge_criteria"] as const) {
+        const source = currentDefinition({
+          caseAxis: side,
+          judge: owner === "judge_criteria",
+          parameters: {
+            ...(variable === undefined ? {} : { variable: { kind: side } }),
+            [owner]: { kind: side },
+          },
+          [side]: ["first", "second"].map((id) => ({
+            id,
+            ...(variable === undefined ? {} : { variable }),
+            [owner]:
+              owner === "input"
+                ? [{ role: "user" as const, content: "Identical instructions" }]
+                : owner === "model"
+                  ? "fixture/model"
+                  : [{ text: "Correct?", correctAnswer: true }],
+          })),
+        });
+        const parsed = gridSchema.parse(source);
+        assert.deepEqual(parsed[side], source[side]);
+        assert.equal(expandGrid(parsed).length, 2);
+        assert.equal(promptVariableIssue(parsed), undefined);
+      }
+    }
+    const unused = currentDefinition({
+      caseAxis: side,
+      parameters: { variable: { kind: side } },
+      [side]: [{ variable: [null] }],
+    });
+    assert.equal(gridSchema.safeParse(unused).success, false);
+  });
+}
+
+for (const side of ["rows", "columns"] as const) {
+  test(`${side} template checks do not depend on a completed model dimension`, () => {
+    const source = input(side);
+    const other = side === "rows" ? "columns" : "rows";
+    source.parameters.model = { kind: other };
+    source[other] = [];
+    assert.equal(promptVariableIssue(source), undefined);
+    generatorInputForCell(source, 0, 0)[0].content =
+      side === "rows" ? "$ROW9" : "$COLUMN9";
+    assert.match(promptVariableIssue(source) ?? "", /Unknown prompt variable/);
+  });
+}

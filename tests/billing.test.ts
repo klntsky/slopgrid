@@ -19,9 +19,12 @@ test("generation usage follows the latest call while billing preserves earlier a
   const store = new Store(join(directory, "db.sqlite"), Buffer.alloc(32, 1));
   try {
     const input = currentInput({
-      prompt: "Make a heading",
       budgetUsd: 5,
       parameters: {
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: "Make a heading" }],
+        },
         model: { kind: "rows" },
         effort: { kind: "columns" },
       },
@@ -117,10 +120,13 @@ test("judge charges enter spent without changing generation usage or duplicating
   const store = new Store(join(directory, "db.sqlite"), Buffer.alloc(32, 1));
   try {
     const input = currentInput({
-      prompt: "An output",
       budgetUsd: 1,
       judge: true,
       parameters: {
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: "An output" }],
+        },
         model: { kind: "common", value: "generator" },
         effort: { kind: "common", value: "none" },
         judge_model: { kind: "rows" },
@@ -248,10 +254,13 @@ test("canonical billing survives reopening and recovery with free and unavailabl
   let store = new Store(path, Buffer.alloc(32, 1));
   try {
     const input = currentInput({
-      prompt: "Saved billing",
       budgetUsd: 1,
       judge: true,
       parameters: {
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: "Saved billing" }],
+        },
         model: { kind: "rows" },
         effort: { kind: "columns" },
         judge_model: { kind: "common", value: "actual-judge" },
@@ -384,10 +393,13 @@ test("shared generation calls aggregate across ledger cells without duplicating 
   const store = new Store(join(directory, "db.sqlite"), Buffer.alloc(32, 1));
   try {
     const input = currentInput({
-      prompt: "Shared output",
       budgetUsd: 1,
       judge: true,
       parameters: {
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: "Shared output" }],
+        },
         model: { kind: "common", value: "generator" },
         effort: { kind: "common", value: "none" },
         judge_model: { kind: "rows" },

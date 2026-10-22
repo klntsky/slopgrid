@@ -43,9 +43,13 @@ test("publishing is permanent, link grids are unlisted, and public summaries omi
   ) {
     const input = currentInput({
       format,
-      prompt: "Draw $ROW1",
+      caseAxis: "rows",
       budgetUsd: 5,
       parameters: {
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: "Draw $ROW1" }],
+        },
         variable: { kind: "rows" },
         ...(format === "image"
           ? { size: { kind: "columns" as const } }
@@ -276,9 +280,13 @@ test("publishing a paused grid exposes unfinished cells as Not generated and loc
   const owner = token();
   store.saveSession({ id: owner, created: Date.now() });
   const input = currentInput({
-    prompt: "Draw $ROW1",
+    caseAxis: "rows",
     budgetUsd: 5,
     parameters: {
+      input: {
+        kind: "common",
+        value: [{ role: "user", content: "Draw $ROW1" }],
+      },
       variable: { kind: "rows" },
       effort: { kind: "columns" },
     },

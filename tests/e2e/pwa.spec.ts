@@ -64,26 +64,27 @@ test("visited pages and completed outputs survive offline reload without retaini
     ).map((format) => {
       const input = currentInput({
         format,
-        prompt: `Offline ${format}`,
-        ...(format === "chat-template"
-          ? {
-              messages: [
-                {
-                  role: "user" as const,
-                  content: "First image",
-                  images: [chatImages[0]],
-                },
-                { role: "unfilled" as const, content: "" },
-                {
-                  role: "user" as const,
-                  content: "Later image",
-                  images: [chatImages[1]],
-                },
-                { role: "unfilled" as const, content: "" },
-              ],
-            }
-          : {}),
         parameters: {
+          input: {
+            kind: "common",
+            value:
+              format === "chat-template"
+                ? [
+                    {
+                      role: "user",
+                      content: "First image",
+                      images: [chatImages[0]],
+                    },
+                    { role: "unfilled", content: "" },
+                    {
+                      role: "user",
+                      content: "Later image",
+                      images: [chatImages[1]],
+                    },
+                    { role: "unfilled", content: "" },
+                  ]
+                : [{ role: "user", content: `Offline ${format}` }],
+          },
           model: { kind: "rows" },
           ...(format === "image"
             ? { quality: { kind: "columns" as const } }
@@ -195,9 +196,12 @@ test("visited pages and completed outputs survive offline reload without retaini
         ...template,
         id: token(),
         input: currentInput({
-          prompt: `Offline judgment ${status}`,
           judge: true,
           parameters: {
+            input: {
+              kind: "common",
+              value: [{ role: "user", content: `Offline judgment ${status}` }],
+            },
             model: { kind: "rows" },
             effort: { kind: "columns" },
             judge_criteria: {
@@ -343,7 +347,7 @@ test("visited pages and completed outputs survive offline reload without retaini
         name: grid.published ? "FORK" : "EDIT",
         exact: true,
       });
-      if (grid.input.inputVersion === 2) {
+      if (grid.input.inputVersion === 3) {
         await expect(configure).toBeEnabled();
       } else {
         await expect(configure).toBeDisabled();
@@ -484,7 +488,7 @@ test("visited pages and completed outputs survive offline reload without retaini
         }
       },
       grids
-        .filter((grid) => grid.input.inputVersion !== 2)
+        .filter((grid) => grid.input.inputVersion !== 3)
         .map((grid) => grid.id),
     );
     await page.goto(web.origin);
@@ -574,7 +578,7 @@ test("visited pages and completed outputs survive offline reload without retaini
         name: grid.published ? "FORK" : "EDIT",
         exact: true,
       });
-      if (grid.input.inputVersion === 2) {
+      if (grid.input.inputVersion === 3) {
         await expect(configure).toBeEnabled();
       } else {
         await expect(configure).toBeDisabled();

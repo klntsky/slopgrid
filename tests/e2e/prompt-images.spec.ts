@@ -178,7 +178,7 @@ for (const format of ["Markdown", "SVG", "Static website"] as const) {
         .click();
       await expect(
         page.getByRole("img", { name: common.name, exact: true }),
-      ).toHaveCount(0);
+      ).toBeVisible();
       await page.getByRole("button", { name: "Markdown", exact: true }).click();
       await expect(
         page.getByRole("img", { name: common.name, exact: true }),

@@ -15,12 +15,18 @@ function template(f: RuntimeFixture) {
     format: "chat-template",
     budgetUsd: 1,
     rows: [{ variable: [{ text: "one" }] }],
-    messages: [
-      { role: "user", content: "Question $ROW1" },
-      { role: "unfilled", content: "" },
-      { role: "user", content: "Next question" },
-      { role: "unfilled", content: "" },
-    ],
+    caseAxis: "rows",
+    parameters: {
+      input: {
+        kind: "common",
+        value: [
+          { role: "user", content: "Question $ROW1" },
+          { role: "unfilled", content: "" },
+          { role: "user", content: "Next question" },
+          { role: "unfilled", content: "" },
+        ],
+      },
+    },
   });
 }
 

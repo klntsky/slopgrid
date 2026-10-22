@@ -798,7 +798,16 @@ test("titles are independent owner-editable metadata and collapsed prompts expan
       prompt,
     );
     const short = await page.request.post("/api/grids", {
-      data: { ...snapshot.input, prompt: "$ROW1 hat" },
+      data: {
+        ...snapshot.input,
+        parameters: {
+          ...snapshot.input.parameters,
+          input: {
+            kind: "common",
+            value: [{ role: "user", content: "$ROW1 hat" }],
+          },
+        },
+      },
     });
     await page.setViewportSize({ width: 1600, height: 900 });
     await page.goto(`/grid/${(await short.json()).id}`);

@@ -18,6 +18,7 @@ test(
     let unlock = () => {};
     try {
       const grid = f.grid({
+        caseAxis: "rows",
         rows: [{ variable: [{ text: "one" }] }],
       });
       unlock = holdDatabaseWrites(f.store);
@@ -65,6 +66,7 @@ test(
     let unsubscribe = () => {};
     try {
       const grid = f.grid({
+        caseAxis: "rows",
         rows: [{ variable: [{ text: "one" }] }],
       });
       const snapshots: string[] = [];

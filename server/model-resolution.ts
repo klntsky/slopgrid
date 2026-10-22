@@ -15,20 +15,24 @@ export function resolveGridModels<T extends GridInput>(
     if (source?.kind === "common") source.value = resolve(source.value);
   }
   for (const side of ["rows", "columns"] as const) {
-    const groups = new Map<
-      string,
-      { record: CaseRecord; original: string }[]
-    >();
+    const groups =
+      resolved.caseAxis === side
+        ? undefined
+        : new Map<string, { record: CaseRecord; original: string }[]>();
     for (const record of resolved[side]) {
-      const original = JSON.stringify([record.model, record.judge_model]);
+      const original = groups
+        ? JSON.stringify([record.model, record.judge_model])
+        : "";
       if (record.model !== undefined) record.model = resolve(record.model);
       if (record.judge_model !== undefined)
         record.judge_model = resolve(record.judge_model);
+      if (!groups) continue;
       const key = JSON.stringify(kinds.map((kind) => record[kind]));
       const group = groups.get(key) ?? [];
       group.push({ record, original });
       groups.set(key, group);
     }
+    if (!groups) continue;
     // Only unique alias spellings of otherwise identical cases can collapse.
     // Intentional repeats or correlated settings retain every complete case.
     const collapsed = new Set<CaseRecord>();

@@ -13,6 +13,7 @@ import {
 } from "../server/domain.js";
 import { createWorkflow, projectWorkflow } from "../server/workflow.js";
 import { reuseArtifacts } from "../server/artifact-reuse.js";
+import { inferenceSignature } from "../server/prepared-inference.js";
 import { token } from "../server/ids.js";
 import { generationGroupKey } from "../shared/generation-key.js";
 import {
@@ -31,6 +32,7 @@ import {
   removeInferenceOutputTokenUsage,
   staleGenerationProvenance,
   removeArtifactSourceGrid,
+  restorePlainPromptGeneration,
 } from "./artifact-reuse-fixture.js";
 import { validatedGrid } from "./grid-storage-fixture.js";
 import {
@@ -42,8 +44,9 @@ import { parameterValue } from "../server/parameters.js";
 
 const input = currentDefinition({
   format: "markdown",
-  prompt: "$ROW1 one",
+  caseAxis: "rows",
   parameters: {
+    input: { kind: "common", value: [{ role: "user", content: "$ROW1 one" }] },
     variable: { kind: "rows" },
     effort: { kind: "columns" },
   },
@@ -78,11 +81,13 @@ test("generator grouping ignores judge-only fields and attachment display metada
   const image = { id: "source", name: "source.png", width: 10, height: 20 };
   const setup = currentDefinition({
     ...input,
-    prompt: "$ROW1",
     judge: true,
-    promptImages: [image],
     parameters: {
       ...input.parameters,
+      input: {
+        kind: "common",
+        value: [{ role: "user", content: "$ROW1", images: [image] }],
+      },
       effort: { kind: "common", value: "none" },
       judge_model: { kind: "columns" },
       judge_effort: { kind: "common", value: "default" },
@@ -146,11 +151,19 @@ for (const format of ["markdown", "svg", "html"] as const)
       )!;
       const setup = currentDefinition({
         format,
-        prompt: "Describe the shape.",
-        promptImages: [original],
         budgetUsd: input.budgetUsd,
         parallelWorkers: input.parallelWorkers,
         parameters: {
+          input: {
+            kind: "common",
+            value: [
+              {
+                role: "user",
+                content: "Describe the shape.",
+                images: [original],
+              },
+            ],
+          },
           model: { kind: "rows" },
           effort: { kind: "columns" },
         },
@@ -177,23 +190,62 @@ for (const format of ["markdown", "svg", "html"] as const)
       await settled(f, source.id);
       const copy = await create(f, {
         ...setup,
-        promptImages: [{ ...copied, width: 900, height: 2 }],
+        caseAxis: "columns",
+        parameters: {
+          ...setup.parameters,
+          input: { kind: "columns" },
+        },
+        columns: ["first", "second"].map((id) => ({
+          id,
+          effort: "none",
+          input: [
+            {
+              role: "user",
+              content: "Describe the shape.",
+              images: [{ ...copied, width: 900, height: 2 }],
+            },
+          ],
+        })),
         sourceGridId: source.id,
         reuseArtifacts: true,
       });
       const savedCopy = await settled(f, copy.id);
-      assert.deepEqual(gridSchema.parse(savedCopy.input).promptImages, [
-        copied,
-      ]);
+      assert.equal(savedCopy.cells.length, 2);
+      assert.equal(gridSchema.parse(savedCopy.input).caseAxis, "columns");
+      assert.deepEqual(
+        parameterValue(gridSchema.parse(savedCopy.input), "input", 0, 0)![0]
+          .images,
+        [copied],
+      );
       assert.deepEqual(savedCopy.cells[0].images, [copied]);
       assert.equal(f.calls.length, 1);
       assert.equal(
         f.store.outputMetadata(copy.cells[0].id)!.artifactId,
         f.store.outputMetadata(source.cells[0].id)!.artifactId,
       );
+      assert.equal(
+        f.store.outputMetadata(copy.cells[1].id)!.artifactId,
+        f.store.outputMetadata(source.cells[0].id)!.artifactId,
+      );
       const different = await create(f, {
         ...setup,
-        promptImages: [changed],
+        caseAxis: "rows",
+        parameters: {
+          ...setup.parameters,
+          input: { kind: "rows" },
+          model: { kind: "common", value: "fixture/text" },
+        },
+        rows: [
+          {
+            input: [
+              {
+                role: "user",
+                content: "Describe the shape.",
+                images: [changed],
+              },
+            ],
+          },
+        ],
         sourceGridId: source.id,
         reuseArtifacts: true,
       });
@@ -226,10 +278,10 @@ test("non-chat image reuse follows content and ignores changed judge-only fields
     )!;
     const setup = currentDefinition({
       ...input,
-      prompt: "$ROW1",
       judge: true,
       parameters: {
         ...input.parameters,
+        input: { kind: "common", value: [{ role: "user", content: "$ROW1" }] },
         effort: { kind: "common", value: "none" },
         judge_model: { kind: "columns" },
         judge_effort: { kind: "common", value: "none" },
@@ -339,24 +391,36 @@ test("chat reuse matches attachment content across uploads but not moved attachm
       ...input,
       format: "chat-template",
       parameters: {
+        input: { kind: "common", value: messages },
         variable: { kind: "rows" },
         model: { kind: "common", value: "fixture/text" },
         effort: { kind: "columns" },
       },
       rows: [{ variable: [{ text: "cat" }] }],
-      messages,
     });
     const source = await create(f, template);
     finish(await f.nextCall(), "Both images");
     const original = await settled(f, source.id);
     const copy = await create(f, {
       ...template,
-      messages: [
+      caseAxis: "columns",
+      parameters: {
+        input: { kind: "columns" },
+        model: { kind: "rows" },
+        effort: { kind: "common", value: "none" },
+      },
+      rows: [{ model: "fixture/text" }],
+      columns: [
         {
-          ...messages[0],
-          images: [{ ...renamed, width: 900, height: 2 }],
+          input: [
+            {
+              ...messages[0],
+              content: "Describe cat one",
+              images: [{ ...renamed, width: 900, height: 2 }],
+            },
+            ...messages.slice(1),
+          ],
         },
-        ...messages.slice(1),
       ],
       sourceGridId: source.id,
       reuseArtifacts: true,
@@ -367,14 +431,23 @@ test("chat reuse matches attachment content across uploads but not moved attachm
       f.store.outputMetadata(original.cells[0].id)!.artifactId,
     );
     assert.equal(f.calls.length, 1);
-    assert.deepEqual(copy.input.messages![0].images, [renamed]);
+    assert.deepEqual(
+      parameterValue(gridSchema.parse(copy.input), "input", 0, 0)![0].images,
+      [renamed],
+    );
     const changed = await create(f, {
       ...template,
-      messages: [
-        { ...messages[0], images: undefined },
-        messages[1],
-        { ...messages[2], images: [first, second] },
-      ],
+      parameters: {
+        ...template.parameters,
+        input: {
+          kind: "common",
+          value: [
+            { ...messages[0], images: undefined },
+            messages[1],
+            { ...messages[2], images: [first, second] },
+          ],
+        },
+      },
       sourceGridId: source.id,
       reuseArtifacts: true,
     });
@@ -407,17 +480,20 @@ test("template usage and per-call reuse survive storage reopening", async () => 
       ...input,
       format: "chat-template",
       parameters: {
+        input: {
+          kind: "common",
+          value: [
+            { role: "user", content: "$ROW1 one" },
+            { role: "unfilled", content: "" },
+            { role: "unfilled", content: "" },
+          ],
+        },
         variable: { kind: "rows" },
         model: { kind: "common", value: "fixture/text" },
         effort: { kind: "columns" },
       },
       budgetUsd: 1,
       rows: [{ variable: [{ text: "cat" }] }],
-      messages: [
-        { role: "user", content: "$ROW1 one" },
-        { role: "unfilled", content: "" },
-        { role: "unfilled", content: "" },
-      ],
     });
     const source = await create(f, template);
     finish(await f.nextCall(), "First answer");
@@ -488,17 +564,20 @@ test("template reuse requires the final completion after supplied trailing histo
       ...input,
       format: "chat-template",
       parameters: {
+        input: {
+          kind: "common",
+          value: [
+            { role: "user", content: "$ROW1 one" },
+            { role: "unfilled", content: "" },
+            { role: "user", content: "Final question" },
+          ],
+        },
         variable: { kind: "rows" },
         model: { kind: "common", value: "fixture/text" },
         effort: { kind: "columns" },
       },
       budgetUsd: 1,
       rows: [{ variable: [{ text: "cat" }] }],
-      messages: [
-        { role: "user", content: "$ROW1 one" },
-        { role: "unfilled", content: "" },
-        { role: "user", content: "Final question" },
-      ],
     });
     const source = await create(f, template);
     finish(await f.nextCall(), "First answer");
@@ -548,17 +627,20 @@ test("failed templates retain the partial transcript and aggregate charged usage
         ...input,
         format: "chat-template",
         parameters: {
+          input: {
+            kind: "common",
+            value: [
+              { role: "user", content: "$ROW1 one" },
+              { role: "unfilled", content: "" },
+              { role: "unfilled", content: "" },
+            ],
+          },
           variable: { kind: "rows" },
           model: { kind: "common", value: "fixture/text" },
           effort: { kind: "columns" },
         },
         budgetUsd: 1,
         rows: [{ variable: [{ text: "cat" }] }],
-        messages: [
-          { role: "user", content: "$ROW1 one" },
-          { role: "unfilled", content: "" },
-          { role: "unfilled", content: "" },
-        ],
       }),
     );
     finish(await f.nextCall(), "First answer");
@@ -926,7 +1008,15 @@ test("effective model, prompt, effort and format determine actual reuse", async 
       },
       {
         name: "prompt",
-        input: { prompt: "Changed $ROW1 one" },
+        input: {
+          parameters: {
+            ...config.parameters,
+            input: {
+              kind: "common",
+              value: [{ role: "user", content: "Changed $ROW1 one" }],
+            },
+          },
+        },
         verify: (call) => assert.equal(call.prompt, "Changed cat one"),
       },
       {
@@ -1051,7 +1141,13 @@ test("reuse selects the first matching source whose actual usage fits the new li
     const config = currentDefinition({
       ...input,
       budgetUsd: 1,
-      prompt: "$ROW1$ROW2",
+      parameters: {
+        ...input.parameters,
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: "$ROW1$ROW2" }],
+        },
+      },
       rows: [
         ["a", "bc"],
         ["a", "c"],
@@ -1179,9 +1275,12 @@ test("duplicate effective prompts choose the first source cell and model alias r
     await f.startWeb();
     const config = currentDefinition({
       ...input,
-      prompt: "$ROW1$ROW2",
       parameters: {
         ...input.parameters,
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: "$ROW1$ROW2" }],
+        },
         model: { kind: "common", value: "fixture/latest" },
       },
       rows: [
@@ -1245,8 +1344,8 @@ test("reuse leaves preparation failures on individual cells and skips unsigned s
     await f.startWeb();
     const config = currentDefinition({
       ...input,
-      prompt: "$ROW1",
       parameters: {
+        input: { kind: "common", value: [{ role: "user", content: "$ROW1" }] },
         variable: { kind: "rows" },
         model: { kind: "columns" },
         effort: { kind: "common", value: "none" },
@@ -1310,9 +1409,12 @@ test("reuse leaves preparation failures on individual cells and skips unsigned s
 
 test("generation failures reach every judged group member while ordinary cells remain independent", () => {
   const judged = currentInput({
-    prompt: "Same output",
     judge: true,
     parameters: {
+      input: {
+        kind: "common",
+        value: [{ role: "user", content: "Same output" }],
+      },
       effort: { kind: "common", value: "none" },
       judge_model: { kind: "rows" },
       judge_effort: { kind: "columns" },
@@ -1348,8 +1450,11 @@ test("generation failures reach every judged group member while ordinary cells r
     Array.from({ length: 4 }, () => ["error", "Generation failed"]),
   );
   const unjudged = currentInput({
-    prompt: judged.prompt,
-    parameters: { model: { kind: "rows" }, effort: { kind: "columns" } },
+    parameters: {
+      input: judged.parameters.input,
+      model: { kind: "rows" },
+      effort: { kind: "columns" },
+    },
     rows: [{ model: "judge-a" }, { model: "judge-b" }],
     columns: [{ effort: "none" }, { effort: "low" }],
   });
@@ -1377,9 +1482,13 @@ test("reuse shares one generation per judge group without copying judgments or a
   try {
     const config = currentDefinition({
       ...input,
-      prompt: "Reusable output",
+      caseAxis: undefined,
       judge: true,
       parameters: {
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: "Reusable output" }],
+        },
         model: { kind: "rows" },
         effort: { kind: "columns" },
         judge_model: { kind: "common", value: "fixture/text" },
@@ -1475,6 +1584,60 @@ test("reuse shares one generation per judge group without copying judgments or a
     assert.equal(
       f.store.removeUnreferencedArtifact(original.artifactId!),
       false,
+    );
+  } finally {
+    await f.close();
+  }
+});
+
+test("unified user-message inputs reuse existing plain-prompt artifacts", async () => {
+  const f = await runtimeFixture();
+  try {
+    const setup = currentDefinition({
+      parameters: {
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: "A reusable plain prompt" }],
+        },
+      },
+    });
+    const source = await create(f, setup);
+    finish(await f.nextCall(), "Previously generated artifact");
+    const completed = await settled(f, source.id);
+    const prepared = await new Provider(f.providerURL).prepare(
+      "markdown",
+      completed.cells[0],
+    );
+    if (prepared.format === "image") throw new Error("Expected text request");
+    const signature = inferenceSignature({
+      ...prepared,
+      text: { ...prepared.text, messages: undefined },
+    });
+    restorePlainPromptGeneration(
+      f.store.db,
+      completed.cells[0].generationId!,
+      signature,
+    );
+    const copy = await create(f, {
+      ...setup,
+      sourceGridId: source.id,
+      reuseArtifacts: true,
+    });
+    assert.equal(copy.status, "complete");
+    assert.equal(
+      f.store.outputMetadata(copy.cells[0].id)!.artifactId,
+      completed.cells[0].artifactId,
+    );
+    assert.equal(f.calls.length, 1);
+    assert.equal(
+      readFileSync(
+        f.store.files.path(
+          f.store.outputMetadata(copy.cells[0].id)!.artifactId,
+          "index.md",
+        )!,
+        "utf8",
+      ),
+      "Previously generated artifact",
     );
   } finally {
     await f.close();

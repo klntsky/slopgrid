@@ -1,12 +1,12 @@
 import type { GridInput } from "./domain.js";
 import type { ReferenceImage } from "./image-settings.js";
-import { criteriaSets } from "./judge-criteria.js";
-import { type ParameterConfiguration } from "./parameters.js";
+import { criteriaForCell } from "./judge-criteria.js";
+import { axisParameters, type ParameterConfiguration } from "./parameters.js";
+import { generatorInputForCell } from "./generator-input.js";
 
 export type VariableField = { text: string; images?: ReferenceImage[] };
 type VariableInput = ParameterConfiguration;
-type TemplateInput = VariableInput &
-  Pick<GridInput, "prompt" | "messages" | "judge" | "format">;
+type TemplateInput = VariableInput & Pick<GridInput, "judge" | "format">;
 
 // A numbered token or bare legacy token must end at a whole-word boundary.
 export const variableToken = /\$(ROW|COLUMN)(\d*)(?![\p{L}\p{N}_])/gu;
@@ -92,12 +92,12 @@ export function interpolateVariables(
 }
 
 export function promptVariableIssue(input: TemplateInput): string | undefined {
-  for (const side of ["rows", "columns"] as const) {
-    if (input.parameters.variable?.kind !== side) continue;
-    const cases = input[side];
+  const variableSide = input.parameters.variable?.kind;
+  if (variableSide) {
+    const cases = input[variableSide];
     const fields = cases[0]?.variable;
     if (
-      !fields?.some((field) => field !== null) ||
+      !fields ||
       cases.some(
         ({ variable }) =>
           !variable ||
@@ -107,53 +107,52 @@ export function promptVariableIssue(input: TemplateInput): string | undefined {
           ),
       )
     )
-      return "Variable values must have the same active numbered fields, with at least one active field.";
+      return "Variable values must have the same active numbered fields.";
   }
-  const templates: { text: string; role: string }[] =
-    input.format === "chat-template"
-      ? (input.messages ?? []).map((message) => ({
-          text: message.content,
-          role: message.role,
-        }))
-      : [{ text: input.prompt, role: "user" }];
-  templates.push(
-    ...criteriaSets(input)
-      .flat()
-      .map(({ text }) => ({
-        text,
-        role: "user",
-      })),
-  );
-  const used = new Set<string>();
-  for (const { text, role } of templates)
-    for (const match of text.matchAll(variableToken)) {
-      const [token, name, number] = match;
-      const side = name === "ROW" ? "rows" : "columns";
-      const axis = input[side];
-      if (input.parameters.variable?.kind !== side)
-        return `Choose prompt variables for ${name === "ROW" ? "rows" : "columns"} to use ${token}.`;
-      if (
-        !/^[1-9]\d*$/.test(number) ||
-        !axis[0]?.variable?.[Number(number) - 1]
-      )
-        return `Unknown prompt variable ${token}.`;
-      if (
-        role !== "user" &&
-        axis.some(
-          (record) => record.variable?.[Number(number) - 1]?.images?.length,
-        )
-      )
-        return "Variable images can only be attached to user messages.";
-      used.add(name);
-    }
-  for (const [name, side] of [
-    ["ROW", "rows"],
-    ["COLUMN", "columns"],
-  ] as const)
-    if (input.parameters.variable?.kind === side && !used.has(name)) {
-      const index = input[side][0]!.variable!.findIndex(
-        (field) => field !== null,
+  let fieldsUsed = false;
+  const count = input.caseAxis ? input[input.caseAxis].length : 1;
+  for (let index = 0; index < count; index++) {
+    const row = input.caseAxis === "rows" ? index : 0;
+    const column = input.caseAxis === "columns" ? index : 0;
+    const templates = generatorInputForCell(input, row, column).map(
+      ({ content, role }) => ({ text: content, role }),
+    );
+    if (input.judge)
+      templates.push(
+        ...criteriaForCell(input, row, column).map(({ text }) => ({
+          text,
+          role: "user" as const,
+        })),
       );
-      return `Include $${name}${index + 1} in the prompt or judge criteria for ${name === "ROW" ? "row" : "column"} variables.`;
-    }
+    for (const { text, role } of templates)
+      for (const [token, name, number] of text.matchAll(variableToken)) {
+        const side = name === "ROW" ? "rows" : "columns";
+        if (variableSide !== side)
+          return input.caseAxis === side
+            ? `Use Add variable in the ${side === "rows" ? "row" : "column"} cases to define ${token}.`
+            : `Choose prompt variables for ${name === "ROW" ? "rows" : "columns"} to use ${token}.`;
+        const caseIndex = side === "rows" ? row : column;
+        const field = input[side][caseIndex]?.variable?.[Number(number) - 1];
+        if (!/^[1-9]\d*$/.test(number) || !field)
+          return `Unknown prompt variable ${token}.`;
+        if (role !== "user" && field.images?.length)
+          return "Variable images can only be attached to user messages.";
+        fieldsUsed = true;
+      }
+  }
+  if (
+    input.caseAxis &&
+    !axisParameters(input, input.caseAxis).some(
+      (kind) => kind !== "variable",
+    ) &&
+    !fieldsUsed
+  ) {
+    const side = input.caseAxis;
+    const index = input[side][0]?.variable?.findIndex(
+      (field) => field !== null,
+    );
+    if (index !== undefined && index >= 0)
+      return `Include $${side === "rows" ? "ROW" : "COLUMN"}${index + 1} in the prompt or judge criteria for ${side === "rows" ? "row" : "column"} variables.`;
+    return "Use a case-owned generator input, parameter, or numbered field for the case axis.";
+  }
 }

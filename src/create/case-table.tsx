@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { ArrowDown, ArrowUp, Plus, X } from "lucide-react";
 import {
   efforts,
+  isChatFormat,
   type CaseRecord,
   type GridDraftInput,
   type ParameterValues,
@@ -25,6 +26,8 @@ import {
   type ParameterSetter,
 } from "./change-axis";
 import { VariableInput } from "./variable-input";
+import { PromptEditor } from "./prompt-editor";
+import { ChatEditor } from "./chat-editor";
 
 type LayoutField =
   { parameter: CommonParameterId } | { parameter: "variable"; index: number };
@@ -56,7 +59,7 @@ function CaseValue({
 }: {
   input: GridDraftInput;
   entry: CaseRecord;
-  parameter: CommonParameterId;
+  parameter: Exclude<CommonParameterId, "input">;
   models: Model[];
   judgeModels: Model[];
   onChange: ParameterSetter;
@@ -148,14 +151,12 @@ export function GridLayoutTable({
     parameter: ParameterId,
     caseIndex?: number,
     fieldIndex?: number,
+    messageIndex?: number,
   ) => ReactNode;
 }) {
-  const side = input.parameters.variable?.kind;
+  const side = input.caseAxis;
   if (!side) return null;
   const fields = fieldsFor(input, side);
-  let variableFieldCount = 0;
-  for (const field of fields)
-    if (field.parameter === "variable") variableFieldCount++;
   const entries = input[side];
   const rowCases = side === "rows";
   const headerWidth = rowCases ? 58 : 92;
@@ -212,7 +213,11 @@ export function GridLayoutTable({
     const label =
       field.parameter === "variable"
         ? token(side, field.index)
-        : parameterNames[field.parameter];
+        : field.parameter === "input"
+          ? isChatFormat(input.format)
+            ? "Chat history"
+            : "Prompt"
+          : parameterNames[field.parameter];
     return (
       <>
         <div className="layout-parameter-heading">
@@ -222,7 +227,6 @@ export function GridLayoutTable({
               type="button"
               className="text-button"
               aria-label={`Remove ${label}`}
-              disabled={variableFieldCount <= 1}
               onClick={() =>
                 onAction({ type: "remove-variable", side, index: field.index })
               }
@@ -273,6 +277,68 @@ export function GridLayoutTable({
       );
     }
     const parameter = field.parameter;
+    if (parameter === "input") {
+      const messages = entry.input ?? [];
+      const label = isChatFormat(input.format) ? "Chat history" : "Prompt";
+      return (
+        <div
+          role="group"
+          aria-label={`${side === "rows" ? "Row" : "Column"} case ${caseIndex + 1} ${label}`}
+        >
+          {isChatFormat(input.format) ? (
+            <ChatEditor
+              messages={messages}
+              onBusy={onBusy}
+              onChange={(change) =>
+                onAction({
+                  type: "edit-input",
+                  source: side,
+                  caseIndex,
+                  change,
+                })
+              }
+              compatibility={(messageIndex) =>
+                compatibility(side, "input", caseIndex, undefined, messageIndex)
+              }
+            />
+          ) : (
+            <PromptEditor
+              prompt={messages[0]?.content ?? ""}
+              onPromptChange={(content) =>
+                onAction({
+                  type: "edit-input",
+                  source: side,
+                  caseIndex,
+                  change: (current) => [
+                    { ...current[0], role: "user", content },
+                  ],
+                })
+              }
+              attachments={{
+                images: messages[0]?.images ?? [],
+                onBusy,
+                onChange: (images) =>
+                  onAction({
+                    type: "edit-input",
+                    source: side,
+                    caseIndex,
+                    change: (current) => [
+                      {
+                        ...current[0],
+                        role: "user",
+                        content: current[0]?.content ?? "",
+                        images,
+                      },
+                    ],
+                  }),
+              }}
+            />
+          )}
+          {!isChatFormat(input.format) &&
+            compatibility(side, "input", caseIndex)}
+        </div>
+      );
+    }
     return (
       <div
         role="group"
@@ -314,6 +380,19 @@ export function GridLayoutTable({
     </div>
   );
   const columns = rowCases ? fields.length : entries.length;
+  const fieldWidths = fields.map((field) =>
+    field.parameter === "input"
+      ? isChatFormat(input.format)
+        ? 420
+        : 320
+      : 256,
+  );
+  const caseWidth = Math.max(256, ...fieldWidths);
+  const tableWidth =
+    headerWidth +
+    (rowCases
+      ? fieldWidths.reduce((total, width) => total + width, 0)
+      : entries.length * caseWidth);
   return (
     <div className="variable-editor">
       {entries.length ? (
@@ -321,7 +400,7 @@ export function GridLayoutTable({
           <table
             className="variable-table layout-parameter-table"
             aria-label="Grid layout parameters"
-            style={{ minWidth: `${headerWidth + columns * 256}px` }}
+            style={{ minWidth: `${tableWidth}px` }}
           >
             <colgroup>
               <col
@@ -329,8 +408,15 @@ export function GridLayoutTable({
                 style={{ width: headerWidth }}
               />
               {rowCases
-                ? fields.map((field) => <col key={fieldKey(field)} />)
-                : entries.map((entry) => <col key={entry.id} />)}
+                ? fields.map((field, index) => (
+                    <col
+                      key={fieldKey(field)}
+                      style={{ width: fieldWidths[index] }}
+                    />
+                  ))
+                : entries.map((entry) => (
+                    <col key={entry.id} style={{ width: caseWidth }} />
+                  ))}
             </colgroup>
             <thead>
               <tr>
@@ -388,8 +474,9 @@ export function GridLayoutTable({
         actions
       )}
       <p className="hint">
-        Each case is one {sideName(side)}. Reference numbered variables in the
-        prompt or judge criteria. Text and images are optional in each field.
+        Each case is one {sideName(side)}. Add generator input or other settings
+        to cases, or reference optional numbered fields in the input or judge
+        criteria. Text and images are optional in each field.
       </p>
     </div>
   );

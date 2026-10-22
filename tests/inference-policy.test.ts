@@ -42,8 +42,9 @@ test("admission sums individual costs, preserves automatic selection, and skips 
     workersMax: 1,
   });
   const input = currentInput({
-    prompt: "$ROW1",
+    caseAxis: "rows",
     parameters: {
+      input: { kind: "common", value: [{ role: "user", content: "$ROW1" }] },
       variable: { kind: "rows" },
       model: { kind: "columns" },
       effort: { kind: "common", value: "none" },
@@ -126,10 +127,13 @@ test("automatic judged admission reserves one generation per source and each unf
     },
   } as unknown as Response;
   const input = currentInput({
-    prompt: "One artifact",
     budgetUsd: 3,
     judge: true,
     parameters: {
+      input: {
+        kind: "common",
+        value: [{ role: "user", content: "One artifact" }],
+      },
       model: { kind: "common", value: "cheap" },
       effort: { kind: "common", value: "none" },
       judge_model: { kind: "rows" },
@@ -174,10 +178,10 @@ test("automatic judged admission reserves one generation per source and each unf
 
   const imageInput = currentInput({
     format: "image",
-    prompt: input.prompt,
     budgetUsd: input.budgetUsd,
     judge: true,
     parameters: {
+      input: input.parameters.input,
       model: input.parameters.model,
       judge_model: input.parameters.judge_model,
       judge_effort: input.parameters.judge_effort,

@@ -257,13 +257,20 @@ for (const format of ["markdown", "chat-template", "image", "svg"] as const) {
           ? "A single solid red rectangle centered on a plain white background. Flat geometric diagram. No circles, letters, or other objects."
           : "Respond with only this short sentence: A red rectangle is shown.";
     const input: GridInput = {
-      inputVersion: 2,
+      inputVersion: 3,
       format,
-      prompt,
-      promptImages: [],
       budgetUsd: 0.03,
       judge: true,
       parameters: {
+        input: {
+          kind: "common",
+          value: [
+            { role: "user", content: prompt },
+            ...(format === "chat-template"
+              ? [{ role: "unfilled" as const, content: "" }]
+              : []),
+          ],
+        },
         model:
           format === "svg" || format === "chat-template"
             ? { kind: "rows" }
@@ -294,14 +301,6 @@ for (const format of ["markdown", "chat-template", "image", "svg"] as const) {
             : { kind: "columns" },
         judge_criteria: { kind: "common", value: criteria },
       },
-      ...(format === "chat-template"
-        ? {
-            messages: [
-              { role: "user" as const, content: prompt },
-              { role: "unfilled" as const, content: "" },
-            ],
-          }
-        : {}),
       rows:
         format === "svg" || format === "chat-template"
           ? [{ id: "row-generator", model: textGenerator }]

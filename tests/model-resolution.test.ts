@@ -1,3 +1,4 @@
+import { generatorInputForCell } from "../server/generator-input.js";
 import { appFixture } from "./app-fixture.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -18,8 +19,13 @@ import {
 } from "../server/image-settings.js";
 
 const input = currentDefinition({
-  prompt: "Draw a cat with a hat",
-  parameters: { model: { kind: "common", value: "~fixture/latest" } },
+  parameters: {
+    model: { kind: "common", value: "~fixture/latest" },
+    input: {
+      kind: "common",
+      value: [{ role: "user", content: "Draw a cat with a hat" }],
+    },
+  },
   budgetUsd: 5,
 });
 function models(target = "fixture/v1"): Model[] {
@@ -131,22 +137,28 @@ test("image input admission checks every resolved generator in fixed and axis se
       format,
       parameters: {
         model: { kind: "common", value: "~fixture/latest" },
+        input: {
+          kind: "common",
+          value:
+            format === "chat-template"
+              ? [
+                  { role: "user", content: "First question." },
+                  { role: "unfilled", content: "" },
+                  {
+                    role: "user",
+                    content: "",
+                    images: [{ id: "image", name: "image.png" }],
+                  },
+                ]
+              : [
+                  {
+                    role: "user",
+                    content: "Draw a cat",
+                    images: [{ id: "image", name: "image.png" }],
+                  },
+                ],
+        },
       },
-      promptImages:
-        format === "chat-template" ? [] : [{ id: "image", name: "image.png" }],
-      ...(format === "chat-template"
-        ? {
-            messages: [
-              { role: "user" as const, content: "First question." },
-              { role: "unfilled" as const, content: "" },
-              {
-                role: "user" as const,
-                content: "",
-                images: [{ id: "image", name: "image.png" }],
-              },
-            ],
-          }
-        : {}),
     });
     const catalog = models().map((model) => ({
       ...model,
@@ -174,15 +186,23 @@ test("image input admission checks every resolved generator in fixed and axis se
       const opposite = side === "rows" ? "columns" : "rows";
       const selected = currentDefinition({
         ...source,
-        prompt:
-          format === "image"
-            ? `$${opposite === "rows" ? "ROW" : "COLUMN"}1`
-            : source.prompt,
-        promptImages: format === "image" ? [] : source.promptImages,
+        caseAxis: format === "image" ? opposite : undefined,
         parameters: {
           ...source.parameters,
           model: { kind: side },
           ...(format === "image" ? { variable: { kind: opposite } } : {}),
+          input: {
+            kind: "common",
+            value:
+              format === "image"
+                ? [
+                    {
+                      role: "user",
+                      content: `$${opposite === "rows" ? "ROW" : "COLUMN"}1`,
+                    },
+                  ]
+                : generatorInputForCell(source, 0, 0),
+          },
         },
         [side]: ["~fixture/latest", "fixture/v2"].map((model) => ({ model })),
         ...(format === "image"
@@ -207,17 +227,21 @@ test("image input admission checks every resolved generator in fixed and axis se
       const withoutImages = resolveGridModels(
         currentDefinition({
           ...selected,
-          prompt: "Text only.",
-          promptImages: [],
+          caseAxis: undefined,
           parameters: {
             ...source.parameters,
             model: { kind: side },
+            input: {
+              kind: "common",
+              value: generatorInputForCell(selected, 0, 0)?.map(
+                ({ role, content }) => ({
+                  role,
+                  content: role === "user" && !content ? "Text only." : content,
+                }),
+              ),
+            },
           },
           [opposite]: [{}],
-          messages: selected.messages?.map(({ role, content }) => ({
-            role,
-            content: role === "user" && !content ? "Text only." : content,
-          })),
         }),
         catalog,
       );
@@ -269,16 +293,19 @@ test("future chat images require image-capable fixed and axis judges", () => {
     parameters: {
       model: { kind: "common", value: "~fixture/latest" },
       judge_model: { kind: "common", value: "fixture/v2" },
-    },
-    messages: [
-      { role: "user", content: "First question." },
-      { role: "unfilled", content: "" },
-      {
-        role: "user",
-        content: "",
-        images: [{ id: "image", name: "image.png" }],
+      input: {
+        kind: "common",
+        value: [
+          { role: "user", content: "First question." },
+          { role: "unfilled", content: "" },
+          {
+            role: "user",
+            content: "",
+            images: [{ id: "image", name: "image.png" }],
+          },
+        ],
       },
-    ],
+    },
   });
   assert.throws(
     () => resolveGridModels(source, catalog),
@@ -303,10 +330,18 @@ test("future chat images require image-capable fixed and axis judges", () => {
   const withoutImages = resolveGridModels(
     currentDefinition({
       ...source,
-      messages: source.messages?.map(({ role, content }) => ({
-        role,
-        content: role === "user" && !content ? "Text only." : content,
-      })),
+      parameters: {
+        ...source.parameters,
+        input: {
+          kind: "common",
+          value: generatorInputForCell(source, 0, 0)?.map(
+            ({ role, content }) => ({
+              role,
+              content: role === "user" && !content ? "Text only." : content,
+            }),
+          ),
+        },
+      },
     }),
     catalog,
   );
@@ -324,12 +359,21 @@ for (const format of ["markdown", "svg"] as const)
     const source = currentDefinition({
       ...judgedInput,
       format,
-      prompt: "$ROW1",
-      promptImages: [common],
       parameters: {
         ...judgedInput.parameters,
         variable: { kind: "rows" },
         judge_model: { kind: "common", value: "fixture/v2" },
+        input: {
+          kind: "common",
+          value: [
+            {
+              ...generatorInputForCell(judgedInput, 0, 0)[0],
+              role: "user",
+              content: "$ROW1",
+              images: [common],
+            },
+          ],
+        },
       },
       rows: [
         {
@@ -339,6 +383,7 @@ for (const format of ["markdown", "svg"] as const)
           ],
         },
       ],
+      caseAxis: "rows",
     });
     assert.deepEqual(selectedReferences(source), [common, variable, unused]);
     assert.deepEqual(generatorReferences(source), [common, variable]);
@@ -375,11 +420,20 @@ for (const format of ["markdown", "svg"] as const)
           resolveGridModels(
             currentDefinition({
               ...source,
-              prompt: "Describe it.",
               parameters: {
                 ...source.parameters,
                 variable: undefined,
                 judge_model: { kind: side },
+                input: {
+                  kind: "common",
+                  value: [
+                    {
+                      ...generatorInputForCell(source, 0, 0)[0],
+                      role: "user",
+                      content: "Describe it.",
+                    },
+                  ],
+                },
               },
               rows: [{}],
               [side]: ["fixture/v1", "fixture/v2"].map((judge_model) => ({
@@ -392,8 +446,20 @@ for (const format of ["markdown", "svg"] as const)
       );
     const textOnly = currentDefinition({
       ...source,
-      prompt: "Describe it.",
-      promptImages: [],
+      parameters: {
+        ...source.parameters,
+        input: {
+          kind: "common",
+          value: [
+            {
+              ...generatorInputForCell(source, 0, 0)[0],
+              role: "user",
+              content: "Describe it.",
+              images: [],
+            },
+          ],
+        },
+      },
     });
     assert.deepEqual(generatorReferences(textOnly), []);
     assert.deepEqual(judgeReferences(textOnly), []);
@@ -428,11 +494,19 @@ for (const format of ["markdown", "svg", "html"] as const)
     const { origin, store } = await appFixture(t, { provider });
     const source = currentDefinition({
       format,
-      prompt: "",
-      promptImages: [{ id: "private-image", name: "private.png" }],
       parameters: {
         model: { kind: "rows" },
         effort: { kind: "columns" },
+        input: {
+          kind: "common",
+          value: [
+            {
+              role: "user",
+              content: "",
+              images: [{ id: "private-image", name: "private.png" }],
+            },
+          ],
+        },
       },
       rows: [{ model: "fixture/v2" }],
       columns: [{ effort: "none" }],
@@ -486,7 +560,6 @@ test("variable image admission follows generator and judge consumption, not fiel
     const token = side === "rows" ? "$ROW2" : "$COLUMN2";
     const opposite = side === "rows" ? "columns" : "rows";
     const source = currentDefinition({
-      prompt: "Describe a shape.",
       judge: true,
       parameters: {
         model: { kind: opposite },
@@ -495,6 +568,10 @@ test("variable image admission follows generator and judge consumption, not fiel
         judge_criteria: {
           kind: "common",
           value: [{ text: `Matches ${token}?`, correctAnswer: false }],
+        },
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: "Describe a shape." }],
         },
       },
       [opposite]: [{ model: "fixture/v2" }],
@@ -506,6 +583,7 @@ test("variable image admission follows generator and judge consumption, not fiel
           ],
         },
       ],
+      caseAxis: side,
     });
     assert.deepEqual(selectedReferences(source), [unused, expected]);
     assert.deepEqual(generatorReferences(source), []);
@@ -526,12 +604,30 @@ test("variable image admission follows generator and judge consumption, not fiel
       /judge model must support image inputs/,
     );
     assert.throws(
-      () => resolveGridModels({ ...source, prompt: token }, catalog),
+      () =>
+        resolveGridModels(
+          {
+            ...source,
+            parameters: {
+              ...source.parameters,
+              input: {
+                kind: "common",
+                value: [
+                  {
+                    ...generatorInputForCell(source, 0, 0)[0],
+                    role: "user",
+                    content: token,
+                  },
+                ],
+              },
+            },
+          },
+          catalog,
+        ),
       /selected model does not support image inputs/,
     );
     const visionGenerator = currentDefinition({
       ...source,
-      prompt: token,
       [opposite]: [{ model: "fixture/v1" }],
       parameters: {
         ...source.parameters,
@@ -540,6 +636,16 @@ test("variable image admission follows generator and judge consumption, not fiel
           kind: "common",
           value: [{ text: "A shape?", correctAnswer: true }],
         },
+        input: {
+          kind: "common",
+          value: [
+            {
+              ...generatorInputForCell(source, 0, 0)[0],
+              role: "user",
+              content: token,
+            },
+          ],
+        },
       },
     });
     assert.throws(
@@ -547,7 +653,22 @@ test("variable image admission follows generator and judge consumption, not fiel
       /judge model must support image inputs/,
     );
     assert.deepEqual(
-      generatorReferences({ ...source, prompt: "$ROW999 $COLUMN0 $ROW" }),
+      generatorReferences({
+        ...source,
+        parameters: {
+          ...source.parameters,
+          input: {
+            kind: "common",
+            value: [
+              {
+                ...generatorInputForCell(source, 0, 0)[0],
+                role: "user",
+                content: "$ROW999 $COLUMN0 $ROW",
+              },
+            ],
+          },
+        },
+      }),
       [],
     );
   }
@@ -563,7 +684,6 @@ for (const side of ["rows", "columns"] as const)
       imageInput: model.id !== "fixture/v2",
     }));
     const source = currentDefinition({
-      prompt: "Describe a shape.",
       judge: true,
       parameters: {
         model: { kind: "common", value: "fixture/v2" },
@@ -571,6 +691,10 @@ for (const side of ["rows", "columns"] as const)
         judge_model: { kind: "common", value: "fixture/v2" },
         judge_effort: { kind: "common", value: "none" },
         judge_criteria: { kind: side },
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: "Describe a shape." }],
+        },
       },
       [side]: [
         {
@@ -590,6 +714,7 @@ for (const side of ["rows", "columns"] as const)
           judge_criteria: [{ text: `Matches ${token}2?`, correctAnswer: true }],
         },
       ],
+      caseAxis: side,
     });
     assert.deepEqual(selectedReferences(source), [first, second]);
     assert.deepEqual(generatorReferences(source), []);
@@ -949,3 +1074,37 @@ for (const moving of [false, true])
     assert.deepEqual(provider.called, [expected, expected, expected, expected]);
     assert.ok(!JSON.stringify(store.all()).includes("~fixture/latest"));
   });
+
+for (const side of ["rows", "columns"] as const) {
+  test(`${side} model aliases retain full input cases even when targets are equal`, () => {
+    const source = currentDefinition({
+      caseAxis: side,
+      parameters: { input: { kind: side }, model: { kind: side } },
+      [side]: [
+        {
+          id: "first",
+          model: "~fixture/latest",
+          input: [{ role: "user" as const, content: "First prompt" }],
+        },
+        {
+          id: "second",
+          model: "fixture/v1",
+          input: [{ role: "user" as const, content: "Second prompt" }],
+        },
+      ],
+    });
+    const resolved = resolveGridModels(source, models());
+    assert.equal(resolved.caseAxis, side);
+    assert.deepEqual(
+      resolved[side].map((record) => [record.id, record.model, record.input]),
+      [
+        ["first", "fixture/v1", source[side][0].input],
+        ["second", "fixture/v1", source[side][1].input],
+      ],
+    );
+    assert.deepEqual(
+      expandGrid(gridSchema.parse(resolved)).map((cell) => cell.prompt),
+      ["First prompt", "Second prompt"],
+    );
+  });
+}

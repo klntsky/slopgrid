@@ -134,30 +134,30 @@ for (const side of ["rows", "columns"] as const) {
     const input = currentInput({
       budgetUsd: 0.15,
       judge: true,
-      prompt: "$" + (other === "rows" ? "ROW1" : "COLUMN1"),
+      caseAxis: side,
       parameters: {
+        input: { kind: side },
         model: { kind: side },
-        effort: { kind: side },
+        effort: { kind: other },
         judge_model: { kind: side },
-        variable: { kind: other },
       },
       [side]: [
         {
           id: "cheap",
           model: model.id,
-          effort: "default",
           judge_model: expensive.id,
+          input: [{ role: "user", content: "hello" }],
         },
         {
           id: "expensive",
           model: expensive.id,
-          effort: "default",
           judge_model: model.id,
+          input: [{ role: "user", content: "world" }],
         },
       ],
       [other]: [
-        { id: "first-prompt", variable: [{ text: "hello" }] },
-        { id: "second-prompt", variable: [{ text: "world" }] },
+        { id: "default-effort", effort: "default" },
+        { id: "disabled-effort", effort: "none" },
       ],
     });
     const original = structuredClone(input);

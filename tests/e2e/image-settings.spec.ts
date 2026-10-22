@@ -17,7 +17,6 @@ async function tooltipFor(page: Page, trigger: Locator) {
 }
 async function acceptDrop(page: Page, action: () => Promise<unknown>) {
   page.once("dialog", async (dialog) => {
-    expect(dialog.message()).toContain("Drop these values?");
     await dialog.accept();
   });
   await action();

@@ -10,9 +10,13 @@ import {
 import { currentDefinition } from "./current-grid-fixture.js";
 
 const input = currentDefinition({
-  prompt: "Recovery",
+  caseAxis: "rows",
   budgetUsd: 0.1,
-  parameters: { variable: { kind: "rows" }, effort: { kind: "columns" } },
+  parameters: {
+    input: { kind: "common", value: [{ role: "user", content: "$ROW1" }] },
+    variable: { kind: "rows" },
+    effort: { kind: "columns" },
+  },
   rows: [{ variable: [{ text: "one" }] }],
   columns: [{ effort: "none" }],
 });
@@ -22,7 +26,6 @@ test("concurrent creation retries and lost responses converge on one grid and on
   try {
     const body = {
       ...input,
-      prompt: "$ROW1",
       creationRequestId: "recovery-request-001",
     };
     const responses = await Promise.all([
@@ -51,7 +54,13 @@ test("concurrent creation retries and lost responses converge on one grid and on
     assert.equal(f.calls.length, 1);
     const conflict = await f.request("/api/grids", {
       ...body,
-      prompt: "Changed $ROW1",
+      parameters: {
+        ...body.parameters,
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: "Changed $ROW1" }],
+        },
+      },
     });
     assert.equal(conflict.status, 409);
   } finally {
@@ -65,7 +74,6 @@ test("creation saved during drain opens the paused grid and replay does not star
     await f.engine.api.drain();
     const body = {
       ...input,
-      prompt: "$ROW1",
       creationRequestId: "recovery-request-002",
     };
     const response = await f.request("/api/grids", body);
@@ -91,7 +99,6 @@ test("a saved creation survives web replacement and an unavailable engine", asyn
     await f.engine.close();
     const body = {
       ...input,
-      prompt: "$ROW1",
       creationRequestId: "recovery-request-003",
     };
     const response = await f.request("/api/grids", body);
@@ -118,7 +125,6 @@ test("creation receipt failure rolls back the grid and retry rechecks current ow
     await f.engine.api.drain();
     const body = {
       ...input,
-      prompt: "$ROW1",
       creationRequestId: "recovery-request-004",
     };
     const allowReceipts = rejectCreationReceipts(f.store.db);

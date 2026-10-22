@@ -30,8 +30,11 @@ export function seedGridLists(
             ? "unlisted"
             : "private";
     const input = currentInput({
-      prompt: `Grid ${i}`,
       parameters: {
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: `Grid ${i}` }],
+        },
         model: { kind: "rows" },
         effort: { kind: "columns" },
       },

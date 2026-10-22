@@ -182,21 +182,44 @@ async function saveReference(id, expected) {
   if (expected === epoch) await reference(request);
 }
 async function saveGridOutputs(grid, expected) {
-  if (
-    grid.input.format === "chat-template" &&
-    grid.cells.some(outputAvailable)
-  ) {
+  if (grid.cells.some(outputAvailable)) {
+    const input = grid.input;
     const messages = [
-      ...(grid.input.messages ?? []),
+      ...(input.inputVersion === 3
+        ? input.parameters.input.kind === "common"
+          ? input.parameters.input.value
+          : input[input.parameters.input.kind].flatMap(
+              (record) => record.input ?? [],
+            )
+        : (input.messages ?? [])),
       ...grid.cells
         .filter(outputAvailable)
         .flatMap((cell) => cell.messages ?? []),
     ];
-    const ids = new Set(
-      messages
+    const configuredImages = [
+      ...(input.promptImages ?? []),
+      ...(input.inputReferences ?? []),
+      ...Object.values(input.referenceGroups ?? {}).flat(),
+      ...[input.rows, input.columns].flatMap((axis) =>
+        Array.isArray(axis)
+          ? axis.flatMap((record) =>
+              (record.variable ?? []).flatMap((field) => field?.images ?? []),
+            )
+          : axis.kind === "variable"
+            ? axis.values.flatMap((fields) =>
+                Array.isArray(fields)
+                  ? fields.flatMap((field) => field?.images ?? [])
+                  : [],
+              )
+            : [],
+      ),
+    ];
+    const ids = new Set([
+      ...configuredImages.map((image) => image.id),
+      ...messages
         .filter((message) => message.role === "user")
         .flatMap((message) => (message.images ?? []).map((image) => image.id)),
-    );
+    ]);
     await Promise.all([...ids].map((id) => saveReference(id, expected)));
   }
   for (const cell of grid.cells) {

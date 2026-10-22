@@ -121,9 +121,10 @@ and draft hydration do not confer validation. Advisory previews may inspect an
 unvalidated candidate without granting generation admission.
 
 Current definitions give each parameter one ownership source, with aligned
-case values on rows or columns. Budget remains an inference setting outside
-that ownership model. The form and canonical schemas share field types but
-have separate admission responsibilities.
+case values on rows or columns. Case-dimension identity is independent of
+optional numbered fields. Budget remains an inference setting outside that
+ownership model. The form and canonical schemas share field types but have
+separate admission responsibilities.
 
 Historical configuration has a read-only boundary. Stored accepted task inputs
 drive cell projection, billing, and output access independently of editor
@@ -133,9 +134,11 @@ old grids retain ordinary owner controls without entering current admission.
 - Model catalogs are loaded by the web process for forms. Provider adapters own
   catalog interpretation, credit lookup, and request preparation; they remain
   separate from HTTP routes and scheduling policy.
-- Input expansion resolves the final parameters of each cell. Model aliases are
-  resolved before saving inputs, and shared normalization gives equivalent image
-  settings the same prepared request.
+- Input expansion selects each cell's owned generator input before resolving
+  numbered references once. Generator inputs share a message-history model;
+  prompt-based interfaces edit a single user message, while Chat interfaces
+  edit complete histories. Model aliases are resolved before saving inputs,
+  and shared normalization gives equivalent image settings the same request.
 - One compatibility engine checks resolved cells. Its results supply form
   warnings and validity, with source locations identifying the affected controls.
   The API applies the same checks before admission; execution consumes concrete
@@ -157,14 +160,23 @@ old grids retain ordinary owner controls without entering current admission.
   grids, snapshots, output files, and billing records; Resume after an engine
   restart needs a new submission of a manual key.
 
-Ordinary dimensions own one independent parameter; prompt-variable dimensions
-own aligned case records containing fields and optional parameter overrides.
-The editor presents these separately, while both feed the same validated
-cell-expansion boundary. Variable token identities survive field deletion.
-Setup validation and expansion resolve generator messages and judge criteria
-independently; execution receives concrete inputs rather than form ownership
-or templates. Model admission checks consumed images, while storage authorization
-tracks all configured field attachments.
+Ordinary dimensions own one independent scalar parameter; case dimensions own
+aligned records containing complete generator inputs, parameter selections,
+and optional numbered fields. The editor keeps prompt and Chat representations
+distinct while both feed the same validated cell-expansion boundary. Variable
+token identities survive field deletion.
+
+Setup validation pairs templates with their actual case values and resolves
+generator messages and judge criteria independently. Execution receives concrete
+inputs rather than form ownership or numbered templates. Format-specific request
+instructions remain separate from conversation filling. Reuse keys describe
+resolved requests, preserving equivalent plain-text and single-user-message
+artifacts rather than depending on case position or ownership.
+
+Model admission checks consumed images, while storage authorization and offline
+retention track all configured attachments, including complete case histories
+and unused numbered fields. Image bytes remain content-addressed independently
+of grid ownership and display metadata.
 
 Judge configuration has one criteria source: a shared rubric or case-owned
 rubrics on one dimension. Setup resolves that source for each cell into the
@@ -172,11 +184,11 @@ ordinary judgment task input. The scheduler and provider adapter do not interpre
 criteria modes. Frontend case transitions preserve rubric association, and result
 projection selects the same cell-specific criteria for scoring and display.
 
-Non-Chat formats combine common prompt images and variable-derived attachments
-into one expanded user input. Attachment membership belongs to the prompt,
-message, or numbered field rather than an independent parameter. Provider
-preparation keeps format instructions separate from that multimodal input;
-judging reuses the same expanded context.
+Input expansion combines each selected message's images with its referenced
+numbered-field attachments. Attachment membership belongs to that message or
+field rather than an independent parameter. Provider preparation keeps format
+instructions separate from multimodal input; judging reuses the same expanded
+context.
 
 Storage upgrades and historical read projections interpret old variable records.
 Browser drafts and configuration editing accept only current definitions.

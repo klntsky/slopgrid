@@ -210,12 +210,20 @@ test("non-chat prompt images preserve output instructions and text-only requests
       for (const prompt of ["Describe the shape.", ""]) {
         const input = currentInput({
           format,
-          prompt,
           parameters: {
+            input: {
+              kind: "common",
+              value: [
+                {
+                  role: "user",
+                  content: prompt,
+                  images: [{ id: "input", name: "shape.png" }],
+                },
+              ],
+            },
             model: { kind: "rows" },
             effort: { kind: "columns" },
           },
-          promptImages: [{ id: "input", name: "shape.png" }],
           rows: [{ model: "all" }],
           columns: [{ effort: "default" }],
           budgetUsd: 5,

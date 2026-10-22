@@ -1,3 +1,4 @@
+import { generatorInputForCell } from "../server/generator-input.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { GridInput } from "../server/domain.js";
@@ -17,8 +18,14 @@ const plain: Model = {
 };
 const base: GridInput = currentDefinition({
   format: "markdown",
-  prompt: "Answer the question.",
-  parameters: { model: { kind: "columns" }, effort: { kind: "rows" } },
+  parameters: {
+    model: { kind: "columns" },
+    effort: { kind: "rows" },
+    input: {
+      kind: "common",
+      value: [{ role: "user", content: "Answer the question." }],
+    },
+  },
   rows: [{ effort: "default" }],
   columns: [{ model: plain.id }],
 });
@@ -26,7 +33,6 @@ const image = { id: "reference", name: "answer.png" };
 
 test("only the rubric that consumes an image requires a vision judge", () => {
   const input: GridInput = currentDefinition({
-    prompt: "Answer the case $ROW1.",
     parameters: {
       model: { kind: "common", value: plain.id },
       variable: { kind: "rows" },
@@ -35,12 +41,17 @@ test("only the rubric that consumes an image requires a vision judge", () => {
         kind: "common",
         value: [{ text: "Compare the answer with $ROW2", correctAnswer: true }],
       },
+      input: {
+        kind: "common",
+        value: [{ role: "user", content: "Answer the case $ROW1." }],
+      },
     },
     rows: [
       { variable: [{ text: "first" }, { text: "answer", images: [image] }] },
       { variable: [{ text: "second" }, { text: "answer" }] },
     ],
     judge: true,
+    caseAxis: "rows",
   });
   const { issues } = analyzeGridCompatibility(input, [plain]);
   const blocked = issues.filter((issue) => issue.blocking);
@@ -77,13 +88,18 @@ test("only the rubric that consumes an image requires a vision judge", () => {
 test("future supplied Chat images block admission at their message, not an earlier text-only turn", () => {
   const input: GridInput = currentDefinition({
     format: "chat-template",
-    parameters: { model: { kind: "columns" } },
+    parameters: {
+      model: { kind: "columns" },
+      input: {
+        kind: "common",
+        value: [
+          { role: "user", content: "First question" },
+          { role: "unfilled", content: "" },
+          { role: "user", content: "", images: [image] },
+        ],
+      },
+    },
     columns: [{ model: plain.id }],
-    messages: [
-      { role: "user", content: "First question" },
-      { role: "unfilled", content: "" },
-      { role: "user", content: "", images: [image] },
-    ],
   });
   const { issues } = analyzeGridCompatibility(input, [plain]);
   assert.deepEqual(
@@ -94,7 +110,7 @@ test("future supplied Chat images block admission at their message, not an earli
       {
         origins: [
           { parameter: "model", source: "columns", caseIndex: 0 },
-          { parameter: "messages", source: "common", messageIndex: 2 },
+          { parameter: "input", source: "common", messageIndex: 2 },
         ],
         support: "unsupported",
       },
@@ -167,6 +183,7 @@ test("provider tuple conflicts mark only the real failing case and involved sett
   );
   const paired = currentDefinition({
     format: "image",
+    caseAxis: "rows",
     parameters: {
       model: { kind: "common", value: model.id },
       background: { kind: "rows" },
@@ -182,6 +199,7 @@ test("provider tuple conflicts mark only the real failing case and involved sett
   assert.deepEqual(analyzeGridCompatibility(paired, [model]).issues, []);
   const transposed = {
     ...paired,
+    caseAxis: "columns" as const,
     parameters: {
       ...paired.parameters,
       background: { kind: "columns" as const },
@@ -211,7 +229,19 @@ test("unverified required vision blocks but missing ordinary effort metadata sta
   const { issues: required } = analyzeGridCompatibility(
     {
       ...input,
-      promptImages: [image],
+      parameters: {
+        ...input.parameters,
+        input: {
+          kind: "common",
+          value: [
+            {
+              role: "user",
+              content: generatorInputForCell(input, 0, 0)[0].content,
+              images: [image],
+            },
+          ],
+        },
+      },
     },
     [],
   );
@@ -222,7 +252,7 @@ test("unverified required vision blocks but missing ordinary effort metadata sta
     [
       {
         support: "unknown",
-        parameters: ["model", "prompt"],
+        parameters: ["model", "input"],
       },
     ],
   );

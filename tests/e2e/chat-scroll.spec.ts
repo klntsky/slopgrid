@@ -6,24 +6,27 @@ import { connectOpenRouter, expectProgress, scrollToRest } from "./helpers";
 
 const historyInput: GridInput = currentDefinition({
   format: "chat-template",
-  prompt: "History $ROW1 one",
+  caseAxis: "rows",
   budgetUsd: 1,
   parameters: {
+    input: {
+      kind: "common",
+      value: [
+        {
+          role: "user",
+          content: "Earlier $ROW1 one. " + "History detail. ".repeat(40),
+        },
+        { role: "assistant", content: "OK" },
+        { role: "user", content: "Later history detail. ".repeat(80) },
+        { role: "unfilled", content: "" },
+      ],
+    },
     model: { kind: "common", value: "fixture/text" },
     variable: { kind: "rows" },
     effort: { kind: "columns" },
   },
   rows: [{ variable: [{ text: "top" }] }, { variable: [{ text: "bottom" }] }],
   columns: [{ effort: "none" }],
-  messages: [
-    {
-      role: "user",
-      content: "Earlier $ROW1 one. " + "History detail. ".repeat(40),
-    },
-    { role: "assistant", content: "OK" },
-    { role: "user", content: "Later history detail. ".repeat(80) },
-    { role: "unfilled", content: "" },
-  ],
 });
 
 async function openHistories(
@@ -404,12 +407,18 @@ test("a streamed peer highlights a newly arrived message under the active compar
     headers: { origin: new URL(page.url()).origin },
     data: {
       ...historyInput,
-      messages: [
-        { role: "user", content: "Start $ROW1 one" },
-        { role: "unfilled", content: "" },
-        { role: "user", content: "Continue $ROW1 one" },
-        { role: "unfilled", content: "" },
-      ],
+      parameters: {
+        ...historyInput.parameters,
+        input: {
+          kind: "common",
+          value: [
+            { role: "user", content: "Start $ROW1 one" },
+            { role: "unfilled", content: "" },
+            { role: "user", content: "Continue $ROW1 one" },
+            { role: "unfilled", content: "" },
+          ],
+        },
+      },
     },
   });
   expect(response.status()).toBe(201);

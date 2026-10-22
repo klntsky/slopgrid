@@ -1,3 +1,4 @@
+import { generatorInputForCell } from "../server/generator-input.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { expandGrid, gridDraftSchema } from "../server/domain.js";
@@ -16,7 +17,6 @@ function input(): GridDraftInput {
   return {
     ...currentDefinition({
       format: "svg",
-      prompt: "$ROW1 $ROW2",
       judge: true,
       parameters: {
         model: { kind: "common", value: "generator" },
@@ -31,6 +31,10 @@ function input(): GridDraftInput {
             { text: "Is $ROW2 blue?", correctAnswer: true },
           ],
         },
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: "$ROW1 $ROW2" }],
+        },
       },
       rows: [
         { id: "r1", variable: [{ text: "$ROW1 literal" }, { text: "a" }] },
@@ -40,6 +44,7 @@ function input(): GridDraftInput {
         { id: "c1", effort: "none" },
         { id: "c2", effort: "high" },
       ],
+      caseAxis: "rows",
     }),
     budgetUsd: "3",
   };
@@ -132,13 +137,13 @@ test("equal rubric collapse copies the value; differing collapse drops values in
   const moved = reduceInput(collapsed, {
     type: "to-axis",
     parameter: "judge_criteria",
-    side: "columns",
+    side: "rows",
   });
   const removed = reduceInput(moved, { type: "judge", enabled: false });
   assert.equal(removed.judge, false);
   assert.equal(removed.parameters.judge_criteria, undefined);
   assert.ok(
-    removed.columns.every((entry) => !Object.hasOwn(entry, "judge_criteria")),
+    removed.rows.every((entry) => !Object.hasOwn(entry, "judge_criteria")),
   );
   assert.equal(
     reduceInput(removed, {
@@ -241,12 +246,18 @@ test("swapping moves all owners and numbered template tokens atomically, not lit
   );
   assert.equal(swapped.columns[0].judge_criteria![0].correctAnswer, false);
   assert.equal(swapped.columns[0].variable![0]!.text, "$ROW1 literal");
-  assert.equal(swapped.prompt, "$COLUMN1 $COLUMN2");
+  assert.equal(
+    generatorInputForCell(swapped, 0, 0)[0].content,
+    "$COLUMN1 $COLUMN2",
+  );
   const restored = reduceInput(swapped, { type: "swap" });
   assert.deepEqual(restored.parameters, original.parameters);
   assert.deepEqual(restored.rows, original.rows);
   assert.deepEqual(restored.columns, original.columns);
-  assert.equal(restored.prompt, original.prompt);
+  assert.equal(
+    generatorInputForCell(restored, 0, 0)[0].content,
+    generatorInputForCell(original, 0, 0)[0].content,
+  );
   const shared = reduceInput(input(), { type: "swap" });
   assert.equal(
     parameterValue(shared, "judge_criteria", 0, 0)![0].text,
@@ -414,7 +425,8 @@ test("draft reload and format changes retain the active case source until Websit
     ]) {
       const unfinished = input();
       unfinished.budgetUsd = budget;
-      unfinished.prompt = "  Draw $ROW1 with $ROW2  ";
+      generatorInputForCell(unfinished, 0, 0)[0].content =
+        "  Draw $ROW1 with $ROW2  ";
       unfinished.rows[0].variable = [{ text: "  cat  " }, { text: "" }];
       unfinished.parameters.judge_criteria = {
         kind: "common",
@@ -424,18 +436,19 @@ test("draft reload and format changes retain the active case source until Websit
         formatSelected: true,
         sourceGridId: "saved-source",
         input: unfinished,
-        inactiveChatMessages: [{ role: "user", content: "  $ROW1 $ROW2  " }],
       });
       startDraft("svg");
       saved = JSON.parse(storage.get("slopgrid-draft")!);
       assert.equal(saved.input.budgetUsd, budget);
-      assert.equal(saved.input.prompt, unfinished.prompt);
+      assert.equal(
+        generatorInputForCell(saved.input, 0, 0)[0].content,
+        generatorInputForCell(unfinished, 0, 0)[0].content,
+      );
       assert.deepEqual(saved.input.rows, unfinished.rows);
       assert.deepEqual(
         saved.input.parameters.judge_criteria,
         unfinished.parameters.judge_criteria,
       );
-      assert.equal(saved.inactiveChatMessages[0].content, "  $ROW1 $ROW2  ");
       assert.equal(saved.sourceGridId, "saved-source");
     }
     const obsolete = { ...input(), inputVersion: 1 };
@@ -449,7 +462,7 @@ test("draft reload and format changes retain the active case source until Websit
     );
     startDraft("svg");
     saved = JSON.parse(storage.get("slopgrid-draft")!);
-    assert.equal(saved.input.inputVersion, 2);
+    assert.equal(saved.input.inputVersion, 3);
     assert.equal(saved.sourceGridId, undefined);
     assert.equal(saved.input.judge, false);
   } finally {
@@ -479,3 +492,110 @@ test("draft budgets remain strings while canonical admission requires positive f
     false,
   );
 });
+
+for (const side of ["rows", "columns"] as const) {
+  test(`${side} full histories convert formats atomically and reset only incompatible case input`, async () => {
+    const storage = new Map<string, string>();
+    const previousWindow = Object.getOwnPropertyDescriptor(
+      globalThis,
+      "window",
+    );
+    const previousStorage = Object.getOwnPropertyDescriptor(
+      globalThis,
+      "sessionStorage",
+    );
+    const confirmations: string[] = [];
+    let answer = false;
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: {
+        confirm: (message: string) => {
+          confirmations.push(message);
+          return answer;
+        },
+      },
+    });
+    Object.defineProperty(globalThis, "sessionStorage", {
+      configurable: true,
+      value: {
+        getItem: (key: string) => storage.get(key) ?? null,
+        setItem: (key: string, value: string) => storage.set(key, value),
+        removeItem: (key: string) => storage.delete(key),
+      },
+    });
+    try {
+      // Static import cannot work: the browser catalog reads window before this test installs its globals.
+      const { saveDraft, startDraft } = await import("../src/create/draft.js");
+      const image = { id: "case-input", name: "case.png" };
+      const source: GridDraftInput = {
+        ...currentDefinition({
+          format: "chat-template",
+          caseAxis: side,
+          parameters: { input: { kind: side }, variable: { kind: side } },
+          [side]: [
+            {
+              id: "compatible",
+              variable: [null],
+              input: [
+                {
+                  role: "user" as const,
+                  content: "  Prompt\n",
+                  images: [image],
+                },
+              ],
+            },
+            {
+              id: "history",
+              variable: [null],
+              input: [
+                { role: "system" as const, content: "Rules" },
+                { role: "user" as const, content: "Question", images: [image] },
+                { role: "unfilled" as const, content: "" },
+                { role: "user" as const, content: "Next question" },
+              ],
+            },
+          ],
+        }),
+        budgetUsd: "3",
+      };
+      saveDraft({
+        input: source,
+        formatSelected: true,
+        sourceGridId: "source-grid",
+      });
+      const before = storage.get("slopgrid-draft");
+      startDraft("markdown");
+      assert.equal(confirmations.length, 1);
+      assert.equal(storage.get("slopgrid-draft"), before);
+      answer = true;
+      startDraft("markdown");
+      assert.equal(confirmations.length, 2);
+      let saved = JSON.parse(storage.get("slopgrid-draft")!);
+      assert.equal(saved.input.format, "markdown");
+      assert.equal(saved.input.caseAxis, side);
+      assert.equal(saved.sourceGridId, "source-grid");
+      assert.deepEqual(saved.input.parameters.input, { kind: side });
+      assert.deepEqual(saved.input[side], [
+        source[side][0],
+        { ...source[side][1], input: [{ role: "user", content: "" }] },
+      ]);
+      const compatible = structuredClone(saved.input[side]);
+      confirmations.length = 0;
+      for (const format of ["svg", "html", "image", "chat-template"] as const) {
+        startDraft(format);
+        saved = JSON.parse(storage.get("slopgrid-draft")!);
+        assert.equal(saved.input.format, format);
+        assert.equal(saved.input.caseAxis, side);
+        assert.deepEqual(saved.input[side], compatible);
+      }
+      assert.deepEqual(confirmations, []);
+    } finally {
+      if (previousWindow)
+        Object.defineProperty(globalThis, "window", previousWindow);
+      else Reflect.deleteProperty(globalThis, "window");
+      if (previousStorage)
+        Object.defineProperty(globalThis, "sessionStorage", previousStorage);
+      else Reflect.deleteProperty(globalThis, "sessionStorage");
+    }
+  });
+}

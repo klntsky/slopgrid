@@ -1,9 +1,7 @@
 import { useState, useEffect } from "react";
 import {
-  chatText,
   gridDraftSchema,
   isChatFormat,
-  type ChatMessage,
   type GridDraftInput,
 } from "../../server/domain";
 import { type ReferenceImage } from "../../server/image-settings";
@@ -21,7 +19,6 @@ import {
   reduceInput,
   type InputAction,
 } from "./change-axis";
-import { swapVariableTokens } from "./judge-mode";
 import { referenceLists } from "./reference-files";
 import { canJudge } from "../../server/compatibility";
 import { modelCatalog } from "../model-catalog";
@@ -31,8 +28,6 @@ export type Draft = {
   input: GridDraftInput;
   sourceGridId?: string;
   reuseArtifacts?: boolean;
-  inactiveChatMessages?: ChatMessage[];
-  inactivePromptImages?: ReferenceImage[];
 };
 const storageKey = "slopgrid-draft";
 const submissionKey = "slopgrid-creation";
@@ -57,7 +52,7 @@ const initial = (): Draft => ({
 function readDraft(): Draft {
   try {
     const saved = JSON.parse(sessionStorage.getItem(storageKey) ?? "null");
-    if (!saved || saved.input?.inputVersion !== 2) return initial();
+    if (!saved || saved.input?.inputVersion !== 3) return initial();
     return { ...saved, input: gridDraftSchema.parse(saved.input) };
   } catch {
     return initial();
@@ -109,13 +104,6 @@ function selectDraftFormat(
       draft: { ...draft, input: defaults, formatSelected: true },
       dropped: [],
     };
-  const messages = previous.messages ??
-    draft.inactiveChatMessages ?? [
-      { role: "user" as const, content: previous.prompt },
-    ];
-  const promptImages = isChatFormat(previous.format)
-    ? (draft.inactivePromptImages ?? [])
-    : previous.promptImages;
   const dropped = new Set<ParameterId>();
   const applicable = new Set<ParameterId>([
     ...(Object.keys(defaults.parameters) as ParameterId[]),
@@ -131,7 +119,6 @@ function selectDraftFormat(
     parameters: { ...previous.parameters },
     rows: previous.rows.map((entry) => ({ ...entry })),
     columns: previous.columns.map((entry) => ({ ...entry })),
-    promptImages: isChatFormat(format) ? [] : promptImages,
   };
   const filled = (parameter: ParameterId, value: unknown) =>
     value !== undefined &&
@@ -201,7 +188,7 @@ function selectDraftFormat(
     input = reduceInput(input, action);
   };
   for (const side of ["rows", "columns"] as const) {
-    if (input.parameters.variable?.kind === side) continue;
+    if (input.caseAxis === side) continue;
     const owned = axisParameters(input, side);
     const native = owned.find((parameter) => parameter !== "judge_criteria");
     for (const parameter of owned)
@@ -211,19 +198,31 @@ function selectDraftFormat(
     // transfer unrelated common settings or duplicate the opposite owner.
     input[side] = [{ id: input[side][0]?.id ?? newCase().id }];
   }
-  if (isChatFormat(format))
-    input = { ...input, messages, prompt: chatText(messages) };
-  else delete input.messages;
+  if (!isChatFormat(format)) {
+    const source = input.parameters.input;
+    if (source.kind === "common") {
+      if (source.value.length !== 1 || source.value[0].role !== "user") {
+        dropped.add("input");
+        input.parameters.input = {
+          kind: "common",
+          value: parameterDefault("input"),
+        };
+      }
+    } else {
+      input[source.kind] = input[source.kind].map((entry) => {
+        if (entry.input?.length === 1 && entry.input[0].role === "user")
+          return entry;
+        dropped.add("input");
+        return { ...entry, input: parameterDefault("input") };
+      });
+    }
+  }
   return {
     dropped: [...dropped],
     draft: {
       ...draft,
       formatSelected: true,
       input,
-      inactiveChatMessages: isChatFormat(format)
-        ? undefined
-        : (previous.messages ?? draft.inactiveChatMessages),
-      inactivePromptImages: isChatFormat(format) ? promptImages : undefined,
     },
   };
 }
@@ -249,7 +248,6 @@ export function useCreateDraft() {
         input: {
           ...draft.input,
           ...partial,
-          ...(partial.messages && { prompt: chatText(partial.messages) }),
         },
       };
     });
@@ -259,12 +257,6 @@ export function useCreateDraft() {
     setDraft((draft) => ({
       ...draft,
       input: reduceInput(draft.input, action),
-      ...(action.type === "swap" && {
-        inactiveChatMessages: draft.inactiveChatMessages?.map((message) => ({
-          ...message,
-          content: swapVariableTokens(message.content),
-        })),
-      }),
     }));
     return true;
   }
@@ -275,13 +267,7 @@ export function useCreateDraft() {
   function replaceReference(localId: string, image: ReferenceImage) {
     setDraft((draft) => {
       const next = structuredClone(draft);
-      const lists = [
-        ...referenceLists(next.input),
-        ...(next.inactiveChatMessages ?? []).flatMap((message) =>
-          message.images ? [message.images] : [],
-        ),
-        ...(next.inactivePromptImages ? [next.inactivePromptImages] : []),
-      ];
+      const lists = referenceLists(next.input);
       for (const images of lists)
         for (let index = 0; index < images.length; index++)
           if (images[index].id === localId) images[index] = image;

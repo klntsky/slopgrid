@@ -38,8 +38,11 @@ test("private websites load in frames and direct tabs for the owning user across
     store.saveSession({ id: owner, created: 0 });
     const input = currentInput({
       format: "html",
-      prompt: "A website",
       parameters: {
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: "A website" }],
+        },
         model: { kind: "rows" },
         effort: { kind: "columns" },
       },

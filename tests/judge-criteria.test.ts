@@ -1,3 +1,4 @@
+import { generatorInputForCell } from "../server/generator-input.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { gridSchema } from "../server/domain.js";
@@ -20,12 +21,16 @@ const second: Criterion[] = [
 ];
 function input(side: "rows" | "columns") {
   return currentDefinition({
-    prompt: "Describe a shape.",
     judge: true,
+    caseAxis: side,
     parameters: {
       judge_criteria: { kind: side },
       judge_model: { kind: "common", value: "fixture/judge" },
       judge_effort: { kind: "common", value: "high" },
+      input: {
+        kind: "common",
+        value: [{ role: "user", content: "Describe a shape." }],
+      },
     },
     [side]: [{ judge_criteria: first }, { judge_criteria: second }],
   });
@@ -33,7 +38,7 @@ function input(side: "rows" | "columns") {
 
 test("shared criteria retain their stored array shape and cell-independent behavior", () => {
   const source = input("rows");
-  source.prompt = "$ROW1";
+  generatorInputForCell(source, 0, 0)[0].content = "$ROW1";
   source.parameters.judge_criteria = { kind: "common", value: first };
   source.rows = source.rows.map(
     ({ judge_criteria: _criteria, ...record }) => record,
@@ -85,6 +90,7 @@ for (const side of ["rows", "columns"] as const) {
             variable: [{ text: "unused" }],
           }),
         ),
+        caseAxis: side,
       }).success,
       false,
       "switching to shared requires the formerly judge-owned variable axis to be referenced",
@@ -95,6 +101,7 @@ for (const side of ["rows", "columns"] as const) {
     const source = input(side);
     const scalarOwner = currentDefinition({
       judge: true,
+      caseAxis: side,
       parameters: { model: { kind: side }, judge_criteria: { kind: side } },
       [side]: [
         { model: "fixture/text", judge_criteria: first },

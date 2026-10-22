@@ -39,6 +39,17 @@ function References({ images }: { images: ReferenceImage[] }) {
 function ParameterValue({ part }: { part: ParameterDisplayPart }) {
   if (part.kind === "model" || part.kind === "judge_model")
     return <ModelName model={part.value} />;
+  if (part.kind === "input")
+    return (
+      <ol>
+        {part.value.map((message, index) => (
+          <li key={index}>
+            <strong>{message.role}</strong>: {message.content}
+            {!!message.images?.length && <References images={message.images} />}
+          </li>
+        ))}
+      </ol>
+    );
   if (part.kind === "images")
     return (
       <>

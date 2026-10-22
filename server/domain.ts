@@ -19,13 +19,21 @@ import {
   judgeCriteriaIssue,
   criteriaSets,
   type Criterion,
+  judgeCriteriaSchema,
+  resolveCriteriaForCell,
 } from "./judge-criteria.js";
 import {
   parameterValue,
   axisParameters,
   parameterLayoutIssue,
+  type ParameterConfiguration,
 } from "./parameters.js";
 import type { LegacyGridInput } from "./legacy-grid-input.js";
+import type { Version2GridInput } from "./legacy-grid-input.js";
+import {
+  generatorInputEntries,
+  generatorInputForCell,
+} from "./generator-input.js";
 export type { VariableField } from "./prompt-variables.js";
 export const efforts = [
   "default",
@@ -38,8 +46,17 @@ export const efforts = [
   "max",
 ] as const;
 export type Effort = (typeof efforts)[number];
+const draftChatMessageSchema = z
+  .object({
+    role: z.enum(["system", "user", "assistant", "unfilled"]),
+    content: z.string(),
+    images: z.array(referenceImageSchema).optional(),
+  })
+  .strict();
+export type ChatMessage = z.infer<typeof draftChatMessageSchema>;
 export const kinds = [
   "model",
+  "input",
   "effort",
   "judge_model",
   "judge_effort",
@@ -54,6 +71,7 @@ const variableFieldSchema = z
   })
   .strict();
 export const parameterValueSchemas = {
+  input: z.array(draftChatMessageSchema),
   model: z.string(),
   effort: z.enum(efforts),
   size: z.string(),
@@ -86,6 +104,7 @@ function source<T extends z.ZodType>(value: T) {
 }
 const parameterSourcesSchema = z
   .object({
+    input: source(parameterValueSchemas.input),
     model: source(parameterValueSchemas.model),
     effort: source(parameterValueSchemas.effort).optional(),
     size: source(parameterValueSchemas.size).optional(),
@@ -105,29 +124,6 @@ const parameterSourcesSchema = z
   .strict();
 export type ParameterSources = z.infer<typeof parameterSourcesSchema>;
 const budgetSchema = z.number().finite().positive();
-const draftChatMessageSchema = z.object({
-  role: z.enum(["system", "user", "assistant", "unfilled"]),
-  content: z.string(),
-  images: z.array(referenceImageSchema).optional(),
-});
-const chatMessageSchema = draftChatMessageSchema
-  .refine(
-    (message) => !message.images?.length || message.role === "user",
-    "Images can only be attached to user messages.",
-  )
-  .refine(
-    (message) =>
-      message.role === "unfilled"
-        ? message.content === ""
-        : !!message.content.trim() ||
-          (message.role === "user" && !!message.images?.length),
-    "Enter a message, or leave an unfilled message empty.",
-  )
-  .transform((message) => {
-    if (!message.images?.length) delete message.images;
-    return message;
-  });
-export type ChatMessage = z.infer<typeof chatMessageSchema>;
 export type FilledChatMessage = ChatMessage & {
   role: "system" | "user" | "assistant";
 };
@@ -152,6 +148,8 @@ export function chatInputIssue(
     )
   )
     return "Enter a message or attach an image.";
+  if (messages.some((m) => m.role === "unfilled" && m.content !== ""))
+    return "Leave unfilled messages empty.";
   if (messages[0].role === "unfilled")
     return "Add a message before the first unfilled message.";
 }
@@ -161,11 +159,9 @@ export function chatText(messages: ChatMessage[]): string {
     .join("\n\n");
 }
 const draftGridFields = {
-  inputVersion: z.literal(2),
+  inputVersion: z.literal(3),
   format: z.enum(["svg", "markdown", "html", "chat-template", "image"]),
-  prompt: z.string().default(""),
-  promptImages: z.array(referenceImageSchema).default([]),
-  messages: z.array(draftChatMessageSchema).optional(),
+  caseAxis: z.enum(["rows", "columns"]).optional(),
   rows: z.array(caseSchema),
   columns: z.array(caseSchema),
   parameters: parameterSourcesSchema,
@@ -177,15 +173,10 @@ export const gridDraftSchema = z
     ...draftGridFields,
     budgetUsd: z.string(),
   })
-  .strict()
-  .refine(
-    (input) => input.format !== "chat-template" || !input.promptImages.length,
-    "Attach Chat images to individual user messages.",
-  );
+  .strict();
 export type GridDraftInput = z.infer<typeof gridDraftSchema>;
 const acceptedGridFields = {
   ...draftGridFields,
-  messages: z.array(chatMessageSchema).min(1).optional(),
   rows: draftGridFields.rows.min(1),
   columns: draftGridFields.columns.min(1),
 };
@@ -206,7 +197,7 @@ const gridInputSchema = z.discriminatedUnion("format", [
     .strict(),
 ]);
 export type GridInput = z.infer<typeof gridInputSchema>;
-export type StoredGridInput = GridInput | LegacyGridInput;
+export type StoredGridInput = GridInput | Version2GridInput | LegacyGridInput;
 export const gridSchema = gridInputSchema
   .transform((g) => {
     for (const kind of [
@@ -226,16 +217,16 @@ export const gridSchema = gridInputSchema
     }
     for (const criteria of criteriaSets(g))
       for (const criterion of criteria) criterion.text = criterion.text.trim();
-    if (isChatFormat(g.format)) g.prompt = chatText(g.messages ?? []);
-    else {
-      g.prompt = g.prompt.trim();
-      delete g.messages;
-    }
     return g;
   })
   .superRefine((g, c) => {
-    const issue = (message: string) => c.addIssue({ code: "custom", message });
-    const applicable = new Set<keyof ParameterValues>(["model", "variable"]);
+    const issue = (message: string, path?: (string | number)[]) =>
+      c.addIssue({ code: "custom", message, ...(path ? { path } : {}) });
+    const applicable = new Set<keyof ParameterValues>([
+      "input",
+      "model",
+      "variable",
+    ]);
     if (g.format === "image")
       for (const kind of imageKinds) applicable.add(kind);
     else applicable.add("effort");
@@ -295,54 +286,46 @@ export const gridSchema = gridInputSchema
             issue(`${key} is not owned by ${side}.`);
       }
     }
-    if (isChatFormat(g.format)) {
-      if (g.promptImages.length)
-        issue("Attach Chat images to individual user messages.");
-      const message = chatInputIssue(g.messages);
-      if (message) issue(message);
+    for (const { source, caseIndex, messages } of generatorInputEntries(g)) {
+      const path =
+        source === "common"
+          ? ["parameters", "input", "value"]
+          : [source, caseIndex!, "input"];
+      if (
+        !isChatFormat(g.format) &&
+        (messages.length !== 1 || messages[0]?.role !== "user")
+      )
+        issue("Prompt formats require exactly one user message.", path);
+      messages.forEach((message, messageIndex) => {
+        if (message.role === "unfilled" && message.content !== "")
+          issue("Leave unfilled messages empty.", [
+            ...path,
+            messageIndex,
+            "content",
+          ]);
+      });
     }
     const criterionIssue = judgeCriteriaIssue(g);
     if (criterionIssue) issue(criterionIssue);
     const variableIssue = promptVariableIssue(g);
     if (variableIssue) issue(variableIssue);
-    // Only numbered fields vary message content; scalar case owners do not.
-    const variableSide = g.parameters.variable?.kind;
-    const contentRows =
-      variableSide === "rows" ? g.rows.length : Math.min(1, g.rows.length);
-    const contentColumns =
-      variableSide === "columns"
-        ? g.columns.length
-        : Math.min(1, g.columns.length);
-    if (!variableIssue && isChatFormat(g.format))
-      for (let row = 0; row < contentRows; row++)
-        for (let column = 0; column < contentColumns; column++) {
-          const messages = g.messages?.map((message) => {
-            const expanded = interpolateVariables(
-              message.content,
-              g,
-              row,
-              column,
-            );
-            const images = mergeVariableImages(message.images, expanded.images);
-            return {
-              ...message,
-              content: expanded.text,
-              ...(images ? { images } : {}),
-            };
-          });
-          const message = chatInputIssue(messages);
-          if (message) issue(message);
+    const contentCases = g.caseAxis ? g[g.caseAxis].length : 1;
+    if (!variableIssue)
+      for (let index = 0; index < contentCases; index++) {
+        const row = g.caseAxis === "rows" ? index : 0;
+        const column = g.caseAxis === "columns" ? index : 0;
+        const messages = expandGeneratorInput(g, row, column);
+        const message = chatInputIssue(messages);
+        if (message) issue(message);
+        if (g.format === "image" && !messages[0]?.content.trim())
+          issue("Enter a prompt.");
+        if (g.judge) {
+          const resolved = resolveCriteriaForCell(g, row, column);
+          const criteria = judgeCriteriaSchema.safeParse(resolved.criteria);
+          if (!criteria.success)
+            issue(criteria.error.issues[0]?.message ?? "Enter judge criteria.");
         }
-    if (!variableIssue && !isChatFormat(g.format))
-      for (let row = 0; row < contentRows; row++)
-        for (let column = 0; column < contentColumns; column++) {
-          const expanded = interpolateVariables(g.prompt, g, row, column);
-          if (!expanded.text.trim()) {
-            if (g.format === "image") issue("Enter a prompt.");
-            else if (!g.promptImages.length && !expanded.images?.length)
-              issue("Enter a prompt or attach an image for every case.");
-          }
-        }
+      }
   })
   .brand<"ValidatedGridInput">();
 export type ValidatedGridInput = z.infer<typeof gridSchema>;
@@ -502,6 +485,32 @@ export type Grid = {
   createdAt: string;
 };
 export type StoredGrid = Grid & { expanded_prompt_for_title: string };
+export function expandGeneratorInput(
+  input: ParameterConfiguration,
+  row: number,
+  column: number,
+  options: VariableInterpolationOptions = {},
+): ChatMessage[] {
+  return generatorInputForCell(input, row, column).map((message) => {
+    const expanded = interpolateVariables(
+      message.content,
+      input,
+      row,
+      column,
+      options,
+    );
+    const images = mergeVariableImages(
+      message.images,
+      message.role === "user" ? expanded.images : undefined,
+    );
+    return {
+      ...message,
+      content: expanded.text,
+      ...(images ? { images } : {}),
+    };
+  });
+}
+
 export function expandGrid(
   input: GridInput,
   options: VariableInterpolationOptions = {},
@@ -523,27 +532,11 @@ export function expandGrid(
         for (const kind of imageKinds) {
           imageSettings[kind] = parameterValue(input, kind, row, column);
         }
-      const messages = input.messages?.map((message) => {
-        const content = interpolateVariables(
-          message.content,
-          input,
-          row,
-          column,
-          options,
-        );
-        const images = mergeVariableImages(message.images, content.images);
-        return {
-          ...message,
-          content: content.text,
-          ...(images ? { images } : {}),
-        };
-      });
-      const expanded = messages
-        ? { text: chatText(messages), images: undefined }
-        : interpolateVariables(input.prompt, input, row, column, options);
-      const attachments = messages
-        ? undefined
-        : mergeVariableImages(input.promptImages, expanded.images);
+      const messages = expandGeneratorInput(input, row, column, options);
+      const prompt = isChatFormat(input.format)
+        ? chatText(messages)
+        : (messages[0]?.content ?? "");
+      const attachments = messages[0]?.images;
       if (input.format === "image" && attachments)
         imageSettings.input_references = attachments.map((image) => image.id);
       const images = input.format !== "image" ? attachments : undefined;
@@ -552,8 +545,8 @@ export function expandGrid(
         column,
         model,
         effort,
-        prompt: expanded.text,
-        ...(messages ? { messages } : {}),
+        prompt,
+        messages,
         ...(images ? { images } : {}),
         budgetUsd: input.budgetUsd,
         ...(input.format === "image"
