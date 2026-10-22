@@ -3,6 +3,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type AriaAttributes,
   type ReactNode,
 } from "react";
 import type { VariableField } from "../../server/prompt-variables";
@@ -22,11 +23,13 @@ function VariableTextInput({
   label,
   text,
   onChange,
+  validation,
 }: {
   id: string;
   label: string;
   text: string;
   onChange: (text: string) => void;
+  validation: AriaAttributes;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
   useLayoutEffect(() => {
@@ -49,6 +52,7 @@ function VariableTextInput({
       ref={ref}
       id={id}
       aria-label={label}
+      {...validation}
       rows={1}
       value={text}
       onChange={(event) => onChange(event.target.value)}
@@ -96,12 +100,13 @@ export function VariableInput({
       )}
       <ValidationField>
         {(validation) => (
-          <div className="variable-cell-input" {...validation}>
+          <div className="variable-cell-input">
             <VariableTextInput
               id={id}
               label={label}
               text={field.text}
               onChange={(text) => update({ text })}
+              validation={validation}
             />
             <ImagePicker
               pasteTarget={id}

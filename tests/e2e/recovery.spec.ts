@@ -45,14 +45,8 @@ test("failed grid lists retry independently and OAuth failures retain their retr
     );
   }
   await page.goto("/settings?connection=failed&signin=failed");
-  await expect(
-    page
-      .getByRole("region", { name: "Account", exact: true })
-      .getByRole("alert"),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("alert").filter({ hasText: "OpenRouter" }),
-  ).toBeVisible();
+  await expect(page.getByRole("banner").getByRole("alert")).toBeVisible();
+  await expect(page.getByRole("main").getByRole("alert")).toBeVisible();
   await expect(
     page
       .getByRole("region", { name: "Account", exact: true })

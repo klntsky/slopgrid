@@ -429,7 +429,24 @@ test("selecting an output type reveals the entire form and preserves it on reloa
   await setVariableValues(page, "Rows", ["cat", "dog"]);
   await expect(generate).toBeEnabled();
   await model.uncheck();
-  await expect(generate).toBeDisabled();
+  await expect(generate).toBeEnabled();
+  const columns = page
+    .getByRole("combobox", { name: "Columns", exact: true })
+    .locator("xpath=ancestor::*[@role='group'][1]");
+  const created: string[] = [];
+  page.on("request", (request) => {
+    if (
+      request.method() === "POST" &&
+      new URL(request.url()).pathname === "/api/grids"
+    )
+      created.push(request.url());
+  });
+  await generate.click();
+  await expect(columns).toHaveAttribute("aria-invalid", "true");
+  expect(created).toEqual([]);
+  await model.check();
+  await expect(columns).not.toHaveAttribute("aria-invalid", "true");
+  await expect(generate).toBeEnabled();
 });
 
 test("the compatibility table shows selected model support without blocking generation or resume", async ({

@@ -32,13 +32,19 @@ for (const [format, prompt] of Object.entries(prompts)) {
     await page.goto("/");
     await page.getByRole("button", { name: format, exact: true }).click();
     await page
+      .getByRole("combobox", { name: "Columns", exact: true })
+      .selectOption("single");
+    await page
       .getByRole("combobox", { name: "Rows", exact: true })
       .selectOption("model");
     await page
       .getByRole("group", { name: "Row values" })
       .getByPlaceholder("Search models")
       .fill(model);
-    await page.getByRole("checkbox").first().check();
+    await page
+      .getByRole("group", { name: "Row values" })
+      .locator(`input[type="checkbox"][value="${model}"]`)
+      .check();
     await page
       .getByRole("combobox", { name: "Columns", exact: true })
       .selectOption("effort");
