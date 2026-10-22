@@ -114,7 +114,7 @@ export function ChatEditor({
               label={`Move message ${index + 1}`}
               disabled={reading}
               root={root}
-              rowSelector=".chat-message"
+              itemSelector=".chat-message"
               count={messages.length}
               onMove={move}
               onDragChange={(source, target) => {

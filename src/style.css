@@ -385,6 +385,16 @@ section {
 .reference-upload.reference-upload-compact {
   right: 40px;
 }
+.reference-upload > input[type="file"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+  cursor: inherit;
+}
 .deletable-input:has(.reference-upload-compact) textarea {
   padding-right: 74px;
 }
@@ -1733,6 +1743,19 @@ header {
 .budget-warnings [data-tooltip] {
   cursor: help;
 }
+.case-compatibility-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 8px 0 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.case-compatibility-warning .lucide {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+}
 .compatibility-table-scroll {
   max-width: 100%;
   overflow-x: auto;
@@ -1773,6 +1796,7 @@ header {
   color: var(--accent);
   vertical-align: middle;
 }
+.case-compatibility-warning .compatibility-warning,
 .compatibility-table .compatibility-warning,
 .budget-warnings .compatibility-warning {
   color: #6f5000;

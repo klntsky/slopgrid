@@ -1,5 +1,5 @@
 import { useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { ArrowLeft, ArrowRight, Plus, X } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import {
   efforts,
   isChatFormat,
@@ -188,58 +188,27 @@ export function GridLayoutTable({
     const name = sideName(side);
     return (
       <div className={`case-header-rail${side === "rows" ? " row-label" : ""}`}>
+        <ReorderHandle
+          index={index}
+          label={`Move ${name} case ${index + 1}`}
+          root={root}
+          orientation={side === "rows" ? "vertical" : "horizontal"}
+          itemSelector={
+            side === "rows"
+              ? ".layout-parameter-table > tbody > tr"
+              : '.layout-parameter-table > thead > tr > th[scope="col"]'
+          }
+          count={entries.length}
+          onMove={(from, to) =>
+            onAction({ type: "move-case", side, index: from, to })
+          }
+          onDragChange={(source, target) => {
+            setDragging(source);
+            setDragTarget(target);
+          }}
+        />
         <span>Case {index + 1}</span>
         <span className="case-header-controls">
-          {side === "rows" ? (
-            <ReorderHandle
-              index={index}
-              label={`Move row case ${index + 1}`}
-              root={root}
-              rowSelector=".layout-parameter-table > tbody > tr"
-              count={entries.length}
-              onMove={(from, to) =>
-                onAction({ type: "move-case", side, index: from, to })
-              }
-              onDragChange={(source, target) => {
-                setDragging(source);
-                setDragTarget(target);
-              }}
-            />
-          ) : (
-            ([-1, 1] as const).map((direction) => {
-              const earlier = direction === -1;
-              const disabled = earlier
-                ? index === 0
-                : index === entries.length - 1;
-              const label = `Move ${name} case ${index + 1} ${earlier ? "earlier" : "later"}`;
-              const Icon = earlier ? ArrowLeft : ArrowRight;
-              return (
-                <span
-                  key={direction}
-                  ref={tooltipRef}
-                  data-tooltip={label}
-                  tabIndex={disabled ? 0 : undefined}
-                >
-                  <button
-                    type="button"
-                    className="text-button editor-icon-button"
-                    aria-label={label}
-                    disabled={disabled}
-                    onClick={() =>
-                      onAction({
-                        type: "move-case",
-                        side,
-                        index,
-                        to: index + direction,
-                      })
-                    }
-                  >
-                    <Icon aria-hidden="true" />
-                  </button>
-                </span>
-              );
-            })
-          )}
           <span
             ref={tooltipRef}
             data-tooltip={
@@ -262,6 +231,17 @@ export function GridLayoutTable({
         </span>
       </div>
     );
+  }
+  function dragAttributes(index: number) {
+    return {
+      "data-dragging": dragging === index,
+      "data-insertion":
+        dragTarget === index
+          ? "before"
+          : index === entries.length - 1 && dragTarget === entries.length
+            ? "after"
+            : undefined,
+    };
   }
   function header(side: AxisSide, field: LayoutField) {
     const vertical = side === "columns";
@@ -508,7 +488,11 @@ export function GridLayoutTable({
                           </th>
                         ))
                       : entries.map((entry, index) => (
-                          <th scope="col" key={entry.id}>
+                          <th
+                            scope="col"
+                            key={entry.id}
+                            {...dragAttributes(index)}
+                          >
                             {caseHeader(side, index)}
                           </th>
                         ))}
@@ -519,15 +503,7 @@ export function GridLayoutTable({
                     ? entries.map((entry, index) => (
                         <tr
                           key={entry.id}
-                          data-dragging={dragging === index}
-                          data-insertion={
-                            dragTarget === index
-                              ? "before"
-                              : index === entries.length - 1 &&
-                                  dragTarget === entries.length
-                                ? "after"
-                                : undefined
-                          }
+                          {...dragAttributes(index)}
                         >
                           <th scope="row">{caseHeader(side, index)}</th>
                           {fields.map((field) => (
@@ -549,6 +525,7 @@ export function GridLayoutTable({
                               key={entry.id}
                               data-case-parameter={`${side}-${field.parameter}`}
                               data-field={field.parameter}
+                              {...dragAttributes(index)}
                             >
                               {editor(side, field, index)}
                             </td>

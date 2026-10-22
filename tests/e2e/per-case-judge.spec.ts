@@ -5,8 +5,7 @@ import {
   connectOpenRouter,
   expectProgress,
   finishPublishing,
-  moveParameter,
-  openParameterMenu,
+  defineCases,
   selectModel,
   setVariableValues,
 } from "./helpers";
@@ -85,17 +84,11 @@ test("judge criteria have one owner and differing cases reset only after confirm
   page,
 }) => {
   await start(page);
-  await openParameterMenu(page, "judge criteria");
-  const rowButton = judgeSection(page).getByRole("menuitem", {
-    name: "Make Judge criteria a row variable",
+  const defineCriteria = judgeSection(page).getByRole("button", {
+    name: "define multiple cases for judge criteria",
     exact: true,
   });
-  const columnButton = judgeSection(page).getByRole("menuitem", {
-    name: "Make Judge criteria a column variable",
-    exact: true,
-  });
-  await expect(rowButton).toBeDisabled();
-  await expect(columnButton).toBeDisabled();
+  await expect(defineCriteria).toBeDisabled();
   await page
     .getByRole("combobox", { name: "Rows", exact: true })
     .selectOption("variable");
@@ -103,9 +96,8 @@ test("judge criteria have one owner and differing cases reset only after confirm
   await page
     .getByRole("combobox", { name: "Columns", exact: true })
     .selectOption("effort");
-  await openParameterMenu(page, "judge criteria");
-  await expect(columnButton).toBeDisabled();
-  await rowButton.click();
+  await expect(defineCriteria).toBeEnabled();
+  await defineCases(page, "judge criteria");
   await expect(
     rubric(page, "Row", 1).getByLabel("Criterion 1", { exact: true }),
   ).toHaveValue("Does the output answer the question?");
@@ -115,7 +107,7 @@ test("judge criteria have one owner and differing cases reset only after confirm
   await expect(
     page.getByRole("combobox", { name: "Rows", exact: true }),
   ).toBeEnabled();
-  await expect(columnButton).toHaveCount(0);
+  await expect(defineCriteria).toHaveCount(0);
   await rubric(page, "Row", 1)
     .getByLabel("Criterion 1", { exact: true })
     .fill("Does the output satisfy alpha?");
@@ -152,13 +144,11 @@ test("judge criteria have one owner and differing cases reset only after confirm
   await judgeSection(page)
     .getByLabel("Criterion 1", { exact: true })
     .fill("Does the output retain equal criteria?");
-  await openParameterMenu(page, "judge criteria");
-  await expect(rowButton).toBeEnabled();
-  await expect(columnButton).toBeDisabled();
+  await expect(defineCriteria).toBeEnabled();
   await page
     .getByRole("button", { name: "Swap rows and columns", exact: true })
     .click();
-  await moveParameter(page, "judge criteria", "columns");
+  await defineCases(page, "judge criteria");
   await expect(
     rubric(page, "Column", 1).getByLabel("Criterion 1", { exact: true }),
   ).toHaveValue("Does the output retain equal criteria?");
@@ -169,7 +159,7 @@ test("judge criteria have one owner and differing cases reset only after confirm
   await expect(
     judgeSection(page).getByLabel("Criterion 1", { exact: true }),
   ).toHaveValue("Does the output retain equal criteria?");
-  await moveParameter(page, "judge criteria", "columns");
+  await defineCases(page, "judge criteria");
   await page.reload();
   await expect(
     rubric(page, "Column", 2).getByLabel("Criterion 1", { exact: true }),
@@ -197,7 +187,7 @@ test("different case rubrics judge one reused generation independently and survi
   await page
     .getByLabel("Prompt", { exact: true })
     .fill("Answer independently of judge-only reference material.");
-  await moveParameter(page, "judge criteria", "rows");
+  await defineCases(page, "judge criteria");
   await page.getByRole("button", { name: "new case", exact: true }).click();
   await expect(rubric(page, "Row", 3)).toBeVisible();
   await rubric(page, "Row", 3)
@@ -377,11 +367,7 @@ for (const side of ["Rows", "Columns"] as const) {
     const token = side === "Rows" ? "$ROW1" : "$COLUMN1";
     const axis = side === "Rows" ? "Row" : "Column";
     await page.getByLabel("Prompt", { exact: true }).fill(`Answer ${token}.`);
-    await moveParameter(
-      page,
-      "judge criteria",
-      side === "Rows" ? "rows" : "columns",
-    );
+    await defineCases(page, "judge criteria");
     const table = layoutTable(page);
     await table
       .getByLabel(`${token}, case 1`, { exact: true })
@@ -410,14 +396,10 @@ for (const side of ["Rows", "Columns"] as const) {
       .getByLabel("Criterion 1", { exact: true })
       .fill(`Does the answer respect ${swappedToken}?`);
     const reorder = table.getByRole("button", {
-      name:
-        swappedAxis === "Row"
-          ? "Move row case 2"
-          : "Move column case 2 earlier",
+      name: `Move ${swappedAxis.toLowerCase()} case 2`,
       exact: true,
     });
-    if (swappedAxis === "Row") await reorder.press("ArrowUp");
-    else await reorder.click();
+    await reorder.press(swappedAxis === "Row" ? "ArrowUp" : "ArrowLeft");
     await page
       .getByRole("button", {
         name: "new case",
@@ -503,7 +485,7 @@ test("pointer dragging row cases ignores nested criteria rows and moves the whol
     .getByRole("combobox", { name: "Rows", exact: true })
     .selectOption("variable");
   await setVariableValues(page, "Rows", ["Alpha", "Beta", "Gamma"]);
-  await moveParameter(page, "judge criteria", "rows");
+  await defineCases(page, "judge criteria");
   for (const [index, name] of ["Alpha", "Beta", "Gamma"].entries()) {
     const criteria = rubric(page, "Row", index + 1);
     await criteria

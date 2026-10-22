@@ -90,29 +90,11 @@ export async function expectProgress(
   await expect(bar).toHaveAttribute("max", String(total));
 }
 
-export async function openParameterMenu(page: Page, parameter: string) {
-  const trigger = page.getByRole("button", {
-    name: `Add variable cases for ${parameter}`,
-    exact: true,
-  });
-  if ((await trigger.getAttribute("aria-expanded")) !== "true")
-    await trigger.click();
-  return page.getByRole("menu", {
-    name: `Variable cases for ${parameter}`,
-    exact: true,
-  });
-}
-
-export async function moveParameter(
-  page: Page,
-  parameter: string,
-  side: "rows" | "columns",
-) {
-  const menu = await openParameterMenu(page, parameter);
-  const direction = side === "rows" ? "row" : "column";
-  await menu
-    .getByRole("menuitem", {
-      name: new RegExp(`(?:a ${direction} variable|to ${direction} cases)$`),
+export async function defineCases(page: Page, parameter: string) {
+  await page
+    .getByRole("button", {
+      name: `define multiple cases for ${parameter}`,
+      exact: true,
     })
     .click();
 }

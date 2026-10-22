@@ -3,12 +3,12 @@ import {
   connectOpenRouter,
   expectProgress,
   setVariableValues,
-  moveParameter,
+  defineCases,
   selectModel,
 } from "./helpers";
 import { referencePng } from "../reference-image-fixture";
 
-test("column parameter actions remain usable without a row-owned parameter and preserve equal values", async ({
+test("the direct parameter action targets column cases without a row-owned parameter and preserves equal values", async ({
   page,
 }) => {
   await page.goto("/");
@@ -28,7 +28,7 @@ test("column parameter actions remain usable without a row-owned parameter and p
     .selectOption("variable");
   await setVariableValues(page, "Columns", ["Alpha", "Beta"]);
   await page.getByLabel("Prompt", { exact: true }).fill("Draw $COLUMN1");
-  await moveParameter(page, "model", "columns");
+  await defineCases(page, "model");
   await expect(
     table
       .getByRole("group", { name: "Column case 1 Model", exact: true })

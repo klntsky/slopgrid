@@ -1,5 +1,5 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
-import { ChevronDown, Plus } from "lucide-react";
+import type { ReactNode } from "react";
+import { CornerRightUp, ListOrdered } from "lucide-react";
 import { imageKinds, imageChoices } from "../../server/image-settings";
 import {
   efforts,
@@ -18,6 +18,7 @@ import type { Model } from "../../server/provider";
 import { ModelSelector } from "./model-selector";
 import { CustomAxisSizes } from "./custom-image-size";
 import { caseValuesAction, type InputAction } from "./change-axis";
+import { useTooltip } from "../components/use-tooltip";
 import "./parameter-actions.css";
 
 type AxisProps = {
@@ -194,147 +195,38 @@ export function CommonParameterActions({
   onMove: (parameter: CommonParameterId, side: AxisSide) => void;
   disabled?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
-  const id = useId();
-  const root = useRef<HTMLDivElement>(null);
-  const trigger = useRef<HTMLButtonElement>(null);
-  const menu = useRef<HTMLDivElement>(null);
-  const initialFocus = useRef(0);
+  const side = input.caseAxis;
+  const reason = !side
+    ? "Select Multiple cases in Specify grid layout first."
+    : !input[side].length
+      ? "Add a case with new case first."
+      : undefined;
+  const tooltip = useTooltip<HTMLSpanElement>(reason);
   const name =
     parameter === "input"
       ? input.format === "chat-template"
         ? "chat history"
         : "prompt"
       : parameterNames[parameter].toLowerCase();
-  function openMenu(index = 0) {
-    initialFocus.current = index;
-    setOpen(true);
-  }
-  useEffect(() => {
-    if (!open) return;
-    if (disabled) {
-      setOpen(false);
-      return;
-    }
-    menu.current
-      ?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')
-      [initialFocus.current]?.focus();
-    const outside = (event: PointerEvent) => {
-      if (!root.current?.contains(event.target as Node)) setOpen(false);
-    };
-    const escape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        setOpen(false);
-        trigger.current?.focus();
-      }
-    };
-    document.addEventListener("pointerdown", outside);
-    document.addEventListener("keydown", escape);
-    return () => {
-      document.removeEventListener("pointerdown", outside);
-      document.removeEventListener("keydown", escape);
-    };
-  }, [open, disabled]);
   return (
-    <div
+    <span
       className="parameter-actions"
-      ref={root}
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null))
-          setOpen(false);
-      }}
+      ref={tooltip}
+      tabIndex={reason ? 0 : undefined}
     >
       <button
         type="button"
-        className="text-button parameter-move-trigger"
-        ref={trigger}
-        disabled={disabled}
-        aria-label={`Add variable cases for ${name}`}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-controls={open ? id : undefined}
-        onClick={() => setOpen((value) => !value)}
-        onKeyDown={(event) => {
-          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-            event.preventDefault();
-            openMenu(event.key === "ArrowUp" ? 1 : 0);
-          }
+        className="text-button parameter-case-action"
+        disabled={disabled || !!reason}
+        aria-label={`define multiple cases for ${name}`}
+        onClick={() => {
+          if (side) onMove(parameter, side);
         }}
       >
-        <Plus aria-hidden="true" /> Add variable cases{" "}
-        <ChevronDown aria-hidden="true" />
+        <ListOrdered aria-hidden="true" />
+        define multiple cases
+        <CornerRightUp aria-hidden="true" />
       </button>
-      {open && (
-        <div
-          className="parameter-move-menu"
-          id={id}
-          ref={menu}
-          role="menu"
-          aria-label={`Variable cases for ${name}`}
-          onKeyDown={(event) => {
-            const items = Array.from(
-              event.currentTarget.querySelectorAll<HTMLButtonElement>(
-                '[role="menuitem"]',
-              ),
-            );
-            const current = items.indexOf(
-              document.activeElement as HTMLButtonElement,
-            );
-            let next: number;
-            if (event.key === "ArrowDown") next = (current + 1) % items.length;
-            else if (event.key === "ArrowUp")
-              next = (current - 1 + items.length) % items.length;
-            else if (event.key === "Home") next = 0;
-            else if (event.key === "End") next = items.length - 1;
-            else return;
-            event.preventDefault();
-            items[next]?.focus();
-          }}
-        >
-          {(["rows", "columns"] as const).map((side) => {
-            const unavailable =
-              (parameter === "judge_criteria" || parameter === "input") &&
-              input.caseAxis !== side;
-            const label = side === "rows" ? "Rows" : "Columns";
-            const explanation = unavailable
-              ? `Select Multiple cases for ${label} first.`
-              : undefined;
-            return (
-              <button
-                key={side}
-                type="button"
-                role="menuitem"
-                tabIndex={-1}
-                aria-disabled={unavailable || undefined}
-                aria-label={
-                  parameter === "input"
-                    ? `Add ${input.format === "chat-template" ? "chat history" : "prompt"} to ${side === "rows" ? "row" : "column"} cases`
-                    : `Make ${parameterNames[parameter]} a ${side === "rows" ? "row" : "column"} variable`
-                }
-                aria-describedby={unavailable ? `${id}-${side}` : undefined}
-                onClick={() => {
-                  if (
-                    unavailable ||
-                    disabled ||
-                    trigger.current?.matches(":disabled")
-                  )
-                    return;
-                  setOpen(false);
-                  onMove(parameter, side);
-                }}
-              >
-                <span>{label}</span>
-                {explanation && (
-                  <span className="parameter-move-reason" id={`${id}-${side}`}>
-                    {explanation}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </div>
+    </span>
   );
 }

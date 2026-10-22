@@ -3,8 +3,7 @@ import {
   connectOpenRouter,
   expectProgress,
   mockModels,
-  moveParameter,
-  openParameterMenu,
+  defineCases,
   selectModel,
 } from "./helpers";
 import { referencePng } from "../reference-image-fixture";
@@ -59,7 +58,7 @@ for (const format of ["SVG", "Image"]) {
       table.getByRole("button", { name: "Remove row case 1", exact: true }),
     ).toBeDisabled();
 
-    await moveParameter(page, "model", "columns");
+    await columns.selectOption("model");
     await expect(columns).toHaveValue("model");
     const models = page.getByRole("group", {
       name: "Column values",
@@ -194,22 +193,21 @@ test("case-owned model and judge controls stay with prompt fields while common j
     .getByRole("checkbox", { name: "Add a LLM judge", exact: true })
     .check();
   const judge = page.getByRole("region", { name: "Judge", exact: true });
-  await openParameterMenu(page, "judge criteria");
-  const rowCriteria = judge.getByRole("menuitem", {
-    name: "Make Judge criteria a row variable",
+  const defineCriteria = judge.getByRole("button", {
+    name: "define multiple cases for judge criteria",
     exact: true,
   });
-  await expect(rowCriteria).toBeDisabled();
+  await expect(defineCriteria).toBeDisabled();
   await expect(
     judge.getByRole("radiogroup", { name: "Judge model", exact: true }),
   ).toBeVisible();
   await page
     .getByRole("combobox", { name: "Rows", exact: true })
     .selectOption("variable");
-  await moveParameter(page, "model", "rows");
-  await moveParameter(page, "judge model", "rows");
-  await moveParameter(page, "judge thinking effort", "rows");
-  await moveParameter(page, "judge criteria", "rows");
+  await defineCases(page, "model");
+  await defineCases(page, "judge model");
+  await defineCases(page, "judge thinking effort");
+  await defineCases(page, "judge criteria");
   const table = page.getByRole("table", {
     name: "Grid layout parameters",
     exact: true,
@@ -281,8 +279,14 @@ test("an empty restored case list hides only the table and can return to one edi
   await expect(
     page.getByRole("group", { name: "Column values", exact: true }),
   ).toBeVisible();
+  const definePrompt = page.getByRole("button", {
+    name: "define multiple cases for prompt",
+    exact: true,
+  });
+  await expect(definePrompt).toBeDisabled();
   await page.getByRole("button", { name: "new case", exact: true }).click();
   await expect(table).toBeVisible();
+  await expect(definePrompt).toBeEnabled();
   await page
     .getByRole("button", { name: "new variable", exact: true })
     .click();
@@ -319,14 +323,9 @@ for (const side of ["Rows", "Columns"] as const) {
     await page
       .getByRole("combobox", { name: "Thinking effort", exact: true })
       .selectOption("high");
-    const direction = side === "Rows" ? "row" : "column";
     const token = side === "Rows" ? "$ROW1" : "$COLUMN1";
-    await moveParameter(page, "model", side === "Rows" ? "rows" : "columns");
-    await moveParameter(
-      page,
-      "thinking effort",
-      side === "Rows" ? "rows" : "columns",
-    );
+    await defineCases(page, "model");
+    await defineCases(page, "thinking effort");
     const table = page.getByRole("table", {
       name: "Grid layout parameters",
       exact: true,
@@ -432,7 +431,6 @@ for (const side of ["Rows", "Columns"] as const) {
   }) => {
     await page.goto("/");
     await page.getByRole("button", { name: "SVG", exact: true }).click();
-    const direction = side === "Rows" ? "row" : "column";
     const title = side === "Rows" ? "Row" : "Column";
     const opposite = side === "Rows" ? "Columns" : "Rows";
     const oppositeTitle = side === "Rows" ? "Column" : "Row";
@@ -462,9 +460,7 @@ for (const side of ["Rows", "Columns"] as const) {
     await expect(
       page.getByRole("img", { name: "complete.png", exact: true }),
     ).toBeVisible();
-    const promote = () =>
-      moveParameter(page, "prompt", side === "Rows" ? "rows" : "columns");
-    await promote();
+    await defineCases(page, "prompt");
     const first = table.getByRole("group", {
       name: `${title} case 1 Prompt`,
       exact: true,
@@ -493,7 +489,7 @@ for (const side of ["Rows", "Columns"] as const) {
     await expect(
       page.getByRole("img", { name: "complete.png", exact: true }),
     ).toBeVisible();
-    await promote();
+    await defineCases(page, "prompt");
     await second
       .getByLabel("Prompt", { exact: true })
       .fill("Paint a distinct red portrait");
@@ -588,7 +584,6 @@ for (const side of ["Rows", "Columns"] as const) {
     await page
       .getByRole("button", { name: "Chat completion", exact: true })
       .click();
-    const direction = side === "Rows" ? "row" : "column";
     const title = side === "Rows" ? "Row" : "Column";
     await page
       .getByRole("combobox", { name: side, exact: true })
@@ -616,11 +611,7 @@ for (const side of ["Rows", "Columns"] as const) {
     await page
       .getByRole("button", { name: "Add message", exact: true })
       .click();
-    await moveParameter(
-      page,
-      "chat history",
-      side === "Rows" ? "rows" : "columns",
-    );
+    await defineCases(page, "chat history");
     const table = page.getByRole("table", {
       name: "Grid layout parameters",
       exact: true,
@@ -650,11 +641,7 @@ for (const side of ["Rows", "Columns"] as const) {
         exact: true,
       }),
     ).toBeVisible();
-    await moveParameter(
-      page,
-      "chat history",
-      side === "Rows" ? "rows" : "columns",
-    );
+    await defineCases(page, "chat history");
     await page
       .getByRole("button", { name: "new case", exact: true })
       .click();
@@ -768,53 +755,41 @@ for (const side of ["Rows", "Columns"] as const) {
   });
 }
 
-test("parameter menus explain unavailable destinations and support keyboard moves without losing input", async ({
+test("the direct parameter control explains disabled admission and targets the selected case dimension without losing input", async ({
   page,
 }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Markdown", exact: true }).click();
-  await page
-    .getByLabel("Prompt", { exact: true })
-    .fill("Keep this complete prompt");
+  const prompt = page.getByLabel("Prompt", { exact: true });
+  await prompt.fill("Keep this complete prompt");
   const trigger = page.getByRole("button", {
-    name: "Add variable cases for prompt",
+    name: "define multiple cases for prompt",
     exact: true,
   });
-  await trigger.focus();
-  await trigger.press("Enter");
-  const menu = page.getByRole("menu", {
-    name: "Variable cases for prompt",
-    exact: true,
-  });
-  const columns = menu.getByRole("menuitem", {
-    name: "Add prompt to column cases",
-    exact: true,
-  });
-  await menu.getByRole("menuitem").first().press("End");
-  await expect(columns).toBeFocused();
-  await expect(columns).toBeDisabled();
-  await columns.press("Enter");
-  await expect(page.getByLabel("Prompt", { exact: true })).toHaveValue(
-    "Keep this complete prompt",
-  );
-  await columns.press("Escape");
-  await expect(menu).toHaveCount(0);
-  await expect(trigger).toBeFocused();
-  await trigger.press("Space");
-  await expect(menu).toBeVisible();
+  await expect(trigger).toBeDisabled();
+  const action = trigger.locator("..");
+  await action.hover();
+  const tooltip = page.getByRole("tooltip");
+  await expect(tooltip).toBeVisible();
+  await expect(tooltip).toContainText(/multiple cases/i);
+  await expect(action).toHaveAccessibleDescription(/multiple cases/i);
+  await expect(prompt).toHaveValue("Keep this complete prompt");
   await page
     .getByRole("heading", { name: "Enter your prompt", exact: true })
-    .click();
-  await expect(menu).toHaveCount(0);
-  await page
-    .getByRole("combobox", { name: "Columns", exact: true })
-    .selectOption("variable");
+    .hover();
+  await expect(tooltip).not.toBeVisible();
+  const rows = page.getByRole("combobox", { name: "Rows", exact: true });
+  const columns = page.getByRole("combobox", {
+    name: "Columns",
+    exact: true,
+  });
+  await columns.selectOption("variable");
+  await expect(trigger).toBeEnabled();
   await trigger.focus();
-  await trigger.press("ArrowUp");
-  await expect(columns).toBeFocused();
-  await expect(columns).toBeEnabled();
-  await columns.press("Enter");
-  await expect(menu).toHaveCount(0);
+  await trigger.press("Enter");
+  await expect(columns).toHaveValue("variable");
+  await expect(rows).toHaveValue("model");
+  await expect(trigger).toHaveCount(0);
   const editor = page
     .getByRole("group", { name: "Column case 1 Prompt", exact: true })
     .getByLabel("Prompt", { exact: true });
@@ -870,9 +845,7 @@ test("case workspaces stay centered at normal width and grow only until the view
   expect(phone.x + phone.width).toBeLessThan(390);
   await expect
     .poll(() =>
-      page.evaluate(
-        () => document.documentElement.scrollWidth <= window.innerWidth,
-      ),
+      page.evaluate(() => document.documentElement.scrollWidth),
     )
-    .toBe(true);
+    .toBeLessThanOrEqual(390);
 });

@@ -132,9 +132,12 @@ test("variable records merge images per message, interpolate judge references an
     [1, red],
     [2, green],
   ] as const) {
+    const chooser = page.waitForEvent("filechooser");
     await page
       .getByLabel(`Add images to $ROW1, case ${caseNumber}`, { exact: true })
-      .setInputFiles(input);
+      .locator("..")
+      .click({ timeout: 5000 });
+    await (await chooser).setFiles(input);
     await expect(
       page.getByRole("img", { name: input.name, exact: true }),
     ).toBeVisible();
@@ -189,20 +192,6 @@ test("variable records merge images per message, interpolate judge references an
       .getByRole("table", { name: "Grid layout parameters", exact: true })
       .getByRole("img", { name: blue.name, exact: true }),
   ).toHaveCount(2);
-  const originalViewport = page.viewportSize()!;
-  await page.setViewportSize({ width: 390, height: 844 });
-  const tableScroll = await page
-    .getByRole("table", { name: "Grid layout parameters", exact: true })
-    .evaluate((table) => {
-      const scroll = table.parentElement!;
-      scroll.scrollLeft = scroll.scrollWidth;
-      const result = { width: scroll.clientWidth, offset: scroll.scrollLeft };
-      scroll.scrollLeft = 0;
-      return result;
-    });
-  expect(tableScroll.width).toBeLessThanOrEqual(390);
-  expect(tableScroll.offset).toBeGreaterThan(0);
-  await page.setViewportSize(originalViewport);
   await selectModel(page, "fixture/text");
   await selectJudge(page, "fixture/text");
   await connectOpenRouter(page);

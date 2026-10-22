@@ -115,6 +115,19 @@ export function CompatibilityFeedback({
     !matching.some((issue) => issue.support === "unsupported" || issue.blocking)
   )
     return null;
+  if (origin.caseIndex !== undefined) {
+    const reasons = [...new Set(matching.map((issue) => issue.reason))];
+    return (
+      <>
+        {reasons.map((reason) => (
+          <p className="case-compatibility-warning" key={reason}>
+            <TriangleAlert className="compatibility-warning" aria-hidden="true" />
+            {reason}
+          </p>
+        ))}
+      </>
+    );
+  }
   const caption = `${sourceLabel(origin)} compatibility`;
   function caseLabel(side: "rows" | "columns", index: number) {
     return input[side].length ? `Case ${index + 1}` : "Not selected (preview)";

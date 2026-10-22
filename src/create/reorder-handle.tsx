@@ -6,7 +6,8 @@ export function ReorderHandle({
   index,
   label,
   root,
-  rowSelector,
+  itemSelector,
+  orientation = "vertical",
   count,
   onMove,
   onDragChange,
@@ -15,7 +16,8 @@ export function ReorderHandle({
   index: number;
   label: string;
   root: RefObject<HTMLElement | null>;
-  rowSelector: string;
+  itemSelector: string;
+  orientation?: "vertical" | "horizontal";
   count: number;
   onMove: (from: number, to: number) => void;
   onDragChange?: (dragging?: number, target?: number) => void;
@@ -27,8 +29,8 @@ export function ReorderHandle({
   const focusTarget = useRef<number | undefined>(undefined);
   useLayoutEffect(() => {
     if (focusTarget.current === undefined) return;
-    const rows = root.current?.querySelectorAll<HTMLElement>(rowSelector);
-    rows?.[focusTarget.current]
+    const items = root.current?.querySelectorAll<HTMLElement>(itemSelector);
+    items?.[focusTarget.current]
       ?.querySelector<HTMLButtonElement>(".reorder-handle")
       ?.focus();
     focusTarget.current = undefined;
@@ -45,12 +47,19 @@ export function ReorderHandle({
       y > bounds.bottom
     )
       return;
-    const rows = Array.from(list.querySelectorAll<HTMLElement>(rowSelector));
-    const before = rows.findIndex((row) => {
-      const rect = row.getBoundingClientRect();
-      return y < rect.top + rect.height / 2;
-    });
-    const target = before < 0 ? rows.length : before;
+    const items = list.querySelectorAll<HTMLElement>(itemSelector);
+    let target = items.length;
+    for (let position = 0; position < items.length; position++) {
+      const rect = items[position].getBoundingClientRect();
+      if (
+        orientation === "horizontal"
+          ? x < rect.left + rect.width / 2
+          : y < rect.top + rect.height / 2
+      ) {
+        target = position;
+        break;
+      }
+    }
     if (target !== from && target !== from + 1) return target;
   }
 
@@ -79,7 +88,7 @@ export function ReorderHandle({
       className="text-button editor-icon-button reorder-handle"
       aria-label={label}
       ref={tooltipRef}
-      data-tooltip={`${label}. Use Up and Down arrow keys to reorder.`}
+      data-tooltip={`${label}. Use ${orientation === "horizontal" ? "Left and Right" : "Up and Down"} arrow keys to reorder.`}
       disabled={disabled}
       onPointerDown={(event) => {
         event.currentTarget.setPointerCapture(event.pointerId);
@@ -115,9 +124,11 @@ export function ReorderHandle({
       onPointerCancel={endDrag}
       onLostPointerCapture={endDrag}
       onKeyDown={(event) => {
-        if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+        const previous = orientation === "horizontal" ? "ArrowLeft" : "ArrowUp";
+        const next = orientation === "horizontal" ? "ArrowRight" : "ArrowDown";
+        if (event.key !== previous && event.key !== next) return;
         event.preventDefault();
-        const target = index + (event.key === "ArrowUp" ? -1 : 1);
+        const target = index + (event.key === previous ? -1 : 1);
         if (target < 0 || target >= count) return;
         focusTarget.current = target;
         move(index, target);

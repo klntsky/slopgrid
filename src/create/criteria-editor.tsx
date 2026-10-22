@@ -73,7 +73,7 @@ export function CriteriaEditor({
                   index={index}
                   label={`Move criterion ${index + 1}`}
                   root={root}
-                  rowSelector=".criteria-row"
+                  itemSelector=".criteria-row"
                   count={criteria.length}
                   onMove={move}
                   onDragChange={dragChange}
