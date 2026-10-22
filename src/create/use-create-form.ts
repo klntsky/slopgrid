@@ -12,6 +12,12 @@ import { judgeCriteriaIssue } from "../../server/judge-criteria";
 import { compatibilityPreviewInput, validateDraftInput } from "./draft-input";
 import type { InputAction } from "./change-axis";
 
+const sortedModelCatalog = [...modelCatalog].sort(
+  (a, b) =>
+    a.name.localeCompare(b.name, "en", { sensitivity: "base" }) ||
+    a.id.localeCompare(b.id, "en"),
+);
+
 function useBudgetEstimate(input: GridInput) {
   const [minute, setMinute] = useState(() => Math.floor(Date.now() / 60000));
   useEffect(() => {
@@ -68,13 +74,9 @@ export function useCreateForm() {
   const blockingCompatibilityIssues = compatibilityIssues.filter(
     (issue) => issue.blocking,
   );
-  const judgeModels = modelCatalog
-    .filter((model) => canJudge(model, input.format))
-    .sort(
-      (a, b) =>
-        a.name.localeCompare(b.name, "en", { sensitivity: "base" }) ||
-        a.id.localeCompare(b.id, "en"),
-    );
+  const judgeModels = sortedModelCatalog.filter((model) =>
+    canJudge(model, input.format),
+  );
   const judgeIssue = input.judge
     ? (judgeCriteriaIssue(input) ??
       (input.parameters.judge_model?.kind === "common" &&
@@ -108,13 +110,9 @@ export function useCreateForm() {
     submission.reset();
     editing.selectFormat(format);
   }
-  const models = modelCatalog
-    .filter((model) => (input.format === "image" ? model.image : model.text))
-    .sort(
-      (a, b) =>
-        a.name.localeCompare(b.name, "en", { sensitivity: "base" }) ||
-        a.id.localeCompare(b.id, "en"),
-    );
+  const models = sortedModelCatalog.filter((model) =>
+    input.format === "image" ? model.image : model.text,
+  );
   const generateReasons =
     [
       submission.busy && "Starting generation.",

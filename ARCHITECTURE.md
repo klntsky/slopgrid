@@ -225,10 +225,12 @@ always independent.
 ## Workflow and content execution
 
 Creation assigns durable generation and judgment tasks before scheduling.
-Equivalent judged cells share a generation task; ordinary cells keep independent
-generations. Cells link to those tasks, and judgments depend on committed
-generation output. The browser-safe grouping key remains separate from the
-provider request signature.
+One browser-safe partition policy serves the form's generation count, workflow
+planning, and legacy workflow reconstruction. Equivalent judged cells share a
+generation task; ordinary cells keep independent generations. Persisted legacy
+source identities remain authoritative during reconstruction. Cells link to
+tasks, and judgments depend on committed generation output. The configuration
+grouping key remains separate from the provider request signature.
 
 - The scheduler owns admission, worker reservations, attempt identity, retries,
   cancellation, settlement, and serialized persistence through one task lifecycle.

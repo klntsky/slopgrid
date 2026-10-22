@@ -9,8 +9,11 @@ import type { VariableField } from "../../server/prompt-variables";
 import { ImageList, ImagePicker } from "./image-input";
 
 function fitTextarea(input: HTMLTextAreaElement) {
+  // Measure the content, not the extra height borrowed from a taller cell.
+  input.style.flexGrow = "0";
   input.style.height = "auto";
   input.style.height = `${input.scrollHeight + input.offsetHeight - input.clientHeight}px`;
+  input.style.flexGrow = "";
 }
 
 function VariableTextInput({
@@ -77,7 +80,7 @@ export function VariableInput({
     onChange({ ...field, ...change });
   }
   return (
-    <div aria-busy={reading}>
+    <div className="case-prompt-editor" aria-busy={reading}>
       <div className="variable-cell-input">
         <VariableTextInput
           id={id}

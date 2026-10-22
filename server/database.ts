@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 import type { Cell, StoredGridInput } from "./domain.js";
-import { generationGroupKey } from "../shared/generation-key.js";
+import { generationPartitionKey } from "../shared/generation-key.js";
 import { migrateVariableInput } from "../shared/variable-migration.js";
 import {
   expandLegacyGrid,
@@ -246,11 +246,11 @@ function migrateWorkflow(db: Database.Database) {
       } as LegacyCell;
       if (cell.judge && !saved.judge && cell.status === "complete")
         cell.judge = { ...cell.judge, status: "complete" };
-      const key = cell.judge
-        ? cell.generationSourceId
-          ? `source:${cell.generationSourceId}`
-          : `group:${generationGroupKey(input.format, cell)}`
-        : `cell:${cell.id}`;
+      const key = generationPartitionKey(
+        input.format,
+        cell,
+        cell.generationSourceId,
+      );
       const group = groups.get(key);
       if (group) group.push(cell);
       else groups.set(key, [cell]);

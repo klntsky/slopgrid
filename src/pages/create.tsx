@@ -15,7 +15,7 @@ import {
   type CommonParameterId,
   type AxisSide,
 } from "../../server/parameters";
-import { generationGroupKey } from "../../shared/generation-key";
+import { generationPartitionKey } from "../../shared/generation-key";
 import { effortLabel } from "../../server/compatibility";
 import { useCreateForm } from "../create/use-create-form";
 import {
@@ -160,24 +160,15 @@ export function Create() {
   );
   const swapHint = useTooltip<HTMLButtonElement>("Swap rows and columns");
   const generateHint = useTooltip<HTMLDivElement>(generateReasons || undefined);
-  const generatedOutputs =
-    input.judge && !variableIssue && !criteriaIssue
-      ? new Set(
-          compatibilityCells.map((cell) =>
-            generationGroupKey(input.format, { ...cell, id: "" }),
-          ),
-        ).size
-      : input.rows.length * input.columns.length;
+  const generationPartitions = new Set<string>();
+  for (const cell of compatibilityCells) {
+    if (cell.row < input.rows.length && cell.column < input.columns.length)
+      generationPartitions.add(generationPartitionKey(input.format, cell));
+  }
   const layoutSummary = (
     <p className="hint">
-      {input.judge ? (
-        `${input.rows.length} rows x ${input.columns.length} columns - ${generatedOutputs} generated outputs`
-      ) : (
-        <>
-          {input.rows.length} rows × {input.columns.length} columns ·{" "}
-          {generatedOutputs} outputs
-        </>
-      )}
+      {input.rows.length} rows × {input.columns.length} columns ·{" "}
+      {generationPartitions.size} outputs
     </p>
   );
 

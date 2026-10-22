@@ -263,12 +263,18 @@ for (const orientation of ["Rows", "Columns"] as const) {
       { text: "Copied criterion for Gamma?", correctAnswer: true },
       { text: "Does the output contain a blue circle?", correctAnswer: false },
     ]);
-    expect(cells.map((cell) => cell.images?.map(({ name }) => name) ?? []))
-      .toEqual([
-        ["source-prompt.png", "source-variable.png"],
-        [],
-        ["source-variable.png"],
-      ]);
+    expect(
+      grid.input[side].map((record) =>
+        [
+          ...(record.input?.flatMap((message) => message.images ?? []) ?? []),
+          ...(record.variable?.flatMap((field) => field?.images ?? []) ?? []),
+        ].map(({ name }) => name),
+      ),
+    ).toEqual([
+      ["source-prompt.png", "source-variable.png"],
+      [],
+      ["source-variable.png"],
+    ]);
   });
 
   test(`${orientation} fall back to the last case after reload or removal of the focused case`, async ({ page }) => {

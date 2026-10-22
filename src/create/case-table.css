@@ -80,7 +80,7 @@
   margin: 0;
 }
 .case-header-rail:not(.row-label) > .case-header-controls,
-.layout-parameter-heading > .editor-icon-button {
+.layout-parameter-heading > .case-header-controls {
   margin-inline-start: auto;
 }
 .variable-corner {
@@ -88,9 +88,6 @@
 }
 .case-header-controls {
   flex-shrink: 0;
-}
-.case-header-controls > span {
-  display: inline-flex;
 }
 .variable-table th[scope="row"] .case-header-rail,
 .variable-table th[scope="row"] .layout-parameter-heading {
@@ -136,6 +133,47 @@
   gap: 12px;
   margin-top: 8px;
 }
+.variable-table > tbody > tr > .case-prompt-cell {
+  padding: 0;
+  /* Give percentage-height editors the row height without fixing its size. */
+  height: 1px;
+}
+.case-prompt-editor,
+.case-prompt-editor > .prompt-editor {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.case-prompt-editor {
+  height: 100%;
+}
+.case-prompt-editor > *,
+.case-prompt-editor > .prompt-editor > * {
+  flex-shrink: 0;
+}
+.case-prompt-editor > .prompt-editor,
+.case-prompt-editor > .variable-cell-input,
+.case-prompt-editor > .prompt-editor > .prompt-input {
+  flex-grow: 1;
+}
+.case-prompt-editor > .variable-cell-input,
+.case-prompt-editor > .prompt-editor > .prompt-input {
+  display: flex;
+  flex-direction: column;
+}
+.variable-table .case-prompt-editor :is(.variable-cell-input, .prompt-input) > textarea {
+  flex: 1 0 auto;
+  border: 0;
+  border-radius: 0;
+}
+.variable-table .case-prompt-editor :is(.variable-cell-input, .prompt-input) > textarea:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+.case-prompt-editor > :not(.variable-cell-input, .prompt-editor),
+.case-prompt-editor > .prompt-editor > :not(.prompt-input) {
+  margin-inline: 12px;
+}
 .variable-cell-input {
   position: relative;
   min-width: 180px;
@@ -167,8 +205,8 @@
   min-height: 72px;
   overflow: hidden;
 }
-.variable-table :is(textarea, input, select):not(:focus):not(:hover) {
-  border-color: transparent;
+.variable-table .case-prompt-editor .reference-images {
+  margin-block: 8px 12px;
 }
 @media (pointer: coarse) {
   .case-axis-add {

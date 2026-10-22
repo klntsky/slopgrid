@@ -55,6 +55,39 @@ function fieldKey(field: LayoutField) {
     : field.parameter;
 }
 
+function CaseHeaderRemove({
+  label,
+  tooltip,
+  disabled = false,
+  danger = true,
+  onRemove,
+}: {
+  label: string;
+  tooltip: string;
+  disabled?: boolean;
+  danger?: boolean;
+  onRemove: () => void;
+}) {
+  return (
+    <span
+      className="case-header-controls"
+      ref={tooltipRef}
+      data-tooltip={tooltip}
+      tabIndex={disabled ? 0 : undefined}
+    >
+      <button
+        type="button"
+        className={`text-button editor-icon-button${danger ? " editor-icon-danger" : ""}`}
+        aria-label={label}
+        disabled={disabled}
+        onClick={onRemove}
+      >
+        <X aria-hidden="true" />
+      </button>
+    </span>
+  );
+}
+
 function CaseValue({
   input,
   entry,
@@ -222,27 +255,16 @@ export function GridLayoutTable({
           }}
         />
         <span>Case {index + 1}</span>
-        <span className="case-header-controls">
-          <span
-            ref={tooltipRef}
-            data-tooltip={
-              entries.length <= 1
-                ? "Keep at least one case"
-                : `Remove ${name} case ${index + 1} and its values`
-            }
-            tabIndex={entries.length <= 1 ? 0 : undefined}
-          >
-            <button
-              type="button"
-              className="text-button editor-icon-button editor-icon-danger"
-              aria-label={`Remove ${name} case ${index + 1}`}
-              disabled={entries.length <= 1}
-              onClick={() => onAction({ type: "remove-case", side, index })}
-            >
-              <X aria-hidden="true" />
-            </button>
-          </span>
-        </span>
+        <CaseHeaderRemove
+          label={`Remove ${name} case ${index + 1}`}
+          tooltip={
+            entries.length <= 1
+              ? "Keep at least one case"
+              : `Remove ${name} case ${index + 1} and its values`
+          }
+          disabled={entries.length <= 1}
+          onRemove={() => onAction({ type: "remove-case", side, index })}
+        />
       </div>
     );
   }
@@ -272,31 +294,22 @@ export function GridLayoutTable({
         <div className={`layout-parameter-heading${vertical ? " row-label" : ""}`}>
           <span>{label}</span>
           {field.parameter === "variable" ? (
-            <button
-              type="button"
-              className="text-button editor-icon-button editor-icon-danger"
-              ref={tooltipRef}
-              data-tooltip={`Remove ${label} and its values from all cases`}
-              aria-label={`Remove ${label}`}
-              onClick={() =>
+            <CaseHeaderRemove
+              label={`Remove ${label}`}
+              tooltip={`Remove ${label} and its values from all cases`}
+              onRemove={() =>
                 onAction({ type: "remove-variable", side, index: field.index })
               }
-            >
-              <X aria-hidden="true" />
-            </button>
+            />
           ) : (
-            <button
-              type="button"
-              className="text-button editor-icon-button"
-              ref={tooltipRef}
-              data-tooltip={`Return ${label.toLowerCase()} to common parameters`}
-              aria-label={`Make ${label.toLowerCase()} common`}
-              onClick={() =>
+            <CaseHeaderRemove
+              label={`Make ${label.toLowerCase()} common`}
+              tooltip={`Return ${label.toLowerCase()} to common parameters`}
+              danger={false}
+              onRemove={() =>
                 onAction({ type: "to-common", parameter: field.parameter })
               }
-            >
-              <X aria-hidden="true" />
-            </button>
+            />
           )}
         </div>
       </>
@@ -336,6 +349,7 @@ export function GridLayoutTable({
       return (
         <div
           role="group"
+          className={isChatFormat(input.format) ? undefined : "case-prompt-editor"}
           aria-label={`${side === "rows" ? "Row" : "Column"} case ${caseIndex + 1} ${label}`}
         >
           {isChatFormat(input.format) ? (
@@ -549,6 +563,13 @@ export function GridLayoutTable({
                           {fields.map((field) => (
                             <td
                               key={fieldKey(field)}
+                              className={
+                                field.parameter === "variable" ||
+                                (field.parameter === "input" &&
+                                  !isChatFormat(input.format))
+                                  ? "case-prompt-cell"
+                                  : undefined
+                              }
                               data-field={field.parameter}
                               data-case-parameter={`${side}-${field.parameter}`}
                             >
@@ -563,6 +584,13 @@ export function GridLayoutTable({
                           {entries.map((entry, index) => (
                             <td
                               key={entry.id}
+                              className={
+                                field.parameter === "variable" ||
+                                (field.parameter === "input" &&
+                                  !isChatFormat(input.format))
+                                  ? "case-prompt-cell"
+                                  : undefined
+                              }
                               data-case-id={entry.id}
                               data-case-parameter={`${side}-${field.parameter}`}
                               data-field={field.parameter}

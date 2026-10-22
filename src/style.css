@@ -241,6 +241,14 @@ main {
     margin-inline: auto;
     padding-inline: 28px;
   }
+  .create-page.case-layout-active > .case-layout-section {
+    border-top: 0;
+    padding-top: 0;
+  }
+  .create-page.case-layout-active > .case-layout-section > .section-heading {
+    border-top: 1px solid var(--line);
+    padding-top: 28px;
+  }
 }
 .site-footer {
   padding: 24px 20px;

@@ -7,7 +7,7 @@ import type {
   WorkflowTask,
 } from "./domain.js";
 import { token } from "./ids.js";
-import { generationGroupKey } from "../shared/generation-key.js";
+import { generationPartitionKey } from "../shared/generation-key.js";
 import { resolveCriteriaForCell } from "./judge-criteria.js";
 
 export function createWorkflow(
@@ -17,8 +17,8 @@ export function createWorkflow(
   const tasks: WorkflowTask[] = [];
   const groups = new Map<string, GenerationTask>();
   for (const cell of cells) {
-    const key = cell.judge ? generationGroupKey(input.format, cell) : undefined;
-    let generation = key === undefined ? undefined : groups.get(key);
+    const key = generationPartitionKey(input.format, cell);
+    let generation = groups.get(key);
     if (!generation) {
       generation = {
         id: token(),
@@ -36,7 +36,7 @@ export function createWorkflow(
         },
       };
       tasks.push(generation);
-      if (key !== undefined) groups.set(key, generation);
+      groups.set(key, generation);
     }
     cell.generationId = generation.id;
     if (cell.judge && input.judge) {
