@@ -7,6 +7,7 @@ import {
 } from "react";
 import type { VariableField } from "../../server/prompt-variables";
 import { ImageList, ImagePicker } from "./image-input";
+import { ValidationField } from "./validation-feedback";
 
 function fitTextarea(input: HTMLTextAreaElement) {
   // Measure the content, not the extra height borrowed from a taller cell.
@@ -80,37 +81,41 @@ export function VariableInput({
     onChange({ ...field, ...change });
   }
   return (
-    <div className="case-prompt-editor" aria-busy={reading}>
-      <div className="variable-cell-input">
-        <VariableTextInput
-          id={id}
-          label={label}
-          text={field.text}
-          onChange={(text) => update({ text })}
-        />
-        <ImagePicker
-          pasteTarget={id}
-          accessibleLabel={`Add images to ${label}`}
-          disabled={reading}
-          onBusy={onReading}
-          onSelect={(images) =>
-            update({ images: [...(field.images ?? []), ...images] })
-          }
-        />
-      </div>
-      {!!field.images?.length && (
-        <ImageList
-          images={field.images}
-          disabled={reading}
-          removeLabel={(image) => `Remove ${image.name} from ${label}`}
-          onRemove={(index) =>
-            update({
-              images: field.images?.filter((_, i) => i !== index),
-            })
-          }
-        />
+    <ValidationField>
+      {(validation) => (
+        <div className="case-prompt-editor" aria-busy={reading} {...validation}>
+          <div className="variable-cell-input">
+            <VariableTextInput
+              id={id}
+              label={label}
+              text={field.text}
+              onChange={(text) => update({ text })}
+            />
+            <ImagePicker
+              pasteTarget={id}
+              accessibleLabel={`Add images to ${label}`}
+              disabled={reading}
+              onBusy={onReading}
+              onSelect={(images) =>
+                update({ images: [...(field.images ?? []), ...images] })
+              }
+            />
+          </div>
+          {!!field.images?.length && (
+            <ImageList
+              images={field.images}
+              disabled={reading}
+              removeLabel={(image) => `Remove ${image.name} from ${label}`}
+              onRemove={(index) =>
+                update({
+                  images: field.images?.filter((_, i) => i !== index),
+                })
+              }
+            />
+          )}
+          {children}
+        </div>
       )}
-      {children}
-    </div>
+    </ValidationField>
   );
 }

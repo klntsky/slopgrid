@@ -126,6 +126,11 @@ optional numbered fields. Budget remains an inference setting outside that
 ownership model. The form and canonical schemas share field types but have
 separate admission responsibilities.
 
+Canonical validation retains field paths through parameter selection and cell
+expansion. The form routes those paths to common controls and case editors
+through shared feedback, rather than rerunning parameter-specific validity
+checks. Nested editor paths identify individual messages, criteria, and fields.
+
 Creation components own presentation, menu and editor focus, and pointer and
 keyboard interaction. Parameter ownership transitions remain in the form action
 layer; changing a control's placement does not create another conversion or

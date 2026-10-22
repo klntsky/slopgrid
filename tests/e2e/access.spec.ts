@@ -249,11 +249,6 @@ test("EDIT cancels inference and restores settings, while a public FORK creates 
     ).toBe(403);
     await page.getByRole("button", { name: "EDIT", exact: true }).click();
     await expect(page).toHaveURL("/create");
-    await expect(
-      page.getByRole("heading", {
-        name: "Specify grid layout · what should be the rows and the columns of the grid?",
-      }),
-    ).toBeVisible();
     await expect(page.getByLabel("$ROW1, case 1", { exact: true })).toHaveValue(
       "cat",
     );
@@ -519,11 +514,6 @@ test("owners can list a link-only published grid publicly without regenerating o
       .click();
     await expect(publicGrids).toHaveCount(0);
     await visitor.reload();
-    await expect(
-      visitor.getByRole("heading", {
-        name: "Specify grid layout · what should be the rows and the columns of the grid?",
-      }),
-    ).toBeVisible();
     await expect(publicGrids).toHaveCount(0);
     await page.goto("/grids");
     await expect(

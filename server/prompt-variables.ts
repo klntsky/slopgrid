@@ -1,7 +1,12 @@
 import type { GridInput } from "./domain.js";
 import type { ReferenceImage } from "./image-settings.js";
 import { criteriaForCell } from "./judge-criteria.js";
-import { axisParameters, type ParameterConfiguration } from "./parameters.js";
+import {
+  axisParameters,
+  parameterValuePath,
+  type ParameterConfiguration,
+  type ValidationIssue,
+} from "./parameters.js";
 import { generatorInputForCell } from "./generator-input.js";
 
 export type VariableField = { text: string; images?: ReferenceImage[] };
@@ -91,7 +96,34 @@ export function interpolateVariables(
   return { text: expanded, ...(images.length ? { images } : {}) };
 }
 
-export function caseSetupIssue(input: VariableInput):
+export function referencedVariableFields(
+  text: string,
+  input: VariableInput,
+  row: number,
+  column: number,
+): { field: VariableField; path: (string | number)[] }[] {
+  const fields: { field: VariableField; path: (string | number)[] }[] = [];
+  const seen = new Set<number>();
+  for (const [, name, number] of text.matchAll(variableToken)) {
+    const side = name === "ROW" ? "rows" : "columns";
+    if (input.parameters.variable?.kind !== side || !/^[1-9]\d*$/.test(number))
+      continue;
+    const fieldIndex = Number(number) - 1;
+    const caseIndex = side === "rows" ? row : column;
+    const field = input[side][caseIndex]?.variable?.[fieldIndex];
+    if (!field || seen.has(fieldIndex)) continue;
+    seen.add(fieldIndex);
+    fields.push({
+      field,
+      path: [side, caseIndex, "variable", fieldIndex],
+    });
+  }
+  return fields;
+}
+
+export function caseSetupIssue(
+  input: VariableInput,
+):
   | { kind: "cases" | "parameters" | "axis-values"; message: string }
   | undefined {
   const side = input.caseAxis;
@@ -117,23 +149,34 @@ export function caseSetupIssue(input: VariableInput):
     };
 }
 
-export function promptVariableIssue(input: TemplateInput): string | undefined {
+export function promptVariableIssues(input: TemplateInput): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
   const variableSide = input.parameters.variable?.kind;
   if (variableSide) {
     const cases = input[variableSide];
     const fields = cases[0]?.variable;
-    if (
-      !fields ||
-      cases.some(
-        ({ variable }) =>
-          !variable ||
-          variable.length !== fields.length ||
-          variable.some(
-            (field, index) => (field === null) !== (fields[index] === null),
-          ),
-      )
-    )
-      return "Variable values must have the same active numbered fields.";
+    if (!cases.length)
+      issues.push({
+        message: "Variable values must have the same active numbered fields.",
+        path: [variableSide],
+      });
+    cases.forEach(({ variable }, caseIndex) => {
+      const path = [variableSide, caseIndex, "variable"];
+      if (!fields || !variable || variable.length !== fields.length)
+        issues.push({
+          message: "Variable values must have the same active numbered fields.",
+          path,
+        });
+      if (fields && variable)
+        variable.forEach((field, fieldIndex) => {
+          if ((field === null) !== (fields[fieldIndex] === null))
+            issues.push({
+              message:
+                "Variable values must have the same active numbered fields.",
+              path: [...path, fieldIndex],
+            });
+        });
+    });
   }
   let fieldsUsed = false;
   const count = input.caseAxis ? input[input.caseAxis].length : 1;
@@ -141,28 +184,61 @@ export function promptVariableIssue(input: TemplateInput): string | undefined {
     const row = input.caseAxis === "rows" ? index : 0;
     const column = input.caseAxis === "columns" ? index : 0;
     const templates = generatorInputForCell(input, row, column).map(
-      ({ content, role }) => ({ text: content, role }),
+      ({ content, role }, messageIndex) => ({
+        text: content,
+        role,
+        path: [
+          ...parameterValuePath(input, "input", row, column),
+          messageIndex,
+          "content",
+        ],
+      }),
     );
     if (input.judge)
       templates.push(
-        ...criteriaForCell(input, row, column).map(({ text }) => ({
-          text,
-          role: "user" as const,
-        })),
+        ...criteriaForCell(input, row, column).map(
+          ({ text }, criterionIndex) => ({
+            text,
+            role: "user" as const,
+            path: [
+              ...parameterValuePath(input, "judge_criteria", row, column),
+              criterionIndex,
+              "text",
+            ],
+          }),
+        ),
       );
-    for (const { text, role } of templates)
+    for (const { text, role, path } of templates)
       for (const [token, name, number] of text.matchAll(variableToken)) {
         const side = name === "ROW" ? "rows" : "columns";
-        if (variableSide !== side)
-          return input.caseAxis === side
-            ? `Use new variable in the ${side === "rows" ? "row" : "column"} cases to define ${token}.`
-            : `Choose prompt variables for ${name === "ROW" ? "rows" : "columns"} to use ${token}.`;
+        if (variableSide !== side) {
+          issues.push({
+            message:
+              input.caseAxis === side
+                ? `Use new variable in the ${side === "rows" ? "row" : "column"} cases to define ${token}.`
+                : `Choose prompt variables for ${name === "ROW" ? "rows" : "columns"} to use ${token}.`,
+            path,
+          });
+          continue;
+        }
         const caseIndex = side === "rows" ? row : column;
-        const field = input[side][caseIndex]?.variable?.[Number(number) - 1];
-        if (!/^[1-9]\d*$/.test(number) || !field)
-          return `Unknown prompt variable ${token}.`;
-        if (role !== "user" && field.images?.length)
-          return "Variable images can only be attached to user messages.";
+        const fieldIndex = Number(number) - 1;
+        const field = input[side][caseIndex]?.variable?.[fieldIndex];
+        if (!/^[1-9]\d*$/.test(number) || !field) {
+          issues.push({ message: `Unknown prompt variable ${token}.`, path });
+          continue;
+        }
+        if (role !== "user" && field.images?.length) {
+          const message =
+            "Variable images can only be attached to user messages.";
+          issues.push(
+            { message, path },
+            {
+              message,
+              path: [side, caseIndex, "variable", fieldIndex, "images"],
+            },
+          );
+        }
         fieldsUsed = true;
       }
   }
@@ -177,8 +253,23 @@ export function promptVariableIssue(input: TemplateInput): string | undefined {
     const index = input[side][0]?.variable?.findIndex(
       (field) => field !== null,
     );
-    if (index !== undefined && index >= 0)
-      return `Include $${side === "rows" ? "ROW" : "COLUMN"}${index + 1} in the prompt or judge criteria for ${side === "rows" ? "row" : "column"} variables.`;
-    return caseSetupIssue(input)?.message;
+    if (index !== undefined && index >= 0) {
+      const message = `Include $${side === "rows" ? "ROW" : "COLUMN"}${index + 1} in the prompt or judge criteria for ${side === "rows" ? "row" : "column"} variables.`;
+      input[side].forEach((record, caseIndex) => {
+        if (record.variable?.[index])
+          issues.push({
+            message,
+            path: [side, caseIndex, "variable", index, "text"],
+          });
+      });
+    } else {
+      const setup = caseSetupIssue(input);
+      if (setup) issues.push({ message: setup.message, path: [side] });
+    }
   }
+  return issues;
+}
+
+export function promptVariableIssue(input: TemplateInput): string | undefined {
+  return promptVariableIssues(input)[0]?.message;
 }

@@ -13,6 +13,7 @@ import {
 import { CustomImageSize } from "./custom-image-size";
 import type { InputAction } from "./change-axis";
 import { CommonParameterActions } from "./axis-editor";
+import { ValidationField } from "./validation-feedback";
 
 export function ImageOptions({
   input,
@@ -61,35 +62,46 @@ export function ImageOptions({
                   disabled={disabled}
                 />
               </div>
-              <select
-                id={`${id}-${parameter}`}
-                value={custom ? "custom" : value}
-                onChange={(event) =>
-                  select(
-                    parameter,
-                    event.target.value === "custom" ? "x" : event.target.value,
-                  )
-                }
-              >
-                {[
-                  ...new Set([
-                    ...imageChoices[parameter],
-                    ...(custom ? [] : [value]),
-                  ]),
-                ].map((choice) => (
-                  <option key={choice} value={choice}>
-                    {choice === "auto" ? "Auto" : choice}
-                  </option>
-                ))}
-                {parameter === "size" && <option value="custom">Custom</option>}
-              </select>
-              {custom && (
-                <CustomImageSize
-                  label="Custom size"
-                  value={value}
-                  onChange={(size) => select(parameter, size)}
-                />
-              )}
+              <ValidationField path={["parameters", parameter, "value"]}>
+                {(validation) => (
+                  <>
+                    <select
+                      id={`${id}-${parameter}`}
+                      {...validation}
+                      value={custom ? "custom" : value}
+                      onChange={(event) =>
+                        select(
+                          parameter,
+                          event.target.value === "custom"
+                            ? "x"
+                            : event.target.value,
+                        )
+                      }
+                    >
+                      {[
+                        ...new Set([
+                          ...imageChoices[parameter],
+                          ...(custom ? [] : [value]),
+                        ]),
+                      ].map((choice) => (
+                        <option key={choice} value={choice}>
+                          {choice === "auto" ? "Auto" : choice}
+                        </option>
+                      ))}
+                      {parameter === "size" && (
+                        <option value="custom">Custom</option>
+                      )}
+                    </select>
+                    {custom && (
+                      <CustomImageSize
+                        label="Custom size"
+                        value={value}
+                        onChange={(size) => select(parameter, size)}
+                      />
+                    )}
+                  </>
+                )}
+              </ValidationField>
               {compatibility[parameter]}
             </div>
           );

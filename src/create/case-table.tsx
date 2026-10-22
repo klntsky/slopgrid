@@ -31,6 +31,11 @@ import { PromptEditor } from "./prompt-editor";
 import { ChatEditor } from "./chat-editor";
 import { tooltipRef } from "../components/use-tooltip";
 import { ReorderHandle } from "./reorder-handle";
+import {
+  ValidationFeedback,
+  ValidationField,
+  ValidationScope,
+} from "./validation-feedback";
 import "./case-table.css";
 
 type LayoutField =
@@ -234,38 +239,45 @@ export function GridLayoutTable({
     const entries = input[side];
     const name = sideName(side);
     return (
-      <div className={`case-header-rail${side === "rows" ? " row-label" : ""}`}>
-        <ReorderHandle
-          index={index}
-          label={`Move ${name} case ${index + 1}`}
-          root={root}
-          orientation={side === "rows" ? "vertical" : "horizontal"}
-          itemSelector={
-            side === "rows"
-              ? ".layout-parameter-table > tbody > tr"
-              : '.layout-parameter-table > thead > tr > th[scope="col"]'
-          }
-          count={entries.length}
-          onMove={(from, to) =>
-            onAction({ type: "move-case", side, index: from, to })
-          }
-          onDragChange={(source, target) => {
-            setDragging(source);
-            setDragTarget(target);
-          }}
-        />
-        <span>Case {index + 1}</span>
-        <CaseHeaderRemove
-          label={`Remove ${name} case ${index + 1}`}
-          tooltip={
-            entries.length <= 1
-              ? "Keep at least one case"
-              : `Remove ${name} case ${index + 1} and its values`
-          }
-          disabled={entries.length <= 1}
-          onRemove={() => onAction({ type: "remove-case", side, index })}
-        />
-      </div>
+      <>
+        <div
+          className={`case-header-rail${side === "rows" ? " row-label" : ""}`}
+        >
+          <ReorderHandle
+            index={index}
+            label={`Move ${name} case ${index + 1}`}
+            root={root}
+            orientation={side === "rows" ? "vertical" : "horizontal"}
+            itemSelector={
+              side === "rows"
+                ? ".layout-parameter-table > tbody > tr"
+                : '.layout-parameter-table > thead > tr > th[scope="col"]'
+            }
+            count={entries.length}
+            onMove={(from, to) =>
+              onAction({ type: "move-case", side, index: from, to })
+            }
+            onDragChange={(source, target) => {
+              setDragging(source);
+              setDragTarget(target);
+            }}
+          />
+          <span>Case {index + 1}</span>
+          <CaseHeaderRemove
+            label={`Remove ${name} case ${index + 1}`}
+            tooltip={
+              entries.length <= 1
+                ? "Keep at least one case"
+                : `Remove ${name} case ${index + 1} and its values`
+            }
+            disabled={entries.length <= 1}
+            onRemove={() => onAction({ type: "remove-case", side, index })}
+          />
+        </div>
+        <ValidationFeedback path={[side, index]} />
+        <ValidationFeedback path={[side, index, "id"]} />
+        <ValidationFeedback path={[side, index, "variable"]} />
+      </>
     );
   }
   function dragAttributes(index: number) {
@@ -291,7 +303,9 @@ export function GridLayoutTable({
           : parameterNames[field.parameter];
     return (
       <>
-        <div className={`layout-parameter-heading${vertical ? " row-label" : ""}`}>
+        <div
+          className={`layout-parameter-heading${vertical ? " row-label" : ""}`}
+        >
           <span>{label}</span>
           {field.parameter === "variable" ? (
             <CaseHeaderRemove
@@ -315,7 +329,7 @@ export function GridLayoutTable({
       </>
     );
   }
-  function editor(side: AxisSide, field: LayoutField, caseIndex: number) {
+  function editorValue(side: AxisSide, field: LayoutField, caseIndex: number) {
     const entry = input[side][caseIndex];
     if (field.parameter === "variable") {
       const index = field.index;
@@ -349,7 +363,9 @@ export function GridLayoutTable({
       return (
         <div
           role="group"
-          className={isChatFormat(input.format) ? undefined : "case-prompt-editor"}
+          className={
+            isChatFormat(input.format) ? undefined : "case-prompt-editor"
+          }
           aria-label={`${side === "rows" ? "Row" : "Column"} case ${caseIndex + 1} ${label}`}
         >
           {isChatFormat(input.format) ? (
@@ -432,6 +448,27 @@ export function GridLayoutTable({
         />
         {compatibility(side, parameter, caseIndex)}
       </div>
+    );
+  }
+  function editor(side: AxisSide, field: LayoutField, caseIndex: number) {
+    const path: (string | number)[] = [side, caseIndex, field.parameter];
+    if (field.parameter === "variable") path.push(field.index);
+    return (
+      <ValidationScope path={path}>
+        {field.parameter === "variable" ||
+        field.parameter === "input" ||
+        field.parameter === "judge_criteria" ? (
+          editorValue(side, field, caseIndex)
+        ) : (
+          <ValidationField>
+            {(validation) => (
+              <div role="group" {...validation}>
+                {editorValue(side, field, caseIndex)}
+              </div>
+            )}
+          </ValidationField>
+        )}
+      </ValidationScope>
     );
   }
   function add(kind: "case" | "variable") {

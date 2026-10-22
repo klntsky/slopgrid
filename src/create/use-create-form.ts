@@ -8,7 +8,6 @@ import { useCreateSubmission } from "./use-create-submission";
 import { analyzeGridCompatibility } from "../../server/grid-compatibility";
 import { canJudge } from "../../server/compatibility";
 import { promptVariableIssue } from "../../server/prompt-variables";
-import { judgeCriteriaIssue } from "../../server/judge-criteria";
 import { compatibilityPreviewInput, validateDraftInput } from "./draft-input";
 import type { InputAction } from "./change-axis";
 
@@ -55,8 +54,6 @@ export function useCreateForm() {
   const workersPending = !capacity.isSuccess || capacity.isFetching;
   const commonModel = input.parameters.model.kind === "common";
   const commonEffort = input.parameters.effort?.kind === "common";
-  const modelMissing =
-    input.parameters.model.kind === "common" && !input.parameters.model.value;
   const commonJudgeModel =
     input.judge && input.parameters.judge_model?.kind === "common";
   const commonJudgeEffort =
@@ -77,22 +74,11 @@ export function useCreateForm() {
   const judgeModels = sortedModelCatalog.filter((model) =>
     canJudge(model, input.format),
   );
-  const judgeIssue = input.judge
-    ? (judgeCriteriaIssue(input) ??
-      (input.parameters.judge_model?.kind === "common" &&
-      !input.parameters.judge_model.value
-        ? "Select a judge model."
-        : undefined))
-    : undefined;
-  const variableIssue = promptVariableIssue(input);
   const submission = useCreateSubmission({
     draft,
     blocked:
       !validation.parsed.success ||
-      modelMissing ||
-      !!judgeIssue ||
       blockingCompatibilityIssues.length > 0 ||
-      !!variableIssue ||
       workersPending,
     parallelWorkers,
     onReferenceUploaded: editing.replaceReference,
@@ -113,36 +99,29 @@ export function useCreateForm() {
   const models = sortedModelCatalog.filter((model) =>
     input.format === "image" ? model.image : model.text,
   );
-  const generateReasons =
-    [
-      submission.busy && "Starting generation.",
-      submission.uploading && "Uploading reference images.",
-      workersPending &&
-        connection.data?.connected &&
-        (capacity.isError
-          ? "Could not determine the automatic worker count."
-          : "Checking the automatic worker count."),
-      modelMissing && "Select a model.",
-      judgeIssue,
-      ...new Set(blockingCompatibilityIssues.map((issue) => issue.reason)),
-      !input.rows.length && "Select row values.",
-      !input.columns.length && "Select column values.",
-      !connection.data?.connected && "Connect OpenRouter.",
-      variableIssue,
-      input.format !== "image" &&
-        (!Number.isFinite(validation.candidate.budgetUsd) ||
-          validation.candidate.budgetUsd <= 0) &&
-        "Enter a positive per-cell budget.",
-    ]
-      .filter(Boolean)
-      .join(" ") ||
-    (!validation.parsed.success
-      ? (validation.parsed.error.issues[0]?.message ?? "")
-      : "");
+  const generateReasons = [
+    submission.busy && "Starting generation.",
+    submission.uploading && "Uploading reference images.",
+    workersPending &&
+      connection.data?.connected &&
+      (capacity.isError
+        ? "Could not determine the automatic worker count."
+        : "Checking the automatic worker count."),
+    ...(!validation.parsed.success
+      ? new Set(validation.parsed.error.issues.map((issue) => issue.message))
+      : []),
+    ...new Set(blockingCompatibilityIssues.map((issue) => issue.reason)),
+    !connection.data?.connected && "Connect OpenRouter.",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return {
     draft,
     candidate: validation.candidate,
+    validationIssues: validation.parsed.success
+      ? []
+      : validation.parsed.error.issues,
     compatibilityIssues,
     compatibilityCells,
     update,

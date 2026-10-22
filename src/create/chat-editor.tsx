@@ -11,6 +11,7 @@ import { DeletableInput } from "./deletable-input";
 import { ReorderHandle } from "./reorder-handle";
 import { ImageList, ImagePicker } from "./image-input";
 import { tooltipRef } from "../components/use-tooltip";
+import { ValidationFeedback, ValidationScope } from "./validation-feedback";
 
 const imageRoleHint = "Remove images before changing this message’s role.";
 
@@ -92,128 +93,134 @@ export function ChatEditor({
   return (
     <div className="chat-editor" ref={root} aria-busy={reading}>
       {messages.map((message, index) => (
-        <div
-          className="chat-message"
-          data-message-index={index}
-          data-dragging={dragging === index}
-          key={index}
-        >
-          <button
-            type="button"
-            className="text-button chat-insert"
-            data-chat-insertion={dragTarget === index}
-            aria-label={`Insert message before ${index + 1}`}
-            disabled={reading}
-            onClick={() => insert(index)}
+        <ValidationScope key={index} path={[index]}>
+          <div
+            className="chat-message"
+            data-message-index={index}
+            data-dragging={dragging === index}
           >
-            <Plus aria-hidden="true" />
-          </button>
-          <div className="chat-message-controls">
-            <ReorderHandle
-              index={index}
-              label={`Move message ${index + 1}`}
+            <button
+              type="button"
+              className="text-button chat-insert"
+              data-chat-insertion={dragTarget === index}
+              aria-label={`Insert message before ${index + 1}`}
               disabled={reading}
-              root={root}
-              itemSelector=".chat-message"
-              count={messages.length}
-              onMove={move}
-              onDragChange={(source, target) => {
-                setDragging(source);
-                setDragTarget(target);
-              }}
-            />
-            <span
-              className="chat-role-hint"
-              ref={tooltipRef}
-              data-tooltip={message.images?.length ? imageRoleHint : undefined}
-              tabIndex={message.images?.length ? 0 : undefined}
+              onClick={() => insert(index)}
             >
-              <button
-                type="button"
-                className={`model-badge chat-role chat-role-${message.role}`}
-                aria-label={`Message ${index + 1} role: ${message.role}`}
-                disabled={reading || !!message.images?.length}
-                aria-describedby={
-                  message.images?.length
-                    ? `${descriptionId}-${index}`
-                    : undefined
-                }
-                onClick={() => {
-                  if (reads.current || message.images?.length) return;
-                  update(index, (current) => {
-                    const role =
-                      roles[(roles.indexOf(current.role) + 1) % roles.length];
-                    return {
-                      role,
-                      ...(role === "unfilled" && { content: "" }),
-                    };
-                  });
+              <Plus aria-hidden="true" />
+            </button>
+            <div className="chat-message-controls">
+              <ReorderHandle
+                index={index}
+                label={`Move message ${index + 1}`}
+                disabled={reading}
+                root={root}
+                itemSelector=".chat-message"
+                count={messages.length}
+                onMove={move}
+                onDragChange={(source, target) => {
+                  setDragging(source);
+                  setDragTarget(target);
                 }}
+              />
+              <span
+                className="chat-role-hint"
+                ref={tooltipRef}
+                data-tooltip={
+                  message.images?.length ? imageRoleHint : undefined
+                }
+                tabIndex={message.images?.length ? 0 : undefined}
               >
-                {message.role}
-              </button>
-              {!!message.images?.length && (
-                <span className="sr-only" id={`${descriptionId}-${index}`}>
-                  {imageRoleHint}
-                </span>
-              )}
-            </span>
-          </div>
-          <DeletableInput
-            content={message.content}
-            label={`Remove message ${index + 1}`}
-            disabled={reading}
-            onRemove={() => remove(index)}
-          >
-            {message.role === "unfilled" ? (
-              <span className="chat-unfilled-text">
-                The model will fill this message with an assistant response.
+                <button
+                  type="button"
+                  className={`model-badge chat-role chat-role-${message.role}`}
+                  aria-label={`Message ${index + 1} role: ${message.role}`}
+                  disabled={reading || !!message.images?.length}
+                  aria-describedby={
+                    message.images?.length
+                      ? `${descriptionId}-${index}`
+                      : undefined
+                  }
+                  onClick={() => {
+                    if (reads.current || message.images?.length) return;
+                    update(index, (current) => {
+                      const role =
+                        roles[(roles.indexOf(current.role) + 1) % roles.length];
+                      return {
+                        role,
+                        ...(role === "unfilled" && { content: "" }),
+                      };
+                    });
+                  }}
+                >
+                  {message.role}
+                </button>
+                {!!message.images?.length && (
+                  <span className="sr-only" id={`${descriptionId}-${index}`}>
+                    {imageRoleHint}
+                  </span>
+                )}
               </span>
-            ) : (
-              <textarea
-                id={`${descriptionId}-message-${index}`}
-                aria-label={`Message ${index + 1}`}
-                rows={1}
-                value={message.content}
-                onChange={(event) => {
-                  const content = event.target.value;
-                  update(index, () => ({ content }));
-                }}
-              />
-            )}
-            {message.role === "user" && (
-              <ImagePicker
-                pasteTarget={`${descriptionId}-message-${index}`}
-                accessibleLabel={`Add images to message ${index + 1}`}
-                disabled={reading}
-                onBusy={onReading}
-                onSelect={(images) =>
-                  update(index, (current) => ({
-                    images: [...(current.images ?? []), ...images],
-                  }))
-                }
-              />
-            )}
-          </DeletableInput>
-          {message.role === "user" && !!message.images?.length && (
-            <div className="chat-message-images">
-              <ImageList
-                images={message.images}
-                disabled={reading}
-                removeLabel={(image) =>
-                  `Remove ${image.name} from message ${index + 1}`
-                }
-                onRemove={(imageIndex) => {
-                  if (reads.current) return;
-                  update(index, (current) => ({
-                    images: current.images?.filter((_, i) => i !== imageIndex),
-                  }));
-                }}
-              />
             </div>
-          )}
-          {compatibility?.(index)}
-        </div>
+            <DeletableInput
+              content={message.content}
+              label={`Remove message ${index + 1}`}
+              disabled={reading}
+              onRemove={() => remove(index)}
+            >
+              {message.role === "unfilled" ? (
+                <span className="chat-unfilled-text">
+                  The model will fill this message with an assistant response.
+                </span>
+              ) : (
+                <textarea
+                  id={`${descriptionId}-message-${index}`}
+                  aria-label={`Message ${index + 1}`}
+                  rows={1}
+                  value={message.content}
+                  onChange={(event) => {
+                    const content = event.target.value;
+                    update(index, () => ({ content }));
+                  }}
+                />
+              )}
+              {message.role === "user" && (
+                <ImagePicker
+                  pasteTarget={`${descriptionId}-message-${index}`}
+                  accessibleLabel={`Add images to message ${index + 1}`}
+                  disabled={reading}
+                  onBusy={onReading}
+                  onSelect={(images) =>
+                    update(index, (current) => ({
+                      images: [...(current.images ?? []), ...images],
+                    }))
+                  }
+                />
+              )}
+            </DeletableInput>
+            {message.role === "user" && !!message.images?.length && (
+              <div className="chat-message-images">
+                <ImageList
+                  images={message.images}
+                  disabled={reading}
+                  removeLabel={(image) =>
+                    `Remove ${image.name} from message ${index + 1}`
+                  }
+                  onRemove={(imageIndex) => {
+                    if (reads.current) return;
+                    update(index, (current) => ({
+                      images: current.images?.filter(
+                        (_, i) => i !== imageIndex,
+                      ),
+                    }));
+                  }}
+                />
+              </div>
+            )}
+            {compatibility?.(index)}
+            <ValidationFeedback descendants />
+          </div>
+        </ValidationScope>
       ))}
       <button
         type="button"
@@ -225,6 +232,7 @@ export function ChatEditor({
       >
         <Plus aria-hidden="true" />
       </button>
+      <ValidationFeedback />
     </div>
   );
 }

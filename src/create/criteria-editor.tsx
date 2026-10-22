@@ -5,6 +5,7 @@ import { DeletableInput } from "./deletable-input";
 import { ReorderHandle } from "./reorder-handle";
 import "./criteria-editor.css";
 import { tooltipRef } from "../components/use-tooltip";
+import { ValidationFeedback, ValidationField } from "./validation-feedback";
 
 type Criteria = Criterion[];
 
@@ -80,40 +81,53 @@ export function CriteriaEditor({
                 />
               </td>
               <td>
-                <DeletableInput
-                  content={criterion.text}
-                  label={`Remove criterion ${index + 1}`}
-                  onRemove={() =>
-                    onChange(
-                      criteria.filter((_, position) => position !== index),
-                    )
-                  }
-                >
-                  <textarea
-                    aria-label={`Criterion ${index + 1}`}
-                    placeholder="a yes-or-no question about the output."
-                    rows={1}
-                    value={criterion.text}
-                    onChange={(event) =>
-                      update(index, { text: event.target.value })
-                    }
-                  />
-                </DeletableInput>
+                <ValidationField path={[index, "text"]}>
+                  {(validation) => (
+                    <DeletableInput
+                      content={criterion.text}
+                      label={`Remove criterion ${index + 1}`}
+                      onRemove={() =>
+                        onChange(
+                          criteria.filter((_, position) => position !== index),
+                        )
+                      }
+                    >
+                      <textarea
+                        aria-label={`Criterion ${index + 1}`}
+                        {...validation}
+                        placeholder="a yes-or-no question about the output."
+                        rows={1}
+                        value={criterion.text}
+                        onChange={(event) =>
+                          update(index, { text: event.target.value })
+                        }
+                      />
+                    </DeletableInput>
+                  )}
+                </ValidationField>
+                <ValidationFeedback path={[index]} />
               </td>
               <td>
-                <button
-                  type="button"
-                  className="model-badge criteria-answer"
-                  ref={tooltipRef}
-                  data-tooltip={`Change the correct answer for criterion ${index + 1}`}
-                  aria-label="Correct answer"
-                  aria-pressed={criterion.correctAnswer}
-                  onClick={() =>
-                    update(index, { correctAnswer: !criterion.correctAnswer })
-                  }
-                >
-                  {criterion.correctAnswer ? "YES" : "NO"}
-                </button>
+                <ValidationField path={[index, "correctAnswer"]}>
+                  {(validation) => (
+                    <button
+                      type="button"
+                      className="model-badge criteria-answer"
+                      ref={tooltipRef}
+                      data-tooltip={`Change the correct answer for criterion ${index + 1}`}
+                      aria-label="Correct answer"
+                      {...validation}
+                      aria-pressed={criterion.correctAnswer}
+                      onClick={() =>
+                        update(index, {
+                          correctAnswer: !criterion.correctAnswer,
+                        })
+                      }
+                    >
+                      {criterion.correctAnswer ? "YES" : "NO"}
+                    </button>
+                  )}
+                </ValidationField>
               </td>
             </tr>
           ))}
@@ -131,6 +145,7 @@ export function CriteriaEditor({
         <Plus size={16} aria-hidden="true" />
         Add criterion
       </button>
+      <ValidationFeedback />
     </div>
   );
 }

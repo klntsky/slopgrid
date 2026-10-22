@@ -1,6 +1,11 @@
 import { z } from "zod";
 import type { GridInput } from "./domain.js";
-import { parameterValue, type ParameterConfiguration } from "./parameters.js";
+import {
+  parameterValue,
+  parameterValuePath,
+  type ParameterConfiguration,
+  type ValidationIssue,
+} from "./parameters.js";
 import {
   interpolateVariables,
   mergeVariableImages,
@@ -65,11 +70,37 @@ export function resolveCriteriaForCell(
   return { criteria, ...(images ? { images } : {}) };
 }
 
+export function judgeCriteriaIssues(
+  input: Pick<GridInput, "parameters" | "rows" | "columns" | "judge">,
+): ValidationIssue[] {
+  if (!input.judge) return [];
+  const source = input.parameters.judge_criteria;
+  if (!source) return [];
+  const sets =
+    source.kind === "common"
+      ? [
+          {
+            criteria: source.value,
+            path: parameterValuePath(input, "judge_criteria", 0, 0),
+          },
+        ]
+      : input[source.kind].map((record, index) => ({
+          criteria: record.judge_criteria ?? [],
+          path: parameterValuePath(input, "judge_criteria", index, index),
+        }));
+  return sets.flatMap(({ criteria, path }) => {
+    const result = judgeCriteriaSchema.safeParse(criteria);
+    return result.success
+      ? []
+      : result.error.issues.map((issue) => ({
+          message: issue.message,
+          path: [...path, ...(issue.path as (string | number)[])],
+        }));
+  });
+}
+
 export function judgeCriteriaIssue(
   input: Pick<GridInput, "parameters" | "rows" | "columns" | "judge">,
 ): string | undefined {
-  for (const criteria of criteriaSets(input)) {
-    const result = judgeCriteriaSchema.safeParse(criteria);
-    if (!result.success) return result.error.issues[0]?.message;
-  }
+  return judgeCriteriaIssues(input)[0]?.message;
 }

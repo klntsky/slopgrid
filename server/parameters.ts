@@ -13,6 +13,24 @@ export type ParameterConfiguration = Pick<
   GridInput,
   "parameters" | "rows" | "columns" | "caseAxis"
 >;
+
+export type ValidationIssue = {
+  message: string;
+  path: (string | number)[];
+};
+
+export function parameterValuePath(
+  input: Pick<ParameterConfiguration, "parameters">,
+  kind: ParameterId,
+  row: number,
+  column: number,
+): (string | number)[] {
+  const source = input.parameters[kind];
+  if (!source) return ["parameters", kind];
+  return source.kind === "common"
+    ? ["parameters", kind, "value"]
+    : [source.kind, source.kind === "rows" ? row : column, kind];
+}
 export const parameterNames: Record<ParameterId, string> = {
   input: "Input",
   model: "Model",
@@ -87,21 +105,42 @@ export function axisParameters(
   );
 }
 
-export function parameterLayoutIssue(
+export function parameterLayoutIssues(
   input: ParameterConfiguration,
-): string | undefined {
+): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
   const variableSide = input.parameters.variable?.kind;
   if (variableSide && variableSide !== input.caseAxis)
-    return "Numbered fields must belong to the case axis.";
+    issues.push({
+      message: "Numbered fields must belong to the case axis.",
+      path: ["parameters", "variable"],
+    });
   for (const side of ["rows", "columns"] as const) {
     const owned = axisParameters(input, side);
     if (input.caseAxis === side) continue;
-    if (owned.length > 1) return "Only case axes can own multiple parameters.";
+    if (owned.length > 1)
+      issues.push({
+        message: "Only case axes can own multiple parameters.",
+        path: [side],
+      });
     if (owned.includes("judge_criteria") || owned.includes("input"))
-      return "Per-case input and judge criteria require a case axis.";
+      issues.push({
+        message: "Per-case input and judge criteria require a case axis.",
+        path: [side],
+      });
     if (!owned.length && input[side].length !== 1)
-      return `An axis with no parameters must have one neutral ${side} case.`;
+      issues.push({
+        message: `An axis with no parameters must have one neutral ${side} case.`,
+        path: [side],
+      });
   }
+  return issues;
+}
+
+export function parameterLayoutIssue(
+  input: ParameterConfiguration,
+): string | undefined {
+  return parameterLayoutIssues(input)[0]?.message;
 }
 
 export function isEditableGridInput(input: unknown): input is GridInput {

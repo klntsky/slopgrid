@@ -11,13 +11,15 @@ import {
 import {
   interpolateVariables,
   mergeVariableImages,
-  promptVariableIssue,
+  promptVariableIssues,
+  referencedVariableFields,
   type VariableInterpolationOptions,
 } from "./prompt-variables.js";
 import {
   draftJudgeCriteriaSchema,
-  judgeCriteriaIssue,
+  judgeCriteriaIssues,
   criteriaSets,
+  criteriaForCell,
   type Criterion,
   judgeCriteriaSchema,
   resolveCriteriaForCell,
@@ -25,7 +27,9 @@ import {
 import {
   parameterValue,
   axisParameters,
-  parameterLayoutIssue,
+  parameterLayoutIssues,
+  parameterValuePath,
+  type ValidationIssue,
   type ParameterConfiguration,
 } from "./parameters.js";
 import type { LegacyGridInput } from "./legacy-grid-input.js";
@@ -133,25 +137,48 @@ export function isChatFormat(format: GridInput["format"]): boolean {
 export function isMarkdownFormat(format: GridInput["format"]): boolean {
   return format === "markdown" || isChatFormat(format);
 }
+export function chatInputIssues(
+  messages: ChatMessage[] = [],
+): ValidationIssue[] {
+  if (!messages.length) return [{ message: "Add a message.", path: [] }];
+  const issues: ValidationIssue[] = [];
+  messages.forEach((message, index) => {
+    if (message.images?.length && message.role !== "user")
+      issues.push({
+        message: "Images can only be attached to user messages.",
+        path: [index, "images"],
+      });
+  });
+  messages.forEach((message, index) => {
+    if (
+      message.role !== "unfilled" &&
+      !message.content.trim() &&
+      !(message.role === "user" && message.images?.length)
+    )
+      issues.push({
+        message: "Enter a message or attach an image.",
+        path: [index, "content"],
+      });
+  });
+  messages.forEach((message, index) => {
+    if (message.role === "unfilled" && message.content !== "")
+      issues.push({
+        message: "Leave unfilled messages empty.",
+        path: [index, "content"],
+      });
+  });
+  if (messages[0].role === "unfilled")
+    issues.push({
+      message: "Add a message before the first unfilled message.",
+      path: [0, "role"],
+    });
+  return issues;
+}
+
 export function chatInputIssue(
   messages: ChatMessage[] = [],
 ): string | undefined {
-  if (!messages.length) return "Add a message.";
-  if (messages.some((m) => m.images?.length && m.role !== "user"))
-    return "Images can only be attached to user messages.";
-  if (
-    messages.some(
-      (m) =>
-        m.role !== "unfilled" &&
-        !m.content.trim() &&
-        !(m.role === "user" && m.images?.length),
-    )
-  )
-    return "Enter a message or attach an image.";
-  if (messages.some((m) => m.role === "unfilled" && m.content !== ""))
-    return "Leave unfilled messages empty.";
-  if (messages[0].role === "unfilled")
-    return "Add a message before the first unfilled message.";
+  return chatInputIssues(messages)[0]?.message;
 }
 export function chatText(messages: ChatMessage[]): string {
   return messages
@@ -220,8 +247,13 @@ export const gridSchema = gridInputSchema
     return g;
   })
   .superRefine((g, c) => {
-    const issue = (message: string, path?: (string | number)[]) =>
-      c.addIssue({ code: "custom", message, ...(path ? { path } : {}) });
+    const reported = new Set<string>();
+    const issue = (message: string, path: (string | number)[]) => {
+      const key = JSON.stringify([path, message]);
+      if (reported.has(key)) return;
+      reported.add(key);
+      c.addIssue({ code: "custom", message, path });
+    };
     const applicable = new Set<keyof ParameterValues>([
       "input",
       "model",
@@ -231,7 +263,8 @@ export const gridSchema = gridInputSchema
       for (const kind of imageKinds) applicable.add(kind);
     else applicable.add("effort");
     if (g.judge) {
-      if (g.format === "html") issue("Websites do not support a judge yet.");
+      if (g.format === "html")
+        issue("Websites do not support a judge yet.", ["judge"]);
       applicable.add("judge_model");
       applicable.add("judge_effort");
       applicable.add("judge_criteria");
@@ -239,27 +272,36 @@ export const gridSchema = gridInputSchema
     for (const kind of kinds) {
       const source = g.parameters[kind];
       if (!applicable.has(kind)) {
-        if (source) issue(`${kind} is not applicable to this grid.`);
+        if (source)
+          issue(`${kind} is not applicable to this grid.`, [
+            "parameters",
+            kind,
+          ]);
         continue;
       }
       if (!source) {
-        if (kind !== "variable") issue(`Choose a source for ${kind}.`);
+        if (kind !== "variable")
+          issue(`Choose a source for ${kind}.`, ["parameters", kind]);
         continue;
       }
       const values =
         source.kind === "common"
           ? [source.value]
           : g[source.kind].map((record) => record[kind]);
-      for (const value of values) {
+      for (const [index, value] of values.entries()) {
+        const path = parameterValuePath(g, kind, index, index);
         if (value === undefined) {
-          issue(`Add ${kind} to every ${source.kind} case.`);
+          issue(`Add ${kind} to every ${source.kind} case.`, path);
           continue;
         }
         if (
           (kind === "model" || kind === "judge_model") &&
           (typeof value !== "string" || !value.trim())
         )
-          issue(kind === "model" ? "Select a model." : "Select a judge model.");
+          issue(
+            kind === "model" ? "Select a model." : "Select a judge model.",
+            path,
+          );
         if (
           imageKinds.includes(kind as (typeof imageKinds)[number]) &&
           (typeof value !== "string" ||
@@ -269,63 +311,121 @@ export const gridSchema = gridInputSchema
             kind === "size"
               ? "Use a resolution or a size such as 1536x1024"
               : "Unknown image setting",
+            path,
           );
       }
     }
-    const layoutIssue = parameterLayoutIssue(g);
-    if (layoutIssue) issue(layoutIssue);
+    for (const item of parameterLayoutIssues(g)) issue(item.message, item.path);
     for (const side of ["rows", "columns"] as const) {
       const owned = new Set(axisParameters(g, side));
       const ids = new Set<string>();
-      for (const record of g[side]) {
+      for (const [index, record] of g[side].entries()) {
         if (ids.has(record.id))
-          issue("Case IDs must be distinct within an axis.");
+          issue("Case IDs must be distinct within an axis.", [
+            side,
+            index,
+            "id",
+          ]);
         ids.add(record.id);
         for (const key of Object.keys(record))
           if (key !== "id" && !owned.has(key as keyof ParameterValues))
-            issue(`${key} is not owned by ${side}.`);
+            issue(`${key} is not owned by ${side}.`, [side, index, key]);
       }
     }
-    for (const { source, caseIndex, messages } of generatorInputEntries(g)) {
-      const path =
-        source === "common"
-          ? ["parameters", "input", "value"]
-          : [source, caseIndex!, "input"];
+    for (const { caseIndex, messages } of generatorInputEntries(g)) {
+      const path = parameterValuePath(
+        g,
+        "input",
+        caseIndex ?? 0,
+        caseIndex ?? 0,
+      );
       if (
         !isChatFormat(g.format) &&
         (messages.length !== 1 || messages[0]?.role !== "user")
       )
         issue("Prompt formats require exactly one user message.", path);
-      messages.forEach((message, messageIndex) => {
-        if (message.role === "unfilled" && message.content !== "")
-          issue("Leave unfilled messages empty.", [
-            ...path,
-            messageIndex,
-            "content",
-          ]);
-      });
+      // Expanded content is checked below, since a consumed variable may supply images.
+      for (const item of chatInputIssues(messages))
+        if (
+          item.path.at(-1) !== "content" ||
+          messages[item.path[0] as number]?.role === "unfilled"
+        )
+          issue(item.message, [...path, ...item.path]);
     }
-    const criterionIssue = judgeCriteriaIssue(g);
-    if (criterionIssue) issue(criterionIssue);
-    const variableIssue = promptVariableIssue(g);
-    if (variableIssue) issue(variableIssue);
+    for (const item of judgeCriteriaIssues(g)) issue(item.message, item.path);
+    for (const item of promptVariableIssues(g)) issue(item.message, item.path);
+    const expandedIssue = (
+      item: ValidationIssue,
+      path: (string | number)[],
+      template: string,
+      row: number,
+      column: number,
+    ) => {
+      issue(item.message, [...path, ...item.path]);
+      if (item.path.at(-1) === "content" || item.path.at(-1) === "text")
+        for (const reference of referencedVariableFields(
+          template,
+          g,
+          row,
+          column,
+        ))
+          issue(item.message, [...reference.path, "text"]);
+    };
     const contentCases = g.caseAxis ? g[g.caseAxis].length : 1;
-    if (!variableIssue)
-      for (let index = 0; index < contentCases; index++) {
-        const row = g.caseAxis === "rows" ? index : 0;
-        const column = g.caseAxis === "columns" ? index : 0;
-        const messages = expandGeneratorInput(g, row, column);
-        const message = chatInputIssue(messages);
-        if (message) issue(message);
-        if (g.format === "image" && !messages[0]?.content.trim())
-          issue("Enter a prompt.");
-        if (g.judge) {
-          const resolved = resolveCriteriaForCell(g, row, column);
-          const criteria = judgeCriteriaSchema.safeParse(resolved.criteria);
-          if (!criteria.success)
-            issue(criteria.error.issues[0]?.message ?? "Enter judge criteria.");
+    for (let index = 0; index < contentCases; index++) {
+      const row = g.caseAxis === "rows" ? index : 0;
+      const column = g.caseAxis === "columns" ? index : 0;
+      const rawMessages = generatorInputForCell(g, row, column);
+      const inputPath = parameterValuePath(g, "input", row, column);
+      const messages = expandGeneratorInput(g, row, column, {
+        allowUnresolvedVariables: true,
+      });
+      for (const item of chatInputIssues(messages)) {
+        // Variable-image role violations retain their more specific template error.
+        if (item.path.at(-1) === "images") continue;
+        expandedIssue(
+          item,
+          inputPath,
+          rawMessages[item.path[0] as number]?.content ?? "",
+          row,
+          column,
+        );
+      }
+      if (g.format === "image" && !messages[0]?.content.trim())
+        expandedIssue(
+          {
+            message: "Enter a prompt.",
+            path: messages.length ? [0, "content"] : [],
+          },
+          inputPath,
+          rawMessages[0]?.content ?? "",
+          row,
+          column,
+        );
+      if (g.judge) {
+        const resolved = resolveCriteriaForCell(g, row, column, {
+          allowUnresolvedVariables: true,
+        });
+        const criteria = judgeCriteriaSchema.safeParse(resolved.criteria);
+        if (!criteria.success) {
+          const rawCriteria = criteriaForCell(g, row, column);
+          const criteriaPath = parameterValuePath(
+            g,
+            "judge_criteria",
+            row,
+            column,
+          );
+          for (const item of criteria.error.issues)
+            expandedIssue(
+              { message: item.message, path: item.path as (string | number)[] },
+              criteriaPath,
+              rawCriteria[item.path[0] as number]?.text ?? "",
+              row,
+              column,
+            );
         }
       }
+    }
   })
   .brand<"ValidatedGridInput">();
 export type ValidatedGridInput = z.infer<typeof gridSchema>;

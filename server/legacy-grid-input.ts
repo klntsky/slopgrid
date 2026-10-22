@@ -163,6 +163,7 @@ export function legacySelectedReferences(
   return (
     mergeImages(
       explicit,
+      input.messages?.flatMap((message) => message.images ?? []),
       ...[input.rows, input.columns].flatMap((axis) =>
         axis.kind === "variable"
           ? axis.values.flatMap((fields) => fields.map((field) => field.images))
