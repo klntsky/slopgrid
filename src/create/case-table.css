@@ -135,7 +135,7 @@
 }
 .variable-table > tbody > tr > .case-prompt-cell {
   padding: 0;
-  /* Give percentage-height editors the row height without fixing its size. */
+  /* Fill taller rows while letting editor content determine their minimum size. */
   height: 1px;
 }
 .case-prompt-editor,
@@ -145,7 +145,7 @@
   min-width: 0;
 }
 .case-prompt-editor {
-  height: 100%;
+  min-height: 100%;
 }
 .case-prompt-editor > *,
 .case-prompt-editor > .prompt-editor > * {

@@ -81,10 +81,10 @@ export function VariableInput({
     onChange({ ...field, ...change });
   }
   return (
-    <ValidationField>
-      {(validation) => (
-        <div className="case-prompt-editor" aria-busy={reading} {...validation}>
-          <div className="variable-cell-input">
+    <div className="case-prompt-editor" aria-busy={reading}>
+      <ValidationField>
+        {(validation) => (
+          <div className="variable-cell-input" {...validation}>
             <VariableTextInput
               id={id}
               label={label}
@@ -101,21 +101,21 @@ export function VariableInput({
               }
             />
           </div>
-          {!!field.images?.length && (
-            <ImageList
-              images={field.images}
-              disabled={reading}
-              removeLabel={(image) => `Remove ${image.name} from ${label}`}
-              onRemove={(index) =>
-                update({
-                  images: field.images?.filter((_, i) => i !== index),
-                })
-              }
-            />
-          )}
-          {children}
-        </div>
+        )}
+      </ValidationField>
+      {!!field.images?.length && (
+        <ImageList
+          images={field.images}
+          disabled={reading}
+          removeLabel={(image) => `Remove ${image.name} from ${label}`}
+          onRemove={(index) =>
+            update({
+              images: field.images?.filter((_, i) => i !== index),
+            })
+          }
+        />
       )}
-    </ValidationField>
+      {children}
+    </div>
   );
 }
