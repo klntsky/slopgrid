@@ -5,6 +5,7 @@ import { expandGrid, gridDraftSchema } from "../server/domain.js";
 import type { GridDraftInput } from "../server/domain.js";
 import { parameterDefault, parameterValue } from "../server/parameters.js";
 import {
+  addCaseAction,
   caseValueAction,
   droppedParameters,
   reduceInput,
@@ -191,12 +192,22 @@ for (const side of ["rows", "columns"] as const) {
       caseValueAction(side, 1, "model", "second/generator"),
     );
     const originalCases = structuredClone(varied[side]);
-    varied = reduceInput(varied, { type: "add-case", side });
-    assert.deepEqual(varied[side][2].variable, [{ text: "" }, { text: "" }]);
-    assert.deepEqual(varied[side][2].judge_criteria, [
-      { text: "", correctAnswer: true },
-    ]);
-    assert.equal(varied[side][2].model, "");
+    varied = reduceInput(varied, addCaseAction(varied, side));
+    const { id: sourceId, ...sourceValues } = originalCases[1];
+    const { id: copiedId, ...copiedValues } = varied[side][2];
+    assert.deepEqual(copiedValues, sourceValues);
+    assert.notEqual(copiedId, sourceId);
+    const independentlyEdited = reduceInput(
+      varied,
+      caseValueAction(side, 2, "judge_criteria", [
+        { text: "Copied case only?", correctAnswer: true },
+      ]),
+    );
+    assert.deepEqual(
+      independentlyEdited[side][1].judge_criteria,
+      originalCases[1].judge_criteria,
+    );
+    assert.deepEqual(varied[side][2].judge_criteria, sourceValues.judge_criteria);
     assert.ok(!originalCases.some((entry) => entry.id === varied[side][2].id));
     varied = reduceInput(varied, { type: "move-case", side, index: 1, to: 0 });
     assert.deepEqual(varied[side].slice(0, 2), [
@@ -206,7 +217,7 @@ for (const side of ["rows", "columns"] as const) {
     varied = reduceInput(varied, { type: "remove-case", side, index: 1 });
     assert.deepEqual(varied[side][0], originalCases[1]);
     const other = side === "rows" ? "columns" : "rows";
-    const addedOther = reduceInput(varied, { type: "add-case", side: other });
+    const addedOther = reduceInput(varied, addCaseAction(varied, other));
     assert.deepEqual(addedOther[side], varied[side]);
     varied = reduceInput(varied, { type: "remove-case", side, index: 1 });
     assert.equal(

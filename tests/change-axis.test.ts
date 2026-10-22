@@ -6,6 +6,7 @@ import type { GridDraftInput, ParameterValues } from "../server/domain.js";
 import { parameterDefault, parameterValue } from "../server/parameters.js";
 import type { CommonParameterId } from "../server/parameters.js";
 import {
+  addCaseAction,
   caseValueAction,
   caseValuesAction,
   confirmInputAction,
@@ -688,8 +689,22 @@ test("deleted variable slots preserve later values and image identity through ap
     },
   }).parsed;
   assert.equal(removed.success, false);
-  const added = reduceInput(input, { type: "add-case", side: "rows" });
-  assert.deepEqual(added.rows[2].variable, [null, { text: "" }, { text: "" }]);
+  const added = reduceInput(input, addCaseAction(input, "rows"));
+  assert.deepEqual(added.rows[2].variable, input.rows[1].variable);
+  assert.equal(added.rows[2].variable![0], null);
+  assert.equal(added.rows[2].variable![1]!.images![0].id, "b");
+  assert.notEqual(added.rows[2].id, input.rows[1].id);
+  const edited = reduceInput(
+    added,
+    caseValueAction("rows", 2, "variable", [
+      null,
+      { ...added.rows[2].variable![1]!, text: "independent answer" },
+      { text: "" },
+    ]),
+  );
+  assert.equal(edited.rows[1].variable![1]!.text, "answer B");
+  assert.equal(added.rows[2].variable![1]!.text, "answer B");
+  assert.equal(edited.rows[2].variable![1]!.images![0].id, "b");
   const swapped = reduceInput(input, { type: "swap" });
   const parsedSwap = validateDraftInput(swapped).parsed;
   assert.ok(parsedSwap.success);
@@ -886,7 +901,7 @@ for (const side of ["rows", "columns"] as const) {
       [{}],
     );
     input = reduceInput(input, { type: "to-axis", side, parameter: "input" });
-    input = reduceInput(input, { type: "add-case", side });
+    input = reduceInput(input, addCaseAction(input, side));
     const ids = input[side].map((record) => record.id);
     input = reduceInput(input, { type: "add-variable", side });
     assert.deepEqual(input.parameters.variable, { kind: side });
@@ -952,7 +967,7 @@ for (const side of ["rows", "columns"] as const) {
         side,
         parameter: "variable",
       });
-      input = reduceInput(input, { type: "add-case", side });
+      input = reduceInput(input, addCaseAction(input, side));
       input = reduceInput(input, { type: "to-axis", side, parameter: "input" });
       const action = { type: "single" as const, side };
       const before = structuredClone(input);

@@ -196,10 +196,9 @@ export function CommonParameterActions({
   disabled?: boolean;
 }) {
   const side = input.caseAxis;
-  const reason = !side
-    ? "Select Multiple cases in Specify grid layout first."
-    : !input[side].length
-      ? "Add a case with new case first."
+  const reason =
+    !side || !input[side].length
+      ? 'Select "Multiple cases" for rows or columns first'
       : undefined;
   const tooltip = useTooltip<HTMLSpanElement>(reason);
   const name =

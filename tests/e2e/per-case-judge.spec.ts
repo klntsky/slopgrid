@@ -196,6 +196,9 @@ test("different case rubrics judge one reused generation independently and survi
   await expect(
     rubric(page, "Row", 1).getByLabel("Criterion 1", { exact: true }),
   ).toHaveValue("Does the output answer the question?");
+  await expect(
+    rubric(page, "Row", 2).getByLabel("Criterion 1", { exact: true }),
+  ).toHaveValue("Does the output answer the question?");
   await page
     .getByRole("button", { name: "Remove row case 3", exact: true })
     .click();

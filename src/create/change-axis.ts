@@ -58,7 +58,7 @@ export type InputAction =
   | { type: "to-common"; parameter: CommonParameterId }
   | { type: "dimension"; side: AxisSide; parameter: ParameterId }
   | { type: "single"; side: AxisSide }
-  | { type: "add-case"; side: AxisSide }
+  | { type: "add-case"; side: AxisSide; value: CaseRecord }
   | { type: "remove-case"; side: AxisSide; index: number }
   | { type: "move-case"; side: AxisSide; index: number; to: number }
   | { type: "add-variable"; side: AxisSide }
@@ -87,6 +87,18 @@ export function caseValuesAction<K extends ParameterId>(
   values: ParameterValues[NoInfer<K>][],
 ): CaseValuesAction {
   return { type: "case-values", side, parameter, values } as CaseValuesAction;
+}
+
+export function addCaseAction(
+  input: GridDraftInput,
+  side: AxisSide,
+  source = input[side].at(-1),
+): Extract<InputAction, { type: "add-case" }> {
+  return {
+    type: "add-case",
+    side,
+    value: newCase(source ?? caseDefaults(input, side)),
+  };
 }
 
 function comparisonKeys(value: object) {
@@ -416,10 +428,7 @@ export function reduceInput(
       if (input.caseAxis !== action.side) return input;
       return {
         ...input,
-        [action.side]: [
-          ...input[action.side],
-          newCase(caseDefaults(input, action.side)),
-        ],
+        [action.side]: [...input[action.side], action.value],
       };
     case "remove-case":
       if (input.caseAxis !== action.side || input[action.side].length <= 1)

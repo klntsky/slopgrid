@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from "react";
+import { useId, useLayoutEffect, useRef, useState } from "react";
 import { Search, X } from "lucide-react";
 import type { ModelInfo } from "../../server/model-catalog";
 import type { GridInput } from "../../server/domain";
@@ -48,6 +48,8 @@ export function ModelSelector({
   label = "Model",
   multiple = false,
   judge = false,
+  initialFilter,
+  onFilterChange,
 }: {
   models: ModelInfo[];
   format: GridInput["format"];
@@ -56,9 +58,16 @@ export function ModelSelector({
   label?: "Rows" | "Columns" | "Model";
   multiple?: boolean;
   judge?: boolean;
+  initialFilter?: string;
+  onFilterChange?: (filter: string) => void;
 }) {
   const name = useId();
-  const [filter, setFilter] = useState(format === "image" ? "" : "latest");
+  const [filter, setFilter] = useState(
+    initialFilter ?? (format === "image" ? "" : "latest"),
+  );
+  useLayoutEffect(() => {
+    onFilterChange?.(filter);
+  }, [filter, onFilterChange]);
   const filterInput = useRef<HTMLInputElement>(null);
   const rangeAnchor = useRef<string | undefined>(undefined);
   const drag = useRef<{ x: number; y: number; active: boolean } | null>(null);

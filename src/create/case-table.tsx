@@ -21,6 +21,7 @@ import { ModelSelector } from "./model-selector";
 import { CriteriaEditor } from "./criteria-editor";
 import { CustomImageSize } from "./custom-image-size";
 import {
+  addCaseAction,
   caseValueAction,
   type InputAction,
   type ParameterSetter,
@@ -34,6 +35,8 @@ import "./case-table.css";
 
 type LayoutField =
   { parameter: CommonParameterId } | { parameter: "variable"; index: number };
+
+type ModelFilters = Partial<Record<"model" | "judge_model", string>>;
 
 function fieldsFor(input: GridDraftInput, side: AxisSide): LayoutField[] {
   const fields: LayoutField[] = [];
@@ -58,6 +61,8 @@ function CaseValue({
   parameter,
   models,
   judgeModels,
+  modelFilters,
+  onModelFilterChange,
   onChange,
 }: {
   input: GridDraftInput;
@@ -65,6 +70,11 @@ function CaseValue({
   parameter: Exclude<CommonParameterId, "input">;
   models: Model[];
   judgeModels: Model[];
+  modelFilters?: ModelFilters;
+  onModelFilterChange: (
+    parameter: "model" | "judge_model",
+    filter: string,
+  ) => void;
   onChange: ParameterSetter;
 }) {
   if (parameter === "model" || parameter === "judge_model") {
@@ -76,6 +86,8 @@ function CaseValue({
         format={input.format}
         values={value ? [value] : []}
         onChange={(values) => onChange(parameter, values[0] ?? "")}
+        initialFilter={modelFilters?.[parameter]}
+        onFilterChange={(filter) => onModelFilterChange(parameter, filter)}
       />
     );
   }
@@ -160,6 +172,8 @@ export function GridLayoutTable({
   children?: ReactNode;
 }) {
   const root = useRef<HTMLDivElement>(null);
+  const focusedCase = useRef<string | undefined>(undefined);
+  const modelFilters = useRef(new Map<string, ModelFilters>());
   const [dragging, setDragging] = useState<number>();
   const [dragTarget, setDragTarget] = useState<number>();
   const selectedSide = input.caseAxis;
@@ -389,6 +403,15 @@ export function GridLayoutTable({
           parameter={parameter}
           models={models}
           judgeModels={judgeModels}
+          modelFilters={modelFilters.current.get(entry.id)}
+          onModelFilterChange={(parameter, filter) => {
+            const previous = modelFilters.current.get(entry.id);
+            if (previous?.[parameter] === filter) return;
+            modelFilters.current.set(entry.id, {
+              ...previous,
+              [parameter]: filter,
+            });
+          }}
           onChange={(parameter, value) =>
             onAction(caseValueAction(side, caseIndex, parameter, value))
           }
@@ -399,7 +422,15 @@ export function GridLayoutTable({
   }
   function add(kind: "case" | "variable") {
     const previousFocus = document.activeElement;
-    onAction({ type: kind === "case" ? "add-case" : "add-variable", side });
+    if (kind === "case") {
+      const source =
+        entries.find((entry) => entry.id === focusedCase.current) ??
+        entries.at(-1);
+      const action = addCaseAction(input, side, source);
+      const filters = source && modelFilters.current.get(source.id);
+      if (filters) modelFilters.current.set(action.value.id, { ...filters });
+      onAction(action);
+    } else onAction({ type: "add-variable", side });
     requestAnimationFrame(() => {
       if (
         document.activeElement !== document.body &&
@@ -447,6 +478,13 @@ export function GridLayoutTable({
       style={{ "--case-required-width": requiredWidth } as CSSProperties}
       data-populated={entries.length > 0 && fields.length > 0}
       data-case-axis={side}
+      onFocusCapture={(event) => {
+        const id = (event.target as Element)
+          .closest<HTMLElement>("[data-case-id]")
+          ?.getAttribute("data-case-id");
+        if (id && entries.some((entry) => entry.id === id))
+          focusedCase.current = id;
+      }}
     >
       {entries.length ? (
         <>
@@ -491,6 +529,7 @@ export function GridLayoutTable({
                           <th
                             scope="col"
                             key={entry.id}
+                            data-case-id={entry.id}
                             {...dragAttributes(index)}
                           >
                             {caseHeader(side, index)}
@@ -503,6 +542,7 @@ export function GridLayoutTable({
                     ? entries.map((entry, index) => (
                         <tr
                           key={entry.id}
+                          data-case-id={entry.id}
                           {...dragAttributes(index)}
                         >
                           <th scope="row">{caseHeader(side, index)}</th>
@@ -523,6 +563,7 @@ export function GridLayoutTable({
                           {entries.map((entry, index) => (
                             <td
                               key={entry.id}
+                              data-case-id={entry.id}
                               data-case-parameter={`${side}-${field.parameter}`}
                               data-field={field.parameter}
                               {...dragAttributes(index)}

@@ -650,6 +650,15 @@ for (const side of ["Rows", "Columns"] as const) {
       exact: true,
     });
     await second
+      .getByRole("button", { name: "Remove message 2", exact: true })
+      .click();
+    await second
+      .getByRole("button", {
+        name: "Remove history.png from message 1",
+        exact: true,
+      })
+      .click();
+    await second
       .getByLabel("Message 1", { exact: true })
       .fill("Different final question");
     await second
@@ -695,6 +704,9 @@ for (const side of ["Rows", "Columns"] as const) {
     await expect(
       first.getByRole("img", { name: "history.png", exact: true }),
     ).toBeVisible();
+    await expect(
+      second.getByRole("img", { name: "history.png", exact: true }),
+    ).toHaveCount(0);
     await expect(second.getByLabel("Message 1", { exact: true })).toHaveValue(
       "A separate system instruction",
     );

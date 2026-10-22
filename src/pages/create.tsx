@@ -239,6 +239,11 @@ export function Create() {
               </AxisValues>
             </AxisEditor>
           </fieldset>
+          {caseLayoutActive && (
+            <div className="section-heading">
+              <h2>Define your eval cases.</h2>
+            </div>
+          )}
           <fieldset
             className="case-layout"
             disabled={submission.uploading || busy}
