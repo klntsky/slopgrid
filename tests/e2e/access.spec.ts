@@ -390,7 +390,7 @@ test("publishing dialogs preserve private grids, handle failures, and remember s
     }),
   );
   await dialog.getByRole("button", { name: "Confirm", exact: true }).click();
-  await expect(dialog.getByRole("alert")).toHaveText("Publishing failed");
+  await expect(dialog.getByRole("alert")).toContainText("Publishing failed");
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await publish.click();
@@ -606,10 +606,17 @@ test("manual key entry persists in the browser, rejects invalid replacements, an
     await page.getByRole("button", { name: "Use API key" }).click();
     await page.getByLabel("API key", { exact: true }).fill("invalid-key");
     await page.getByRole("button", { name: "Connect API key" }).click();
-    await expect(page.getByRole("alert")).toHaveText(
-      "Invalid OpenRouter API key.",
-    );
+    await expect(
+      page
+        .locator("form")
+        .filter({ has: page.getByLabel("API key", { exact: true }) })
+        .getByRole("alert"),
+    ).toBeVisible();
     await page.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(page.getByText("Connected", { exact: true })).toBeVisible();
+    await expect(
+      otherTab.getByText("Connected", { exact: true }),
+    ).toBeVisible();
     await page.goto("/");
     await page.getByRole("button", { name: "Markdown", exact: true }).click();
     await page

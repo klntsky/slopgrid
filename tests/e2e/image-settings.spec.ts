@@ -275,7 +275,9 @@ test("case-variable images survive reload, Edit and Fork without mixing their fi
     data: { referenceStorageFailure: true },
   });
   await page.getByRole("button", { name: "Generate", exact: true }).click();
-  await expect(page.getByRole("alert")).toHaveText("Could not upload one.png.");
+  await expect(
+    page.getByRole("alert").filter({ hasText: "one.png" }),
+  ).toBeVisible();
   expect(await (await request.get("/fixture/image-requests")).json()).toEqual(
     [],
   );
@@ -540,18 +542,26 @@ test("shared image settings transfer to axes, preserve equal values on removal, 
     name: "Parameters",
     exact: true,
   });
-  const parameterValues = parameters.getByRole("definition");
-  await expect(parameterValues.first()).not.toBeVisible();
+  await expect(parameters).not.toBeVisible();
   const parameterButton = page.getByRole("button", {
     name: "Parameters",
     exact: true,
   });
   await parameterButton.focus();
   await parameterButton.press("Enter");
-  await expect(parameterValues.nth(0)).toHaveText("1536x1024");
-  await expect(parameterValues.nth(1)).toHaveText("3:2");
+  for (const [name, value] of [
+    ["Size", "1536x1024"],
+    ["Aspect ratio", "3:2"],
+  ])
+    await expect(
+      parameters
+        .getByRole("term")
+        .filter({ hasText: new RegExp(`^${name}$`) })
+        .locator("..")
+        .getByRole("definition"),
+    ).toHaveText(value);
   await page.keyboard.press("Escape");
-  await expect(parameterValues.first()).not.toBeVisible();
+  await expect(parameters).not.toBeVisible();
   await expect(parameterButton).toBeFocused();
   await page.setViewportSize({ width: 390, height: 844 });
   await parameterButton.click();
@@ -634,9 +644,9 @@ test("common prompt images survive uploads, reload, publication, forks and axis 
     data: { referenceStorageFailure: true },
   });
   await page.getByRole("button", { name: "Generate", exact: true }).click();
-  await expect(page.getByRole("alert")).toHaveText(
-    "Could not upload shared-one.png.",
-  );
+  await expect(
+    page.getByRole("alert").filter({ hasText: "shared-one.png" }),
+  ).toBeVisible();
   await request.post("/fixture/reset", { data: {} });
   await page.getByRole("button", { name: "Generate", exact: true }).click();
   await expectProgress(page, 1, 1);

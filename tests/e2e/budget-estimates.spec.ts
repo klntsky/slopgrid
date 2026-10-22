@@ -43,15 +43,19 @@ test("budget warnings group models across thinking efforts and axis swaps", asyn
   const budget = page.getByLabel("Budget limit per cell", { exact: true });
   await budget.fill("0.5");
   const warnings = page.locator(".budget-warnings");
-  await expect(warnings.locator("p")).toHaveCount(2);
+  await expect(warnings.getByRole("status")).toHaveCount(2);
   await expect(warnings.locator("[data-tooltip]")).toHaveCount(1);
   await expect(warnings.locator("[data-tooltip]")).toContainText("$1");
   await expect(warnings).toContainText("Pricing unavailable.");
-  const before = await warnings.locator("p").allTextContents();
+  const warnedModels = await warnings.locator("strong").allTextContents();
   await page.getByRole("button", { name: "Swap rows and columns" }).click();
-  await expect(warnings.locator("p")).toHaveText(before);
+  await expect(warnings.getByRole("status")).toHaveCount(2);
+  await expect(warnings.locator("strong")).toHaveText(warnedModels);
+  await expect(warnings.locator("[data-tooltip]")).toHaveCount(1);
+  await expect(warnings.locator("[data-tooltip]")).toContainText("$1");
+  await expect(warnings).toContainText("Pricing unavailable.");
   await budget.fill("2");
-  await expect(warnings.locator("p")).toHaveCount(1);
+  await expect(warnings.getByRole("status")).toHaveCount(1);
   await expect(warnings.locator("[data-tooltip]")).toHaveCount(0);
   await page
     .getByRole("group", { name: "Column values", exact: true })
@@ -104,8 +108,8 @@ test("budget estimates follow expanded prompts, warn without blocking, and prese
   const warnings = page.locator(".budget-warnings");
   await expect(warnings).toHaveCount(0);
   await budget.fill("0.1");
-  await expect(warnings.locator("p")).toHaveCount(1);
-  const warning = warnings.locator("[data-tooltip]").first();
+  await expect(warnings.getByRole("status")).toHaveCount(1);
+  const warning = warnings.locator("[data-tooltip]");
   await expect(warning).toContainText("$0.1275");
   await warning.focus();
   const tooltip = page.getByRole("tooltip").filter({ hasText: "$0.1" });

@@ -202,22 +202,17 @@ export const gridDraftSchema = z
   })
   .strict();
 export type GridDraftInput = z.infer<typeof gridDraftSchema>;
-const acceptedGridFields = {
-  ...draftGridFields,
-  rows: draftGridFields.rows.min(1),
-  columns: draftGridFields.columns.min(1),
-};
 const gridInputSchema = z.discriminatedUnion("format", [
   z
     .object({
-      ...acceptedGridFields,
+      ...draftGridFields,
       format: z.enum(["svg", "markdown", "html", "chat-template"]),
       budgetUsd: budgetSchema,
     })
     .strict(),
   z
     .object({
-      ...acceptedGridFields,
+      ...draftGridFields,
       format: z.literal("image"),
       budgetUsd: budgetSchema.catch(3),
     })
@@ -225,6 +220,7 @@ const gridInputSchema = z.discriminatedUnion("format", [
 ]);
 export type GridInput = z.infer<typeof gridInputSchema>;
 export type StoredGridInput = GridInput | Version2GridInput | LegacyGridInput;
+export const modelSelectionIssueKind = "empty-model-selection";
 export const gridSchema = gridInputSchema
   .transform((g) => {
     for (const kind of [
@@ -254,6 +250,28 @@ export const gridSchema = gridInputSchema
       reported.add(key);
       c.addIssue({ code: "custom", message, path });
     };
+    for (const side of ["rows", "columns"] as const) {
+      if (g[side].length) continue;
+      const modelDimension =
+        g.caseAxis !== side &&
+        (g.parameters.model.kind === side ||
+          g.parameters.judge_model?.kind === side);
+      if (modelDimension)
+        c.addIssue({
+          code: "custom",
+          message: "Select at least one model",
+          path: [side],
+          params: { kind: modelSelectionIssueKind },
+        });
+      else
+        c.addIssue({
+          code: "too_small",
+          origin: "array",
+          minimum: 1,
+          inclusive: true,
+          path: [side],
+        });
+    }
     const applicable = new Set<keyof ParameterValues>([
       "input",
       "model",

@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 
-const model = "nvidia/nemotron-3-super-120b-a12b:free";
+const model = "openai/gpt-4.1-mini";
 const prompts = {
   Markdown:
     "Return a Markdown document containing only a level-one heading with the text OK.",
@@ -43,11 +43,10 @@ for (const [format, prompt] of Object.entries(prompts)) {
       .getByRole("combobox", { name: "Columns", exact: true })
       .selectOption("effort");
     const columnValues = page.getByRole("group", { name: "Column values" });
+    // GPT-4.1 mini is non-reasoning; retain the effort dimension without
+    // sending an unsupported explicit reasoning override.
     await columnValues
       .getByRole("checkbox", { name: "Model default", exact: true })
-      .uncheck();
-    await columnValues
-      .getByRole("checkbox", { name: "None", exact: true })
       .check();
     await page.getByLabel("Prompt", { exact: true }).fill(prompt);
     await page

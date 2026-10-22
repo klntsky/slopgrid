@@ -5,10 +5,13 @@ import type { BillingPage } from "../../server/billing";
 import { criteriaForCell } from "../../server/judge-criteria";
 import type { ReferenceImage } from "../../server/image-settings";
 import { rasterizeSvg } from "../../server/svg-raster";
+import { judgeSystem } from "../../server/judge";
 
 const judges = ["openai/gpt-5-mini", "openai/gpt-5-nano"];
 const textGenerator = "openai/gpt-4.1-mini";
 const imageGenerator = "google/gemini-2.5-flash-image";
+const chatReferenceSvg =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="192" height="128"><rect width="192" height="128" fill="white"/><rect x="32" y="32" width="128" height="64" fill="red"/></svg>';
 const criteria = [
   {
     text: "Does the output contain or describe a blue circle?",
@@ -154,12 +157,45 @@ async function inspect(page: Page, grid: Snapshot) {
   await expect(scores).toHaveCount(grid.cells.length);
   for (const [index, cell] of grid.cells.entries()) {
     const expected = criteriaForCell(grid.input, cell.row, cell.column);
-    expect(cell.outputReady).toBe(true);
-    expect(cell.judge?.status).toBe("complete");
-    expect(cell.judge?.results).toHaveLength(expected.length);
-    expect(cell.judge!.results!.map((result) => result.verdict)).toEqual(
-      criteria.map((criterion) => criterion.correctAnswer),
+    const download = await page.request.get(`/outputs/${cell.id}/download`);
+    expect(download.ok()).toBe(true);
+    const output = await download.body();
+    outputs.push(output);
+    const diagnostic = JSON.stringify(
+      {
+        gridId: grid.id,
+        cellId: cell.id,
+        generationId: cell.generationId,
+        input: grid.input,
+        row: cell.row,
+        column: cell.column,
+        criteria: expected,
+        expectedVerdicts: criteria.map((criterion) => criterion.correctAnswer),
+        judge: cell.judge,
+        judgeSystem,
+        judgeCriteriaMessage: `Criteria:\n${expected.map((criterion, index) => `${index + 1}. ${criterion.text}`).join("\n")}`,
+        ...(grid.input.format === "chat-template"
+          ? {
+              savedConversation: JSON.parse(output.toString("utf8")),
+              referenceImageSourceSvg: chatReferenceSvg,
+            }
+          : {}),
+      },
+      null,
+      2,
     );
+    if (grid.input.format === "chat-template")
+      await test.info().attach(`chat-judgment-${cell.id}`, {
+        body: diagnostic,
+        contentType: "application/json",
+      });
+    expect(cell.outputReady).toBe(true);
+    expect(cell.judge?.status, diagnostic).toBe("complete");
+    expect(cell.judge?.results, diagnostic).toHaveLength(expected.length);
+    expect(
+      cell.judge!.results!.map((result) => result.verdict),
+      diagnostic,
+    ).toEqual(criteria.map((criterion) => criterion.correctAnswer));
     const correct = cell.judge!.results!.filter(
       (result, criterion) =>
         result.verdict === expected[criterion].correctAnswer,
@@ -168,18 +204,16 @@ async function inspect(page: Page, grid: Snapshot) {
     await expect(scores.nth(index)).toHaveAccessibleName(
       `Judgment: ${correct} of ${expected.length} correct`,
     );
-    const download = await page.request.get(`/outputs/${cell.id}/download`);
-    expect(download.ok()).toBe(true);
-    outputs.push(await download.body());
     if (grid.input.format === "chat-template") {
-      const messages: { role: string; content: string }[] =
-        await download.json();
+      const messages: { role: string; content: string }[] = JSON.parse(
+        output.toString("utf8"),
+      );
       const answers = messages.filter(
         (message) => message.role === "assistant",
       );
-      expect(answers).toHaveLength(1);
-      expect(answers[0].content).toMatch(/\bred\b/i);
-      expect(answers[0].content).toMatch(/\brectangle\b/i);
+      expect(answers, diagnostic).toHaveLength(1);
+      expect(answers[0].content, diagnostic).toMatch(/\bred\b/i);
+      expect(answers[0].content, diagnostic).toMatch(/\brectangle\b/i);
     }
   }
   for (const output of outputs.slice(1))
@@ -277,11 +311,7 @@ for (const format of ["markdown", "chat-template", "image", "svg"] as const) {
     const headers = await connect(page, format);
     let attachment: ReferenceImage | undefined;
     if (format === "chat-template") {
-      const image = await rasterizeSvg(
-        Buffer.from(
-          '<svg xmlns="http://www.w3.org/2000/svg" width="192" height="128"><rect width="192" height="128" fill="white"/><rect x="32" y="32" width="128" height="64" fill="red"/></svg>',
-        ),
-      );
+      const image = await rasterizeSvg(Buffer.from(chatReferenceSvg));
       const upload = await page.request.post("/api/references?name=input.png", {
         headers: { ...headers, "content-type": "application/octet-stream" },
         data: image.bytes,

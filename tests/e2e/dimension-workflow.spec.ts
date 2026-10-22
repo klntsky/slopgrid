@@ -56,10 +56,15 @@ for (const format of ["SVG", "Image"] as const)
         ).toHaveCount(0);
         await expect(
           control.locator('option[value="judge_model"]'),
-        ).toBeDisabled();
+        ).toHaveJSProperty("disabled", true);
         await expect(
           control.locator('option[value="judge_effort"]'),
-        ).toBeDisabled();
+        ).toHaveJSProperty("disabled", true);
+        // Native options use their disabled property; try keyboard selection too.
+        const withoutJudge = await savedInput(page);
+        await control.press("j");
+        await expect(control).toHaveValue("single");
+        expect(await savedInput(page)).toEqual(withoutJudge);
       }
       await expect(
         page.getByRole("button", {
@@ -67,7 +72,10 @@ for (const format of ["SVG", "Image"] as const)
         }),
       ).toHaveCount(0);
       await axis.selectOption("variable");
-      await expect(other.locator('option[value="variable"]')).toBeDisabled();
+      await expect(other.locator('option[value="variable"]')).toHaveJSProperty(
+        "disabled",
+        true,
+      );
       await defineCases(page, label.toLowerCase());
       const table = page.getByRole("table", {
         name: "Grid layout parameters",
@@ -92,8 +100,11 @@ for (const format of ["SVG", "Image"] as const)
         .selectOption("low");
       await expect(
         other.locator(`option[value="${parameter}"]`),
-      ).toBeDisabled();
+      ).toHaveJSProperty("disabled", true);
       const before = await savedInput(page);
+      await other.press(format === "Image" ? "q" : "t");
+      await expect(other).toHaveValue("single");
+      expect(await savedInput(page)).toEqual(before);
 
       const cancelled = page.waitForEvent("dialog");
       const cancelSelection = axis.selectOption(parameter);
@@ -133,7 +144,13 @@ for (const format of ["SVG", "Image"] as const)
       expect(retained.parameters.input).toEqual(before.parameters.input);
       expect(retained.parameters.model).toEqual(before.parameters.model);
       expect(retained.budgetUsd).toBe(before.budgetUsd);
-      await expect(other.locator('option[value="variable"]')).toBeEnabled();
+      await expect(other.locator('option[value="variable"]')).toHaveJSProperty(
+        "disabled",
+        false,
+      );
+      await expect(
+        other.locator(`option[value="${parameter}"]`),
+      ).toHaveJSProperty("disabled", true);
       await page.reload();
       expect(await savedInput(page)).toEqual(retained);
 
@@ -150,7 +167,9 @@ for (const format of ["SVG", "Image"] as const)
       await expect(
         page.getByRole("combobox", { name: label, exact: true }),
       ).toHaveValue(format === "Image" ? "auto" : "default");
-      await expect(other.locator(`option[value="${parameter}"]`)).toBeEnabled();
+      await expect(
+        other.locator(`option[value="${parameter}"]`),
+      ).toHaveJSProperty("disabled", false);
       await other.selectOption("variable");
       await defineCases(page, label.toLowerCase());
       await expect(

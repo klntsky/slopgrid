@@ -19,6 +19,7 @@ export function useCreateSubmission({
   onReferenceUploaded: (localId: string, image: ReferenceImage) => void;
 }) {
   const [validationError, setError] = useState("");
+  const [attempted, setAttempted] = useState(false);
   const [uploads, setUploads] = useState(0);
   const pendingUploads = useRef(0);
   const uploading = uploads > 0;
@@ -41,19 +42,18 @@ export function useCreateSubmission({
   }
   function reset() {
     setError("");
+    setAttempted(false);
     inference.reset();
   }
   async function generate(continueWithLowBalance = false) {
     if (blocked || pendingUploads.current || busy || uploadController.current)
       return;
+    setAttempted(true);
     const { parsed } = validateDraftInput({
       ...draft.input,
       parallelWorkers,
     });
-    if (!parsed.success) {
-      setError(parsed.error.issues[0].message);
-      return;
-    }
+    if (!parsed.success) return;
     setError("");
     const controller = new AbortController();
     uploadController.current = controller;
@@ -88,6 +88,7 @@ export function useCreateSubmission({
 
   return {
     generate,
+    attempted,
     reset,
     onUploading,
     uploading,

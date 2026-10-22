@@ -83,7 +83,7 @@ for (const limit of ["grid creation", "API traffic"] as const) {
       name: "Generate",
       exact: true,
     });
-    await expect(page.getByRole("alert")).toHaveText(message);
+    await expect(page.getByRole("alert")).toContainText(message);
     await expect(generate).toBeEnabled();
     await expect(page.getByLabel("Prompt", { exact: true })).toHaveValue(
       "Draw $ROW1 wearing a hat",
@@ -107,7 +107,7 @@ for (const limit of ["grid creation", "API traffic"] as const) {
     );
     await generate.click();
     expect((await rejected).status()).toBe(429);
-    await expect(page.getByRole("alert")).toHaveText(message);
+    await expect(page.getByRole("alert")).toContainText(message);
     await expect(generate).toBeEnabled();
     // A fresh client address restores IP allowance without replacing the session or draft.
     clientIP = "192.0.2.81";

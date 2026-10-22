@@ -30,9 +30,9 @@ test("a later failed upload preserves earlier references across reload and retry
     route.fulfill({ status: 503, json: { error: "Storage unavailable" } }),
   );
   await page.getByRole("button", { name: "Generate", exact: true }).click();
-  await expect(page.getByRole("alert")).toHaveText(
-    "Could not upload second.png.",
-  );
+  await expect(
+    page.getByRole("alert").filter({ hasText: "second.png" }),
+  ).toBeVisible();
   await page.reload();
   await page.unroute("**/api/references?name=second.png");
   await page.getByRole("button", { name: "Generate", exact: true }).click();

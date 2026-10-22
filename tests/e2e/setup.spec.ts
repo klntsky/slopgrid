@@ -330,9 +330,19 @@ test("unused prompt variables block generation and the API rejects bypasses", as
   await qualities.getByRole("checkbox", { name: "high", exact: true }).check();
   for (const prompt of ["Draw a cat", "$COLUMN1"]) {
     await page.getByLabel("Prompt", { exact: true }).fill(prompt);
-    await expect(page.getByRole("alert")).toBeVisible();
+    for (const caseNumber of [1, 2]) {
+      const variable = page.getByLabel(`$ROW1, case ${caseNumber}`, {
+        exact: true,
+      });
+      await expect(variable).toHaveAttribute("aria-invalid", "true");
+      await expect(variable).toHaveAccessibleDescription(/\$ROW1/);
+    }
   }
   await page.getByLabel("Prompt", { exact: true }).fill("$ROW1 wearing a hat");
+  for (const caseNumber of [1, 2])
+    await expect(
+      page.getByLabel(`$ROW1, case ${caseNumber}`, { exact: true }),
+    ).not.toHaveAttribute("aria-invalid", "true");
   const connect = page.getByRole("link", { name: "Connect OpenRouter" });
   await connect.click();
   await expect(

@@ -12,6 +12,7 @@ import {
 } from "../../server/domain";
 import { token } from "../../server/ids";
 import { createWorkflow } from "../../server/workflow";
+import { cacheScope } from "../../server/session";
 import { startTestServer } from "../test-server";
 import { create, expectProgress } from "./helpers";
 import { parseE2EPort } from "../e2e-port";
@@ -651,30 +652,43 @@ test("visited pages and completed outputs survive offline reload without retaini
     await expect(
       page.getByText("This page isn't available offline.", { exact: true }),
     ).toBeVisible();
-    await context.setOffline(false);
-    // A cookie/session change can happen without the logout endpoint. The first
-    // image request must recheck access rather than use immutable cached bytes.
-    const otherSession = token();
-    store.saveSession({ id: otherSession, created: Date.now() });
+    // Switch while offline: reconnect refetches /api/session, whose renewal
+    // could otherwise overwrite the replacement cookie with the original owner.
+    const otherSession = { id: token(), created: Date.now() };
+    store.saveSession(otherSession);
+    for (const image of chatImages) {
+      expect(store.references.allowed(image.id)).toBe(false);
+      expect(store.references.allowed(image.id, otherSession)).toBe(false);
+    }
     await context.addCookies([
       {
         name: "__Host-slopgrid",
-        value: otherSession,
+        value: otherSession.id,
         url: web.origin,
         httpOnly: true,
         secure: true,
         sameSite: "Lax",
       },
     ]);
-    expect(
-      await page.evaluate(
-        async (id) => (await fetch(`/api/references/${id}`)).status,
-        chatImages[0].id,
-      ),
-    ).toBe(404);
-    expect(
-      await page.evaluate(async () => (await fetch("/api/session")).status),
-    ).toBe(200);
+    await context.setOffline(false);
+    const observedSession = await page.evaluate(async () => {
+      const response = await fetch("/api/session");
+      return {
+        status: response.status,
+        scope: response.headers.get("X-Slopgrid-Cache-Scope"),
+      };
+    });
+    expect(observedSession).toEqual({
+      status: 200,
+      scope: cacheScope(otherSession),
+    });
+    for (const image of chatImages)
+      expect(
+        await page.evaluate(
+          async (id) => (await fetch(`/api/references/${id}`)).status,
+          image.id,
+        ),
+      ).toBe(404);
     await context.setOffline(true);
     await page.goto(`${web.origin}/grid/${grids[0].id}`);
     await expect(page.getByText("Saved content")).toHaveCount(0);
@@ -688,7 +702,6 @@ test("visited pages and completed outputs survive offline reload without retaini
 
     // Returning to the original identity may recache its conversation. Keep
     // logout coverage distinct from the observed-session-change path above.
-    await context.setOffline(false);
     await context.addCookies([
       {
         name: "__Host-slopgrid",
@@ -699,6 +712,16 @@ test("visited pages and completed outputs survive offline reload without retaini
         sameSite: "Lax",
       },
     ]);
+    await context.setOffline(false);
+    expect(
+      await page.evaluate(async () => {
+        const response = await fetch("/api/session");
+        return {
+          status: response.status,
+          scope: response.headers.get("X-Slopgrid-Cache-Scope"),
+        };
+      }),
+    ).toEqual({ status: 200, scope: cacheScope({ id: owner }) });
     const chat = grids.find((grid) => grid.input.format === "chat-template")!;
     await page.goto(`${web.origin}/grid/${chat.id}`);
     await expect

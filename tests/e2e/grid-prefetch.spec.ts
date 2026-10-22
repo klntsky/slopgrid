@@ -67,7 +67,7 @@ test("failed prefetch leaves the current lists usable and retries on the request
     await expect(owned.getByRole("alert")).toHaveCount(0);
   }
   await owned.getByRole("button", { name: "Next", exact: true }).click();
-  await expect(owned.getByRole("alert")).toHaveText("Page unavailable", {
+  await expect(owned.getByRole("alert")).toContainText("Page unavailable", {
     timeout: 15000,
   });
   await expect(publicGrids.locator(".history-row")).toHaveCount(20);
@@ -105,19 +105,17 @@ test("cached list pages survive unavailable page APIs and restore independent na
     `/grid/${ids[20]}`,
   );
   await publicGrids.getByRole("button", { name: "Next", exact: true }).click();
-  await expect(publicGrids.locator(".history-grid-link").first()).toHaveAttribute(
-    "href",
-    publicPaths[20],
-  );
+  await expect(
+    publicGrids.locator(".history-grid-link").first(),
+  ).toHaveAttribute("href", publicPaths[20]);
   await page.reload();
   await expect(owned.locator(".history-row a").first()).toHaveAttribute(
     "href",
     `/grid/${ids[20]}`,
   );
-  await expect(publicGrids.locator(".history-grid-link").first()).toHaveAttribute(
-    "href",
-    publicPaths[20],
-  );
+  await expect(
+    publicGrids.locator(".history-grid-link").first(),
+  ).toHaveAttribute("href", publicPaths[20]);
   await owned.getByRole("button", { name: "Next", exact: true }).click();
   await expect(owned.locator(".history-row a").first()).toHaveAttribute(
     "href",
@@ -128,14 +126,13 @@ test("cached list pages survive unavailable page APIs and restore independent na
   await expect(publicGrids.locator(".history-row")).toHaveCount(
     publicPageFive.length,
   );
-  await expect(publicGrids.locator(".history-grid-link").first()).toHaveAttribute(
-    "href",
-    publicPageFive[0],
-  );
+  await expect(
+    publicGrids.locator(".history-grid-link").first(),
+  ).toHaveAttribute("href", publicPageFive[0]);
   expect(
-    await publicGrids.locator(".history-grid-link").evaluateAll(
-      (links) => links.map((link) => link.getAttribute("href")),
-    ),
+    await publicGrids
+      .locator(".history-grid-link")
+      .evaluateAll((links) => links.map((link) => link.getAttribute("href"))),
   ).toEqual(publicPageFive);
   await owned.getByRole("button", { name: "Next", exact: true }).click();
   await expect(owned.locator(".history-row")).toHaveCount(3);

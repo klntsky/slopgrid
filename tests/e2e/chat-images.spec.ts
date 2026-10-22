@@ -429,15 +429,20 @@ test("clipboard images attach to their user turn and disabled role badges retain
   await expectMessagePreview(page, 3, pastedName!);
   await expectMessagePreview(page, 1, firstImage.name);
   await expect(first).toHaveValue("Earlier $ROW1 one\nNotes");
-  await expect(
-    later.getByRole("button", { name: "Message 3 role: user", exact: true }),
-  ).toBeDisabled();
+  const role = later.getByRole("button", {
+    name: "Message 3 role: user",
+    exact: true,
+  });
+  await expect(role).toBeDisabled();
+  const roleHint = /Remove images before changing this message.s role/;
+  await expect(role).toHaveAccessibleDescription(roleHint);
+  const roleTooltip = page.getByRole("tooltip", { name: roleHint });
   await later.locator(".chat-role-hint").hover();
-  await expect(page.getByRole("tooltip")).toBeVisible();
+  await expect(roleTooltip).toBeVisible();
   await first.hover();
-  await expect(page.getByRole("tooltip")).toBeHidden();
+  await expect(roleTooltip).toBeHidden();
   await later.locator(".chat-role-hint").focus();
-  await expect(page.getByRole("tooltip")).toBeVisible();
+  await expect(roleTooltip).toBeVisible();
   await appendFinalCompletion(page);
   await page.reload();
   await expectMessagePreview(page, 3, pastedName!);

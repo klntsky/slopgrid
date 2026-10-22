@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { type GridInput } from "../../server/domain";
+import { modelSelectionIssueKind, type GridInput } from "../../server/domain";
 import { estimateGrid } from "../../server/cost-estimates";
 import { modelCatalog } from "../model-catalog";
 import { useConnection, useInferenceCapacity } from "../queries";
@@ -10,6 +10,13 @@ import { canJudge } from "../../server/compatibility";
 import { promptVariableIssue } from "../../server/prompt-variables";
 import { compatibilityPreviewInput, validateDraftInput } from "./draft-input";
 import type { InputAction } from "./change-axis";
+import type { ZodIssue } from "zod";
+
+function isDeferredModelIssue(issue: ZodIssue) {
+  return (
+    issue.code === "custom" && issue.params?.kind === modelSelectionIssueKind
+  );
+}
 
 const sortedModelCatalog = [...modelCatalog].sort(
   (a, b) =>
@@ -40,6 +47,12 @@ export function useCreateForm() {
   const { draft } = editing;
   const { formatSelected, input } = draft;
   const validation = useMemo(() => validateDraftInput(input), [input]);
+  const validationIssues = validation.parsed.success
+    ? []
+    : validation.parsed.error.issues;
+  const blockingValidationIssues = validationIssues.filter(
+    (issue) => !isDeferredModelIssue(issue),
+  );
   const connection = useConnection();
   const capacity = useInferenceCapacity(
     formatSelected && connection.data?.connected === true,
@@ -77,7 +90,7 @@ export function useCreateForm() {
   const submission = useCreateSubmission({
     draft,
     blocked:
-      !validation.parsed.success ||
+      blockingValidationIssues.length > 0 ||
       blockingCompatibilityIssues.length > 0 ||
       workersPending,
     parallelWorkers,
@@ -107,9 +120,7 @@ export function useCreateForm() {
       (capacity.isError
         ? "Could not determine the automatic worker count."
         : "Checking the automatic worker count."),
-    ...(!validation.parsed.success
-      ? new Set(validation.parsed.error.issues.map((issue) => issue.message))
-      : []),
+    ...new Set(blockingValidationIssues.map((issue) => issue.message)),
     ...new Set(blockingCompatibilityIssues.map((issue) => issue.reason)),
     !connection.data?.connected && "Connect OpenRouter.",
   ]
@@ -119,9 +130,9 @@ export function useCreateForm() {
   return {
     draft,
     candidate: validation.candidate,
-    validationIssues: validation.parsed.success
-      ? []
-      : validation.parsed.error.issues,
+    validationIssues: validationIssues.filter(
+      (issue) => submission.attempted || !isDeferredModelIssue(issue),
+    ),
     compatibilityIssues,
     compatibilityCells,
     update,

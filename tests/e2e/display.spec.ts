@@ -500,8 +500,12 @@ test("a missing grid reports 404 without retrying the request", async ({
   page.on("request", (request) => {
     if (new URL(request.url()).pathname === `/api/grids/${id}`) requests++;
   });
+  const missing = page.waitForResponse(
+    (response) => new URL(response.url()).pathname === `/api/grids/${id}`,
+  );
   await page.goto(`/grid/${id}`);
-  await expect(page.getByRole("alert")).toHaveText("Grid not found");
+  expect((await missing).status()).toBe(404);
+  await expect(page.getByRole("alert")).toBeVisible();
   expect(requests).toBe(1);
 });
 

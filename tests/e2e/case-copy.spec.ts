@@ -392,9 +392,16 @@ for (const orientation of ["Rows", "Columns"] as const) {
     await history(2)
       .getByLabel("Message 1", { exact: true })
       .fill("Other question");
-    await history(2)
+    const otherFutureMessage = history(2)
+      .locator(".deletable-input")
+      .filter({ has: page.getByLabel("Message 3", { exact: true }) });
+    await otherFutureMessage.hover();
+    await otherFutureMessage
       .getByRole("button", { name: "Remove message 3", exact: true })
       .click();
+    await expect(
+      history(2).getByLabel("Message 3", { exact: true }),
+    ).toHaveCount(0);
     await history(2)
       .getByRole("button", { name: "Message 1 role: user", exact: true })
       .click();
