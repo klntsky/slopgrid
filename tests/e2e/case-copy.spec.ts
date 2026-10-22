@@ -34,7 +34,6 @@ for (const orientation of ["Rows", "Columns"] as const) {
         uploads.push(url.searchParams.get("name")!);
     });
     await page.goto("/");
-    await connectOpenRouter(page);
     await page.getByRole("button", { name: "Markdown", exact: true }).click();
     await page
       .getByRole("combobox", { name: orientation, exact: true })
@@ -206,12 +205,15 @@ for (const orientation of ["Rows", "Columns"] as const) {
     expect(JSON.stringify(edited)).not.toContain(judgeFilter);
     expect(uploads).toEqual([]);
 
+    await connectOpenRouter(page);
     const created = page.waitForResponse(
       (response) =>
         response.request().method() === "POST" &&
         new URL(response.url()).pathname === "/api/grids",
     );
-    await page.getByRole("button", { name: "Generate", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Generate", exact: true })
+      .click({ timeout: 5000 });
     const response = await created;
     expect(response.status()).toBe(201);
     const submitted = response.request().postDataJSON();

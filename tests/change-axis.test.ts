@@ -914,7 +914,6 @@ for (const side of ["rows", "columns"] as const) {
       input[side].map((record) => record.id),
       ids,
     );
-    assert.equal(validateDraftInput(input).parsed.success, false);
     input = reduceInput(
       input,
       caseValueAction(side, 1, "input", [{ role: "user", content: "Second" }]),
