@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useLayoutEffect, useRef } from "react";
-import { ErrorMessage } from "../components/error-message";
+import { ErrorMessage } from "../components/feedback-message";
 import { MarkdownContent } from "../../shared/markdown";
 import "./markdown-preview.css";
 import { textOutput } from "./text-output";
@@ -115,7 +115,7 @@ export function MarkdownPreview({
       )}
       {query.error && (
         <>
-          <ErrorMessage error={query.error.message} />
+          <ErrorMessage>{query.error.message}</ErrorMessage>
           <button className="secondary" onClick={() => void query.refetch()}>
             Retry preview
           </button>

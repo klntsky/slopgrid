@@ -3,7 +3,7 @@ import type { ViewGrid } from "../api";
 import { Modal } from "./modal";
 import { useEffect, useRef, useState } from "react";
 import type { GridVisibility } from "../../server/domain";
-import { ErrorMessage } from "./error-message";
+import { ErrorMessage } from "./feedback-message";
 import { isGridSlug, slugNamingError } from "../../shared/grid-slug";
 
 export type Publication = { visibility: GridVisibility; slug?: string };
@@ -168,11 +168,13 @@ export function PublishDialog({
                 )}
                 {value === "public" && (
                   <div className="publish-slug-error">
-                    <p aria-hidden="true">{slugNamingError}</p>
+                    <ErrorMessage aria-hidden="true">
+                      {slugNamingError}
+                    </ErrorMessage>
                     {(validation || error?.message) && (
-                      <p role="alert" id="publish-slug-error">
+                      <ErrorMessage id="publish-slug-error">
                         {validation || error?.message}
-                      </p>
+                      </ErrorMessage>
                     )}
                   </div>
                 )}
@@ -198,7 +200,7 @@ export function PublishDialog({
         </button>
       </div>
       {(confirming || visibility !== "public") && (
-        <ErrorMessage error={error?.message} />
+        <ErrorMessage>{error?.message}</ErrorMessage>
       )}
     </Modal>
   );

@@ -1,5 +1,6 @@
 import { createContext, useContext, useId, type ReactNode } from "react";
 import type { ZodIssue } from "zod";
+import { ErrorMessage } from "../components/feedback-message";
 
 type ValidationIssue = Pick<ZodIssue, "message" | "path">;
 
@@ -58,11 +59,7 @@ function useValidationMessages(path: Path, descendants: boolean) {
 }
 
 function Feedback({ messages, id }: { messages: string[]; id?: string }) {
-  return messages.length ? (
-    <p id={id} role="alert" className="error">
-      {messages.join(" ")}
-    </p>
-  ) : null;
+  return <ErrorMessage id={id}>{messages.join(" ")}</ErrorMessage>;
 }
 
 export function ValidationFeedback({

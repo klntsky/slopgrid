@@ -30,7 +30,7 @@ import {
 } from "../create/compatibility-table";
 import { BudgetWarnings } from "../create/budget-warnings";
 import { Connection } from "../components/connection";
-import { ErrorMessage } from "../components/error-message";
+import { ErrorMessage } from "../components/feedback-message";
 import { LowBalanceDialog } from "../components/inference-dialogs";
 import { useTooltip } from "../components/use-tooltip";
 import { caseSetupIssue } from "../../server/prompt-variables";
@@ -295,7 +295,7 @@ export function Create() {
                   />
                 )}
               >
-                <ErrorMessage error={caseIssue?.message} />
+                <ErrorMessage>{caseIssue?.message}</ErrorMessage>
               </GridLayoutTable>
             </fieldset>
             {caseLayoutActive && layoutSummary}
@@ -714,7 +714,7 @@ export function Create() {
             )}
             {capacity.isError && connection.data?.connected && (
               <>
-                <ErrorMessage error={capacity.error.message} />
+                <ErrorMessage>{capacity.error.message}</ErrorMessage>
                 <button
                   className="secondary"
                   onClick={() => void capacity.refetch()}
@@ -751,7 +751,7 @@ export function Create() {
             </div>
           </section>
         )}
-        <ErrorMessage error={error} />
+        <ErrorMessage>{error}</ErrorMessage>
         {lowBalance !== null && (
           <LowBalanceDialog
             balanceUsd={lowBalance}

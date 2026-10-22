@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { readReferenceFile, saveReferenceFile } from "./reference-files";
 import { Paperclip, X } from "lucide-react";
 import type { ReferenceImage } from "../../server/image-settings";
-import { ErrorMessage } from "../components/error-message";
+import { ErrorMessage } from "../components/feedback-message";
 import { tooltipRef } from "../components/use-tooltip";
 
 export function ImagePicker({
@@ -86,7 +86,7 @@ export function ImagePicker({
         />
       </label>
       {busy && <span role="status">Reading images...</span>}
-      <ErrorMessage error={error} />
+      <ErrorMessage>{error}</ErrorMessage>
     </>
   );
 }

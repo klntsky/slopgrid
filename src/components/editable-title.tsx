@@ -1,6 +1,6 @@
 import { useRef, useState, type ReactNode } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { ErrorMessage } from "./error-message";
+import { ErrorMessage } from "./feedback-message";
 
 export function EditableTitle({
   value,
@@ -70,7 +70,7 @@ export function EditableTitle({
           <span>{value || placeholder}</span>
         </button>
       )}
-      <ErrorMessage error={save.error?.message} />
+      <ErrorMessage>{save.error?.message}</ErrorMessage>
     </>
   );
 }

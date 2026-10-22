@@ -11,6 +11,7 @@ import { dimensionNames } from "../format";
 import { modelCatalog } from "../model-catalog";
 import { effortLabel } from "../../server/compatibility";
 import { tooltipRef } from "../components/use-tooltip";
+import { ErrorMessage, WarningMessage } from "../components/feedback-message";
 
 export type CompatibilityTables = Partial<
   Record<CompatibilityParameter, ReactNode>
@@ -116,15 +117,18 @@ export function CompatibilityFeedback({
   )
     return null;
   if (origin.caseIndex !== undefined) {
-    const reasons = [...new Set(matching.map((issue) => issue.reason))];
+    const reasons = new Map<string, boolean>();
+    for (const issue of matching)
+      reasons.set(issue.reason, issue.blocking || !!reasons.get(issue.reason));
     return (
       <>
-        {reasons.map((reason) => (
-          <p className="case-compatibility-warning" key={reason}>
-            <TriangleAlert className="compatibility-warning" aria-hidden="true" />
-            {reason}
-          </p>
-        ))}
+        {[...reasons].map(([reason, blocking]) =>
+          blocking ? (
+            <ErrorMessage key={reason}>{reason}</ErrorMessage>
+          ) : (
+            <WarningMessage key={reason}>{reason}</WarningMessage>
+          ),
+        )}
       </>
     );
   }

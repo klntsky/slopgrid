@@ -1,4 +1,4 @@
-import { TriangleAlert } from "lucide-react";
+import { WarningMessage } from "../components/feedback-message";
 import { expandGrid, type GridInput } from "../../server/domain";
 import type { CostEstimate } from "../../server/cost-estimates";
 import type { ModelInfo } from "../../server/model-catalog";
@@ -44,8 +44,7 @@ export function BudgetWarnings({
           ),
         ];
         return (
-          <p key={id}>
-            <TriangleAlert className="compatibility-warning" aria-hidden="true" />{" "}
+          <WarningMessage key={id}>
             <strong>
               {models.find((model) => model.id === id)?.name ?? id}
             </strong>
@@ -63,7 +62,7 @@ export function BudgetWarnings({
             {unknown.length > 0 && (
               <span data-estimate="unknown"> {unknown.join(" ")}</span>
             )}
-          </p>
+          </WarningMessage>
         );
       })}
     </div>

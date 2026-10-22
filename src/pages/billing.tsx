@@ -4,7 +4,7 @@ import { Link } from "@tanstack/react-router";
 import { ArrowUp, ArrowDown, RefreshCw } from "lucide-react";
 import type { BillingPage } from "../../server/billing";
 import { api } from "../api";
-import { ErrorMessage } from "../components/error-message";
+import { ErrorMessage } from "../components/feedback-message";
 import { PaginationButton } from "../components/pagination-button";
 import { formatCost } from "../format";
 import "./billing.css";
@@ -34,7 +34,7 @@ export function Billing() {
         Each inference attempt appears here, including retries, failures, and
         cancellations. OpenRouter bills your account directly.
       </p>
-      <ErrorMessage error={query.error?.message ?? ""} />
+      <ErrorMessage>{query.error?.message ?? ""}</ErrorMessage>
       {query.isPending && <p role="status">Loading billing history…</p>}
       {data && (
         <>
