@@ -653,3 +653,157 @@ test("deleted variable slots preserve later values and image identity through ap
     expected.map((cell) => [cell.prompt, cell.images]),
   );
 });
+
+for (const side of ["rows", "columns"] as const) {
+  const other = side === "rows" ? "columns" : "rows";
+
+  test(`single ${side} returns equal case settings to common and leaves the other axis intact`, () => {
+    let input = initial("svg", side);
+    input = reduceInput(input, {
+      type: "to-axis",
+      side,
+      parameter: "model",
+    });
+    input = reduceInput(input, {
+      type: "to-axis",
+      side,
+      parameter: "judge_criteria",
+    });
+    input = reduceInput(input, {
+      type: "dimension",
+      side: other,
+      parameter: "effort",
+    });
+    input = reduceInput(
+      input,
+      caseValuesAction(other, "effort", ["low", "high"]),
+    );
+    input = reduceInput(
+      input,
+      caseValuesAction(side, "variable", [
+        [{ text: "", images: [{ id: "case-image", name: "answer.png" }] }],
+        [{ text: "", images: [{ id: "case-image", name: "answer.png" }] }],
+      ]),
+    );
+    const original = structuredClone(input);
+    const action = { type: "single" as const, side };
+    assert.deepEqual(droppedParameters(input, action), ["variable"]);
+    withConfirmation(false, (calls) => {
+      assert.equal(confirmInputAction(input, action), false);
+      assert.equal(calls.length, 1);
+    });
+    assert.deepEqual(input, original);
+    withConfirmation(true, (calls) => {
+      assert.equal(confirmInputAction(input, action), true);
+      assert.equal(calls.length, 1);
+    });
+    const next = reduceInput(input, action);
+    assert.deepEqual(next[side], [{ id: input[side][0].id }]);
+    assert.deepEqual(next[other], input[other]);
+    assert.equal(next.parameters.variable, undefined);
+    assert.deepEqual(next.parameters.model, {
+      kind: "common",
+      value: "generator/fixed",
+    });
+    assert.deepEqual(criteriaForCell(next, 0, 0), [
+      { text: "Is it blue?", correctAnswer: false },
+    ]);
+    assert.equal(next.prompt, input.prompt);
+    assert.equal(validateDraftInput(next).parsed.success, false);
+    const corrected = validateDraftInput({
+      ...next,
+      prompt: "Draw a rectangle",
+    }).parsed;
+    assert.ok(corrected.success);
+    assert.deepEqual(
+      expandGrid(corrected.data).map(({ model, effort, prompt }) => [
+        model,
+        effort,
+        prompt,
+      ]),
+      [
+        ["generator/fixed", "low", "Draw a rectangle"],
+        ["generator/fixed", "high", "Draw a rectangle"],
+      ],
+    );
+  });
+
+  test(`single ${side} confirms all discarded case settings once and restores common defaults`, () => {
+    let input = initial("svg", side);
+    for (const parameter of [
+      "model",
+      "effort",
+      "judge_criteria",
+      "judge_effort",
+    ] as const)
+      input = reduceInput(input, { type: "to-axis", side, parameter });
+    input = reduceInput(
+      input,
+      caseValueAction(side, 1, "model", "generator/other"),
+    );
+    input = reduceInput(input, caseValueAction(side, 1, "effort", "low"));
+    input = reduceInput(
+      input,
+      caseValueAction(side, 1, "judge_criteria", [
+        { text: "Is it red?", correctAnswer: false },
+      ]),
+    );
+    const original = structuredClone(input);
+    const action = { type: "single" as const, side };
+    assert.deepEqual(
+      new Set(droppedParameters(input, action)),
+      new Set(["variable", "model", "effort", "judge_criteria"]),
+    );
+    withConfirmation(false, (calls) => {
+      assert.equal(confirmInputAction(input, action), false);
+      assert.equal(calls.length, 1);
+    });
+    assert.deepEqual(input, original);
+    withConfirmation(true, (calls) => {
+      assert.equal(confirmInputAction(input, action), true);
+      assert.equal(calls.length, 1);
+    });
+    const next = reduceInput(input, action);
+    assert.deepEqual(next[side], [{ id: input[side][0].id }]);
+    assert.deepEqual(next[other], input[other]);
+    assert.equal(next.parameters.variable, undefined);
+    for (const parameter of ["model", "effort", "judge_criteria"] as const)
+      assert.deepEqual(next.parameters[parameter], {
+        kind: "common",
+        value: parameterDefault(parameter),
+      });
+    assert.deepEqual(next.parameters.judge_effort, {
+      kind: "common",
+      value: "medium",
+    });
+  });
+
+  test(`empty or blank ${side} cases can return to a valid single cell without confirmation`, () => {
+    for (const count of [0, 1, 2]) {
+      let input = initial("svg", side);
+      input.prompt = "Draw a rectangle";
+      input = reduceInput(
+        input,
+        caseValuesAction(
+          side,
+          "variable",
+          Array.from({ length: count }, () => [{ text: "" }]),
+        ),
+      );
+      const action = { type: "single" as const, side };
+      withConfirmation(false, (calls) => {
+        assert.equal(confirmInputAction(input, action), true);
+        assert.deepEqual(calls, []);
+      });
+      const next = reduceInput(input, action);
+      const accepted = validateDraftInput(next).parsed;
+      assert.ok(accepted.success);
+      assert.equal(next.rows.length, 1);
+      assert.equal(next.columns.length, 1);
+      assert.deepEqual(
+        expandGrid(accepted.data).map(({ model, prompt }) => [model, prompt]),
+        [["generator/fixed", "Draw a rectangle"]],
+      );
+    }
+  });
+}

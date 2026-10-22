@@ -1,5 +1,5 @@
 import { test, expect } from "./fixtures";
-import { mockModels } from "./helpers";
+import { connectOpenRouter, expectProgress, mockModels } from "./helpers";
 import { referencePng } from "../reference-image-fixture";
 
 for (const format of ["SVG", "Image"]) {
@@ -304,3 +304,137 @@ test("an empty restored case list hides only the table and can return to one edi
     "restored question",
   );
 });
+
+for (const side of ["Rows", "Columns"] as const) {
+  test(`${side} variable cases can be cancelled or returned to a single-cell grid`, async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await page.getByRole("button", { name: "SVG", exact: true }).click();
+    const axis = page.getByRole("combobox", { name: side, exact: true });
+    const other = page.getByRole("combobox", {
+      name: side === "Rows" ? "Columns" : "Rows",
+      exact: true,
+    });
+    await axis.selectOption("variable");
+    await other.selectOption("single");
+    const commonModel = page.getByRole("radiogroup", {
+      name: "Model",
+      exact: true,
+    });
+    await commonModel.getByRole("searchbox").fill("fixture/text");
+    await commonModel
+      .locator('input[type="radio"][value="fixture/text"]')
+      .check();
+    await page
+      .getByRole("combobox", { name: "Thinking effort", exact: true })
+      .selectOption("high");
+    const direction = side === "Rows" ? "row" : "column";
+    const token = side === "Rows" ? "$ROW1" : "$COLUMN1";
+    await page
+      .getByRole("button", {
+        name: `Make Model a ${direction} variable`,
+        exact: true,
+      })
+      .click();
+    await page
+      .getByRole("button", {
+        name: `Make Thinking effort a ${direction} variable`,
+        exact: true,
+      })
+      .click();
+    const table = page.getByRole("table", {
+      name: "Grid layout parameters",
+      exact: true,
+    });
+    await table.getByLabel(`${token}, case 1`, { exact: true }).fill("Alpha");
+    await table
+      .getByRole("button", { name: `Add ${direction} case`, exact: true })
+      .click();
+    await table.getByLabel(`${token}, case 2`, { exact: true }).fill("Beta");
+    const secondModel = table.getByRole("group", {
+      name: `${side === "Rows" ? "Row" : "Column"} case 2 Model`,
+      exact: true,
+    });
+    await secondModel.getByRole("searchbox").fill("fixture/text");
+    await secondModel
+      .locator('input[type="radio"][value="fixture/text"]')
+      .check();
+    await table
+      .getByRole("combobox", { name: "Thinking effort", exact: true })
+      .nth(1)
+      .selectOption("low");
+    const prompt = page.getByLabel("Prompt", { exact: true });
+    await prompt.fill(`Draw ${token}`);
+    await connectOpenRouter(page);
+    const generate = page.getByRole("button", {
+      name: "Generate",
+      exact: true,
+    });
+    await expect(generate).toBeEnabled();
+
+    const cancellation = page.waitForEvent("dialog");
+    const cancelledSelection = axis.selectOption("single");
+    await (await cancellation).dismiss();
+    await cancelledSelection;
+    await expect(axis).toHaveValue("variable");
+    await page.reload();
+    await expect(
+      table.getByLabel(`${token}, case 1`, { exact: true }),
+    ).toHaveValue("Alpha");
+    await expect(
+      table.getByLabel(`${token}, case 2`, { exact: true }),
+    ).toHaveValue("Beta");
+    await secondModel.getByRole("searchbox").fill("fixture/text");
+    await expect(
+      secondModel.locator('input[type="radio"][value="fixture/text"]'),
+    ).toBeChecked();
+    await expect(
+      table
+        .getByRole("combobox", { name: "Thinking effort", exact: true })
+        .nth(1),
+    ).toHaveValue("low");
+
+    const confirmation = page.waitForEvent("dialog");
+    const acceptedSelection = axis.selectOption("single");
+    await (await confirmation).accept();
+    await acceptedSelection;
+    await expect(axis).toHaveValue("single");
+    await expect(other).toHaveValue("single");
+    await expect(table).toHaveCount(0);
+    await commonModel.getByRole("searchbox").fill("fixture/text");
+    await expect(
+      commonModel.locator('input[type="radio"][value="fixture/text"]'),
+    ).toBeChecked();
+    await expect(
+      page.getByRole("combobox", { name: "Thinking effort", exact: true }),
+    ).toHaveValue("default");
+    await expect(prompt).toHaveValue(`Draw ${token}`);
+    await expect(generate).toBeDisabled();
+    await prompt.fill("Draw a rectangle");
+    await expect(generate).toBeEnabled();
+    const created = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        new URL(response.url()).pathname === "/api/grids",
+    );
+    await generate.click();
+    const response = await created;
+    expect(response.status()).toBe(201);
+    const { id } = await response.json();
+    await expectProgress(page, 1, 1);
+    const grid = await (await page.request.get(`/api/grids/${id}`)).json();
+    expect(grid.input.rows).toHaveLength(1);
+    expect(grid.input.columns).toHaveLength(1);
+    expect(grid.input.parameters.variable).toBeUndefined();
+    expect(
+      grid.cells.map(
+        (cell: { model: string; effort: string; prompt: string }) => [
+          cell.model,
+          cell.effort,
+          cell.prompt,
+        ],
+      ),
+    ).toEqual([["fixture/text", "default", "Draw a rectangle"]]);
+  });
+}

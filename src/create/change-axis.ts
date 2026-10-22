@@ -50,6 +50,7 @@ export type InputAction =
   | { type: "to-axis"; parameter: CommonParameterId; side: AxisSide }
   | { type: "to-common"; parameter: CommonParameterId }
   | { type: "dimension"; side: AxisSide; parameter: ParameterId }
+  | { type: "single"; side: AxisSide }
   | { type: "add-case"; side: AxisSide }
   | { type: "remove-case"; side: AxisSide; index: number }
   | { type: "move-case"; side: AxisSide; index: number; to: number }
@@ -116,13 +117,15 @@ export function droppedParameters(
         ? action
         : undefined;
   const removed =
-    action.type === "to-common"
-      ? [action.parameter]
-      : replacement
-        ? axisParameters(input, replacement.side).filter(
-            (kind) => kind !== replacement.parameter,
-          )
-        : [];
+    action.type === "single"
+      ? axisParameters(input, action.side)
+      : action.type === "to-common"
+        ? [action.parameter]
+        : replacement
+          ? axisParameters(input, replacement.side).filter(
+              (kind) => kind !== replacement.parameter,
+            )
+          : [];
   return removed.filter((kind) =>
     kind === "variable"
       ? input[input.parameters.variable!.kind].some((entry) =>
@@ -257,6 +260,12 @@ export function reduceInput(
       return reduceInput(input, { ...action, type: "dimension" });
     case "to-common":
       return collapse(input, action.parameter);
+    case "single": {
+      let next = input;
+      for (const parameter of axisParameters(input, action.side))
+        next = collapse(next, parameter);
+      return neutralDimension(next, action.side);
+    }
     case "dimension": {
       const source = input.parameters[action.parameter];
       const other = action.side === "rows" ? "columns" : "rows";

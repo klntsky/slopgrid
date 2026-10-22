@@ -45,27 +45,25 @@ export function AxisEditor({
   const label = side === "rows" ? "Rows" : "Columns";
   const dimension =
     input.parameters.variable?.kind === side ? "variable" : members[0];
-  const summary = !dimension;
   return (
     <div className="axis">
       <label className="axis-selector">
         <span className="axis-name">{label}:</span>
         <select
           aria-label={label}
-          value={dimension ?? "summary"}
-          onChange={(event) =>
-            onAction({
-              type: "dimension",
-              side,
-              parameter: event.target.value as ParameterId,
-            })
-          }
+          value={dimension ?? "single"}
+          onChange={(event) => {
+            const value = event.target.value;
+            if (value === "single") onAction({ type: "single", side });
+            else {
+              const parameter = kinds.find((kind) => kind === value);
+              if (parameter) onAction({ type: "dimension", side, parameter });
+            }
+          }}
         >
-          {summary && (
-            <option value="summary" disabled>
-              Single {side === "rows" ? "row" : "column"}
-            </option>
-          )}
+          <option value="single">
+            Single {side === "rows" ? "row" : "column"}
+          </option>
           {kinds.map((kind) => (
             <option
               key={kind}
