@@ -162,6 +162,25 @@ export function ChatEditor({
                 )}
               </span>
             </div>
+            {message.role === "user" && !!message.images?.length && (
+              <div className="chat-message-images">
+                <ImageList
+                  images={message.images}
+                  disabled={reading}
+                  removeLabel={(image) =>
+                    `Remove ${image.name} from message ${index + 1}`
+                  }
+                  onRemove={(imageIndex) => {
+                    if (reads.current) return;
+                    update(index, (current) => ({
+                      images: current.images?.filter(
+                        (_, i) => i !== imageIndex,
+                      ),
+                    }));
+                  }}
+                />
+              </div>
+            )}
             <DeletableInput
               content={message.content}
               label={`Remove message ${index + 1}`}
@@ -198,25 +217,6 @@ export function ChatEditor({
                 />
               )}
             </DeletableInput>
-            {message.role === "user" && !!message.images?.length && (
-              <div className="chat-message-images">
-                <ImageList
-                  images={message.images}
-                  disabled={reading}
-                  removeLabel={(image) =>
-                    `Remove ${image.name} from message ${index + 1}`
-                  }
-                  onRemove={(imageIndex) => {
-                    if (reads.current) return;
-                    update(index, (current) => ({
-                      images: current.images?.filter(
-                        (_, i) => i !== imageIndex,
-                      ),
-                    }));
-                  }}
-                />
-              </div>
-            )}
             {compatibility?.(index)}
             <ValidationFeedback descendants />
           </div>

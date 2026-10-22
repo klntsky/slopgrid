@@ -369,3 +369,72 @@ for (const side of ["rows", "columns"] as const)
       source[side].map((record) => record.judge_criteria),
     );
   });
+
+for (const side of ["rows", "columns"] as const)
+  test(`${side} Chat grouping preserves message and image order while ordinary samples stay independent`, () => {
+    const history: NonNullable<Cell["messages"]> = [
+      { role: "user", content: "Inspect", images: [reference, second] },
+      { role: "assistant", content: "Supplied answer" },
+      { role: "user", content: "Follow up" },
+    ];
+    const renamed = structuredClone(history);
+    renamed[0].images = [
+      { ...reference, name: "renamed.png", width: 40, height: 20 },
+      { ...second, name: "also-renamed.png" },
+    ];
+    renamed[2].images = [];
+    const reorderedImages = structuredClone(history);
+    reorderedImages[0].images!.reverse();
+    const moved = structuredClone(history);
+    moved[2].images = moved[0].images;
+    delete moved[0].images;
+    const reorderedMessages = [history[2], history[1], history[0]];
+    const source = currentDefinition({
+      format: "chat-template",
+      caseAxis: side,
+      judge: true,
+      parameters: {
+        input: { kind: side },
+        judge_criteria: { kind: side },
+      },
+      [side]: [history, renamed, reorderedImages, moved, reorderedMessages].map(
+        (input, index) => ({
+          input,
+          judge_criteria: [
+            { text: `Matches case ${index}?`, correctAnswer: index % 2 === 0 },
+          ],
+        }),
+      ),
+    });
+    const { cells, tasks } = workflow(source);
+    assert.equal(tasks.filter((task) => task.kind === "generation").length, 4);
+    assert.equal(tasks.filter((task) => task.kind === "judge").length, 5);
+    assert.equal(cells[0].generationId, cells[1].generationId);
+    assert.equal(
+      new Set([cells[0], ...cells.slice(2)].map((cell) => cell.generationId))
+        .size,
+      4,
+    );
+    for (const [index, cell] of cells.entries()) {
+      const judgment = tasks.find((task) => task.id === cell.judgmentId);
+      assert.equal(judgment?.kind, "judge");
+      if (judgment?.kind !== "judge") throw new Error("Expected judgment");
+      assert.equal(judgment.generationId, cell.generationId);
+      assert.deepEqual(judgment.input.criteria, [
+        { text: `Matches case ${index}?`, correctAnswer: index % 2 === 0 },
+      ]);
+    }
+    const unjudged = structuredClone(source);
+    unjudged.judge = false;
+    delete unjudged.parameters.judge_model;
+    delete unjudged.parameters.judge_effort;
+    delete unjudged.parameters.judge_criteria;
+    for (const record of unjudged[side]) delete record.judge_criteria;
+    const ordinary = workflow(unjudged);
+    assert.equal(ordinary.tasks.length, 5);
+    assert.ok(ordinary.tasks.every((task) => task.kind === "generation"));
+    assert.equal(
+      new Set(ordinary.cells.map((cell) => cell.generationId)).size,
+      5,
+    );
+  });

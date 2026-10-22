@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { test, expect } from "./fixtures";
 import {
   connectOpenRouter,
@@ -80,6 +80,39 @@ async function unsupportedOtherModel(page: Page) {
     .click();
 }
 
+async function expectMessagePreview(page: Page, number: number, name: string) {
+  const message = page.locator(".chat-message").nth(number - 1);
+  const image = message.getByRole("img", { name, exact: true });
+  await expect(image).toBeVisible();
+  await expect(
+    message.getByRole("button", {
+      name: `Remove ${name} from message ${number}`,
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(message.getByText(name, { exact: true })).toBeHidden();
+  await expectPreviewAboveText(
+    image,
+    page.getByLabel(`Message ${number}`, { exact: true }),
+  );
+}
+
+async function expectPreviewAboveText(image: Locator, text: Locator) {
+  await expect
+    .poll(async () => {
+      const [preview, input] = await Promise.all([
+        image.boundingBox(),
+        text.boundingBox(),
+      ]);
+      return (
+        preview !== null &&
+        input !== null &&
+        preview.y + preview.height <= input.y
+      );
+    })
+    .toBe(true);
+}
+
 test("message attachments gate every model and reach only their own completion turns", async ({
   page,
   request,
@@ -102,9 +135,10 @@ test("message attachments gate every model and reach only their own completion t
   await page
     .getByLabel("Add images to message 3", { exact: true })
     .setInputFiles(laterImage);
+  await expectMessagePreview(page, 3, laterImage.name);
   await expect(
-    page.getByRole("img", { name: laterImage.name, exact: true }),
-  ).toBeVisible();
+    page.locator(".chat-message").nth(0).getByRole("img"),
+  ).toHaveCount(0);
   await expect(generate).toBeDisabled();
   await page
     .getByRole("button", {
@@ -157,6 +191,8 @@ test("message attachments gate every model and reach only their own completion t
   await page
     .getByLabel("Add images to message 1", { exact: true })
     .setInputFiles(firstImage);
+  await expectMessagePreview(page, 1, firstImage.name);
+  await expectMessagePreview(page, 3, laterImage.name);
   await expect(generate).toBeEnabled();
   await generate.click();
   await expectProgress(page, 1, 1);
@@ -341,11 +377,19 @@ test("clipboard images attach to their user turn and disabled role badges retain
   });
   const first = page.getByLabel("Message 1", { exact: true });
   await first.fill("Earlier $ROW1 one");
+  await page
+    .getByLabel("Add images to message 1", { exact: true })
+    .setInputFiles(firstImage);
+  await expectMessagePreview(page, 1, firstImage.name);
   await page.evaluate(() => navigator.clipboard.writeText("\nNotes"));
   await first.press("End");
   await first.press("ControlOrMeta+V");
   await expect(first).toHaveValue("Earlier $ROW1 one\nNotes");
   await appendCompletionAndUser(page);
+  await page
+    .getByLabel("Add images to message 3", { exact: true })
+    .setInputFiles(laterImage);
+  await expectMessagePreview(page, 3, laterImage.name);
   const clipboardBytes = await page.evaluate(async () => {
     const canvas = document.createElement("canvas");
     canvas.width = 120;
@@ -366,7 +410,25 @@ test("clipboard images attach to their user turn and disabled role badges retain
   });
   await page.getByLabel("Message 3", { exact: true }).press("ControlOrMeta+V");
   const later = page.locator(".chat-message").nth(2);
-  await expect(later.locator(".reference-image img")).toBeVisible();
+  await expect(later.getByRole("img")).toHaveCount(2);
+  const pastedName = await later.getByRole("img").nth(1).getAttribute("alt");
+  expect(pastedName).toBeTruthy();
+  expect(pastedName).not.toBe(laterImage.name);
+  await expectMessagePreview(page, 3, pastedName!);
+  await expectMessagePreview(page, 1, firstImage.name);
+  await later
+    .getByRole("button", {
+      name: `Remove ${laterImage.name} from message 3`,
+      exact: true,
+    })
+    .click();
+  await expect(
+    later.getByRole("img", { name: laterImage.name, exact: true }),
+  ).toHaveCount(0);
+  await expect(later.getByRole("img")).toHaveCount(1);
+  await expectMessagePreview(page, 3, pastedName!);
+  await expectMessagePreview(page, 1, firstImage.name);
+  await expect(first).toHaveValue("Earlier $ROW1 one\nNotes");
   await expect(
     later.getByRole("button", { name: "Message 3 role: user", exact: true }),
   ).toBeDisabled();
@@ -378,7 +440,8 @@ test("clipboard images attach to their user turn and disabled role badges retain
   await expect(page.getByRole("tooltip")).toBeVisible();
   await appendFinalCompletion(page);
   await page.reload();
-  await expect(later.locator(".reference-image img")).toBeVisible();
+  await expectMessagePreview(page, 3, pastedName!);
+  await expectMessagePreview(page, 1, firstImage.name);
   await expect(page.getByLabel("Message 3", { exact: true })).toHaveValue("");
   const generate = page.getByRole("button", { name: "Generate", exact: true });
   await expect(generate).toBeDisabled();
@@ -386,7 +449,10 @@ test("clipboard images attach to their user turn and disabled role badges retain
   await generate.click();
   await expectProgress(page, 1, 1);
   const sent = await (await request.get("/fixture/chat-requests")).json();
-  const initial = { text: "Earlier one one\nNotes", images: [] };
+  const initial = {
+    text: "Earlier one one\nNotes",
+    images: [dataURL(firstImage)],
+  };
   expect(userTurns(sent[0])).toEqual([initial]);
   expect(userTurns(sent[1])).toEqual([
     initial,

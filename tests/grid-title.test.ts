@@ -81,3 +81,90 @@ for (const side of ["rows", "columns"] as const) {
     });
   }
 }
+
+for (const side of ["rows", "columns"] as const) {
+  for (const format of ["markdown", "chat-template"] as const) {
+    test(`${side} ${format} titles resolve image-only fields against their own complete input case`, () => {
+      const token = side === "rows" ? "$ROW" : "$COLUMN";
+      const input = currentDefinition({
+        format,
+        caseAxis: side,
+        judge: true,
+        parameters: {
+          input: { kind: side },
+          variable: { kind: side },
+          judge_criteria: {
+            kind: "common",
+            value: [{ text: `Private rubric ${token}4`, correctAnswer: false }],
+          },
+        },
+        [side]: [
+          {
+            input: [
+              { role: "user", content: `First ${token}2 / ${token}3` },
+              ...(format === "chat-template"
+                ? [{ role: "unfilled" as const, content: "" }]
+                : []),
+            ],
+            variable: [
+              null,
+              { text: `literal ${token}3` },
+              { text: "", images: [{ id: "first", name: "first.png" }] },
+              { text: "secret first reference answer" },
+            ],
+          },
+          {
+            input: [
+              { role: "user", content: `Second ${token}3 / ${token}2` },
+              ...(format === "chat-template"
+                ? [{ role: "unfilled" as const, content: "" }]
+                : []),
+            ],
+            variable: [
+              null,
+              { text: `other ${token}3` },
+              { text: "", images: [{ id: "second", name: "second.png" }] },
+              { text: "secret second reference answer" },
+            ],
+          },
+        ],
+      });
+      const before = structuredClone(input);
+      const title = expandPromptForTitle(input);
+      const first = `First literal ${token}3 / first.png`;
+      const second = `Second second.png / other ${token}3`;
+      assert.ok(title.includes(first), title);
+      assert.ok(title.includes(second), title);
+      assert.ok(title.indexOf(first) < title.indexOf(second), title);
+      assert.doesNotMatch(title, /Private rubric|secret/);
+      assert.deepEqual(input, before);
+    });
+
+    test(`${side} ${format} image-only complete input titles retain attachment filenames`, () => {
+      const input = currentDefinition({
+        format,
+        caseAxis: side,
+        parameters: { input: { kind: side } },
+        [side]: ["first.png", "second.png"].map((name) => ({
+          input: [
+            {
+              role: "user" as const,
+              content: "",
+              images: [{ id: name, name }],
+            },
+            ...(format === "chat-template"
+              ? [{ role: "unfilled" as const, content: "" }]
+              : []),
+          ],
+        })),
+      });
+      const title = expandPromptForTitle(input);
+      assert.ok(title.includes("first.png"), title);
+      assert.ok(title.includes("second.png"), title);
+      assert.ok(
+        title.indexOf("first.png") < title.indexOf("second.png"),
+        title,
+      );
+    });
+  }
+}

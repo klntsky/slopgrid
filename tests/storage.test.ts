@@ -1,17 +1,20 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import Database from "better-sqlite3";
 import {
   existsSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
   rmSync,
+  writeFileSync,
 } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { token } from "../server/ids.js";
 import { Store } from "../server/store.js";
+import { initializeDatabase } from "../server/database.js";
 import {
   expandGrid,
   gridSchema,
@@ -32,6 +35,8 @@ import {
   restoreV14ReferenceSchema,
   restoreV15ReferenceSchema,
   removeStoredReferenceDimensions,
+  rejectReferenceHashUpdates,
+  allowReferenceHashUpdates,
 } from "./reference-storage-fixture.js";
 import { holdDatabaseWrites } from "./database-lock.js";
 import {
@@ -581,6 +586,116 @@ for (const available of [true, false])
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+for (const failure of ["blob write", "metadata commit"] as const)
+  test(`reference migration retains legacy bytes after a failed ${failure} and safely retries`, async () => {
+    const dir = mkdtempSync(join(tmpdir(), "slopgrid-reference-retry-"));
+    const database = join(dir, "app.sqlite");
+    const secret = Buffer.alloc(32, 1);
+    let store = new Store(database, secret);
+    try {
+      const image = store.references.add(referencePng, "original.png", {
+        id: "owner",
+        userId: "account",
+        created: 0,
+      })!;
+      const sha256 = createHash("sha256").update(referencePng).digest("hex");
+      store.files.write(`reference-${image.id}`, { image: referencePng });
+      const legacyPath = store.files.path(`reference-${image.id}`, "image")!;
+      rmSync(join(store.files.root, ".references"), { recursive: true });
+      restoreV14ReferenceSchema(store.db);
+      initializeDatabase(store.db);
+      if (failure === "metadata commit") rejectReferenceHashUpdates(store.db);
+      else writeFileSync(join(store.files.root, ".references"), "blocked");
+      store.db.close();
+      assert.throws(
+        () => new Store(database, secret),
+        failure === "metadata commit"
+          ? /Injected reference migration failure/
+          : /EEXIST|ENOTDIR/,
+      );
+      assert.deepEqual(readFileSync(legacyPath), referencePng);
+      const snapshot = new Database(database);
+      try {
+        assert.equal(
+          snapshot
+            .prepare<[string], { sha256: string | null }>(
+              "SELECT sha256 FROM reference_images WHERE id=?",
+            )
+            .get(image.id)!.sha256,
+          null,
+        );
+        assert.deepEqual(referenceBlobs(snapshot), []);
+        if (failure === "metadata commit") {
+          assert.deepEqual(
+            readFileSync(join(store.files.root, ".references", sha256)),
+            referencePng,
+          );
+          allowReferenceHashUpdates(snapshot);
+        } else rmSync(join(store.files.root, ".references"));
+      } finally {
+        snapshot.close();
+      }
+      store = new Store(database, secret);
+      assert.deepEqual(store.references.hydrate(image), image);
+      assert.equal(store.references.get(image.id)!.ownerUserId, "account");
+      assert.equal(store.references.get(image.id)!.name, "original.png");
+      assert.equal(existsSync(legacyPath), false);
+      assert.deepEqual(
+        (await store.references.loader()([image.id])).get(image.id)!.bytes,
+        referencePng,
+      );
+      assert.deepEqual(referenceBlobs(store.db), [
+        { sha256, width: 7, height: 3 },
+      ]);
+      assert.deepEqual(readdirSync(join(store.files.root, ".references")), [
+        sha256,
+      ]);
+    } finally {
+      if (store.db.open) store.db.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+test("reference migration refuses mismatched historical bytes without replacing a shared blob or deleting either copy", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "slopgrid-reference-hash-"));
+  const database = join(dir, "app.sqlite");
+  const secret = Buffer.alloc(32, 1);
+  let store = new Store(database, secret);
+  try {
+    const owner = { id: "owner", created: 0 };
+    const image = store.references.add(referencePng, "original.png", owner)!;
+    const duplicate = store.references.add(referencePng, "shared.png", owner)!;
+    const sharedPath = store.references.path(image.id)!;
+    const mismatched = Buffer.concat([referencePng, Buffer.from("changed")]);
+    store.files.write(`reference-${image.id}`, { image: mismatched });
+    const legacyPath = store.files.path(`reference-${image.id}`, "image")!;
+    store.db.close();
+    assert.throws(
+      () => new Store(database, secret),
+      /Legacy reference content does not match its hash/,
+    );
+    assert.deepEqual(readFileSync(sharedPath), referencePng);
+    assert.deepEqual(readFileSync(legacyPath), mismatched);
+    assert.deepEqual(readdirSync(join(store.files.root, ".references")), [
+      createHash("sha256").update(referencePng).digest("hex"),
+    ]);
+    writeFileSync(legacyPath, referencePng);
+    store = new Store(database, secret);
+    assert.equal(existsSync(legacyPath), false);
+    assert.equal(store.references.path(duplicate.id), sharedPath);
+    assert.deepEqual(
+      (await store.references.loader()([image.id, duplicate.id])).get(
+        duplicate.id,
+      )!.bytes,
+      referencePng,
+    );
+    assert.deepEqual(store.references.hydrate(image), image);
+  } finally {
+    if (store.db.open) store.db.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 test("v15 CAS metadata backfills once per SHA, keeps missing images usable as metadata and survives restarts", () => {
   const dir = mkdtempSync(join(tmpdir(), "slopgrid-dimension-migration-"));

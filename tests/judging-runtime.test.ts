@@ -412,6 +412,201 @@ test("per-case rubrics persist as one source while resolved judgments and reused
   }
 });
 
+test("admitted image-bearing Chat histories and judges do not recheck eligibility on Resume", async () => {
+  const fixture = await runtimeFixture();
+  try {
+    await fixture.engine.api.drain();
+    const image = fixture.store.references.add(png, "input.png", {
+      id: fixture.owner,
+      created: 0,
+    })!;
+    const id = await create(
+      fixture,
+      currentDefinition({
+        format: "chat-template",
+        judge: true,
+        budgetUsd: 1,
+        parameters: {
+          input: {
+            kind: "common",
+            value: [
+              { role: "user", content: "First question" },
+              { role: "unfilled", content: "" },
+              { role: "user", content: "", images: [image] },
+            ],
+          },
+        },
+      }),
+    );
+    assert.equal(fixture.calls.length, 0);
+    fixture.catalog.data[0].architecture.input_modalities = ["text"];
+    fixture.catalog.data[0].supported_parameters = [];
+    // Restart removes the engine's cached catalog, so Resume and preparation see
+    // metadata that would reject this same setup as a new grid.
+    await fixture.engine.close();
+    await fixture.startEngine();
+    const response = await fixture.request(`/api/grids/${id}/retry`, {});
+    assert.equal(response.status, 200, await response.clone().text());
+    finish(await fixture.nextCall(), "First answer", 0.1);
+    const generation = await fixture.nextCall();
+    assert.deepEqual(judgeImage(generation), {
+      bytes: png,
+      mediaType: "image/png",
+    });
+    finish(generation, "Image answer", 0.1);
+    const judge = await fixture.nextCall();
+    assert.deepEqual(judgeImage(judge), {
+      bytes: png,
+      mediaType: "image/png",
+    });
+    finish(
+      judge,
+      '{"results":[{"verdict":true,"explanation":"Matches."}]}',
+      0.25,
+    );
+    const grid = await settled(fixture, id);
+    assert.equal(grid.cells[0].status, "complete");
+    assert.equal(grid.cells[0].judge?.status, "complete");
+    assert.equal(fixture.calls.length, 3);
+  } finally {
+    await fixture.close();
+  }
+});
+
+for (const side of ["rows", "columns"] as const)
+  test(`${side} Chat case fields deduplicate per message without exposing private judge answers`, async () => {
+    const fixture = await runtimeFixture();
+    try {
+      const session = { id: fixture.owner, created: 0 };
+      const bytes = ["first", "second", "answer-0", "answer-1", "unused"].map(
+        (value) => Buffer.concat([png, Buffer.from(value)]),
+      );
+      const images = bytes.map((value, index) =>
+        fixture.store.references.add(value, `${index}.png`, session)!,
+      );
+      const urls = bytes.map(
+        (value) => `data:image/png;base64,${value.toString("base64")}`,
+      );
+      const token = side === "rows" ? "$ROW" : "$COLUMN";
+      const id = await create(
+        fixture,
+        currentDefinition({
+          format: "chat-template",
+          caseAxis: side,
+          judge: true,
+          budgetUsd: 1,
+          parallelWorkers: 1,
+          parameters: {
+            input: { kind: side },
+            variable: { kind: side },
+            judge_criteria: { kind: side },
+          },
+          [side]: [0, 1].map((index) => ({
+            input: [
+              {
+                role: "user",
+                content: `Compare ${token}1 ${token}1`,
+                images: [images[0]],
+              },
+              { role: "unfilled", content: "" },
+              {
+                role: "user",
+                content: `Again ${token}1`,
+                images: [images[1]],
+              },
+            ],
+            variable: [
+              { text: `shape ${token}2`, images: [images[0], images[1]] },
+              { text: `secret answer ${index}`, images: [images[index + 2]] },
+              { text: "not consumed", images: [images[4]] },
+            ],
+            judge_criteria: [
+              {
+                text: `Does ${token}1 match ${token}2 and ${token}2?`,
+                correctAnswer: index === 0,
+              },
+            ],
+          })),
+        }),
+      );
+      const history = (call: RuntimeCall) =>
+        call.request.messages.map((message) => ({
+          role: message.role,
+          text: messageText(message.content),
+          images:
+            typeof message.content === "string"
+              ? []
+              : message.content.flatMap((part) =>
+                  part.type === "image_url" ? [part.image_url!.url] : [],
+                ),
+        }));
+      const first = await fixture.nextCall();
+      const initial = [
+        {
+          role: "user",
+          text: `Compare shape ${token}2 shape ${token}2`,
+          images: urls.slice(0, 2),
+        },
+      ];
+      assert.deepEqual(history(first), initial);
+      finish(first, "First answer", 0.1);
+      const second = await fixture.nextCall();
+      const next = [
+        ...initial,
+        { role: "assistant", text: "First answer", images: [] },
+        {
+          role: "user",
+          text: `Again shape ${token}2`,
+          images: [urls[1], urls[0]],
+        },
+      ];
+      assert.deepEqual(history(second), next);
+      for (const call of [first, second]) {
+        const wire = JSON.stringify(call.request);
+        assert.equal(wire.includes("secret answer"), false);
+        for (const privateUrl of urls.slice(2))
+          assert.equal(wire.includes(privateUrl), false);
+      }
+      finish(second, "Final answer", 0.1);
+      for (const index of [0, 1]) {
+        const judge = await fixture.nextCall();
+        const messages = history(judge);
+        assert.deepEqual(messages.slice(0, -2), [
+          ...next,
+          { role: "assistant", text: "Final answer", images: [] },
+        ]);
+        assert.deepEqual(messages.at(-1), {
+          role: "user",
+          text: `Criteria:\n1. Does shape ${token}2 match secret answer ${index} and secret answer ${index}?`,
+          images: [urls[0], urls[1], urls[index + 2]],
+        });
+        assert.equal(
+          JSON.stringify(judge.request).includes(urls[3 - index]),
+          false,
+        );
+        assert.equal(JSON.stringify(judge.request).includes(urls[4]), false);
+        finish(
+          judge,
+          '{"results":[{"verdict":true,"explanation":"Matches."}]}',
+          0.25,
+        );
+      }
+      const grid = await settled(fixture, id);
+      assert.equal(
+        new Set(grid.cells.map((cell) => cell.generationId)).size,
+        1,
+      );
+      assert.ok(grid.cells.every((cell) => cell.judge?.status === "complete"));
+      assert.deepEqual(
+        grid.cells.map((cell) => cell.judge?.criteria[0].correctAnswer),
+        [true, false],
+      );
+      assert.equal(fixture.calls.length, 4);
+    } finally {
+      await fixture.close();
+    }
+  });
+
 test("chat judging restores each turn's image bytes to the completed conversation", async () => {
   const fixture = await runtimeFixture();
   try {

@@ -336,6 +336,12 @@ section {
   margin-bottom: 12px;
   align-items: start;
 }
+.chat-message > :is(.deletable-input, .feedback-message, .compatibility-table-scroll) {
+  grid-column: 2;
+}
+.chat-message:has(.chat-message-images) > .chat-message-controls {
+  grid-row: 2;
+}
 .chat-message-controls {
   display: flex;
   align-items: flex-start;
@@ -349,8 +355,9 @@ section {
 }
 .chat-message-images {
   grid-column: 2;
+  grid-row: 1;
   min-width: 0;
-  margin-top: 8px;
+  margin-bottom: 8px;
 }
 .deletable-input {
   position: relative;
@@ -698,7 +705,7 @@ section {
   pointer-events: auto;
 }
 .prompt-editor > .reference-images {
-  margin-top: 10px;
+  margin-top: 0;
 }
 .axis > .axis-selector {
   margin-bottom: 12px;
@@ -2307,14 +2314,9 @@ header {
   margin-bottom: 10px;
 }
 .reference-image img {
-  width: 48px;
-  height: 48px;
+  width: 144px;
+  height: 144px;
   object-fit: contain;
-}
-.reference-image span {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  flex: 1;
 }
 .reference-upload {
   position: relative;

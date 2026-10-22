@@ -82,6 +82,18 @@ export function VariableInput({
   }
   return (
     <div className="case-prompt-editor" aria-busy={reading}>
+      {!!field.images?.length && (
+        <ImageList
+          images={field.images}
+          disabled={reading}
+          removeLabel={(image) => `Remove ${image.name} from ${label}`}
+          onRemove={(index) =>
+            update({
+              images: field.images?.filter((_, i) => i !== index),
+            })
+          }
+        />
+      )}
       <ValidationField>
         {(validation) => (
           <div className="variable-cell-input" {...validation}>
@@ -103,18 +115,6 @@ export function VariableInput({
           </div>
         )}
       </ValidationField>
-      {!!field.images?.length && (
-        <ImageList
-          images={field.images}
-          disabled={reading}
-          removeLabel={(image) => `Remove ${image.name} from ${label}`}
-          onRemove={(index) =>
-            update({
-              images: field.images?.filter((_, i) => i !== index),
-            })
-          }
-        />
-      )}
       {children}
     </div>
   );

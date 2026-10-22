@@ -497,3 +497,91 @@ test("shared generation calls aggregate across ledger cells without duplicating 
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+for (const side of ["rows", "columns"] as const)
+  test(`${side} case billing attributes calls to their generator and judge tasks`, () => {
+    const directory = mkdtempSync(join(tmpdir(), "slopgrid-case-billing-"));
+    const store = new Store(join(directory, "db.sqlite"), Buffer.alloc(32, 1));
+    try {
+      const input = currentInput({
+        format: "chat-template",
+        caseAxis: side,
+        judge: true,
+        parameters: {
+          input: { kind: side },
+          model: { kind: side },
+          effort: { kind: side },
+          judge_model: { kind: side },
+          judge_effort: { kind: side },
+        },
+        [side]: [
+          {
+            input: [{ role: "user", content: "First question" }],
+            model: "generator-a",
+            effort: "none",
+            judge_model: "judge-a",
+            judge_effort: "high",
+          },
+          {
+            input: [
+              { role: "system", content: "Instructions" },
+              { role: "user", content: "Second question" },
+            ],
+            model: "generator-b",
+            effort: "low",
+            judge_model: "judge-b",
+            judge_effort: "default",
+          },
+        ],
+      });
+      const cells = expandGrid(input).map((cell, index) => ({
+        ...cell,
+        id: `case-cell-${index}`,
+      }));
+      store.insert(
+        validatedGrid({
+          id: "case-grid",
+          owner: "owner",
+          input,
+          cells,
+          status: "paused",
+          published: false,
+          visibility: "private",
+          createdAt: "2026-01-01T00:00:00.000Z",
+        }),
+      );
+      for (const [index, cell] of cells.entries()) {
+        // Without a provider selection override, the durable workflow task is
+        // authoritative for each phase, not the generator at a grid position.
+        for (const phase of ["direct", "judge"] as const) {
+          const call = store.billing.observe(cell.id)(phase);
+          call.update({ generationId: `${phase}-${index}` });
+          call.complete(
+            { phase, finishReason: "stop" },
+            { costUsd: phase === "judge" ? 0.25 : 0.1 },
+          );
+        }
+      }
+      const page = store.billing.page("owner", 0);
+      assert.equal(page.total, 4);
+      const label = side === "rows" ? "Row" : "Column";
+      for (const call of page.calls) {
+        const index = call.generationId === `${call.phase}-0` ? 0 : 1;
+        assert.equal(call.gridId, "case-grid");
+        assert.equal(
+          call.gridPrompt,
+          `${label} case 1:\nuser: First question\n\n${label} case 2:\nsystem: Instructions\n\nuser: Second question`,
+        );
+        assert.equal(
+          call.model,
+          `${call.phase === "judge" ? "judge" : "generator"}-${index ? "b" : "a"}`,
+        );
+        const efforts =
+          call.phase === "judge" ? ["high", "default"] : ["none", "low"];
+        assert.equal(call.effort, efforts[index]);
+      }
+    } finally {
+      store.db.close();
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });

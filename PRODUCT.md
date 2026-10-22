@@ -27,7 +27,7 @@ The following numbered requirements define the visible layout and interaction co
 19. Enclose preset checkboxes in a bordered panel and use the theme accent for checked states.
 20. Align the axis swap control with desktop selectors and rotate its arrows vertically when axes stack on phones.
 21. Stretch common image options across equal desktop columns and stack full-width controls on phones.
-22. Show image attachments on their prompt, message, or numbered case field, with thumbnails, visible filenames, and compact individual removal controls.
+22. Show image attachments above the text in their prompt, message, or numbered case field. Use previews three times their previous size, without visible filenames, and retain compact individual removal controls and accessible image names.
 23. Present the prompt and chat editors as follows:
     - For prompt-based output, use a six-row textarea with the placeholder Describe what you want to generate and the section heading Enter your prompt. The heading serves as its visible label.
     - For Markdown, Image, SVG, and Static website, place an icon-only image file picker inside the prompt textarea. Use the existing attachment styling, previews, individual removal controls, and image paste behavior.
@@ -90,7 +90,7 @@ Status: high level product goal that is not a requirement (not achieved yet).
 
    Enable provider prompt caching for Chat completion requests. Preserve reusable image and history prefixes as conversations grow, including long runs of supplied messages. Keep each message's images before its own text without changing their message positions. Keep stable routing per cell. Cache availability remains provider-controlled.
 
-   - Attach images directly to individual supplied user messages, with previews, filenames, and individual removal controls. Accept pasted clipboard images in each user-message input while preserving normal text-only paste. Place an icon-only paperclip file chooser inside the message input, immediately left of the delete cross and with the same styling. Allow image-only user messages. Before changing an attached message's role, require removing its images and show "Remove images before changing this message's role." in the role badge's tooltip, including when its button is disabled.
+   - Attach images directly to individual supplied user messages, with previews above their text and individual removal controls. Accept pasted clipboard images in each user-message input while preserving normal text-only paste. Place an icon-only paperclip file chooser inside the message input, immediately left of the delete cross and with the same styling. Allow image-only user messages. Before changing an attached message's role, require removing its images and show "Remove images before changing this message's role." in the role badge's tooltip, including when its button is disabled.
    - Preserve attachments with their messages through reordering, draft reloads, provider authorization, format switches, Edit, and Fork. Removing a message also removes its attachments from the history.
    - Apply the image upload, local persistence, access, and content-sharing rules in section 3.7 to Chat attachments. Chat completion uses text grid dimensions, accepts images only as inputs, and produces text responses.
    - Reserve each rendered attachment's space from its saved proportions before it loads. In interactive chat views, keep a spinner centered over the gradually loading image without hiding it, and remove the spinner when loading succeeds or fails. Preserve the image's proportions in narrow and expanded views and standalone downloads.
@@ -313,6 +313,7 @@ Image grids expose a "Parameters" panel for the common model, shared image setti
 ### 4.2. Title, prompt, author, and price
 
 1. Title and prompt are separate values. A new title is empty. Grid lists use a custom title when set; otherwise, use an expanded prompt that replaces each numbered variable with that field's values across its axis cases, in order, formatted as (value1|value2|...). Use attachment filenames for image-only fields. Limit the expanded prompt to 160 characters, including a trailing "..." when truncated, without splitting Unicode characters. Older grids without an expanded prompt retain their original prompt as the fallback. Keep the original prompt for generation and the grid navbar.
+   - For case-owned prompts and Chat histories, expand each case with its own numbered fields before combining case titles. Retain filename fallbacks for image-only fields alongside surrounding text.
 2. In the navbar, show "Set Title" when the title is empty or the title when set, followed by a centered dot and the prompt. Owners can set or change the title independently of the prompt, including after publication.
 3. Limit titles to 40 characters. Neither the title nor "Set Title" may be ellipsized.
 4. Title text is dark in light mode and white in dark mode. Prompt text uses the same accent color as "grid" in the wordmark.

@@ -23,6 +23,20 @@ export function PromptEditor({
       <ValidationField path={[0]}>
         {(validation) => (
           <div className="prompt-editor" aria-busy={reading}>
+            {!!attachments?.images.length && (
+              <ImageList
+                images={attachments.images}
+                disabled={reading}
+                removeLabel={(image) => `Remove ${image.name} from prompt`}
+                onRemove={(index) =>
+                  attachments.onChange(
+                    attachments.images.filter(
+                      (_, imageIndex) => imageIndex !== index,
+                    ),
+                  )
+                }
+              />
+            )}
             <div className="prompt-input">
               <textarea
                 id={`${id}-prompt`}
@@ -48,20 +62,6 @@ export function PromptEditor({
                 />
               )}
             </div>
-            {!!attachments?.images.length && (
-              <ImageList
-                images={attachments.images}
-                disabled={reading}
-                removeLabel={(image) => `Remove ${image.name} from prompt`}
-                onRemove={(index) =>
-                  attachments.onChange(
-                    attachments.images.filter(
-                      (_, imageIndex) => imageIndex !== index,
-                    ),
-                  )
-                }
-              />
-            )}
           </div>
         )}
       </ValidationField>

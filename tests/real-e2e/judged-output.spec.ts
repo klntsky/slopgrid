@@ -3,6 +3,8 @@ import type { Cell, GridInput } from "../../server/domain";
 import type { Model } from "../../server/provider";
 import type { BillingPage } from "../../server/billing";
 import { criteriaForCell } from "../../server/judge-criteria";
+import type { ReferenceImage } from "../../server/image-settings";
+import { rasterizeSvg } from "../../server/svg-raster";
 
 const judges = ["openai/gpt-5-mini", "openai/gpt-5-nano"];
 const textGenerator = "openai/gpt-4.1-mini";
@@ -84,6 +86,19 @@ async function connect(page: Page, format: GridInput["format"]) {
       models.find((entry) => entry.id === imageGenerator)?.image,
       `Required image generator is unavailable: ${imageGenerator}`,
     ).toBe(true);
+  } else if (format === "chat-template") {
+    const model = models.find((entry) => entry.id === textGenerator);
+    expect(
+      model,
+      `Required Chat generator is unavailable: ${textGenerator}`,
+    ).toBeTruthy();
+    expect(model!.text, `${textGenerator} must support text output.`).toBe(
+      true,
+    );
+    expect(
+      model!.imageInput,
+      `${textGenerator} must accept the uploaded Chat image.`,
+    ).toBe(true);
   }
   return headers;
 }
@@ -156,6 +171,16 @@ async function inspect(page: Page, grid: Snapshot) {
     const download = await page.request.get(`/outputs/${cell.id}/download`);
     expect(download.ok()).toBe(true);
     outputs.push(await download.body());
+    if (grid.input.format === "chat-template") {
+      const messages: { role: string; content: string }[] =
+        await download.json();
+      const answers = messages.filter(
+        (message) => message.role === "assistant",
+      );
+      expect(answers).toHaveLength(1);
+      expect(answers[0].content).toMatch(/\bred\b/i);
+      expect(answers[0].content).toMatch(/\brectangle\b/i);
+    }
   }
   for (const output of outputs.slice(1))
     expect(output.equals(outputs[0])).toBe(true);
@@ -250,12 +275,34 @@ for (const format of ["markdown", "chat-template", "image", "svg"] as const) {
   }) => {
     test.setTimeout(600_000);
     const headers = await connect(page, format);
+    let attachment: ReferenceImage | undefined;
+    if (format === "chat-template") {
+      const image = await rasterizeSvg(
+        Buffer.from(
+          '<svg xmlns="http://www.w3.org/2000/svg" width="192" height="128"><rect width="192" height="128" fill="white"/><rect x="32" y="32" width="128" height="64" fill="red"/></svg>',
+        ),
+      );
+      const upload = await page.request.post("/api/references?name=input.png", {
+        headers: { ...headers, "content-type": "application/octet-stream" },
+        data: image.bytes,
+      });
+      expect(
+        upload.status(),
+        `Real image upload failed: ${await upload.text()}`,
+      ).toBe(201);
+      attachment = await upload.json();
+      const saved = await page.request.get(`/api/references/${attachment!.id}`);
+      expect(saved.ok()).toBe(true);
+      expect(await saved.body()).toEqual(image.bytes);
+    }
     const prompt =
       format === "svg"
         ? "Return only a valid SVG: a solid red rectangle on a white 64 by 64 canvas. No circles, text, gradients or external resources."
         : format === "image"
           ? "A single solid red rectangle centered on a plain white background. Flat geometric diagram. No circles, letters, or other objects."
-          : "Respond with only this short sentence: A red rectangle is shown.";
+          : format === "chat-template"
+            ? "Describe the colored shape in the attached image, including its color and shape. Respond with one short sentence."
+            : "Respond with only this short sentence: A red rectangle is shown.";
     const input: GridInput = {
       inputVersion: 3,
       format,
@@ -265,7 +312,11 @@ for (const format of ["markdown", "chat-template", "image", "svg"] as const) {
         input: {
           kind: "common",
           value: [
-            { role: "user", content: prompt },
+            {
+              role: "user",
+              content: prompt,
+              ...(attachment ? { images: [attachment] } : {}),
+            },
             ...(format === "chat-template"
               ? [{ role: "unfilled" as const, content: "" }]
               : []),

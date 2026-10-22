@@ -69,6 +69,17 @@ export function rejectReferenceUploads(db: Database.Database) {
   return () => db.exec("DROP TRIGGER fail_reference_upload");
 }
 
+export function rejectReferenceHashUpdates(db: Database.Database) {
+  db.exec(`CREATE TRIGGER fail_reference_hash
+    BEFORE UPDATE OF sha256 ON reference_images BEGIN
+      SELECT RAISE(ABORT, 'Injected reference migration failure');
+    END`);
+}
+
+export function allowReferenceHashUpdates(db: Database.Database) {
+  db.exec("DROP TRIGGER fail_reference_hash");
+}
+
 export function rejectReferenceGridCells(db: Database.Database) {
   db.exec(`CREATE TEMP TRIGGER fail_reference_grid
     BEFORE INSERT ON cells BEGIN

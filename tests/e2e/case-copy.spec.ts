@@ -140,28 +140,41 @@ for (const orientation of ["Rows", "Columns"] as const) {
     await group(1, "Thinking effort").getByRole("combobox").focus();
     await page.getByRole("button", { name: "new case", exact: true }).click();
     await expect(variable(3)).toHaveValue("Alpha");
-    await expect(group(3, "Prompt").getByLabel("Prompt", { exact: true }))
-      .toHaveValue(`Source asks ${token}.`);
-    await expect(group(3, "Model").getByRole("searchbox"))
-      .toHaveValue(generatorFilter);
+    await expect(
+      group(3, "Prompt").getByLabel("Prompt", { exact: true }),
+    ).toHaveValue(`Source asks ${token}.`);
+    await expect(group(3, "Model").getByRole("searchbox")).toHaveValue(
+      generatorFilter,
+    );
     await expect(
       group(3, "Model").locator('input[type="radio"][value="fixture/text"]'),
     ).toBeChecked();
-    await expect(group(3, "Judge model").getByRole("searchbox"))
-      .toHaveValue(judgeFilter);
+    await expect(group(3, "Judge model").getByRole("searchbox")).toHaveValue(
+      judgeFilter,
+    );
     await expect(
-      group(3, "Judge model").locator('input[type="radio"][value="fixture/other"]'),
+      group(3, "Judge model").locator(
+        'input[type="radio"][value="fixture/other"]',
+      ),
     ).toBeChecked();
-    await expect(group(3, "Thinking effort").getByRole("combobox"))
-      .toHaveValue("high");
-    await expect(group(3, "Judge thinking effort").getByRole("combobox"))
-      .toHaveValue("medium");
-    await expect(group(3, "judge criteria").getByLabel("Criterion 2", { exact: true }))
-      .toHaveValue("Does the output contain a blue circle?");
-    await expect(group(3, "judge criteria").getByLabel("Correct answer", { exact: true }).nth(1))
-      .toHaveAttribute("aria-pressed", "false");
+    await expect(group(3, "Thinking effort").getByRole("combobox")).toHaveValue(
+      "high",
+    );
+    await expect(
+      group(3, "Judge thinking effort").getByRole("combobox"),
+    ).toHaveValue("medium");
+    await expect(
+      group(3, "judge criteria").getByLabel("Criterion 2", { exact: true }),
+    ).toHaveValue("Does the output contain a blue circle?");
+    await expect(
+      group(3, "judge criteria")
+        .getByLabel("Correct answer", { exact: true })
+        .nth(1),
+    ).toHaveAttribute("aria-pressed", "false");
     for (const name of ["source-prompt.png", "source-variable.png"])
-      await expect(table.getByRole("img", { name, exact: true })).toHaveCount(2);
+      await expect(table.getByRole("img", { name, exact: true })).toHaveCount(
+        2,
+      );
     const copied = await savedInput(page);
     const { id: sourceId, ...sourceValues } = before[side][0];
     const { id: copiedId, ...copiedValues } = copied[side][2];
@@ -191,22 +204,33 @@ for (const orientation of ["Rows", "Columns"] as const) {
     await group(3, "Judge model")
       .getByRole("button", { name: "Clear judge model filter", exact: true })
       .click();
-    await expect(group(3, "Judge model").getByRole("searchbox")).toHaveValue("");
+    await expect(group(3, "Judge model").getByRole("searchbox")).toHaveValue(
+      "",
+    );
     await group(3, "Judge model")
       .locator('input[type="radio"][value="fixture/text"]')
       .check();
-    await group(3, "Judge thinking effort").getByRole("combobox").selectOption("high");
-    await expect(group(1, "Model").getByRole("searchbox")).toHaveValue(generatorFilter);
-    await expect(group(1, "Judge model").getByRole("searchbox")).toHaveValue(judgeFilter);
-    await expect(group(1, "Prompt").getByRole("img", {
-      name: "source-prompt.png",
-      exact: true,
-    })).toBeVisible();
+    await group(3, "Judge thinking effort")
+      .getByRole("combobox")
+      .selectOption("high");
+    await expect(group(1, "Model").getByRole("searchbox")).toHaveValue(
+      generatorFilter,
+    );
+    await expect(group(1, "Judge model").getByRole("searchbox")).toHaveValue(
+      judgeFilter,
+    );
+    await expect(
+      group(1, "Prompt").getByRole("img", {
+        name: "source-prompt.png",
+        exact: true,
+      }),
+    ).toBeVisible();
     const edited = await savedInput(page);
     expect(edited[side].slice(0, 2)).toEqual(before[side]);
     expect(edited[side][2].id).toBe(copiedId);
-    expect(edited[side][2].variable![0]!.images)
-      .toEqual(before[side][0].variable![0]!.images);
+    expect(edited[side][2].variable![0]!.images).toEqual(
+      before[side][0].variable![0]!.images,
+    );
     expect(JSON.stringify(edited)).not.toContain(generatorFilter);
     expect(JSON.stringify(edited)).not.toContain(judgeFilter);
     expect(uploads).toEqual([]);
@@ -230,13 +254,20 @@ for (const orientation of ["Rows", "Columns"] as const) {
     const snapshot = await page.request.get(`/api/grids/${id}`);
     expect(snapshot.status()).toBe(200);
     const grid: { input: GridInput; cells: Cell[] } = await snapshot.json();
-    expect(uploads.sort()).toEqual(["source-prompt.png", "source-variable.png"]);
-    expect(grid.input[side].map(({ id }) => id))
-      .toEqual(edited[side].map(({ id }) => id));
-    expect(grid.input[side][2].variable![0]!.images)
-      .toEqual(grid.input[side][0].variable![0]!.images);
+    expect(uploads.sort()).toEqual([
+      "source-prompt.png",
+      "source-variable.png",
+    ]);
+    expect(grid.input[side].map(({ id }) => id)).toEqual(
+      edited[side].map(({ id }) => id),
+    );
+    expect(grid.input[side][2].variable![0]!.images).toEqual(
+      grid.input[side][0].variable![0]!.images,
+    );
     for (const input of [submitted, grid.input]) {
-      expect(JSON.stringify(input)).not.toMatch(/"[^"]*(?:filter|focus)[^"]*":/i);
+      expect(JSON.stringify(input)).not.toMatch(
+        /"[^"]*(?:filter|focus)[^"]*":/i,
+      );
     }
     const position = side === "rows" ? "row" : "column";
     const cells = [...grid.cells].sort(
@@ -252,7 +283,13 @@ for (const orientation of ["Rows", "Columns"] as const) {
       ]),
     ).toEqual([
       ["Source asks Alpha.", "fixture/text", "high", "fixture/other", "medium"],
-      ["Other asks Beta revised.", "fixture/other", "low", "fixture/text", "high"],
+      [
+        "Other asks Beta revised.",
+        "fixture/other",
+        "low",
+        "fixture/text",
+        "high",
+      ],
       ["Copy asks Gamma.", "fixture/other", "low", "fixture/text", "high"],
     ]);
     expect(cells[0].judge?.criteria).toEqual([
@@ -277,7 +314,9 @@ for (const orientation of ["Rows", "Columns"] as const) {
     ]);
   });
 
-  test(`${orientation} fall back to the last case after reload or removal of the focused case`, async ({ page }) => {
+  test(`${orientation} fall back to the last case after reload or removal of the focused case`, async ({
+    page,
+  }) => {
     await page.goto("/");
     await page.getByRole("button", { name: "Markdown", exact: true }).click();
     await page
@@ -304,5 +343,113 @@ for (const orientation of ["Rows", "Columns"] as const) {
     await add.click();
     for (const [index, value] of ["Beta", "Gamma", "Gamma", "Gamma"].entries())
       await expect(variable(index + 1)).toHaveValue(value);
+  });
+}
+
+for (const orientation of ["Rows", "Columns"] as const) {
+  const side = orientation === "Rows" ? "rows" : "columns";
+  const title = orientation === "Rows" ? "Row" : "Column";
+
+  test(`${orientation} clone the focused non-last complete Chat history with future-turn images independently`, async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await page
+      .getByRole("button", { name: "Chat completion", exact: true })
+      .click();
+    await page
+      .getByRole("combobox", { name: orientation, exact: true })
+      .selectOption("variable");
+    await page.getByLabel("Message 1", { exact: true }).fill("Source question");
+    await page
+      .getByRole("button", { name: "Add message", exact: true })
+      .click();
+    await page
+      .getByRole("button", { name: "Add message", exact: true })
+      .click();
+    await page.getByLabel("Message 3", { exact: true }).fill("Future question");
+    await page
+      .getByLabel("Add images to message 3", { exact: true })
+      .setInputFiles({
+        name: "future.png",
+        mimeType: "image/png",
+        buffer: referencePng,
+      });
+    await expect(
+      page.getByRole("img", { name: "future.png", exact: true }),
+    ).toBeVisible();
+    await defineCases(page, "chat history");
+    await page.getByRole("button", { name: "new case", exact: true }).click();
+    const table = page.getByRole("table", {
+      name: "Grid layout parameters",
+      exact: true,
+    });
+    const history = (index: number) =>
+      table.getByRole("group", {
+        name: `${title} case ${index} Chat history`,
+        exact: true,
+      });
+    await history(2)
+      .getByLabel("Message 1", { exact: true })
+      .fill("Other question");
+    await history(2)
+      .getByRole("button", { name: "Remove message 3", exact: true })
+      .click();
+    await history(2)
+      .getByRole("button", { name: "Message 1 role: user", exact: true })
+      .click();
+    const before = await savedInput(page);
+    expect(before[side][0].input).toHaveLength(3);
+    expect(before[side][0].input![1]).toEqual({
+      role: "unfilled",
+      content: "",
+    });
+    expect(before[side][1].input).toHaveLength(2);
+
+    await history(1).getByLabel("Message 1", { exact: true }).focus();
+    await page.getByRole("button", { name: "new case", exact: true }).click();
+    await expect(
+      history(3).getByLabel("Message 3", { exact: true }),
+    ).toHaveValue("Future question");
+    await expect(
+      history(3).getByRole("button", {
+        name: "Message 2 role: unfilled",
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(
+      history(3).getByRole("img", { name: "future.png", exact: true }),
+    ).toBeVisible();
+    const copied = await savedInput(page);
+    expect(copied[side].slice(0, 2)).toEqual(before[side]);
+    expect(copied[side][2].input).toEqual(before[side][0].input);
+    expect(before[side].map(({ id }) => id)).not.toContain(copied[side][2].id);
+    await history(3)
+      .getByLabel("Message 1", { exact: true })
+      .fill("Independent copy");
+    await history(3)
+      .getByRole("button", {
+        name: "Remove future.png from message 3",
+        exact: true,
+      })
+      .click();
+    await history(3)
+      .getByRole("button", { name: "Message 1 role: user", exact: true })
+      .click();
+    const edited = await savedInput(page);
+    expect(edited[side].slice(0, 2)).toEqual(before[side]);
+    expect(edited[side][2].input![0]).toEqual({
+      role: "assistant",
+      content: "Independent copy",
+    });
+    expect(edited[side][2].input![2].images ?? []).toEqual([]);
+    await expect(
+      history(1).getByRole("img", { name: "future.png", exact: true }),
+    ).toBeVisible();
+    await page.reload();
+    expect(await savedInput(page)).toEqual(edited);
+    await expect(
+      history(3).getByLabel("Message 1", { exact: true }),
+    ).toHaveValue("Independent copy");
   });
 }

@@ -822,3 +822,156 @@ test("missing input image bytes do not hide a completed conversation or weaken i
     artifact,
   );
 });
+
+for (const side of ["rows", "columns"] as const)
+  test(`${side} case-owned saved conversations project only their own per-turn images while judging is pending`, async (t) => {
+    const { origin, store } = await appFixture(t);
+    const owner = token();
+    const session = { id: owner, created: Date.now() };
+    store.saveSession(session);
+    const images = [
+      "first-direct.png",
+      "first-field.png",
+      "first-judge.png",
+      "second-direct.png",
+      "second-field.png",
+      "second-judge.png",
+    ].map((name) => store.references.add(referencePng, name, session)!);
+    const variable = side === "rows" ? "$ROW" : "$COLUMN";
+    const input = currentInput({
+      format: "chat-template",
+      caseAxis: side,
+      judge: true,
+      parameters: {
+        input: { kind: side },
+        variable: { kind: side },
+        judge_criteria: {
+          kind: "common",
+          value: [{ text: `Is it ${variable}2?`, correctAnswer: false }],
+        },
+      },
+      [side]: [
+        {
+          input: [
+            { role: "user", content: "First question", images: [images[0]] },
+            { role: "unfilled", content: "" },
+            { role: "user", content: `Compare ${variable}1 / ${variable}1` },
+            { role: "unfilled", content: "" },
+          ],
+          variable: [
+            { text: "first field", images: [images[1]] },
+            { text: "private first answer", images: [images[2]] },
+          ],
+        },
+        {
+          input: [
+            { role: "system", content: "Second history only" },
+            {
+              role: "user",
+              content: `Inspect ${variable}1`,
+              images: [images[3]],
+            },
+            { role: "unfilled", content: "" },
+          ],
+          variable: [
+            { text: "second field", images: [images[4]] },
+            { text: "private second answer", images: [images[5]] },
+          ],
+        },
+      ],
+    });
+    const expected: FilledChatMessage[][] = [
+      [
+        { role: "user", content: "First question", images: [images[0]] },
+        { role: "assistant", content: "First generated answer" },
+        {
+          role: "user",
+          content: "Compare first field / first field",
+          images: [images[1]],
+        },
+        { role: "assistant", content: "Later generated answer" },
+      ],
+      [
+        { role: "system", content: "Second history only" },
+        {
+          role: "user",
+          content: "Inspect second field",
+          images: [images[3], images[4]],
+        },
+        { role: "assistant", content: "Second generated answer" },
+      ],
+    ];
+    const grid: Grid = {
+      id: token(),
+      owner,
+      input,
+      status: "paused",
+      published: false,
+      visibility: "private",
+      createdAt: new Date().toISOString(),
+      cells: expandGrid(input).map((cell) => ({ ...cell, id: token() })),
+    };
+    const tasks = createWorkflow(input, grid.cells);
+    for (const [index, cell] of grid.cells.entries()) {
+      const generation = tasks.find((task) => task.id === cell.generationId)!;
+      assert.equal(generation.kind, "generation");
+      if (generation.kind !== "generation")
+        throw new Error("Missing generation");
+      const artifactId = token();
+      const artifact = writeChatOutput(expected[index]);
+      assert.doesNotMatch(artifact, /"images"|"id"|"name"/);
+      store.files.write(artifactId, { "messages.json": artifact });
+      generation.status = "complete";
+      generation.output = {
+        artifactId,
+        provenance: {
+          signature: "case-owned-conversation",
+          files: ["messages.json"],
+        },
+      };
+    }
+    projectWorkflow(grid, tasks);
+    store.insert(validatedGrid(grid), tasks);
+    for (const published of [false, true]) {
+      if (published)
+        assert.equal(store.publish(grid.id, "unlisted", null), undefined);
+      const headers = published ? {} : { cookie: `slopgrid=${owner}` };
+      for (const [index, cell] of grid.cells.entries()) {
+        for (const suffix of ["?raw=1", "/download"]) {
+          const response = await fetch(
+            `${origin}/outputs/${cell.id}${suffix}`,
+            {
+              headers,
+            },
+          );
+          assert.equal(response.status, 200);
+          assert.equal(response.headers.get("X-Slopgrid-Output-Ready"), "1");
+          assert.deepEqual(await response.json(), expected[index]);
+        }
+        const response = await fetch(`${origin}/outputs/${cell.id}`, {
+          headers,
+        });
+        assert.equal(response.status, 200);
+        const html = await response.text();
+        const turns = [...html.matchAll(/<li\b[^>]*>([\s\S]*?)<\/li>/g)].map(
+          (match) => match[1],
+        );
+        assert.equal(turns.length, expected[index].length);
+        for (const [turn, message] of expected[index].entries()) {
+          assert.equal(
+            [...turns[turn].matchAll(/<img\b/g)].length,
+            message.images?.length ?? 0,
+          );
+          for (const image of message.images ?? [])
+            assert.ok(turns[turn].includes(`alt="${image.name}"`));
+        }
+        assert.doesNotMatch(
+          html,
+          /private (?:first|second) answer|(?:first|second)-judge\.png/,
+        );
+        const other = index === 0 ? "second" : "first";
+        assert.ok(!html.includes(`${other}-direct.png`));
+        assert.ok(!html.includes(`${other}-field.png`));
+      }
+    }
+  });

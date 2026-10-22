@@ -1081,3 +1081,156 @@ for (const side of ["rows", "columns"] as const)
       [["user", "Keep this prompt"]],
     );
   });
+
+const ordinaryValues = {
+  model: ["generator/one", "generator/two"],
+  effort: ["low", "high"],
+  judge_model: ["judge/one", "judge/two"],
+  judge_effort: ["none", "high"],
+  size: ["1024x1024", "1536x1024"],
+  aspect_ratio: ["1:1", "16:9"],
+  quality: ["high", "low"],
+  background: ["transparent", "opaque"],
+} as const satisfies Partial<{
+  [K in CommonParameterId]: readonly [ParameterValues[K], ParameterValues[K]];
+}>;
+type OrdinaryParameter = keyof typeof ordinaryValues;
+
+for (const format of [
+  "svg",
+  "markdown",
+  "chat-template",
+  "html",
+  "image",
+] as const) {
+  const parameters: OrdinaryParameter[] = [
+    "model",
+    ...(format === "image"
+      ? (["size", "aspect_ratio", "quality", "background"] as const)
+      : (["effort"] as const)),
+    ...(format === "html" ? [] : (["judge_model", "judge_effort"] as const)),
+  ];
+  for (const side of ["rows", "columns"] as const) {
+    const other = side === "rows" ? "columns" : "rows";
+
+    test(`${format} ${side} ordinary replacements preserve equal values or confirm loss across every parameter pair`, () => {
+      for (const previous of parameters)
+        for (const replacement of parameters) {
+          if (previous === replacement) continue;
+          for (const values of [
+            [],
+            [ordinaryValues[previous][0]],
+            [ordinaryValues[previous][0], ordinaryValues[previous][0]],
+            [...ordinaryValues[previous]],
+          ]) {
+            const label = `${previous} -> ${replacement}, ${JSON.stringify(values)}`;
+            let input = initial(format);
+            Object.assign(input.parameters, {
+              [previous]: {
+                kind: "common",
+                value: ordinaryValues[previous][0],
+              },
+              [replacement]: {
+                kind: "common",
+                value: ordinaryValues[replacement][1],
+              },
+            });
+            input = reduceInput(input, {
+              type: "dimension",
+              side,
+              parameter: previous,
+            });
+            input = reduceInput(
+              input,
+              caseValuesAction(side, previous, values),
+            );
+            const before = structuredClone(input);
+            const action = {
+              type: "dimension" as const,
+              side,
+              parameter: replacement,
+            };
+            const differing = values.length > 1 && values[0] !== values[1];
+            assert.deepEqual(
+              droppedParameters(input, action),
+              differing ? [previous] : [],
+              label,
+            );
+            withConfirmation(false, (calls) => {
+              const next = confirmInputAction(input, action)
+                ? reduceInput(input, action)
+                : input;
+              assert.equal(calls.length, differing ? 1 : 0, label);
+              if (differing) assert.equal(next, input, label);
+            });
+            withConfirmation(true, (calls) => {
+              assert.equal(confirmInputAction(input, action), true, label);
+              assert.equal(calls.length, differing ? 1 : 0, label);
+            });
+            const replaced = reduceInput(input, action);
+            assert.deepEqual(
+              replaced.parameters[previous],
+              {
+                kind: "common",
+                value:
+                  values.length && !differing
+                    ? values[0]
+                    : parameterDefault(previous),
+              },
+              label,
+            );
+            assert.deepEqual(
+              replaced.parameters[replacement],
+              { kind: side },
+              label,
+            );
+            assert.equal(replaced.caseAxis, undefined, label);
+            assert.deepEqual(
+              replaced[side].map(({ id: _id, ...record }) => record),
+              [{ [replacement]: ordinaryValues[replacement][1] }],
+              label,
+            );
+            assert.equal(
+              parameterValue(replaced, replacement, 0, 0),
+              ordinaryValues[replacement][1],
+              label,
+            );
+            assert.deepEqual(replaced[other], input[other], label);
+            assert.equal(replaced.budgetUsd, input.budgetUsd, label);
+            assert.deepEqual(input, before, label);
+          }
+        }
+    });
+
+    test(`${format} ${side} can retain any selected case parameter as its ordinary axis without losing case identity`, () => {
+      for (const parameter of parameters) {
+        let input = initial(format, side);
+        input = reduceInput(input, { type: "to-axis", side, parameter });
+        input = reduceInput(
+          input,
+          caseValuesAction(side, parameter, [...ordinaryValues[parameter]]),
+        );
+        const before = structuredClone(input);
+        const action = { type: "dimension" as const, side, parameter };
+        assert.deepEqual(droppedParameters(input, action), ["variable"]);
+        withConfirmation(false, (calls) => {
+          assert.equal(confirmInputAction(input, action), false);
+          assert.equal(calls.length, 1);
+        });
+        const retained = reduceInput(input, action);
+        assert.equal(retained.caseAxis, undefined);
+        assert.equal(retained.parameters.variable, undefined);
+        assert.deepEqual(retained.parameters[parameter], { kind: side });
+        assert.deepEqual(
+          retained[side],
+          input[side].map((record) => ({
+            id: record.id,
+            [parameter]: record[parameter],
+          })),
+        );
+        assert.deepEqual(retained[other], input[other]);
+        assert.deepEqual(input, before);
+      }
+    });
+  }
+}

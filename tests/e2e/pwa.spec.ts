@@ -188,19 +188,42 @@ test("visited pages and completed outputs survive offline reload without retaini
     });
     // Finished generation must remain cacheable while judging is pending or fails.
     // Overall cell status includes judging, so it cannot determine output readiness.
-    for (const status of ["pending", "error", "complete"] as const) {
-      const template = grids[0];
+    for (const [format, status] of [
+      ["markdown", "pending"],
+      ["markdown", "error"],
+      ["markdown", "complete"],
+      ["chat-template", "pending"],
+    ] as const) {
+      const template = grids.find((grid) => grid.input.format === format)!;
       const cellId = token();
-      const filename = "index.md";
+      const filename =
+        format === "chat-template" ? "messages.json" : "index.md";
       const grid = {
         ...template,
         id: token(),
         input: currentInput({
+          format,
           judge: true,
           parameters: {
             input: {
               kind: "common",
-              value: [{ role: "user", content: `Offline judgment ${status}` }],
+              value:
+                format === "chat-template"
+                  ? [
+                      {
+                        role: "user",
+                        content: "First image",
+                        images: [chatImages[0]],
+                      },
+                      { role: "unfilled", content: "" },
+                      {
+                        role: "user",
+                        content: "Later image",
+                        images: [chatImages[1]],
+                      },
+                      { role: "unfilled", content: "" },
+                    ]
+                  : [{ role: "user", content: `Offline judgment ${status}` }],
             },
             model: { kind: "rows" },
             effort: { kind: "columns" },
@@ -259,7 +282,15 @@ test("visited pages and completed outputs survive offline reload without retaini
         `Saved judgment ${status} thinking`,
       );
       store.files.write(task.output.artifactId, {
-        [filename]: "# Cached markdown\n\nSaved content",
+        [filename]:
+          format === "chat-template"
+            ? JSON.stringify([
+                { role: "user", content: "First image" },
+                { role: "assistant", content: "First answer" },
+                { role: "user", content: "Later image" },
+                { role: "assistant", content: "Later answer" },
+              ])
+            : "# Cached markdown\n\nSaved content",
       });
       grids.push(grid);
     }
@@ -621,6 +652,76 @@ test("visited pages and completed outputs survive offline reload without retaini
       page.getByText("This page isn't available offline.", { exact: true }),
     ).toBeVisible();
     await context.setOffline(false);
+    // A cookie/session change can happen without the logout endpoint. The first
+    // image request must recheck access rather than use immutable cached bytes.
+    const otherSession = token();
+    store.saveSession({ id: otherSession, created: Date.now() });
+    await context.addCookies([
+      {
+        name: "__Host-slopgrid",
+        value: otherSession,
+        url: web.origin,
+        httpOnly: true,
+        secure: true,
+        sameSite: "Lax",
+      },
+    ]);
+    expect(
+      await page.evaluate(
+        async (id) => (await fetch(`/api/references/${id}`)).status,
+        chatImages[0].id,
+      ),
+    ).toBe(404);
+    expect(
+      await page.evaluate(async () => (await fetch("/api/session")).status),
+    ).toBe(200);
+    await context.setOffline(true);
+    await page.goto(`${web.origin}/grid/${grids[0].id}`);
+    await expect(page.getByText("Saved content")).toHaveCount(0);
+    for (const image of chatImages)
+      expect(
+        await page.evaluate(
+          async (id) => (await fetch(`/api/references/${id}`)).status,
+          image.id,
+        ),
+      ).toBe(503);
+
+    // Returning to the original identity may recache its conversation. Keep
+    // logout coverage distinct from the observed-session-change path above.
+    await context.setOffline(false);
+    await context.addCookies([
+      {
+        name: "__Host-slopgrid",
+        value: owner,
+        url: web.origin,
+        httpOnly: true,
+        secure: true,
+        sameSite: "Lax",
+      },
+    ]);
+    const chat = grids.find((grid) => grid.input.format === "chat-template")!;
+    await page.goto(`${web.origin}/grid/${chat.id}`);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          async (ids) => {
+            for (const name of await caches.keys()) {
+              const cache = await caches.open(name);
+              if (
+                (
+                  await Promise.all(
+                    ids.map((id) => cache.match(`/api/references/${id}`)),
+                  )
+                ).every(Boolean)
+              )
+                return true;
+            }
+            return false;
+          },
+          chatImages.map((image) => image.id),
+        ),
+      )
+      .toBe(true);
     await page.goto(web.origin);
     await page.evaluate(() => fetch("/api/auth/logout", { method: "POST" }));
     await context.clearCookies();

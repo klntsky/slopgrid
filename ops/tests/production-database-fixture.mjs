@@ -39,6 +39,8 @@ export class Store {
     writeFileSync(join(outputsPath, ".binary"), "transformed binary");
     if (process.env.SLOPGRID_FIXTURE_FILE_MIGRATION_FAILURE === "1")
       throw new Error("file-dependent migration failed");
+    if (process.env.SLOPGRID_FIXTURE_FRONTEND_MUTATION === "1")
+      writeFileSync(join(process.env.FRONTEND_PATH, "index.html"), "changed during migration");
     this.db = new Database(databasePath, { fileMustExist: true });
     assert.equal(this.db.pragma("user_version", { simple: true }), 1);
     assert.deepEqual(this.db.prepare("SELECT id, value FROM records ORDER BY id").all(), [

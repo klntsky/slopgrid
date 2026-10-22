@@ -107,7 +107,6 @@ export function ImageList({
       {images.map((image, index) => (
         <div className="reference-image" key={`${image.id}-${index}`}>
           <ImagePreview image={image} />
-          <span>{image.name}</span>
           <button
             type="button"
             className="text-button editor-icon-button editor-icon-danger"

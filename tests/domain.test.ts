@@ -11,6 +11,11 @@ import {
 import { readChatOutput } from "../shared/chat-output.js";
 import { appFixture } from "./app-fixture.js";
 import { currentDefinition, currentInput } from "./current-grid-fixture.js";
+import {
+  isCurrentGridInput,
+  isEditableGridInput,
+} from "../server/parameters.js";
+import { draftInputFromGridInput } from "../src/create/draft-input.js";
 
 test("incomplete editor states preserve raw text but cannot create a grid", async (t) => {
   const { origin, store } = await appFixture(t);
@@ -1565,3 +1570,160 @@ for (const side of ["rows", "columns"] as const) {
     }
   });
 }
+
+for (const format of [
+  "svg",
+  "markdown",
+  "chat-template",
+  "html",
+  "image",
+] as const)
+  for (const side of ["rows", "columns"] as const) {
+    const other = side === "rows" ? "columns" : "rows";
+    test(`${format} ${side} admission requires every owned value and rejects every competing case source`, () => {
+      const common = currentDefinition({ format, judge: format !== "html" });
+      for (const [parameter, source] of Object.entries(common.parameters)) {
+        assert.ok(source.kind === "common");
+        if (source.kind !== "common") continue;
+        const input = currentDefinition({
+          format,
+          judge: common.judge,
+          caseAxis: side,
+          parameters: { [parameter]: { kind: side } },
+          [side]: [
+            { id: "first", [parameter]: structuredClone(source.value) },
+            { id: "second", [parameter]: structuredClone(source.value) },
+          ],
+        });
+        const accepted = gridSchema.parse(input);
+        assert.deepEqual(
+          accepted[side].map((record) => record.id),
+          ["first", "second"],
+          parameter,
+        );
+        assert.equal(expandGrid(accepted).length, 2, parameter);
+
+        const missing = gridSchema.safeParse({
+          ...input,
+          [side]: [input[side][0], { id: "second" }],
+        });
+        assert.equal(missing.success, false, parameter);
+        if (!missing.success)
+          assert.ok(
+            missing.error.issues.some(
+              ({ path }) =>
+                JSON.stringify(path) === JSON.stringify([side, 1, parameter]),
+            ),
+            parameter,
+          );
+        for (const conflicting of [
+          {
+            ...input,
+            parameters: {
+              ...input.parameters,
+              [parameter]: { kind: "common", value: source.value },
+            },
+          },
+          {
+            ...input,
+            [other]: [{ id: "shadow", [parameter]: source.value }],
+          },
+        ]) {
+          const rejected = gridSchema.safeParse(conflicting);
+          assert.equal(rejected.success, false, parameter);
+          if (!rejected.success)
+            assert.ok(
+              rejected.error.issues.some(({ path }) => path[2] === parameter),
+              parameter,
+            );
+        }
+        const duplicate = gridSchema.safeParse({
+          ...input,
+          [side]: input[side].map((record) => ({ ...record, id: "duplicate" })),
+        });
+        assert.equal(duplicate.success, false, parameter);
+        if (!duplicate.success)
+          assert.ok(
+            duplicate.error.issues.some(
+              ({ path }) =>
+                JSON.stringify(path) === JSON.stringify([side, 1, "id"]),
+            ),
+            parameter,
+          );
+      }
+    });
+  }
+
+test("budget cannot become a common, row or column parameter, even in an explicit case layout", () => {
+  for (const side of ["rows", "columns"] as const) {
+    const input = currentDefinition({
+      caseAxis: side,
+      parameters: { input: { kind: side } },
+      [side]: [{ input: [{ role: "user", content: "An entire prompt" }] }],
+    });
+    for (const kind of ["common", "rows", "columns"])
+      assert.equal(
+        gridSchema.safeParse({
+          ...input,
+          parameters: {
+            ...input.parameters,
+            budgetUsd: kind === "common" ? { kind, value: 3 } : { kind },
+          },
+        }).success,
+        false,
+      );
+    assert.equal(
+      gridSchema.safeParse({
+        ...input,
+        [side]: input[side].map((record) => ({ ...record, budgetUsd: 3 })),
+      }).success,
+      false,
+    );
+  }
+});
+
+test("current-version layouts with incompatible ownership cannot cross the Edit or Fork boundary", () => {
+  for (const side of ["rows", "columns"] as const) {
+    const other = side === "rows" ? "columns" : "rows";
+    const compound = currentDefinition({
+      parameters: { model: { kind: side }, effort: { kind: side } },
+      [side]: [{ model: "model/a", effort: "high" }],
+    });
+    const misplacedInput = currentDefinition({
+      parameters: { input: { kind: side } },
+      [side]: [{ input: [{ role: "user", content: "Accepted old input" }] }],
+    });
+    const wrongFields = currentDefinition({
+      caseAxis: other,
+      parameters: {
+        variable: { kind: side },
+        input: {
+          kind: "common",
+          value: [
+            {
+              role: "user",
+              content: side === "rows" ? "$ROW1" : "$COLUMN1",
+            },
+          ],
+        },
+      },
+      [side]: [{ variable: [{ text: "Accepted field" }] }],
+    });
+    for (const input of [compound, misplacedInput, wrongFields]) {
+      const before = structuredClone(input);
+      assert.equal(isCurrentGridInput(input), true);
+      assert.equal(isEditableGridInput(input), false);
+      assert.throws(
+        () => draftInputFromGridInput(input),
+        /cannot be edited or forked/,
+      );
+      assert.deepEqual(input, before);
+    }
+    const editable = { ...compound, caseAxis: side };
+    assert.equal(isEditableGridInput(editable), true);
+    const draft = draftInputFromGridInput(editable);
+    assert.deepEqual(draft, { ...editable, budgetUsd: "3" });
+    draft[side][0].model = "changed";
+    assert.equal(editable[side][0].model, "model/a");
+  }
+});

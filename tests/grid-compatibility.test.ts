@@ -286,3 +286,75 @@ test("an unfinished model selection does not hide a known size/aspect conflict o
     false,
   );
 });
+
+for (const side of ["rows", "columns"] as const)
+  test(`${side} provider combinations count only merged generator images and identify their owning case fields`, () => {
+    const second = { id: "second", name: "second.png" };
+    const unused = { id: "unused", name: "unused.png" };
+    const model: Model = {
+      ...plain,
+      id: "image",
+      image: true,
+      imageInput: true,
+      imageEndpoints: [
+        {
+          provider_name: "high-one",
+          pricing: [],
+          supported_parameters: {
+            quality: { type: "enum", values: ["high"] },
+            input_references: { type: "range", min: 0, max: 1 },
+          },
+        },
+        {
+          provider_name: "low-three",
+          pricing: [],
+          supported_parameters: {
+            quality: { type: "enum", values: ["low"] },
+            input_references: { type: "range", min: 0, max: 3 },
+          },
+        },
+      ],
+    };
+    const token = side === "rows" ? "$ROW1" : "$COLUMN1";
+    const input = currentDefinition({
+      format: "image",
+      caseAxis: side,
+      parameters: {
+        model: { kind: "common", value: model.id },
+        input: { kind: side },
+        variable: { kind: side },
+        quality: { kind: "common", value: "high" },
+      },
+      [side]: [image, second].map((fieldImage) => ({
+        input: [
+          { role: "user", content: `${token} ${token}`, images: [image] },
+        ],
+        variable: [
+          { text: "Describe", images: [fieldImage, fieldImage] },
+          { text: "not consumed", images: [unused] },
+        ],
+      })),
+    });
+    const { cells, issues } = analyzeGridCompatibility(input, [model]);
+    assert.deepEqual(
+      cells.map((cell) => cell.imageSettings?.input_references),
+      [[image.id], [image.id, second.id]],
+    );
+    assert.equal(issues.length, 1);
+    assert.deepEqual(
+      [issues[0].row, issues[0].column],
+      side === "rows" ? [1, 0] : [0, 1],
+    );
+    assert.equal(issues[0].support, "unsupported");
+    assert.equal(issues[0].blocking, false);
+    assert.match(
+      issues[0].reason,
+      /2 images.*one provider|one provider.*2 images/,
+    );
+    assert.deepEqual(issues[0].origins, [
+      { parameter: "model", source: "common" },
+      { parameter: "quality", source: "common" },
+      { parameter: "input", source: side, caseIndex: 1, messageIndex: 0 },
+      { parameter: "variable", source: side, caseIndex: 1, fieldIndex: 0 },
+    ]);
+  });

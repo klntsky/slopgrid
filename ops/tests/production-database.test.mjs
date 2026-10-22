@@ -263,6 +263,8 @@ try {
             SLOPGRID_FIXTURE_TEST_FAILURE: options.testFailure ? "1" : "0",
             SLOPGRID_FIXTURE_FILE_MIGRATION_FAILURE:
               options.fileMigrationFailure ? "1" : "0",
+            SLOPGRID_FIXTURE_FRONTEND_MUTATION:
+              options.frontendMutation ? "1" : "0",
             SLOPGRID_FIXTURE_FOREIGN_KEY_FAILURE: options.foreignKeyFailure
               ? "1"
               : "0",
@@ -493,6 +495,34 @@ test("a file-dependent migration failure removes modified copied outputs without
   f.assertUnchangedSource();
   f.assertRuntimeRemoved();
 });
+
+for (const tests of ["full", "skip"])
+  test(`rehearsal rejects changed validation frontend after migration (${tests} suites) without changing its build`, (t) => {
+    const f = fixture(t, {
+      target: "rehearse",
+      tests,
+      frontendMutation: true,
+    });
+    const child = f.execute();
+    assertExit(child, 1);
+    assert.match(child.stdout + child.stderr, /Artifact changed: dist\/index\.html/);
+    assert.deepEqual(
+      f.events().map((event) => event.phase),
+      [
+        "migration-start",
+        "migration-passed",
+        ...(tests === "full" ? ["unit", "e2e"] : []),
+      ],
+    );
+    assert.equal(f.result().status, "failed");
+    assert.equal(f.result().migration, "passed");
+    assert.equal(
+      readFileSync(join(f.root, "build/dist/index.html"), "utf8"),
+      "candidate frontend\n",
+    );
+    f.assertUnchangedSource();
+    f.assertRuntimeRemoved();
+  });
 
 for (const [option, message] of [
   ["foreignKeyFailure", /failed SQLite foreign key check/],
