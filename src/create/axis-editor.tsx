@@ -80,7 +80,7 @@ export function AxisEditor({
               }
             >
               {kind === "variable"
-                ? "Multiple variable cases"
+                ? "Multiple cases"
                 : parameterNames[kind]}
             </option>
           ))}
@@ -298,7 +298,7 @@ export function CommonParameterActions({
               input.caseAxis !== side;
             const label = side === "rows" ? "Rows" : "Columns";
             const explanation = unavailable
-              ? `Select Multiple variable cases for ${label} first.`
+              ? `Select Multiple cases for ${label} first.`
               : undefined;
             return (
               <button

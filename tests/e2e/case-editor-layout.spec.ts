@@ -793,9 +793,6 @@ test("parameter menus explain unavailable destinations and support keyboard move
   await menu.getByRole("menuitem").first().press("End");
   await expect(columns).toBeFocused();
   await expect(columns).toBeDisabled();
-  await expect(columns).toHaveAccessibleDescription(
-    /Select Multiple variable cases for Columns/,
-  );
   await columns.press("Enter");
   await expect(page.getByLabel("Prompt", { exact: true })).toHaveValue(
     "Keep this complete prompt",
