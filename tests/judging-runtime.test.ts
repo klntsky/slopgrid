@@ -598,7 +598,7 @@ for (const side of ["rows", "columns"] as const)
       );
       assert.ok(grid.cells.every((cell) => cell.judge?.status === "complete"));
       assert.deepEqual(
-        grid.cells.map((cell) => cell.judge?.criteria[0].correctAnswer),
+        grid.cells.map((cell) => cell.judge?.criteria?.[0]?.correctAnswer),
         [true, false],
       );
       assert.equal(fixture.calls.length, 4);

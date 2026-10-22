@@ -935,7 +935,9 @@ for (const side of ["rows", "columns"] as const)
     for (const published of [false, true]) {
       if (published)
         assert.equal(store.publish(grid.id, "unlisted", null), undefined);
-      const headers = published ? {} : { cookie: `slopgrid=${owner}` };
+      const headers: Record<string, string> = published
+        ? {}
+        : { cookie: `slopgrid=${owner}` };
       for (const [index, cell] of grid.cells.entries()) {
         for (const suffix of ["?raw=1", "/download"]) {
           const response = await fetch(
