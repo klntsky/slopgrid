@@ -232,12 +232,13 @@ export function GridLayoutTable({
           ) : (
             <button
               type="button"
+              className="text-button"
               aria-label={`Make ${parameterNames[field.parameter].toLowerCase()} common`}
               onClick={() =>
                 onAction({ type: "to-common", parameter: field.parameter })
               }
             >
-              Make common
+              <X aria-hidden="true" />
             </button>
           )}
         </div>

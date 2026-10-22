@@ -63,7 +63,7 @@ export function AxisEditor({
         >
           {summary && (
             <option value="summary" disabled>
-              Common parameters
+              Single {side === "rows" ? "row" : "column"}
             </option>
           )}
           {kinds.map((kind) => (
@@ -77,7 +77,9 @@ export function AxisEditor({
                   (kind === "judge_model" || kind === "judge_effort"))
               }
             >
-              {parameterNames[kind]}
+              {kind === "variable"
+                ? "Multiple variable cases"
+                : parameterNames[kind]}
             </option>
           ))}
         </select>
