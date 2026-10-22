@@ -99,11 +99,13 @@ for (const orientation of ["Rows", "Columns"] as const) {
       name: `${title} case 2 Model`,
       exact: true,
     });
-    await expect(firstModel.getByRole("alert")).toHaveCount(1);
-    await expect(secondModel.getByRole("alert")).toHaveCount(1);
+    const firstModelCell = firstModel.locator("xpath=ancestor::td[1]");
+    const secondModelCell = secondModel.locator("xpath=ancestor::td[1]");
+    await expect(firstModelCell.getByRole("alert")).toHaveCount(1);
+    await expect(secondModelCell.getByRole("alert")).toHaveCount(1);
     await firstModel.getByRole("searchbox").fill("");
     await firstModel.getByRole("radio").first().check();
-    await expect(firstModel.getByRole("alert")).toHaveCount(0);
-    await expect(secondModel.getByRole("alert")).toHaveCount(1);
+    await expect(firstModelCell.getByRole("alert")).toHaveCount(0);
+    await expect(secondModelCell.getByRole("alert")).toHaveCount(1);
   });
 }
