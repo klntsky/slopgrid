@@ -227,9 +227,9 @@ for (const orientation of ["Rows", "Columns"] as const) {
     expect(JSON.stringify(submitted)).not.toContain(judgeFilter);
     const { id } = await response.json();
     await expectProgress(page, 3, 3);
-    const grid: { input: GridInput; cells: Cell[] } = await (
-      await request.get(`/api/grids/${id}`)
-    ).json();
+    const snapshot = await page.request.get(`/api/grids/${id}`);
+    expect(snapshot.status()).toBe(200);
+    const grid: { input: GridInput; cells: Cell[] } = await snapshot.json();
     expect(uploads.sort()).toEqual(["source-prompt.png", "source-variable.png"]);
     expect(grid.input[side].map(({ id }) => id))
       .toEqual(edited[side].map(({ id }) => id));

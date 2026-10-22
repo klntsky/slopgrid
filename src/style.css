@@ -235,7 +235,6 @@ main {
   }
   .create-page.case-layout-active > :not(.case-layout-section),
   .create-page.case-layout-active > .case-layout-section > .section-heading,
-  .create-page.case-layout-active > .case-layout-section > .axes,
   .create-page.case-layout-active > .case-layout-section > .hint {
     width: 100%;
     max-width: 950px;
@@ -667,6 +666,9 @@ section {
 }
 .case-layout {
   min-width: 0;
+}
+.case-layout-section[data-case-table="false"] {
+  display: contents;
 }
 .prompt-input {
   position: relative;

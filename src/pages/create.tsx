@@ -168,6 +168,18 @@ export function Create() {
           ),
         ).size
       : input.rows.length * input.columns.length;
+  const layoutSummary = (
+    <p className="hint">
+      {input.judge ? (
+        `${input.rows.length} rows x ${input.columns.length} columns - ${generatedOutputs} generated outputs`
+      ) : (
+        <>
+          {input.rows.length} rows × {input.columns.length} columns ·{" "}
+          {generatedOutputs} outputs
+        </>
+      )}
+    </p>
+  );
 
   return (
     <main
@@ -192,7 +204,7 @@ export function Create() {
         />
       </fieldset>
       {formatSelected && (
-        <section className="case-layout-section">
+        <section>
           <div className="section-heading">
             <span className="number">02</span>
             <h2>
@@ -239,8 +251,17 @@ export function Create() {
               </AxisValues>
             </AxisEditor>
           </fieldset>
+          {!caseLayoutActive && layoutSummary}
+        </section>
+      )}
+      {formatSelected && (
+        <section
+          className="case-layout-section"
+          data-case-table={caseLayoutActive}
+        >
           {caseLayoutActive && (
             <div className="section-heading">
+              <span className="number">03</span>
               <h2>Define your eval cases.</h2>
             </div>
           )}
@@ -282,22 +303,13 @@ export function Create() {
               />
             </GridLayoutTable>
           </fieldset>
-          <p className="hint">
-            {input.judge ? (
-              `${input.rows.length} rows x ${input.columns.length} columns - ${generatedOutputs} generated outputs`
-            ) : (
-              <>
-                {input.rows.length} rows × {input.columns.length} columns ·{" "}
-                {generatedOutputs} outputs
-              </>
-            )}
-          </p>
+          {caseLayoutActive && layoutSummary}
         </section>
       )}
       {formatSelected && commonParameters && (
         <section>
           <div className="section-heading">
-            <span className="number">03</span>
+            <span className="number">{caseLayoutActive ? "04" : "03"}</span>
             <h2>Specify common parameters</h2>
           </div>
           {commonFixedParameters && (
@@ -393,7 +405,11 @@ export function Create() {
       {formatSelected && inputSource.kind === "common" && (
         <section>
           <div className="section-heading">
-            <span className="number">{commonParameters ? "04" : "03"}</span>
+            <span className="number">
+              {String(
+                3 + Number(!!commonParameters) + Number(caseLayoutActive),
+              ).padStart(2, "0")}
+            </span>
             <h2>
               {isChatFormat(input.format)
                 ? "Enter chat history"
@@ -474,6 +490,7 @@ export function Create() {
               {String(
                 3 +
                   Number(!!commonParameters) +
+                  Number(caseLayoutActive) +
                   Number(inputSource.kind === "common"),
               ).padStart(2, "0")}
             </span>
@@ -621,6 +638,7 @@ export function Create() {
               {String(
                 4 +
                   Number(!!commonParameters) +
+                  Number(caseLayoutActive) +
                   Number(inputSource.kind === "common"),
               ).padStart(2, "0")}
             </span>
