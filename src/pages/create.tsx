@@ -130,6 +130,16 @@ export function Create() {
   const judgeModelSource = input.parameters.judge_model;
   const judgeEffortSource = input.parameters.judge_effort;
   const inputSource = input.parameters.input;
+  const caseLayoutActive =
+    !!input.caseAxis &&
+    input[input.caseAxis].length > 0 &&
+    axisParameters(input, input.caseAxis).some(
+      (parameter) =>
+        parameter !== "variable" ||
+        (input[input.caseAxis!][0]?.variable ?? []).some(
+          (field) => field !== null,
+        ),
+    );
   function toAxis(parameter: CommonParameterId, side: AxisSide) {
     const previousFocus = document.activeElement;
     if (!dispatch({ type: "to-axis", parameter, side })) return;
@@ -163,7 +173,9 @@ export function Create() {
       : input.rows.length * input.columns.length;
 
   return (
-    <main className="create-page">
+    <main
+      className={`create-page${caseLayoutActive ? " case-layout-active" : ""}`}
+    >
       <div className="page-heading">
         <h1>Create your own AI model benchmark</h1>
       </div>
@@ -183,7 +195,7 @@ export function Create() {
         />
       </fieldset>
       {formatSelected && (
-        <section>
+        <section className="case-layout-section">
           <div className="section-heading">
             <span className="number">02</span>
             <h2>
@@ -285,64 +297,78 @@ export function Create() {
           {commonFixedParameters && (
             <div className="fixed-options">
               {commonModel && (
-                <fieldset role="radiogroup" aria-label="Model">
-                  <legend className="parameter-name">Model</legend>
-                  <ModelSelector
-                    models={models}
-                    format={input.format}
-                    values={
-                      modelSource.kind === "common" && modelSource.value
-                        ? [modelSource.value]
-                        : []
-                    }
-                    onChange={(values) =>
-                      dispatch({
-                        type: "common",
-                        parameter: "model",
-                        value: values[0] ?? "",
-                      })
-                    }
-                  />
-                  {compatibility.model}
-                  <CommonParameterActions
-                    input={input}
-                    parameter="model"
-                    onMove={toAxis}
-                  />
-                </fieldset>
+                <div>
+                  <div className="parameter-header">
+                    <span className="parameter-name" id="common-model-label">
+                      Model
+                    </span>
+                    <CommonParameterActions
+                      input={input}
+                      parameter="model"
+                      onMove={toAxis}
+                      disabled={submission.uploading || busy}
+                    />
+                  </div>
+                  <fieldset
+                    role="radiogroup"
+                    aria-labelledby="common-model-label"
+                  >
+                    <ModelSelector
+                      models={models}
+                      format={input.format}
+                      values={
+                        modelSource.kind === "common" && modelSource.value
+                          ? [modelSource.value]
+                          : []
+                      }
+                      onChange={(values) =>
+                        dispatch({
+                          type: "common",
+                          parameter: "model",
+                          value: values[0] ?? "",
+                        })
+                      }
+                    />
+                    {compatibility.model}
+                  </fieldset>
+                </div>
               )}
               {commonEffort && (
                 <div>
-                  <label>
-                    <span className="parameter-name">Thinking effort</span>
-                    <select
-                      aria-label="Thinking effort"
-                      value={
-                        effortSource?.kind === "common"
-                          ? effortSource.value
-                          : "default"
-                      }
-                      onChange={(e) =>
-                        dispatch({
-                          type: "common",
-                          parameter: "effort",
-                          value: e.target.value as Effort,
-                        })
-                      }
-                    >
-                      {efforts.map((e) => (
-                        <option key={e} value={e}>
-                          {effortLabel(e)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  <div className="parameter-header">
+                    <label className="parameter-name" htmlFor="common-effort">
+                      Thinking effort
+                    </label>
+                    <CommonParameterActions
+                      input={input}
+                      parameter="effort"
+                      onMove={toAxis}
+                      disabled={submission.uploading || busy}
+                    />
+                  </div>
+                  <select
+                    id="common-effort"
+                    aria-label="Thinking effort"
+                    value={
+                      effortSource?.kind === "common"
+                        ? effortSource.value
+                        : "default"
+                    }
+                    onChange={(e) =>
+                      dispatch({
+                        type: "common",
+                        parameter: "effort",
+                        value: e.target.value as Effort,
+                      })
+                    }
+                  >
+                    {efforts.map((e) => (
+                      <option key={e} value={e}>
+                        {effortLabel(e)}
+                      </option>
+                    ))}
+                  </select>
                   {compatibility.effort}
-                  <CommonParameterActions
-                    input={input}
-                    parameter="effort"
-                    onMove={toAxis}
-                  />
                 </div>
               )}
             </div>
@@ -353,6 +379,7 @@ export function Create() {
               input={input}
               onAction={dispatch}
               onMove={toAxis}
+              disabled={submission.uploading || busy}
             />
           )}
         </section>
@@ -366,6 +393,12 @@ export function Create() {
                 ? "Enter chat history"
                 : "Enter your prompt"}
             </h2>
+            <CommonParameterActions
+              input={input}
+              parameter="input"
+              onMove={toAxis}
+              disabled={submission.uploading || busy}
+            />
           </div>
 
           {isChatFormat(input.format) ? (
@@ -419,11 +452,6 @@ export function Create() {
             />
           )}
           {!isChatFormat(input.format) && compatibility.input}
-          <CommonParameterActions
-            input={input}
-            parameter="input"
-            onMove={toAxis}
-          />
           <ErrorMessage error={variableIssue} />
           {promptVariables.map((variable) => (
             <p className="hint" key={variable}>
@@ -463,73 +491,100 @@ export function Create() {
             <>
               <div className="fixed-options">
                 {commonJudgeModel && (
-                  <fieldset role="radiogroup" aria-label="Judge model">
-                    <legend className="parameter-name">Judge model</legend>
-                    <ModelSelector
-                      judge
-                      models={judgeModels}
-                      format={input.format}
-                      values={
-                        judgeModelSource?.kind === "common" &&
-                        judgeModelSource.value
-                          ? [judgeModelSource.value]
-                          : []
-                      }
-                      onChange={(values) =>
-                        dispatch({
-                          type: "common",
-                          parameter: "judge_model",
-                          value: values[0] ?? "",
-                        })
-                      }
-                    />
-                    {compatibility.judge_model}
-                    <CommonParameterActions
-                      input={input}
-                      parameter="judge_model"
-                      onMove={toAxis}
-                    />
-                  </fieldset>
+                  <div>
+                    <div className="parameter-header">
+                      <span
+                        className="parameter-name"
+                        id="common-judge-model-label"
+                      >
+                        Judge model
+                      </span>
+                      <CommonParameterActions
+                        input={input}
+                        parameter="judge_model"
+                        onMove={toAxis}
+                        disabled={submission.uploading || busy}
+                      />
+                    </div>
+                    <fieldset
+                      role="radiogroup"
+                      aria-labelledby="common-judge-model-label"
+                    >
+                      <ModelSelector
+                        judge
+                        models={judgeModels}
+                        format={input.format}
+                        values={
+                          judgeModelSource?.kind === "common" &&
+                          judgeModelSource.value
+                            ? [judgeModelSource.value]
+                            : []
+                        }
+                        onChange={(values) =>
+                          dispatch({
+                            type: "common",
+                            parameter: "judge_model",
+                            value: values[0] ?? "",
+                          })
+                        }
+                      />
+                      {compatibility.judge_model}
+                    </fieldset>
+                  </div>
                 )}
                 {commonJudgeEffort && (
                   <div>
-                    <label>
-                      <span className="parameter-name">
-                        Judge thinking effort
-                      </span>
-                      <select
-                        aria-label="Judge thinking effort"
-                        value={
-                          judgeEffortSource?.kind === "common"
-                            ? judgeEffortSource.value
-                            : "default"
-                        }
-                        onChange={(event) =>
-                          dispatch({
-                            type: "common",
-                            parameter: "judge_effort",
-                            value: event.target.value as Effort,
-                          })
-                        }
+                    <div className="parameter-header">
+                      <label
+                        className="parameter-name"
+                        htmlFor="common-judge-effort"
                       >
-                        {efforts.map((effort) => (
-                          <option key={effort} value={effort}>
-                            {effortLabel(effort)}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                        Judge thinking effort
+                      </label>
+                      <CommonParameterActions
+                        input={input}
+                        parameter="judge_effort"
+                        onMove={toAxis}
+                        disabled={submission.uploading || busy}
+                      />
+                    </div>
+                    <select
+                      id="common-judge-effort"
+                      aria-label="Judge thinking effort"
+                      value={
+                        judgeEffortSource?.kind === "common"
+                          ? judgeEffortSource.value
+                          : "default"
+                      }
+                      onChange={(event) =>
+                        dispatch({
+                          type: "common",
+                          parameter: "judge_effort",
+                          value: event.target.value as Effort,
+                        })
+                      }
+                    >
+                      {efforts.map((effort) => (
+                        <option key={effort} value={effort}>
+                          {effortLabel(effort)}
+                        </option>
+                      ))}
+                    </select>
                     {compatibility.judge_effort}
-                    <CommonParameterActions
-                      input={input}
-                      parameter="judge_effort"
-                      onMove={toAxis}
-                    />
                   </div>
                 )}
               </div>
               {criteriaSource?.kind === "common" && (
                 <>
+                  <div className="parameter-header">
+                    <span className="parameter-name">Judge criteria</span>
+                    <CommonParameterActions
+                      input={input}
+                      parameter="judge_criteria"
+                      onMove={toAxis}
+                      disabled={submission.uploading || busy}
+                    />
+                  </div>
                   <CriteriaEditor
                     criteria={criteriaSource.value}
                     onChange={(value) => {
@@ -543,11 +598,6 @@ export function Create() {
                     }}
                   />
                   {compatibility.judge_criteria}
-                  <CommonParameterActions
-                    input={input}
-                    parameter="judge_criteria"
-                    onMove={toAxis}
-                  />
                 </>
               )}
               <ErrorMessage error={criteriaIssue} />

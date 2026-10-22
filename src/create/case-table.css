@@ -1,0 +1,186 @@
+.variable-editor {
+  --case-label-width: 72px;
+  --case-header-height: 45px;
+  min-width: 0;
+  max-width: 100%;
+}
+.variable-editor[data-case-axis="rows"] {
+  --case-label-width: 96px;
+}
+.variable-table-scroll {
+  max-width: 100%;
+  max-height: min(76vh, 900px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.variable-table-scroll:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+}
+.case-scroll-guidance {
+  margin-block: 8px;
+  padding-inline: 8px;
+}
+.case-table-plane {
+  display: grid;
+  grid-template-columns: minmax(min-content, 1fr) max-content;
+  width: 100%;
+  min-width: 0;
+  align-items: start;
+}
+.variable-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+}
+.variable-table > thead > tr > *,
+.variable-table > tbody > tr > * {
+  padding: 8px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+.variable-table > thead > tr > * {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--grid-header);
+  text-align: left;
+  font-weight: 500;
+}
+.variable-table > tbody > tr > th {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--grid-header);
+  font-weight: 500;
+  text-align: left;
+}
+.variable-table > thead > tr > .variable-corner {
+  left: 0;
+  z-index: 4;
+  background: var(--grid-header);
+}
+.variable-table td[data-field] {
+  background: var(--paper);
+}
+.case-header-rail,
+.layout-parameter-heading,
+.case-header-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.case-header-rail,
+.layout-parameter-heading {
+  justify-content: space-between;
+  margin: 0;
+}
+.case-header-controls {
+  flex-shrink: 0;
+}
+.case-header-controls > span {
+  display: inline-flex;
+}
+.variable-table th[scope="row"] .case-header-rail,
+.variable-table th[scope="row"] .layout-parameter-heading {
+  justify-content: flex-start;
+  position: sticky;
+  top: var(--case-header-height);
+  white-space: nowrap;
+}
+.variable-table .row-label {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  white-space: nowrap;
+  line-height: 1.2;
+}
+.case-table-trailing-column {
+  padding: 8px;
+  position: sticky;
+  top: 0;
+}
+.case-table-trailing-row {
+  grid-column: 1;
+  padding: 8px;
+}
+.case-axis-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  min-height: 32px;
+}
+.case-axis-add svg {
+  width: 16px;
+  height: 16px;
+}
+.variable-table-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 8px;
+}
+.variable-cell-input {
+  position: relative;
+  min-width: 180px;
+}
+.variable-cell-input textarea {
+  display: block;
+  min-height: 72px;
+  padding-right: 34px;
+  overflow-y: hidden;
+  resize: none;
+  field-sizing: content;
+}
+.variable-cell-input .reference-upload-compact {
+  right: 3px;
+  opacity: 1;
+  pointer-events: auto;
+}
+.variable-table .reference-images {
+  margin-block: 8px 0;
+}
+.variable-table .chat-editor {
+  padding-top: 0;
+}
+.variable-table textarea {
+  resize: none;
+  field-sizing: content;
+}
+.variable-table .prompt-input textarea {
+  min-height: 72px;
+  overflow: hidden;
+}
+.variable-table :is(textarea, input, select):not(:focus):not(:hover) {
+  border-color: transparent;
+}
+@media (pointer: coarse) {
+  .case-axis-add {
+    min-height: 36px;
+  }
+}
+.variable-table th[scope="row"] .case-header-controls {
+  display: grid;
+  grid-template-columns: repeat(2, 28px);
+  gap: 0;
+}
+.variable-table th[scope="row"] .case-header-controls > span:last-child {
+  grid-column: 2;
+}
+@media (hover: none), (pointer: coarse) {
+  .variable-editor {
+    --case-label-width: 80px;
+    --case-header-height: 53px;
+  }
+  .variable-editor[data-case-axis="rows"] {
+    --case-label-width: 112px;
+  }
+  .variable-table th[scope="row"] .case-header-controls {
+    grid-template-columns: repeat(2, 36px);
+  }
+}

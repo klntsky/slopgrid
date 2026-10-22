@@ -4,6 +4,7 @@ import type { Criterion } from "../../server/judge-criteria";
 import { DeletableInput } from "./deletable-input";
 import { ReorderHandle } from "./reorder-handle";
 import "./criteria-editor.css";
+import { tooltipRef } from "../components/use-tooltip";
 
 type Criteria = Criterion[];
 
@@ -103,6 +104,8 @@ export function CriteriaEditor({
                 <button
                   type="button"
                   className="model-badge criteria-answer"
+                  ref={tooltipRef}
+                  data-tooltip={`Change the correct answer for criterion ${index + 1}`}
                   aria-label="Correct answer"
                   aria-pressed={criterion.correctAnswer}
                   onClick={() =>
@@ -118,6 +121,9 @@ export function CriteriaEditor({
       </table>
       <button
         type="button"
+        className="text-button criteria-add"
+        ref={tooltipRef}
+        data-tooltip="Add a criterion to this criteria list"
         onClick={() =>
           onChange([...criteria, { text: "", correctAnswer: true }])
         }

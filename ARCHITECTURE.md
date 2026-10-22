@@ -126,6 +126,13 @@ optional numbered fields. Budget remains an inference setting outside that
 ownership model. The form and canonical schemas share field types but have
 separate admission responsibilities.
 
+Creation components own presentation, menu and editor focus, and pointer and
+keyboard interaction. Parameter ownership transitions remain in the form action
+layer; changing a control's placement does not create another conversion or
+validation path. Shared prompt, conversation, and criteria editors serve both
+common fields and case cells, while the case matrix owns orientation and its
+scrolling workspace.
+
 Historical configuration has a read-only boundary. Stored accepted task inputs
 drive cell projection, billing, and output access independently of editor
 definitions. Configuration compatibility is separate from ownership permission;

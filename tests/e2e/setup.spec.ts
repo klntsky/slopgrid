@@ -24,10 +24,16 @@ test("disabled Generate explains blockers on hover and keyboard focus", async ({
   await page.getByRole("button", { name: "SVG", exact: true }).click();
   const generate = page.getByRole("button", { name: "Generate", exact: true });
   const wrapper = generate.locator("..");
-  const tooltip = page.getByRole("tooltip");
+  const expectHint = async () => {
+    await expect(wrapper).toHaveAttribute("aria-describedby", /\S/);
+    const description = await wrapper.getAttribute("aria-describedby");
+    await expect(
+      page.locator(`[id="${description}"]`).getByRole("tooltip"),
+    ).toBeVisible();
+  };
   await expect(generate).toBeDisabled();
   await wrapper.hover();
-  await expect(tooltip).toBeVisible();
+  await expectHint();
   await page
     .getByRole("combobox", { name: "Rows", exact: true })
     .selectOption("variable");
@@ -37,7 +43,7 @@ test("disabled Generate explains blockers on hover and keyboard focus", async ({
   await setVariableValues(page, "Rows", ["cat"]);
   await page.getByLabel("Prompt", { exact: true }).fill("$ROW1");
   await wrapper.focus();
-  await expect(tooltip).toBeVisible();
+  await expectHint();
   await expect(generate).toBeDisabled();
   await selectModel(page, "fixture/text");
   await page.getByLabel("Prompt", { exact: true }).fill("$ROW1 wearing a hat");
@@ -55,7 +61,7 @@ test("disabled Generate explains blockers on hover and keyboard focus", async ({
   await connectOpenRouter(page);
   await wrapper.hover();
   await expect(generate).toBeDisabled();
-  await expect(tooltip).toBeVisible();
+  await expectHint();
   releaseCapacity();
   await expect(
     page.getByRole("button", { name: "Check balance again" }),
@@ -63,21 +69,17 @@ test("disabled Generate explains blockers on hover and keyboard focus", async ({
   await page.mouse.move(0, 0);
   await wrapper.hover();
   await expect(generate).toBeDisabled();
-  await expect(tooltip).toBeVisible();
+  await expectHint();
   await page.unroute("**/api/inference-capacity?*");
   await page.getByRole("button", { name: "Check balance again" }).click();
   await expect(generate).toBeEnabled();
   await generate.focus();
   await wrapper.hover();
-  await expect(tooltip).toHaveCount(0);
+  await expect(wrapper).not.toHaveAttribute("aria-describedby", /\S/);
   await page.getByLabel("Budget limit per cell").fill("0");
   await expect(generate).toBeDisabled();
   await wrapper.focus();
-  await expect(wrapper).toHaveAttribute("aria-describedby", /\S/);
-  const description = await wrapper.getAttribute("aria-describedby");
-  await expect(
-    page.locator(`[id="${description}"]`).getByRole("tooltip"),
-  ).toBeVisible();
+  await expectHint();
 });
 
 test("axis swap preserves selections and substitutes the corresponding prompt variables", async ({

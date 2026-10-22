@@ -3,6 +3,7 @@ import {
   connectOpenRouter,
   expectProgress,
   setVariableValues,
+  moveParameter,
   selectModel,
 } from "./helpers";
 import { referencePng } from "../reference-image-fixture";
@@ -27,9 +28,7 @@ test("column parameter actions remain usable without a row-owned parameter and p
     .selectOption("variable");
   await setVariableValues(page, "Columns", ["Alpha", "Beta"]);
   await page.getByLabel("Prompt", { exact: true }).fill("Draw $COLUMN1");
-  await page
-    .getByRole("button", { name: "Make Model a column variable", exact: true })
-    .click();
+  await moveParameter(page, "model", "columns");
   await expect(
     table
       .getByRole("group", { name: "Column case 1 Model", exact: true })

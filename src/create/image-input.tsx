@@ -3,6 +3,7 @@ import { readReferenceFile, saveReferenceFile } from "./reference-files";
 import { Paperclip, X } from "lucide-react";
 import type { ReferenceImage } from "../../server/image-settings";
 import { ErrorMessage } from "../components/error-message";
+import { tooltipRef } from "../components/use-tooltip";
 
 export function ImagePicker({
   accessibleLabel = "Add images",
@@ -67,8 +68,9 @@ export function ImagePicker({
   return (
     <>
       <label
-        className="button text-button reference-upload reference-upload-compact"
-        title={accessibleLabel}
+        className="button text-button editor-icon-button reference-upload reference-upload-compact"
+        ref={tooltipRef}
+        data-tooltip={accessibleLabel}
       >
         <Paperclip aria-hidden="true" />
         <input
@@ -108,9 +110,11 @@ export function ImageList({
           <span>{image.name}</span>
           <button
             type="button"
-            className="text-button"
+            className="text-button editor-icon-button editor-icon-danger"
             disabled={disabled}
             aria-label={removeLabel(image)}
+            ref={tooltipRef}
+            data-tooltip={removeLabel(image)}
             onClick={() => onRemove(index)}
           >
             <X aria-hidden="true" />

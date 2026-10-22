@@ -90,6 +90,33 @@ export async function expectProgress(
   await expect(bar).toHaveAttribute("max", String(total));
 }
 
+export async function openParameterMenu(page: Page, parameter: string) {
+  const trigger = page.getByRole("button", {
+    name: `Move ${parameter} to...`,
+    exact: true,
+  });
+  if ((await trigger.getAttribute("aria-expanded")) !== "true")
+    await trigger.click();
+  return page.getByRole("menu", {
+    name: `Move ${parameter} to`,
+    exact: true,
+  });
+}
+
+export async function moveParameter(
+  page: Page,
+  parameter: string,
+  side: "rows" | "columns",
+) {
+  const menu = await openParameterMenu(page, parameter);
+  const direction = side === "rows" ? "row" : "column";
+  await menu
+    .getByRole("menuitem", {
+      name: new RegExp(`(?:a ${direction} variable|to ${direction} cases)$`),
+    })
+    .click();
+}
+
 export async function setVariableValues(
   page: Page,
   side: "Rows" | "Columns",
@@ -104,7 +131,7 @@ export async function setVariableValues(
   });
   await expect(table).toBeVisible();
   if (!(await table.getByLabel(`${token}, case 1`, { exact: true }).count()))
-    await table
+    await page
       .getByRole("button", { name: `Add ${axis} variable`, exact: true })
       .click();
   const cases = table.getByRole("button", {
@@ -112,7 +139,7 @@ export async function setVariableValues(
   });
   let count = await cases.count();
   while (count < values.length) {
-    await table
+    await page
       .getByRole("button", { name: `Add ${axis} case`, exact: true })
       .click();
     count++;

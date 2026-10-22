@@ -1,5 +1,6 @@
 import { GripVertical } from "lucide-react";
 import { useLayoutEffect, useRef, type RefObject } from "react";
+import { tooltipRef } from "../components/use-tooltip";
 
 export function ReorderHandle({
   index,
@@ -75,8 +76,10 @@ export function ReorderHandle({
   return (
     <button
       type="button"
-      className="text-button reorder-handle"
+      className="text-button editor-icon-button reorder-handle"
       aria-label={label}
+      ref={tooltipRef}
+      data-tooltip={`${label}. Use Up and Down arrow keys to reorder.`}
       disabled={disabled}
       onPointerDown={(event) => {
         event.currentTarget.setPointerCapture(event.pointerId);

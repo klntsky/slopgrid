@@ -1,5 +1,6 @@
 import { X } from "lucide-react";
 import { type ReactNode, useState } from "react";
+import { tooltipRef } from "../components/use-tooltip";
 
 export function DeletableInput({
   children,
@@ -44,8 +45,10 @@ export function DeletableInput({
       )}
       <button
         type="button"
-        className="text-button deletable-input-remove"
+        className="text-button editor-icon-button editor-icon-danger deletable-input-remove"
         aria-label={label}
+        ref={tooltipRef}
+        data-tooltip={label}
         disabled={disabled}
         onClick={() => {
           if (content.trim().split(/\s+/).length > 5)

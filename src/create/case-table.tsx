@@ -1,5 +1,12 @@
 import type { ReactNode } from "react";
-import { ArrowDown, ArrowUp, Plus, X } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowLeft,
+  ArrowRight,
+  ArrowUp,
+  Plus,
+  X,
+} from "lucide-react";
 import {
   efforts,
   isChatFormat,
@@ -28,6 +35,8 @@ import {
 import { VariableInput } from "./variable-input";
 import { PromptEditor } from "./prompt-editor";
 import { ChatEditor } from "./chat-editor";
+import { tooltipRef } from "../components/use-tooltip";
+import "./case-table.css";
 
 type LayoutField =
   { parameter: CommonParameterId } | { parameter: "variable"; index: number };
@@ -159,7 +168,6 @@ export function GridLayoutTable({
   const fields = fieldsFor(input, side);
   const entries = input[side];
   const rowCases = side === "rows";
-  const headerWidth = rowCases ? 58 : 92;
   function token(side: AxisSide, index: number) {
     return `$${side === "rows" ? "ROW" : "COLUMN"}${index + 1}`;
   }
@@ -170,42 +178,72 @@ export function GridLayoutTable({
     const entries = input[side];
     const name = sideName(side);
     return (
-      <>
+      <div className="case-header-rail">
         <span className={side === "rows" ? "row-label" : undefined}>
           Case {index + 1}
         </span>
-        <button
-          type="button"
-          className="text-button"
-          aria-label={`Move ${name} case ${index + 1} earlier`}
-          disabled={index === 0}
-          onClick={() =>
-            onAction({ type: "move-case", side, index, to: index - 1 })
-          }
-        >
-          <ArrowUp aria-hidden="true" />
-        </button>
-        <button
-          type="button"
-          className="text-button"
-          aria-label={`Move ${name} case ${index + 1} later`}
-          disabled={index === entries.length - 1}
-          onClick={() =>
-            onAction({ type: "move-case", side, index, to: index + 1 })
-          }
-        >
-          <ArrowDown aria-hidden="true" />
-        </button>
-        <button
-          type="button"
-          className="text-button"
-          aria-label={`Remove ${name} case ${index + 1}`}
-          disabled={entries.length <= 1}
-          onClick={() => onAction({ type: "remove-case", side, index })}
-        >
-          <X aria-hidden="true" />
-        </button>
-      </>
+        <span className="case-header-controls">
+          {([-1, 1] as const).map((direction) => {
+            const earlier = direction === -1;
+            const disabled = earlier
+              ? index === 0
+              : index === entries.length - 1;
+            const label = `Move ${name} case ${index + 1} ${earlier ? "earlier" : "later"}`;
+            const Icon =
+              side === "rows"
+                ? earlier
+                  ? ArrowUp
+                  : ArrowDown
+                : earlier
+                  ? ArrowLeft
+                  : ArrowRight;
+            return (
+              <span
+                key={direction}
+                ref={tooltipRef}
+                data-tooltip={label}
+                tabIndex={disabled ? 0 : undefined}
+              >
+                <button
+                  type="button"
+                  className="text-button editor-icon-button"
+                  aria-label={label}
+                  disabled={disabled}
+                  onClick={() =>
+                    onAction({
+                      type: "move-case",
+                      side,
+                      index,
+                      to: index + direction,
+                    })
+                  }
+                >
+                  <Icon aria-hidden="true" />
+                </button>
+              </span>
+            );
+          })}
+          <span
+            ref={tooltipRef}
+            data-tooltip={
+              entries.length <= 1
+                ? "Keep at least one case"
+                : `Remove ${name} case ${index + 1} and its values`
+            }
+            tabIndex={entries.length <= 1 ? 0 : undefined}
+          >
+            <button
+              type="button"
+              className="text-button editor-icon-button editor-icon-danger"
+              aria-label={`Remove ${name} case ${index + 1}`}
+              disabled={entries.length <= 1}
+              onClick={() => onAction({ type: "remove-case", side, index })}
+            >
+              <X aria-hidden="true" />
+            </button>
+          </span>
+        </span>
+      </div>
     );
   }
   function header(side: AxisSide, field: LayoutField) {
@@ -225,7 +263,9 @@ export function GridLayoutTable({
           {field.parameter === "variable" ? (
             <button
               type="button"
-              className="text-button"
+              className="text-button editor-icon-button editor-icon-danger"
+              ref={tooltipRef}
+              data-tooltip={`Remove ${label} and its values from all cases`}
               aria-label={`Remove ${label}`}
               onClick={() =>
                 onAction({ type: "remove-variable", side, index: field.index })
@@ -236,7 +276,9 @@ export function GridLayoutTable({
           ) : (
             <button
               type="button"
-              className="text-button"
+              className="text-button editor-icon-button"
+              ref={tooltipRef}
+              data-tooltip={`Return ${parameterNames[field.parameter].toLowerCase()} to common settings`}
               aria-label={`Make ${parameterNames[field.parameter].toLowerCase()} common`}
               onClick={() =>
                 onAction({ type: "to-common", parameter: field.parameter })
@@ -358,120 +400,137 @@ export function GridLayoutTable({
       </div>
     );
   }
-  const actions = (
-    <div className="variable-table-actions">
+  const addCase = (
+    <button
+      type="button"
+      className="text-button case-axis-add"
+      aria-label={`Add ${sideName(side)} case`}
+      ref={tooltipRef}
+      data-tooltip={`Add a ${sideName(side)} case`}
+      onClick={() => onAction({ type: "add-case", side })}
+    >
+      <Plus aria-hidden="true" /> Add {sideName(side)} case
+    </button>
+  );
+  const addVariable = (
+    <span
+      ref={tooltipRef}
+      data-tooltip={
+        entries.length
+          ? "Add an optional field to every case"
+          : "Add a case before adding a variable"
+      }
+      tabIndex={!entries.length ? 0 : undefined}
+    >
       <button
         type="button"
-        className="text-button"
-        aria-label={`Add ${sideName(side)} case`}
-        onClick={() => onAction({ type: "add-case", side })}
-      >
-        <Plus aria-hidden="true" /> Add {sideName(side)} case
-      </button>
-      <button
-        type="button"
-        className="text-button"
+        className="text-button case-axis-add"
         aria-label={`Add ${sideName(side)} variable`}
         disabled={!entries.length}
         onClick={() => onAction({ type: "add-variable", side })}
       >
         <Plus aria-hidden="true" /> Add variable
       </button>
-    </div>
+    </span>
   );
-  const columns = rowCases ? fields.length : entries.length;
-  const fieldWidths = fields.map((field) =>
-    field.parameter === "input"
-      ? isChatFormat(input.format)
-        ? 420
-        : 320
-      : 256,
-  );
-  const caseWidth = Math.max(256, ...fieldWidths);
-  const tableWidth =
-    headerWidth +
-    (rowCases
-      ? fieldWidths.reduce((total, width) => total + width, 0)
-      : entries.length * caseWidth);
   return (
-    <div className="variable-editor">
+    <div
+      className="variable-editor"
+      data-populated={entries.length > 0 && fields.length > 0}
+      data-case-axis={side}
+    >
       {entries.length ? (
-        <div className="variable-table-scroll">
-          <table
-            className="variable-table layout-parameter-table"
-            aria-label="Grid layout parameters"
-            style={{ minWidth: `${tableWidth}px` }}
+        <>
+          <p className="hint case-scroll-guidance">
+            Scroll within the table to see more cases or fields. Case and field
+            labels stay visible.
+          </p>
+          <div
+            className="variable-table-scroll"
+            role="region"
+            aria-label="Editable case parameters; scroll for more cases and fields"
+            tabIndex={0}
           >
-            <colgroup>
-              <col
-                className="variable-row-header"
-                style={{ width: headerWidth }}
-              />
-              {rowCases
-                ? fields.map((field, index) => (
-                    <col
-                      key={fieldKey(field)}
-                      style={{ width: fieldWidths[index] }}
-                    />
-                  ))
-                : entries.map((entry) => (
-                    <col key={entry.id} style={{ width: caseWidth }} />
-                  ))}
-            </colgroup>
-            <thead>
-              <tr>
-                <td className="variable-corner" />
-                {rowCases
-                  ? fields.map((field) => (
-                      <th scope="col" key={fieldKey(field)}>
-                        {header(side, field)}
-                      </th>
-                    ))
-                  : entries.map((entry, index) => (
-                      <th scope="col" key={entry.id}>
-                        {caseHeader(side, index)}
-                      </th>
-                    ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rowCases
-                ? entries.map((entry, index) => (
-                    <tr key={entry.id}>
-                      <th scope="row">{caseHeader(side, index)}</th>
-                      {fields.map((field) => (
-                        <td
-                          key={fieldKey(field)}
-                          data-case-parameter={`${side}-${field.parameter}`}
-                        >
-                          {editor(side, field, index)}
-                        </td>
+            <div className="case-table-plane">
+              <table
+                className="variable-table layout-parameter-table"
+                aria-label="Grid layout parameters"
+                style={{
+                  minWidth: `calc(var(--case-label-width) + ${rowCases ? fields.length : entries.length} * 300px)`,
+                }}
+              >
+                <colgroup>
+                  <col style={{ width: "var(--case-label-width)" }} />
+                  {(rowCases ? fields.length : entries.length) > 0 && (
+                    <col span={rowCases ? fields.length : entries.length} />
+                  )}
+                </colgroup>
+                <thead>
+                  <tr>
+                    <td className="variable-corner" />
+                    {rowCases
+                      ? fields.map((field) => (
+                          <th
+                            scope="col"
+                            key={fieldKey(field)}
+                            data-field={field.parameter}
+                          >
+                            {header(side, field)}
+                          </th>
+                        ))
+                      : entries.map((entry, index) => (
+                          <th scope="col" key={entry.id}>
+                            {caseHeader(side, index)}
+                          </th>
+                        ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rowCases
+                    ? entries.map((entry, index) => (
+                        <tr key={entry.id}>
+                          <th scope="row">{caseHeader(side, index)}</th>
+                          {fields.map((field) => (
+                            <td
+                              key={fieldKey(field)}
+                              data-field={field.parameter}
+                              data-case-parameter={`${side}-${field.parameter}`}
+                            >
+                              {editor(side, field, index)}
+                            </td>
+                          ))}
+                        </tr>
+                      ))
+                    : fields.map((field) => (
+                        <tr key={fieldKey(field)}>
+                          <th scope="row">{header(side, field)}</th>
+                          {entries.map((entry, index) => (
+                            <td
+                              key={entry.id}
+                              data-case-parameter={`${side}-${field.parameter}`}
+                              data-field={field.parameter}
+                            >
+                              {editor(side, field, index)}
+                            </td>
+                          ))}
+                        </tr>
                       ))}
-                    </tr>
-                  ))
-                : fields.map((field) => (
-                    <tr key={fieldKey(field)}>
-                      <th scope="row">{header(side, field)}</th>
-                      {entries.map((entry, index) => (
-                        <td
-                          key={entry.id}
-                          data-case-parameter={`${side}-${field.parameter}`}
-                        >
-                          {editor(side, field, index)}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-            </tbody>
-            <tfoot>
-              <tr>
-                <td colSpan={columns + 1}>{actions}</td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
+                </tbody>
+              </table>
+              <div className="case-table-trailing-column">
+                {rowCases ? addVariable : addCase}
+              </div>
+              <div className="case-table-trailing-row">
+                {rowCases ? addCase : addVariable}
+              </div>
+            </div>
+          </div>
+        </>
       ) : (
-        actions
+        <div className="variable-table-actions">
+          {addCase}
+          {addVariable}
+        </div>
       )}
       <p className="hint">
         Each case is one {sideName(side)}. Add generator input or other settings
