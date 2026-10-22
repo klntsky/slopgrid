@@ -1624,19 +1624,12 @@ test("unified user-message inputs reuse existing plain-prompt artifacts", async 
       reuseArtifacts: true,
     });
     assert.equal(copy.status, "complete");
-    assert.equal(
-      f.store.outputMetadata(copy.cells[0].id)!.artifactId,
-      completed.cells[0].artifactId,
-    );
+    const artifactId = f.store.outputMetadata(copy.cells[0].id)?.artifactId;
+    assert.ok(artifactId);
+    assert.equal(artifactId, completed.cells[0].artifactId);
     assert.equal(f.calls.length, 1);
     assert.equal(
-      readFileSync(
-        f.store.files.path(
-          f.store.outputMetadata(copy.cells[0].id)!.artifactId,
-          "index.md",
-        )!,
-        "utf8",
-      ),
+      readFileSync(f.store.files.path(artifactId, "index.md")!, "utf8"),
       "Previously generated artifact",
     );
   } finally {
