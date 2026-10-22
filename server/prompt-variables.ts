@@ -91,6 +91,32 @@ export function interpolateVariables(
   return { text: expanded, ...(images.length ? { images } : {}) };
 }
 
+export function caseSetupIssue(input: VariableInput):
+  | { kind: "cases" | "parameters" | "axis-values"; message: string }
+  | undefined {
+  const side = input.caseAxis;
+  if (!side) return;
+  const name = side === "rows" ? "row" : "column";
+  if (!input[side].length)
+    return { kind: "cases", message: `Add at least one ${name} case.` };
+  const hasFields = axisParameters(input, side).some(
+    (parameter) =>
+      parameter !== "variable" ||
+      input[side][0]?.variable?.some((field) => field !== null),
+  );
+  if (!hasFields)
+    return {
+      kind: "parameters",
+      message: `Add a variable or parameter to the ${name} cases.`,
+    };
+  const other = side === "rows" ? "columns" : "rows";
+  if (!input[other].length)
+    return {
+      kind: "axis-values",
+      message: `Select at least one ${axisParameters(input, other).includes("model") ? "model" : "value"} for ${other}.`,
+    };
+}
+
 export function promptVariableIssue(input: TemplateInput): string | undefined {
   const variableSide = input.parameters.variable?.kind;
   if (variableSide) {
@@ -129,7 +155,7 @@ export function promptVariableIssue(input: TemplateInput): string | undefined {
         const side = name === "ROW" ? "rows" : "columns";
         if (variableSide !== side)
           return input.caseAxis === side
-            ? `Use Add variable in the ${side === "rows" ? "row" : "column"} cases to define ${token}.`
+            ? `Use new variable in the ${side === "rows" ? "row" : "column"} cases to define ${token}.`
             : `Choose prompt variables for ${name === "ROW" ? "rows" : "columns"} to use ${token}.`;
         const caseIndex = side === "rows" ? row : column;
         const field = input[side][caseIndex]?.variable?.[Number(number) - 1];
@@ -153,6 +179,6 @@ export function promptVariableIssue(input: TemplateInput): string | undefined {
     );
     if (index !== undefined && index >= 0)
       return `Include $${side === "rows" ? "ROW" : "COLUMN"}${index + 1} in the prompt or judge criteria for ${side === "rows" ? "row" : "column"} variables.`;
-    return "Use a case-owned prompt, chat history, parameter, or numbered field for the case axis.";
+    return caseSetupIssue(input)?.message;
   }
 }

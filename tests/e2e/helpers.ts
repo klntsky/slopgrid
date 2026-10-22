@@ -132,7 +132,7 @@ export async function setVariableValues(
   await expect(table).toBeVisible();
   if (!(await table.getByLabel(`${token}, case 1`, { exact: true }).count()))
     await page
-      .getByRole("button", { name: `Add ${axis} variable`, exact: true })
+      .getByRole("button", { name: "new variable", exact: true })
       .click();
   const cases = table.getByRole("button", {
     name: new RegExp(`^Remove ${axis} case \\d+$`),
@@ -140,7 +140,7 @@ export async function setVariableValues(
   let count = await cases.count();
   while (count < values.length) {
     await page
-      .getByRole("button", { name: `Add ${axis} case`, exact: true })
+      .getByRole("button", { name: "new case", exact: true })
       .click();
     count++;
   }

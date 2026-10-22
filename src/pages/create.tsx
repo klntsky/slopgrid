@@ -32,7 +32,10 @@ import { Connection } from "../components/connection";
 import { ErrorMessage } from "../components/error-message";
 import { LowBalanceDialog } from "../components/inference-dialogs";
 import { useTooltip } from "../components/use-tooltip";
-import { promptVariableIssue } from "../../server/prompt-variables";
+import {
+  caseSetupIssue,
+  promptVariableIssue,
+} from "../../server/prompt-variables";
 import { PromptEditor } from "../create/prompt-editor";
 import { GridLayoutTable } from "../create/case-table";
 import { judgeCriteriaIssue } from "../../server/judge-criteria";
@@ -123,6 +126,9 @@ export function Create() {
       )
     : [];
   const variableIssue = promptVariableIssue(input);
+  const caseIssue = caseSetupIssue(input);
+  const templateIssue =
+    caseIssue && caseIssue.kind !== "axis-values" ? undefined : variableIssue;
   const criteriaIssue = judgeCriteriaIssue(input);
   const criteriaSource = input.parameters.judge_criteria;
   const modelSource = input.parameters.model;
@@ -262,11 +268,15 @@ export function Create() {
                   }}
                 />
               )}
-            />
+            >
+              <ErrorMessage
+                error={
+                  caseIssue?.message ??
+                  (inputSource.kind !== "common" ? templateIssue : undefined)
+                }
+              />
+            </GridLayoutTable>
           </fieldset>
-          {inputSource.kind !== "common" && (
-            <ErrorMessage error={variableIssue} />
-          )}
           <p className="hint">
             {input.judge ? (
               `${input.rows.length} rows x ${input.columns.length} columns - ${generatedOutputs} generated outputs`
@@ -443,7 +453,7 @@ export function Create() {
             />
           )}
           {!isChatFormat(input.format) && compatibility.input}
-          <ErrorMessage error={variableIssue} />
+          <ErrorMessage error={templateIssue} />
           {promptVariables.map((variable) => (
             <p className="hint" key={variable}>
               {variable} inserts the field's text and images where referenced in

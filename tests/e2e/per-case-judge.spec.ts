@@ -198,7 +198,7 @@ test("different case rubrics judge one reused generation independently and survi
     .getByLabel("Prompt", { exact: true })
     .fill("Answer independently of judge-only reference material.");
   await moveParameter(page, "judge criteria", "rows");
-  await page.getByRole("button", { name: "Add row case", exact: true }).click();
+  await page.getByRole("button", { name: "new case", exact: true }).click();
   await expect(rubric(page, "Row", 3)).toBeVisible();
   await rubric(page, "Row", 3)
     .getByLabel("Criterion 1", { exact: true })
@@ -420,7 +420,7 @@ for (const side of ["Rows", "Columns"] as const) {
     else await reorder.click();
     await page
       .getByRole("button", {
-        name: `Add ${swappedAxis.toLowerCase()} case`,
+        name: "new case",
         exact: true,
       })
       .click();

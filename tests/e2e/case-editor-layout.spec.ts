@@ -53,7 +53,7 @@ for (const format of ["SVG", "Image"]) {
     await expect(table).toBeVisible();
     await expect(table.getByRole("textbox")).toHaveCount(0);
     await page
-      .getByRole("button", { name: "Add row variable", exact: true })
+      .getByRole("button", { name: "new variable", exact: true })
       .click();
     await expect(
       table.getByRole("button", { name: "Remove row case 1", exact: true }),
@@ -76,7 +76,7 @@ for (const format of ["SVG", "Image"]) {
     await expect(table.getByRole("textbox")).toHaveCount(1);
 
     await page
-      .getByRole("button", { name: "Add row case", exact: true })
+      .getByRole("button", { name: "new case", exact: true })
       .click();
     await expect(table.getByRole("textbox")).toHaveCount(2);
     await table.getByLabel("$ROW1, case 1", { exact: true }).fill("identical");
@@ -113,10 +113,10 @@ test("a single case keeps field image associations and stable tokens in both ori
     exact: true,
   });
   await page
-    .getByRole("button", { name: "Add row variable", exact: true })
+    .getByRole("button", { name: "new variable", exact: true })
     .click();
   await page
-    .getByRole("button", { name: "Add row variable", exact: true })
+    .getByRole("button", { name: "new variable", exact: true })
     .click();
   await table
     .getByLabel("$ROW1, case 1", { exact: true })
@@ -144,7 +144,7 @@ test("a single case keeps field image associations and stable tokens in both ori
     "keep this field",
   );
   await page
-    .getByRole("button", { name: "Add row variable", exact: true })
+    .getByRole("button", { name: "new variable", exact: true })
     .click();
   await expect(table.getByLabel("$ROW3, case 1", { exact: true })).toHaveValue(
     "",
@@ -216,7 +216,7 @@ test("case-owned model and judge controls stay with prompt fields while common j
   });
   await expect(table).toHaveCount(1);
   await expect(
-    page.getByRole("button", { name: "Add row variable", exact: true }),
+    page.getByRole("button", { name: "new variable", exact: true }),
   ).toBeVisible();
   await expect(
     table.getByRole("group", { name: "Row case 1 Model", exact: true }),
@@ -258,7 +258,7 @@ test("an empty restored case list hides only the table and can return to one edi
     .getByRole("combobox", { name: "Rows", exact: true })
     .selectOption("variable");
   await page
-    .getByRole("button", { name: "Add row variable", exact: true })
+    .getByRole("button", { name: "new variable", exact: true })
     .click();
   await page
     .getByLabel("$ROW1, case 1", { exact: true })
@@ -274,16 +274,17 @@ test("an empty restored case list hides only the table and can return to one edi
     exact: true,
   });
   await expect(table).toHaveCount(0);
+  await expect(page.locator(".variable-editor").getByRole("alert")).toBeVisible();
   await expect(
     page.getByRole("combobox", { name: "Rows", exact: true }),
   ).toHaveValue("variable");
   await expect(
     page.getByRole("group", { name: "Column values", exact: true }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Add row case", exact: true }).click();
+  await page.getByRole("button", { name: "new case", exact: true }).click();
   await expect(table).toBeVisible();
   await page
-    .getByRole("button", { name: "Add row variable", exact: true })
+    .getByRole("button", { name: "new variable", exact: true })
     .click();
   await table
     .getByLabel("$ROW1, case 1", { exact: true })
@@ -331,11 +332,11 @@ for (const side of ["Rows", "Columns"] as const) {
       exact: true,
     });
     await page
-      .getByRole("button", { name: `Add ${direction} variable`, exact: true })
+      .getByRole("button", { name: "new variable", exact: true })
       .click();
     await table.getByLabel(`${token}, case 1`, { exact: true }).fill("Alpha");
     await page
-      .getByRole("button", { name: `Add ${direction} case`, exact: true })
+      .getByRole("button", { name: "new case", exact: true })
       .click();
     await table.getByLabel(`${token}, case 2`, { exact: true }).fill("Beta");
     const secondModel = table.getByRole("group", {
@@ -447,7 +448,7 @@ for (const side of ["Rows", "Columns"] as const) {
     });
     await expect(table.getByRole("textbox")).toHaveCount(0);
     await page
-      .getByRole("button", { name: `Add ${direction} case`, exact: true })
+      .getByRole("button", { name: "new case", exact: true })
       .click();
     const common = page.getByLabel("Prompt", { exact: true });
     await common.fill("Draw a complete blue landscape");
@@ -655,7 +656,7 @@ for (const side of ["Rows", "Columns"] as const) {
       side === "Rows" ? "rows" : "columns",
     );
     await page
-      .getByRole("button", { name: `Add ${direction} case`, exact: true })
+      .getByRole("button", { name: "new case", exact: true })
       .click();
     const second = table.getByRole("group", {
       name: `${title} case 2 Chat history`,
@@ -684,7 +685,7 @@ for (const side of ["Rows", "Columns"] as const) {
       }),
     ).toBeVisible();
     await page
-      .getByRole("button", { name: `Add ${direction} variable`, exact: true })
+      .getByRole("button", { name: "new variable", exact: true })
       .click();
     const token = side === "Rows" ? "$ROW1" : "$COLUMN1";
     await table
@@ -694,7 +695,7 @@ for (const side of ["Rows", "Columns"] as const) {
       table.getByLabel(`${token}, case 1`, { exact: true }),
     ).toHaveCount(0);
     await page
-      .getByRole("button", { name: `Add ${direction} variable`, exact: true })
+      .getByRole("button", { name: "new variable", exact: true })
       .click();
     const next = side === "Rows" ? "$ROW2" : "$COLUMN2";
     await expect(
@@ -842,7 +843,7 @@ test("case workspaces stay centered at normal width and grow only until the view
   const empty = await bounds();
   expect(empty.x + empty.width / 2).toBeCloseTo(720, 0);
   const addField = page.getByRole("button", {
-    name: "Add row variable",
+    name: "new variable",
     exact: true,
   });
   await addField.click();

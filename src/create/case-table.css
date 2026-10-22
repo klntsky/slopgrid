@@ -78,9 +78,6 @@
 .layout-parameter-heading > .editor-icon-button {
   margin-inline-start: auto;
 }
-.case-header-add {
-  margin-inline-start: 4px;
-}
 .variable-corner {
   text-align: right;
 }
@@ -97,7 +94,11 @@
   top: var(--case-header-height);
   white-space: nowrap;
 }
+.variable-table th[scope="row"] {
+  text-align: center;
+}
 .variable-table .row-label {
+  display: inline-flex;
   writing-mode: vertical-rl;
   transform: rotate(180deg);
   white-space: nowrap;
@@ -106,10 +107,11 @@
 .case-table-footer {
   padding: 8px;
 }
-.case-table-footer > :is(button, span) {
+.case-table-actions {
   position: sticky;
   left: 8px;
   display: inline-flex;
+  gap: 8px;
 }
 .case-axis-add {
   display: inline-flex;
@@ -183,8 +185,5 @@
   }
   .variable-editor[data-case-axis="rows"] {
     --case-label-width: 112px;
-  }
-  .variable-table th[scope="row"] .case-header-controls {
-    flex-direction: column;
   }
 }

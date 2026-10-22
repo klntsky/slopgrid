@@ -143,6 +143,7 @@ export function GridLayoutTable({
   onAction,
   onBusy,
   compatibility,
+  children,
 }: {
   input: GridDraftInput;
   models: Model[];
@@ -156,6 +157,7 @@ export function GridLayoutTable({
     fieldIndex?: number,
     messageIndex?: number,
   ) => ReactNode;
+  children?: ReactNode;
 }) {
   const root = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState<number>();
@@ -185,10 +187,8 @@ export function GridLayoutTable({
     const entries = input[side];
     const name = sideName(side);
     return (
-      <div className="case-header-rail">
-        <span className={side === "rows" ? "row-label" : undefined}>
-          Case {index + 1}
-        </span>
+      <div className={`case-header-rail${side === "rows" ? " row-label" : ""}`}>
+        <span>Case {index + 1}</span>
         <span className="case-header-controls">
           {side === "rows" ? (
             <ReorderHandle
@@ -260,7 +260,6 @@ export function GridLayoutTable({
             </button>
           </span>
         </span>
-        {!rowCases && index === entries.length - 1 && addCase(true)}
       </div>
     );
   }
@@ -276,8 +275,8 @@ export function GridLayoutTable({
           : parameterNames[field.parameter];
     return (
       <>
-        <div className="layout-parameter-heading">
-          <span className={vertical ? "row-label" : undefined}>{label}</span>
+        <div className={`layout-parameter-heading${vertical ? " row-label" : ""}`}>
+          <span>{label}</span>
           {field.parameter === "variable" ? (
             <button
               type="button"
@@ -305,7 +304,6 @@ export function GridLayoutTable({
               <X aria-hidden="true" />
             </button>
           )}
-          {rowCases && field === fields[fields.length - 1] && addVariable(true)}
         </div>
       </>
     );
@@ -433,45 +431,33 @@ export function GridLayoutTable({
         ?.focus();
     });
   }
-  function addCase(compact = false) {
+  function addCase() {
     return (
       <button
         type="button"
-        className={`text-button ${compact ? "editor-icon-button case-header-add" : "case-axis-add"}`}
-        aria-label={`Add ${sideName(side)} case`}
+        className="text-button case-axis-add"
+        aria-label="new case"
         data-add="case"
-        ref={tooltipRef}
-        data-tooltip={`Add a ${sideName(side)} case`}
         onClick={() => add("case")}
       >
         <Plus aria-hidden="true" />
-        {!compact && <>Add {sideName(side)} case</>}
+        new case
       </button>
     );
   }
-  function addVariable(compact = false) {
+  function addVariable() {
     return (
-      <span
-        ref={tooltipRef}
-        data-tooltip={
-          entries.length
-            ? "Add an optional field to every case"
-            : "Add a case before adding a variable"
-        }
-        tabIndex={!entries.length ? 0 : undefined}
+      <button
+        type="button"
+        className="text-button case-axis-add"
+        aria-label="new variable"
+        data-add="variable"
+        disabled={!entries.length}
+        onClick={() => add("variable")}
       >
-        <button
-          type="button"
-          className={`text-button ${compact ? "editor-icon-button case-header-add" : "case-axis-add"}`}
-          aria-label={`Add ${sideName(side)} variable`}
-          data-add="variable"
-          disabled={!entries.length}
-          onClick={() => add("variable")}
-        >
-          <Plus aria-hidden="true" />
-          {!compact && <>Add variable</>}
-        </button>
-      </span>
+        <Plus aria-hidden="true" />
+        new variable
+      </button>
     );
   }
   return (
@@ -510,9 +496,7 @@ export function GridLayoutTable({
                 </colgroup>
                 <thead>
                   <tr>
-                    <td className="variable-corner">
-                      {rowCases && !fields.length && addVariable(true)}
-                    </td>
+                    <td className="variable-corner" />
                     {rowCases
                       ? fields.map((field) => (
                           <th
@@ -574,7 +558,10 @@ export function GridLayoutTable({
                 </tbody>
               </table>
               <div className="case-table-footer">
-                {rowCases ? addCase() : addVariable()}
+                <div className="case-table-actions">
+                  {addCase()}
+                  {addVariable()}
+                </div>
               </div>
             </div>
           </div>
@@ -585,6 +572,7 @@ export function GridLayoutTable({
           {addVariable()}
         </div>
       )}
+      {children}
     </div>
   );
 }

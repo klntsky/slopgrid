@@ -120,7 +120,7 @@ test("variable records merge images per message, interpolate judge references an
     .fill("Second turn: $ROW1");
   await variableAxis(page, ["Alpha literal $ROW2", "Beta"]);
   await page
-    .getByRole("button", { name: "Add row variable", exact: true })
+    .getByRole("button", { name: "new variable", exact: true })
     .click();
   await page
     .getByLabel("$ROW2, case 1", { exact: true })
@@ -346,7 +346,7 @@ for (const side of ["Rows", "Columns"] as const) {
     await variableAxis(page, ["Question"], side);
     await page
       .getByRole("button", {
-        name: side === "Rows" ? "Add row variable" : "Add column variable",
+        name: "new variable",
         exact: true,
       })
       .click();
