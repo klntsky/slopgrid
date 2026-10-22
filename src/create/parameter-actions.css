@@ -22,8 +22,7 @@
   margin-left: auto;
 }
 
-.parameter-move-trigger,
-.parameter-return-common {
+.parameter-move-trigger {
   min-height: 28px;
   padding: 3px 6px;
   font-size: 12px;
@@ -43,8 +42,7 @@
 }
 
 .parameter-move-trigger:hover,
-.parameter-move-trigger[aria-expanded="true"],
-.parameter-return-common:hover {
+.parameter-move-trigger[aria-expanded="true"] {
   color: var(--text);
   background: var(--grid-header);
 }
@@ -84,8 +82,7 @@
 }
 
 .parameter-move-menu > button:focus-visible,
-.parameter-move-trigger:focus-visible,
-.parameter-return-common:focus-visible {
+.parameter-move-trigger:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
@@ -106,8 +103,7 @@
 }
 
 @media (pointer: coarse) {
-  .parameter-move-trigger,
-  .parameter-return-common {
+  .parameter-move-trigger {
     min-height: 36px;
   }
 

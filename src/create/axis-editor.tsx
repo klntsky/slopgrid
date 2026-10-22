@@ -131,17 +131,6 @@ export function AxisValues({
         }));
   return (
     <>
-      <div className="parameter-header">
-        <span className="parameter-name">{parameterNames[parameter]}</span>
-        <button
-          type="button"
-          className="text-button parameter-return-common"
-          aria-label={`Make ${parameterNames[parameter].toLowerCase()} common`}
-          onClick={() => onAction({ type: "to-common", parameter })}
-        >
-          Make common
-        </button>
-      </div>
       <fieldset
         aria-label={side === "rows" ? "Row values" : "Column values"}
         data-case-parameter={`${side}-${parameter}`}

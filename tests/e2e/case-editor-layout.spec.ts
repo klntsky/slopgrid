@@ -870,9 +870,11 @@ test("case workspaces stay centered at normal width and grow only until the view
   const phone = await bounds();
   expect(phone.x).toBeGreaterThan(0);
   expect(phone.x + phone.width).toBeLessThan(390);
-  expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= window.innerWidth,
-    ),
-  ).toBe(true);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    )
+    .toBe(true);
 });

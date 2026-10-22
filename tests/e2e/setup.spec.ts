@@ -203,8 +203,8 @@ test("model filtering preserves deliberate selections and supports keyboard remo
       .locator('option[value="model"]'),
   ).toHaveJSProperty("disabled", true);
   await page
-    .getByRole("button", { name: "Make model common", exact: true })
-    .click();
+    .getByRole("combobox", { name: "Columns", exact: true })
+    .selectOption("single");
   await page
     .getByRole("combobox", { name: "Rows", exact: true })
     .selectOption("model");
@@ -285,8 +285,8 @@ test("Shift-click selects and clears visible model ranges while preserving hidde
   await expect(selected).toHaveText([names[0], names[5]]);
   await acceptDrop(page, () =>
     page
-      .getByRole("button", { name: "Make model common", exact: true })
-      .click(),
+      .getByRole("combobox", { name: "Columns", exact: true })
+      .selectOption("single"),
   );
   await page
     .getByRole("combobox", { name: "Rows", exact: true })

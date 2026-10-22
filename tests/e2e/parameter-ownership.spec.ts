@@ -21,8 +21,8 @@ test("column parameter actions remain usable without a row-owned parameter and p
   await models.getByRole("searchbox").fill("fixture/text");
   await models.locator('input[type="checkbox"][value="fixture/text"]').check();
   await page
-    .getByRole("button", { name: "Make model common", exact: true })
-    .click();
+    .getByRole("combobox", { name: "Rows", exact: true })
+    .selectOption("single");
   await page
     .getByRole("combobox", { name: "Columns", exact: true })
     .selectOption("variable");
