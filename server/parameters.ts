@@ -14,7 +14,7 @@ export type ParameterConfiguration = Pick<
   "parameters" | "rows" | "columns" | "caseAxis"
 >;
 export const parameterNames: Record<ParameterId, string> = {
-  input: "Generator input",
+  input: "Input",
   model: "Model",
   effort: "Thinking effort",
   size: "Size",

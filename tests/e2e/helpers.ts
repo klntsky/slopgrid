@@ -92,13 +92,13 @@ export async function expectProgress(
 
 export async function openParameterMenu(page: Page, parameter: string) {
   const trigger = page.getByRole("button", {
-    name: `Move ${parameter} to...`,
+    name: `Add variable cases for ${parameter}`,
     exact: true,
   });
   if ((await trigger.getAttribute("aria-expanded")) !== "true")
     await trigger.click();
   return page.getByRole("menu", {
-    name: `Move ${parameter} to`,
+    name: `Variable cases for ${parameter}`,
     exact: true,
   });
 }

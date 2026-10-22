@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Plus } from "lucide-react";
 import { imageKinds, imageChoices } from "../../server/image-settings";
 import {
   efforts,
@@ -261,7 +261,7 @@ export function CommonParameterActions({
         className="text-button parameter-move-trigger"
         ref={trigger}
         disabled={disabled}
-        aria-label={`Move ${name} to...`}
+        aria-label={`Add variable cases for ${name}`}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? id : undefined}
@@ -273,7 +273,8 @@ export function CommonParameterActions({
           }
         }}
       >
-        Move to... <ChevronDown aria-hidden="true" />
+        <Plus aria-hidden="true" /> Add variable cases{" "}
+        <ChevronDown aria-hidden="true" />
       </button>
       {open && (
         <div
@@ -281,7 +282,7 @@ export function CommonParameterActions({
           id={id}
           ref={menu}
           role="menu"
-          aria-label={`Move ${name} to`}
+          aria-label={`Variable cases for ${name}`}
           onKeyDown={(event) => {
             const items = Array.from(
               event.currentTarget.querySelectorAll<HTMLButtonElement>(

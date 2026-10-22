@@ -153,6 +153,6 @@ export function promptVariableIssue(input: TemplateInput): string | undefined {
     );
     if (index !== undefined && index >= 0)
       return `Include $${side === "rows" ? "ROW" : "COLUMN"}${index + 1} in the prompt or judge criteria for ${side === "rows" ? "row" : "column"} variables.`;
-    return "Use a case-owned generator input, parameter, or numbered field for the case axis.";
+    return "Use a case-owned prompt, chat history, parameter, or numbered field for the case axis.";
   }
 }

@@ -486,7 +486,7 @@ for (const side of ["Rows", "Columns"] as const) {
     ).toBeVisible();
     await expect(page.getByLabel("Prompt", { exact: true })).toHaveCount(2);
     await table
-      .getByRole("button", { name: "Make generator input common", exact: true })
+      .getByRole("button", { name: "Make prompt common", exact: true })
       .click();
     await expect(common).toHaveValue("Draw a complete blue landscape");
     await expect(
@@ -510,7 +510,7 @@ for (const side of ["Rows", "Columns"] as const) {
       () =>
         table
           .getByRole("button", {
-            name: "Make generator input common",
+            name: "Make prompt common",
             exact: true,
           })
           .click(),
@@ -567,7 +567,7 @@ for (const side of ["Rows", "Columns"] as const) {
     await page.getByRole("button", { name: "EDIT", exact: true }).click();
     const confirmation = page.waitForEvent("dialog");
     const demote = table
-      .getByRole("button", { name: "Make generator input common", exact: true })
+      .getByRole("button", { name: "Make prompt common", exact: true })
       .click();
     await (await confirmation).accept();
     await demote;
@@ -638,7 +638,7 @@ for (const side of ["Rows", "Columns"] as const) {
       first.getByRole("img", { name: "history.png", exact: true }),
     ).toBeVisible();
     await table
-      .getByRole("button", { name: "Make generator input common", exact: true })
+      .getByRole("button", { name: "Make chat history common", exact: true })
       .click();
     await expect(page.getByLabel("Message 1", { exact: true })).toHaveValue(
       "First complete question",
@@ -723,7 +723,7 @@ for (const side of ["Rows", "Columns"] as const) {
     ]);
     const cancellation = page.waitForEvent("dialog");
     const pending = table
-      .getByRole("button", { name: "Make generator input common", exact: true })
+      .getByRole("button", { name: "Make chat history common", exact: true })
       .click();
     await (await cancellation).dismiss();
     await pending;
@@ -776,12 +776,15 @@ test("parameter menus explain unavailable destinations and support keyboard move
     .getByLabel("Prompt", { exact: true })
     .fill("Keep this complete prompt");
   const trigger = page.getByRole("button", {
-    name: "Move prompt to...",
+    name: "Add variable cases for prompt",
     exact: true,
   });
   await trigger.focus();
   await trigger.press("Enter");
-  const menu = page.getByRole("menu", { name: "Move prompt to", exact: true });
+  const menu = page.getByRole("menu", {
+    name: "Variable cases for prompt",
+    exact: true,
+  });
   const columns = menu.getByRole("menuitem", {
     name: "Add prompt to column cases",
     exact: true,
@@ -819,4 +822,57 @@ test("parameter menus explain unavailable destinations and support keyboard move
     .getByLabel("Prompt", { exact: true });
   await expect(editor).toHaveValue("Keep this complete prompt");
   await expect(editor).toBeFocused();
+});
+
+test("case workspaces stay centered at normal width and grow only until the viewport cap", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Markdown", exact: true }).click();
+  await page
+    .getByRole("combobox", { name: "Rows", exact: true })
+    .selectOption("variable");
+  const workspace = page.locator(".variable-editor");
+  const bounds = async () => {
+    const box = await workspace.boundingBox();
+    expect(box).not.toBeNull();
+    return box!;
+  };
+  const empty = await bounds();
+  expect(empty.x + empty.width / 2).toBeCloseTo(720, 0);
+  const addField = page.getByRole("button", {
+    name: "Add row variable",
+    exact: true,
+  });
+  await addField.click();
+  expect((await bounds()).width).toBeCloseTo(empty.width, 0);
+  await addField.click();
+  expect((await bounds()).width).toBeCloseTo(empty.width, 0);
+  await addField.click();
+  const growing = await bounds();
+  expect(growing.width).toBeGreaterThan(empty.width);
+  expect(growing.width).toBeLessThan(1440);
+  expect(growing.x + growing.width / 2).toBeCloseTo(720, 0);
+  await addField.click();
+  await addField.click();
+  const capped = await bounds();
+  expect(capped.width).toBeLessThanOrEqual(1440);
+  expect(capped.x).toBeGreaterThanOrEqual(0);
+  expect(capped.x + capped.width / 2).toBeCloseTo(720, 0);
+  const scroll = workspace.locator(".variable-table-scroll");
+  expect(
+    await scroll.evaluate(
+      (element) => element.scrollWidth > element.clientWidth,
+    ),
+  ).toBe(true);
+  await page.setViewportSize({ width: 390, height: 844 });
+  const phone = await bounds();
+  expect(phone.x).toBeGreaterThan(0);
+  expect(phone.x + phone.width).toBeLessThan(390);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
 });

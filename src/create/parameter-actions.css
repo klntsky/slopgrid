@@ -1,10 +1,15 @@
 .parameter-header {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   justify-content: space-between;
   gap: 12px;
   min-width: 0;
   margin-bottom: 9px;
+}
+
+.section-heading:has(> .parameter-actions) {
+  flex-wrap: wrap;
 }
 
 .parameter-header > .parameter-name {

@@ -3,6 +3,8 @@
   --case-header-height: 45px;
   min-width: 0;
   max-width: 100%;
+  width: min(100%, max(894px, calc(var(--case-required-width) + 2px)));
+  margin-inline: auto;
 }
 .variable-editor[data-case-axis="rows"] {
   --case-label-width: 96px;
@@ -19,12 +21,9 @@
   outline: 2px solid var(--focus);
   outline-offset: 3px;
 }
-.case-scroll-guidance {
-  margin-block: 8px;
-  padding-inline: 8px;
-}
 .case-table-plane {
   width: 100%;
+  min-width: var(--case-required-width);
 }
 .variable-table {
   width: 100%;
@@ -168,13 +167,14 @@
     min-height: 36px;
   }
 }
-.variable-table th[scope="row"] .case-header-controls {
-  display: grid;
-  grid-template-columns: repeat(2, 28px);
-  gap: 0;
+.layout-parameter-table > tbody > tr[data-dragging="true"] {
+  opacity: 0.6;
 }
-.variable-table th[scope="row"] .case-header-controls > span:last-child {
-  grid-column: 2;
+.layout-parameter-table > tbody > tr[data-insertion="before"] > * {
+  box-shadow: inset 0 2px 0 var(--focus);
+}
+.layout-parameter-table > tbody > tr[data-insertion="after"] > * {
+  box-shadow: inset 0 -2px 0 var(--focus);
 }
 @media (hover: none), (pointer: coarse) {
   .variable-editor {
@@ -185,6 +185,6 @@
     --case-label-width: 112px;
   }
   .variable-table th[scope="row"] .case-header-controls {
-    grid-template-columns: repeat(2, 36px);
+    flex-direction: column;
   }
 }

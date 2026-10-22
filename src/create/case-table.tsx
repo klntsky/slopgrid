@@ -1,12 +1,5 @@
-import { useRef, type ReactNode } from "react";
-import {
-  ArrowDown,
-  ArrowLeft,
-  ArrowRight,
-  ArrowUp,
-  Plus,
-  X,
-} from "lucide-react";
+import { useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { ArrowLeft, ArrowRight, Plus, X } from "lucide-react";
 import {
   efforts,
   isChatFormat,
@@ -36,6 +29,7 @@ import { VariableInput } from "./variable-input";
 import { PromptEditor } from "./prompt-editor";
 import { ChatEditor } from "./chat-editor";
 import { tooltipRef } from "../components/use-tooltip";
+import { ReorderHandle } from "./reorder-handle";
 import "./case-table.css";
 
 type LayoutField =
@@ -164,12 +158,23 @@ export function GridLayoutTable({
   ) => ReactNode;
 }) {
   const root = useRef<HTMLDivElement>(null);
+  const [dragging, setDragging] = useState<number>();
+  const [dragTarget, setDragTarget] = useState<number>();
   const selectedSide = input.caseAxis;
   if (!selectedSide) return null;
   const side = selectedSide;
   const fields = fieldsFor(input, side);
   const entries = input[side];
   const rowCases = side === "rows";
+  const chatInput =
+    isChatFormat(input.format) &&
+    fields.some((field) => field.parameter === "input");
+  const columnWidths = rowCases
+    ? fields.map((field) =>
+        chatInput && field.parameter === "input" ? 420 : 300,
+      )
+    : entries.map(() => (chatInput ? 420 : 300));
+  const requiredWidth = `calc(var(--case-label-width) + ${columnWidths.reduce((sum, width) => sum + width, 0)}px)`;
   function token(side: AxisSide, index: number) {
     return `$${side === "rows" ? "ROW" : "COLUMN"}${index + 1}`;
   }
@@ -185,46 +190,56 @@ export function GridLayoutTable({
           Case {index + 1}
         </span>
         <span className="case-header-controls">
-          {([-1, 1] as const).map((direction) => {
-            const earlier = direction === -1;
-            const disabled = earlier
-              ? index === 0
-              : index === entries.length - 1;
-            const label = `Move ${name} case ${index + 1} ${earlier ? "earlier" : "later"}`;
-            const Icon =
-              side === "rows"
-                ? earlier
-                  ? ArrowUp
-                  : ArrowDown
-                : earlier
-                  ? ArrowLeft
-                  : ArrowRight;
-            return (
-              <span
-                key={direction}
-                ref={tooltipRef}
-                data-tooltip={label}
-                tabIndex={disabled ? 0 : undefined}
-              >
-                <button
-                  type="button"
-                  className="text-button editor-icon-button"
-                  aria-label={label}
-                  disabled={disabled}
-                  onClick={() =>
-                    onAction({
-                      type: "move-case",
-                      side,
-                      index,
-                      to: index + direction,
-                    })
-                  }
+          {side === "rows" ? (
+            <ReorderHandle
+              index={index}
+              label={`Move row case ${index + 1}`}
+              root={root}
+              rowSelector=".layout-parameter-table > tbody > tr"
+              count={entries.length}
+              onMove={(from, to) =>
+                onAction({ type: "move-case", side, index: from, to })
+              }
+              onDragChange={(source, target) => {
+                setDragging(source);
+                setDragTarget(target);
+              }}
+            />
+          ) : (
+            ([-1, 1] as const).map((direction) => {
+              const earlier = direction === -1;
+              const disabled = earlier
+                ? index === 0
+                : index === entries.length - 1;
+              const label = `Move ${name} case ${index + 1} ${earlier ? "earlier" : "later"}`;
+              const Icon = earlier ? ArrowLeft : ArrowRight;
+              return (
+                <span
+                  key={direction}
+                  ref={tooltipRef}
+                  data-tooltip={label}
+                  tabIndex={disabled ? 0 : undefined}
                 >
-                  <Icon aria-hidden="true" />
-                </button>
-              </span>
-            );
-          })}
+                  <button
+                    type="button"
+                    className="text-button editor-icon-button"
+                    aria-label={label}
+                    disabled={disabled}
+                    onClick={() =>
+                      onAction({
+                        type: "move-case",
+                        side,
+                        index,
+                        to: index + direction,
+                      })
+                    }
+                  >
+                    <Icon aria-hidden="true" />
+                  </button>
+                </span>
+              );
+            })
+          )}
           <span
             ref={tooltipRef}
             data-tooltip={
@@ -281,8 +296,8 @@ export function GridLayoutTable({
               type="button"
               className="text-button editor-icon-button"
               ref={tooltipRef}
-              data-tooltip={`Return ${parameterNames[field.parameter].toLowerCase()} to common settings`}
-              aria-label={`Make ${parameterNames[field.parameter].toLowerCase()} common`}
+              data-tooltip={`Return ${label.toLowerCase()} to common parameters`}
+              aria-label={`Make ${label.toLowerCase()} common`}
               onClick={() =>
                 onAction({ type: "to-common", parameter: field.parameter })
               }
@@ -463,36 +478,35 @@ export function GridLayoutTable({
     <div
       className="variable-editor"
       ref={root}
+      style={{ "--case-required-width": requiredWidth } as CSSProperties}
       data-populated={entries.length > 0 && fields.length > 0}
       data-case-axis={side}
     >
       {entries.length ? (
         <>
-          <p className="hint case-scroll-guidance">
-            Scroll within the table to see more cases or fields. Case and field
-            labels stay visible.
-          </p>
           <div
             className="variable-table-scroll"
             role="region"
             aria-label="Editable case parameters; scroll for more cases and fields"
             tabIndex={0}
           >
-            <div
-              className="case-table-plane"
-              style={{
-                minWidth: `calc(var(--case-label-width) + ${rowCases ? fields.length : entries.length} * 300px)`,
-              }}
-            >
+            <div className="case-table-plane">
               <table
                 className="variable-table layout-parameter-table"
                 aria-label="Grid layout parameters"
               >
                 <colgroup>
                   <col style={{ width: "var(--case-label-width)" }} />
-                  {(rowCases ? fields.length : entries.length) > 0 && (
-                    <col span={rowCases ? fields.length : entries.length} />
-                  )}
+                  {columnWidths.map((width, index) => (
+                    <col
+                      key={index}
+                      style={
+                        rowCases && fields.length > 1 && width !== 300
+                          ? { width }
+                          : undefined
+                      }
+                    />
+                  ))}
                 </colgroup>
                 <thead>
                   <tr>
@@ -519,7 +533,18 @@ export function GridLayoutTable({
                 <tbody>
                   {rowCases
                     ? entries.map((entry, index) => (
-                        <tr key={entry.id}>
+                        <tr
+                          key={entry.id}
+                          data-dragging={dragging === index}
+                          data-insertion={
+                            dragTarget === index
+                              ? "before"
+                              : index === entries.length - 1 &&
+                                  dragTarget === entries.length
+                                ? "after"
+                                : undefined
+                          }
+                        >
                           <th scope="row">{caseHeader(side, index)}</th>
                           {fields.map((field) => (
                             <td
@@ -560,11 +585,6 @@ export function GridLayoutTable({
           {addVariable()}
         </div>
       )}
-      <p className="hint">
-        Each case is one {sideName(side)}. Add generator input or other settings
-        to cases, or reference optional numbered fields in the input or judge
-        criteria. Text and images are optional in each field.
-      </p>
     </div>
   );
 }

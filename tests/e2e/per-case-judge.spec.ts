@@ -409,12 +409,15 @@ for (const side of ["Rows", "Columns"] as const) {
     await rubric(page, swappedAxis, 1)
       .getByLabel("Criterion 1", { exact: true })
       .fill(`Does the answer respect ${swappedToken}?`);
-    await table
-      .getByRole("button", {
-        name: `Move ${swappedAxis.toLowerCase()} case 2 earlier`,
-        exact: true,
-      })
-      .click();
+    const reorder = table.getByRole("button", {
+      name:
+        swappedAxis === "Row"
+          ? "Move row case 2"
+          : "Move column case 2 earlier",
+      exact: true,
+    });
+    if (swappedAxis === "Row") await reorder.press("ArrowUp");
+    else await reorder.click();
     await page
       .getByRole("button", {
         name: `Add ${swappedAxis.toLowerCase()} case`,
@@ -491,3 +494,75 @@ for (const side of ["Rows", "Columns"] as const) {
     );
   });
 }
+
+test("pointer dragging row cases ignores nested criteria rows and moves the whole record", async ({
+  page,
+}) => {
+  await start(page);
+  await page
+    .getByRole("combobox", { name: "Rows", exact: true })
+    .selectOption("variable");
+  await setVariableValues(page, "Rows", ["Alpha", "Beta", "Gamma"]);
+  await moveParameter(page, "judge criteria", "rows");
+  for (const [index, name] of ["Alpha", "Beta", "Gamma"].entries()) {
+    const criteria = rubric(page, "Row", index + 1);
+    await criteria
+      .getByLabel("Criterion 1", { exact: true })
+      .fill(`${name} first?`);
+    await criteria
+      .getByRole("button", { name: "Add criterion", exact: true })
+      .click();
+    await criteria
+      .getByLabel("Criterion 2", { exact: true })
+      .fill(`${name} second?`);
+  }
+  await rubric(page, "Row", 3)
+    .getByRole("button", {
+      name: "Correct answer",
+      exact: true,
+    })
+    .nth(1)
+    .click();
+  const table = layoutTable(page);
+  const handle = table.getByRole("button", {
+    name: "Move row case 3",
+    exact: true,
+  });
+  await handle.scrollIntoViewIfNeeded();
+  const source = await handle.boundingBox();
+  const target = await rubric(page, "Row", 1)
+    .getByLabel("Criterion 1", { exact: true })
+    .boundingBox();
+  expect(source).not.toBeNull();
+  expect(target).not.toBeNull();
+  await page.mouse.move(
+    source!.x + source!.width / 2,
+    source!.y + source!.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(target!.x + 10, target!.y + 2, { steps: 12 });
+  await expect(table.locator(":scope > tbody > tr").first()).toHaveAttribute(
+    "data-insertion",
+    "before",
+  );
+  await page.mouse.up();
+  for (const [index, name] of ["Gamma", "Alpha", "Beta"].entries()) {
+    await expect(
+      table.getByLabel(`$ROW1, case ${index + 1}`, { exact: true }),
+    ).toHaveValue(name);
+    await expect(
+      rubric(page, "Row", index + 1).getByLabel("Criterion 1", { exact: true }),
+    ).toHaveValue(`${name} first?`);
+    await expect(
+      rubric(page, "Row", index + 1).getByLabel("Criterion 2", { exact: true }),
+    ).toHaveValue(`${name} second?`);
+  }
+  await expect(
+    rubric(page, "Row", 1)
+      .getByRole("button", {
+        name: "Correct answer",
+        exact: true,
+      })
+      .nth(1),
+  ).toHaveAttribute("aria-pressed", "false");
+});

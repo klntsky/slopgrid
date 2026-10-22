@@ -11,7 +11,6 @@ import { DeletableInput } from "./deletable-input";
 import { ReorderHandle } from "./reorder-handle";
 import { ImageList, ImagePicker } from "./image-input";
 import { tooltipRef } from "../components/use-tooltip";
-import "./chat-editor.css";
 
 const imageRoleHint = "Remove images before changing this message’s role.";
 
@@ -104,8 +103,6 @@ export function ChatEditor({
             className="text-button chat-insert"
             data-chat-insertion={dragTarget === index}
             aria-label={`Insert message before ${index + 1}`}
-            ref={tooltipRef}
-            data-tooltip={`Insert message before message ${index + 1}`}
             disabled={reading}
             onClick={() => insert(index)}
           >
@@ -128,15 +125,8 @@ export function ChatEditor({
             <span
               className="chat-role-hint"
               ref={tooltipRef}
-              data-tooltip={
-                message.images?.length
-                  ? imageRoleHint
-                  : `Change the role of message ${index + 1}`
-              }
+              data-tooltip={message.images?.length ? imageRoleHint : undefined}
               tabIndex={message.images?.length ? 0 : undefined}
-              aria-describedby={
-                message.images?.length ? `${descriptionId}-${index}` : undefined
-              }
             >
               <button
                 type="button"
@@ -176,13 +166,8 @@ export function ChatEditor({
             onRemove={() => remove(index)}
           >
             {message.role === "unfilled" ? (
-              <span
-                className="chat-unfilled-text"
-                ref={tooltipRef}
-                data-tooltip="The model will fill this message with an assistant response."
-                tabIndex={0}
-              >
-                Assistant response
+              <span className="chat-unfilled-text">
+                The model will fill this message with an assistant response.
               </span>
             ) : (
               <textarea
@@ -235,13 +220,10 @@ export function ChatEditor({
         className="text-button chat-append"
         data-chat-insertion={dragTarget === messages.length}
         aria-label="Add message"
-        ref={tooltipRef}
-        data-tooltip="Add a message to the end of this chat"
         disabled={reading}
         onClick={() => insert(messages.length)}
       >
         <Plus aria-hidden="true" />
-        Add message
       </button>
     </div>
   );

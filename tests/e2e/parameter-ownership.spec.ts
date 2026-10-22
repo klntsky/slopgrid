@@ -96,8 +96,8 @@ test("case image attachments keep their identity across formats without restorin
   ).toBeVisible();
   await page.getByRole("button", { name: "Markdown", exact: true }).click();
   await page
-    .getByRole("button", { name: "Move row case 2 earlier", exact: true })
-    .click();
+    .getByRole("button", { name: "Move row case 2", exact: true })
+    .press("ArrowUp");
   await page
     .getByRole("button", { name: "Remove row case 2", exact: true })
     .click();
