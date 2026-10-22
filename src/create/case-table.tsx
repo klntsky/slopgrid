@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import {
   ArrowDown,
   ArrowLeft,
@@ -163,8 +163,10 @@ export function GridLayoutTable({
     messageIndex?: number,
   ) => ReactNode;
 }) {
-  const side = input.caseAxis;
-  if (!side) return null;
+  const root = useRef<HTMLDivElement>(null);
+  const selectedSide = input.caseAxis;
+  if (!selectedSide) return null;
+  const side = selectedSide;
   const fields = fieldsFor(input, side);
   const entries = input[side];
   const rowCases = side === "rows";
@@ -243,6 +245,7 @@ export function GridLayoutTable({
             </button>
           </span>
         </span>
+        {!rowCases && index === entries.length - 1 && addCase(true)}
       </div>
     );
   }
@@ -287,6 +290,7 @@ export function GridLayoutTable({
               <X aria-hidden="true" />
             </button>
           )}
+          {rowCases && field === fields[fields.length - 1] && addVariable(true)}
         </div>
       </>
     );
@@ -400,42 +404,65 @@ export function GridLayoutTable({
       </div>
     );
   }
-  const addCase = (
-    <button
-      type="button"
-      className="text-button case-axis-add"
-      aria-label={`Add ${sideName(side)} case`}
-      ref={tooltipRef}
-      data-tooltip={`Add a ${sideName(side)} case`}
-      onClick={() => onAction({ type: "add-case", side })}
-    >
-      <Plus aria-hidden="true" /> Add {sideName(side)} case
-    </button>
-  );
-  const addVariable = (
-    <span
-      ref={tooltipRef}
-      data-tooltip={
-        entries.length
-          ? "Add an optional field to every case"
-          : "Add a case before adding a variable"
-      }
-      tabIndex={!entries.length ? 0 : undefined}
-    >
+  function add(kind: "case" | "variable") {
+    const previousFocus = document.activeElement;
+    onAction({ type: kind === "case" ? "add-case" : "add-variable", side });
+    requestAnimationFrame(() => {
+      if (
+        document.activeElement !== document.body &&
+        document.activeElement !== previousFocus
+      )
+        return;
+      root.current
+        ?.querySelector<HTMLButtonElement>(`[data-add="${kind}"]`)
+        ?.focus();
+    });
+  }
+  function addCase(compact = false) {
+    return (
       <button
         type="button"
-        className="text-button case-axis-add"
-        aria-label={`Add ${sideName(side)} variable`}
-        disabled={!entries.length}
-        onClick={() => onAction({ type: "add-variable", side })}
+        className={`text-button ${compact ? "editor-icon-button case-header-add" : "case-axis-add"}`}
+        aria-label={`Add ${sideName(side)} case`}
+        data-add="case"
+        ref={tooltipRef}
+        data-tooltip={`Add a ${sideName(side)} case`}
+        onClick={() => add("case")}
       >
-        <Plus aria-hidden="true" /> Add variable
+        <Plus aria-hidden="true" />
+        {!compact && <>Add {sideName(side)} case</>}
       </button>
-    </span>
-  );
+    );
+  }
+  function addVariable(compact = false) {
+    return (
+      <span
+        ref={tooltipRef}
+        data-tooltip={
+          entries.length
+            ? "Add an optional field to every case"
+            : "Add a case before adding a variable"
+        }
+        tabIndex={!entries.length ? 0 : undefined}
+      >
+        <button
+          type="button"
+          className={`text-button ${compact ? "editor-icon-button case-header-add" : "case-axis-add"}`}
+          aria-label={`Add ${sideName(side)} variable`}
+          data-add="variable"
+          disabled={!entries.length}
+          onClick={() => add("variable")}
+        >
+          <Plus aria-hidden="true" />
+          {!compact && <>Add variable</>}
+        </button>
+      </span>
+    );
+  }
   return (
     <div
       className="variable-editor"
+      ref={root}
       data-populated={entries.length > 0 && fields.length > 0}
       data-case-axis={side}
     >
@@ -451,13 +478,15 @@ export function GridLayoutTable({
             aria-label="Editable case parameters; scroll for more cases and fields"
             tabIndex={0}
           >
-            <div className="case-table-plane">
+            <div
+              className="case-table-plane"
+              style={{
+                minWidth: `calc(var(--case-label-width) + ${rowCases ? fields.length : entries.length} * 300px)`,
+              }}
+            >
               <table
                 className="variable-table layout-parameter-table"
                 aria-label="Grid layout parameters"
-                style={{
-                  minWidth: `calc(var(--case-label-width) + ${rowCases ? fields.length : entries.length} * 300px)`,
-                }}
               >
                 <colgroup>
                   <col style={{ width: "var(--case-label-width)" }} />
@@ -467,7 +496,9 @@ export function GridLayoutTable({
                 </colgroup>
                 <thead>
                   <tr>
-                    <td className="variable-corner" />
+                    <td className="variable-corner">
+                      {rowCases && !fields.length && addVariable(true)}
+                    </td>
                     {rowCases
                       ? fields.map((field) => (
                           <th
@@ -517,19 +548,16 @@ export function GridLayoutTable({
                       ))}
                 </tbody>
               </table>
-              <div className="case-table-trailing-column">
-                {rowCases ? addVariable : addCase}
-              </div>
-              <div className="case-table-trailing-row">
-                {rowCases ? addCase : addVariable}
+              <div className="case-table-footer">
+                {rowCases ? addCase() : addVariable()}
               </div>
             </div>
           </div>
         </>
       ) : (
         <div className="variable-table-actions">
-          {addCase}
-          {addVariable}
+          {addCase()}
+          {addVariable()}
         </div>
       )}
       <p className="hint">

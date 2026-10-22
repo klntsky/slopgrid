@@ -130,16 +130,7 @@ export function Create() {
   const judgeModelSource = input.parameters.judge_model;
   const judgeEffortSource = input.parameters.judge_effort;
   const inputSource = input.parameters.input;
-  const caseLayoutActive =
-    !!input.caseAxis &&
-    input[input.caseAxis].length > 0 &&
-    axisParameters(input, input.caseAxis).some(
-      (parameter) =>
-        parameter !== "variable" ||
-        (input[input.caseAxis!][0]?.variable ?? []).some(
-          (field) => field !== null,
-        ),
-    );
+  const caseLayoutActive = !!input.caseAxis && input[input.caseAxis].length > 0;
   function toAxis(parameter: CommonParameterId, side: AxisSide) {
     const previousFocus = document.activeElement;
     if (!dispatch({ type: "to-axis", parameter, side })) return;

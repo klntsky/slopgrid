@@ -12,7 +12,6 @@
   max-height: min(76vh, 900px);
   overflow: auto;
   overscroll-behavior: contain;
-  scrollbar-gutter: stable;
   border: 1px solid var(--line);
   border-radius: 6px;
 }
@@ -25,11 +24,7 @@
   padding-inline: 8px;
 }
 .case-table-plane {
-  display: grid;
-  grid-template-columns: minmax(min-content, 1fr) max-content;
   width: 100%;
-  min-width: 0;
-  align-items: start;
 }
 .variable-table {
   width: 100%;
@@ -80,6 +75,16 @@
   justify-content: space-between;
   margin: 0;
 }
+.case-header-rail > .case-header-controls,
+.layout-parameter-heading > .editor-icon-button {
+  margin-inline-start: auto;
+}
+.case-header-add {
+  margin-inline-start: 4px;
+}
+.variable-corner {
+  text-align: right;
+}
 .case-header-controls {
   flex-shrink: 0;
 }
@@ -99,14 +104,13 @@
   white-space: nowrap;
   line-height: 1.2;
 }
-.case-table-trailing-column {
+.case-table-footer {
   padding: 8px;
-  position: sticky;
-  top: 0;
 }
-.case-table-trailing-row {
-  grid-column: 1;
-  padding: 8px;
+.case-table-footer > :is(button, span) {
+  position: sticky;
+  left: 8px;
+  display: inline-flex;
 }
 .case-axis-add {
   display: inline-flex;
