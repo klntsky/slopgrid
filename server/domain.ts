@@ -374,10 +374,7 @@ export const gridSchema = gridInputSchema
       row: number,
       column: number,
     ) => {
-      const message =
-        g.caseAxes.length === 2
-          ? `Row case ${row + 1}, column case ${column + 1}: ${item.message}`
-          : item.message;
+      const message = item.message;
       issue(message, [...path, ...item.path]);
       if (item.path.at(-1) === "content" || item.path.at(-1) === "text")
         for (const reference of referencedVariableFields(

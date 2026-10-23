@@ -109,3 +109,57 @@ for (const orientation of ["Rows", "Columns"] as const) {
     await expect(secondModelCell.getByRole("alert")).toHaveCount(1);
   });
 }
+
+test("shared input errors stay deduplicated, separate and accessible as case counts grow", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Markdown", exact: true }).click();
+  for (const side of ["Rows", "Columns"])
+    await page
+      .getByRole("combobox", { name: side, exact: true })
+      .selectOption("variable");
+  for (const side of ["row", "column"] as const) {
+    await page
+      .getByRole("button", { name: `new ${side} variable`, exact: true })
+      .click();
+    await page
+      .getByRole("textbox", {
+        name: `$${side === "row" ? "ROW" : "COLUMN"}1, case 1`,
+        exact: true,
+      })
+      .fill(side === "row" ? "shape" : "red");
+    await page
+      .getByRole("button", { name: `new ${side} case`, exact: true })
+      .click();
+  }
+  for (const name of ["Prompt", "Message 1"]) {
+    if (name === "Message 1")
+      await page
+        .getByRole("button", { name: "Chat completion", exact: true })
+        .click();
+    const field = page.getByRole("textbox", { name, exact: true });
+    await field.fill("$ROW9 $COLUMN9 $ROW9");
+    await expect(field).toHaveAttribute("aria-invalid", "true");
+    const ids = (await field.getAttribute("aria-describedby"))!.split(" ");
+    expect(ids).toHaveLength(2);
+    const errors = page.locator(ids.map((id) => `[id="${id}"]`).join(","));
+    await expect(errors).toHaveCount(2);
+    await expect(errors.locator(".feedback-content")).toHaveText([
+      "Unknown prompt variable $ROW9",
+      "Unknown prompt variable $COLUMN9",
+    ]);
+    for (const error of await errors.all())
+      await expect(error).toHaveAttribute("role", "alert");
+    for (const side of ["row", "column"])
+      await page
+        .getByRole("button", { name: `new ${side} case`, exact: true })
+        .click();
+    await expect(field).toHaveAttribute("aria-describedby", ids.join(" "));
+    await expect(errors).toHaveCount(2);
+    await field.fill("$ROW1 $COLUMN1");
+    await expect(field).not.toHaveAttribute("aria-invalid", "true");
+    await expect(field).not.toHaveAttribute("aria-describedby");
+    await expect(errors).toHaveCount(0);
+  }
+});

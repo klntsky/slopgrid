@@ -146,10 +146,6 @@ export function promptVariableIssues(input: TemplateInput): ValidationIssue[] {
   const fieldsUsed = new Set<AxisSide>();
   for (let row = 0; row < Math.max(1, input.rows.length); row++) {
     for (let column = 0; column < Math.max(1, input.columns.length); column++) {
-      const combination =
-        isCaseAxis(input, "rows") && isCaseAxis(input, "columns")
-          ? `Row case ${row + 1}, column case ${column + 1}: `
-          : "";
       const templates = generatorInputForCell(input, row, column).map(
         ({ content, role }, messageIndex) => ({
           text: content,
@@ -180,11 +176,9 @@ export function promptVariableIssues(input: TemplateInput): ValidationIssue[] {
           const side = name === "ROW" ? "rows" : "columns";
           if (!isCaseAxis(input, side) || !axisHasVariables(input, side)) {
             issues.push({
-              message:
-                combination +
-                (isCaseAxis(input, side)
-                  ? `Use new variable in the ${side === "rows" ? "row" : "column"} cases to define ${token}.`
-                  : `Choose prompt variables for ${side} to use ${token}.`),
+              message: isCaseAxis(input, side)
+                ? `Use new variable in the ${side === "rows" ? "row" : "column"} cases to define ${token}.`
+                : `Choose prompt variables for ${side} to use ${token}.`,
               path,
             });
             continue;
@@ -194,13 +188,14 @@ export function promptVariableIssues(input: TemplateInput): ValidationIssue[] {
           const field = input[side][caseIndex]?.variable?.[fieldIndex];
           if (!/^[1-9]\d*$/.test(number) || !field) {
             issues.push({
-              message: `${combination}Unknown prompt variable ${token}.`,
+              message: `Unknown prompt variable ${token}`,
               path,
             });
             continue;
           }
           if (role !== "user" && field.images?.length) {
-            const message = `${combination}Variable images can only be attached to user messages.`;
+            const message =
+              "Variable images can only be attached to user messages.";
             issues.push(
               { message, path },
               {

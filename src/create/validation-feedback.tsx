@@ -59,7 +59,15 @@ function useValidationMessages(path: Path, descendants: boolean) {
 }
 
 function Feedback({ messages, id }: { messages: string[]; id?: string }) {
-  return <ErrorMessage id={id}>{messages.join(" ")}</ErrorMessage>;
+  return (
+    <>
+      {messages.map((message, index) => (
+        <ErrorMessage key={message} id={id ? `${id}-${index}` : undefined}>
+          {message}
+        </ErrorMessage>
+      ))}
+    </>
+  );
 }
 
 export function ValidationFeedback({
@@ -92,7 +100,9 @@ export function ValidationField({
     <>
       {children({
         "aria-invalid": messages.length ? true : undefined,
-        "aria-describedby": messages.length ? id : undefined,
+        "aria-describedby": messages.length
+          ? messages.map((_, index) => `${id}-${index}`).join(" ")
+          : undefined,
       })}
       <Feedback messages={messages} id={id} />
     </>

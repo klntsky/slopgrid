@@ -387,49 +387,13 @@ test("case setup and unused variable validation are independent for each axis", 
   assert.ok(paths.some((path) => path.length === 1 && path[0] === "columns"));
 });
 
-test("dual-axis expanded errors retain every intersection at the original field", () => {
-  const input = dualAxisInput();
-  input.rows.forEach((record) => {
-    record.variable![0]!.text = "";
-  });
-  input.columns.forEach((record) => {
-    record.variable![0]!.text = "";
-  });
-  input.judge = true;
-  input.parameters.judge_model = { kind: "common", value: "judge" };
-  input.parameters.judge_effort = { kind: "common", value: "default" };
-  input.parameters.judge_criteria = {
-    kind: "common",
-    value: [{ text: "$ROW1$COLUMN1", correctAnswer: true }],
-  };
-  const parsed = gridSchema.safeParse(input);
-  assert.equal(parsed.success, false);
-  if (parsed.success) return;
-  for (const path of [
-    ["parameters", "input", "value", 0, "content"],
-    ["parameters", "judge_criteria", "value", 0, "text"],
-  ]) {
-    const messages: string[] = parsed.error.issues
-      .filter((issue) => JSON.stringify(issue.path) === JSON.stringify(path))
-      .map(({ message }) => message);
-    assert.equal(messages.length, 4);
-    for (const row of [1, 2])
-      for (const column of [1, 2])
-        assert.ok(
-          messages.some((message) =>
-            message.startsWith(`Row case ${row}, column case ${column}: `),
-          ),
-        );
-  }
-});
-
-test("dual-axis token and image violations identify their Cartesian intersection", () => {
+test("dual-axis image violations stay attached to the contributing field", () => {
   const input = dualAxisInput();
   input.format = "chat-template";
   input.parameters.input = {
     kind: "common",
     value: [
-      { role: "system", content: "$COLUMN1 $ROW2" },
+      { role: "system", content: "$COLUMN1" },
       { role: "user", content: "question" },
     ],
   };
@@ -439,28 +403,9 @@ test("dual-axis token and image violations identify their Cartesian intersection
   const issues = promptVariableIssues(input);
   assert.ok(
     issues.some(
-      ({ message }) =>
-        message === "Row case 2, column case 2: Unknown prompt variable $ROW2.",
-    ),
-  );
-  assert.ok(
-    issues.some(
-      ({ path, message }) =>
+      ({ path }) =>
         JSON.stringify(path) ===
-          JSON.stringify(["columns", 1, "variable", 0, "images"]) &&
-        message ===
-          "Row case 2, column case 2: Variable images can only be attached to user messages.",
-    ),
-  );
-  input.caseAxes = ["rows"];
-  input.columns = [{ id: "neutral" }];
-  input.parameters.input = {
-    kind: "common",
-    value: [{ role: "user", content: "$ROW2" }],
-  };
-  assert.ok(
-    promptVariableIssues(input).some(
-      ({ message }) => message === "Unknown prompt variable $ROW2.",
+        JSON.stringify(["columns", 1, "variable", 0, "images"]),
     ),
   );
 });
