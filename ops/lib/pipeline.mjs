@@ -1,12 +1,11 @@
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseEnv } from "node:util";
 import { isDeepStrictEqual } from "node:util";
 import {
   command,
   capture,
-  readJSON,
   writeJSON,
   atomic,
   validateConfig,
@@ -286,7 +285,7 @@ export async function pipeline(request, run) {
     state.status = "failed";
     state.error = error.message;
     console.error(
-      `${request.target === "rehearse" ? "Rehearsal" : nonDeploying ? "Validation" : "Deployment"} failed: ${error.message}. Inspect ${run}/result.json and the recorded process logs. Retry the same command after correcting the cause; no automatic database rollback is attempted.`,
+      `${request.target === "rehearse" ? "Rehearsal" : nonDeploying ? "Validation" : "Deployment"} failed: ${error.message}. Inspect ${run}/result.json and the recorded process logs. ${nonDeploying ? "Retry the same command after correcting the cause" : "The deployment fence remains in place. An operator must reconcile runtime state and acknowledge the interrupted transaction under the deployment lock before retrying"}; no automatic database rollback is attempted.`,
     );
     throw error;
   } finally {
@@ -296,12 +295,6 @@ export async function pipeline(request, run) {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  process.umask(0o077);
-  const path = process.argv[2];
-  try {
-    await pipeline(readJSON(path), dirname(path));
-  } catch (error) {
-    console.error(error.message);
-    process.exitCode = 1;
-  }
+  console.error("Run pipelines through remote-run.sh; direct execution has no deployment admission.");
+  process.exitCode = 1;
 }

@@ -18,7 +18,6 @@ import {
   capture,
   parseArgs,
   assertProductionRevision,
-  sha256,
 } from "../lib/common.mjs";
 import { executePlan, pipeline } from "../lib/pipeline.mjs";
 import { fixtureConfig, fixtureEnvironment } from "./config-fixture.mjs";
@@ -275,52 +274,6 @@ test("CLI rehearsal plan resolves a candidate without production authority or ru
   assert.equal(plan.revision, f.candidate);
 });
 
-test("remote rehearsal worker bypasses a held deployment lock and records the pipeline exit status", async (t) => {
-  const path = directory(t),
-    tools = join(path, "tools");
-  mkdirSync(join(tools, "lib"), { recursive: true });
-  writeFileSync(
-    join(tools, "remote-run.sh"),
-    readFileSync(join(root, "remote-run.sh")),
-  );
-  // Adapt only the worker's pipeline boundary: orchestration itself is covered above.
-  writeFileSync(
-    join(tools, "lib/pipeline.mjs"),
-    `
-import { readFileSync } from "node:fs";
-const request = JSON.parse(readFileSync(process.argv[2], "utf8"));
-console.log("isolated rehearsal reached");
-process.exitCode = request.fixtureExit;
-`,
-  );
-  const lock = spawn(
-    "flock",
-    [join(path, "deployment.lock"), "sh", "-c", "echo locked; cat"],
-    { stdio: ["pipe", "pipe", "inherit"] },
-  );
-  t.after(() => lock.stdin.end());
-  await once(lock.stdout, "data");
-  for (const code of [0, 17]) {
-    const run = join(path, `run-${code}`);
-    mkdirSync(run);
-    writeFileSync(
-      join(run, "request.json"),
-      JSON.stringify({ target: "rehearse", fixtureExit: code }),
-    );
-    const result = spawnSync(
-      "bash",
-      [join(tools, "remote-run.sh"), run, path],
-      { encoding: "utf8" },
-    );
-    assert.equal(result.status, code, result.stderr);
-    assert.equal(readFileSync(join(run, "exit"), "utf8").trim(), String(code));
-    assert.match(
-      readFileSync(join(run, "run.log"), "utf8"),
-      /isolated rehearsal reached/,
-    );
-  }
-});
-
 test("CLI rejects a locally named master before SSH, even with skipped tests", (t) => {
   const f = fixture(t),
     bin = join(f.path, "bin"),
@@ -460,3 +413,4 @@ else process.exit(99);
   lock.stdin.end();
   await once(lock, "exit");
 });
+

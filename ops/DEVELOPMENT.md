@@ -35,8 +35,8 @@ Source archives exclude the initiating `.env` and remote credentials.
 Both machines need Git read access to the authoritative repository. Locally,
 install Node, the application's declared pnpm version, tar, Git, and the browser
 dependencies described in [application development](../DEVELOPMENT.md). Remote
-operations also require SSH, tmux, flock, rsync, and PM2. Runtime networking,
-TLS, DNS, and credentials must already be configured.
+operations require Linux with `/proc` mounted, plus SSH, tmux, flock, rsync, and
+PM2. Runtime networking, TLS, DNS, and credentials must already be configured.
 
 ## Candidate validation and deployment
 
@@ -63,10 +63,15 @@ suites in an isolated workspace with temporary data, a private socket, and
 OS-assigned ports. `validate` finishes locally without SSH or deployment.
 Use `SLOPGRID_LOCAL_TEST_ENV_FILE` for private local test credentials.
 
-Deployment uploads committed source, operations, and the validated frontend.
-The remote worker installs host-native dependencies and verifies artifact
-manifests without rebuilding the frontend or running suites. Runtime deployments
-take an exclusive lock; concurrent deployments fail rather than wait.
+Deployment uploads committed source, operations, and the validated frontend into
+a fresh run directory. Keep that directory for status reconnection. The remote
+worker installs host-native dependencies and verifies artifact manifests without
+rebuilding the frontend or running suites.
+
+Use one `OPS_REMOTE_ROOT`, deployment user, and PM2 instance for staging and
+production. Different deployment roots controlling the same runtime or PM2
+instance are unsupported. Before switching to this worker protocol, let all old
+deployment workers finish. Do not restart old uploaded deployment requests.
 
 Production requires the resolved revision to equal the freshly queried
 authoritative `refs/heads/master` tip, checked locally and remotely. Production
@@ -90,10 +95,50 @@ retain the engine. Keep database, outputs, and encryption keys together in backu
 `--plan` uploads nothing and changes no runtime; a production plan still queries
 the Git authority. Remote work continues in tmux `bg` after SSH disconnection.
 Use the printed run ID with `status` to follow its log and final exit status.
-Failed startup retains its phase and backup location for recovery; inspect those
-before retrying. The pipeline does not automatically restore an older database.
-`staging --recover-failed-start` permits guarded machinery recovery only when the
-unpromoted candidate never became ready.
+Failed startup retains its phase and backup location for recovery. Reconcile a
+blocked transaction before retrying through a fresh run ID. The pipeline does not
+automatically restore an older database. `staging --recover-failed-start` permits
+guarded machinery recovery only when the unpromoted candidate never became ready;
+it does not override an unresolved deployment transaction.
+
+If a competing deployment returns exit 75, wait for the current owner to finish
+before retrying. Do not use TERM, HUP, or INT to cancel an admitted deployment;
+those signals are deferred. Reconnect with `status` to observe its outcome.
+If a run reports recovery required, use the reconciliation procedure below.
+
+## Reconcile an interrupted deployment
+
+Use SSH to inspect the deployment host. Keep the same lock held throughout
+inspection and acknowledgement. Set `ROOT` to the configured `OPS_REMOTE_ROOT`:
+
+```sh
+exec 9>"$ROOT/deployment.lock"
+flock -n 9 && cat "$ROOT/deployment-transaction.json"
+```
+
+If `flock` fails, an owner still holds the deployment lock. Stop this procedure.
+Never remove or replace the lock file.
+
+1. Preserve the recorded run's request, worker identity, logs, stage results,
+   completion evidence, and backup location.
+2. Establish that the interrupted worker and its mutating command descendants
+   have stopped. A missing PID alone is insufficient. Inspect PM2 registrations
+   and restart activity as well.
+3. Inspect the engine and web release pointers, generated configuration, startup
+   logs, deployment metadata, and saved PM2 state. Reconcile uncertain runtime
+   state while holding the lock. Preserve potentially migrated data.
+4. If quiescence or data compatibility remains uncertain, leave the transaction
+   record in place and stop.
+5. Record acknowledgement for the exact interrupted run in your incident record.
+   Remove only its `deployment-transaction.json` after verifying that the record
+   still identifies that run. Preserve the run directory and its permanent claim.
+6. Release the lock with `exec 9>&-`. Retry the deployment command to create a
+   fresh run.
+
+Acknowledgement permits new deployment work. It does not restore an older
+runtime or prove that a partial deployment was rolled back. Power-loss durability
+and all-or-nothing visibility across processes and migrated storage are not
+provided by deployment serialization.
 
 ## Local pipeline checks
 
@@ -103,9 +148,11 @@ unpromoted candidate never became ready.
 ./check.sh --test-name-pattern='argument policy' tests/pipeline.test.mjs
 ```
 
-The runner uses the local candidate application's dependencies and isolated
-fixtures. It needs no deployment configuration or SSH connection. Application
-fixture dependencies must be installed before running it.
+Install the local candidate application's dependencies before running the checks.
+Run them on Linux with `/proc`, Git, pnpm, tar, flock, rsync, and PM2 available on
+`PATH`. The runner needs no deployment configuration or SSH connection. It owns
+temporary data and private `PM2_HOME` directories; leave shared PM2 instances
+untouched.
 
 ## Data administration
 
