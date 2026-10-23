@@ -547,9 +547,9 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
 
 1. Private output belongs to the owning user account and is accessible from any live session signed into that account, including direct output links in another browser. Anonymous grids remain accessible through their anonymous browser identity until claimed on sign-in. Knowing a grid, output, preview, download, or thinking URL does not grant access to another user or an unauthenticated visitor.
 2. Enforce ownership and session access for every output format, website asset, preview, download, and thinking trace. Retain offline copies of visited ready outputs and pages for the current session. Sign-out and observed session changes clear those offline copies. Offline access cannot observe remote session revocation until reconnection.
-3. Isolate generated websites from the application and from other outputs. Offline website copies must not make network requests.
-4. Generated HTML must not access or modify application sessions or another output's private data. Retain isolation while allowing its static scripts and assets to render.
-5. Generated websites can access only their own bundle's files.
+3. Give each live generated website its own origin, isolating application cookies and site data and the cookies and site data of other outputs. Allow live iframe content the browser's normal capabilities, including network access, scripts, workers, WebAssembly, storage, forms, popups, downloads, audio, and permission-gated APIs. Browser permission prompts, user activation, and cross-origin rules still apply.
+4. Generated HTML must not access or modify application sessions or another output's private data. Authorize application-hosted output files against the requested output and its viewer; external resource requests remain available under normal browser rules.
+5. Offline website copies use self-contained cached resources and cannot access application cookies or site data. They make no network requests.
 
 ## 9. Availability and updates
 

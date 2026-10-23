@@ -39,6 +39,67 @@ test("drafts, mutation endpoints, and generated hosts enforce ownership and orig
     (await (await frame.elementHandle())!.contentFrame())!.url(),
   );
   expect(isolated.hostname).toMatch(/^[a-f0-9]{48}-output\.localhost$/);
+  await page.evaluate(() => {
+    localStorage.setItem("site-isolation", "application");
+    document.cookie = "site-isolation=application; Path=/";
+  });
+  await page.context().route("https://capabilities.example.test/**", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      headers: { "access-control-allow-origin": "*" },
+      body: JSON.stringify({ external: true }),
+    }),
+  );
+  const outputFrames = page
+    .frames()
+    .filter((frame) => frame.url().includes("-output.localhost"));
+  expect(outputFrames).toHaveLength(2);
+  const capabilities = await outputFrames[0].evaluate(async () => {
+    const isolated =
+      localStorage.getItem("site-isolation") === null &&
+      !document.cookie.includes("site-isolation=application");
+    localStorage.setItem("site-isolation", "first-output");
+    document.cookie = "site-isolation=first-output; Path=/";
+    const external = await (
+      await fetch("https://capabilities.example.test/data")
+    ).json();
+    const wasm = await WebAssembly.instantiate(
+      new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]),
+    );
+    const url = URL.createObjectURL(
+      new Blob(["postMessage('worker-ready')"], { type: "text/javascript" }),
+    );
+    const worker = new Worker(url);
+    try {
+      const message = await new Promise((resolve) => {
+        worker.onmessage = (event) => resolve(event.data);
+      });
+      return {
+        isolated,
+        external,
+        wasm: wasm.instance instanceof WebAssembly.Instance,
+        message,
+      };
+    } finally {
+      worker.terminate();
+      URL.revokeObjectURL(url);
+    }
+  });
+  expect(capabilities).toEqual({
+    isolated: true,
+    external: { external: true },
+    wasm: true,
+    message: "worker-ready",
+  });
+  expect(
+    await outputFrames[1].evaluate(() => ({
+      storage: localStorage.getItem("site-isolation"),
+      cookie: document.cookie,
+    })),
+  ).toEqual({ storage: null, cookie: "" });
+  expect(
+    await page.evaluate(() => localStorage.getItem("site-isolation")),
+  ).toBe("application");
   const response = await page.request.get(output!);
   expect(response.status()).toBe(200);
   expect(response.headers()["set-cookie"]).toBeUndefined();
