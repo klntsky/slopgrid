@@ -25,8 +25,9 @@ environment variables override its values. Configure remote deployments privatel
 
 The initiating `.env` selects remote locations; each remote `runtime.env` remains
 the source of application credentials and target settings. Supply the HTTPS
-origin, listener port, output domain, encryption secret, and GitHub credentials
-there. Relative data paths resolve against the target's application root.
+origin, listener port, output domain, and encryption secret there. Add both
+GitHub credentials to enable sign-in. Relative data paths resolve against the
+target's application root.
 The pipeline derives socket and retained-frontend locations and generates web
 and engine environment files and a process-manager definition in the target's
 configuration directory. Release pointers select web and engine code separately.

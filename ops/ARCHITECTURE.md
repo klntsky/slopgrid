@@ -1,9 +1,8 @@
 # Deployment architecture
 
 The deployment pipeline separates local candidate preparation, remote release
-management, and application-owned migration. Requirements belong in
-[PRODUCT.md](PRODUCT.md), and configuration and commands belong in
-[DEVELOPMENT.md](DEVELOPMENT.md).
+management, and application-owned migration. Configuration and commands belong
+in [DEVELOPMENT.md](DEVELOPMENT.md).
 
 ## Candidate preparation and trust
 
