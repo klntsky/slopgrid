@@ -96,20 +96,6 @@ test("dual case axes keep independent editors, cross-axis parameters and the Car
   await selectModel(page, "fixture/text");
 
   const commonPrompt = page.getByLabel("Prompt", { exact: true });
-  await commonPrompt.fill("Pair ");
-  const picker = page.getByRole("combobox", {
-    name: "Insert variable",
-    exact: true,
-  });
-  await expect(
-    picker.locator('optgroup[label="Row variables"] option'),
-  ).toHaveText(["$ROW1"]);
-  await expect(
-    picker.locator('optgroup[label="Column variables"] option'),
-  ).toHaveText(["$COLUMN1"]);
-  await picker.selectOption("$ROW1");
-  await picker.selectOption("$COLUMN1");
-  await expect(commonPrompt).toHaveValue("Pair $ROW1$COLUMN1");
   await commonPrompt.fill("Pair $ROW1 / $COLUMN1");
 
   const action = page.getByRole("button", {
@@ -187,15 +173,6 @@ test("dual case axes keep independent editors, cross-axis parameters and the Car
     .getByLabel("Criterion 1", { exact: true })
     .fill("Does this answer address $ROW1 and $COLUMN1?");
   await moveCommon(page, "judge criteria", "Column");
-  const columnCriteria = columns.getByRole("group", {
-    name: "Column case 1 judge criteria",
-    exact: true,
-  });
-  await expect(
-    columnCriteria
-      .getByRole("combobox", { name: "Insert variable", exact: true })
-      .locator("option"),
-  ).toHaveText(["Insert variable…", "$ROW1", "$COLUMN1"]);
   const before = await savedInput(page);
   expect(before.caseAxes).toEqual(["rows", "columns"]);
   expect(before.parameters.input.kind).toBe("rows");
@@ -333,7 +310,7 @@ test.describe("Mobile dual-axis cases", () => {
     viewport: { width: 390, height: 844 },
   });
 
-  test("dual-axis chat pickers retain numbered holes and mobile tables scroll independently", async ({
+  test("dual-axis chat inputs retain numbered holes and mobile tables scroll independently", async ({
     page,
   }) => {
     await page.goto("/create");
@@ -355,21 +332,8 @@ test.describe("Mobile dual-axis cases", () => {
     await caseTable(page, "Row")
       .getByRole("button", { name: "Remove $ROW1", exact: true })
       .click();
-    const picker = page.getByRole("combobox", {
-      name: "Insert variable",
-      exact: true,
-    });
-    await expect(
-      picker.locator('optgroup[label="Row variables"] option'),
-    ).toHaveText(["$ROW2"]);
-    await expect(
-      picker.locator('optgroup[label="Column variables"] option'),
-    ).toHaveText(["$COLUMN1"]);
     const message = page.getByLabel("Message 1", { exact: true });
-    await message.fill("");
-    await picker.selectOption("$ROW2");
-    await picker.selectOption("$COLUMN1");
-    await expect(message).toHaveValue("$ROW2$COLUMN1");
+    await message.fill("$ROW2$COLUMN1");
     const rowScroll = page.getByRole("region", {
       name: "Row cases; scroll for more cases and fields",
       exact: true,

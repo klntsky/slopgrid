@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { Plus } from "lucide-react";
 import type { Criterion } from "../../server/judge-criteria";
 import { DeletableInput } from "./deletable-input";
@@ -6,21 +6,17 @@ import { ReorderHandle } from "./reorder-handle";
 import "./criteria-editor.css";
 import { tooltipRef } from "../components/use-tooltip";
 import { ValidationFeedback, ValidationField } from "./validation-feedback";
-import { VariableTokenPicker } from "./variable-input";
 
 type Criteria = Criterion[];
 
 export function CriteriaEditor({
   criteria,
   onChange,
-  variables,
 }: {
   criteria: Criteria;
   onChange: (criteria: Criteria) => void;
-  variables: readonly string[];
 }) {
   const root = useRef<HTMLTableElement>(null);
-  const id = useId();
   const [dragging, setDragging] = useState<number>();
   const [dragTarget, setDragTarget] = useState<number>();
 
@@ -92,7 +88,6 @@ export function CriteriaEditor({
                     >
                       <textarea
                         aria-label={`Criterion ${index + 1}`}
-                        id={`${id}-criterion-${index}`}
                         {...validation}
                         placeholder="a yes-or-no question about the output."
                         rows={1}
@@ -104,12 +99,6 @@ export function CriteriaEditor({
                     </DeletableInput>
                   )}
                 </ValidationField>
-                <VariableTokenPicker
-                  tokens={variables}
-                  targetId={`${id}-criterion-${index}`}
-                  value={criterion.text}
-                  onChange={(text) => update(index, { text })}
-                />
                 <ValidationFeedback path={[index]} />
               </td>
               <td>

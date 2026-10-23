@@ -16,7 +16,6 @@ import {
   ValidationField,
   ValidationScope,
 } from "./validation-feedback";
-import { VariableTokenPicker } from "./variable-input";
 
 const imageRoleHint = "Remove images before changing this message’s role.";
 
@@ -25,13 +24,11 @@ export function ChatEditor({
   onChange,
   onBusy,
   compatibility,
-  variables,
 }: {
   messages: ChatMessage[];
   onChange: (change: (messages: ChatMessage[]) => ChatMessage[]) => void;
   onBusy: (busy: boolean) => void;
   compatibility: (messageIndex: number) => ReactNode;
-  variables: readonly string[];
 }) {
   const roles: ChatMessage["role"][] = [
     "system",
@@ -229,15 +226,6 @@ export function ChatEditor({
                       />
                     )}
                   </DeletableInput>
-                  {message.role !== "unfilled" && (
-                    <VariableTokenPicker
-                      tokens={variables}
-                      targetId={`${descriptionId}-message-${index}`}
-                      value={message.content}
-                      onChange={(content) => update(index, () => ({ content }))}
-                      disabled={reading}
-                    />
-                  )}
                   {compatibility(index)}
                 </>
               )}

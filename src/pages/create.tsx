@@ -136,7 +136,6 @@ export function Create() {
   const criteriaSource = input.parameters.judge_criteria;
   const inputSource = input.parameters.input;
   const caseLayoutActive = caseSides.length > 0;
-  const setupIssue = caseSetupIssue(input);
   function toAxis(parameter: CommonParameterId, side: AxisSide) {
     const previousFocus = document.activeElement;
     if (!dispatch({ type: "to-axis", parameter, side })) return;
@@ -337,7 +336,6 @@ export function Create() {
                     key={side}
                     side={side}
                     input={input}
-                    variables={promptVariables}
                     models={models}
                     judgeModels={judgeModels}
                     onAction={dispatch}
@@ -381,9 +379,6 @@ export function Create() {
                 );
               })}
             </fieldset>
-            {caseLayoutActive && setupIssue?.kind === "axis-values" && (
-              <ErrorMessage>{setupIssue.message}</ErrorMessage>
-            )}
             {caseLayoutActive && layoutSummary}
           </section>
         )}
@@ -435,7 +430,6 @@ export function Create() {
               <CompleteInputEditor
                 format={input.format}
                 messages={inputSource.value}
-                variables={promptVariables}
                 source="common"
                 onAction={dispatch}
                 onBusy={onUploading}
@@ -452,12 +446,11 @@ export function Create() {
                 )}
               />
             </ValidationScope>
-            {promptVariables.map((variable) => (
-              <p className="hint" key={variable}>
-                {variable} inserts the field's text and images where referenced
-                in the prompt or judge criteria.
+            {promptVariables.length > 0 && (
+              <p className="hint">
+                Variables available: {promptVariables.join(", ")}
               </p>
-            ))}
+            )}
           </section>
         )}
         {formatSelected && (
@@ -512,7 +505,6 @@ export function Create() {
                     >
                       <CriteriaEditor
                         criteria={criteriaSource.value}
-                        variables={promptVariables}
                         onChange={(value) => {
                           if (!value.length) setJudgeEnabled(false);
                           else

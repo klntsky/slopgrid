@@ -86,11 +86,3 @@
   outline: 2px solid var(--focus);
   outline-offset: -2px;
 }
-.variable-token-picker {
-  display: block;
-  width: auto;
-  max-width: 100%;
-  margin-block: 8px;
-  padding: 4px 8px;
-  font-size: 12px;
-}

@@ -9,64 +9,6 @@ import {
 import type { VariableField } from "../../server/prompt-variables";
 import { ImageList, ImagePicker } from "./image-input";
 import { ValidationField } from "./validation-feedback";
-import "./parameter-actions.css";
-
-export function VariableTokenPicker({
-  tokens,
-  targetId,
-  value,
-  onChange,
-  disabled = false,
-}: {
-  tokens: readonly string[];
-  targetId: string;
-  value: string;
-  onChange: (value: string) => void;
-  disabled?: boolean;
-}) {
-  if (!tokens.length) return null;
-  return (
-    <select
-      className="variable-token-picker"
-      aria-label="Insert variable"
-      aria-controls={targetId}
-      value=""
-      disabled={disabled}
-      onChange={(event) => {
-        const token = event.target.value;
-        if (!token) return;
-        const target = document.getElementById(targetId);
-        if (!(target instanceof HTMLTextAreaElement)) return;
-        const start = target.selectionStart;
-        const end = target.selectionEnd;
-        onChange(value.slice(0, start) + token + value.slice(end));
-        requestAnimationFrame(() => {
-          target.focus();
-          target.setSelectionRange(start + token.length, start + token.length);
-        });
-      }}
-    >
-      <option value="">Insert variable…</option>
-      {(["ROW", "COLUMN"] as const).map((axis) => {
-        const variables = tokens.filter((token) =>
-          token.startsWith(`$${axis}`),
-        );
-        return variables.length ? (
-          <optgroup
-            key={axis}
-            label={axis === "ROW" ? "Row variables" : "Column variables"}
-          >
-            {variables.map((token) => (
-              <option key={token} value={token}>
-                {token}
-              </option>
-            ))}
-          </optgroup>
-        ) : null;
-      })}
-    </select>
-  );
-}
 
 function fitTextarea(input: HTMLTextAreaElement) {
   // Measure the content, not the extra height borrowed from a taller cell.

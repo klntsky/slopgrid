@@ -61,54 +61,56 @@ export function AxisEditor({
   const label = side === "rows" ? "Rows" : "Columns";
   const dimension = isCaseAxis(input, side) ? "variable" : members[0];
   return (
-    <ValidationField
-      path={isCaseAxis(input, side) ? ["caseAxes"] : [side]}
-      descendants={!isCaseAxis(input, side)}
-    >
-      {(validation) => (
-        <div className="axis" role="group">
-          <label className="axis-selector">
-            <span className="axis-name">{label}:</span>
-            <select
-              aria-label={label}
-              {...validation}
-              value={dimension ?? "single"}
-              onChange={(event) => {
-                const value = event.target.value;
-                if (value === "single") onAction({ type: "single", side });
-                else {
-                  const parameter = kinds.find((kind) => kind === value);
-                  if (parameter)
-                    onAction({ type: "dimension", side, parameter });
-                }
-              }}
-            >
-              <option value="single">
-                Single {side === "rows" ? "row" : "column"}
-              </option>
-              {kinds.map((kind) => (
-                <option
-                  key={kind}
-                  value={kind}
-                  disabled={
-                    (kind !== "variable" &&
-                      input.parameters[kind]?.kind ===
-                        (side === "rows" ? "columns" : "rows")) ||
-                    (!input.judge &&
-                      (kind === "judge_model" || kind === "judge_effort"))
+    <div className="axis" role="group">
+      <ValidationField
+        path={isCaseAxis(input, side) ? ["caseAxes"] : [side]}
+        descendants={!isCaseAxis(input, side)}
+      >
+        {(validation) => (
+          <>
+            <label className="axis-selector">
+              <span className="axis-name">{label}:</span>
+              <select
+                aria-label={label}
+                {...validation}
+                value={dimension ?? "single"}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  if (value === "single") onAction({ type: "single", side });
+                  else {
+                    const parameter = kinds.find((kind) => kind === value);
+                    if (parameter)
+                      onAction({ type: "dimension", side, parameter });
                   }
-                >
-                  {kind === "variable"
-                    ? "Multiple cases"
-                    : parameterNames[kind]}
+                }}
+              >
+                <option value="single">
+                  Single {side === "rows" ? "row" : "column"}
                 </option>
-              ))}
-            </select>
-          </label>
-          {children(validation)}
-        </div>
-      )}
-    </ValidationField>
+                {kinds.map((kind) => (
+                  <option
+                    key={kind}
+                    value={kind}
+                    disabled={
+                      (kind !== "variable" &&
+                        input.parameters[kind]?.kind ===
+                          (side === "rows" ? "columns" : "rows")) ||
+                      (!input.judge &&
+                        (kind === "judge_model" || kind === "judge_effort"))
+                    }
+                  >
+                    {kind === "variable"
+                      ? "Multiple cases"
+                      : parameterNames[kind]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {children(validation)}
+          </>
+        )}
+      </ValidationField>
+    </div>
   );
 }
 

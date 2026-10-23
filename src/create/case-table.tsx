@@ -92,7 +92,6 @@ function CaseValue({
   modelFilters,
   onModelFilterChange,
   onChange,
-  variables,
 }: {
   input: GridDraftInput;
   entry: CaseRecord;
@@ -105,13 +104,11 @@ function CaseValue({
     filter: string,
   ) => void;
   onChange: ParameterSetter;
-  variables: readonly string[];
 }) {
   if (parameter === "judge_criteria")
     return (
       <CriteriaEditor
         criteria={entry.judge_criteria ?? []}
-        variables={variables}
         onChange={(value) => onChange(parameter, value)}
       />
     );
@@ -146,7 +143,6 @@ function CaseValue({
 export function GridLayoutTable({
   input,
   side,
-  variables,
   models,
   judgeModels,
   onAction,
@@ -156,7 +152,6 @@ export function GridLayoutTable({
 }: {
   input: GridDraftInput;
   side: AxisSide;
-  variables: readonly string[];
   models: Model[];
   judgeModels: Model[];
   onAction: (action: InputAction) => void;
@@ -331,7 +326,6 @@ export function GridLayoutTable({
           <CompleteInputEditor
             format={input.format}
             messages={messages}
-            variables={variables}
             source={side}
             caseIndex={caseIndex}
             onAction={onAction}
@@ -354,7 +348,6 @@ export function GridLayoutTable({
           parameter={parameter}
           models={models}
           judgeModels={judgeModels}
-          variables={variables}
           modelFilters={modelFilters.current.get(entry.id)}
           onModelFilterChange={(parameter, filter) => {
             const previous = modelFilters.current.get(entry.id);

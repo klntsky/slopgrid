@@ -99,36 +99,25 @@ export function referencedVariableFields(
 
 export function caseSetupIssue(
   input: VariableInput,
-  side?: AxisSide,
-):
-  | { kind: "cases" | "parameters" | "axis-values"; message: string }
-  | undefined {
-  for (const current of side ? [side] : input.caseAxes) {
-    if (!isCaseAxis(input, current)) continue;
-    const name = current === "rows" ? "row" : "column";
-    if (!input[current].length)
-      return { kind: "cases", message: `Add at least one ${name} case.` };
-    const hasFields = axisParameters(input, current).some(
-      (parameter) =>
-        parameter !== "variable" ||
-        input[current].some((record) =>
-          record.variable?.some((field) => field !== null),
-        ),
-    );
-    if (!hasFields)
-      return {
-        kind: "parameters",
-        message:
-          'Add a variable or click "define multiple cases" for a parameter.',
-      };
-  }
-  if (side) return;
-  for (const current of ["rows", "columns"] as const)
-    if (!input[current].length)
-      return {
-        kind: "axis-values",
-        message: `Select at least one ${axisParameters(input, current).includes("model") ? "model" : "value"} for ${current}.`,
-      };
+  side: AxisSide,
+): { kind: "cases" | "parameters"; message: string } | undefined {
+  if (!isCaseAxis(input, side)) return;
+  const name = side === "rows" ? "row" : "column";
+  if (!input[side].length)
+    return { kind: "cases", message: `Add at least one ${name} case.` };
+  const hasFields = axisParameters(input, side).some(
+    (parameter) =>
+      parameter !== "variable" ||
+      input[side].some((record) =>
+        record.variable?.some((field) => field !== null),
+      ),
+  );
+  if (!hasFields)
+    return {
+      kind: "parameters",
+      message:
+        'Add a variable or click "define multiple cases" for a parameter.',
+    };
 }
 
 export function promptVariableIssues(input: TemplateInput): ValidationIssue[] {

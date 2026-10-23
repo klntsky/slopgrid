@@ -1,11 +1,11 @@
 import { test, expect } from "./fixtures";
-import { connectOpenRouter, expectProgress } from "./helpers";
+import { connectOpenRouter, defineCases, expectProgress } from "./helpers";
 import { currentDefinition } from "../current-grid-fixture";
 
 for (const parameter of ["model", "judge_model"] as const) {
   for (const orientation of ["Rows", "Columns"] as const) {
     const side = orientation === "Rows" ? "rows" : "columns";
-    test(`${orientation} ${parameter} request a model only after Generate and never submit an empty model dimension`, async ({
+    test(`${orientation} ${parameter} keep empty-model feedback under their selector with cases and never submit an empty model dimension`, async ({
       page,
     }) => {
       await page.goto("/");
@@ -33,7 +33,7 @@ for (const parameter of ["model", "judge_model"] as const) {
           name: orientation === "Rows" ? "Columns" : "Rows",
           exact: true,
         })
-        .selectOption("single");
+        .selectOption("variable");
       const selector = page.getByRole("combobox", {
         name: orientation,
         exact: true,
@@ -51,6 +51,7 @@ for (const parameter of ["model", "judge_model"] as const) {
       await page
         .getByRole("textbox", { name: "Prompt", exact: true })
         .fill("Describe a red rectangle.");
+      await defineCases(page, "prompt");
       await connectOpenRouter(page);
       const generate = page.getByRole("button", {
         name: "Generate",
@@ -58,6 +59,7 @@ for (const parameter of ["model", "judge_model"] as const) {
       });
       await expect(selector).not.toHaveAttribute("aria-invalid", "true");
       await expect(generate).toBeEnabled();
+      await expect(page.getByRole("alert")).toHaveCount(0);
       const requests: string[] = [];
       page.on("request", (request) => {
         if (
@@ -71,6 +73,11 @@ for (const parameter of ["model", "judge_model"] as const) {
       const errorId = await selector.getAttribute("aria-describedby");
       expect(errorId).toBeTruthy();
       await expect(page.locator(`[id="${errorId}"]`)).toBeVisible();
+      const modelsBox = (await models.boundingBox())!;
+      const errorBox = (await page.locator(`[id="${errorId}"]`).boundingBox())!;
+      expect(errorBox.x).toBeCloseTo(modelsBox.x, 0);
+      expect(errorBox.width).toBeLessThanOrEqual(modelsBox.width + 1);
+      expect(errorBox.y).toBeGreaterThanOrEqual(modelsBox.y + modelsBox.height);
       expect(requests).toEqual([]);
       const bypass = await page.request.post("/api/grids", {
         data: currentDefinition({
