@@ -20,7 +20,6 @@ test("private websites load in frames and direct tabs for the owning user across
   });
   const store = new Store(join(directory, "db.sqlite"), Buffer.alloc(32, 7));
   const web = await webFixture({
-    directory,
     hostname: "slopgrid.test",
     socket: join(directory, "db.sqlite.sock"),
     database: join(directory, "db.sqlite"),

@@ -48,6 +48,13 @@ keeps HMR on the web listener. Browser fixtures own independent temporary runtim
 Credentials remain in ignored local configuration; deployed runtime locations do
 not select development or candidate state.
 
+Test harnesses own reusable, immutable initialization resources: closed database
+templates and localhost TLS material. Every fixture retains private writable
+storage, listeners, connections, and process state. Production-data rehearsal
+snapshots take precedence over blank templates. Storage and route tests use the
+smallest boundary their behavior requires; process-lifecycle and contention tests
+retain independent service processes.
+
 The repository's `ops/` directory owns deployment orchestration for committed
 revisions, including release builds, update-mode selection, draining, promotion,
 and deployment status. Immutable releases, retained frontend assets, private

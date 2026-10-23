@@ -33,7 +33,6 @@ test("visited pages and completed outputs survive offline reload without retaini
   const generation = await startGenerationFixture({ database, secret });
   const store = new Store(database, secret);
   const web = await webFixture({
-    directory,
     database,
     secret,
     socket: database + ".sock",

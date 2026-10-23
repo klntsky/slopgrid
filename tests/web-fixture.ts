@@ -8,7 +8,6 @@ import { waitForReady } from "./process-ready.js";
 import { localhostTestTLS } from "./fixture-resources.js";
 
 export async function webFixture(config: {
-  directory: string;
   database: string;
   secret: Buffer;
   providerURL?: string;

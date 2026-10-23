@@ -574,7 +574,6 @@ app.get("/svg-probe", (req, res) => {
 });
 app.get("/fixture/svg-probes", (_req, res) => res.json(svgProbes));
 const web = await webFixture({
-  directory: data,
   database: `${data}/.data/db.sqlite`,
   secret: Buffer.alloc(32, 1),
   socket: `${data}/.data/db.sqlite.sock`,

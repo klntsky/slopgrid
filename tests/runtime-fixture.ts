@@ -291,7 +291,6 @@ export async function runtimeFixture(
   async function startWeb(socket = database + ".sock") {
     await web?.close();
     web = await webFixture({
-      directory,
       database,
       socket,
       secret,
