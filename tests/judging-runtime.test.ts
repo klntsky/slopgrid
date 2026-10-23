@@ -24,7 +24,7 @@ import { token } from "../server/ids.js";
 import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { holdDatabaseWrites } from "./database-lock.js";
-import { crashCheckpoint } from "./crash-checkpoint.js";
+import { crashCheckpoint, type CrashCheckpoint } from "./crash-checkpoint.js";
 import { arrangeHistoricalGrid } from "./grid-storage-fixture.js";
 import { pixelPng as png } from "./reference-image-fixture.js";
 import {
@@ -74,6 +74,39 @@ const verdicts = {
 function finish(call: RuntimeCall, content: string, cost: number) {
   call.write({ content });
   call.finish(cost);
+}
+
+async function shortJudgeBusyTimeout(debug: CrashCheckpoint) {
+  // Change the actual engine connection, not the fixture's independent Store.
+  // Generation persistence tests retain production-default SQLite contention;
+  // these cases exercise the application retry queue against a genuine lock.
+  assert.equal(
+    await debug.evaluate(
+      '(this.store.db.pragma("busy_timeout = 1"), this.store.db.pragma("busy_timeout", { simple: true }))',
+    ),
+    1,
+  );
+}
+
+async function finishBeforeJudgeWithShortBusyTimeout(
+  fixture: RuntimeFixture,
+  generation: RuntimeCall,
+  content: string,
+  cost: number,
+) {
+  const debug = await crashCheckpoint(
+    fixture.engine.child,
+    "jobs.ts",
+    "beginTaskAttempt(prepared)",
+  );
+  try {
+    finish(generation, content, cost);
+    await debug.paused;
+    await shortJudgeBusyTimeout(debug);
+    await debug.resume();
+  } finally {
+    debug.close();
+  }
 }
 async function create(fixture: RuntimeFixture, body: unknown = input) {
   const response = await fixture.request("/api/grids", body);
@@ -1776,7 +1809,8 @@ test(
     let unlock = () => {};
     try {
       const id = await create(fixture, pair);
-      finish(
+      await finishBeforeJudgeWithShortBusyTimeout(
+        fixture,
         await fixture.nextCall(),
         "Retained through storage failure",
         0.125,
@@ -1837,6 +1871,7 @@ test(
       closeDebugger = () => debug.close();
       finish(generation, "Already durable before judge admission", 0.125);
       await debug.paused;
+      await shortJudgeBusyTimeout(debug);
       unlock = holdDatabaseWrites(fixture.store);
       await debug.resume();
       debug.close();
@@ -1885,7 +1920,8 @@ test(
     let unlock = () => {};
     try {
       const id = await create(fixture, single);
-      finish(
+      await finishBeforeJudgeWithShortBusyTimeout(
+        fixture,
         await fixture.nextCall(),
         "Generation must not be cleared by judging",
         0.125,

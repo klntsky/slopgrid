@@ -1,13 +1,20 @@
 import type { ChildProcess } from "node:child_process";
 import { once } from "node:events";
 
+export interface CrashCheckpoint {
+  paused: Promise<void>;
+  evaluate(expression: string): Promise<unknown>;
+  resume(): Promise<void>;
+  close(): void;
+}
+
 /** Stop the actual engine at a persistence boundary without replacing its code. */
 export async function crashCheckpoint(
   child: ChildProcess,
   file: string,
   statement: string,
   condition?: string,
-) {
+): Promise<CrashCheckpoint> {
   const opened = once(child, "message");
   child.send({ inspect: true });
   const [url] = await opened;
@@ -21,7 +28,8 @@ export async function crashCheckpoint(
     );
   });
   let sequence = 0,
-    stopped!: () => void;
+    stopped!: () => void,
+    callFrameId: string | undefined;
   let timeout: ReturnType<typeof setTimeout>;
   const paused = new Promise<void>((resolve, reject) => {
     timeout = setTimeout(
@@ -49,7 +57,10 @@ export async function crashCheckpoint(
       else request.resolve(value.result);
     } else if (value.method === "Debugger.scriptParsed")
       scripts.push(value.params);
-    else if (value.method === "Debugger.paused") stopped();
+    else if (value.method === "Debugger.paused") {
+      callFrameId = value.params.callFrames[0].callFrameId;
+      stopped();
+    }
   });
   const send = (method: string, params?: object) =>
     new Promise<any>((resolve, reject) => {
@@ -82,7 +93,24 @@ export async function crashCheckpoint(
     });
     return {
       paused,
-      resume: () => send("Debugger.resume"),
+      evaluate: async (expression: string) => {
+        if (!callFrameId) throw new Error("Engine is not paused at checkpoint");
+        const result = await send("Debugger.evaluateOnCallFrame", {
+          callFrameId,
+          expression,
+          returnByValue: true,
+        });
+        if (result.exceptionDetails)
+          throw new Error(
+            result.exceptionDetails.exception?.description ??
+              result.exceptionDetails.text,
+          );
+        return result.result.value;
+      },
+      resume: async () => {
+        callFrameId = undefined;
+        await send("Debugger.resume");
+      },
       close: () => {
         clearTimeout(timeout);
         socket.close();
