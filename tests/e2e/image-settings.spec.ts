@@ -574,6 +574,11 @@ test("shared image settings transfer to axes, preserve equal values on removal, 
   for (const key of ["quality", "background", "input_references"])
     expect(sent[0]).not.toHaveProperty(key);
   await page.getByRole("button", { name: "EDIT", exact: true }).click();
+  await expect(field("Rows")).toHaveValue("model");
+  await expect(field("Columns")).toHaveValue("quality");
+  await expect(
+    page.getByRole("checkbox", { name: "Auto", exact: true }),
+  ).toBeChecked();
   await expect(field("Size")).toHaveValue("custom");
   await expect(
     page.getByLabel("Custom size width", { exact: true }),
@@ -581,6 +586,20 @@ test("shared image settings transfer to axes, preserve equal values on removal, 
   await expect(
     page.getByLabel("Custom size height", { exact: true }),
   ).toHaveValue("1024");
+  await field("Columns").selectOption("background");
+  await page
+    .getByRole("checkbox", { name: "transparent", exact: true })
+    .check();
+  await page.reload();
+  await expect(field("Columns")).toHaveValue("background");
+  await expect(
+    page.getByRole("checkbox", { name: "transparent", exact: true }),
+  ).toBeChecked();
+  await expect(
+    page.getByRole("checkbox", { name: "Fixture image", exact: true }),
+  ).toBeChecked();
+  await field("Columns").selectOption("quality");
+  await field("Background").selectOption("auto");
   await field("Size").selectOption("auto");
   await field("Aspect ratio").selectOption("auto");
   await page.getByRole("button", { name: "Generate", exact: true }).click();

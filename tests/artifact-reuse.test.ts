@@ -4,6 +4,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, rmSync, chmodSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { createServer } from "node:http";
+import { once } from "node:events";
 import {
   expandGrid,
   gridSchema,
@@ -36,6 +38,7 @@ import {
   masterPlainPrompt,
 } from "./artifact-reuse-fixture.js";
 import { validatedGrid } from "./grid-storage-fixture.js";
+import { storeFixture } from "./store-fixture.js";
 import {
   currentDefinition,
   currentInput,
@@ -1477,117 +1480,194 @@ test("generation failures reach every judged group member while ordinary cells r
   );
 });
 
-test("reuse shares one generation per judge group without copying judgments or attempts", async () => {
-  const f = await runtimeFixture();
-  try {
-    const config = currentDefinition({
-      ...input,
-      caseAxis: undefined,
-      judge: true,
-      parameters: {
-        input: {
-          kind: "common",
-          value: [{ role: "user", content: "Reusable output" }],
-        },
-        model: { kind: "rows" },
-        effort: { kind: "columns" },
-        judge_model: { kind: "common", value: "fixture/text" },
-        judge_effort: { kind: "common", value: "none" },
-        judge_criteria: {
-          kind: "common",
-          value: [{ text: "Is this empty?", correctAnswer: false }],
-        },
-      },
-      rows: [{ model: "fixture/text" }],
-      columns: [{ effort: "none" }],
-    });
-    const created = await create(f, config);
-    finish(await f.nextCall(), "Shared artifact");
-    (await f.nextCall()).fail(400);
-    await settled(f, created.id);
-    const source = f.store.get(created.id)!;
-    const original = source.cells[0];
-    assert.equal(original.judge?.status, "error");
-    const judged = currentDefinition({
-      ...config,
-      parameters: {
-        ...config.parameters,
-        model: { kind: "common", value: "fixture/text" },
-        effort: { kind: "common", value: "none" },
-        judge_model: { kind: "rows" },
-        judge_effort: { kind: "columns" },
-      },
-      rows: [{ judge_model: "judge-a" }, { judge_model: "judge-b" }],
-      columns: [{ judge_effort: "none" }, { judge_effort: "low" }],
-    });
-    const destination: Grid = {
-      ...source,
-      id: token(),
-      input: judged,
-      status: "paused",
-      cells: expandGrid(judged).map((cell) => ({ ...cell, id: token() })),
-    };
-    const tasks = createWorkflow(gridSchema.parse(judged), destination.cells);
-    const before = readdirSync(f.store.files.root).sort();
-    await reuseArtifacts(f.store, new Provider(f.providerURL), source, tasks);
-    projectWorkflow(destination, tasks);
-    assert.deepEqual(readdirSync(f.store.files.root).sort(), before);
-    assert.equal(f.calls.length, 2);
-    for (const cell of destination.cells) {
-      assert.equal(cell.status, "pending");
-      assert.equal(hasCompletedOutput(cell), true);
-      assert.equal(cell.artifactId, original.artifactId);
-      assert.equal(cell.thinkingId, original.thinkingId);
-      assert.equal(cell.thinkingSourceId, original.thinkingSourceId);
-      assert.equal(cell.judge?.model, judged.rows[cell.row].judge_model);
-      assert.equal(
-        cell.judge?.effort,
-        judged.columns[cell.column].judge_effort,
+test("reuse shares one generation per judge group without copying judgments or attempts", async (t) => {
+  const { store } = storeFixture(t);
+  const requests: string[] = [];
+  const upstream = createServer((req, res) => {
+    requests.push(req.url!);
+    res.setHeader("Content-Type", "application/json");
+    if (req.url === "/images/models") {
+      res.end(JSON.stringify({ data: [] }));
+    } else if (req.url === "/models") {
+      res.end(
+        JSON.stringify({
+          data: [
+            {
+              id: "fixture/text",
+              name: "Fixture",
+              pricing: { prompt: "0.000001", completion: "0.000001" },
+              context_length: 100000,
+              top_provider: { max_completion_tokens: 1000 },
+              architecture: {
+                input_modalities: ["text"],
+                output_modalities: ["text"],
+              },
+              supported_parameters: ["reasoning", "structured_outputs"],
+            },
+          ],
+        }),
       );
-      assert.equal(cell.judge?.status, "pending");
-      assert.equal(cell.attemptId, undefined);
-      assert.deepEqual(cell.usage, original.usage);
-      assert.deepEqual(cell.provenance, original.provenance);
+    } else {
+      res.writeHead(404).end();
     }
-    const generation = tasks.find((task) => task.kind === "generation")!;
-    assert.equal(generation.attemptId, undefined);
-    assert.equal(generation.error, undefined);
-    f.store.insert(validatedGrid(destination), tasks);
-    const judgments = tasks.filter((task) => task.kind === "judge");
-    judgments[0].status = "complete";
-    judgments[0].attemptId = "fresh-judge-attempt";
-    judgments[0].output = {
-      results: [{ verdict: false, explanation: "The output is not empty." }],
-    };
-    judgments[1].status = "error";
-    judgments[1].attemptId = "failed-judge-attempt";
-    judgments[1].error = "Temporary error";
-    judgments[1].errorCode = 503;
-    f.store.saveWorkflow(destination, tasks);
-    const restored = f.store.get(destination.id)!;
-    assert.deepEqual(
-      restored.cells[0].judge?.results,
-      judgments[0].output.results,
-    );
-    assert.equal(restored.cells[1].judge?.error, "Temporary error");
-    const criteria = parameterValue(
-      gridSchema.parse(restored.input),
-      "judge_criteria",
-      0,
-      0,
-    )!;
-    assert.ok(Array.isArray(criteria));
-    assert.equal(criteria[0].correctAnswer, false);
-    assert.ok(
-      restored.cells.every((cell) => cell.artifactId === original.artifactId),
-    );
-    assert.equal(
-      f.store.removeUnreferencedArtifact(original.artifactId!),
-      false,
-    );
-  } finally {
-    await f.close();
+  });
+  t.after(() => new Promise<void>((resolve) => upstream.close(() => resolve())));
+  upstream.listen(0, "127.0.0.1");
+  await once(upstream, "listening");
+  const address = upstream.address();
+  assert.ok(address && typeof address !== "string");
+  const provider = new Provider(
+    `http://127.0.0.1:${address.port}`,
+  );
+  const config = currentDefinition({
+    ...input,
+    caseAxis: undefined,
+    judge: true,
+    parameters: {
+      input: {
+        kind: "common",
+        value: [{ role: "user", content: "Reusable output" }],
+      },
+      model: { kind: "rows" },
+      effort: { kind: "columns" },
+      judge_model: { kind: "common", value: "fixture/text" },
+      judge_effort: { kind: "common", value: "none" },
+      judge_criteria: {
+        kind: "common",
+        value: [{ text: "Is this empty?", correctAnswer: false }],
+      },
+    },
+    rows: [{ model: "fixture/text" }],
+    columns: [{ effort: "none" }],
+  });
+  const sourceGrid: Grid = {
+    id: token(),
+    owner: token(),
+    input: config,
+    status: "complete",
+    published: false,
+    visibility: "private",
+    createdAt: new Date().toISOString(),
+    cells: expandGrid(config).map((cell) => ({ ...cell, id: token() })),
+  };
+  const sourceTasks = createWorkflow(gridSchema.parse(config), sourceGrid.cells);
+  const sourceGeneration = sourceTasks.find(
+    (task) => task.kind === "generation",
+  )!;
+  const prepared = await provider.prepare("markdown", sourceGeneration.input);
+  assert.ok(prepared.format === "markdown");
+  const artifactId = token();
+  const thinkingId = token();
+  store.files.write(artifactId, { "index.md": "Shared artifact" });
+  store.files.writeThinking(artifactId, thinkingId, "Recorded thinking.");
+  sourceGeneration.status = "complete";
+  sourceGeneration.attemptId = token();
+  sourceGeneration.output = {
+    artifactId,
+    thinkingId,
+    thinkingSourceId: artifactId,
+    usage: { inputTokens: 12, outputTokens: 8, costUsd: 0.00002 },
+    provenance: {
+      signature: inferenceSignature(prepared),
+      maxOutputTokens: prepared.text.maxOutputTokens,
+      files: ["index.md"],
+    },
+  };
+  const sourceJudgment = sourceTasks.find((task) => task.kind === "judge")!;
+  sourceJudgment.status = "error";
+  sourceJudgment.attemptId = token();
+  sourceJudgment.error = "Judge request failed";
+  sourceJudgment.errorCode = 400;
+  store.insert(validatedGrid(sourceGrid), sourceTasks);
+  const source = store.get(sourceGrid.id)!;
+  const original = source.cells[0];
+  assert.equal(original.attemptId, sourceGeneration.attemptId);
+  assert.equal(original.judge?.status, "error");
+  assert.equal(original.judge?.attemptId, sourceJudgment.attemptId);
+  const judged = currentDefinition({
+    ...config,
+    parameters: {
+      ...config.parameters,
+      model: { kind: "common", value: "fixture/text" },
+      effort: { kind: "common", value: "none" },
+      judge_model: { kind: "rows" },
+      judge_effort: { kind: "columns" },
+    },
+    rows: [{ judge_model: "judge-a" }, { judge_model: "judge-b" }],
+    columns: [{ judge_effort: "none" }, { judge_effort: "low" }],
+  });
+  const destination: Grid = {
+    ...source,
+    id: token(),
+    input: judged,
+    status: "paused",
+    cells: expandGrid(judged).map((cell) => ({ ...cell, id: token() })),
+  };
+  const tasks = createWorkflow(gridSchema.parse(judged), destination.cells);
+  assert.equal(tasks.filter((task) => task.kind === "generation").length, 1);
+  const before = readdirSync(store.files.root).sort();
+  await reuseArtifacts(store, provider, source, tasks);
+  projectWorkflow(destination, tasks);
+  assert.deepEqual(readdirSync(store.files.root).sort(), before);
+  assert.deepEqual(requests.sort(), ["/images/models", "/models"]);
+  for (const cell of destination.cells) {
+    assert.equal(cell.status, "pending");
+    assert.equal(hasCompletedOutput(cell), true);
+    assert.equal(cell.artifactId, original.artifactId);
+    assert.equal(cell.thinkingId, original.thinkingId);
+    assert.equal(cell.thinkingSourceId, original.thinkingSourceId);
+    assert.equal(cell.judge?.model, judged.rows[cell.row].judge_model);
+    assert.equal(cell.judge?.effort, judged.columns[cell.column].judge_effort);
+    assert.equal(cell.judge?.status, "pending");
+    assert.equal(cell.judge?.attemptId, undefined);
+    assert.equal(cell.judge?.results, undefined);
+    assert.equal(cell.judge?.error, undefined);
+    assert.equal(cell.judge?.errorCode, undefined);
+    assert.equal(cell.attemptId, undefined);
+    assert.deepEqual(cell.usage, original.usage);
+    assert.deepEqual(cell.provenance, original.provenance);
   }
+  const generation = tasks.find((task) => task.kind === "generation")!;
+  assert.equal(generation.attemptId, undefined);
+  assert.equal(generation.error, undefined);
+  store.insert(validatedGrid(destination), tasks);
+  const judgments = tasks.filter((task) => task.kind === "judge");
+  assert.equal(judgments.length, 4);
+  assert.equal(new Set(judgments.map((task) => task.id)).size, 4);
+  judgments[0].status = "complete";
+  judgments[0].attemptId = "fresh-judge-attempt";
+  judgments[0].output = {
+    results: [{ verdict: false, explanation: "The output is not empty." }],
+  };
+  judgments[1].status = "error";
+  judgments[1].attemptId = "failed-judge-attempt";
+  judgments[1].error = "Temporary error";
+  judgments[1].errorCode = 503;
+  store.saveWorkflow(destination, tasks);
+  const restored = store.get(destination.id)!;
+  assert.equal(restored.cells[0].judge?.status, "complete");
+  assert.equal(restored.cells[0].judge?.attemptId, "fresh-judge-attempt");
+  assert.deepEqual(restored.cells[0].judge?.results, judgments[0].output.results);
+  assert.equal(restored.cells[1].judge?.status, "error");
+  assert.equal(restored.cells[1].judge?.attemptId, "failed-judge-attempt");
+  assert.equal(restored.cells[1].judge?.error, "Temporary error");
+  assert.equal(restored.cells[1].judge?.errorCode, 503);
+  assert.deepEqual(
+    restored.cells.slice(2).map((cell) => cell.judge?.status),
+    ["pending", "pending"],
+  );
+  const criteria = parameterValue(
+    gridSchema.parse(restored.input),
+    "judge_criteria",
+    0,
+    0,
+  )!;
+  assert.ok(Array.isArray(criteria));
+  assert.equal(criteria[0].correctAnswer, false);
+  assert.ok(
+    restored.cells.every((cell) => cell.artifactId === original.artifactId),
+  );
+  assert.equal(store.removeUnreferencedArtifact(original.artifactId!), false);
 });
 
 test("unified user-message inputs reuse master plain-prompt artifacts", async () => {

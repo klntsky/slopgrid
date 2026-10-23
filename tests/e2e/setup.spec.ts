@@ -851,47 +851,6 @@ for (const format of ["SVG", "Image"]) {
   });
 }
 
-test("image generation omits automatic quality and preserves edited axes", async ({
-  page,
-  request,
-}) => {
-  await request.post("/fixture/reset", { data: {} });
-  await page.goto("/");
-  await page.getByRole("button", { name: "Image", exact: true }).click();
-  const rows = page.getByRole("combobox", { name: "Rows", exact: true });
-  const columns = page.getByRole("combobox", { name: "Columns", exact: true });
-  await page.getByLabel("Prompt", { exact: true }).fill("Draw a landscape");
-  await connectOpenRouter(page);
-  await expect(
-    page.getByRole("button", { name: "Generate", exact: true }),
-  ).toBeDisabled();
-  await page
-    .getByRole("checkbox", { name: "Fixture image", exact: true })
-    .check();
-  await page.getByRole("button", { name: "Generate", exact: true }).click();
-  await expectProgress(page, 1, 1);
-  const sent = await (await request.get("/fixture/image-requests")).json();
-  expect(sent[0]).not.toHaveProperty("quality");
-  await page.getByRole("button", { name: "EDIT", exact: true }).click();
-  await expect(rows).toHaveValue("model");
-  await expect(columns).toHaveValue("quality");
-  await expect(
-    page.getByRole("checkbox", { name: "Auto", exact: true }),
-  ).toBeChecked();
-  await columns.selectOption("background");
-  await page
-    .getByRole("checkbox", { name: "transparent", exact: true })
-    .check();
-  await page.reload();
-  await expect(columns).toHaveValue("background");
-  await expect(
-    page.getByRole("checkbox", { name: "transparent", exact: true }),
-  ).toBeChecked();
-  await expect(
-    page.getByRole("checkbox", { name: "Fixture image", exact: true }),
-  ).toBeChecked();
-});
-
 for (const format of ["SVG", "Static website", "Markdown"]) {
   test(`${format} generation preserves thinking-effort and variable-axis edits`, async ({
     page,
@@ -1024,27 +983,4 @@ test("incomplete chat, criteria and raw budget survive reload and OAuth before c
   await expect(budget).toHaveValue("0.25");
   await expect(message).toHaveValue("  Draw $ROW1  ");
   await expect(criterion).toHaveValue("Is it a cat?");
-});
-
-test("grid admission accepts only v3 input sources, not root prompt or history aliases", async ({
-  page,
-}) => {
-  await page.goto("/create");
-  await connectOpenRouter(page);
-  const input = currentDefinition();
-  const { input: _generatorInput, ...parameters } = input.parameters;
-  for (const legacy of [
-    { prompt: "A legacy root prompt" },
-    { messages: [{ role: "user", content: "A legacy root history" }] },
-    { prompt: "Legacy image input", promptImages: [] },
-  ]) {
-    const response = await page.request.post("/api/grids", {
-      data: { ...input, parameters, ...legacy },
-    });
-    expect(response.status()).toBe(400);
-  }
-  const previousVersion = await page.request.post("/api/grids", {
-    data: { ...input, inputVersion: 2 },
-  });
-  expect(previousVersion.status()).toBe(400);
 });

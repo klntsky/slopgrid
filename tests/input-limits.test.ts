@@ -58,10 +58,18 @@ test("large current prompts, variables, and model IDs reach inference without re
   assert.deepEqual(store.get(grid.id)!.input, input);
   assert.equal(received[0].prompt, "x".repeat(110_000) + value);
   assert.equal(received[0].model, model);
+  const { input: _generatorInput, ...parameters } = input.parameters;
   for (const invalid of [
     { ...input, inputVersion: undefined },
     { ...input, inputVersion: 1 },
     { ...input, inputVersion: 2 },
+    { ...input, parameters, prompt: "A legacy root prompt" },
+    {
+      ...input,
+      parameters,
+      messages: [{ role: "user", content: "A legacy root history" }],
+    },
+    { ...input, parameters, prompt: "Legacy image input", promptImages: [] },
     { ...input, prompt },
     { ...input, messages: [{ role: "user", content: prompt }] },
     { ...input, promptImages: [] },

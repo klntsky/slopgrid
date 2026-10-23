@@ -38,16 +38,11 @@ test("selecting the active output type returns home and preserves the draft", as
   }
 });
 
-test("direct creation opens the form without a saved draft", async ({
+test("home separates discovery from the saved creation form and redirects grids", async ({
   page,
 }) => {
   await page.goto("/create");
   await expect(page.getByLabel("Prompt", { exact: true })).toBeVisible();
-});
-
-test("home separates discovery from the saved creation form and redirects grids", async ({
-  page,
-}) => {
   await page.goto("/grids");
   await expect(page).toHaveURL("/");
   await expect(
