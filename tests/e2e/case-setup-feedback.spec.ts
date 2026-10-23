@@ -5,7 +5,7 @@ for (const orientation of ["Rows", "Columns"] as const) {
     test(`${orientation} empty cases keep setup feedback beside the table and clear it after adding a ${repair}`, async ({
       page,
     }) => {
-      await page.goto("/create");
+      await page.goto("/");
       await page.getByRole("button", { name: "SVG", exact: true }).click();
       await page
         .getByRole("combobox", { name: "Columns", exact: true })
