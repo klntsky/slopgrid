@@ -172,7 +172,7 @@ test("settings connects and disconnects OpenRouter without exposing a key to the
   const session = await page.evaluate(
     async () => await (await fetch("/api/session")).json(),
   );
-  expect(session).toEqual({ connected: true, user: null });
+  expect(session).toMatchObject({ connected: true, user: null });
   await page.getByRole("button", { name: "Disconnect OpenRouter" }).click();
   await expect(
     page.getByRole("link", { name: "Connect OpenRouter" }),

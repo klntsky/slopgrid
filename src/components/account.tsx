@@ -38,7 +38,7 @@ export function Account({
             </button>
           )}
         </>
-      ) : (
+      ) : session.data.signInEnabled ? (
         <a
           className="button account-signin"
           href={`/api/auth/github/start?returnTo=${encodeURIComponent(returnTo)}`}
@@ -50,7 +50,7 @@ export function Account({
           />
           Sign in with GitHub
         </a>
-      )}
+      ) : null}
       <ErrorMessage>
         {settings
           ? logout.error?.message

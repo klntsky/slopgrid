@@ -10,6 +10,8 @@ export function FavoriteButton({ gridId }: { gridId: string }) {
   const mutation = useSetFavorite(gridId);
   const pathname = useLocation({ select: (location) => location.pathname });
   const errorId = useId();
+  if (session.isSuccess && !session.data.user && !session.data.signInEnabled)
+    return null;
   if (session.isSuccess && !session.data.user) {
     const label = "Sign in with GitHub to add to favorites";
     return (

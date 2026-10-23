@@ -27,10 +27,8 @@ export interface OAuthProvider {
 export function githubCredentials(
   clientId?: string,
   clientSecret?: string,
-): OAuthCredentials {
-  if (!clientId?.trim()) throw new Error("GITHUB_CLIENT_ID is required");
-  if (!clientSecret?.trim())
-    throw new Error("GITHUB_CLIENT_SECRET is required");
+): OAuthCredentials | undefined {
+  if (!clientId?.trim() || !clientSecret?.trim()) return undefined;
   return { clientId: clientId.trim(), clientSecret: clientSecret.trim() };
 }
 export type OAuthAttempt = {

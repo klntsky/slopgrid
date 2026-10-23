@@ -1,7 +1,11 @@
 import type { User } from "../server/domain";
 import type { GridPresenter } from "../server/grid-presentation";
 import { setOffline } from "./pwa";
-export type SessionInfo = { connected: boolean; user: User | null };
+export type SessionInfo = {
+  connected: boolean;
+  user: User | null;
+  signInEnabled: boolean;
+};
 export type ViewGrid = ReturnType<GridPresenter>;
 export class ApiError extends Error {
   constructor(

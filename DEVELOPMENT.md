@@ -15,9 +15,11 @@ pnpm install
 pnpm exec playwright install chromium firefox
 ```
 
-Supply `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` through private configuration
-before starting the application. Both are required. Load development credentials
-and provider settings separately from deployed runtime configuration.
+Supply both `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` through private
+configuration to enable GitHub sign-in. If either is absent or blank, the
+application starts with GitHub sign-in disabled. Anonymous use and OpenRouter
+connections remain available. Load development credentials and provider settings
+separately from deployed runtime configuration.
 
 ## Running a development worktree
 
