@@ -2,16 +2,16 @@ import type Database from "better-sqlite3";
 import { migrateProductionGrid } from "./production-input-migration.js";
 import { selectedReferences } from "./image-settings.js";
 
-const schemaVersion = 17;
+const schemaVersion = 18;
 
 export function initializeDatabase(db: Database.Database) {
   const version = db.pragma("user_version", { simple: true });
   if (version === schemaVersion) return;
-  if (version !== 0 && version !== 14)
+  if (version !== 0 && version !== 14 && version !== 17)
     throw new Error("Unsupported database version");
   db.transaction(() => {
     if (version === 0) initializeSchema(db);
-    else {
+    else if (version === 14) {
       db.exec(`
         CREATE TABLE reference_blobs (
           sha256 TEXT PRIMARY KEY CHECK (length(sha256)=64),
@@ -24,6 +24,14 @@ export function initializeDatabase(db: Database.Database) {
       `);
       migrateProductionInputs(db);
     }
+    db.exec(`
+      CREATE TABLE grid_favorites (
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        grid_id TEXT NOT NULL REFERENCES grids(id) ON DELETE CASCADE,
+        PRIMARY KEY (user_id,grid_id)
+      ) STRICT;
+      CREATE INDEX grid_favorites_grid ON grid_favorites(grid_id);
+    `);
     db.pragma(`user_version = ${schemaVersion}`);
   }).immediate();
 }

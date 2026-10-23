@@ -3,12 +3,17 @@ import type { inferenceCapacity } from "../server/inference-policy";
 import { useOpenRouterKey } from "./openrouter-key";
 import {
   keepPreviousData,
+  useIsMutating,
+  useMutation,
+  useMutationState,
   useQuery,
   useQueryClient,
+  type QueryClient,
 } from "@tanstack/react-query";
 import type { GridInput } from "../server/domain";
 import type { GridListPage } from "../server/grid-listing";
-import { api, type SessionInfo } from "./api";
+import type { FavoriteIds, FavoriteState } from "../server/favorites";
+import { api, ApiError, type SessionInfo } from "./api";
 export { queryClient } from "./query-client";
 function gridListOptions(kind: "grids" | "public-grids", page: number) {
   return {
@@ -62,6 +67,120 @@ export function useConnection() {
 
 export function usePublicGrids(page = 1) {
   return useGridList("public-grids", page);
+}
+
+function favoritePageOptions(userId: string | undefined, page: number) {
+  return {
+    queryKey: ["favorites", userId, "pages", page],
+    queryFn: ({ signal }: { signal: AbortSignal }) =>
+      api<GridListPage>(
+        `/favorites?page=${page}`,
+        "GET",
+        undefined,
+        undefined,
+        signal,
+      ),
+    staleTime: 30000,
+  };
+}
+
+export function invalidateFavoritePages(cache: QueryClient) {
+  return cache.invalidateQueries({
+    predicate: ({ queryKey }) =>
+      queryKey[0] === "favorites" && queryKey[2] === "pages",
+  });
+}
+
+export function useFavoriteIds() {
+  const session = useSession();
+  const userId = session.data?.user?.id;
+  return useQuery({
+    queryKey: ["favorites", userId, "ids"],
+    queryFn: async ({ signal }): Promise<ReadonlySet<string>> => {
+      const { ids } = await api<FavoriteIds>(
+        "/favorites/ids",
+        "GET",
+        undefined,
+        undefined,
+        signal,
+      );
+      return new Set(ids);
+    },
+    enabled: !!userId,
+    staleTime: 30000,
+  });
+}
+
+export function useFavoriteGrids(page = 1) {
+  const cache = useQueryClient();
+  const session = useSession();
+  const userId = session.data?.user?.id;
+  const query = useQuery({
+    ...favoritePageOptions(userId, page),
+    enabled: !!userId,
+    placeholderData: (previous, previousQuery) =>
+      previousQuery?.queryKey[1] === userId ? previous : undefined,
+  });
+  useEffect(() => {
+    if (!userId || !query.data || query.isPlaceholderData || query.isError)
+      return;
+    const last = Math.min(
+      query.data.page + 2,
+      Math.ceil(query.data.total / query.data.pageSize),
+    );
+    for (let next = query.data.page + 1; next <= last; next++)
+      void cache.prefetchQuery(favoritePageOptions(userId, next));
+  }, [cache, userId, query.data, query.isPlaceholderData, query.isError]);
+  return query;
+}
+
+export function useSetFavorite(gridId: string) {
+  const cache = useQueryClient();
+  const session = useSession();
+  const userId = session.data?.user?.id;
+  const idsKey = ["favorites", userId, "ids"];
+  const mutationKey = ["favorites", userId, "set", gridId];
+  const pending = useIsMutating({ mutationKey, exact: true });
+  const states = useMutationState({
+    filters: { mutationKey, exact: true },
+    select: (mutation) => mutation.state.error,
+  });
+  const mutation = useMutation({
+    mutationKey,
+    mutationFn: (starred: boolean) => {
+      if (!userId) throw new Error("Sign in with GitHub to manage favorites.");
+      return api<FavoriteState>(
+        `/favorites/${gridId}`,
+        starred ? "PUT" : "DELETE",
+      );
+    },
+    onMutate: () => cache.cancelQueries({ queryKey: idsKey }),
+    onSuccess: async (saved) => {
+      await cache.cancelQueries({ queryKey: idsKey });
+      cache.setQueryData<ReadonlySet<string>>(idsKey, (previous) => {
+        if (!previous || previous.has(saved.gridId) === saved.starred)
+          return previous;
+        const next = new Set(previous);
+        if (saved.starred) next.add(saved.gridId);
+        else next.delete(saved.gridId);
+        return next;
+      });
+    },
+    onSettled: async (_data, error) => {
+      await Promise.all([
+        cache.invalidateQueries({ queryKey: idsKey }),
+        cache.invalidateQueries({ queryKey: ["favorites", userId, "pages"] }),
+        ...(error instanceof ApiError && error.status === 401
+          ? [cache.invalidateQueries({ queryKey: ["session"] })]
+          : []),
+      ]);
+    },
+  });
+  return {
+    ...mutation,
+    isPending: pending > 0 || mutation.isPending,
+    error: states.at(-1) ?? null,
+  };
 }
 
 export function useInferenceCapacity(

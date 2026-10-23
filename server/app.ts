@@ -7,6 +7,7 @@ import {
 } from "./oauth.js";
 import { createIdentityRoutes } from "./routes/identity.js";
 import { createBillingRoutes } from "./routes/billing.js";
+import { createFavoriteRoutes } from "./routes/favorites.js";
 import express from "express";
 import { Store } from "./store.js";
 import { Provider } from "./provider.js";
@@ -99,6 +100,7 @@ export function createApp(config: Config) {
   app.use(createModelRoutes(modelCatalog));
   app.use(createReferenceRoutes(store, session));
   app.use(createBillingRoutes(store, session));
+  app.use(createFavoriteRoutes(store, session));
   app.use(
     createGridRoutes({
       store,

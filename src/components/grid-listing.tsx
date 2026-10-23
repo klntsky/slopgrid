@@ -6,18 +6,29 @@ import { Author } from "./identity";
 import { ErrorMessage } from "./feedback-message";
 import { GridFormatIcon } from "./grid-format-icon";
 import { PaginationButton } from "./pagination-button";
+import { FavoriteButton } from "./favorite-button";
 
 export function GridListing({
   query,
-  publicListing = false,
+  kind,
   onPageChange,
 }: {
   query: UseQueryResult<GridListPage, Error>;
-  publicListing?: boolean;
+  kind: "owned" | "public" | "favorites";
   onPageChange: (page: number) => void;
 }) {
-  if (query.isPending)
-    return <p>Loading {publicListing ? "public grids" : "your grids"}...</p>;
+  const labels = {
+    owned: {
+      loading: "your grids",
+      empty: "You haven't created any grids yet.",
+    },
+    public: { loading: "public grids", empty: "No public grids yet." },
+    favorites: {
+      loading: "favorites",
+      empty: "You haven't starred any grids yet.",
+    },
+  }[kind];
+  if (query.isPending) return <p>Loading {labels.loading}...</p>;
   if (query.isError)
     return (
       <>
@@ -33,6 +44,7 @@ export function GridListing({
         {query.data.grids.length ? (
           query.data.grids.map((g) => (
             <div className="history-row" key={g.id}>
+              <FavoriteButton gridId={g.id} />
               <Link
                 to={g.slug ? "/$slug" : "/grid/$id"}
                 params={{ id: g.id, slug: g.slug ?? "" }}
@@ -45,18 +57,14 @@ export function GridListing({
                   {g.title || g.expanded_prompt_for_title}
                 </span>
               </Link>
-              {publicListing && <Author identity={g.author} />}
-              {!publicListing && (
+              {kind !== "owned" && <Author identity={g.author} />}
+              {kind === "owned" && (
                 <small>{g.published ? "published" : g.status}</small>
               )}
             </div>
           ))
         ) : (
-          <p>
-            {publicListing
-              ? "No public grids yet."
-              : "You haven't created any grids yet."}
-          </p>
+          <p>{labels.empty}</p>
         )}
       </div>
       {query.data.total > query.data.pageSize && (
@@ -103,7 +111,7 @@ export function PublicGrids({
       </h2>
       <GridListing
         query={publicGrids}
-        publicListing
+        kind="public"
         onPageChange={onPageChange}
       />
     </section>

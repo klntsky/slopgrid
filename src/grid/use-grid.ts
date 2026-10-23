@@ -7,6 +7,7 @@ import { saveDraft } from "../create/draft";
 import { cacheGrid, useOffline } from "../pwa";
 import { applyDelta, type GridStreamMessage } from "../../shared/grid-delta";
 import { draftInputFromGridInput } from "../create/draft-input";
+import { invalidateFavoritePages } from "../queries";
 export function useGrid(id: string) {
   const cache = useQueryClient(),
     navigate = useNavigate();
@@ -113,7 +114,10 @@ export function useGrid(id: string) {
         sourceGridId: grid.id,
         reuseArtifacts: true,
       });
-      await cache.invalidateQueries({ queryKey: ["grids"] });
+      await Promise.all([
+        cache.invalidateQueries({ queryKey: ["grids"] }),
+        invalidateFavoritePages(cache),
+      ]);
       await navigate({ to: "/create" });
     },
   });

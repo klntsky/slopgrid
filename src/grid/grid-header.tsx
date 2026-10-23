@@ -3,6 +3,7 @@ import { gridPath } from "../../shared/grid-slug";
 import { PublishGrid } from "./publish-grid";
 import { GridTitle } from "./grid-title";
 import { Author } from "../components/identity";
+import { FavoriteButton } from "../components/favorite-button";
 import { Square, Play, Pencil, GitBranch, Link2 } from "lucide-react";
 import type { ViewGrid } from "../api";
 import { useTooltip, tooltipRef } from "../components/use-tooltip";
@@ -149,6 +150,7 @@ export function GridHeader({
           </div>
         </div>
         <div className="grid-title">
+          <FavoriteButton gridId={g.id} />
           <div className="grid-title-text">
             <GridTitle grid={g} />
             <div className="grid-byline">

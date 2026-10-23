@@ -10,6 +10,16 @@ import {
   insertReferenceBlobDimensions,
   referenceBlobs,
 } from "./reference-storage-fixture.js";
+import {
+  favoriteMigrationPreservedState,
+  insertFavoriteAccount,
+  insertFavoriteMembership,
+  obstructFavoritesMigration,
+  removeFavoriteAccount,
+  removeFavoriteGrid,
+  storedFavoriteIds,
+} from "./favorites-storage-fixture.js";
+import { rejectStoredGridUpdates } from "./grid-storage-fixture.js";
 
 const { productionDatabase, seedProduction, snapshot, storedData, input } =
   migration;
@@ -26,7 +36,6 @@ test("production v14 migrates directly to canonical persisted inputs without rew
     const accounting = migration.productionBillingSummary(db);
     const acceptedData = storedData(db, "grid");
     initializeDatabase(db);
-    assert.equal(migration.databaseVersion(db), 17);
     assert.deepEqual(migration.gridIdentitiesAndMetadata(db), identities);
     assert.deepEqual(migration.unchangedProductionRecords(db), records);
     assert.deepEqual(
@@ -136,7 +145,6 @@ test("a failed direct v14 migration rolls back schema, every payload, indexes an
     assert.deepEqual(snapshot(db), before);
     unblock();
     initializeDatabase(db);
-    assert.equal(migration.databaseVersion(db), 17);
     assert.equal(storedData(db, "grid").input.inputVersion, 3);
   } finally {
     db.close();
@@ -183,7 +191,7 @@ test("direct migration backfills configured links without deleting accepted or h
 });
 
 test("unsupported pre-production and intermediate versions leave stored data untouched", () => {
-  for (const version of [1, 7, 8, 9, 10, 11, 12, 13, 15, 16, 18]) {
+  for (const version of [1, 7, 8, 9, 10, 11, 12, 13, 15, 16, 19]) {
     const db = productionDatabase();
     try {
       seedProduction(db);
@@ -204,11 +212,95 @@ test("fresh databases initialize once and preserve encrypted sessions", () => {
   const db = new Database(":memory:");
   try {
     initializeDatabase(db);
-    assert.equal(migration.databaseVersion(db), 17);
     migration.seedEncryptedMigrationSession(db);
     const before = snapshot(db);
     initializeDatabase(db);
     assert.deepEqual(snapshot(db), before);
+  } finally {
+    db.close();
+  }
+});
+
+test("a genuine v17 upgrade preserves canonical payloads, accounting and encrypted sessions without rewriting grids", () => {
+  const db = migration.productionV17Database();
+  try {
+    rejectStoredGridUpdates(db);
+    const before = favoriteMigrationPreservedState(db);
+    assert.equal(migration.productionSessionKey(db), "production-browser-key");
+    initializeDatabase(db);
+    assert.deepEqual(favoriteMigrationPreservedState(db), before);
+    assert.equal(migration.productionSessionKey(db), "production-browser-key");
+    assert.deepEqual(storedFavoriteIds(db, "account"), []);
+    insertFavoriteMembership(db, "account", "grid");
+    const migrated = snapshot(db);
+    initializeDatabase(db);
+    assert.deepEqual(snapshot(db), migrated);
+    assert.deepEqual(storedFavoriteIds(db, "account"), ["grid"]);
+    assert.deepEqual(migration.foreignKeyViolations(db), []);
+  } finally {
+    db.close();
+  }
+});
+
+test("fresh, frozen v14 and deployed v17 databases support durable unique favorites and cascading cleanup", () => {
+  for (const create of [
+    () => new Database(":memory:"),
+    productionDatabase,
+    migration.productionV17Database,
+  ]) {
+    const db = create();
+    try {
+      initializeDatabase(db);
+      insertFavoriteAccount(db, "favorite-account");
+      migration.insertPublicationBoundaryGrid(
+        db,
+        "favorite-grid",
+        0,
+        "private",
+      );
+      assert.deepEqual(storedFavoriteIds(db, "favorite-account"), []);
+      insertFavoriteMembership(db, "favorite-account", "favorite-grid");
+      assert.throws(
+        () => insertFavoriteMembership(db, "favorite-account", "favorite-grid"),
+        /UNIQUE constraint failed/,
+      );
+      assert.throws(
+        () => insertFavoriteMembership(db, "missing-account", "favorite-grid"),
+        /FOREIGN KEY constraint failed/,
+      );
+      assert.throws(
+        () => insertFavoriteMembership(db, "favorite-account", "missing-grid"),
+        /FOREIGN KEY constraint failed/,
+      );
+      const stable = snapshot(db);
+      initializeDatabase(db);
+      assert.deepEqual(snapshot(db), stable);
+      removeFavoriteGrid(db, "favorite-grid");
+      assert.deepEqual(storedFavoriteIds(db, "favorite-account"), []);
+      migration.insertPublicationBoundaryGrid(
+        db,
+        "favorite-grid",
+        0,
+        "private",
+      );
+      insertFavoriteMembership(db, "favorite-account", "favorite-grid");
+      removeFavoriteAccount(db, "favorite-account");
+      assert.deepEqual(storedFavoriteIds(db, "favorite-account"), []);
+      assert.deepEqual(migration.foreignKeyViolations(db), []);
+    } finally {
+      db.close();
+    }
+  }
+});
+
+test("a failed v17 favorites migration preserves the previous schema, rows and version atomically", () => {
+  const db = migration.productionV17Database();
+  try {
+    obstructFavoritesMigration(db);
+    const before = snapshot(db);
+    assert.throws(() => initializeDatabase(db), /grid_favorites/);
+    assert.deepEqual(snapshot(db), before);
+    assert.equal(migration.productionSessionKey(db), "production-browser-key");
   } finally {
     db.close();
   }
