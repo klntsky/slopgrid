@@ -8,7 +8,7 @@
 
 4. When the user supplies literal text for documentation inclusion and asks to fill gaps, preserve the supplied text exactly and fill only the gaps.
 
-5. Always commit and push together in one shell command using `git commit ... && git push`.
+5. After achieving a goal requested by the developer, always commit and push the completed changes. Run commit and push together in one shell command using `git commit ... && git push`.
 
 6. When the agent starts a background task, run its top-level command in tmux session `bg` so the user can inspect it. Application code, test runners, and CI manage their own child processes without requiring tmux.
 
@@ -25,3 +25,5 @@
 12. Keep current product requirements, including UI behavior and visible text, in PRODUCT.md. Structure requirements with meaningful numbered items and bullets for human readers. Specify functional behavior rather than lists of things not to add. Keep architectural responsibilities and system boundaries in ARCHITECTURE.md. Implementation details belong in the code and do not need documentation; remove them from product requirements without moving them to another document. DEVELOPMENT.md is for humans: edit it only when a development-environment change needs explaining, not to add feature inventories, test inventories, or validation procedures. Keep agent instructions and workflow rules in AGENTS.md, and keep README.md within the introduction scope defined above. Do not duplicate product requirements in ARCHITECTURE.md or DEVELOPMENT.md; link to PRODUCT.md where context is needed. Update the appropriate document when a requirement changes, and remove superseded requirements and their references.
 
 13. Keep SQL in domain code or semantically named test-helper modules. Test files must not contain raw SQL, including fixture construction or generated fixture source; call those helpers instead.
+
+14. Always migrate old persistent data to the current canonical format before normal runtime use. Never add runtime adapters, dual-format readers, or legacy compatibility branches for old data. Keep old-format handling confined to the migration boundary, and remove obsolete runtime code and callers after the migration.
