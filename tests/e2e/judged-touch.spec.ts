@@ -78,6 +78,32 @@ test.describe("touch judgment following", () => {
         timestamp: timestamp + 0.2,
       });
     };
+    const headings = (await grid.locator("thead").boundingBox())!;
+    const pinchY = headings.y + headings.height / 2;
+    await client.send("Input.dispatchTouchEvent", {
+      type: "touchStart",
+      touchPoints: [
+        { x: 220, y: pinchY, id: 1 },
+        { x: 320, y: pinchY, id: 2 },
+      ],
+    });
+    await client.send("Input.dispatchTouchEvent", {
+      type: "touchMove",
+      touchPoints: [
+        { x: 150, y: pinchY, id: 1 },
+        { x: 370, y: pinchY, id: 2 },
+      ],
+    });
+    await client.send("Input.dispatchTouchEvent", {
+      type: "touchEnd",
+      touchPoints: [],
+    });
+    await expect
+      .poll(() => grid.evaluate((view) => view.scrollWidth - view.clientWidth))
+      .toBeGreaterThan(120);
+    await grid.evaluate((view) => {
+      view.scrollLeft = 0;
+    });
     const box = (await source.boundingBox())!;
     const y = box.y + box.height / 2;
     await scrollToRest(grid, () => swipe(300, y, -120, 0));
