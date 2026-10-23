@@ -56,6 +56,13 @@ The pipeline derives absolute storage paths, socket paths, and retained frontend
 paths, and writes process-specific environment files under the target's config
 directory. It does not print credentials or copy them into releases.
 
+The initiating `.env` selects configuration locations; the remote runtime files
+remain the source of application credentials and target settings. A deployment
+generates separate web and engine environments and a process-manager definition
+beside each target's source environment. Release pointers select immutable code
+independently for web and engine, so a soft update can advance the web release
+while the engine continues using its existing release and persistent data.
+
 Install Node 22.12 or newer, the pnpm version declared by Slopgrid, PM2, tmux,
 flock, tar, rsync, Git, and the browser dependencies required by Slopgrid tests.
 The configured SSH account owns the runtime files and runs PM2. Existing split
