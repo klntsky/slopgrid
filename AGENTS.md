@@ -14,7 +14,7 @@
 
 7. Use the LLM patch tools for text edits, and never use Python for string replacement.
 
-8. Keep ARCHITECTURE.md focused on architectural responsibilities and boundaries; leave granular styling details such as individual breakpoints in the code. Organize it with descriptive headings, short paragraphs, and bullet points grouped by responsibility instead of dense implementation inventories.
+8. Keep ARCHITECTURE.md focused on component responsibilities, ownership of state and side effects, dependency direction, and process and trust boundaries. Explain which boundary enforces a guarantee. Keep algorithms, schema versions, field layouts, constants, source-file inventories, and implementation steps in code. Put operational commands and configuration procedures in DEVELOPMENT.md and observable behavior in PRODUCT.md. Use descriptive headings and connected paragraphs instead of implementation inventories.
 
 9. remember to never editorialize anything I say anywhere - not in the docs, not in the UI, not in your responses when citing
 

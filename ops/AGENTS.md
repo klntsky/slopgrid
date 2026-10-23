@@ -18,7 +18,8 @@
    `bg`; fixture children are managed by their test runners.
 5. Keep infrastructure values and secrets in the ignored application-root `.env`,
    not tracked code or documentation. Runtime data stays outside tracked source. Describe
-   product requirements in PRODUCT.md, architecture in ARCHITECTURE.md,
-   development and validation in DEVELOPMENT.md, and agent rules here. Keep
+   product requirements in PRODUCT.md, responsibility and trust boundaries in
+   ARCHITECTURE.md, developer operations in DEVELOPMENT.md, and agent rules here.
+   Keep algorithms, field layouts, and implementation steps in code. Keep
    README.md a brief introduction. Documentation must be ASCII and describe
    current behavior. Remove superseded requirements completely.
