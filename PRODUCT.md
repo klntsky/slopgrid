@@ -10,7 +10,7 @@ This document defines Slopgrid's product behavior and user experience.
 
 The following numbered requirements define the visible layout and interaction contract.
 
-1. Center ordinary pages in a readable content column. Keep the cases table at the normal content width while its columns fit. Expand only the cases table as far as its content requires, up to the available desktop viewport, then scroll overflowing content locally. Keep surrounding form controls, errors, and warnings within the normal content width, including feedback beside an expanded cases table. On phones, retain page gutters and local table scrolling.
+1. Center ordinary pages in a readable content column. Keep the cases table at the normal content width while its columns fit. Expand only the cases table as far as its content requires, up to the available desktop viewport, then scroll overflowing content locally. Keep surrounding form controls at their normal width. On phones, retain page gutters and local table scrolling.
 2. Use 48px medium-weight page headings, reducing to 38px on phones, and 19px medium-weight section headings.
 3. Use the warm beige and olive light palette and warm charcoal dark palette, including all panel, border, selection, link, and icon colors.
 4. Use an 88px ordinary-page navbar with 5vw horizontal margins on desktop and a compact 64px minimum-height grid navbar. Phone navigation wraps with 20px ordinary-page and 10px grid-page horizontal padding.
