@@ -43,10 +43,13 @@ replace the web process while the engine retains accepted work. Incompatible
 updates use the application's admission and drain boundary before replacing
 the engine.
 
-Runtime deployments serialize persistent changes, while independent candidate
-work owns separate build and runtime resources. Staging and production have
-separate configuration, data, and process ownership; production promotion does
-not depend on deploying staging.
+Each run owns its uploaded tools and inputs. Exclusive run admission prevents
+duplicate workers from replacing that run's logs or completion evidence.
+Runtime admission serializes the shared process-manager and persistent runtime
+changes through terminal publication. Staging and production share this admission
+boundary even though their configuration, data, and application processes are
+separate. Independent candidate work owns separate build and runtime resources.
+Production promotion does not depend on deploying staging.
 
 ## Observation and recovery
 
@@ -55,7 +58,14 @@ reconnection observes that same run rather than inferring success from a
 previous deployment. Process state and fresh startup evidence establish
 production readiness without application verification requests.
 
-The pipeline owns promotion and records failures. Recovery decisions preserve
-the boundary between code replacement and potentially migrated data rather
-than assuming an older release can read a newer store. Host networking, TLS,
-DNS, and system-package administration remain outside application deployment.
+The pipeline owns promotion and records failures. An interrupted deployment
+retains an ownership record that blocks successors even after an operating-system
+lock is released. Operator reconciliation, not missing process liveness, permits
+new runtime mutations. Catchable signals defer termination while deployment
+operations retain ownership.
+
+Exclusive execution does not make code, process state, and migrated storage a
+single rollback transaction. Recovery decisions preserve the boundary between
+code replacement and potentially migrated data rather than assuming an older
+release can read a newer store. Host networking, TLS, DNS, and system-package
+administration remain outside application deployment.

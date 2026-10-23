@@ -87,7 +87,6 @@ async function main() {
       "rev-parse",
       "--show-toplevel",
     ]);
-    const tools = join(config.remoteRoot, "tools", opsRevision);
     if (options.plan) {
       console.log(
         JSON.stringify(
@@ -162,25 +161,21 @@ async function main() {
       if (options.target === "validate") return;
       const id = `${new Date().toISOString().replace(/[^0-9]/g, "")}-${randomBytes(4).toString("hex")}`;
       const run = join(config.remoteRoot, "runs", id);
-      remote(["mkdir", "-p", run, dirname(tools)]);
+      const tools = join(run, "tools");
+      remote(["mkdir", "-p", dirname(run)]);
+      remote(["mkdir", "-m", "700", run]);
+      remote(["mkdir", "-m", "700", tools]);
       const upload = (path, content) =>
         command("ssh", [config.host, `umask 077; cat > ${quote(path)}`], {
           input: content,
           stdio: ["pipe", "inherit", "inherit"],
         });
       upload(join(run, "tools.tar.gz"), implementation);
-      const incoming = tools + "-" + id;
-      remote(["mkdir", "-p", incoming]);
-      remote(["tar", "-xzf", join(run, "tools.tar.gz"), "-C", incoming]);
-      remote([
-        "bash",
-        "-c",
-        `if test -d ${quote(tools)}; then diff -qr ${quote(incoming)} ${quote(tools)} && rm -rf ${quote(incoming)}; else mv ${quote(incoming)} ${quote(tools)}; fi`,
-      ]);
+      remote(["tar", "-xzf", join(run, "tools.tar.gz"), "-C", tools]);
       upload(join(run, "source.tar.gz"), source);
       upload(join(run, "frontend.tar.gz"), local.frontend);
       upload(
-        join(run, "request.json"),
+        join(run, "request.json.next"),
         JSON.stringify({
           ...options,
           revision,
@@ -193,10 +188,11 @@ async function main() {
           config,
         }),
       );
+      remote(["mv", "-T", join(run, "request.json.next"), join(run, "request.json")]);
       remote([
         "bash",
         "-c",
-        "tmux has-session -t bg 2>/dev/null || tmux new-session -d -s bg",
+        "tmux new-session -d -s bg 2>/dev/null || tmux has-session -t bg",
       ]);
       const window = remote([
         "tmux",
@@ -248,7 +244,7 @@ async function follow(remote, remoteNode, tools, run) {
     }
     if (state.orphaned)
       throw new Error(
-        `Deployment worker is no longer running. Inspect ${run}; do not assume deployment succeeded.`,
+        `Deployment worker is incomplete or no longer running. Inspect ${run}; recovery may be required. Do not assume deployment succeeded.`,
       );
     await new Promise((resolve) => setTimeout(resolve, 2000));
   }

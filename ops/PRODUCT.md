@@ -88,3 +88,13 @@
       the operation without uploading or changing runtime processes, while still
       requiring configuration, candidate resolution, and production authorization
       where applicable.
+12. Runtime deployments execute with exclusive ownership of shared deployment
+    state, including process-manager persistence. A competing deployment returns
+    a busy result without changing or cancelling the owner.
+    - Every run owns its uploaded operations, inputs, log, and completion evidence.
+      Starting the same run again preserves the original run without re-execution.
+    - Catchable termination signals preserve ownership until active deployment
+      operations finish. Completion reflects the deployment result.
+    - An interrupted owner without reliable completion evidence blocks later
+      runtime deployments until an operator reconciles the interrupted operation.
+      Independent validation and rehearsal remain available.
