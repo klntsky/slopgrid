@@ -156,11 +156,11 @@ export function GridViewport({
       pinching = false;
       zoom(1);
       applySizes();
-      if (touch && viewport.clientHeight)
+      if (touch && viewport.clientWidth)
         zoom(
           Math.min(
             1,
-            viewport.clientHeight / table.getBoundingClientRect().height,
+            viewport.clientWidth / table.getBoundingClientRect().width,
           ),
         );
       viewport.scrollLeft = viewport.scrollTop = 0;
@@ -283,8 +283,7 @@ export function GridViewport({
         scale,
         minimum: Math.min(
           1,
-          (viewport.clientHeight * scale) /
-            table.getBoundingClientRect().height,
+          (viewport.clientWidth * scale) / table.getBoundingClientRect().width,
         ),
         anchor: {
           x: (viewport.scrollLeft + center.x - bounds.left) / scale,

@@ -386,6 +386,22 @@ test.describe("mobile grid interaction", () => {
         cell = page.locator(".cell").first(),
         header = page.getByRole("banner");
       const before = (await cell.boundingBox())!;
+      const table = grid.getByRole("table");
+      expect((await table.boundingBox())!.width).toBeLessThanOrEqual(
+        (await grid.boundingBox())!.width + 1,
+      );
+      if (columnCount === 1) {
+        expect(
+          await grid.evaluate((el) => el.scrollHeight / el.clientHeight),
+        ).toBeGreaterThan(1.25);
+        await grid.evaluate((el) => {
+          el.scrollTop = 120;
+        });
+        expect(await grid.evaluate((el) => el.scrollTop)).toBe(120);
+        await grid.evaluate((el) => {
+          el.scrollTop = 0;
+        });
+      }
       const client = await page.context().newCDPSession(page);
       async function touch(
         type: "touchStart" | "touchMove" | "touchEnd",
@@ -396,6 +412,27 @@ test.describe("mobile grid interaction", () => {
           touchPoints: points,
         });
       }
+      if (columnCount === 1) {
+        const label = (await grid
+          .locator("tbody > tr > th")
+          .first()
+          .boundingBox())!;
+        const point = {
+          x: label.x + label.width / 2,
+          y: label.y + label.height / 2,
+          id: 1,
+        };
+        await touch("touchStart", [point]);
+        for (const distance of [20, 50, 80, 110])
+          await touch("touchMove", [{ ...point, y: point.y - distance }]);
+        await touch("touchEnd", []);
+        await expect
+          .poll(() => grid.evaluate((el) => el.scrollTop))
+          .toBeGreaterThan(0);
+        await grid.evaluate((el) => {
+          el.scrollTop = 0;
+        });
+      }
       const headings = (await grid.locator("thead").boundingBox())!;
       const y = headings.y + headings.height / 2;
       await touch("touchStart", [
@@ -403,8 +440,8 @@ test.describe("mobile grid interaction", () => {
         { x: 320, y, id: 2 },
       ]);
       await touch("touchMove", [
-        { x: 190, y, id: 1 },
-        { x: 350, y, id: 2 },
+        { x: 150, y, id: 1 },
+        { x: 370, y, id: 2 },
       ]);
       await touch("touchEnd", []);
       await expect
@@ -442,6 +479,22 @@ test.describe("mobile grid interaction", () => {
       await expect(
         header.getByRole("button", { name: "PUBLISH" }),
       ).toBeEnabled();
+      if (columnCount === 1) {
+        const handle = page.getByRole("separator", {
+          name: "Resize row 1",
+          exact: true,
+        });
+        await handle.focus();
+        await page.keyboard.press("Shift+ArrowDown");
+        await page.reload();
+        await expect
+          .poll(() => grid.evaluate((el) => el.scrollHeight / el.clientHeight))
+          .toBeGreaterThan(1.25);
+        await page.setViewportSize({ width: 844, height: 390 });
+        await expect
+          .poll(() => grid.evaluate((el) => el.scrollHeight / el.clientHeight))
+          .toBeGreaterThan(1.25);
+      }
     });
 });
 
