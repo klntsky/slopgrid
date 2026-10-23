@@ -17,6 +17,7 @@ export function CompleteInputEditor({
   onAction,
   onBusy,
   compatibility,
+  variables,
 }: {
   format: GridDraftInput["format"];
   messages: ChatMessage[];
@@ -25,6 +26,7 @@ export function CompleteInputEditor({
   onAction: (action: InputAction) => void;
   onBusy: (busy: boolean) => void;
   compatibility: (messageIndex?: number) => ReactNode;
+  variables: readonly string[];
 }) {
   function change(change: (current: ChatMessage[]) => ChatMessage[]) {
     onAction({ type: "edit-input", source, caseIndex, change });
@@ -33,6 +35,7 @@ export function CompleteInputEditor({
     return (
       <ChatEditor
         messages={messages}
+        variables={variables}
         onChange={change}
         onBusy={onBusy}
         compatibility={compatibility}
@@ -42,6 +45,7 @@ export function CompleteInputEditor({
     <>
       <PromptEditor
         prompt={messages[0]?.content ?? ""}
+        variables={variables}
         onPromptChange={(content) =>
           change((current) => [{ ...current[0], role: "user", content }])
         }

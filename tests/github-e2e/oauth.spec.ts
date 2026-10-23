@@ -29,6 +29,7 @@ test("real GitHub sign-in claims an anonymous grid, shares account access, and f
       format: "markdown",
       budgetUsd: 0.001,
       judge: false,
+      caseAxes: [],
       parameters: {
         input: {
           kind: "common",

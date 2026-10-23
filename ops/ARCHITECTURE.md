@@ -99,12 +99,12 @@ cell links, and ledger attribution. The application owns schema migration.
 Artifact and thinking storage is shared by reference: transfer and administrative
 deletion preserve bytes still owned by retained tasks. Account mapping belongs
 to the move; sessions and inference credentials remain environment-local.
-Transfer requires schema 17 but supports legacy grid inputs only, including their
-multi-field variable inputs; current version 3 case-record inputs are rejected
-without modifying either environment. Administrative deletion accepts deployed
-schemas 12, 13, 14, and 17 before the application upgrades them. Reference usage
-links include every configured variable field attachment, independent of which
-fields the accepted workflow consumes.
+Transfer requires schema 17 and canonical version 3 grid definitions; unsupported
+formats are rejected without modifying either environment. Administrative
+deletion accepts production schema 14 and current schema 17 before the
+application upgrades them. Reference usage links include every configured
+variable field attachment on either axis, independent of which fields the
+accepted workflow consumes.
 
 ## Host prerequisites
 

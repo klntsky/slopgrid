@@ -92,6 +92,7 @@ function CaseValue({
   modelFilters,
   onModelFilterChange,
   onChange,
+  variables,
 }: {
   input: GridDraftInput;
   entry: CaseRecord;
@@ -104,11 +105,13 @@ function CaseValue({
     filter: string,
   ) => void;
   onChange: ParameterSetter;
+  variables: readonly string[];
 }) {
   if (parameter === "judge_criteria")
     return (
       <CriteriaEditor
         criteria={entry.judge_criteria ?? []}
+        variables={variables}
         onChange={(value) => onChange(parameter, value)}
       />
     );
@@ -142,6 +145,8 @@ function CaseValue({
 
 export function GridLayoutTable({
   input,
+  side,
+  variables,
   models,
   judgeModels,
   onAction,
@@ -150,6 +155,8 @@ export function GridLayoutTable({
   children,
 }: {
   input: GridDraftInput;
+  side: AxisSide;
+  variables: readonly string[];
   models: Model[];
   judgeModels: Model[];
   onAction: (action: InputAction) => void;
@@ -168,12 +175,11 @@ export function GridLayoutTable({
   const modelFilters = useRef(new Map<string, ModelFilters>());
   const [dragging, setDragging] = useState<number>();
   const [dragTarget, setDragTarget] = useState<number>();
-  const selectedSide = input.caseAxis;
-  if (!selectedSide) return null;
-  const side = selectedSide;
   const fields = fieldsFor(input, side);
   const entries = input[side];
   const rowCases = side === "rows";
+  const dualCases = input.caseAxes.length > 1;
+  const axisName = rowCases ? "Row" : "Column";
   const chatInput =
     isChatFormat(input.format) &&
     fields.some((field) => field.parameter === "input");
@@ -271,8 +277,8 @@ export function GridLayoutTable({
             />
           ) : (
             <CaseHeaderRemove
-              label={`Make ${label.toLowerCase()} common`}
-              tooltip={`Return ${label.toLowerCase()} to common parameters`}
+              label={`Make ${label.toLowerCase()} common${dualCases ? ` from ${sideName(side)} cases` : ""}`}
+              tooltip={`Return ${label.toLowerCase()} from ${sideName(side)} cases to common parameters`}
               danger={false}
               onRemove={() =>
                 onAction({ type: "to-common", parameter: field.parameter })
@@ -325,6 +331,7 @@ export function GridLayoutTable({
           <CompleteInputEditor
             format={input.format}
             messages={messages}
+            variables={variables}
             source={side}
             caseIndex={caseIndex}
             onAction={onAction}
@@ -347,6 +354,7 @@ export function GridLayoutTable({
           parameter={parameter}
           models={models}
           judgeModels={judgeModels}
+          variables={variables}
           modelFilters={modelFilters.current.get(entry.id)}
           onModelFilterChange={(parameter, filter) => {
             const previous = modelFilters.current.get(entry.id);
@@ -414,7 +422,7 @@ export function GridLayoutTable({
       <button
         type="button"
         className="text-button case-axis-add"
-        aria-label="new case"
+        aria-label={dualCases ? `new ${sideName(side)} case` : "new case"}
         data-add="case"
         onClick={() => add("case")}
       >
@@ -428,7 +436,9 @@ export function GridLayoutTable({
       <button
         type="button"
         className="text-button case-axis-add"
-        aria-label="new variable"
+        aria-label={
+          dualCases ? `new ${sideName(side)} variable` : "new variable"
+        }
         data-add="variable"
         disabled={!entries.length}
         onClick={() => add("variable")}
@@ -453,18 +463,25 @@ export function GridLayoutTable({
           focusedCase.current = id;
       }}
     >
+      <h3 className="case-table-heading">{axisName} cases</h3>
       {entries.length ? (
         <>
           <div
             className="variable-table-scroll"
             role="region"
-            aria-label="Editable case parameters; scroll for more cases and fields"
+            aria-label={
+              dualCases
+                ? `${axisName} cases; scroll for more cases and fields`
+                : "Editable case parameters; scroll for more cases and fields"
+            }
             tabIndex={0}
           >
             <div className="case-table-plane">
               <table
                 className="variable-table layout-parameter-table"
-                aria-label="Grid layout parameters"
+                aria-label={
+                  dualCases ? `${axisName} cases` : "Grid layout parameters"
+                }
               >
                 <colgroup>
                   <col style={{ width: "var(--case-label-width)" }} />

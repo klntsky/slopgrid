@@ -8,9 +8,11 @@ import { type ReferenceImage } from "../../server/image-settings";
 import {
   defaultGridDraft,
   axisParameters,
+  isCaseAxis,
   parameterDefault,
   parameterNames,
   type ParameterId,
+  type CommonParameterId,
 } from "../../server/parameters";
 import {
   confirmInputAction,
@@ -113,9 +115,8 @@ function selectDraftFormat(
       dropped: [],
     };
   const dropped = new Set<ParameterId>();
-  const applicable = new Set<ParameterId>([
-    ...(Object.keys(defaults.parameters) as ParameterId[]),
-    "variable",
+  const applicable = new Set<CommonParameterId>([
+    ...(Object.keys(defaults.parameters) as CommonParameterId[]),
     ...(previous.judge && format !== "html"
       ? (["judge_model", "judge_effort", "judge_criteria"] as const)
       : []),
@@ -126,7 +127,9 @@ function selectDraftFormat(
     judge: previous.judge && format !== "html",
     parameters: { ...previous.parameters },
   };
-  for (const parameter of Object.keys(input.parameters) as ParameterId[]) {
+  for (const parameter of Object.keys(
+    input.parameters,
+  ) as CommonParameterId[]) {
     if (applicable.has(parameter)) continue;
     const source = input.parameters[parameter];
     if (
@@ -147,7 +150,9 @@ function selectDraftFormat(
       for (const key of Object.keys(entry)) {
         if (key === "id") continue;
         const parameter = key as ParameterId;
-        if (input.parameters[parameter]?.kind === side) continue;
+        if (parameter === "variable") {
+          if (isCaseAxis(input, side)) continue;
+        } else if (input.parameters[parameter]?.kind === side) continue;
         if (hasParameterValue(parameter, entry[parameter]))
           dropped.add(parameter);
         delete next[parameter];
@@ -156,7 +161,7 @@ function selectDraftFormat(
     });
   }
   for (const parameter of applicable) {
-    if (parameter === "variable" || input.parameters[parameter]) continue;
+    if (input.parameters[parameter]) continue;
     Object.assign(input.parameters, {
       [parameter]: { kind: "common", value: parameterDefault(parameter) },
     });
@@ -198,7 +203,7 @@ function selectDraftFormat(
     input = reduceInput(input, action);
   };
   for (const side of ["rows", "columns"] as const) {
-    if (input.caseAxis === side) continue;
+    if (isCaseAxis(input, side)) continue;
     const owned = axisParameters(input, side);
     const native = owned.find((parameter) => parameter !== "judge_criteria");
     for (const parameter of owned)

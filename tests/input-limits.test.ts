@@ -34,12 +34,11 @@ test("large current prompts, variables, and model IDs reach inference without re
   const input = currentDefinition({
     format: "markdown",
     budgetUsd: 5,
-    caseAxis: "rows",
+    caseAxes: ["rows"],
     parameters: {
       input: { kind: "common", value: [{ role: "user", content: prompt }] },
       model: { kind: "common", value: model },
       effort: { kind: "columns" },
-      variable: { kind: "rows" },
     },
     rows: [{ id: "long-variable", variable: [{ text: value }] }],
     columns: [{ id: "effort-none", effort: "none" }],

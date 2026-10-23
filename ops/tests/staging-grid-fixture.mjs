@@ -49,8 +49,7 @@ function discardFixture(t, version = 14) {
       CREATE TABLE creation_requests(grid_id TEXT REFERENCES grids(id) ON DELETE CASCADE,request_id TEXT);
       CREATE TABLE sessions(id TEXT PRIMARY KEY,data TEXT);
     `);
-    if (version >= 13)
-      db.exec(`
+    db.exec(`
       ALTER TABLE grids ADD COLUMN owner TEXT;
       ALTER TABLE grids ADD COLUMN owner_user_id TEXT;
       ALTER TABLE grids ADD COLUMN published INTEGER;
@@ -65,8 +64,7 @@ function discardFixture(t, version = 14) {
       ALTER TABLE inference_calls ADD COLUMN cost_usd REAL;
       CREATE TABLE grid_reference_images(grid_id TEXT REFERENCES grids(id) ON DELETE CASCADE,reference_id TEXT);
     `);
-    if (version >= 14)
-      db.exec(`
+    db.exec(`
       CREATE TABLE workflow_tasks(id TEXT PRIMARY KEY,grid_id TEXT REFERENCES grids(id) ON DELETE CASCADE,kind TEXT,status TEXT,dependency_id TEXT REFERENCES workflow_tasks(id),artifact_id TEXT,thinking_source_id TEXT,data TEXT);
       ALTER TABLE cells ADD COLUMN generation_id TEXT REFERENCES workflow_tasks(id);
       ALTER TABLE cells ADD COLUMN judgment_id TEXT REFERENCES workflow_tasks(id);
@@ -106,13 +104,25 @@ function discardFixture(t, version = 14) {
           published: false,
           visibility: "private",
           createdAt: "2026-10-01",
-          input: { format: "svg" },
+          input: version === 14 ? {
+            format: "svg", prompt: "Draw a horse", budgetUsd: 3,
+            rows: { kind: "model", values: ["fixture/text"] },
+            columns: { kind: "effort", values: ["default"] },
+          } : {
+            inputVersion: 3, format: "svg", budgetUsd: 3, judge: false,
+            parameters: {
+              input: { kind: "common", value: [{ role: "user", content: "Draw a horse" }] },
+              model: { kind: "rows" },
+              effort: { kind: "common", value: "default" },
+            },
+            rows: [{ id: "row-1", model: "fixture/text" }],
+            columns: [{ id: "column-1" }],
+          },
         }),
       );
-      if (version >= 13)
-        db.prepare(
-          "INSERT INTO grid_reference_images VALUES (?,'retained-reference')",
-        ).run(grid);
+      db.prepare(
+        "INSERT INTO grid_reference_images VALUES (?,'retained-reference')",
+      ).run(grid);
     }
     if (version === 17)
       db.prepare("INSERT INTO grid_reference_images VALUES (?,?)").run(
@@ -125,26 +135,19 @@ function discardFixture(t, version = 14) {
       [surviving, "2", 0],
     ]) {
       const cellId = cell.repeat(48);
-      const artifact =
-        version >= 14
-          ? cell === "3"
-            ? removedArtifact
-            : sharedArtifact
-          : cellId;
-      const trace =
-        version >= 14 ? (cell === "3" ? removedTrace : sharedTrace) : cellId;
+      const artifact = cell === "3" ? removedArtifact : sharedArtifact;
+      const trace = cell === "3" ? removedTrace : sharedTrace;
       db.prepare(
         "INSERT INTO cells (id,grid_id,position,data) VALUES (?,?,?,?)",
       ).run(
         cellId,
         gridId,
         position,
-        version >= 14 ? "{}" : JSON.stringify({ status: "complete" }),
+        "{}",
       );
       db.prepare(
         "INSERT INTO inference_calls (id,cell_id,started_at,data) VALUES (?,?,?,?)",
       ).run(`call-${cell}`, cellId, position, `charge-${cell}`);
-      if (version >= 14) {
         db.prepare(
           "INSERT INTO workflow_tasks VALUES (?,?,'generation','complete',NULL,?,?,?)",
         ).run(
@@ -164,7 +167,6 @@ function discardFixture(t, version = 14) {
           `g:${cellId}`,
           cellId,
         );
-      }
       db.prepare("INSERT INTO creation_requests VALUES (?,?)").run(
         gridId,
         `receipt-${cell}`,
@@ -198,8 +200,7 @@ function discardFixture(t, version = 14) {
         "creation_requests",
         "sessions",
       ];
-      if (version >= 13) tables.push("grid_reference_images");
-      if (version >= 14) tables.push("workflow_tasks");
+      tables.push("grid_reference_images", "workflow_tasks");
       if (version === 17) tables.push("reference_images", "reference_blobs");
       return Object.fromEntries(
         tables.map((table) => [
@@ -247,14 +248,6 @@ export function failDiscardGeneration(db, task) {
 }
 export function discardSchemaVersion(db) {
   return db.pragma("user_version", { simple: true });
-}
-export function discardWorkflowTable(db) {
-  return db
-    .prepare("SELECT 1 FROM sqlite_master WHERE name='workflow_tasks'")
-    .get();
-}
-export function discardCallColumns(db) {
-  return db.pragma("table_info(inference_calls)");
 }
 export function rejectGridDiscard(db) {
   db.exec(

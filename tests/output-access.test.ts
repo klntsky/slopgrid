@@ -75,11 +75,10 @@ test("private outputs require ownership, isolated grants are scoped and revoked 
   function makeGrid(format: Grid["input"]["format"], running = false) {
     const input = currentInput({
       format,
-      caseAxis: "rows",
+      caseAxes: ["rows"],
       budgetUsd: 1,
       parameters: {
         input: { kind: "common", value: [{ role: "user", content: "$ROW1" }] },
-        variable: { kind: "rows" },
         ...(format === "image"
           ? { size: { kind: "columns" as const } }
           : { effort: { kind: "columns" as const } }),
@@ -840,11 +839,10 @@ for (const side of ["rows", "columns"] as const)
     const variable = side === "rows" ? "$ROW" : "$COLUMN";
     const input = currentInput({
       format: "chat-template",
-      caseAxis: side,
+      caseAxes: [side],
       judge: true,
       parameters: {
         input: { kind: side },
-        variable: { kind: side },
         judge_criteria: {
           kind: "common",
           value: [{ text: `Is it ${variable}2?`, correctAnswer: false }],

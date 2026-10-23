@@ -50,13 +50,6 @@ function ParameterValue({ part }: { part: ParameterDisplayPart }) {
         ))}
       </ol>
     );
-  if (part.kind === "images")
-    return (
-      <>
-        {part.value.name && <span>{part.value.name}</span>}
-        <References images={part.value.images} />
-      </>
-    );
   if (part.kind === "judge_criteria")
     return (
       <ol>
@@ -179,12 +172,6 @@ export function GridParameters({ grid }: { grid: ViewGrid }) {
                 </div>
               ))}
             </dl>
-            {!!display.promptImages.length && (
-              <section aria-label="Prompt images">
-                <h3>Prompt images</h3>
-                <References images={display.promptImages} />
-              </section>
-            )}
           </section>,
           container,
         )}

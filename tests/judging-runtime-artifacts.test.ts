@@ -1,19 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { runtimeFixture, type RuntimeFixture } from "./runtime-fixture.js";
-import type { Grid, GridInput, WorkflowTask } from "../server/domain.js";
-import { isCurrentGridInput } from "../server/parameters.js";
-import { currentDefinition } from "./current-grid-fixture.js";
+import { expandGrid, type Grid, type GridInput, type WorkflowTask } from "../server/domain.js";
+import { currentDefinition, currentInput } from "./current-grid-fixture.js";
 import { projectWorkflow } from "../server/workflow.js";
 import { token } from "../server/ids.js";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { arrangeHistoricalGrid } from "./grid-storage-fixture.js";
 import { pixelPng as png } from "./reference-image-fixture.js";
-import {
-  expandLegacyGrid,
-  type LegacyGridInput,
-} from "../server/legacy-grid-input.js";
 import {
   judgeParameters,
   judging,
@@ -106,7 +101,7 @@ test("malformed saved chat messages fail judging without making a provider reque
 });
 
 for (const accepted of [false, true])
-  test(`Image judging preserves source order separately from the generated artifact (accepted legacy=${accepted})`, async () => {
+  test(`Image judging preserves source order separately from the generated artifact (accepted history=${accepted})`, async () => {
     const fixture = await runtimeFixture({ judges: true, images: true });
     try {
       const session = { id: fixture.owner, created: 0 };
@@ -120,37 +115,45 @@ for (const accepted of [false, true])
       )!;
       let grid: Grid;
       if (accepted) {
-        const legacyInput: LegacyGridInput = {
+        const acceptedInput = currentInput({
           format: "image",
-          prompt: "Draw a red rectangle",
-          inputReferences: [second, first, second],
-          model: "fixture/image",
-          effort: "default",
-          rows: { kind: "judge_model", values: ["fixture/text"] },
-          columns: { kind: "judge_effort", values: ["none"] },
-          judge: {
-            model: "fixture/text",
-            effort: "none",
-            criteria: [
-              { text: "Is there a blue circle?", correctAnswer: false },
-              { text: "Is there a red rectangle?", correctAnswer: true },
-            ],
-          },
+          judge: true,
           budgetUsd: 0.1,
           parallelWorkers: 1,
-        };
+          parameters: {
+            input: {
+              kind: "common",
+              value: [{
+                role: "user",
+                content: "Draw a red rectangle",
+                images: [second, first, second],
+              }],
+            },
+            judge_model: { kind: "rows" },
+            judge_effort: { kind: "columns" },
+            judge_criteria: {
+              kind: "common",
+              value: [
+                { text: "Is there a blue circle?", correctAnswer: false },
+                { text: "Is there a red rectangle?", correctAnswer: true },
+              ],
+            },
+          },
+          rows: [{ judge_model: "fixture/text" }],
+          columns: [{ judge_effort: "none" }],
+        });
         const generationId = token();
         const judgmentId = token();
         const artifactId = token();
-        const historical: Grid & { input: LegacyGridInput } = {
+        const historical: Grid = {
           id: token(),
           owner: fixture.owner,
-          input: legacyInput,
+          input: acceptedInput,
           status: "paused",
           published: false,
           visibility: "private",
           createdAt: "2026-01-01T00:00:00.000Z",
-          cells: expandLegacyGrid(legacyInput).map((cell) => ({
+          cells: expandGrid(acceptedInput).map((cell) => ({
             ...cell,
             id: token(),
             generationId,
@@ -166,11 +169,11 @@ for (const accepted of [false, true])
               format: "image",
               model: "fixture/image",
               effort: "default",
-              prompt: legacyInput.prompt,
+              prompt: "Draw a red rectangle",
               imageSettings: {
                 input_references: [second.id, first.id, second.id],
               },
-              budgetUsd: legacyInput.budgetUsd,
+              budgetUsd: 0.1,
             },
             output: {
               artifactId,
@@ -187,8 +190,8 @@ for (const accepted of [false, true])
             status: "pending",
             generationId,
             input: {
-              model: legacyInput.judge!.model,
-              effort: legacyInput.judge!.effort,
+              model: "fixture/text",
+              effort: "none",
               criteria: [
                 { text: "Is there a blue circle?", correctAnswer: false },
                 { text: "Is there a red rectangle?", correctAnswer: true },
@@ -254,7 +257,7 @@ for (const accepted of [false, true])
       finish(judge, JSON.stringify(verdicts), 0.25);
       const saved = await settled(fixture, grid.id);
       assert.equal(saved.cells[0].judge?.status, "complete");
-      assert.equal(isCurrentGridInput(saved.input), !accepted);
+      assert.equal(saved.input.inputVersion, 3);
       if (accepted) {
         const generation = fixture.store
           .workflow(grid.id)

@@ -31,10 +31,9 @@ test("image-only admission requires image context in every case", () => {
       const token = side === "rows" ? "$ROW1" : "$COLUMN1";
       const input = currentDefinition({
         format,
-        caseAxis: side,
+        caseAxes: [side],
         parameters: {
           input: { kind: "common", value: [{ role: "user", content: token }] },
-          variable: { kind: side },
         },
         [side]: [
           { variable: [{ text: "", images: [image] }] },
@@ -89,7 +88,7 @@ test("output-required judge vision is attributed only to the judge model", () =>
   for (const format of ["svg", "image"] as const) {
     const input = currentInput({
       format,
-      caseAxis: "rows",
+      caseAxes: ["rows"],
       judge: true,
       parameters: {
         input: {
@@ -97,7 +96,6 @@ test("output-required judge vision is attributed only to the judge model", () =>
           value: [{ role: "user", content: "Describe $ROW1." }],
         },
         model: { kind: "common", value: vision.id },
-        variable: { kind: "rows" },
         judge_model: { kind: "common", value: plain.id },
         judge_criteria: {
           kind: "common",
@@ -123,11 +121,10 @@ for (const side of ["rows", "columns"] as const) {
   test(`${side} validate roles and image capabilities against actual paired inputs and fields`, () => {
     const input = currentDefinition({
       format: "chat-template",
-      caseAxis: side,
+      caseAxes: [side],
       parameters: {
         input: { kind: side },
         model: { kind: side },
-        variable: { kind: side },
       },
       [side]: [
         {

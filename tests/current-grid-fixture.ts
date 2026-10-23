@@ -66,6 +66,7 @@ export function currentDefinition(
     inputVersion: 3 as const,
     budgetUsd: 3,
     judge: false,
+    caseAxes: [],
     ...overrides,
     parameters,
     rows: cases(overrides.rows, "row-"),

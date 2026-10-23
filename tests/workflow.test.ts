@@ -21,13 +21,12 @@ function workflow(source: GridInput) {
 }
 function base(): GridInput {
   return currentDefinition({
-    caseAxis: "columns",
+    caseAxes: ["columns"],
     parameters: {
       input: {
         kind: "common",
         value: [{ role: "user", content: "Solve $COLUMN2" }],
       },
-      variable: { kind: "columns" },
       judge_model: { kind: "common", value: "fixture/judge" },
       judge_criteria: {
         kind: "common",
@@ -61,11 +60,10 @@ for (const side of ["rows", "columns"] as const)
     const token = side === "rows" ? "$ROW" : "$COLUMN";
     const source = currentDefinition({
       format: "chat-template",
-      caseAxis: side,
+      caseAxes: [side],
       judge: true,
       parameters: {
         input: { kind: side },
-        variable: { kind: side },
         judge_criteria: {
           kind: "common",
           value: [{ text: `Matches ${token}2?`, correctAnswer: true }],
@@ -233,8 +231,8 @@ test("judge criteria participate in setup validation including numbered fields a
   assert.equal(
     gridSchema.safeParse({
       ...source,
-      caseAxis: "rows",
-      parameters: { ...source.parameters, variable: { kind: "rows" } },
+      caseAxes: ["rows"],
+      parameters: source.parameters,
       rows: [{ id: "question", variable: [{ text: "question" }] }],
       columns: [{}],
     }).success,
@@ -293,14 +291,13 @@ test("case criteria and double-digit column fields expand independently across o
 for (const side of ["rows", "columns"] as const)
   test(`${side} case rubrics resolve independently without changing generation grouping`, () => {
     const source = currentDefinition({
-      caseAxis: side,
+      caseAxes: [side],
       judge: true,
       parameters: {
         input: {
           kind: "common",
           value: [{ role: "user", content: "Solve question" }],
         },
-        variable: { kind: side },
         judge_criteria: { kind: side },
         effort: { kind: side === "rows" ? "columns" : "rows" },
       },
@@ -391,7 +388,7 @@ for (const side of ["rows", "columns"] as const)
     const reorderedMessages = [history[2], history[1], history[0]];
     const source = currentDefinition({
       format: "chat-template",
-      caseAxis: side,
+      caseAxes: [side],
       judge: true,
       parameters: {
         input: { kind: side },

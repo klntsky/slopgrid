@@ -14,7 +14,7 @@ for (const side of ["rows", "columns"] as const) {
   test(`${side} retain every scalar and criterion failure on its own case`, () => {
     const issues = failures(
       currentDefinition({
-        caseAxis: side,
+        caseAxes: [side],
         judge: true,
         parameters: {
           model: { kind: side },
@@ -54,7 +54,7 @@ for (const side of ["rows", "columns"] as const) {
     const issues = failures(
       currentDefinition({
         format: "chat-template",
-        caseAxis: side,
+        caseAxes: [side],
         parameters: { input: { kind: side } },
         [side]: [
           {
@@ -90,7 +90,7 @@ test("image prompt and size errors keep independent value addresses", () => {
   const issues = failures(
     currentDefinition({
       format: "image",
-      caseAxis: "rows",
+      caseAxes: ["rows"],
       parameters: { input: { kind: "rows" }, size: { kind: "rows" } },
       rows: [
         { input: [{ role: "user", content: "" }], size: "invalid-size" },

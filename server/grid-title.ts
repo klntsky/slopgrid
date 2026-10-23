@@ -1,46 +1,39 @@
-import { chatText, type StoredGridInput } from "./domain.js";
+import { chatText, type ChatMessage, type GridInput } from "./domain.js";
 import { generatorInputForCell } from "./generator-input.js";
 import { variableToken } from "./prompt-variables.js";
+import { isCaseAxis } from "./parameters.js";
 
 function titlePrompt(
-  input: StoredGridInput,
+  input: GridInput,
   prompt: string,
-  caseIndex?: number,
+  cell?: { row: number; column: number },
 ): string {
   return prompt.replace(
     variableToken,
     (token, name: string, number: string) => {
       if (!/^[1-9]\d*$/.test(number)) return token;
       const side = name === "ROW" ? "rows" : "columns";
+      if (!isCaseAxis(input, side)) return token;
       const index = Number(number) - 1;
-      if (caseIndex !== undefined && "parameters" in input) {
+      if (cell) {
         const field =
-          input.parameters.variable?.kind === side
-            ? input[side][caseIndex]?.variable?.[index]
-            : undefined;
+          input[side][side === "rows" ? cell.row : cell.column]?.variable?.[
+            index
+          ];
         return field
           ? field.text ||
               field.images?.map((image) => image.name).join(", ") ||
               ""
           : token;
       }
-      const values =
-        "parameters" in input
-          ? input.parameters.variable?.kind === side
-            ? input[side].map((record) => record.variable ?? [])
-            : undefined
-          : input[side].kind === "variable"
-            ? input[side].values
-            : undefined;
-      if (!values?.length || values.some((fields) => !fields[index]))
+      const values = input[side].map((record) => record.variable ?? []);
+      if (!values.length || values.some((fields) => !fields[index]))
         return token;
       const expanded = values.map((fields) => {
         const field = fields[index];
         return (
           field?.text ||
-          (field && "images" in field
-            ? field.images?.map((image) => image.name).join(", ")
-            : "") ||
+          field?.images?.map((image) => image.name).join(", ") ||
           ""
         );
       });
@@ -49,55 +42,43 @@ function titlePrompt(
   );
 }
 
-export function expandPromptForTitle(input: StoredGridInput) {
-  const commonPrompt =
-    input.inputVersion !== 3
-      ? input.prompt
-      : input.parameters.input.kind === "common"
-        ? input.format === "chat-template"
-          ? chatText(input.parameters.input.value)
-          : input.parameters.input.value[0]?.content ||
-            input.parameters.input.value[0]?.images
-              ?.map((image) => image.name)
-              .join(", ") ||
-            ""
-        : undefined;
+function messagesForTitle(input: GridInput, messages: ChatMessage[]): string {
+  const content = (message: ChatMessage | undefined): string =>
+    message?.content ||
+    message?.images?.map((image) => image.name).join(", ") ||
+    "";
+  return input.format === "chat-template"
+    ? chatText(
+        messages.map((message) => ({ ...message, content: content(message) })),
+      )
+    : content(messages[0]);
+}
+
+export function expandPromptForTitle(input: GridInput) {
   const expanded =
-    commonPrompt === undefined && input.inputVersion === 3
-      ? [
+    input.parameters.input.kind === "common"
+      ? titlePrompt(
+          input,
+          messagesForTitle(input, input.parameters.input.value),
+        )
+      : [
           ...new Set(
-            (input.caseAxis ? input[input.caseAxis] : [undefined]).map(
-              (_, index) => {
-                const row = input.caseAxis === "rows" ? index : 0;
-                const column = input.caseAxis === "columns" ? index : 0;
+            input.rows.flatMap((_, row) =>
+              input.columns.map((_, column) => {
                 const messages = generatorInputForCell(input, row, column).map(
                   (message) => ({
                     ...message,
-                    content: titlePrompt(input, message.content, index),
+                    content: titlePrompt(input, message.content, {
+                      row,
+                      column,
+                    }),
                   }),
                 );
-                return input.format === "chat-template"
-                  ? chatText(
-                      messages.map((message) => ({
-                        ...message,
-                        content:
-                          message.content ||
-                          message.images
-                            ?.map((image) => image.name)
-                            .join(", ") ||
-                          "",
-                      })),
-                    )
-                  : messages[0]?.content ||
-                      messages[0]?.images
-                        ?.map((image) => image.name)
-                        .join(", ") ||
-                      "";
-              },
+                return messagesForTitle(input, messages);
+              }),
             ),
           ),
-        ].join(" | ")
-      : titlePrompt(input, commonPrompt ?? "");
+        ].join(" | ");
   const characters = Array.from(expanded);
   return characters.length > 160
     ? characters.slice(0, 157).join("") + "..."

@@ -2,10 +2,9 @@ import { z } from "zod";
 import type {
   GenerationParameters,
   GridDraftInput,
-  StoredGridInput,
+  GridInput,
 } from "./domain.js";
 import { mergeVariableImages } from "./prompt-variables.js";
-import { legacySelectedReferences } from "./legacy-grid-input.js";
 import { generatorInputEntries } from "./generator-input.js";
 
 import {
@@ -88,9 +87,8 @@ export function normalizeImageSettings(
   );
 }
 export function selectedReferences(
-  input: StoredGridInput | GridDraftInput,
+  input: GridInput | GridDraftInput,
 ): ReferenceImage[] {
-  if (input.inputVersion === undefined) return legacySelectedReferences(input);
   const attachments = generatorInputEntries(input).flatMap(({ messages }) =>
     messages.flatMap((message) => message.images ?? []),
   );

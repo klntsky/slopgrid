@@ -7,7 +7,6 @@ import { webFixture } from "../web-fixture";
 import { Store } from "../../server/store";
 import {
   expandGrid,
-  type GenerationTask,
   type Grid,
   type ChatMessage,
 } from "../../server/domain";
@@ -18,7 +17,6 @@ import { startTestServer } from "../test-server";
 import { create, expectProgress } from "./helpers";
 import { parseE2EPort } from "../e2e-port";
 import { currentInput } from "../current-grid-fixture";
-import { arrangeHistoricalGrid } from "../grid-storage-fixture";
 import { pixelPng as bytes } from "../reference-image-fixture";
 
 const port = parseE2EPort(process.env.E2E_PORT);
@@ -74,14 +72,15 @@ test("visited pages and completed outputs survive offline reload without retaini
       files: Record<string, string | Buffer>,
       thinking: string,
       judgeStatus?: "pending" | "error" | "complete",
+      published = false,
     ): Grid {
       const grid = {
         id: token(),
         owner,
         input,
         status: judgeStatus ? "paused" : "complete",
-        published: false,
-        visibility: "private",
+        published,
+        visibility: published ? "unlisted" : "private",
         createdAt: new Date().toISOString(),
         cells: expandGrid(input).map((cell) => ({ ...cell, id: token() })),
       } satisfies Grid;
@@ -223,66 +222,28 @@ test("visited pages and completed outputs survive offline reload without retaini
         ),
       );
     }
-    // Historical metadata is stored with its already-accepted concrete task.
-    // It never passes through current admission or an editable conversion.
     for (const published of [false, true]) {
-      const prompt = `Offline legacy ${published ? "published" : "private"} $ROW1 wearing a $COLUMN1`;
-      const generationId = token();
-      const artifactId = token();
-      const grid = {
-        id: token(),
-        owner,
-        input: {
-          format: "markdown",
-          prompt,
-          model: "fixture/text",
-          effort: "none",
-          budgetUsd: 1,
-          rows: { kind: "variable", values: [[{ text: "cat" }]] },
-          columns: { kind: "variable", values: [[{ text: "hat" }]] },
-        },
-        status: "complete",
-        published,
-        visibility: published ? "unlisted" : "private",
-        createdAt: new Date().toISOString(),
-        cells: [
-          {
-            id: token(),
-            row: 0,
-            column: 0,
-            model: "fixture/text",
-            effort: "none",
-            prompt: prompt.replace("$ROW1", "cat").replace("$COLUMN1", "hat"),
-            budgetUsd: 1,
-            status: "complete",
-            generationId,
-          },
-        ],
-      } satisfies Grid;
-      const task = {
-        id: generationId,
-        kind: "generation",
-        status: "complete",
-        input: {
-          format: "markdown",
-          model: "fixture/text",
-          effort: "none",
-          prompt: grid.cells[0].prompt,
-          budgetUsd: 1,
-        },
-        output: {
-          artifactId,
-          provenance: {
-            signature: "legacy-offline-output",
-            files: ["index.md"],
+      const input = currentInput({
+        caseAxes: ["rows", "columns"],
+        parameters: {
+          input: {
+            kind: "common",
+            value: [{
+              role: "user",
+              content: "Offline canonical $ROW1 wearing a $COLUMN1",
+            }],
           },
         },
-      } satisfies GenerationTask;
-      arrangeHistoricalGrid(store, grid, [task]);
-      store.files.write(artifactId, {
-        "index.md": "# Cached markdown\n\nSaved content",
+        rows: [{ variable: [{ text: "cat" }] }],
+        columns: [{ variable: [{ text: "hat" }] }],
       });
-      grids.push(grid);
+      grids.push(completedGrid(
+        input,
+        { "index.md": "# Cached markdown\n\nSaved content" },
+        "Saved canonical thinking",
+        undefined,
+        published,
+      ));
     }
     const context = await browser.newContext({ ignoreHTTPSErrors: true });
     await context.addCookies([
@@ -307,21 +268,7 @@ test("visited pages and completed outputs survive offline reload without retaini
         name: grid.published ? "FORK" : "EDIT",
         exact: true,
       });
-      if (grid.input.inputVersion === 3) {
-        await expect(configure).toBeEnabled();
-      } else {
-        await expect(configure).toBeDisabled();
-        await expect(
-          page.getByRole("button", { name: "Set Title", exact: true }),
-        ).toBeVisible();
-        expect(
-          await page.evaluate(
-            async (id) =>
-              (await fetch(`/api/grids/${id}/edit`, { method: "POST" })).status,
-            grid.id,
-          ),
-        ).toBe(409);
-      }
+      await expect(configure).toBeEnabled();
       // Completion is observable through CacheStorage rather than a timing delay.
       await expect
         .poll(() =>
@@ -372,33 +319,6 @@ test("visited pages and completed outputs survive offline reload without retaini
       expect(savedCell.outputURL).toContain(`/outputs/${grid.cells[0].id}`);
       expect(savedCell.judge).toEqual(grid.cells[0].judge);
     }
-    // Reproduce snapshots written before display/canConfigure existed, without
-    // changing their legacy input or any cached output/reference bytes.
-    await page.evaluate(
-      async (ids) => {
-        for (const name of await caches.keys()) {
-          const cache = await caches.open(name);
-          for (const id of ids) {
-            const url = `/api/grids/${id}`;
-            const response = await cache.match(url);
-            if (!response) continue;
-            const snapshot = await response.json();
-            delete snapshot.display;
-            delete snapshot.canConfigure;
-            await cache.put(
-              url,
-              new Response(JSON.stringify(snapshot), {
-                status: response.status,
-                headers: response.headers,
-              }),
-            );
-          }
-        }
-      },
-      grids
-        .filter((grid) => grid.input.inputVersion !== 3)
-        .map((grid) => grid.id),
-    );
     await page.goto(web.origin);
     await context.setOffline(true);
     await page.reload();
@@ -486,21 +406,7 @@ test("visited pages and completed outputs survive offline reload without retaini
         name: grid.published ? "FORK" : "EDIT",
         exact: true,
       });
-      if (grid.input.inputVersion === 3) {
-        await expect(configure).toBeEnabled();
-      } else {
-        await expect(configure).toBeDisabled();
-        const snapshot = await page.evaluate(
-          async (id) => (await fetch(`/api/grids/${id}`)).json(),
-          grid.id,
-        );
-        expect(snapshot.input).not.toHaveProperty("inputVersion");
-        expect(snapshot).not.toHaveProperty("display");
-        expect(snapshot).not.toHaveProperty("canConfigure");
-        await expect(
-          page.getByRole("heading", { name: "Cached markdown" }),
-        ).toBeVisible();
-      }
+      await expect(configure).toBeEnabled();
       if (grid.input.format === "chat-template") {
         for (const image of chatImages)
           await expect

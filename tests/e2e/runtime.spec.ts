@@ -24,25 +24,23 @@ test("open browsers reconnect to a replaced web process while markdown, thinking
       },
     ]);
     const markdown = fixture.grid({
-      caseAxis: "rows",
+      caseAxes: ["rows"],
       parameters: {
         input: {
           kind: "common",
           value: [{ role: "user", content: "Draw $ROW1" }],
         },
-        variable: { kind: "rows" },
       },
       rows: [{ variable: [{ text: "markdown" }] }],
     });
     const website = fixture.grid({
       format: "html",
-      caseAxis: "rows",
+      caseAxes: ["rows"],
       parameters: {
         input: {
           kind: "common",
           value: [{ role: "user", content: "Draw $ROW1" }],
         },
-        variable: { kind: "rows" },
       },
       rows: [{ variable: [{ text: "website" }] }],
     });

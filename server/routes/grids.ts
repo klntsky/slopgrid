@@ -28,7 +28,6 @@ import {
 import { token } from "../ids.js";
 import { creationRequest } from "../creation-request.js";
 import { isGridSlug, slugNamingError } from "../../shared/grid-slug.js";
-import { editableGridInput } from "../editable-grid-input.js";
 
 export function createGridRoutes({
   store,
@@ -332,11 +331,6 @@ export function createGridRoutes({
     const found = readGrid(req, res);
     if (!found) return;
     const { g, s } = found;
-    if (!editableGridInput(g.input))
-      return res.status(409).json({
-        error:
-          "This grid uses an older configuration and cannot be edited or forked.",
-      });
     if (g.published)
       return res
         .status(409)

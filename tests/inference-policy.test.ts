@@ -42,10 +42,9 @@ test("admission sums individual costs, preserves automatic selection, and skips 
     workersMax: 1,
   });
   const input = currentInput({
-    caseAxis: "rows",
+    caseAxes: ["rows"],
     parameters: {
       input: { kind: "common", value: [{ role: "user", content: "$ROW1" }] },
-      variable: { kind: "rows" },
       model: { kind: "columns" },
       effort: { kind: "common", value: "none" },
     },

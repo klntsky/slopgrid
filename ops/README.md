@@ -147,10 +147,9 @@ installed application release, `--source-db PATH`, `--target-db PATH`,
 belong in private host configuration or operator commands outside this repository.
 
 The default invocation previews a move without changing data. Add `--apply`
-to move a settled private legacy-input SVG grid with model rows and one column,
-omitting one failed model. Both databases must use schema 17; current version 3
-case-record inputs are not supported by this selective move. The destination
-must already contain the matching account.
+to move a settled private canonical-input SVG grid with model rows and one column,
+omitting one failed model. Both databases must use schema 17 and current version 3
+case-record inputs. The destination must already contain the matching account.
 The command preserves the grid ID, remaining artifacts, thinking, and call history,
 and does not copy sessions or credentials. Keep the backup for recovery.
 

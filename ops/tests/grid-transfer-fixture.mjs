@@ -130,13 +130,20 @@ function fixture(t, { shared = false, customize } = {}) {
       status: "paused",
       interruption: { reason: "stopped" },
       input: {
+        inputVersion: 3,
         format: "svg",
-        prompt: "horse",
-        rows: {
-          kind: "model",
-          values: ["first/model", "broken/model", "last/model"],
+        budgetUsd: 3,
+        judge: false,
+        parameters: {
+          input: { kind: "common", value: [{ role: "user", content: "horse" }] },
+          model: { kind: "rows" },
+          effort: { kind: "common", value: "default" },
         },
-        columns: { kind: "effort", values: ["default"] },
+        rows: ["first/model", "broken/model", "last/model"].map((model, index) => ({
+          id: `row-${index + 1}`,
+          model,
+        })),
+        columns: [{ id: "column-1" }],
       },
     }),
     "source-session",
@@ -437,16 +444,14 @@ export function seedTransferVariableFields(f) {
     .prepare("SELECT data FROM grids WHERE id=?")
     .get(f.options.grid);
   const data = JSON.parse(row.data);
-  data.input.prompt = "Draw $COLUMN1";
-  data.input.columns = {
-    kind: "variable",
-    values: [
-      [
-        { text: "literal $COLUMN", images: [first] },
-        { text: "unused field", images: [unused] },
-      ],
-    ],
-  };
+  data.input.parameters.input.value = [{ role: "user", content: "Draw $COLUMN1" }];
+  data.input.columns = [{
+    id: "column-1",
+    fields: {
+      "1": { text: "literal $COLUMN", images: [first] },
+      "2": { text: "unused field", images: [unused] },
+    },
+  }];
   f.source
     .prepare("UPDATE grids SET data=? WHERE id=?")
     .run(JSON.stringify(data), f.options.grid);

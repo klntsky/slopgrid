@@ -1,7 +1,7 @@
 import { defineConfig } from "@playwright/test";
 export default defineConfig({
   fullyParallel: false,
-  workers: 3,
+  workers: 4,
   use: {
     baseURL: process.env.E2E_ORIGIN ?? "http://localhost:4317",
     browserName: "chromium",

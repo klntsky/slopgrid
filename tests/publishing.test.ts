@@ -17,10 +17,6 @@ import {
   arrangeHistoricalGrid,
 } from "./grid-storage-fixture.js";
 import { currentInput } from "./current-grid-fixture.js";
-import {
-  expandLegacyGrid,
-  type LegacyGridInput,
-} from "../server/legacy-grid-input.js";
 
 // Exercise the real session, ownership, persistence, and publishing routes.
 test("publishing is permanent, link grids are unlisted, and public summaries omit private data", async (t) => {
@@ -43,14 +39,13 @@ test("publishing is permanent, link grids are unlisted, and public summaries omi
   ) {
     const input = currentInput({
       format,
-      caseAxis: "rows",
+      caseAxes: ["rows"],
       budgetUsd: 5,
       parameters: {
         input: {
           kind: "common",
           value: [{ role: "user", content: "Draw $ROW1" }],
         },
-        variable: { kind: "rows" },
         ...(format === "image"
           ? { size: { kind: "columns" as const } }
           : { effort: { kind: "columns" as const } }),
@@ -280,14 +275,13 @@ test("publishing a paused grid exposes unfinished cells as Not generated and loc
   const owner = token();
   store.saveSession({ id: owner, created: Date.now() });
   const input = currentInput({
-    caseAxis: "rows",
+    caseAxes: ["rows"],
     budgetUsd: 5,
     parameters: {
       input: {
         kind: "common",
         value: [{ role: "user", content: "Draw $ROW1" }],
       },
-      variable: { kind: "rows" },
       effort: { kind: "columns" },
     },
     rows: ["cat", "dog", "owl"].map((text) => ({ variable: [{ text }] })),
@@ -376,27 +370,33 @@ test("publishing a paused grid exposes unfinished cells as Not generated and loc
   }
 });
 
-test("incompatible historical outputs retain owner controls and publication without configuration access", async (t) => {
+test("canonical historical outputs retain configuration, owner controls, and publication", async (t) => {
   const { origin, store, database, secret } = await appFixture(t);
   const owner = token();
   const stranger = token();
   store.saveSession({ id: owner, created: Date.now() });
   store.saveSession({ id: stranger, created: Date.now() });
-  const input: LegacyGridInput = {
+  const input = currentInput({
     format: "markdown",
-    prompt: "Historical $ROW1 wearing $COLUMN1",
-    model: "metadata-model",
-    effort: "none",
+    caseAxes: ["rows", "columns"],
     budgetUsd: 1,
-    rows: {
-      kind: "variable",
-      values: [[{ text: "cat" }], [{ text: "dog" }]],
+    parameters: {
+      input: {
+        kind: "common",
+        value: [{ role: "user", content: "Historical $ROW1 wearing $COLUMN1" }],
+      },
+      model: { kind: "common", value: "metadata-model" },
+      effort: { kind: "common", value: "none" },
     },
-    columns: {
-      kind: "variable",
-      values: [[{ text: "hat" }], [{ text: "coat" }]],
-    },
-  };
+    rows: [
+      { variable: [{ text: "cat" }] },
+      { variable: [{ text: "dog" }] },
+    ],
+    columns: [
+      { variable: [{ text: "hat" }] },
+      { variable: [{ text: "coat" }] },
+    ],
+  });
   const task: GenerationTask = {
     id: token(),
     kind: "generation",
@@ -419,7 +419,7 @@ test("incompatible historical outputs retain owner controls and publication with
       },
     },
   };
-  const grid: Grid & { input: LegacyGridInput } = {
+  const grid: Grid = {
     id: token(),
     owner,
     input,
@@ -427,7 +427,7 @@ test("incompatible historical outputs retain owner controls and publication with
     published: false,
     visibility: "private",
     createdAt: "2025-01-01T00:00:00.000Z",
-    cells: expandLegacyGrid(input).map((cell) => ({
+    cells: expandGrid(input).map((cell) => ({
       ...cell,
       id: token(),
       generationId: task.id,
@@ -471,17 +471,25 @@ test("incompatible historical outputs retain owner controls and publication with
         headers: ownerHeaders,
       })
     ).status,
-    409,
+    200,
   );
   assert.deepEqual(store.get(grid.id), before);
   const privateView = await (
     await fetch(origin + path, { headers: ownerHeaders })
   ).json();
   assert.equal(privateView.canEdit, true);
-  assert.equal(privateView.canConfigure, false);
+  assert.equal(privateView.canConfigure, true);
   assert.equal(privateView.canPublish, true);
   assert.equal(privateView.spentUsd, 0.25);
-  assert.equal(privateView.input.inputVersion, undefined);
+  assert.equal(privateView.input.inputVersion, 3);
+  assert.deepEqual(privateView.input.caseAxes, ["rows", "columns"]);
+  assert.deepEqual(
+    privateView.cells.map(({ row, column }: { row: number; column: number }) => [
+      row,
+      column,
+    ]),
+    [[0, 0], [0, 1], [1, 0], [1, 1]],
+  );
   assert.equal(privateView.cells[0].model, "accepted-model");
   assert.equal(privateView.cells[0].prompt, task.input.prompt);
   assert.equal(privateView.cells[0].outputReady, true);
@@ -494,10 +502,10 @@ test("incompatible historical outputs retain owner controls and publication with
   assert.equal(publication.status, 200);
   const publishedOwner = await publication.json();
   assert.equal(publishedOwner.canEdit, true);
-  assert.equal(publishedOwner.canConfigure, false);
+  assert.equal(publishedOwner.canConfigure, true);
   const publicView = await (await fetch(origin + path)).json();
   assert.equal(publicView.canEdit, false);
-  assert.equal(publicView.canConfigure, false);
+  assert.equal(publicView.canConfigure, true);
   assert.equal(publicView.spentUsd, undefined);
   assert.equal(publicView.title, "Historical custom title");
   assert.equal(publicView.cells[0].prompt, task.input.prompt);
@@ -514,11 +522,7 @@ test("incompatible historical outputs retain owner controls and publication with
     if (outputPath.endsWith("/download")) {
       assert.match(
         output.headers.get("content-disposition")!,
-        /\.cat\.hat\.md/,
-      );
-      assert.doesNotMatch(
-        output.headers.get("content-disposition")!,
-        /second-field/,
+        /^attachment(?:;|$)/,
       );
     }
     assert.match(await output.text(), new RegExp(expected));

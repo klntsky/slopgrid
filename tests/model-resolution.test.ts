@@ -11,7 +11,7 @@ import {
   type Cell,
   type GridInput,
 } from "../server/domain.js";
-import { parameterValue, isCurrentGridInput } from "../server/parameters.js";
+import { parameterValue } from "../server/parameters.js";
 import { currentDefinition } from "./current-grid-fixture.js";
 import { selectedReferences } from "../server/image-settings.js";
 import { resolveCriteriaForCell } from "../server/judge-criteria.js";
@@ -197,11 +197,10 @@ test("image input admission checks every resolved generator in fixed and axis se
       const opposite = side === "rows" ? "columns" : "rows";
       const selected = currentDefinition({
         ...source,
-        caseAxis: format === "image" ? opposite : undefined,
+        caseAxes: format === "image" ? [opposite] : [],
         parameters: {
           ...source.parameters,
           model: { kind: side },
-          ...(format === "image" ? { variable: { kind: opposite } } : {}),
           input: {
             kind: "common",
             value:
@@ -238,7 +237,7 @@ test("image input admission checks every resolved generator in fixed and axis se
       const withoutImages = resolveGridModels(
         currentDefinition({
           ...selected,
-          caseAxis: undefined,
+          caseAxes: [],
           parameters: {
             ...source.parameters,
             model: { kind: side },
@@ -372,7 +371,6 @@ for (const format of ["markdown", "svg"] as const)
       format,
       parameters: {
         ...judgedInput.parameters,
-        variable: { kind: "rows" },
         judge_model: { kind: "common", value: "fixture/v2" },
         input: {
           kind: "common",
@@ -394,7 +392,7 @@ for (const format of ["markdown", "svg"] as const)
           ],
         },
       ],
-      caseAxis: "rows",
+      caseAxes: ["rows"],
     });
     assert.deepEqual(selectedReferences(source), [common, variable, unused]);
     assert.deepEqual(expandGrid(source)[0].messages?.[0].images, [
@@ -435,7 +433,6 @@ for (const format of ["markdown", "svg"] as const)
               ...source,
               parameters: {
                 ...source.parameters,
-                variable: undefined,
                 judge_model: { kind: side },
                 input: {
                   kind: "common",
@@ -586,7 +583,6 @@ test("variable image admission follows generator and judge consumption, not fiel
       judge: true,
       parameters: {
         model: { kind: opposite },
-        variable: { kind: side },
         judge_model: { kind: "common", value: "fixture/v1" },
         judge_criteria: {
           kind: "common",
@@ -606,7 +602,7 @@ test("variable image admission follows generator and judge consumption, not fiel
           ],
         },
       ],
-      caseAxis: side,
+      caseAxes: [side],
     });
     assert.deepEqual(selectedReferences(source), [unused, expected]);
     assert.doesNotThrow(() => resolveGridModels(source, catalog));
@@ -689,7 +685,6 @@ for (const side of ["rows", "columns"] as const)
       judge: true,
       parameters: {
         model: { kind: "common", value: "fixture/v2" },
-        variable: { kind: side },
         judge_model: { kind: "common", value: "fixture/v2" },
         judge_effort: { kind: "common", value: "none" },
         judge_criteria: { kind: side },
@@ -716,7 +711,7 @@ for (const side of ["rows", "columns"] as const)
           judge_criteria: [{ text: `Matches ${token}2?`, correctAnswer: true }],
         },
       ],
-      caseAxis: side,
+      caseAxes: [side],
     });
     assert.deepEqual(selectedReferences(source), [first, second]);
     assert.doesNotThrow(() => resolveGridModels(source, catalog));
@@ -1067,7 +1062,6 @@ for (const moving of [false, true])
     );
     await settle(1);
     const storedInput = store.get(created.id)!.input;
-    assert.ok(isCurrentGridInput(storedInput));
     assert.equal(parameterValue(storedInput, "model", 0, 0), expected);
     provider.target = "fixture/v2";
     await post(`/grids/${created.id}/retry`);
@@ -1089,7 +1083,7 @@ for (const moving of [false, true])
 for (const side of ["rows", "columns"] as const) {
   test(`${side} model aliases retain full input cases even when targets are equal`, () => {
     const source = currentDefinition({
-      caseAxis: side,
+      caseAxes: [side],
       parameters: { input: { kind: side }, model: { kind: side } },
       [side]: [
         {
@@ -1105,7 +1099,7 @@ for (const side of ["rows", "columns"] as const) {
       ],
     });
     const resolved = resolveGridModels(source, models());
-    assert.equal(resolved.caseAxis, side);
+    assert.deepEqual(resolved.caseAxes, [side]);
     assert.deepEqual(
       resolved[side].map((record) => [record.id, record.model, record.input]),
       [

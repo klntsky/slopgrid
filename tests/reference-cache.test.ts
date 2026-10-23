@@ -181,7 +181,7 @@ test("completed chat retention deduplicates image downloads and respects denial,
           input: {
             inputVersion: 3,
             format: "chat-template",
-            caseAxis: "rows",
+            caseAxes: ["rows"],
             parameters: { input: { kind: "rows" } },
             rows: [
               {

@@ -367,7 +367,7 @@ export async function runtimeFixture(
         overrides.inputVersion === 3
           ? currentInput(overrides)
           : currentInput({
-              caseAxis: "rows",
+              caseAxes: ["rows"],
               rows: [
                 { variable: [{ text: "cat" }] },
                 { variable: [{ text: "dog" }] },
@@ -381,7 +381,6 @@ export async function runtimeFixture(
                   kind: "common",
                   value: [{ role: "user", content: "Draw $ROW1" }],
                 },
-                variable: { kind: "rows" },
                 model: { kind: "columns" },
                 effort: { kind: "common", value: "none" },
                 ...overrides.parameters,

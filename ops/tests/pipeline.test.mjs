@@ -50,8 +50,6 @@ import {
   backupSessions,
   failDiscardGeneration,
   discardSchemaVersion,
-  discardWorkflowTable,
-  discardCallColumns,
   rejectGridDiscard,
 } from "./staging-grid-fixture.mjs";
 
@@ -458,83 +456,31 @@ test("discarding all sharing grids deletes each now-unreferenced artifact and tr
     );
 });
 
-test("pre-migration v12/v13 discard follows backup without migrating or fabricating normalized data", async (t) => {
-  for (const version of [12, 13])
-    await t.test(`schema ${version}`, async (child) => {
-      const f = discardFixture(child, version),
-        before = f.read(f.env);
-      const target = {
-        state: join(f.root, "state"),
-        config: join(f.root, "config"),
-        envFile: join(f.root, "runtime.env"),
-      };
-      mkdirSync(target.config);
-      writeFileSync(
-        target.envFile,
-        "DATABASE_PATH=" + f.env.DATABASE_PATH + "\n",
-      );
-      const saved = await backup(
-        target,
-        process.env.SLOPGRID_TEST_APP,
-        f.env,
-        "before-upgrade",
-      );
-      discardStagingGrids(
-        "staging",
-        process.env.SLOPGRID_TEST_APP,
-        f.env,
-        f.production,
-        [f.selected],
-      );
-      assert.deepEqual(
-        f.read({ DATABASE_PATH: join(saved, "slopgrid.sqlite") }),
-        before,
-      );
-      const db = new f.Database(f.env.DATABASE_PATH);
-      assert.equal(discardSchemaVersion(db), version);
-      assert.equal(discardWorkflowTable(db), undefined);
-      assert.equal(
-        discardCallColumns(db).some((column) => column.name === "task_id"),
-        false,
-      );
-      assert.deepEqual(referenceForeignKeyViolations(db), []);
-      db.close();
-      const remaining = f.read(f.env);
-      assert.deepEqual(
-        remaining.cells,
-        before.cells.filter((cell) => cell.grid_id === f.surviving),
-      );
-      assert.deepEqual(
-        remaining.inference_calls,
-        before.inference_calls.filter(
-          (call) => call.cell_id === "2".repeat(48),
-        ),
-      );
-      assert.deepEqual(remaining.sessions, before.sessions);
-      for (const cell of ["1", "3"]) {
-        assert.throws(
-          () =>
-            readFileSync(
-              join(f.env.OUTPUTS_PATH, cell.repeat(48), "index.svg"),
-            ),
-          /ENOENT/,
-        );
-        assert.equal(
-          readFileSync(
-            join(saved, "outputs", cell.repeat(48), "index.svg"),
-            "utf8",
-          ),
-          `output-${cell.repeat(48)}`,
-        );
-      }
-      assert.equal(
-        readFileSync(
-          join(f.env.OUTPUTS_PATH, "2".repeat(48), "index.svg"),
-          "utf8",
-        ),
-        `output-${"2".repeat(48)}`,
-      );
-    });
+test("v14 discard follows backup without migrating accepted task inputs or losing retained data", async (t) => {
+  const f = discardFixture(t),
+    before = f.read(f.env);
+  const target = {
+    state: join(f.root, "state"),
+    config: join(f.root, "config"),
+    envFile: join(f.root, "runtime.env"),
+  };
+  mkdirSync(target.config);
+  writeFileSync(target.envFile, "DATABASE_PATH=" + f.env.DATABASE_PATH + "\n");
+  const saved = await backup(target, process.env.SLOPGRID_TEST_APP, f.env, "before-upgrade");
+  discardStagingGrids("staging", process.env.SLOPGRID_TEST_APP, f.env, f.production, [f.selected]);
+  assert.deepEqual(f.read({ DATABASE_PATH: join(saved, "slopgrid.sqlite") }), before);
+  const remaining = f.read(f.env);
+  for (const table of ["cells", "workflow_tasks", "grid_reference_images"])
+    assert.deepEqual(remaining[table], before[table].filter((row) => row.grid_id === f.surviving));
+  assert.deepEqual(remaining.sessions, before.sessions);
+  assert.equal(
+    readFileSync(join(saved, "outputs", f.removedArtifact, "index.svg"), "utf8"),
+    `output-${f.removedArtifact}`,
+  );
+  const db = new f.Database(f.env.DATABASE_PATH);
+  assert.equal(discardSchemaVersion(db), 14);
+  assert.deepEqual(referenceForeignKeyViolations(db), []);
+  db.close();
 });
 
 test("grid discard rejects production aliases and rolls back failed deletion before touching files", (t) => {
@@ -579,8 +525,8 @@ test("grid discard rejects production aliases and rolls back failed deletion bef
   );
 });
 
-test("discard refuses unknown schemas and symlinked trace ancestors without changing history", async (t) => {
-  for (const reason of ["schema11", "schema999", "symlink"])
+test("discard refuses pre-v14, intermediate and unknown schemas and symlinked trace ancestors without changing history", async (t) => {
+  for (const reason of ["schema0", "schema12", "schema13", "schema15", "schema16", "schema999", "symlink"])
     await t.test(reason, (child) => {
       const f = discardFixture(child),
         before = f.read(f.env);
@@ -592,7 +538,7 @@ test("discard refuses unknown schemas and symlinked trace ancestors without chan
         );
       } else {
         const db = new f.Database(f.env.DATABASE_PATH);
-        setReferenceSchemaVersion(db, reason === "schema11" ? 11 : 999);
+        setReferenceSchemaVersion(db, Number(reason.slice("schema".length)));
         db.close();
       }
       const productionBefore = f.read(f.production);

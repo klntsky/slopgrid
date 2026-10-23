@@ -96,7 +96,7 @@ for (const shared of [false, true])
     );
     const input = currentInput({
       format: "image",
-      caseAxis: shared ? undefined : "rows",
+      caseAxes: shared ? [] : ["rows"],
       budgetUsd: 5,
       parameters: {
         input: {
@@ -109,9 +109,7 @@ for (const shared of [false, true])
             },
           ],
         },
-        ...(shared
-          ? { quality: { kind: "rows" as const } }
-          : { variable: { kind: "rows" as const } }),
+        ...(shared ? { quality: { kind: "rows" as const } } : {}),
         size: { kind: "columns" },
       },
       rows: shared
@@ -327,13 +325,12 @@ for (const format of ["markdown", "svg", "html"] as const)
     const forged = { ...common, width: 900, height: 2 };
     const input = currentInput({
       format,
-      caseAxis: "rows",
+      caseAxes: ["rows"],
       parameters: {
         input: {
           kind: "common",
           value: [{ role: "user", content: "$ROW1", images: [forged] }],
         },
-        variable: { kind: "rows" },
         model: { kind: "columns" },
         effort: { kind: "common", value: "none" },
       },
@@ -362,7 +359,7 @@ for (const format of ["markdown", "svg", "html"] as const)
       assert.deepEqual(parameterValue(savedInput, "input", 0, 0)![0].images, [
         common,
       ]);
-      assert.deepEqual(savedInput.parameters.variable, { kind: "rows" });
+      assert.deepEqual(savedInput.caseAxes, ["rows"]);
       assert.deepEqual(savedInput.rows[0].variable![0]!.images, [
         variable,
         common,
@@ -410,10 +407,9 @@ for (const side of ["rows", "columns"] as const)
       const opposite = side === "rows" ? "columns" : "rows";
       const input = currentInput({
         format,
-        caseAxis: side,
+        caseAxes: [side],
         parameters: {
           input: { kind: side },
-          variable: { kind: side },
           model: { kind: opposite },
         },
         [side]: [first, second].map((image, index) => ({
@@ -458,7 +454,7 @@ for (const side of ["rows", "columns"] as const)
       const reopened = new Store(database, secret);
       try {
         const saved = gridSchema.parse(reopened.get(grid.id)!.input);
-        assert.equal(saved.caseAxis, side);
+        assert.deepEqual(saved.caseAxes, [side]);
         assert.equal(saved[side].length, 2);
         assert.deepEqual(saved[side][0].variable, [
           null,
@@ -591,14 +587,13 @@ test("grid creation records every configured field image atomically and keeps me
   const missing = { id: token(), name: "missing.png" };
   const input = currentDefinition({
     format: "image",
-    caseAxis: "rows",
+    caseAxes: ["rows"],
     budgetUsd: 1,
     parameters: {
       input: {
         kind: "common",
         value: [{ role: "user", content: "Use the selected references$ROW1" }],
       },
-      variable: { kind: "rows" },
       size: { kind: "columns" },
     },
     rows: [

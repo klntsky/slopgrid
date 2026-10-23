@@ -159,7 +159,7 @@ process.exit(result.status ?? 1);
   );
   if (!options.missingSource) {
     source = new Database(sourcePath);
-    seedProductionWalRecords(source);
+    seedProductionWalRecords(source, options.sourceVersion ?? 14);
     // Prove the second row is absent from the main file. Keeping the live
     // connection open prevents close-time WAL checkpointing during validation.
     const mainFileOnly = join(root, "main-file-only.sqlite");
@@ -271,6 +271,8 @@ try {
             SLOPGRID_FIXTURE_INTEGRITY_FAILURE: options.integrityFailure
               ? "1"
               : "0",
+            SLOPGRID_FIXTURE_VERSION_FAILURE: options.versionFailure ? "1" : "0",
+            SLOPGRID_FIXTURE_NONCANONICAL_FAILURE: options.noncanonicalFailure ? "1" : "0",
           },
         },
       );
@@ -344,7 +346,7 @@ function assertExit(child, status) {
 
 function assertMigrated(event) {
   assert.equal(event.phase, "migration-passed");
-  assert.equal(event.version, 2);
+  assert.equal(event.version, 17);
   assert.deepEqual(event.rows, expectedRows);
 }
 
@@ -367,8 +369,8 @@ test("production copies every output and WAL-only row, migrates file-dependent d
     {
       files: 2,
       bytes: Buffer.byteLength(artifact) + binaryArtifact.length,
-      schemaBefore: 1,
-      schemaAfter: 2,
+      schemaBefore: 14,
+      schemaAfter: 17,
     },
   );
   f.assertUnchangedSource();
@@ -451,8 +453,8 @@ for (const tests of ["full", "scoped", "skip"]) {
     assertMigrated(f.events()[1]);
     f.assertIndependentCopies(f.events()[1]);
     assert.equal(f.result().migration, "passed");
-    assert.equal(f.result().productionData.schemaBefore, 1);
-    assert.equal(f.result().productionData.schemaAfter, 2);
+    assert.equal(f.result().productionData.schemaBefore, 14);
+    assert.equal(f.result().productionData.schemaAfter, 17);
     assert.equal(f.result().status, tests === "skip" ? "skipped" : "passed");
     f.assertUnchangedSource();
     f.assertRuntimeRemoved();
@@ -527,6 +529,8 @@ for (const tests of ["full", "skip"])
 for (const [option, message] of [
   ["foreignKeyFailure", /failed SQLite foreign key check/],
   ["integrityFailure", /failed SQLite integrity check/],
+  ["versionFailure", /must produce database schema 17/],
+  ["noncanonicalFailure", /must produce canonical inputVersion 3 grids/],
 ]) {
   test(`${option} fails the migration gate even when suites are skipped`, (t) => {
     const f = fixture(t, { tests: "skip", [option]: true });
@@ -543,6 +547,21 @@ for (const [option, message] of [
     f.assertRuntimeRemoved();
   });
 }
+
+for (const sourceVersion of [8, 9, 10, 11, 12, 13, 15, 16, 17])
+  test(`rehearsal rejects unsupported or noncanonical source schema ${sourceVersion} before candidate startup`, (t) => {
+    const f = fixture(t, { tests: "skip", sourceVersion });
+    const child = f.execute();
+    assertExit(child, 1);
+    assert.match(child.stdout + child.stderr, sourceVersion === 17
+      ? /requires canonical inputVersion 3 grids/
+      : /requires source database schema 14 or canonical schema 17/);
+    assert.deepEqual(f.events(), []);
+    assert.equal(f.result().status, "failed");
+    assert.equal(f.result().migration, undefined);
+    f.assertUnchangedSource();
+    f.assertRuntimeRemoved();
+  });
 
 for (const options of [
   { missingOutputs: true },

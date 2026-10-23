@@ -18,13 +18,12 @@ test("an offline browser retains earlier output and thinking while receiving rec
       },
     ]);
     const grid = f.grid({
-      caseAxis: "rows",
+      caseAxes: ["rows"],
       parameters: {
         input: {
           kind: "common",
           value: [{ role: "user", content: "Draw $ROW1" }],
         },
-        variable: { kind: "rows" },
       },
       rows: [{ variable: [{ text: "cat" }] }],
     });

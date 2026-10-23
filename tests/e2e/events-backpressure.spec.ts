@@ -11,13 +11,12 @@ for (const size of [1024, 1024 * 1024]) {
   }, testInfo) => {
     const f = await runtimeFixture();
     const grid = f.grid({
-      caseAxis: "rows",
+      caseAxes: ["rows"],
       parameters: {
         input: {
           kind: "common",
           value: [{ role: "user", content: "Draw $ROW1" }],
         },
-        variable: { kind: "rows" },
       },
       rows: [{ variable: [{ text: "cat" }] }],
     });

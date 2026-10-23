@@ -20,7 +20,7 @@ export function formatCost(cost: number | undefined): string {
   if (cost > 0 && cost < 0.00000001) return "<$0.00000001";
   return usd.format(cost);
 }
-export const dimensionNames = { ...parameterNames, images: "Images" };
+export const dimensionNames = parameterNames;
 export function cellError(cell: ViewGrid["cells"][number]) {
   return cell.errorCode === undefined
     ? cell.error
@@ -49,12 +49,6 @@ export function displayValue(part: ParameterDisplayPart): string {
               ],
         )
         .join(" | ");
-    case "images":
-      return (
-        part.value.name ||
-        part.value.images.map((image) => image.name).join(" · ") ||
-        "None"
-      );
     case "judge_criteria":
       return part.value
         .map(

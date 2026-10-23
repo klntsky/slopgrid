@@ -2,14 +2,17 @@ import { useId, useState } from "react";
 import type { ReferenceImage } from "../../server/image-settings";
 import { ImageList, ImagePicker } from "./image-input";
 import { ValidationFeedback, ValidationField } from "./validation-feedback";
+import { VariableTokenPicker } from "./variable-input";
 
 export function PromptEditor({
   prompt,
   onPromptChange,
   attachments,
+  variables,
 }: {
   prompt: string;
   onPromptChange: (prompt: string) => void;
+  variables: readonly string[];
   attachments: {
     images: readonly ReferenceImage[];
     onChange: (images: ReferenceImage[]) => void;
@@ -60,6 +63,13 @@ export function PromptEditor({
                 }
               />
             </div>
+            <VariableTokenPicker
+              tokens={variables}
+              targetId={`${id}-prompt`}
+              value={prompt}
+              onChange={onPromptChange}
+              disabled={reading}
+            />
           </div>
         )}
       </ValidationField>

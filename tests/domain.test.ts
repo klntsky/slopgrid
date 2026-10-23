@@ -10,8 +10,6 @@ import {
 import { readChatOutput } from "../shared/chat-output.js";
 import { appFixture } from "./app-fixture.js";
 import { currentDefinition, currentInput } from "./current-grid-fixture.js";
-import { isCurrentGridInput } from "../server/parameters.js";
-import { editableGridInput } from "../server/editable-grid-input.js";
 import { draftInputFromGridInput } from "../src/create/draft-input.js";
 
 test("incomplete editor states preserve raw text but cannot create a grid", async (t) => {
@@ -113,9 +111,8 @@ test("incomplete editor states preserve raw text but cannot create a grid", asyn
     },
     {
       ...currentDefinition({
-        parameters: { variable: { kind: "rows" } },
         rows: [{ variable: [] }],
-        caseAxis: "rows",
+        caseAxes: ["rows"],
       }),
       budgetUsd: "1.25",
     },
@@ -152,7 +149,6 @@ test("chat completion accepts optional blanks after a prefix and preserves expan
   const source = currentDefinition({
     format: "chat-template",
     parameters: {
-      variable: { kind: "rows" },
       model: { kind: "columns" },
       input: {
         kind: "common",
@@ -166,7 +162,7 @@ test("chat completion accepts optional blanks after a prefix and preserves expan
     },
     rows: [{ variable: [{ text: "one" }] }],
     columns: [{ model: "test/model" }],
-    caseAxis: "rows",
+    caseAxes: ["rows"],
   });
   const parsed = gridSchema.parse(source);
   assert.equal(expandGrid(parsed)[0].messages![0].content, "Question one");
@@ -215,7 +211,6 @@ test("chat histories preserve roles and whitespace while expanding multiple vari
   const source = currentDefinition({
     format: "chat-template",
     parameters: {
-      variable: { kind: "rows" },
       input: {
         kind: "common",
         value: [
@@ -226,7 +221,7 @@ test("chat histories preserve roles and whitespace while expanding multiple vari
       },
     },
     rows: [{ variable: [{ text: "Markdown" }, { text: "why" }] }],
-    caseAxis: "rows",
+    caseAxes: ["rows"],
   });
   assert.deepEqual(expandGrid(gridSchema.parse(source))[0].messages, [
     { role: "system", content: "Use Markdown" },
@@ -289,7 +284,6 @@ test("chat images belong to supplied user messages, including image-only turns",
     format: "chat-template",
     parameters: {
       model: { kind: "common", value: "vision" },
-      variable: { kind: "rows" },
       input: {
         kind: "common",
         value: [
@@ -304,7 +298,7 @@ test("chat images belong to supplied user messages, including image-only turns",
       },
     },
     rows: [{ variable: [{ text: "one" }] }, { variable: [{ text: "two" }] }],
-    caseAxis: "rows",
+    caseAxes: ["rows"],
   });
   assert.deepEqual(
     expandGrid(varied).map((cell) => cell.messages![2]),
@@ -422,7 +416,6 @@ test("multiple prompt fields are replaced literally, including dollar signs in v
   const cells = expandGrid(
     currentInput({
       parameters: {
-        variable: { kind: "rows" },
         model: { kind: "columns" },
         input: {
           kind: "common",
@@ -434,7 +427,7 @@ test("multiple prompt fields are replaced literally, including dollar signs in v
         { variable: [{ text: "dog" }, { text: "cape" }] },
       ],
       columns: [{ model: "a/model" }, { model: "b/model" }],
-      caseAxis: "rows",
+      caseAxes: ["rows"],
     }),
   );
   assert.equal(cells.length, 4);
@@ -541,7 +534,7 @@ test("ordinary axes own one parameter while explicit case axes permit correlated
     );
     assert.equal(gridSchema.safeParse(multiple).success, false);
     assert.equal(
-      gridSchema.safeParse({ ...multiple, caseAxis: side }).success,
+      gridSchema.safeParse({ ...multiple, caseAxes: [side] }).success,
       true,
     );
     const criteria = [{ text: "Is the answer correct?", correctAnswer: true }];
@@ -552,14 +545,13 @@ test("ordinary axes own one parameter while explicit case axes permit correlated
     });
     assert.equal(gridSchema.safeParse(criteriaOnly).success, false);
     assert.equal(
-      gridSchema.safeParse({ ...criteriaOnly, caseAxis: side }).success,
+      gridSchema.safeParse({ ...criteriaOnly, caseAxes: [side] }).success,
       true,
     );
     const token = side === "rows" ? "$ROW2" : "$COLUMN2";
     const correlated = currentDefinition({
       judge: true,
       parameters: {
-        variable: { kind: side },
         model: { kind: side },
         effort: { kind: side },
         judge_criteria: { kind: side },
@@ -579,7 +571,7 @@ test("ordinary axes own one parameter while explicit case axes permit correlated
           judge_criteria: criteria,
         },
       ],
-      caseAxis: side,
+      caseAxes: [side],
     });
     assert.equal(gridSchema.safeParse(correlated).success, true);
     const other = side === "rows" ? "columns" : "rows";
@@ -619,7 +611,6 @@ test("unowned sides have exactly one neutral record while drafts retain unfinish
 test("draft and canonical variable schemas preserve deleted slots and raw field content", () => {
   const source = currentDefinition({
     parameters: {
-      variable: { kind: "rows" },
       input: { kind: "common", value: [{ role: "user", content: "$ROW2" }] },
     },
     rows: [
@@ -635,7 +626,7 @@ test("draft and canonical variable schemas preserve deleted slots and raw field 
         ],
       },
     ],
-    caseAxis: "rows",
+    caseAxes: ["rows"],
   });
   const draft = gridDraftSchema.parse({ ...source, budgetUsd: "3" });
   const parsed = gridSchema.parse(source);
@@ -656,25 +647,17 @@ test("draft and canonical variable schemas preserve deleted slots and raw field 
   assert.equal(gridSchema.safeParse(deleted).success, false);
 });
 
-test("current admission rejects old axis definitions and simultaneous variable ownership", () => {
+test("current admission rejects old axis definitions and unmarked variable fields", () => {
   const base = currentDefinition({
     parameters: {
-      variable: { kind: "rows" },
       input: { kind: "common", value: [{ role: "user", content: "$ROW1" }] },
     },
     rows: [{ variable: [{ text: "cat" }] }],
-    caseAxis: "rows",
+    caseAxes: ["rows"],
   });
   for (const invalid of [
     { ...base, inputVersion: undefined },
     { ...base, rows: { kind: "variable", values: [[{ text: "cat" }]] } },
-    {
-      ...base,
-      parameters: {
-        ...base.parameters,
-        variable: { kind: "common", value: [{ text: "cat" }] },
-      },
-    },
     {
       ...base,
       columns: [{ id: "shadow", variable: [{ text: "hat" }] }],
@@ -701,11 +684,10 @@ test("every enabled variable axis must be used before a grid can generate", () =
     const token = side === "rows" ? "$ROW1" : "$COLUMN1";
     const input = currentDefinition({
       parameters: {
-        variable: { kind: side },
         input: { kind: "common", value: [{ role: "user", content: token }] },
       },
       [side]: [{ variable: [{ text: "cat" }] }],
-      caseAxis: side,
+      caseAxes: [side],
     });
     assert.equal(gridSchema.safeParse(input).success, true);
     for (const prompt of ["Draw a cat", side === "rows" ? "$COLUMN1" : "$ROW1"])
@@ -736,14 +718,13 @@ test("only text grids require a valid budget, while image grids normalize an unu
     const input = currentDefinition({
       format,
       parameters: {
-        variable: { kind: "rows" },
         input: {
           kind: "common",
           value: [{ role: "user", content: "$ROW1 $ROW2" }],
         },
       },
       rows: [{ variable: [{ text: "cat" }, { text: "hat" }] }],
-      caseAxis: "rows",
+      caseAxes: ["rows"],
     });
     for (const budgetUsd of [
       undefined,
@@ -774,12 +755,11 @@ test("only text grids require a valid budget, while image grids normalize an unu
 test("generation requires an explicit common model or selected model cases", () => {
   const input = currentDefinition({
     parameters: {
-      variable: { kind: "rows" },
       model: { kind: "common", value: "" },
       input: { kind: "common", value: [{ role: "user", content: "$ROW1" }] },
     },
     rows: [{ variable: [{ text: "cat" }] }],
-    caseAxis: "rows",
+    caseAxes: ["rows"],
   });
   assert.equal(gridSchema.safeParse(input).success, false);
   assert.equal(
@@ -807,13 +787,12 @@ test("large grids preserve every case combination and requested parallelism", ()
   const input = currentInput({
     parallelWorkers: 81,
     parameters: {
-      variable: { kind: "rows" },
       model: { kind: "columns" },
       input: { kind: "common", value: [{ role: "user", content: "$ROW1" }] },
     },
     rows: values.map((text) => ({ variable: [{ text }] })),
     columns: values.map((value) => ({ model: `fixture/model-${value}` })),
-    caseAxis: "rows",
+    caseAxes: ["rows"],
   });
   const cells = expandGrid(input);
   assert.equal(input.parallelWorkers, cells.length);
@@ -838,7 +817,6 @@ for (const format of ["markdown", "svg", "html"] as const) {
     const input = currentInput({
       format,
       parameters: {
-        variable: { kind: "rows" },
         input: {
           kind: "common",
           value: [
@@ -866,7 +844,7 @@ for (const format of ["markdown", "svg", "html"] as const) {
           ],
         },
       ],
-      caseAxis: "rows",
+      caseAxes: ["rows"],
     });
     assert.deepEqual(generatorInputForCell(input, 0, 0)[0].images, [
       common,
@@ -924,14 +902,13 @@ for (const format of ["markdown", "svg", "html"] as const) {
     const variableSource = currentDefinition({
       format,
       parameters: {
-        variable: { kind: "rows" },
         input: { kind: "common", value: [{ role: "user", content: "$ROW1" }] },
       },
       rows: [
         { variable: [{ text: "", images: [image] }] },
         { variable: [{ text: " " }] },
       ],
-      caseAxis: "rows",
+      caseAxes: ["rows"],
     });
     assert.equal(gridSchema.safeParse(variableSource).success, false);
     assert.equal(
@@ -965,11 +942,10 @@ test("Image generation requires a nonempty expanded instruction even with attach
   const source = currentDefinition({
     format: "image",
     parameters: {
-      variable: { kind: "rows" },
       input: { kind: "common", value: [{ role: "user", content: "$ROW1" }] },
     },
     rows: [{ variable: [{ text: "", images: [image] }] }],
-    caseAxis: "rows",
+    caseAxes: ["rows"],
   });
   assert.equal(gridSchema.safeParse(source).success, false);
   source.rows[0].variable![0]!.text = "Describe the attachment";
@@ -982,7 +958,6 @@ test("image cases expand settings and variable images in field order", () => {
     format: "image",
     parameters: {
       size: { kind: "rows" },
-      variable: { kind: "columns" },
       input: {
         kind: "common",
         value: [{ role: "user", content: "A landscape$COLUMN1" }],
@@ -1000,7 +975,7 @@ test("image cases expand settings and variable images in field order", () => {
         ],
       },
     ],
-    caseAxis: "columns",
+    caseAxes: ["columns"],
   });
   const cells = expandGrid(input);
   assert.deepEqual(
@@ -1072,7 +1047,6 @@ test("shared image settings combine with cases and omit Auto defaults", () => {
   const caseImages = currentInput({
     format: "image",
     parameters: {
-      variable: { kind: "rows" },
       input: { kind: "common", value: [{ role: "user", content: "$ROW1" }] },
     },
     rows: [
@@ -1085,7 +1059,7 @@ test("shared image settings combine with cases and omit Auto defaults", () => {
         ],
       },
     ],
-    caseAxis: "rows",
+    caseAxes: ["rows"],
   });
   assert.deepEqual(expandGrid(caseImages)[0].imageSettings?.input_references, [
     "case-image",
@@ -1387,7 +1361,7 @@ for (const side of ["rows", "columns"] as const) {
   test(`${side} own complete prompt inputs without numbered fields and retain equal cases`, () => {
     const image = { id: "case-image", name: "case.png" };
     const source = currentDefinition({
-      caseAxis: side,
+      caseAxes: [side],
       parameters: { input: { kind: side }, model: { kind: other } },
       [side]: [
         {
@@ -1417,7 +1391,7 @@ for (const side of ["rows", "columns"] as const) {
       assert.equal(cell.prompt, source[side][index].input![0].content);
     }
     assert.equal(cells.length, 4);
-    assert.equal(parsed.parameters.variable, undefined);
+    assert.ok(parsed[side].every((record) => record.variable === undefined));
     const equal = {
       ...source,
       [side]: source[side].map((record) => ({
@@ -1455,8 +1429,8 @@ for (const side of ["rows", "columns"] as const) {
   test(`${side} own structurally different histories with independent roles, counts and unfilled positions`, () => {
     const source = currentDefinition({
       format: "chat-template",
-      caseAxis: side,
-      parameters: { input: { kind: side }, variable: { kind: side } },
+      caseAxes: [side],
+      parameters: { input: { kind: side } },
       [side]: [
         {
           id: "short",
@@ -1541,7 +1515,7 @@ for (const format of [
         const input = currentDefinition({
           format,
           judge: common.judge,
-          caseAxis: side,
+          caseAxes: [side],
           parameters: { [parameter]: { kind: side } },
           [side]: [
             { id: "first", [parameter]: structuredClone(source.value) },
@@ -1597,7 +1571,7 @@ for (const format of [
 test("case IDs must be distinct in both axis orientations", () => {
   for (const side of ["rows", "columns"] as const) {
     const input = currentDefinition({
-      caseAxis: side,
+      caseAxes: [side],
       parameters: { input: { kind: side } },
       [side]: [
         { id: "duplicate", input: [{ role: "user", content: "First" }] },
@@ -1619,7 +1593,7 @@ test("case IDs must be distinct in both axis orientations", () => {
 test("budget cannot become a common, row or column parameter, even in an explicit case layout", () => {
   for (const side of ["rows", "columns"] as const) {
     const input = currentDefinition({
-      caseAxis: side,
+      caseAxes: [side],
       parameters: { input: { kind: side } },
       [side]: [{ input: [{ role: "user", content: "An entire prompt" }] }],
     });
@@ -1644,7 +1618,7 @@ test("budget cannot become a common, row or column parameter, even in an explici
   }
 });
 
-test("current-version layouts with incompatible ownership cannot cross the Edit or Fork boundary", () => {
+test("malformed current ownership cannot become a draft and canonical case layouts clone independently", () => {
   for (const side of ["rows", "columns"] as const) {
     const other = side === "rows" ? "columns" : "rows";
     const compound = currentDefinition({
@@ -1653,12 +1627,11 @@ test("current-version layouts with incompatible ownership cannot cross the Edit 
     });
     const misplacedInput = currentDefinition({
       parameters: { input: { kind: side } },
-      [side]: [{ input: [{ role: "user", content: "Accepted old input" }] }],
+      [side]: [{ input: [{ role: "user", content: "Misplaced case input" }] }],
     });
     const wrongFields = currentDefinition({
-      caseAxis: other,
+      caseAxes: [other],
       parameters: {
-        variable: { kind: side },
         input: {
           kind: "common",
           value: [
@@ -1669,20 +1642,14 @@ test("current-version layouts with incompatible ownership cannot cross the Edit 
           ],
         },
       },
-      [side]: [{ variable: [{ text: "Accepted field" }] }],
+      [side]: [{ variable: [{ text: "Misplaced field" }] }],
     });
     for (const input of [compound, misplacedInput, wrongFields]) {
       const before = structuredClone(input);
-      assert.equal(isCurrentGridInput(input), true);
-      assert.equal(editableGridInput(input), undefined);
-      assert.throws(
-        () => draftInputFromGridInput(input),
-        /cannot be edited or forked/,
-      );
+      assert.throws(() => draftInputFromGridInput(input));
       assert.deepEqual(input, before);
     }
-    const editable = { ...compound, caseAxis: side };
-    assert.ok(editableGridInput(editable));
+    const editable = { ...compound, caseAxes: [side] };
     const draft = draftInputFromGridInput(editable);
     assert.deepEqual(draft, { ...editable, budgetUsd: "3" });
     draft[side][0].model = "changed";

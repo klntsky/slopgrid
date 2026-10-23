@@ -17,6 +17,7 @@ import { isChatFormat, type Effort } from "../../server/domain";
 import { imageKinds } from "../../server/image-settings";
 import {
   axisParameters,
+  isCaseAxis,
   parameterNames,
   type CommonParameterId,
   type AxisSide,
@@ -122,20 +123,20 @@ export function Create() {
       imageKinds.some(
         (parameter) => input.parameters[parameter]?.kind === "common",
       ));
-  const variableSource = input.parameters.variable;
-  const promptVariables = variableSource
-    ? (input[variableSource.kind][0]?.variable ?? []).flatMap((field, index) =>
-        field === null
-          ? []
-          : [
-              `$${variableSource.kind === "rows" ? "ROW" : "COLUMN"}${index + 1}`,
-            ],
-      )
-    : [];
-  const caseIssue = caseSetupIssue(input);
+  const caseSides = (["rows", "columns"] as const).filter((side) =>
+    isCaseAxis(input, side),
+  );
+  const promptVariables = caseSides.flatMap((side) =>
+    (input[side][0]?.variable ?? []).flatMap((field, index) =>
+      field === null
+        ? []
+        : [`$${side === "rows" ? "ROW" : "COLUMN"}${index + 1}`],
+    ),
+  );
   const criteriaSource = input.parameters.judge_criteria;
   const inputSource = input.parameters.input;
-  const caseLayoutActive = !!input.caseAxis && input[input.caseAxis].length > 0;
+  const caseLayoutActive = caseSides.length > 0;
+  const setupIssue = caseSetupIssue(input);
   function toAxis(parameter: CommonParameterId, side: AxisSide) {
     const previousFocus = document.activeElement;
     if (!dispatch({ type: "to-axis", parameter, side })) return;
@@ -303,7 +304,7 @@ export function Create() {
                 )}
               </AxisEditor>
             </fieldset>
-            <ValidationFeedback path={["caseAxis"]} />
+            <ValidationFeedback path={["caseAxes"]} descendants />
             <ValidationFeedback path={["parameters"]} />
             {Object.keys(parameterNames).map((parameter) => (
               <ValidationScope key={parameter} path={["parameters", parameter]}>
@@ -329,49 +330,60 @@ export function Create() {
               className="case-layout"
               disabled={submission.uploading || busy}
             >
-              <GridLayoutTable
-                input={input}
-                models={models}
-                judgeModels={judgeModels}
-                onAction={dispatch}
-                onBusy={onUploading}
-                compatibility={(
-                  side,
-                  parameter,
-                  caseIndex,
-                  fieldIndex,
-                  messageIndex,
-                ) => (
-                  <CompatibilityFeedback
-                    input={candidate}
-                    issues={compatibilityIssues}
-                    origin={{
+              {caseSides.map((side) => {
+                const caseIssue = caseSetupIssue(input, side);
+                return (
+                  <GridLayoutTable
+                    key={side}
+                    side={side}
+                    input={input}
+                    variables={promptVariables}
+                    models={models}
+                    judgeModels={judgeModels}
+                    onAction={dispatch}
+                    onBusy={onUploading}
+                    compatibility={(
+                      source,
                       parameter,
-                      source: side,
                       caseIndex,
                       fieldIndex,
                       messageIndex,
-                    }}
-                  />
-                )}
-              >
-                {caseIssue ? (
-                  <ErrorMessage>
-                    {caseIssue.kind === "parameters" ? (
-                      <>
-                        {'Add a variable or click "'}
-                        <ListOrdered size={14} aria-hidden="true" />
-                        {' define multiple cases" for a parameter.'}
-                      </>
-                    ) : (
-                      caseIssue.message
+                    ) => (
+                      <CompatibilityFeedback
+                        input={candidate}
+                        issues={compatibilityIssues}
+                        origin={{
+                          parameter,
+                          source,
+                          caseIndex,
+                          fieldIndex,
+                          messageIndex,
+                        }}
+                      />
                     )}
-                  </ErrorMessage>
-                ) : input.caseAxis ? (
-                  <ValidationFeedback path={[input.caseAxis]} />
-                ) : null}
-              </GridLayoutTable>
+                  >
+                    {caseIssue ? (
+                      <ErrorMessage>
+                        {caseIssue.kind === "parameters" ? (
+                          <>
+                            {'Add a variable or click "'}
+                            <ListOrdered size={14} aria-hidden="true" />
+                            {' define multiple cases" for a parameter.'}
+                          </>
+                        ) : (
+                          caseIssue.message
+                        )}
+                      </ErrorMessage>
+                    ) : (
+                      <ValidationFeedback path={[side]} />
+                    )}
+                  </GridLayoutTable>
+                );
+              })}
             </fieldset>
+            {caseLayoutActive && setupIssue?.kind === "axis-values" && (
+              <ErrorMessage>{setupIssue.message}</ErrorMessage>
+            )}
             {caseLayoutActive && layoutSummary}
           </section>
         )}
@@ -423,6 +435,7 @@ export function Create() {
               <CompleteInputEditor
                 format={input.format}
                 messages={inputSource.value}
+                variables={promptVariables}
                 source="common"
                 onAction={dispatch}
                 onBusy={onUploading}
@@ -499,6 +512,7 @@ export function Create() {
                     >
                       <CriteriaEditor
                         criteria={criteriaSource.value}
+                        variables={promptVariables}
                         onChange={(value) => {
                           if (!value.length) setJudgeEnabled(false);
                           else

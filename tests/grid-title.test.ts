@@ -20,7 +20,7 @@ for (const side of ["rows", "columns"] as const)
     );
     const title = expandPromptForTitle(
       currentDefinition({
-        caseAxis: side,
+        caseAxes: [side],
         parameters: {
           input: {
             kind: "common",
@@ -31,7 +31,6 @@ for (const side of ["rows", "columns"] as const)
               },
             ],
           },
-          variable: { kind: side },
         },
         [side]: [{ variable: first }, { variable: secondWithImage }],
       }),
@@ -54,7 +53,7 @@ for (const side of ["rows", "columns"] as const) {
       const title = expandPromptForTitle(
         currentDefinition({
           format,
-          caseAxis: side,
+          caseAxes: [side],
           parameters: { input: { kind: side } },
           [side]: [
             { input: [{ role: "user", content: "First complete question" }] },
@@ -88,11 +87,10 @@ for (const side of ["rows", "columns"] as const) {
       const token = side === "rows" ? "$ROW" : "$COLUMN";
       const input = currentDefinition({
         format,
-        caseAxis: side,
+        caseAxes: [side],
         judge: true,
         parameters: {
           input: { kind: side },
-          variable: { kind: side },
           judge_criteria: {
             kind: "common",
             value: [{ text: `Private rubric ${token}4`, correctAnswer: false }],
@@ -143,7 +141,7 @@ for (const side of ["rows", "columns"] as const) {
     test(`${side} ${format} image-only complete input titles retain attachment filenames`, () => {
       const input = currentDefinition({
         format,
-        caseAxis: side,
+        caseAxes: [side],
         parameters: { input: { kind: side } },
         [side]: ["first.png", "second.png"].map((name) => ({
           input: [

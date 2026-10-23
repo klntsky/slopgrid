@@ -67,6 +67,7 @@ export function serviceWorkerFixture(
   runInNewContext(source, {
     self: {
       location: { origin },
+      clients: { claim: async () => {} },
       addEventListener: (type: string, handler: (event: WorkerEvent) => void) =>
         handlers.set(type, handler),
     },
@@ -100,6 +101,9 @@ export function serviceWorkerFixture(
 
   return {
     caches,
+    activate() {
+      return dispatch("activate", {}).settled();
+    },
     fetch(path: string, method = "GET") {
       return dispatch("fetch", { request: new Request(key(path), { method }) });
     },

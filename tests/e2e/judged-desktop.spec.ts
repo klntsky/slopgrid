@@ -260,14 +260,13 @@ test("judgment hover aligns short criteria fractionally even when unequal views 
   });
   const id = await seedJudged(page, {
     ...judgedInput,
-    caseAxis: "rows",
+    caseAxes: ["rows"],
     parameters: {
       ...judgedInput.parameters,
       input: {
         kind: "common",
         value: [{ role: "user", content: "Draw a red $ROW1 rectangle" }],
       },
-      variable: { kind: "rows" },
       judge_model: { kind: "common", value: "fixture/text" },
       judge_criteria: { kind: "common", value: criteria },
     },
@@ -531,14 +530,13 @@ test("native judgment wheel aligns the criterion under a stationary cursor in un
   });
   const id = await seedJudged(page, {
     ...judgedInput,
-    caseAxis: "rows",
+    caseAxes: ["rows"],
     parameters: {
       ...judgedInput.parameters,
       input: {
         kind: "common",
         value: [{ role: "user", content: "Draw a red $ROW1 rectangle" }],
       },
-      variable: { kind: "rows" },
       judge_model: { kind: "common", value: "fixture/text" },
       judge_criteria: { kind: "common", value: criteria },
     },
@@ -709,14 +707,13 @@ test("judgment layout changes after desktop scrollend refresh a stationary curso
   });
   const id = await seedJudged(page, {
     ...judgedInput,
-    caseAxis: "rows",
+    caseAxes: ["rows"],
     parameters: {
       ...judgedInput.parameters,
       input: {
         kind: "common",
         value: [{ role: "user", content: "Draw a red $ROW1 rectangle" }],
       },
-      variable: { kind: "rows" },
       judge_model: { kind: "common", value: "fixture/text" },
       judge_criteria: { kind: "common", value: criteria },
     },

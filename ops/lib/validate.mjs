@@ -13,7 +13,7 @@ export function validationCommands(options, unitFiles) {
   const units = options.tests === "full" ? unitFiles : options.units;
   const commands = [];
   if (units.length)
-    commands.push(["exec", "tsx", "--test", "--test-concurrency=4", ...units]);
+    commands.push(["exec", "tsx", "--test", "--test-concurrency=6", ...units]);
   if (options.tests === "full")
     commands.push([
       "exec",
@@ -141,6 +141,11 @@ export async function validateBuild(request, build, run) {
         try {
           result.productionData.databaseBytes = lstatSync(env.DATABASE_PATH).size;
           result.productionData.schemaBefore = snapshot.pragma("user_version", { simple: true });
+          if (![14, 17].includes(result.productionData.schemaBefore))
+            throw new Error("Production data rehearsal requires source database schema 14 or canonical schema 17");
+          if (result.productionData.schemaBefore === 17 &&
+              snapshot.prepare("SELECT 1 FROM grids WHERE json_extract(data,'$.input.inputVersion') IS NOT 3 LIMIT 1").get())
+            throw new Error("Production schema 17 requires canonical inputVersion 3 grids");
         } finally {
           snapshot.close();
         }
@@ -161,6 +166,10 @@ store.db.close();`,
           if (migrated.prepare("PRAGMA foreign_key_check").get() !== undefined)
             throw new Error("Production data rehearsal failed SQLite foreign key check");
           result.productionData.schemaAfter = migrated.pragma("user_version", { simple: true });
+          if (result.productionData.schemaAfter !== 17)
+            throw new Error("Production data rehearsal must produce database schema 17");
+          if (migrated.prepare("SELECT 1 FROM grids WHERE json_extract(data,'$.input.inputVersion') IS NOT 3 LIMIT 1").get())
+            throw new Error("Production data rehearsal must produce canonical inputVersion 3 grids");
         } finally {
           migrated.close();
         }

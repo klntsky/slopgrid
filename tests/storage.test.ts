@@ -22,11 +22,8 @@ import {
   type GenerationTask,
 } from "../server/domain.js";
 import { createWorkflow } from "../server/workflow.js";
-import {
-  expandLegacyGrid,
-  type LegacyGridInput,
-} from "../server/legacy-grid-input.js";
-import { isCurrentGridInput, parameterValue } from "../server/parameters.js";
+import { parameterValue } from "../server/parameters.js";
+import { selectedReferences } from "../server/image-settings.js";
 import { currentInput } from "./current-grid-fixture.js";
 import {
   referenceUsageLinks,
@@ -112,16 +109,16 @@ test("list prompts are expanded and truncated once, then persist independently o
     ];
     for (const [index, scenario] of cases.entries()) {
       const input = currentInput({
-        caseAxis: scenario.prompt.includes("$ROW1") ? "rows" : undefined,
+        caseAxes: scenario.prompt.includes("$ROW1") ? ["rows"] : [],
         budgetUsd: 1,
         parameters: {
           input: {
             kind: "common",
             value: [{ role: "user", content: scenario.prompt }],
           },
-          ...(scenario.prompt.includes("$ROW1")
-            ? { variable: { kind: "rows" as const } }
-            : { model: { kind: "rows" as const } }),
+          ...(!scenario.prompt.includes("$ROW1")
+            ? { model: { kind: "rows" as const } }
+            : {}),
           effort: { kind: "columns" },
         },
         rows: scenario.prompt.includes("$ROW1")
@@ -182,14 +179,13 @@ test("saved outputs and traces remain readable after publication and reject arti
   try {
     const input = currentInput({
       format: "html",
-      caseAxis: "rows",
+      caseAxes: ["rows"],
       budgetUsd: 5,
       parameters: {
         input: {
           kind: "common",
           value: [{ role: "user", content: "Draw $ROW1" }],
         },
-        variable: { kind: "rows" },
         effort: { kind: "columns" },
       },
       rows: [{ variable: [{ text: "cat" }] }],
@@ -400,7 +396,7 @@ for (const available of [true, false])
       })!;
       const different = store.references.add(changed, "different.png", owner)!;
       const unavailable = store.references.add(png, "unavailable.png", owner)!;
-      const input: LegacyGridInput = {
+      const productionInput: unknown = {
         format: "image",
         prompt: "Describe these images",
         inputReferences: [first, second, unavailable],
@@ -410,7 +406,25 @@ for (const available of [true, false])
         effort: "none",
         budgetUsd: 1,
       };
-      const grid: Grid & { input: LegacyGridInput } = {
+      const input = currentInput({
+        format: "image",
+        budgetUsd: 1,
+        parameters: {
+          input: {
+            kind: "common",
+            value: [{
+              role: "user",
+              content: "Describe these images",
+              images: [first, second, unavailable],
+            }],
+          },
+          quality: { kind: "rows" },
+          model: { kind: "columns" },
+        },
+        rows: [{ quality: "high" }],
+        columns: [{ model: "fixture/image" }],
+      });
+      const grid: Grid = {
         id: token(),
         owner: owner.id,
         ownerUserId: "claimed-account",
@@ -419,7 +433,7 @@ for (const available of [true, false])
         published: false,
         visibility: "private",
         createdAt: "2026-01-01T00:00:00.000Z",
-        cells: expandLegacyGrid(input).map((cell) => ({
+        cells: expandGrid(input).map((cell) => ({
           ...cell,
           id: token(),
           generationId: "accepted-reference-generation",
@@ -432,11 +446,14 @@ for (const available of [true, false])
         status: "pending",
         input: {
           format: "image",
-          model: cell.model,
-          effort: cell.effort,
-          prompt: cell.prompt,
-          imageSettings: cell.imageSettings,
-          budgetUsd: cell.budgetUsd,
+          model: "fixture/image",
+          effort: "none",
+          prompt: "Describe these images",
+          imageSettings: {
+            quality: "high",
+            input_references: [first.id, second.id, unavailable.id],
+          },
+          budgetUsd: 1,
         },
       };
       arrangeHistoricalGrid(store, grid, [acceptedTask]);
@@ -459,6 +476,7 @@ for (const available of [true, false])
       const expectedTasks = tasks;
       const links = referenceUsageLinks(store.db);
       removeStoredReferenceDimensions(store.db);
+      replaceLegacyGridInputs(store.db, productionInput, grid.id);
       restoreV14ReferenceSchema(store.db);
       rmSync(join(store.files.root, ".references"), { recursive: true });
       if (available) {
@@ -469,10 +487,10 @@ for (const available of [true, false])
       store.db.close();
       store = new Store(database, secret);
       assert.deepEqual(store.workflow(grid.id), expectedTasks);
-      assert.deepEqual(store.get(grid.id)!.input, {
-        ...input,
-        inputReferences: expectedReferences,
-      });
+      const migrated = store.get(grid.id)!.input;
+      assert.equal(migrated.inputVersion, 3);
+      assert.equal(gridSchema.safeParse(migrated).success, true);
+      assert.deepEqual(selectedReferences(migrated), expectedReferences);
       assert.equal(store.get(grid.id)!.ownerUserId, "claimed-account");
       assert.deepEqual(referenceUsageLinks(store.db), links);
       assert.deepEqual(store.session("saved-session"), {
@@ -753,22 +771,27 @@ test("production v14 files retain unknown bytes and populate shared proportions 
   }
 });
 
-test("production v14 variable grids reopen read-only with accepted payloads intact", () => {
+test("canonical variable grids reopen editable with accepted payloads intact", () => {
   const dir = mkdtempSync(join(tmpdir(), "slopgrid-variable-migration-"));
   const database = join(dir, "app.sqlite");
   const secret = Buffer.alloc(32, 1);
   let store = new Store(database, secret);
   try {
-    const input: LegacyGridInput = {
+    const input = currentInput({
       format: "markdown",
-      prompt: "Draw $ROW1",
-      rows: { kind: "variable", values: [[{ text: "literal $COLUMN" }]] },
-      columns: { kind: "effort", values: ["none"] },
-      model: "fixture/text",
-      effort: "none",
+      caseAxes: ["rows"],
       budgetUsd: 1,
-    };
-    const grid: Grid & { input: LegacyGridInput } = {
+      parameters: {
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: "Draw $ROW1" }],
+        },
+        effort: { kind: "columns" },
+      },
+      rows: [{ variable: [{ text: "literal $COLUMN" }] }],
+      columns: [{ effort: "none" }],
+    });
+    const grid: Grid = {
       id: token(),
       owner: "owner",
       input,
@@ -776,7 +799,7 @@ test("production v14 variable grids reopen read-only with accepted payloads inta
       published: false,
       visibility: "private",
       createdAt: "2026-01-01T00:00:00.000Z",
-      cells: expandLegacyGrid(input).map((cell) => ({
+      cells: expandGrid(input).map((cell) => ({
         ...cell,
         id: token(),
         generationId: "accepted-variable-generation",
@@ -798,16 +821,6 @@ test("production v14 variable grids reopen read-only with accepted payloads inta
     arrangeHistoricalGrid(store, grid, [task]);
     const accepted = store.workflow(grid.id);
     const title = store.get(grid.id)!.expanded_prompt_for_title;
-    replaceLegacyGridInputs(
-      store.db,
-      {
-        ...input,
-        prompt: "Draw $ROW",
-        rows: { kind: "variable", values: ["literal $COLUMN"] },
-      },
-      grid.id,
-    );
-    restoreV14ReferenceSchema(store.db);
     store.db.close();
     store = new Store(database, secret);
     const saved = store.get(grid.id)!;
@@ -815,8 +828,8 @@ test("production v14 variable grids reopen read-only with accepted payloads inta
     assert.equal(saved.cells[0].prompt, "Draw literal $COLUMN");
     assert.equal(saved.expanded_prompt_for_title, title);
     assert.deepEqual(store.workflow(grid.id), accepted);
-    assert.equal(isCurrentGridInput(saved.input), false);
-    assert.equal(gridSchema.safeParse(saved.input).success, false);
+    assert.equal(saved.input.inputVersion, 3);
+    assert.equal(gridSchema.safeParse(saved.input).success, true);
     store.db.close();
     store = new Store(database, secret);
     assert.deepEqual(store.get(grid.id)!.input, input);
@@ -858,7 +871,7 @@ for (const format of ["markdown", "chat-template", "image"] as const)
       });
       const input = currentInput({
         format,
-        caseAxis: "rows",
+        caseAxes: ["rows"],
         budgetUsd: 1,
         judge: true,
         parameters: {
@@ -872,7 +885,6 @@ for (const format of ["markdown", "chat-template", "image"] as const)
               },
             ],
           },
-          variable: { kind: "rows" },
           ...(format !== "image"
             ? { effort: { kind: "common" as const, value: "none" as const } }
             : {}),
@@ -909,10 +921,8 @@ for (const format of ["markdown", "chat-template", "image"] as const)
       store.db.close();
       store = new Store(database, secret);
       const saved = store.get(grid.id)!;
-      assert.equal(isCurrentGridInput(saved.input), true);
-      if (!isCurrentGridInput(saved.input))
-        throw new Error("Expected current saved input");
-      assert.deepEqual(saved.input.parameters.variable, { kind: "rows" });
+      assert.equal(saved.input.inputVersion, 3);
+      assert.deepEqual(saved.input.caseAxes, ["rows"]);
       assert.deepEqual(saved.input.rows[0].variable![0]!.images, [generator]);
       assert.deepEqual(parameterValue(saved.input, "input", 0, 0)![0].images, [
         explicit,

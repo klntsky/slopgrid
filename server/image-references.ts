@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { imageSize } from "image-size";
-import type { ChatMessage, StoredGridInput, WorkflowTask } from "./domain.js";
+import type { ChatMessage, GridInput, WorkflowTask } from "./domain.js";
 import { generatorInputEntries } from "./generator-input.js";
 import type { ReferenceImage } from "./image-settings.js";
 import { readChatOutput } from "../shared/chat-output.js";
@@ -198,20 +198,10 @@ export function createImageReferences(
         : message,
     );
   }
-  function input<T extends StoredGridInput>(input: T): T {
+  function input<T extends GridInput>(input: T): T {
     // Cloning the already-admitted value preserves its opaque admission type.
     // Hydration changes metadata only, never ownership or reference identity.
     const hydrated = structuredClone(input);
-    if (hydrated.inputVersion === undefined) {
-      if (hydrated.format === "image") {
-        if (hydrated.inputReferences)
-          hydrated.inputReferences = hydrated.inputReferences.map(hydrate);
-        for (const name in hydrated.referenceGroups)
-          hydrated.referenceGroups[name] =
-            hydrated.referenceGroups[name].map(hydrate);
-      }
-      return hydrated;
-    }
     for (const { messages } of generatorInputEntries(hydrated))
       for (const message of messages)
         if (message.images) message.images = message.images.map(hydrate);

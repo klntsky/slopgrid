@@ -42,7 +42,7 @@ export class Store {
     if (process.env.SLOPGRID_FIXTURE_FRONTEND_MUTATION === "1")
       writeFileSync(join(process.env.FRONTEND_PATH, "index.html"), "changed during migration");
     this.db = new Database(databasePath, { fileMustExist: true });
-    assert.equal(this.db.pragma("user_version", { simple: true }), 1);
+    assert.equal(this.db.pragma("user_version", { simple: true }), 14);
     assert.deepEqual(this.db.prepare("SELECT id, value FROM records ORDER BY id").all(), [
       { id: 1, value: "checkpointed" }, { id: 2, value: "wal-only" },
     ]);
@@ -50,7 +50,10 @@ export class Store {
     if (process.env.SLOPGRID_FIXTURE_MIGRATION_FAILURE === "1")
       this.db.exec("ALTER TABLE missing_migration_table ADD COLUMN broken TEXT");
     this.db.prepare("UPDATE records SET migrated = 'candidate:' || value || ':' || ?").run(original);
-    this.db.pragma("user_version=2");
+    this.db.exec("UPDATE grids SET data=json_set(data,'$.input.inputVersion',3)");
+    if (process.env.SLOPGRID_FIXTURE_NONCANONICAL_FAILURE === "1")
+      this.db.exec("UPDATE grids SET data=json_remove(data,'$.input.inputVersion')");
+    this.db.pragma("user_version=" + (process.env.SLOPGRID_FIXTURE_VERSION_FAILURE === "1" ? 16 : 17));
     if (process.env.SLOPGRID_FIXTURE_FOREIGN_KEY_FAILURE === "1")
       this.db.exec("PRAGMA foreign_keys=OFF; CREATE TABLE parents(id INTEGER PRIMARY KEY); CREATE TABLE children(parent INTEGER REFERENCES parents(id)); INSERT INTO children VALUES (999)");
     if (process.env.SLOPGRID_FIXTURE_INTEGRITY_FAILURE === "1")
@@ -77,7 +80,8 @@ export function assertCandidateDatabase(phase) {
   assert.equal(process.env.SLOPGRID_TEST_DATABASE, process.env.DATABASE_PATH);
   const db = new Database(process.env.SLOPGRID_TEST_DATABASE, { readonly: true, fileMustExist: true });
   try {
-    assert.equal(db.pragma("user_version", { simple: true }), 2);
+    assert.equal(db.pragma("user_version", { simple: true }), 17);
+    assert.equal(db.prepare("SELECT json_extract(data,'$.input.inputVersion') AS version FROM grids").get().version, 3);
     const rows = db.prepare("SELECT * FROM records ORDER BY id").all();
     assert.deepEqual(rows, ${JSON.stringify(expectedRows)});
     assert.equal(readFileSync(join(process.env.OUTPUTS_PATH, "nested/production-only.html"), "utf8"),
@@ -104,6 +108,7 @@ function sourceState(database) {
       .all(),
     version: database.pragma("user_version", { simple: true }),
     rows: database.prepare("SELECT * FROM records ORDER BY id").all(),
+    grids: database.prepare("SELECT * FROM grids ORDER BY id").all(),
   };
 }
 export {
@@ -115,11 +120,14 @@ export {
   sourceState,
 };
 
-export function seedProductionWalRecords(source) {
+export function seedProductionWalRecords(source, version = 14) {
   source.pragma("journal_mode = WAL");
   source.pragma("wal_autocheckpoint = 0");
   source.exec(
-    "CREATE TABLE records(id INTEGER PRIMARY KEY, value TEXT NOT NULL); PRAGMA user_version=1; INSERT INTO records VALUES (1, 'checkpointed')",
+    `CREATE TABLE records(id INTEGER PRIMARY KEY, value TEXT NOT NULL);
+     CREATE TABLE grids(id TEXT PRIMARY KEY, data TEXT NOT NULL);
+     INSERT INTO grids VALUES ('production-grid','{"input":{"prompt":"production prompt"}}');
+     PRAGMA user_version=${version}; INSERT INTO records VALUES (1, 'checkpointed')`,
   );
   source.pragma("wal_checkpoint(TRUNCATE)");
   source.exec("INSERT INTO records VALUES (2, 'wal-only')");

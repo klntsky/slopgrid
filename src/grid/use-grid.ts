@@ -6,7 +6,7 @@ import { api, ApiError, type ViewGrid } from "../api";
 import { saveDraft } from "../create/draft";
 import { cacheGrid, useOffline } from "../pwa";
 import { applyDelta, type GridStreamMessage } from "../../shared/grid-delta";
-import { editableGridInput } from "../../server/editable-grid-input";
+import { draftInputFromGridInput } from "../create/draft-input";
 export function useGrid(id: string) {
   const cache = useQueryClient(),
     navigate = useNavigate();
@@ -102,18 +102,10 @@ export function useGrid(id: string) {
   const configure = useMutation({
     mutationFn: async () => {
       const grid = query.data!;
-      if (!editableGridInput(grid.input) || grid.canConfigure === false)
-        throw new Error(
-          "This grid uses an older configuration and cannot be edited or forked.",
-        );
       return grid.published ? grid : api<ViewGrid>(`/grids/${id}/edit`, "POST");
     },
     onSuccess: async (grid) => {
-      const input = editableGridInput(grid.input);
-      if (!input)
-        throw new Error(
-          "This grid uses an older configuration and cannot be edited or forked.",
-        );
+      const input = draftInputFromGridInput(grid.input);
       cache.setQueryData(["grid", id], grid);
       saveDraft({
         formatSelected: true,

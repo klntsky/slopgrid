@@ -34,13 +34,12 @@ test("a restart preserves finished outputs and pauses interrupted work until an 
       createdAt: new Date().toISOString(),
       status: "running",
       input: currentInput({
-        caseAxis: "rows",
+        caseAxes: ["rows"],
         parameters: {
           input: {
             kind: "common",
             value: [{ role: "user", content: "$ROW1 hat" }],
           },
-          variable: { kind: "rows" },
           effort: { kind: "common", value: "none" },
         },
         rows: [

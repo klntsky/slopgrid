@@ -18,13 +18,12 @@ test(
       const owner = fixture.owner;
       const request = fixture.request;
       const input = currentDefinition({
-        caseAxis: "rows",
+        caseAxes: ["rows"],
         parameters: {
           input: {
             kind: "common",
             value: [{ role: "user", content: "Draw $ROW1" }],
           },
-          variable: { kind: "rows" },
           model: { kind: "columns" },
           effort: { kind: "common", value: "none" },
         },

@@ -1,4 +1,6 @@
-import type { ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import tippy, { type Instance } from "tippy.js";
 import { CornerRightUp, ListOrdered } from "lucide-react";
 import { imageKinds, imageChoices } from "../../server/image-settings";
 import {
@@ -8,6 +10,7 @@ import {
 } from "../../server/domain";
 import {
   axisParameters,
+  isCaseAxis,
   parameterNames,
   type AxisSide,
   type ParameterId,
@@ -56,11 +59,11 @@ export function AxisEditor({
     "judge_effort",
   ];
   const label = side === "rows" ? "Rows" : "Columns";
-  const dimension = input.caseAxis === side ? "variable" : members[0];
+  const dimension = isCaseAxis(input, side) ? "variable" : members[0];
   return (
     <ValidationField
-      path={input.caseAxis === side ? ["caseAxis"] : [side]}
-      descendants={input.caseAxis !== side}
+      path={isCaseAxis(input, side) ? ["caseAxes"] : [side]}
+      descendants={!isCaseAxis(input, side)}
     >
       {(validation) => (
         <div className="axis" role="group">
@@ -88,11 +91,9 @@ export function AxisEditor({
                   key={kind}
                   value={kind}
                   disabled={
-                    (kind === "variable" &&
-                      !!input.caseAxis &&
-                      input.caseAxis !== side) ||
-                    input.parameters[kind]?.kind ===
-                      (side === "rows" ? "columns" : "rows") ||
+                    (kind !== "variable" &&
+                      input.parameters[kind]?.kind ===
+                        (side === "rows" ? "columns" : "rows")) ||
                     (!input.judge &&
                       (kind === "judge_model" || kind === "judge_effort"))
                   }
@@ -123,7 +124,7 @@ export function AxisValues({
   const parameter = axisParameters(input, side)[0];
   const label = side === "rows" ? "Rows" : "Columns";
   if (
-    input.caseAxis === side ||
+    isCaseAxis(input, side) ||
     !parameter ||
     parameter === "variable" ||
     parameter === "judge_criteria" ||
@@ -216,12 +217,74 @@ export function CommonParameterActions({
   onMove: (parameter: CommonParameterId, side: AxisSide) => void;
   disabled?: boolean;
 }) {
-  const side = input.caseAxis;
-  const reason =
-    !side || !input[side].length
-      ? 'Select "Multiple cases" for rows or columns first'
+  const destinations = (["rows", "columns"] as const).filter((side) =>
+    isCaseAxis(input, side),
+  );
+  const chooseDestination = destinations.length === 2;
+  const side = destinations[0];
+  const reason = !side
+    ? 'Select "Multiple cases" for rows or columns first'
+    : !destinations.some((destination) => input[destination].length > 0)
+      ? "Add at least one case before defining parameter cases"
       : undefined;
   const tooltip = useTooltip<HTMLSpanElement>(reason);
+  const button = useRef<HTMLButtonElement>(null);
+  const popup = useRef<Instance | null>(null);
+  const [container, setContainer] = useState<HTMLDivElement | null>(null);
+  const [open, setOpen] = useState(false);
+  const menuId = useId();
+  useEffect(() => {
+    if (!chooseDestination || disabled || reason) return;
+    const element = button.current!;
+    const content = document.createElement("div");
+    setContainer(content);
+    const instance = tippy(element, {
+      content,
+      theme: "case-destination",
+      trigger: "manual",
+      hideOnClick: false,
+      interactive: true,
+      placement: "bottom-end",
+      appendTo: () => document.body,
+      arrow: false,
+      role: "presentation",
+      aria: { content: null, expanded: false },
+      onShow: () => setOpen(true),
+      onHide: () => setOpen(false),
+      onMount: () =>
+        content
+          .querySelector<HTMLButtonElement>('[role="menuitem"]:not(:disabled)')
+          ?.focus(),
+    });
+    popup.current = instance;
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || !instance.state.isVisible) return;
+      event.preventDefault();
+      event.stopPropagation();
+      instance.hide();
+      element.focus();
+    };
+    const outside = (event: PointerEvent | FocusEvent) => {
+      if (
+        event.target instanceof Node &&
+        !element.contains(event.target) &&
+        !instance.popper.contains(event.target)
+      )
+        instance.hide();
+    };
+    document.addEventListener("keydown", escape, true);
+    document.addEventListener("pointerdown", outside, true);
+    document.addEventListener("focusin", outside);
+    return () => {
+      document.removeEventListener("keydown", escape, true);
+      document.removeEventListener("pointerdown", outside, true);
+      document.removeEventListener("focusin", outside);
+      instance.destroy();
+      popup.current = null;
+      setOpen(false);
+      setContainer(null);
+    };
+  }, [chooseDestination, disabled, reason]);
   const name =
     parameter === "input"
       ? input.format === "chat-template"
@@ -236,17 +299,90 @@ export function CommonParameterActions({
     >
       <button
         type="button"
+        ref={button}
         className="text-button parameter-case-action"
         disabled={disabled || !!reason}
         aria-label={`define multiple cases for ${name}`}
+        aria-haspopup={chooseDestination ? "menu" : undefined}
+        aria-expanded={chooseDestination ? open : undefined}
+        aria-controls={open ? menuId : undefined}
+        onKeyDown={(event) => {
+          if (
+            chooseDestination &&
+            (event.key === "ArrowDown" || event.key === "ArrowUp")
+          ) {
+            event.preventDefault();
+            popup.current?.show();
+          }
+        }}
         onClick={() => {
-          if (side) onMove(parameter, side);
+          if (chooseDestination) {
+            if (popup.current?.state.isVisible) popup.current.hide();
+            else popup.current?.show();
+          } else if (side && input[side].length) onMove(parameter, side);
         }}
       >
         <ListOrdered aria-hidden="true" />
         define multiple cases
         <CornerRightUp aria-hidden="true" />
       </button>
+      {container &&
+        createPortal(
+          <div
+            id={menuId}
+            className="case-destination-menu"
+            role="menu"
+            aria-label={`Define multiple cases for ${name} in`}
+            onKeyDown={(event) => {
+              const items = Array.from(
+                event.currentTarget.querySelectorAll<HTMLButtonElement>(
+                  '[role="menuitem"]:not(:disabled)',
+                ),
+              );
+              const index = items.indexOf(
+                document.activeElement as HTMLButtonElement,
+              );
+              const next =
+                event.key === "Home"
+                  ? 0
+                  : event.key === "End"
+                    ? items.length - 1
+                    : event.key === "ArrowDown"
+                      ? (index + 1) % items.length
+                      : event.key === "ArrowUp"
+                        ? (index + items.length - 1) % items.length
+                        : undefined;
+              if (next !== undefined) {
+                event.preventDefault();
+                items[next]?.focus();
+              }
+            }}
+          >
+            {destinations.map((destination) => (
+              <button
+                key={destination}
+                type="button"
+                role="menuitem"
+                className="text-button"
+                disabled={!input[destination].length}
+                title={
+                  !input[destination].length
+                    ? `Add at least one ${destination === "rows" ? "row" : "column"} case first`
+                    : undefined
+                }
+                onClick={() => {
+                  if (!input[destination].length) return;
+                  popup.current?.hide();
+                  button.current?.focus();
+                  onMove(parameter, destination);
+                }}
+              >
+                {destination === "rows" ? "Row cases" : "Column cases"}
+              </button>
+            ))}
+          </div>,
+          container,
+        )}
     </span>
   );
 }

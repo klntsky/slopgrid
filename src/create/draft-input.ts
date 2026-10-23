@@ -1,25 +1,34 @@
 import {
+  gridDraftSchema,
   gridSchema,
   type GridDraftInput,
   type GridInput,
-  type StoredGridInput,
 } from "../../server/domain";
 import {
   axisParameters,
   newCase,
   parameterDefault,
+  parameterLayoutIssue,
 } from "../../server/parameters";
-import { editableGridInput } from "../../server/editable-grid-input";
 
-export function draftInputFromGridInput(
-  input: StoredGridInput,
-): GridDraftInput {
-  const draft = editableGridInput(input);
-  if (!draft)
+export function draftInputFromGridInput(input: GridInput): GridDraftInput {
+  // Hydrate structurally without admitting generation: saved models and draft
+  // values remain editable even when current catalogs or run validation reject them.
+  const draft = { ...input, budgetUsd: String(input.budgetUsd) };
+  for (const side of ["rows", "columns"] as const)
+    if (
+      !Array.isArray(draft[side]) ||
+      draft[side].some((record) => typeof record?.id !== "string" || !record.id)
+    )
+      throw new Error(
+        "This grid has an invalid configuration and cannot be edited or forked.",
+      );
+  const parsed = gridDraftSchema.safeParse(draft);
+  if (!parsed.success || parameterLayoutIssue(parsed.data))
     throw new Error(
-      "This grid uses an older configuration and cannot be edited or forked.",
+      "This grid has an invalid configuration and cannot be edited or forked.",
     );
-  return draft;
+  return structuredClone(parsed.data);
 }
 
 export function validateDraftInput(draft: GridDraftInput) {

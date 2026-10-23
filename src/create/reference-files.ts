@@ -57,7 +57,7 @@ export async function saveReferenceFile(file: File): Promise<ReferenceImage> {
 export function referenceLists(
   input: Pick<
     GridInput | GridDraftInput,
-    "parameters" | "rows" | "columns" | "caseAxis"
+    "parameters" | "rows" | "columns" | "caseAxes"
   >,
 ): ReferenceImage[][] {
   return [

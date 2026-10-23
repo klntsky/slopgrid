@@ -8,7 +8,11 @@ import {
 import { criteriaForCell, resolveCriteriaForCell } from "./judge-criteria.js";
 import { variableToken } from "./prompt-variables.js";
 import type { Model } from "./provider.js";
-import { type CommonParameterId, type ParameterId } from "./parameters.js";
+import {
+  isCaseAxis,
+  type CommonParameterId,
+  type ParameterId,
+} from "./parameters.js";
 import { ModelResolutionError, modelAliasResolver } from "./model-alias.js";
 import { generatorInputForCell } from "./generator-input.js";
 
@@ -80,7 +84,7 @@ function variableImageOrigins(
     const caseIndex = source === "rows" ? cell.row : cell.column;
     const fieldIndex = Number(number) - 1;
     if (
-      input.parameters.variable?.kind === source &&
+      isCaseAxis(input, source) &&
       axis[caseIndex]?.variable?.[fieldIndex]?.images?.some((image) =>
         consumed.has(image.id),
       )

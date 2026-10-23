@@ -359,13 +359,12 @@ test("unused prompt variables block generation and the API rejects bypasses", as
   const response = await page.request.post("/api/grids", {
     data: currentDefinition({
       format: "image",
-      caseAxis: "rows",
+      caseAxes: ["rows"],
       parameters: {
         input: {
           kind: "common",
           value: [{ role: "user", content: "Draw a cat" }],
         },
-        variable: { kind: "rows" },
       },
       rows: [{ variable: [{ text: "cat" }] }],
       budgetUsd: 5,

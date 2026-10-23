@@ -35,7 +35,6 @@ test("only the rubric that consumes an image requires a vision judge", () => {
   const input: GridInput = currentDefinition({
     parameters: {
       model: { kind: "common", value: plain.id },
-      variable: { kind: "rows" },
       judge_model: { kind: "common", value: plain.id },
       judge_criteria: {
         kind: "common",
@@ -51,7 +50,7 @@ test("only the rubric that consumes an image requires a vision judge", () => {
       { variable: [{ text: "second" }, { text: "answer" }] },
     ],
     judge: true,
-    caseAxis: "rows",
+    caseAxes: ["rows"],
   });
   const { issues } = analyzeGridCompatibility(input, [plain]);
   const blocked = issues.filter((issue) => issue.blocking);
@@ -183,7 +182,7 @@ test("provider tuple conflicts mark only the real failing case and involved sett
   );
   const paired = currentDefinition({
     format: "image",
-    caseAxis: "rows",
+    caseAxes: ["rows"],
     parameters: {
       model: { kind: "common", value: model.id },
       background: { kind: "rows" },
@@ -199,7 +198,7 @@ test("provider tuple conflicts mark only the real failing case and involved sett
   assert.deepEqual(analyzeGridCompatibility(paired, [model]).issues, []);
   const transposed = {
     ...paired,
-    caseAxis: "columns" as const,
+    caseAxes: ["columns" as const],
     parameters: {
       ...paired.parameters,
       background: { kind: "columns" as const },
@@ -318,11 +317,10 @@ for (const side of ["rows", "columns"] as const)
     const token = side === "rows" ? "$ROW1" : "$COLUMN1";
     const input = currentDefinition({
       format: "image",
-      caseAxis: side,
+      caseAxes: [side],
       parameters: {
         model: { kind: "common", value: model.id },
         input: { kind: side },
-        variable: { kind: side },
         quality: { kind: "common", value: "high" },
       },
       [side]: [image, second].map((fieldImage) => ({

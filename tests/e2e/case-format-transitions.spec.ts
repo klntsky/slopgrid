@@ -42,7 +42,7 @@ function caseDraft(): Draft {
     reuseArtifacts: true,
     input: {
       ...defaultGridDraft("svg"),
-      caseAxis: "rows",
+      caseAxes: ["rows"],
       budgetUsd: "0.75",
       judge: true,
       parameters: {
@@ -56,7 +56,6 @@ function caseDraft(): Draft {
             },
           ],
         },
-        variable: { kind: "rows" },
         model: { kind: "rows" },
         effort: { kind: "rows" },
         judge_criteria: { kind: "rows" },
@@ -170,7 +169,7 @@ test("image-only common and case settings require one confirmation and cancellat
     reuseArtifacts: true,
     input: {
       ...defaultGridDraft("image"),
-      caseAxis: "rows",
+      caseAxes: ["rows"],
       parameters: {
         input: {
           kind: "common",
@@ -178,7 +177,6 @@ test("image-only common and case settings require one confirmation and cancellat
             { role: "user", content: "Draw $ROW1", images: [commonImage] },
           ],
         },
-        variable: { kind: "rows" },
         model: { kind: "rows" },
         quality: { kind: "rows" },
         size: { kind: "common", value: "1536x1024" },
@@ -216,7 +214,6 @@ test("image-only common and case settings require one confirmation and cancellat
         format: "markdown",
         parameters: {
           input: draft.input.parameters.input,
-          variable: { kind: "rows" },
           model: { kind: "rows" },
           effort: { kind: "common", value: "default" },
         },
@@ -278,7 +275,6 @@ test("Website removes all judging fields only after a single accepted loss confi
         judge: false,
         parameters: {
           input: draft.input.parameters.input,
-          variable: { kind: "rows" },
           model: { kind: "rows" },
           effort: { kind: "rows" },
         },
@@ -419,7 +415,7 @@ for (const side of ["rows", "columns"] as const) {
       formatSelected: true,
       input: {
         ...defaultGridDraft("chat-template"),
-        caseAxis: side,
+        caseAxes: [side],
         parameters: {
           input: { kind: side },
           model: { kind: "common", value: "fixture/text" },
@@ -446,9 +442,8 @@ for (const side of ["rows", "columns"] as const) {
     await expect.poll(() => savedDraft(page)).toEqual(draft);
     expect(await changeFormat(page, "Markdown")).toHaveLength(1);
     const changed = await savedDraft(page);
-    expect(changed.input.caseAxis).toBe(side);
+    expect(changed.input.caseAxes).toEqual([side]);
     expect(changed.input.parameters.input).toEqual({ kind: side });
-    expect(changed.input.parameters.variable).toBeUndefined();
     expect(changed.input[side]).toEqual([
       { id: "compatible-case", input: compatible },
       { id: "full-history-case", input: [{ role: "user", content: "" }] },
@@ -479,10 +474,9 @@ test("swap rewrites full case input templates but never literal numbered field c
     formatSelected: true,
     input: {
       ...defaultGridDraft("chat-template"),
-      caseAxis: "rows",
+      caseAxes: ["rows"],
       parameters: {
         input: { kind: "rows" },
-        variable: { kind: "rows" },
         model: { kind: "common", value: "fixture/text" },
         effort: { kind: "common", value: "default" },
       },
@@ -505,9 +499,8 @@ test("swap rewrites full case input templates but never literal numbered field c
     .getByRole("button", { name: "Swap rows and columns", exact: true })
     .click();
   const swapped = await savedDraft(page);
-  expect(swapped.input.caseAxis).toBe("columns");
+  expect(swapped.input.caseAxes).toEqual(["columns"]);
   expect(swapped.input.parameters.input).toEqual({ kind: "columns" });
-  expect(swapped.input.parameters.variable).toEqual({ kind: "columns" });
   expect(swapped.input.columns).toEqual([
     {
       ...draft.input.rows[0],

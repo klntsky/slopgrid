@@ -505,7 +505,7 @@ for (const side of ["rows", "columns"] as const)
     try {
       const input = currentInput({
         format: "chat-template",
-        caseAxis: side,
+        caseAxes: [side],
         judge: true,
         parameters: {
           input: { kind: side },

@@ -15,7 +15,7 @@ function template(f: RuntimeFixture) {
     format: "chat-template",
     budgetUsd: 1,
     rows: [{ variable: [{ text: "one" }] }],
-    caseAxis: "rows",
+    caseAxes: ["rows"],
     parameters: {
       input: {
         kind: "common",

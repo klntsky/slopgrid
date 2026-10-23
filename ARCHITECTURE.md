@@ -135,11 +135,11 @@ durable creation and workflow construction require that result. Stored metadata
 and draft hydration do not confer validation. Advisory previews may inspect an
 unvalidated candidate without granting generation admission.
 
-Current definitions give each parameter one ownership source, with aligned
-case values on rows or columns. Case-dimension identity is independent of
-optional numbered fields. Budget remains an inference setting outside that
-ownership model. The form and canonical schemas share field types but have
-separate admission responsibilities.
+Current definitions give each ordinary parameter one ownership source, with
+aligned case values on rows or columns. Both axes can independently hold cases;
+numbered fields belong to their axis rather than a shared parameter source.
+Budget remains an inference setting outside that ownership model. The form and
+canonical schemas share field types but have separate admission responsibilities.
 
 Canonical validation retains field paths through parameter selection and cell
 expansion. The form routes those paths to common controls and case editors
@@ -150,15 +150,13 @@ Creation components own presentation, menu and editor focus, and pointer and
 keyboard interaction. Parameter ownership transitions remain in the form action
 layer; changing a control's placement does not create another conversion or
 validation path. Shared prompt, conversation, and criteria editors serve both
-common fields and case cells, while the case matrix owns orientation and its
-scrolling workspace.
+common fields and case cells. A reusable axis-scoped case editor owns each
+table's orientation, focus, copying, reordering, and scrolling workspace.
 
 Historical accepted task inputs remain read-only and drive cell projection,
-billing, and output access independently of editor definitions. A production-only
-converter can restore text variables, text-only Chat histories, and Image
-attachments as current drafts without changing those accepted tasks. Restored
-drafts undergo current admission. Configuration compatibility remains separate
-from ownership permission and ordinary owner controls.
+billing, and output access independently of editor definitions. Runtime grid
+definitions use only canonical `inputVersion: 3`; Edit and Fork hydrate those
+definitions as current drafts and apply normal admission before generation.
 
 - Model catalogs are loaded by the web process for forms. Provider adapters own
   catalog interpretation, credit lookup, and request preparation; they remain
@@ -196,11 +194,12 @@ and optional numbered fields. The editor keeps prompt and Chat representations
 distinct while both feed the same validated cell-expansion boundary. Variable
 token identities survive field deletion.
 
-Setup validation pairs templates with their actual case values and resolves
-generator messages and judge criteria independently. Execution receives concrete
-inputs rather than form ownership or numbered templates. Format-specific request
-instructions remain separate from conversation filling. Reuse keys describe
-resolved requests, preserving equivalent plain-text and single-user-message
+Setup validation resolves generator messages and judge criteria independently
+for their Cartesian row-column combinations. Variable identity includes its axis
+and numbered slot, while replacement text remains literal. Execution receives
+concrete inputs rather than form ownership or numbered templates. Format-specific
+request instructions remain separate from conversation filling. Reuse keys
+describe resolved requests, preserving equivalent plain-text and single-user-message
 artifacts rather than depending on case position or ownership.
 
 Model admission checks consumed images, while storage authorization and offline
@@ -220,13 +219,16 @@ field rather than an independent parameter. Provider preparation keeps format
 instructions separate from multimodal input; judging reuses the same expanded
 context.
 
-Storage upgrades and historical read projections interpret production variable
-records. A shared editor-boundary conversion restores faithfully representable
-production definitions as current structural drafts; capability reporting and
-Edit/Fork use the same decision. Canonical admission remains separate and accepts
-only current definitions. Accepted workflow inputs and immutable artifacts keep
-their original payloads; presentation metadata and current-grid references remain
-independent of reusable generated content.
+A one-time storage migration accepts production schema 14 and converts its grid
+definitions directly to canonical `inputVersion: 3` in schema 17. Already-current
+schema 17 storage must contain canonical definitions. Pre-v14 and intermediate
+schemas are not supported migration sources, and runtime code has no historical
+input adapters or format-based Edit/Fork restrictions. Accepted workflow inputs
+and immutable artifacts keep their exact original payloads; presentation metadata
+and current-grid references remain independent of reusable generated content.
+The service worker uses a new offline-data namespace for the canonical format.
+Activation removes obsolete data partitions instead of adapting historical
+snapshots, while keeping hashed assets needed by already-open pages.
 
 Image uploads have independent names and ownership records. Their bytes are
 SHA-256-addressed and shared across uploads and grids. SQLite links each grid to
@@ -250,12 +252,11 @@ always independent.
 ## Workflow and content execution
 
 Creation assigns durable generation and judgment tasks before scheduling.
-One browser-safe partition policy serves the form's generation count, workflow
-planning, and legacy workflow reconstruction. Equivalent judged cells share a
-generation task; ordinary cells keep independent generations. Persisted legacy
-source identities remain authoritative during reconstruction. Cells link to
-tasks, and judgments depend on committed generation output. The configuration
-grouping key remains separate from the provider request signature.
+One browser-safe partition policy serves the form's generation count and workflow
+planning. Equivalent judged cells share a generation task; ordinary cells keep
+independent generations. Persisted task identities remain authoritative. Cells
+link to tasks, and judgments depend on committed generation output. The
+configuration grouping key remains separate from the provider request signature.
 
 - The scheduler owns admission, worker reservations, attempt identity, retries,
   cancellation, settlement, and serialized persistence through one task lifecycle.

@@ -1,11 +1,8 @@
 import { test, expect } from "@playwright/test";
 import { runtimeFixture } from "../runtime-fixture";
 import { arrangeHistoricalGrid } from "../grid-storage-fixture";
-import {
-  expandLegacyGrid,
-  type LegacyGridInput,
-} from "../../server/legacy-grid-input";
-import type { GenerationTask, Grid } from "../../server/domain";
+import { currentInput } from "../current-grid-fixture";
+import { expandGrid, type GenerationTask, type Grid } from "../../server/domain";
 import { token } from "../../server/ids";
 import { expectProgress } from "./helpers";
 
@@ -20,31 +17,35 @@ for (const format of ["markdown", "chat-template"] as const) {
         { name: f.cookieName, value: f.owner, url: f.origin },
       ]);
       const chat = format === "chat-template";
-      const input: LegacyGridInput = {
+      const prompt = "  Historical prompt\n";
+      const input = currentInput({
         format,
-        prompt: chat
-          ? "system: Keep answers short.\n\nuser: Question $ROW1\n\nunfilled: "
-          : "  Historical prompt\n",
-        ...(chat
-          ? {
-              messages: [
-                { role: "system" as const, content: "Keep answers short." },
-                { role: "user" as const, content: "  Question $ROW1\n" },
-                { role: "unfilled" as const, content: "" },
-              ],
-            }
-          : {}),
-        model: "fixture/text",
-        effort: "default",
+        caseAxes: chat ? ["rows"] : [],
         budgetUsd: 0.25,
+        parameters: {
+          input: {
+            kind: "common",
+            value: chat
+              ? [
+                  { role: "system", content: "Keep answers short." },
+                  { role: "user", content: "  Question $ROW1\n" },
+                  { role: "unfilled", content: "" },
+                ]
+              : [{ role: "user", content: prompt }],
+          },
+          model: { kind: chat ? "columns" : "rows" },
+          effort: chat
+            ? { kind: "common", value: "default" }
+            : { kind: "columns" },
+        },
         rows: chat
-          ? { kind: "variable", values: [[{ text: "cat" }], [{ text: "dog" }]] }
-          : { kind: "model", values: ["fixture/text"] },
+          ? [{ variable: [{ text: "cat" }] }, { variable: [{ text: "dog" }] }]
+          : [{ model: "fixture/text" }],
         columns: chat
-          ? { kind: "model", values: ["fixture/text"] }
-          : { kind: "effort", values: ["default"] },
-      };
-      const grid: Grid & { input: LegacyGridInput } = {
+          ? [{ model: "fixture/text" }]
+          : [{ effort: "default" }],
+      });
+      const grid: Grid = {
         id: token(),
         owner: f.owner,
         input,
@@ -52,7 +53,7 @@ for (const format of ["markdown", "chat-template"] as const) {
         published: chat,
         visibility: chat ? "unlisted" : "private",
         createdAt: "2026-01-01T00:00:00.000Z",
-        cells: expandLegacyGrid(input).map((cell) => ({
+        cells: expandGrid(input).map((cell) => ({
           ...cell,
           id: token(),
           generationId: token(),
@@ -78,7 +79,7 @@ for (const format of ["markdown", "chat-template"] as const) {
             model: cell.model,
             effort: cell.effort,
             prompt: cell.prompt,
-            messages: cell.messages,
+            messages: chat ? cell.messages : undefined,
             budgetUsd: cell.budgetUsd,
           },
           output: {
@@ -123,7 +124,7 @@ for (const format of ["markdown", "chat-template"] as const) {
         await page.getByLabel("$ROW1, case 1", { exact: true }).fill("owl");
       } else {
         await expect(page.getByLabel("Prompt", { exact: true })).toHaveValue(
-          input.prompt,
+          prompt,
         );
         await expect(
           page.getByRole("combobox", { name: "Rows", exact: true }),

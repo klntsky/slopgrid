@@ -42,7 +42,7 @@ async function variableAxis(
         exact: true,
       })
       .locator('option[value="variable"]'),
-  ).toHaveJSProperty("disabled", true);
+  ).toHaveJSProperty("disabled", false);
   await page
     .getByRole("combobox", {
       name: side === "Rows" ? "Columns" : "Rows",

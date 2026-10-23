@@ -29,10 +29,10 @@ import {
   axisParameters,
   parameterLayoutIssues,
   parameterValuePath,
+  isCaseAxis,
   type ValidationIssue,
   type ParameterConfiguration,
 } from "./parameters.js";
-import type { LegacyGridInput } from "./legacy-grid-input.js";
 import {
   generatorInputEntries,
   generatorInputForCell,
@@ -117,12 +117,6 @@ const parameterSourcesSchema = z
     judge_model: source(parameterValueSchemas.judge_model).optional(),
     judge_effort: source(parameterValueSchemas.judge_effort).optional(),
     judge_criteria: source(parameterValueSchemas.judge_criteria).optional(),
-    variable: z
-      .discriminatedUnion("kind", [
-        z.object({ kind: z.literal("rows") }).strict(),
-        z.object({ kind: z.literal("columns") }).strict(),
-      ])
-      .optional(),
   })
   .strict();
 export type ParameterSources = z.infer<typeof parameterSourcesSchema>;
@@ -182,7 +176,13 @@ export function chatText(messages: ChatMessage[]): string {
 const draftGridFields = {
   inputVersion: z.literal(3),
   format: z.enum(["svg", "markdown", "html", "chat-template", "image"]),
-  caseAxis: z.enum(["rows", "columns"]).optional(),
+  caseAxes: z
+    .array(z.enum(["rows", "columns"]))
+    .default([])
+    .refine(
+      (axes) => new Set(axes).size === axes.length,
+      "Case axes must be distinct.",
+    ),
   rows: z.array(caseSchema),
   columns: z.array(caseSchema),
   parameters: parameterSourcesSchema,
@@ -213,7 +213,6 @@ const gridInputSchema = z.discriminatedUnion("format", [
     .strict(),
 ]);
 export type GridInput = z.infer<typeof gridInputSchema>;
-export type StoredGridInput = GridInput | LegacyGridInput;
 export const modelSelectionIssueKind = "empty-model-selection";
 export const gridSchema = gridInputSchema
   .transform((g) => {
@@ -247,7 +246,7 @@ export const gridSchema = gridInputSchema
     for (const side of ["rows", "columns"] as const) {
       if (g[side].length) continue;
       const modelDimension =
-        g.caseAxis !== side &&
+        !isCaseAxis(g, side) &&
         (g.parameters.model.kind === side ||
           g.parameters.judge_model?.kind === side);
       if (modelDimension)
@@ -282,6 +281,7 @@ export const gridSchema = gridInputSchema
       applicable.add("judge_criteria");
     }
     for (const kind of kinds) {
+      if (kind === "variable") continue;
       const source = g.parameters[kind];
       if (!applicable.has(kind)) {
         if (source)
@@ -292,8 +292,7 @@ export const gridSchema = gridInputSchema
         continue;
       }
       if (!source) {
-        if (kind !== "variable")
-          issue(`Choose a source for ${kind}.`, ["parameters", kind]);
+        issue(`Choose a source for ${kind}.`, ["parameters", kind]);
         continue;
       }
       const values =
@@ -330,6 +329,7 @@ export const gridSchema = gridInputSchema
     for (const item of parameterLayoutIssues(g)) issue(item.message, item.path);
     for (const side of ["rows", "columns"] as const) {
       const owned = new Set(axisParameters(g, side));
+      if (isCaseAxis(g, side)) owned.add("variable");
       const ids = new Set<string>();
       for (const [index, record] of g[side].entries()) {
         if (ids.has(record.id))
@@ -364,7 +364,7 @@ export const gridSchema = gridInputSchema
         )
           issue(item.message, [...path, ...item.path]);
     }
-    if (g.caseAxis && !g[g.caseAxis].length)
+    if (!g.rows.length || !g.columns.length)
       for (const item of judgeCriteriaIssues(g)) issue(item.message, item.path);
     for (const item of promptVariableIssues(g)) issue(item.message, item.path);
     const expandedIssue = (
@@ -374,7 +374,11 @@ export const gridSchema = gridInputSchema
       row: number,
       column: number,
     ) => {
-      issue(item.message, [...path, ...item.path]);
+      const message =
+        g.caseAxes.length === 2
+          ? `Row case ${row + 1}, column case ${column + 1}: ${item.message}`
+          : item.message;
+      issue(message, [...path, ...item.path]);
       if (item.path.at(-1) === "content" || item.path.at(-1) === "text")
         for (const reference of referencedVariableFields(
           template,
@@ -382,60 +386,59 @@ export const gridSchema = gridInputSchema
           row,
           column,
         ))
-          issue(item.message, [...reference.path, "text"]);
+          issue(message, [...reference.path, "text"]);
     };
-    const contentCases = g.caseAxis ? g[g.caseAxis].length : 1;
-    for (let index = 0; index < contentCases; index++) {
-      const row = g.caseAxis === "rows" ? index : 0;
-      const column = g.caseAxis === "columns" ? index : 0;
-      const rawMessages = generatorInputForCell(g, row, column);
-      const inputPath = parameterValuePath(g, "input", row, column);
-      const messages = expandGeneratorInput(g, row, column, {
-        allowUnresolvedVariables: true,
-      });
-      for (const item of chatInputIssues(messages)) {
-        // Variable-image role violations retain their more specific template error.
-        if (item.path.at(-1) === "images") continue;
-        expandedIssue(
-          item,
-          inputPath,
-          rawMessages[item.path[0] as number]?.content ?? "",
-          row,
-          column,
-        );
-      }
-      if (g.format === "image" && !messages[0]?.content.trim())
-        expandedIssue(
-          {
-            message: "Enter a prompt.",
-            path: messages.length ? [0, "content"] : [],
-          },
-          inputPath,
-          rawMessages[0]?.content ?? "",
-          row,
-          column,
-        );
-      if (g.judge) {
-        const resolved = resolveCriteriaForCell(g, row, column, {
+    for (let row = 0; row < g.rows.length; row++) {
+      for (let column = 0; column < g.columns.length; column++) {
+        const rawMessages = generatorInputForCell(g, row, column);
+        const inputPath = parameterValuePath(g, "input", row, column);
+        const messages = expandGeneratorInput(g, row, column, {
           allowUnresolvedVariables: true,
         });
-        const criteria = judgeCriteriaSchema.safeParse(resolved.criteria);
-        if (!criteria.success) {
-          const rawCriteria = criteriaForCell(g, row, column);
-          const criteriaPath = parameterValuePath(
-            g,
-            "judge_criteria",
+        for (const item of chatInputIssues(messages))
+          expandedIssue(
+            item,
+            inputPath,
+            rawMessages[item.path[0] as number]?.content ?? "",
             row,
             column,
           );
-          for (const item of criteria.error.issues)
-            expandedIssue(
-              { message: item.message, path: item.path as (string | number)[] },
-              criteriaPath,
-              rawCriteria[item.path[0] as number]?.text ?? "",
+        if (g.format === "image" && !messages[0]?.content.trim())
+          expandedIssue(
+            {
+              message: "Enter a prompt.",
+              path: messages.length ? [0, "content"] : [],
+            },
+            inputPath,
+            rawMessages[0]?.content ?? "",
+            row,
+            column,
+          );
+        if (g.judge) {
+          const resolved = resolveCriteriaForCell(g, row, column, {
+            allowUnresolvedVariables: true,
+          });
+          const criteria = judgeCriteriaSchema.safeParse(resolved.criteria);
+          if (!criteria.success) {
+            const rawCriteria = criteriaForCell(g, row, column);
+            const criteriaPath = parameterValuePath(
+              g,
+              "judge_criteria",
               row,
               column,
             );
+            for (const item of criteria.error.issues)
+              expandedIssue(
+                {
+                  message: item.message,
+                  path: item.path as (string | number)[],
+                },
+                criteriaPath,
+                rawCriteria[item.path[0] as number]?.text ?? "",
+                row,
+                column,
+              );
+          }
         }
       }
     }
@@ -582,7 +585,7 @@ export type Grid = {
   owner: string;
   ownerUserId?: string;
   author?: Identity | null;
-  input: StoredGridInput;
+  input: GridInput;
   status: "running" | "paused" | "complete";
   published: boolean;
   visibility: GridVisibility;

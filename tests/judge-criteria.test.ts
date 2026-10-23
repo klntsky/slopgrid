@@ -26,7 +26,7 @@ const second: Criterion[] = [
 function input(side: "rows" | "columns") {
   return currentDefinition({
     judge: true,
-    caseAxis: side,
+    caseAxes: [side],
     parameters: {
       judge_criteria: { kind: side },
       judge_model: { kind: "common", value: "fixture/judge" },
@@ -47,7 +47,6 @@ test("shared criteria retain their stored array shape and cell-independent behav
   source.rows = source.rows.map(
     ({ judge_criteria: _criteria, ...record }) => record,
   );
-  source.parameters.variable = { kind: "rows" };
   source.rows = source.rows.map((record, index) => ({
     ...record,
     variable: [{ text: `case ${index + 1}` }],
@@ -85,7 +84,6 @@ for (const side of ["rows", "columns"] as const) {
         ...source,
         parameters: {
           ...source.parameters,
-          variable: { kind: side },
           judge_criteria: { kind: "common", value: first },
         },
         [side]: source[side].map(
@@ -94,7 +92,7 @@ for (const side of ["rows", "columns"] as const) {
             variable: [{ text: "unused" }],
           }),
         ),
-        caseAxis: side,
+        caseAxes: [side],
       }).success,
       false,
       "switching to shared requires the formerly judge-owned variable axis to be referenced",
@@ -105,7 +103,7 @@ for (const side of ["rows", "columns"] as const) {
     const source = input(side);
     const scalarOwner = currentDefinition({
       judge: true,
-      caseAxis: side,
+      caseAxes: [side],
       parameters: { model: { kind: side }, judge_criteria: { kind: side } },
       [side]: [
         { model: "fixture/text", judge_criteria: first },

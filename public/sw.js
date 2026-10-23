@@ -4,7 +4,7 @@ const SHELL = "/offline-shell.html?release=" + __PWA_VERSION__;
 const STATIC = "slopgrid-static-v1";
 const POLICY = __PWA_POLICY__;
 const STATE = "slopgrid-state-v1";
-const PREFIX = "slopgrid-data-v1-";
+const PREFIX = "slopgrid-data-v2-";
 let scope;
 let epoch = 0;
 let writes = Promise.resolve();
@@ -185,33 +185,18 @@ async function saveGridOutputs(grid, expected) {
   if (grid.cells.some(outputAvailable)) {
     const input = grid.input;
     const messages = [
-      ...(input.inputVersion === 3
-        ? input.parameters.input.kind === "common"
-          ? input.parameters.input.value
-          : input[input.parameters.input.kind].flatMap(
-              (record) => record.input ?? [],
-            )
-        : (input.messages ?? [])),
+      ...(input.parameters.input.kind === "common"
+        ? input.parameters.input.value
+        : input[input.parameters.input.kind].flatMap(
+            (record) => record.input ?? [],
+          )),
       ...grid.cells
         .filter(outputAvailable)
         .flatMap((cell) => cell.messages ?? []),
     ];
     const configuredImages = [
-      ...(input.promptImages ?? []),
-      ...(input.inputReferences ?? []),
-      ...Object.values(input.referenceGroups ?? {}).flat(),
-      ...[input.rows, input.columns].flatMap((axis) =>
-        Array.isArray(axis)
-          ? axis.flatMap((record) =>
-              (record.variable ?? []).flatMap((field) => field?.images ?? []),
-            )
-          : axis.kind === "variable"
-            ? axis.values.flatMap((fields) =>
-                Array.isArray(fields)
-                  ? fields.flatMap((field) => field?.images ?? [])
-                  : [],
-              )
-            : [],
+      ...[...input.rows, ...input.columns].flatMap((record) =>
+        (record.variable ?? []).flatMap((field) => field?.images ?? []),
       ),
     ];
     const ids = new Set([
@@ -397,7 +382,16 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   // Retain hashed assets referenced by previously cached pages and open tabs.
   // Activation follows the browser lifecycle instead of replacing a live worker.
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    caches.keys().then(async (names) => {
+      await Promise.all(
+        names
+          .filter((name) => name.startsWith("slopgrid-data-v1-"))
+          .map((name) => caches.delete(name)),
+      );
+      await self.clients.claim();
+    }),
+  );
 });
 self.addEventListener("fetch", (event) => {
   const request = event.request;

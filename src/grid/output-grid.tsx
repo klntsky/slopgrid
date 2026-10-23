@@ -181,7 +181,6 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
             `${dimensionNames[part.kind].toLowerCase()}: ${displayValue(part)}`
           )}
         </span>
-        {part.kind === "images" && referencePreviews(part.value.images)}
         {part.kind === "input" &&
           referencePreviews(
             part.value.flatMap((message) => message.images ?? []),

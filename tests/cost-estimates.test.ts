@@ -134,7 +134,7 @@ for (const side of ["rows", "columns"] as const) {
     const input = currentInput({
       budgetUsd: 0.15,
       judge: true,
-      caseAxis: side,
+      caseAxes: [side],
       parameters: {
         input: { kind: side },
         model: { kind: side },

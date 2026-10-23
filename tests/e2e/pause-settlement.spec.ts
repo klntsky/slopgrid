@@ -25,13 +25,12 @@ test("a delayed paused response cannot reopen streaming after the engine restart
       .context()
       .addCookies([{ name: f.cookieName, value: f.owner, url: f.origin }]);
     const grid = f.grid({
-      caseAxis: "rows",
+      caseAxes: ["rows"],
       parameters: {
         input: {
           kind: "common",
           value: [{ role: "user", content: "Draw $ROW1" }],
         },
-        variable: { kind: "rows" },
       },
       rows: [{ variable: [{ text: "cat" }] }],
     });

@@ -8,6 +8,7 @@ import {
 import type { Model } from "./provider.js";
 import { analyzeGridCompatibility } from "./grid-compatibility.js";
 import { ModelResolutionError, modelAliasResolver } from "./model-alias.js";
+import { isCaseAxis } from "./parameters.js";
 
 export type PreparedGridModels<T extends GridInput = GridInput> = {
   input: T;
@@ -30,7 +31,7 @@ export function prepareGridModels<T extends GridInput>(
       (kind) => resolved.parameters[kind]?.kind === side,
     );
     const groups =
-      resolved.caseAxis === side || !owner
+      isCaseAxis(resolved, side) || !owner
         ? undefined
         : new Map<
             string,

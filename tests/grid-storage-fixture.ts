@@ -1,7 +1,6 @@
 import type Database from "better-sqlite3";
 import { gridSchema, type Grid, type WorkflowTask } from "../server/domain.js";
-import type { LegacyGridInput } from "../server/legacy-grid-input.js";
-import { legacySelectedReferences } from "../server/legacy-grid-input.js";
+import { selectedReferences } from "../server/image-settings.js";
 import { expandPromptForTitle } from "../server/grid-title.js";
 import type { Store } from "../server/store.js";
 import { projectWorkflow } from "../server/workflow.js";
@@ -14,7 +13,7 @@ export function validatedGrid(grid: Grid) {
 // Callers supply concrete task inputs and cell/task links; no workflow is rebuilt.
 export function arrangeHistoricalGrid(
   store: Store,
-  grid: Grid & { input: LegacyGridInput },
+  grid: Grid,
   tasks: readonly WorkflowTask[],
 ) {
   projectWorkflow(grid, tasks);
@@ -65,7 +64,7 @@ export function arrangeHistoricalGrid(
     const insertReference = store.db.prepare(
       "INSERT INTO grid_reference_images (grid_id,reference_id) VALUES (?,?)",
     );
-    for (const reference of legacySelectedReferences(grid.input))
+    for (const reference of selectedReferences(grid.input))
       insertReference.run(id, reference.id);
   })();
 }

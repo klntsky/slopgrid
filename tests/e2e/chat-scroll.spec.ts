@@ -6,7 +6,7 @@ import { connectOpenRouter, expectProgress, scrollToRest } from "./helpers";
 
 const historyInput: GridInput = currentDefinition({
   format: "chat-template",
-  caseAxis: "rows",
+  caseAxes: ["rows"],
   budgetUsd: 1,
   parameters: {
     input: {
@@ -22,7 +22,6 @@ const historyInput: GridInput = currentDefinition({
       ],
     },
     model: { kind: "common", value: "fixture/text" },
-    variable: { kind: "rows" },
     effort: { kind: "columns" },
   },
   rows: [{ variable: [{ text: "top" }] }, { variable: [{ text: "bottom" }] }],

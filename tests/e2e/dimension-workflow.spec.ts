@@ -68,7 +68,7 @@ for (const format of ["SVG", "Image"] as const) {
           await axis.selectOption("variable");
           await expect(other.locator('option[value="variable"]')).toHaveJSProperty(
             "disabled",
-            true,
+            false,
           );
           await defineCases(page, label.toLowerCase());
           const table = page.getByRole("table", {
@@ -125,8 +125,7 @@ for (const format of ["SVG", "Image"] as const) {
             ordinary.getByRole("checkbox", { name: "low", exact: true }),
           ).toBeChecked();
           const retained = await savedInput(page);
-          expect(retained.caseAxis).toBeUndefined();
-          expect(retained.parameters.variable).toBeUndefined();
+          expect(retained.caseAxes).toEqual([]);
           expect(retained.parameters[parameter]).toEqual({ kind: side });
           expect(retained[side]).toEqual(
             before[side].map((record) => ({
@@ -170,10 +169,9 @@ for (const format of ["SVG", "Image"] as const) {
             table.getByRole("combobox", { name: label, exact: true }),
           ).toHaveValue(format === "Image" ? "auto" : "default");
           const roundTrip = await savedInput(page);
-          expect(roundTrip.caseAxis).toBe(otherSide);
+          expect(roundTrip.caseAxes).toEqual([otherSide]);
           expect(roundTrip.parameters[parameter]).toEqual({ kind: otherSide });
           expect(roundTrip[otherSide]).toHaveLength(1);
-          expect(roundTrip.parameters.variable).toBeUndefined();
           expect(roundTrip.parameters.input).toEqual(before.parameters.input);
           expect(roundTrip.parameters.model).toEqual(before.parameters.model);
           expect(roundTrip.budgetUsd).toBe(before.budgetUsd);

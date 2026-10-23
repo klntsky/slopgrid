@@ -86,7 +86,11 @@ test("preview is read-only; move preserves canonical tasks, links, accounts, fil
   assert.equal(grid.status, "complete");
   assert.equal(grid.interruption, undefined);
   assert.equal(saved.published, 0);
-  assert.deepEqual(grid.input.rows.values, ["first/model", "last/model"]);
+  assert.equal(grid.input.inputVersion, 3);
+  assert.deepEqual(grid.input.rows, [
+    { id: "row-1", model: "first/model" },
+    { id: "row-3", model: "last/model" },
+  ]);
   assert.deepEqual(
     transferCells(f.target),
     [0, 2].map((i, position) => ({
@@ -259,31 +263,16 @@ test("retaining shared execution keeps one ledger call and reattributes only a r
   );
 });
 
-test("selective model removal rejects versioned case records without changing either grid", (t) => {
+test("selective model removal rejects historical inputs without changing either grid", (t) => {
   const f = fixture(t, {
     customize(f) {
       const row = transferGridRow(f.source, f.options.grid);
       const data = JSON.parse(row.data);
       data.input = {
-        inputVersion: 3,
         format: "svg",
-        budgetUsd: 3,
-        judge: false,
-        parameters: {
-          input: {
-            kind: "common",
-            value: [{ role: "user", content: "horse" }],
-          },
-          model: { kind: "rows" },
-          effort: { kind: "common", value: "default" },
-        },
-        rows: ["first/model", "broken/model", "last/model"].map(
-          (model, index) => ({
-            id: `row-${index + 1}`,
-            model,
-          }),
-        ),
-        columns: [{ id: "column-1" }],
+        prompt: "horse",
+        rows: { kind: "model", values: ["first/model", "broken/model", "last/model"] },
+        columns: { kind: "effort", values: ["default"] },
       };
       f.source
         .prepare("UPDATE grids SET data=? WHERE id=?")
@@ -295,7 +284,7 @@ test("selective model removal rejects versioned case records without changing ei
   for (const apply of [false, true])
     assert.throws(
       () => transferGrid(Database, { ...f.options, apply }),
-      /does not support this grid input version/,
+      /requires canonical inputVersion 3/,
     );
   assert.deepEqual(transferGrids(f.source), source);
   assert.deepEqual(transferGrids(f.target), target);

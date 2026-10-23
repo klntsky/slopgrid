@@ -401,7 +401,6 @@ for (const side of ["Rows", "Columns"] as const) {
     const grid = await (await page.request.get(`/api/grids/${id}`)).json();
     expect(grid.input.rows).toHaveLength(1);
     expect(grid.input.columns).toHaveLength(1);
-    expect(grid.input.parameters.variable).toBeUndefined();
     expect(
       grid.cells.map(
         (cell: { model: string; effort: string; prompt: string }) => [
@@ -484,9 +483,8 @@ for (const side of ["Rows", "Columns"] as const) {
       .fill("Paint a distinct red portrait");
     const snapshot = () => savedInput(page);
     const before = await snapshot();
-    expect(before.caseAxis).toBe(sourceSide);
+    expect(before.caseAxes).toEqual([sourceSide]);
     expect(before.parameters.input).toEqual({ kind: sourceSide });
-    expect(before.parameters.variable).toBeUndefined();
     for (const record of before[sourceSide])
       expect(record.variable).toBeUndefined();
     for (const action of [
@@ -543,7 +541,6 @@ for (const side of ["Rows", "Columns"] as const) {
     await expectProgress(page, 2, 2);
     const grid = await (await page.request.get(`/api/grids/${id}`)).json();
     expect(grid.input.inputVersion).toBe(3);
-    expect(grid.input.parameters.variable).toBeUndefined();
     expect(grid.cells.map((cell: { prompt: string }) => cell.prompt)).toEqual([
       "Draw a complete blue landscape",
       "Paint a distinct red portrait",

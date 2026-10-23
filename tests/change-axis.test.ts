@@ -14,7 +14,11 @@ import {
   reduceInput,
 } from "../src/create/change-axis.js";
 import { criteriaForCell } from "../server/judge-criteria.js";
-import { validateDraftInput } from "../src/create/draft-input.js";
+import {
+  draftInputFromGridInput,
+  validateDraftInput,
+} from "../src/create/draft-input.js";
+import { referenceLists } from "../src/create/reference-files.js";
 import { currentDefinition } from "./current-grid-fixture.js";
 
 function initial(
@@ -27,11 +31,10 @@ function initial(
   return {
     ...currentDefinition({
       format,
-      caseAxis: caseSide,
+      caseAxes: caseSide ? [caseSide] : [],
       judge: format !== "html",
       parameters: {
         model: { kind: "common", value: "generator/fixed" },
-        ...(caseSide ? { variable: { kind: caseSide } } : {}),
         ...(format !== "image"
           ? { effort: { kind: "common" as const, value: "high" as const } }
           : {}),
@@ -281,7 +284,7 @@ test("leaving prompt variables collapses former members and preserves the other 
   assert.deepEqual(next.parameters.judge_model, { kind: "rows" });
   assert.equal(next.rows.length, 1);
   assert.equal(next.rows[0].judge_model, "judge/fixed");
-  assert.equal(next.parameters.variable, undefined);
+  assert.deepEqual(next.caseAxes, []);
   assert.deepEqual(next.columns, input.columns);
 });
 
@@ -512,7 +515,7 @@ for (const side of ["rows", "columns"] as const) {
 }
 
 for (const side of ["rows", "columns"] as const) {
-  test(`replacing ${side} prompt variables confirms field/image loss without creating a second variable owner`, () => {
+  test(`replacing ${side} prompt variables confirms field/image loss while leaving the other case axis intact`, () => {
     const token = side === "rows" ? "$ROW1" : "$COLUMN1";
     let input: GridDraftInput = initial();
     input.parameters.input = {
@@ -531,16 +534,16 @@ for (const side of ["rows", "columns"] as const) {
         { text: "first", images: [{ id: "field-image", name: "field.png" }] },
       ]),
     );
-    const original = structuredClone(input);
     const other = side === "rows" ? "columns" : "rows";
-    assert.equal(
-      reduceInput(input, {
-        type: "dimension",
-        side: other,
-        parameter: "variable",
-      }),
-      input,
-    );
+    const both = reduceInput(input, {
+      type: "dimension",
+      side: other,
+      parameter: "variable",
+    });
+    assert.deepEqual(both[side], input[side]);
+    assert.deepEqual(both.caseAxes, [side, other]);
+    input = reduceInput(both, { type: "add-variable", side: other });
+    const original = structuredClone(input);
     const action = {
       type: "dimension" as const,
       side,
@@ -557,7 +560,8 @@ for (const side of ["rows", "columns"] as const) {
       assert.equal(calls.length, 1);
     });
     const next = reduceInput(input, action);
-    assert.equal(next.parameters.variable, undefined);
+    assert.deepEqual(next.caseAxes, [other]);
+    assert.deepEqual(next[other], original[other]);
     assert.ok(next[side].every((entry) => !Object.hasOwn(entry, "variable")));
     assert.equal(next[side].length, 1);
     assert.equal(generatorInputForCell(next, 0, 0)[0].content, token);
@@ -642,7 +646,7 @@ test("single-case and identical-case variable text or images require confirmatio
         assert.equal(confirmInputAction(input, action), false),
       );
       const next = reduceInput(input, action);
-      assert.equal(next.parameters.variable, undefined);
+      assert.deepEqual(next.caseAxes, []);
       assert.equal(next.rows.length, 1);
       assert.deepEqual(
         next.rows.map(({ id, ...value }) => value),
@@ -772,7 +776,7 @@ for (const side of ["rows", "columns"] as const) {
     const next = reduceInput(input, action);
     assert.deepEqual(next[side], [{ id: input[side][0].id }]);
     assert.deepEqual(next[other], input[other]);
-    assert.equal(next.parameters.variable, undefined);
+    assert.deepEqual(next.caseAxes, []);
     assert.deepEqual(next.parameters.model, {
       kind: "common",
       value: "generator/fixed",
@@ -853,7 +857,7 @@ for (const side of ["rows", "columns"] as const) {
     const next = reduceInput(input, action);
     assert.deepEqual(next[side], [{ id: input[side][0].id }]);
     assert.deepEqual(next[other], input[other]);
-    assert.equal(next.parameters.variable, undefined);
+    assert.deepEqual(next.caseAxes, []);
     for (const parameter of ["model", "effort", "judge_criteria"] as const)
       assert.deepEqual(next.parameters[parameter], {
         kind: "common",
@@ -901,8 +905,7 @@ for (const side of ["rows", "columns"] as const) {
       side,
       parameter: "variable",
     });
-    assert.equal(input.caseAxis, side);
-    assert.equal(input.parameters.variable, undefined);
+    assert.deepEqual(input.caseAxes, [side]);
     assert.equal(input[side].length, 1);
     assert.deepEqual(
       input[side].map(({ id, ...record }) => record),
@@ -912,7 +915,10 @@ for (const side of ["rows", "columns"] as const) {
     input = reduceInput(input, addCaseAction(input, side));
     const ids = input[side].map((record) => record.id);
     input = reduceInput(input, { type: "add-variable", side });
-    assert.deepEqual(input.parameters.variable, { kind: side });
+    assert.deepEqual(
+      input[side].map((record) => record.variable),
+      [[{ text: "" }], [{ text: "" }]],
+    );
     input = reduceInput(input, { type: "remove-variable", side, index: 0 });
     assert.deepEqual(
       input[side].map((record) => record.variable),
@@ -939,7 +945,7 @@ for (const side of ["rows", "columns"] as const) {
       added[side].map((record) => record.id),
       ids,
     );
-    assert.equal(added.caseAxis, side);
+    assert.deepEqual(added.caseAxes, [side]);
   });
 
   for (const format of ["svg", "chat-template"] as const) {
@@ -983,7 +989,7 @@ for (const side of ["rows", "columns"] as const) {
         assert.deepEqual(calls, []);
       });
       const equal = reduceInput(input, action);
-      assert.equal(equal.caseAxis, undefined);
+      assert.deepEqual(equal.caseAxes, []);
       assert.deepEqual(equal.parameters.input, {
         kind: "common",
         value: messages,
@@ -1011,7 +1017,7 @@ for (const side of ["rows", "columns"] as const) {
         assert.equal(calls.length, 1);
       });
       const reset = reduceInput(changed, action);
-      assert.equal(reset.caseAxis, undefined);
+      assert.deepEqual(reset.caseAxes, []);
       assert.deepEqual(reset.parameters.input, {
         kind: "common",
         value: [{ role: "user", content: "" }],
@@ -1045,7 +1051,7 @@ for (const side of ["rows", "columns"] as const) {
     input[side][0].variable![0]!.text = token;
     const swapped = reduceInput(input, { type: "swap" });
     const swappedToken = other === "rows" ? "$ROW1" : "$COLUMN1";
-    assert.equal(swapped.caseAxis, other);
+    assert.deepEqual(swapped.caseAxes, [other]);
     assert.deepEqual(swapped.parameters.input, { kind: other });
     assert.deepEqual(swapped[other][0].input, [
       { role: "system", content: `Rules ${swappedToken}` },
@@ -1216,7 +1222,7 @@ for (const format of [
             { kind: side },
             label,
           );
-          assert.equal(replaced.caseAxis, undefined, label);
+          assert.deepEqual(replaced.caseAxes, [], label);
           assert.deepEqual(
             replaced[side].map(({ id: _id, ...record }) => record),
             [{ [replacement]: ordinaryValues[replacement][1] }],
@@ -1251,8 +1257,7 @@ for (const format of [
           assert.equal(calls.length, 1);
         });
         const retained = reduceInput(input, action);
-        assert.equal(retained.caseAxis, undefined);
-        assert.equal(retained.parameters.variable, undefined);
+        assert.deepEqual(retained.caseAxes, []);
         assert.deepEqual(retained.parameters[parameter], { kind: side });
         assert.deepEqual(
           retained[side],
@@ -1267,3 +1272,222 @@ for (const format of [
     });
   }
 }
+
+function bothCaseAxes(): GridDraftInput {
+  const input = initial("svg", "rows");
+  input.caseAxes = ["rows", "columns"];
+  input.columns = [
+    { id: "c1", variable: [{ text: "left" }, { text: "warm" }] },
+    { id: "c2", variable: [{ text: "right" }, { text: "cool" }] },
+  ];
+  input.parameters.input = {
+    kind: "common",
+    value: [{ role: "user", content: "Draw $ROW1 with $COLUMN1" }],
+  };
+  return input;
+}
+
+for (const side of ["rows", "columns"] as const) {
+  const other = side === "rows" ? "columns" : "rows";
+
+  test(`${side} case actions and numbered field deletion are independent with both case axes`, () => {
+    let input = bothCaseAxes();
+    input[side] = input[side].map((entry) => ({
+      ...entry,
+      variable: [
+        { text: "unused" },
+        {
+          text: `$${side === "rows" ? "ROW" : "COLUMN"}1 literal`,
+          images: [{ id: `${side}-image`, name: "field.png" }],
+        },
+      ],
+    }));
+    const opposite = structuredClone(input[other]);
+    const original = structuredClone(input);
+    input = reduceInput(input, { type: "remove-variable", side, index: 0 });
+    assert.ok(input[side].every((entry) => entry.variable![0] === null));
+    assert.deepEqual(input[other], opposite);
+    input = reduceInput(input, { type: "add-variable", side });
+    assert.deepEqual(input[side][0].variable, [
+      null,
+      original[side][0].variable![1],
+      { text: "" },
+    ]);
+    input = reduceInput(
+      input,
+      caseValueAction(side, 0, "variable", [
+        null,
+        { text: "edited", images: original[side][0].variable![1]!.images },
+        { text: "new numbered field" },
+      ]),
+    );
+    const source = input[side][0];
+    input = reduceInput(input, addCaseAction(input, side, source));
+    const copy = input[side][2];
+    assert.notEqual(copy.id, source.id);
+    assert.deepEqual(copy.variable, source.variable);
+    assert.notEqual(copy.variable, source.variable);
+    assert.notEqual(copy.variable![1], source.variable![1]);
+    assert.notEqual(copy.variable![1]!.images, source.variable![1]!.images);
+    assert.equal(copy.variable![0], null);
+    assert.equal(copy.variable![1]!.images![0].id, `${side}-image`);
+    input = reduceInput(input, { type: "move-case", side, index: 2, to: 0 });
+    assert.equal(input[side][0].id, copy.id);
+    input = reduceInput(input, { type: "remove-case", side, index: 1 });
+    assert.deepEqual(input[side].map((entry) => entry.id), [
+      copy.id,
+      original[side][1].id,
+    ]);
+    assert.deepEqual(input[other], opposite);
+    assert.deepEqual(input.caseAxes, ["rows", "columns"]);
+    assert.deepEqual(reduceInput(input, { type: "swap" }).caseAxes, [
+      "columns",
+      "rows",
+    ]);
+    assert.deepEqual(
+      reduceInput(reduceInput(input, { type: "swap" }), { type: "swap" }),
+      input,
+    );
+  });
+
+  test(`${side} collapse and dimension changes preserve the opposite case editor and its ordinary owners`, () => {
+    let input = bothCaseAxes();
+    input = reduceInput(input, { type: "to-axis", parameter: "model", side });
+    input = reduceInput(input, {
+      type: "to-axis",
+      parameter: "effort",
+      side: other,
+    });
+    input = reduceInput(
+      input,
+      caseValueAction(other, 1, "effort", "low"),
+    );
+    const opposite = structuredClone(input[other]);
+    const common = reduceInput(input, { type: "to-common", parameter: "model" });
+    assert.deepEqual(common[side], bothCaseAxes()[side]);
+    assert.deepEqual(common[other], opposite);
+    assert.deepEqual(common.caseAxes, ["rows", "columns"]);
+    assert.deepEqual(common.parameters.model, {
+      kind: "common",
+      value: "generator/fixed",
+    });
+    const moved = reduceInput(common, {
+      type: "to-axis",
+      parameter: "model",
+      side: other,
+    });
+    assert.deepEqual(moved.parameters.model, { kind: other });
+    assert.ok(moved[side].every((entry) => entry.model === undefined));
+    assert.ok(moved[other].every((entry) => entry.model === "generator/fixed"));
+    assert.equal(
+      reduceInput(moved, { type: "to-axis", parameter: "model", side }),
+      moved,
+    );
+    for (const action of [
+      { type: "single", side },
+      { type: "dimension", side, parameter: "judge_model" },
+    ] as const) {
+      assert.deepEqual(droppedParameters(input, action), ["variable"]);
+      const next = reduceInput(input, action);
+      assert.deepEqual(next.caseAxes, [other]);
+      assert.deepEqual(next[other], opposite);
+      assert.deepEqual(next.parameters.effort, { kind: other });
+      assert.ok(next[side].every((entry) => entry.variable === undefined));
+    }
+  });
+
+  test(`${side} can enter case mode while the opposite axis already owns numbered fields`, () => {
+    const input = initial("svg", other);
+    const next = reduceInput(input, {
+      type: "dimension",
+      side,
+      parameter: "variable",
+    });
+    assert.deepEqual(next.caseAxes, [other, side]);
+    assert.deepEqual(next[other], input[other]);
+    assert.equal(next[side].length, 1);
+    assert.equal(next[side][0].variable, undefined);
+    assert.equal(
+      reduceInput(next, { type: "dimension", side, parameter: "variable" }),
+      next,
+    );
+    const fields = reduceInput(next, { type: "add-variable", side });
+    assert.deepEqual(fields[side][0].variable, [{ text: "" }]);
+    assert.deepEqual(fields[other], input[other]);
+  });
+}
+
+test("both-axis swapping moves template namespaces and owners but keeps literal fields and deletion holes", () => {
+  let input = bothCaseAxes();
+  input = reduceInput(input, {
+    type: "to-axis",
+    parameter: "input",
+    side: "rows",
+  });
+  input = reduceInput(input, {
+    type: "to-axis",
+    parameter: "judge_criteria",
+    side: "columns",
+  });
+  input.rows[0].input = [{
+    role: "user",
+    content: "$ROW1 / $COLUMN2 / $ROW12 / $COLUMN1_suffix",
+  }];
+  input.columns[0].judge_criteria = [{
+    text: "Does $COLUMN2 match $ROW1?",
+    correctAnswer: false,
+  }];
+  input.rows[0].variable = [null, { text: "$COLUMN2 literal" }];
+  input.columns[0].variable = [null, { text: "$ROW2 literal" }];
+  const original = structuredClone(input);
+  const swapped = reduceInput(input, { type: "swap" });
+  assert.deepEqual(swapped.parameters.input, { kind: "columns" });
+  assert.deepEqual(swapped.parameters.judge_criteria, { kind: "rows" });
+  assert.equal(
+    swapped.columns[0].input![0].content,
+    "$COLUMN1 / $ROW2 / $COLUMN12 / $COLUMN1_suffix",
+  );
+  assert.deepEqual(swapped.rows[0].judge_criteria, [{
+    text: "Does $ROW2 match $COLUMN1?",
+    correctAnswer: false,
+  }]);
+  assert.deepEqual(swapped.rows[0].variable, original.columns[0].variable);
+  assert.deepEqual(swapped.columns[0].variable, original.rows[0].variable);
+  assert.deepEqual(reduceInput(swapped, { type: "swap" }), original);
+  assert.deepEqual(input, original);
+});
+
+test("both-axis draft hydration retains independent slots and exposes every reference image list", () => {
+  let draft = bothCaseAxes();
+  draft = reduceInput(draft, {
+    type: "to-axis",
+    parameter: "input",
+    side: "columns",
+  });
+  for (const [index, entry] of draft.columns.entries())
+    entry.input![0].images = [{ id: `history-${index}`, name: "history.png" }];
+  for (const side of ["rows", "columns"] as const)
+    for (const [index, entry] of draft[side].entries())
+      entry.variable![0]!.images = [
+        { id: `${side}-${index}`, name: `${side}.png` },
+      ];
+  const parsed = validateDraftInput(draft).parsed;
+  assert.ok(parsed.success);
+  const hydrated = draftInputFromGridInput(parsed.data);
+  assert.deepEqual(hydrated, draft);
+  assert.notEqual(hydrated.rows[0].variable, draft.rows[0].variable);
+  assert.notEqual(hydrated.columns[0].input, draft.columns[0].input);
+  assert.deepEqual(
+    referenceLists(hydrated).flat().map((image) => image.id),
+    ["history-0", "history-1", "rows-0", "rows-1", "columns-0", "columns-1"],
+  );
+  assert.deepEqual(
+    expandGrid(parsed.data).map((cell) => cell.prompt),
+    [
+      "Draw first with left",
+      "Draw first with right",
+      "Draw second with left",
+      "Draw second with right",
+    ],
+  );
+});

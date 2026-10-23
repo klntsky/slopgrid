@@ -189,8 +189,8 @@ export function transferGrid(Database, options) {
     check(row, "Source grid not found");
     const data = JSON.parse(row.data);
     check(
-      data.input?.inputVersion === undefined,
-      "Selective grid transfer does not support this grid input version",
+      data.input?.inputVersion === 3,
+      "Selective grid transfer requires canonical inputVersion 3",
     );
     check(
       ["paused", "complete"].includes(data.status) &&
@@ -201,12 +201,14 @@ export function transferGrid(Database, options) {
     check(row.owner_user_id, "Source grid requires account ownership");
     check(
       data.input.format === "svg" &&
-        data.input.rows.kind === "model" &&
-        data.input.columns.values.length === 1,
+        data.input.parameters?.model?.kind === "rows" &&
+        Array.isArray(data.input.rows) &&
+        Array.isArray(data.input.columns) &&
+        data.input.columns.length === 1,
       "Transfer requires an SVG grid with model rows and one column",
     );
-    const positions = data.input.rows.values.flatMap((model, index) =>
-      model === removeModel ? [index] : [],
+    const positions = data.input.rows.flatMap((row, index) =>
+      row.model === removeModel ? [index] : [],
     );
     check(
       positions.length === 1,
@@ -216,7 +218,7 @@ export function transferGrid(Database, options) {
       .prepare("SELECT * FROM cells WHERE grid_id=? ORDER BY position")
       .all(grid);
     check(
-      cells.length === data.input.rows.values.length &&
+      cells.length === data.input.rows.length &&
         cells.every((cell, index) => cell.position === index),
       "Grid positions do not match its inputs",
     );
@@ -505,7 +507,7 @@ export function transferGrid(Database, options) {
     }
     data.status = "complete";
     delete data.interruption;
-    data.input.rows.values.splice(positions[0], 1);
+    data.input.rows.splice(positions[0], 1);
     target
       .prepare(
         `INSERT INTO grids

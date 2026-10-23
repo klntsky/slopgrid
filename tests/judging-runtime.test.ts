@@ -7,7 +7,6 @@ import {
   type RuntimeCall,
 } from "./runtime-fixture.js";
 import type { ChatMessage, GridInput } from "../server/domain.js";
-import { isCurrentGridInput } from "../server/parameters.js";
 import { currentDefinition } from "./current-grid-fixture.js";
 import { rmSync, writeFileSync } from "node:fs";
 import { pixelPng as png } from "./reference-image-fixture.js";
@@ -38,11 +37,10 @@ test("non-chat variable images isolate judge-only answers and merge criterion im
       fixture,
       currentDefinition({
         ...single,
-        caseAxis: "rows",
+        caseAxes: ["rows"],
         parameters: {
           ...single.parameters,
           input: { kind: "rows" },
-          variable: { kind: "rows" },
           judge_model: { kind: "columns" },
           judge_effort: { kind: "common", value: "default" },
           judge_criteria: {
@@ -124,14 +122,13 @@ test("per-case rubrics persist as one source while resolved judgments and reused
     );
     const source: GridInput = currentDefinition({
       ...single,
-      caseAxis: "rows",
+      caseAxes: ["rows"],
       parameters: {
         ...single.parameters,
         input: {
           kind: "common",
           value: [{ role: "user", content: "Describe a shape." }],
         },
-        variable: { kind: "rows" },
         judge_model: { kind: "common", value: "fixture/text" },
         judge_criteria: { kind: "rows" },
       },
@@ -189,7 +186,6 @@ test("per-case rubrics persist as one source while resolved judgments and reused
       complete.cells.map((cell) => cell.judge?.results),
       results,
     );
-    assert.ok(isCurrentGridInput(complete.input));
     assert.deepEqual(complete.input.parameters.judge_criteria, {
       kind: "rows",
     });
@@ -204,7 +200,6 @@ test("per-case rubrics persist as one source while resolved judgments and reused
     await fixture.startEngine();
     await fixture.startWeb();
     const restored = fixture.store.get(id)!;
-    assert.ok(isCurrentGridInput(restored.input));
     assert.deepEqual(restored.input.parameters.judge_criteria, {
       kind: "rows",
     });
@@ -265,7 +260,6 @@ test("per-case rubrics persist as one source while resolved judgments and reused
       5,
       "criteria-only edits run fresh judgments, not generation",
     );
-    assert.ok(isCurrentGridInput(reused.input));
     assert.deepEqual(reused.input.parameters.judge_criteria, { kind: "rows" });
     assert.deepEqual(
       reused.input.rows.map((record) => record.judge_criteria),
@@ -364,13 +358,12 @@ for (const side of ["rows", "columns"] as const)
         fixture,
         currentDefinition({
           format: "chat-template",
-          caseAxis: side,
+          caseAxes: [side],
           judge: true,
           budgetUsd: 1,
           parallelWorkers: 1,
           parameters: {
             input: { kind: side },
-            variable: { kind: side },
             judge_criteria: { kind: side },
           },
           [side]: [0, 1].map((index) => ({

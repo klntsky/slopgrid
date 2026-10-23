@@ -13,10 +13,6 @@ import { analyzeGridCompatibility } from "../server/grid-compatibility.js";
 import { expandPromptForTitle } from "../server/grid-title.js";
 import { gridDisplay } from "../shared/grid-display.js";
 import { displayValue } from "../src/format.js";
-import {
-  interpolateLegacyVariables,
-  type LegacyGridInput,
-} from "../server/legacy-grid-input.js";
 
 const first = { id: "first", name: "first.png" };
 const second = { id: "second", name: "second.png" };
@@ -24,7 +20,6 @@ const third = { id: "third", name: "third.png" };
 function input(side: "rows" | "columns" = "rows") {
   return currentDefinition({
     parameters: {
-      variable: { kind: side },
       input: {
         kind: "common",
         value: [
@@ -36,7 +31,7 @@ function input(side: "rows" | "columns" = "rows") {
       },
     },
     [side]: [{ variable: [{ text: side === "rows" ? "row" : "column" }] }],
-    caseAxis: side,
+    caseAxes: [side],
   });
 }
 
@@ -279,7 +274,6 @@ test("numbered cases share positional active slots and reject references to dele
     const token = side === "rows" ? "$ROW" : "$COLUMN";
     const source = currentDefinition({
       parameters: {
-        variable: { kind: side },
         input: {
           kind: "common",
           value: [{ role: "user", content: `${token}2` }],
@@ -289,7 +283,7 @@ test("numbered cases share positional active slots and reject references to dele
         { variable: [null, { text: "first" }, null] },
         { variable: [null, { text: "second" }, null] },
       ],
-      caseAxis: side,
+      caseAxes: [side],
     });
     assert.equal(gridSchema.safeParse(source).success, true);
     for (const variable of [
@@ -389,7 +383,6 @@ test("chat substitution preserves supplied whitespace and merges images once per
   const source = currentDefinition({
     format: "chat-template",
     parameters: {
-      variable: { kind: "rows" },
       input: {
         kind: "common",
         value: [
@@ -411,7 +404,7 @@ test("chat substitution preserves supplied whitespace and merges images once per
         ],
       },
     ],
-    caseAxis: "rows",
+    caseAxes: ["rows"],
   });
   const parsed = gridSchema.parse(source);
   assert.deepEqual(expandGrid(parsed)[0].messages, [
@@ -468,7 +461,6 @@ test("prompt formats carry field images while image generation merges prompt ima
     const source = currentDefinition({
       format,
       parameters: {
-        variable: { kind: "rows" },
         input: {
           kind: "common",
           value: [
@@ -488,7 +480,7 @@ test("prompt formats carry field images while image generation merges prompt ima
           ],
         },
       ],
-      caseAxis: "rows",
+      caseAxes: ["rows"],
     });
     const cell = expandGrid(gridSchema.parse(source))[0];
     assert.equal(cell.prompt, "column row column");
@@ -509,7 +501,6 @@ test("deleted slots keep judge-only images out of Chat while retaining original 
     judge: true,
     parameters: {
       model: { kind: "common", value: "plain" },
-      variable: { kind: "rows" },
       judge_model: { kind: "common", value: "plain" },
       judge_criteria: {
         kind: "common",
@@ -539,7 +530,7 @@ test("deleted slots keep judge-only images out of Chat while retaining original 
         ],
       },
     ],
-    caseAxis: "rows",
+    caseAxes: ["rows"],
   });
   const parsed = gridSchema.parse(source);
   assert.equal(expandGrid(parsed)[0].messages![0].images, undefined);
@@ -592,7 +583,6 @@ test("zero-case compatibility previews remain safe with unresolved deleted-field
   for (const side of ["rows", "columns"] as const) {
     const source = currentDefinition({
       parameters: {
-        variable: { kind: side },
         input: {
           kind: "common",
           value: [
@@ -601,7 +591,7 @@ test("zero-case compatibility previews remain safe with unresolved deleted-field
         },
       },
       [side]: [],
-      caseAxis: side,
+      caseAxes: [side],
     });
     assert.deepEqual(analyzeGridCompatibility(source, []), {
       cells: [],
@@ -615,29 +605,6 @@ test("zero-case compatibility previews remain safe with unresolved deleted-field
   }
 });
 
-test("legacy read-only variable fields retain labels and plain text interpolation", () => {
-  const source: LegacyGridInput = {
-    format: "markdown",
-    prompt: "$ROW1 / $COLUMN1",
-    rows: { kind: "variable", values: [[{ text: "Question" }]] },
-    columns: { kind: "variable", values: [[{ text: "Answer" }]] },
-    model: "plain",
-    effort: "default",
-    budgetUsd: 3,
-  };
-  const before = structuredClone(source);
-  const display = gridDisplay(source).rows[0];
-  assert.equal(display.downloadLabel, "Question");
-  assert.deepEqual(display.parts, [
-    { kind: "variable", value: source.rows.values[0] },
-  ]);
-  assert.equal(displayValue(display.parts[0]), "Question");
-  assert.equal(
-    interpolateLegacyVariables(source.prompt, source, 0, 0),
-    "Question / Answer",
-  );
-  assert.deepEqual(source, before);
-});
 
 for (const side of ["rows", "columns"] as const) {
   const token = side === "rows" ? "$ROW" : "$COLUMN";
@@ -646,8 +613,8 @@ for (const side of ["rows", "columns"] as const) {
     const literal = JSON.stringify([{ role: "system", content: `${token}2` }]);
     const source = currentDefinition({
       format: "chat-template",
-      caseAxis: side,
-      parameters: { input: { kind: side }, variable: { kind: side } },
+      caseAxes: [side],
+      parameters: { input: { kind: side } },
       [side]: [
         {
           variable: [
@@ -711,10 +678,9 @@ for (const side of ["rows", "columns"] as const) {
     for (const variable of [undefined, [], [null], [null, null]]) {
       for (const owner of ["input", "model", "judge_criteria"] as const) {
         const source = currentDefinition({
-          caseAxis: side,
+          caseAxes: [side],
           judge: owner === "judge_criteria",
           parameters: {
-            ...(variable === undefined ? {} : { variable: { kind: side } }),
             [owner]: { kind: side },
           },
           [side]: ["first", "second"].map((id) => ({
@@ -735,8 +701,7 @@ for (const side of ["rows", "columns"] as const) {
       }
     }
     const unused = currentDefinition({
-      caseAxis: side,
-      parameters: { variable: { kind: side } },
+      caseAxes: [side],
       [side]: [{ variable: [null] }],
     });
     assert.equal(gridSchema.safeParse(unused).success, false);

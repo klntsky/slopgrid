@@ -10,7 +10,7 @@ export type CommonParameterId = Exclude<ParameterId, "variable">;
 export type AxisSide = "rows" | "columns";
 export type ParameterConfiguration = Pick<
   GridInput,
-  "parameters" | "rows" | "columns" | "caseAxis"
+  "parameters" | "rows" | "columns" | "caseAxes"
 >;
 
 export type ValidationIssue = {
@@ -23,7 +23,12 @@ export function parameterValuePath(
   kind: ParameterId,
   row: number,
   column: number,
+  side?: AxisSide,
 ): (string | number)[] {
+  if (kind === "variable")
+    return side
+      ? [side, side === "rows" ? row : column, "variable"]
+      : ["parameters", "variable"];
   const source = input.parameters[kind];
   if (!source) return ["parameters", kind];
   return source.kind === "common"
@@ -44,37 +49,43 @@ export const parameterNames: Record<ParameterId, string> = {
   variable: "Prompt variables",
 };
 
-export function isCurrentGridInput(input: unknown): input is GridInput {
-  return (
-    typeof input === "object" &&
-    input !== null &&
-    "inputVersion" in input &&
-    input.inputVersion === 3
-  );
+export function isCaseAxis(
+  input: Pick<ParameterConfiguration, "caseAxes">,
+  side: AxisSide,
+): boolean {
+  return input.caseAxes.includes(side);
+}
+
+export function axisHasVariables(
+  input: Pick<ParameterConfiguration, "rows" | "columns">,
+  side: AxisSide,
+): boolean {
+  return input[side].some((record) => !!record.variable?.length);
 }
 
 export function axisParameters(
-  input: Pick<ParameterConfiguration, "parameters">,
+  input: Pick<ParameterConfiguration, "parameters" | "rows" | "columns">,
   side: AxisSide,
 ): ParameterId[] {
-  return (Object.keys(input.parameters) as ParameterId[]).filter(
-    (kind) => input.parameters[kind]?.kind === side,
-  );
+  const parameters: ParameterId[] = (
+    Object.keys(input.parameters) as CommonParameterId[]
+  ).filter((kind) => input.parameters[kind]?.kind === side);
+  if (axisHasVariables(input, side)) parameters.push("variable");
+  return parameters;
 }
 
 export function parameterLayoutIssues(
   input: ParameterConfiguration,
 ): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
-  const variableSide = input.parameters.variable?.kind;
-  if (variableSide && variableSide !== input.caseAxis)
-    issues.push({
-      message: "Numbered fields must belong to the case axis.",
-      path: ["parameters", "variable"],
-    });
   for (const side of ["rows", "columns"] as const) {
     const owned = axisParameters(input, side);
-    if (input.caseAxis === side) continue;
+    if (isCaseAxis(input, side)) continue;
+    if (axisHasVariables(input, side))
+      issues.push({
+        message: "Numbered fields must belong to a case axis.",
+        path: [side],
+      });
     if (owned.length > 1)
       issues.push({
         message: "Only case axes can own multiple parameters.",
@@ -126,8 +137,13 @@ export function parameterValue<K extends ParameterId>(
   kind: K,
   row: number,
   column: number,
+  side?: AxisSide,
 ): ParameterValues[K] | undefined {
-  const source = input.parameters[kind];
+  if (kind === "variable")
+    return (
+      side ? input[side][side === "rows" ? row : column]?.variable : undefined
+    ) as ParameterValues[K] | undefined;
+  const source = input.parameters[kind as CommonParameterId];
   if (!source) return undefined;
   if (source.kind === "common") return source.value as ParameterValues[K];
   const record: Partial<ParameterValues> | undefined =
@@ -147,6 +163,7 @@ export function defaultGridDraft(format: GridInput["format"]): GridDraftInput {
     format,
     budgetUsd: "3",
     judge: false,
+    caseAxes: [],
     parameters: {
       input: { kind: "common", value: parameterDefault("input") },
       model: { kind: modelRows ? "rows" : "columns" },

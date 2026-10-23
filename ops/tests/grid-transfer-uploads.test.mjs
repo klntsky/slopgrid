@@ -520,7 +520,7 @@ test("unsafe shared upload paths, bytes and metadata collisions fail before tran
     });
 });
 
-test("schema17 transfers and exports variable fields, expanded task images and unused configured references", (t) => {
+test("canonical transfers and exports case fields, expanded task images and unused configured references", (t) => {
   let first, unused, columns;
   const f = fixture(t, {
     customize(f) {
@@ -533,7 +533,7 @@ test("schema17 transfers and exports variable fields, expanded task images and u
   transferGrid(Database, { ...f.options, apply: true });
   const saved = JSON.parse(transferGridRow(f.target, f.options.grid).data);
   assert.deepEqual(saved.input.columns, columns);
-  assert.equal(saved.input.prompt, "Draw $COLUMN1");
+  assert.deepEqual(saved.input.parameters.input.value, [{ role: "user", content: "Draw $COLUMN1" }]);
   assert.deepEqual(transferTasks(f.target), tasks);
   assert.deepEqual(
     orderedReferenceLinks(f.target)

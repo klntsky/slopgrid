@@ -10,11 +10,10 @@ import {
 import { currentDefinition } from "./current-grid-fixture.js";
 
 const input = currentDefinition({
-  caseAxis: "rows",
+  caseAxes: ["rows"],
   budgetUsd: 0.1,
   parameters: {
     input: { kind: "common", value: [{ role: "user", content: "$ROW1" }] },
-    variable: { kind: "rows" },
     effort: { kind: "columns" },
   },
   rows: [{ variable: [{ text: "one" }] }],

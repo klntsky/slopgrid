@@ -113,21 +113,32 @@ export async function setVariableValues(
   expect(values.length).toBeGreaterThan(0);
   const axis = side === "Rows" ? "row" : "column";
   const token = side === "Rows" ? "$ROW1" : "$COLUMN1";
+  const dualCases = (await savedInput(page)).caseAxes.length === 2;
   const table = page.getByRole("table", {
-    name: "Grid layout parameters",
+    name: dualCases
+      ? side === "Rows" ? "Row cases" : "Column cases"
+      : "Grid layout parameters",
     exact: true,
   });
   await expect(table).toBeVisible();
   if (!(await table.getByLabel(`${token}, case 1`, { exact: true }).count()))
     await page
-      .getByRole("button", { name: "new variable", exact: true })
+      .getByRole("button", {
+        name: dualCases ? `new ${axis} variable` : "new variable",
+        exact: true,
+      })
       .click();
   const cases = table.getByRole("button", {
     name: new RegExp(`^Remove ${axis} case \\d+$`),
   });
   let count = await cases.count();
   while (count < values.length) {
-    await page.getByRole("button", { name: "new case", exact: true }).click();
+    await page
+      .getByRole("button", {
+        name: dualCases ? `new ${axis} case` : "new case",
+        exact: true,
+      })
+      .click();
     count++;
   }
   while (count > values.length) {

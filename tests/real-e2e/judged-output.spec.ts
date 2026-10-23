@@ -346,6 +346,7 @@ for (const format of ["markdown", "chat-template", "image", "svg"] as const) {
       format,
       budgetUsd: 0.03,
       judge: true,
+      caseAxes: [],
       parameters: {
         input: {
           kind: "common",

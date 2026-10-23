@@ -40,7 +40,7 @@ for (const limit of ["grid creation", "API traffic"] as const) {
               const response = await client.post("/api/grids", {
                 data: currentDefinition({
                   format: "image",
-                  caseAxis: "rows",
+                  caseAxes: ["rows"],
                   parameters: {
                     input: {
                       kind: "common",
@@ -48,7 +48,6 @@ for (const limit of ["grid creation", "API traffic"] as const) {
                         { role: "user", content: "Draw $ROW1 wearing a hat" },
                       ],
                     },
-                    variable: { kind: "rows" },
                   },
                   rows: [{ variable: [{ text: "cat" }] }],
                   budgetUsd: 5,

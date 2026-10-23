@@ -49,10 +49,9 @@ import { pixelPng as png } from "./reference-image-fixture.js";
 
 const input = currentDefinition({
   format: "markdown",
-  caseAxis: "rows",
+  caseAxes: ["rows"],
   parameters: {
     input: { kind: "common", value: [{ role: "user", content: "$ROW1 one" }] },
-    variable: { kind: "rows" },
     effort: { kind: "columns" },
   },
   rows: ["cat", "dog", "owl", "fox"].map((text) => ({ variable: [{ text }] })),
@@ -198,7 +197,7 @@ test("common input image reuse follows bytes rather than upload ids or display m
         await settled(f, source.id);
         const copy = await create(f, {
           ...setup,
-          caseAxis: "columns",
+          caseAxes: ["columns"],
           parameters: {
             ...setup.parameters,
             input: { kind: "columns" },
@@ -219,7 +218,7 @@ test("common input image reuse follows bytes rather than upload ids or display m
         });
         const savedCopy = await settled(f, copy.id);
         assert.equal(savedCopy.cells.length, 2);
-        assert.equal(gridSchema.parse(savedCopy.input).caseAxis, "columns");
+        assert.deepEqual(gridSchema.parse(savedCopy.input).caseAxes, ["columns"]);
         assert.deepEqual(
           parameterValue(gridSchema.parse(savedCopy.input), "input", 0, 0)![0]
             .images,
@@ -237,7 +236,7 @@ test("common input image reuse follows bytes rather than upload ids or display m
         );
         const different = await create(f, {
           ...setup,
-          caseAxis: "rows",
+          caseAxes: ["rows"],
           parameters: {
             ...setup.parameters,
             input: { kind: "rows" },
@@ -393,7 +392,6 @@ test("chat reuse matches attachment content across uploads but not moved attachm
       format: "chat-template",
       parameters: {
         input: { kind: "common", value: messages },
-        variable: { kind: "rows" },
         model: { kind: "common", value: "fixture/text" },
         effort: { kind: "columns" },
       },
@@ -404,7 +402,7 @@ test("chat reuse matches attachment content across uploads but not moved attachm
     const original = await settled(f, source.id);
     const copy = await create(f, {
       ...template,
-      caseAxis: "columns",
+      caseAxes: ["columns"],
       parameters: {
         input: { kind: "columns" },
         model: { kind: "rows" },
@@ -490,7 +488,6 @@ test("template reuse preserves usage metadata and requires every completion", as
               { role: "unfilled", content: "" },
             ],
           },
-          variable: { kind: "rows" },
           model: { kind: "common", value: "fixture/text" },
           effort: { kind: "columns" },
         },
@@ -569,7 +566,6 @@ test("template reuse preserves usage metadata and requires every completion", as
               { role: "user", content: "Final question" },
             ],
           },
-          variable: { kind: "rows" },
           model: { kind: "common", value: "fixture/text" },
           effort: { kind: "columns" },
         },
@@ -633,7 +629,6 @@ test("failed templates retain the partial transcript and aggregate charged usage
               { role: "unfilled", content: "" },
             ],
           },
-          variable: { kind: "rows" },
           model: { kind: "common", value: "fixture/text" },
           effort: { kind: "columns" },
         },
@@ -1330,7 +1325,6 @@ test("reuse leaves preparation failures on individual cells and skips unsigned s
       ...input,
       parameters: {
         input: { kind: "common", value: [{ role: "user", content: "$ROW1" }] },
-        variable: { kind: "rows" },
         model: { kind: "columns" },
         effort: { kind: "common", value: "none" },
       },
@@ -1502,7 +1496,7 @@ test("reuse shares one generation per judge group without copying judgments or a
   );
   const config = currentDefinition({
     ...input,
-    caseAxis: undefined,
+    caseAxes: [],
     judge: true,
     parameters: {
       input: {

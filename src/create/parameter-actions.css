@@ -48,7 +48,6 @@
   outline-offset: 2px;
 }
 
-
 .section-heading > .parameter-actions {
   align-self: center;
 }
@@ -57,4 +56,41 @@
   .parameter-case-action {
     min-height: 36px;
   }
+}
+
+.tippy-box[data-theme="case-destination"] {
+  color: var(--text);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px #0002;
+}
+.tippy-box[data-theme="case-destination"] > .tippy-content {
+  padding: 4px;
+}
+.case-destination-menu {
+  display: flex;
+  flex-direction: column;
+  min-width: 160px;
+}
+.case-destination-menu > button {
+  padding: 8px 12px;
+  text-align: left;
+  border-radius: 4px;
+}
+.case-destination-menu > button:hover,
+.case-destination-menu > button:focus-visible {
+  background: var(--grid-header);
+}
+.case-destination-menu > button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+.variable-token-picker {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  margin-block: 8px;
+  padding: 4px 8px;
+  font-size: 12px;
 }
