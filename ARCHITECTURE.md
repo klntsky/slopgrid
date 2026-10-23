@@ -54,6 +54,8 @@ storage, listeners, connections, and process state. Production-data rehearsal
 snapshots take precedence over blank templates. Storage and route tests use the
 smallest boundary their behavior requires; process-lifecycle and contention tests
 retain independent service processes.
+Related scenario variants may share a private runtime within one test. Fresh pages
+isolate per-tab editor state; fresh contexts also isolate browser session state.
 
 The repository's `ops/` directory owns deployment orchestration for committed
 revisions, including release builds, update-mode selection, draining, promotion,

@@ -143,129 +143,132 @@ test("generator grouping ignores judge-only fields and attachment display metada
   );
 });
 
-for (const format of ["markdown", "svg", "html"] as const)
-  test(`${format} common input image reuse follows bytes rather than upload ids or display metadata`, async () => {
-    const f = await runtimeFixture();
-    try {
-      const session = { id: f.owner, created: 0 };
-      const original = f.store.references.add(png, "original.png", session)!;
-      const copied = f.store.references.add(png, "renamed.png", session)!;
-      const changed = f.store.references.add(
-        Buffer.concat([png, Buffer.from("changed")]),
-        "changed.png",
-        session,
-      )!;
-      const setup = currentDefinition({
-        format,
-        budgetUsd: input.budgetUsd,
-        parallelWorkers: input.parallelWorkers,
-        parameters: {
-          input: {
-            kind: "common",
-            value: [
-              {
-                role: "user",
-                content: "Describe the shape.",
-                images: [original],
-              },
-            ],
-          },
-          model: { kind: "rows" },
-          effort: { kind: "columns" },
-        },
-        rows: [{ model: "fixture/text" }],
-        columns: [{ effort: "none" }],
-      });
-      const output =
-        format === "html"
-          ? '{"files":[{"path":"index.html","content":"<h1>Shape</h1>"}]}'
-          : format === "svg"
-            ? '<svg xmlns="http://www.w3.org/2000/svg"><text>Shape</text></svg>'
-            : "Shape";
-      const source = await create(f, setup);
-      const call = await f.nextCall();
-      const user = call.request.messages.find(
-        (message) => message.role === "user",
-      )!;
-      assert.ok(Array.isArray(user.content));
-      assert.equal(
-        user.content.filter((part) => part.type === "image_url").length,
-        1,
-      );
-      finish(call, output);
-      await settled(f, source.id);
-      const copy = await create(f, {
-        ...setup,
-        caseAxis: "columns",
-        parameters: {
-          ...setup.parameters,
-          input: { kind: "columns" },
-        },
-        columns: ["first", "second"].map((id) => ({
-          id,
-          effort: "none",
-          input: [
-            {
-              role: "user",
-              content: "Describe the shape.",
-              images: [{ ...copied, width: 900, height: 2 }],
+test("common input image reuse follows bytes rather than upload ids or display metadata", async (t) => {
+  const f = await runtimeFixture();
+  try {
+    for (const format of ["markdown", "svg", "html"] as const)
+      await t.test(format, async () => {
+        const calls = f.calls.length;
+        const session = { id: f.owner, created: 0 };
+        const original = f.store.references.add(png, "original.png", session)!;
+        const copied = f.store.references.add(png, "renamed.png", session)!;
+        const changed = f.store.references.add(
+          Buffer.concat([png, Buffer.from("changed")]),
+          "changed.png",
+          session,
+        )!;
+        const setup = currentDefinition({
+          format,
+          budgetUsd: input.budgetUsd,
+          parallelWorkers: input.parallelWorkers,
+          parameters: {
+            input: {
+              kind: "common",
+              value: [
+                {
+                  role: "user",
+                  content: "Describe the shape.",
+                  images: [original],
+                },
+              ],
             },
-          ],
-        })),
-        sourceGridId: source.id,
-        reuseArtifacts: true,
-      });
-      const savedCopy = await settled(f, copy.id);
-      assert.equal(savedCopy.cells.length, 2);
-      assert.equal(gridSchema.parse(savedCopy.input).caseAxis, "columns");
-      assert.deepEqual(
-        parameterValue(gridSchema.parse(savedCopy.input), "input", 0, 0)![0]
-          .images,
-        [copied],
-      );
-      assert.deepEqual(savedCopy.cells[0].messages![0].images, [copied]);
-      assert.equal(f.calls.length, 1);
-      assert.equal(
-        f.store.outputMetadata(copy.cells[0].id)!.artifactId,
-        f.store.outputMetadata(source.cells[0].id)!.artifactId,
-      );
-      assert.equal(
-        f.store.outputMetadata(copy.cells[1].id)!.artifactId,
-        f.store.outputMetadata(source.cells[0].id)!.artifactId,
-      );
-      const different = await create(f, {
-        ...setup,
-        caseAxis: "rows",
-        parameters: {
-          ...setup.parameters,
-          input: { kind: "rows" },
-          model: { kind: "common", value: "fixture/text" },
-        },
-        rows: [
-          {
+            model: { kind: "rows" },
+            effort: { kind: "columns" },
+          },
+          rows: [{ model: "fixture/text" }],
+          columns: [{ effort: "none" }],
+        });
+        const output =
+          format === "html"
+            ? '{"files":[{"path":"index.html","content":"<h1>Shape</h1>"}]}'
+            : format === "svg"
+              ? '<svg xmlns="http://www.w3.org/2000/svg"><text>Shape</text></svg>'
+              : "Shape";
+        const source = await create(f, setup);
+        const call = await f.nextCall();
+        const user = call.request.messages.find(
+          (message) => message.role === "user",
+        )!;
+        assert.ok(Array.isArray(user.content));
+        assert.equal(
+          user.content.filter((part) => part.type === "image_url").length,
+          1,
+        );
+        finish(call, output);
+        await settled(f, source.id);
+        const copy = await create(f, {
+          ...setup,
+          caseAxis: "columns",
+          parameters: {
+            ...setup.parameters,
+            input: { kind: "columns" },
+          },
+          columns: ["first", "second"].map((id) => ({
+            id,
+            effort: "none",
             input: [
               {
                 role: "user",
                 content: "Describe the shape.",
-                images: [changed],
+                images: [{ ...copied, width: 900, height: 2 }],
               },
             ],
+          })),
+          sourceGridId: source.id,
+          reuseArtifacts: true,
+        });
+        const savedCopy = await settled(f, copy.id);
+        assert.equal(savedCopy.cells.length, 2);
+        assert.equal(gridSchema.parse(savedCopy.input).caseAxis, "columns");
+        assert.deepEqual(
+          parameterValue(gridSchema.parse(savedCopy.input), "input", 0, 0)![0]
+            .images,
+          [copied],
+        );
+        assert.deepEqual(savedCopy.cells[0].messages![0].images, [copied]);
+        assert.equal(f.calls.length, calls + 1);
+        assert.equal(
+          f.store.outputMetadata(copy.cells[0].id)!.artifactId,
+          f.store.outputMetadata(source.cells[0].id)!.artifactId,
+        );
+        assert.equal(
+          f.store.outputMetadata(copy.cells[1].id)!.artifactId,
+          f.store.outputMetadata(source.cells[0].id)!.artifactId,
+        );
+        const different = await create(f, {
+          ...setup,
+          caseAxis: "rows",
+          parameters: {
+            ...setup.parameters,
+            input: { kind: "rows" },
+            model: { kind: "common", value: "fixture/text" },
           },
-        ],
-        sourceGridId: source.id,
-        reuseArtifacts: true,
+          rows: [
+            {
+              input: [
+                {
+                  role: "user",
+                  content: "Describe the shape.",
+                  images: [changed],
+                },
+              ],
+            },
+          ],
+          sourceGridId: source.id,
+          reuseArtifacts: true,
+        });
+        finish(await f.nextCall(), output.replace("Shape", "Different shape"));
+        await settled(f, different.id);
+        assert.equal(f.calls.length, calls + 2);
+        assert.notEqual(
+          f.store.outputMetadata(different.cells[0].id)!.artifactId,
+          f.store.outputMetadata(source.cells[0].id)!.artifactId,
+        );
       });
-      finish(await f.nextCall(), output.replace("Shape", "Different shape"));
-      await settled(f, different.id);
-      assert.equal(f.calls.length, 2);
-      assert.notEqual(
-        f.store.outputMetadata(different.cells[0].id)!.artifactId,
-        f.store.outputMetadata(source.cells[0].id)!.artifactId,
-      );
-    } finally {
-      await f.close();
-    }
-  });
+  } finally {
+    await f.close();
+  }
+});
 
 test("non-chat image reuse follows content and ignores changed judge-only fields", async () => {
   const f = await runtimeFixture();
@@ -471,146 +474,143 @@ test("chat reuse matches attachment content across uploads but not moved attachm
   }
 });
 
-test("template usage and per-call reuse survive storage reopening", async () => {
+test("template reuse preserves usage metadata and requires every completion", async (t) => {
   const f = await runtimeFixture();
   try {
-    const template = currentDefinition({
-      ...input,
-      format: "chat-template",
-      parameters: {
-        input: {
-          kind: "common",
-          value: [
-            { role: "user", content: "$ROW1 one" },
-            { role: "unfilled", content: "" },
-            { role: "unfilled", content: "" },
-          ],
+    await t.test("consecutive blanks preserve per-call usage and JSON downloads", async () => {
+      const template = currentDefinition({
+        ...input,
+        format: "chat-template",
+        parameters: {
+          input: {
+            kind: "common",
+            value: [
+              { role: "user", content: "$ROW1 one" },
+              { role: "unfilled", content: "" },
+              { role: "unfilled", content: "" },
+            ],
+          },
+          variable: { kind: "rows" },
+          model: { kind: "common", value: "fixture/text" },
+          effort: { kind: "columns" },
         },
-        variable: { kind: "rows" },
-        model: { kind: "common", value: "fixture/text" },
-        effort: { kind: "columns" },
-      },
-      budgetUsd: 1,
-      rows: [{ variable: [{ text: "cat" }] }],
-    });
-    const source = await create(f, template);
-    finish(await f.nextCall(), "First answer");
-    const second = await f.nextCall();
-    assert.equal(second.request.messages.at(-1)!.role, "assistant");
-    assert.equal(
-      messageText(second.request.messages.at(-1)!.content),
-      "First answer",
-    );
-    finish(second, "Second answer");
-    await settled(f, source.id);
-    const saved = f.store.get(source.id)!;
-    assertCost(saved.cells[0].usage!.costUsd!, 0.0246);
-    const calls = f.calls.length;
-    const copy = await create(f, {
-      ...template,
-      sourceGridId: source.id,
-      reuseArtifacts: true,
-    });
-    assert.equal(copy.cells[0].status, "complete");
-    assert.equal(f.calls.length, calls);
-    const artifactId = f.store.outputMetadata(copy.cells[0].id)!.artifactId;
-    assert.equal(artifactId, saved.cells[0].artifactId);
-    assertCost(f.store.get(copy.id)!.cells[0].usage!.costUsd!, 0.0246);
-    const conversation = await f.request(`/outputs/${copy.cells[0].id}?raw=1`);
-    assert.match(
-      conversation.headers.get("content-type")!,
-      /application\/json/,
-    );
-    assert.deepEqual(await conversation.json(), [
-      { role: "user", content: "cat one" },
-      { role: "assistant", content: "First answer" },
-      { role: "assistant", content: "Second answer" },
-    ]);
-    const download = await f.request(`/outputs/${copy.cells[0].id}/download`);
-    assert.equal(download.status, 200);
-    assert.match(download.headers.get("content-type")!, /application\/json/);
-    assert.match(download.headers.get("content-disposition")!, /\.json/);
-    assert.deepEqual(await download.json(), [
-      { role: "user", content: "cat one" },
-      { role: "assistant", content: "First answer" },
-      { role: "assistant", content: "Second answer" },
-    ]);
-    assert.equal(
-      (await f.fetch(f.origin + `/outputs/${copy.cells[0].id}?raw=1`)).status,
-      404,
-    );
-    removeTemplateInputTokenUsage(f.store.db, copy.cells[0].generationId);
-    const regenerated = await create(f, {
-      ...template,
-      sourceGridId: copy.id,
-      reuseArtifacts: true,
-    });
-    assert.notEqual(regenerated.cells[0].status, "complete");
-    finish(await f.nextCall(), "Fresh first answer");
-    finish(await f.nextCall(), "Fresh second answer");
-    assert.equal((await settled(f, regenerated.id)).status, "complete");
-    assert.equal(f.calls.length, calls + 2);
-  } finally {
-    await f.close();
-  }
-});
-
-test("template reuse requires the final completion after supplied trailing history", async () => {
-  const f = await runtimeFixture();
-  try {
-    const template = currentDefinition({
-      ...input,
-      format: "chat-template",
-      parameters: {
-        input: {
-          kind: "common",
-          value: [
-            { role: "user", content: "$ROW1 one" },
-            { role: "unfilled", content: "" },
-            { role: "user", content: "Final question" },
-          ],
-        },
-        variable: { kind: "rows" },
-        model: { kind: "common", value: "fixture/text" },
-        effort: { kind: "columns" },
-      },
-      budgetUsd: 1,
-      rows: [{ variable: [{ text: "cat" }] }],
-    });
-    const source = await create(f, template);
-    finish(await f.nextCall(), "First answer");
-    const last = await f.nextCall();
-    assert.deepEqual(
-      last.request.messages.map((m) => ({
-        role: m.role,
-        content: messageText(m.content),
-      })),
-      [
+        budgetUsd: 1,
+        rows: [{ variable: [{ text: "cat" }] }],
+      });
+      const source = await create(f, template);
+      finish(await f.nextCall(), "First answer");
+      const second = await f.nextCall();
+      assert.equal(second.request.messages.at(-1)!.role, "assistant");
+      assert.equal(
+        messageText(second.request.messages.at(-1)!.content),
+        "First answer",
+      );
+      finish(second, "Second answer");
+      await settled(f, source.id);
+      const saved = f.store.get(source.id)!;
+      assertCost(saved.cells[0].usage!.costUsd!, 0.0246);
+      const calls = f.calls.length;
+      const copy = await create(f, {
+        ...template,
+        sourceGridId: source.id,
+        reuseArtifacts: true,
+      });
+      assert.equal(copy.cells[0].status, "complete");
+      assert.equal(f.calls.length, calls);
+      const artifactId = f.store.outputMetadata(copy.cells[0].id)!.artifactId;
+      assert.equal(artifactId, saved.cells[0].artifactId);
+      assertCost(f.store.get(copy.id)!.cells[0].usage!.costUsd!, 0.0246);
+      const conversation = await f.request(`/outputs/${copy.cells[0].id}?raw=1`);
+      assert.match(
+        conversation.headers.get("content-type")!,
+        /application\/json/,
+      );
+      assert.deepEqual(await conversation.json(), [
         { role: "user", content: "cat one" },
         { role: "assistant", content: "First answer" },
-        { role: "user", content: "Final question" },
-      ],
-    );
-    finish(last, "Final answer");
-    await settled(f, source.id);
-    const copy = await create(f, {
-      ...template,
-      sourceGridId: source.id,
-      reuseArtifacts: true,
+        { role: "assistant", content: "Second answer" },
+      ]);
+      const download = await f.request(`/outputs/${copy.cells[0].id}/download`);
+      assert.equal(download.status, 200);
+      assert.match(download.headers.get("content-type")!, /application\/json/);
+      assert.match(download.headers.get("content-disposition")!, /\.json/);
+      assert.deepEqual(await download.json(), [
+        { role: "user", content: "cat one" },
+        { role: "assistant", content: "First answer" },
+        { role: "assistant", content: "Second answer" },
+      ]);
+      assert.equal(
+        (await f.fetch(f.origin + `/outputs/${copy.cells[0].id}?raw=1`)).status,
+        404,
+      );
+      removeTemplateInputTokenUsage(f.store.db, copy.cells[0].generationId);
+      const regenerated = await create(f, {
+        ...template,
+        sourceGridId: copy.id,
+        reuseArtifacts: true,
+      });
+      assert.notEqual(regenerated.cells[0].status, "complete");
+      finish(await f.nextCall(), "Fresh first answer");
+      finish(await f.nextCall(), "Fresh second answer");
+      assert.equal((await settled(f, regenerated.id)).status, "complete");
+      assert.equal(f.calls.length, calls + 2);
     });
-    assert.equal(copy.status, "complete");
-    assert.equal(f.calls.length, 2);
-    removeSecondTemplateStep(f.store.db, source.cells[0].generationId);
-    const regenerated = await create(f, {
-      ...template,
-      sourceGridId: source.id,
-      reuseArtifacts: true,
+    await t.test("trailing supplied history still requires the final completion", async () => {
+      const calls = f.calls.length;
+      const template = currentDefinition({
+        ...input,
+        format: "chat-template",
+        parameters: {
+          input: {
+            kind: "common",
+            value: [
+              { role: "user", content: "$ROW1 one" },
+              { role: "unfilled", content: "" },
+              { role: "user", content: "Final question" },
+            ],
+          },
+          variable: { kind: "rows" },
+          model: { kind: "common", value: "fixture/text" },
+          effort: { kind: "columns" },
+        },
+        budgetUsd: 1,
+        rows: [{ variable: [{ text: "cat" }] }],
+      });
+      const source = await create(f, template);
+      finish(await f.nextCall(), "First answer");
+      const last = await f.nextCall();
+      assert.deepEqual(
+        last.request.messages.map((m) => ({
+          role: m.role,
+          content: messageText(m.content),
+        })),
+        [
+          { role: "user", content: "cat one" },
+          { role: "assistant", content: "First answer" },
+          { role: "user", content: "Final question" },
+        ],
+      );
+      finish(last, "Final answer");
+      await settled(f, source.id);
+      const copy = await create(f, {
+        ...template,
+        sourceGridId: source.id,
+        reuseArtifacts: true,
+      });
+      assert.equal(copy.status, "complete");
+      assert.equal(f.calls.length, calls + 2);
+      removeSecondTemplateStep(f.store.db, source.cells[0].generationId);
+      const regenerated = await create(f, {
+        ...template,
+        sourceGridId: source.id,
+        reuseArtifacts: true,
+      });
+      assert.notEqual(regenerated.status, "complete");
+      finish(await f.nextCall(), "Fresh first answer");
+      finish(await f.nextCall(), "Fresh final answer");
+      await settled(f, regenerated.id);
+      assert.equal(f.calls.length, calls + 4);
     });
-    assert.notEqual(regenerated.status, "complete");
-    finish(await f.nextCall(), "Fresh first answer");
-    finish(await f.nextCall(), "Fresh final answer");
-    await settled(f, regenerated.id);
-    assert.equal(f.calls.length, 4);
   } finally {
     await f.close();
   }
@@ -1131,64 +1131,6 @@ test("budget and token ceiling changes reuse outputs that fit through copies and
   }
 });
 
-test("reuse selects the first matching source whose actual usage fits the new limit", async () => {
-  const f = await runtimeFixture({
-    configureCatalog(catalog) {
-      catalog.data[0].pricing = { prompt: "0", completion: "0.001" };
-    },
-  });
-  try {
-    const config = currentDefinition({
-      ...input,
-      budgetUsd: 1,
-      parameters: {
-        ...input.parameters,
-        input: {
-          kind: "common",
-          value: [{ role: "user", content: "$ROW1$ROW2" }],
-        },
-      },
-      rows: [
-        ["a", "bc"],
-        ["a", "c"],
-        ["ab", "bc"],
-        ["ab", "c"],
-      ].map((fields) => ({ variable: fields.map((text) => ({ text })) })),
-    });
-    const source = await create(f, config);
-    const first = await f.nextCall();
-    first.write({ content: "Large" });
-    first.finish(0.6, { reason: "stop", outputTokens: 600 });
-    for (let i = 0; i < 3; i++) finish(await f.nextCall(), "Small");
-    await settled(f, source.id);
-    const copied = await create(f, {
-      ...config,
-      budgetUsd: 0.5,
-      sourceGridId: source.id,
-      reuseArtifacts: true,
-    });
-    assert.equal(copied.status, "complete");
-    assert.deepEqual(
-      copied.cells.map((cell) => cell.usage?.outputTokens),
-      [20, 20, 20, 20],
-    );
-    for (const cell of copied.cells)
-      assert.equal(
-        readFileSync(
-          f.store.files.path(
-            f.store.outputMetadata(cell.id)!.artifactId!,
-            "index.md",
-          )!,
-          "utf8",
-        ),
-        "Small",
-      );
-    assert.equal(f.calls.length, 4);
-  } finally {
-    await f.close();
-  }
-});
-
 test("missing token usage reuses only when the original ceiling fits, including copies", async () => {
   const f = await runtimeFixture({
     configureCatalog(catalog) {
@@ -1265,6 +1207,7 @@ test("stored artifacts with stale request signatures regenerate instead of reusi
 test("duplicate effective prompts choose the first source cell and model alias retargeting forces generation", async () => {
   const f = await runtimeFixture({
     configureCatalog(catalog) {
+      catalog.data[0].pricing = { prompt: "0", completion: "0.001" };
       catalog.data.push({ ...catalog.data[0], id: "fixture/other" });
       catalog.data.push({
         ...catalog.data[0],
@@ -1276,6 +1219,7 @@ test("duplicate effective prompts choose the first source cell and model alias r
   try {
     const config = currentDefinition({
       ...input,
+      budgetUsd: 1,
       parameters: {
         ...input.parameters,
         input: {
@@ -1292,8 +1236,16 @@ test("duplicate effective prompts choose the first source cell and model alias r
       ].map((fields) => ({ variable: fields.map((text) => ({ text })) })),
     });
     const source = await create(f, config);
-    for (let i = 0; i < 4; i++) finish(await f.nextCall(), `Output ${i}`);
-    await settled(f, source.id);
+    const first = await f.nextCall();
+    first.write({ content: "Output 0" });
+    first.finish(0.6, { reason: "stop", outputTokens: 600 });
+    for (let i = 1; i < 4; i++) finish(await f.nextCall(), `Output ${i}`);
+    const completedSource = await settled(f, source.id);
+    assert.equal(f.calls.length, 4);
+    assert.deepEqual(
+      completedSource.cells.map((cell) => cell.usage?.outputTokens),
+      [600, 20, 20, 20],
+    );
     const copied = await create(f, {
       ...config,
       sourceGridId: source.id,
@@ -1301,16 +1253,44 @@ test("duplicate effective prompts choose the first source cell and model alias r
     });
     assert.equal(copied.status, "complete");
     assert.equal(f.calls.length, 4);
-    assert.equal(
-      readFileSync(
-        f.store.files.path(
-          f.store.outputMetadata(copied.cells[3].id)!.artifactId!,
-          "index.md",
-        )!,
-        "utf8",
-      ),
-      "Output 0",
+    assert.deepEqual(
+      copied.cells.map((cell) => cell.usage?.outputTokens),
+      [600, 20, 20, 600],
     );
+    for (const [index, cell] of copied.cells.entries())
+      assert.equal(
+        readFileSync(
+          f.store.files.path(
+            f.store.outputMetadata(cell.id)!.artifactId!,
+            "index.md",
+          )!,
+          "utf8",
+        ),
+        `Output ${index === 3 ? 0 : index}`,
+      );
+    const fitting = await create(f, {
+      ...config,
+      budgetUsd: 0.5,
+      sourceGridId: source.id,
+      reuseArtifacts: true,
+    });
+    assert.equal(fitting.status, "complete");
+    assert.deepEqual(
+      fitting.cells.map((cell) => cell.usage?.outputTokens),
+      [20, 20, 20, 20],
+    );
+    for (const [index, cell] of fitting.cells.entries())
+      assert.equal(
+        readFileSync(
+          f.store.files.path(
+            f.store.outputMetadata(cell.id)!.artifactId!,
+            "index.md",
+          )!,
+          "utf8",
+        ),
+        `Output ${index === 0 ? 3 : index}`,
+      );
+    assert.equal(f.calls.length, 4);
     f.catalog.data[2].alias_target!.slug = "fixture/other";
     await kill(f.web);
     await f.startWeb();
@@ -1327,6 +1307,7 @@ test("duplicate effective prompts choose the first source cell and model alias r
       finish(call, cell.prompt);
     }
     await settled(f, changed.id);
+    assert.equal(f.calls.length, 8);
   } finally {
     await f.close();
   }

@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { startTestServer } from "./test-server.js";
@@ -9,17 +9,68 @@ import { join } from "node:path";
 import { Store } from "../server/store.js";
 import { seedGridLists } from "./grid-list-fixture.js";
 
-test("production browser fixtures release processes, TLS listeners and temporary data", async () => {
+function snapshotFixture(t: TestContext) {
+  const directory = mkdtempSync(join(tmpdir(), "slopgrid-seeded-browser-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const database = join(directory, "snapshot.sqlite");
+  const source = new Store(database, Buffer.alloc(32, 6));
+  const { publicIds } = seedGridLists(source, "snapshot-owner", {
+    owned: 1,
+    public: 1,
+  });
+  source.saveSession({
+    id: "historical-session",
+    key: "historical-secret",
+    created: 1,
+  });
+  mkdirSync(join(directory, "outputs"), { recursive: true });
+  const artifact = join(directory, "outputs/production-only.txt");
+  writeFileSync(artifact, "production artifact");
+  source.db.close();
+  const original = readFileSync(database);
+  function assertUnchanged() {
+    assert.deepEqual(readFileSync(database), original);
+    assert.equal(readFileSync(artifact, "utf8"), "production artifact");
+  }
+  return {
+    database,
+    assertUnchanged,
+    async assertCopy(
+      server: Awaited<ReturnType<typeof startTestServer>>,
+      project: "mock" | "real",
+      request: (url: string) => Promise<Response>,
+    ) {
+      const response = await request(
+        `${server.origin}/api/grids/${publicIds[0]}`,
+      );
+      assert.equal(response.status, 200);
+      const grid = (await response.json()) as { id: string; status: string };
+      assert.equal(grid.id, publicIds[0]);
+      assert.equal(grid.status, "paused");
+      const outputs = join(
+        server.data,
+        project === "mock" ? ".data/outputs" : "outputs",
+      );
+      assert.equal(existsSync(join(outputs, "production-only.txt")), false);
+      assertUnchanged();
+    },
+  };
+}
+
+test("populated browser fixtures release processes, TLS listeners and temporary data without changing their source", async (t) => {
   const previous = { ...process.env };
+  const snapshot = snapshotFixture(t);
   const dispatcher = new Agent({ connect: { rejectUnauthorized: false } });
   const request = (url: string) => fetch(url, { dispatcher } as RequestInit);
   process.env.GITHUB_CLIENT_ID = "fixture-client";
   process.env.GITHUB_CLIENT_SECRET = "fixture-secret";
+  process.env.SLOPGRID_TEST_DATABASE = snapshot.database;
   try {
     const server = await startTestServer("mock", 0);
     const port = Number(new URL(server.origin).port);
     try {
       assert.equal((await request(`${server.origin}/api/session`)).status, 200);
+      await snapshot.assertCopy(server, "mock", request);
       for (const address of ["127.0.0.1", "::1"]) {
         const status = await new Promise<number | undefined>(
           (resolve, reject) => {
@@ -59,16 +110,18 @@ test("production browser fixtures release processes, TLS listeners and temporary
   } finally {
     await dispatcher.destroy();
     process.env = previous;
+    snapshot.assertUnchanged();
   }
 });
 
-test("concurrent real browser fixtures ignore ambient deployment runtime paths", async () => {
+test("concurrent real browser fixtures isolate populated snapshots and ignore ambient deployment paths", async (t) => {
   const previous = { ...process.env };
   const ambient = mkdtempSync(join(tmpdir(), "slopgrid-ambient-"));
+  const snapshot = snapshotFixture(t);
   const dispatcher = new Agent({ connect: { rejectUnauthorized: false } });
   const request = (url: string, init?: RequestInit) =>
     fetch(url, { ...init, dispatcher } as RequestInit);
-  const closeServers: (() => Promise<void>)[] = [];
+  const servers: Awaited<ReturnType<typeof startTestServer>>[] = [];
   try {
     Object.assign(process.env, {
       GITHUB_CLIENT_ID: "fixture-client",
@@ -85,12 +138,13 @@ test("concurrent real browser fixtures ignore ambient deployment runtime paths",
       KEY_ENCRYPTION_SECRET: "invalid-ambient-secret",
       GENERATION_DRAINING: "1",
       WORKERS_MAX: "0",
+      SLOPGRID_TEST_DATABASE: snapshot.database,
     });
     delete process.env.E2E_PORT;
     const first = await startTestServer("real", 0);
-    closeServers.push(first.close);
+    servers.push(first);
     const second = await startTestServer("real", 0);
-    closeServers.push(second.close);
+    servers.push(second);
     assert.notEqual(first.origin, second.origin);
     assert.notEqual(first.data, second.data);
     const frontend = readFileSync(join(process.cwd(), "dist/index.html"), "utf8");
@@ -111,6 +165,7 @@ test("concurrent real browser fixtures ignore ambient deployment runtime paths",
         ),
         frontend,
       );
+      await snapshot.assertCopy(server, "real", request);
     }
     const session = await request(`${first.origin}/api/session`);
     const cookie = session.headers.get("set-cookie")!.split(";")[0];
@@ -127,63 +182,16 @@ test("concurrent real browser fixtures ignore ambient deployment runtime paths",
     await retained.arrayBuffer();
     assert.deepEqual(readdirSync(ambient), []);
   } finally {
-    await Promise.all(closeServers.map((close) => close()));
+    await Promise.all(servers.map((server) => server.close()));
+    for (const server of servers) assert.equal(existsSync(server.data), false);
     await dispatcher.destroy();
     process.env = previous;
     rmSync(ambient, { recursive: true, force: true });
+    snapshot.assertUnchanged();
   }
 });
 
 test("browser fixtures reject invalid numeric ports before startup", async () => {
   for (const port of [NaN, Infinity, -1, 1, 1023, 65536, 3000.5])
     await assert.rejects(startTestServer("mock", port), /Invalid E2E_PORT/);
-});
-
-test("browser services exercise populated snapshot copies without copying artifacts or changing the source", async () => {
-  const previous = { ...process.env };
-  const directory = mkdtempSync(join(tmpdir(), "slopgrid-seeded-browser-"));
-  const database = join(directory, "snapshot.sqlite");
-  const source = new Store(database, Buffer.alloc(32, 6));
-  const { publicIds } = seedGridLists(source, "snapshot-owner", { owned: 1, public: 1 });
-  source.saveSession({ id: "historical-session", key: "historical-secret", created: 1 });
-  mkdirSync(join(directory, "outputs"), { recursive: true });
-  writeFileSync(join(directory, "outputs/production-only.txt"), "production artifact");
-  source.db.close();
-  const original = readFileSync(database);
-  const dispatcher = new Agent({ connect: { rejectUnauthorized: false } });
-  try {
-    Object.assign(process.env, {
-      GITHUB_CLIENT_ID: "fixture-client",
-      GITHUB_CLIENT_SECRET: "fixture-secret",
-      SLOPGRID_TEST_DATABASE: database,
-    });
-    for (const project of ["mock", "real"] as const) {
-      const server = await startTestServer(project, 0);
-      try {
-        const response = await fetch(`${server.origin}/api/grids/${publicIds[0]}`, {
-          dispatcher,
-        } as RequestInit);
-        assert.equal(response.status, 200);
-        const grid = await response.json() as { id: string; status: string };
-        assert.equal(grid.id, publicIds[0]);
-        assert.equal(grid.status, "paused");
-        const outputs = project === "mock"
-          ? join(server.data, ".data/outputs")
-          : join(server.data, "outputs");
-        assert.equal(existsSync(join(outputs, "production-only.txt")), false);
-        assert.deepEqual(readFileSync(database), original);
-      } finally {
-        await server.close();
-      }
-      assert.equal(existsSync(server.data), false);
-    }
-    assert.equal(
-      readFileSync(join(directory, "outputs/production-only.txt"), "utf8"),
-      "production artifact",
-    );
-  } finally {
-    await dispatcher.destroy();
-    process.env = previous;
-    rmSync(directory, { recursive: true, force: true });
-  }
 });
