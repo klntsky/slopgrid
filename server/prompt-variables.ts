@@ -223,7 +223,7 @@ export function promptVariableIssues(input: TemplateInput): ValidationIssue[] {
       (field) => field !== null,
     );
     if (index !== undefined && index >= 0) {
-      const message = `Include $${side === "rows" ? "ROW" : "COLUMN"}${index + 1} in the prompt or judge criteria for ${side === "rows" ? "row" : "column"} variables.`;
+      const message = `$${side === "rows" ? "ROW" : "COLUMN"}${index + 1} is not used anywhere`;
       input[side].forEach((record, caseIndex) => {
         if (record.variable?.[index])
           issues.push({
