@@ -1,4 +1,5 @@
-import { expandGrid, type Cell, type GridInput } from "./domain.js";
+import { chatText, expandGrid, type Cell, type GridInput } from "./domain.js";
+import { templateSequence } from "./chat-template.js";
 import { generationBudget, PreparationError } from "./generation-budget.js";
 import { instruction } from "./generation-instructions.js";
 import { prepareGridModels } from "./model-resolution.js";
@@ -16,7 +17,7 @@ const dollars = (n: number) =>
 
 export function estimateCell(
   model: Model | undefined,
-  cell: Pick<Cell, "prompt" | "budgetUsd">,
+  cell: Pick<Cell, "prompt" | "budgetUsd" | "messages">,
   format: GridInput["format"],
   now = new Date(),
 ): CostEstimate {
@@ -30,15 +31,27 @@ export function estimateCell(
     return unknown("Token limits unavailable.");
   if (model.pricing.incomplete)
     return unknown("Total cost estimate unavailable.");
-  // Later requests contain answers whose lengths are not known before generation.
-  // Reserve the whole attempt budget for capacity instead of a single-call cost.
-  if (format === "chat-template")
-    return unknown("Total cost estimate unavailable.");
+  let prompt = cell.prompt;
+  if (format === "chat-template") {
+    if (!cell.messages?.length)
+      return unknown("Total cost estimate unavailable.");
+    const sequence = templateSequence(cell.messages);
+    // Later requests contain answers whose lengths are unknown before generation.
+    // Reserve the whole attempt budget, including any implicit final call.
+    if (sequence.filter((message) => message.role === "unfilled").length > 1)
+      return { costUsd: cell.budgetUsd, support: "unknown" };
+    prompt = chatText(
+      sequence.slice(
+        0,
+        sequence.findIndex((message) => message.role === "unfilled"),
+      ),
+    );
+  }
   try {
     const budget = generationBudget(
       model,
-      cell.prompt,
-      instruction(format),
+      prompt,
+      format === "chat-template" ? "" : instruction(format),
       cell.budgetUsd,
       now,
     );

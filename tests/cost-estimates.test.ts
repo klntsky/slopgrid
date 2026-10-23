@@ -220,7 +220,8 @@ for (const finalUnfilled of [false, true]) {
       const estimate = estimateCell(priced, configured, "chat-template");
       assert.equal(
         estimate.costUsd,
-        budget.inputCost! + budget.maxOutputTokens! * budget.pricing!.completion,
+        budget.inputCost! +
+          budget.maxOutputTokens! * budget.pricing!.completion,
       );
       assert.equal(
         estimate.maximumCostUsd,
@@ -230,7 +231,10 @@ for (const finalUnfilled of [false, true]) {
         estimate.support,
         budget.maxOutputTokens! < budget.ceiling! ? "unsupported" : "supported",
       );
-      assert.equal(estimate.support, budgetUsd === 3 ? "supported" : "unsupported");
+      assert.equal(
+        estimate.support,
+        budgetUsd === 3 ? "supported" : "unsupported",
+      );
     }
   });
 }
@@ -263,12 +267,27 @@ test("chat grid estimates use per-cell interpolated messages for prompt costs an
   ]) {
     const { estimates } = estimateGrid(input, [priced]);
     const expected = cells.map((expanded) => {
-      const history = expanded.messages!.filter((message) => message.role !== "unfilled");
-      const budget = generationBudget(priced, chatText(history), "", expanded.budgetUsd);
-      return budget.inputCost! + budget.maxOutputTokens! * budget.pricing!.completion;
+      const history = expanded.messages!.filter(
+        (message) => message.role !== "unfilled",
+      );
+      const budget = generationBudget(
+        priced,
+        chatText(history),
+        "",
+        expanded.budgetUsd,
+      );
+      return (
+        budget.inputCost! + budget.maxOutputTokens! * budget.pricing!.completion
+      );
     });
-    assert.deepEqual(estimates.map((estimate) => estimate.costUsd), expected);
-    assert.deepEqual(estimates.map((estimate) => estimate.support), ["supported", "supported"]);
+    assert.deepEqual(
+      estimates.map((estimate) => estimate.costUsd),
+      expected,
+    );
+    assert.deepEqual(
+      estimates.map((estimate) => estimate.support),
+      ["supported", "supported"],
+    );
     assert.notEqual(estimates[0]!.costUsd, estimates[1]!.costUsd);
   }
 });
@@ -289,7 +308,10 @@ for (const implicitFinal of [false, true]) {
     for (const [incomplete, reason] of [
       [{ ...model, pricing: undefined }, "Pricing unavailable."],
       [{ ...model, contextLength: undefined }, "Token limits unavailable."],
-      [{ ...model, pricing: { ...model.pricing!, incomplete: true } }, "Total cost estimate unavailable."],
+      [
+        { ...model, pricing: { ...model.pricing!, incomplete: true } },
+        "Total cost estimate unavailable.",
+      ],
     ] as const) {
       assert.deepEqual(estimateCell(incomplete, configured, "chat-template"), {
         costUsd: configured.budgetUsd,
