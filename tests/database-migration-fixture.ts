@@ -575,10 +575,14 @@ export function seedUnattributedLegacyCharge(db: Database.Database) {
   ).run(JSON.stringify({ usage: { inputTokens: 4, outputTokens: 6 } }));
 }
 
-export function replaceLegacyGridInputs(db: Database.Database, input: unknown) {
-  db.prepare("UPDATE grids SET data=json_set(data,'$.input',json(?))").run(
-    JSON.stringify(input),
-  );
+export function replaceLegacyGridInputs(
+  db: Database.Database,
+  input: unknown,
+  gridId: string | null = null,
+) {
+  db.prepare(
+    "UPDATE grids SET data=json_set(data,'$.input',json(?)) WHERE (? IS NULL OR id=?)",
+  ).run(JSON.stringify(input), gridId, gridId);
 }
 
 export function rejectVariableTemplateMigration(db: Database.Database) {

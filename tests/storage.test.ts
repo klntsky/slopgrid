@@ -44,6 +44,7 @@ import {
   validatedGrid,
   arrangeHistoricalGrid,
 } from "./grid-storage-fixture.js";
+import { replaceLegacyGridInputs } from "./database-migration-fixture.js";
 import {
   referencePng,
   orientedReferenceJpeg,
@@ -788,11 +789,7 @@ test("production v14 variable grids reopen read-only with accepted payloads inta
     const grid: Grid & { input: LegacyGridInput } = {
       id: token(),
       owner: "owner",
-      input: {
-        ...input,
-        prompt: "Draw $ROW",
-        rows: { kind: "variable", values: ["literal $COLUMN"] },
-      },
+      input,
       status: "running",
       published: false,
       visibility: "private",
@@ -819,6 +816,15 @@ test("production v14 variable grids reopen read-only with accepted payloads inta
     arrangeHistoricalGrid(store, grid, [task]);
     const accepted = store.workflow(grid.id);
     const title = store.get(grid.id)!.expanded_prompt_for_title;
+    replaceLegacyGridInputs(
+      store.db,
+      {
+        ...input,
+        prompt: "Draw $ROW",
+        rows: { kind: "variable", values: ["literal $COLUMN"] },
+      },
+      grid.id,
+    );
     restoreV14ReferenceSchema(store.db);
     store.db.close();
     store = new Store(database, secret);
