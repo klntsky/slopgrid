@@ -91,11 +91,20 @@ for (const [format, prompt] of Object.entries(prompts)) {
     const response = await page.request.get(output!);
     expect(response.ok()).toBe(true);
     if (format === "Markdown") {
-      await expect(
-        page
-          .locator(".markdown-preview")
-          .getByRole("heading", { name: "OK", exact: true }),
-      ).toBeVisible();
+      const markdown = await response.text();
+      const preview = page.locator(".markdown-preview:visible");
+      await expect(preview.locator(".markdown-document")).toBeVisible();
+      await expect(preview.getByRole("alert")).toHaveCount(0);
+      const viewRaw = page.getByRole("button", {
+        name: "View raw",
+        exact: true,
+      });
+      await viewRaw.click();
+      await expect(preview.locator("pre")).toBeVisible();
+      expect(await preview.locator("pre").textContent()).toBe(markdown);
+      await viewRaw.click();
+      await expect(preview.locator(".markdown-raw")).toHaveCount(0);
+      await expect(preview.locator(".markdown-document")).toBeVisible();
     } else if (format === "SVG") {
       const image = page.getByRole("img", { name: "Generated SVG" });
       await expect
