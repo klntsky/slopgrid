@@ -43,6 +43,7 @@ for (const parameter of ["model", "judge_model"] as const) {
         name: `${orientation === "Rows" ? "Row" : "Column"} values`,
         exact: true,
       });
+      await models.getByRole("searchbox").fill("");
       for (const selected of await models
         .locator('input[type="checkbox"]:checked')
         .all())
