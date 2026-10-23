@@ -89,6 +89,14 @@ test("nested operations transport archives only its committed subtree and never 
       join(repository, "ops", file),
       readFileSync(join(source, file)),
     );
+  writeFileSync(
+    join(repository, "ops/lib/local.mjs"),
+    `
+export async function prepareLocalCandidate() {
+  return { run: ${JSON.stringify(join(path, "local-run"))}, frontend: Buffer.from("fixture"), frontendHash: "fixture", validation: {status: "skipped"} };
+}
+`,
+  );
   writeFileSync(join(repository, ".gitignore"), ".env\n");
   writeFileSync(join(repository, "application.txt"), "application source");
   capture("git", ["-C", repository, "add", "."]);
@@ -119,7 +127,7 @@ test("nested operations transport archives only its committed subtree and never 
 const fs = require("node:fs"), path = require("node:path");
 const command = process.argv[3];
 if (command.includes("cat >")) {
-  const name = ["tools.tar.gz", "source.tar.gz", "request.json"].find(name => command.includes(name));
+  const name = ["tools.tar.gz", "source.tar.gz", "frontend.tar.gz", "request.json"].find(name => command.includes(name));
   if (!name) process.exit(99);
   fs.writeFileSync(path.join(process.env.OPS_FIXTURE_UPLOADS, name), fs.readFileSync(0));
 } else if (command.includes("lib/status.mjs")) console.log(JSON.stringify({log: "", offset: 0, exit: 0}));
@@ -135,7 +143,7 @@ else if (command.includes("new-window")) console.log("@fixture");
   };
   const result = spawnSync(
     process.execPath,
-    [join(repository, "ops", "cli.mjs"), "validate"],
+    [join(repository, "ops", "cli.mjs"), "staging", "--skip-tests"],
     { cwd: repository, env, encoding: "utf8" },
   );
   assert.equal(result.status, 0, result.stderr);

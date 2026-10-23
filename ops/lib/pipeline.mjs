@@ -18,7 +18,7 @@ import {
   prepareRelease,
   engineFingerprint,
 } from "./artifacts.mjs";
-import { validateBuild } from "./validate.mjs";
+import { validateRemoteBuild } from "./validate.mjs";
 import {
   environment,
   engineEnvironment,
@@ -41,7 +41,11 @@ function validateRecoveryRequest(request) {
     typeof request.recoverFailedStart !== "boolean"
   )
     throw new Error("recoverFailedStart must be a boolean");
-  if (request.target === "rehearse" && request.mode !== undefined && request.mode !== "auto")
+  if (
+    request.target === "rehearse" &&
+    request.mode !== undefined &&
+    request.mode !== "auto"
+  )
     throw new Error("Rehearsal does not accept deployment modes");
   if (!request.recoverFailedStart) return;
   if (request.target !== "staging")
@@ -67,7 +71,9 @@ export async function executePlan(request, operations) {
     throw new Error("Production requires full validation or explicit skip");
   assertProductionRevision(request);
   // Reject incompatible forced modes before touching any selected runtime.
-  const names = ["validate", "rehearse"].includes(request.target) ? [] : [request.target];
+  const names = ["validate", "rehearse"].includes(request.target)
+    ? []
+    : [request.target];
   const plans = [];
   for (const name of names) plans.push(await operations.prepare(name, build));
   for (const plan of plans) {
@@ -85,7 +91,9 @@ export async function pipeline(request, run) {
   )
     throw new Error("Invalid revision");
   if (
-    !["validate", "rehearse", "staging", "production"].includes(request.target) ||
+    !["validate", "rehearse", "staging", "production"].includes(
+      request.target,
+    ) ||
     !["full", "scoped", "skip"].includes(request.tests)
   )
     throw new Error("Invalid deployment request");
@@ -132,8 +140,8 @@ export async function pipeline(request, run) {
   record({ phase: "started" });
   try {
     await executePlan(request, {
-      build: () => prepareBuild(request, run),
-      validate: (build) => validateBuild(request, build, run),
+      build: () => prepareBuild(request, run, true),
+      validate: (build) => validateRemoteBuild(request, build, run),
       prepare: async (name, build) => {
         const target = config.targets[name],
           env = environments[name];

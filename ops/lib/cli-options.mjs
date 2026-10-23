@@ -7,14 +7,14 @@ export const commands = {
   validate: {
     argument: "[REV]",
     description:
-      "Validate a committed candidate in an isolated workspace without deploying.",
+      "Validate a committed candidate locally in an isolated workspace without deploying.",
     details:
       "Runs the complete suite by default. Scoped tests select individual files. Skipped tests and deployment modes other than the explicit default --mode=auto are not permitted.",
   },
   rehearse: {
     argument: "[REV]",
     description:
-      "Rehearse migrations on a private full copy of production data on staging.",
+      "Test locally and rehearse migrations remotely on a private full copy of production data.",
     details:
       "Changes neither runtime. Runs the complete suite by default; --skip-tests still runs migrations. Deployment modes are not permitted.",
   },

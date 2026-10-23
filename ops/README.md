@@ -11,9 +11,8 @@ For work on the operations implementation, see [DEVELOPMENT.md](DEVELOPMENT.md).
 | Script          | Purpose                                                                                                                                  |
 | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | `deploy.sh`     | Command entrypoint for candidate validation, full-data migration rehearsal, deployment, and status.                                      |
-| `check.sh`      | Run operations regression checks on the configured host in tmux bg and stream their result.                                              |
+| `check.sh`      | Run operations regression checks locally with isolated fixtures.                                                                         |
 | `remote-run.sh` | Internal remote pipeline worker; records logs and status and locks deployments while allowing independent validation and rehearsal runs. |
-| `test-run.sh`   | Internal remote check worker; runs selected Node tests or the full operations suite and records logs and status.                         |
 
 Run the commands below from `ops/`.
 
@@ -33,7 +32,7 @@ Configure these variables without committing their values:
 | `OPS_MASTER_REPOSITORY`                                           | Authoritative application's Git repository URL                                                                   |
 | `OPS_REMOTE_ROOT`                                                 | Absolute remote directory for tools, runs, and checks                                                            |
 | `OPS_NODE_PATH`                                                   | Complete remote executable search path                                                                           |
-| `OPS_TEST_ENV_FILE`                                               | Optional private remote test-credential file                                                                     |
+| `SLOPGRID_LOCAL_TEST_ENV_FILE`                                     | Optional private local test-credential file                                                                      |
 | `OPS_STAGING_STATE`, `OPS_PRODUCTION_STATE`                       | Absolute runtime state directories                                                                               |
 | `OPS_STAGING_CONFIG`, `OPS_PRODUCTION_CONFIG`                     | Absolute generated configuration directories                                                                     |
 | `OPS_STAGING_APPLICATION_ROOT`, `OPS_PRODUCTION_APPLICATION_ROOT` | Absolute roots for relative runtime storage paths                                                                |
@@ -101,7 +100,7 @@ before runtime operations, after tests, and immediately before promotion.
 `--skip-tests` never bypasses it. Production deploys only the single configured
 production runtime; it never deploys or depends on staging.
 
-`rehearse [REV]` builds a committed candidate on the configured staging host and
+`rehearse [REV]` builds and tests a committed candidate locally, then remotely
 checks its migrations against a private full copy of live production data. It
 does not replace shared staging, prepare a persistent runtime, acquire the
 deployment lock, or promote production. The default runs the complete suites;
@@ -115,10 +114,9 @@ special files, migration errors, and failed SQLite integrity or foreign key
 checks fail the run.
 
 Production stays online. The database backup is transaction-consistent; the
-live filesystem copy is not an atomic cross-storage checkpoint. Database-backed
-service fixtures use independent copies of the migrated database, while
-schema-specific fixtures retain their own databases. Production runtime
-credentials are not passed to validation services. Private database and output
+live filesystem copy is not an atomic cross-storage checkpoint. Local test
+fixtures use their own data; remote rehearsal does not execute test suites.
+Production runtime credentials are not passed to validation services. Private database and output
 copies are deleted after success or failure; the validation result retains
 aggregate copy size and schema versions.
 

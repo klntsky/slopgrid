@@ -2,7 +2,8 @@ import { spawnSync } from "node:child_process";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
-import { realpathSync } from "node:fs";
+import { realpathSync, rmSync } from "node:fs";
+import { prepareLocalCandidate } from "./lib/local.mjs";
 import {
   command,
   capture,
@@ -96,7 +97,7 @@ async function main() {
             target: options.target,
             validation: options.tests,
             stages: [
-              "build committed candidate in isolated remote run",
+              "build committed candidate and run test suites locally in isolation",
               ...(options.target === "production" ||
               options.target === "rehearse"
                 ? [
@@ -106,7 +107,7 @@ async function main() {
                 : ["validate fresh data in isolated run"]),
               options.tests === "skip"
                 ? "skip test suites explicitly"
-                : `run ${options.tests} test suites in isolated run`,
+                : `run ${options.tests} test suites locally`,
               ...(["validate", "rehearse"].includes(options.target)
                 ? []
                 : [`deploy ${options.target}`]),
@@ -148,66 +149,83 @@ async function main() {
     };
     const source = archive(config.repository, revision),
       implementation = archive(operationsRepository, `${opsRevision}:ops`);
-    const id = `${new Date().toISOString().replace(/[^0-9]/g, "")}-${randomBytes(4).toString("hex")}`;
-    const run = join(config.remoteRoot, "runs", id);
-    remote(["mkdir", "-p", run, dirname(tools)]);
-    const upload = (path, content) =>
-      command("ssh", [config.host, `umask 077; cat > ${quote(path)}`], {
-        input: content,
-        stdio: ["pipe", "inherit", "inherit"],
-      });
-    upload(join(run, "tools.tar.gz"), implementation);
-    const incoming = tools + "-" + id;
-    remote(["mkdir", "-p", incoming]);
-    remote(["tar", "-xzf", join(run, "tools.tar.gz"), "-C", incoming]);
-    remote([
-      "bash",
-      "-c",
-      `if test -d ${quote(tools)}; then diff -qr ${quote(incoming)} ${quote(tools)} && rm -rf ${quote(incoming)}; else mv ${quote(incoming)} ${quote(tools)}; fi`,
-    ]);
-    upload(join(run, "source.tar.gz"), source);
-    upload(
-      join(run, "request.json"),
-      JSON.stringify({
+    const local = await prepareLocalCandidate(
+      {
         ...options,
         revision,
         opsRevision,
-        tools,
-        id,
         sourceHash: sha256(source),
-        config,
-      }),
+      },
+      source,
     );
-    remote([
-      "bash",
-      "-c",
-      "tmux has-session -t bg 2>/dev/null || tmux new-session -d -s bg",
-    ]);
-    const window = remote([
-      "tmux",
-      "new-window",
-      "-d",
-      "-P",
-      "-F",
-      "#{window_id}",
-      "-t",
-      "bg",
-      "-n",
-      `deploy-${options.target}-${id}`,
-      shell([
-        "env",
-        `PATH=${config.nodePath}`,
+    try {
+      if (options.target === "validate") return;
+      const id = `${new Date().toISOString().replace(/[^0-9]/g, "")}-${randomBytes(4).toString("hex")}`;
+      const run = join(config.remoteRoot, "runs", id);
+      remote(["mkdir", "-p", run, dirname(tools)]);
+      const upload = (path, content) =>
+        command("ssh", [config.host, `umask 077; cat > ${quote(path)}`], {
+          input: content,
+          stdio: ["pipe", "inherit", "inherit"],
+        });
+      upload(join(run, "tools.tar.gz"), implementation);
+      const incoming = tools + "-" + id;
+      remote(["mkdir", "-p", incoming]);
+      remote(["tar", "-xzf", join(run, "tools.tar.gz"), "-C", incoming]);
+      remote([
         "bash",
-        join(tools, "remote-run.sh"),
-        run,
-        config.remoteRoot,
-      ]),
-    ]);
-    console.log(
-      `Run ${id} started in remote tmux bg (${window}). Log: ${run}/run.log`,
-    );
-    console.log(`Reconnect with: ./deploy.sh status ${id}`);
-    await follow(remote, remoteNode, tools, run);
+        "-c",
+        `if test -d ${quote(tools)}; then diff -qr ${quote(incoming)} ${quote(tools)} && rm -rf ${quote(incoming)}; else mv ${quote(incoming)} ${quote(tools)}; fi`,
+      ]);
+      upload(join(run, "source.tar.gz"), source);
+      upload(join(run, "frontend.tar.gz"), local.frontend);
+      upload(
+        join(run, "request.json"),
+        JSON.stringify({
+          ...options,
+          revision,
+          opsRevision,
+          tools,
+          id,
+          sourceHash: sha256(source),
+          frontendHash: local.frontendHash,
+          localValidation: local.validation,
+          config,
+        }),
+      );
+      remote([
+        "bash",
+        "-c",
+        "tmux has-session -t bg 2>/dev/null || tmux new-session -d -s bg",
+      ]);
+      const window = remote([
+        "tmux",
+        "new-window",
+        "-d",
+        "-P",
+        "-F",
+        "#{window_id}",
+        "-t",
+        "bg",
+        "-n",
+        `deploy-${options.target}-${id}`,
+        shell([
+          "env",
+          `PATH=${config.nodePath}`,
+          "bash",
+          join(tools, "remote-run.sh"),
+          run,
+          config.remoteRoot,
+        ]),
+      ]);
+      console.log(
+        `Run ${id} started in remote tmux bg (${window}). Log: ${run}/run.log`,
+      );
+      console.log(`Reconnect with: ./deploy.sh status ${id}`);
+      await follow(remote, remoteNode, tools, run);
+    } finally {
+      rmSync(local.run, { recursive: true, force: true });
+    }
   }
 }
 

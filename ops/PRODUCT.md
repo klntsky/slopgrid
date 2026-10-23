@@ -1,17 +1,17 @@
 # Deployment requirements
 
-1. One command must prepare and validate any committed application revision,
+1. One command must build and test any committed application revision locally,
    including worktree candidates, using the implementation in this repository.
    Only the authoritative master tip may be published to the single production
    runtime. Resolve commits and query the configured Git authority independently
    locally and remotely; neither branch-name arguments nor skipped stages authorize
    production. Missing or unreachable authority fails closed.
-2. Candidate validation must use independent build/source workspaces, temporary
+2. Local candidate validation must use independent build/source workspaces, temporary
    data, sockets, process-manager homes, and OS-assigned ports. Tests must not
    mutate shared staging or production runtimes. Explicit staging remains
    an administrative target, isolated from production.
 3. Build once per run and promote that exact frontend artifact to production.
-   Production defaults to the complete unit, mock browser, and real-provider
+   Production defaults to the complete local unit, mock browser, and real-provider
    browser suites; an explicit `--skip-tests` records the decision and skips tests,
    but still requires the full production-data migration rehearsal.
    `validate` uses fresh isolated data, requires tests, supports full or scoped
@@ -29,9 +29,8 @@
      skipping migrations or data-integrity checks.
    - Before production promotion, take a transaction-consistent read-only SQLite
      backup and independent copies of all production output files.
-   - Run the candidate's storage initialization against those copies, exercising
-     SQL and file migrations before database-backed service tests. Keep
-     schema-specific unit fixtures independent.
+   - Run the candidate's storage initialization remotely against those copies,
+     exercising SQL and file migrations without executing test suites remotely.
    - Missing, unsafe, or unsupported source data, migration failure, failed SQLite
      integrity or foreign key checks, or test failure must prevent promotion.
    - Keep production runtime credentials out of validation services. Remove the

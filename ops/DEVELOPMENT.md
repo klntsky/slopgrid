@@ -5,8 +5,8 @@ For configuration and operator commands, see [README.md](README.md).
 ## Validation
 
 Run `./check.sh` for the pipeline's own regression checks. The permanent runner
-uploads working source to the staging host and runs tests in tmux bg with isolated
-temporary data. It uses dependencies from the current staging release and never
+executes working source locally with isolated temporary data and the candidate
+application's dependencies. It never
 deploys or sends requests to production. Test-managed child processes and fixture
 directories are separate from deployment scripts.
 
@@ -15,7 +15,7 @@ engine fingerprints, artifact corruption, promotion ordering and failure gates,
 environment quoting, SQLite and output backups, real deployment locking,
 fresh per-run exit status, and startup/failure detection through an isolated
 PM2 daemon. Application validation is selected by the command and runs in
-per-run workspaces on the configured host, never against staging or production
+local per-run workspaces, never against staging or production
 runtime data. A skipped test run is recorded as skipped, never passed.
 
 Focused workflow checks (fixture adapters, no deployment):
@@ -36,7 +36,6 @@ behavior should have focused regression coverage at its responsibility boundary.
 
 ## Grid transfer checks
 
-Run `tests/grid-transfer.test.mjs` on staging with `SLOPGRID_TEST_APP` pointing
-to an installed staging release. Its isolated databases and output directories
+Run `./check.sh tests/grid-transfer.test.mjs` locally. Its isolated databases and output directories
 cover ownership mapping, exclusion of a failed model, byte preservation, backups,
 read-only preview, collision and active-work rejection, and import rollback.

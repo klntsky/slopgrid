@@ -2,7 +2,7 @@
 
 1. Use only ASCII characters in documentation unless the user explicitly requests non-ASCII characters in those documents. Before finishing, check modified Markdown documentation for non-ASCII characters and replace them with ASCII equivalents while preserving meaning.
 
-2. Run only tests covering features actually changed, and skip tests for simple changes such as wording, styling, and documentation. Run affected automated and manual tests against an isolated candidate worktree and runtime, never against shared staging or production state. Keep GitHub CI disabled while preserving its workflow file. Before production deployment, run the complete unit, mock browser, and real-provider browser suites against the isolated candidate revision and runtime.
+2. Run only tests covering features actually changed, and skip tests for simple changes such as wording, styling, and documentation. Run automated and manual tests locally against isolated candidate source, data, and runtimes, using dynamically assigned ports. Keep GitHub CI disabled while preserving its workflow file. Before production deployment, run the complete unit, mock browser, and real-provider browser suites locally against the candidate revision. Remote operations may rehearse migrations on private data copies, but must not run test suites.
 
 3. Keep README.md focused on a brief product introduction, a grid screenshot immediately after the first paragraph, useful features, and supported grid dimensions grouped by output type, without usage instructions.
 

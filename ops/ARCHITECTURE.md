@@ -29,13 +29,13 @@ master hashes do not grant eligibility. An unavailable authority fails closed.
 
 ## Build and validation boundaries
 
-Each run builds its own committed source archive using the application's lockfile.
+Each run builds its own committed source archive locally using the application's lockfile.
 The build records its source archive checksum, source and frontend manifests,
 engine fingerprint, and toolchain versions. Builds are not read from or adopted
 from a shared staging runtime or mutable worktree. Existing deployed releases
 are verified and never rewritten.
 
-Validation runs in a separate run-owned source workspace with that run's frontend
+Local validation runs in a separate run-owned source workspace with that run's frontend
 build and read-only dependency link. A short temporary directory supplies isolated
 SQLite/output paths, a generation socket and PM2 home. These override inherited
 and private test settings; fixture servers use OS-assigned ports (`E2E_PORT=0`).
@@ -48,10 +48,10 @@ Production storage is read-only to the snapshotter, and copied files share no
 writable links with live files. Production runtime credentials remain outside
 the validation boundary.
 
-Test service fixtures receive independent copies of the migrated database;
-schema-specific unit fixtures retain their own databases. Rehearsal remains
-required when suites are skipped. Results retain aggregate copy size and schema
-transitions, not copied production records.
+The remote worker verifies the uploaded frontend and source manifests, installs
+host-native dependencies, and rehearses migrations without running test suites.
+Rehearsal remains required when local suites are skipped. Results retain aggregate
+copy size and schema transitions, not copied production records.
 
 `validate` uses fresh data. `rehearse` uses a private staging workspace with full
 production data. Neither prepares or deploys a persistent runtime, and both can

@@ -371,7 +371,7 @@ test("CLI defaults to invoking application worktree rather than configured check
   }
 });
 
-test("independent validate runs bypass production lock and never access a shared runtime", async (t) => {
+test("independent local validate commands bypass SSH and the production lock", async (t) => {
   const f = fixture(t),
     bin = join(f.path, "bin"),
     log = join(f.path, "commands.jsonl");
@@ -413,6 +413,7 @@ else process.exit(99);
     "#!/bin/sh\necho 'shared PM2 must not be accessed' >&2\nexit 99\n",
     { mode: 0o700 },
   );
+  writeFileSync(join(bin, "ssh"), "#!/bin/sh\nexit 99\n", { mode: 0o700 });
   mkdirSync(f.config.remoteRoot);
   const lock = spawn(
     "flock",
@@ -426,35 +427,12 @@ else process.exit(99);
   );
   t.after(() => lock.stdin.end());
   await once(lock.stdout, "data");
-  const runs = ["one", "two"].map((id) => {
-    const run = join(f.config.remoteRoot, id);
-    mkdirSync(run);
-    const archive = spawnSync("git", [
-      "-C",
-      f.repository,
-      "archive",
-      "--format=tar.gz",
-      revision,
-    ]);
-    assert.equal(archive.status, 0);
-    writeFileSync(join(run, "source.tar.gz"), archive.stdout);
-    writeFileSync(
-      join(run, "request.json"),
-      JSON.stringify({
-        ...parseArgs(["validate"]),
-        revision,
-        opsRevision: "1".repeat(40),
-        sourceHash: sha256(archive.stdout),
-        id,
-        config: f.config,
-      }),
-    );
-    return run;
-  });
-  const children = runs.map((run) =>
-    spawn("bash", [join(root, "remote-run.sh"), run, f.config.remoteRoot], {
+  const children = ["one", "two"].map(() =>
+    spawn(process.execPath, [join(f.repository, "ops/cli.mjs"), "validate"], {
+      cwd: f.repository,
       env: {
         ...process.env,
+        ...fixtureEnvironment(f.config),
         PATH: `${bin}:${process.env.PATH}`,
         SLOPGRID_FIXTURE_LOG: log,
       },
@@ -462,21 +440,11 @@ else process.exit(99);
     }),
   );
   const exits = await Promise.all(children.map((child) => once(child, "exit")));
-  for (const [index, [code]] of exits.entries()) {
-    assert.equal(code, 0, readFileSync(join(runs[index], "run.log"), "utf8"));
-    const result = JSON.parse(
-      readFileSync(join(runs[index], "result.json"), "utf8"),
-    );
-    assert.equal(result.status, "succeeded");
-    assert.equal(
-      result.stages.some((stage) => stage.phase === "deploying"),
-      false,
-    );
-  }
+  for (const [code] of exits) assert.equal(code, 0);
   const commands = readFileSync(log, "utf8").trim().split("\n").map(JSON.parse);
   assert.equal(commands.length, 4);
-  const first = commands.find((entry) => entry.cwd.startsWith(runs[0] + "/"));
-  const second = commands.find((entry) => entry.cwd.startsWith(runs[1] + "/"));
+  const first = commands[0];
+  const second = commands.find((entry) => entry.cwd !== first.cwd);
   for (const key of [
     "DATABASE_PATH",
     "OUTPUTS_PATH",
