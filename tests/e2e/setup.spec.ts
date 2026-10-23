@@ -430,9 +430,10 @@ test("selecting an output type reveals the entire form and preserves it on reloa
   await expect(generate).toBeEnabled();
   await model.uncheck();
   await expect(generate).toBeEnabled();
-  const columns = page
-    .getByRole("combobox", { name: "Columns", exact: true })
-    .locator("xpath=ancestor::*[@role='group'][1]");
+  const columns = page.getByRole("combobox", {
+    name: "Columns",
+    exact: true,
+  });
   const created: string[] = [];
   page.on("request", (request) => {
     if (

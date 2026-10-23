@@ -52,12 +52,11 @@ for (const parameter of ["model", "judge_model"] as const) {
         .getByRole("textbox", { name: "Prompt", exact: true })
         .fill("Describe a red rectangle.");
       await connectOpenRouter(page);
-      const axis = selector.locator("xpath=ancestor::*[@role='group'][1]");
       const generate = page.getByRole("button", {
         name: "Generate",
         exact: true,
       });
-      await expect(axis).not.toHaveAttribute("aria-invalid", "true");
+      await expect(selector).not.toHaveAttribute("aria-invalid", "true");
       await expect(generate).toBeEnabled();
       const requests: string[] = [];
       page.on("request", (request) => {
@@ -68,8 +67,8 @@ for (const parameter of ["model", "judge_model"] as const) {
           requests.push(request.url());
       });
       await generate.click();
-      await expect(axis).toHaveAttribute("aria-invalid", "true");
-      const errorId = await axis.getAttribute("aria-describedby");
+      await expect(selector).toHaveAttribute("aria-invalid", "true");
+      const errorId = await selector.getAttribute("aria-describedby");
       expect(errorId).toBeTruthy();
       await expect(page.locator(`[id="${errorId}"]`)).toBeVisible();
       expect(requests).toEqual([]);
@@ -104,7 +103,7 @@ for (const parameter of ["model", "judge_model"] as const) {
       await models
         .locator('input[type="checkbox"][value="fixture/text"]')
         .check();
-      await expect(axis).not.toHaveAttribute("aria-invalid", "true");
+      await expect(selector).not.toHaveAttribute("aria-invalid", "true");
       await expect(page.locator(`[id="${errorId}"]`)).toHaveCount(0);
       const created = page.waitForResponse(
         (response) =>
