@@ -28,7 +28,7 @@ const handle = (page: Page, side: Side, index: number) =>
     exact: true,
   });
 
-async function prepareCases(page: Page, side: Side) {
+async function prepareCases(page: Page, side: Side, nested = false) {
   await page.goto("/");
   await page.getByRole("button", { name: "Markdown", exact: true }).click();
   await page
@@ -44,7 +44,12 @@ async function prepareCases(page: Page, side: Side) {
   await defineCases(page, "judge criteria");
   await defineCases(page, "prompt");
   await page.getByRole("button", { name: "new case", exact: true }).click();
-  for (const [index, name] of ["Alpha", "Beta"].entries()) {
+  if (nested)
+    await page.getByRole("button", { name: "new case", exact: true }).click();
+  for (const [index, name] of (nested
+    ? ["Alpha", "Beta", "Gamma"]
+    : ["Alpha", "Beta"]
+  ).entries()) {
     const prompt = layoutTable(page).getByRole("group", {
       name: `${side === "rows" ? "Row" : "Column"} case ${index + 1} Prompt`,
       exact: true,
@@ -66,17 +71,32 @@ async function prepareCases(page: Page, side: Side) {
     await criteria(page, side, index + 1)
       .getByLabel("Criterion 1", { exact: true })
       .fill(`Does the output match ${name}?`);
+    if (nested) {
+      await criteria(page, side, index + 1)
+        .getByRole("button", { name: "Add criterion", exact: true })
+        .click();
+      await criteria(page, side, index + 1)
+        .getByLabel("Criterion 2", { exact: true })
+        .fill(`${name} second?`);
+    }
   }
   await criteria(page, side, 2)
     .getByRole("button", { name: "Correct answer", exact: true })
+    .first()
     .click();
+  if (nested)
+    await criteria(page, side, 3)
+      .getByRole("button", { name: "Correct answer", exact: true })
+      .nth(1)
+      .click();
 }
 
 async function expectCase(
   page: Page,
   side: Side,
   index: number,
-  name: "Alpha" | "Beta",
+  name: "Alpha" | "Beta" | "Gamma",
+  nested = false,
 ) {
   const prompt = layoutTable(page).getByRole("group", {
     name: `${side === "rows" ? "Row" : "Column"} case ${index} Prompt`,
@@ -99,11 +119,21 @@ async function expectCase(
     criteria(page, side, index).getByLabel("Criterion 1", { exact: true }),
   ).toHaveValue(`Does the output match ${name}?`);
   await expect(
-    criteria(page, side, index).getByRole("button", {
-      name: "Correct answer",
-      exact: true,
-    }),
-  ).toHaveAttribute("aria-pressed", name === "Alpha" ? "true" : "false");
+    criteria(page, side, index)
+      .getByRole("button", { name: "Correct answer", exact: true })
+      .first(),
+  ).toHaveAttribute("aria-pressed", name === "Beta" ? "false" : "true");
+  if (nested) {
+    await expect(prompt.getByRole("img")).toHaveCount(1);
+    await expect(
+      criteria(page, side, index).getByLabel("Criterion 2", { exact: true }),
+    ).toHaveValue(`${name} second?`);
+    await expect(
+      criteria(page, side, index)
+        .getByRole("button", { name: "Correct answer", exact: true })
+        .nth(1),
+    ).toHaveAttribute("aria-pressed", name === "Gamma" ? "false" : "true");
+  }
 }
 
 async function dragCase(page: Page, side: Side, pointer: "mouse" | "touch") {
@@ -170,7 +200,9 @@ for (const pointer of ["mouse", "touch"] as const) {
       test(`${side} move values and criteria together and retain keyboard focus`, async ({
         page,
       }) => {
-        await prepareCases(page, side);
+        const nested = pointer === "mouse" && side === "rows";
+        if (nested) await page.setViewportSize({ width: 1280, height: 2000 });
+        await prepareCases(page, side, nested);
         await dragCase(page, side, pointer);
         await expectCase(page, side, 1, "Beta");
         await expectCase(page, side, 2, "Alpha");
@@ -187,6 +219,32 @@ for (const pointer of ["mouse", "touch"] as const) {
         await page.reload();
         await expectCase(page, side, 1, "Beta");
         await expectCase(page, side, 2, "Alpha");
+        if (nested) {
+          await test.step("dropping into nested criteria moves the complete case", async () => {
+            await expectCase(page, side, 3, "Gamma", true);
+            const source = await handle(page, side, 3).boundingBox();
+            const target = await criteria(page, side, 1)
+              .getByLabel("Criterion 1", { exact: true })
+              .boundingBox();
+            expect(source).not.toBeNull();
+            expect(target).not.toBeNull();
+            await page.mouse.move(
+              source!.x + source!.width / 2,
+              source!.y + source!.height / 2,
+            );
+            await page.mouse.down();
+            await page.mouse.move(target!.x + 10, target!.y + 2, { steps: 12 });
+            await expect(
+              layoutTable(page).locator(":scope > tbody > tr").first(),
+            ).toHaveAttribute("data-insertion", "before");
+            await page.mouse.up();
+            for (const [index, name] of (["Gamma", "Beta", "Alpha"] as const).entries())
+              await expectCase(page, side, index + 1, name, true);
+            await page.reload();
+            for (const [index, name] of (["Gamma", "Beta", "Alpha"] as const).entries())
+              await expectCase(page, side, index + 1, name, true);
+          });
+        }
       });
     }
   });
