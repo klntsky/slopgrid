@@ -139,7 +139,8 @@ export function caseSetupIssue(
   if (!hasFields)
     return {
       kind: "parameters",
-      message: `Add a variable or parameter to the ${name} cases.`,
+      message:
+        'Add a variable or click "define multiple cases" for a parameter.',
     };
   const other = side === "rows" ? "columns" : "rows";
   if (!input[other].length)

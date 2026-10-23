@@ -6,7 +6,12 @@ import { FormatPicker } from "../components/format-picker";
 import { useNavigate } from "@tanstack/react-router";
 import { saveDraft } from "../create/draft";
 import { useGrids, usePublicGrids } from "../queries";
-import { ArrowUpRight, DollarSign, ArrowLeftRight } from "lucide-react";
+import {
+  ArrowUpRight,
+  DollarSign,
+  ArrowLeftRight,
+  ListOrdered,
+} from "lucide-react";
 import { useLayoutEffect, useRef } from "react";
 import { efforts, isChatFormat, type Effort } from "../../server/domain";
 import { imageKinds } from "../../server/image-settings";
@@ -295,7 +300,21 @@ export function Create() {
                   />
                 )}
               >
-                <ErrorMessage>{caseIssue?.message}</ErrorMessage>
+                {caseIssue ? (
+                  <ErrorMessage>
+                    {caseIssue.kind === "parameters" ? (
+                      <>
+                        {'Add a variable or click "'}
+                        <ListOrdered size={14} aria-hidden="true" />
+                        {' define multiple cases" for a parameter.'}
+                      </>
+                    ) : (
+                      caseIssue.message
+                    )}
+                  </ErrorMessage>
+                ) : input.caseAxis ? (
+                  <ValidationFeedback path={[input.caseAxis]} />
+                ) : null}
               </GridLayoutTable>
             </fieldset>
             {caseLayoutActive && layoutSummary}

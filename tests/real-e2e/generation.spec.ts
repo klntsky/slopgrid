@@ -91,7 +91,11 @@ for (const [format, prompt] of Object.entries(prompts)) {
     const response = await page.request.get(output!);
     expect(response.ok()).toBe(true);
     if (format === "Markdown") {
-      const markdown = await response.text();
+      const download = await page.request.get(
+        `/outputs/${grid.cells[0].id}/download`,
+      );
+      expect(download.ok()).toBe(true);
+      const markdown = await download.text();
       const preview = page.locator(".markdown-preview:visible");
       await expect(preview.locator(".markdown-document")).toBeVisible();
       await expect(preview.getByRole("alert")).toHaveCount(0);

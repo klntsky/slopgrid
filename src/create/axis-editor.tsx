@@ -49,7 +49,10 @@ export function AxisEditor({
   const label = side === "rows" ? "Rows" : "Columns";
   const dimension = input.caseAxis === side ? "variable" : members[0];
   return (
-    <ValidationField path={[side]} descendants={input.caseAxis !== side}>
+    <ValidationField
+      path={input.caseAxis === side ? ["caseAxis"] : [side]}
+      descendants={input.caseAxis !== side}
+    >
       {(validation) => (
         <div className="axis" role="group" {...validation}>
           <label className="axis-selector">
