@@ -1,20 +1,26 @@
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { Plus } from "lucide-react";
-import type { GridInput } from "../../server/domain";
+import type { Criterion } from "../../server/judge-criteria";
 import { DeletableInput } from "./deletable-input";
 import { ReorderHandle } from "./reorder-handle";
 import "./criteria-editor.css";
+import { tooltipRef } from "../components/use-tooltip";
+import { ValidationFeedback, ValidationField } from "./validation-feedback";
+import { VariableTokenPicker } from "./variable-input";
 
-type Criteria = NonNullable<GridInput["judge"]>["criteria"];
+type Criteria = Criterion[];
 
 export function CriteriaEditor({
   criteria,
   onChange,
+  variables,
 }: {
   criteria: Criteria;
   onChange: (criteria: Criteria) => void;
+  variables: readonly string[];
 }) {
   const root = useRef<HTMLTableElement>(null);
+  const id = useId();
   const [dragging, setDragging] = useState<number>();
   const [dragTarget, setDragTarget] = useState<number>();
 
@@ -66,45 +72,67 @@ export function CriteriaEditor({
                   index={index}
                   label={`Move criterion ${index + 1}`}
                   root={root}
-                  rowSelector=".criteria-row"
+                  itemSelector=".criteria-row"
                   count={criteria.length}
                   onMove={move}
                   onDragChange={dragChange}
                 />
               </td>
               <td>
-                <DeletableInput
-                  content={criterion.text}
-                  label={`Remove criterion ${index + 1}`}
-                  onRemove={() =>
-                    onChange(
-                      criteria.filter((_, position) => position !== index),
-                    )
-                  }
-                >
-                  <textarea
-                    aria-label={`Criterion ${index + 1}`}
-                    placeholder="a yes-or-no question about the output."
-                    rows={1}
-                    value={criterion.text}
-                    onChange={(event) =>
-                      update(index, { text: event.target.value })
-                    }
-                  />
-                </DeletableInput>
+                <ValidationField path={[index, "text"]}>
+                  {(validation) => (
+                    <DeletableInput
+                      content={criterion.text}
+                      label={`Remove criterion ${index + 1}`}
+                      onRemove={() =>
+                        onChange(
+                          criteria.filter((_, position) => position !== index),
+                        )
+                      }
+                    >
+                      <textarea
+                        aria-label={`Criterion ${index + 1}`}
+                        id={`${id}-criterion-${index}`}
+                        {...validation}
+                        placeholder="a yes-or-no question about the output."
+                        rows={1}
+                        value={criterion.text}
+                        onChange={(event) =>
+                          update(index, { text: event.target.value })
+                        }
+                      />
+                    </DeletableInput>
+                  )}
+                </ValidationField>
+                <VariableTokenPicker
+                  tokens={variables}
+                  targetId={`${id}-criterion-${index}`}
+                  value={criterion.text}
+                  onChange={(text) => update(index, { text })}
+                />
+                <ValidationFeedback path={[index]} />
               </td>
               <td>
-                <button
-                  type="button"
-                  className="model-badge criteria-answer"
-                  aria-label="Correct answer"
-                  aria-pressed={criterion.correctAnswer}
-                  onClick={() =>
-                    update(index, { correctAnswer: !criterion.correctAnswer })
-                  }
-                >
-                  {criterion.correctAnswer ? "YES" : "NO"}
-                </button>
+                <ValidationField path={[index, "correctAnswer"]}>
+                  {(validation) => (
+                    <button
+                      type="button"
+                      className="model-badge criteria-answer"
+                      ref={tooltipRef}
+                      data-tooltip={`Change the correct answer for criterion ${index + 1}`}
+                      aria-label="Correct answer"
+                      {...validation}
+                      aria-pressed={criterion.correctAnswer}
+                      onClick={() =>
+                        update(index, {
+                          correctAnswer: !criterion.correctAnswer,
+                        })
+                      }
+                    >
+                      {criterion.correctAnswer ? "YES" : "NO"}
+                    </button>
+                  )}
+                </ValidationField>
               </td>
             </tr>
           ))}
@@ -112,6 +140,9 @@ export function CriteriaEditor({
       </table>
       <button
         type="button"
+        className="text-button criteria-add"
+        ref={tooltipRef}
+        data-tooltip="Add a criterion to this criteria list"
         onClick={() =>
           onChange([...criteria, { text: "", correctAnswer: true }])
         }
@@ -119,6 +150,7 @@ export function CriteriaEditor({
         <Plus size={16} aria-hidden="true" />
         Add criterion
       </button>
+      <ValidationFeedback />
     </div>
   );
 }

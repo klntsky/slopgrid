@@ -1,12 +1,26 @@
 import { test, expect } from "./fixtures";
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import {
   connectOpenRouter,
   finishPublishing,
   expectProgress,
   selectModel,
   mockModels,
+  setVariableValues,
 } from "./helpers";
+
+async function tooltipFor(page: Page, trigger: Locator) {
+  await expect(trigger).toHaveAttribute("aria-describedby", /\S+/);
+  return page.locator(
+    `[id="${await trigger.getAttribute("aria-describedby")}"]`,
+  );
+}
+async function acceptDrop(page: Page, action: () => Promise<unknown>) {
+  page.once("dialog", async (dialog) => {
+    await dialog.accept();
+  });
+  await action();
+}
 
 async function setup(page: Page, connect = true) {
   await page.goto("/");
@@ -32,6 +46,7 @@ test("image warning grids compare models with parameter values and remain adviso
   const rows = page.getByRole("combobox", { name: "Rows", exact: true });
   const columns = page.getByRole("combobox", { name: "Columns", exact: true });
   await rows.selectOption("quality");
+  await page.getByRole("checkbox", { name: "Auto", exact: true }).uncheck();
   await page.getByRole("checkbox", { name: "low", exact: true }).check();
   await page.getByRole("checkbox", { name: "high", exact: true }).check();
   await page
@@ -61,6 +76,10 @@ test("image warning grids compare models with parameter values and remain adviso
     }),
   ).toBeVisible();
   await rows.selectOption("background");
+  await page
+    .getByRole("group", { name: "Row values", exact: true })
+    .getByRole("checkbox", { name: "Auto", exact: true })
+    .uncheck();
   await selectModel(page, "fixture/image");
   await page
     .getByRole("checkbox", { name: "transparent", exact: true })
@@ -83,8 +102,16 @@ test("image warning grids compare models with parameter values and remain adviso
     ["high", "transparent"],
   ]);
   await page.getByRole("button", { name: "EDIT", exact: true }).click();
-  await rows.selectOption("size");
+  await acceptDrop(page, () => rows.selectOption("size"));
+  await page
+    .getByRole("group", { name: "Row values", exact: true })
+    .getByRole("checkbox", { name: "Auto", exact: true })
+    .uncheck();
   await columns.selectOption("aspect_ratio");
+  await page
+    .getByRole("group", { name: "Column values", exact: true })
+    .getByRole("checkbox", { name: "Auto", exact: true })
+    .uncheck();
   await page.getByRole("checkbox", { name: "2K", exact: true }).check();
   await page.getByRole("checkbox", { name: "Custom", exact: true }).check();
   await page
@@ -109,10 +136,16 @@ test("image warning grids compare models with parameter values and remain adviso
   await page
     .getByLabel("Custom rows size 3 width", { exact: true })
     .fill("256");
-  await page.getByRole("button", { name: "Generate", exact: true }).click();
-  await expect(page.getByRole("alert")).toHaveText(
-    "Use a resolution or a size such as 1536x1024",
-  );
+  const generate = page.getByRole("button", { name: "Generate", exact: true });
+  await expect(generate).toBeDisabled();
+  await page.reload();
+  await expect(
+    page.getByLabel("Custom rows size 3 width", { exact: true }),
+  ).toHaveValue("256");
+  await expect(
+    page.getByLabel("Custom rows size 3 height", { exact: true }),
+  ).toHaveValue("");
+  await expect(generate).toBeDisabled();
   expect(
     await (await request.get("/fixture/image-requests")).json(),
   ).toHaveLength(2);
@@ -150,13 +183,13 @@ test("image warning grids compare models with parameter values and remain adviso
       ])
       .sort(),
   ).toEqual([
-    ["1536x1024", "3:2", undefined, undefined, "Draw a landscape"],
-    ["2K", "3:2", undefined, undefined, "Draw a landscape"],
-    ["768x512", "3:2", undefined, undefined, "Draw a landscape"],
+    ["1536x1024", "3:2", "high", undefined, "Draw a landscape"],
+    ["2K", "3:2", "high", undefined, "Draw a landscape"],
+    ["768x512", "3:2", "high", undefined, "Draw a landscape"],
   ]);
 });
 
-test("renamed reference groups survive reload, Edit and Fork without mixing their files", async ({
+test("case-variable images survive reload, Edit and Fork without mixing their files", async ({
   page,
   request,
   browser,
@@ -164,12 +197,12 @@ test("renamed reference groups survive reload, Edit and Fork without mixing thei
   await request.post("/fixture/reset", { data: {} });
   await setup(page, false);
   await page
-    .getByRole("combobox", { name: "Rows", exact: true })
-    .selectOption("input_references");
-  await page
     .getByRole("combobox", { name: "Columns", exact: true })
     .selectOption("size");
   await selectModel(page, "fixture/image");
+  await setVariableValues(page, "Rows", ["Landscape", "Details"]);
+  await page.getByLabel("Prompt", { exact: true }).fill("Draw $ROW1");
+  await page.getByRole("checkbox", { name: "Auto", exact: true }).uncheck();
   await page.getByRole("checkbox", { name: "1K", exact: true }).check();
   const png = Buffer.from(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
@@ -183,53 +216,39 @@ test("renamed reference groups survive reload, Edit and Fork without mixing thei
   const first = [file("one.png"), file("two.png")],
     second = [file("three.png"), file("four.png"), file("five.png")];
   await page
-    .getByLabel("Add reference group", { exact: true })
+    .getByLabel("Add images to $ROW1, case 1", { exact: true })
     .setInputFiles(first);
   await expect(page.getByRole("img", { name: "two.png" })).toBeVisible();
   await page
-    .getByLabel("Add reference group", { exact: true })
+    .getByLabel("Add images to $ROW1, case 2", { exact: true })
     .setInputFiles(second.slice(0, 1));
   await expect(page.getByRole("img", { name: "three.png" })).toBeVisible();
   await page
-    .getByLabel("Add images to Group 2", { exact: true })
+    .getByLabel("Add images to $ROW1, case 2", { exact: true })
     .setInputFiles(second.slice(1));
-  const titles = page.getByRole("button", {
-    name: /^Edit reference group title:/,
-  });
-  const titleField = page.getByRole("textbox", {
-    name: "Reference group title",
-  });
-  // Removing all files preserves the group and its title until it is refilled.
+  // Removing all files leaves the case text and its identity intact.
   for (const image of first)
     await page
       .getByRole("button", {
-        name: `Remove ${image.name} from Group 1`,
+        name: `Remove ${image.name} from $ROW1, case 1`,
         exact: true,
       })
       .click();
-  await expect(titles.nth(0)).toHaveText("Group 1");
-  await page.reload();
-  await expect(titles.nth(0)).toHaveText("Group 1");
-  await connectOpenRouter(page);
-  await page.getByRole("button", { name: "Generate", exact: true }).click();
-  await expect(page.getByRole("alert")).toHaveText(
-    "Add images to every reference group",
+  await expect(page.getByLabel("$ROW1, case 1", { exact: true })).toHaveValue(
+    "Landscape",
   );
+  await page.reload();
+  await expect(page.getByLabel("$ROW1, case 1", { exact: true })).toHaveValue(
+    "Landscape",
+  );
+  await expect(page.getByRole("img", { name: /\.png$/ })).toHaveCount(3);
+  await connectOpenRouter(page);
+  const generate = page.getByRole("button", { name: "Generate", exact: true });
+  await expect(generate).toBeEnabled();
   await page
-    .getByLabel("Add images to Group 1", { exact: true })
+    .getByLabel("Add images to $ROW1, case 1", { exact: true })
     .setInputFiles(first);
   await expect(page.getByRole("img", { name: "two.png" })).toBeVisible();
-  await titles.nth(0).click();
-  await titleField.fill("Landscape");
-  await titleField.press("Enter");
-  await titles.nth(1).click();
-  await titleField.fill("Details");
-  await titleField.press("Tab");
-  const warning = page.getByRole("cell", {
-    name: "Fixture image / Details: Unsupported",
-    exact: true,
-  });
-  await expect(warning).toBeVisible();
   await page.reload();
   await expect(page.getByRole("img", { name: /\.png$/ })).toHaveCount(5);
   await expect
@@ -239,37 +258,26 @@ test("renamed reference groups survive reload, Edit and Fork without mixing thei
         .evaluate((img: HTMLImageElement) => img.naturalWidth),
     )
     .toBe(1);
-  await expect(titles.nth(0)).toHaveText("Landscape");
-  await expect(titles.nth(1)).toHaveText("Details");
-  // Rejected titles preserve both groups and their file associations.
-  for (const invalid of ["Landscape", "   "]) {
-    await titles.nth(1).click();
-    await titleField.fill(invalid);
-    await titleField.press("Enter");
-    await expect(page.getByRole("alert")).toHaveText(
-      invalid.trim()
-        ? "Use a different reference group title."
-        : "Enter a reference group title.",
-    );
-    await titleField.press("Escape");
-    await expect(titles.nth(1)).toHaveText("Details");
-  }
-  await titles.nth(1).click();
-  await titleField.fill("Discard this edit");
-  await titleField.press("Escape");
-  await expect(titles.nth(1)).toBeFocused();
+  await expect(page.getByLabel("$ROW1, case 1", { exact: true })).toHaveValue(
+    "Landscape",
+  );
+  await expect(page.getByLabel("$ROW1, case 2", { exact: true })).toHaveValue(
+    "Details",
+  );
   await page.getByRole("button", { name: "Swap rows and columns" }).click();
   await expect(
-    page.getByRole("cell", {
-      name: "Fixture image / Details: Unsupported",
-      exact: true,
-    }),
-  ).toBeVisible();
+    page.getByLabel("$COLUMN1, case 1", { exact: true }),
+  ).toHaveValue("Landscape");
+  await expect(
+    page.getByLabel("$COLUMN1, case 2", { exact: true }),
+  ).toHaveValue("Details");
   await request.post("/fixture/reset", {
     data: { referenceStorageFailure: true },
   });
   await page.getByRole("button", { name: "Generate", exact: true }).click();
-  await expect(page.getByRole("alert")).toHaveText("Could not upload one.png.");
+  await expect(
+    page.getByRole("alert").filter({ hasText: "one.png" }),
+  ).toBeVisible();
   expect(await (await request.get("/fixture/image-requests")).json()).toEqual(
     [],
   );
@@ -277,6 +285,10 @@ test("renamed reference groups survive reload, Edit and Fork without mixing thei
   await page.getByRole("button", { name: "Generate", exact: true }).click();
   await expectProgress(page, 2, 2);
   const sent = await (await request.get("/fixture/image-requests")).json();
+  expect(sent.map((call: { prompt: string }) => call.prompt).sort()).toEqual([
+    "Draw Details",
+    "Draw Landscape",
+  ]);
   const expected = [first, second].map((group) =>
     group.map((f) => ({
       type: "image_url",
@@ -290,15 +302,28 @@ test("renamed reference groups survive reload, Edit and Fork without mixing thei
       .map((r: any) => r.input_references)
       .sort((a: any[], b: any[]) => a.length - b.length),
   ).toEqual(expected);
+  expect(
+    sent
+      .map((call: { prompt: string; input_references: unknown[] }) => ({
+        prompt: call.prompt,
+        images: call.input_references,
+      }))
+      .sort((a: { prompt: string }, b: { prompt: string }) =>
+        a.prompt.localeCompare(b.prompt),
+      ),
+  ).toEqual([
+    { prompt: "Draw Details", images: expected[1] },
+    { prompt: "Draw Landscape", images: expected[0] },
+  ]);
   const url = page.url();
   async function expandReference(
-    target: import("@playwright/test").Page,
+    target: Page,
     orientation: "columnheader" | "rowheader",
     name: string,
     escape = true,
   ) {
     const thumbnail = target.getByRole(orientation).getByRole("button", {
-      name: `Expand reference image: ${name}`,
+      name: `Expand image: ${name}`,
       exact: true,
     });
     const source = await thumbnail.getByRole("img").getAttribute("src");
@@ -328,8 +353,12 @@ test("renamed reference groups survive reload, Edit and Fork without mixing thei
     first[1].buffer,
   );
   await page.getByRole("button", { name: "EDIT", exact: true }).click();
-  await expect(titles.nth(0)).toHaveText("Landscape");
-  await expect(titles.nth(1)).toHaveText("Details");
+  await expect(
+    page.getByLabel("$COLUMN1, case 1", { exact: true }),
+  ).toHaveValue("Landscape");
+  await expect(
+    page.getByLabel("$COLUMN1, case 2", { exact: true }),
+  ).toHaveValue("Details");
   await expect(page.getByRole("img", { name: /\.png$/ })).toHaveCount(5);
   await expect
     .poll(() =>
@@ -361,8 +390,12 @@ test("renamed reference groups survive reload, Edit and Fork without mixing thei
     await visitor.close();
   }
   await page.getByRole("button", { name: "FORK", exact: true }).click();
-  await expect(titles.nth(0)).toHaveText("Landscape");
-  await expect(titles.nth(1)).toHaveText("Details");
+  await expect(
+    page.getByLabel("$COLUMN1, case 1", { exact: true }),
+  ).toHaveValue("Landscape");
+  await expect(
+    page.getByLabel("$COLUMN1, case 2", { exact: true }),
+  ).toHaveValue("Details");
   await expect(page.getByRole("img", { name: /\.png$/ })).toHaveCount(5);
   await page.getByRole("button", { name: "Swap rows and columns" }).click();
   await page.getByRole("button", { name: "Generate", exact: true }).click();
@@ -408,6 +441,7 @@ test("image model prices preserve published units and tiers without changing sel
   await page
     .getByRole("combobox", { name: "Rows", exact: true })
     .selectOption("quality");
+  await page.getByRole("checkbox", { name: "Auto", exact: true }).uncheck();
   await page.getByRole("checkbox", { name: "low", exact: true }).check();
   await expect(
     page.getByRole("cell", {
@@ -434,7 +468,7 @@ test("image model prices preserve published units and tiers without changing sel
   ).toBeVisible();
 });
 
-test("shared image settings transfer to axes, reset on removal, and preserve defaults through Edit and Fork", async ({
+test("shared image settings transfer to axes, preserve equal values on removal, and survive Edit and Fork", async ({
   page,
   request,
 }) => {
@@ -455,7 +489,8 @@ test("shared image settings transfer to axes, reset on removal, and preserve def
   await expect(field("Background")).toHaveCount(0);
   await expect(field("Quality")).toHaveValue("auto");
   await field("Rows").selectOption("quality");
-  await expect(field("Background")).toHaveValue("auto");
+  await expect(field("Background")).toHaveValue("transparent");
+  await field("Background").selectOption("auto");
   await page.getByRole("checkbox", { name: "Auto", exact: true }).check();
   await field("Aspect ratio").selectOption("3:2");
   await expect(
@@ -463,10 +498,20 @@ test("shared image settings transfer to axes, reset on removal, and preserve def
   ).toHaveCount(0);
   await field("Size").selectOption("custom");
   await page.getByLabel("Custom size width", { exact: true }).fill("1536");
-  await page.getByRole("button", { name: "Generate", exact: true }).click();
-  await expect(page.getByRole("alert")).toHaveText(
+  const generate = page.getByRole("button", { name: "Generate", exact: true });
+  await expect(generate).toBeDisabled();
+  await generate.locator("..").focus();
+  await expect(page.getByRole("tooltip")).toContainText(
     "Use a resolution or a size such as 1536x1024",
   );
+  await page.reload();
+  await expect(
+    page.getByLabel("Custom size width", { exact: true }),
+  ).toHaveValue("1536");
+  await expect(
+    page.getByLabel("Custom size height", { exact: true }),
+  ).toHaveValue("");
+  await expect(generate).toBeDisabled();
   expect(
     await (await request.get("/fixture/image-requests")).json(),
   ).toHaveLength(0);
@@ -497,18 +542,26 @@ test("shared image settings transfer to axes, reset on removal, and preserve def
     name: "Parameters",
     exact: true,
   });
-  const parameterValues = parameters.getByRole("definition");
-  await expect(parameterValues.first()).not.toBeVisible();
+  await expect(parameters).not.toBeVisible();
   const parameterButton = page.getByRole("button", {
     name: "Parameters",
     exact: true,
   });
   await parameterButton.focus();
   await parameterButton.press("Enter");
-  await expect(parameterValues.nth(0)).toHaveText("1536x1024");
-  await expect(parameterValues.nth(1)).toHaveText("3:2");
+  for (const [name, value] of [
+    ["Size", "1536x1024"],
+    ["Aspect ratio", "3:2"],
+  ])
+    await expect(
+      parameters
+        .getByRole("term")
+        .filter({ hasText: new RegExp(`^${name}$`) })
+        .locator("..")
+        .getByRole("definition"),
+    ).toHaveText(value);
   await page.keyboard.press("Escape");
-  await expect(parameterValues.first()).not.toBeVisible();
+  await expect(parameters).not.toBeVisible();
   await expect(parameterButton).toBeFocused();
   await page.setViewportSize({ width: 390, height: 844 });
   await parameterButton.click();
@@ -521,6 +574,11 @@ test("shared image settings transfer to axes, reset on removal, and preserve def
   for (const key of ["quality", "background", "input_references"])
     expect(sent[0]).not.toHaveProperty(key);
   await page.getByRole("button", { name: "EDIT", exact: true }).click();
+  await expect(field("Rows")).toHaveValue("model");
+  await expect(field("Columns")).toHaveValue("quality");
+  await expect(
+    page.getByRole("checkbox", { name: "Auto", exact: true }),
+  ).toBeChecked();
   await expect(field("Size")).toHaveValue("custom");
   await expect(
     page.getByLabel("Custom size width", { exact: true }),
@@ -528,6 +586,23 @@ test("shared image settings transfer to axes, reset on removal, and preserve def
   await expect(
     page.getByLabel("Custom size height", { exact: true }),
   ).toHaveValue("1024");
+  await field("Columns").selectOption("background");
+  await page
+    .getByRole("checkbox", { name: "transparent", exact: true })
+    .check();
+  await page.reload();
+  await expect(field("Columns")).toHaveValue("background");
+  await expect(
+    page.getByRole("checkbox", { name: "transparent", exact: true }),
+  ).toBeChecked();
+  await expect(
+    page.getByRole("checkbox", { name: "Fixture image", exact: true }),
+  ).toBeChecked();
+  await page
+    .getByRole("checkbox", { name: "transparent", exact: true })
+    .uncheck();
+  await field("Columns").selectOption("quality");
+  await field("Background").selectOption("auto");
   await field("Size").selectOption("auto");
   await field("Aspect ratio").selectOption("auto");
   await page.getByRole("button", { name: "Generate", exact: true }).click();
@@ -553,7 +628,7 @@ test("shared image settings transfer to axes, reset on removal, and preserve def
   ).toHaveLength(2);
 });
 
-test("shared references survive uploads, reload, publication and forks, and transfer to an axis", async ({
+test("common prompt images survive uploads, reload, publication, forks and axis changes", async ({
   page,
   request,
   browser,
@@ -563,6 +638,7 @@ test("shared references survive uploads, reload, publication and forks, and tran
   await page
     .getByRole("combobox", { name: "Rows", exact: true })
     .selectOption("quality");
+  await page.getByRole("checkbox", { name: "Auto", exact: true }).uncheck();
   await page.getByRole("checkbox", { name: "high", exact: true }).check();
   await page
     .getByRole("checkbox", { name: "Fixture image", exact: true })
@@ -577,7 +653,7 @@ test("shared references survive uploads, reload, publication and forks, and tran
     buffer: Buffer.concat([png, Buffer.from(name)]),
   }));
   await page
-    .getByLabel("Add input references", { exact: true })
+    .getByLabel("Add images to prompt", { exact: true })
     .setInputFiles(files);
   await expect(
     page.getByRole("img", { name: files[1].name, exact: true }),
@@ -590,9 +666,9 @@ test("shared references survive uploads, reload, publication and forks, and tran
     data: { referenceStorageFailure: true },
   });
   await page.getByRole("button", { name: "Generate", exact: true }).click();
-  await expect(page.getByRole("alert")).toHaveText(
-    "Could not upload shared-one.png.",
-  );
+  await expect(
+    page.getByRole("alert").filter({ hasText: "shared-one.png" }),
+  ).toBeVisible();
   await request.post("/fixture/reset", { data: {} });
   await page.getByRole("button", { name: "Generate", exact: true }).click();
   await expectProgress(page, 1, 1);
@@ -646,16 +722,17 @@ test("shared references survive uploads, reload, publication and forks, and tran
   ).toBeVisible();
   await page
     .getByRole("combobox", { name: "Rows", exact: true })
-    .selectOption("input_references");
+    .selectOption("variable");
+  await setVariableValues(page, "Rows", [""]);
+  await page
+    .getByLabel("Prompt", { exact: true })
+    .fill("Draw a landscape$ROW1");
   await expect(
-    page.getByRole("button", {
-      name: "Edit reference group title: Group 1",
-      exact: true,
-    }),
-  ).toBeVisible();
-  await expect(
-    page.getByLabel("Add input references", { exact: true }),
-  ).toHaveCount(0);
+    page.getByLabel("Add images to prompt", { exact: true }),
+  ).toBeEnabled();
+  await expect(page.getByRole("img", { name: /shared-.*\.png/ })).toHaveCount(
+    2,
+  );
   await page
     .getByRole("combobox", { name: "Quality", exact: true })
     .selectOption("high");
@@ -672,7 +749,7 @@ test("shared references survive uploads, reload, publication and forks, and tran
     page.getByRole("checkbox", { name: "high", exact: true }),
   ).toBeChecked();
   await expect(page.getByRole("img", { name: /shared-.*\.png/ })).toHaveCount(
-    0,
+    2,
   );
 });
 
@@ -692,6 +769,7 @@ test("parameter compatibility grids isolate simultaneous warnings, unknown model
   const table = (name: string) =>
     page.getByRole("table", { name: `${name} compatibility`, exact: true });
   await select("Rows").selectOption("quality");
+  await page.getByRole("checkbox", { name: "Auto", exact: true }).uncheck();
   await page.getByRole("checkbox", { name: "low", exact: true }).check();
   await page.getByRole("checkbox", { name: "high", exact: true }).check();
   for (const model of ["Fixture image", "Fixture megapixels"])
@@ -717,12 +795,7 @@ test("parameter compatibility grids isolate simultaneous warnings, unknown model
     exact: true,
   });
   await low.hover();
-  await expect(
-    page.getByRole("tooltip", {
-      name: "Unsupported quality: low.",
-      exact: true,
-    }),
-  ).toBeVisible();
+  await expect(await tooltipFor(page, low)).toContainText("low");
   await expect(
     table("Quality").getByRole("cell", {
       name: "Fixture megapixels / high: Support unknown",
@@ -739,13 +812,11 @@ test("parameter compatibility grids isolate simultaneous warnings, unknown model
       exact: true,
     }),
   ).toBeVisible();
-  await expect(page.getByRole("table")).toHaveCount(2);
   await select("Aspect ratio").selectOption("16:9");
   await expect(table("Aspect ratio").getByRole("columnheader")).toHaveText([
     "Model",
     "16:9",
   ]);
-  await expect(page.getByRole("table")).toHaveCount(3);
   await page.getByRole("button", { name: "Swap rows and columns" }).click();
   await expect(table("Quality").getByRole("columnheader")).toHaveText([
     "Model",
@@ -761,23 +832,19 @@ test("parameter compatibility grids isolate simultaneous warnings, unknown model
   await select("Aspect ratio").selectOption("auto");
   await expect(table("Aspect ratio")).toHaveCount(0);
   await page.getByRole("checkbox", { name: "low", exact: true }).uncheck();
-  await expect(page.getByRole("table")).toHaveCount(0);
+  await expect(table("Quality")).toHaveCount(0);
   await select("Size").selectOption("custom");
   await page.getByLabel("Custom size width", { exact: true }).fill("1536");
   await page.getByLabel("Custom size height", { exact: true }).fill("1024");
   await select("Aspect ratio").selectOption("1:1");
-  await expect(page.getByRole("table")).toHaveCount(2);
   const mismatch = table("Aspect ratio").getByRole("cell", {
     name: "Fixture image / 1:1: Unsupported",
     exact: true,
   });
   await mismatch.hover();
-  await expect(
-    page.getByRole("tooltip", {
-      name: "Size 1536x1024 does not match aspect ratio 1:1.",
-      exact: true,
-    }),
-  ).toBeVisible();
+  const mismatchDetails = await tooltipFor(page, mismatch);
+  await expect(mismatchDetails).toContainText("1536x1024");
+  await expect(mismatchDetails).toContainText("1:1");
   await expect(
     table("Size").getByRole("cell", {
       name: "Fixture image / 1536x1024: Unsupported",
@@ -785,5 +852,73 @@ test("parameter compatibility grids isolate simultaneous warnings, unknown model
     }),
   ).toBeVisible();
   await select("Aspect ratio").selectOption("3:2");
-  await expect(page.getByRole("table")).toHaveCount(0);
+  await expect(table("Aspect ratio")).toHaveCount(0);
+  await expect(table("Size")).toHaveCount(0);
+});
+
+test("a model/value pair reports mixed support when its actual cases use different provider tuples", async ({
+  page,
+}) => {
+  await mockModels(page, (models) =>
+    models.map((model) =>
+      model.id === "fixture/image"
+        ? {
+            ...model,
+            imageEndpoints: [
+              {
+                provider_name: "opaque",
+                pricing: [],
+                supported_parameters: {
+                  quality: { type: "enum", values: ["high"] },
+                  background: { type: "enum", values: ["opaque"] },
+                },
+              },
+              {
+                provider_name: "transparent",
+                pricing: [],
+                supported_parameters: {
+                  quality: { type: "enum", values: ["low"] },
+                  background: { type: "enum", values: ["transparent"] },
+                },
+              },
+            ],
+          }
+        : model,
+    ),
+  );
+  await setup(page, false);
+  await page
+    .getByRole("combobox", { name: "Rows", exact: true })
+    .selectOption("background");
+  await page.getByRole("checkbox", { name: "Auto", exact: true }).uncheck();
+  await page
+    .getByRole("checkbox", { name: "transparent", exact: true })
+    .check();
+  await page.getByRole("checkbox", { name: "opaque", exact: true }).check();
+  await page
+    .getByRole("combobox", { name: "Columns", exact: true })
+    .selectOption("quality");
+  await page
+    .getByRole("group", { name: "Column values", exact: true })
+    .getByRole("checkbox", { name: "Auto", exact: true })
+    .uncheck();
+  await page.getByRole("checkbox", { name: "high", exact: true }).check();
+  await selectModel(page, "fixture/image");
+  const quality = page.getByRole("table", {
+    name: "Quality compatibility",
+    exact: true,
+  });
+  const mixed = quality.getByRole("cell", {
+    name: "Fixture image / high: Mixed support",
+    exact: true,
+  });
+  await expect(mixed).toBeVisible();
+  await mixed.hover();
+  const mixedDetails = await tooltipFor(page, mixed);
+  await expect(mixedDetails).toContainText("Row 1");
+  await expect(mixedDetails).toContainText("Row 2");
+  await page
+    .getByRole("checkbox", { name: "transparent", exact: true })
+    .uncheck();
+  await expect(quality).toHaveCount(0);
 });

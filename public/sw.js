@@ -4,7 +4,7 @@ const SHELL = "/offline-shell.html?release=" + __PWA_VERSION__;
 const STATIC = "slopgrid-static-v1";
 const POLICY = __PWA_POLICY__;
 const STATE = "slopgrid-state-v1";
-const PREFIX = "slopgrid-data-v1-";
+const PREFIX = "slopgrid-data-v2-";
 let scope;
 let epoch = 0;
 let writes = Promise.resolve();
@@ -164,7 +164,49 @@ async function saveOutput(url, expected) {
   pending.set(key, work);
   return work;
 }
+async function reference(request, event) {
+  const key = `reference:${epoch}:${request.url}`;
+  let work = pending.get(key);
+  if (!work) {
+    work = network(request, event).finally(() => pending.delete(key));
+    pending.set(key, work);
+  }
+  return (await work).clone();
+}
+async function saveReference(id, expected) {
+  if (!/^[a-f0-9]{48}$/.test(id) || expected !== epoch) return;
+  const request = new Request(
+    new URL(`/api/references/${id}`, self.location.origin),
+  );
+  if (await cached(request.url)) return;
+  if (expected === epoch) await reference(request);
+}
 async function saveGridOutputs(grid, expected) {
+  if (grid.cells.some(outputAvailable)) {
+    const input = grid.input;
+    const messages = [
+      ...(input.parameters.input.kind === "common"
+        ? input.parameters.input.value
+        : input[input.parameters.input.kind].flatMap(
+            (record) => record.input ?? [],
+          )),
+      ...grid.cells
+        .filter(outputAvailable)
+        .flatMap((cell) => cell.messages ?? []),
+    ];
+    const configuredImages = [
+      ...[...input.rows, ...input.columns].flatMap((record) =>
+        (record.variable ?? []).flatMap((field) => field?.images ?? []),
+      ),
+    ];
+    const ids = new Set([
+      ...configuredImages.map((image) => image.id),
+      ...messages
+        .filter((message) => message.role === "user")
+        .flatMap((message) => (message.images ?? []).map((image) => image.id)),
+    ]);
+    await Promise.all([...ids].map((id) => saveReference(id, expected)));
+  }
   for (const cell of grid.cells) {
     if (expected !== epoch) return;
     if (!outputAvailable(cell)) continue;
@@ -192,6 +234,7 @@ const apiPath = (path) =>
     "/api/models",
     "/api/billing",
   ].includes(path) || /^\/api\/(?:grids|references)\/[a-f0-9]{48}$/.test(path);
+const referencePath = (path) => /^\/api\/references\/[a-f0-9]{48}$/.test(path);
 const outputPath = (path) =>
   /^\/outputs\/[a-f0-9]{48}(?:\/download|\/thinking\/[a-f0-9]{48})?$/.test(
     path,
@@ -202,13 +245,31 @@ async function network(request, event) {
   const url = new URL(request.url);
   const previous = await currentScope();
   const started = epoch;
+  const image = referencePath(url.pathname);
+  const savedImage = image ? await cached(request.url) : undefined;
   let response;
   try {
-    response = await fetch(request);
+    if (image) {
+      const headers = new Headers(request.headers);
+      if (savedImage?.headers.has("ETag"))
+        headers.set("If-None-Match", savedImage.headers.get("ETag"));
+      // CacheStorage owns offline bytes. Never accept an unscoped fresh HTTP
+      // cache hit: even immutable images must observe authorization and scope.
+      // Native image requests are no-cors, which strips conditional headers.
+      // This handler only accepts same-origin URLs.
+      response = await fetch(
+        new Request(request, {
+          headers,
+          cache: "no-store",
+          mode: "same-origin",
+        }),
+      );
+    } else response = await fetch(request);
   } catch {
     if (offlinePath(url.pathname))
       return (await cached(request.url)) ?? unavailable(true);
     const saved = await cached(request.url);
+    if (image && started !== epoch) return unavailable(true);
     if (saved) {
       if (url.pathname.startsWith("/api/")) {
         const headers = new Headers(saved.headers);
@@ -230,6 +291,26 @@ async function network(request, event) {
       : unavailable(true);
   }
   const next = response.headers.get("X-Slopgrid-Cache-Scope");
+  if (image && !next && [403, 404].includes(response.status)) {
+    await serial(async () => {
+      if (started === epoch)
+        await (await caches.open(PREFIX + scope)).delete(request.url);
+    });
+    return response;
+  }
+  if (image && response.status === 304) {
+    if (next) await partition(next, previous, started);
+    if (
+      !savedImage ||
+      started !== epoch ||
+      previous !== (await currentScope()) ||
+      next !== previous ||
+      response.headers.get("ETag") !== savedImage.headers.get("ETag")
+    )
+      return unavailable(true);
+    await store(request.url, savedImage, started);
+    return started === epoch ? savedImage : unavailable(true);
+  }
   if (!next || !(await partition(next, previous, started))) return response;
   const expected = epoch;
   if (!response.ok) {
@@ -301,7 +382,16 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   // Retain hashed assets referenced by previously cached pages and open tabs.
   // Activation follows the browser lifecycle instead of replacing a live worker.
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    caches.keys().then(async (names) => {
+      await Promise.all(
+        names
+          .filter((name) => name.startsWith("slopgrid-data-v1-"))
+          .map((name) => caches.delete(name)),
+      );
+      await self.clients.claim();
+    }),
+  );
 });
 self.addEventListener("fetch", (event) => {
   const request = event.request;
@@ -343,7 +433,11 @@ self.addEventListener("fetch", (event) => {
     outputPath(url.pathname) ||
     offlinePath(url.pathname)
   ) {
-    const work = network(request, event).catch(async () => {
+    const work = (
+      referencePath(url.pathname)
+        ? reference(request, event)
+        : network(request, event)
+    ).catch(async () => {
       try {
         return await fetch(request);
       } catch {

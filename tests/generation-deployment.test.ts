@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import type { Grid } from "../server/domain.js";
 import { runtimeFixture, until, kill } from "./runtime-fixture.js";
+import { validatedGrid } from "./grid-storage-fixture.js";
+import { currentDefinition } from "./current-grid-fixture.js";
 
 test(
   "web replacement preserves live calls, thinking, billing and metadata; draining fences new work and finishes the queue",
@@ -15,16 +17,24 @@ test(
     try {
       const owner = fixture.owner;
       const request = fixture.request;
-      const input = {
-        format: "markdown",
-        prompt: "Draw $ROW",
-        rows: { kind: "variable", values: ["cat", "dog"] },
-        columns: { kind: "model", values: ["fixture/text"] },
-        model: "",
-        effort: "none",
+      const input = currentDefinition({
+        caseAxes: ["rows"],
+        parameters: {
+          input: {
+            kind: "common",
+            value: [{ role: "user", content: "Draw $ROW1" }],
+          },
+          model: { kind: "columns" },
+          effort: { kind: "common", value: "none" },
+        },
+        rows: [
+          { variable: [{ text: "cat" }] },
+          { variable: [{ text: "dog" }] },
+        ],
+        columns: [{ model: "fixture/text" }],
         budgetUsd: 0.1,
         parallelWorkers: 1,
-      };
+      });
       const created = await request("/api/grids", input);
       assert.equal(created.status, 201, await created.clone().text());
       const grid = (await created.json()) as Grid;
@@ -94,7 +104,7 @@ test(
           status: "pending" as const,
         })),
       };
-      store.insert(blocked);
+      store.insert(validatedGrid(blocked));
       await assert.rejects(
         engine.api.startGrid({
           gridId: blocked.id,

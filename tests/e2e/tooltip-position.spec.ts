@@ -5,7 +5,7 @@ test("tooltips escape clipped cells and remain in the viewport on keyboard focus
   page,
 }) => {
   await page.setViewportSize({ width: 480, height: 600 });
-  await create(page, "SVG", "cat", "hat");
+  await create(page, { rowValues: ["cat"] });
   await expectProgress(page, 1, 1);
   const expand = page.getByRole("button", { name: "Expand SVG", exact: true });
   await expand.focus();

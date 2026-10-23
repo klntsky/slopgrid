@@ -1,6 +1,6 @@
 import { Modal } from "./modal";
 import { formatCost } from "../format";
-import { ErrorMessage } from "./error-message";
+import { ErrorMessage } from "./feedback-message";
 export function LowBalanceDialog({
   balanceUsd,
   busy,
@@ -53,7 +53,7 @@ export function LowBalanceDialog({
           Cancel
         </button>
       </div>
-      <ErrorMessage error={error} />
+      <ErrorMessage>{error}</ErrorMessage>
     </Modal>
   );
 }
@@ -91,7 +91,7 @@ export function BillingDialog({
           Close
         </button>
       </div>
-      <ErrorMessage error={error} />
+      <ErrorMessage>{error}</ErrorMessage>
     </Modal>
   );
 }

@@ -44,11 +44,16 @@ export async function engineFingerprint(root) {
   return sha256(JSON.stringify(fileManifest(root, files)));
 }
 
-export async function prepareBuild(request, run) {
+export async function prepareBuild(request, run, imported = false) {
   const { revision } = request;
   const archive = join(run, "source.tar.gz");
   if (sha256(readFileSync(archive)) !== request.sourceHash)
     throw new Error("Source archive checksum mismatch");
+  if (
+    imported &&
+    sha256(readFileSync(join(run, "frontend.tar.gz"))) !== request.frontendHash
+  )
+    throw new Error("Frontend archive checksum mismatch");
   const candidate = join(run, "build");
   mkdirSync(candidate, { recursive: true, mode: 0o700 });
   command("tar", ["-xzf", archive, "-C", candidate]);
@@ -60,6 +65,22 @@ export async function prepareBuild(request, run) {
       `Configure pnpm ${expectedPnpm ?? "from packageManager"} on the host before deploying`,
     );
   command("pnpm", ["install", "--frozen-lockfile"], { cwd: candidate });
+  if (imported) {
+    const frontend = join(run, "frontend.tar.gz");
+    command("tar", ["-xzf", frontend, "-C", candidate]);
+    const result = readJSON(join(candidate, "build.json"));
+    if (
+      result.revision !== revision ||
+      result.sourceHash !== request.sourceHash ||
+      result.opsRevision !== request.opsRevision
+    )
+      throw new Error("Local build does not match deployment request");
+    verifyManifest(candidate, result.source);
+    verifyManifest(candidate, result.frontend);
+    if (result.fingerprint !== (await engineFingerprint(candidate)))
+      throw new Error("Local build engine fingerprint mismatch");
+    return { path: candidate, manifest: result };
+  }
   command("pnpm", ["build"], { cwd: candidate });
   verifyManifest(candidate, source);
   const result = {

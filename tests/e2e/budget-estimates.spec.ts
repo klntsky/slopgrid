@@ -4,6 +4,7 @@ import {
   mockModels,
   selectModel,
   expectProgress,
+  setVariableValues,
 } from "./helpers";
 
 test("budget warnings group models across thinking efforts and axis swaps", async ({
@@ -22,6 +23,7 @@ test("budget warnings group models across thinking efforts and axis swaps", asyn
   );
   await page.goto("/");
   await page.getByRole("button", { name: "Markdown", exact: true }).click();
+  await page.getByRole("button", { name: "Swap rows and columns" }).click();
   await page
     .getByRole("combobox", { name: "Rows", exact: true })
     .selectOption("model");
@@ -41,15 +43,19 @@ test("budget warnings group models across thinking efforts and axis swaps", asyn
   const budget = page.getByLabel("Budget limit per cell", { exact: true });
   await budget.fill("0.5");
   const warnings = page.locator(".budget-warnings");
-  await expect(warnings.locator("p")).toHaveCount(2);
+  await expect(warnings.getByRole("status")).toHaveCount(2);
   await expect(warnings.locator("[data-tooltip]")).toHaveCount(1);
   await expect(warnings.locator("[data-tooltip]")).toContainText("$1");
   await expect(warnings).toContainText("Pricing unavailable.");
-  const before = await warnings.locator("p").allTextContents();
+  const warnedModels = await warnings.locator("strong").allTextContents();
   await page.getByRole("button", { name: "Swap rows and columns" }).click();
-  await expect(warnings.locator("p")).toHaveText(before);
+  await expect(warnings.getByRole("status")).toHaveCount(2);
+  await expect(warnings.locator("strong")).toHaveText(warnedModels);
+  await expect(warnings.locator("[data-tooltip]")).toHaveCount(1);
+  await expect(warnings.locator("[data-tooltip]")).toContainText("$1");
+  await expect(warnings).toContainText("Pricing unavailable.");
   await budget.fill("2");
-  await expect(warnings.locator("p")).toHaveCount(1);
+  await expect(warnings.getByRole("status")).toHaveCount(1);
   await expect(warnings.locator("[data-tooltip]")).toHaveCount(0);
   await page
     .getByRole("group", { name: "Column values", exact: true })
@@ -94,28 +100,27 @@ test("budget estimates follow expanded prompts, warn without blocking, and prese
     .selectOption("variable");
   await page
     .getByRole("combobox", { name: "Columns", exact: true })
-    .selectOption("variable");
-  await page.getByLabel("Row values").fill("a\nb\nc");
-  await page.getByLabel("Column values").fill("d");
+    .selectOption("effort");
+  await setVariableValues(page, "Rows", ["a", "b", "c"]);
   await selectModel(page, "fixture/text");
-  await page.getByLabel("Prompt", { exact: true }).fill("$ROW $COLUMN");
+  await page.getByLabel("Prompt", { exact: true }).fill("$ROW1 d");
   const budget = page.getByLabel("Budget limit per cell", { exact: true });
   const warnings = page.locator(".budget-warnings");
   await expect(warnings).toHaveCount(0);
   await budget.fill("0.1");
-  await expect(warnings.locator("p")).toHaveCount(1);
-  const warning = warnings.locator("[data-tooltip]").first();
+  await expect(warnings.getByRole("status")).toHaveCount(1);
+  const warning = warnings.locator("[data-tooltip]");
   await expect(warning).toContainText("$0.1275");
   await warning.focus();
   const tooltip = page.getByRole("tooltip").filter({ hasText: "$0.1" });
   await expect(tooltip).toBeVisible();
   await expect(tooltip).toContainText("$0.1275");
-  await page.getByLabel("Row values").fill(`a\n${"b".repeat(100)}\nc`);
+  await setVariableValues(page, "Rows", ["a", "b".repeat(100), "c"]);
   await expect(warning).toContainText("$0.1374");
-  await page.getByLabel("Row values").fill(`a\n${"b".repeat(1000)}\nc`);
+  await setVariableValues(page, "Rows", ["a", "b".repeat(1000), "c"]);
   await expect(warnings).toContainText("The cell budget is too small");
   await expect(warning).toContainText("$0.1275");
-  await page.getByLabel("Row values").fill("a\nb\nc");
+  await setVariableValues(page, "Rows", ["a", "b", "c"]);
   await page.reload();
   await expect(budget).toHaveValue("0.1");
   const sent = page.waitForRequest(

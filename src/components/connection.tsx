@@ -5,7 +5,7 @@ import { Link } from "@tanstack/react-router";
 import { LoaderCircle } from "lucide-react";
 import { api } from "../api";
 import { useConnection } from "../queries";
-import { ErrorMessage } from "./error-message";
+import { ErrorMessage } from "./feedback-message";
 
 export function Connection({
   returnTo,
@@ -160,13 +160,15 @@ export function Connection({
                 Cancel
               </button>
             </div>
-            <ErrorMessage error={connectKey.error?.message} />
+            <ErrorMessage>{connectKey.error?.message}</ErrorMessage>
           </form>
         )}
       </div>
-      <ErrorMessage error={disconnect.error?.message} />
+      <ErrorMessage>{disconnect.error?.message}</ErrorMessage>
       {new URLSearchParams(location.search).get("connection") === "failed" && (
-        <ErrorMessage error="OpenRouter connection failed. Connect again." />
+        <ErrorMessage>
+          OpenRouter connection failed. Connect again.
+        </ErrorMessage>
       )}
     </>
   );

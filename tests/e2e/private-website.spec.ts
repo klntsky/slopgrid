@@ -5,9 +5,10 @@ import { join } from "node:path";
 import { startGenerationFixture } from "../generation-fixture";
 import { webFixture } from "../web-fixture";
 import { Store } from "../../server/store";
-import { expandGrid, type GridInput, type Grid } from "../../server/domain";
+import { expandGrid, type Grid } from "../../server/domain";
 import { token } from "../../server/ids";
 import { createWorkflow } from "../../server/workflow";
+import { currentInput } from "../current-grid-fixture";
 
 test("private websites load in frames and direct tabs for the owning user across sessions", async ({
   playwright,
@@ -19,7 +20,6 @@ test("private websites load in frames and direct tabs for the owning user across
   });
   const store = new Store(join(directory, "db.sqlite"), Buffer.alloc(32, 7));
   const web = await webFixture({
-    directory,
     hostname: "slopgrid.test",
     socket: join(directory, "db.sqlite.sock"),
     database: join(directory, "db.sqlite"),
@@ -35,16 +35,21 @@ test("private websites load in frames and direct tabs for the owning user across
   try {
     const owner = token();
     store.saveSession({ id: owner, created: 0 });
-    const input: GridInput = {
+    const input = currentInput({
       format: "html",
-      prompt: "A website",
-      rows: { kind: "model", values: ["fixture/text"] },
-      columns: { kind: "effort", values: ["none"] },
-      model: "fixture/text",
-      effort: "none",
+      parameters: {
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: "A website" }],
+        },
+        model: { kind: "rows" },
+        effort: { kind: "columns" },
+      },
+      rows: [{ model: "fixture/text" }],
+      columns: [{ effort: "none" }],
       budgetUsd: 1,
-    };
-    const grid: Grid = {
+    });
+    const grid = {
       id: token(),
       owner,
       input,
@@ -57,7 +62,7 @@ test("private websites load in frames and direct tabs for the owning user across
         id: token(),
         status: "complete",
       })),
-    };
+    } satisfies Grid;
     const cell = grid.cells[0];
     const artifactId = token();
     const files = {

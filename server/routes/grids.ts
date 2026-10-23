@@ -15,11 +15,12 @@ import type { GridPresenter } from "../grid-presentation.js";
 import { anonymousOwner } from "../session.js";
 import { presentIdentity } from "../grid-presentation.js";
 import { gridListPage } from "../grid-listing.js";
-import { gridSchema, expandGrid, type Grid } from "../domain.js";
+import { gridSchema, type Grid, type ValidatedGridInput } from "../domain.js";
 import {
-  ModelResolutionError,
-  resolveGridModels,
+  prepareGridModels,
+  type PreparedGridModels,
 } from "../model-resolution.js";
+import { ModelResolutionError } from "../model-alias.js";
 import {
   createInferenceGuard,
   inferenceCapacity,
@@ -169,12 +170,28 @@ export function createGridRoutes({
       : undefined;
     if (reuse.data.sourceGridId && (!source || !canViewGrid(source, s)))
       return res.status(404).json({ error: "Grid not found" });
-    const parsed = gridSchema.safeParse(req.body);
+    const definition = { ...req.body };
+    delete definition.creationRequestId;
+    delete definition.sourceGridId;
+    delete definition.reuseArtifacts;
+    delete definition.continueWithLowBalance;
+    const parsed = gridSchema.safeParse(definition);
     if (!parsed.success)
       return res.status(400).json({ error: parsed.error.issues[0].message });
-    let input: Grid["input"];
+    if (
+      selectedReferences(parsed.data).some(
+        (image) => !store.references.allowed(image.id, s),
+      )
+    )
+      return res
+        .status(400)
+        .json({ error: "A reference image is unavailable." });
+    let prepared: PreparedGridModels<ValidatedGridInput>;
     try {
-      input = resolveGridModels(parsed.data, await provider.models());
+      prepared = prepareGridModels(
+        store.references.input(parsed.data),
+        await provider.models(),
+      );
     } catch (error) {
       return res
         .status(error instanceof ModelResolutionError ? 400 : 502)
@@ -185,21 +202,14 @@ export function createGridRoutes({
               : "Could not load OpenRouter models. Try again.",
         });
     }
-    if (
-      selectedReferences(input).some(
-        (image) => !store.references.allowed(image.id, s),
-      )
-    )
-      return res
-        .status(400)
-        .json({ error: "A reference image is unavailable." });
-    const cells = expandGrid(input).map((c) => ({ ...c, id: token() }));
+    const { input } = prepared;
+    const cells = prepared.cells.map((cell) => ({ ...cell, id: token() }));
     const tasks = createWorkflow(input, cells);
     if (!rate(`create:${s.id}`, 10) || !rate(`create-ip:${req.ip}`, 30))
       return res
         .status(429)
         .json({ error: "Grid limit reached. Try again in an hour." });
-    const g: Grid = {
+    const g: Grid & { input: ValidatedGridInput } = {
       id: token(),
       owner: anonymousOwner(s),
       ownerUserId: s.userId,
@@ -228,7 +238,7 @@ export function createGridRoutes({
       return;
     if (cells.every((cell) => cell.status === "complete"))
       g.status = "complete";
-    let savedGrid = g;
+    let savedGrid: Grid = g;
     if (creation) savedGrid = creation.insert(g, tasks);
     else store.insert(g, tasks);
     return saved(savedGrid, savedGrid.id === g.id);

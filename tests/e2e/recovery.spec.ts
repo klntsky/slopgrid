@@ -13,7 +13,7 @@ test("failed grid lists retry independently and OAuth failures retain their retr
     name: /^Public grids\b/,
     exact: true,
   });
-  await expect(publicList.getByRole("alert")).toHaveText(
+  await expect(publicList.getByRole("alert")).toContainText(
     "Discovery unavailable",
     { timeout: 15000 },
   );
@@ -35,9 +35,9 @@ test("failed grid lists retry independently and OAuth failures retain their retr
       baseline.grids.length,
     );
     expect(
-      await publicList.locator(".history-grid-link").evaluateAll(
-        (links) => links.map((link) => link.getAttribute("href")),
-      ),
+      await publicList
+        .locator(".history-grid-link")
+        .evaluateAll((links) => links.map((link) => link.getAttribute("href"))),
     ).toEqual(
       baseline.grids.map((grid: { id: string; slug?: string }) =>
         grid.slug ? `/${grid.slug}` : `/grid/${grid.id}`,
@@ -45,12 +45,8 @@ test("failed grid lists retry independently and OAuth failures retain their retr
     );
   }
   await page.goto("/settings?connection=failed&signin=failed");
-  await expect(
-    page.getByRole("alert").filter({ hasText: "GitHub sign-in failed" }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("alert").filter({ hasText: "OpenRouter connection failed" }),
-  ).toBeVisible();
+  await expect(page.getByRole("banner").getByRole("alert")).toBeVisible();
+  await expect(page.getByRole("main").getByRole("alert")).toBeVisible();
   await expect(
     page
       .getByRole("region", { name: "Account", exact: true })

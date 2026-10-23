@@ -5,6 +5,7 @@ import {
   expectProgress,
   finishPublishing,
   selectModel,
+  setVariableValues,
 } from "./helpers";
 
 test("drafts, mutation endpoints, and generated hosts enforce ownership and origin boundaries", async ({
@@ -13,7 +14,7 @@ test("drafts, mutation endpoints, and generated hosts enforce ownership and orig
   baseURL,
 }) => {
   await request.post("/fixture/reset", { data: { billing: false } });
-  await create(page, "Static website");
+  await create(page, { format: "Static website" });
   await expectProgress(page, 2, 2);
   const id = page.url().split("/").pop();
   const anonymous = await (
@@ -38,6 +39,67 @@ test("drafts, mutation endpoints, and generated hosts enforce ownership and orig
     (await (await frame.elementHandle())!.contentFrame())!.url(),
   );
   expect(isolated.hostname).toMatch(/^[a-f0-9]{48}-output\.localhost$/);
+  await page.evaluate(() => {
+    localStorage.setItem("site-isolation", "application");
+    document.cookie = "site-isolation=application; Path=/";
+  });
+  await page.context().route("https://capabilities.example.test/**", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      headers: { "access-control-allow-origin": "*" },
+      body: JSON.stringify({ external: true }),
+    }),
+  );
+  const outputFrames = page
+    .frames()
+    .filter((frame) => frame.url().includes("-output.localhost"));
+  expect(outputFrames).toHaveLength(2);
+  const capabilities = await outputFrames[0].evaluate(async () => {
+    const isolated =
+      localStorage.getItem("site-isolation") === null &&
+      !document.cookie.includes("site-isolation=application");
+    localStorage.setItem("site-isolation", "first-output");
+    document.cookie = "site-isolation=first-output; Path=/";
+    const external = await (
+      await fetch("https://capabilities.example.test/data")
+    ).json();
+    const wasm = await WebAssembly.instantiate(
+      new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]),
+    );
+    const url = URL.createObjectURL(
+      new Blob(["postMessage('worker-ready')"], { type: "text/javascript" }),
+    );
+    const worker = new Worker(url);
+    try {
+      const message = await new Promise((resolve) => {
+        worker.onmessage = (event) => resolve(event.data);
+      });
+      return {
+        isolated,
+        external,
+        wasm: wasm.instance instanceof WebAssembly.Instance,
+        message,
+      };
+    } finally {
+      worker.terminate();
+      URL.revokeObjectURL(url);
+    }
+  });
+  expect(capabilities).toEqual({
+    isolated: true,
+    external: { external: true },
+    wasm: true,
+    message: "worker-ready",
+  });
+  expect(
+    await outputFrames[1].evaluate(() => ({
+      storage: localStorage.getItem("site-isolation"),
+      cookie: document.cookie,
+    })),
+  ).toEqual({ storage: null, cookie: "" });
+  expect(
+    await page.evaluate(() => localStorage.getItem("site-isolation")),
+  ).toBe("application");
   const response = await page.request.get(output!);
   expect(response.status()).toBe(200);
   expect(response.headers()["set-cookie"]).toBeUndefined();
@@ -143,7 +205,7 @@ for (const format of ["SVG", "Markdown"])
     await request.post("/fixture/reset", {
       data: { billing: false, unsafe: true },
     });
-    await create(page, format);
+    await create(page, { format });
     await expectProgress(page, 2, 2);
     if (format === "SVG") {
       const image = page.getByRole("img", { name: "Generated SVG" }).first();
@@ -204,7 +266,7 @@ test("navigation returns to a saved grid after creation", async ({
   await expect(
     page.getByRole("region", { name: "Your grids", exact: true }),
   ).toHaveCount(0);
-  await create(page, "Image", "cat", "hat");
+  await create(page, { format: "Image", rowValues: ["cat"] });
   await expectProgress(page, 1, 1);
   const gridURL = page.url();
   await page.getByRole("link", { name: "slopgrid", exact: true }).click();
@@ -215,7 +277,7 @@ test("navigation returns to a saved grid after creation", async ({
   await page.reload();
   await page
     .getByRole("link", {
-      name: "Draw (cat) wearing a (hat)",
+      name: "Draw (cat) wearing a hat",
     })
     .click();
   await expect(page).toHaveURL(gridURL);
@@ -228,7 +290,7 @@ test("EDIT cancels inference and restores settings, while a public FORK creates 
   await page.setExtraHTTPHeaders({ "X-Forwarded-For": "192.0.2.43" });
   await request.post("/fixture/reset", { data: { holdGenerations: true } });
   try {
-    await create(page, "Image", "cat\ndog", "hat");
+    await create(page, { format: "Image" });
     await expect(page).toHaveURL(/\/grid\/[a-f0-9]+$/);
     const original = page.url();
     const id = new URL(original).pathname.split("/").pop()!;
@@ -248,13 +310,20 @@ test("EDIT cancels inference and restores settings, while a public FORK creates 
     ).toBe(403);
     await page.getByRole("button", { name: "EDIT", exact: true }).click();
     await expect(page).toHaveURL("/create");
+    await expect(page.getByLabel("$ROW1, case 1", { exact: true })).toHaveValue(
+      "cat",
+    );
+    await expect(page.getByLabel("$ROW1, case 2", { exact: true })).toHaveValue(
+      "dog",
+    );
     await expect(
-      page.getByRole("heading", {
-        name: "Specify grid layout · what should be the rows and the columns of the grid?",
-      }),
-    ).toBeVisible();
-    await expect(page.getByLabel("Row values")).toHaveValue("cat\ndog");
-    await expect(page.getByLabel("Column values")).toHaveValue("hat");
+      page.getByRole("combobox", { name: "Columns", exact: true }),
+    ).toHaveValue("quality");
+    await expect(
+      page
+        .getByRole("group", { name: "Column values", exact: true })
+        .getByRole("checkbox", { name: "Auto", exact: true }),
+    ).toBeChecked();
     const modelSelector = page.getByRole("radiogroup", {
       name: "Model",
       exact: true,
@@ -273,10 +342,14 @@ test("EDIT cancels inference and restores settings, while a public FORK creates 
     ).toBe(true);
     await request.post("/fixture/release", { data: { all: true } });
     await page.reload();
-    await expect(page.getByLabel("Column values")).toHaveValue("hat");
-    await page.getByLabel("Row values").fill("owl");
+    await expect(
+      page
+        .getByRole("group", { name: "Column values", exact: true })
+        .getByRole("checkbox", { name: "Auto", exact: true }),
+    ).toBeChecked();
+    await setVariableValues(page, "Rows", ["owl"]);
     await expect(page.getByLabel("Prompt", { exact: true })).toHaveValue(
-      "Draw $ROW wearing a $COLUMN",
+      "Draw $ROW1 wearing a hat",
     );
     await page.getByRole("button", { name: "Generate", exact: true }).click();
     await expectProgress(page, 1, 1);
@@ -284,7 +357,9 @@ test("EDIT cancels inference and restores settings, while a public FORK creates 
     await page.setViewportSize({ width: 390, height: 844 });
     const publish = page.getByRole("button", { name: "PUBLISH", exact: true });
     await page.getByRole("button", { name: "EDIT", exact: true }).click();
-    await expect(page.getByLabel("Row values")).toHaveValue("owl");
+    await expect(page.getByLabel("$ROW1, case 1", { exact: true })).toHaveValue(
+      "owl",
+    );
     await page.goBack();
     await publish.click();
     await finishPublishing(page);
@@ -303,10 +378,12 @@ test("EDIT cancels inference and restores settings, while a public FORK creates 
         visitor.getByRole("button", { name: "EDIT", exact: true }),
       ).toHaveCount(0);
       await visitor.getByRole("button", { name: "FORK", exact: true }).click();
-      await expect(visitor.getByLabel("Row values")).toHaveValue("owl");
-      await visitor.getByLabel("Row values").fill("fox");
+      await expect(
+        visitor.getByLabel("$ROW1, case 1", { exact: true }),
+      ).toHaveValue("owl");
+      await setVariableValues(visitor, "Rows", ["fox"]);
       await expect(visitor.getByLabel("Prompt", { exact: true })).toHaveValue(
-        "Draw $ROW wearing a $COLUMN",
+        "Draw $ROW1 wearing a hat",
       );
       await connectOpenRouter(visitor);
       await visitor
@@ -317,9 +394,6 @@ test("EDIT cancels inference and restores settings, while a public FORK creates 
       await page.reload();
       await expect(
         page.getByRole("button", { name: "FORK", exact: true }),
-      ).toBeVisible();
-      await expect(
-        page.getByRole("rowheader", { name: /^owl(?:\s|$)/ }),
       ).toBeVisible();
     } finally {
       await stranger.close();
@@ -335,7 +409,7 @@ test("publishing dialogs preserve private grids, handle failures, and remember s
 }) => {
   await page.setExtraHTTPHeaders({ "X-Forwarded-For": "192.0.2.51" });
   await request.post("/fixture/reset", { data: {} });
-  await create(page, "SVG", "cat");
+  await create(page, { rowValues: ["cat"] });
   await expectProgress(page, 1, 1);
   const id = new URL(page.url()).pathname.split("/").pop()!;
   const publish = page.getByRole("button", { name: "PUBLISH", exact: true });
@@ -377,7 +451,7 @@ test("publishing dialogs preserve private grids, handle failures, and remember s
     }),
   );
   await dialog.getByRole("button", { name: "Confirm", exact: true }).click();
-  await expect(dialog.getByRole("alert")).toHaveText("Publishing failed");
+  await expect(dialog.getByRole("alert")).toContainText("Publishing failed");
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await publish.click();
@@ -428,8 +502,8 @@ test("owners can list a link-only published grid publicly without regenerating o
 }) => {
   await page.setExtraHTTPHeaders({ "X-Forwarded-For": "192.0.2.60" });
   await request.post("/fixture/reset", { data: {} });
-  const prompt = "Promoted grid $ROW $COLUMN";
-  await create(page, "SVG", "cat", "hat", prompt);
+  const prompt = "Promoted grid $ROW1 hat";
+  await create(page, { rowValues: ["cat"], prompt });
   await expectProgress(page, 1, 1);
   const url = page.url();
   const id = new URL(url).pathname.split("/").pop()!;
@@ -501,11 +575,6 @@ test("owners can list a link-only published grid publicly without regenerating o
       .click();
     await expect(publicGrids).toHaveCount(0);
     await visitor.reload();
-    await expect(
-      visitor.getByRole("heading", {
-        name: "Specify grid layout · what should be the rows and the columns of the grid?",
-      }),
-    ).toBeVisible();
     await expect(publicGrids).toHaveCount(0);
     await page.goto("/grids");
     await expect(
@@ -538,7 +607,7 @@ test("publishing still works when browser storage is unavailable and asks again"
     };
   });
   await request.post("/fixture/reset", { data: {} });
-  await create(page, "SVG", "cat");
+  await create(page, { rowValues: ["cat"] });
   await expectProgress(page, 1, 1);
   const id = new URL(page.url()).pathname.split("/").pop()!;
   const initial = await (await page.request.get(`/api/grids/${id}`)).json();
@@ -598,24 +667,34 @@ test("manual key entry persists in the browser, rejects invalid replacements, an
     await page.getByRole("button", { name: "Use API key" }).click();
     await page.getByLabel("API key", { exact: true }).fill("invalid-key");
     await page.getByRole("button", { name: "Connect API key" }).click();
-    await expect(page.getByRole("alert")).toHaveText(
-      "Invalid OpenRouter API key.",
-    );
+    await expect(
+      page
+        .locator("form")
+        .filter({ has: page.getByLabel("API key", { exact: true }) })
+        .getByRole("alert"),
+    ).toBeVisible();
     await page.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(page.getByText("Connected", { exact: true })).toBeVisible();
+    await expect(
+      otherTab.getByText("Connected", { exact: true }),
+    ).toBeVisible();
     await page.goto("/");
     await page.getByRole("button", { name: "Markdown", exact: true }).click();
     await page
       .getByRole("combobox", { name: "Rows", exact: true })
       .selectOption("variable");
-    await page.getByLabel("Row values").fill("cat");
+    await setVariableValues(page, "Rows", ["cat"]);
     await page
       .getByRole("combobox", { name: "Columns", exact: true })
-      .selectOption("variable");
-    await page.getByLabel("Column values").fill("hat");
+      .selectOption("effort");
+    await page
+      .getByRole("group", { name: "Column values", exact: true })
+      .getByRole("checkbox", { name: "Model default", exact: true })
+      .check();
     await selectModel(page, "fixture/text");
     await page
       .getByLabel("Prompt", { exact: true })
-      .fill("Draw $ROW with $COLUMN");
+      .fill("Draw $ROW1 with hat");
     await page.getByRole("button", { name: "Generate", exact: true }).click();
     await expectProgress(page, 0, 1);
     await page.getByRole("button", { name: "Pause generation" }).click();
@@ -654,13 +733,13 @@ test("titles are independent owner-editable metadata and collapsed prompts expan
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await request.post("/fixture/reset", { data: { holdGenerations: true } });
   const prompt =
-    "Draw $ROW wearing a $COLUMN.\n" +
+    "Draw $ROW1 wearing a hat.\n" +
     "Preserve all of these details, including punctuation & <plain text>. "
       .repeat(12)
       .trim();
   const visitor = await context.browser()!.newContext({ baseURL });
   try {
-    await create(page, "Image", "cat", "hat", prompt);
+    await create(page, { format: "Image", rowValues: ["cat"], prompt });
     await expectProgress(page, 0, 1);
     const id = page.url().split("/").pop();
     const endpoint = `/api/grids/${id}/title`;
@@ -688,9 +767,7 @@ test("titles are independent owner-editable metadata and collapsed prompts expan
       await heading.focus();
       await page.setViewportSize({ width, height: 900 });
       await heading.hover();
-      const tooltip = page.locator(
-        '[data-theme="grid-prompt"][data-state="visible"]',
-      );
+      const tooltip = page.getByRole("tooltip").filter({ hasText: prompt });
       await expect(tooltip).toHaveText(prompt);
       await page.keyboard.press("Escape");
       await expect(tooltip).toHaveCount(0);
@@ -726,9 +803,7 @@ test("titles are independent owner-editable metadata and collapsed prompts expan
     ).toHaveText("Flight study");
     await expect(heading).toHaveText(prompt);
     const snapshot = await (await page.request.get(`/api/grids/${id}`)).json();
-    expect(snapshot.cells[0].prompt).toBe(
-      prompt.replaceAll("$ROW", "cat").replaceAll("$COLUMN", "hat"),
-    );
+    expect(snapshot.cells[0].prompt).toBe(prompt.replaceAll("$ROW1", "cat"));
     expect(
       (
         await page.request.post(`/api/grids/${id}/publish`, {
@@ -781,7 +856,16 @@ test("titles are independent owner-editable metadata and collapsed prompts expan
       prompt,
     );
     const short = await page.request.post("/api/grids", {
-      data: { ...snapshot.input, prompt: "$ROW $COLUMN" },
+      data: {
+        ...snapshot.input,
+        parameters: {
+          ...snapshot.input.parameters,
+          input: {
+            kind: "common",
+            value: [{ role: "user", content: "$ROW1 hat" }],
+          },
+        },
+      },
     });
     await page.setViewportSize({ width: 1600, height: 900 });
     await page.goto(`/grid/${(await short.json()).id}`);

@@ -1,5 +1,10 @@
 import { test, expect } from "./fixtures";
-import { connectOpenRouter, expectProgress, selectModel } from "./helpers";
+import {
+  connectOpenRouter,
+  expectProgress,
+  selectModel,
+  setVariableValues,
+} from "./helpers";
 
 test("chat template editing, persistence, sequential output and exports", async ({
   page,
@@ -28,23 +33,18 @@ test("chat template editing, persistence, sequential output and exports", async 
   await page
     .getByRole("button", { name: "Chat completion", exact: true })
     .click();
-  await page.getByLabel("Message 1", { exact: true }).fill("Question $ROW");
+  await page.getByLabel("Message 1", { exact: true }).fill("Question $ROW1");
   async function appendBlank(index: number) {
     await page.locator(".chat-append").hover();
     await page
       .getByRole("button", { name: "Add message", exact: true })
       .click();
     await expect(
-      page.getByLabel(`Message ${index}`, { exact: true }),
+      page.getByRole("button", {
+        name: `Message ${index} role: unfilled`,
+        exact: true,
+      }),
     ).toBeFocused();
-    await page
-      .getByLabel(`Message ${index}`, { exact: true })
-      .fill("Discard this body");
-    while (await page.getByLabel(`Message ${index}`, { exact: true }).count())
-      await page
-        .locator(".chat-role")
-        .nth(index - 1)
-        .click();
   }
   await appendBlank(2);
   await page.locator(".chat-append").hover();
@@ -80,14 +80,11 @@ test("chat template editing, persistence, sequential output and exports", async 
   await page
     .getByRole("combobox", { name: "Rows", exact: true })
     .selectOption("variable");
-  await page.getByLabel("Row values").fill("one");
+  await setVariableValues(page, "Rows", ["one"]);
   await page
     .getByRole("combobox", { name: "Columns", exact: true })
-    .selectOption("variable");
-  await page.getByLabel("Column values").fill("two");
-  await page
-    .getByLabel("Message 3", { exact: true })
-    .fill("Next question $COLUMN");
+    .selectOption("effort");
+  await page.getByLabel("Message 3", { exact: true }).fill("Next question two");
   await selectModel(page, "fixture/text");
   await connectOpenRouter(page);
   await page.getByRole("button", { name: "Generate", exact: true }).click();
@@ -171,7 +168,7 @@ test("chat template editing, persistence, sequential output and exports", async 
   await page.getByRole("button", { name: "EDIT", exact: true }).click();
   await expect(page.locator(".chat-role-unfilled")).toHaveCount(2);
   await expect(page.getByLabel("Message 1", { exact: true })).toHaveValue(
-    "Question $ROW",
+    "Question $ROW1",
   );
   await page
     .getByRole("button", { name: "Chat completion", exact: true })

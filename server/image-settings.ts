@@ -1,4 +1,11 @@
 import { z } from "zod";
+import type {
+  GenerationParameters,
+  GridDraftInput,
+  GridInput,
+} from "./domain.js";
+import { mergeVariableImages } from "./prompt-variables.js";
+import { generatorInputEntries } from "./generator-input.js";
 
 import {
   ImageGenerationRequestAspectRatio,
@@ -21,17 +28,22 @@ export const imageKinds = [
   "aspect_ratio",
   "quality",
   "background",
-  "input_references",
 ] as const;
 export type ImageSettings = Partial<
-  Record<Exclude<(typeof imageKinds)[number], "input_references">, string>
+  Record<(typeof imageKinds)[number], string>
 > & { input_references?: string[] };
-export const referenceImageSchema = z.object({
-  id: z.string().min(1).max(80),
-  name: z.string().min(1).max(255),
-});
+export const referenceImageSchema = z
+  .object({
+    id: z.string().min(1).max(80),
+    name: z.string().min(1).max(255),
+    width: z.number().finite().int().positive().optional(),
+    height: z.number().finite().int().positive().optional(),
+  })
+  .refine(
+    (image) => (image.width === undefined) === (image.height === undefined),
+    "Image dimensions must include both width and height.",
+  );
 export type ReferenceImage = z.infer<typeof referenceImageSchema>;
-export type ReferenceGroups = Record<string, ReferenceImage[]>;
 export const imageCapabilitiesSchema = z.record(
   z.string(),
   z.union([
@@ -65,24 +77,6 @@ export function validImageSetting(kind: ScalarImageKind, value: string) {
     ? validImageSize(value)
     : imageChoices[kind].includes(value);
 }
-function sharedSetting(kind: ScalarImageKind) {
-  return z
-    .string()
-    .trim()
-    .refine(
-      (value) => !value || validImageSetting(kind, value),
-      kind === "size"
-        ? "Use a resolution or a size such as 1536x1024"
-        : "Unknown image setting",
-    )
-    .optional();
-}
-export const sharedImageSettingsSchema = z.object({
-  size: sharedSetting("size"),
-  aspect_ratio: sharedSetting("aspect_ratio"),
-  quality: sharedSetting("quality"),
-  background: sharedSetting("background"),
-});
 export function normalizeImageSettings(
   settings: ImageSettings = {},
 ): ImageSettings {
@@ -92,12 +86,28 @@ export function normalizeImageSettings(
     ),
   );
 }
-export function selectedReferences(input: {
-  referenceGroups?: ReferenceGroups;
-  inputReferences?: ReferenceImage[];
-}) {
-  return [
-    ...Object.values(input.referenceGroups ?? {}).flat(),
-    ...(input.inputReferences ?? []),
-  ];
+export function selectedReferences(
+  input: GridInput | GridDraftInput,
+): ReferenceImage[] {
+  const attachments = generatorInputEntries(input).flatMap(({ messages }) =>
+    messages.flatMap((message) => message.images ?? []),
+  );
+  return (
+    mergeVariableImages(
+      attachments,
+      ...[...input.rows, ...input.columns].flatMap(
+        (record) => record.variable?.map((field) => field?.images) ?? [],
+      ),
+    ) ?? []
+  );
+}
+
+export function referenceIds(
+  input: Pick<GenerationParameters, "messages" | "imageSettings">,
+): readonly string[] {
+  return input.messages
+    ? input.messages.flatMap(
+        (message) => message.images?.map((image) => image.id) ?? [],
+      )
+    : (input.imageSettings?.input_references ?? []);
 }

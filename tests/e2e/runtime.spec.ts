@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { runtimeFixture, kill } from "../runtime-fixture";
+import { currentDefinition } from "../current-grid-fixture";
 
 test("open browsers reconnect to a replaced web process while markdown, thinking and website assets continue streaming", async ({
   playwright,
@@ -23,11 +24,25 @@ test("open browsers reconnect to a replaced web process while markdown, thinking
       },
     ]);
     const markdown = fixture.grid({
-      rows: { kind: "variable", values: ["markdown"] },
+      caseAxes: ["rows"],
+      parameters: {
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: "Draw $ROW1" }],
+        },
+      },
+      rows: [{ variable: [{ text: "markdown" }] }],
     });
     const website = fixture.grid({
       format: "html",
-      rows: { kind: "variable", values: ["website"] },
+      caseAxes: ["rows"],
+      parameters: {
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: "Draw $ROW1" }],
+        },
+      },
+      rows: [{ variable: [{ text: "website" }] }],
     });
     const pages = [await context.newPage(), await context.newPage()];
     for (const [index, grid] of [markdown, website].entries()) {
@@ -139,14 +154,22 @@ test("running chat output stays readable offline and catches up after reconnecti
         url: fixture.origin,
       },
     ]);
-    const grid = fixture.grid({
-      format: "chat-template",
-      rows: { kind: "variable", values: ["chat"] },
-      messages: [
-        { role: "user", content: "Keep this conversation visible." },
-        { role: "unfilled", content: "" },
-      ],
-    });
+    const grid = fixture.grid(
+      currentDefinition({
+        format: "chat-template",
+        budgetUsd: 0.1,
+        parameters: {
+          input: {
+            kind: "common",
+            value: [
+              { role: "user", content: "Keep this conversation visible." },
+              { role: "unfilled", content: "" },
+            ],
+          },
+          effort: { kind: "common", value: "none" },
+        },
+      }),
+    );
     await fixture.engine.api.startGrid({
       gridId: grid.id,
       sessionId: fixture.owner,
@@ -235,17 +258,24 @@ test("loaded SVG, website and image output survives disconnection without losing
     ]);
     const svg = fixture.grid({
       format: "svg",
-      rows: { kind: "variable", values: ["svg"] },
+      rows: [{ variable: [{ text: "svg" }] }],
     });
     const website = fixture.grid({
       format: "html",
-      rows: { kind: "variable", values: ["website"] },
+      rows: [{ variable: [{ text: "website" }] }],
     });
-    const image = fixture.grid({
-      format: "image",
-      rows: { kind: "variable", values: ["image"] },
-      columns: { kind: "model", values: ["fixture/image"] },
-    });
+    const image = fixture.grid(
+      currentDefinition({
+        format: "image",
+        budgetUsd: 0.1,
+        parameters: {
+          input: {
+            kind: "common",
+            value: [{ role: "user", content: "Draw image" }],
+          },
+        },
+      }),
+    );
     for (const grid of [svg, website, image])
       await fixture.engine.api.startGrid({
         gridId: grid.id,

@@ -1,102 +1,77 @@
+import { useId } from "react";
 import type { CompatibilityTables } from "./compatibility-table";
-import type { GridInput } from "../../server/domain";
+import type { GridDraftInput } from "../../server/domain";
+import type { ScalarImageKind } from "../../server/image-settings";
 import {
-  imageChoices,
-  type ScalarImageKind,
-} from "../../server/image-settings";
-import { dimensionNames } from "../format";
-import { CustomImageSize } from "./custom-image-size";
-import { ReferenceGroups } from "./reference-groups";
+  parameterNames,
+  type AxisSide,
+  type CommonParameterId,
+} from "../../server/parameters";
+import { ScalarControl } from "./scalar-control";
+import type { InputAction } from "./change-axis";
+import { CommonParameterActions } from "./axis-editor";
+import { ValidationScope } from "./validation-feedback";
 
 export function ImageOptions({
   input,
-  onChange,
-  onBusy,
+  onAction,
   compatibility,
+  onMove,
+  disabled = false,
 }: {
   compatibility: CompatibilityTables;
-  input: GridInput;
-  onChange: (input: Partial<GridInput>) => void;
-  onBusy: (busy: boolean) => void;
+  input: GridDraftInput;
+  onAction: (action: InputAction) => void;
+  onMove: (parameter: CommonParameterId, side: AxisSide) => void;
+  disabled?: boolean;
 }) {
-  const dimensions = [input.rows.kind, input.columns.kind];
-  function select(kind: ScalarImageKind, value: string) {
-    const imageSettings = { ...input.imageSettings };
-    if (value === "auto") delete imageSettings[kind];
-    else imageSettings[kind] = value;
-    onChange({ imageSettings });
+  const id = useId();
+  function select(parameter: ScalarImageKind, value: string) {
+    onAction({ type: "common", parameter, value });
   }
   return (
-    <>
-      <div className="image-options">
-        {(["size", "aspect_ratio", "background", "quality"] as const)
-          .filter((kind) => !dimensions.includes(kind))
-          .map((kind) => {
-            const value = input.imageSettings?.[kind] || "auto";
-            const custom =
-              kind === "size" && !imageChoices.size.includes(value);
-            return (
-              <div
-                key={kind}
-                className={
-                  kind === "quality" ? "image-quality-option" : undefined
-                }
-              >
-                <label>
-                  <span className="parameter-name">{dimensionNames[kind]}</span>
-                  <select
-                    value={custom ? "custom" : value}
-                    onChange={(event) =>
-                      select(
-                        kind,
-                        event.target.value === "custom"
-                          ? "x"
-                          : event.target.value,
-                      )
-                    }
-                  >
-                    {[
-                      ...new Set([
-                        ...imageChoices[kind],
-                        ...(custom ? [] : [value]),
-                      ]),
-                    ].map((choice) => (
-                      <option key={choice} value={choice}>
-                        {choice === "auto" ? "Auto" : choice}
-                      </option>
-                    ))}
-                    {kind === "size" && <option value="custom">Custom</option>}
-                  </select>
+    <div className="image-options">
+      {(["size", "aspect_ratio", "background", "quality"] as const).map(
+        (parameter) => {
+          const source = input.parameters[parameter];
+          if (source?.kind !== "common") return null;
+          const value = source.value;
+          return (
+            <div
+              key={parameter}
+              className={
+                parameter === "quality" ? "image-quality-option" : undefined
+              }
+            >
+              <div className="parameter-header">
+                <label
+                  className="parameter-name"
+                  htmlFor={`${id}-${parameter}`}
+                >
+                  {parameterNames[parameter]}
                 </label>
-                {custom && (
-                  <CustomImageSize
-                    label="Custom size"
-                    value={value}
-                    onChange={(size) => select(kind, size)}
-                  />
-                )}
-                {compatibility[kind]}
+                <CommonParameterActions
+                  input={input}
+                  parameter={parameter}
+                  onMove={onMove}
+                  disabled={disabled}
+                />
               </div>
-            );
-          })}
-      </div>
-      {!dimensions.includes("input_references") && (
-        <div>
-          <span className="parameter-name parameter-name-standalone">
-            Input references
-          </span>
-          <ReferenceGroups
-            shared
-            values={["Input references"]}
-            groups={{ "Input references": input.inputReferences ?? [] }}
-            onBusy={onBusy}
-            onChange={(_, groups) =>
-              onChange({ inputReferences: groups?.["Input references"] ?? [] })
-            }
-          />
-          {compatibility.input_references}
-        </div>
+              <ValidationScope path={["parameters", parameter, "value"]}>
+                <ScalarControl
+                  id={`${id}-${parameter}`}
+                  parameter={parameter}
+                  value={value}
+                  format={input.format}
+                  models={[]}
+                  onChange={(value) => select(parameter, value)}
+                />
+              </ValidationScope>
+              {compatibility[parameter]}
+            </div>
+          );
+        },
       )}
-    </>
+    </div>
   );
 }

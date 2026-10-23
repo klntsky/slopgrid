@@ -2,6 +2,13 @@ import { expect } from "@playwright/test";
 import type { Locator, Page } from "@playwright/test";
 import type { ModelInfo } from "../../server/model-catalog";
 import { createHash } from "node:crypto";
+import type { Effort, GridDraftInput } from "../../server/domain";
+
+export async function savedInput(page: Page): Promise<GridDraftInput> {
+  return page.evaluate(
+    () => JSON.parse(sessionStorage.getItem("slopgrid-draft")!).input,
+  );
+}
 
 export async function mockModels(
   page: Page,
@@ -89,28 +96,116 @@ export async function expectProgress(
   await expect(bar).toHaveAttribute("max", String(total));
 }
 
-export async function create(
+export async function defineCases(page: Page, parameter: string) {
+  await page
+    .getByRole("button", {
+      name: `define multiple cases for ${parameter}`,
+      exact: true,
+    })
+    .click();
+}
+
+export async function setVariableValues(
   page: Page,
-  format = "SVG",
-  rows = "cat\ndog",
-  columns = "hat",
-  prompt = "Draw $ROW wearing a $COLUMN",
-  model?: string,
+  side: "Rows" | "Columns",
+  values: string[],
 ) {
+  expect(values.length).toBeGreaterThan(0);
+  const axis = side === "Rows" ? "row" : "column";
+  const token = side === "Rows" ? "$ROW1" : "$COLUMN1";
+  const dualCases = (await savedInput(page)).caseAxes.length === 2;
+  const table = page.getByRole("table", {
+    name: dualCases
+      ? side === "Rows" ? "Row cases" : "Column cases"
+      : "Grid layout parameters",
+    exact: true,
+  });
+  await expect(table).toBeVisible();
+  if (!(await table.getByLabel(`${token}, case 1`, { exact: true }).count()))
+    await page
+      .getByRole("button", {
+        name: dualCases ? `new ${axis} variable` : "new variable",
+        exact: true,
+      })
+      .click();
+  const cases = table.getByRole("button", {
+    name: new RegExp(`^Remove ${axis} case \\d+$`),
+  });
+  let count = await cases.count();
+  while (count < values.length) {
+    await page
+      .getByRole("button", {
+        name: dualCases ? `new ${axis} case` : "new case",
+        exact: true,
+      })
+      .click();
+    count++;
+  }
+  while (count > values.length) {
+    await table
+      .getByRole("button", {
+        name: `Remove ${axis} case ${count}`,
+        exact: true,
+      })
+      .click();
+    count--;
+  }
+  for (const [index, value] of values.entries())
+    await table
+      .getByLabel(`${token}, case ${index + 1}`, { exact: true })
+      .fill(value);
+}
+
+export type CreateOptions = {
+  format?: string;
+  rowValues?: string[];
+  columns?:
+    | { kind: "effort"; values: Effort[] }
+    | { kind: "quality"; values: string[] };
+  prompt?: string;
+  model?: string;
+};
+
+export async function create(page: Page, options: CreateOptions = {}) {
+  const {
+    format = "SVG",
+    rowValues = ["cat", "dog"],
+    columns = format === "Image"
+      ? { kind: "quality" as const, values: ["auto"] }
+      : { kind: "effort" as const, values: ["default"] },
+    prompt = "Draw $ROW1 wearing a hat",
+    model = format === "Image" ? "fixture/image" : "fixture/text",
+  } = options;
   await page.goto("/");
   await page.getByRole("button", { name: format, exact: true }).click();
   await page
     .getByRole("combobox", { name: "Rows", exact: true })
     .selectOption("variable");
-  await page.getByLabel("Row values").fill(rows);
+  await setVariableValues(page, "Rows", rowValues);
   await page
     .getByRole("combobox", { name: "Columns", exact: true })
-    .selectOption("variable");
-  await page.getByLabel("Column values").fill(columns);
-  await selectModel(
-    page,
-    model ?? (format === "Image" ? "fixture/image" : "fixture/text"),
-  );
+    .selectOption(columns.kind);
+  const columnValues = page.getByRole("group", {
+    name: "Column values",
+    exact: true,
+  });
+  const checked = columnValues.locator('input[type="checkbox"]:checked');
+  for (const checkbox of await checked.all()) await checkbox.uncheck();
+  for (const value of columns.values)
+    await columnValues
+      .getByRole("checkbox", {
+        name:
+          value === "default"
+            ? "Model default"
+            : value === "auto"
+              ? "Auto"
+              : value === "none"
+                ? "None"
+                : value,
+        exact: true,
+      })
+      .check();
+  await selectModel(page, model);
   await page.getByLabel("Prompt", { exact: true }).fill(prompt);
   await connectOpenRouter(page);
   await page.getByRole("button", { name: "Generate", exact: true }).click();

@@ -1,0 +1,96 @@
+.parameter-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  margin-bottom: 9px;
+}
+
+.section-heading:has(> .parameter-actions) {
+  flex-wrap: wrap;
+}
+
+.parameter-header > .parameter-name {
+  margin: 0;
+}
+
+.parameter-actions {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.parameter-case-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 3px 6px;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.parameter-case-action svg {
+  width: 14px;
+  height: 14px;
+}
+
+.parameter-case-action:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--grid-header);
+}
+
+.parameter-case-action:focus-visible,
+.parameter-actions:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.section-heading > .parameter-actions {
+  align-self: center;
+}
+
+@media (pointer: coarse) {
+  .parameter-case-action {
+    min-height: 36px;
+  }
+}
+
+.tippy-box[data-theme="case-destination"] {
+  color: var(--text);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px #0002;
+}
+.tippy-box[data-theme="case-destination"] > .tippy-content {
+  padding: 4px;
+}
+.case-destination-menu {
+  display: flex;
+  flex-direction: column;
+  min-width: 160px;
+}
+.case-destination-menu > button {
+  padding: 8px 12px;
+  text-align: left;
+  border-radius: 4px;
+}
+.case-destination-menu > button:hover,
+.case-destination-menu > button:focus-visible {
+  background: var(--grid-header);
+}
+.case-destination-menu > button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+.variable-token-picker {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  margin-block: 8px;
+  padding: 4px 8px;
+  font-size: 12px;
+}

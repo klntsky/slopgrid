@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 
-const model = "minimax/minimax-m3.1-flash:free";
+const model = "openai/gpt-4.1-mini";
 const prompts = {
   Markdown:
     "Return a Markdown document containing only a level-one heading with the text OK.",
@@ -32,22 +32,28 @@ for (const [format, prompt] of Object.entries(prompts)) {
     await page.goto("/");
     await page.getByRole("button", { name: format, exact: true }).click();
     await page
+      .getByRole("combobox", { name: "Columns", exact: true })
+      .selectOption("single");
+    await page
       .getByRole("combobox", { name: "Rows", exact: true })
       .selectOption("model");
     await page
       .getByRole("group", { name: "Row values" })
       .getByPlaceholder("Search models")
       .fill(model);
-    await page.getByRole("checkbox").first().check();
+    await page
+      .getByRole("group", { name: "Row values" })
+      .locator(`input[type="checkbox"][value="${model}"]`)
+      .check();
     await page
       .getByRole("combobox", { name: "Columns", exact: true })
       .selectOption("effort");
     const columnValues = page.getByRole("group", { name: "Column values" });
+    // GPT-4.1 mini is non-reasoning; retain the effort dimension without
+    // sending an unsupported explicit reasoning override.
     await columnValues
       .getByRole("checkbox", { name: "Model default", exact: true })
-      .uncheck();
-    await columnValues
-      .getByRole("checkbox", { name: "low", exact: true })
+
       .check();
     await page.getByLabel("Prompt", { exact: true }).fill(prompt);
     await page
@@ -86,11 +92,24 @@ for (const [format, prompt] of Object.entries(prompts)) {
     const response = await page.request.get(output!);
     expect(response.ok()).toBe(true);
     if (format === "Markdown") {
-      await expect(
-        page
-          .locator(".markdown-preview")
-          .getByRole("heading", { name: "OK", exact: true }),
-      ).toBeVisible();
+      const download = await page.request.get(
+        `/outputs/${grid.cells[0].id}/download`,
+      );
+      expect(download.ok()).toBe(true);
+      const markdown = await download.text();
+      const preview = page.locator(".markdown-preview:visible");
+      await expect(preview.locator(".markdown-document")).toBeVisible();
+      await expect(preview.getByRole("alert")).toHaveCount(0);
+      const viewRaw = page.getByRole("button", {
+        name: "View raw",
+        exact: true,
+      });
+      await viewRaw.click();
+      await expect(preview.locator("pre")).toBeVisible();
+      expect(await preview.locator("pre").textContent()).toBe(markdown);
+      await viewRaw.click();
+      await expect(preview.locator(".markdown-raw")).toHaveCount(0);
+      await expect(preview.locator(".markdown-document")).toBeVisible();
     } else if (format === "SVG") {
       const image = page.getByRole("img", { name: "Generated SVG" });
       await expect

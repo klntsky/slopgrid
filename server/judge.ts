@@ -1,8 +1,9 @@
 import { streamText, Output } from "ai";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { z } from "zod";
-import type { GridInput, JudgeResult } from "./domain.js";
-import type { ReferenceContent } from "./image-references.js";
+import type { JudgmentInput, JudgeResult } from "./domain.js";
+import { chatMessages, type ChatInputMessage } from "./chat-messages.js";
+import type { ReferenceInputs } from "./image-references.js";
 import type { CallRecorder } from "./billing.js";
 import { completionFailure } from "./failures.js";
 import {
@@ -22,24 +23,13 @@ export const judgmentSchema = z.strictObject({
     }),
   ),
 });
-export type PreparedJudgeInference = {
-  format: GridInput["format"];
-  model: string;
-  effort: GridInput["effort"];
-  criteria: readonly string[];
-  artifact: string | ReferenceContent;
-};
-export function prepareJudgeInference(
-  input: PreparedJudgeInference,
-): PreparedJudgeInference {
-  return { ...input, criteria: [...input.criteria] };
-}
-
 export async function judgeInference(
   baseURL: string,
   key: string,
-  prepared: PreparedJudgeInference,
+  input: JudgmentInput,
+  messages: ChatInputMessage[],
   context: InferenceContext = {},
+  references?: ReferenceInputs,
 ): Promise<{ results: JudgeResult[] }> {
   let call: CallRecorder | undefined;
   const provider = createOpenRouter({
@@ -49,43 +39,38 @@ export async function judgeInference(
       call = current;
     }),
   });
-  const criteria = prepared.criteria
-    .map((text, index) => `${index + 1}. ${text}`)
-    .join("\n");
-  const heading = `Criteria:\n${criteria}\n\nCompleted artifact:\n`;
-  const artifact = prepared.artifact;
   try {
     let failure: unknown;
     const result = streamText({
-      model: provider.chat(prepared.model, {
+      model: provider.chat(input.model, {
         provider: { require_parameters: true },
-        extraBody:
-          prepared.effort === "default"
+        extraBody: {
+          modalities: ["text"],
+          ...(input.effort === "default"
             ? {}
             : {
                 reasoning:
-                  prepared.effort === "none"
+                  input.effort === "none"
                     ? { enabled: false }
-                    : { effort: prepared.effort },
-              },
-      }),
-      system: judgeSystem,
-      messages: [
-        {
-          role: "user",
-          content:
-            typeof artifact === "string"
-              ? heading + artifact
-              : [
-                  { type: "text", text: heading },
-                  {
-                    type: "file",
-                    data: artifact.bytes,
-                    mediaType: artifact.mediaType,
-                  },
-                ],
+                    : { effort: input.effort },
+              }),
         },
+      }),
+      messages: [
+        ...messages,
+        { role: "system", content: judgeSystem },
+        ...chatMessages(
+          [
+            {
+              role: "user",
+              content: `Criteria:\n${input.criteria.map((criterion, index) => `${index + 1}. ${criterion.text}`).join("\n")}`,
+              images: input.images,
+            },
+          ],
+          references,
+        ),
       ],
+      allowSystemInMessages: true,
       output: Output.object({ schema: judgmentSchema, name: "judgment" }),
       maxRetries: 0,
       abortSignal: context.signal,
@@ -131,10 +116,7 @@ export async function judgeInference(
     const completionError = completionFailure(finishReason);
     if (completionError) throw new Error(completionError);
     const parsed = judgmentSchema.safeParse(await optional(result.output));
-    if (
-      !parsed.success ||
-      parsed.data.results.length !== prepared.criteria.length
-    )
+    if (!parsed.success || parsed.data.results.length !== input.criteria.length)
       throw new Error("The judge returned an invalid structured result.");
     call?.complete(completion, recordedUsage);
     return parsed.data;

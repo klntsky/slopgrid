@@ -1,16 +1,28 @@
 import { useEffect, useMemo, useState } from "react";
-import {
-  unusedVariableIssue,
-  isChatFormat,
-  chatInputIssue,
-  type GridInput,
-} from "../../server/domain";
+import { modelSelectionIssueKind, type GridInput } from "../../server/domain";
 import { estimateGrid } from "../../server/cost-estimates";
 import { modelCatalog } from "../model-catalog";
 import { useConnection, useInferenceCapacity } from "../queries";
 import { useCreateDraft } from "./draft";
 import { useCreateSubmission } from "./use-create-submission";
+import { analyzeGridCompatibility } from "../../server/grid-compatibility";
 import { canJudge } from "../../server/compatibility";
+import { promptVariableIssue } from "../../server/prompt-variables";
+import { compatibilityPreviewInput, validateDraftInput } from "./draft-input";
+import type { InputAction } from "./change-axis";
+import type { ZodIssue } from "zod";
+
+function isDeferredModelIssue(issue: ZodIssue) {
+  return (
+    issue.code === "custom" && issue.params?.kind === modelSelectionIssueKind
+  );
+}
+
+const sortedModelCatalog = [...modelCatalog].sort(
+  (a, b) =>
+    a.name.localeCompare(b.name, "en", { sensitivity: "base" }) ||
+    a.id.localeCompare(b.id, "en"),
+);
 
 function useBudgetEstimate(input: GridInput) {
   const [minute, setMinute] = useState(() => Math.floor(Date.now() / 60000));
@@ -23,7 +35,7 @@ function useBudgetEstimate(input: GridInput) {
   }, []);
   return useMemo(
     () =>
-      input.format === "image"
+      input.format === "image" || promptVariableIssue(input)
         ? undefined
         : estimateGrid(input, modelCatalog, new Date(minute * 60000)),
     [input, minute],
@@ -34,65 +46,53 @@ export function useCreateForm() {
   const editing = useCreateDraft();
   const { draft } = editing;
   const { formatSelected, input } = draft;
+  const validation = useMemo(() => validateDraftInput(input), [input]);
+  const validationIssues = validation.parsed.success
+    ? []
+    : validation.parsed.error.issues;
+  const blockingValidationIssues = validationIssues.filter(
+    (issue) => !isDeferredModelIssue(issue),
+  );
   const connection = useConnection();
   const capacity = useInferenceCapacity(
     formatSelected && connection.data?.connected === true,
     input.format,
   );
-  const cellCount = input.rows.values.length * input.columns.values.length;
-  const estimated = useBudgetEstimate(input);
+  const cellCount = input.rows.length * input.columns.length;
+  const estimated = useBudgetEstimate(validation.candidate);
   const parallelWorkers =
     input.format === "image"
       ? Math.max(1, Math.min(cellCount, capacity.data?.parallelWorkers ?? 1))
       : undefined;
   const workersPending = !capacity.isSuccess || capacity.isFetching;
-  const commonModel = ![input.rows.kind, input.columns.kind].includes("model");
-  const commonEffort =
-    input.format !== "image" &&
-    ![input.rows.kind, input.columns.kind].includes("effort");
-  const modelMissing = commonModel && !input.model;
+  const commonModel = input.parameters.model.kind === "common";
+  const commonEffort = input.parameters.effort?.kind === "common";
   const commonJudgeModel =
-    !!input.judge &&
-    ![input.rows.kind, input.columns.kind].includes("judge_model");
+    input.judge && input.parameters.judge_model?.kind === "common";
   const commonJudgeEffort =
-    !!input.judge &&
-    ![input.rows.kind, input.columns.kind].includes("judge_effort");
-  const judgeModels = modelCatalog
-    .filter((model) => canJudge(model, input.format))
-    .sort(
-      (a, b) =>
-        a.name.localeCompare(b.name, "en", { sensitivity: "base" }) ||
-        a.id.localeCompare(b.id, "en"),
-    );
-  const judgeModelIds = [input.rows, input.columns].find(
-    (axis) => axis.kind === "judge_model",
-  )?.values ?? [input.judge?.model ?? ""];
-  const judgeIssue = input.judge
-    ? !input.judge.criteria.length
-      ? "Add at least one criterion."
-      : input.judge.criteria.some(
-            (criterion) =>
-              !criterion.text.trim() ||
-              typeof criterion.correctAnswer !== "boolean",
-          )
-        ? "Enter a yes-or-no question for each criterion."
-        : !judgeModels.length
-          ? "No compatible judge models are available for this output type."
-          : !judgeModelIds.length || judgeModelIds.some((id) => !id)
-            ? "Select a judge model."
-            : judgeModelIds.some(
-                  (id) => !judgeModels.some((model) => model.id === id),
-                )
-              ? "Select a judge model."
-              : undefined
-    : [input.rows, input.columns].some(
-          (axis) => axis.kind === "judge_model" || axis.kind === "judge_effort",
-        )
-      ? "Add a judge to use judge dimensions."
-      : undefined;
+    input.judge && input.parameters.judge_effort?.kind === "common";
+  const compatibilityAnalysis = useMemo(
+    () =>
+      analyzeGridCompatibility(
+        compatibilityPreviewInput(validation.candidate),
+        modelCatalog,
+      ),
+    [validation.candidate],
+  );
+  const { cells: compatibilityCells, issues: compatibilityIssues } =
+    compatibilityAnalysis;
+  const blockingCompatibilityIssues = compatibilityIssues.filter(
+    (issue) => issue.blocking,
+  );
+  const judgeModels = sortedModelCatalog.filter((model) =>
+    canJudge(model, input.format),
+  );
   const submission = useCreateSubmission({
     draft,
-    blocked: modelMissing || !!judgeIssue || workersPending,
+    blocked:
+      blockingValidationIssues.length > 0 ||
+      blockingCompatibilityIssues.length > 0 ||
+      workersPending,
     parallelWorkers,
     onReferenceUploaded: editing.replaceReference,
   });
@@ -100,17 +100,18 @@ export function useCreateForm() {
     editing.update(change);
     submission.reset();
   }
+  function dispatch(action: InputAction) {
+    const applied = editing.dispatch(action);
+    if (applied) submission.reset();
+    return applied;
+  }
   function selectFormat(format: GridInput["format"]) {
     submission.reset();
     editing.selectFormat(format);
   }
-  const models = modelCatalog
-    .filter((m) => (input.format === "image" ? m.image : m.text))
-    .sort(
-      (a, b) =>
-        a.name.localeCompare(b.name, "en", { sensitivity: "base" }) ||
-        a.id.localeCompare(b.id, "en"),
-    );
+  const models = sortedModelCatalog.filter((model) =>
+    input.format === "image" ? model.image : model.text,
+  );
   const generateReasons = [
     submission.busy && "Starting generation.",
     submission.uploading && "Uploading reference images.",
@@ -119,26 +120,25 @@ export function useCreateForm() {
       (capacity.isError
         ? "Could not determine the automatic worker count."
         : "Checking the automatic worker count."),
-    modelMissing && "Select a model.",
-    judgeIssue,
-    !input.rows.values.length && "Select row values.",
-    !input.columns.values.length && "Select column values.",
+    ...new Set(blockingValidationIssues.map((issue) => issue.message)),
+    ...new Set(blockingCompatibilityIssues.map((issue) => issue.reason)),
     !connection.data?.connected && "Connect OpenRouter.",
-    isChatFormat(input.format)
-      ? chatInputIssue(input.messages)
-      : !input.prompt.trim() && "Enter a prompt.",
-    unusedVariableIssue(input),
-    input.format !== "image" &&
-      (!Number.isFinite(input.budgetUsd) || input.budgetUsd <= 0) &&
-      "Enter a positive per-cell budget.",
   ]
     .filter(Boolean)
     .join(" ");
 
   return {
     draft,
+    candidate: validation.candidate,
+    validationIssues: validationIssues.filter(
+      (issue) => submission.attempted || !isDeferredModelIssue(issue),
+    ),
+    compatibilityIssues,
+    compatibilityCells,
     update,
+    dispatch,
     selectFormat,
+    swapAxes: () => dispatch({ type: "swap" }),
     setReuseArtifacts: editing.setReuseArtifacts,
     connection,
     capacity,

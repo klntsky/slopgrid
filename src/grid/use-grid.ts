@@ -6,6 +6,7 @@ import { api, ApiError, type ViewGrid } from "../api";
 import { saveDraft } from "../create/draft";
 import { cacheGrid, useOffline } from "../pwa";
 import { applyDelta, type GridStreamMessage } from "../../shared/grid-delta";
+import { draftInputFromGridInput } from "../create/draft-input";
 export function useGrid(id: string) {
   const cache = useQueryClient(),
     navigate = useNavigate();
@@ -104,10 +105,11 @@ export function useGrid(id: string) {
       return grid.published ? grid : api<ViewGrid>(`/grids/${id}/edit`, "POST");
     },
     onSuccess: async (grid) => {
+      const input = draftInputFromGridInput(grid.input);
       cache.setQueryData(["grid", id], grid);
       saveDraft({
         formatSelected: true,
-        input: grid.input,
+        input,
         sourceGridId: grid.id,
         reuseArtifacts: true,
       });

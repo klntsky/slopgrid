@@ -2,7 +2,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { runtimeFixture, until } from "./runtime-fixture.js";
-import { holdDatabaseWrites, rejectAdmissionCommit } from "./database-lock.js";
+import {
+  holdDatabaseWrites,
+  holdDatabaseWriteTransaction,
+  rejectAdmissionCommit,
+  type HeldDatabaseWriteTransaction,
+} from "./database-lock.js";
 import { crashCheckpoint } from "./crash-checkpoint.js";
 
 test(
@@ -12,7 +17,10 @@ test(
     const f = await runtimeFixture();
     let unlock = () => {};
     try {
-      const grid = f.grid({ rows: { kind: "variable", values: ["one"] } });
+      const grid = f.grid({
+        caseAxes: ["rows"],
+        rows: [{ variable: [{ text: "one" }] }],
+      });
       unlock = holdDatabaseWrites(f.store);
       await assert.rejects(
         f.engine.api.startGrid({ gridId: grid.id, sessionId: f.owner }),
@@ -57,7 +65,10 @@ test(
     let restore = () => {};
     let unsubscribe = () => {};
     try {
-      const grid = f.grid({ rows: { kind: "variable", values: ["one"] } });
+      const grid = f.grid({
+        caseAxes: ["rows"],
+        rows: [{ variable: [{ text: "one" }] }],
+      });
       const snapshots: string[] = [];
       unsubscribe = f.engine.api.subscribeGrid(
         grid.id,
@@ -167,14 +178,13 @@ test(
   { timeout: 40000 },
   async () => {
     const f = await runtimeFixture({ workers: 1 });
-    let locked = false;
+    let writeTransaction: HeldDatabaseWriteTransaction | undefined;
     try {
       const grid = f.grid();
       const waiting = f.grid();
       await f.engine.api.startGrid({ gridId: grid.id, sessionId: f.owner });
       const first = await f.nextCall();
-      f.store.db.exec("BEGIN IMMEDIATE");
-      locked = true;
+      writeTransaction = holdDatabaseWriteTransaction(f.store);
       first.write({
         content: "Retained output",
         reasoning: "Retained thinking",
@@ -194,8 +204,7 @@ test(
         /storage/,
       );
       assert.equal((await f.engine.api.drain()).persistence.healthy, false);
-      f.store.db.exec("COMMIT");
-      locked = false;
+      writeTransaction.commit();
       await until(
         () => f.engine.api.status(),
         (s) => s.persistence.healthy,
@@ -231,7 +240,7 @@ test(
         "Retained output",
       );
     } finally {
-      if (locked) f.store.db.exec("ROLLBACK");
+      writeTransaction?.rollback();
       await f.close();
     }
   },

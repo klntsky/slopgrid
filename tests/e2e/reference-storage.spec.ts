@@ -5,6 +5,11 @@ test("a supported large reference survives reload, authorization and generation"
   page,
   request,
 }) => {
+  const uploads: string[] = [];
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/api/references")
+      uploads.push(request.url());
+  });
   await page.goto("/");
   await page.getByRole("button", { name: "Image", exact: true }).click();
   await page
@@ -17,11 +22,15 @@ test("a supported large reference survives reload, authorization and generation"
   );
   const buffer = Buffer.concat([png, Buffer.alloc(6 * 1024 * 1024)]);
   await page
-    .getByLabel("Add input references", { exact: true })
+    .getByLabel("Add images to prompt", { exact: true })
     .setInputFiles({ name: "large.png", mimeType: "image/png", buffer });
   await expect(
     page.getByRole("img", { name: "large.png", exact: true }),
   ).toBeVisible();
+  await page
+    .getByRole("combobox", { name: "Size", exact: true })
+    .selectOption("custom");
+  await page.getByLabel("Custom size width", { exact: true }).fill("1536");
   await page.reload();
   const preview = page.getByRole("img", { name: "large.png", exact: true });
   await expect(preview).toBeVisible();
@@ -32,6 +41,16 @@ test("a supported large reference survives reload, authorization and generation"
     .toBe(1);
   await connectOpenRouter(page);
   await expect(preview).toBeVisible();
+  const generate = page.getByRole("button", { name: "Generate", exact: true });
+  await expect(
+    page.getByLabel("Custom size width", { exact: true }),
+  ).toHaveValue("1536");
+  await expect(
+    page.getByLabel("Custom size height", { exact: true }),
+  ).toHaveValue("");
+  await expect(generate).toBeDisabled();
+  expect(uploads).toEqual([]);
+  await page.getByLabel("Custom size height", { exact: true }).fill("1024");
   await page.getByRole("button", { name: "Generate", exact: true }).click();
   await expectProgress(page, 1, 1);
   const sent = await (await request.get("/fixture/image-requests")).json();

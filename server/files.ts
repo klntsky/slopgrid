@@ -3,6 +3,7 @@ import {
   appendFileSync,
   mkdirSync,
   mkdtempSync,
+  linkSync,
   renameSync,
   rmSync,
   statSync,
@@ -58,6 +59,32 @@ export class OutputFiles {
     } finally {
       if (!installed) rmSync(temporary, { recursive: true, force: true });
     }
+  }
+  writeReference(sha256: string, data: Uint8Array) {
+    if (!/^[a-f0-9]{64}$/.test(sha256))
+      throw new Error("Invalid reference hash");
+    const directory = join(this.root, ".references");
+    mkdirSync(directory, { recursive: true, mode: 0o700 });
+    const target = join(directory, sha256);
+    if (existsSync(target)) return;
+    const temporary = mkdtempSync(join(this.root, ".pending-"));
+    try {
+      const source = join(temporary, "image");
+      writeFileSync(source, data, { mode: 0o600 });
+      try {
+        // Hard-link installation never replaces a concurrent upload's blob.
+        linkSync(source, target);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      }
+    } finally {
+      rmSync(temporary, { recursive: true, force: true });
+    }
+  }
+  referencePath(sha256: string): string | undefined {
+    if (!/^[a-f0-9]{64}$/.test(sha256)) return;
+    const file = join(this.root, ".references", sha256);
+    return existsSync(file) && statSync(file).isFile() ? file : undefined;
   }
   path(id: string, path: string): string | undefined {
     if (!safePath(path)) return;

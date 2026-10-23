@@ -17,7 +17,16 @@ test("an offline browser retains earlier output and thinking while receiving rec
         url: f.origin,
       },
     ]);
-    const grid = f.grid({ rows: { kind: "variable", values: ["cat"] } });
+    const grid = f.grid({
+      caseAxes: ["rows"],
+      parameters: {
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: "Draw $ROW1" }],
+        },
+      },
+      rows: [{ variable: [{ text: "cat" }] }],
+    });
     await f.engine.api.startGrid({ gridId: grid.id, sessionId: f.owner });
     const call = await f.call(0);
     const prefix = "Earlier streaming text. ".repeat(3000);

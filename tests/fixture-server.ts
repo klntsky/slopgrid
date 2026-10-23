@@ -9,6 +9,7 @@ import { mkdirSync } from "node:fs";
 import { once } from "node:events";
 import { Store } from "../server/store.js";
 import { seedGridLists } from "./grid-list-fixture.js";
+import { seedCompletedJudgment } from "./completed-judgment-fixture.js";
 import { createSessionReader } from "../server/session.js";
 import { parseE2EPort } from "./e2e-port.js";
 const port = parseE2EPort(process.env.E2E_PORT);
@@ -16,6 +17,7 @@ let balanceUsd = 100;
 let tokenLimits: { model: string; max_tokens: number }[] = [];
 let imageRequests: Record<string, unknown>[] = [];
 let judgeRequests: Record<string, unknown>[] = [];
+let chatRequests: Record<string, unknown>[] = [];
 let judgeOutput: string | undefined;
 let judgeCost = 0.25;
 let holdJudges = false;
@@ -130,7 +132,7 @@ upstream.get("/api/v1/images/models", (_req, res) =>
       id: `fixture/${id}`,
       name,
       architecture: {
-        input_modalities: ["text"],
+        input_modalities: ["text", "image"],
         output_modalities: ["image"],
       },
       supported_parameters: { n: { type: "integer" } },
@@ -276,8 +278,7 @@ upstream.post("/api/v1/chat/completions", async (req, res) => {
     calls.push(prompt);
     await waitForRelease(prompt, res, holdJudges);
     if (res.destroyed) return;
-    const criteria = prompt
-      .split("\n\nCompleted artifact:\n")[0]
+    const criteria = contentText(req.body.messages.at(-1)?.content ?? "")
       .split("\n")
       .filter((line: string) => /^\d+\. /.test(line));
     const text =
@@ -305,6 +306,7 @@ upstream.post("/api/v1/chat/completions", async (req, res) => {
     );
     return;
   }
+  chatRequests.push(req.body);
   tokenLimits.push({ model: req.body.model, max_tokens: req.body.max_tokens });
   calls.push(prompt);
   await waitForRelease(prompt, res);
@@ -479,6 +481,24 @@ app.post("/fixture/grids", (req, res) => {
     seedGridLists(store, session.anonymousId ?? session.id, req.body?.counts),
   );
 });
+app.post("/fixture/completed-judgment", (req, res) => {
+  const session = createSessionReader(store, new URL("https://localhost")).read(
+    req,
+  );
+  if (!session) return res.sendStatus(401);
+  if (judgeOutput === undefined)
+    return res
+      .status(400)
+      .json({ error: "Configure judgeOutput before seeding judgments" });
+  const id = seedCompletedJudgment(
+    store,
+    session.anonymousId ?? session.id,
+    req.body,
+    judgeOutput,
+    markdownOutput,
+  );
+  res.status(201).json({ id });
+});
 app.post("/fixture/reset", (req, res) => {
   store.db.exec("DROP TRIGGER IF EXISTS fail_reference_upload");
   if (req.body.referenceStorageFailure)
@@ -497,6 +517,7 @@ app.post("/fixture/reset", (req, res) => {
   judgeCost = req.body.judgeCost ?? 0.25;
   svgOutput = req.body.svgOutput;
   judgeRequests = [];
+  chatRequests = [];
   for (const entry of [...held]) entry.release();
   aborted = [];
   websiteStreaming = !!req.body.websiteStreaming;
@@ -545,6 +566,7 @@ app.post("/fixture/credits", (req, res) => {
 app.get("/fixture/token-limits", (_req, res) => res.json(tokenLimits));
 app.get("/fixture/image-requests", (_req, res) => res.json(imageRequests));
 app.get("/fixture/judge-requests", (_req, res) => res.json(judgeRequests));
+app.get("/fixture/chat-requests", (_req, res) => res.json(chatRequests));
 app.get("/fixture/calls", (_req, res) => res.json(calls));
 app.get("/svg-probe", (req, res) => {
   svgProbes.push(req.originalUrl);
@@ -552,7 +574,6 @@ app.get("/svg-probe", (req, res) => {
 });
 app.get("/fixture/svg-probes", (_req, res) => res.json(svgProbes));
 const web = await webFixture({
-  directory: data,
   database: `${data}/.data/db.sqlite`,
   secret: Buffer.alloc(32, 1),
   socket: `${data}/.data/db.sqlite.sock`,

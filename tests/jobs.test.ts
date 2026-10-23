@@ -14,6 +14,8 @@ import type {
   WorkflowCommit,
   WorkflowExecutor,
 } from "../server/workflow-executor.js";
+import { validatedGrid } from "./grid-storage-fixture.js";
+import { currentInput } from "./current-grid-fixture.js";
 
 const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
 function harness(limit?: number) {
@@ -25,21 +27,23 @@ function harness(limit?: number) {
   function grid(owner: string, name: string, count: number): Grid {
     store.saveSession({ id: owner, key: "fixture-key", created: Date.now() });
     const rows = Math.min(count, 8);
-    const input: Grid["input"] = {
-      format: "markdown",
-      prompt: "$ROW $COLUMN",
-      rows: {
-        kind: "variable",
-        values: Array.from({ length: rows }, (_, i) => `${owner} ${i}`),
+    const input = currentInput({
+      caseAxes: ["rows"],
+      parameters: {
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: "$ROW1 $ROW2" }],
+        },
+        effort: { kind: "common", value: "none" },
       },
-      columns: {
-        kind: "variable",
-        values: Array.from({ length: count / rows }, (_, i) => String(i)),
-      },
-      model: "fixture/text",
-      effort: "none",
+      rows: Array.from({ length: count }, (_, i) => ({
+        variable: [
+          { text: `${owner} ${i % rows}` },
+          { text: String(Math.floor(i / rows)) },
+        ],
+      })),
       budgetUsd: 5,
-    };
+    });
     const g: Grid = {
       id: `${owner}/${name}`,
       owner,
@@ -53,7 +57,7 @@ function harness(limit?: number) {
         id: `${owner}/${name}/${i}`,
       })),
     };
-    store.insert(g);
+    store.insert(validatedGrid(g));
     for (const cell of g.cells) taskIds.set(cell.id, cell.generationId!);
     return g;
   }

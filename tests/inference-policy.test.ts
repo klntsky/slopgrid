@@ -5,8 +5,9 @@ import { ControlledProvider } from "./controlled-provider.js";
 import type { Model } from "../server/provider.js";
 import type { Request, Response } from "express";
 import { createInferenceGuard } from "../server/inference-policy.js";
-import { expandGrid, type GridInput } from "../server/domain.js";
+import { expandGrid } from "../server/domain.js";
 import { createWorkflow } from "../server/workflow.js";
+import { currentInput } from "./current-grid-fixture.js";
 
 test("admission sums individual costs, preserves automatic selection, and skips completed cells on resume", async (t) => {
   class Provider extends ControlledProvider {
@@ -40,15 +41,20 @@ test("admission sums individual costs, preserves automatic selection, and skips 
     provider,
     workersMax: 1,
   });
-  const input = {
-    format: "markdown",
-    prompt: "$ROW",
-    rows: { kind: "variable", values: ["first", "second"] },
-    columns: { kind: "model", values: ["cheap", "unknown"] },
-    model: "",
-    effort: "none",
+  const input = currentInput({
+    caseAxes: ["rows"],
+    parameters: {
+      input: { kind: "common", value: [{ role: "user", content: "$ROW1" }] },
+      model: { kind: "columns" },
+      effort: { kind: "common", value: "none" },
+    },
+    rows: [
+      { variable: [{ text: "first" }] },
+      { variable: [{ text: "second" }] },
+    ],
+    columns: [{ model: "cheap" }, { model: "unknown" }],
     budgetUsd: 3,
-  };
+  });
   const response = await fetch(`${origin}/api/grids`, {
     method: "POST",
     headers: {
@@ -119,20 +125,26 @@ test("automatic judged admission reserves one generation per source and each unf
       assert.fail("Admission should not reject the available balance");
     },
   } as unknown as Response;
-  const input: GridInput = {
-    format: "markdown",
-    prompt: "One artifact",
-    rows: { kind: "judge_model", values: ["judge-a", "judge-b"] },
-    columns: { kind: "judge_effort", values: ["none", "low"] },
-    model: "cheap",
-    effort: "none",
+  const input = currentInput({
     budgetUsd: 3,
-    judge: {
-      criteria: [{ text: "Is this empty?", correctAnswer: false }],
-      model: "",
-      effort: "default",
+    judge: true,
+    parameters: {
+      input: {
+        kind: "common",
+        value: [{ role: "user", content: "One artifact" }],
+      },
+      model: { kind: "common", value: "cheap" },
+      effort: { kind: "common", value: "none" },
+      judge_model: { kind: "rows" },
+      judge_effort: { kind: "columns" },
+      judge_criteria: {
+        kind: "common",
+        value: [{ text: "Is this empty?", correctAnswer: false }],
+      },
     },
-  };
+    rows: [{ judge_model: "judge-a" }, { judge_model: "judge-b" }],
+    columns: [{ judge_effort: "none" }, { judge_effort: "low" }],
+  });
   const cells = expandGrid(input).map((cell, index) => ({
     ...cell,
     id: `reservation-${index}`,
@@ -163,13 +175,25 @@ test("automatic judged admission reserves one generation per source and each unf
   assert.equal(await allow(req, res, session, 7, input.format, cells), true);
   assert.equal(store.session(session.id)!.inferenceConcurrency, 7);
 
-  const images = expandGrid({ ...input, format: "image" }).map(
-    (cell, index) => ({
-      ...cell,
-      id: `image-reservation-${index}`,
-    }),
-  );
-  createWorkflow({ ...input, format: "image" }, images);
+  const imageInput = currentInput({
+    format: "image",
+    budgetUsd: input.budgetUsd,
+    judge: true,
+    parameters: {
+      input: input.parameters.input,
+      model: input.parameters.model,
+      judge_model: input.parameters.judge_model,
+      judge_effort: input.parameters.judge_effort,
+      judge_criteria: input.parameters.judge_criteria,
+    },
+    rows: input.rows,
+    columns: input.columns,
+  });
+  const images = expandGrid(imageInput).map((cell, index) => ({
+    ...cell,
+    id: `image-reservation-${index}`,
+  }));
+  createWorkflow(imageInput, images);
   assert.equal(
     await allow(req, res, session, undefined, "image", images),
     true,

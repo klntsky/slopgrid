@@ -6,9 +6,12 @@ import { gridAuthor } from "../server/grid-presentation.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { setImmediate as immediate } from "node:timers/promises";
-import { expandGrid, type Grid } from "../server/domain.js";
+import { expandGrid, gridSchema, type Grid } from "../server/domain.js";
+import { validatedGrid } from "./grid-storage-fixture.js";
 import { githubCredentials, oauthReturnTo } from "../server/oauth.js";
 import { ControlledProvider } from "./controlled-provider.js";
+import { hasGithubIdentity } from "./session-storage-fixture.js";
+import { currentInput } from "./current-grid-fixture.js";
 
 test("GitHub credentials are mandatory and OAuth return paths stay local", () => {
   for (const [id, secret] of [
@@ -48,11 +51,7 @@ test("account ownership, frozen authors, browser credentials, and OAuth callback
   let aliceSubject: number;
   do {
     aliceSubject = randomInt(2 ** 47, 2 ** 48 - 1);
-  } while (
-    store.db
-      .prepare("SELECT 1 FROM oauth_identities WHERE provider='github' AND subject=?")
-      .get(String(aliceSubject))
-  );
+  } while (hasGithubIdentity(store.db, String(aliceSubject)));
   const alice = store.identify("github", String(aliceSubject), {
     provider: "github",
     username: "alice",
@@ -74,15 +73,16 @@ test("account ownership, frozen authors, browser credentials, and OAuth callback
   });
   store.saveSession({ id: second, userId: alice.id, created: Date.now() });
   store.saveSession({ id: other, userId: bob.id, created: Date.now() });
-  const input: Grid["input"] = {
-    format: "markdown",
-    prompt: "test",
-    model: "unused",
-    effort: "none",
+  const input = currentInput({
     budgetUsd: 5,
-    rows: { kind: "model", values: ["unused"] },
-    columns: { kind: "effort", values: ["none"] },
-  };
+    parameters: {
+      input: { kind: "common", value: [{ role: "user", content: "test" }] },
+      model: { kind: "rows" },
+      effort: { kind: "columns" },
+    },
+    rows: [{ model: "unused" }],
+    columns: [{ effort: "none" }],
+  });
   function grid(id: string, published = false) {
     const g: Grid = {
       id,
@@ -97,7 +97,7 @@ test("account ownership, frozen authors, browser credentials, and OAuth callback
         id: id + "-cell",
       })),
     };
-    const tasks = createWorkflow(input, g.cells);
+    const tasks = createWorkflow(gridSchema.parse(input), g.cells);
     if (published)
       for (const task of tasks) {
         if (task.kind !== "generation") throw new Error("Expected generation");
@@ -107,7 +107,7 @@ test("account ownership, frozen authors, browser credentials, and OAuth callback
           provenance: { signature: "identity-fixture", files: ["index.md"] },
         };
       }
-    store.insert(g, tasks);
+    store.insert(validatedGrid(g), tasks);
     return g;
   }
   const draft = grid(token());
@@ -195,16 +195,23 @@ test("account ownership, frozen authors, browser credentials, and OAuth callback
   assert.equal((await (await request("/api/billing", second)).json()).total, 1);
   assert.equal((await (await request("/api/billing", other)).json()).total, 0);
   assert.equal(
-    (await (await request(`/api/grids/${draft.id}`, second)).json()).author.username,
+    (await (await request(`/api/grids/${draft.id}`, second)).json()).author
+      .username,
     "alice",
   );
   assert.equal(
-    (await (await request(`/api/grids/${historical.id}`, second)).json()).author,
+    (await (await request(`/api/grids/${historical.id}`, second)).json())
+      .author,
     null,
   );
-  const published = await request(`/api/grids/${draft.id}/publish`, second, "POST", {
-    visibility: "public",
-  });
+  const published = await request(
+    `/api/grids/${draft.id}/publish`,
+    second,
+    "POST",
+    {
+      visibility: "public",
+    },
+  );
   assert.equal(published.status, 200);
   assert.equal((await published.json()).author.username, "alice");
   const renamed = store.identify("github", String(aliceSubject), {

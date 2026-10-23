@@ -9,7 +9,9 @@ import {
 } from "lucide-react";
 import { ExpandButton } from "../components/expand-button";
 import { CopyButton } from "../components/copy-button";
+import { ErrorMessage } from "../components/feedback-message";
 import type { GridInput } from "../../server/domain";
+import type { Criterion } from "../../server/judge-criteria";
 import type { ViewGrid } from "../api";
 import { useTheme } from "../theme";
 import { formatCost, cellError, formatNames } from "../format";
@@ -41,7 +43,7 @@ export function OutputCell({
   cell: ViewGrid["cells"][number];
   format: GridInput["format"];
   gridStatus: ViewGrid["status"];
-  criteria?: NonNullable<GridInput["judge"]>["criteria"];
+  criteria?: Criterion[];
   title: string;
   expanded?: boolean;
   view?: CellView;
@@ -126,7 +128,7 @@ export function OutputCell({
             loading="lazy"
           />
         ) : cell.status === "error" ? (
-          <p className="cell-error">{cellError(cell)}</p>
+          <ErrorMessage className="cell-error">{cellError(cell)}</ErrorMessage>
         ) : cell.status === "running" && format === "svg" ? (
           <SvgPreview key={cell.id} draft={cell.draft ?? ""} />
         ) : (
@@ -144,7 +146,9 @@ export function OutputCell({
               "Queued"
             )}
             {cell.status === "pending" && cell.error && (
-              <small className="cell-provider-error">{cellError(cell)}</small>
+              <ErrorMessage className="cell-provider-error">
+                {cellError(cell)}
+              </ErrorMessage>
             )}
           </div>
         )}

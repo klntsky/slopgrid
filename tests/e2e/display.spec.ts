@@ -7,7 +7,7 @@ test("SVG images grow during generation without exposing markup or running SVG s
 }) => {
   await request.post("/fixture/reset", { data: { svgStreaming: true } });
   try {
-    await create(page, "SVG", "cat", "hat");
+    await create(page, { rowValues: ["cat"] });
     const preview = page.getByRole("img", { name: "SVG preview", exact: true });
     const centerColor = () =>
       preview.evaluate((img) => {
@@ -83,7 +83,7 @@ for (const format of ["Image", "SVG"])
     browser,
   }) => {
     await request.post("/fixture/reset", { data: {} });
-    await create(page, format, "cat", "hat");
+    await create(page, { format, rowValues: ["cat"] });
     await expectProgress(page, 1, 1);
     const gridURL = page.url();
     const source = await page
@@ -158,7 +158,14 @@ for (const format of ["Image", "SVG", "Markdown", "Static website"])
   }) => {
     await page.setViewportSize({ width: 800, height: 650 });
     await request.post("/fixture/reset", { data: {} });
-    await create(page, format, "cat\ndog\nowl", "hat\ncape\nscarf");
+    await create(page, {
+      format,
+      rowValues: ["cat", "dog", "owl"],
+      columns:
+        format === "Image"
+          ? { kind: "quality", values: ["low", "medium", "high"] }
+          : { kind: "effort", values: ["none", "low", "high"] },
+    });
     await expectProgress(page, 9, 9);
     const grid = page.getByLabel("Generated output grid");
     const cell = page.locator("article.cell").first();
@@ -351,16 +358,23 @@ test.describe("mobile grid interaction", () => {
     hasTouch: true,
   });
 
-  for (const { layout, columns, total } of [
-    { layout: "wide grid", columns: "hat\ncape\nscarf", total: 9 },
-    { layout: "tall grid", columns: "hat", total: 3 },
+  for (const { layout, columnCount, total } of [
+    { layout: "wide grid", columnCount: 3, total: 9 },
+    { layout: "tall grid", columnCount: 1, total: 3 },
   ])
     test(`pinching changes grid scale and one-finger scrolling still works (${layout})`, async ({
       page,
       request,
     }) => {
       await request.post("/fixture/reset", { data: { billing: false } });
-      await create(page, "Static website", "cat\ndog\nowl", columns);
+      await create(page, {
+        format: "Static website",
+        rowValues: ["cat", "dog", "owl"],
+        columns: {
+          kind: "effort",
+          values: columnCount === 3 ? ["none", "low", "high"] : ["default"],
+        },
+      });
       await expectProgress(page, total, total);
       await expect(
         page
@@ -372,6 +386,22 @@ test.describe("mobile grid interaction", () => {
         cell = page.locator(".cell").first(),
         header = page.getByRole("banner");
       const before = (await cell.boundingBox())!;
+      const table = grid.getByRole("table");
+      expect((await table.boundingBox())!.width).toBeLessThanOrEqual(
+        (await grid.boundingBox())!.width + 1,
+      );
+      if (columnCount === 1) {
+        expect(
+          await grid.evaluate((el) => el.scrollHeight / el.clientHeight),
+        ).toBeGreaterThan(1.25);
+        await grid.evaluate((el) => {
+          el.scrollTop = 120;
+        });
+        expect(await grid.evaluate((el) => el.scrollTop)).toBe(120);
+        await grid.evaluate((el) => {
+          el.scrollTop = 0;
+        });
+      }
       const client = await page.context().newCDPSession(page);
       async function touch(
         type: "touchStart" | "touchMove" | "touchEnd",
@@ -382,6 +412,27 @@ test.describe("mobile grid interaction", () => {
           touchPoints: points,
         });
       }
+      if (columnCount === 1) {
+        const label = (await grid
+          .locator("tbody > tr > th")
+          .first()
+          .boundingBox())!;
+        const point = {
+          x: label.x + label.width / 2,
+          y: label.y + label.height / 2,
+          id: 1,
+        };
+        await touch("touchStart", [point]);
+        for (const distance of [20, 50, 80, 110])
+          await touch("touchMove", [{ ...point, y: point.y - distance }]);
+        await touch("touchEnd", []);
+        await expect
+          .poll(() => grid.evaluate((el) => el.scrollTop))
+          .toBeGreaterThan(0);
+        await grid.evaluate((el) => {
+          el.scrollTop = 0;
+        });
+      }
       const headings = (await grid.locator("thead").boundingBox())!;
       const y = headings.y + headings.height / 2;
       await touch("touchStart", [
@@ -389,8 +440,8 @@ test.describe("mobile grid interaction", () => {
         { x: 320, y, id: 2 },
       ]);
       await touch("touchMove", [
-        { x: 190, y, id: 1 },
-        { x: 350, y, id: 2 },
+        { x: 150, y, id: 1 },
+        { x: 370, y, id: 2 },
       ]);
       await touch("touchEnd", []);
       await expect
@@ -428,6 +479,22 @@ test.describe("mobile grid interaction", () => {
       await expect(
         header.getByRole("button", { name: "PUBLISH" }),
       ).toBeEnabled();
+      if (columnCount === 1) {
+        const handle = page.getByRole("separator", {
+          name: "Resize row 1",
+          exact: true,
+        });
+        await handle.focus();
+        await page.keyboard.press("Shift+ArrowDown");
+        await page.reload();
+        await expect
+          .poll(() => grid.evaluate((el) => el.scrollHeight / el.clientHeight))
+          .toBeGreaterThan(1.25);
+        await page.setViewportSize({ width: 844, height: 390 });
+        await expect
+          .poll(() => grid.evaluate((el) => el.scrollHeight / el.clientHeight))
+          .toBeGreaterThan(1.25);
+      }
     });
 });
 
@@ -436,7 +503,7 @@ test("keyboard resizing updates saved dimensions and restores them after reload"
   request,
 }) => {
   await request.post("/fixture/reset", { data: { billing: false } });
-  await create(page, "SVG", "cat", "hat");
+  await create(page, { rowValues: ["cat"] });
   await expectProgress(page, 1, 1);
   const id = new URL(page.url()).pathname.split("/").pop()!;
   const storageKey = `slopgrid:grid:${id}:sizes`;
@@ -486,8 +553,12 @@ test("a missing grid reports 404 without retrying the request", async ({
   page.on("request", (request) => {
     if (new URL(request.url()).pathname === `/api/grids/${id}`) requests++;
   });
+  const missing = page.waitForResponse(
+    (response) => new URL(response.url()).pathname === `/api/grids/${id}`,
+  );
   await page.goto(`/grid/${id}`);
-  await expect(page.getByRole("alert")).toHaveText("Grid not found");
+  expect((await missing).status()).toBe(404);
+  await expect(page.getByRole("alert")).toBeVisible();
   expect(requests).toBe(1);
 });
 
@@ -499,7 +570,7 @@ test("Markdown preserves raw content and rendered structure across toggles and e
   const code = Array(300).fill(line).join("\n") + "\n";
   const markdown = "```js\n" + code + "```\n\nA paragraph after the code.";
   await request.post("/fixture/reset", { data: { markdownOutput: markdown } });
-  await create(page, "Markdown", "cat", "hat");
+  await create(page, { format: "Markdown", rowValues: ["cat"] });
   await expectProgress(page, 1, 1);
   const viewRaw = page.getByRole("button", { name: "View raw", exact: true });
   const checkRaw = async () => {

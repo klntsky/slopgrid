@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { failureDiagnostics } from "../server/failures.js";
 import { runtimeFixture, until } from "./runtime-fixture.js";
+import { storedCellInferenceFailure } from "./billing-storage-fixture.js";
 
 test("diagnostics retain bounded cause codes without serializing private error payloads", () => {
   const cause = Object.assign(new Error("private output"), {
@@ -40,7 +41,9 @@ test(
   async () => {
     const f = await runtimeFixture();
     try {
-      const grid = f.grid({ rows: { kind: "variable", values: ["cat"] } });
+      const grid = f.grid({
+        rows: [{ variable: [{ text: "cat" }] }],
+      });
       await f.engine.api.startGrid({ gridId: grid.id, sessionId: f.owner });
       const call = await f.call(0);
       call.write({ content: "Partial output" });
@@ -53,12 +56,8 @@ test(
         () => f.engine.api.getGrid(grid.id),
         (g) => g.cells[0].status === "error",
       );
-      const read = () => {
-        const row = f.store.db
-          .prepare("SELECT status,data FROM inference_calls WHERE cell_id=?")
-          .get(grid.cells[0].id) as { status: string; data: string };
-        return { ...JSON.parse(row.data), status: row.status };
-      };
+      const read = () =>
+        storedCellInferenceFailure(f.store.db, grid.cells[0].id);
       const saved = read();
       assert.equal(saved.status, "failed");
       assert.equal(saved.httpStatus, 200);

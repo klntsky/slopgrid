@@ -1,5 +1,14 @@
-import type { GridInput } from "../../server/domain";
-import type { ReferenceImage } from "../../server/image-settings";
+import {
+  gridSchema,
+  type GridDraftInput,
+  type GridInput,
+  type ValidatedGridInput,
+} from "../../server/domain";
+import {
+  referenceImageSchema,
+  type ReferenceImage,
+} from "../../server/image-settings";
+import { generatorInputEntries } from "../../server/generator-input";
 
 // Files stay in this browser across reloads and OAuth redirects until Generate.
 function localFile(
@@ -7,32 +16,34 @@ function localFile(
   file?: File,
   remove = false,
 ): Promise<File | undefined> {
-  return new Promise((resolve, reject) => {
-    const opening = indexedDB.open("slopgrid-reference-files", 1);
-    opening.onupgradeneeded = () => opening.result.createObjectStore("files");
-    opening.onerror = () => reject(opening.error);
-    opening.onsuccess = () => {
-      const db = opening.result;
-      const transaction = db.transaction(
-        "files",
-        file || remove ? "readwrite" : "readonly",
-      );
-      const store = transaction.objectStore("files");
-      const request = file
-        ? store.put(file, id)
-        : remove
-          ? store.delete(id)
-          : store.get(id);
-      transaction.oncomplete = () => {
-        db.close();
-        resolve(file ?? (remove ? undefined : request.result));
-      };
-      transaction.onabort = transaction.onerror = () => {
-        db.close();
-        reject(transaction.error);
-      };
+  const { promise, resolve, reject } = Promise.withResolvers<
+    File | undefined
+  >();
+  const opening = indexedDB.open("slopgrid-reference-files", 1);
+  opening.onupgradeneeded = () => opening.result.createObjectStore("files");
+  opening.onerror = () => reject(opening.error);
+  opening.onsuccess = () => {
+    const db = opening.result;
+    const transaction = db.transaction(
+      "files",
+      file || remove ? "readwrite" : "readonly",
+    );
+    const store = transaction.objectStore("files");
+    const request = file
+      ? store.put(file, id)
+      : remove
+        ? store.delete(id)
+        : store.get(id);
+    transaction.oncomplete = () => {
+      db.close();
+      resolve(file ?? (remove ? undefined : request.result));
     };
-  });
+    transaction.onabort = transaction.onerror = () => {
+      db.close();
+      reject(transaction.error);
+    };
+  };
+  return promise;
 }
 export const readReferenceFile = (id: string) => localFile(id);
 export const removeReferenceFile = (id: string) =>
@@ -42,20 +53,33 @@ export async function saveReferenceFile(file: File): Promise<ReferenceImage> {
   await localFile(id, file);
   return { id, name: file.name };
 }
+
+export function referenceLists(
+  input: Pick<
+    GridInput | GridDraftInput,
+    "parameters" | "rows" | "columns" | "caseAxes"
+  >,
+): ReferenceImage[][] {
+  return [
+    ...generatorInputEntries(input).flatMap(({ messages }) =>
+      messages.flatMap((message) => (message.images ? [message.images] : [])),
+    ),
+    ...[...input.rows, ...input.columns].flatMap((entry) => [
+      ...(entry.variable ?? []).flatMap((field) =>
+        field?.images ? [field.images] : [],
+      ),
+    ]),
+  ];
+}
+
 export async function uploadReferences(
-  input: GridInput,
+  input: ValidatedGridInput,
   uploaded: (localId: string, image: ReferenceImage) => void,
   signal: AbortSignal,
-): Promise<GridInput> {
-  const names = [input.rows, input.columns]
-    .filter((axis) => axis.kind === "input_references")
-    .flatMap((axis) => axis.values);
-  const groups = Object.fromEntries(
-    names.map((name) => [name, [...input.referenceGroups![name]]]),
-  );
-  const inputReferences = [...(input.inputReferences ?? [])];
+): Promise<ValidatedGridInput> {
+  const prepared: GridInput = structuredClone(input);
   const replacements = new Map<string, ReferenceImage>();
-  for (const images of [...Object.values(groups), inputReferences]) {
+  for (const images of referenceLists(prepared)) {
     for (let index = 0; index < images.length; index++) {
       const image = images[index];
       if (!image.id.startsWith("local-")) continue;
@@ -83,12 +107,12 @@ export async function uploadReferences(
                 ? `Could not upload ${image.name}. Use PNG, JPEG, or WebP.`
                 : `Could not upload ${image.name}.`,
           );
-        saved = (await response.json()) as ReferenceImage;
+        saved = referenceImageSchema.parse(await response.json());
         replacements.set(image.id, saved);
         uploaded(image.id, saved);
       }
       images[index] = saved;
     }
   }
-  return { ...input, referenceGroups: groups, inputReferences };
+  return gridSchema.parse(prepared);
 }

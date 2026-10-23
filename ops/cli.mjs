@@ -2,45 +2,31 @@ import { spawnSync } from "node:child_process";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
-import { realpathSync } from "node:fs";
+import { realpathSync, rmSync } from "node:fs";
+import { prepareLocalCandidate } from "./lib/local.mjs";
 import {
   command,
   capture,
   shell,
   quote,
   sha256,
-  parseArgs,
+  deploymentOptions,
   assertProductionRevision,
 } from "./lib/common.mjs";
 import { loadConfig } from "./lib/config.mjs";
+import { parseCommandLine, showHelp } from "./lib/cli-options.mjs";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
-if (!args.length || args.includes("--help")) {
-  console.log(`Usage:
-  ./deploy.sh validate [REV] [--unit FILE --browser FILE]
-  ./deploy.sh staging [REV] [--skip-tests | --unit FILE --browser FILE] [--mode auto|soft|machinery] [--discard-grid ID] [--recover-failed-start]
-  ./deploy.sh production [REV] [--skip-tests] [--mode auto|soft|machinery]
-  ./deploy.sh validate|staging|production [REV] --plan
-  ./deploy.sh status RUN_ID
-
-The default validation is the complete suite in an isolated per-run workspace.
-Use validate for independent worktree candidates without changing any runtime.
-Production accepts only the authoritative master tip and promotes only production.
-Repeat --unit or --browser for more files; --suite mock|real and --grep PATTERN
-select browsers. Production never changes staging.
-Repeat --discard-grid to delete selected staging grids after draining and backup,
-before migration. Deletion forces machinery mode and is rejected for production.
-Use --recover-failed-start only to recover an unpromoted staging engine that
-failed before readiness. Recovery requires runtime safety checks, forces machinery
-mode, and cannot be combined with --mode soft or used for production.
-The command waits for completion and returns the remote exit status. Work runs
-in remote tmux bg and survives an SSH disconnect. --plan changes nothing.
-Config: OPS_* values in the application repository root .env (environment overrides allowed).`);
-  process.exit(0);
-}
 process.umask(0o077);
-try {
+async function main() {
+  const invocation = parseCommandLine(args);
+  if (invocation.help) {
+    await showHelp(invocation.target);
+    return;
+  }
+  const options =
+    invocation.target === "status" ? null : deploymentOptions(invocation);
   const config = loadConfig();
   const remote = (words) => capture("ssh", [config.host, shell(words)]);
   const remoteNode = (words) => [
@@ -49,10 +35,8 @@ try {
     "node",
     ...words,
   ];
-  if (args[0] === "status") {
-    const id = args[1];
-    if (!/^[a-zA-Z0-9-]+$/.test(id ?? "") || args.length !== 2)
-      throw new Error("Invalid run ID");
+  if (invocation.target === "status") {
+    const id = invocation.argument;
     const run = join(config.remoteRoot, "runs", id);
     const request = JSON.parse(remote(["cat", join(run, "request.json")]));
     await follow(remote, remoteNode, request.tools, run);
@@ -60,18 +44,26 @@ try {
     // Prefer the invoking application worktree, never an unrelated checkout.
     const caller = spawnSync(
       "git",
-      ["rev-parse", "--path-format=absolute", "--git-common-dir", "--show-toplevel"],
+      [
+        "rev-parse",
+        "--path-format=absolute",
+        "--git-common-dir",
+        "--show-toplevel",
+      ],
       { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
     );
     if (caller.status === 0) {
       const [common, checkout] = caller.stdout.trim().split("\n");
       const configuredCommon = capture("git", [
-        "-C", config.repository, "rev-parse", "--path-format=absolute", "--git-common-dir",
+        "-C",
+        config.repository,
+        "rev-parse",
+        "--path-format=absolute",
+        "--git-common-dir",
       ]);
       if (realpathSync(common) === realpathSync(configuredCommon))
         config.repository = checkout;
     }
-    const options = parseArgs([...args]);
     const revision = capture("git", [
       "-C",
       config.repository,
@@ -90,7 +82,10 @@ try {
       "HEAD",
     ]);
     const operationsRepository = capture("git", [
-      "-C", root, "rev-parse", "--show-toplevel",
+      "-C",
+      root,
+      "rev-parse",
+      "--show-toplevel",
     ]);
     const tools = join(config.remoteRoot, "tools", opsRevision);
     if (options.plan) {
@@ -102,15 +97,28 @@ try {
             target: options.target,
             validation: options.tests,
             stages: [
-              "build in isolated run",
-              "validate in isolated run",
-              ...(options.target === "validate" ? [] : [`deploy ${options.target}`]),
+              "build committed candidate and run test suites locally in isolation",
+              ...(options.target === "production" ||
+              options.target === "rehearse"
+                ? [
+                    "copy production SQLite backup and all outputs into private workspace",
+                    "run candidate Store migrations and check database integrity",
+                  ]
+                : ["validate fresh data in isolated run"]),
+              options.tests === "skip"
+                ? "skip test suites explicitly"
+                : `run ${options.tests} test suites locally`,
+              ...(["validate", "rehearse"].includes(options.target)
+                ? []
+                : [`deploy ${options.target}`]),
             ],
             mode: options.mode,
             discardGrids: options.discardGrids,
             recoverFailedStart: options.recoverFailedStart,
             config: { host: config.host, remoteRoot: config.remoteRoot },
-            note: "No files uploaded or runtime processes changed. Production plans query authoritative master. Auto mode compares engine dependencies at deployment time.",
+            note: ["validate", "rehearse"].includes(options.target)
+              ? "No deployment lock, persistent runtime preparation, promotion or PM2 operations. Plan uploads no files and changes no runtime processes."
+              : "No files uploaded or runtime processes changed. Production plans query authoritative master. Auto mode compares engine dependencies at deployment time.",
           },
           null,
           2,
@@ -132,13 +140,7 @@ try {
     const archive = (directory, tree) => {
       const result = spawnSync(
         "git",
-        [
-          "-C",
-          directory,
-          "archive",
-          "--format=tar.gz",
-          tree,
-        ],
+        ["-C", directory, "archive", "--format=tar.gz", tree],
         { maxBuffer: 256 * 1024 * 1024 },
       );
       if (result.status !== 0)
@@ -147,71 +149,90 @@ try {
     };
     const source = archive(config.repository, revision),
       implementation = archive(operationsRepository, `${opsRevision}:ops`);
-    const id = `${new Date().toISOString().replace(/[^0-9]/g, "")}-${randomBytes(4).toString("hex")}`;
-    const run = join(config.remoteRoot, "runs", id);
-    remote(["mkdir", "-p", run, dirname(tools)]);
-    const upload = (path, content) =>
-      command("ssh", [config.host, `umask 077; cat > ${quote(path)}`], {
-        input: content,
-        stdio: ["pipe", "inherit", "inherit"],
-      });
-    upload(join(run, "tools.tar.gz"), implementation);
-    const incoming = tools + "-" + id;
-    remote(["mkdir", "-p", incoming]);
-    remote(["tar", "-xzf", join(run, "tools.tar.gz"), "-C", incoming]);
-    remote([
-      "bash",
-      "-c",
-      `if test -d ${quote(tools)}; then diff -qr ${quote(incoming)} ${quote(tools)} && rm -rf ${quote(incoming)}; else mv ${quote(incoming)} ${quote(tools)}; fi`,
-    ]);
-    upload(join(run, "source.tar.gz"), source);
-    upload(
-      join(run, "request.json"),
-      JSON.stringify({
+    const local = await prepareLocalCandidate(
+      {
         ...options,
         revision,
         opsRevision,
-        tools,
-        id,
         sourceHash: sha256(source),
-        config,
-      }),
+      },
+      source,
     );
-    remote([
-      "bash",
-      "-c",
-      "tmux has-session -t bg 2>/dev/null || tmux new-session -d -s bg",
-    ]);
-    const window = remote([
-      "tmux",
-      "new-window",
-      "-d",
-      "-P",
-      "-F",
-      "#{window_id}",
-      "-t",
-      "bg",
-      "-n",
-      `deploy-${options.target}-${id}`,
-      shell([
-        "env",
-        `PATH=${config.nodePath}`,
+    try {
+      if (options.target === "validate") return;
+      const id = `${new Date().toISOString().replace(/[^0-9]/g, "")}-${randomBytes(4).toString("hex")}`;
+      const run = join(config.remoteRoot, "runs", id);
+      remote(["mkdir", "-p", run, dirname(tools)]);
+      const upload = (path, content) =>
+        command("ssh", [config.host, `umask 077; cat > ${quote(path)}`], {
+          input: content,
+          stdio: ["pipe", "inherit", "inherit"],
+        });
+      upload(join(run, "tools.tar.gz"), implementation);
+      const incoming = tools + "-" + id;
+      remote(["mkdir", "-p", incoming]);
+      remote(["tar", "-xzf", join(run, "tools.tar.gz"), "-C", incoming]);
+      remote([
         "bash",
-        join(tools, "remote-run.sh"),
-        run,
-        config.remoteRoot,
-      ]),
-    ]);
-    console.log(
-      `Run ${id} started in remote tmux bg (${window}). Log: ${run}/run.log`,
-    );
-    console.log(`Reconnect with: ./deploy.sh status ${id}`);
-    await follow(remote, remoteNode, tools, run);
+        "-c",
+        `if test -d ${quote(tools)}; then diff -qr ${quote(incoming)} ${quote(tools)} && rm -rf ${quote(incoming)}; else mv ${quote(incoming)} ${quote(tools)}; fi`,
+      ]);
+      upload(join(run, "source.tar.gz"), source);
+      upload(join(run, "frontend.tar.gz"), local.frontend);
+      upload(
+        join(run, "request.json"),
+        JSON.stringify({
+          ...options,
+          revision,
+          opsRevision,
+          tools,
+          id,
+          sourceHash: sha256(source),
+          frontendHash: local.frontendHash,
+          localValidation: local.validation,
+          config,
+        }),
+      );
+      remote([
+        "bash",
+        "-c",
+        "tmux has-session -t bg 2>/dev/null || tmux new-session -d -s bg",
+      ]);
+      const window = remote([
+        "tmux",
+        "new-window",
+        "-d",
+        "-P",
+        "-F",
+        "#{window_id}",
+        "-t",
+        "bg",
+        "-n",
+        `deploy-${options.target}-${id}`,
+        shell([
+          "env",
+          `PATH=${config.nodePath}`,
+          "bash",
+          join(tools, "remote-run.sh"),
+          run,
+          config.remoteRoot,
+        ]),
+      ]);
+      console.log(
+        `Run ${id} started in remote tmux bg (${window}). Log: ${run}/run.log`,
+      );
+      console.log(`Reconnect with: ./deploy.sh status ${id}`);
+      await follow(remote, remoteNode, tools, run);
+    } finally {
+      rmSync(local.run, { recursive: true, force: true });
+    }
   }
-} catch (error) {
+}
+
+await main().catch((error) => {
   console.error(error.message);
   process.exitCode = 1;
-}
+});
 
 async function follow(remote, remoteNode, tools, run) {
   let offset = 0;

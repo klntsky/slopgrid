@@ -22,7 +22,9 @@ test(
       const drained = await f.engine.api.drain();
       assert.equal(drained.runningCalls, 0);
       assert.equal(drained.activeGrids, 1);
-      const extra = f.grid({ rows: { kind: "variable", values: ["extra"] } });
+      const extra = f.grid({
+        rows: [{ variable: [{ text: "extra" }] }],
+      });
       await assert.rejects(
         f.engine.api.startGrid({ gridId: extra.id, sessionId: f.owner }),
         { code: "DRAINING" },
@@ -62,7 +64,9 @@ test(
     const f = await runtimeFixture();
     let unlock = () => {};
     try {
-      const grid = f.grid({ rows: { kind: "variable", values: ["one"] } });
+      const grid = f.grid({
+        rows: [{ variable: [{ text: "one" }] }],
+      });
       await f.engine.api.startGrid({ gridId: grid.id, sessionId: f.owner });
       const first = await f.nextCall();
       first.write({ content: "Discarded output", reasoning: "Saved thinking" });

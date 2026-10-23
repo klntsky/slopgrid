@@ -10,7 +10,7 @@ test("owners claim permanent public slugs and visitors follow and reload slug li
   await page.setExtraHTTPHeaders({ "X-Forwarded-For": "192.0.2.85" });
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await request.post("/fixture/reset", { data: { billing: false } });
-  await create(page, "Markdown", "slug-cat");
+  await create(page, { format: "Markdown", rowValues: ["slug-cat"] });
   await expectProgress(page, 1, 1);
   const original = page.url();
   const slug = `my-cool-grid-${new URL(original).pathname.split("/").pop()}`;
@@ -66,7 +66,8 @@ test("owners claim permanent public slugs and visitors follow and reload slug li
       const body = await (
         await tab.request.get(`/api/grids/public?page=${publicPage}`)
       ).json();
-      if (body.grids.some((grid: { slug?: string }) => grid.slug === slug)) break;
+      if (body.grids.some((grid: { slug?: string }) => grid.slug === slug))
+        break;
       expect(publicPage * body.pageSize).toBeLessThan(body.total);
     }
     await tab.goto(`/?publicPage=${publicPage}`);
@@ -99,7 +100,7 @@ test("an already public grid can claim a slug after a conflict without changing 
 }) => {
   await page.setExtraHTTPHeaders({ "X-Forwarded-For": "192.0.2.86" });
   await request.post("/fixture/reset", { data: { billing: false } });
-  await create(page, "Markdown", "late-slug-cat");
+  await create(page, { format: "Markdown", rowValues: ["late-slug-cat"] });
   await expectProgress(page, 1, 1);
   const id = new URL(page.url()).pathname.split("/").pop()!;
   const snapshot = await (await page.request.get(`/api/grids/${id}`)).json();

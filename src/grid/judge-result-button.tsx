@@ -1,5 +1,5 @@
 import { Check, LoaderCircle, Scale, X } from "lucide-react";
-import type { GridInput } from "../../server/domain";
+import type { Criterion } from "../../server/judge-criteria";
 import type { ViewGrid } from "../api";
 import { tooltipRef } from "../components/use-tooltip";
 import "./judge-result-button.css";
@@ -15,7 +15,7 @@ export type JudgmentSummary = {
 
 export function summarizeJudgment(
   judge: NonNullable<ViewGrid["cells"][number]["judge"]>,
-  criteria: NonNullable<GridInput["judge"]>["criteria"],
+  criteria: Criterion[],
   gridStatus: ViewGrid["status"],
 ): JudgmentSummary {
   const results =
@@ -118,7 +118,7 @@ export function JudgeResults({
   criteria,
 }: {
   summary: JudgmentSummary;
-  criteria: NonNullable<GridInput["judge"]>["criteria"];
+  criteria: Criterion[];
 }) {
   return (
     <div

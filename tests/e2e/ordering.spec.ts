@@ -18,7 +18,16 @@ test("delayed HTTP snapshots cannot replace newer streamed drafts", async ({
     await context.addCookies([
       { name: f.cookieName, value: f.owner, url: f.origin },
     ]);
-    const grid = f.grid({ rows: { kind: "variable", values: ["cat"] } });
+    const grid = f.grid({
+      caseAxes: ["rows"],
+      parameters: {
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: "Draw $ROW1" }],
+        },
+      },
+      rows: [{ variable: [{ text: "cat" }] }],
+    });
     await f.engine.api.startGrid({ gridId: grid.id, sessionId: f.owner });
     const call = await f.call(0);
     call.write({
@@ -91,7 +100,16 @@ test("late HTTP and reconnected stream snapshots cannot roll back content, think
     await context.addCookies([
       { name: f.cookieName, value: f.owner, url: f.origin },
     ]);
-    const grid = f.grid({ rows: { kind: "variable", values: ["cat"] } });
+    const grid = f.grid({
+      caseAxes: ["rows"],
+      parameters: {
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: "Draw $ROW1" }],
+        },
+      },
+      rows: [{ variable: [{ text: "cat" }] }],
+    });
     const endpoint = `${f.origin}/api/grids/${grid.id}`;
     await f.engine.api.startGrid({ gridId: grid.id, sessionId: f.owner });
     const call = await f.call(0);

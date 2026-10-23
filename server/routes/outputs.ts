@@ -5,7 +5,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MarkdownContent } from "../../shared/markdown.js";
 import { ChatConversation } from "../../shared/chat-conversation.js";
-import { readChatOutput } from "../../shared/chat-output.js";
+import { readChatOutput, withChatImages } from "../../shared/chat-output.js";
 import type { FilledChatMessage } from "../domain.js";
 import type { Store } from "../store.js";
 import type { RateLimiter } from "../rate-limit.js";
@@ -14,6 +14,7 @@ import { downloadFilename } from "../download-filename.js";
 import { canViewGrid } from "../grid-policy.js";
 import type { SessionReader } from "../session.js";
 import { offlineWebsite, offlineWebsitePolicy } from "../offline-website.js";
+import { ReferenceImageUnavailableError } from "../image-references.js";
 
 const markdownFont = readFileSync(
   new URL("../../public/fonts/DejaVuSansMono.woff2", import.meta.url),
@@ -156,11 +157,18 @@ export function createOutputRoutes(
       return res
         .type(mediaType)
         .send(
-          JSON.stringify(readChatOutput(readFileSync(file, "utf8")), null, 2),
+          JSON.stringify(
+            withChatImages(
+              readChatOutput(readFileSync(file, "utf8")),
+              output.messages,
+            ),
+            null,
+            2,
+          ),
         );
     return res.type(mediaType).sendFile(file, { dotfiles: "allow" });
   });
-  app.get("/outputs/:id", (req, res) => {
+  app.get("/outputs/:id", async (req, res) => {
     const id = String(req.params.id);
     if (!rate(`output:${req.ip}`, 2000, 60000)) {
       res.set("Retry-After", "60");
@@ -194,7 +202,10 @@ export function createOutputRoutes(
     }
     const messages: FilledChatMessage[] | undefined =
       output.format === "chat-template"
-        ? readChatOutput(readFileSync(file, "utf8"))
+        ? withChatImages(
+            readChatOutput(readFileSync(file, "utf8")),
+            output.messages,
+          )
         : undefined;
     if (messages && req.query.raw === "1")
       return res
@@ -215,6 +226,34 @@ export function createOutputRoutes(
       "Content-Security-Policy",
       `${res.get("Content-Security-Policy")}; font-src data:`,
     );
+    const imageSources = new Map<string, string>();
+    if (messages) {
+      const load = store.references.loader();
+      const ids = new Set(
+        messages.flatMap(
+          (message) => message.images?.map((image) => image.id) ?? [],
+        ),
+      );
+      const encoded = new Map<string, string>();
+      await Promise.all(
+        [...ids].map(async (id) => {
+          let reference;
+          try {
+            reference = (await load([id])).get(id)!;
+          } catch (error) {
+            if (!(error instanceof ReferenceImageUnavailableError)) throw error;
+            imageSources.set(id, `/api/references/${encodeURIComponent(id)}`);
+            return;
+          }
+          let source = encoded.get(reference.sha256);
+          if (!source) {
+            source = `data:${reference.mediaType};base64,${reference.bytes.toString("base64")}`;
+            encoded.set(reference.sha256, source);
+          }
+          imageSources.set(id, source);
+        }),
+      );
+    }
     return res.type("html").send(
       `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>
         @font-face{font-family:"Slopgrid Mono";src:url(data:font/woff2;base64,${markdownFont}) format("woff2");font-display:block}
@@ -228,7 +267,7 @@ export function createOutputRoutes(
         hr,th,td{border-color:light-dark(#d1cabd,#45423e)}
         img{max-width:100%}
         ${messages ? conversationStyle : ""}
-      </style></head><body>${renderToStaticMarkup(messages ? createElement(ChatConversation, { messages }) : createElement(MarkdownContent, { markdown: readFileSync(file, "utf8") }))}</body></html>`,
+      </style></head><body>${renderToStaticMarkup(messages ? createElement(ChatConversation, { messages, imageSource: (image) => imageSources.get(image.id)!, showImageLoader: false }) : createElement(MarkdownContent, { markdown: readFileSync(file, "utf8") }))}</body></html>`,
     );
   });
   return app;

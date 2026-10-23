@@ -10,7 +10,16 @@ for (const size of [1024, 1024 * 1024]) {
     context,
   }, testInfo) => {
     const f = await runtimeFixture();
-    const grid = f.grid({ rows: { kind: "variable", values: ["cat"] } });
+    const grid = f.grid({
+      caseAxes: ["rows"],
+      parameters: {
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: "Draw $ROW1" }],
+        },
+      },
+      rows: [{ variable: [{ text: "cat" }] }],
+    });
     const initial = await f.engine.api.getGrid(grid.id);
     let current: GenerationSnapshot = {
       ...initial,

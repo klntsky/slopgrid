@@ -1,233 +1,370 @@
 import type { ReactNode } from "react";
-import { tooltipRef } from "../components/use-tooltip";
-import { Check, TriangleAlert } from "lucide-react";
-import { expandGrid, type GridInput } from "../../server/domain";
-import { imageKinds } from "../../server/image-settings";
-import {
-  effortLabel,
-  thinkingEffortSupport,
-  imageSettingsSupport,
-  imageParameterNames,
-  combinationSupport,
-  type Compatibility,
-} from "../../server/compatibility";
-import type { ModelInfo } from "../../server/model-catalog";
+import { Check, CircleHelp, TriangleAlert } from "lucide-react";
+import type { GridInput } from "../../server/domain";
+import type {
+  CompatibilityOrigin,
+  CompatibilityParameter,
+  GridCompatibilityIssue,
+  GridCompatibilityAnalysis,
+} from "../../server/grid-compatibility";
+import { dimensionNames } from "../format";
 import { modelCatalog } from "../model-catalog";
+import { effortLabel } from "../../server/compatibility";
+import { tooltipRef } from "../components/use-tooltip";
+import { ErrorMessage, WarningMessage } from "../components/feedback-message";
 
-type Props = { input: GridInput; models: readonly ModelInfo[] };
 export type CompatibilityTables = Partial<
-  Record<GridInput["rows"]["kind"], ReactNode>
+  Record<CompatibilityParameter, ReactNode>
 >;
+
+const parameterNames: Record<CompatibilityParameter, string> = {
+  ...dimensionNames,
+  judge_criteria: "Judge criteria",
+  variable: "Prompt variable",
+  input: "Input",
+};
+
+function matchesOrigin(
+  origin: CompatibilityOrigin,
+  selected: CompatibilityOrigin,
+) {
+  return (
+    origin.parameter === selected.parameter &&
+    origin.source === selected.source &&
+    (selected.caseIndex === undefined ||
+      origin.caseIndex === selected.caseIndex) &&
+    (selected.fieldIndex === undefined ||
+      origin.fieldIndex === selected.fieldIndex) &&
+    (selected.messageIndex === undefined ||
+      origin.messageIndex === selected.messageIndex)
+  );
+}
+
+function sourceLabel(origin: CompatibilityOrigin) {
+  const source =
+    origin.source === "common"
+      ? "Common"
+      : origin.source === "rows"
+        ? "Row"
+        : "Column";
+  const caseLabel =
+    origin.caseIndex === undefined ? "" : ` case ${origin.caseIndex + 1}`;
+  const fieldLabel =
+    origin.fieldIndex === undefined
+      ? ""
+      : `, $${origin.source === "rows" ? "ROW" : "COLUMN"}${origin.fieldIndex + 1}`;
+  const messageLabel =
+    origin.messageIndex === undefined ? "" : ` ${origin.messageIndex + 1}`;
+  return `${source}${caseLabel}: ${parameterNames[origin.parameter]}${messageLabel}${fieldLabel}`;
+}
 
 export function compatibilityTables({
   input,
-  models,
-}: Props): CompatibilityTables {
-  const axes = [input.rows, input.columns];
-  const judgeModels = (
-    axes.find((axis) => axis.kind === "judge_model")?.values ?? [
-      input.judge?.model ?? "",
-    ]
-  )
-    .filter(Boolean)
-    .map((id) => ({
-      id,
-      info: modelCatalog.find((model) => model.id === id),
-    }));
-  const judgeEfforts = (
-    axes.find((axis) => axis.kind === "judge_effort")?.values ?? [
-      input.judge?.effort ?? "default",
-    ]
-  ).filter((effort) => effort !== "default");
-  const judgeCompatibility = input.judge
-    ? {
-        judge_effort: (
-          <CompatibilityGrid
-            caption="Judge thinking effort compatibility"
-            rows={judgeModels.map(({ id, info }) => info?.name ?? id)}
-            columns={judgeEfforts.map(effortLabel)}
-            cells={judgeModels.map(({ info }) =>
-              judgeEfforts.map((effort) => ({
-                support: thinkingEffortSupport(info, effort),
-              })),
-            )}
-          />
-        ),
-      }
-    : {};
-  const selectedModels = [
-    ...new Set(
-      axes.find((axis) => axis.kind === "model")?.values ??
-        [input.model].filter(Boolean),
+  issues,
+  cells,
+  source = "common",
+}: {
+  input: GridInput;
+  issues: readonly GridCompatibilityIssue[];
+  cells: GridCompatibilityAnalysis["cells"];
+  source?: CompatibilityOrigin["source"];
+}): CompatibilityTables {
+  const parameters = new Set(
+    issues.flatMap((issue) =>
+      issue.origins
+        .filter((origin) => origin.source === source)
+        .map((origin) => origin.parameter),
     ),
-  ].map((id) => ({ id, info: models.find((model) => model.id === id) }));
-  const modelNames = selectedModels.map(({ id, info }) => info?.name ?? id);
-  if (input.format !== "image") {
-    const efforts = (
-      axes.find((axis) => axis.kind === "effort")?.values ?? [input.effort]
-    ).filter((effort) => effort !== "default");
-    return {
-      ...judgeCompatibility,
-      effort: (
-        <CompatibilityGrid
-          caption="Thinking effort compatibility"
-          rows={modelNames}
-          columns={efforts.map(effortLabel)}
-          cells={selectedModels.map(({ info }) =>
-            efforts.map((effort) => ({
-              support: thinkingEffortSupport(info, effort),
-            })),
-          )}
+  );
+  return Object.fromEntries(
+    [...parameters].map((parameter) => [
+      parameter,
+      isMatrixParameter(parameter) ? (
+        <ParameterCompatibilityGrid
+          key={parameter}
+          input={input}
+          issues={issues}
+          cells={cells}
+          parameter={parameter}
+          origin={{ parameter, source }}
+        />
+      ) : (
+        <CompatibilityFeedback
+          key={parameter}
+          input={input}
+          issues={issues}
+          origin={{ parameter, source }}
         />
       ),
-    };
-  }
-  // Unfilled unrelated axes do not hide compatibility for settings already chosen.
-  const expanded = expandGrid({
-    ...input,
-    rows: {
-      ...input.rows,
-      values: input.rows.values.length ? input.rows.values : [""],
-    },
-    columns: {
-      ...input.columns,
-      values: input.columns.values.length ? input.columns.values : [""],
-    },
-  }).map((cell) => ({
-    ...cell,
-    compatibility: imageSettingsSupport(
-      models
-        .find((model) => model.id === cell.model)
-        ?.imageEndpoints?.map((endpoint) => endpoint.supported_parameters),
-      cell.imageSettings ?? {},
-    ),
-  }));
-  return {
-    ...judgeCompatibility,
-    ...Object.fromEntries(
-      imageKinds.map((kind) => {
-        const side =
-          input.rows.kind === kind
-            ? "rows"
-            : input.columns.kind === kind
-              ? "columns"
-              : undefined;
-        const values = side
-          ? input[side].values
-          : [
-              kind === "input_references"
-                ? `${input.inputReferences?.length ?? 0} images`
-                : input.imageSettings?.[kind] || "auto",
-            ];
-        const cells = selectedModels.map(({ id }) =>
-          values.map((value) => {
-            const matches = expanded
-              .filter(
-                (cell) =>
-                  cell.model === id &&
-                  (!side ||
-                    input[side].values[
-                      side === "rows" ? cell.row : cell.column
-                    ] === value),
-              )
-              .map((cell) => cell.compatibility.parameters[kind]);
-            const support = matches.length
-              ? combinationSupport(matches.map((cell) => cell.support))
-              : "unknown";
-            return {
-              support,
-              reason:
-                [
-                  ...new Set(
-                    matches
-                      .filter((cell) => cell.support === support)
-                      .map((cell) => cell.reason)
-                      .filter(Boolean),
-                  ),
-                ].join("\n") || undefined,
-            } as Compatibility;
-          }),
-        );
-        return [
-          kind,
-          <CompatibilityGrid
-            key={kind}
-            caption={`${imageParameterNames[kind]} compatibility`}
-            rows={modelNames}
-            columns={values.map((value) => (value === "auto" ? "Auto" : value))}
-            cells={cells}
-          />,
-        ];
-      }),
-    ),
-  };
+    ]),
+  );
 }
 
-function CompatibilityGrid({
-  caption,
-  rows,
-  columns,
-  cells,
+export function CompatibilityFeedback({
+  input,
+  issues,
+  origin,
 }: {
-  caption: string;
-  rows: string[];
-  columns: string[];
-  cells: Compatibility[][];
+  input: GridInput;
+  issues: readonly GridCompatibilityIssue[];
+  origin: CompatibilityOrigin;
 }) {
-  if (!cells.some((row) => row.some((cell) => cell.support === "unsupported")))
+  const matching = issues.filter((issue) =>
+    issue.origins.some((source) => matchesOrigin(source, origin)),
+  );
+  if (
+    !matching.some((issue) => issue.support === "unsupported" || issue.blocking)
+  )
     return null;
+  if (origin.caseIndex !== undefined) {
+    const reasons = new Map<string, boolean>();
+    for (const issue of matching)
+      reasons.set(issue.reason, issue.blocking || !!reasons.get(issue.reason));
+    return (
+      <>
+        {[...reasons].map(([reason, blocking]) =>
+          blocking ? (
+            <ErrorMessage key={reason}>{reason}</ErrorMessage>
+          ) : (
+            <WarningMessage key={reason}>{reason}</WarningMessage>
+          ),
+        )}
+      </>
+    );
+  }
+  const caption = `${sourceLabel(origin)} compatibility`;
+  function caseLabel(side: "rows" | "columns", index: number) {
+    return input[side].length ? `Case ${index + 1}` : "Not selected (preview)";
+  }
   return (
     <div className="compatibility-table-scroll">
       <table className="compatibility-table">
         <caption>{caption}</caption>
         <thead>
           <tr>
+            <th scope="col">Row</th>
+            <th scope="col">Column</th>
+            <th scope="col">Parameters</th>
+            <th scope="col">Support</th>
+            <th scope="col">Reason</th>
+          </tr>
+        </thead>
+        <tbody>
+          {matching.map((issue, index) => {
+            const status =
+              issue.support === "unknown" ? "Support unknown" : "Unsupported";
+            return (
+              <tr key={index}>
+                <th scope="row">{caseLabel("rows", issue.row)}</th>
+                <td>{caseLabel("columns", issue.column)}</td>
+                <td>{issue.origins.map(sourceLabel).join("; ")}</td>
+                <td
+                  data-support={issue.support}
+                  aria-label={`Row ${issue.row + 1} / Column ${issue.column + 1}: ${status}`}
+                >
+                  {issue.support === "unknown" ? (
+                    <CircleHelp aria-hidden="true" />
+                  ) : (
+                    <TriangleAlert
+                      className="compatibility-warning"
+                      aria-hidden="true"
+                    />
+                  )}
+                  {status}
+                </td>
+                <td>{issue.reason}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+type MatrixParameter =
+  | "effort"
+  | "judge_effort"
+  | "size"
+  | "aspect_ratio"
+  | "quality"
+  | "background";
+
+function isMatrixParameter(
+  parameter: CompatibilityParameter,
+): parameter is MatrixParameter {
+  return (
+    parameter === "effort" ||
+    parameter === "judge_effort" ||
+    parameter === "size" ||
+    parameter === "aspect_ratio" ||
+    parameter === "quality" ||
+    parameter === "background"
+  );
+}
+
+function ParameterCompatibilityGrid({
+  input,
+  issues,
+  cells,
+  parameter,
+  origin,
+}: {
+  input: GridInput;
+  issues: readonly GridCompatibilityIssue[];
+  cells: GridCompatibilityAnalysis["cells"];
+  parameter: MatrixParameter;
+  origin: CompatibilityOrigin;
+}) {
+  const matching = issues.filter((issue) =>
+    issue.origins.some((source) => matchesOrigin(source, origin)),
+  );
+  if (
+    !matching.some((issue) => issue.support === "unsupported" || issue.blocking)
+  )
+    return null;
+  const judged = parameter === "judge_effort";
+  function value(cell: GridCompatibilityAnalysis["cells"][number]) {
+    if (parameter === "effort") return cell.effort;
+    if (parameter === "judge_effort") return cell.judge?.effort ?? "default";
+    return cell.imageSettings?.[parameter] || "auto";
+  }
+  const relevant = cells.filter(
+    (cell) =>
+      origin.caseIndex === undefined ||
+      (origin.source === "rows" ? cell.row : cell.column) === origin.caseIndex,
+  );
+  const observations = new Map<
+    string,
+    Map<string, GridCompatibilityAnalysis["cells"]>
+  >();
+  const selectedValues = new Set<string>();
+  for (const cell of relevant) {
+    const model = judged ? (cell.judge?.model ?? "") : cell.model;
+    const entry = value(cell);
+    let row = observations.get(model);
+    if (!row) observations.set(model, (row = new Map()));
+    const group = row.get(entry);
+    if (group) group.push(cell);
+    else row.set(entry, [cell]);
+    selectedValues.add(entry);
+  }
+  const values = [...selectedValues].filter(
+    (entry) =>
+      !(
+        (parameter === "effort" || parameter === "judge_effort") &&
+        entry === "default"
+      ),
+  );
+  if (!values.length) return null;
+  const byCell = new Map<string, GridCompatibilityIssue[]>();
+  for (const issue of matching) {
+    const key = `${issue.row}:${issue.column}`;
+    const group = byCell.get(key);
+    if (group) group.push(issue);
+    else byCell.set(key, [issue]);
+  }
+  const label = (entry: string) =>
+    parameter === "effort" || parameter === "judge_effort"
+      ? effortLabel(entry)
+      : entry === "auto"
+        ? "Auto"
+        : entry;
+  return (
+    <div className="compatibility-table-scroll">
+      <table className="compatibility-table">
+        <caption>{parameterNames[parameter]} compatibility</caption>
+        <thead>
+          <tr>
             <th scope="col">Model</th>
-            {columns.map((label, index) => (
-              <th scope="col" key={index}>
-                {label}
+            {values.map((entry) => (
+              <th scope="col" key={entry}>
+                {label(entry)}
               </th>
             ))}
           </tr>
         </thead>
         <tbody>
-          {rows.map((label, row) => (
-            <tr key={row}>
-              <th scope="row">{label}</th>
-              {columns.map((value, column) => {
-                const { support, reason } = cells[row][column];
-                const status =
-                  support === "supported"
-                    ? "Supported"
-                    : support === "unknown"
-                      ? "Support unknown"
-                      : "Unsupported";
-                return (
-                  <td
-                    key={column}
-                    data-support={support}
-                    aria-label={`${label} / ${value}: ${status}`}
-                    data-tooltip={
-                      support === "supported" ? undefined : (reason ?? status)
-                    }
-                    ref={support === "supported" ? undefined : tooltipRef}
-                    tabIndex={support === "supported" ? undefined : 0}
-                  >
-                    {support === "supported" && <Check aria-hidden="true" />}
-                    {support === "unknown" && (
-                      <span aria-hidden="true">❓</span>
-                    )}
-                    {support === "unsupported" && (
-                      <TriangleAlert
-                        className="compatibility-warning"
-                        aria-hidden="true"
-                      />
-                    )}
-                  </td>
-                );
-              })}
-            </tr>
-          ))}
+          {[...observations].map(([model, row]) => {
+            const name =
+              modelCatalog.find((entry) => entry.id === model)?.name ??
+              (model || "Not selected (preview)");
+            return (
+              <tr key={model}>
+                <th scope="row">{name}</th>
+                {values.map((entry) => {
+                  const observed = row.get(entry) ?? [];
+                  const outcomes = new Set(
+                    observed.map((cell) => {
+                      const found =
+                        byCell.get(`${cell.row}:${cell.column}`) ?? [];
+                      return found.some(
+                        (issue) => issue.support === "unsupported",
+                      )
+                        ? "unsupported"
+                        : found.length
+                          ? "unknown"
+                          : "supported";
+                    }),
+                  );
+                  const support = !observed.length
+                    ? "unused"
+                    : outcomes.size > 1
+                      ? "mixed"
+                      : [...outcomes][0];
+                  const status =
+                    support === "supported"
+                      ? "Supported"
+                      : support === "unsupported"
+                        ? "Unsupported"
+                        : support === "unknown"
+                          ? "Support unknown"
+                          : support === "mixed"
+                            ? "Mixed support"
+                            : "Not used";
+                  const details =
+                    support === "supported"
+                      ? undefined
+                      : support === "unused"
+                        ? "This combination is not used by any cell."
+                        : observed
+                            .map((cell) => {
+                              const found =
+                                byCell.get(`${cell.row}:${cell.column}`) ?? [];
+                              return `Row ${cell.row + 1}, column ${cell.column + 1}: ${found.map((issue) => issue.reason).join(" ") || "Supported."}`;
+                            })
+                            .join("\n");
+                  return (
+                    <td
+                      key={entry}
+                      data-support={support}
+                      aria-label={`${name} / ${label(entry)}: ${status}`}
+                      data-tooltip={
+                        support === "supported" ? undefined : details
+                      }
+                      ref={support === "supported" ? undefined : tooltipRef}
+                      tabIndex={support === "supported" ? undefined : 0}
+                    >
+                      {support === "supported" ? (
+                        <Check aria-hidden="true" />
+                      ) : support === "mixed" ? (
+                        <span>Mixed</span>
+                      ) : support === "unsupported" ? (
+                        <TriangleAlert
+                          className="compatibility-warning"
+                          aria-hidden="true"
+                        />
+                      ) : support === "unknown" ? (
+                        <CircleHelp aria-hidden="true" />
+                      ) : (
+                        <span aria-hidden="true">-</span>
+                      )}
+                    </td>
+                  );
+                })}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

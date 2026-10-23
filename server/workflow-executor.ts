@@ -2,16 +2,15 @@ import { join } from "node:path";
 import type {
   GenerationOutput,
   GenerationTask,
-  GridInput,
   WorkflowTask,
 } from "./domain.js";
 import type { Store } from "./store.js";
 import type { Provider } from "./provider.js";
 import { generateAttempt } from "./generation-attempt.js";
-import { prepareJudgeInference } from "./judge.js";
-import { loadJudgeArtifact, releaseJudgeArtifact } from "./judge-artifact.js";
+import { loadJudgeMessages, releaseJudgeArtifact } from "./judge-artifact.js";
 import { WebsitePreviews } from "./website-previews.js";
 import { token } from "./ids.js";
+import { referenceIds } from "./image-settings.js";
 
 export type WorkflowExecutionContext = {
   key?: string;
@@ -54,20 +53,24 @@ export function createWorkflowExecutor(store: Store, provider: Provider) {
         const generation = context.generation(task.generationId);
         if (!generation?.output)
           throw new Error("The generated output is unavailable for judging.");
-        const artifact = await context.retryStorage(() =>
-          loadJudgeArtifact(store, generation, context.signal),
+        const ids = [
+          ...new Set([
+            ...referenceIds(generation.input),
+            ...(task.input.images?.map((image) => image.id) ?? []),
+          ]),
+        ];
+        const references = ids.length
+          ? await context.retryStorage(() => store.references.loader()(ids))
+          : undefined;
+        const messages = await context.retryStorage(() =>
+          loadJudgeMessages(store, generation, context.signal, references),
         );
         context.signal.throwIfAborted();
         if (!context.current()) throw new DOMException("Paused", "AbortError");
         const result = await provider.judge(
           context.key,
-          prepareJudgeInference({
-            format: generation.input.format,
-            model: task.input.model,
-            effort: task.input.effort as GridInput["effort"],
-            criteria: task.input.criteria.map((criterion) => criterion.text),
-            artifact,
-          }),
+          task.input,
+          messages,
           {
             signal: context.signal,
             observe: store.billing.observe(context.cellId, context.attemptId, {
@@ -76,15 +79,16 @@ export function createWorkflowExecutor(store: Store, provider: Provider) {
             }),
             beforeRequest: context.beforeRequest,
           },
+          references,
         );
         return () => ({ results: result.results });
       }
       const artifactId = token();
       const thinkingId = token();
-      const references = store.references.loader();
-      const inputReferences = await references(
-        task.input.imageSettings?.input_references ?? [],
-      );
+      const ids = referenceIds(task.input);
+      const inputReferences = ids.length
+        ? await store.references.loader()(ids)
+        : undefined;
       context.signal.throwIfAborted();
       if (!context.current()) throw new DOMException("Paused", "AbortError");
       const result = await generateAttempt(

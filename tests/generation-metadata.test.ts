@@ -9,7 +9,9 @@ test(
   async () => {
     const f = await runtimeFixture();
     try {
-      const grid = f.grid({ rows: { kind: "variable", values: ["cat"] } });
+      const grid = f.grid({
+        rows: [{ variable: [{ text: "cat" }] }],
+      });
       await f.engine.api.startGrid({ gridId: grid.id, sessionId: f.owner });
       const call = await f.call(0);
       call.write({ content: "First. ", reasoning: "Thinking. " });
@@ -92,7 +94,9 @@ test(
     const f = await runtimeFixture();
     try {
       for (let iteration = 0; iteration < 6; iteration++) {
-        const grid = f.grid({ rows: { kind: "variable", values: ["cat"] } });
+        const grid = f.grid({
+          rows: [{ variable: [{ text: "cat" }] }],
+        });
         const firstCall = f.calls.length;
         await f.engine.api.startGrid({ gridId: grid.id, sessionId: f.owner });
         const failed = await f.call(firstCall);

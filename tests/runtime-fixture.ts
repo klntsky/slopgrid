@@ -6,10 +6,15 @@ import { join } from "node:path";
 import express from "express";
 import { startGenerationFixture } from "./generation-fixture.js";
 import { Store } from "../server/store.js";
-import { expandGrid, type GridInput, type Grid } from "../server/domain.js";
+import { expandGrid, type Grid } from "../server/domain.js";
 import { token } from "../server/ids.js";
 import { webFixture } from "./web-fixture.js";
 import { seedTestDatabase } from "./database-fixture.js";
+import { validatedGrid } from "./grid-storage-fixture.js";
+import {
+  currentInput,
+  type CurrentGridOverrides,
+} from "./current-grid-fixture.js";
 
 export type CapturedRequest = {
   model: string;
@@ -61,9 +66,27 @@ export async function kill(child: ChildProcess) {
   await exited;
 }
 
+type RuntimeCatalog = {
+  data: {
+    id: string;
+    name: string;
+    alias_target?: { slug: string };
+    pricing: { prompt: string; completion: string };
+    context_length: number;
+    top_provider: { max_completion_tokens: number };
+    architecture: { input_modalities: string[]; output_modalities: string[] };
+    supported_parameters: string[];
+  }[];
+};
+
 /** Real service processes with a controllable external HTTP provider. */
 export async function runtimeFixture(
-  options: { workers?: number; judges?: boolean; images?: boolean } = {},
+  options: {
+    workers?: number;
+    judges?: boolean;
+    images?: boolean;
+    configureCatalog?: (catalog: RuntimeCatalog) => void;
+  } = {},
 ) {
   const directory = mkdtempSync(join(tmpdir(), "slopgrid-runtime-"));
   const database = join(directory, "app.sqlite"),
@@ -74,18 +97,7 @@ export async function runtimeFixture(
   store.saveSession({ id: owner, key: "manual-test-key", created: Date.now() });
   const upstream = express();
   upstream.use(express.json());
-  const catalog: {
-    data: {
-      id: string;
-      name: string;
-      alias_target?: { slug: string };
-      pricing: { prompt: string; completion: string };
-      context_length: number;
-      top_provider: { max_completion_tokens: number };
-      architecture: { input_modalities: string[]; output_modalities: string[] };
-      supported_parameters: string[];
-    }[];
-  } = {
+  const catalog: RuntimeCatalog = {
     data: [
       {
         id: "fixture/text",
@@ -117,6 +129,8 @@ export async function runtimeFixture(
         : []),
     ],
   };
+  // Seed catalog variations before either service can cache the model list.
+  options.configureCatalog?.(catalog);
   const credits = { total_credits: 100, total_usage: 0 };
   upstream.get("/models", (_req, res) => res.json(catalog));
   upstream.get("/images/models", (_req, res) =>
@@ -277,7 +291,6 @@ export async function runtimeFixture(
   async function startWeb(socket = database + ".sock") {
     await web?.close();
     web = await webFixture({
-      directory,
       database,
       socket,
       secret,
@@ -348,18 +361,31 @@ export async function runtimeFixture(
         },
         body: body === undefined ? undefined : JSON.stringify(body),
       }),
-    grid(overrides: Partial<GridInput> = {}) {
-      const input: GridInput = {
-        format: "markdown",
-        prompt: "Draw $ROW",
-        rows: { kind: "variable", values: ["cat", "dog"] },
-        columns: { kind: "model", values: ["fixture/text"] },
-        model: "",
-        effort: "none",
-        budgetUsd: 0.1,
-        parallelWorkers: 1,
-        ...overrides,
-      };
+    grid(overrides: CurrentGridOverrides = {}) {
+      // A complete current definition must not inherit this helper's variable axis.
+      const input =
+        overrides.inputVersion === 3
+          ? currentInput(overrides)
+          : currentInput({
+              caseAxes: ["rows"],
+              rows: [
+                { variable: [{ text: "cat" }] },
+                { variable: [{ text: "dog" }] },
+              ],
+              columns: [{ model: "fixture/text" }],
+              budgetUsd: 0.1,
+              parallelWorkers: 1,
+              ...overrides,
+              parameters: {
+                input: {
+                  kind: "common",
+                  value: [{ role: "user", content: "Draw $ROW1" }],
+                },
+                model: { kind: "columns" },
+                effort: { kind: "common", value: "none" },
+                ...overrides.parameters,
+              },
+            });
       const grid: Grid = {
         id: token(),
         owner,
@@ -370,7 +396,7 @@ export async function runtimeFixture(
         createdAt: new Date().toISOString(),
         cells: expandGrid(input).map((c) => ({ ...c, id: token() })),
       };
-      store.insert(grid);
+      store.insert(validatedGrid(grid));
       return grid;
     },
     call: (index: number) => until(() => calls[index], Boolean),

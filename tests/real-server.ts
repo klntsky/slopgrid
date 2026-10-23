@@ -12,7 +12,6 @@ const generation = await startGenerationFixture({
   secret,
 });
 const web = await webFixture({
-  directory: data,
   port,
   database: join(data, "app.sqlite"),
   secret,

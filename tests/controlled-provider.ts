@@ -6,7 +6,7 @@ import type {
   InferenceProgress,
 } from "../server/domain.js";
 import type { CallObserver } from "../server/billing.js";
-import type { ReferenceContent } from "../server/image-references.js";
+import type { ReferenceInputs } from "../server/image-references.js";
 
 type Result = Awaited<ReturnType<Provider["generate"]>>;
 export class ControlledProvider extends Provider {
@@ -30,7 +30,7 @@ export class ControlledProvider extends Provider {
     onChunk: (progress: InferenceProgress) => void,
     signal?: AbortSignal,
     _observe?: CallObserver,
-    _references?: ReferenceContent[],
+    _references?: ReferenceInputs,
     _beforeRequest?: () => Promise<void>,
     taskId?: string,
   ): Promise<Result> {

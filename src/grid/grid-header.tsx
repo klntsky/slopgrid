@@ -24,6 +24,7 @@ export function GridHeader({
   onAction: (action: "retry" | "pause") => void;
   onConfigure: () => void;
 }) {
+  const canConfigure = g.canConfigure ?? (g.canEdit || g.published);
   const complete = g.cells.filter((c) => c.status === "complete").length,
     failed = g.cells.filter((c) => c.status === "error").length,
     finished = complete + failed,
@@ -101,20 +102,32 @@ export function GridHeader({
           )}
           <div className="actions">
             {(g.canEdit || g.published) && (
-              <button
-                className="secondary inference-toggle"
-                disabled={busy}
-                onClick={onConfigure}
-                aria-label={g.published ? "FORK" : "EDIT"}
-                data-tooltip={g.published ? "Fork grid" : "Edit grid"}
+              <span
+                tabIndex={!canConfigure ? 0 : undefined}
+                data-tooltip={
+                  canConfigure
+                    ? g.published
+                      ? "Fork grid"
+                      : "Edit grid"
+                    : "This grid's configuration format is not supported by the current editor. Its outputs remain available."
+                }
                 ref={tooltipRef}
               >
-                {g.published ? (
-                  <GitBranch aria-hidden="true" />
-                ) : (
-                  <Pencil aria-hidden="true" />
-                )}
-              </button>
+                <button
+                  className="secondary inference-toggle"
+                  disabled={busy || !canConfigure}
+                  onClick={() => {
+                    if (canConfigure) onConfigure();
+                  }}
+                  aria-label={g.published ? "FORK" : "EDIT"}
+                >
+                  {g.published ? (
+                    <GitBranch aria-hidden="true" />
+                  ) : (
+                    <Pencil aria-hidden="true" />
+                  )}
+                </button>
+              </span>
             )}
             {g.canEdit &&
               (!g.published || g.visibility === "unlisted" || !g.slug) && (

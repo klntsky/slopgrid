@@ -2,6 +2,7 @@ import { ownsGrid, publicationError } from "./grid-policy.js";
 import { hasCompletedOutput, type Grid, type Identity } from "./domain.js";
 import type { Store, Session } from "./store.js";
 import type { GenerationSnapshot } from "./generation-api.js";
+import { gridDisplay } from "../shared/grid-display.js";
 
 export function presentIdentity(user?: Identity): Identity | null {
   return user
@@ -23,10 +24,14 @@ export function createGridPresenter(store: Store, origin: URL) {
   const snapshot = (g: GenerationSnapshot, s: Session) => {
     const { owner: _owner, ownerUserId: _ownerUserId, spentUsd, ...grid } = g;
     const canEdit = ownsGrid(g, s);
+    const input = store.references.input(g.input);
     return {
       ...grid,
+      input,
       author: gridAuthor(g, store),
       canEdit,
+      canConfigure: canEdit || g.published,
+      display: gridDisplay(input),
       canPublish: canEdit && !publicationError(g, "public"),
       spentUsd: canEdit ? spentUsd : undefined,
       cells: g.cells.map((c) => ({
@@ -57,7 +62,12 @@ export function createGridPresenter(store: Store, origin: URL) {
         thinkingURL: c.thinkingId
           ? `/outputs/${c.id}/thinking/${c.thinkingId}`
           : undefined,
-        draft: g.input.format === "html" ? undefined : c.draft,
+        draft:
+          g.input.format === "html"
+            ? undefined
+            : g.input.format === "chat-template"
+              ? store.references.draft(c.draft)
+              : c.draft,
         previewURL:
           g.input.format === "html" && c.status === "running" && c.preview
             ? `${origin.origin}/outputs/${c.id}/website?path=${encodeURIComponent(`__preview/${c.preview.attempt}/index.html`)}&revision=${c.preview.revision}`

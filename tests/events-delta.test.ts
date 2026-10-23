@@ -64,7 +64,9 @@ test(
       };
     }
     try {
-      const grid = f.grid({ rows: { kind: "variable", values: ["cat"] } });
+      const grid = f.grid({
+        rows: [{ variable: [{ text: "cat" }] }],
+      });
       await f.engine.api.startGrid({ gridId: grid.id, sessionId: f.owner });
       const call = await f.call(0);
       const prefix = "Previous output and thinking. ".repeat(10000);

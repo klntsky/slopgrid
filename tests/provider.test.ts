@@ -4,8 +4,18 @@ import { createServer } from "node:http";
 import { once } from "node:events";
 import { Provider } from "../server/provider.js";
 import { generateAttempt } from "../server/generation-attempt.js";
+import {
+  inferenceSignature,
+  templateSignature,
+} from "../server/prepared-inference.js";
+import { createHash } from "node:crypto";
 import { failureDetails } from "../server/failures.js";
-import type { Cell, InferenceProgress } from "../server/domain.js";
+import {
+  expandGrid,
+  type Cell,
+  type InferenceProgress,
+} from "../server/domain.js";
+import { currentInput } from "./current-grid-fixture.js";
 
 async function upstream(streamError?: Record<string, unknown>) {
   const requests: Record<string, unknown>[] = [];
@@ -45,7 +55,10 @@ async function upstream(streamError?: Record<string, unknown>) {
           },
     context_length: 1000000,
     top_provider: { max_completion_tokens: 128000 },
-    architecture: { input_modalities: ["text"], output_modalities: ["text"] },
+    architecture: {
+      input_modalities: m.id === "all" ? ["text", "image"] : ["text"],
+      output_modalities: ["text"],
+    },
   }));
   const server = createServer(async (req, res) => {
     if (req.url === "/models" || req.url === "/images/models") {
@@ -112,7 +125,9 @@ async function upstream(streamError?: Record<string, unknown>) {
             content,
           })),
         })
-      : "# Output";
+      : JSON.stringify(request.messages).includes("SVG generation request")
+        ? '<svg xmlns="http://www.w3.org/2000/svg"><text>Output</text></svg>'
+        : "# Output";
     res.write(
       `data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: { reasoning: "Private reasoning before the answer." }, finish_reason: null }] })}\n\n`,
     );
@@ -171,6 +186,175 @@ function cell(model: string, effort: string): Cell {
     status: "running",
   };
 }
+
+test("non-chat prompt images preserve output instructions and text-only requests", async () => {
+  const h = await upstream();
+  const bytes = Buffer.from("prompt image");
+  const references = new Map([
+    [
+      "input",
+      {
+        bytes,
+        mediaType: "image/png",
+        sha256: createHash("sha256").update(bytes).digest("hex"),
+      },
+    ],
+  ]);
+  try {
+    const instructionPatterns = {
+      markdown: /markdown/i,
+      svg: /<svg\b/,
+      html: /JSON[\s\S]*index\.html/i,
+    };
+    for (const format of ["markdown", "svg", "html"] as const) {
+      for (const prompt of ["Describe the shape.", ""]) {
+        const input = currentInput({
+          format,
+          parameters: {
+            input: {
+              kind: "common",
+              value: [
+                {
+                  role: "user",
+                  content: prompt,
+                  images: [{ id: "input", name: "shape.png" }],
+                },
+              ],
+            },
+            model: { kind: "rows" },
+            effort: { kind: "columns" },
+          },
+          rows: [{ model: "all" }],
+          columns: [{ effort: "default" }],
+          budgetUsd: 5,
+        });
+        const parameters = {
+          ...cell("all", "default"),
+          ...expandGrid(input)[0],
+        };
+        const prepared = await h.provider.prepare(
+          format,
+          parameters,
+          references,
+        );
+        if (prepared.format === "image")
+          throw new Error("Expected text preparation");
+        assert.match(prepared.text.system, instructionPatterns[format]);
+        const result = await h.provider.generate(
+          "key",
+          format,
+          parameters,
+          () => {},
+          undefined,
+          undefined,
+          references,
+        );
+        const output =
+          result.files[
+            format === "html"
+              ? "index.html"
+              : format === "svg"
+                ? "index.svg"
+                : "index.md"
+          ];
+        if (format === "svg")
+          assert.match(String(output), /<svg\b[\s\S]*<text>Output<\/text>/);
+        else
+          assert.equal(
+            output,
+            format === "html" ? "<h1>Output</h1>" : "# Output",
+          );
+        const request = h.requests.at(-1)!;
+        assert.deepEqual(request.modalities, ["text"]);
+        const messages = request.messages as {
+          role: string;
+          content:
+            | string
+            | { type: string; text?: string; image_url?: { url: string } }[];
+        }[];
+        assert.equal(messages[0].role, "system");
+        assert.match(
+          typeof messages[0].content === "string"
+            ? messages[0].content
+            : messages[0].content.map((part) => part.text ?? "").join(""),
+          instructionPatterns[format],
+        );
+        assert.equal(messages[1].role, "user");
+        assert.ok(Array.isArray(messages[1].content));
+        assert.deepEqual(
+          messages[1].content.flatMap((part) =>
+            part.type === "image_url" ? [part.image_url!.url] : [],
+          ),
+          [`data:image/png;base64,${bytes.toString("base64")}`],
+        );
+        assert.equal(
+          messages[1].content.map((part) => part.text ?? "").join(""),
+          parameters.prompt,
+        );
+        assert.equal(JSON.stringify(request).includes("shape.png"), false);
+      }
+    }
+  } finally {
+    await h.close();
+  }
+});
+
+test("non-chat image signatures use content and keep empty-image requests unchanged", async () => {
+  const h = await upstream();
+  const first = {
+    bytes: Buffer.from("first"),
+    mediaType: "image/png",
+    sha256: createHash("sha256").update("first").digest("hex"),
+  };
+  const changed = {
+    bytes: Buffer.from("changed"),
+    mediaType: "image/png",
+    sha256: createHash("sha256").update("changed").digest("hex"),
+  };
+  const references = new Map([
+    ["first", first],
+    ["copy", first],
+    ["changed", changed],
+  ]);
+  try {
+    const base = cell("all", "default");
+    for (const format of ["markdown", "svg", "html"] as const) {
+      const prepare = (
+        images?: NonNullable<Cell["messages"]>[number]["images"],
+      ) =>
+        h.provider.prepare(
+          format,
+          {
+            ...base,
+            messages: [{ role: "user", content: base.prompt, images }],
+          },
+          references,
+        );
+      const plain = inferenceSignature(await prepare());
+      assert.equal(inferenceSignature(await prepare([])), plain);
+      const signature = inferenceSignature(
+        await prepare([{ id: "first", name: "first.png" }]),
+      );
+      assert.equal(
+        inferenceSignature(
+          await prepare([
+            { id: "copy", name: "renamed.png", width: 100, height: 200 },
+          ]),
+        ),
+        signature,
+      );
+      assert.notEqual(signature, plain);
+      assert.notEqual(
+        inferenceSignature(
+          await prepare([{ id: "changed", name: "first.png" }]),
+        ),
+        signature,
+      );
+    }
+  } finally {
+    await h.close();
+  }
+});
 test("chat templates fill blanks sequentially and complete trailing history", async () => {
   const h = await upstream();
   try {
@@ -268,6 +452,285 @@ test("chat templates fill blanks sequentially and complete trailing history", as
     await h.close();
   }
 });
+
+test("chat images stay on their user turns through long sequential SDK requests", async () => {
+  const h = await upstream();
+  const images = Array.from({ length: 6 }, (_, index) => {
+    const bytes = Buffer.from(`image ${index}`);
+    return {
+      bytes,
+      mediaType: "image/png",
+      sha256: createHash("sha256").update(bytes).digest("hex"),
+    };
+  });
+  const attachments = images.map((_, index) => ({
+    id: `image-${index}`,
+    name: `${index}.png`,
+  }));
+  // Loader completion order is unrelated to message or attachment order.
+  const references = new Map(
+    images
+      .map((image, index) => [attachments[index].id, image] as const)
+      .reverse(),
+  );
+  try {
+    const messages: NonNullable<Cell["messages"]> = [
+      { role: "system", content: "Keep the supplied conversation." },
+      { role: "user", content: "", images: [attachments[0]] },
+      { role: "assistant", content: "A supplied answer." },
+      { role: "user", content: "First question." },
+      { role: "unfilled", content: "" },
+      ...Array.from({ length: 25 }, (_, index) => ({
+        role: "user" as const,
+        content: `Follow-up ${index}`,
+        ...(index < 5 ? { images: [attachments[index + 1]] } : {}),
+      })),
+      { role: "unfilled", content: "" },
+    ];
+    const parameters = { ...cell("all", "default"), messages };
+    const updates: InferenceProgress[] = [];
+    const result = await generateAttempt(
+      h.provider,
+      "key",
+      "chat-template",
+      parameters,
+      "image-template",
+      (progress) => updates.push(progress),
+      {},
+      references,
+    );
+    assert.equal(h.requests.length, 2);
+    const histories: NonNullable<Cell["messages"]>[] = [
+      messages.slice(0, 4),
+      [
+        ...messages.slice(0, 4),
+        { role: "assistant", content: "# Output" },
+        ...messages.slice(5, -1),
+      ],
+    ];
+    for (const [requestIndex, request] of h.requests.entries()) {
+      assert.deepEqual(request.modalities, ["text"]);
+      assert.equal(request.session_id, "image-template");
+      const wire = request.messages as {
+        role: string;
+        content:
+          | string
+          | {
+              type: string;
+              text?: string;
+              image_url?: { url: string };
+              cache_control?: { type: string };
+            }[];
+      }[];
+      const expected = histories[requestIndex];
+      assert.equal(wire.length, expected.length);
+      const imageCheckpoints: number[] = [];
+      const boundaries: number[] = [];
+      let markers = 0;
+      for (const [index, message] of wire.entries()) {
+        assert.equal(message.role, expected[index].role);
+        const parts =
+          typeof message.content === "string" ? [] : message.content;
+        const files = parts.filter((part) => part.type === "image_url");
+        assert.deepEqual(
+          files.map((part) => part.image_url!.url),
+          expected[index].images?.map(({ id }) => {
+            const image = references.get(id)!;
+            return `data:${image.mediaType};base64,${image.bytes.toString("base64")}`;
+          }) ?? [],
+        );
+        assert.equal(
+          typeof message.content === "string"
+            ? message.content
+            : parts.map((part) => part.text ?? "").join(""),
+          expected[index].content,
+        );
+        for (const part of parts)
+          if (part.cache_control) {
+            markers++;
+            (part.type === "image_url" ? imageCheckpoints : boundaries).push(
+              index,
+            );
+          }
+      }
+      assert.deepEqual(imageCheckpoints, requestIndex ? [1, 9] : [1]);
+      assert.deepEqual(boundaries, requestIndex ? [3, 29] : [3]);
+      assert.ok(markers <= 4, "OpenRouter allows at most four block markers");
+    }
+    const completed = [
+      ...histories[1],
+      { role: "assistant", content: "# Output" },
+    ];
+    assert.deepEqual(JSON.parse(updates.at(-1)!.text), completed);
+    assert.deepEqual(
+      JSON.parse(result.files["messages.json"] as string),
+      completed.map(({ role, content }) => ({ role, content })),
+    );
+    assert.equal(result.signature, templateSignature(parameters, references));
+  } finally {
+    await h.close();
+  }
+});
+
+test("chat reuse signatures use attachment positions and ordered content, not upload metadata", () => {
+  const first = {
+    bytes: Buffer.from("first"),
+    mediaType: "image/png",
+    sha256: "first",
+  };
+  const second = {
+    bytes: Buffer.from("second"),
+    mediaType: "image/jpeg",
+    sha256: "second",
+  };
+  const references = new Map([
+    ["first", first],
+    ["copy", first],
+    ["second", second],
+  ]);
+  const parameters = {
+    ...cell("all", "default"),
+    messages: [
+      {
+        role: "user" as const,
+        content: "Inspect.",
+        images: [
+          { id: "first", name: "first.png" },
+          { id: "second", name: "second.jpg" },
+        ],
+      },
+      { role: "assistant" as const, content: "Supplied answer." },
+      { role: "user" as const, content: "Inspect." },
+    ],
+  };
+  const signature = templateSignature(parameters, references);
+  const renamed = structuredClone(parameters);
+  renamed.messages[0].images![0] = { id: "copy", name: "renamed.png" };
+  assert.equal(templateSignature(renamed, references), signature);
+  assert.equal(
+    templateSignature(parameters, new Map([...references].reverse())),
+    signature,
+  );
+  const reordered = structuredClone(parameters);
+  reordered.messages[0].images!.reverse();
+  assert.notEqual(templateSignature(reordered, references), signature);
+  const moved = structuredClone(parameters);
+  moved.messages[2].images = moved.messages[0].images;
+  delete moved.messages[0].images;
+  assert.notEqual(templateSignature(moved, references), signature);
+  assert.notEqual(
+    templateSignature(
+      parameters,
+      new Map([
+        ...references,
+        ["first", { ...first, mediaType: "image/jpeg" }],
+      ]),
+    ),
+    signature,
+  );
+  assert.throws(() => templateSignature(parameters), /unavailable/);
+});
+
+test("Image preparation follows selected IDs in order and preserves duplicates", async () => {
+  const h = await upstream();
+  try {
+    const first = {
+      bytes: Buffer.from("first"),
+      mediaType: "image/png",
+      sha256: "first",
+    };
+    const second = {
+      bytes: Buffer.from("second"),
+      mediaType: "image/png",
+      sha256: "second",
+    };
+    const prepared = await h.provider.prepare(
+      "image",
+      {
+        ...cell("image", "default"),
+        imageSettings: { input_references: ["second", "first", "second"] },
+      },
+      new Map([
+        ["first", first],
+        ["second", second],
+      ]),
+    );
+    assert.equal(prepared.format, "image");
+    if (prepared.format !== "image")
+      throw new Error("Expected Image preparation");
+    assert.deepEqual(prepared.image.input_references, [second, first, second]);
+    assert.equal(
+      prepared.image.input_references![0],
+      prepared.image.input_references![2],
+    );
+  } finally {
+    await h.close();
+  }
+});
+
+test("different user questions share an explicitly cached image prefix", async () => {
+  const h = await upstream();
+  const bytes = Buffer.from("shared image");
+  const references = new Map([
+    [
+      "shared",
+      {
+        bytes,
+        mediaType: "image/png",
+        sha256: createHash("sha256").update(bytes).digest("hex"),
+      },
+    ],
+  ]);
+  try {
+    for (const question of ["Describe the colors.", "Describe the shapes."])
+      await generateAttempt(
+        h.provider,
+        "key",
+        "chat-template",
+        {
+          ...cell("all", "default"),
+          messages: [
+            { role: "system", content: "Inspect the supplied image." },
+            {
+              role: "user",
+              content: question,
+              images: [{ id: "shared", name: "shared.png" }],
+            },
+          ],
+        },
+        question,
+        () => {},
+        {},
+        references,
+      );
+    const imagePrefix = (request: Record<string, unknown>) => {
+      const messages = request.messages as {
+        role: string;
+        content:
+          | string
+          | {
+              type: string;
+              cache_control?: { type: string };
+            }[];
+      }[];
+      const user = messages.findIndex((message) => message.role === "user");
+      const parts = messages[user].content;
+      assert.ok(Array.isArray(parts));
+      let end = parts.length - 1;
+      while (end >= 0 && parts[end].type !== "image_url") end--;
+      assert.ok(end >= 0);
+      assert.equal(parts[end].cache_control?.type, "ephemeral");
+      return [
+        ...messages.slice(0, user),
+        { role: "user", content: parts.slice(0, end + 1) },
+      ];
+    };
+    assert.deepEqual(imagePrefix(h.requests[0]), imagePrefix(h.requests[1]));
+  } finally {
+    await h.close();
+  }
+});
+
 test("template caching preserves long prefixes and isolates generation routing", async () => {
   const h = await upstream();
   try {

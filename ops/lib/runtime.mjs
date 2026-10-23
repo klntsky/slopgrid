@@ -267,9 +267,9 @@ export function discardStagingGrids(name, release, env, productionEnv, ids) {
   try {
     db.pragma("foreign_keys=ON");
     // Discard runs after drain/backup, before the new engine migrates the DB.
-    // Administer deployed v12/v13 in place; only v14 has shared task references.
+    // Both supported schemas already use shared workflow task references.
     const version = db.pragma("user_version", { simple: true });
-    if (![12, 13, 14].includes(version))
+    if (![14, 17].includes(version))
       throw new Error("Unsupported database schema for staging grid deletion");
     discarded = db
       .transaction(() => {
@@ -285,17 +285,11 @@ export function discardStagingGrids(name, release, env, productionEnv, ids) {
           .all(...ids);
         if (cells.some((cell) => !/^[a-f0-9]{48}$/.test(cell.id)))
           throw new Error("Invalid staging cell ID");
-        const references =
-          version === 14
-            ? db
-                .prepare(
-                  `SELECT artifact_id,thinking_source_id FROM workflow_tasks WHERE grid_id IN (${slots})`,
-                )
-                .all(...ids)
-            : cells.map((cell) => ({
-                artifact_id: cell.id,
-                thinking_source_id: cell.id,
-              }));
+        const references = db
+          .prepare(
+            `SELECT artifact_id,thinking_source_id FROM workflow_tasks WHERE grid_id IN (${slots})`,
+          )
+          .all(...ids);
         const artifacts = new Set(
           references.map((row) => row.artifact_id).filter(Boolean),
         );
@@ -327,19 +321,14 @@ export function discardStagingGrids(name, release, env, productionEnv, ids) {
           `DELETE FROM creation_requests WHERE grid_id IN (${slots})`,
         ).run(...ids);
         db.prepare(`DELETE FROM cells WHERE grid_id IN (${slots})`).run(...ids);
-        if (version === 14)
-          db.prepare(
-            `DELETE FROM workflow_tasks WHERE grid_id IN (${slots})`,
-          ).run(...ids);
+        db.prepare(
+          `DELETE FROM workflow_tasks WHERE grid_id IN (${slots})`,
+        ).run(...ids);
         db.prepare(`DELETE FROM grids WHERE id IN (${slots})`).run(...ids);
         return {
           cells: cells.length,
           paths: paths.filter(({ id, column }) =>
-            version === 14
-              ? !db
-                  .prepare(`SELECT 1 FROM workflow_tasks WHERE ${column}=?`)
-                  .get(id)
-              : !db.prepare("SELECT 1 FROM cells WHERE id=?").get(id),
+            !db.prepare(`SELECT 1 FROM workflow_tasks WHERE ${column}=?`).get(id),
           ),
         };
       })

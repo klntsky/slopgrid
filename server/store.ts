@@ -5,9 +5,9 @@ import { Billing } from "./billing.js";
 import Database from "better-sqlite3";
 import { encrypt, decrypt } from "./encryption.js";
 import {
-  expandGrid,
   type Grid,
   type StoredGrid,
+  type ValidatedGridInput,
   type Cell,
   type WorkflowTask,
   type User,
@@ -18,7 +18,13 @@ import { OutputFiles } from "./files.js";
 import { token } from "./ids.js";
 import { initializeDatabase } from "./database.js";
 import { expandPromptForTitle } from "./grid-title.js";
+import { selectedReferences } from "./image-settings.js";
 import { createWorkflow, projectWorkflow } from "./workflow.js";
+import {
+  gridDimensions,
+  gridDisplay,
+  gridInputText,
+} from "../shared/grid-display.js";
 export type Session = {
   id: string;
   anonymousId?: string;
@@ -135,27 +141,45 @@ export class Store {
     if (row.slug === null) delete grid.slug;
     if (!grid.title) delete grid.title;
     if (!grid.interruption) delete grid.interruption;
+    grid.input = this.references.input(grid.input);
     const cells = this.db
       .prepare(
-        "SELECT id, generation_id, judgment_id FROM cells WHERE grid_id=? ORDER BY position",
+        "SELECT id, position, generation_id, judgment_id FROM cells WHERE grid_id=? ORDER BY position",
       )
       .all(id) as {
       id: string;
+      position: number;
       generation_id: string;
       judgment_id: string | null;
     }[];
-    grid.cells = expandGrid(grid.input).map((cell, index) => ({
-      ...cell,
-      id: cells[index].id,
-      generationId: cells[index].generation_id,
-      judgmentId: cells[index].judgment_id ?? undefined,
-    }));
     const tasks = this.workflow(id);
+    const byId = new Map(tasks.map((task) => [task.id, task]));
+    const { columns } = gridDimensions(grid.input);
+    grid.cells = cells.map((cell) => {
+      const generation = byId.get(cell.generation_id);
+      if (generation?.kind !== "generation")
+        throw new Error("A cell must reference its generation task.");
+      const { format: _format, ...parameters } = generation.input;
+      return {
+        ...parameters,
+        id: cell.id,
+        row: Math.floor(cell.position / columns),
+        column: cell.position % columns,
+        generationId: cell.generation_id,
+        judgmentId: cell.judgment_id ?? undefined,
+        status: generation.status,
+      };
+    });
     projectWorkflow(grid, tasks);
     return grid;
   }
   // Creation is the only operation that writes both metadata and generation state.
-  insert(grid: Grid, tasks = createWorkflow(grid.input, grid.cells)) {
+  insert(
+    grid: Grid & { input: ValidatedGridInput },
+    tasks = createWorkflow(grid.input, grid.cells),
+  ) {
+    grid.input = this.references.input(grid.input);
+    for (const task of tasks) this.references.task(task);
     projectWorkflow(grid, tasks);
     const {
       id,
@@ -188,12 +212,10 @@ export class Store {
           slug ?? null,
           createdAt,
         );
-      if (grid.input.inputReferences || grid.input.referenceGroups) {
-        const referenceIds = new Set<string>();
-        for (const reference of grid.input.inputReferences ?? [])
-          referenceIds.add(reference.id);
-        for (const group of Object.values(grid.input.referenceGroups ?? {}))
-          for (const reference of group) referenceIds.add(reference.id);
+      const referenceIds = new Set(
+        selectedReferences(grid.input).map((reference) => reference.id),
+      );
+      if (referenceIds.size) {
         const insertReference = this.db.prepare(
           "INSERT INTO grid_reference_images (grid_id, reference_id) VALUES (?,?)",
         );
@@ -223,6 +245,11 @@ export class Store {
       .all(gridId) as WorkflowRow[];
     return rows.map((row) => {
       const task = readTask(row);
+      this.references.task(task);
+      if (task.kind === "generation") {
+        if (task.input.format === "chat-template" && task.progress?.draft)
+          task.progress.draft = this.references.draft(task.progress.draft);
+      }
       if (task.kind === "generation" && (task.attemptId || !task.output)) {
         const billing = this.billing.task(task.id, task.attemptId);
         if (billing) {
@@ -251,6 +278,7 @@ export class Store {
           WHERE workflow_tasks.grid_id=excluded.grid_id`,
       );
       for (const task of tasks) {
+        this.references.task(task);
         let output: unknown = task.output;
         let artifactId: string | undefined;
         let thinkingSourceId: string | undefined;
@@ -400,7 +428,7 @@ export class Store {
     const { input } = JSON.parse(row.grid) as Pick<Grid, "input">;
     const generation = JSON.parse(row.generation) as Pick<
       Extract<WorkflowTask, { kind: "generation" }>,
-      "output" | "progress"
+      "input" | "output" | "progress"
     >;
     return {
       owner: row.owner,
@@ -408,6 +436,7 @@ export class Store {
       published: row.published === 1,
       format: input.format,
       generationId: row.generationId,
+      messages: this.references.messages(generation.input.messages),
       thinkingId:
         generation.progress?.thinkingId ?? generation.output?.thinkingId,
       thinkingSourceId: row.thinkingSourceId ?? undefined,
@@ -430,15 +459,17 @@ export class Store {
       )
       .get(id) as { gridId: string; data: string; position: number };
     const { input } = JSON.parse(row.data) as Pick<Grid, "input">;
-    const columns = input.columns.values.length;
+    const { columns } = gridDimensions(input);
+    const display = gridDisplay(input);
     return {
       gridId: row.gridId,
-      prompt: input.prompt,
-      row: input.rows.values[Math.floor(row.position / columns)],
-      column: input.columns.values[row.position % columns],
+      prompt: gridInputText(input),
+      row: display.rows[Math.floor(row.position / columns)].downloadLabel,
+      column: display.columns[row.position % columns].downloadLabel,
       format: input.format,
       mediaType: output.mediaType,
       artifactId: output.artifactId!,
+      messages: output.messages,
       thinkingSourceId: output.thinkingSourceId,
     };
   }

@@ -4,9 +4,13 @@ import tippy, { type Instance } from "tippy.js";
 import { Info, X } from "lucide-react";
 import type { ViewGrid } from "../api";
 import type { ReferenceImage } from "../../server/image-settings";
-import { dimensionNames } from "../format";
+import { dimensionNames, displayValue } from "../format";
 import { ModelName } from "../model-name";
 import "./grid-parameters.css";
+import {
+  gridDisplay,
+  type ParameterDisplayPart,
+} from "../../shared/grid-display";
 
 function References({ images }: { images: ReferenceImage[] }) {
   return images.length ? (
@@ -32,9 +36,35 @@ function References({ images }: { images: ReferenceImage[] }) {
   );
 }
 
+function ParameterValue({ part }: { part: ParameterDisplayPart }) {
+  if (part.kind === "model" || part.kind === "judge_model")
+    return <ModelName model={part.value} />;
+  if (part.kind === "input")
+    return (
+      <ol>
+        {part.value.map((message, index) => (
+          <li key={index}>
+            <strong>{message.role}</strong>: {message.content}
+            {!!message.images?.length && <References images={message.images} />}
+          </li>
+        ))}
+      </ol>
+    );
+  if (part.kind === "judge_criteria")
+    return (
+      <ol>
+        {part.value.map((criterion, index) => (
+          <li key={index}>
+            {criterion.text} (expected {criterion.correctAnswer ? "YES" : "NO"})
+          </li>
+        ))}
+      </ol>
+    );
+  return displayValue(part);
+}
+
 export function GridParameters({ grid }: { grid: ViewGrid }) {
-  const { input } = grid;
-  const axes = [input.rows.kind, input.columns.kind];
+  const display = grid.display ?? gridDisplay(grid.input);
   const button = useRef<HTMLButtonElement>(null);
   const popup = useRef<Instance | null>(null);
   const [container, setContainer] = useState<HTMLDivElement | null>(null);
@@ -133,35 +163,14 @@ export function GridParameters({ grid }: { grid: ViewGrid }) {
               </button>
             </div>
             <dl>
-              {!axes.includes("model") && (
-                <div>
-                  <dt>Model</dt>
+              {display.common.map((part) => (
+                <div key={part.kind}>
+                  <dt>{dimensionNames[part.kind]}</dt>
                   <dd>
-                    <ModelName model={input.model} />
+                    <ParameterValue part={part} />
                   </dd>
                 </div>
-              )}
-              {(["size", "aspect_ratio", "quality", "background"] as const)
-                .filter((kind) => !axes.includes(kind))
-                .map((kind) => (
-                  <div key={kind}>
-                    <dt>{dimensionNames[kind]}</dt>
-                    <dd>
-                      {!input.imageSettings?.[kind] ||
-                      input.imageSettings[kind] === "auto"
-                        ? "Auto"
-                        : input.imageSettings[kind]}
-                    </dd>
-                  </div>
-                ))}
-              {!axes.includes("input_references") && (
-                <div>
-                  <dt>Input references</dt>
-                  <dd>
-                    <References images={input.inputReferences ?? []} />
-                  </dd>
-                </div>
-              )}
+              ))}
             </dl>
           </section>,
           container,

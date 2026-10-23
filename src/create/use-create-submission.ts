@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { gridSchema } from "../../server/domain";
+import { validateDraftInput } from "./draft-input";
 import type { ReferenceImage } from "../../server/image-settings";
 import { queryClient } from "../queries";
 import { useInferenceMutation } from "../use-inference-mutation";
@@ -19,7 +19,9 @@ export function useCreateSubmission({
   onReferenceUploaded: (localId: string, image: ReferenceImage) => void;
 }) {
   const [validationError, setError] = useState("");
+  const [attempted, setAttempted] = useState(false);
   const [uploads, setUploads] = useState(0);
+  const pendingUploads = useRef(0);
   const uploading = uploads > 0;
   const uploadController = useRef<AbortController | undefined>(undefined);
   useEffect(() => () => uploadController.current?.abort(), []);
@@ -35,22 +37,23 @@ export function useCreateSubmission({
   const busy = inference.isPending;
 
   function onUploading(busy: boolean) {
-    setUploads((count) => count + (busy ? 1 : -1));
+    pendingUploads.current += busy ? 1 : -1;
+    setUploads(pendingUploads.current);
   }
   function reset() {
     setError("");
+    setAttempted(false);
     inference.reset();
   }
   async function generate(continueWithLowBalance = false) {
-    if (blocked || uploading || busy || uploadController.current) return;
-    const parsed = gridSchema.safeParse({
+    if (blocked || pendingUploads.current || busy || uploadController.current)
+      return;
+    setAttempted(true);
+    const { parsed } = validateDraftInput({
       ...draft.input,
       parallelWorkers,
     });
-    if (!parsed.success) {
-      setError(parsed.error.issues[0].message);
-      return;
-    }
+    if (!parsed.success) return;
     setError("");
     const controller = new AbortController();
     uploadController.current = controller;
@@ -85,6 +88,7 @@ export function useCreateSubmission({
 
   return {
     generate,
+    attempted,
     reset,
     onUploading,
     uploading,

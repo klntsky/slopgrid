@@ -1,7 +1,8 @@
 import { expandGrid, type Cell, type GridInput } from "./domain.js";
 import { generationBudget, PreparationError } from "./generation-budget.js";
 import { instruction } from "./generation-instructions.js";
-import { resolveGridModels, ModelResolutionError } from "./model-resolution.js";
+import { prepareGridModels } from "./model-resolution.js";
+import { ModelResolutionError } from "./model-alias.js";
 import type { Model } from "./provider.js";
 
 export type CostEstimate = {
@@ -69,15 +70,18 @@ export function estimateGrid(
   now = new Date(),
 ) {
   let resolved = input;
+  let cells: Omit<Cell, "id">[] | undefined;
   try {
-    resolved = resolveGridModels(input, models);
+    const prepared = prepareGridModels(input, models);
+    resolved = prepared.input;
+    cells = prepared.cells;
   } catch (error) {
     if (!(error instanceof ModelResolutionError)) throw error;
   }
   const byId = new Map(models.map((model) => [model.id, model]));
   return {
     input: resolved,
-    estimates: expandGrid(resolved).map((cell) =>
+    estimates: (cells ?? expandGrid(resolved)).map((cell) =>
       estimateCell(byId.get(cell.model), cell, input.format, now),
     ),
   };

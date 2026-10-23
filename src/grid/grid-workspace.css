@@ -27,6 +27,17 @@
   border: 0;
   background: var(--cell);
 }
+.variable-axis-fields,
+.variable-axis-field {
+  display: grid;
+  gap: 6px;
+}
+.variable-axis-fields {
+  min-width: 100px;
+  max-width: 300px;
+  text-align: left;
+  white-space: pre-wrap;
+}
 .axis-reference-previews {
   display: inline-flex;
   gap: 4px;

@@ -1,5 +1,6 @@
-import type { GridInput } from "../server/domain";
-import { effortLabel, imageParameterNames } from "../server/compatibility";
+import { effortLabel } from "../server/compatibility";
+import { parameterNames } from "../server/parameters";
+import type { ParameterDisplayPart } from "../shared/grid-display";
 import type { ViewGrid } from "./api";
 export const formatNames = {
   markdown: "Markdown",
@@ -19,20 +20,46 @@ export function formatCost(cost: number | undefined): string {
   if (cost > 0 && cost < 0.00000001) return "<$0.00000001";
   return usd.format(cost);
 }
-export const dimensionNames = {
-  model: "Model",
-  effort: "Thinking effort",
-  judge_model: "Judge model",
-  judge_effort: "Judge thinking effort",
-  variable: "Prompt variable",
-  ...imageParameterNames,
-};
+export const dimensionNames = parameterNames;
 export function cellError(cell: ViewGrid["cells"][number]) {
   return cell.errorCode === undefined
     ? cell.error
     : `Error ${cell.errorCode}: ${cell.error}`;
 }
-export function displayValue(value: string, kind: GridInput["rows"]["kind"]) {
-  if (kind === "effort" || kind === "judge_effort") return effortLabel(value);
-  return value;
+export function displayValue(part: ParameterDisplayPart): string {
+  switch (part.kind) {
+    case "input":
+      return part.value
+        .map(
+          ({ role, content, images }) =>
+            `${role}: ${[content, ...(images ?? []).map((image) => image.name)]
+              .filter(Boolean)
+              .join(" · ")}`,
+        )
+        .join(" | ");
+    case "variable":
+      return part.value
+        .flatMap((field) =>
+          field === null
+            ? []
+            : [
+                [field.text, ...(field.images ?? []).map((image) => image.name)]
+                  .filter(Boolean)
+                  .join(" · "),
+              ],
+        )
+        .join(" | ");
+    case "judge_criteria":
+      return part.value
+        .map(
+          (criterion) =>
+            `${criterion.text} (expected ${criterion.correctAnswer ? "YES" : "NO"})`,
+        )
+        .join(" | ");
+    case "effort":
+    case "judge_effort":
+      return effortLabel(part.value);
+    default:
+      return part.value === "auto" ? "Auto" : part.value;
+  }
 }

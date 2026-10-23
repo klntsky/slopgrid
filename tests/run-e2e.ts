@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { parseEnv } from "node:util";
 import { startTestServer } from "./test-server";
 import { parseE2EPort } from "./e2e-port";
+import { closeTestResources, prepareTestResources } from "./fixture-resources";
 
 const args = process.argv.slice(2);
 const index = args.indexOf("--suite");
@@ -62,41 +63,46 @@ if (reuseBuild) {
   const result = await command(["build"]);
   if (result) process.exit(result);
 }
-for (const project of suite === "all"
-  ? (["mock", "real"] as const)
-  : [suite as "mock" | "real" | "github"]) {
-  const started = Date.now();
-  const results = mkdtempSync(join(tmpdir(), "slopgrid-e2e-results-"));
-  let server: Awaited<ReturnType<typeof startTestServer>> | undefined;
-  try {
-    // Mock tests create their own servers; real suites share one serial server.
-    if (project !== "mock") {
-      server = await startTestServer(project, port);
+process.env.SLOPGRID_TEST_RESOURCES = prepareTestResources();
+try {
+  for (const project of suite === "all"
+    ? (["mock", "real"] as const)
+    : [suite as "mock" | "real" | "github"]) {
+    const started = Date.now();
+    const results = mkdtempSync(join(tmpdir(), "slopgrid-e2e-results-"));
+    let server: Awaited<ReturnType<typeof startTestServer>> | undefined;
+    try {
+      // Mock tests create their own servers; real suites share one serial server.
+      if (project !== "mock") {
+        server = await startTestServer(project, port);
+      }
+      const code = await command(
+        [
+          "exec",
+          "playwright",
+          "test",
+          `--project=${project}`,
+          ...(project === "mock" ? [] : ["--workers=1"]),
+          `--output=${results}`,
+          ...args,
+        ],
+        {
+          ...process.env,
+          ...(server
+            ? { E2E_ORIGIN: server.origin, OPENROUTER_API_KEY: key! }
+            : {}),
+        },
+      );
+      console.log(
+        `${project} E2E elapsed: ${((Date.now() - started) / 1000).toFixed(1)}s`,
+      );
+      process.exitCode = code;
+      if (code) break;
+    } finally {
+      await server?.close();
+      rmSync(results, { recursive: true, force: true });
     }
-    const code = await command(
-      [
-        "exec",
-        "playwright",
-        "test",
-        `--project=${project}`,
-        ...(project === "mock" ? [] : ["--workers=1"]),
-        `--output=${results}`,
-        ...args,
-      ],
-      {
-        ...process.env,
-        ...(server
-          ? { E2E_ORIGIN: server.origin, OPENROUTER_API_KEY: key! }
-          : {}),
-      },
-    );
-    console.log(
-      `${project} E2E elapsed: ${((Date.now() - started) / 1000).toFixed(1)}s`,
-    );
-    process.exitCode = code;
-    if (code) break;
-  } finally {
-    await server?.close();
-    rmSync(results, { recursive: true, force: true });
   }
+} finally {
+  closeTestResources();
 }

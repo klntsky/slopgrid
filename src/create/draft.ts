@@ -1,17 +1,36 @@
 import { useState, useEffect } from "react";
 import {
-  chatText,
+  gridDraftSchema,
   isChatFormat,
-  isMarkdownFormat,
-  type GridInput,
+  type GridDraftInput,
 } from "../../server/domain";
-import type { ReferenceImage } from "../../server/image-settings";
+import { type ReferenceImage } from "../../server/image-settings";
+import {
+  defaultGridDraft,
+  axisParameters,
+  isCaseAxis,
+  parameterDefault,
+  parameterNames,
+  type ParameterId,
+  type CommonParameterId,
+} from "../../server/parameters";
+import {
+  confirmInputAction,
+  droppedParameters,
+  hasParameterValue,
+  neutralDimension,
+  parameterValuesEqual,
+  removeParameter,
+  reduceInput,
+  type InputAction,
+} from "./change-axis";
+import { referenceLists } from "./reference-files";
 import { canJudge } from "../../server/compatibility";
 import { modelCatalog } from "../model-catalog";
-import { removeJudge } from "./change-axis";
+
 export type Draft = {
   formatSelected: boolean;
-  input: GridInput;
+  input: GridDraftInput;
   sourceGridId?: string;
   reuseArtifacts?: boolean;
 };
@@ -31,28 +50,17 @@ export function creationSubmission(body: Record<string, unknown>) {
   );
   return request;
 }
-const initial: Draft = {
+const initial = (): Draft => ({
   formatSelected: false,
-  input: {
-    format: "svg",
-    prompt: "",
-    rows: { kind: "model", values: [] },
-    columns: { kind: "effort", values: ["default"] },
-    model: "",
-    effort: "default",
-    budgetUsd: 3,
-  },
-};
+  input: defaultGridDraft("svg"),
+});
 function readDraft(): Draft {
   try {
-    const draft: Draft =
-      JSON.parse(sessionStorage.getItem(storageKey) ?? "null") ?? initial;
-    if (draft.input.judge && !draft.input.judge.criteria.length) {
-      Object.assign(draft.input, removeJudge(draft.input));
-    }
-    return draft;
+    const saved = JSON.parse(sessionStorage.getItem(storageKey) ?? "null");
+    if (!saved || saved.input?.inputVersion !== 3) return initial();
+    return { ...saved, input: gridDraftSchema.parse(saved.input) };
   } catch {
-    return initial;
+    return initial();
   }
 }
 export function saveDraft(draft: Draft) {
@@ -62,59 +70,175 @@ export function clearDraft() {
   sessionStorage.removeItem(storageKey);
   sessionStorage.removeItem(submissionKey);
 }
-export function startDraft(format: GridInput["format"]) {
-  saveDraft(selectDraftFormat(readDraft(), format));
+export function startDraft(format: GridDraftInput["format"]) {
+  const change = selectDraftFormat(readDraft(), format);
+  if (confirmFormatChange(change)) saveDraft(change.draft);
 }
-function selectDraftFormat(d: Draft, format: GridInput["format"]): Draft {
-  const messages = d.input.messages ?? [
-    { role: "user" as const, content: d.input.prompt },
-  ];
-  const judgeModel =
-    [d.input.rows, d.input.columns].find((axis) => axis.kind === "judge_model")
-      ?.values[0] ??
-    d.input.judge?.model ??
-    "";
-  const judgeEffort =
-    [d.input.rows, d.input.columns].find((axis) => axis.kind === "judge_effort")
-      ?.values[0] ??
-    d.input.judge?.effort ??
-    "default";
+
+type FormatChange = { draft: Draft; dropped: ParameterId[] };
+
+function confirmFormatChange({ dropped }: FormatChange): boolean {
+  return (
+    !dropped.length ||
+    window.confirm(
+      `Changing format will discard incompatible or differing ${dropped
+        .map((parameter) => parameterNames[parameter])
+        .join(
+          ", ",
+        )} settings and case values. Differing values that become common will return to their defaults. Continue?`,
+    )
+  );
+}
+
+function selectDraftFormat(
+  draft: Draft,
+  format: GridDraftInput["format"],
+): FormatChange {
+  if (draft.input.format === format)
+    return { draft: { ...draft, formatSelected: true }, dropped: [] };
+  const previous = draft.input;
+  const defaults = defaultGridDraft(format);
+  // An untouched starting form uses the chosen format's ordinary defaults.
+  const withoutCaseIds = (input: GridDraftInput) => ({
+    ...input,
+    rows: input.rows.map(({ id: _id, ...entry }) => entry),
+    columns: input.columns.map(({ id: _id, ...entry }) => entry),
+  });
+  if (
+    parameterValuesEqual(
+      withoutCaseIds(previous),
+      withoutCaseIds(defaultGridDraft(previous.format)),
+    )
+  )
+    return {
+      draft: { ...draft, input: defaults, formatSelected: true },
+      dropped: [],
+    };
+  const dropped = new Set<ParameterId>();
+  const applicable = new Set<CommonParameterId>([
+    ...(Object.keys(defaults.parameters) as CommonParameterId[]),
+    ...(previous.judge && format !== "html"
+      ? (["judge_model", "judge_effort", "judge_criteria"] as const)
+      : []),
+  ]);
+  let input: GridDraftInput = {
+    ...previous,
+    format,
+    judge: previous.judge && format !== "html",
+    parameters: { ...previous.parameters },
+  };
+  for (const parameter of Object.keys(
+    input.parameters,
+  ) as CommonParameterId[]) {
+    if (applicable.has(parameter)) continue;
+    const source = input.parameters[parameter];
+    if (
+      source?.kind === "common"
+        ? hasParameterValue(parameter, source.value)
+        : source &&
+          input[source.kind].some((entry) =>
+            hasParameterValue(parameter, entry[parameter]),
+          )
+    )
+      dropped.add(parameter);
+    input = removeParameter(input, parameter);
+  }
+  // Strip unowned fields while retaining compatible cases' identities.
+  for (const side of ["rows", "columns"] as const) {
+    input[side] = input[side].map((entry) => {
+      const next = { ...entry };
+      for (const key of Object.keys(entry)) {
+        if (key === "id") continue;
+        const parameter = key as ParameterId;
+        if (parameter === "variable") {
+          if (isCaseAxis(input, side)) continue;
+        } else if (input.parameters[parameter]?.kind === side) continue;
+        if (hasParameterValue(parameter, entry[parameter]))
+          dropped.add(parameter);
+        delete next[parameter];
+      }
+      return next;
+    });
+  }
+  for (const parameter of applicable) {
+    if (input.parameters[parameter]) continue;
+    Object.assign(input.parameters, {
+      [parameter]: { kind: "common", value: parameterDefault(parameter) },
+    });
+  }
+  for (const parameter of ["model", "judge_model"] as const) {
+    const source = input.parameters[parameter];
+    const compatible = (value: string | undefined) => {
+      if (!value) return true;
+      const model = modelCatalog.find((model) => model.id === value);
+      if (!model) return true;
+      // Missing structured-output metadata is not evidence of incompatibility.
+      if (parameter === "judge_model" && model.structuredOutputs === undefined)
+        return (
+          model.text &&
+          ((format !== "svg" && format !== "image") || model.imageInput)
+        );
+      return parameter === "judge_model"
+        ? canJudge(model, format)
+        : format === "image"
+          ? model.image
+          : model.text;
+    };
+    if (source?.kind === "common") {
+      if (!compatible(source.value)) {
+        dropped.add(parameter);
+        input.parameters[parameter] = { kind: "common", value: "" };
+      }
+    } else if (source) {
+      input[source.kind] = input[source.kind].map((entry) => {
+        if (compatible(entry[parameter])) return entry;
+        dropped.add(parameter);
+        return { ...entry, [parameter]: "" };
+      });
+    }
+  }
+  const collapse = (parameter: Exclude<ParameterId, "variable">) => {
+    const action = { type: "to-common", parameter } as const;
+    for (const lost of droppedParameters(input, action)) dropped.add(lost);
+    input = reduceInput(input, action);
+  };
+  for (const side of ["rows", "columns"] as const) {
+    if (isCaseAxis(input, side)) continue;
+    const owned = axisParameters(input, side);
+    const native = owned.find((parameter) => parameter !== "judge_criteria");
+    for (const parameter of owned)
+      if (parameter !== native && parameter !== "variable") collapse(parameter);
+    input = neutralDimension(input, side);
+  }
+  if (!isChatFormat(format)) {
+    const source = input.parameters.input;
+    if (source.kind === "common") {
+      if (source.value.length !== 1 || source.value[0].role !== "user") {
+        dropped.add("input");
+        input.parameters.input = {
+          kind: "common",
+          value: parameterDefault("input"),
+        };
+      }
+    } else {
+      input[source.kind] = input[source.kind].map((entry) => {
+        if (entry.input?.length === 1 && entry.input[0].role === "user")
+          return entry;
+        dropped.add("input");
+        return { ...entry, input: parameterDefault("input") };
+      });
+    }
+  }
   return {
-    ...d,
-    formatSelected: true,
-    input: {
-      ...d.input,
-      format,
-      judge:
-        format === "html"
-          ? undefined
-          : d.input.judge && {
-              ...d.input.judge,
-              effort: judgeEffort as GridInput["effort"],
-              model: modelCatalog.some(
-                (model) => model.id === judgeModel && canJudge(model, format),
-              )
-                ? judgeModel
-                : "",
-            },
-      messages: isChatFormat(format) ? messages : undefined,
-      prompt: isChatFormat(format) ? chatText(messages) : d.input.prompt,
-      imageSettings: undefined,
-      inputReferences: undefined,
-      model: "",
-      effort: "default",
-      rows: isMarkdownFormat(format)
-        ? { kind: "effort", values: ["default"] }
-        : { kind: "model", values: [] },
-      columns:
-        format === "image"
-          ? { kind: "quality", values: ["auto"] }
-          : isMarkdownFormat(format)
-            ? { kind: "model", values: [] }
-            : { kind: "effort", values: ["default"] },
+    dropped: [...dropped],
+    draft: {
+      ...draft,
+      formatSelected: true,
+      input,
     },
   };
 }
+
 export function useCreateDraft() {
   const [draft, setDraft] = useState(() => ({
     ...readDraft(),
@@ -124,49 +248,51 @@ export function useCreateDraft() {
     saveDraft(draft);
   }, [draft]);
   function update(
-    change: Partial<GridInput> | ((input: GridInput) => Partial<GridInput>),
+    change:
+      | Partial<GridDraftInput>
+      | ((input: GridDraftInput) => Partial<GridDraftInput>),
   ) {
-    setDraft((d) => {
-      const partial = typeof change === "function" ? change(d.input) : change;
-      if (partial.messages) partial.prompt = chatText(partial.messages);
+    setDraft((draft) => {
+      const partial =
+        typeof change === "function" ? change(draft.input) : change;
       return {
-        ...d,
+        ...draft,
         input: {
-          ...d.input,
+          ...draft.input,
           ...partial,
-          referenceGroups: partial.referenceGroups
-            ? { ...d.input.referenceGroups, ...partial.referenceGroups }
-            : d.input.referenceGroups,
         },
       };
     });
   }
-  function selectFormat(format: GridInput["format"]) {
-    setDraft((d) => selectDraftFormat(d, format));
+  function dispatch(action: InputAction) {
+    if (!confirmInputAction(draft.input, action)) return false;
+    setDraft((draft) => ({
+      ...draft,
+      input: reduceInput(draft.input, action),
+    }));
+    return true;
+  }
+  function selectFormat(format: GridDraftInput["format"]) {
+    const change = selectDraftFormat(draft, format);
+    if (confirmFormatChange(change)) setDraft(change.draft);
   }
   function replaceReference(localId: string, image: ReferenceImage) {
-    setDraft((d) => ({
-      ...d,
-      input: {
-        ...d.input,
-        inputReferences: d.input.inputReferences?.map((candidate) =>
-          candidate.id === localId ? image : candidate,
-        ),
-        referenceGroups: Object.fromEntries(
-          Object.entries(d.input.referenceGroups ?? {}).map(
-            ([name, images]) => [
-              name,
-              images.map((candidate) =>
-                candidate.id === localId ? image : candidate,
-              ),
-            ],
-          ),
-        ),
-      },
-    }));
+    setDraft((draft) => {
+      const next = structuredClone(draft);
+      const lists = referenceLists(next.input);
+      for (const images of lists)
+        for (let index = 0; index < images.length; index++)
+          if (images[index].id === localId) images[index] = image;
+      return next;
+    });
   }
-  function setReuseArtifacts(reuseArtifacts: boolean) {
-    setDraft((d) => ({ ...d, reuseArtifacts }));
-  }
-  return { draft, update, selectFormat, replaceReference, setReuseArtifacts };
+  return {
+    draft,
+    update,
+    dispatch,
+    selectFormat,
+    replaceReference,
+    setReuseArtifacts: (reuseArtifacts: boolean) =>
+      setDraft((draft) => ({ ...draft, reuseArtifacts })),
+  };
 }

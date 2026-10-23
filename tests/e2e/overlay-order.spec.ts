@@ -11,7 +11,14 @@ for (const format of ["SVG", "Image", "Markdown", "Static website"]) {
   test(`${format} phone menu paints above the entire grid and expanded preview`, async ({
     page,
   }) => {
-    await create(page, format, "cat\ndog", "hat\ncape");
+    await create(page, {
+      format,
+      rowValues: ["cat", "dog"],
+      columns:
+        format === "Image"
+          ? { kind: "quality", values: ["low", "high"] }
+          : { kind: "effort", values: ["none", "low"] },
+    });
     await expectProgress(page, 4, 4);
     for (const expanded of [false, true]) {
       if (expanded)

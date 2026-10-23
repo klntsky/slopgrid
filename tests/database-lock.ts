@@ -10,6 +10,30 @@ export function holdDatabaseWrites(store: Store) {
     }
   };
 }
+
+export interface HeldDatabaseWriteTransaction {
+  commit(): void;
+  rollback(): void;
+}
+
+export function holdDatabaseWriteTransaction(
+  store: Store,
+): HeldDatabaseWriteTransaction {
+  store.db.exec("BEGIN IMMEDIATE");
+  let held = true;
+  return {
+    commit() {
+      store.db.exec("COMMIT");
+      held = false;
+    },
+    rollback() {
+      if (held) {
+        store.db.exec("ROLLBACK");
+        held = false;
+      }
+    },
+  };
+}
 export function rejectAdmissionCommit(store: Store) {
   store.db.exec(`
     CREATE TABLE fault_parent(id TEXT PRIMARY KEY);

@@ -13,7 +13,14 @@ test("thinking follows streaming text until scrolled up and resumes at the botto
       { name: fixture.cookieName, value: fixture.owner, url: fixture.origin },
     ]);
     const grid = fixture.grid({
-      rows: { kind: "variable", values: ["thinking"] },
+      caseAxes: ["rows"],
+      parameters: {
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: "Draw $ROW1" }],
+        },
+      },
+      rows: [{ variable: [{ text: "thinking" }] }],
     });
     await fixture.engine.api.startGrid({
       gridId: grid.id,
@@ -83,7 +90,18 @@ test("thinking-only token exhaustion explains the failure, retains charges and c
       { name: fixture.cookieName, value: fixture.owner, url: fixture.origin },
     ]);
     const grid = fixture.grid({
-      rows: { kind: "variable", values: ["exhausted", "partial", "early"] },
+      caseAxes: ["rows"],
+      parameters: {
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: "Draw $ROW1" }],
+        },
+      },
+      rows: [
+        { variable: [{ text: "exhausted" }] },
+        { variable: [{ text: "partial" }] },
+        { variable: [{ text: "early" }] },
+      ],
     });
     await fixture.engine.api.startGrid({
       gridId: grid.id,
@@ -161,7 +179,14 @@ test("SVG streaming advances behind thinking and survives view switches through 
     ]);
     const grid = fixture.grid({
       format: "svg",
-      rows: { kind: "variable", values: ["svg"] },
+      caseAxes: ["rows"],
+      parameters: {
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: "Draw $ROW1" }],
+        },
+      },
+      rows: [{ variable: [{ text: "svg" }] }],
     });
     await fixture.engine.api.startGrid({
       gridId: grid.id,

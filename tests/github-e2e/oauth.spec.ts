@@ -25,13 +25,21 @@ test("real GitHub sign-in claims an anonymous grid, shares account access, and f
   const response = await page.request.post("/api/grids", {
     headers: { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY!}` },
     data: {
+      inputVersion: 3,
       format: "markdown",
-      prompt: "Return only the word OK.",
-      model: "cohere/north-mini-code:free",
-      effort: "none",
       budgetUsd: 0.001,
-      rows: { kind: "model", values: ["cohere/north-mini-code:free"] },
-      columns: { kind: "effort", values: ["none"] },
+      judge: false,
+      caseAxes: [],
+      parameters: {
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: "Return only the word OK." }],
+        },
+        model: { kind: "rows" },
+        effort: { kind: "columns" },
+      },
+      rows: [{ id: "row-model", model: "cohere/north-mini-code:free" }],
+      columns: [{ id: "column-none", effort: "none" }],
       continueWithLowBalance: true,
     },
   });

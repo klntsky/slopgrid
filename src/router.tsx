@@ -14,7 +14,7 @@ import { GridPage } from "./pages/grid";
 import { gridPageNumber } from "../shared/grid-page";
 import { isGridSlug } from "../shared/grid-slug";
 import { api } from "./api";
-import { ErrorMessage } from "./components/error-message";
+import { ErrorMessage } from "./components/feedback-message";
 const rootRoute = createRootRoute({ component: Layout });
 const createRoutePage = createRoute({
   getParentRoute: () => rootRoute,
@@ -68,9 +68,9 @@ const slugRoute = createRoute({
   component: () => <GridPage id={slugRoute.useLoaderData().id} />,
   errorComponent: ({ error }) => (
     <main>
-      <ErrorMessage
-        error={error instanceof Error ? error.message : "Grid not found"}
-      />
+      <ErrorMessage>
+        {error instanceof Error ? error.message : "Grid not found"}
+      </ErrorMessage>
     </main>
   ),
 });

@@ -20,7 +20,7 @@ test("a later failed upload preserves earlier references across reload and retry
     buffer: Buffer.concat([png, Buffer.from(name)]),
   }));
   await page
-    .getByLabel("Add input references", { exact: true })
+    .getByLabel("Add images to prompt", { exact: true })
     .setInputFiles(files);
   await expect(
     page.getByRole("img", { name: "second.png", exact: true }),
@@ -30,9 +30,9 @@ test("a later failed upload preserves earlier references across reload and retry
     route.fulfill({ status: 503, json: { error: "Storage unavailable" } }),
   );
   await page.getByRole("button", { name: "Generate", exact: true }).click();
-  await expect(page.getByRole("alert")).toHaveText(
-    "Could not upload second.png.",
-  );
+  await expect(
+    page.getByRole("alert").filter({ hasText: "second.png" }),
+  ).toBeVisible();
   await page.reload();
   await page.unroute("**/api/references?name=second.png");
   await page.getByRole("button", { name: "Generate", exact: true }).click();

@@ -14,13 +14,19 @@ function template(f: RuntimeFixture) {
   return f.grid({
     format: "chat-template",
     budgetUsd: 1,
-    rows: { kind: "variable", values: ["one"] },
-    messages: [
-      { role: "user", content: "Question $ROW" },
-      { role: "unfilled", content: "" },
-      { role: "user", content: "Next question" },
-      { role: "unfilled", content: "" },
-    ],
+    rows: [{ variable: [{ text: "one" }] }],
+    caseAxes: ["rows"],
+    parameters: {
+      input: {
+        kind: "common",
+        value: [
+          { role: "user", content: "Question $ROW1" },
+          { role: "unfilled", content: "" },
+          { role: "user", content: "Next question" },
+          { role: "unfilled", content: "" },
+        ],
+      },
+    },
   });
 }
 

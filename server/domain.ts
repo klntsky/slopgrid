@@ -2,12 +2,42 @@ import { z } from "zod";
 import {
   imageKinds,
   validImageSetting,
-  sharedImageSettingsSchema,
   normalizeImageSettings,
   type ScalarImageKind,
   referenceImageSchema,
   type ImageSettings,
+  type ReferenceImage,
 } from "./image-settings.js";
+import {
+  interpolateVariables,
+  mergeVariableImages,
+  promptVariableIssues,
+  referencedVariableFields,
+  type VariableInterpolationOptions,
+} from "./prompt-variables.js";
+import {
+  draftJudgeCriteriaSchema,
+  judgeCriteriaIssues,
+  criteriaSets,
+  criteriaForCell,
+  type Criterion,
+  judgeCriteriaSchema,
+  resolveCriteriaForCell,
+} from "./judge-criteria.js";
+import {
+  parameterValue,
+  axisParameters,
+  parameterLayoutIssues,
+  parameterValuePath,
+  isCaseAxis,
+  type ValidationIssue,
+  type ParameterConfiguration,
+} from "./parameters.js";
+import {
+  generatorInputEntries,
+  generatorInputForCell,
+} from "./generator-input.js";
+export type { VariableField } from "./prompt-variables.js";
 export const efforts = [
   "default",
   "none",
@@ -18,35 +48,79 @@ export const efforts = [
   "xhigh",
   "max",
 ] as const;
-export const kinds = [
-  "model",
-  "effort",
-  "judge_model",
-  "judge_effort",
-  "variable",
-  ...imageKinds,
-] as const;
-const axis = z.object({
-  kind: z.enum(kinds),
-  values: z
-    .array(z.string().trim().min(1))
-    .min(1)
-    .refine((v) => new Set(v).size === v.length, "Values must be distinct"),
-});
-const budgetSchema = z.number().finite().positive();
-const chatMessageSchema = z
+export type Effort = (typeof efforts)[number];
+const draftChatMessageSchema = z
   .object({
     role: z.enum(["system", "user", "assistant", "unfilled"]),
     content: z.string(),
+    images: z.array(referenceImageSchema).optional(),
   })
-  .refine(
-    (message) =>
-      message.role === "unfilled"
-        ? message.content === ""
-        : message.content.trim().length > 0,
-    "Enter a message, or leave an unfilled message empty.",
-  );
-export type ChatMessage = z.infer<typeof chatMessageSchema>;
+  .strict();
+export type ChatMessage = z.infer<typeof draftChatMessageSchema>;
+export const kinds = [
+  "model",
+  "input",
+  "effort",
+  "judge_model",
+  "judge_effort",
+  "judge_criteria",
+  "variable",
+  ...imageKinds,
+] as const;
+const variableFieldSchema = z
+  .object({
+    text: z.string(),
+    images: z.array(referenceImageSchema).optional(),
+  })
+  .strict();
+export const parameterValueSchemas = {
+  input: z.array(draftChatMessageSchema),
+  model: z.string(),
+  effort: z.enum(efforts),
+  size: z.string(),
+  aspect_ratio: z.string(),
+  quality: z.string(),
+  background: z.string(),
+  judge_model: z.string(),
+  judge_effort: z.enum(efforts),
+  judge_criteria: draftJudgeCriteriaSchema,
+  variable: z.array(variableFieldSchema.nullable()),
+};
+const parameterValuesSchema = z.object(parameterValueSchemas);
+export type ParameterValues = z.infer<typeof parameterValuesSchema>;
+const caseSchema = parameterValuesSchema
+  .partial()
+  .extend({
+    id: z
+      .string()
+      .min(1)
+      .default(() => globalThis.crypto.randomUUID()),
+  })
+  .strict();
+export type CaseRecord = z.infer<typeof caseSchema>;
+function source<T extends z.ZodType>(value: T) {
+  return z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("common"), value }).strict(),
+    z.object({ kind: z.literal("rows") }).strict(),
+    z.object({ kind: z.literal("columns") }).strict(),
+  ]);
+}
+const parameterSourcesSchema = z
+  .object({
+    input: source(parameterValueSchemas.input),
+    model: source(parameterValueSchemas.model),
+    effort: source(parameterValueSchemas.effort).optional(),
+    size: source(parameterValueSchemas.size).optional(),
+    aspect_ratio: source(parameterValueSchemas.aspect_ratio).optional(),
+    quality: source(parameterValueSchemas.quality).optional(),
+    background: source(parameterValueSchemas.background).optional(),
+    judge_model: source(parameterValueSchemas.judge_model).optional(),
+    judge_effort: source(parameterValueSchemas.judge_effort).optional(),
+    judge_criteria: source(parameterValueSchemas.judge_criteria).optional(),
+  })
+  .strict();
+export type ParameterSources = z.infer<typeof parameterSourcesSchema>;
+const budgetSchema = z.number().finite().positive();
 export type FilledChatMessage = ChatMessage & {
   role: "system" | "user" | "assistant";
 };
@@ -56,168 +130,321 @@ export function isChatFormat(format: GridInput["format"]): boolean {
 export function isMarkdownFormat(format: GridInput["format"]): boolean {
   return format === "markdown" || isChatFormat(format);
 }
-export function chatInputIssue(
+export function chatInputIssues(
   messages: ChatMessage[] = [],
-): string | undefined {
-  if (!messages.length) return "Add a message.";
-  if (messages.some((m) => m.role !== "unfilled" && !m.content.trim()))
-    return "Enter a message.";
+): ValidationIssue[] {
+  if (!messages.length) return [{ message: "Add a message.", path: [] }];
+  const issues: ValidationIssue[] = [];
+  messages.forEach((message, index) => {
+    if (message.images?.length && message.role !== "user")
+      issues.push({
+        message: "Images can only be attached to user messages.",
+        path: [index, "images"],
+      });
+  });
+  messages.forEach((message, index) => {
+    if (
+      message.role !== "unfilled" &&
+      !message.content.trim() &&
+      !(message.role === "user" && message.images?.length)
+    )
+      issues.push({
+        message: "Enter a message or attach an image.",
+        path: [index, "content"],
+      });
+  });
+  messages.forEach((message, index) => {
+    if (message.role === "unfilled" && message.content !== "")
+      issues.push({
+        message: "Leave unfilled messages empty.",
+        path: [index, "content"],
+      });
+  });
   if (messages[0].role === "unfilled")
-    return "Add a message before the first unfilled message.";
+    issues.push({
+      message: "Add a message before the first unfilled message.",
+      path: [0, "role"],
+    });
+  return issues;
 }
+
 export function chatText(messages: ChatMessage[]): string {
   return messages
     .map(({ role, content }) => `${role}: ${content}`)
     .join("\n\n");
 }
-const gridFields = {
-  prompt: z.string().trim().default(""),
-  messages: z.array(chatMessageSchema).min(1).optional(),
-  rows: axis,
-  columns: axis,
-  imageSettings: sharedImageSettingsSchema.optional(),
-  inputReferences: z.array(referenceImageSchema).optional(),
-  referenceGroups: z
-    .record(z.string(), z.array(referenceImageSchema))
-    .optional(),
-  model: z.string().trim(),
-  effort: z.enum(efforts),
-  judge: z
-    .object({
-      criteria: z
-        .array(
-          z.object({
-            text: z
-              .string()
-              .trim()
-              .min(1, "Enter a yes-or-no question for each criterion."),
-            correctAnswer: z.boolean(),
-          }),
-        )
-        .min(1, "Add at least one criterion."),
-      model: z.string().trim(),
-      effort: z.enum(efforts),
-    })
-    .optional(),
+const draftGridFields = {
+  inputVersion: z.literal(3),
+  format: z.enum(["svg", "markdown", "html", "chat-template", "image"]),
+  caseAxes: z
+    .array(z.enum(["rows", "columns"]))
+    .default([])
+    .refine(
+      (axes) => new Set(axes).size === axes.length,
+      "Case axes must be distinct.",
+    ),
+  rows: z.array(caseSchema),
+  columns: z.array(caseSchema),
+  parameters: parameterSourcesSchema,
+  judge: z.boolean().default(false),
   parallelWorkers: z.number().int().min(1).optional(),
 };
-export const gridSchema = z
-  .discriminatedUnion("format", [
-    z.object({
-      ...gridFields,
+export const gridDraftSchema = z
+  .object({
+    ...draftGridFields,
+    budgetUsd: z.string(),
+  })
+  .strict();
+export type GridDraftInput = z.infer<typeof gridDraftSchema>;
+const gridInputSchema = z.discriminatedUnion("format", [
+  z
+    .object({
+      ...draftGridFields,
       format: z.enum(["svg", "markdown", "html", "chat-template"]),
       budgetUsd: budgetSchema,
-    }),
-    z.object({
-      ...gridFields,
+    })
+    .strict(),
+  z
+    .object({
+      ...draftGridFields,
       format: z.literal("image"),
-      // Keep numeric metadata for saved grids; image inference ignores it.
       budgetUsd: budgetSchema.catch(3),
-    }),
-  ])
+    })
+    .strict(),
+]);
+export type GridInput = z.infer<typeof gridInputSchema>;
+export const modelSelectionIssueKind = "empty-model-selection";
+export const gridSchema = gridInputSchema
   .transform((g) => {
-    if (isChatFormat(g.format)) g.prompt = chatText(g.messages ?? []);
-    else delete g.messages;
+    for (const kind of [
+      "model",
+      "judge_model",
+      "size",
+      "aspect_ratio",
+      "quality",
+      "background",
+    ] as const) {
+      const source = g.parameters[kind];
+      if (source?.kind === "common") source.value = source.value.trim();
+      for (const record of [...g.rows, ...g.columns]) {
+        const value = record[kind];
+        if (value !== undefined) record[kind] = value.trim();
+      }
+    }
+    for (const criteria of criteriaSets(g))
+      for (const criterion of criteria) criterion.text = criterion.text.trim();
     return g;
   })
   .superRefine((g, c) => {
-    const issue = (message: string) => c.addIssue({ code: "custom", message });
-    if (isChatFormat(g.format)) {
-      const message = chatInputIssue(g.messages);
-      if (message) issue(message);
+    const reported = new Set<string>();
+    const issue = (message: string, path: (string | number)[]) => {
+      const key = JSON.stringify([path, message]);
+      if (reported.has(key)) return;
+      reported.add(key);
+      c.addIssue({ code: "custom", message, path });
+    };
+    for (const side of ["rows", "columns"] as const) {
+      if (g[side].length) continue;
+      const modelDimension =
+        !isCaseAxis(g, side) &&
+        (g.parameters.model.kind === side ||
+          g.parameters.judge_model?.kind === side);
+      if (modelDimension)
+        c.addIssue({
+          code: "custom",
+          message: "Select at least one model",
+          path: [side],
+          params: { kind: modelSelectionIssueKind },
+        });
+      else
+        c.addIssue({
+          code: "too_small",
+          origin: "array",
+          minimum: 1,
+          inclusive: true,
+          path: [side],
+        });
     }
-    if (!g.prompt.trim()) issue("Enter a prompt.");
-    if (![g.rows.kind, g.columns.kind].includes("model") && !g.model)
-      issue("Select a model.");
-    if (g.rows.kind === g.columns.kind && g.rows.kind !== "variable")
-      issue("Choose different row and column dimensions");
-    const dimensions = [g.rows.kind, g.columns.kind];
-    if (
-      !g.judge &&
-      dimensions.some(
-        (kind) => kind === "judge_model" || kind === "judge_effort",
-      )
-    )
-      issue("Add a judge to use judge dimensions.");
+    const applicable = new Set<keyof ParameterValues>([
+      "input",
+      "model",
+      "variable",
+    ]);
+    if (g.format === "image")
+      for (const kind of imageKinds) applicable.add(kind);
+    else applicable.add("effort");
     if (g.judge) {
-      if (g.format === "html") issue("Websites do not support a judge yet.");
-      if (!dimensions.includes("judge_model") && !g.judge.model)
-        issue("Select a judge model.");
+      if (g.format === "html")
+        issue("Websites do not support a judge yet.", ["judge"]);
+      applicable.add("judge_model");
+      applicable.add("judge_effort");
+      applicable.add("judge_criteria");
     }
-    if (
-      g.format === "image" &&
-      [g.rows.kind, g.columns.kind].includes("effort")
-    )
-      issue("Images do not support thinking effort dimensions");
-    for (const a of [g.rows, g.columns]) {
-      if (
-        (a.kind === "effort" || a.kind === "judge_effort") &&
-        a.values.some((v) => !efforts.includes(v as (typeof efforts)[number]))
-      )
-        issue("Unknown thinking effort");
-    }
-    for (const axis of [g.rows, g.columns]) {
-      if (imageKinds.some((kind) => kind === axis.kind) && g.format !== "image")
-        issue("Image settings require Image output");
-      if (
-        imageKinds.some((kind) => kind === axis.kind) &&
-        axis.kind !== "input_references" &&
-        axis.values.some(
-          (value) => !validImageSetting(axis.kind as ScalarImageKind, value),
+    for (const kind of kinds) {
+      if (kind === "variable") continue;
+      const source = g.parameters[kind];
+      if (!applicable.has(kind)) {
+        if (source)
+          issue(`${kind} is not applicable to this grid.`, [
+            "parameters",
+            kind,
+          ]);
+        continue;
+      }
+      if (!source) {
+        issue(`Choose a source for ${kind}.`, ["parameters", kind]);
+        continue;
+      }
+      const values =
+        source.kind === "common"
+          ? [source.value]
+          : g[source.kind].map((record) => record[kind]);
+      for (const [index, value] of values.entries()) {
+        const path = parameterValuePath(g, kind, index, index);
+        if (value === undefined) {
+          issue(`Add ${kind} to every ${source.kind} case.`, path);
+          continue;
+        }
+        if (
+          (kind === "model" || kind === "judge_model") &&
+          (typeof value !== "string" || !value.trim())
         )
-      )
-        issue(
-          axis.kind === "size"
-            ? "Use a resolution or a size such as 1536x1024"
-            : "Unknown image setting",
-        );
-      if (
-        axis.kind === "input_references" &&
-        axis.values.some((value) => !g.referenceGroups?.[value]?.length)
-      )
-        issue("Add images to every reference group");
+          issue(
+            kind === "model" ? "Select a model." : "Select a judge model.",
+            path,
+          );
+        if (
+          imageKinds.includes(kind as (typeof imageKinds)[number]) &&
+          (typeof value !== "string" ||
+            !validImageSetting(kind as ScalarImageKind, value))
+        )
+          issue(
+            kind === "size"
+              ? "Use a resolution or a size such as 1536x1024"
+              : "Unknown image setting",
+            path,
+          );
+      }
     }
-    const variableIssue = unusedVariableIssue(g);
-    if (variableIssue) issue(variableIssue);
-    if (g.prompt.includes("$ROW") && g.rows.kind !== "variable")
-      issue("Choose prompt variables for rows to use $ROW");
-    if (g.prompt.includes("$COLUMN") && g.columns.kind !== "variable")
-      issue("Choose prompt variables for columns to use $COLUMN");
-  })
-  .transform((g) => {
-    const dimensions = [g.rows.kind, g.columns.kind];
-    const settings = normalizeImageSettings(g.imageSettings);
-    for (const kind of dimensions) delete settings[kind as ScalarImageKind];
-    if (g.format === "image" && Object.keys(settings).length)
-      g.imageSettings = settings;
-    else delete g.imageSettings;
-    if (
-      g.format !== "image" ||
-      dimensions.includes("input_references") ||
-      !g.inputReferences?.length
-    )
-      delete g.inputReferences;
-    const groups = [g.rows, g.columns]
-      .filter((axis) => axis.kind === "input_references")
-      .flatMap((axis) => axis.values);
-    if (groups.length)
-      g.referenceGroups = Object.fromEntries(
-        groups.map((name) => [name, g.referenceGroups![name]]),
+    for (const item of parameterLayoutIssues(g)) issue(item.message, item.path);
+    for (const side of ["rows", "columns"] as const) {
+      const owned = new Set(axisParameters(g, side));
+      if (isCaseAxis(g, side)) owned.add("variable");
+      const ids = new Set<string>();
+      for (const [index, record] of g[side].entries()) {
+        if (ids.has(record.id))
+          issue("Case IDs must be distinct within an axis.", [
+            side,
+            index,
+            "id",
+          ]);
+        ids.add(record.id);
+        for (const key of Object.keys(record))
+          if (key !== "id" && !owned.has(key as keyof ParameterValues))
+            issue(`${key} is not owned by ${side}.`, [side, index, key]);
+      }
+    }
+    for (const { caseIndex, messages } of generatorInputEntries(g)) {
+      const path = parameterValuePath(
+        g,
+        "input",
+        caseIndex ?? 0,
+        caseIndex ?? 0,
       );
-    else delete g.referenceGroups;
-    return g;
-  });
-export type GridInput = z.infer<typeof gridSchema>;
-export function unusedVariableIssue(
-  input: Pick<GridInput, "prompt" | "rows" | "columns">,
-): string | undefined {
-  for (const [axis, token, label] of [
-    [input.rows, "$ROW", "row"],
-    [input.columns, "$COLUMN", "column"],
-  ] as const)
-    if (axis.kind === "variable" && !input.prompt.includes(token))
-      return `Include ${token} in the prompt for ${label} variables.`;
-}
+      if (
+        !isChatFormat(g.format) &&
+        (messages.length !== 1 || messages[0]?.role !== "user")
+      )
+        issue("Prompt formats require exactly one user message.", path);
+      // Expanded content is checked below, since a consumed variable may supply images.
+      for (const item of chatInputIssues(messages))
+        if (
+          item.path.at(-1) !== "content" ||
+          messages[item.path[0] as number]?.role === "unfilled"
+        )
+          issue(item.message, [...path, ...item.path]);
+    }
+    if (!g.rows.length || !g.columns.length)
+      for (const item of judgeCriteriaIssues(g)) issue(item.message, item.path);
+    for (const item of promptVariableIssues(g)) issue(item.message, item.path);
+    const expandedIssue = (
+      item: ValidationIssue,
+      path: (string | number)[],
+      template: string,
+      row: number,
+      column: number,
+    ) => {
+      const message =
+        g.caseAxes.length === 2
+          ? `Row case ${row + 1}, column case ${column + 1}: ${item.message}`
+          : item.message;
+      issue(message, [...path, ...item.path]);
+      if (item.path.at(-1) === "content" || item.path.at(-1) === "text")
+        for (const reference of referencedVariableFields(
+          template,
+          g,
+          row,
+          column,
+        ))
+          issue(message, [...reference.path, "text"]);
+    };
+    for (let row = 0; row < g.rows.length; row++) {
+      for (let column = 0; column < g.columns.length; column++) {
+        const rawMessages = generatorInputForCell(g, row, column);
+        const inputPath = parameterValuePath(g, "input", row, column);
+        const messages = expandGeneratorInput(g, row, column, {
+          allowUnresolvedVariables: true,
+        });
+        for (const item of chatInputIssues(messages))
+          expandedIssue(
+            item,
+            inputPath,
+            rawMessages[item.path[0] as number]?.content ?? "",
+            row,
+            column,
+          );
+        if (g.format === "image" && !messages[0]?.content.trim())
+          expandedIssue(
+            {
+              message: "Enter a prompt.",
+              path: messages.length ? [0, "content"] : [],
+            },
+            inputPath,
+            rawMessages[0]?.content ?? "",
+            row,
+            column,
+          );
+        if (g.judge) {
+          const resolved = resolveCriteriaForCell(g, row, column, {
+            allowUnresolvedVariables: true,
+          });
+          const criteria = judgeCriteriaSchema.safeParse(resolved.criteria);
+          if (!criteria.success) {
+            const rawCriteria = criteriaForCell(g, row, column);
+            const criteriaPath = parameterValuePath(
+              g,
+              "judge_criteria",
+              row,
+              column,
+            );
+            for (const item of criteria.error.issues)
+              expandedIssue(
+                {
+                  message: item.message,
+                  path: item.path as (string | number)[],
+                },
+                criteriaPath,
+                rawCriteria[item.path[0] as number]?.text ?? "",
+                row,
+                column,
+              );
+          }
+        }
+      }
+    }
+  })
+  .brand<"ValidatedGridInput">();
+export type ValidatedGridInput = z.infer<typeof gridSchema>;
 export type Completion = {
   phase: "direct" | "image" | "judge";
   finishReason?: string;
@@ -249,6 +476,7 @@ export type Cell = {
   judge?: {
     model: string;
     effort: string;
+    criteria?: Criterion[];
     status: Cell["status"];
     attemptId?: string;
     results?: JudgeResult[];
@@ -319,7 +547,8 @@ export type GenerationTask = Task<GenerationInput, GenerationOutput> & {
 export type JudgmentInput = {
   model: string;
   effort: string;
-  criteria: NonNullable<GridInput["judge"]>["criteria"];
+  criteria: Criterion[];
+  images?: ReferenceImage[];
 };
 export type JudgmentTask = Task<JudgmentInput, { results: JudgeResult[] }> & {
   kind: "judge";
@@ -365,58 +594,67 @@ export type Grid = {
   createdAt: string;
 };
 export type StoredGrid = Grid & { expanded_prompt_for_title: string };
-export function expandGrid(input: GridInput): Omit<Cell, "id">[] {
-  return input.rows.values.flatMap((r, row) =>
-    input.columns.values.map((c, column) => {
-      const selections: Record<string, string> = {
-        model: input.model,
-        effort: input.effort,
-      };
+export function expandGeneratorInput(
+  input: ParameterConfiguration,
+  row: number,
+  column: number,
+  options: VariableInterpolationOptions = {},
+): ChatMessage[] {
+  return generatorInputForCell(input, row, column).map((message) => {
+    const expanded = interpolateVariables(
+      message.content,
+      input,
+      row,
+      column,
+      options,
+    );
+    const images = mergeVariableImages(
+      message.images,
+      message.role === "user" ? expanded.images : undefined,
+    );
+    return {
+      ...message,
+      content: expanded.text,
+      ...(images ? { images } : {}),
+    };
+  });
+}
+
+export function expandGrid(
+  input: GridInput,
+  options: VariableInterpolationOptions = {},
+): Omit<Cell, "id">[] {
+  return input.rows.flatMap((_, row) =>
+    input.columns.map((_, column) => {
+      const model = parameterValue(input, "model", row, column) ?? "";
+      const effort = parameterValue(input, "effort", row, column) ?? "default";
       const judge: Cell["judge"] = input.judge
         ? {
-            model: input.judge.model,
-            effort: input.judge.effort,
+            model: parameterValue(input, "judge_model", row, column) ?? "",
+            effort:
+              parameterValue(input, "judge_effort", row, column) ?? "default",
             status: "pending",
           }
         : undefined;
-      const imageSettings: ImageSettings = { ...input.imageSettings };
-      if (input.inputReferences?.length)
-        imageSettings.input_references = input.inputReferences.map(
-          (image) => image.id,
-        );
-      for (const [a, v] of [
-        [input.rows, r],
-        [input.columns, c],
-      ] as const)
-        if (a.kind === "model" || a.kind === "effort") selections[a.kind] = v;
-        else if (a.kind === "judge_model" || a.kind === "judge_effort") {
-          if (judge) {
-            if (a.kind === "judge_model") judge.model = v;
-            else judge.effort = v;
-          }
-        } else if (a.kind === "input_references")
-          imageSettings.input_references =
-            input.referenceGroups?.[v]?.map((image) => image.id) ?? [];
-        else if (a.kind !== "variable") imageSettings[a.kind] = v;
+      const imageSettings: ImageSettings = {};
+      if (input.format === "image")
+        for (const kind of imageKinds) {
+          imageSettings[kind] = parameterValue(input, kind, row, column);
+        }
+      const messages = expandGeneratorInput(input, row, column, options);
+      const prompt = isChatFormat(input.format)
+        ? chatText(messages)
+        : (messages[0]?.content ?? "");
+      const attachments = messages[0]?.images;
+      if (input.format === "image" && attachments)
+        imageSettings.input_references = attachments.map((image) => image.id);
       return {
         row,
         column,
-        ...selections,
-        model: selections.model,
-        effort: selections.effort,
-        prompt: input.prompt
-          .replaceAll("$ROW", () => r)
-          .replaceAll("$COLUMN", () => c),
-        ...(input.messages
-          ? {
-              messages: input.messages?.map((message) => ({
-                ...message,
-                content: message.content
-                  .replaceAll("$ROW", () => r)
-                  .replaceAll("$COLUMN", () => c),
-              })),
-            }
-          : {}),
+        model,
+        effort,
+        prompt,
+        messages,
         budgetUsd: input.budgetUsd,
         ...(input.format === "image"
           ? { imageSettings: normalizeImageSettings(imageSettings) }

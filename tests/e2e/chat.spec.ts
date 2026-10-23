@@ -1,6 +1,11 @@
 import { test, expect } from "./fixtures";
 import type { Page } from "@playwright/test";
-import { connectOpenRouter, expectProgress, selectModel } from "./helpers";
+import {
+  connectOpenRouter,
+  expectProgress,
+  selectModel,
+  setVariableValues,
+} from "./helpers";
 
 async function history(page: Page) {
   return page
@@ -8,6 +13,22 @@ async function history(page: Page) {
     .evaluateAll((inputs) =>
       inputs.map((input) => (input as HTMLTextAreaElement).value),
     );
+}
+
+async function setMessageRole(
+  page: Page,
+  index: number,
+  role: "system" | "user" | "assistant",
+) {
+  const target = page.getByRole("button", {
+    name: `Message ${index} role: ${role}`,
+    exact: true,
+  });
+  for (let step = 0; step < 4 && !(await target.count()); step++)
+    await page
+      .locator(".chat-role")
+      .nth(index - 1)
+      .click();
 }
 
 test("chat editing, ordering, persistence and completion without explicit blanks", async ({
@@ -53,23 +74,19 @@ test("chat editing, ordering, persistence and completion without explicit blanks
   await page.setViewportSize({ width: 1280, height: 720 });
   await page
     .getByLabel("Message 1", { exact: true })
-    .fill("Question $ROW $COLUMN");
+    .fill("Question $ROW1 hat");
   await page.locator(".chat-append").hover();
   await page.getByRole("button", { name: "Add message", exact: true }).click();
-  await expect(page.getByLabel("Message 2", { exact: true })).toBeFocused();
+  await setMessageRole(page, 2, "assistant");
   await page.getByLabel("Message 2", { exact: true }).fill("Answer prefix ");
   await page.locator(".chat-insert").nth(1).hover();
   await page
     .getByRole("button", { name: "Insert message before 2", exact: true })
     .click();
-  await expect(page.getByLabel("Message 2", { exact: true })).toBeFocused();
-  await page.getByLabel("Message 2", { exact: true }).fill("Use Markdown");
-  await page
-    .getByRole("button", { name: "Message 2 role: assistant", exact: true })
-    .click();
-  await page
-    .getByRole("button", { name: "Message 2 role: unfilled", exact: true })
-    .click();
+  await expect(
+    page.getByRole("button", { name: "Message 2 role: unfilled", exact: true }),
+  ).toBeFocused();
+  await setMessageRole(page, 2, "system");
   await page.getByLabel("Message 2", { exact: true }).fill("Use Markdown");
   await expect(
     page.getByRole("button", { name: "Message 2 role: system", exact: true }),
@@ -114,11 +131,10 @@ test("chat editing, ordering, persistence and completion without explicit blanks
   await page
     .getByRole("combobox", { name: "Rows", exact: true })
     .selectOption("variable");
-  await page.getByLabel("Row values").fill("cat");
+  await setVariableValues(page, "Rows", ["cat"]);
   await page
     .getByRole("combobox", { name: "Columns", exact: true })
-    .selectOption("variable");
-  await page.getByLabel("Column values").fill("hat");
+    .selectOption("effort");
   await selectModel(page, "fixture/text");
   await connectOpenRouter(page);
   await expect(page.getByLabel("Message 3", { exact: true })).toHaveValue(
@@ -181,6 +197,7 @@ test("chat dragging reorders messages into gaps before and after rows", async ({
         .getByRole("button", { name: "Add message", exact: true })
         .click();
     }
+    await setMessageRole(page, index + 1, "user");
     await page
       .getByLabel(`Message ${index + 1}`, { exact: true })
       .fill(["A", "B\nsecond line\nthird line", "C", "D"][index]);
@@ -257,11 +274,21 @@ test("every chat control works from the keyboard, including an empty history", a
   await page.keyboard.press("Tab");
   await page.keyboard.press("Tab");
   await expect(
+    page.getByLabel("Add images to message 1", { exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(
     page.getByRole("button", { name: "Remove message 1", exact: true }),
   ).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(page.locator(".chat-append")).toBeFocused();
   await page.keyboard.press("Enter");
+  await expect(
+    page.getByRole("button", { name: "Message 2 role: unfilled", exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("Space");
+  await page.keyboard.press("Space");
+  await page.keyboard.press("Tab");
   await expect(page.getByLabel("Message 2", { exact: true })).toBeFocused();
   await page.keyboard.insertText("Last");
   await page.keyboard.press("Shift+Tab");
@@ -281,6 +308,11 @@ test("every chat control works from the keyboard, including an empty history", a
   await page.keyboard.press("Shift+Tab");
   await expect(page.locator(".chat-insert").nth(1)).toBeFocused();
   await page.keyboard.press("Enter");
+  await expect(
+    page.getByRole("button", { name: "Message 2 role: unfilled", exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("Space");
+  await page.keyboard.press("Tab");
   await expect(page.getByLabel("Message 2", { exact: true })).toBeFocused();
   await page.keyboard.insertText("Middle");
   await expect
@@ -289,6 +321,10 @@ test("every chat control works from the keyboard, including an empty history", a
   for (let remaining = 3; remaining > 0; remaining--) {
     await page.getByLabel("Message 1", { exact: true }).focus();
     await page.keyboard.press("Tab");
+    if (
+      await page.getByLabel("Add images to message 1", { exact: true }).count()
+    )
+      await page.keyboard.press("Tab");
     const remove = page.getByRole("button", {
       name: "Remove message 1",
       exact: true,
@@ -369,7 +405,7 @@ test.describe("chat history on touch devices", () => {
       .tap();
     await page.getByLabel("Message 1", { exact: true }).fill("First");
     await page.getByRole("button", { name: "Add message", exact: true }).tap();
-    await expect(page.getByLabel("Message 2", { exact: true })).toBeFocused();
+    await setMessageRole(page, 2, "user");
     await page.getByLabel("Message 2", { exact: true }).fill("Second");
     await page.locator(".chat-insert").first().tap();
     await expect(page.getByLabel("Message 1", { exact: true })).toBeFocused();

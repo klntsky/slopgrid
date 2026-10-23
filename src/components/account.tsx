@@ -2,7 +2,7 @@ import { useMutation } from "@tanstack/react-query";
 import { api } from "../api";
 import { useSession } from "../queries";
 import { IdentityLink } from "./identity";
-import { ErrorMessage } from "./error-message";
+import { ErrorMessage } from "./feedback-message";
 
 export function Account({
   returnTo,
@@ -51,15 +51,13 @@ export function Account({
           Sign in with GitHub
         </a>
       )}
-      <ErrorMessage
-        error={
-          settings
-            ? logout.error?.message
-            : new URLSearchParams(location.search).get("signin") === "failed"
-              ? "GitHub sign-in failed. Sign in again."
-              : undefined
-        }
-      />
+      <ErrorMessage>
+        {settings
+          ? logout.error?.message
+          : new URLSearchParams(location.search).get("signin") === "failed"
+            ? "GitHub sign-in failed. Sign in again."
+            : undefined}
+      </ErrorMessage>
     </div>
   );
 }

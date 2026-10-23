@@ -7,10 +7,13 @@ import { Store } from "../server/store.js";
 import { recoverInterruptedGrids } from "../server/recovery.js";
 import { Jobs } from "../server/jobs.js";
 import { Provider } from "../server/provider.js";
-import { expandGrid, type Grid, type GridInput } from "../server/domain.js";
+import { expandGrid, gridSchema, type Grid } from "../server/domain.js";
+import { validatedGrid } from "./grid-storage-fixture.js";
 import { createWorkflow } from "../server/workflow.js";
 import { createWorkflowExecutor } from "../server/workflow-executor.js";
 import { token } from "../server/ids.js";
+import { firstStoredSessionPayload } from "./session-storage-fixture.js";
+import { currentInput } from "./current-grid-fixture.js";
 
 test("a restart preserves finished outputs and pauses interrupted work until an explicit retry", async () => {
   const dir = mkdtempSync(join(tmpdir(), "slopgrid-recovery-")),
@@ -30,15 +33,21 @@ test("a restart preserves finished outputs and pauses interrupted work until an 
       visibility: "private",
       createdAt: new Date().toISOString(),
       status: "running",
-      input: {
-        format: "markdown",
-        prompt: "Hello",
-        rows: { kind: "variable", values: ["cat", "dog"] },
-        columns: { kind: "variable", values: ["hat"] },
-        model: "fixture/text",
-        effort: "none",
+      input: currentInput({
+        caseAxes: ["rows"],
+        parameters: {
+          input: {
+            kind: "common",
+            value: [{ role: "user", content: "$ROW1 hat" }],
+          },
+          effort: { kind: "common", value: "none" },
+        },
+        rows: [
+          { variable: [{ text: "cat" }] },
+          { variable: [{ text: "dog" }] },
+        ],
         budgetUsd: 5,
-      },
+      }),
       cells: [
         {
           id: "finished",
@@ -62,7 +71,7 @@ test("a restart preserves finished outputs and pauses interrupted work until an 
         },
       ],
     };
-    const tasks = createWorkflow(g.input, g.cells);
+    const tasks = createWorkflow(gridSchema.parse(g.input), g.cells);
     const finished = tasks[0];
     if (finished.kind !== "generation") throw new Error("Expected generation");
     finished.status = "complete";
@@ -75,10 +84,8 @@ test("a restart preserves finished outputs and pauses interrupted work until an 
     store.files.write(finished.output.artifactId, {
       "index.md": "Saved output",
     });
-    store.insert(g, tasks);
-    const raw = store.db.prepare("SELECT data FROM sessions").get() as {
-      data: string;
-    };
+    store.insert(validatedGrid(g), tasks);
+    const raw = firstStoredSessionPayload(store.db);
     assert.ok(
       !raw.data.includes("private-openrouter-key"),
       "credentials must not be readable in SQLite",
@@ -143,20 +150,25 @@ test("recovery preserves a shared generation and settled judgment while requeuin
   const dir = mkdtempSync(join(tmpdir(), "slopgrid-task-recovery-"));
   const store = new Store(":memory:", Buffer.alloc(32, 2), dir);
   try {
-    const input: GridInput = {
-      format: "markdown",
-      prompt: "Shared output",
-      rows: { kind: "judge_model", values: ["fixture/one", "fixture/two"] },
-      columns: { kind: "judge_effort", values: ["none"] },
-      model: "fixture/text",
-      effort: "none",
+    const input = currentInput({
       budgetUsd: 1,
-      judge: {
-        model: "fixture/one",
-        effort: "none",
-        criteria: [{ text: "Is this shared?", correctAnswer: true }],
+      judge: true,
+      parameters: {
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: "Shared output" }],
+        },
+        judge_model: { kind: "rows" },
+        judge_effort: { kind: "columns" },
+        judge_criteria: {
+          kind: "common",
+          value: [{ text: "Is this shared?", correctAnswer: true }],
+        },
+        effort: { kind: "common", value: "none" },
       },
-    };
+      rows: [{ judge_model: "fixture/one" }, { judge_model: "fixture/two" }],
+      columns: [{ judge_effort: "none" }],
+    });
     const grid: Grid = {
       id: "shared-recovery",
       owner: "owner",
@@ -170,7 +182,7 @@ test("recovery preserves a shared generation and settled judgment while requeuin
       status: "running",
       createdAt: new Date().toISOString(),
     };
-    const tasks = createWorkflow(input, grid.cells);
+    const tasks = createWorkflow(gridSchema.parse(input), grid.cells);
     const generation = tasks.find((task) => task.kind === "generation")!;
     const judgments = tasks.filter((task) => task.kind === "judge");
     const artifactId = token();
@@ -186,7 +198,7 @@ test("recovery preserves a shared generation and settled judgment while requeuin
     judgments[1].status = "running";
     judgments[1].attemptId = token();
     store.files.write(artifactId, { "index.md": "Shared output" });
-    store.insert(grid, tasks);
+    store.insert(validatedGrid(grid), tasks);
     recoverInterruptedGrids(store);
     const restored = store.get(grid.id)!;
     assert.equal(restored.status, "paused");

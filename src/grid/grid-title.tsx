@@ -5,15 +5,17 @@ import { api, type ViewGrid } from "../api";
 import { CopyButton } from "../components/copy-button";
 import { EditableTitle } from "../components/editable-title";
 import { GridParameters } from "./grid-parameters";
+import { gridInputText } from "../../shared/grid-display";
 
 export function GridTitle({ grid }: { grid: ViewGrid }) {
   const cache = useQueryClient();
   const prompt = useRef<HTMLHeadingElement>(null);
+  const inputText = gridInputText(grid.input);
   useEffect(() => {
     const element = prompt.current;
     if (!element) return;
     const tooltip = tippy(element, {
-      content: grid.input.prompt,
+      content: inputText,
       theme: "grid-prompt",
       placement: "bottom-start",
       maxWidth: "min(720px, calc(100vw - 24px))",
@@ -35,7 +37,7 @@ export function GridTitle({ grid }: { grid: ViewGrid }) {
       tooltip.destroy();
       document.removeEventListener("keydown", escape);
     };
-  }, [grid.input.prompt]);
+  }, [inputText]);
   return (
     <div className="grid-title-line">
       {grid.canEdit ? (
@@ -64,16 +66,14 @@ export function GridTitle({ grid }: { grid: ViewGrid }) {
         </span>
       )}
       <h1 ref={prompt} tabIndex={0} className="grid-prompt-text">
-        {grid.input.prompt}
+        {inputText}
       </h1>
       <CopyButton
         className="text-button prompt-copy"
         label="Copy prompt"
-        copy={() => navigator.clipboard.writeText(grid.input.prompt)}
+        copy={() => navigator.clipboard.writeText(inputText)}
       />
-      {grid.input.format === "image" && (
-        <GridParameters key={grid.id} grid={grid} />
-      )}
+      <GridParameters key={grid.id} grid={grid} />
     </div>
   );
 }

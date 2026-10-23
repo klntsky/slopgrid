@@ -5,12 +5,19 @@ import { join } from "node:path";
 import { startGenerationFixture } from "../generation-fixture";
 import { webFixture } from "../web-fixture";
 import { Store } from "../../server/store";
-import { expandGrid, type GridInput, type Grid } from "../../server/domain";
+import {
+  expandGrid,
+  type Grid,
+  type ChatMessage,
+} from "../../server/domain";
 import { token } from "../../server/ids";
 import { createWorkflow } from "../../server/workflow";
+import { cacheScope } from "../../server/session";
 import { startTestServer } from "../test-server";
 import { create, expectProgress } from "./helpers";
 import { parseE2EPort } from "../e2e-port";
+import { currentInput } from "../current-grid-fixture";
+import { pixelPng as bytes } from "../reference-image-fixture";
 
 const port = parseE2EPort(process.env.E2E_PORT);
 
@@ -24,7 +31,6 @@ test("visited pages and completed outputs survive offline reload without retaini
   const generation = await startGenerationFixture({ database, secret });
   const store = new Store(database, secret);
   const web = await webFixture({
-    directory,
     database,
     secret,
     socket: database + ".sock",
@@ -39,66 +45,110 @@ test("visited pages and completed outputs survive offline reload without retaini
   try {
     const owner = token();
     store.saveSession({ id: owner, created: Date.now() });
-    const grids = (["markdown", "svg", "image", "html"] as const).map(
-      (format) => {
-        const input: GridInput = {
-          format,
-          prompt: `Offline ${format}`,
-          rows: { kind: "model", values: ["fixture/text"] },
-          columns: { kind: "variable", values: ["one"] },
-          model: "fixture/text",
-          effort: "none",
-          budgetUsd: 1,
-        };
-        const grid: Grid = {
-          id: token(),
-          owner,
-          input,
-          status: "complete",
-          published: false,
-          visibility: "private",
-          createdAt: new Date().toISOString(),
-          cells: expandGrid(input).map((cell) => ({
-            ...cell,
-            id: token(),
-          })),
-        };
-        const tasks = createWorkflow(input, grid.cells);
-        const task = tasks.find((task) => task.kind === "generation")!;
-        task.status = "complete";
-        task.output = {
-          artifactId: token(),
-          mediaType: format === "image" ? "image/png" : undefined,
-          provenance: {
-            signature: "offline-output",
-            files:
-              format === "markdown"
-                ? ["index.md"]
-                : format === "svg"
-                  ? ["index.svg"]
-                  : format === "image"
-                    ? ["image"]
-                    : [
-                        "index.html",
-                        "style.css",
-                        "theme.css",
-                        "app.js",
-                        "message.js",
-                        "nested/page.html",
-                      ],
+    const chatImages = ["first.png", "later.png"].map((name) =>
+      store.references.add(Buffer.concat([bytes, Buffer.from(name)]), name, {
+        id: owner,
+        created: Date.now(),
+      })!,
+    );
+    const unusedImage = store.references.add(bytes, "unused.png", {
+      id: owner,
+      created: Date.now(),
+    })!;
+    const chatMessages: ChatMessage[] = [
+      { role: "user", content: "First image", images: [chatImages[0]] },
+      { role: "unfilled", content: "" },
+      { role: "user", content: "Later image", images: [chatImages[1]] },
+      { role: "unfilled", content: "" },
+    ];
+    const chatOutput = JSON.stringify([
+      { role: "user", content: "First image" },
+      { role: "assistant", content: "First answer" },
+      { role: "user", content: "Later image" },
+      { role: "assistant", content: "Later answer" },
+    ]);
+    function completedGrid(
+      input: ReturnType<typeof currentInput>,
+      files: Record<string, string | Buffer>,
+      thinking: string,
+      judgeStatus?: "pending" | "error" | "complete",
+      published = false,
+    ): Grid {
+      const grid = {
+        id: token(),
+        owner,
+        input,
+        status: judgeStatus ? "paused" : "complete",
+        published,
+        visibility: published ? "unlisted" : "private",
+        createdAt: new Date().toISOString(),
+        cells: expandGrid(input).map((cell) => ({ ...cell, id: token() })),
+      } satisfies Grid;
+      const tasks = createWorkflow(input, grid.cells);
+      const generation = tasks.find((task) => task.kind === "generation")!;
+      generation.status = "complete";
+      generation.output = {
+        artifactId: token(),
+        mediaType: input.format === "image" ? "image/png" : undefined,
+        provenance: { signature: "offline-output", files: Object.keys(files) },
+        thinkingId: token(),
+        thinkingSourceId: token(),
+      };
+      const judgment = tasks.find((task) => task.kind === "judge");
+      if (judgment && judgeStatus) {
+        judgment.status = judgeStatus;
+        if (judgeStatus === "error") judgment.error = "Judge unavailable";
+        if (judgeStatus === "complete")
+          judgment.output = {
+            results: [
+              {
+                verdict: false,
+                explanation: "This is saved Markdown, not a website.",
+              },
+            ],
+          };
+      }
+      store.insert(grid, tasks);
+      store.files.appendThinking(
+        generation.output.thinkingSourceId!,
+        generation.output.thinkingId!,
+        thinking,
+      );
+      store.files.write(generation.output.artifactId, files);
+      return grid;
+    }
+    const grids: Grid[] = (
+      ["markdown", "svg", "image", "html", "chat-template"] as const
+    ).map((format) => {
+      const input = currentInput({
+        format,
+        parameters: {
+          input: {
+            kind: "common",
+            value:
+              format === "chat-template"
+                ? chatMessages
+                : [{ role: "user", content: `Offline ${format}` }],
           },
-          thinkingId: token(),
-          thinkingSourceId: token(),
-        };
-        store.insert(grid, tasks);
-        store.files.appendThinking(
-          task.output.thinkingSourceId!,
-          task.output.thinkingId!,
-          `Saved ${format} thinking`,
-        );
-        store.files.write(
-          task.output.artifactId,
-          format === "markdown"
+          model: { kind: "rows" },
+          ...(format === "image"
+            ? { quality: { kind: "columns" as const } }
+            : { effort: { kind: "columns" as const } }),
+        },
+        rows: [
+          { model: format === "image" ? "fixture/image" : "fixture/text" },
+        ],
+        columns:
+          format === "image" ? [{ quality: "auto" }] : [{ effort: "none" }],
+        budgetUsd: 1,
+      });
+      const grid = completedGrid(
+        input,
+        format === "chat-template"
+          ? {
+              "messages.json": chatOutput,
+            }
+          : format === "markdown"
             ? { "index.md": "# Cached markdown\n\nSaved content" }
             : format === "svg"
               ? {
@@ -107,10 +157,7 @@ test("visited pages and completed outputs survive offline reload without retaini
                 }
               : format === "image"
                 ? {
-                    image: Buffer.from(
-                      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
-                      "base64",
-                    ),
+                    image: bytes,
                   }
                 : {
                     "index.html":
@@ -125,77 +172,78 @@ test("visited pages and completed outputs survive offline reload without retaini
                     "nested/page.html":
                       '<h1>Nested cached page</h1><a href="../index.html">Back</a>',
                   },
-        );
-        return grid;
-      },
-    );
+        `Saved ${format} thinking`,
+      );
+      return grid;
+    });
     // Finished generation must remain cacheable while judging is pending or fails.
     // Overall cell status includes judging, so it cannot determine output readiness.
-    for (const status of ["pending", "error", "complete"] as const) {
-      const template = grids[0];
-      const cellId = token();
-      const filename = "index.md";
-      const grid: Grid = {
-        ...template,
-        id: token(),
-        input: {
-          ...template.input,
-          prompt: `Offline judgment ${status}`,
-          judge: {
-            criteria: [{ text: "Is this a website?", correctAnswer: false }],
-            model: "fixture/text",
-            effort: "default",
+    for (const [format, status] of [
+      ["markdown", "pending"],
+      ["markdown", "error"],
+      ["markdown", "complete"],
+      ["chat-template", "pending"],
+    ] as const) {
+      const filename =
+        format === "chat-template" ? "messages.json" : "index.md";
+      const input = currentInput({
+        format,
+        judge: true,
+        parameters: {
+          input: {
+            kind: "common",
+            value:
+              format === "chat-template"
+                ? chatMessages
+                : [{ role: "user", content: `Offline judgment ${status}` }],
+          },
+          model: { kind: "rows" },
+          effort: { kind: "columns" },
+          judge_criteria: {
+            kind: "common",
+            value: [{ text: "Is this a website?", correctAnswer: false }],
           },
         },
-        status: "paused",
-        cells: [
-          {
-            ...template.cells[0],
-            id: cellId,
-            status,
-            judge: {
-              model: "fixture/text",
-              effort: "default",
-              status,
-              ...(status === "error" ? { error: "Judge unavailable" } : {}),
-              ...(status === "complete"
-                ? {
-                    results: [
-                      {
-                        verdict: false,
-                        explanation: "This is saved Markdown, not a website.",
-                      },
-                    ],
-                  }
-                : {}),
-            },
-          },
-        ],
-      };
-      const tasks = createWorkflow(grid.input, grid.cells);
-      const task = tasks.find((task) => task.kind === "generation")!;
-      const judgment = tasks.find((task) => task.kind === "judge")!;
-      task.status = "complete";
-      task.output = {
-        artifactId: token(),
-        provenance: { signature: "offline-output", files: [filename] },
-        thinkingId: token(),
-        thinkingSourceId: token(),
-      };
-      judgment.status = status;
-      if (status === "error") judgment.error = "Judge unavailable";
-      if (status === "complete")
-        judgment.output = { results: grid.cells[0].judge!.results! };
-      store.insert(grid, tasks);
-      store.files.appendThinking(
-        task.output.thinkingSourceId!,
-        task.output.thinkingId!,
-        `Saved judgment ${status} thinking`,
-      );
-      store.files.write(task.output.artifactId, {
-        [filename]: "# Cached markdown\n\nSaved content",
+        rows: [{ model: "fixture/text" }],
+        columns: [{ effort: "none" }],
+        budgetUsd: 1,
       });
-      grids.push(grid);
+      grids.push(
+        completedGrid(
+          input,
+          {
+            [filename]:
+              format === "chat-template"
+                ? chatOutput
+                : "# Cached markdown\n\nSaved content",
+          },
+          `Saved judgment ${status} thinking`,
+          status,
+        ),
+      );
+    }
+    for (const published of [false, true]) {
+      const input = currentInput({
+        caseAxes: ["rows", "columns"],
+        parameters: {
+          input: {
+            kind: "common",
+            value: [{
+              role: "user",
+              content: "Offline canonical $ROW1 wearing a $COLUMN1",
+            }],
+          },
+        },
+        rows: [{ variable: [{ text: "cat" }] }],
+        columns: [{ variable: [{ text: "hat" }] }],
+      });
+      grids.push(completedGrid(
+        input,
+        { "index.md": "# Cached markdown\n\nSaved content" },
+        "Saved canonical thinking",
+        undefined,
+        published,
+      ));
     }
     const context = await browser.newContext({ ignoreHTTPSErrors: true });
     await context.addCookies([
@@ -216,6 +264,11 @@ test("visited pages and completed outputs survive offline reload without retaini
     for (const grid of grids) {
       await page.goto(`${web.origin}/grid/${grid.id}`);
       await expect(page.locator("article.cell")).toHaveCount(1);
+      const configure = page.getByRole("button", {
+        name: grid.published ? "FORK" : "EDIT",
+        exact: true,
+      });
+      await expect(configure).toBeEnabled();
       // Completion is observable through CacheStorage rather than a timing delay.
       await expect
         .poll(() =>
@@ -229,6 +282,30 @@ test("visited pages and completed outputs survive offline reload without retaini
         )
         .toBe(true);
     }
+    for (const image of chatImages) {
+      await expect
+        .poll(() =>
+          page.evaluate(async (id) => {
+            for (const name of await caches.keys()) {
+              if (
+                await (await caches.open(name)).match(`/api/references/${id}`)
+              )
+                return true;
+            }
+            return false;
+          }, image.id),
+        )
+        .toBe(true);
+    }
+    expect(
+      await page.evaluate(async (id) => {
+        for (const name of await caches.keys()) {
+          if (await (await caches.open(name)).match(`/api/references/${id}`))
+            return true;
+        }
+        return false;
+      }, unusedImage.id),
+    ).toBe(false);
     for (const grid of grids.filter((grid) => grid.input.judge)) {
       const savedCell = await page.evaluate(async (id) => {
         for (const name of await caches.keys()) {
@@ -246,11 +323,7 @@ test("visited pages and completed outputs survive offline reload without retaini
     await context.setOffline(true);
     await page.reload();
     for (const grid of grids) {
-      await page
-        .getByRole("link", {
-          name: new RegExp(`${grid.input.prompt}$`),
-        })
-        .click();
+      await page.locator(`a[href="/grid/${grid.id}"]`).click();
       if (grid.cells[0].judge?.status === "complete") {
         const judgment = page.getByRole("region", {
           name: "Judgment details",
@@ -286,6 +359,21 @@ test("visited pages and completed outputs survive offline reload without retaini
               .evaluate((el) => (el as HTMLImageElement).naturalWidth),
           )
           .toBe(1);
+      if (grid.input.format === "chat-template") {
+        await expect(
+          page.getByText("Later answer", { exact: true }),
+        ).toBeVisible();
+        for (const image of chatImages)
+          await expect
+            .poll(() =>
+              page
+                .getByRole("img", { name: image.name, exact: true })
+                .evaluate(
+                  (element) => (element as HTMLImageElement).naturalWidth,
+                ),
+            )
+            .toBe(1);
+      }
       if (grid.input.format === "html") {
         const frame = page.frameLocator('iframe[aria-hidden="false"]');
         await expect(frame.getByText("Cached module loaded")).toBeVisible();
@@ -314,6 +402,23 @@ test("visited pages and completed outputs survive offline reload without retaini
       }
       await page.reload();
       await expect(page.locator("article.cell")).toHaveCount(1);
+      const configure = page.getByRole("button", {
+        name: grid.published ? "FORK" : "EDIT",
+        exact: true,
+      });
+      await expect(configure).toBeEnabled();
+      if (grid.input.format === "chat-template") {
+        for (const image of chatImages)
+          await expect
+            .poll(() =>
+              page
+                .getByRole("img", { name: image.name, exact: true })
+                .evaluate(
+                  (element) => (element as HTMLImageElement).naturalWidth,
+                ),
+            )
+            .toBe(1);
+      }
       if (grid.input.judge) {
         const snapshot = await page.evaluate(
           async (id) => (await fetch(`/api/grids/${id}`)).json(),
@@ -329,7 +434,99 @@ test("visited pages and completed outputs survive offline reload without retaini
     await expect(
       page.getByText("This page isn't available offline.", { exact: true }),
     ).toBeVisible();
+    // Switch while offline: reconnect refetches /api/session, whose renewal
+    // could otherwise overwrite the replacement cookie with the original owner.
+    const otherSession = { id: token(), created: Date.now() };
+    store.saveSession(otherSession);
+    for (const image of chatImages) {
+      expect(store.references.allowed(image.id)).toBe(false);
+      expect(store.references.allowed(image.id, otherSession)).toBe(false);
+    }
+    await context.addCookies([
+      {
+        name: "__Host-slopgrid",
+        value: otherSession.id,
+        url: web.origin,
+        httpOnly: true,
+        secure: true,
+        sameSite: "Lax",
+      },
+    ]);
     await context.setOffline(false);
+    const observedSession = await page.evaluate(async () => {
+      const response = await fetch("/api/session");
+      return {
+        status: response.status,
+        scope: response.headers.get("X-Slopgrid-Cache-Scope"),
+      };
+    });
+    expect(observedSession).toEqual({
+      status: 200,
+      scope: cacheScope(otherSession),
+    });
+    for (const image of chatImages)
+      expect(
+        await page.evaluate(
+          async (id) => (await fetch(`/api/references/${id}`)).status,
+          image.id,
+        ),
+      ).toBe(404);
+    await context.setOffline(true);
+    await page.goto(`${web.origin}/grid/${grids[0].id}`);
+    await expect(page.getByText("Saved content")).toHaveCount(0);
+    for (const image of chatImages)
+      expect(
+        await page.evaluate(
+          async (id) => (await fetch(`/api/references/${id}`)).status,
+          image.id,
+        ),
+      ).toBe(503);
+
+    // Returning to the original identity may recache its conversation. Keep
+    // logout coverage distinct from the observed-session-change path above.
+    await context.addCookies([
+      {
+        name: "__Host-slopgrid",
+        value: owner,
+        url: web.origin,
+        httpOnly: true,
+        secure: true,
+        sameSite: "Lax",
+      },
+    ]);
+    await context.setOffline(false);
+    expect(
+      await page.evaluate(async () => {
+        const response = await fetch("/api/session");
+        return {
+          status: response.status,
+          scope: response.headers.get("X-Slopgrid-Cache-Scope"),
+        };
+      }),
+    ).toEqual({ status: 200, scope: cacheScope({ id: owner }) });
+    const chat = grids.find((grid) => grid.input.format === "chat-template")!;
+    await page.goto(`${web.origin}/grid/${chat.id}`);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          async (ids) => {
+            for (const name of await caches.keys()) {
+              const cache = await caches.open(name);
+              if (
+                (
+                  await Promise.all(
+                    ids.map((id) => cache.match(`/api/references/${id}`)),
+                  )
+                ).every(Boolean)
+              )
+                return true;
+            }
+            return false;
+          },
+          chatImages.map((image) => image.id),
+        ),
+      )
+      .toBe(true);
     await page.goto(web.origin);
     await page.evaluate(() => fetch("/api/auth/logout", { method: "POST" }));
     await context.clearCookies();
@@ -337,6 +534,13 @@ test("visited pages and completed outputs survive offline reload without retaini
     await context.setOffline(true);
     await page.goto(`${web.origin}/grid/${grids[0].id}`);
     await expect(page.getByText("Saved content")).toHaveCount(0);
+    for (const image of chatImages)
+      expect(
+        await page.evaluate(
+          async (id) => (await fetch(`/api/references/${id}`)).status,
+          image.id,
+        ),
+      ).toBe(503);
   } finally {
     await browser.close();
     await web.close();
@@ -360,7 +564,7 @@ test("streaming output is excluded until completion and remains available after 
     });
     const page = await context.newPage();
     await page.request.post("/fixture/reset", { data: { svgStreaming: true } });
-    await create(page, "SVG", "cat", "hat");
+    await create(page, { rowValues: ["cat"] });
     await expect(
       page.getByRole("img", { name: "SVG preview", exact: true }),
     ).toBeVisible();

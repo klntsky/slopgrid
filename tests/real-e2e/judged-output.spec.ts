@@ -2,10 +2,16 @@ import { test, expect, type Page } from "@playwright/test";
 import type { Cell, GridInput } from "../../server/domain";
 import type { Model } from "../../server/provider";
 import type { BillingPage } from "../../server/billing";
+import { criteriaForCell } from "../../server/judge-criteria";
+import type { ReferenceImage } from "../../server/image-settings";
+import { rasterizeSvg } from "../../server/svg-raster";
+import { judgeSystem } from "../../server/judge";
 
 const judges = ["openai/gpt-5-mini", "openai/gpt-5-nano"];
 const textGenerator = "openai/gpt-4.1-mini";
 const imageGenerator = "google/gemini-2.5-flash-image";
+const chatReferenceSvg =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="192" height="128"><rect width="192" height="128" fill="white"/><rect x="32" y="32" width="128" height="64" fill="red"/></svg>';
 const criteria = [
   {
     text: "Does the output contain or describe a blue circle?",
@@ -83,6 +89,19 @@ async function connect(page: Page, format: GridInput["format"]) {
       models.find((entry) => entry.id === imageGenerator)?.image,
       `Required image generator is unavailable: ${imageGenerator}`,
     ).toBe(true);
+  } else if (format === "chat-template") {
+    const model = models.find((entry) => entry.id === textGenerator);
+    expect(
+      model,
+      `Required Chat generator is unavailable: ${textGenerator}`,
+    ).toBeTruthy();
+    expect(model!.text, `${textGenerator} must support text output.`).toBe(
+      true,
+    );
+    expect(
+      model!.imageInput,
+      `${textGenerator} must accept the uploaded Chat image.`,
+    ).toBe(true);
   }
   return headers;
 }
@@ -131,19 +150,55 @@ async function create(
   return grid!;
 }
 
-async function inspect(page: Page, grid: Snapshot) {
+async function inspect(page: Page, grid: Snapshot, submitted: GridInput) {
   expect(new Set(grid.cells.map((cell) => cell.generationId)).size).toBe(1);
   const outputs: Buffer[] = [];
-  const expected = grid.input.judge!.criteria;
   const scores = page.locator(".judge-result-button");
   await expect(scores).toHaveCount(grid.cells.length);
   for (const [index, cell] of grid.cells.entries()) {
-    expect(cell.outputReady).toBe(true);
-    expect(cell.judge?.status).toBe("complete");
-    expect(cell.judge?.results).toHaveLength(expected.length);
-    expect(cell.judge!.results!.map((result) => result.verdict)).toEqual(
-      criteria.map((criterion) => criterion.correctAnswer),
+    const expected = criteriaForCell(grid.input, cell.row, cell.column);
+    const download = await page.request.get(`/outputs/${cell.id}/download`);
+    expect(download.ok()).toBe(true);
+    const output = await download.body();
+    outputs.push(output);
+    const diagnostic = JSON.stringify(
+      {
+        gridId: grid.id,
+        cellId: cell.id,
+        generationId: cell.generationId,
+        input: grid.input,
+        row: cell.row,
+        column: cell.column,
+        criteria: expected,
+        expectedVerdicts: criteria.map((criterion) => criterion.correctAnswer),
+        judge: cell.judge,
+        judgeSystem,
+        judgeCriteriaMessage: `Criteria:\n${expected.map((criterion, index) => `${index + 1}. ${criterion.text}`).join("\n")}`,
+        ...(grid.input.format === "chat-template"
+          ? {
+              savedConversation: JSON.parse(output.toString("utf8")),
+              referenceImageSourceSvg: chatReferenceSvg,
+            }
+          : {}),
+      },
+      null,
+      2,
     );
+    if (grid.input.format === "chat-template")
+      await test.info().attach(`chat-judgment-${cell.id}`, {
+        body: diagnostic,
+        contentType: "application/json",
+      });
+    expect(cell.outputReady).toBe(true);
+    expect(cell.judge?.status, diagnostic).toBe("complete");
+    expect(cell.judge?.results, diagnostic).toHaveLength(expected.length);
+    // Chat integration must also handle an inaccurate generated answer.
+    // Deterministic provider tests assert exact image context and verdicts.
+    if (grid.input.format !== "chat-template")
+      expect(
+        cell.judge!.results!.map((result) => result.verdict),
+        diagnostic,
+      ).toEqual(criteria.map((criterion) => criterion.correctAnswer));
     const correct = cell.judge!.results!.filter(
       (result, criterion) =>
         result.verdict === expected[criterion].correctAnswer,
@@ -152,9 +207,22 @@ async function inspect(page: Page, grid: Snapshot) {
     await expect(scores.nth(index)).toHaveAccessibleName(
       `Judgment: ${correct} of ${expected.length} correct`,
     );
-    const download = await page.request.get(`/outputs/${cell.id}/download`);
-    expect(download.ok()).toBe(true);
-    outputs.push(await download.body());
+    if (grid.input.format === "chat-template") {
+      const messages: { role: string; content: string }[] = JSON.parse(
+        output.toString("utf8"),
+      );
+      const source = submitted.parameters.input;
+      if (source.kind !== "common")
+        throw new Error("This live fixture requires a common conversation.");
+      const provided = source.value.filter(
+        (message) => message.role !== "unfilled",
+      );
+      expect(messages.slice(0, -1), diagnostic).toEqual(provided);
+      expect(
+        messages.map((message) => message.role),
+        diagnostic,
+      ).toEqual([...provided.map((message) => message.role), "assistant"]);
+    }
   }
   for (const output of outputs.slice(1))
     expect(output.equals(outputs[0])).toBe(true);
@@ -167,6 +235,11 @@ async function inspect(page: Page, grid: Snapshot) {
   await expect(details).toBeVisible();
   await expect(cell.locator(".cell-view").first()).toBeHidden();
   const items = details.getByRole("listitem");
+  const expected = criteriaForCell(
+    grid.input,
+    grid.cells[0].row,
+    grid.cells[0].column,
+  );
   for (const [index, result] of grid.cells[0].judge!.results!.entries()) {
     const matched = result.verdict === expected[index].correctAnswer;
     await expect(
@@ -244,66 +317,123 @@ for (const format of ["markdown", "chat-template", "image", "svg"] as const) {
   }) => {
     test.setTimeout(600_000);
     const headers = await connect(page, format);
+    let attachment: ReferenceImage | undefined;
+    if (format === "chat-template") {
+      const image = await rasterizeSvg(Buffer.from(chatReferenceSvg));
+      const upload = await page.request.post("/api/references?name=input.png", {
+        headers: { ...headers, "content-type": "application/octet-stream" },
+        data: image.bytes,
+      });
+      expect(
+        upload.status(),
+        `Real image upload failed: ${await upload.text()}`,
+      ).toBe(201);
+      attachment = await upload.json();
+      const saved = await page.request.get(`/api/references/${attachment!.id}`);
+      expect(saved.ok()).toBe(true);
+      expect(await saved.body()).toEqual(image.bytes);
+    }
     const prompt =
       format === "svg"
         ? "Return only a valid SVG: a solid red rectangle on a white 64 by 64 canvas. No circles, text, gradients or external resources."
         : format === "image"
           ? "A single solid red rectangle centered on a plain white background. Flat geometric diagram. No circles, letters, or other objects."
-          : "Respond with only this short sentence: A red rectangle is shown.";
+          : format === "chat-template"
+            ? "Describe the colored shape in the attached image, including its color and shape. Respond with one short sentence."
+            : "Respond with only this short sentence: A red rectangle is shown.";
     const input: GridInput = {
+      inputVersion: 3,
       format,
-      prompt,
-      model: format === "image" ? imageGenerator : textGenerator,
-      effort: "default",
       budgetUsd: 0.03,
-      ...(format === "chat-template"
-        ? {
-            messages: [
-              { role: "user" as const, content: prompt },
-              { role: "unfilled" as const, content: "" },
-            ],
-          }
-        : {}),
+      judge: true,
+      caseAxes: [],
+      parameters: {
+        input: {
+          kind: "common",
+          value: [
+            {
+              role: "user",
+              content: prompt,
+              ...(attachment ? { images: [attachment] } : {}),
+            },
+            ...(format === "chat-template"
+              ? [{ role: "unfilled" as const, content: "" }]
+              : []),
+          ],
+        },
+        model:
+          format === "svg" || format === "chat-template"
+            ? { kind: "rows" }
+            : {
+                kind: "common",
+                value: format === "image" ? imageGenerator : textGenerator,
+              },
+        ...(format === "image"
+          ? {
+              size: { kind: "common" as const, value: "auto" },
+              aspect_ratio: { kind: "common" as const, value: "auto" },
+              quality: { kind: "common" as const, value: "auto" },
+              background: { kind: "common" as const, value: "auto" },
+            }
+          : {
+              effort:
+                format === "svg" || format === "chat-template"
+                  ? { kind: "columns" as const }
+                  : { kind: "common" as const, value: "default" as const },
+            }),
+        judge_model:
+          format === "svg" || format === "chat-template"
+            ? { kind: "common", value: judges[0] }
+            : { kind: "rows" },
+        judge_effort:
+          format === "svg" || format === "chat-template"
+            ? { kind: "common", value: "low" }
+            : { kind: "columns" },
+        judge_criteria: { kind: "common", value: criteria },
+      },
       rows:
         format === "svg" || format === "chat-template"
-          ? { kind: "model", values: [textGenerator] }
-          : {
-              kind: "judge_model",
-              values: format === "markdown" ? judges : [judges[0]],
-            },
+          ? [{ id: "row-generator", model: textGenerator }]
+          : (format === "markdown" ? judges : [judges[0]]).map(
+              (judge_model, index) => ({
+                id: `row-judge-${index + 1}`,
+                judge_model,
+              }),
+            ),
       columns:
         format === "svg" || format === "chat-template"
-          ? { kind: "effort", values: ["default"] }
-          : {
-              kind: "judge_effort",
-              values: format === "markdown" ? ["low", "high"] : ["low"],
-            },
-      judge: {
-        criteria,
-        model: format === "svg" || format === "chat-template" ? judges[0] : "",
-        effort: "low",
-      },
+          ? [{ id: "column-default", effort: "default" }]
+          : (format === "markdown"
+              ? (["low", "high"] as const)
+              : (["low"] as const)
+            ).map((judge_effort) => ({
+              id: `column-${judge_effort}`,
+              judge_effort,
+            })),
     };
     const grid = await create(page, input, headers);
     expect(new Set(grid.cells.map((cell) => cell.judge!.effort))).toEqual(
       new Set(format === "markdown" ? ["low", "high"] : ["low"]),
     );
-    await inspect(page, grid);
+    await inspect(page, grid, input);
     await billing(page, grid, 1);
     if (format === "markdown") {
       const fresh = await create(
         page,
         {
           ...input,
-          judge: {
-            ...input.judge!,
-            criteria: [criteria[0], { ...criteria[1], correctAnswer: false }],
+          parameters: {
+            ...input.parameters,
+            judge_criteria: {
+              kind: "common",
+              value: [criteria[0], { ...criteria[1], correctAnswer: false }],
+            },
           },
         },
         headers,
         grid.id,
       );
-      await inspect(page, fresh);
+      await inspect(page, fresh, input);
       const firstAttempts = new Set(
         grid.cells.map((cell) => cell.judge!.attemptId),
       );

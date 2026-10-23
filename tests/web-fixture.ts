@@ -1,15 +1,13 @@
 import { createServer } from "node:https";
 import { request, type RequestListener } from "node:http";
 import { once } from "node:events";
-import { execFileSync } from "node:child_process";
-import { readFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { Agent } from "undici";
 import { serviceFixture, stopService } from "./service-fixture.js";
 import { waitForReady } from "./process-ready.js";
+import { localhostTestTLS } from "./fixture-resources.js";
 
 export async function webFixture(config: {
-  directory: string;
   database: string;
   secret: Buffer;
   providerURL?: string;
@@ -19,28 +17,6 @@ export async function webFixture(config: {
   controls?: RequestListener;
   hostname?: string;
 }) {
-  const key = join(config.directory, "key.pem"),
-    cert = join(config.directory, "cert.pem");
-  if (!existsSync(key))
-    execFileSync(
-      "openssl",
-      [
-        "req",
-        "-x509",
-        "-newkey",
-        "rsa:2048",
-        "-nodes",
-        "-keyout",
-        key,
-        "-out",
-        cert,
-        "-days",
-        "1",
-        "-subj",
-        "/CN=localhost",
-      ],
-      { stdio: "ignore" },
-    );
   let backend: number;
   const handleRequest: RequestListener = (req, res) => {
     if (
@@ -71,7 +47,7 @@ export async function webFixture(config: {
     res.on("close", () => upstream.destroy());
     req.pipe(upstream);
   };
-  const tls = { key: readFileSync(key), cert: readFileSync(cert) };
+  const tls = localhostTestTLS();
   const proxy = createServer(tls, handleRequest);
   const ipv6Proxy = createServer(tls, handleRequest);
   const proxies = [proxy, ipv6Proxy];

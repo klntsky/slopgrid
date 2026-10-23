@@ -1,7 +1,9 @@
 import { token } from "../server/ids.js";
-import { expandGrid, type Grid } from "../server/domain.js";
+import { expandGrid, gridSchema, type Grid } from "../server/domain.js";
+import { validatedGrid } from "./grid-storage-fixture.js";
 import type { Store } from "../server/store.js";
 import { createWorkflow } from "../server/workflow.js";
+import { currentInput } from "./current-grid-fixture.js";
 
 export function seedGridLists(
   store: Store,
@@ -27,15 +29,18 @@ export function seedGridLists(
           : i === listed
             ? "unlisted"
             : "private";
-    const input: Grid["input"] = {
-      format: "markdown",
-      prompt: `Grid ${i}`,
-      model: "fixture/text",
-      rows: { kind: "variable", values: ["row"] },
-      columns: { kind: "effort", values: ["default"] },
-      effort: "default",
-      budgetUsd: 3,
-    };
+    const input = currentInput({
+      parameters: {
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: `Grid ${i}` }],
+        },
+        model: { kind: "rows" },
+        effort: { kind: "columns" },
+      },
+      rows: [{ model: "fixture/text" }],
+      columns: [{ effort: "default" }],
+    });
     const grid: Grid = {
       id,
       owner: i < counts.owned ? owner : otherOwner,
@@ -53,12 +58,12 @@ export function seedGridLists(
         error: "Fixture output",
       })),
     };
-    const tasks = createWorkflow(input, grid.cells);
+    const tasks = createWorkflow(gridSchema.parse(input), grid.cells);
     for (const task of tasks) {
       task.status = "error";
       task.error = "Fixture output";
     }
-    store.insert(grid, tasks);
+    store.insert(validatedGrid(grid), tasks);
     created.set(id, grid.createdAt);
     if (i < counts.owned) owned.push(id);
     if (visibility === "public")

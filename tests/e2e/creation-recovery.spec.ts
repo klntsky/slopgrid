@@ -15,7 +15,7 @@ test("a lost creation response followed by reload recovers one grid", async ({
       await route.abort("failed");
     } else await route.fulfill({ response });
   });
-  await create(page, "Markdown", "cat", "hat");
+  await create(page, { format: "Markdown", rowValues: ["cat"] });
   await expect(page.getByRole("alert")).toBeVisible();
   await page.reload();
   await page.getByRole("button", { name: "Generate", exact: true }).click();

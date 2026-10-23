@@ -50,3 +50,40 @@
   min-width: 0;
   overflow-x: auto;
 }
+.chat-message-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-start;
+  max-width: 100%;
+  margin-bottom: 12px;
+}
+.chat-image-frame {
+  position: relative;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  border-radius: 8px;
+}
+.chat-image-frame img {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.chat-image-loader {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.chat-image-loader .spinner {
+  padding: 6px;
+  border-radius: 50%;
+  background: var(--chat-bubble-fill);
+}

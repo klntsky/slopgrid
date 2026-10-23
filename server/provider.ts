@@ -1,4 +1,4 @@
-import type { ReferenceContent } from "./image-references.js";
+import type { ReferenceInputs } from "./image-references.js";
 import {
   prepareTextInference,
   prepareImageInference,
@@ -14,14 +14,15 @@ import { generateInference, type InferenceContext } from "./inference.js";
 import { parsePricing, type ModelPricing } from "./model-pricing.js";
 import type { CallObserver } from "./billing.js";
 import { upstreamFetch } from "./http.js";
-import { judgeInference, type PreparedJudgeInference } from "./judge.js";
-import { canJudge, judgeModelIssue } from "./compatibility.js";
+import { judgeInference } from "./judge.js";
+import type { ChatInputMessage } from "./chat-messages.js";
 import {
   efforts,
   type Cell,
   type GenerationParameters,
-  type GridInput,
+  type Effort,
   type InferenceProgress,
+  type JudgmentInput,
 } from "./domain.js";
 export type Model = {
   id: string;
@@ -34,10 +35,11 @@ export type Model = {
   reasoning: boolean;
   reasoningMandatory: boolean;
   structuredOutputs?: boolean;
-  reasoningEfforts?: GridInput["effort"][];
+  reasoningEfforts?: Effort[];
   pricing?: ModelPricing;
   contextLength?: number;
   maxCompletionTokens?: number;
+  imageEndpoints?: ImageEndpoint[];
 };
 export class InvalidKey extends Error {}
 
@@ -153,7 +155,7 @@ export class Provider {
         !!m.reasoning ||
         parameters.some((p) => p === "reasoning" || p === "reasoning_effort");
       const mandatory = m.reasoning?.mandatory === true;
-      let reasoningEfforts: GridInput["effort"][] | undefined;
+      let reasoningEfforts: Effort[] | undefined;
       if (!reasoning) reasoningEfforts = ["none"];
       else if (m.reasoning) {
         const supported =
@@ -238,20 +240,21 @@ export class Provider {
     }
   }
 
-  async judge(
+  judge(
     key: string,
-    prepared: PreparedJudgeInference,
+    input: JudgmentInput,
+    messages: ChatInputMessage[],
     context: InferenceContext = {},
+    references?: ReferenceInputs,
   ) {
-    const model = (await this.models()).find(
-      (candidate) => candidate.id === prepared.model,
+    return judgeInference(
+      this.baseURL,
+      key,
+      input,
+      messages,
+      context,
+      references,
     );
-    if (!model || !canJudge(model, prepared.format))
-      throw new PreparationError(
-        judgeModelIssue(model, prepared.format) ??
-          "The judge model must support structured outputs.",
-      );
-    return judgeInference(this.baseURL, key, prepared, context);
   }
   async generate(
     key: string,
@@ -260,7 +263,7 @@ export class Provider {
     onChunk: (progress: InferenceProgress) => void,
     signal?: AbortSignal,
     observe?: CallObserver,
-    references?: ReferenceContent[],
+    references?: ReferenceInputs,
     beforeRequest?: () => Promise<void>,
     _taskId?: string,
   ): Promise<{
@@ -294,7 +297,7 @@ export class Provider {
   async prepare(
     format: SingleOutputFormat,
     cell: GenerationParameters,
-    references: ReferenceContent[] = [],
+    references?: ReferenceInputs,
   ) {
     if (format === "image") return prepareImageInference(cell, references);
     const pricedModel = (await this.models()).find(
@@ -313,6 +316,8 @@ export class Provider {
       cell,
       budget,
       format === "html" && pricedModel.structuredOutputs === true,
+      undefined,
+      references,
     );
   }
 }

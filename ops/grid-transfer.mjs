@@ -13,6 +13,8 @@ import {
   copyFileSync,
   rmSync,
   realpathSync,
+  constants,
+  linkSync,
 } from "node:fs";
 
 function check(condition, message) {
@@ -99,6 +101,56 @@ function inventory(root, relative) {
   return JSON.stringify(files);
 }
 
+function referenceInventory(root, sha256) {
+  check(/^[a-f0-9]{64}$/.test(sha256), "Invalid reference SHA-256");
+  const directory = join(root, ".references");
+  const parent = lstatSync(directory, { throwIfNoEntry: false });
+  if (!parent) return false;
+  check(
+    !parent.isSymbolicLink() && parent.isDirectory(),
+    "Reference storage is not a regular directory",
+  );
+  const path = join(directory, sha256);
+  const stat = lstatSync(path, { throwIfNoEntry: false });
+  if (!stat) return false;
+  check(
+    !stat.isSymbolicLink() && stat.isFile(),
+    "Reference blob is not a regular file",
+  );
+  check(hash(path) === sha256, "Reference blob checksum mismatch");
+  return true;
+}
+
+function copyReference(source, target, sha256) {
+  const directory = join(target, ".references");
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  const temporary = join(
+    directory,
+    `.${sha256}-${randomBytes(12).toString("hex")}`,
+  );
+  try {
+    copyFileSync(
+      join(source, ".references", sha256),
+      temporary,
+      constants.COPYFILE_EXCL,
+    );
+    check(hash(temporary) === sha256, "Copied reference checksum mismatch");
+    try {
+      linkSync(temporary, join(directory, sha256));
+      return true;
+    } catch (error) {
+      if (error.code !== "EEXIST") throw error;
+      check(
+        referenceInventory(target, sha256),
+        "Destination reference is missing",
+      );
+      return false;
+    }
+  } finally {
+    rmSync(temporary, { force: true });
+  }
+}
+
 // Target commit precedes source removal. A crash between them leaves both copies,
 // and a subsequent run refuses to overwrite the destination.
 export function transferGrid(Database, options) {
@@ -127,8 +179,8 @@ export function transferGrid(Database, options) {
   try {
     for (const db of [source, target]) {
       check(
-        db.pragma("user_version", { simple: true }) === 14,
-        "Grid transfer requires database schema 14",
+        db.pragma("user_version", { simple: true }) === 17,
+        "Grid transfer requires database schema 17",
       );
       db.pragma("foreign_keys=ON");
       db.exec(apply ? "BEGIN IMMEDIATE" : "BEGIN");
@@ -136,6 +188,10 @@ export function transferGrid(Database, options) {
     const row = source.prepare("SELECT * FROM grids WHERE id=?").get(grid);
     check(row, "Source grid not found");
     const data = JSON.parse(row.data);
+    check(
+      data.input?.inputVersion === 3,
+      "Selective grid transfer requires canonical inputVersion 3",
+    );
     check(
       ["paused", "complete"].includes(data.status) &&
         !row.published &&
@@ -145,12 +201,14 @@ export function transferGrid(Database, options) {
     check(row.owner_user_id, "Source grid requires account ownership");
     check(
       data.input.format === "svg" &&
-        data.input.rows.kind === "model" &&
-        data.input.columns.values.length === 1,
+        data.input.parameters?.model?.kind === "rows" &&
+        Array.isArray(data.input.rows) &&
+        Array.isArray(data.input.columns) &&
+        data.input.columns.length === 1,
       "Transfer requires an SVG grid with model rows and one column",
     );
-    const positions = data.input.rows.values.flatMap((model, index) =>
-      model === removeModel ? [index] : [],
+    const positions = data.input.rows.flatMap((row, index) =>
+      row.model === removeModel ? [index] : [],
     );
     check(
       positions.length === 1,
@@ -160,7 +218,7 @@ export function transferGrid(Database, options) {
       .prepare("SELECT * FROM cells WHERE grid_id=? ORDER BY position")
       .all(grid);
     check(
-      cells.length === data.input.rows.values.length &&
+      cells.length === data.input.rows.length &&
         cells.every((cell, index) => cell.position === index),
       "Grid positions do not match its inputs",
     );
@@ -325,6 +383,62 @@ export function transferGrid(Database, options) {
       );
       if (existing === undefined) toCopy.add(relative);
     }
+    const references = source
+      .prepare("SELECT reference_id FROM grid_reference_images WHERE grid_id=?")
+      .all(grid);
+    const referenceImages = source
+      .prepare(
+        `SELECT r.* FROM reference_images r
+        JOIN grid_reference_images g ON g.reference_id=r.id
+        WHERE g.grid_id=? ORDER BY r.id`,
+      )
+      .all(grid);
+    const findReference = target.prepare(
+      "SELECT owner_user_id,name,media_type,sha256 FROM reference_images WHERE id=?",
+    );
+    const newReferenceImages = referenceImages.filter((reference) => {
+      const existing = findReference.get(reference.id);
+      if (!existing) return true;
+      check(
+        existing.owner_user_id === owner &&
+          existing.name === reference.name &&
+          existing.media_type === reference.media_type &&
+          existing.sha256 === reference.sha256,
+        "Destination reference metadata already exists with different contents or ownership",
+      );
+      return false;
+    });
+    const referenceBlobs = new Map();
+    const findSourceBlob = source.prepare(
+      "SELECT sha256,width,height FROM reference_blobs WHERE sha256=?",
+    );
+    const findTargetBlob = target.prepare(
+      "SELECT width,height FROM reference_blobs WHERE sha256=?",
+    );
+    for (const reference of referenceImages) {
+      if (reference.sha256 === null || referenceBlobs.has(reference.sha256))
+        continue;
+      const blob = findSourceBlob.get(reference.sha256);
+      check(blob, "Source reference blob metadata is missing");
+      const targetBlob = findTargetBlob.get(reference.sha256);
+      check(
+        !targetBlob ||
+          blob.width === null ||
+          targetBlob.width === null ||
+          (targetBlob.width === blob.width &&
+            targetBlob.height === blob.height),
+        "Destination reference blob dimensions already exist with different contents",
+      );
+      const available = referenceInventory(
+        options.sourceOutputs,
+        reference.sha256,
+      );
+      const existing = referenceInventory(
+        options.targetOutputs,
+        reference.sha256,
+      );
+      referenceBlobs.set(reference.sha256, { blob, available, existing });
+    }
     for (const call of retainedCalls)
       check(
         !target
@@ -349,12 +463,18 @@ export function transferGrid(Database, options) {
     const receipts = source
       .prepare("SELECT * FROM creation_requests WHERE grid_id=?")
       .all(grid);
-    const references = source
-      .prepare("SELECT reference_id FROM grid_reference_images WHERE grid_id=?")
-      .all(grid);
     writeFileSync(
       join(options.backupDir, "source.json"),
-      JSON.stringify({ grid: row, cells, tasks, calls, receipts, references }),
+      JSON.stringify({
+        grid: row,
+        cells,
+        tasks,
+        calls,
+        receipts,
+        references,
+        referenceImages,
+        referenceBlobs: [...referenceBlobs.values()].map(({ blob }) => blob),
+      }),
       { mode: 0o600 },
     );
     for (const relative of paths) {
@@ -369,9 +489,25 @@ export function transferGrid(Database, options) {
       copied.push(to);
       copyTree(from, to);
     }
+    for (const [sha256, { available, existing }] of referenceBlobs) {
+      if (!available) continue;
+      const backup = join(options.backupDir, "outputs", ".references", sha256);
+      mkdirSync(dirname(backup), { recursive: true, mode: 0o700 });
+      copyFileSync(
+        join(options.sourceOutputs, ".references", sha256),
+        backup,
+        constants.COPYFILE_EXCL,
+      );
+      check(hash(backup) === sha256, "Backed-up reference checksum mismatch");
+      if (
+        !existing &&
+        copyReference(options.sourceOutputs, options.targetOutputs, sha256)
+      )
+        copied.push(join(options.targetOutputs, ".references", sha256));
+    }
     data.status = "complete";
     delete data.interruption;
-    data.input.rows.values.splice(positions[0], 1);
+    data.input.rows.splice(positions[0], 1);
     target
       .prepare(
         `INSERT INTO grids
@@ -387,6 +523,26 @@ export function transferGrid(Database, options) {
         row.visibility,
         row.slug,
         row.created_at,
+      );
+    const addBlob = target.prepare(
+      `INSERT INTO reference_blobs (sha256,width,height) VALUES (?,?,?)
+      ON CONFLICT (sha256) DO UPDATE SET width=excluded.width,height=excluded.height
+      WHERE reference_blobs.width IS NULL AND excluded.width IS NOT NULL`,
+    );
+    for (const { blob } of referenceBlobs.values())
+      addBlob.run(blob.sha256, blob.width, blob.height);
+    const addReferenceImage = target.prepare(
+      `INSERT INTO reference_images
+      (id,owner,owner_user_id,name,media_type,sha256) VALUES (?,?,?,?,?,?)`,
+    );
+    for (const reference of newReferenceImages)
+      addReferenceImage.run(
+        reference.id,
+        randomBytes(24).toString("hex"),
+        owner,
+        reference.name,
+        reference.media_type,
+        reference.sha256,
       );
     const addReference = target.prepare(
       "INSERT INTO grid_reference_images (grid_id,reference_id) VALUES (?,?)",

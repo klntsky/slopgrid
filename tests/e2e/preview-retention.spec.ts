@@ -11,7 +11,7 @@ for (const touch of [false, true]) {
     test("expansion retains the website browsing context and restores focus", async ({
       page,
     }) => {
-      await create(page, "Static website", "cat", "hat");
+      await create(page, { format: "Static website", rowValues: ["cat"] });
       await expectProgress(page, 1, 1);
       const frame = page.frameLocator('iframe[aria-hidden="false"]');
       await expect(frame.locator("body")).toBeVisible();

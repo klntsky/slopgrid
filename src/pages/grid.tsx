@@ -5,7 +5,7 @@ import { GridHeaderTarget } from "../layout";
 import { useGrid } from "../grid/use-grid";
 import { GridHeader } from "../grid/grid-header";
 import { OutputGrid } from "../grid/output-grid";
-import { ErrorMessage } from "../components/error-message";
+import { ErrorMessage } from "../components/feedback-message";
 import { useOffline } from "../pwa";
 import {
   LowBalanceDialog,
@@ -36,7 +36,7 @@ export function GridPage({ id }: { id: string }) {
   if (query.isError)
     return (
       <main>
-        <ErrorMessage error={query.error.message} />
+        <ErrorMessage>{query.error.message}</ErrorMessage>
         {offline && (
           <button className="secondary" onClick={() => void query.refetch()}>
             Retry
@@ -71,7 +71,7 @@ export function GridPage({ id }: { id: string }) {
             <span>Connection lost. Reconnecting…</span>
           </div>
         )}
-        <ErrorMessage error={error} />
+        <ErrorMessage>{error}</ErrorMessage>
         <OutputGrid grid={g} />
         {lowBalance !== null && (
           <LowBalanceDialog

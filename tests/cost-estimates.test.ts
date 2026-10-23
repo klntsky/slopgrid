@@ -1,9 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { generationBudget } from "../server/generation-budget.js";
-import { estimateCell, recommendWorkers } from "../server/cost-estimates.js";
+import {
+  estimateCell,
+  estimateGrid,
+  recommendWorkers,
+} from "../server/cost-estimates.js";
 import { parsePricing, effectivePricing } from "../server/model-pricing.js";
 import type { Model } from "../server/provider.js";
+import { currentInput } from "./current-grid-fixture.js";
 
 const model: Model = {
   id: "test/model",
@@ -116,4 +121,77 @@ test("generation and estimates share effective pricing, UTF-8 input, and free ou
     0.256,
   );
   assert.equal(freeOutput.maxOutputTokens, 100);
+});
+
+for (const side of ["rows", "columns"] as const) {
+  test(`grid estimates resolve generator ownership from ${side}, independently of judge settings`, () => {
+    const other = side === "rows" ? "columns" : "rows";
+    const expensive: Model = {
+      ...model,
+      id: "test/expensive",
+      pricing: { prompt: 0, completion: 0.002 },
+    };
+    const input = currentInput({
+      budgetUsd: 0.15,
+      judge: true,
+      caseAxes: [side],
+      parameters: {
+        input: { kind: side },
+        model: { kind: side },
+        effort: { kind: other },
+        judge_model: { kind: side },
+      },
+      [side]: [
+        {
+          id: "cheap",
+          model: model.id,
+          judge_model: expensive.id,
+          input: [{ role: "user", content: "hello" }],
+        },
+        {
+          id: "expensive",
+          model: expensive.id,
+          judge_model: model.id,
+          input: [{ role: "user", content: "world" }],
+        },
+      ],
+      [other]: [
+        { id: "default-effort", effort: "default" },
+        { id: "disabled-effort", effort: "none" },
+      ],
+    });
+    const original = structuredClone(input);
+    const result = estimateGrid(input, [model, expensive]);
+    const cheap = [0.1, "supported"];
+    const capped = [0.15, "unsupported"];
+    assert.deepEqual(
+      result.estimates.map((estimate) => [estimate.costUsd, estimate.support]),
+      side === "rows"
+        ? [cheap, cheap, capped, capped]
+        : [cheap, capped, cheap, capped],
+    );
+    assert.deepEqual(
+      result.input[side].map((entry) => [
+        entry.id,
+        entry.model,
+        entry.judge_model,
+      ]),
+      input[side].map((entry) => [entry.id, entry.model, entry.judge_model]),
+    );
+    assert.deepEqual(input, original);
+  });
+}
+
+test("unknown chat capacity reserves the configured inference budget instead of the non-chat fallback", () => {
+  const configured = { ...cell, budgetUsd: 0.125 };
+  assert.equal(estimateCell(undefined, configured, "markdown").costUsd, 3);
+  assert.equal(
+    estimateCell(undefined, configured, "chat-template").costUsd,
+    0.125,
+  );
+  assert.equal(
+    estimateCell(model, configured, "chat-template").support,
+    "unknown",
+  );
+  assert.equal(estimateCell(model, configured, "chat-template").costUsd, 0.125);
 });

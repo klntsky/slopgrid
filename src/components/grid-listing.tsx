@@ -3,7 +3,7 @@ import type { UseQueryResult } from "@tanstack/react-query";
 import type { GridListPage } from "../../server/grid-listing";
 import { usePublicGrids } from "../queries";
 import { Author } from "./identity";
-import { ErrorMessage } from "./error-message";
+import { ErrorMessage } from "./feedback-message";
 import { GridFormatIcon } from "./grid-format-icon";
 import { PaginationButton } from "./pagination-button";
 
@@ -21,7 +21,7 @@ export function GridListing({
   if (query.isError)
     return (
       <>
-        <ErrorMessage error={query.error.message} />
+        <ErrorMessage>{query.error.message}</ErrorMessage>
         <button className="secondary" onClick={() => query.refetch()}>
           Reload grids
         </button>

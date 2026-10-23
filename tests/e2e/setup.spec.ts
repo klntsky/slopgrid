@@ -1,11 +1,21 @@
 import { test, expect } from "./fixtures";
+import type { Page } from "@playwright/test";
 import {
   connectOpenRouter,
   create,
   expectProgress,
   selectModel,
   mockModels,
+  setVariableValues,
 } from "./helpers";
+import { currentDefinition } from "../current-grid-fixture";
+
+async function acceptDrop(page: Page, action: () => Promise<unknown>) {
+  page.once("dialog", async (dialog) => {
+    await dialog.accept();
+  });
+  await action();
+}
 
 test("disabled Generate explains blockers on hover and keyboard focus", async ({
   page,
@@ -14,32 +24,29 @@ test("disabled Generate explains blockers on hover and keyboard focus", async ({
   await page.getByRole("button", { name: "SVG", exact: true }).click();
   const generate = page.getByRole("button", { name: "Generate", exact: true });
   const wrapper = generate.locator("..");
-  const tooltip = page.getByRole("tooltip");
+  const expectHint = async () => {
+    await expect(wrapper).toHaveAttribute("aria-describedby", /\S/);
+    const description = await wrapper.getAttribute("aria-describedby");
+    await expect(
+      page.locator(`[id="${description}"]`).getByRole("tooltip"),
+    ).toBeVisible();
+  };
   await expect(generate).toBeDisabled();
   await wrapper.hover();
-  for (const reason of [
-    "Select row values.",
-    "Connect OpenRouter.",
-    "Enter a prompt.",
-  ])
-    await expect(tooltip).toContainText(reason);
+  await expectHint();
   await page
     .getByRole("combobox", { name: "Rows", exact: true })
     .selectOption("variable");
   await page
     .getByRole("combobox", { name: "Columns", exact: true })
-    .selectOption("variable");
-  await page.getByLabel("Row values").fill("cat");
-  await page.getByLabel("Column values").fill("hat");
-  await page.getByLabel("Prompt", { exact: true }).fill("$ROW");
+    .selectOption("effort");
+  await setVariableValues(page, "Rows", ["cat"]);
+  await page.getByLabel("Prompt", { exact: true }).fill("$ROW1");
   await wrapper.focus();
-  await expect(tooltip).toContainText("Select a model.");
-  await expect(tooltip).toContainText(
-    "Include $COLUMN in the prompt for column variables.",
-  );
-  await expect(tooltip).not.toContainText("Select row values.");
+  await expectHint();
+  await expect(generate).toBeDisabled();
   await selectModel(page, "fixture/text");
-  await page.getByLabel("Prompt", { exact: true }).fill("$ROW $COLUMN");
+  await page.getByLabel("Prompt", { exact: true }).fill("$ROW1 wearing a hat");
   let releaseCapacity!: () => void;
   const capacityResponse = new Promise<void>((resolve) => {
     releaseCapacity = resolve;
@@ -53,31 +60,26 @@ test("disabled Generate explains blockers on hover and keyboard focus", async ({
   });
   await connectOpenRouter(page);
   await wrapper.hover();
-  await expect(tooltip).toHaveText("Checking the automatic worker count.");
+  await expect(generate).toBeDisabled();
+  await expectHint();
   releaseCapacity();
   await expect(
     page.getByRole("button", { name: "Check balance again" }),
   ).toBeVisible();
   await page.mouse.move(0, 0);
   await wrapper.hover();
-  await expect(tooltip).toHaveText(
-    "Could not determine the automatic worker count.",
-  );
+  await expect(generate).toBeDisabled();
+  await expectHint();
   await page.unroute("**/api/inference-capacity?*");
   await page.getByRole("button", { name: "Check balance again" }).click();
   await expect(generate).toBeEnabled();
   await generate.focus();
   await wrapper.hover();
-  await expect(tooltip).toHaveCount(0);
+  await expect(wrapper).not.toHaveAttribute("aria-describedby", /\S/);
   await page.getByLabel("Budget limit per cell").fill("0");
   await expect(generate).toBeDisabled();
   await wrapper.focus();
-  await expect(
-    page.getByRole("tooltip", {
-      name: "Enter a positive per-cell budget.",
-      exact: true,
-    }),
-  ).toBeVisible();
+  await expectHint();
 });
 
 test("axis swap preserves selections and substitutes the corresponding prompt variables", async ({
@@ -91,9 +93,12 @@ test("axis swap preserves selections and substitutes the corresponding prompt va
     exact: true,
   });
   await rows.selectOption("variable");
-  await page.getByLabel("Row values").fill("cat\ndog");
+  await setVariableValues(page, "Rows", ["cat", "dog"]);
   await columns.selectOption("effort");
   const columnValues = page.getByRole("group", { name: "Column values" });
+  await columnValues
+    .getByRole("checkbox", { name: "Model default", exact: true })
+    .uncheck();
   await columnValues
     .getByRole("checkbox", { name: "None", exact: true })
     .check();
@@ -101,7 +106,7 @@ test("axis swap preserves selections and substitutes the corresponding prompt va
     .getByRole("checkbox", { name: "high", exact: true })
     .check();
   const prompt = page.getByLabel("Prompt", { exact: true });
-  await prompt.fill("Draw $ROW");
+  await prompt.fill("Draw $ROW1");
   const swap = page.getByRole("button", { name: "Swap rows and columns" });
   await swap.click();
   await expect(rows).toHaveValue("effort");
@@ -109,16 +114,31 @@ test("axis swap preserves selections and substitutes the corresponding prompt va
   await expect(
     page.getByRole("group", { name: "Row values" }).locator("input:checked"),
   ).toHaveCount(2);
-  await expect(page.getByLabel("Column values")).toHaveValue("cat\ndog");
-  await expect(prompt).toHaveValue("Draw $COLUMN");
+  await expect(
+    page.getByLabel("$COLUMN1, case 1", { exact: true }),
+  ).toHaveValue("cat");
+  await expect(
+    page.getByLabel("$COLUMN1, case 2", { exact: true }),
+  ).toHaveValue("dog");
+  await expect(prompt).toHaveValue("Draw $COLUMN1");
   await swap.click();
   await expect(rows).toHaveValue("variable");
   await expect(columns).toHaveValue("effort");
-  await expect(page.getByLabel("Row values")).toHaveValue("cat\ndog");
-  await expect(prompt).toHaveValue("Draw $ROW");
+  await expect(page.getByLabel("$ROW1, case 1", { exact: true })).toHaveValue(
+    "cat",
+  );
+  await expect(page.getByLabel("$ROW1, case 2", { exact: true })).toHaveValue(
+    "dog",
+  );
+  await expect(prompt).toHaveValue("Draw $ROW1");
   await page.reload();
-  await expect(page.getByLabel("Row values")).toHaveValue("cat\ndog");
-  await expect(prompt).toHaveValue("Draw $ROW");
+  await expect(page.getByLabel("$ROW1, case 1", { exact: true })).toHaveValue(
+    "cat",
+  );
+  await expect(page.getByLabel("$ROW1, case 2", { exact: true })).toHaveValue(
+    "dog",
+  );
+  await expect(prompt).toHaveValue("Draw $ROW1");
 });
 
 test("model filtering preserves deliberate selections and supports keyboard removal", async ({
@@ -126,6 +146,7 @@ test("model filtering preserves deliberate selections and supports keyboard remo
 }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "SVG", exact: true }).click();
+  await page.getByRole("button", { name: "Swap rows and columns" }).click();
   await page
     .getByRole("combobox", { name: "Rows", exact: true })
     .selectOption("effort");
@@ -176,6 +197,14 @@ test("model filtering preserves deliberate selections and supports keyboard remo
     columns.getByRole("checkbox", { name: "Second model" }),
   ).not.toBeChecked();
   await expect(selectedModels).toHaveCount(0);
+  await expect(
+    page
+      .getByRole("combobox", { name: "Rows", exact: true })
+      .locator('option[value="model"]'),
+  ).toHaveJSProperty("disabled", true);
+  await page
+    .getByRole("combobox", { name: "Columns", exact: true })
+    .selectOption("single");
   await page
     .getByRole("combobox", { name: "Rows", exact: true })
     .selectOption("model");
@@ -216,6 +245,7 @@ test("Shift-click selects and clears visible model ranges while preserving hidde
   );
   await page.goto("/");
   await page.getByRole("button", { name: "SVG", exact: true }).click();
+  await page.getByRole("button", { name: "Swap rows and columns" }).click();
   await page
     .getByRole("combobox", { name: "Rows", exact: true })
     .selectOption("effort");
@@ -253,6 +283,11 @@ test("Shift-click selects and clears visible model ranges while preserving hidde
   await page.reload();
   await page.getByRole("button", { name: "Clear column model filter" }).click();
   await expect(selected).toHaveText([names[0], names[5]]);
+  await acceptDrop(page, () =>
+    page
+      .getByRole("combobox", { name: "Columns", exact: true })
+      .selectOption("single"),
+  );
   await page
     .getByRole("combobox", { name: "Rows", exact: true })
     .selectOption("model");
@@ -265,7 +300,9 @@ test("Shift-click selects and clears visible model ranges while preserving hidde
   await expect(
     rows.locator("label.checkbox:has(input:checked) > span:first-of-type"),
   ).toHaveText(names.slice(0, 3));
-  await expect(selected).toHaveText([names[0], names[5]]);
+  await expect(
+    page.getByRole("radiogroup", { name: "Model", exact: true }),
+  ).toHaveCount(0);
 });
 
 test("unused prompt variables block generation and the API rejects bypasses", async ({
@@ -280,14 +317,32 @@ test("unused prompt variables block generation and the API rejects bypasses", as
     .selectOption("variable");
   await page
     .getByRole("combobox", { name: "Columns", exact: true })
-    .selectOption("variable");
-  await page.getByLabel("Row values").fill("cat\ndog");
-  await page.getByLabel("Column values").fill("hat\ncape");
-  for (const prompt of ["Draw a cat", "$ROW", "$COLUMN"]) {
+    .selectOption("quality");
+  await setVariableValues(page, "Rows", ["cat", "dog"]);
+  const qualities = page.getByRole("group", {
+    name: "Column values",
+    exact: true,
+  });
+  await qualities
+    .getByRole("checkbox", { name: "Auto", exact: true })
+    .uncheck();
+  await qualities.getByRole("checkbox", { name: "low", exact: true }).check();
+  await qualities.getByRole("checkbox", { name: "high", exact: true }).check();
+  for (const prompt of ["Draw a cat", "$COLUMN1"]) {
     await page.getByLabel("Prompt", { exact: true }).fill(prompt);
-    await expect(page.getByRole("alert")).toBeVisible();
+    for (const caseNumber of [1, 2]) {
+      const variable = page.getByLabel(`$ROW1, case ${caseNumber}`, {
+        exact: true,
+      });
+      await expect(variable).toHaveAttribute("aria-invalid", "true");
+      await expect(variable).toHaveAccessibleDescription(/\$ROW1/);
+    }
   }
-  await page.getByLabel("Prompt", { exact: true }).fill("$ROW $COLUMN");
+  await page.getByLabel("Prompt", { exact: true }).fill("$ROW1 wearing a hat");
+  for (const caseNumber of [1, 2])
+    await expect(
+      page.getByLabel(`$ROW1, case ${caseNumber}`, { exact: true }),
+    ).not.toHaveAttribute("aria-invalid", "true");
   const connect = page.getByRole("link", { name: "Connect OpenRouter" });
   await connect.click();
   await expect(
@@ -297,23 +352,26 @@ test("unused prompt variables block generation and the API rejects bypasses", as
   await expect(
     page.getByRole("button", { name: "Generate", exact: true }),
   ).toBeEnabled();
-  await page.getByLabel("Prompt", { exact: true }).fill("$ROW");
+  await page.getByLabel("Prompt", { exact: true }).fill("Draw a cat");
   await expect(
     page.getByRole("button", { name: "Generate", exact: true }),
   ).toBeDisabled();
   const response = await page.request.post("/api/grids", {
-    data: {
+    data: currentDefinition({
       format: "image",
-      prompt: "$ROW",
-      rows: { kind: "variable", values: ["cat"] },
-      columns: { kind: "variable", values: ["hat"] },
-      model: "fixture/image",
-      effort: "none",
+      caseAxes: ["rows"],
+      parameters: {
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: "Draw a cat" }],
+        },
+      },
+      rows: [{ variable: [{ text: "cat" }] }],
       budgetUsd: 5,
-    },
+    }),
   });
   expect(response.status()).toBe(400);
-  await page.getByLabel("Prompt", { exact: true }).fill("$ROW $COLUMN");
+  await page.getByLabel("Prompt", { exact: true }).fill("$ROW1 wearing a hat");
   await page.getByRole("button", { name: "Generate", exact: true }).click();
   await expectProgress(page, 4, 4);
 });
@@ -352,9 +410,9 @@ test("selecting an output type reveals the entire form and preserves it on reloa
   await page
     .getByRole("combobox", { name: "Columns", exact: true })
     .selectOption("model");
-  await prompt.fill("Draw $ROW");
+  await prompt.fill("Draw $ROW1");
   await page.reload();
-  await expect(prompt).toHaveValue("Draw $ROW");
+  await expect(prompt).toHaveValue("Draw $ROW1");
   await expect(
     page.getByRole("link", { name: "Connect OpenRouter" }),
   ).toBeVisible();
@@ -367,11 +425,28 @@ test("selecting an output type reveals the entire form and preserves it on reloa
     exact: true,
   });
   await model.check();
-  await expect(generate).toBeDisabled();
-  await page.getByLabel("Row values").fill("cat\ndog");
+  await setVariableValues(page, "Rows", ["cat", "dog"]);
   await expect(generate).toBeEnabled();
   await model.uncheck();
-  await expect(generate).toBeDisabled();
+  await expect(generate).toBeEnabled();
+  const columns = page.getByRole("combobox", {
+    name: "Columns",
+    exact: true,
+  });
+  const created: string[] = [];
+  page.on("request", (request) => {
+    if (
+      request.method() === "POST" &&
+      new URL(request.url()).pathname === "/api/grids"
+    )
+      created.push(request.url());
+  });
+  await generate.click();
+  await expect(columns).toHaveAttribute("aria-invalid", "true");
+  expect(created).toEqual([]);
+  await model.check();
+  await expect(columns).not.toHaveAttribute("aria-invalid", "true");
+  await expect(generate).toBeEnabled();
 });
 
 test("the compatibility table shows selected model support without blocking generation or resume", async ({
@@ -380,20 +455,21 @@ test("the compatibility table shows selected model support without blocking gene
 }) => {
   await page.setExtraHTTPHeaders({ "X-Forwarded-For": "192.0.2.47" });
   await request.post("/fixture/reset", { data: { billing: false } });
-  await create(page, "SVG", "cat", "hat");
+  await create(page, { rowValues: ["cat"] });
   await expectProgress(page, 1, 1);
   await page.goto("/");
   await page.getByRole("button", { name: "SVG", exact: true }).click();
+  await page.getByRole("button", { name: "Swap rows and columns" }).click();
   await page
     .getByRole("combobox", { name: "Rows", exact: true })
     .selectOption("effort");
   await page
     .getByRole("combobox", { name: "Columns", exact: true })
     .selectOption("model");
-  await page
-    .getByRole("combobox", { name: "Rows", exact: true })
-    .selectOption("effort");
   const rows = page.getByRole("group", { name: "Row values" });
+  await rows
+    .getByRole("checkbox", { name: "Model default", exact: true })
+    .uncheck();
   await rows.getByRole("checkbox", { name: "None", exact: true }).check();
   await rows.getByRole("checkbox", { name: "max", exact: true }).check();
   await page.getByRole("button", { name: "Clear column model filter" }).click();
@@ -468,15 +544,20 @@ test("the compatibility table shows selected model support without blocking gene
   await expectProgress(page, 6, 6);
   await request.post("/fixture/reset", { data: { holdGenerations: true } });
   try {
-    const input = {
+    const input = currentDefinition({
       format: "svg",
-      prompt: "Draw a cat",
-      rows: { kind: "effort", values: ["none", "max"] },
-      columns: { kind: "model", values: ["fixture/other"] },
-      model: "fixture/text",
-      effort: "default",
+      parameters: {
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: "Draw a cat" }],
+        },
+        effort: { kind: "rows" },
+        model: { kind: "columns" },
+      },
+      rows: [{ effort: "none" }, { effort: "max" }],
+      columns: [{ model: "fixture/other" }],
       budgetUsd: 5,
-    };
+    });
     const created = await page.request.post("/api/grids", { data: input });
     expect(created.status()).toBe(201);
     const grid = await created.json();
@@ -516,7 +597,7 @@ test("compatibility keeps model rows and effort columns with variable axes and f
     name: "Thinking effort compatibility",
   });
   await rows.selectOption("variable");
-  await page.getByLabel("Row values").fill("cat\ndog\nfox");
+  await setVariableValues(page, "Rows", ["cat", "dog", "fox"]);
   await page.getByRole("button", { name: "Clear column model filter" }).click();
   await page
     .getByRole("checkbox", { name: "Second model", exact: true })
@@ -580,10 +661,12 @@ for (const axis of ["Rows", "Columns"] as const) {
       "X-Forwarded-For": axis === "Rows" ? "192.0.2.48" : "192.0.2.49",
     });
     await request.post("/fixture/reset", { data: { billing: false } });
-    await create(page, "SVG", "cat", "hat");
+    await create(page, { rowValues: ["cat"] });
     await expectProgress(page, 1, 1);
     await page.goto("/");
     await page.getByRole("button", { name: "SVG", exact: true }).click();
+    if (axis === "Rows")
+      await page.getByRole("button", { name: "Swap rows and columns" }).click();
     await page
       .getByRole("combobox", { name: axis, exact: true })
       .selectOption("effort");
@@ -595,6 +678,9 @@ for (const axis of ["Rows", "Columns"] as const) {
     const values = page.getByRole("group", {
       name: axis === "Rows" ? "Row values" : "Column values",
     });
+    await values
+      .getByRole("checkbox", { name: "Model default", exact: true })
+      .uncheck();
     for (const effort of ["max", "high", "low"])
       await values.getByRole("checkbox", { name: effort, exact: true }).check();
     await values.getByRole("checkbox", { name: "high", exact: true }).uncheck();
@@ -612,17 +698,9 @@ for (const axis of ["Rows", "Columns"] as const) {
       axis === "Rows"
         ? page.getByRole("rowheader")
         : page.getByRole("columnheader").filter({ hasText: /\S/ });
-    await expect(labels).toHaveText([
-      "thinking: low",
-      "thinking: high",
-      "thinking: max",
-    ]);
+    await expect(labels).toHaveText([/\blow$/, /\bhigh$/, /\bmax$/]);
     await page.reload();
-    await expect(labels).toHaveText([
-      "thinking: low",
-      "thinking: high",
-      "thinking: max",
-    ]);
+    await expect(labels).toHaveText([/\blow$/, /\bhigh$/, /\bmax$/]);
   });
 }
 
@@ -640,7 +718,7 @@ test("changing the per-cell budget changes the model token limit and survives Ed
   );
   await request.post("/fixture/reset", { data: { holdGenerations: true } });
   try {
-    await create(page, "Markdown", "cat", "hat");
+    await create(page, { format: "Markdown", rowValues: ["cat"] });
     await expect
       .poll(
         async () =>
@@ -683,14 +761,32 @@ for (const format of ["SVG", "Image"]) {
       .selectOption("variable");
     await page
       .getByRole("combobox", { name: "Columns", exact: true })
-      .selectOption("variable");
-    await page.getByLabel("Row values").fill("cat\ndog");
-    await page.getByLabel("Column values").fill("hat\ncape");
+      .selectOption(format === "Image" ? "quality" : "effort");
+    await setVariableValues(page, "Rows", ["cat", "dog"]);
+    const values = page.getByRole("group", {
+      name: "Column values",
+      exact: true,
+    });
+    await values
+      .getByRole("checkbox", {
+        name: format === "Image" ? "Auto" : "Model default",
+        exact: true,
+      })
+      .uncheck();
+    for (const value of format === "Image" ? ["low", "high"] : ["none", "high"])
+      await values
+        .getByRole("checkbox", {
+          name: value === "none" ? "None" : value,
+          exact: true,
+        })
+        .check();
     await selectModel(
       page,
       format === "Image" ? "fixture/image" : "fixture/text",
     );
-    await page.getByLabel("Prompt", { exact: true }).fill("$ROW $COLUMN");
+    await page
+      .getByLabel("Prompt", { exact: true })
+      .fill("$ROW1 wearing a hat");
     await connectOpenRouter(page);
     await page.evaluate(() => {
       const draft = JSON.parse(sessionStorage.getItem("slopgrid-draft")!);
@@ -730,7 +826,7 @@ for (const format of ["SVG", "Image"]) {
       .selectOption("variable");
     await page
       .getByRole("combobox", { name: "Columns", exact: true })
-      .selectOption("variable");
+      .selectOption(format === "Image" ? "quality" : "effort");
     const selector = page.getByRole("radiogroup", {
       name: "Model",
       exact: true,
@@ -754,47 +850,6 @@ for (const format of ["SVG", "Image"]) {
     await expect(selector.locator("input:checked")).toHaveValue(second);
   });
 }
-
-test("image generation omits automatic quality and preserves edited axes", async ({
-  page,
-  request,
-}) => {
-  await request.post("/fixture/reset", { data: {} });
-  await page.goto("/");
-  await page.getByRole("button", { name: "Image", exact: true }).click();
-  const rows = page.getByRole("combobox", { name: "Rows", exact: true });
-  const columns = page.getByRole("combobox", { name: "Columns", exact: true });
-  await page.getByLabel("Prompt", { exact: true }).fill("Draw a landscape");
-  await connectOpenRouter(page);
-  await expect(
-    page.getByRole("button", { name: "Generate", exact: true }),
-  ).toBeDisabled();
-  await page
-    .getByRole("checkbox", { name: "Fixture image", exact: true })
-    .check();
-  await page.getByRole("button", { name: "Generate", exact: true }).click();
-  await expectProgress(page, 1, 1);
-  const sent = await (await request.get("/fixture/image-requests")).json();
-  expect(sent[0]).not.toHaveProperty("quality");
-  await page.getByRole("button", { name: "EDIT", exact: true }).click();
-  await expect(rows).toHaveValue("model");
-  await expect(columns).toHaveValue("quality");
-  await expect(
-    page.getByRole("checkbox", { name: "Auto", exact: true }),
-  ).toBeChecked();
-  await columns.selectOption("background");
-  await page
-    .getByRole("checkbox", { name: "transparent", exact: true })
-    .check();
-  await page.reload();
-  await expect(columns).toHaveValue("background");
-  await expect(
-    page.getByRole("checkbox", { name: "transparent", exact: true }),
-  ).toBeChecked();
-  await expect(
-    page.getByRole("checkbox", { name: "Fixture image", exact: true }),
-  ).toBeChecked();
-});
 
 for (const format of ["SVG", "Static website", "Markdown"]) {
   test(`${format} generation preserves thinking-effort and variable-axis edits`, async ({
@@ -841,13 +896,91 @@ for (const format of ["SVG", "Static website", "Markdown"]) {
       page.getByRole("checkbox", { name: "None", exact: true }),
     ).toBeChecked();
     await effortKind.selectOption("variable");
+    const side = format === "Markdown" ? "Rows" : "Columns";
     const variableValues = page.getByLabel(
-      format === "Markdown" ? "Row values" : "Column values",
+      format === "Markdown" ? "$ROW1, case 1" : "$COLUMN1, case 1",
+      { exact: true },
     );
-    await variableValues.fill("landscape");
+    await setVariableValues(page, side, ["landscape"]);
     await page.reload();
     await expect(modelKind).toHaveValue("model");
     await expect(effortKind).toHaveValue("variable");
     await expect(variableValues).toHaveValue("landscape");
   });
 }
+
+test("incomplete chat, criteria and raw budget survive reload and OAuth before canonical submission", async ({
+  page,
+  request,
+}) => {
+  await request.post("/fixture/reset", { data: {} });
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "Chat completion", exact: true })
+    .click();
+  await page
+    .getByRole("combobox", { name: "Rows", exact: true })
+    .selectOption("variable");
+  await page
+    .getByRole("combobox", { name: "Columns", exact: true })
+    .selectOption("effort");
+  await setVariableValues(page, "Rows", ["cat"]);
+  await selectModel(page, "fixture/text");
+  const message = page.getByLabel("Message 1", { exact: true });
+  const budget = page.getByLabel("Budget limit per cell", { exact: true });
+  const generate = page.getByRole("button", { name: "Generate", exact: true });
+  await budget.fill("");
+  await page
+    .getByRole("checkbox", { name: "Add a LLM judge", exact: true })
+    .check();
+  const judgeSection = page.getByRole("region", { name: "Judge", exact: true });
+  const criterion = judgeSection.getByLabel("Criterion 1", { exact: true });
+  await criterion.fill("  ");
+  const judge = judgeSection.getByRole("radiogroup", {
+    name: "Judge model",
+    exact: true,
+  });
+  await judge.getByRole("searchbox").fill("fixture/text");
+  await judge.locator('input[type="radio"][value="fixture/text"]').check();
+  await expect(generate).toBeDisabled();
+  await page.reload();
+  await expect(message).toHaveValue("");
+  await expect(criterion).toHaveValue("  ");
+  await expect(budget).toHaveValue("");
+  await connectOpenRouter(page);
+  await expect(message).toHaveValue("");
+  await expect(criterion).toHaveValue("  ");
+  await expect(budget).toHaveValue("");
+  expect(
+    await page.evaluate(() => {
+      const saved = JSON.parse(sessionStorage.getItem("slopgrid-draft")!);
+      return {
+        budget: saved.input.budgetUsd,
+        message: saved.input.parameters.input.value[0].content,
+        criterion: saved.input.parameters.judge_criteria.value[0].text,
+      };
+    }),
+  ).toEqual({ budget: "", message: "", criterion: "  " });
+  await budget.fill("0.25");
+  await expect(generate).toBeDisabled();
+  await message.fill("  Draw $ROW1  ");
+  await expect(generate).toBeDisabled();
+  await criterion.fill("  Is it a cat?  ");
+  await expect(generate).toBeEnabled();
+  await message.fill("");
+  await expect(generate).toBeDisabled();
+  await message.fill("  Draw $ROW1  ");
+  await budget.fill("");
+  await expect(generate).toBeDisabled();
+  await budget.fill("0.25");
+  const sent = page.waitForRequest(
+    (r) => r.method() === "POST" && new URL(r.url()).pathname === "/api/grids",
+  );
+  await generate.click();
+  expect((await sent).postDataJSON().budgetUsd).toBe(0.25);
+  await expectProgress(page, 1, 1);
+  await page.getByRole("button", { name: "EDIT", exact: true }).click();
+  await expect(budget).toHaveValue("0.25");
+  await expect(message).toHaveValue("  Draw $ROW1  ");
+  await expect(criterion).toHaveValue("Is it a cat?");
+});
