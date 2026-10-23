@@ -6,7 +6,7 @@ import {
   messageText,
   type RuntimeCall,
 } from "./runtime-fixture.js";
-import type { ChatMessage } from "../server/domain.js";
+import type { ChatMessage, GridInput } from "../server/domain.js";
 import { isCurrentGridInput } from "../server/parameters.js";
 import { currentDefinition } from "./current-grid-fixture.js";
 import { rmSync, writeFileSync } from "node:fs";
