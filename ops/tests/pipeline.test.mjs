@@ -30,6 +30,7 @@ import {
 import { engineFingerprint } from "../lib/artifacts.mjs";
 import { validationCommands } from "../lib/validate.mjs";
 import { executePlan } from "../lib/pipeline.mjs";
+import { prepareLocalCandidate } from "../lib/local.mjs";
 import {
   environment,
   configureProcesses,
@@ -79,6 +80,17 @@ test("scoped test options reach validation commands unchanged", () => {
   ]);
   assert.deepEqual(commands[1].slice(-2), ["--grep", "case (a|b)"]);
   assert.deepEqual(validationCommands({ tests: "skip" }, []), []);
+});
+
+test("failed demo preparation preserves caller-owned durable evidence", async (t) => {
+  const run = directory(t);
+  writeFileSync(join(run, "request.json"), '{"target":"demo"}');
+  await assert.rejects(
+    prepareLocalCandidate({ sourceHash: "invalid" }, Buffer.from("unverified"), run),
+    /Source archive checksum mismatch/,
+  );
+  assert.equal(readFileSync(join(run, "request.json"), "utf8"), '{"target":"demo"}');
+  assert.equal(readFileSync(join(run, "source.tar.gz"), "utf8"), "unverified");
 });
 
 test("selected grid deletion requires a draining update", () => {

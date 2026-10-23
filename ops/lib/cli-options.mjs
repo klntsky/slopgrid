@@ -1,8 +1,8 @@
 import { parseArgs } from "node:util";
 import { createInterface } from "node:readline";
 
-const deployments = ["validate", "rehearse", "staging", "production"];
-const scopedTargets = ["validate", "rehearse", "staging"];
+const deployments = ["validate", "demo", "rehearse", "staging", "production"];
+const scopedTargets = ["validate", "demo", "rehearse", "staging"];
 export const commands = {
   validate: {
     argument: "[REV]",
@@ -10,6 +10,13 @@ export const commands = {
       "Validate a committed candidate locally in an isolated workspace without deploying.",
     details:
       "Runs the complete suite by default. Scoped tests select individual files. Skipped tests and deployment modes other than the explicit default --mode=auto are not permitted.",
+  },
+  demo: {
+    argument: "[REV]",
+    description:
+      "Run a private 24-hour demo as the current local user after isolated validation.",
+    details:
+      "Uses foreground Tailscale HTTPS and a transient user service. Data and its encryption key are retained after stopping until manually removed. Full, scoped or explicitly skipped local tests are supported. No SSH, PM2 or shared runtime changes.",
   },
   rehearse: {
     argument: "[REV]",
@@ -34,9 +41,9 @@ export const commands = {
   },
   status: {
     argument: "RUN_ID",
-    description: "Follow an existing remote run and return its exit status.",
+    description: "Inspect a local demo or follow an existing remote run.",
     details:
-      "Reconnect after SSH disconnects. Remote work continues in tmux bg.",
+      "Local demo status includes its deadline and retained data. Remote work continues in tmux bg after SSH disconnects.",
   },
 };
 
@@ -55,15 +62,15 @@ const options = {
     // Validation intentionally permits the explicit default, but no deployment mode.
     exceptions: { validate: (value) => value === "auto" },
     error: (target) =>
-      target === "rehearse"
-        ? "Rehearsal does not accept deployment modes"
+      target === "rehearse" || target === "demo"
+        ? `${target === "demo" ? "Demo" : "Rehearsal"} does not accept deployment modes`
         : "Validation requires tests and does not accept deployment modes",
     description:
       "Deployment mode (default: auto); soft rejects incompatible engine changes.",
   },
   "skip-tests": {
     type: "boolean",
-    targets: ["rehearse", "staging", "production"],
+    targets: ["demo", "rehearse", "staging", "production"],
     error: () =>
       "Validation requires tests and does not accept deployment modes",
     description:
@@ -180,7 +187,7 @@ export function parseCommandLine(args) {
   }
   if (target && !Object.hasOwn(commands, target))
     throw new Error(
-      "Target must be validate, rehearse, staging, production or status",
+      "Target must be validate, demo, rehearse, staging, production or status",
     );
   if (positionals.length > 2 || argument?.startsWith("-"))
     throw new Error(

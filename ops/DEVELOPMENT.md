@@ -5,8 +5,8 @@ Run commands from the application worktree using `./ops/deploy.sh`, or from
 
 ## Configuration
 
-The ignored application-root `.env` supplies deployment settings; inherited
-environment variables override its values. Configure these variables privately:
+The ignored application-root `.env` supplies operations settings; inherited
+environment variables override its values. Configure remote deployments privately:
 
 | Variables                                                         | Purpose                                                                  |
 | ----------------------------------------------------------------- | ------------------------------------------------------------------------ |
@@ -139,6 +139,65 @@ Acknowledgement permits new deployment work. It does not restore an older
 runtime or prove that a partial deployment was rolled back. Power-loss durability
 and all-or-nothing visibility across processes and migrated storage are not
 provided by deployment serialization.
+
+## Run a temporary demo as your user
+
+Configure these local settings in the ignored application-root `.env`:
+
+| Variable | Purpose |
+| -------- | ------- |
+| `OPS_DEMO_ENV_FILE` | Absolute path to a private local demo environment file |
+| `OPS_DEMO_HTTPS_PORT` | Unused Tailscale HTTPS listener port |
+| `OPS_DEMO_STATE_ROOT` | Optional absolute directory for retained demo runs |
+
+The default state directory is `$XDG_STATE_HOME/slopgrid/demos`, or
+`$HOME/.local/state/slopgrid/demos` when `XDG_STATE_HOME` is unset. Demo commands
+do not require `OPS_HOST` or staging and production configuration.
+
+Install the local build dependencies listed above, Tailscale, and a systemd user
+manager. Enable HTTPS for the tailnet and grant your user permission to use
+Tailscale Serve. Ask the host administrator to enable lingering for your account
+with `loginctl enable-linger USER` so the user manager survives logout.
+
+Create the dedicated demo environment file with mode `0600`. Set `PORT` to an
+unused loopback backend port. Supply dedicated `GITHUB_CLIENT_ID` and
+`GITHUB_CLIENT_SECRET` credentials and a demo-only `OUTPUT_DOMAIN`. The app origin
+uses the current node's Tailscale DNS name and `OPS_DEMO_HTTPS_PORT`. Register
+that exact origin with GitHub at `/api/auth/github/callback` and with OpenRouter
+at `/api/auth/callback`. If the environment file includes `APP_ORIGIN`, it must
+match the derived origin.
+
+Tailscale Serve supplies HTTPS for the app hostname. HTML outputs still require
+independent wildcard DNS, trusted TLS, and proxy routing to the demo's backend
+`PORT`. Use a hyphen-prefixed `OUTPUT_DOMAIN` as required by the application.
+Do not point that routing at staging or production. The demo command does not
+provision wildcard output hosting or OAuth applications.
+
+```sh
+./deploy.sh demo --plan
+./deploy.sh demo
+./deploy.sh demo HEAD --unit tests/publishing.test.ts
+./deploy.sh demo HEAD --skip-tests
+./deploy.sh status RUN_ID
+systemctl --user stop slopgrid-demo.service
+```
+
+The command builds and validates committed source locally, then prints the
+private HTTPS URL, deadline, and data location. Full local validation is the
+default. Scoped selection and explicit skipped tests use the same controls as
+candidate validation. Runtime processes run as the invoking local user without
+SSH or PM2. One demo can run per user at a time.
+
+The service stops after 24 hours of runtime, including startup. Expiry kills
+generation without draining accepted work. Upstream provider work can still
+incur charges after local processes stop. Early stop uses the same service
+command shown above. Neither stop nor expiry deletes the database, outputs,
+generated environment, or encryption key. Keep the retained data private.
+Remove an old run directory manually only after its service has stopped.
+
+Use `status` with the printed run ID to inspect a local demo before any remote
+status lookup. Runtime output is in the run's `demo.log`; the service journal
+is available with `journalctl --user -u slopgrid-demo.service`.
 
 ## Local pipeline checks
 

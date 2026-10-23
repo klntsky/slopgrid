@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
+import { homedir } from "node:os";
 import { parseEnv } from "node:util";
 import { validateConfig } from "./common.mjs";
 
@@ -34,4 +35,38 @@ export function loadConfig(root = projectRoot, inherited = process.env) {
   const path = join(root, ".env");
   const values = existsSync(path) ? parseEnv(readFileSync(path, "utf8")) : {};
   return configFromEnvironment({ ...values, ...inherited }, root);
+}
+
+function demoValues(root, inherited) {
+  const path = join(root, ".env");
+  const values = existsSync(path) ? parseEnv(readFileSync(path, "utf8")) : {};
+  return { ...values, ...inherited };
+}
+
+function stateRoot(values) {
+  const path = values.OPS_DEMO_STATE_ROOT || join(
+    values.XDG_STATE_HOME || join(values.HOME || homedir(), ".local", "state"),
+    "slopgrid", "demos",
+  );
+  if (!isAbsolute(path) || /[\n\r\0]/.test(path))
+    throw new Error("OPS_DEMO_STATE_ROOT must be an absolute local demo state path");
+  return path;
+}
+
+export function demoStateRoot(root = projectRoot, inherited = process.env) {
+  return stateRoot(demoValues(root, inherited));
+}
+
+export function loadDemoConfig(root = projectRoot, inherited = process.env) {
+  const values = demoValues(root, inherited),
+    envFile = values.OPS_DEMO_ENV_FILE,
+    port = values.OPS_DEMO_HTTPS_PORT;
+  if (typeof envFile !== "string" || !isAbsolute(envFile) || /[\n\r\0]/.test(envFile))
+    throw new Error("Demo requires OPS_DEMO_ENV_FILE as an absolute local private env path");
+  if (typeof port !== "string" || !/^\d+$/.test(port) || Number(port) < 1 || Number(port) > 65535)
+    throw new Error("Demo requires OPS_DEMO_HTTPS_PORT as an integer from 1 to 65535");
+  return {
+    repository: root,
+    demo: { envFile, httpsPort: Number(port), stateRoot: stateRoot(values) },
+  };
 }

@@ -51,6 +51,23 @@ boundary even though their configuration, data, and application processes are
 separate. Independent candidate work owns separate build and runtime resources.
 Production promotion does not depend on deploying staging.
 
+## Local demo ownership
+
+Demo preparation shares the local candidate build and validation boundary.
+Its runtime stays under the invoking user's account instead of crossing the
+remote deployment boundary. Run-owned source, credentials, and storage keep
+demo effects separate from staging and production.
+
+The systemd user manager owns the demo process group and enforces its lifetime
+outside the initiating command. Tailscale owns the private HTTPS listener through
+the foreground Serve session in that group. Stopping the group removes that
+session without changing unrelated listeners. Operations records the stopped
+lifecycle while retaining application data and its encryption key.
+
+Runtime observation matches the service invocation to its run record so a later
+demo cannot make an older run appear active. Host administration owns user-manager
+availability, Tailscale permission, OAuth registration, and output-host routing.
+
 ## Observation and recovery
 
 Each remote run owns its lifecycle record, logs, and exit status. Status

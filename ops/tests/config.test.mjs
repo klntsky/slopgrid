@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { capture } from "../lib/common.mjs";
-import { configFromEnvironment, loadConfig } from "../lib/config.mjs";
+import { configFromEnvironment, loadConfig, loadDemoConfig } from "../lib/config.mjs";
 import { fixtureConfig, fixtureEnvironment } from "./config-fixture.mjs";
 
 function directory(t) {
@@ -72,6 +72,30 @@ test("missing root settings fail closed without an external JSON fallback", (t) 
   );
 });
 
+test("demo configuration needs only current-user settings and validates a private endpoint", (t) => {
+  const root = directory(t),
+    envFile = join(root, "demo", "runtime.env"),
+    values = { HOME: root, OPS_DEMO_ENV_FILE: envFile, OPS_DEMO_HTTPS_PORT: "8443" };
+  assert.deepEqual(loadDemoConfig(root, values), {
+    repository: root,
+    demo: { envFile, httpsPort: 8443, stateRoot: join(root, ".local/state/slopgrid/demos") },
+  });
+  assert.equal(loadDemoConfig(root, { ...values, XDG_STATE_HOME: join(root, "xdg") }).demo.stateRoot, join(root, "xdg/slopgrid/demos"));
+  assert.equal(loadDemoConfig(root, { ...values, OPS_DEMO_STATE_ROOT: join(root, "custom") }).demo.stateRoot, join(root, "custom"));
+  assert.equal(Object.hasOwn(configFromEnvironment(fixtureEnvironment(fixtureConfig(root)), root), "demo"), false);
+  for (const demo of [
+    { OPS_DEMO_ENV_FILE: undefined },
+    { OPS_DEMO_HTTPS_PORT: undefined },
+    { OPS_DEMO_ENV_FILE: "relative.env" },
+    { OPS_DEMO_STATE_ROOT: "relative" },
+    ...["", "0", "65536", "1.5", "443junk", "NaN"].map((port) => ({ OPS_DEMO_HTTPS_PORT: port })),
+  ]) assert.throws(() => loadDemoConfig(root, { ...values, ...demo }), /demo|OPS_DEMO/i);
+  writeFileSync(join(root, ".env"), `OPS_DEMO_ENV_FILE=${envFile}\nOPS_DEMO_HTTPS_PORT=443\n`);
+  assert.equal(loadDemoConfig(root, { HOME: root }).demo.httpsPort, 443);
+  assert.equal(loadDemoConfig(root, values).demo.httpsPort, 8443);
+  assert.throws(() => loadConfig(root, {}), /Missing or invalid config: host/);
+});
+
 test("nested operations transport archives only its committed subtree and never root dotenv", (t) => {
   const path = directory(t),
     repository = join(path, "app"),
@@ -84,6 +108,7 @@ test("nested operations transport archives only its committed subtree and never 
     "lib/config.mjs",
     "lib/common.mjs",
     "lib/cli-options.mjs",
+    "lib/process-identity.mjs",
   ])
     writeFileSync(
       join(repository, "ops", file),

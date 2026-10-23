@@ -8,6 +8,7 @@ import {
   rmSync,
   existsSync,
   cpSync,
+  readdirSync,
 } from "node:fs";
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
@@ -272,6 +273,157 @@ test("CLI rehearsal plan resolves a candidate without production authority or ru
   const plan = JSON.parse(result.stdout);
   assert.equal(plan.target, "rehearse");
   assert.equal(plan.revision, f.candidate);
+});
+
+test("demo plan selects caller HEAD using only local settings and changes no state", (t) => {
+  const f = fixture(t),
+    worktree = join(f.path, "demo-worktree"),
+    bin = join(f.path, "bin"),
+    touched = join(f.path, "infrastructure-called"),
+    stateRoot = join(f.path, "demo-state");
+  git(f.repository, "worktree", "add", "--detach", worktree, f.master);
+  mkdirSync(bin);
+  for (const program of ["ssh", "pnpm", "pm2", "systemctl", "tailscale"])
+    writeFileSync(join(bin, program), `#!/bin/sh\nprintf called > '${touched}'\nexit 99\n`, { mode: 0o700 });
+  const result = spawnSync(process.execPath, [
+    join(f.repository, "ops/cli.mjs"), "demo", "--skip-tests", "--plan",
+  ], {
+    cwd: worktree,
+    env: {
+      HOME: f.path, PATH: `${bin}:${process.env.PATH}`,
+      OPS_DEMO_ENV_FILE: join(f.path, "private-demo.env"),
+      OPS_DEMO_HTTPS_PORT: "8443", OPS_DEMO_STATE_ROOT: stateRoot,
+    },
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const plan = JSON.parse(result.stdout);
+  assert.equal(plan.revision, f.master);
+  assert.equal(plan.target, "demo");
+  assert.equal(plan.validation, "skip");
+  assert.match(plan.stages.join("\n"), /isolated|fresh/i);
+  assert.match(plan.stages.join("\n"), /foreground.*HTTPS|HTTPS.*foreground/i);
+  assert.match(plan.stages.join("\n"), /24.hour|86400|one.day/i);
+  assert.match(plan.stages.join("\n"), /data.*retain|retain.*data/i);
+  assert.doesNotMatch(plan.stages.join("\n"), /copy production|migration|deploy demo|upload/);
+  assert.match(plan.note, /current.*user/i);
+  assert.match(plan.note, /PM2/);
+  assert.equal(existsSync(touched), false);
+  assert.equal(existsSync(stateRoot), false);
+  assert.equal(existsSync(f.config.remoteRoot), false);
+});
+
+test("demo requires dedicated config before Git, candidate build or remote access", (t) => {
+  const f = fixture(t),
+    bin = join(f.path, "bin"),
+    touched = join(f.path, "infrastructure-called");
+  mkdirSync(bin);
+  for (const program of ["git", "ssh", "pnpm", "pm2"])
+    writeFileSync(join(bin, program), `#!/bin/sh\nprintf called > '${touched}'\nexit 99\n`, { mode: 0o700 });
+  const result = spawnSync(process.execPath, [join(f.repository, "ops/cli.mjs"), "demo"], {
+    cwd: f.repository,
+    env: { HOME: f.path, PATH: `${bin}:${process.env.PATH}` },
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /demo.*(?:config|OPS_DEMO)|OPS_DEMO.*required/i);
+  assert.equal(existsSync(touched), false);
+  assert.equal(existsSync(f.config.remoteRoot), false);
+});
+
+test("CLI demo status survives a lost initiating process without remote configuration or SSH", (t) => {
+  const path = directory(t),
+    stateRoot = join(path, "demos"),
+    run = join(stateRoot, "20261023-local"),
+    bin = join(path, "bin"),
+    touched = join(path, "ssh-called"),
+    deadline = "2026-10-24T10:00:00.000Z";
+  mkdirSync(run, { recursive: true });
+  mkdirSync(bin);
+  writeFileSync(join(bin, "ssh"), `#!/bin/sh\nprintf called > '${touched}'\nexit 99\n`, { mode: 0o700 });
+  writeFileSync(join(run, "demo.json"), JSON.stringify({
+    status: "expired", origin: "https://demo.tail.invalid:8443", expiresAt: deadline,
+    stoppedAt: deadline, runtimeDir: run, unit: "slopgrid-demo.service",
+  }));
+  writeFileSync(join(run, "owner.json"), JSON.stringify({ pid: 2147483647, boot: "fixture", start: "1" }));
+  const result = spawnSync(process.execPath, [
+    join(root, "cli.mjs"), "status", "20261023-local",
+  ], {
+    cwd: path,
+    env: { HOME: path, PATH: `${bin}:${process.env.PATH}`, OPS_DEMO_STATE_ROOT: stateRoot },
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /expired/);
+  assert.ok(result.stdout.includes("https://demo.tail.invalid:8443"));
+  assert.ok(result.stdout.includes(deadline));
+  assert.match(result.stdout, /data.*retain|retain.*data/i);
+  assert.equal(existsSync(touched), false);
+});
+
+test("local demos validate full scoped or skipped committed candidates and retain failed-start builds", (t) => {
+  const f = fixture(t),
+    bin = join(f.path, "demo-bin"),
+    stateRoot = join(f.path, "demo-state"),
+    log = join(f.path, "local-commands.jsonl"),
+    touched = join(f.path, "shared-runtime-called");
+  mkdirSync(bin);
+  mkdirSync(join(f.repository, "server"));
+  mkdirSync(join(f.repository, "tests"));
+  writeFileSync(join(f.repository, "server/engine.ts"), 'console.log("fixture engine");\n');
+  writeFileSync(join(f.repository, "tests/fixture.test.ts"), "");
+  writeFileSync(join(f.repository, "package.json"), JSON.stringify({ type: "module", packageManager: "pnpm@fixture" }));
+  writeFileSync(join(f.repository, "pnpm-lock.yaml"), "lockfileVersion: 9.0\n");
+  writeFileSync(join(f.repository, "pnpm-workspace.yaml"), "packages: []\n");
+  const revision = commit(f.repository, "local demo fixture");
+  writeFileSync(join(bin, "pnpm"), `#!${process.execPath}
+const fs = require("node:fs"), path = require("node:path");
+const args = process.argv.slice(2);
+if (args[0] === "--version") console.log("fixture");
+else if (args[0] === "install") fs.symlinkSync(path.join(process.env.SLOPGRID_TEST_APP, "node_modules"), "node_modules");
+else if (args[0] === "build") { fs.mkdirSync("dist"); fs.writeFileSync("dist/index.html", "fixture frontend"); }
+else if (args[0] === "exec") fs.appendFileSync(process.env.SLOPGRID_FIXTURE_LOG, JSON.stringify({args, cwd: process.cwd()}) + "\\n");
+else process.exit(99);
+`, { mode: 0o700 });
+  for (const program of ["ssh", "pm2", "rsync"])
+    writeFileSync(join(bin, program), `#!/bin/sh\nprintf called > '${touched}'\nexit 99\n`, { mode: 0o700 });
+  for (const program of ["systemctl", "systemd-run", "tailscale", "loginctl"])
+    writeFileSync(join(bin, program), "#!/bin/sh\nexit 99\n", { mode: 0o700 });
+  const flags = { full: [], scoped: ["--unit=tests/fixture.test.ts"], skip: ["--skip-tests"] };
+  for (const [policy, selection] of Object.entries(flags)) {
+    const state = join(stateRoot, policy);
+    const result = spawnSync(process.execPath, [
+      join(f.repository, "ops/cli.mjs"), "demo", ...selection,
+    ], {
+      cwd: f.repository,
+      env: {
+        HOME: f.path, PATH: `${bin}:${process.env.PATH}`,
+        SLOPGRID_TEST_APP: process.env.SLOPGRID_TEST_APP, SLOPGRID_FIXTURE_LOG: log,
+        OPS_DEMO_ENV_FILE: join(f.path, "missing-private-demo.env"),
+        OPS_DEMO_HTTPS_PORT: "8443", OPS_DEMO_STATE_ROOT: state,
+      },
+      encoding: "utf8",
+    });
+    assert.equal(result.status, 1, result.stdout);
+    const runs = readdirSync(state);
+    assert.equal(runs.length, 1);
+    const run = join(state, runs[0]),
+      request = JSON.parse(readFileSync(join(run, "request.json"), "utf8")),
+      validation = JSON.parse(readFileSync(join(run, "validation.json"), "utf8"));
+    assert.equal(request.revision, revision);
+    assert.equal(request.tests, policy);
+    assert.equal(validation.policy, policy);
+    assert.equal(validation.status, policy === "skip" ? "skipped" : "passed");
+    assert.equal(JSON.parse(readFileSync(join(run, "result.json"), "utf8")).status, "failed");
+    assert.equal(readFileSync(join(run, "build/dist/index.html"), "utf8"), "fixture frontend");
+    assert.equal(existsSync(join(run, "build/node_modules")), true);
+  }
+  const commands = readFileSync(log, "utf8").trim().split("\n").map(JSON.parse);
+  assert.equal(commands.length, 3);
+  assert.equal(commands.filter(({ args }) => args.includes("tests/run-e2e.ts")).length, 1);
+  assert.equal(commands.filter(({ args }) => args.includes("tests/fixture.test.ts")).length, 2);
+  assert.equal(existsSync(touched), false);
+  assert.equal(existsSync(f.config.remoteRoot), false);
 });
 
 test("CLI rejects a locally named master before SSH, even with skipped tests", (t) => {

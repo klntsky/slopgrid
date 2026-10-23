@@ -1,8 +1,8 @@
 import { spawnSync } from "node:child_process";
-import { join, dirname } from "node:path";
+import { join, dirname, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
-import { realpathSync, rmSync } from "node:fs";
+import { realpathSync, rmSync, existsSync, mkdirSync, mkdtempSync } from "node:fs";
 import { prepareLocalCandidate } from "./lib/local.mjs";
 import {
   command,
@@ -12,9 +12,12 @@ import {
   sha256,
   deploymentOptions,
   assertProductionRevision,
+  writeJSON,
+  atomic,
 } from "./lib/common.mjs";
-import { loadConfig } from "./lib/config.mjs";
+import { loadConfig, loadDemoConfig, demoStateRoot, projectRoot } from "./lib/config.mjs";
 import { parseCommandLine, showHelp } from "./lib/cli-options.mjs";
+import { processIdentity } from "./lib/process-identity.mjs";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -27,6 +30,22 @@ async function main() {
   }
   const options =
     invocation.target === "status" ? null : deploymentOptions(invocation);
+  if (invocation.target === "demo") {
+    await localDemo(options);
+    return;
+  }
+  if (invocation.target === "status") {
+    const run = join(demoStateRoot(), invocation.argument);
+    if (existsSync(run)) {
+      await follow(
+        (words) => capture(process.execPath, words),
+        (words) => words,
+        root,
+        run,
+      );
+      return;
+    }
+  }
   const config = loadConfig();
   const remote = (words) => capture("ssh", [config.host, shell(words)]);
   const remoteNode = (words) => [
@@ -238,7 +257,13 @@ async function follow(remote, remoteNode, tools, run) {
     );
     if (state.log) process.stdout.write(state.log);
     offset = state.offset;
+    if (state.demo && state.demo.status !== "starting") {
+      printDemo(state.demo, run);
+      process.exitCode = state.exit ?? (state.demo.status === "failed" ? 1 : 0);
+      return;
+    }
     if (state.exit !== null) {
+      if (state.demo) printDemo(state.demo, run);
       process.exitCode = state.exit;
       return;
     }
@@ -247,5 +272,91 @@ async function follow(remote, remoteNode, tools, run) {
         `Deployment worker is incomplete or no longer running. Inspect ${run}; recovery may be required. Do not assume deployment succeeded.`,
       );
     await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+}
+
+function printDemo(lease, run) {
+  console.log(`Demo ${lease.status}: ${lease.origin ?? "origin not ready"}`);
+  if (lease.expiresAt) console.log(`24-hour runtime deadline: ${lease.expiresAt}`);
+  if (lease.stoppedAt) console.log(`Stopped: ${lease.stoppedAt}`);
+  console.log(`Data and encryption key retained until manually removed: ${lease.runtimeDir ?? run}`);
+  console.log(`Service: ${lease.unit ?? "slopgrid-demo.service"}. Log: ${join(run, "demo.log")}`);
+}
+
+async function localDemo(options) {
+  const config = loadDemoConfig();
+  const caller = spawnSync("git", ["rev-parse", "--show-toplevel"], {
+    encoding: "utf8", stdio: ["ignore", "pipe", "ignore"],
+  });
+  if (caller.status === 0) {
+    const checkout = caller.stdout.trim();
+    const common = (directory) => capture("git", [
+      "-C", directory, "rev-parse", "--path-format=absolute", "--git-common-dir",
+    ]);
+    if (realpathSync(common(checkout)) === realpathSync(common(projectRoot)))
+      config.repository = checkout;
+  }
+  const revision = capture("git", [
+    "-C", config.repository, "rev-parse", "--verify", `${options.revision}^{commit}`,
+  ]);
+  if (!/^[a-f0-9]{40}$/.test(revision)) throw new Error("Invalid application revision");
+  const opsRevision = capture("git", ["-C", root, "rev-parse", "--verify", "HEAD"]);
+  if (options.plan) {
+    console.log(JSON.stringify({
+      revision, opsRevision, target: "demo", validation: options.tests,
+      stages: [
+        "build committed candidate locally with fresh isolated data",
+        options.tests === "skip" ? "skip test suites explicitly" : `run ${options.tests} test suites locally`,
+        "start foreground Tailscale HTTPS in a transient current-user service",
+        "stop the full service control group after 24 hours",
+        "retain all demo data and its encryption key until manually removed",
+      ],
+      config: { repository: config.repository, stateRoot: config.demo.stateRoot },
+      note: "Runs as the current local user. No SSH, deployment lock, migration rehearsal or PM2 operations. Plan creates no state and changes no runtime processes.",
+    }, null, 2));
+    return;
+  }
+  for (const directory of [config.repository, root])
+    if (capture("git", ["-C", directory, "status", "--porcelain", "--untracked-files=no"]))
+      throw new Error(`Commit changes before deploying: ${directory}`);
+  const archived = spawnSync("git", [
+    "-C", config.repository, "archive", "--format=tar.gz", revision,
+  ], { maxBuffer: 256 * 1024 * 1024 });
+  if (archived.status !== 0) throw new Error("Could not archive committed source");
+  mkdirSync(config.demo.stateRoot, { recursive: true, mode: 0o700 });
+  const run = mkdtempSync(join(config.demo.stateRoot, `${new Date().toISOString().replace(/[^0-9]/g, "")}-`));
+  const request = {
+    ...options, revision, opsRevision, id: basename(run),
+    sourceHash: sha256(archived.stdout), config,
+  };
+  writeJSON(join(run, "request.json"), request);
+  writeJSON(join(run, "owner.json"), processIdentity());
+  const result = {
+    run: request.id, revision, opsRevision, target: "demo",
+    status: "running", startedAt: new Date().toISOString(), stages: [],
+  };
+  writeJSON(join(run, "result.json"), result);
+  console.log(`Local demo run ${request.id}: ${run}`);
+  let exit = 1;
+  try {
+    const local = await prepareLocalCandidate(request, archived.stdout, run);
+    result.validation = local.validation;
+    result.stages.push({ phase: "validated", at: new Date().toISOString() });
+    writeJSON(join(run, "result.json"), result);
+    const { startDemo } = await import("./lib/demo.mjs");
+    const lease = await startDemo(request, run, local.build);
+    result.status = "succeeded";
+    result.stages.push({ phase: "started", at: new Date().toISOString() });
+    printDemo(lease, run);
+    console.log(`Startup handed off. Reconnect with: ./deploy.sh status ${request.id}`);
+    exit = 0;
+  } catch (error) {
+    result.status = "failed";
+    result.error = error.message;
+    throw error;
+  } finally {
+    result.completedAt = new Date().toISOString();
+    writeJSON(join(run, "result.json"), result);
+    atomic(join(run, "exit"), `${exit}\n`);
   }
 }

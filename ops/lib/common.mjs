@@ -127,9 +127,9 @@ export function parseArgs(args) {
 export function deploymentOptions({ target, argument, values, help }) {
   if (
     help ||
-    !["validate", "rehearse", "staging", "production"].includes(target)
+    !["validate", "demo", "rehearse", "staging", "production"].includes(target)
   )
-    throw new Error("Target must be validate, rehearse, staging or production");
+    throw new Error("Target must be validate, demo, rehearse, staging or production");
   assertOptionTargets(target, values);
   const options = {
     target,

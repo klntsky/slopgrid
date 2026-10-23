@@ -69,25 +69,26 @@
      Retain a separate usage link for each grid.
    - Require both environments to use the supported current data format; reject
      unsupported formats without changing either environment.
-10. Command and option help must cover validation, rehearsal, staging, production,
-    and run status without requiring configuration, Git, SSH, or infrastructure.
+10. Command and option help must cover validation, demos, rehearsal, staging,
+    production, and run status without requiring configuration, Git, SSH, or infrastructure.
     `--help` and `help [COMMAND]` show general or command-specific guidance.
     Interactive terminals support selecting help topics and exiting without
     running commands; non-interactive help prints and exits. Invoking the CLI
     without a command shows help and never starts a deployment.
 11. Match operational controls to the selected command:
-    - Offer deployment modes for staging and production. Rehearsal accepts no
-      explicit deployment mode; validation accepts only the explicit default
-      `--mode=auto`.
-    - Allow scoped unit and browser selections for validation, rehearsal, and
-      staging. Production requires the full suite or explicit `--skip-tests`.
+    - Offer deployment modes for staging and production. Rehearsal and demos
+      accept no explicit deployment mode; validation accepts only the explicit
+      default `--mode=auto`.
+    - Allow scoped unit and browser selections for validation, demos, rehearsal,
+      and staging. Demos also support explicitly skipped tests. Production
+      requires the full suite or explicit `--skip-tests`.
       Reject combinations of scoped selection and skipped tests.
     - Browser filtering requires a browser-file selection. Browser-suite selection
       affects scoped browser checks, not full-suite runs.
-    - Offer `--plan` for validation, rehearsal, staging, and production. Preview
-      the operation without uploading or changing runtime processes, while still
-      requiring configuration, candidate resolution, and production authorization
-      where applicable.
+    - Offer `--plan` for validation, demos, rehearsal, staging, and production.
+      Preview the operation without uploading or changing runtime processes,
+      while still requiring configuration, candidate resolution, and production
+      authorization where applicable.
 12. Runtime deployments execute with exclusive ownership of shared deployment
     state, including process-manager persistence. A competing deployment returns
     a busy result without changing or cancelling the owner.
@@ -98,3 +99,14 @@
     - An interrupted owner without reliable completion evidence blocks later
       runtime deployments until an operator reconciles the interrupted operation.
       Independent validation and rehearsal remain available.
+13. Temporary demos run on the invoking user's local machine and account.
+    - Serve the app privately over Tailscale after local candidate preparation.
+      Use dedicated demo credentials, storage, and output hosting.
+    - Stop all demo runtime processes automatically after 24 hours of running,
+      independently of the initiating command or SSH connection.
+    - Preserve demo data and its encryption key after stopping. Leave deletion
+      to the operator.
+    - Keep staging and production accounts, processes, data, and networking
+      unchanged. A demo requires no remote deployment configuration.
+    - Support one active demo per user. Report its URL, runtime deadline,
+      retained data location, and observed lifecycle status.

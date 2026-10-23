@@ -116,6 +116,29 @@ test("parser preserves validation, production, scoped-test and path safety polic
   assert.equal(deploymentOptions(invocation).plan, true);
 });
 
+test("demo rejects persistent deployment and invalid validation options", () => {
+  for (const flags of [
+    ["--mode=auto"], ["--mode=soft"], ["--mode=machinery"],
+    ["--recover-failed-start"], [`--discard-grid=${"a".repeat(48)}`],
+    ["--ttl=5"], ["--skip-tests", "--unit=tests/a.test.ts"],
+    ["--grep=case"], ["--unit=tests/../secret.test.ts"],
+  ]) assert.throws(() => parseArgs(["demo", ...flags]), undefined, flags.join(" "));
+});
+
+test("demo shell help is available without configuration or infrastructure", (t) => {
+  const f = unconfiguredCli(t);
+  for (const args of [["help", "demo"], ["demo", "--help"]]) {
+    const result = f.run(args);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /\.\/deploy\.sh demo \[REV\]/);
+    assert.match(result.stdout, /24.hour|one.day/i);
+    assert.match(result.stdout, /data.*retain|retain.*data/i);
+    assert.doesNotMatch(result.stdout, /--mode |--discard-grid|--recover-failed-start|--ttl/);
+  }
+  assert.equal(existsSync(f.touched), false);
+  assert.deepEqual(readdirSync(f.root).sort(), ["bin", "ops"]);
+});
+
 test("grid discard and failed-start recovery remain staging-only and reject soft mode", () => {
   for (const target of ["staging", "production"])
     assert.equal(parseArgs([target]).recoverFailedStart, false);
