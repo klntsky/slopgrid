@@ -51,12 +51,7 @@ export function prepareTextInference(
 ) {
   const messages = cell.messages
     ? chatMessages(cell.messages, references)
-    : cell.images?.length
-      ? chatMessages(
-          [{ role: "user", content: cell.prompt, images: cell.images }],
-          references,
-        )
-      : undefined;
+    : undefined;
   // OpenRouter 3.1.0's convertToOpenRouterChatMessages flattens assistant text
   // parts (dropping part providerOptions) and puts message cacheControl beside
   // content, not on a content block. Native providerOptions therefore cannot
@@ -180,7 +175,21 @@ export function inferenceSignature(prepared: PreparedInference): string {
                   ),
                 },
           );
-    return digest({ ...request, text: { ...text, messages } });
+    // Explicit text-only output is equivalent to the adapter's former default.
+    // Keep historical request identities without rewriting saved provenance.
+    const { modalities, ...body } = text.options.extraBody;
+    const extraBody =
+      modalities?.length === 1 && modalities[0] === "text"
+        ? body
+        : text.options.extraBody;
+    return digest({
+      ...request,
+      text: {
+        ...text,
+        messages,
+        options: { ...text.options, extraBody },
+      },
+    });
   }
   const references = prepared.image.input_references?.map(
     ({ mediaType, sha256 }) => ({

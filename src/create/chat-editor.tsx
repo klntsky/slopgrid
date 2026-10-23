@@ -11,7 +11,11 @@ import { DeletableInput } from "./deletable-input";
 import { ReorderHandle } from "./reorder-handle";
 import { ImageList, ImagePicker } from "./image-input";
 import { tooltipRef } from "../components/use-tooltip";
-import { ValidationFeedback, ValidationScope } from "./validation-feedback";
+import {
+  ValidationFeedback,
+  ValidationField,
+  ValidationScope,
+} from "./validation-feedback";
 
 const imageRoleHint = "Remove images before changing this message’s role.";
 
@@ -24,7 +28,7 @@ export function ChatEditor({
   messages: ChatMessage[];
   onChange: (change: (messages: ChatMessage[]) => ChatMessage[]) => void;
   onBusy: (busy: boolean) => void;
-  compatibility?: (messageIndex: number) => ReactNode;
+  compatibility: (messageIndex: number) => ReactNode;
 }) {
   const roles: ChatMessage["role"][] = [
     "system",
@@ -181,44 +185,51 @@ export function ChatEditor({
                 />
               </div>
             )}
-            <DeletableInput
-              content={message.content}
-              label={`Remove message ${index + 1}`}
-              disabled={reading}
-              onRemove={() => remove(index)}
-            >
-              {message.role === "unfilled" ? (
-                <span className="chat-unfilled-text">
-                  The model will fill this message with an assistant response.
-                </span>
-              ) : (
-                <textarea
-                  id={`${descriptionId}-message-${index}`}
-                  aria-label={`Message ${index + 1}`}
-                  rows={1}
-                  value={message.content}
-                  onChange={(event) => {
-                    const content = event.target.value;
-                    update(index, () => ({ content }));
-                  }}
-                />
+            <ValidationField>
+              {(validation) => (
+                <>
+                  <DeletableInput
+                    content={message.content}
+                    label={`Remove message ${index + 1}`}
+                    disabled={reading}
+                    onRemove={() => remove(index)}
+                  >
+                    {message.role === "unfilled" ? (
+                      <span className="chat-unfilled-text">
+                        The model will fill this message with an assistant
+                        response.
+                      </span>
+                    ) : (
+                      <textarea
+                        id={`${descriptionId}-message-${index}`}
+                        aria-label={`Message ${index + 1}`}
+                        {...validation}
+                        rows={1}
+                        value={message.content}
+                        onChange={(event) => {
+                          const content = event.target.value;
+                          update(index, () => ({ content }));
+                        }}
+                      />
+                    )}
+                    {message.role === "user" && (
+                      <ImagePicker
+                        pasteTarget={`${descriptionId}-message-${index}`}
+                        accessibleLabel={`Add images to message ${index + 1}`}
+                        disabled={reading}
+                        onBusy={onReading}
+                        onSelect={(images) =>
+                          update(index, (current) => ({
+                            images: [...(current.images ?? []), ...images],
+                          }))
+                        }
+                      />
+                    )}
+                  </DeletableInput>
+                  {compatibility(index)}
+                </>
               )}
-              {message.role === "user" && (
-                <ImagePicker
-                  pasteTarget={`${descriptionId}-message-${index}`}
-                  accessibleLabel={`Add images to message ${index + 1}`}
-                  disabled={reading}
-                  onBusy={onReading}
-                  onSelect={(images) =>
-                    update(index, (current) => ({
-                      images: [...(current.images ?? []), ...images],
-                    }))
-                  }
-                />
-              )}
-            </DeletableInput>
-            {compatibility?.(index)}
-            <ValidationFeedback descendants />
+            </ValidationField>
           </div>
         </ValidationScope>
       ))}

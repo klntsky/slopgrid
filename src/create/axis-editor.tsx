@@ -17,9 +17,16 @@ import { effortLabel } from "../../server/compatibility";
 import type { Model } from "../../server/provider";
 import { ModelSelector } from "./model-selector";
 import { CustomAxisSizes } from "./custom-image-size";
-import { caseValuesAction, type InputAction } from "./change-axis";
+import {
+  caseValuesAction,
+  type InputAction,
+  type ScalarParameterId,
+} from "./change-axis";
 import { useTooltip } from "../components/use-tooltip";
-import { ValidationField } from "./validation-feedback";
+import {
+  ValidationField,
+  type ValidationAttributes,
+} from "./validation-feedback";
 import "./parameter-actions.css";
 
 type AxisProps = {
@@ -28,7 +35,7 @@ type AxisProps = {
   models: Model[];
   judgeModels: Model[];
   onAction: (action: InputAction) => void;
-  onUploading: (busy: boolean) => void;
+  validation: ValidationAttributes;
   children?: ReactNode;
 };
 
@@ -37,7 +44,9 @@ export function AxisEditor({
   side,
   onAction,
   children,
-}: Pick<AxisProps, "input" | "side" | "onAction" | "children">) {
+}: Pick<AxisProps, "input" | "side" | "onAction"> & {
+  children: (validation: ValidationAttributes) => ReactNode;
+}) {
   const members = axisParameters(input, side);
   const kinds: ParameterId[] = [
     ...(input.format === "image"
@@ -54,11 +63,12 @@ export function AxisEditor({
       descendants={input.caseAxis !== side}
     >
       {(validation) => (
-        <div className="axis" role="group" {...validation}>
+        <div className="axis" role="group">
           <label className="axis-selector">
             <span className="axis-name">{label}:</span>
             <select
               aria-label={label}
+              {...validation}
               value={dimension ?? "single"}
               onChange={(event) => {
                 const value = event.target.value;
@@ -94,7 +104,7 @@ export function AxisEditor({
               ))}
             </select>
           </label>
-          {children}
+          {children(validation)}
         </div>
       )}
     </ValidationField>
@@ -108,6 +118,7 @@ export function AxisValues({
   judgeModels,
   onAction,
   children,
+  validation,
 }: AxisProps) {
   const parameter = axisParameters(input, side)[0];
   const label = side === "rows" ? "Rows" : "Columns";
@@ -120,7 +131,7 @@ export function AxisValues({
   )
     return null;
   const values = input[side].map((entry) => entry[parameter]);
-  function change<K extends ParameterId>(
+  function change<K extends ScalarParameterId>(
     parameter: K,
     values: ParameterValues[NoInfer<K>][],
   ) {
@@ -184,6 +195,7 @@ export function AxisValues({
           <CustomAxisSizes
             label={label}
             values={strings}
+            validation={validation}
             onChange={(values) => change(parameter, values)}
           />
         )}

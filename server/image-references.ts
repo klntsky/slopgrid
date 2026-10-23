@@ -4,7 +4,6 @@ import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { imageSize } from "image-size";
 import type { ChatMessage, StoredGridInput, WorkflowTask } from "./domain.js";
-import { mapLegacyReferences } from "./legacy-grid-input.js";
 import { generatorInputEntries } from "./generator-input.js";
 import type { ReferenceImage } from "./image-settings.js";
 import { readChatOutput } from "../shared/chat-output.js";
@@ -204,7 +203,13 @@ export function createImageReferences(
     // Hydration changes metadata only, never ownership or reference identity.
     const hydrated = structuredClone(input);
     if (hydrated.inputVersion === undefined) {
-      Object.assign(hydrated, mapLegacyReferences(hydrated, hydrate));
+      if (hydrated.format === "image") {
+        if (hydrated.inputReferences)
+          hydrated.inputReferences = hydrated.inputReferences.map(hydrate);
+        for (const name in hydrated.referenceGroups)
+          hydrated.referenceGroups[name] =
+            hydrated.referenceGroups[name].map(hydrate);
+      }
       return hydrated;
     }
     for (const { messages } of generatorInputEntries(hydrated))
@@ -223,9 +228,10 @@ export function createImageReferences(
     messages,
     input,
     task(task: WorkflowTask) {
-      if (task.input.images) task.input.images = task.input.images.map(hydrate);
-      if (task.kind === "generation")
-        task.input.messages = messages(task.input.messages);
+      if (task.kind === "judge") {
+        if (task.input.images)
+          task.input.images = task.input.images.map(hydrate);
+      } else task.input.messages = messages(task.input.messages);
     },
     draft(draft: string | undefined) {
       return draft

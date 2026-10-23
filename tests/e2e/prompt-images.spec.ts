@@ -8,40 +8,11 @@ import {
   selectModel,
   setVariableValues,
 } from "./helpers";
-import { rasterizeSvg } from "../../server/svg-raster";
-
-type WireMessage = {
-  role: string;
-  content:
-    string | { type: string; text?: string; image_url?: { url: string } }[];
-};
-function userContent(messages: WireMessage[]) {
-  return messages
-    .filter((message) => message.role === "user")
-    .map((message) =>
-      typeof message.content === "string"
-        ? { text: message.content, images: [] as string[] }
-        : {
-            text: message.content
-              .filter((part) => part.type === "text")
-              .map((part) => part.text)
-              .join(""),
-            images: message.content
-              .filter((part) => part.type === "image_url")
-              .map((part) => part.image_url!.url),
-          },
-    );
-}
-async function picture(name: string, color: string) {
-  const result = await rasterizeSvg(
-    Buffer.from(
-      `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="16"><rect width="32" height="16" fill="${color}"/></svg>`,
-    ),
-  );
-  return { name, mimeType: "image/png", buffer: result.bytes };
-}
-const dataURL = (file: { buffer: Buffer }) =>
-  `data:image/png;base64,${file.buffer.toString("base64")}`;
+import {
+  picture,
+  imageURL as dataURL,
+  userContents as userContent,
+} from "./image-input-helpers";
 
 async function expectPromptPreview(editor: Locator, name: string) {
   const image = editor.getByRole("img", { name, exact: true });

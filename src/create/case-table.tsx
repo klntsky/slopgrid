@@ -1,14 +1,10 @@
 import { useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Plus, X } from "lucide-react";
 import {
-  efforts,
   isChatFormat,
   type CaseRecord,
   type GridDraftInput,
-  type ParameterValues,
 } from "../../server/domain";
-import { imageChoices } from "../../server/image-settings";
-import { effortLabel } from "../../server/compatibility";
 import {
   axisParameters,
   parameterNames,
@@ -17,9 +13,7 @@ import {
   type ParameterId,
 } from "../../server/parameters";
 import type { Model } from "../../server/provider";
-import { ModelSelector } from "./model-selector";
 import { CriteriaEditor } from "./criteria-editor";
-import { CustomImageSize } from "./custom-image-size";
 import {
   addCaseAction,
   caseValueAction,
@@ -27,15 +21,11 @@ import {
   type ParameterSetter,
 } from "./change-axis";
 import { VariableInput } from "./variable-input";
-import { PromptEditor } from "./prompt-editor";
-import { ChatEditor } from "./chat-editor";
+import { CompleteInputEditor } from "./complete-input-editor";
+import { ScalarControl } from "./scalar-control";
 import { tooltipRef } from "../components/use-tooltip";
 import { ReorderHandle } from "./reorder-handle";
-import {
-  ValidationFeedback,
-  ValidationField,
-  ValidationScope,
-} from "./validation-feedback";
+import { ValidationFeedback, ValidationScope } from "./validation-feedback";
 import "./case-table.css";
 
 type LayoutField =
@@ -115,20 +105,6 @@ function CaseValue({
   ) => void;
   onChange: ParameterSetter;
 }) {
-  if (parameter === "model" || parameter === "judge_model") {
-    const value = entry[parameter] ?? "";
-    return (
-      <ModelSelector
-        models={parameter === "model" ? models : judgeModels}
-        judge={parameter === "judge_model"}
-        format={input.format}
-        values={value ? [value] : []}
-        onChange={(values) => onChange(parameter, values[0] ?? "")}
-        initialFilter={modelFilters?.[parameter]}
-        onFilterChange={(filter) => onModelFilterChange(parameter, filter)}
-      />
-    );
-  }
   if (parameter === "judge_criteria")
     return (
       <CriteriaEditor
@@ -136,53 +112,31 @@ function CaseValue({
         onChange={(value) => onChange(parameter, value)}
       />
     );
-  if (parameter === "effort" || parameter === "judge_effort")
-    return (
-      <select
-        aria-label={parameterNames[parameter]}
-        value={entry[parameter] ?? "default"}
-        onChange={(event) =>
-          onChange(parameter, event.target.value as ParameterValues["effort"])
-        }
-      >
-        {efforts.map((value) => (
-          <option key={value} value={value}>
-            {effortLabel(value)}
-          </option>
-        ))}
-      </select>
-    );
-  const value = entry[parameter] ?? "auto";
-  const custom = parameter === "size" && !imageChoices.size.includes(value);
   return (
-    <>
-      <select
-        aria-label={parameterNames[parameter]}
-        value={custom ? "custom" : value}
-        onChange={(event) =>
-          onChange(
-            parameter,
-            event.target.value === "custom" ? "x" : event.target.value,
-          )
-        }
-      >
-        {[
-          ...new Set([...imageChoices[parameter], ...(custom ? [] : [value])]),
-        ].map((choice) => (
-          <option key={choice} value={choice}>
-            {choice === "auto" ? "Auto" : choice}
-          </option>
-        ))}
-        {parameter === "size" && <option value="custom">Custom</option>}
-      </select>
-      {custom && (
-        <CustomImageSize
-          label="Custom size"
-          value={value}
-          onChange={(value) => onChange(parameter, value)}
-        />
-      )}
-    </>
+    <ScalarControl
+      parameter={parameter}
+      value={
+        entry[parameter] ??
+        (parameter === "model" || parameter === "judge_model"
+          ? ""
+          : parameter === "effort" || parameter === "judge_effort"
+            ? "default"
+            : "auto")
+      }
+      format={input.format}
+      models={parameter === "judge_model" ? judgeModels : models}
+      initialFilter={
+        parameter === "model" || parameter === "judge_model"
+          ? modelFilters?.[parameter]
+          : undefined
+      }
+      onFilterChange={
+        parameter === "model" || parameter === "judge_model"
+          ? (filter) => onModelFilterChange(parameter, filter)
+          : undefined
+      }
+      onChange={(value) => onChange(parameter, value)}
+    />
   );
 }
 
@@ -368,57 +322,17 @@ export function GridLayoutTable({
           }
           aria-label={`${side === "rows" ? "Row" : "Column"} case ${caseIndex + 1} ${label}`}
         >
-          {isChatFormat(input.format) ? (
-            <ChatEditor
-              messages={messages}
-              onBusy={onBusy}
-              onChange={(change) =>
-                onAction({
-                  type: "edit-input",
-                  source: side,
-                  caseIndex,
-                  change,
-                })
-              }
-              compatibility={(messageIndex) =>
-                compatibility(side, "input", caseIndex, undefined, messageIndex)
-              }
-            />
-          ) : (
-            <PromptEditor
-              prompt={messages[0]?.content ?? ""}
-              onPromptChange={(content) =>
-                onAction({
-                  type: "edit-input",
-                  source: side,
-                  caseIndex,
-                  change: (current) => [
-                    { ...current[0], role: "user", content },
-                  ],
-                })
-              }
-              attachments={{
-                images: messages[0]?.images ?? [],
-                onBusy,
-                onChange: (images) =>
-                  onAction({
-                    type: "edit-input",
-                    source: side,
-                    caseIndex,
-                    change: (current) => [
-                      {
-                        ...current[0],
-                        role: "user",
-                        content: current[0]?.content ?? "",
-                        images,
-                      },
-                    ],
-                  }),
-              }}
-            />
-          )}
-          {!isChatFormat(input.format) &&
-            compatibility(side, "input", caseIndex)}
+          <CompleteInputEditor
+            format={input.format}
+            messages={messages}
+            source={side}
+            caseIndex={caseIndex}
+            onAction={onAction}
+            onBusy={onBusy}
+            compatibility={(messageIndex) =>
+              compatibility(side, "input", caseIndex, undefined, messageIndex)
+            }
+          />
         </div>
       );
     }
@@ -450,25 +364,27 @@ export function GridLayoutTable({
       </div>
     );
   }
-  function editor(side: AxisSide, field: LayoutField, caseIndex: number) {
+  function cell(field: LayoutField, caseIndex: number) {
     const path: (string | number)[] = [side, caseIndex, field.parameter];
     if (field.parameter === "variable") path.push(field.index);
     return (
-      <ValidationScope path={path}>
-        {field.parameter === "variable" ||
-        field.parameter === "input" ||
-        field.parameter === "judge_criteria" ? (
-          editorValue(side, field, caseIndex)
-        ) : (
-          <ValidationField>
-            {(validation) => (
-              <div role="group" {...validation}>
-                {editorValue(side, field, caseIndex)}
-              </div>
-            )}
-          </ValidationField>
-        )}
-      </ValidationScope>
+      <td
+        key={rowCases ? fieldKey(field) : entries[caseIndex].id}
+        className={
+          field.parameter === "variable" ||
+          (field.parameter === "input" && !isChatFormat(input.format))
+            ? "case-prompt-cell"
+            : undefined
+        }
+        data-case-id={rowCases ? undefined : entries[caseIndex].id}
+        data-field={field.parameter}
+        data-case-parameter={`${side}-${field.parameter}`}
+        {...(rowCases ? {} : dragAttributes(caseIndex))}
+      >
+        <ValidationScope path={path}>
+          {editorValue(side, field, caseIndex)}
+        </ValidationScope>
+      </td>
     );
   }
   function add(kind: "case" | "variable") {
@@ -597,45 +513,13 @@ export function GridLayoutTable({
                           {...dragAttributes(index)}
                         >
                           <th scope="row">{caseHeader(side, index)}</th>
-                          {fields.map((field) => (
-                            <td
-                              key={fieldKey(field)}
-                              className={
-                                field.parameter === "variable" ||
-                                (field.parameter === "input" &&
-                                  !isChatFormat(input.format))
-                                  ? "case-prompt-cell"
-                                  : undefined
-                              }
-                              data-field={field.parameter}
-                              data-case-parameter={`${side}-${field.parameter}`}
-                            >
-                              {editor(side, field, index)}
-                            </td>
-                          ))}
+                          {fields.map((field) => cell(field, index))}
                         </tr>
                       ))
                     : fields.map((field) => (
                         <tr key={fieldKey(field)}>
                           <th scope="row">{header(side, field)}</th>
-                          {entries.map((entry, index) => (
-                            <td
-                              key={entry.id}
-                              className={
-                                field.parameter === "variable" ||
-                                (field.parameter === "input" &&
-                                  !isChatFormat(input.format))
-                                  ? "case-prompt-cell"
-                                  : undefined
-                              }
-                              data-case-id={entry.id}
-                              data-case-parameter={`${side}-${field.parameter}`}
-                              data-field={field.parameter}
-                              {...dragAttributes(index)}
-                            >
-                              {editor(side, field, index)}
-                            </td>
-                          ))}
+                          {entries.map((_, index) => cell(field, index))}
                         </tr>
                       ))}
                 </tbody>

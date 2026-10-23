@@ -8,11 +8,7 @@ import { appFixture } from "./app-fixture.js";
 import { serviceWorkerFixture } from "./service-worker-fixture.js";
 import { validatedGrid } from "./grid-storage-fixture.js";
 import { currentInput } from "./current-grid-fixture.js";
-
-const png = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
-  "base64",
-);
+import { pixelPng as png } from "./reference-image-fixture.js";
 
 test("reference SHA validators reuse bytes only after authorization, including account and publication changes", async (t) => {
   const { origin, store } = await appFixture(t);

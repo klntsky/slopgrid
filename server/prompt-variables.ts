@@ -30,30 +30,6 @@ export function mergeVariableImages(
   return images.length ? images : undefined;
 }
 
-export function referencedVariableImages(
-  text: string,
-  input: VariableInput,
-  selection?: Partial<Record<"rows" | "columns", number>>,
-): ReferenceImage[] {
-  const images: ReferenceImage[] = [];
-  const seen = new Set<string>();
-  for (const [, name, number] of text.matchAll(variableToken)) {
-    const side = name === "ROW" ? "rows" : "columns";
-    const axis = input[side];
-    if (input.parameters.variable?.kind !== side || !/^[1-9]\d*$/.test(number))
-      continue;
-    const index = selection?.[side];
-    const values = index === undefined ? axis : [axis[index]];
-    for (const record of values)
-      for (const image of record?.variable?.[Number(number) - 1]?.images ?? [])
-        if (!seen.has(image.id)) {
-          seen.add(image.id);
-          images.push(image);
-        }
-  }
-  return images;
-}
-
 export type VariableInterpolationOptions = {
   allowUnresolvedVariables?: boolean;
 };

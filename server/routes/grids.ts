@@ -15,13 +15,11 @@ import type { GridPresenter } from "../grid-presentation.js";
 import { anonymousOwner } from "../session.js";
 import { presentIdentity } from "../grid-presentation.js";
 import { gridListPage } from "../grid-listing.js";
+import { gridSchema, type Grid, type ValidatedGridInput } from "../domain.js";
 import {
-  gridSchema,
-  expandGrid,
-  type Grid,
-  type ValidatedGridInput,
-} from "../domain.js";
-import { resolveGridModels } from "../model-resolution.js";
+  prepareGridModels,
+  type PreparedGridModels,
+} from "../model-resolution.js";
 import { ModelResolutionError } from "../model-alias.js";
 import {
   createInferenceGuard,
@@ -181,9 +179,20 @@ export function createGridRoutes({
     const parsed = gridSchema.safeParse(definition);
     if (!parsed.success)
       return res.status(400).json({ error: parsed.error.issues[0].message });
-    let input: ValidatedGridInput;
+    if (
+      selectedReferences(parsed.data).some(
+        (image) => !store.references.allowed(image.id, s),
+      )
+    )
+      return res
+        .status(400)
+        .json({ error: "A reference image is unavailable." });
+    let prepared: PreparedGridModels<ValidatedGridInput>;
     try {
-      input = resolveGridModels(parsed.data, await provider.models());
+      prepared = prepareGridModels(
+        store.references.input(parsed.data),
+        await provider.models(),
+      );
     } catch (error) {
       return res
         .status(error instanceof ModelResolutionError ? 400 : 502)
@@ -194,16 +203,8 @@ export function createGridRoutes({
               : "Could not load OpenRouter models. Try again.",
         });
     }
-    if (
-      selectedReferences(input).some(
-        (image) => !store.references.allowed(image.id, s),
-      )
-    )
-      return res
-        .status(400)
-        .json({ error: "A reference image is unavailable." });
-    input = store.references.input(input);
-    const cells = expandGrid(input).map((c) => ({ ...c, id: token() }));
+    const { input } = prepared;
+    const cells = prepared.cells.map((cell) => ({ ...cell, id: token() }));
     const tasks = createWorkflow(input, cells);
     if (!rate(`create:${s.id}`, 10) || !rate(`create-ip:${req.ip}`, 30))
       return res

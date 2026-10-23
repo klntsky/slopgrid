@@ -26,6 +26,7 @@ import { join } from "node:path";
 import { holdDatabaseWrites } from "./database-lock.js";
 import { crashCheckpoint } from "./crash-checkpoint.js";
 import { arrangeHistoricalGrid } from "./grid-storage-fixture.js";
+import { pixelPng as png } from "./reference-image-fixture.js";
 import {
   expandLegacyGrid,
   type LegacyGridInput,
@@ -93,10 +94,6 @@ const pair: GridInput = currentDefinition({
     { judge_model: "fixture/judge-other" },
   ],
 });
-const png = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
-  "base64",
-);
 const svg =
   '<svg xmlns="http://www.w3.org/2000/svg" width="80" height="40"><rect x="10" y="10" width="20" height="20" fill="red"/></svg>';
 function judgeArtifact(call: RuntimeCall): string {

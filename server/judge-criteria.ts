@@ -98,9 +98,3 @@ export function judgeCriteriaIssues(
         }));
   });
 }
-
-export function judgeCriteriaIssue(
-  input: Pick<GridInput, "parameters" | "rows" | "columns" | "judge">,
-): string | undefined {
-  return judgeCriteriaIssues(input)[0]?.message;
-}

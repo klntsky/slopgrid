@@ -33,14 +33,6 @@ export function migrateVariableInput(input: unknown): unknown {
           legacy.has(name) ? `${match}1` : match,
         )
       : text;
-  const migrateRubric = (criteria: unknown[]) =>
-    criteria.map((criterion) =>
-      record(criterion)
-        ? { ...criterion, text: template(criterion.text) }
-        : criterion,
-    );
-  const source = record(input.judge) ? input.judge.criteria : undefined;
-  const criteria = Array.isArray(source) ? migrateRubric(source) : source;
   return {
     ...input,
     ...axes,
@@ -54,14 +46,6 @@ export function migrateVariableInput(input: unknown): unknown {
               ? { ...message, content: template(message.content) }
               : message,
           ),
-        }
-      : {}),
-    ...(record(input.judge)
-      ? {
-          judge: {
-            ...input.judge,
-            criteria,
-          },
         }
       : {}),
   };

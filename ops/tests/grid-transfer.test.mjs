@@ -32,8 +32,7 @@ import {
   removeReferenceMetadata,
   rejectUploadTransfer,
   transferredGridExists,
-  transferGridCount,
-  transferCellCount,
+  transferRowCount,
 } from "./reference-fixture.mjs";
 import {
   Database,
@@ -47,7 +46,6 @@ import {
   transferCells,
   transferCost,
   transferSessionData,
-  transferRowCount,
   survivingTransferTask,
   artifactTaskCount,
   shareTransferExecution,
@@ -82,7 +80,7 @@ test("preview is read-only; move preserves canonical tasks, links, accounts, fil
   assert.equal(plan.retainedCells, 2);
   assert.equal(plan.retainedTasks, 4);
   assert.equal(plan.retainedCalls, 4);
-  assert.equal(transferGridCount(f.source), 1);
+  assert.equal(transferRowCount(f.source, "grids"), 1);
   assert.equal(existsSync(f.options.backupDir), false);
   assert.deepEqual(referenceImages(f.target), []);
   assert.equal(existsSync(join(f.options.targetOutputs, ".references")), false);
@@ -277,15 +275,17 @@ test("selective model removal rejects versioned case records without changing ei
   const row = transferGridRow(f.source, f.options.grid);
   const data = JSON.parse(row.data);
   data.input = {
-    inputVersion: 2,
+    inputVersion: 3,
     format: "svg",
-    prompt: "horse",
     budgetUsd: 3,
     judge: false,
     parameters: {
+      input: {
+        kind: "common",
+        value: [{ role: "user", content: "horse" }],
+      },
       model: { kind: "rows" },
       effort: { kind: "common", value: "default" },
-      input_references: { kind: "common", value: { name: "", images: [] } },
     },
     rows: ["first/model", "broken/model", "last/model"].map((model, index) => ({
       id: `row-${index + 1}`,
@@ -305,7 +305,7 @@ test("selective model removal rejects versioned case records without changing ei
     );
   assert.deepEqual(transferGrids(f.source), source);
   assert.deepEqual(transferGrids(f.target), target);
-  assert.equal(transferCellCount(f.source), 3);
+  assert.equal(transferRowCount(f.source, "cells"), 3);
   assert.equal(existsSync(f.options.backupDir), false);
 });
 
@@ -382,7 +382,7 @@ test("unsafe transfers leave both databases and source files untouched", async (
         transferGrid(Database, { ...f.options, apply: true }),
       );
       assert.deepEqual(transferGrids(f.target), before);
-      assert.equal(transferCellCount(f.source), 3);
+      assert.equal(transferRowCount(f.source, "cells"), 3);
       assert.ok(
         existsSync(join(f.options.sourceOutputs, f.artifacts[0], "index.svg")),
       );

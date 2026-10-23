@@ -8,43 +8,22 @@ import {
   selectModel,
   setVariableValues,
 } from "./helpers";
+import { pixelPng as png } from "../reference-image-fixture";
+import {
+  imageURL as dataURL,
+  userContents,
+  type WireRequest,
+} from "./image-input-helpers";
 
-const png = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
-  "base64",
-);
 const firstImage = { name: "first.png", mimeType: "image/png", buffer: png };
 const laterImage = {
   name: "later.png",
   mimeType: "image/png",
   buffer: Buffer.concat([png, Buffer.from("later image")]),
 };
-type WireMessage = {
-  role: string;
-  content:
-    string | { type: string; text?: string; image_url?: { url: string } }[];
-};
-function userTurns(request: { messages: WireMessage[] }) {
-  return request.messages
-    .filter((message) => message.role === "user")
-    .map((message) => ({
-      text:
-        typeof message.content === "string"
-          ? message.content
-          : message.content
-              .filter((part) => part.type === "text")
-              .map((part) => part.text)
-              .join("\n"),
-      images:
-        typeof message.content === "string"
-          ? []
-          : message.content
-              .filter((part) => part.type === "image_url")
-              .map((part) => part.image_url!.url),
-    }));
+function userTurns(request: Pick<WireRequest, "messages">) {
+  return userContents(request.messages, "\n");
 }
-const dataURL = (image: typeof firstImage) =>
-  `data:image/png;base64,${image.buffer.toString("base64")}`;
 
 async function appendMessage(page: Page) {
   await page.locator(".chat-append").hover();

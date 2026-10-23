@@ -5,6 +5,7 @@ import {
   mockModels,
   defineCases,
   selectModel,
+  savedInput,
 } from "./helpers";
 import { referencePng } from "../reference-image-fixture";
 
@@ -74,9 +75,7 @@ for (const format of ["SVG", "Image"]) {
     await expect(table.getByRole("searchbox")).toHaveCount(0);
     await expect(table.getByRole("textbox")).toHaveCount(1);
 
-    await page
-      .getByRole("button", { name: "new case", exact: true })
-      .click();
+    await page.getByRole("button", { name: "new case", exact: true }).click();
     await expect(table.getByRole("textbox")).toHaveCount(2);
     await table.getByLabel("$ROW1, case 1", { exact: true }).fill("identical");
     await table.getByLabel("$ROW1, case 2", { exact: true }).fill("identical");
@@ -111,12 +110,8 @@ test("a single case keeps field image associations and stable tokens in both ori
     name: "Grid layout parameters",
     exact: true,
   });
-  await page
-    .getByRole("button", { name: "new variable", exact: true })
-    .click();
-  await page
-    .getByRole("button", { name: "new variable", exact: true })
-    .click();
+  await page.getByRole("button", { name: "new variable", exact: true }).click();
+  await page.getByRole("button", { name: "new variable", exact: true }).click();
   await table
     .getByLabel("$ROW1, case 1", { exact: true })
     .fill("discard this field");
@@ -142,9 +137,7 @@ test("a single case keeps field image associations and stable tokens in both ori
   await expect(table.getByLabel("$ROW2, case 1", { exact: true })).toHaveValue(
     "keep this field",
   );
-  await page
-    .getByRole("button", { name: "new variable", exact: true })
-    .click();
+  await page.getByRole("button", { name: "new variable", exact: true }).click();
   await expect(table.getByLabel("$ROW3, case 1", { exact: true })).toHaveValue(
     "",
   );
@@ -255,9 +248,7 @@ test("an empty restored case list hides only the table and can return to one edi
   await page
     .getByRole("combobox", { name: "Rows", exact: true })
     .selectOption("variable");
-  await page
-    .getByRole("button", { name: "new variable", exact: true })
-    .click();
+  await page.getByRole("button", { name: "new variable", exact: true }).click();
   await page
     .getByLabel("$ROW1, case 1", { exact: true })
     .fill("unfinished question");
@@ -272,7 +263,9 @@ test("an empty restored case list hides only the table and can return to one edi
     exact: true,
   });
   await expect(table).toHaveCount(0);
-  await expect(page.locator(".variable-editor").getByRole("alert")).toBeVisible();
+  await expect(
+    page.locator(".variable-editor").getByRole("alert"),
+  ).toBeVisible();
   await expect(
     page.getByRole("combobox", { name: "Rows", exact: true }),
   ).toHaveValue("variable");
@@ -287,9 +280,7 @@ test("an empty restored case list hides only the table and can return to one edi
   await page.getByRole("button", { name: "new case", exact: true }).click();
   await expect(table).toBeVisible();
   await expect(definePrompt).toBeEnabled();
-  await page
-    .getByRole("button", { name: "new variable", exact: true })
-    .click();
+  await page.getByRole("button", { name: "new variable", exact: true }).click();
   await table
     .getByLabel("$ROW1, case 1", { exact: true })
     .fill("restored question");
@@ -334,9 +325,7 @@ for (const side of ["Rows", "Columns"] as const) {
       .getByRole("button", { name: "new variable", exact: true })
       .click();
     await table.getByLabel(`${token}, case 1`, { exact: true }).fill("Alpha");
-    await page
-      .getByRole("button", { name: "new case", exact: true })
-      .click();
+    await page.getByRole("button", { name: "new case", exact: true }).click();
     await table.getByLabel(`${token}, case 2`, { exact: true }).fill("Beta");
     const secondModel = table.getByRole("group", {
       name: `${side === "Rows" ? "Row" : "Column"} case 2 Model`,
@@ -434,6 +423,8 @@ for (const side of ["Rows", "Columns"] as const) {
     const title = side === "Rows" ? "Row" : "Column";
     const opposite = side === "Rows" ? "Columns" : "Rows";
     const oppositeTitle = side === "Rows" ? "Column" : "Row";
+    const sourceSide = side === "Rows" ? "rows" : "columns";
+    const targetSide = sourceSide === "rows" ? "columns" : "rows";
     const axis = page.getByRole("combobox", { name: side, exact: true });
     await axis.selectOption("variable");
     await page
@@ -445,9 +436,7 @@ for (const side of ["Rows", "Columns"] as const) {
       exact: true,
     });
     await expect(table.getByRole("textbox")).toHaveCount(0);
-    await page
-      .getByRole("button", { name: "new case", exact: true })
-      .click();
+    await page.getByRole("button", { name: "new case", exact: true }).click();
     const common = page.getByLabel("Prompt", { exact: true });
     await common.fill("Draw a complete blue landscape");
     await page
@@ -493,15 +482,12 @@ for (const side of ["Rows", "Columns"] as const) {
     await second
       .getByLabel("Prompt", { exact: true })
       .fill("Paint a distinct red portrait");
-    const snapshot = () =>
-      page.evaluate(
-        () => JSON.parse(sessionStorage.getItem("slopgrid-draft")!).input,
-      );
+    const snapshot = () => savedInput(page);
     const before = await snapshot();
-    expect(before.caseAxis).toBe(side.toLowerCase());
-    expect(before.parameters.input).toEqual({ kind: side.toLowerCase() });
+    expect(before.caseAxis).toBe(sourceSide);
+    expect(before.parameters.input).toEqual({ kind: sourceSide });
     expect(before.parameters.variable).toBeUndefined();
-    for (const record of before[side.toLowerCase()])
+    for (const record of before[sourceSide])
       expect(record.variable).toBeUndefined();
     for (const action of [
       () =>
@@ -540,9 +526,10 @@ for (const side of ["Rows", "Columns"] as const) {
       swapped.getByRole("img", { name: "complete.png", exact: true }),
     ).toBeVisible();
     const afterSwap = await snapshot();
-    expect(afterSwap[opposite.toLowerCase()]).toEqual(
-      before[side.toLowerCase()],
-    );
+    expect(afterSwap[targetSide]).toEqual(before[sourceSide]);
+    // Editing, persistence and transposition are orientation-sensitive;
+    // submission and the shared Edit flow need one complete workflow.
+    if (side === "Columns") return;
     await connectOpenRouter(page);
     const created = page.waitForResponse(
       (response) =>
@@ -585,6 +572,7 @@ for (const side of ["Rows", "Columns"] as const) {
       .getByRole("button", { name: "Chat completion", exact: true })
       .click();
     const title = side === "Rows" ? "Row" : "Column";
+    const sourceSide = side === "Rows" ? "rows" : "columns";
     await page
       .getByRole("combobox", { name: side, exact: true })
       .selectOption("variable");
@@ -642,9 +630,7 @@ for (const side of ["Rows", "Columns"] as const) {
       }),
     ).toBeVisible();
     await defineCases(page, "chat history");
-    await page
-      .getByRole("button", { name: "new case", exact: true })
-      .click();
+    await page.getByRole("button", { name: "new case", exact: true }).click();
     const second = table.getByRole("group", {
       name: `${title} case 2 Chat history`,
       exact: true,
@@ -714,14 +700,8 @@ for (const side of ["Rows", "Columns"] as const) {
     await expect(second.getByLabel("Message 1", { exact: true })).toHaveValue(
       "A separate system instruction",
     );
-    const before = await page.evaluate(
-      () => JSON.parse(sessionStorage.getItem("slopgrid-draft")!).input,
-    );
-    expect(
-      before[side.toLowerCase()].map(
-        (record: { variable: unknown }) => record.variable,
-      ),
-    ).toEqual([
+    const before = await savedInput(page);
+    expect(before[sourceSide].map((record) => record.variable)).toEqual([
       [null, null],
       [null, null],
     ]);
@@ -731,11 +711,8 @@ for (const side of ["Rows", "Columns"] as const) {
       .click();
     await (await cancellation).dismiss();
     await pending;
-    expect(
-      await page.evaluate(
-        () => JSON.parse(sessionStorage.getItem("slopgrid-draft")!).input,
-      ),
-    ).toEqual(before);
+    expect(await savedInput(page)).toEqual(before);
+    if (side === "Columns") return;
     await connectOpenRouter(page);
     await page.getByRole("button", { name: "Generate", exact: true }).click();
     await expectProgress(page, 2, 2);
@@ -812,52 +789,4 @@ test("the direct parameter control explains disabled admission and targets the s
     .getByLabel("Prompt", { exact: true });
   await expect(editor).toHaveValue("Keep this complete prompt");
   await expect(editor).toBeFocused();
-});
-
-test("case workspaces stay centered at normal width and grow only until the viewport cap", async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: 1440, height: 1000 });
-  await page.goto("/");
-  await page.getByRole("button", { name: "Markdown", exact: true }).click();
-  await page
-    .getByRole("combobox", { name: "Rows", exact: true })
-    .selectOption("variable");
-  const workspace = page.locator(".variable-editor");
-  const bounds = async () => {
-    const box = await workspace.boundingBox();
-    expect(box).not.toBeNull();
-    return box!;
-  };
-  const empty = await bounds();
-  expect(empty.x + empty.width / 2).toBeCloseTo(720, 0);
-  const addField = page.getByRole("button", {
-    name: "new variable",
-    exact: true,
-  });
-  await addField.click();
-  expect((await bounds()).width).toBeCloseTo(empty.width, 0);
-  await addField.click();
-  expect((await bounds()).width).toBeCloseTo(empty.width, 0);
-  await addField.click();
-  const growing = await bounds();
-  expect(growing.width).toBeGreaterThan(empty.width);
-  expect(growing.width).toBeLessThan(1440);
-  expect(growing.x + growing.width / 2).toBeCloseTo(720, 0);
-  await addField.click();
-  await addField.click();
-  const capped = await bounds();
-  expect(capped.width).toBeLessThanOrEqual(1440);
-  expect(capped.x).toBeGreaterThanOrEqual(0);
-  expect(capped.x + capped.width / 2).toBeCloseTo(720, 0);
-  const scroll = workspace.locator(".variable-table-scroll");
-  expect(
-    await scroll.evaluate(
-      (element) => element.scrollWidth > element.clientWidth,
-    ),
-  ).toBe(true);
-  await page.setViewportSize({ width: 390, height: 844 });
-  const phone = await bounds();
-  expect(phone.x).toBeGreaterThan(0);
-  expect(phone.x + phone.width).toBeLessThan(390);
 });

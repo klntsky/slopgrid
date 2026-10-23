@@ -1,5 +1,14 @@
 import type Database from "better-sqlite3";
 
+// Frozen from master ebd1243: Markdown, default effort, fixture/text at $1/M
+// input/output tokens. Unlike a current-adapter reconstruction, this detects
+// request-signature drift across the production cutover.
+export const masterPlainPrompt = {
+  model: "fixture/text",
+  prompt: "A reusable plain prompt",
+  signature: "6ee9059025297416e039e3b1dfd99800d5f4a3138ec4bdb427201ef0e8625c53",
+};
+
 export function removeTemplateInputTokenUsage(
   db: Database.Database,
   generationId: string,

@@ -9,7 +9,7 @@ import {
   shell,
   quote,
   sha256,
-  parseArgs,
+  deploymentOptions,
   assertProductionRevision,
 } from "./lib/common.mjs";
 import { loadConfig } from "./lib/config.mjs";
@@ -24,7 +24,8 @@ async function main() {
     await showHelp(invocation.target);
     return;
   }
-  const options = invocation.target === "status" ? null : parseArgs(args);
+  const options =
+    invocation.target === "status" ? null : deploymentOptions(invocation);
   const config = loadConfig();
   const remote = (words) => capture("ssh", [config.host, shell(words)]);
   const remoteNode = (words) => [

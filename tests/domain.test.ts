@@ -879,10 +879,10 @@ for (const format of ["markdown", "svg", "html"] as const) {
       ["column first column", "column second column"],
     );
     for (const cell of cells) {
-      assert.deepEqual(cell.images, [common, row, column]);
+      assert.deepEqual(cell.messages?.[0].images, [common, row, column]);
       assert.equal(cell.imageSettings, undefined);
       assert.deepEqual(cell.messages, [
-        { role: "user", content: cell.prompt, images: cell.images },
+        { role: "user", content: cell.prompt, images: [common, row, column] },
       ]);
     }
   });
@@ -900,7 +900,7 @@ for (const format of ["markdown", "svg", "html"] as const) {
     });
     const input = gridSchema.parse(source);
     assert.equal(generatorInputForCell(input, 0, 0)[0].content, " \n ");
-    assert.deepEqual(expandGrid(input)[0].images, [image]);
+    assert.deepEqual(expandGrid(input)[0].messages?.[0].images, [image]);
     for (const promptImages of [undefined, []])
       assert.equal(
         gridSchema.safeParse({
@@ -1590,22 +1590,31 @@ for (const format of [
               parameter,
             );
         }
-        const duplicate = gridSchema.safeParse({
-          ...input,
-          [side]: input[side].map((record) => ({ ...record, id: "duplicate" })),
-        });
-        assert.equal(duplicate.success, false, parameter);
-        if (!duplicate.success)
-          assert.ok(
-            duplicate.error.issues.some(
-              ({ path }) =>
-                JSON.stringify(path) === JSON.stringify([side, 1, "id"]),
-            ),
-            parameter,
-          );
       }
     });
   }
+
+test("case IDs must be distinct in both axis orientations", () => {
+  for (const side of ["rows", "columns"] as const) {
+    const input = currentDefinition({
+      caseAxis: side,
+      parameters: { input: { kind: side } },
+      [side]: [
+        { id: "duplicate", input: [{ role: "user", content: "First" }] },
+        { id: "duplicate", input: [{ role: "user", content: "Second" }] },
+      ],
+    });
+    const result = gridSchema.safeParse(input);
+    assert.equal(result.success, false);
+    if (!result.success)
+      assert.ok(
+        result.error.issues.some(
+          ({ path }) =>
+            JSON.stringify(path) === JSON.stringify([side, 1, "id"]),
+        ),
+      );
+  }
+});
 
 test("budget cannot become a common, row or column parameter, even in an explicit case layout", () => {
   for (const side of ["rows", "columns"] as const) {

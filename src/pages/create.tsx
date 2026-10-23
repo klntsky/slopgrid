@@ -1,5 +1,5 @@
-import { ModelSelector } from "../create/model-selector";
-import { ChatEditor } from "../create/chat-editor";
+import { ScalarControl } from "../create/scalar-control";
+import { CompleteInputEditor } from "../create/complete-input-editor";
 import { CriteriaEditor } from "../create/criteria-editor";
 import { ImageOptions } from "../create/image-options";
 import { FormatPicker } from "../components/format-picker";
@@ -13,7 +13,7 @@ import {
   ListOrdered,
 } from "lucide-react";
 import { useLayoutEffect, useRef } from "react";
-import { efforts, isChatFormat, type Effort } from "../../server/domain";
+import { isChatFormat, type Effort } from "../../server/domain";
 import { imageKinds } from "../../server/image-settings";
 import {
   axisParameters,
@@ -22,7 +22,6 @@ import {
   type AxisSide,
 } from "../../server/parameters";
 import { generationPartitionKey } from "../../shared/generation-key";
-import { effortLabel } from "../../server/compatibility";
 import { useCreateForm } from "../create/use-create-form";
 import {
   AxisEditor,
@@ -39,7 +38,6 @@ import { ErrorMessage } from "../components/feedback-message";
 import { LowBalanceDialog } from "../components/inference-dialogs";
 import { useTooltip } from "../components/use-tooltip";
 import { caseSetupIssue } from "../../server/prompt-variables";
-import { PromptEditor } from "../create/prompt-editor";
 import { GridLayoutTable } from "../create/case-table";
 import {
   ValidationFeedback,
@@ -136,10 +134,6 @@ export function Create() {
     : [];
   const caseIssue = caseSetupIssue(input);
   const criteriaSource = input.parameters.judge_criteria;
-  const modelSource = input.parameters.model;
-  const effortSource = input.parameters.effort;
-  const judgeModelSource = input.parameters.judge_model;
-  const judgeEffortSource = input.parameters.judge_effort;
   const inputSource = input.parameters.input;
   const caseLayoutActive = !!input.caseAxis && input[input.caseAxis].length > 0;
   function toAxis(parameter: CommonParameterId, side: AxisSide) {
@@ -156,6 +150,63 @@ export function Create() {
         ?.querySelector<HTMLElement>("input:not([type=file]), select, textarea")
         ?.focus();
     });
+  }
+  function commonControl(
+    parameter: "model" | "judge_model" | "effort" | "judge_effort",
+  ) {
+    const source = input.parameters[parameter];
+    if (source?.kind !== "common") return null;
+    const model = parameter === "model" || parameter === "judge_model";
+    const id = `common-${parameter.replace("_", "-")}`;
+    const label = parameterNames[parameter];
+    const control = (
+      <ValidationScope path={["parameters", parameter, "value"]}>
+        <ScalarControl
+          parameter={parameter}
+          value={source.value}
+          format={input.format}
+          models={parameter === "judge_model" ? judgeModels : models}
+          id={model ? undefined : id}
+          onChange={(value) => {
+            if (parameter === "effort" || parameter === "judge_effort")
+              dispatch({ type: "common", parameter, value: value as Effort });
+            else dispatch({ type: "common", parameter, value });
+          }}
+        />
+      </ValidationScope>
+    );
+    return (
+      <div>
+        <div className="parameter-header">
+          {model ? (
+            <span className="parameter-name" id={`${id}-label`}>
+              {label}
+            </span>
+          ) : (
+            <label className="parameter-name" htmlFor={id}>
+              {label}
+            </label>
+          )}
+          <CommonParameterActions
+            input={input}
+            parameter={parameter}
+            onMove={toAxis}
+            disabled={submission.uploading || busy}
+          />
+        </div>
+        {model ? (
+          <fieldset role="radiogroup" aria-labelledby={`${id}-label`}>
+            {control}
+            {compatibility[parameter]}
+          </fieldset>
+        ) : (
+          <>
+            {control}
+            {compatibility[parameter]}
+          </>
+        )}
+      </div>
+    );
   }
   const budgetHint = useTooltip<HTMLLabelElement>(
     "Used to calculate each output’s token limit.",
@@ -215,16 +266,18 @@ export function Create() {
               disabled={submission.uploading || busy}
             >
               <AxisEditor input={input} side="rows" onAction={dispatch}>
-                <AxisValues
-                  input={input}
-                  side="rows"
-                  models={models}
-                  judgeModels={judgeModels}
-                  onAction={dispatch}
-                  onUploading={onUploading}
-                >
-                  {ordinaryAxisCompatibility("rows")}
-                </AxisValues>
+                {(validation) => (
+                  <AxisValues
+                    input={input}
+                    side="rows"
+                    models={models}
+                    judgeModels={judgeModels}
+                    onAction={dispatch}
+                    validation={validation}
+                  >
+                    {ordinaryAxisCompatibility("rows")}
+                  </AxisValues>
+                )}
               </AxisEditor>
               <button
                 type="button"
@@ -236,16 +289,18 @@ export function Create() {
                 <ArrowLeftRight aria-hidden="true" />
               </button>
               <AxisEditor input={input} side="columns" onAction={dispatch}>
-                <AxisValues
-                  input={input}
-                  side="columns"
-                  models={models}
-                  judgeModels={judgeModels}
-                  onAction={dispatch}
-                  onUploading={onUploading}
-                >
-                  {ordinaryAxisCompatibility("columns")}
-                </AxisValues>
+                {(validation) => (
+                  <AxisValues
+                    input={input}
+                    side="columns"
+                    models={models}
+                    judgeModels={judgeModels}
+                    onAction={dispatch}
+                    validation={validation}
+                  >
+                    {ordinaryAxisCompatibility("columns")}
+                  </AxisValues>
+                )}
               </AxisEditor>
             </fieldset>
             <ValidationFeedback path={["caseAxis"]} />
@@ -328,93 +383,8 @@ export function Create() {
             </div>
             {commonFixedParameters && (
               <div className="fixed-options">
-                {commonModel && (
-                  <div>
-                    <div className="parameter-header">
-                      <span className="parameter-name" id="common-model-label">
-                        Model
-                      </span>
-                      <CommonParameterActions
-                        input={input}
-                        parameter="model"
-                        onMove={toAxis}
-                        disabled={submission.uploading || busy}
-                      />
-                    </div>
-                    <fieldset
-                      role="radiogroup"
-                      aria-labelledby="common-model-label"
-                    >
-                      <ValidationField path={["parameters", "model", "value"]}>
-                        {(validation) => (
-                          <div role="group" {...validation}>
-                            <ModelSelector
-                              models={models}
-                              format={input.format}
-                              values={
-                                modelSource.kind === "common" &&
-                                modelSource.value
-                                  ? [modelSource.value]
-                                  : []
-                              }
-                              onChange={(values) =>
-                                dispatch({
-                                  type: "common",
-                                  parameter: "model",
-                                  value: values[0] ?? "",
-                                })
-                              }
-                            />
-                          </div>
-                        )}
-                      </ValidationField>
-                      {compatibility.model}
-                    </fieldset>
-                  </div>
-                )}
-                {commonEffort && (
-                  <div>
-                    <div className="parameter-header">
-                      <label className="parameter-name" htmlFor="common-effort">
-                        Thinking effort
-                      </label>
-                      <CommonParameterActions
-                        input={input}
-                        parameter="effort"
-                        onMove={toAxis}
-                        disabled={submission.uploading || busy}
-                      />
-                    </div>
-                    <ValidationField path={["parameters", "effort", "value"]}>
-                      {(validation) => (
-                        <select
-                          id="common-effort"
-                          aria-label="Thinking effort"
-                          {...validation}
-                          value={
-                            effortSource?.kind === "common"
-                              ? effortSource.value
-                              : "default"
-                          }
-                          onChange={(e) =>
-                            dispatch({
-                              type: "common",
-                              parameter: "effort",
-                              value: e.target.value as Effort,
-                            })
-                          }
-                        >
-                          {efforts.map((e) => (
-                            <option key={e} value={e}>
-                              {effortLabel(e)}
-                            </option>
-                          ))}
-                        </select>
-                      )}
-                    </ValidationField>
-                    {compatibility.effort}
-                  </div>
-                )}
+                {commonModel && commonControl("model")}
+                {commonEffort && commonControl("effort")}
               </div>
             )}
             {input.format === "image" && (
@@ -450,57 +420,24 @@ export function Create() {
             </div>
 
             <ValidationScope path={["parameters", "input", "value"]}>
-              {isChatFormat(input.format) ? (
-                <ChatEditor
-                  messages={inputSource.value}
-                  onBusy={onUploading}
-                  compatibility={(messageIndex) => (
-                    <CompatibilityFeedback
-                      input={candidate}
-                      issues={compatibilityIssues}
-                      origin={{
-                        parameter: "input",
-                        source: "common",
-                        messageIndex,
-                      }}
-                    />
-                  )}
-                  onChange={(change) =>
-                    dispatch({ type: "edit-input", source: "common", change })
-                  }
-                />
-              ) : (
-                <PromptEditor
-                  prompt={inputSource.value[0]?.content ?? ""}
-                  onPromptChange={(content) =>
-                    dispatch({
-                      type: "edit-input",
+              <CompleteInputEditor
+                format={input.format}
+                messages={inputSource.value}
+                source="common"
+                onAction={dispatch}
+                onBusy={onUploading}
+                compatibility={(messageIndex) => (
+                  <CompatibilityFeedback
+                    input={candidate}
+                    issues={compatibilityIssues}
+                    origin={{
+                      parameter: "input",
                       source: "common",
-                      change: (current) => [
-                        { ...current[0], role: "user", content },
-                      ],
-                    })
-                  }
-                  attachments={{
-                    images: inputSource.value[0]?.images ?? [],
-                    onChange: (images) =>
-                      dispatch({
-                        type: "edit-input",
-                        source: "common",
-                        change: (current) => [
-                          {
-                            ...current[0],
-                            role: "user",
-                            content: current[0]?.content ?? "",
-                            images,
-                          },
-                        ],
-                      }),
-                    onBusy: onUploading,
-                  }}
-                />
-              )}
-              {!isChatFormat(input.format) && compatibility.input}
+                      messageIndex,
+                    }}
+                  />
+                )}
+              />
             </ValidationScope>
             {promptVariables.map((variable) => (
               <p className="hint" key={variable}>
@@ -543,104 +480,8 @@ export function Create() {
             ) : input.judge ? (
               <>
                 <div className="fixed-options">
-                  {commonJudgeModel && (
-                    <div>
-                      <div className="parameter-header">
-                        <span
-                          className="parameter-name"
-                          id="common-judge-model-label"
-                        >
-                          Judge model
-                        </span>
-                        <CommonParameterActions
-                          input={input}
-                          parameter="judge_model"
-                          onMove={toAxis}
-                          disabled={submission.uploading || busy}
-                        />
-                      </div>
-                      <fieldset
-                        role="radiogroup"
-                        aria-labelledby="common-judge-model-label"
-                      >
-                        <ValidationField
-                          path={["parameters", "judge_model", "value"]}
-                        >
-                          {(validation) => (
-                            <div role="group" {...validation}>
-                              <ModelSelector
-                                judge
-                                models={judgeModels}
-                                format={input.format}
-                                values={
-                                  judgeModelSource?.kind === "common" &&
-                                  judgeModelSource.value
-                                    ? [judgeModelSource.value]
-                                    : []
-                                }
-                                onChange={(values) =>
-                                  dispatch({
-                                    type: "common",
-                                    parameter: "judge_model",
-                                    value: values[0] ?? "",
-                                  })
-                                }
-                              />
-                            </div>
-                          )}
-                        </ValidationField>
-                        {compatibility.judge_model}
-                      </fieldset>
-                    </div>
-                  )}
-                  {commonJudgeEffort && (
-                    <div>
-                      <div className="parameter-header">
-                        <label
-                          className="parameter-name"
-                          htmlFor="common-judge-effort"
-                        >
-                          Judge thinking effort
-                        </label>
-                        <CommonParameterActions
-                          input={input}
-                          parameter="judge_effort"
-                          onMove={toAxis}
-                          disabled={submission.uploading || busy}
-                        />
-                      </div>
-                      <ValidationField
-                        path={["parameters", "judge_effort", "value"]}
-                      >
-                        {(validation) => (
-                          <select
-                            id="common-judge-effort"
-                            aria-label="Judge thinking effort"
-                            {...validation}
-                            value={
-                              judgeEffortSource?.kind === "common"
-                                ? judgeEffortSource.value
-                                : "default"
-                            }
-                            onChange={(event) =>
-                              dispatch({
-                                type: "common",
-                                parameter: "judge_effort",
-                                value: event.target.value as Effort,
-                              })
-                            }
-                          >
-                            {efforts.map((effort) => (
-                              <option key={effort} value={effort}>
-                                {effortLabel(effort)}
-                              </option>
-                            ))}
-                          </select>
-                        )}
-                      </ValidationField>
-                      {compatibility.judge_effort}
-                    </div>
-                  )}
+                  {commonJudgeModel && commonControl("judge_model")}
+                  {commonJudgeEffort && commonControl("judge_effort")}
                 </div>
                 {criteriaSource?.kind === "common" && (
                   <>

@@ -2,7 +2,13 @@ import { expect } from "@playwright/test";
 import type { Locator, Page } from "@playwright/test";
 import type { ModelInfo } from "../../server/model-catalog";
 import { createHash } from "node:crypto";
-import type { Effort } from "../../server/domain";
+import type { Effort, GridDraftInput } from "../../server/domain";
+
+export async function savedInput(page: Page): Promise<GridDraftInput> {
+  return page.evaluate(
+    () => JSON.parse(sessionStorage.getItem("slopgrid-draft")!).input,
+  );
+}
 
 export async function mockModels(
   page: Page,
@@ -121,9 +127,7 @@ export async function setVariableValues(
   });
   let count = await cases.count();
   while (count < values.length) {
-    await page
-      .getByRole("button", { name: "new case", exact: true })
-      .click();
+    await page.getByRole("button", { name: "new case", exact: true }).click();
     count++;
   }
   while (count > values.length) {

@@ -51,12 +51,15 @@
    their records, call history, creation receipts, outputs, and thinking traces.
    Retain unselected grids, their shared artifacts and traces, and all sessions.
    Reject deletion for production, shared storage paths, and forced soft updates.
-9. Grid transfers preserve generation and judgment state, ordered inference
-   history, generated outputs, and thinking traces. Source removal keeps bytes
+9. Legacy-input grid transfers on schema 17 preserve generation and judgment
+   state, ordered inference history, generated outputs, and thinking traces.
+   Source removal keeps bytes
    required by other grids. The destination account identity must already
    exist; sessions and credentials stay in their original environment.
    Reuse an existing upload ID only when its destination account, filename,
    media type, and content hash match; retain a separate usage link for each grid.
+   Current version 3 case-record inputs are rejected without changing either
+   environment.
 10. Command and option help must cover validation, rehearsal, staging, production,
     and run status without requiring configuration, Git, SSH, or infrastructure.
     `--help` and `help [COMMAND]` show general or command-specific guidance.

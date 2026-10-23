@@ -8,7 +8,6 @@ import { type ReferenceImage } from "../../server/image-settings";
 import {
   defaultGridDraft,
   axisParameters,
-  newCase,
   parameterDefault,
   parameterNames,
   type ParameterId,
@@ -16,6 +15,10 @@ import {
 import {
   confirmInputAction,
   droppedParameters,
+  hasParameterValue,
+  neutralDimension,
+  parameterValuesEqual,
+  removeParameter,
   reduceInput,
   type InputAction,
 } from "./change-axis";
@@ -94,11 +97,16 @@ function selectDraftFormat(
   const previous = draft.input;
   const defaults = defaultGridDraft(format);
   // An untouched starting form uses the chosen format's ordinary defaults.
-  const withoutCaseIds = (key: string, value: unknown) =>
-    key === "id" ? undefined : value;
+  const withoutCaseIds = (input: GridDraftInput) => ({
+    ...input,
+    rows: input.rows.map(({ id: _id, ...entry }) => entry),
+    columns: input.columns.map(({ id: _id, ...entry }) => entry),
+  });
   if (
-    JSON.stringify(previous, withoutCaseIds) ===
-    JSON.stringify(defaultGridDraft(previous.format), withoutCaseIds)
+    parameterValuesEqual(
+      withoutCaseIds(previous),
+      withoutCaseIds(defaultGridDraft(previous.format)),
+    )
   )
     return {
       draft: { ...draft, input: defaults, formatSelected: true },
@@ -117,21 +125,22 @@ function selectDraftFormat(
     format,
     judge: previous.judge && format !== "html",
     parameters: { ...previous.parameters },
-    rows: previous.rows.map((entry) => ({ ...entry })),
-    columns: previous.columns.map((entry) => ({ ...entry })),
   };
-  const filled = (parameter: ParameterId, value: unknown) =>
-    value !== undefined &&
-    JSON.stringify(value) !== JSON.stringify(parameterDefault(parameter));
   for (const parameter of Object.keys(input.parameters) as ParameterId[]) {
     if (applicable.has(parameter)) continue;
     const source = input.parameters[parameter];
-    if (source?.kind === "common" && filled(parameter, source.value))
+    if (
+      source?.kind === "common"
+        ? hasParameterValue(parameter, source.value)
+        : source &&
+          input[source.kind].some((entry) =>
+            hasParameterValue(parameter, entry[parameter]),
+          )
+    )
       dropped.add(parameter);
-    delete input.parameters[parameter];
+    input = removeParameter(input, parameter);
   }
-  // Strip removed and unowned fields, including values from the case axis.
-  // Keeping the records themselves preserves compatible cases' identities.
+  // Strip unowned fields while retaining compatible cases' identities.
   for (const side of ["rows", "columns"] as const) {
     input[side] = input[side].map((entry) => {
       const next = { ...entry };
@@ -139,7 +148,8 @@ function selectDraftFormat(
         if (key === "id") continue;
         const parameter = key as ParameterId;
         if (input.parameters[parameter]?.kind === side) continue;
-        if (filled(parameter, entry[parameter])) dropped.add(parameter);
+        if (hasParameterValue(parameter, entry[parameter]))
+          dropped.add(parameter);
         delete next[parameter];
       }
       return next;
@@ -193,10 +203,7 @@ function selectDraftFormat(
     const native = owned.find((parameter) => parameter !== "judge_criteria");
     for (const parameter of owned)
       if (parameter !== native && parameter !== "variable") collapse(parameter);
-    if (native) continue;
-    // A removed ordinary dimension becomes one neutral position. Do not
-    // transfer unrelated common settings or duplicate the opposite owner.
-    input[side] = [{ id: input[side][0]?.id ?? newCase().id }];
+    input = neutralDimension(input, side);
   }
   if (!isChatFormat(format)) {
     const source = input.parameters.input;

@@ -126,6 +126,8 @@ aggregate copy size and schema versions.
 `--mode soft` rejects incompatible engine changes; `--mode machinery` drains
 and replaces the engine; automatic mode is the default. The explicit `staging`
 target remains an administrative deployment, not a shared worktree testing target.
+`validate --mode=auto` is accepted as an explicit default, not a deployment;
+other validation modes and all rehearsal mode options are rejected.
 
 Each remote run retains its request, source archive, log, validation result,
 phase record, and exit status. A disconnected client can reconnect with the
@@ -145,8 +147,10 @@ installed application release, `--source-db PATH`, `--target-db PATH`,
 belong in private host configuration or operator commands outside this repository.
 
 The default invocation previews a move without changing data. Add `--apply`
-to move a settled private SVG grid with model rows and one column, omitting
-one failed model. The destination must already contain the matching account.
+to move a settled private legacy-input SVG grid with model rows and one column,
+omitting one failed model. Both databases must use schema 17; current version 3
+case-record inputs are not supported by this selective move. The destination
+must already contain the matching account.
 The command preserves the grid ID, remaining artifacts, thinking, and call history,
 and does not copy sessions or credentials. Keep the backup for recovery.
 

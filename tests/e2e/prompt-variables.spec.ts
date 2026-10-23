@@ -8,37 +8,12 @@ import {
   selectModel,
   setVariableValues,
 } from "./helpers";
-import { rasterizeSvg } from "../../server/svg-raster";
-
-type WireMessage = {
-  role: string;
-  content:
-    string | { type: string; text?: string; image_url?: { url: string } }[];
-};
-type WireRequest = { model: string; messages: WireMessage[] };
-function content(message: WireMessage) {
-  return typeof message.content === "string"
-    ? { text: message.content, images: [] as string[] }
-    : {
-        text: message.content
-          .filter((part) => part.type === "text")
-          .map((part) => part.text)
-          .join(""),
-        images: message.content
-          .filter((part) => part.type === "image_url")
-          .map((part) => part.image_url!.url),
-      };
-}
-async function image(name: string, color: string) {
-  const result = await rasterizeSvg(
-    Buffer.from(
-      `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="16"><rect width="32" height="16" fill="${color}"/></svg>`,
-    ),
-  );
-  return { name, mimeType: "image/png", buffer: result.bytes };
-}
-const imageURL = (file: { buffer: Buffer }) =>
-  `data:image/png;base64,${file.buffer.toString("base64")}`;
+import {
+  picture as image,
+  imageURL,
+  messageContent as content,
+  type WireRequest,
+} from "./image-input-helpers";
 async function selectJudge(page: Page, model: string) {
   const selector = page
     .getByRole("region", { name: "Judge", exact: true })
@@ -119,9 +94,7 @@ test("variable records merge images per message, interpolate judge references an
     .getByLabel("Message 3", { exact: true })
     .fill("Second turn: $ROW1");
   await variableAxis(page, ["Alpha literal $ROW2", "Beta"]);
-  await page
-    .getByRole("button", { name: "new variable", exact: true })
-    .click();
+  await page.getByRole("button", { name: "new variable", exact: true }).click();
   await page
     .getByLabel("$ROW2, case 1", { exact: true })
     .fill("Secret alpha reference");

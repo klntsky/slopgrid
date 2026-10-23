@@ -170,22 +170,20 @@ for (const side of ["rows", "columns"] as const) {
   });
 }
 
-test("Chat conversion preserves message order, roles, whitespace, references and numbered fields", () => {
-  const image = { id: "original", name: "Original.png", width: 40, height: 30 };
-  const fieldImage = { id: "variable", name: "Variable.png" };
+test("Chat conversion preserves text message order, roles, whitespace and the master variable", () => {
   const input = legacy({
     format: "chat-template",
     prompt: "historical display-only chat text",
     messages: [
       { role: "system", content: "  Be concise.\n" },
-      { role: "user", content: "Look at $ROW1.\n", images: [image] },
+      { role: "user", content: "Look at $ROW1.\n" },
       { role: "assistant", content: "\n Acknowledged. " },
-      { role: "user", content: "Describe $ROW2." },
+      { role: "user", content: "Describe $ROW1." },
       { role: "unfilled", content: "" },
     ],
     rows: {
       kind: "variable",
-      values: [[{ text: "this", images: [fieldImage] }, { text: "that" }]],
+      values: [[{ text: "this" }]],
     },
     columns: { kind: "model", values: ["retired/chat"] },
   });
@@ -198,14 +196,14 @@ test("Chat conversion preserves message order, roles, whitespace, references and
   });
   assert.deepEqual(cells(draft)[0].messages, [
     input.messages![0],
-    { role: "user", content: "Look at this.\n", images: [image, fieldImage] },
+    { role: "user", content: "Look at this.\n" },
     input.messages![2],
-    { role: "user", content: "Describe that." },
+    { role: "user", content: "Describe this." },
     input.messages![4],
   ]);
-  assert.deepEqual(selectedReferences(draft), [image, fieldImage]);
+  assert.deepEqual(selectedReferences(draft), []);
   if (draft.parameters.input.kind === "common")
-    draft.parameters.input.value[1].images![0].name = "changed";
+    draft.parameters.input.value[1].content = "changed";
   assert.deepEqual(input, before);
 });
 
@@ -244,7 +242,7 @@ test("common image references and scalar image axes preserve accepted order and 
 });
 
 test("independent legacy case axes are rejected without flattening or discarding cases", () => {
-  const inputs = [
+  const inputs: LegacyGridInput[] = [
     legacy({
       prompt: "$ROW1 $COLUMN1",
       rows: { kind: "variable", values: [[{ text: "row" }]] },
@@ -282,7 +280,7 @@ test("legacy substring, cascade, unknown field and literal judge token semantics
     columns: { kind: "model", values: ["retired/text"] },
   });
   const normalized = migrateVariableInput(raw) as LegacyGridInput;
-  const inputs = [
+  const inputs: LegacyGridInput[] = [
     { ...raw, prompt: "$ROWING" },
     { ...raw, prompt: "$ROW1" },
     { ...raw, prompt: "$ROW_name" },

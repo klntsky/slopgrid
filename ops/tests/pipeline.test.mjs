@@ -40,7 +40,10 @@ import {
   currentEngine,
 } from "../lib/runtime.mjs";
 import { fixtureConfig } from "./config-fixture.mjs";
-import { referenceForeignKeyViolations } from "./reference-fixture.mjs";
+import {
+  referenceForeignKeyViolations,
+  setReferenceSchemaVersion,
+} from "./reference-fixture.mjs";
 import {
   discardFixture,
   seedRetainedBackupSession,
@@ -50,7 +53,6 @@ import {
   discardWorkflowTable,
   discardCallColumns,
   rejectGridDiscard,
-  setDiscardSchemaVersion,
 } from "./staging-grid-fixture.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -60,32 +62,7 @@ function directory(t) {
   return path;
 }
 
-test("argument policy resolves revisions separately and requires deliberate production validation", () => {
-  assert.equal(parseArgs(["staging"]).revision, "HEAD");
-  assert.equal(parseArgs(["validate"]).target, "validate");
-  assert.throws(
-    () => parseArgs(["validate", "--skip-tests"]),
-    /requires tests/,
-  );
-  assert.equal(
-    parseArgs(["production", "release/next", "--skip-tests"]).tests,
-    "skip",
-  );
-  assert.equal(parseArgs(["production", "HEAD~2"]).tests, "full");
-  assert.throws(
-    () => parseArgs(["production", "--unit", "tests/domain.test.ts"]),
-    /full suite/,
-  );
-  assert.throws(
-    () =>
-      parseArgs(["staging", "--skip-tests", "--unit", "tests/domain.test.ts"]),
-    /combine/,
-  );
-  assert.throws(
-    () => parseArgs(["staging", "--unit", "tests/../secrets.test.ts"]),
-    /Invalid test/,
-  );
-  assert.throws(() => parseArgs(["staging", "--mode"]), /Missing/);
+test("scoped test options reach validation commands unchanged", () => {
   const scoped = parseArgs([
     "staging",
     "--unit",
@@ -106,59 +83,9 @@ test("argument policy resolves revisions separately and requires deliberate prod
   assert.deepEqual(validationCommands({ tests: "skip" }, []), []);
 });
 
-test("selected grid deletion is staging-only and requires a draining update", () => {
-  const id = "a".repeat(48);
-  const request = parseArgs(["staging", "--discard-grid", id]);
-  assert.deepEqual(request.discardGrids, [id]);
+test("selected grid deletion requires a draining update", () => {
   assert.equal(chooseMode("auto", "same", "same", true), "machinery");
   assert.throws(() => chooseMode("soft", "same", "same", true), /rejected/);
-  assert.throws(
-    () => parseArgs(["production", "--discard-grid", id]),
-    /only permitted on staging/,
-  );
-  assert.throws(
-    () => parseArgs(["staging", "--mode", "soft", "--discard-grid", id]),
-    /machinery/,
-  );
-  for (const args of [
-    ["staging", "--discard-grid", "../bad"],
-    ["staging", "--discard-grid", id, "--discard-grid", id],
-  ])
-    assert.throws(() => parseArgs(args), /Invalid or duplicate/);
-});
-
-test("failed-start recovery is explicit, staging-only and incompatible with soft mode", () => {
-  for (const target of ["staging", "production"])
-    assert.equal(parseArgs([target]).recoverFailedStart, false);
-  for (const mode of ["auto", "machinery"]) {
-    const request = parseArgs([
-      "staging",
-      "--recover-failed-start",
-      "--mode",
-      mode,
-    ]);
-    assert.equal(request.recoverFailedStart, true);
-  }
-  assert.throws(
-    () => parseArgs(["production", "--recover-failed-start"]),
-    /only permitted on staging/,
-  );
-  for (const args of [
-    ["staging", "--recover-failed-start", "--mode", "soft"],
-    ["staging", "--mode", "soft", "--recover-failed-start"],
-  ])
-    assert.throws(() => parseArgs(args), /requires a machinery deployment/);
-  assert.throws(
-    () =>
-      parseArgs([
-        "staging",
-        "--recover-failed-start",
-        "--skip-tests",
-        "--unit",
-        "tests/domain.test.ts",
-      ]),
-    /combine/,
-  );
 });
 
 test("configuration isolates staging resources from production", (t) => {
@@ -665,7 +592,7 @@ test("discard refuses unknown schemas and symlinked trace ancestors without chan
         );
       } else {
         const db = new f.Database(f.env.DATABASE_PATH);
-        setDiscardSchemaVersion(db, reason === "schema11" ? 11 : 999);
+        setReferenceSchemaVersion(db, reason === "schema11" ? 11 : 999);
         db.close();
       }
       const productionBefore = f.read(f.production);

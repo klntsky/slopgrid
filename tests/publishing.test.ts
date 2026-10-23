@@ -384,16 +384,13 @@ test("incompatible historical outputs retain owner controls and publication with
   store.saveSession({ id: stranger, created: Date.now() });
   const input: LegacyGridInput = {
     format: "markdown",
-    prompt: "Historical $ROW1 and $ROW2 wearing $COLUMN1",
+    prompt: "Historical $ROW1 wearing $COLUMN1",
     model: "metadata-model",
     effort: "none",
     budgetUsd: 1,
     rows: {
       kind: "variable",
-      values: [
-        [{ text: "cat" }, { text: "second-field" }],
-        [{ text: "dog" }, { text: "second-field" }],
-      ],
+      values: [[{ text: "cat" }], [{ text: "dog" }]],
     },
     columns: {
       kind: "variable",

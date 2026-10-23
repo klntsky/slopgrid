@@ -1,13 +1,5 @@
-import type { Page } from "@playwright/test";
-import type { GridDraftInput } from "../../server/domain";
 import { test, expect } from "./fixtures";
-import { defineCases, selectModel } from "./helpers";
-
-async function savedInput(page: Page): Promise<GridDraftInput> {
-  return page.evaluate(
-    () => JSON.parse(sessionStorage.getItem("slopgrid-draft")!).input,
-  );
-}
+import { defineCases, selectModel, savedInput } from "./helpers";
 
 for (const format of ["SVG", "Image"] as const)
   for (const orientation of ["Rows", "Columns"] as const) {

@@ -1,12 +1,23 @@
-import { kinds, type CaseRecord, type GridInput } from "./domain.js";
+import {
+  expandGrid,
+  kinds,
+  type Cell,
+  type CaseRecord,
+  type GridInput,
+} from "./domain.js";
 import type { Model } from "./provider.js";
 import { analyzeGridCompatibility } from "./grid-compatibility.js";
 import { ModelResolutionError, modelAliasResolver } from "./model-alias.js";
 
-export function resolveGridModels<T extends GridInput>(
+export type PreparedGridModels<T extends GridInput = GridInput> = {
+  input: T;
+  cells: Omit<Cell, "id">[];
+};
+
+export function prepareGridModels<T extends GridInput>(
   input: T,
   models: readonly Model[],
-): T {
+): PreparedGridModels<T> {
   const catalog = new Map(models.map((model) => [model.id, model]));
   const resolve = modelAliasResolver(catalog);
   const resolved = structuredClone(input);
@@ -15,14 +26,18 @@ export function resolveGridModels<T extends GridInput>(
     if (source?.kind === "common") source.value = resolve(source.value);
   }
   for (const side of ["rows", "columns"] as const) {
+    const owner = (["model", "judge_model"] as const).find(
+      (kind) => resolved.parameters[kind]?.kind === side,
+    );
     const groups =
-      resolved.caseAxis === side
+      resolved.caseAxis === side || !owner
         ? undefined
-        : new Map<string, { record: CaseRecord; original: string }[]>();
+        : new Map<
+            string,
+            { record: CaseRecord; original: string | undefined }[]
+          >();
     for (const record of resolved[side]) {
-      const original = groups
-        ? JSON.stringify([record.model, record.judge_model])
-        : "";
+      const original = owner ? record[owner] : undefined;
       if (record.model !== undefined) record.model = resolve(record.model);
       if (record.judge_model !== undefined)
         record.judge_model = resolve(record.judge_model);
@@ -41,9 +56,10 @@ export function resolveGridModels<T extends GridInput>(
         for (const { record } of group.slice(1)) collapsed.add(record);
     resolved[side] = resolved[side].filter((record) => !collapsed.has(record));
   }
-  const issue = analyzeGridCompatibility(resolved, models).issues.find(
+  const cells = expandGrid(resolved);
+  const issue = analyzeGridCompatibility(resolved, models, cells).issues.find(
     (issue) => issue.blocking,
   );
   if (issue) throw new ModelResolutionError(issue.reason);
-  return resolved;
+  return { input: resolved, cells };
 }

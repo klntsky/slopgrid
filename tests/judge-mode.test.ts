@@ -3,7 +3,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { expandGrid, gridDraftSchema } from "../server/domain.js";
 import type { GridDraftInput } from "../server/domain.js";
-import { parameterDefault, parameterValue } from "../server/parameters.js";
+import {
+  defaultGridDraft,
+  parameterDefault,
+  parameterValue,
+} from "../server/parameters.js";
 import {
   addCaseAction,
   caseValueAction,
@@ -207,7 +211,10 @@ for (const side of ["rows", "columns"] as const) {
       independentlyEdited[side][1].judge_criteria,
       originalCases[1].judge_criteria,
     );
-    assert.deepEqual(varied[side][2].judge_criteria, sourceValues.judge_criteria);
+    assert.deepEqual(
+      varied[side][2].judge_criteria,
+      sourceValues.judge_criteria,
+    );
     assert.ok(!originalCases.some((entry) => entry.id === varied[side][2].id));
     varied = reduceInput(varied, { type: "move-case", side, index: 1, to: 0 });
     assert.deepEqual(varied[side].slice(0, 2), [
@@ -476,6 +483,20 @@ test("draft reload and format changes retain the active case source until Websit
     assert.equal(saved.input.inputVersion, 3);
     assert.equal(saved.sourceGridId, undefined);
     assert.equal(saved.input.judge, false);
+
+    const untouched = defaultGridDraft("svg");
+    untouched.parameters.input = {
+      kind: "common",
+      value: [{ role: "user", content: "", images: [] }],
+    };
+    saveDraft({ formatSelected: true, input: untouched });
+    startDraft("image");
+    saved = JSON.parse(storage.get("slopgrid-draft")!);
+    assert.deepEqual(
+      saved.input.parameters,
+      defaultGridDraft("image").parameters,
+    );
+    assert.equal(saved.input.caseAxis, undefined);
   } finally {
     if (oldWindow) Object.defineProperty(globalThis, "window", oldWindow);
     else Reflect.deleteProperty(globalThis, "window");

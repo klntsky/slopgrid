@@ -1,5 +1,4 @@
-import type { Page } from "@playwright/test";
-import type { Cell, GridDraftInput, GridInput } from "../../server/domain";
+import type { Cell, GridInput } from "../../server/domain";
 import { referencePng } from "../reference-image-fixture";
 import { test, expect } from "./fixtures";
 import {
@@ -7,13 +6,8 @@ import {
   defineCases,
   expectProgress,
   setVariableValues,
+  savedInput,
 } from "./helpers";
-
-async function savedInput(page: Page): Promise<GridDraftInput> {
-  return page.evaluate(
-    () => JSON.parse(sessionStorage.getItem("slopgrid-draft")!).input,
-  );
-}
 
 for (const orientation of ["Rows", "Columns"] as const) {
   const side = orientation === "Rows" ? "rows" : "columns";

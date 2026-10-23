@@ -141,10 +141,12 @@ validation path. Shared prompt, conversation, and criteria editors serve both
 common fields and case cells, while the case matrix owns orientation and its
 scrolling workspace.
 
-Historical configuration has a read-only boundary. Stored accepted task inputs
-drive cell projection, billing, and output access independently of editor
-definitions. Configuration compatibility is separate from ownership permission;
-old grids retain ordinary owner controls without entering current admission.
+Historical accepted task inputs remain read-only and drive cell projection,
+billing, and output access independently of editor definitions. A production-only
+converter can restore text variables, text-only Chat histories, and Image
+attachments as current drafts without changing those accepted tasks. Restored
+drafts undergo current admission. Configuration compatibility remains separate
+from ownership permission and ordinary owner controls.
 
 - Model catalogs are loaded by the web process for forms. Provider adapters own
   catalog interpretation, credit lookup, and request preparation; they remain
@@ -154,10 +156,11 @@ old grids retain ordinary owner controls without entering current admission.
   prompt-based interfaces edit a single user message, while Chat interfaces
   edit complete histories. Model aliases are resolved before saving inputs,
   and shared normalization gives equivalent image settings the same request.
-- One compatibility engine checks resolved cells. Its results supply form
-  warnings and validity, with source locations identifying the affected controls.
-  The API applies the same checks before admission; execution consumes concrete
-  tasks without interpreting form ownership or repeating compatibility checks.
+- One compatibility engine checks resolved cells. Admission retains the expansion
+  used for compatibility checks and workflow construction. Results supply form
+  warnings and validity, with source locations identifying affected controls.
+  Execution consumes concrete tasks without interpreting form ownership or
+  repeating compatibility checks.
 - Request preparation applies format instructions, model capabilities, pricing,
   token limits, and routing. Text calls stream through the AI SDK; image calls
   use its dedicated image path. The engine budgets generation and schedules

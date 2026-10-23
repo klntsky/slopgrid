@@ -33,6 +33,7 @@ import {
   staleGenerationProvenance,
   removeArtifactSourceGrid,
   restorePlainPromptGeneration,
+  masterPlainPrompt,
 } from "./artifact-reuse-fixture.js";
 import { validatedGrid } from "./grid-storage-fixture.js";
 import {
@@ -41,6 +42,7 @@ import {
   type CurrentGridOverrides,
 } from "./current-grid-fixture.js";
 import { parameterValue } from "../server/parameters.js";
+import { pixelPng as png } from "./reference-image-fixture.js";
 
 const input = currentDefinition({
   format: "markdown",
@@ -114,7 +116,7 @@ test("generator grouping ignores judge-only fields and attachment display metada
   });
   const cells = expandGrid(setup).map((cell) => ({ ...cell, id: token() }));
   assert.deepEqual(
-    cells.map((cell) => cell.images),
+    cells.map((cell) => cell.messages![0].images),
     [[image], [image]],
   );
   assert.equal(
@@ -137,10 +139,6 @@ for (const format of ["markdown", "svg", "html"] as const)
   test(`${format} common input image reuse follows bytes rather than upload ids or display metadata`, async () => {
     const f = await runtimeFixture();
     try {
-      const png = Buffer.from(
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
-        "base64",
-      );
       const session = { id: f.owner, created: 0 };
       const original = f.store.references.add(png, "original.png", session)!;
       const copied = f.store.references.add(png, "renamed.png", session)!;
@@ -217,7 +215,7 @@ for (const format of ["markdown", "svg", "html"] as const)
           .images,
         [copied],
       );
-      assert.deepEqual(savedCopy.cells[0].images, [copied]);
+      assert.deepEqual(savedCopy.cells[0].messages![0].images, [copied]);
       assert.equal(f.calls.length, 1);
       assert.equal(
         f.store.outputMetadata(copy.cells[0].id)!.artifactId,
@@ -264,10 +262,6 @@ for (const format of ["markdown", "svg", "html"] as const)
 test("non-chat image reuse follows content and ignores changed judge-only fields", async () => {
   const f = await runtimeFixture();
   try {
-    const png = Buffer.from(
-      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
-      "base64",
-    );
     const session = { id: f.owner, created: 0 };
     const originalImage = f.store.references.add(png, "source.png", session)!;
     const copiedImage = f.store.references.add(png, "copy.png", session)!;
@@ -366,10 +360,6 @@ test("non-chat image reuse follows content and ignores changed judge-only fields
 test("chat reuse matches attachment content across uploads but not moved attachments", async () => {
   const f = await runtimeFixture();
   try {
-    const png = Buffer.from(
-      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
-      "base64",
-    );
     const session = { id: f.owner, created: 0 };
     const first = f.store.references.add(png, "first.png", session)!;
     const renamed = f.store.references.add(png, "renamed.png", session)!;
@@ -1590,33 +1580,26 @@ test("reuse shares one generation per judge group without copying judgments or a
   }
 });
 
-test("unified user-message inputs reuse existing plain-prompt artifacts", async () => {
+test("unified user-message inputs reuse master plain-prompt artifacts", async () => {
   const f = await runtimeFixture();
   try {
     const setup = currentDefinition({
       parameters: {
+        model: { kind: "common", value: masterPlainPrompt.model },
+        effort: { kind: "common", value: "default" },
         input: {
           kind: "common",
-          value: [{ role: "user", content: "A reusable plain prompt" }],
+          value: [{ role: "user", content: masterPlainPrompt.prompt }],
         },
       },
     });
     const source = await create(f, setup);
     finish(await f.nextCall(), "Previously generated artifact");
     const completed = await settled(f, source.id);
-    const prepared = await new Provider(f.providerURL).prepare(
-      "markdown",
-      completed.cells[0],
-    );
-    if (prepared.format === "image") throw new Error("Expected text request");
-    const signature = inferenceSignature({
-      ...prepared,
-      text: { ...prepared.text, messages: undefined },
-    });
     restorePlainPromptGeneration(
       f.store.db,
       completed.cells[0].generationId!,
-      signature,
+      masterPlainPrompt.signature,
     );
     const copy = await create(f, {
       ...setup,

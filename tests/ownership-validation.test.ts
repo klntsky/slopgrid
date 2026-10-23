@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { gridSchema } from "../server/domain.js";
 import type { Model } from "../server/provider.js";
 import { analyzeGridCompatibility } from "../server/grid-compatibility.js";
-import { resolveGridModels } from "../server/model-resolution.js";
+import { prepareGridModels } from "../server/model-resolution.js";
 import { currentDefinition, currentInput } from "./current-grid-fixture.js";
 
 const image = { id: "reference", name: "input.png" };
@@ -79,7 +79,7 @@ test("preview and admission use the same published generator alias capabilities"
     ),
     [],
   );
-  assert.deepEqual(resolveGridModels(input, models).parameters.model, {
+  assert.deepEqual(prepareGridModels(input, models).input.parameters.model, {
     kind: "common",
     value: vision.id,
   });
@@ -158,7 +158,7 @@ for (const side of ["rows", "columns"] as const) {
       ],
     });
     assert.equal(gridSchema.safeParse(input).success, true);
-    assert.doesNotThrow(() => resolveGridModels(input, [plain, vision]));
+    assert.doesNotThrow(() => prepareGridModels(input, [plain, vision]));
     assert.deepEqual(
       analyzeGridCompatibility(input, [plain, vision]).issues,
       [],
@@ -210,7 +210,7 @@ for (const side of ["rows", "columns"] as const) {
       ),
     );
     assert.throws(
-      () => resolveGridModels(unsupported, [plain, vision]),
+      () => prepareGridModels(unsupported, [plain, vision]),
       /image inputs/,
     );
   });

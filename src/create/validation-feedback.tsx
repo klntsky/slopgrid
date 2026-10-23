@@ -72,7 +72,7 @@ export function ValidationFeedback({
   return <Feedback messages={useValidationMessages(path, descendants)} />;
 }
 
-type ValidationAttributes = {
+export type ValidationAttributes = {
   "aria-invalid": true | undefined;
   "aria-describedby": string | undefined;
 };

@@ -1,3 +1,8 @@
+export const pixelPng = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
+  "base64",
+);
+
 // Real 7×3 images, encoded without metadata. JPEG orientation is added below.
 export const referencePng = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAcAAAADAQMAAABlDYeGAAAAA1BMVEUyZLRNCNUSAAAAC0lEQVQI12NgAAEAAAYAAWb0yWwAAAAASUVORK5CYII=",

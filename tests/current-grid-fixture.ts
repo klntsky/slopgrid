@@ -71,9 +71,7 @@ export function currentDefinition(
     rows: cases(overrides.rows, "row-"),
     columns: cases(overrides.columns, "column-"),
   };
-  return format === "image"
-    ? { ...definition, format }
-    : { ...definition, format };
+  return { ...definition, format };
 }
 
 export function currentInput(overrides: CurrentGridOverrides = {}) {

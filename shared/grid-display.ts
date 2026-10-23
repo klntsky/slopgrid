@@ -10,10 +10,7 @@ import {
   type AxisSide,
   type ParameterId,
 } from "../server/parameters.js";
-import {
-  resolveLegacyCriteriaForCell,
-  type LegacyGridInput,
-} from "../server/legacy-grid-input.js";
+import type { LegacyGridInput } from "../server/legacy-grid-input.js";
 import { migrateVariableInput } from "./variable-migration.js";
 import { generatorInputEntries } from "../server/generator-input.js";
 
@@ -142,13 +139,7 @@ export function gridDisplay(input: StoredGridInput): GridDisplay {
       const first = typeof value === "string" ? undefined : value[0];
       return {
         parts,
-        // Historical filenames intentionally use only the first variable field.
-        downloadLabel:
-          typeof value === "string"
-            ? value
-            : first?.text ||
-              first?.images?.map((image) => image.name).join(" ") ||
-              "",
+        downloadLabel: typeof value === "string" ? value : (first?.text ?? ""),
       };
     });
   };
@@ -177,7 +168,7 @@ export function gridDisplay(input: StoredGridInput): GridDisplay {
     columns: axis("columns"),
     common,
     promptImages:
-      !axes.includes("input_references") && legacy.format !== "chat-template"
+      !axes.includes("input_references") && legacy.format === "image"
         ? (legacy.inputReferences ?? [])
         : [],
     references: selectedReferences(legacy),
@@ -193,12 +184,7 @@ export function readGridCriteria(
     ? resolveCriteriaForCell(input, row, column, {
         allowUnresolvedVariables: true,
       }).criteria
-    : resolveLegacyCriteriaForCell(
-        migrateVariableInput(input) as LegacyGridInput,
-        row,
-        column,
-        { allowUnresolvedVariables: true },
-      ).criteria;
+    : (input.judge?.criteria ?? []);
 }
 
 export function gridInputText(input: StoredGridInput): string {

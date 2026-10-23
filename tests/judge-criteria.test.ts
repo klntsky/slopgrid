@@ -5,12 +5,16 @@ import { gridSchema } from "../server/domain.js";
 import {
   criteriaForCell,
   criteriaSets,
-  judgeCriteriaIssue,
   judgeCriteriaSchema,
   type Criterion,
 } from "../server/judge-criteria.js";
 import { promptVariableIssue } from "../server/prompt-variables.js";
 import { currentDefinition } from "./current-grid-fixture.js";
+
+function judgeCriteriaIssue(input: Parameters<typeof gridSchema.safeParse>[0]) {
+  const result = gridSchema.safeParse(input);
+  return result.success ? undefined : result.error.issues[0]?.message;
+}
 
 const first: Criterion[] = [
   { text: "Is the answer blue?", correctAnswer: false },

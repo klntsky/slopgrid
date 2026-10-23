@@ -95,13 +95,9 @@ function generatorImageContext(
   cell: ExpandedCell,
 ): { consumed: Set<string>; origins: CompatibilityOrigin[] } {
   const consumed = new Set(
-    cell.messages
-      ? cell.messages.flatMap((message) =>
-          (message.images ?? []).map((image) => image.id),
-        )
-      : input.format === "image"
-        ? (cell.imageSettings?.input_references ?? [])
-        : (cell.images ?? []).map((image) => image.id),
+    cell.messages?.flatMap((message) =>
+      (message.images ?? []).map((image) => image.id),
+    ),
   );
   const origins: CompatibilityOrigin[] = [];
   const source = input.parameters.input.kind;
@@ -130,6 +126,7 @@ function generatorImageContext(
 export function analyzeGridCompatibility(
   input: GridInput,
   models: readonly Model[],
+  cells = expandGrid(input, { allowUnresolvedVariables: true }),
 ): GridCompatibilityAnalysis {
   const catalog = new Map(models.map((model) => [model.id, model]));
   const resolve = modelAliasResolver(catalog);
@@ -137,7 +134,6 @@ export function analyzeGridCompatibility(
   // Canonical admission validates tokens strictly. Advisory previews must still
   // expose known cell settings while unrelated draft templates are unfinished.
   const options = { allowUnresolvedVariables: true };
-  const cells = expandGrid(input, options);
   for (const cell of cells) {
     let model: Model | undefined;
     let modelFailure: ModelResolutionError | undefined;

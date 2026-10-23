@@ -233,23 +233,24 @@ parameterTests(
 );
 
 test("empty common model selections remain unselected when choosing a dimension", () => {
-  for (const parameter of ["model", "judge_model"] as const) {
-    const input = initial();
-    input.parameters[parameter] = { kind: "common", value: "" };
-    const next = reduceInput(input, {
-      type: "dimension",
-      side: "rows",
-      parameter,
-    });
-    assert.deepEqual(next.rows, []);
-    assert.deepEqual(next.parameters[parameter], { kind: "rows" });
-    assert.equal(validateDraftInput(next).parsed.success, false);
-    const collapsed = reduceInput(next, { type: "to-common", parameter });
-    assert.deepEqual(collapsed.parameters[parameter], {
-      kind: "common",
-      value: "",
-    });
-  }
+  for (const side of ["rows", "columns"] as const)
+    for (const parameter of ["model", "judge_model"] as const) {
+      const input = initial();
+      input.parameters[parameter] = { kind: "common", value: "" };
+      const next = reduceInput(input, {
+        type: "dimension",
+        side,
+        parameter,
+      });
+      assert.deepEqual(next[side], []);
+      assert.deepEqual(next.parameters[parameter], { kind: side });
+      assert.equal(validateDraftInput(next).parsed.success, false);
+      const collapsed = reduceInput(next, { type: "to-common", parameter });
+      assert.deepEqual(collapsed.parameters[parameter], {
+        kind: "common",
+        value: "",
+      });
+    }
 });
 
 test("leaving prompt variables collapses former members and preserves the other axis", () => {
@@ -284,7 +285,7 @@ test("leaving prompt variables collapses former members and preserves the other 
   assert.deepEqual(next.columns, input.columns);
 });
 
-test("bulk model edits preserve matching case identity and do not resize multi-parameter cases", () => {
+test("ordinary bulk model edits preserve matching identity; case cells only accept individual edits", () => {
   let input = reduceInput(initial(), {
     type: "dimension",
     side: "rows",
@@ -302,15 +303,11 @@ test("bulk model edits preserve matching case identity and do not resize multi-p
     reordered.rows.map((entry) => entry.id),
     [input.rows[1].id, input.rows[0].id],
   );
-  let caseInput = reduceInput(initial("svg", "rows"), {
+  const caseInput = reduceInput(initial("svg", "rows"), {
     type: "to-axis",
     side: "rows",
     parameter: "model",
   });
-  caseInput = reduceInput(
-    caseInput,
-    caseValuesAction("rows", "model", ["second", "first"]),
-  );
   const combined = reduceInput(caseInput, {
     type: "to-axis",
     side: "rows",
@@ -320,14 +317,23 @@ test("bulk model edits preserve matching case identity and do not resize multi-p
     reduceInput(combined, caseValuesAction("rows", "model", ["first"])),
     combined,
   );
-  const edited = reduceInput(
+  assert.equal(
+    reduceInput(
+      combined,
+      caseValuesAction("rows", "model", ["third", "fourth"]),
+    ),
     combined,
-    caseValuesAction("rows", "model", ["third", "fourth"]),
+  );
+  const individual = reduceInput(
+    combined,
+    caseValueAction("rows", 0, "model", "third"),
   );
   assert.deepEqual(
-    edited.rows.map((entry) => [entry.id, entry.judge_effort]),
+    individual.rows.map((entry) => [entry.id, entry.judge_effort]),
     combined.rows.map((entry) => [entry.id, entry.judge_effort]),
   );
+  assert.equal(individual.rows[0].model, "third");
+  assert.equal(individual.rows[1], combined.rows[1]);
 });
 
 for (const format of [
@@ -346,7 +352,7 @@ for (const format of [
         side: "rows",
       });
       input = reduceInput(input, {
-        type: "to-axis",
+        type: "dimension",
         parameter: "judge_effort",
         side: "columns",
       });
@@ -398,12 +404,12 @@ for (const format of ["svg", "markdown", "chat-template", "image"] as const) {
   test(`removing sole judge dimensions leaves neutral positions and common generator settings for ${format}`, () => {
     let input = initial(format);
     input = reduceInput(input, {
-      type: "to-axis",
+      type: "dimension",
       parameter: "judge_model",
       side: "rows",
     });
     input = reduceInput(input, {
-      type: "to-axis",
+      type: "dimension",
       parameter: "judge_effort",
       side: "columns",
     });
@@ -432,12 +438,12 @@ for (const format of ["svg", "markdown", "chat-template", "image"] as const) {
 test("removing a sole judge axis preserves the opposite owner and leaves one neutral row", () => {
   let input = initial();
   input = reduceInput(input, {
-    type: "to-axis",
+    type: "dimension",
     parameter: "judge_model",
     side: "rows",
   });
   input = reduceInput(input, {
-    type: "to-axis",
+    type: "dimension",
     parameter: "model",
     side: "columns",
   });
@@ -461,19 +467,18 @@ for (const side of ["rows", "columns"] as const) {
       side,
       parameter: "model",
     });
-    input = reduceInput(
-      input,
-      caseValuesAction(side, "model", ["generation/one", "generation/two"]),
-    );
+    for (const [index, model] of ["generation/one", "generation/two"].entries())
+      input = reduceInput(input, caseValueAction(side, index, "model", model));
     input = reduceInput(input, {
       type: "to-axis",
       side,
       parameter: "judge_model",
     });
-    input = reduceInput(
-      input,
-      caseValuesAction(side, "judge_model", ["judge/one", "judge/two"]),
-    );
+    for (const [index, model] of ["judge/one", "judge/two"].entries())
+      input = reduceInput(
+        input,
+        caseValueAction(side, index, "judge_model", model),
+      );
     input = reduceInput(input, {
       type: "dimension",
       side: other,
@@ -560,7 +565,7 @@ for (const side of ["rows", "columns"] as const) {
   });
 }
 
-test("ordinary parameter moves replace the axis and return its former parameter to common", () => {
+test("ordinary dimension selection replaces the axis and returns its former parameter to common", () => {
   let input = reduceInput(initial(), {
     type: "dimension",
     side: "rows",
@@ -571,10 +576,13 @@ test("ordinary parameter moves replace the axis and return its former parameter 
     caseValuesAction("rows", "model", ["generator/a", "generator/b"]),
   );
   const action = {
-    type: "to-axis" as const,
+    type: "dimension" as const,
     side: "rows" as const,
     parameter: "effort" as const,
   };
+  const unsupported = { ...action, type: "to-axis" as const };
+  assert.equal(reduceInput(input, unsupported), input);
+  assert.deepEqual(droppedParameters(input, unsupported), []);
   assert.deepEqual(droppedParameters(input, action), ["model"]);
   withConfirmation(false, () =>
     assert.equal(confirmInputAction(input, action), false),
@@ -647,19 +655,19 @@ test("single-case and identical-case variable text or images require confirmatio
 test("deleted variable slots preserve later values and image identity through append, new cases and swaps", () => {
   let input = initial("svg", "rows");
   generatorInputForCell(input, 0, 0)[0].content = "Draw $ROW2";
-  input = reduceInput(
-    input,
-    caseValuesAction("rows", "variable", [
-      [
-        { text: "question A" },
-        { text: "answer A", images: [{ id: "a", name: "a.png" }] },
-      ],
-      [
-        { text: "question B" },
-        { text: "answer B", images: [{ id: "b", name: "b.png" }] },
-      ],
-    ]),
-  );
+  for (const [index, suffix] of ["A", "B"].entries())
+    input = reduceInput(
+      input,
+      caseValueAction("rows", index, "variable", [
+        { text: `question ${suffix}` },
+        {
+          text: `answer ${suffix}`,
+          images: [
+            { id: suffix.toLowerCase(), name: `${suffix.toLowerCase()}.png` },
+          ],
+        },
+      ]),
+    );
   const before = validateDraftInput(input).parsed;
   assert.ok(before.success);
   const expected = expandGrid(before.data);
@@ -742,13 +750,13 @@ for (const side of ["rows", "columns"] as const) {
       input,
       caseValuesAction(other, "effort", ["low", "high"]),
     );
-    input = reduceInput(
-      input,
-      caseValuesAction(side, "variable", [
-        [{ text: "", images: [{ id: "case-image", name: "answer.png" }] }],
-        [{ text: "", images: [{ id: "case-image", name: "answer.png" }] }],
-      ]),
-    );
+    for (const index of [0, 1])
+      input = reduceInput(
+        input,
+        caseValueAction(side, index, "variable", [
+          { text: "", images: [{ id: "case-image", name: "answer.png" }] },
+        ]),
+      );
     const original = structuredClone(input);
     const action = { type: "single" as const, side };
     assert.deepEqual(droppedParameters(input, action), ["variable"]);
@@ -1060,13 +1068,17 @@ for (const side of ["rows", "columns"] as const)
       side,
       parameter: "input",
     });
-    input = reduceInput(
-      input,
-      caseValuesAction(side, "input", [
-        [{ role: "user", content: "Keep this prompt", images: [] }],
-        [{ role: "user", content: "Keep this prompt" }],
-      ]),
-    );
+    for (const index of [0, 1])
+      input = reduceInput(
+        input,
+        caseValueAction(side, index, "input", [
+          {
+            role: "user",
+            content: "Keep this prompt",
+            ...(index === 0 ? { images: [] } : {}),
+          },
+        ]),
+      );
     const action = { type: "to-common" as const, parameter: "input" as const };
     withConfirmation(false, (calls) => {
       assert.equal(confirmInputAction(input, action), true);
@@ -1110,106 +1122,127 @@ for (const format of [
       : (["effort"] as const)),
     ...(format === "html" ? [] : (["judge_model", "judge_effort"] as const)),
   ];
+  const replacements: readonly (readonly [
+    OrdinaryParameter,
+    OrdinaryParameter,
+  ])[] =
+    format === "image"
+      ? [
+          ["model", "size"],
+          ["size", "aspect_ratio"],
+          ["aspect_ratio", "quality"],
+          ["quality", "background"],
+          ["background", "judge_model"],
+          ["judge_model", "judge_effort"],
+          ["judge_effort", "model"],
+        ]
+      : format === "html"
+        ? [
+            ["model", "effort"],
+            ["effort", "model"],
+          ]
+        : [
+            ["model", "effort"],
+            ["effort", "judge_model"],
+            ["judge_model", "judge_effort"],
+            ["judge_effort", "model"],
+          ];
   for (const side of ["rows", "columns"] as const) {
     const other = side === "rows" ? "columns" : "rows";
 
-    test(`${format} ${side} ordinary replacements preserve equal values or confirm loss across every parameter pair`, () => {
-      for (const previous of parameters)
-        for (const replacement of parameters) {
-          if (previous === replacement) continue;
-          for (const values of [
-            [],
-            [ordinaryValues[previous][0]],
-            [ordinaryValues[previous][0], ordinaryValues[previous][0]],
-            [...ordinaryValues[previous]],
-          ]) {
-            const label = `${previous} -> ${replacement}, ${JSON.stringify(values)}`;
-            let input = initial(format);
-            Object.assign(input.parameters, {
-              [previous]: {
-                kind: "common",
-                value: ordinaryValues[previous][0],
-              },
-              [replacement]: {
-                kind: "common",
-                value: ordinaryValues[replacement][1],
-              },
-            });
-            input = reduceInput(input, {
-              type: "dimension",
-              side,
-              parameter: previous,
-            });
-            input = reduceInput(
-              input,
-              caseValuesAction(side, previous, values),
-            );
-            const before = structuredClone(input);
-            const action = {
-              type: "dimension" as const,
-              side,
-              parameter: replacement,
-            };
-            const differing = values.length > 1 && values[0] !== values[1];
-            assert.deepEqual(
-              droppedParameters(input, action),
-              differing ? [previous] : [],
-              label,
-            );
-            withConfirmation(false, (calls) => {
-              const next = confirmInputAction(input, action)
-                ? reduceInput(input, action)
-                : input;
-              assert.equal(calls.length, differing ? 1 : 0, label);
-              if (differing) assert.equal(next, input, label);
-            });
-            withConfirmation(true, (calls) => {
-              assert.equal(confirmInputAction(input, action), true, label);
-              assert.equal(calls.length, differing ? 1 : 0, label);
-            });
-            const replaced = reduceInput(input, action);
-            assert.deepEqual(
-              replaced.parameters[previous],
-              {
-                kind: "common",
-                value:
-                  values.length && !differing
-                    ? values[0]
-                    : parameterDefault(previous),
-              },
-              label,
-            );
-            assert.deepEqual(
-              replaced.parameters[replacement],
-              { kind: side },
-              label,
-            );
-            assert.equal(replaced.caseAxis, undefined, label);
-            assert.deepEqual(
-              replaced[side].map(({ id: _id, ...record }) => record),
-              [{ [replacement]: ordinaryValues[replacement][1] }],
-              label,
-            );
-            assert.equal(
-              parameterValue(replaced, replacement, 0, 0),
-              ordinaryValues[replacement][1],
-              label,
-            );
-            assert.deepEqual(replaced[other], input[other], label);
-            assert.equal(replaced.budgetUsd, input.budgetUsd, label);
-            assert.deepEqual(input, before, label);
-          }
+    test(`${format} ${side} ordinary replacements preserve equal values or confirm loss across branch-covering parameter pairs`, () => {
+      for (const [previous, replacement] of replacements) {
+        for (const values of [
+          [],
+          [ordinaryValues[previous][0]],
+          [ordinaryValues[previous][0], ordinaryValues[previous][0]],
+          [...ordinaryValues[previous]],
+        ]) {
+          const label = `${previous} -> ${replacement}, ${JSON.stringify(values)}`;
+          let input = initial(format);
+          Object.assign(input.parameters, {
+            [previous]: {
+              kind: "common",
+              value: ordinaryValues[previous][0],
+            },
+            [replacement]: {
+              kind: "common",
+              value: ordinaryValues[replacement][1],
+            },
+          });
+          input = reduceInput(input, {
+            type: "dimension",
+            side,
+            parameter: previous,
+          });
+          input = reduceInput(input, caseValuesAction(side, previous, values));
+          const before = structuredClone(input);
+          const action = {
+            type: "dimension" as const,
+            side,
+            parameter: replacement,
+          };
+          const differing = values.length > 1 && values[0] !== values[1];
+          assert.deepEqual(
+            droppedParameters(input, action),
+            differing ? [previous] : [],
+            label,
+          );
+          withConfirmation(false, (calls) => {
+            const next = confirmInputAction(input, action)
+              ? reduceInput(input, action)
+              : input;
+            assert.equal(calls.length, differing ? 1 : 0, label);
+            if (differing) assert.equal(next, input, label);
+          });
+          withConfirmation(true, (calls) => {
+            assert.equal(confirmInputAction(input, action), true, label);
+            assert.equal(calls.length, differing ? 1 : 0, label);
+          });
+          const replaced = reduceInput(input, action);
+          assert.deepEqual(
+            replaced.parameters[previous],
+            {
+              kind: "common",
+              value:
+                values.length && !differing
+                  ? values[0]
+                  : parameterDefault(previous),
+            },
+            label,
+          );
+          assert.deepEqual(
+            replaced.parameters[replacement],
+            { kind: side },
+            label,
+          );
+          assert.equal(replaced.caseAxis, undefined, label);
+          assert.deepEqual(
+            replaced[side].map(({ id: _id, ...record }) => record),
+            [{ [replacement]: ordinaryValues[replacement][1] }],
+            label,
+          );
+          assert.equal(
+            parameterValue(replaced, replacement, 0, 0),
+            ordinaryValues[replacement][1],
+            label,
+          );
+          assert.deepEqual(replaced[other], input[other], label);
+          assert.equal(replaced.budgetUsd, input.budgetUsd, label);
+          assert.deepEqual(input, before, label);
         }
+      }
     });
 
     test(`${format} ${side} can retain any selected case parameter as its ordinary axis without losing case identity`, () => {
       for (const parameter of parameters) {
         let input = initial(format, side);
         input = reduceInput(input, { type: "to-axis", side, parameter });
-        input = reduceInput(
-          input,
-          caseValuesAction(side, parameter, [...ordinaryValues[parameter]]),
-        );
+        for (const [index, value] of ordinaryValues[parameter].entries())
+          input = reduceInput(
+            input,
+            caseValueAction(side, index, parameter, value),
+          );
         const before = structuredClone(input);
         const action = { type: "dimension" as const, side, parameter };
         assert.deepEqual(droppedParameters(input, action), ["variable"]);

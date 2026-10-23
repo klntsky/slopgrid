@@ -174,11 +174,6 @@ export function chatInputIssues(
   return issues;
 }
 
-export function chatInputIssue(
-  messages: ChatMessage[] = [],
-): string | undefined {
-  return chatInputIssues(messages)[0]?.message;
-}
 export function chatText(messages: ChatMessage[]): string {
   return messages
     .map(({ role, content }) => `${role}: ${content}`)
@@ -369,7 +364,8 @@ export const gridSchema = gridInputSchema
         )
           issue(item.message, [...path, ...item.path]);
     }
-    for (const item of judgeCriteriaIssues(g)) issue(item.message, item.path);
+    if (g.caseAxis && !g[g.caseAxis].length)
+      for (const item of judgeCriteriaIssues(g)) issue(item.message, item.path);
     for (const item of promptVariableIssues(g)) issue(item.message, item.path);
     const expandedIssue = (
       item: ValidationIssue,
@@ -467,7 +463,6 @@ export type Cell = {
   effort: string;
   prompt: string;
   messages?: ChatMessage[];
-  images?: ReferenceImage[];
   budgetUsd: number;
   imageSettings?: ImageSettings;
   status: "pending" | "running" | "complete" | "error";
@@ -519,13 +514,7 @@ export type Task<Input, Output> = WorkflowState & {
 };
 export type GenerationParameters = Pick<
   Cell,
-  | "model"
-  | "effort"
-  | "prompt"
-  | "messages"
-  | "images"
-  | "budgetUsd"
-  | "imageSettings"
+  "model" | "effort" | "prompt" | "messages" | "budgetUsd" | "imageSettings"
 >;
 export type GenerationInput = GenerationParameters & {
   format: GridInput["format"];
@@ -656,7 +645,6 @@ export function expandGrid(
       const attachments = messages[0]?.images;
       if (input.format === "image" && attachments)
         imageSettings.input_references = attachments.map((image) => image.id);
-      const images = input.format !== "image" ? attachments : undefined;
       return {
         row,
         column,
@@ -664,7 +652,6 @@ export function expandGrid(
         effort,
         prompt,
         messages,
-        ...(images ? { images } : {}),
         budgetUsd: input.budgetUsd,
         ...(input.format === "image"
           ? { imageSettings: normalizeImageSettings(imageSettings) }

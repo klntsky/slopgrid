@@ -2,15 +2,9 @@ import { z } from "zod";
 import type {
   GenerationParameters,
   GridDraftInput,
-  GridInput,
   StoredGridInput,
 } from "./domain.js";
-import {
-  mergeVariableImages,
-  referencedVariableImages,
-} from "./prompt-variables.js";
-import { criteriaForCell } from "./judge-criteria.js";
-import { type ParameterConfiguration } from "./parameters.js";
+import { mergeVariableImages } from "./prompt-variables.js";
 import { legacySelectedReferences } from "./legacy-grid-input.js";
 import { generatorInputEntries } from "./generator-input.js";
 
@@ -93,8 +87,6 @@ export function normalizeImageSettings(
     ),
   );
 }
-type ReferenceSelectionInput = ParameterConfiguration;
-
 export function selectedReferences(
   input: StoredGridInput | GridDraftInput,
 ): ReferenceImage[] {
@@ -112,49 +104,12 @@ export function selectedReferences(
   );
 }
 
-export function generatorReferences(
-  input: ReferenceSelectionInput,
-): ReferenceImage[] {
-  const groups: (ReferenceImage[] | undefined)[] = [];
-  for (const { source, caseIndex, messages } of generatorInputEntries(input)) {
-    const selection =
-      source === "common" ? undefined : { [source]: caseIndex! };
-    for (const message of messages) {
-      groups.push(message.images);
-      groups.push(referencedVariableImages(message.content, input, selection));
-    }
-  }
-  return mergeVariableImages(...groups) ?? [];
-}
-
-export function judgeReferences(
-  input: ReferenceSelectionInput & Pick<GridInput, "judge">,
-): ReferenceImage[] {
-  const groups: (ReferenceImage[] | undefined)[] = [generatorReferences(input)];
-  if (input.judge)
-    input.rows.forEach((_, row) =>
-      input.columns.forEach((_, column) => {
-        for (const criterion of criteriaForCell(input, row, column))
-          groups.push(
-            referencedVariableImages(criterion.text, input, {
-              rows: row,
-              columns: column,
-            }),
-          );
-      }),
-    );
-  return mergeVariableImages(...groups) ?? [];
-}
-
 export function referenceIds(
-  input: Pick<GenerationParameters, "messages" | "images" | "imageSettings">,
+  input: Pick<GenerationParameters, "messages" | "imageSettings">,
 ): readonly string[] {
   return input.messages
     ? input.messages.flatMap(
         (message) => message.images?.map((image) => image.id) ?? [],
       )
-    : [
-        ...(input.images?.map((image) => image.id) ?? []),
-        ...(input.imageSettings?.input_references ?? []),
-      ];
+    : (input.imageSettings?.input_references ?? []);
 }

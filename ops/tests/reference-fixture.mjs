@@ -1,3 +1,15 @@
+export function createReferenceSchema(db) {
+  db.exec(`
+    CREATE TABLE reference_blobs(
+      sha256 TEXT PRIMARY KEY CHECK(length(sha256)=64),
+      width INTEGER CHECK(width IS NULL OR width > 0),
+      height INTEGER CHECK((width IS NULL AND height IS NULL) OR (width IS NOT NULL AND height IS NOT NULL AND height > 0))
+    ) STRICT;
+    CREATE TABLE reference_images(id TEXT PRIMARY KEY,owner TEXT NOT NULL,owner_user_id TEXT,name TEXT NOT NULL,media_type TEXT NOT NULL,sha256 TEXT REFERENCES reference_blobs(sha256)) STRICT;
+    CREATE INDEX reference_images_sha256 ON reference_images(sha256,id);
+  `);
+}
+
 export function referenceImages(db) {
   return db.prepare("SELECT * FROM reference_images").all();
 }
@@ -83,11 +95,18 @@ export function rejectUploadTransfer(db, failure) {
 export function transferredGridExists(db, gridId) {
   return Boolean(db.prepare("SELECT 1 FROM grids WHERE id=?").get(gridId));
 }
-export function transferGridCount(db) {
-  return db.prepare("SELECT count(*) n FROM grids").get().n;
-}
-export function transferCellCount(db) {
-  return db.prepare("SELECT count(*) n FROM cells").get().n;
+const transferTables = new Set([
+  "grids",
+  "cells",
+  "workflow_tasks",
+  "inference_calls",
+  "creation_requests",
+  "grid_reference_images",
+]);
+export function transferRowCount(db, table) {
+  if (!transferTables.has(table))
+    throw new Error(`Unknown transfer fixture table: ${table}`);
+  return db.prepare(`SELECT count(*) n FROM ${table}`).get().n;
 }
 
 export function referenceForeignKeyViolations(db) {

@@ -3,6 +3,10 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
+import {
+  createReferenceSchema,
+  setReferenceSchemaVersion,
+} from "./reference-fixture.mjs";
 
 function directory(t) {
   const path = mkdtempSync(join(tmpdir(), "slopgrid-ops-test-"));
@@ -36,7 +40,7 @@ function discardFixture(t, version = 14) {
     mkdirSync(env.OUTPUTS_PATH);
     const db = new Database(env.DATABASE_PATH);
     db.pragma("foreign_keys=ON");
-    db.pragma(`user_version=${version}`);
+    setReferenceSchemaVersion(db, version);
     db.exec(`
       CREATE TABLE grids(id TEXT PRIMARY KEY,data TEXT NOT NULL);
       CREATE TABLE cells(id TEXT PRIMARY KEY,grid_id TEXT REFERENCES grids(id) ON DELETE CASCADE,position INTEGER,data TEXT);
@@ -68,15 +72,7 @@ function discardFixture(t, version = 14) {
       ALTER TABLE inference_calls ADD COLUMN task_id TEXT REFERENCES workflow_tasks(id);
     `);
     if (version === 17) {
-      db.exec(`
-        CREATE TABLE reference_blobs(
-          sha256 TEXT PRIMARY KEY CHECK(length(sha256)=64),
-          width INTEGER CHECK(width IS NULL OR width > 0),
-          height INTEGER CHECK((width IS NULL AND height IS NULL) OR (width IS NOT NULL AND height IS NOT NULL AND height > 0))
-        ) STRICT;
-        CREATE TABLE reference_images(id TEXT PRIMARY KEY,owner TEXT NOT NULL,owner_user_id TEXT,name TEXT NOT NULL,media_type TEXT NOT NULL,sha256 TEXT REFERENCES reference_blobs(sha256)) STRICT;
-        CREATE INDEX reference_images_sha256 ON reference_images(sha256,id);
-      `);
+      createReferenceSchema(db);
       mkdirSync(join(env.OUTPUTS_PATH, ".references"));
       for (const [id, sha256, bytes] of [
         ["retained-reference", sharedUploadSha256, sharedUpload],
@@ -262,7 +258,4 @@ export function rejectGridDiscard(db) {
   db.exec(
     "CREATE TRIGGER reject BEFORE DELETE ON grids BEGIN SELECT RAISE(ABORT,'controlled deletion failure'); END",
   );
-}
-export function setDiscardSchemaVersion(db, version) {
-  db.pragma(`user_version=${version}`);
 }

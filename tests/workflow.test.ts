@@ -138,12 +138,12 @@ test("judge-only variable dimensions expand criteria without leaking answer text
     ["Solve question", "Solve question"],
   );
   assert.deepEqual(
-    cells.map((cell) => cell.images),
-    [undefined, undefined],
+    cells.map((cell) => "images" in cell),
+    [false, false],
   );
   assert.equal(cells[0].generationId, cells[1].generationId);
   assert.equal(generations[0].input.prompt, "Solve question");
-  assert.equal(generations[0].input.images, undefined);
+  assert.equal("images" in generations[0].input, false);
   assert.equal(generations[0].input.imageSettings, undefined);
   assert.deepEqual(
     judgments.map((task) => task.input.criteria),
@@ -204,7 +204,7 @@ test("non-chat generator images are copied into generation tasks but criterion-o
   }));
   const { tasks } = workflow(source);
   const generation = tasks.find((task) => task.kind === "generation")!;
-  assert.deepEqual(generation.input.images, [second]);
+  assert.deepEqual(generation.input.messages?.[0].images, [second]);
   const judgments = tasks.filter((task) => task.kind === "judge");
   assert.deepEqual(
     judgments.map((task) => task.input.images),
@@ -343,7 +343,7 @@ for (const side of ["rows", "columns"] as const)
       ["none", "high"],
     );
     for (const generation of generations) {
-      assert.equal(generation.input.images, undefined);
+      assert.equal("images" in generation.input, false);
       assert.equal(JSON.stringify(generation.input).includes("secret"), false);
     }
     for (const cell of cells) {

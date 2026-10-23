@@ -10,7 +10,7 @@ export function PromptEditor({
 }: {
   prompt: string;
   onPromptChange: (prompt: string) => void;
-  attachments?: {
+  attachments: {
     images: readonly ReferenceImage[];
     onChange: (images: ReferenceImage[]) => void;
     onBusy: (busy: boolean) => void;
@@ -23,7 +23,7 @@ export function PromptEditor({
       <ValidationField path={[0]}>
         {(validation) => (
           <div className="prompt-editor" aria-busy={reading}>
-            {!!attachments?.images.length && (
+            {!!attachments.images.length && (
               <ImageList
                 images={attachments.images}
                 disabled={reading}
@@ -47,20 +47,18 @@ export function PromptEditor({
                 onChange={(event) => onPromptChange(event.target.value)}
                 placeholder="Describe what you want to generate"
               />
-              {attachments && (
-                <ImagePicker
-                  pasteTarget={`${id}-prompt`}
-                  accessibleLabel="Add images to prompt"
-                  disabled={reading}
-                  onBusy={(busy) => {
-                    setReading(busy);
-                    attachments.onBusy(busy);
-                  }}
-                  onSelect={(selected) =>
-                    attachments.onChange([...attachments.images, ...selected])
-                  }
-                />
-              )}
+              <ImagePicker
+                pasteTarget={`${id}-prompt`}
+                accessibleLabel="Add images to prompt"
+                disabled={reading}
+                onBusy={(busy) => {
+                  setReading(busy);
+                  attachments.onBusy(busy);
+                }}
+                onSelect={(selected) =>
+                  attachments.onChange([...attachments.images, ...selected])
+                }
+              />
             </div>
           </div>
         )}

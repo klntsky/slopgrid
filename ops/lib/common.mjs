@@ -10,7 +10,7 @@ import {
   readlinkSync,
 } from "node:fs";
 import { dirname, join, isAbsolute } from "node:path";
-import { parseCommandLine } from "./cli-options.mjs";
+import { assertOptionTargets, parseCommandLine } from "./cli-options.mjs";
 
 export function command(program, args = [], options = {}) {
   const result = spawnSync(program, args, {
@@ -121,12 +121,16 @@ export function validateConfig(config) {
 }
 
 export function parseArgs(args) {
-  const { target, argument, values, help } = parseCommandLine(args);
+  return deploymentOptions(parseCommandLine(args));
+}
+
+export function deploymentOptions({ target, argument, values, help }) {
   if (
     help ||
     !["validate", "rehearse", "staging", "production"].includes(target)
   )
     throw new Error("Target must be validate, rehearse, staging or production");
+  assertOptionTargets(target, values);
   const options = {
     target,
     revision: argument ?? "HEAD",
@@ -140,38 +144,21 @@ export function parseArgs(args) {
     recoverFailedStart: values["recover-failed-start"] ?? false,
     ...(values.grep === undefined ? {} : { grep: values.grep }),
   };
-  if (target === "rehearse" && values.mode !== undefined)
-    throw new Error("Rehearsal does not accept deployment modes");
   if (!["auto", "soft", "machinery"].includes(options.mode))
     throw new Error("Invalid deployment mode");
   if (options.recoverFailedStart) {
-    if (target !== "staging")
-      throw new Error("--recover-failed-start is only permitted on staging");
     if (options.mode === "soft")
       throw new Error("--recover-failed-start requires a machinery deployment");
   }
-  if (
-    target === "validate" &&
-    (options.mode !== "auto" || options.tests === "skip")
-  )
-    throw new Error(
-      "Validation requires tests and does not accept deployment modes",
-    );
   if (!["mock", "real"].includes(options.suite))
     throw new Error("Invalid browser suite");
   const scoped = options.units.length + options.browsers.length > 0;
   if (scoped && options.tests === "skip")
     throw new Error("Cannot combine scoped tests and --skip-tests");
-  if (scoped && target === "production")
-    throw new Error(
-      "Production requires the full suite or explicit --skip-tests",
-    );
   if (scoped) options.tests = "scoped";
   if (options.grep && !options.browsers.length)
     throw new Error("--grep requires --browser");
   if (options.discardGrids.length) {
-    if (target !== "staging")
-      throw new Error("Grid deletion is only permitted on staging");
     if (
       options.discardGrids.some((id) => !/^[a-f0-9]{48}$/.test(id)) ||
       new Set(options.discardGrids).size !== options.discardGrids.length

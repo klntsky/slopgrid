@@ -6,13 +6,8 @@ import { currentDefinition } from "./current-grid-fixture.js";
 import {
   interpolateVariables,
   promptVariableIssue,
-  referencedVariableImages,
 } from "../server/prompt-variables.js";
-import {
-  generatorReferences,
-  judgeReferences,
-  selectedReferences,
-} from "../server/image-settings.js";
+import { selectedReferences } from "../server/image-settings.js";
 import { resolveCriteriaForCell } from "../server/judge-criteria.js";
 import { analyzeGridCompatibility } from "../server/grid-compatibility.js";
 import { expandPromptForTitle } from "../server/grid-title.js";
@@ -112,10 +107,16 @@ for (const side of ["rows", "columns"] as const) {
       },
     );
     assert.deepEqual(
-      referencedVariableImages(
-        `${token}2 ${token}1 ${token}99 ${token}3`,
-        source,
-      ),
+      expandGrid({
+        ...source,
+        parameters: {
+          ...source.parameters,
+          input: {
+            kind: "common",
+            value: [{ role: "user", content: `${token}2 ${token}1 ${token}3` }],
+          },
+        },
+      })[0].messages?.[0].images,
       [second, first, third],
     );
   });
@@ -155,11 +156,7 @@ for (const side of ["rows", "columns"] as const) {
       ),
       before,
     );
-    assert.deepEqual(expandGrid(parsed)[0].images, [second]);
-    assert.deepEqual(
-      referencedVariableImages(`${token}1 ${token}3 ${token}2`, parsed),
-      [third, second],
-    );
+    assert.deepEqual(expandGrid(parsed)[0].messages?.[0].images, [second]);
     assert.deepEqual(selectedReferences(parsed), [second, third]);
     assert.ok(expandPromptForTitle(parsed).includes("answerA"));
     assert.equal(
@@ -425,7 +422,7 @@ test("chat substitution preserves supplied whitespace and merges images once per
     { role: "user", content: "", images: [first, second] },
     { role: "unfilled", content: "" },
   ]);
-  assert.equal(expandGrid(parsed)[0].images, undefined);
+  assert.equal("images" in expandGrid(parsed)[0], false);
   for (const role of ["system", "assistant"] as const)
     assert.equal(
       gridSchema.safeParse({
@@ -501,8 +498,8 @@ test("prompt formats carry field images while image generation merges prompt ima
         first.id,
         third.id,
       ]);
-      assert.equal(cell.images, undefined);
-    } else assert.deepEqual(cell.images, [third, first, second]);
+      assert.equal("images" in cell, false);
+    } else assert.deepEqual(cell.messages?.[0].images, [third, first, second]);
   }
 });
 
@@ -545,8 +542,6 @@ test("deleted slots keep judge-only images out of Chat while retaining original 
     caseAxis: "rows",
   });
   const parsed = gridSchema.parse(source);
-  assert.deepEqual(generatorReferences(parsed), []);
-  assert.deepEqual(judgeReferences(parsed), [third]);
   assert.equal(expandGrid(parsed)[0].messages![0].images, undefined);
   assert.deepEqual(resolveCriteriaForCell(parsed, 0, 0), {
     criteria: [{ text: "Compare with Expected answer", correctAnswer: false }],
@@ -620,21 +615,12 @@ test("zero-case compatibility previews remain safe with unresolved deleted-field
   }
 });
 
-test("legacy read-only variable arrays keep their labels, attachments and first-field filenames", () => {
+test("legacy read-only variable fields retain labels and plain text interpolation", () => {
   const source: LegacyGridInput = {
     format: "markdown",
-    prompt: "$ROW2",
-    rows: {
-      kind: "variable",
-      values: [
-        [
-          { text: "Question" },
-          { text: "answerA", images: [second] },
-          { text: "answerB", images: [third] },
-        ],
-      ],
-    },
-    columns: { kind: "model", values: ["plain"] },
+    prompt: "$ROW1 / $COLUMN1",
+    rows: { kind: "variable", values: [[{ text: "Question" }]] },
+    columns: { kind: "variable", values: [[{ text: "Answer" }]] },
     model: "plain",
     effort: "default",
     budgetUsd: 3,
@@ -645,15 +631,12 @@ test("legacy read-only variable arrays keep their labels, attachments and first-
   assert.deepEqual(display.parts, [
     { kind: "variable", value: source.rows.values[0] },
   ]);
+  assert.equal(displayValue(display.parts[0]), "Question");
   assert.equal(
-    displayValue(display.parts[0]),
-    "Question | answerA · second.png | answerB · third.png",
+    interpolateLegacyVariables(source.prompt, source, 0, 0),
+    "Question / Answer",
   );
-  assert.deepEqual(interpolateLegacyVariables(source.prompt, source, 0, 0), {
-    text: "answerA",
-    images: [second],
-  });
-  assert.equal(expandPromptForTitle(source), "(answerA)");
+  assert.equal(expandPromptForTitle(source), "(Question / Answer)");
   assert.deepEqual(source, before);
 });
 
@@ -722,7 +705,7 @@ for (const side of ["rows", "columns"] as const) {
       expandGrid(gridSchema.parse(prompts)).map((cell) => cell.prompt),
       [`Nested ${token}2`, literal],
     );
-    assert.equal(expandGrid(gridSchema.parse(prompts))[0].images, undefined);
+    assert.equal("images" in expandGrid(gridSchema.parse(prompts))[0], false);
   });
 
   test(`${side} optional fields retain empty and deleted slot history when a non-numbered setting consumes cases`, () => {

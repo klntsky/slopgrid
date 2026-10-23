@@ -30,7 +30,6 @@ export function createWorkflow(
           effort: cell.effort,
           prompt: cell.prompt,
           messages: cell.messages,
-          ...(cell.images ? { images: cell.images } : {}),
           budgetUsd: cell.budgetUsd,
           imageSettings: cell.imageSettings,
         },
@@ -88,7 +87,6 @@ export function projectWorkflow(
     cell.effort = input.effort;
     cell.prompt = input.prompt;
     cell.messages = input.messages;
-    cell.images = input.images;
     cell.budgetUsd = input.budgetUsd;
     cell.imageSettings = input.imageSettings;
     cell.status =

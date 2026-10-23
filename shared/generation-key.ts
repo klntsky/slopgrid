@@ -17,9 +17,6 @@ export function generationGroupKey(
         content,
         images: images?.length ? images.map(({ id }) => ({ id })) : undefined,
       })),
-      images: cell.images?.length
-        ? cell.images.map(({ id }) => ({ id }))
-        : undefined,
       budgetUsd: format === "image" ? undefined : cell.budgetUsd,
       imageSettings:
         format === "image"

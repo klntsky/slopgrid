@@ -401,18 +401,12 @@ for (const available of [true, false])
       const different = store.references.add(changed, "different.png", owner)!;
       const unavailable = store.references.add(png, "unavailable.png", owner)!;
       const input: LegacyGridInput = {
-        format: "chat-template",
-        prompt: "",
-        messages: [
-          {
-            role: "user",
-            content: "Describe these images",
-            images: [first, second, unavailable],
-          },
-        ],
-        rows: { kind: "effort", values: ["none"] },
-        columns: { kind: "model", values: ["fixture/text"] },
-        model: "fixture/text",
+        format: "image",
+        prompt: "Describe these images",
+        inputReferences: [first, second, unavailable],
+        rows: { kind: "quality", values: ["high"] },
+        columns: { kind: "model", values: ["fixture/image"] },
+        model: "fixture/image",
         effort: "none",
         budgetUsd: 1,
       };
@@ -437,11 +431,11 @@ for (const available of [true, false])
         kind: "generation",
         status: "pending",
         input: {
-          format: "chat-template",
+          format: "image",
           model: cell.model,
           effort: cell.effort,
           prompt: cell.prompt,
-          messages: cell.messages,
+          imageSettings: cell.imageSettings,
           budgetUsd: cell.budgetUsd,
         },
       };
@@ -462,19 +456,7 @@ for (const available of [true, false])
             : {}),
         }),
       );
-      const expectedTasks = tasks.map((task) =>
-        task.kind === "generation"
-          ? {
-              ...task,
-              input: {
-                ...task.input,
-                messages: [
-                  { ...task.input.messages![0], images: expectedReferences },
-                ],
-              },
-            }
-          : task,
-      );
+      const expectedTasks = tasks;
       const links = referenceUsageLinks(store.db);
       removeStoredReferenceDimensions(store.db);
       restoreV14ReferenceSchema(store.db);
@@ -489,7 +471,7 @@ for (const available of [true, false])
       assert.deepEqual(store.workflow(grid.id), expectedTasks);
       assert.deepEqual(store.get(grid.id)!.input, {
         ...input,
-        messages: [{ ...input.messages![0], images: expectedReferences }],
+        inputReferences: expectedReferences,
       });
       assert.equal(store.get(grid.id)!.ownerUserId, "claimed-account");
       assert.deepEqual(referenceUsageLinks(store.db), links);
@@ -951,8 +933,14 @@ for (const format of ["markdown", "chat-template", "image"] as const)
           generator.id,
         ]);
       else {
-        assert.deepEqual(generation.input.images, [explicit, generator]);
-        assert.deepEqual(saved.cells[0].images, [explicit, generator]);
+        assert.deepEqual(generation.input.messages![0].images, [
+          explicit,
+          generator,
+        ]);
+        assert.deepEqual(saved.cells[0].messages![0].images, [
+          explicit,
+          generator,
+        ]);
       }
       assert.deepEqual(judgment.input.images, [criterion]);
       assert.deepEqual(

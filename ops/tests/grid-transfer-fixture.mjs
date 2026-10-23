@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
 import {
+  createReferenceSchema,
   seedReferenceBlob,
   seedReferenceImage,
   seedReferenceLink,
@@ -94,7 +95,7 @@ function fixture(t, { shared = false } = {}) {
     source.close();
     target.close();
   });
-  for (const db of [source, target])
+  for (const db of [source, target]) {
     db.exec(`
     PRAGMA user_version=17; PRAGMA foreign_keys=ON;
     CREATE TABLE grids(id TEXT PRIMARY KEY,data TEXT,owner TEXT,owner_user_id TEXT,published INTEGER,visibility TEXT,slug TEXT,created_at TEXT);
@@ -105,11 +106,10 @@ function fixture(t, { shared = false } = {}) {
     CREATE TABLE oauth_identities(provider TEXT,subject TEXT,user_id TEXT REFERENCES users(id));
     CREATE TABLE creation_requests(owner TEXT,request_id TEXT,fingerprint TEXT,grid_id TEXT REFERENCES grids(id));
     CREATE TABLE sessions(id TEXT PRIMARY KEY,data TEXT);
-    CREATE TABLE reference_blobs(sha256 TEXT PRIMARY KEY CHECK(length(sha256)=64),width INTEGER CHECK(width IS NULL OR width > 0),height INTEGER CHECK((width IS NULL AND height IS NULL) OR (width IS NOT NULL AND height IS NOT NULL AND height > 0))) STRICT;
-    CREATE TABLE reference_images(id TEXT PRIMARY KEY,owner TEXT NOT NULL,owner_user_id TEXT,name TEXT NOT NULL,media_type TEXT NOT NULL,sha256 TEXT REFERENCES reference_blobs(sha256)) STRICT;
-    CREATE INDEX reference_images_sha256 ON reference_images(sha256,id);
     CREATE TABLE grid_reference_images(grid_id TEXT REFERENCES grids(id) ON DELETE CASCADE,reference_id TEXT,PRIMARY KEY(grid_id,reference_id));
   `);
+    createReferenceSchema(db);
+  }
   for (const [db, user] of [
     [source, "source-owner"],
     [target, "target-owner"],
@@ -331,19 +331,6 @@ export function transferCost(db) {
 }
 export function transferSessionData(db) {
   return db.prepare("SELECT data FROM sessions").get().data;
-}
-const transferTables = new Set([
-  "grids",
-  "cells",
-  "workflow_tasks",
-  "inference_calls",
-  "creation_requests",
-  "grid_reference_images",
-]);
-export function transferRowCount(db, table) {
-  if (!transferTables.has(table))
-    throw new Error(`Unknown transfer fixture table: ${table}`);
-  return db.prepare(`SELECT count(*) n FROM ${table}`).get().n;
 }
 export function survivingTransferTask(db) {
   return db.prepare("SELECT 1 FROM workflow_tasks WHERE id='g:survivor'").get();

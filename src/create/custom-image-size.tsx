@@ -1,15 +1,18 @@
 import { Plus, X } from "lucide-react";
 import { imageChoices } from "../../server/image-settings";
 import { tooltipRef } from "../components/use-tooltip";
+import type { ValidationAttributes } from "./validation-feedback";
 
 export function CustomImageSize({
   label,
   value,
   onChange,
+  validation,
 }: {
   label: string;
   value: string;
   onChange: (size: string) => void;
+  validation: ValidationAttributes;
 }) {
   const [width = "", height = ""] = value.split("x");
   return (
@@ -22,6 +25,7 @@ export function CustomImageSize({
           step="1"
           inputMode="numeric"
           aria-label={`${label} width`}
+          {...validation}
           value={width}
           onChange={(event) => onChange(`${event.target.value}x${height}`)}
         />
@@ -34,6 +38,7 @@ export function CustomImageSize({
           step="1"
           inputMode="numeric"
           aria-label={`${label} height`}
+          {...validation}
           value={height}
           onChange={(event) => onChange(`${width}x${event.target.value}`)}
         />
@@ -46,10 +51,12 @@ export function CustomAxisSizes({
   label,
   values,
   onChange,
+  validation,
 }: {
   label: "Rows" | "Columns";
   values: string[];
   onChange: (values: string[]) => void;
+  validation: ValidationAttributes;
 }) {
   const custom = values
     .map((value, index) => ({ value, index }))
@@ -78,6 +85,7 @@ export function CustomAxisSizes({
             <CustomImageSize
               label={name}
               value={value}
+              validation={validation}
               onChange={(size) =>
                 onChange(values.map((value, i) => (i === index ? size : value)))
               }

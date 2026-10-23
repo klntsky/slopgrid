@@ -10,6 +10,10 @@ archive contains only the committed `ops/` subtree, installed into its own
 immutable directory and compared on reuse. The application archive and tools
 archive never contain the ignored root `.env`.
 
+The CLI parses each invocation once. Command option metadata is the authority for
+applicability and help; validation intentionally accepts explicit `--mode=auto`
+as its default, while rehearsal rejects every deployment-mode option.
+
 Each invocation gets a fresh run directory and executes in tmux with an atomic
 exit status. Runtime deployments acquire the exclusive deployment lock; independent
 `validate` and `rehearse` runs do not. The initiating command streams the log and
@@ -95,10 +99,12 @@ cell links, and ledger attribution. The application owns schema migration.
 Artifact and thinking storage is shared by reference: transfer and administrative
 deletion preserve bytes still owned by retained tasks. Account mapping belongs
 to the move; sessions and inference credentials remain environment-local.
-Transfer requires the current schema 17, including multi-field variable inputs;
-administrative deletion also accepts deployed schemas 12 through 16 before the
-application upgrades them. Reference usage links include every configured variable
-field attachment, independent of which fields the accepted workflow consumes.
+Transfer requires schema 17 but supports legacy grid inputs only, including their
+multi-field variable inputs; current version 3 case-record inputs are rejected
+without modifying either environment. Administrative deletion accepts deployed
+schemas 12, 13, 14, and 17 before the application upgrades them. Reference usage
+links include every configured variable field attachment, independent of which
+fields the accepted workflow consumes.
 
 ## Host prerequisites
 

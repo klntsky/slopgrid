@@ -31,14 +31,18 @@ type CaseValueAction = {
     value: ParameterValues[K];
   };
 }[ParameterId];
+export type ScalarParameterId = Exclude<
+  CommonParameterId,
+  "input" | "judge_criteria"
+>;
 type CaseValuesAction = {
-  [K in ParameterId]: {
+  [K in ScalarParameterId]: {
     type: "case-values";
     side: AxisSide;
     parameter: K;
     values: ParameterValues[K][];
   };
-}[ParameterId];
+}[ScalarParameterId];
 export type ParameterSetter = <K extends CommonParameterId>(
   parameter: K,
   value: ParameterValues[NoInfer<K>],
@@ -81,7 +85,7 @@ export function caseValueAction<K extends ParameterId>(
   } as CaseValueAction;
 }
 
-export function caseValuesAction<K extends ParameterId>(
+export function caseValuesAction<K extends ScalarParameterId>(
   side: AxisSide,
   parameter: K,
   values: ParameterValues[NoInfer<K>][],
@@ -111,7 +115,7 @@ function comparisonKeys(value: object) {
   });
 }
 
-function equal(a: unknown, b: unknown): boolean {
+export function parameterValuesEqual(a: unknown, b: unknown): boolean {
   if (Object.is(a, b)) return true;
   if (!a || !b || typeof a !== "object" || typeof b !== "object") return false;
   if (Array.isArray(a) !== Array.isArray(b)) return false;
@@ -122,7 +126,7 @@ function equal(a: unknown, b: unknown): boolean {
     left.every(
       (key) =>
         Object.hasOwn(b, key) &&
-        equal(Reflect.get(a, key), Reflect.get(b, key)),
+        parameterValuesEqual(Reflect.get(a, key), Reflect.get(b, key)),
     )
   );
 }
@@ -131,19 +135,14 @@ function differing(input: GridDraftInput, parameter: ParameterId) {
   const source = input.parameters[parameter];
   if (!source || source.kind === "common") return false;
   const values = input[source.kind].map((entry) => entry[parameter]);
-  return values.some((value) => !equal(value, values[0]));
+  return values.some((value) => !parameterValuesEqual(value, values[0]));
 }
 
 export function droppedParameters(
   input: GridDraftInput,
   action: InputAction,
 ): ParameterId[] {
-  const replacement =
-    action.type === "dimension"
-      ? action
-      : action.type === "to-axis" && input.caseAxis !== action.side
-        ? action
-        : undefined;
+  const replacement = action.type === "dimension" ? action : undefined;
   const removed =
     action.type === "single"
       ? axisParameters(input, action.side)
@@ -183,7 +182,7 @@ export function confirmInputAction(
   );
 }
 
-function neutralDimension(
+export function neutralDimension(
   input: GridDraftInput,
   side: AxisSide,
 ): GridDraftInput {
@@ -195,36 +194,55 @@ function neutralDimension(
   };
 }
 
+export function hasParameterValue(parameter: ParameterId, value: unknown) {
+  return (
+    value !== undefined &&
+    !parameterValuesEqual(value, parameterDefault(parameter))
+  );
+}
+
+export function removeParameter(
+  input: GridDraftInput,
+  parameter: ParameterId,
+): GridDraftInput {
+  const parameters = { ...input.parameters };
+  const source = input.parameters[parameter];
+  delete parameters[parameter];
+  const next = { ...input, parameters };
+  if (!source || source.kind === "common") return next;
+  return neutralDimension(
+    {
+      ...next,
+      [source.kind]: input[source.kind].map((entry) => {
+        const retained = { ...entry };
+        delete retained[parameter];
+        return retained;
+      }),
+    },
+    source.kind,
+  );
+}
+
 function collapse(
   input: GridDraftInput,
   parameter: ParameterId,
 ): GridDraftInput {
   const source = input.parameters[parameter];
   if (!source || source.kind === "common") return input;
-  const parameters = { ...input.parameters };
   const entries = input[source.kind];
-  if (parameter === "variable") delete parameters.variable;
-  else {
-    const value =
-      entries.length && !differing(input, parameter)
-        ? (entries[0][parameter] ?? parameterDefault(parameter))
-        : parameterDefault(parameter);
-    Object.assign(parameters, {
+  const next = removeParameter(input, parameter);
+  if (parameter === "variable") return next;
+  const value =
+    entries.length && !differing(input, parameter)
+      ? (entries[0][parameter] ?? parameterDefault(parameter))
+      : parameterDefault(parameter);
+  return {
+    ...next,
+    parameters: {
+      ...next.parameters,
       [parameter]: { kind: "common", value: structuredClone(value) },
-    });
-  }
-  return neutralDimension(
-    {
-      ...input,
-      parameters,
-      [source.kind]: entries.map((entry) => {
-        const next = { ...entry };
-        delete next[parameter];
-        return next;
-      }),
     },
-    source.kind,
-  );
+  };
 }
 
 function own(
@@ -303,12 +321,12 @@ export function reduceInput(
         },
       };
     case "to-axis":
-      if (input.parameters[action.parameter]?.kind !== "common") return input;
-      if (input.caseAxis === action.side)
-        return own(input, action.parameter, action.side);
-      if (action.parameter === "judge_criteria" || action.parameter === "input")
+      if (
+        input.caseAxis !== action.side ||
+        input.parameters[action.parameter]?.kind !== "common"
+      )
         return input;
-      return reduceInput(input, { ...action, type: "dimension" });
+      return own(input, action.parameter, action.side);
     case "to-common":
       return collapse(input, action.parameter);
     case "single": {
@@ -396,29 +414,22 @@ export function reduceInput(
         ),
       };
     case "case-values": {
-      if (input.parameters[action.parameter]?.kind !== action.side)
-        return input;
-      const members = axisParameters(input, action.side);
       if (
-        (input.caseAxis === action.side || members.length > 1) &&
-        action.values.length !== input[action.side].length
+        input.parameters[action.parameter]?.kind !== action.side ||
+        input.caseAxis === action.side ||
+        axisParameters(input, action.side).length !== 1
       )
         return input;
       const remaining = [...input[action.side]];
-      const positional =
-        input.caseAxis === action.side ||
-        members.length > 1 ||
-        action.parameter === "variable";
-      const matched = action.values.map((value, index) => {
-        if (positional) return input[action.side][index];
+      const matched = action.values.map((value) => {
         const match = remaining.findIndex((entry) =>
-          equal(entry[action.parameter], value),
+          parameterValuesEqual(entry[action.parameter], value),
         );
         return match >= 0 ? remaining.splice(match, 1)[0] : undefined;
       });
       const entries = action.values.map((value, index) => ({
         ...(matched[index] ??
-          (positional ? undefined : remaining.shift()) ??
+          remaining.shift() ??
           newCase(caseDefaults(input, action.side))),
         [action.parameter]: value,
       }));

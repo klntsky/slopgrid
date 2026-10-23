@@ -291,67 +291,6 @@ test("Website removes all judging fields only after a single accepted loss confi
     });
 });
 
-for (const differing of [false, true]) {
-  test(`ordinary criteria collapse ${differing ? "drops differing values after confirmation" : "preserves equal values without confirmation"}`, async ({
-    page,
-  }) => {
-    const criteria = [{ text: "Does the answer fit?", correctAnswer: false }];
-    const draft: Draft = {
-      formatSelected: true,
-      input: {
-        ...defaultGridDraft("svg"),
-        judge: true,
-        parameters: {
-          input: defaultGridDraft("svg").parameters.input,
-          model: { kind: "rows" },
-          effort: { kind: "columns" },
-          judge_model: { kind: "common", value: "fixture/text" },
-          judge_effort: { kind: "common", value: "high" },
-          judge_criteria: { kind: "rows" },
-        },
-        rows: [
-          { id: "model-a", model: "fixture/text", judge_criteria: criteria },
-          {
-            id: "model-b",
-            model: "fixture/other",
-            judge_criteria: differing
-              ? [{ text: "A different rubric", correctAnswer: true }]
-              : criteria,
-          },
-        ],
-        columns: [{ id: "effort-column", effort: "low" }],
-      },
-    };
-    await openDraft(page, draft);
-    if (differing) {
-      expect(await changeFormat(page, "Markdown", false)).toHaveLength(1);
-      await expect.poll(() => savedDraft(page)).toEqual(draft);
-    }
-    expect(await changeFormat(page, "Markdown")).toHaveLength(
-      differing ? 1 : 0,
-    );
-    await expect
-      .poll(() => savedDraft(page))
-      .toEqual({
-        ...draft,
-        input: {
-          ...draft.input,
-          format: "markdown",
-          parameters: {
-            ...draft.input.parameters,
-            judge_criteria: {
-              kind: "common",
-              value: differing ? [{ text: "", correctAnswer: true }] : criteria,
-            },
-          },
-          rows: draft.input.rows.map(
-            ({ judge_criteria: _criteria, ...entry }) => entry,
-          ),
-        },
-      });
-  });
-}
-
 test("removing the last ordinary owner creates one neutral position without moving common settings", async ({
   page,
 }) => {

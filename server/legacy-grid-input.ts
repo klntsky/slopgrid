@@ -1,9 +1,9 @@
-import type { Cell, ChatMessage, Effort, VariableField } from "./domain.js";
+import type { Cell, ChatMessage, Effort } from "./domain.js";
 import type { ImageSettings, ReferenceImage } from "./image-settings.js";
 import type { Criterion } from "./judge-criteria.js";
 
 export type LegacyGridAxis =
-  | { kind: "variable"; values: VariableField[][] }
+  | { kind: "variable"; values: [{ text: string }][] }
   | {
       kind:
         | "model"
@@ -19,11 +19,12 @@ export type LegacyGridAxis =
     };
 
 // Persisted metadata only. This is deliberately not an admission/editor schema.
+// Master stored one text value per variable case and text-only Chat messages.
 export type LegacyGridInput = {
   inputVersion?: undefined;
   format: "svg" | "markdown" | "html" | "chat-template" | "image";
   prompt: string;
-  messages?: ChatMessage[];
+  messages?: Pick<ChatMessage, "role" | "content">[];
   rows: LegacyGridAxis;
   columns: LegacyGridAxis;
   imageSettings?: Omit<ImageSettings, "input_references">;
@@ -36,148 +37,45 @@ export type LegacyGridInput = {
   budgetUsd: number;
 };
 
-export const legacyVariableToken = /\$(ROW|COLUMN)(\d*)(?![\p{L}\p{N}_])/gu;
-type LegacyVariableInput = Pick<LegacyGridInput, "rows" | "columns">;
-export type LegacyInterpolationOptions = { allowUnresolvedVariables?: boolean };
-
-function mergeImages(
-  ...groups: (readonly ReferenceImage[] | undefined)[]
-): ReferenceImage[] | undefined {
-  const seen = new Set<string>();
-  const images: ReferenceImage[] = [];
-  for (const group of groups)
-    for (const image of group ?? [])
-      if (!seen.has(image.id)) {
-        seen.add(image.id);
-        images.push(image);
-      }
-  return images.length ? images : undefined;
-}
+const legacyVariableToken = /\$(ROW|COLUMN)(\d*)(?![\p{L}\p{N}_])/gu;
 
 export function interpolateLegacyVariables(
   text: string,
-  input: LegacyVariableInput,
+  input: Pick<LegacyGridInput, "rows" | "columns">,
   row: number,
   column: number,
-  options: LegacyInterpolationOptions = {},
-): { text: string; images?: ReferenceImage[] } {
-  const images: ReferenceImage[] = [];
-  const seen = new Set<string>();
-  const expanded = text.replace(
+): string {
+  return text.replace(
     legacyVariableToken,
     (token, name: string, number: string) => {
       const axis = name === "ROW" ? input.rows : input.columns;
       const index = name === "ROW" ? row : column;
-      if (axis.kind !== "variable" || !/^[1-9]\d*$/.test(number)) {
-        if (options.allowUnresolvedVariables) return token;
+      if (axis.kind !== "variable" || number !== "1")
         throw new Error(`Invalid prompt variable ${token}.`);
-      }
-      const field = axis.values[index]?.[Number(number) - 1];
-      if (!field) {
-        if (options.allowUnresolvedVariables) return token;
-        throw new Error(`Missing prompt variable ${token}.`);
-      }
-      for (const image of field.images ?? [])
-        if (!seen.has(image.id)) {
-          seen.add(image.id);
-          images.push(image);
-        }
+      const field = axis.values[index]?.[0];
+      if (!field) throw new Error(`Missing prompt variable ${token}.`);
       return field.text;
     },
   );
-  return { text: expanded, ...(images.length ? { images } : {}) };
-}
-
-export function resolveLegacyCriteriaForCell(
-  input: Pick<LegacyGridInput, "judge" | "rows" | "columns">,
-  row: number,
-  column: number,
-  options: LegacyInterpolationOptions = {},
-): { criteria: Criterion[]; images?: ReferenceImage[] } {
-  let images: ReferenceImage[] | undefined;
-  const criteria = (input.judge?.criteria ?? []).map((criterion) => {
-    const expanded = interpolateLegacyVariables(
-      criterion.text,
-      input,
-      row,
-      column,
-      options,
-    );
-    images = mergeImages(images, expanded.images);
-    return { ...criterion, text: expanded.text };
-  });
-  return { criteria, ...(images ? { images } : {}) };
 }
 
 export function legacySelectedReferences(
   input: LegacyGridInput,
 ): ReferenceImage[] {
+  if (input.format !== "image") return [];
   const axis = [input.rows, input.columns].find(
     (axis) => axis.kind === "input_references",
   );
-  const explicit =
-    input.format === "chat-template"
-      ? input.messages?.flatMap((message) => message.images ?? [])
-      : axis?.kind === "input_references"
-        ? axis.values.flatMap((name) => input.referenceGroups?.[name] ?? [])
-        : input.inputReferences;
-  return (
-    mergeImages(
-      explicit,
-      input.messages?.flatMap((message) => message.images ?? []),
-      ...[input.rows, input.columns].flatMap((axis) =>
-        axis.kind === "variable"
-          ? axis.values.flatMap((fields) => fields.map((field) => field.images))
-          : [],
-      ),
-    ) ?? []
-  );
-}
-
-export function mapLegacyReferences<T extends LegacyGridInput>(
-  input: T,
-  hydrate: (image: ReferenceImage) => ReferenceImage,
-): T {
-  const axis = (axis: LegacyGridAxis): LegacyGridAxis =>
-    axis.kind === "variable"
-      ? {
-          ...axis,
-          values: axis.values.map((fields) =>
-            fields.map((field) =>
-              field.images
-                ? { ...field, images: field.images.map(hydrate) }
-                : field,
-            ),
-          ),
-        }
-      : axis;
-  return {
-    ...input,
-    rows: axis(input.rows),
-    columns: axis(input.columns),
-    ...(input.messages
-      ? {
-          messages: input.messages.map((message) =>
-            message.images
-              ? { ...message, images: message.images.map(hydrate) }
-              : message,
-          ),
-        }
-      : {}),
-    ...(input.inputReferences
-      ? { inputReferences: input.inputReferences.map(hydrate) }
-      : {}),
-    ...(input.referenceGroups
-      ? {
-          referenceGroups: Object.fromEntries(
-            Object.entries(input.referenceGroups).map(([name, images]) => [
-              name,
-              images.map(hydrate),
-            ]),
-          ),
-        }
-      : {}),
-  };
+  const references =
+    axis?.kind === "input_references"
+      ? axis.values.flatMap((name) => input.referenceGroups?.[name] ?? [])
+      : (input.inputReferences ?? []);
+  const seen = new Set<string>();
+  return references.filter((image) => {
+    if (seen.has(image.id)) return false;
+    seen.add(image.id);
+    return true;
+  });
 }
 
 function normalizeLegacyImageSettings(settings: ImageSettings): ImageSettings {
@@ -189,10 +87,7 @@ function normalizeLegacyImageSettings(settings: ImageSettings): ImageSettings {
 }
 
 // Frozen pre-v14 migration semantics. Ordinary reads project accepted tasks.
-export function expandLegacyGrid(
-  input: LegacyGridInput,
-  options: LegacyInterpolationOptions = {},
-): Omit<Cell, "id">[] {
+export function expandLegacyGrid(input: LegacyGridInput): Omit<Cell, "id">[] {
   return input.rows.values.flatMap((_, row) =>
     input.columns.values.map((_, column) => {
       const selections = { model: input.model, effort: input.effort as string };
@@ -226,49 +121,21 @@ export function expandLegacyGrid(
             input.referenceGroups?.[value]?.map((image) => image.id) ?? [];
         else imageSettings[axis.kind] = value;
       }
-      const messages = input.messages?.map((message) => {
-        const content = interpolateLegacyVariables(
-          message.content,
-          input,
-          row,
-          column,
-          options,
-        );
-        const images = mergeImages(message.images, content.images);
-        return {
-          ...message,
-          content: content.text,
-          ...(images ? { images } : {}),
-        };
-      });
-      const expanded = messages
-        ? {
-            text: messages
-              .map(({ role, content }) => `${role}: ${content}`)
-              .join("\n\n"),
-            images: undefined,
-          }
-        : interpolateLegacyVariables(input.prompt, input, row, column, options);
-      if (input.format === "image" && expanded.images)
-        imageSettings.input_references = [
-          ...new Set([
-            ...(imageSettings.input_references ?? []),
-            ...expanded.images.map((image) => image.id),
-          ]),
-        ];
-      const images =
-        input.format !== "image" && !messages
-          ? input.inputReferences?.length
-            ? mergeImages(input.inputReferences, expanded.images)
-            : expanded.images
-          : undefined;
+      const messages = input.messages?.map(({ role, content }) => ({
+        role,
+        content: interpolateLegacyVariables(content, input, row, column),
+      }));
+      const prompt = messages
+        ? messages
+            .map(({ role, content }) => `${role}: ${content}`)
+            .join("\n\n")
+        : interpolateLegacyVariables(input.prompt, input, row, column);
       return {
         row,
         column,
         ...selections,
-        prompt: expanded.text,
+        prompt,
         ...(messages ? { messages } : {}),
-        ...(images ? { images } : {}),
         budgetUsd: input.budgetUsd,
         ...(input.format === "image"
           ? { imageSettings: normalizeLegacyImageSettings(imageSettings) }

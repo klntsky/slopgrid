@@ -12,11 +12,9 @@ type Criteria = Criterion[];
 export function CriteriaEditor({
   criteria,
   onChange,
-  label,
 }: {
   criteria: Criteria;
   onChange: (criteria: Criteria) => void;
-  label?: string;
 }) {
   const root = useRef<HTMLTableElement>(null);
   const [dragging, setDragging] = useState<number>();
@@ -43,11 +41,7 @@ export function CriteriaEditor({
   }
 
   return (
-    <div
-      className="criteria-editor"
-      role={label ? "group" : undefined}
-      aria-label={label}
-    >
+    <div className="criteria-editor">
       <table className="criteria-table" ref={root}>
         <colgroup>
           <col className="criteria-handle-column" />

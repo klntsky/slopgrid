@@ -541,7 +541,7 @@ test("legacy key grouping shares judged output only and keeps the physical outpu
       assert.equal(physical.thinking_source_id, "physical-owner");
       assert.equal(JSON.parse(physical.data).attemptId, "committed-attempt");
       assert.deepEqual(JSON.parse(physical.data).output, {
-        provenance: { signature: "", files: ["index.md"] },
+        provenance: { signature: "", files: ["image"] },
         thinkingId: "saved-trace",
         usage: { costUsd: 0.25 },
       });
@@ -653,6 +653,9 @@ test("production v14 upgrades templates without changing accepted tasks, receipt
     seedLegacy(db, 14);
     const legacyInput = {
       ...input,
+      format: "chat-template",
+      inputReferences: undefined,
+      referenceGroups: undefined,
       prompt: "Compare $ROW and $COLUMN; $ROW1 $ROWS $ROW_suffix",
       rows: { kind: "variable", values: ["Literal $ROW", "two"] },
       columns: { kind: "variable", values: ["Literal $COLUMN"] },
@@ -732,38 +735,20 @@ test("production v14 upgrade rolls back its SQL, grids and version when a later 
   }
 });
 
-test("production v14 upgrade backfills variable and chat references while retaining historical usage links", () => {
+test("production v14 upgrade backfills Image group references while retaining historical usage links", () => {
   const db = legacyDatabase(14);
   try {
     seedLegacy(db, 14);
     migration.replaceLegacyGridInputs(db, {
       ...input,
-      prompt: "$ROW1",
-      rows: {
-        kind: "variable",
-        values: [
-          [
-            { text: "used", images: [{ id: "field-used", name: "used.png" }] },
-            {
-              text: "unused",
-              images: [{ id: "field-unused", name: "unused.png" }],
-            },
-          ],
-        ],
+      rows: { kind: "input_references", values: ["selected"] },
+      referenceGroups: {
+        selected: [{ id: "group-image", name: "group.png" }],
       },
-      messages: [
-        {
-          role: "user",
-          content: "image",
-          images: [{ id: "message", name: "message.png" }],
-        },
-      ],
     });
     initializeDatabase(db);
     assert.deepEqual(migration.migratedGridReferenceIds(db), [
-      { reference_id: "field-unused" },
-      { reference_id: "field-used" },
-      { reference_id: "message" },
+      { reference_id: "group-image" },
       { reference_id: "missing-reference" },
       { reference_id: "reference" },
       { reference_id: "unused-reference" },
@@ -774,25 +759,22 @@ test("production v14 upgrade backfills variable and chat references while retain
   }
 });
 
-test("legacy workflow restoration resolves rubric variables and images into accepted tasks", () => {
-  const images = [
-    { id: "first-answer", name: "first.png" },
-    { id: "second-answer", name: "second.png" },
+test("legacy workflow restoration preserves a literal common rubric for every case", () => {
+  const criteria = [
+    { text: "Does $ROW match $COLUMN1?", correctAnswer: false },
   ];
-  const criteria = [{ text: "Does $ROW1 match?", correctAnswer: false }];
   const db = legacyDatabase(13);
   try {
     seedLegacy(db, 13);
     const source = {
       ...input,
+      format: "markdown",
       prompt: "Describe a shape.",
       inputReferences: undefined,
       referenceGroups: undefined,
       rows: {
         kind: "variable",
-        values: images.map((image, index) => [
-          { text: `answer ${index}`, images: [image] },
-        ]),
+        values: ["answer 0", "answer 1"],
       },
       columns: { kind: "effort", values: ["none"] },
       judge: { model: "judge", effort: "high", criteria },
@@ -816,14 +798,12 @@ test("legacy workflow restoration resolves rubric variables and images into acce
     assert.deepEqual(tasks["j:cell"].input, {
       model: "judge",
       effort: "high",
-      criteria: [{ text: "Does answer 0 match?", correctAnswer: false }],
-      images: [images[0]],
+      criteria,
     });
     assert.deepEqual(tasks["j:second-case"].input, {
       model: "judge",
       effort: "high",
-      criteria: [{ text: "Does answer 1 match?", correctAnswer: false }],
-      images: [images[1]],
+      criteria,
     });
     assert.equal(migration.migratedTaskCount(db, "generation"), 1);
     assert.equal(tasks["g:cell"].input.prompt, source.prompt);

@@ -27,8 +27,8 @@ function safeLegacyTemplates(input: LegacyGridInput): boolean {
       (token, name: string, number: string) => {
         const axis = input[name === "ROW" ? "rows" : "columns"];
         return axis.kind === "variable" &&
-          /^[1-9]\d*$/.test(number) &&
-          axis.values.every((fields) => fields?.[Number(number) - 1])
+          number === "1" &&
+          axis.values.every((fields) => fields?.[0])
           ? ""
           : token;
       },
@@ -38,7 +38,7 @@ function safeLegacyTemplates(input: LegacyGridInput): boolean {
   for (const axis of [input.rows, input.columns])
     if (axis.kind === "variable")
       for (const fields of axis.values) {
-        if (!Array.isArray(fields)) return false;
+        if (!Array.isArray(fields) || fields.length !== 1) return false;
         for (const field of fields)
           if (
             !field ||
@@ -47,8 +47,8 @@ function safeLegacyTemplates(input: LegacyGridInput): boolean {
           )
             return false;
       }
-  // Master judge criteria were literal, not templates. In particular, do not
-  // reinterpret tokens normalized by the old metadata migration as variables.
+  // Master rubrics were literal. Current rubric templates cannot preserve
+  // variable-looking text, so these remain available through legacy reads.
   const criteria = input.judge?.criteria ?? [];
   return (
     Array.isArray(criteria) &&
@@ -99,12 +99,12 @@ function legacyDraft(input: LegacyGridInput): GridDraftInput | undefined {
   };
   const messages: ChatMessage[] =
     legacy.format === "chat-template"
-      ? (legacy.messages ?? [])
+      ? (legacy.messages ?? []).map(({ role, content }) => ({ role, content }))
       : [
           {
             role: "user",
             content: legacy.prompt,
-            ...(legacy.inputReferences?.length
+            ...(legacy.format === "image" && legacy.inputReferences?.length
               ? { images: legacy.inputReferences }
               : {}),
           },
@@ -163,7 +163,7 @@ function legacyDraft(input: LegacyGridInput): GridDraftInput | undefined {
       if (!ownCases(side)) return;
       draft.parameters.variable = { kind: side };
       draft[side].forEach((record, index) => {
-        record.variable = axis.values[index];
+        record.variable = [{ text: axis.values[index][0].text }];
       });
     } else if (axis.kind === "input_references") {
       if (legacy.format !== "image" || !ownCases(side)) return;

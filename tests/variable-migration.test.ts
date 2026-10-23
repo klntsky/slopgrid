@@ -12,7 +12,6 @@ test("legacy variable axes upgrade only whole template tokens, without interpola
       {
         role: "user",
         content: "$ROW: $COLUMN; $ROW",
-        images: [{ id: "photo", name: "photo.png" }],
       },
       { role: "unfilled", content: "" },
     ],
@@ -39,21 +38,13 @@ test("legacy variable axes upgrade only whole template tokens, without interpola
       { ...input.messages[0], content: "$ROW1: $COLUMN1; $ROW1" },
       input.messages[1],
     ],
-    judge: {
-      ...input.judge,
-      criteria: [
-        { text: "Is $ROW1 better than $COLUMN1?", correctAnswer: false },
-      ],
-    },
   });
   assert.deepEqual(input, before);
   assert.equal(migrateVariableInput(migrated), migrated);
 });
 
 test("mixed inputs rename only the axis whose persisted shape is legacy", () => {
-  const fields = [
-    [{ text: "$COLUMN", images: [{ id: "field", name: "field.png" }] }],
-  ];
+  const fields = [[{ text: "$COLUMN" }]];
   assert.deepEqual(
     migrateVariableInput({
       prompt: "$ROW $COLUMN",

@@ -15,7 +15,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { PassThrough } from "node:stream";
-import { parseArgs, quote } from "../lib/common.mjs";
+import { deploymentOptions, parseArgs, quote } from "../lib/common.mjs";
 import { commands, parseCommandLine, showHelp } from "../lib/cli-options.mjs";
 
 const source = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -95,6 +95,7 @@ test("parser preserves validation, production, scoped-test and path safety polic
     ["rehearse", "--mode=machinery"],
     ["production", "--unit=tests/a.test.ts"],
     ["production", "--browser=tests/a.spec.ts"],
+    ["production", "--grep=case"],
     ["staging", "--skip-tests", "--unit=tests/a.test.ts"],
     ["staging", "--grep=case"],
     ["staging", "--suite=invalid"],
@@ -106,9 +107,24 @@ test("parser preserves validation, production, scoped-test and path safety polic
   assert.equal(parseArgs(["production", "HEAD~2"]).tests, "full");
   assert.equal(parseArgs(["production", "--skip-tests"]).tests, "skip");
   assert.equal(parseArgs(["rehearse", "--skip-tests"]).tests, "skip");
+  assert.equal(parseArgs(["production", "--suite=real"]).suite, "real");
+  assert.equal(parseArgs(["validate", "--mode=auto"]).mode, "auto");
+  assert.equal(parseArgs(["staging"]).revision, "HEAD");
+  assert.equal(parseArgs(["validate"]).target, "validate");
+  const invocation = parseCommandLine(["staging", "release/next", "--plan"]);
+  assert.equal(deploymentOptions(invocation).revision, "release/next");
+  assert.equal(deploymentOptions(invocation).plan, true);
 });
 
 test("grid discard and failed-start recovery remain staging-only and reject soft mode", () => {
+  for (const target of ["staging", "production"])
+    assert.equal(parseArgs([target]).recoverFailedStart, false);
+  for (const mode of ["auto", "machinery"])
+    assert.equal(
+      parseArgs(["staging", "--recover-failed-start", `--mode=${mode}`])
+        .recoverFailedStart,
+      true,
+    );
   const first = "a".repeat(48),
     second = "b".repeat(48);
   const result = parseArgs([
@@ -126,6 +142,7 @@ test("grid discard and failed-start recovery remain staging-only and reject soft
   for (const flags of [
     [`--discard-grid=${first}`, "--mode=soft"],
     ["--recover-failed-start", "--mode=soft"],
+    ["--recover-failed-start", "--skip-tests", "--unit=tests/a.test.ts"],
     [`--discard-grid=${first}`, `--discard-grid=${first}`],
     ["--discard-grid=not-an-id"],
   ])

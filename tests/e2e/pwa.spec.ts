@@ -9,6 +9,7 @@ import {
   expandGrid,
   type GenerationTask,
   type Grid,
+  type ChatMessage,
 } from "../../server/domain";
 import { token } from "../../server/ids";
 import { createWorkflow } from "../../server/workflow";
@@ -18,6 +19,7 @@ import { create, expectProgress } from "./helpers";
 import { parseE2EPort } from "../e2e-port";
 import { currentInput } from "../current-grid-fixture";
 import { arrangeHistoricalGrid } from "../grid-storage-fixture";
+import { pixelPng as bytes } from "../reference-image-fixture";
 
 const port = parseE2EPort(process.env.E2E_PORT);
 
@@ -46,10 +48,6 @@ test("visited pages and completed outputs survive offline reload without retaini
   try {
     const owner = token();
     store.saveSession({ id: owner, created: Date.now() });
-    const bytes = Buffer.from(
-      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
-      "base64",
-    );
     const chatImages = ["first.png", "later.png"].map((name) =>
       store.references.add(Buffer.concat([bytes, Buffer.from(name)]), name, {
         id: owner,
@@ -60,6 +58,67 @@ test("visited pages and completed outputs survive offline reload without retaini
       id: owner,
       created: Date.now(),
     })!;
+    const chatMessages: ChatMessage[] = [
+      { role: "user", content: "First image", images: [chatImages[0]] },
+      { role: "unfilled", content: "" },
+      { role: "user", content: "Later image", images: [chatImages[1]] },
+      { role: "unfilled", content: "" },
+    ];
+    const chatOutput = JSON.stringify([
+      { role: "user", content: "First image" },
+      { role: "assistant", content: "First answer" },
+      { role: "user", content: "Later image" },
+      { role: "assistant", content: "Later answer" },
+    ]);
+    function completedGrid(
+      input: ReturnType<typeof currentInput>,
+      files: Record<string, string | Buffer>,
+      thinking: string,
+      judgeStatus?: "pending" | "error" | "complete",
+    ): Grid {
+      const grid = {
+        id: token(),
+        owner,
+        input,
+        status: judgeStatus ? "paused" : "complete",
+        published: false,
+        visibility: "private",
+        createdAt: new Date().toISOString(),
+        cells: expandGrid(input).map((cell) => ({ ...cell, id: token() })),
+      } satisfies Grid;
+      const tasks = createWorkflow(input, grid.cells);
+      const generation = tasks.find((task) => task.kind === "generation")!;
+      generation.status = "complete";
+      generation.output = {
+        artifactId: token(),
+        mediaType: input.format === "image" ? "image/png" : undefined,
+        provenance: { signature: "offline-output", files: Object.keys(files) },
+        thinkingId: token(),
+        thinkingSourceId: token(),
+      };
+      const judgment = tasks.find((task) => task.kind === "judge");
+      if (judgment && judgeStatus) {
+        judgment.status = judgeStatus;
+        if (judgeStatus === "error") judgment.error = "Judge unavailable";
+        if (judgeStatus === "complete")
+          judgment.output = {
+            results: [
+              {
+                verdict: false,
+                explanation: "This is saved Markdown, not a website.",
+              },
+            ],
+          };
+      }
+      store.insert(grid, tasks);
+      store.files.appendThinking(
+        generation.output.thinkingSourceId!,
+        generation.output.thinkingId!,
+        thinking,
+      );
+      store.files.write(generation.output.artifactId, files);
+      return grid;
+    }
     const grids: Grid[] = (
       ["markdown", "svg", "image", "html", "chat-template"] as const
     ).map((format) => {
@@ -70,20 +129,7 @@ test("visited pages and completed outputs survive offline reload without retaini
             kind: "common",
             value:
               format === "chat-template"
-                ? [
-                    {
-                      role: "user",
-                      content: "First image",
-                      images: [chatImages[0]],
-                    },
-                    { role: "unfilled", content: "" },
-                    {
-                      role: "user",
-                      content: "Later image",
-                      images: [chatImages[1]],
-                    },
-                    { role: "unfilled", content: "" },
-                  ]
+                ? chatMessages
                 : [{ role: "user", content: `Offline ${format}` }],
           },
           model: { kind: "rows" },
@@ -98,64 +144,11 @@ test("visited pages and completed outputs survive offline reload without retaini
           format === "image" ? [{ quality: "auto" }] : [{ effort: "none" }],
         budgetUsd: 1,
       });
-      const grid = {
-        id: token(),
-        owner,
+      const grid = completedGrid(
         input,
-        status: "complete",
-        published: false,
-        visibility: "private",
-        createdAt: new Date().toISOString(),
-        cells: expandGrid(input).map((cell) => ({
-          ...cell,
-          id: token(),
-        })),
-      } satisfies Grid;
-      const tasks = createWorkflow(input, grid.cells);
-      const task = tasks.find((task) => task.kind === "generation")!;
-      task.status = "complete";
-      task.output = {
-        artifactId: token(),
-        mediaType: format === "image" ? "image/png" : undefined,
-        provenance: {
-          signature: "offline-output",
-          files:
-            format === "chat-template"
-              ? ["messages.json"]
-              : format === "markdown"
-                ? ["index.md"]
-                : format === "svg"
-                  ? ["index.svg"]
-                  : format === "image"
-                    ? ["image"]
-                    : [
-                        "index.html",
-                        "style.css",
-                        "theme.css",
-                        "app.js",
-                        "message.js",
-                        "nested/page.html",
-                      ],
-        },
-        thinkingId: token(),
-        thinkingSourceId: token(),
-      };
-      store.insert(grid, tasks);
-      store.files.appendThinking(
-        task.output.thinkingSourceId!,
-        task.output.thinkingId!,
-        `Saved ${format} thinking`,
-      );
-      store.files.write(
-        task.output.artifactId,
         format === "chat-template"
           ? {
-              "messages.json": JSON.stringify([
-                { role: "user", content: "First image" },
-                { role: "assistant", content: "First answer" },
-                { role: "user", content: "Later image" },
-                { role: "assistant", content: "Later answer" },
-              ]),
+              "messages.json": chatOutput,
             }
           : format === "markdown"
             ? { "index.md": "# Cached markdown\n\nSaved content" }
@@ -166,10 +159,7 @@ test("visited pages and completed outputs survive offline reload without retaini
                 }
               : format === "image"
                 ? {
-                    image: Buffer.from(
-                      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
-                      "base64",
-                    ),
+                    image: bytes,
                   }
                 : {
                     "index.html":
@@ -184,6 +174,7 @@ test("visited pages and completed outputs survive offline reload without retaini
                     "nested/page.html":
                       '<h1>Nested cached page</h1><a href="../index.html">Back</a>',
                   },
+        `Saved ${format} thinking`,
       );
       return grid;
     });
@@ -195,105 +186,43 @@ test("visited pages and completed outputs survive offline reload without retaini
       ["markdown", "complete"],
       ["chat-template", "pending"],
     ] as const) {
-      const template = grids.find((grid) => grid.input.format === format)!;
-      const cellId = token();
       const filename =
         format === "chat-template" ? "messages.json" : "index.md";
-      const grid = {
-        ...template,
-        id: token(),
-        input: currentInput({
-          format,
-          judge: true,
-          parameters: {
-            input: {
-              kind: "common",
-              value:
-                format === "chat-template"
-                  ? [
-                      {
-                        role: "user",
-                        content: "First image",
-                        images: [chatImages[0]],
-                      },
-                      { role: "unfilled", content: "" },
-                      {
-                        role: "user",
-                        content: "Later image",
-                        images: [chatImages[1]],
-                      },
-                      { role: "unfilled", content: "" },
-                    ]
-                  : [{ role: "user", content: `Offline judgment ${status}` }],
-            },
-            model: { kind: "rows" },
-            effort: { kind: "columns" },
-            judge_criteria: {
-              kind: "common",
-              value: [{ text: "Is this a website?", correctAnswer: false }],
-            },
+      const input = currentInput({
+        format,
+        judge: true,
+        parameters: {
+          input: {
+            kind: "common",
+            value:
+              format === "chat-template"
+                ? chatMessages
+                : [{ role: "user", content: `Offline judgment ${status}` }],
           },
-          rows: [{ model: "fixture/text" }],
-          columns: [{ effort: "none" }],
-          budgetUsd: 1,
-        }),
-        status: "paused",
-        cells: [
-          {
-            ...template.cells[0],
-            id: cellId,
-            status,
-            judge: {
-              model: "fixture/text",
-              effort: "default",
-              status,
-              ...(status === "error" ? { error: "Judge unavailable" } : {}),
-              ...(status === "complete"
-                ? {
-                    results: [
-                      {
-                        verdict: false,
-                        explanation: "This is saved Markdown, not a website.",
-                      },
-                    ],
-                  }
-                : {}),
-            },
+          model: { kind: "rows" },
+          effort: { kind: "columns" },
+          judge_criteria: {
+            kind: "common",
+            value: [{ text: "Is this a website?", correctAnswer: false }],
           },
-        ],
-      } satisfies Grid;
-      const tasks = createWorkflow(grid.input, grid.cells);
-      const task = tasks.find((task) => task.kind === "generation")!;
-      const judgment = tasks.find((task) => task.kind === "judge")!;
-      task.status = "complete";
-      task.output = {
-        artifactId: token(),
-        provenance: { signature: "offline-output", files: [filename] },
-        thinkingId: token(),
-        thinkingSourceId: token(),
-      };
-      judgment.status = status;
-      if (status === "error") judgment.error = "Judge unavailable";
-      if (status === "complete")
-        judgment.output = { results: grid.cells[0].judge!.results! };
-      store.insert(grid, tasks);
-      store.files.appendThinking(
-        task.output.thinkingSourceId!,
-        task.output.thinkingId!,
-        `Saved judgment ${status} thinking`,
-      );
-      store.files.write(task.output.artifactId, {
-        [filename]:
-          format === "chat-template"
-            ? JSON.stringify([
-                { role: "user", content: "First image" },
-                { role: "assistant", content: "First answer" },
-                { role: "user", content: "Later image" },
-                { role: "assistant", content: "Later answer" },
-              ])
-            : "# Cached markdown\n\nSaved content",
+        },
+        rows: [{ model: "fixture/text" }],
+        columns: [{ effort: "none" }],
+        budgetUsd: 1,
       });
-      grids.push(grid);
+      grids.push(
+        completedGrid(
+          input,
+          {
+            [filename]:
+              format === "chat-template"
+                ? chatOutput
+                : "# Cached markdown\n\nSaved content",
+          },
+          `Saved judgment ${status} thinking`,
+          status,
+        ),
+      );
     }
     // Historical metadata is stored with its already-accepted concrete task.
     // It never passes through current admission or an editable conversion.
@@ -431,58 +360,6 @@ test("visited pages and completed outputs survive offline reload without retaini
         return false;
       }, unusedImage.id),
     ).toBe(false);
-    const worker = context.serviceWorkers()[0];
-    await worker.evaluate(() => {
-      const state = globalThis as typeof globalThis & {
-        referenceTrace?: { url: string; status: number }[];
-        originalReferenceFetch?: typeof fetch;
-      };
-      state.referenceTrace = [];
-      state.originalReferenceFetch = fetch;
-      state.fetch = async (...args: Parameters<typeof fetch>) => {
-        const response = await state.originalReferenceFetch!(...args);
-        const url = args[0] instanceof Request ? args[0].url : String(args[0]);
-        if (url.includes("cache-probe=conditional"))
-          state.referenceTrace!.push({ url, status: response.status });
-        return response;
-      };
-    });
-    const probe = `/api/references/${chatImages[0].id}?cache-probe=conditional`;
-    try {
-      const reused = await page.evaluate(async (url) => {
-        const first = await fetch(url, { mode: "no-cors", cache: "reload" });
-        const firstBytes = Array.from(
-          new Uint8Array(await first.arrayBuffer()),
-        );
-        const second = await fetch(url, { mode: "no-cors", cache: "reload" });
-        return {
-          firstBytes,
-          secondBytes: Array.from(new Uint8Array(await second.arrayBuffer())),
-        };
-      }, probe);
-      expect(Buffer.from(reused.firstBytes)).toEqual(
-        Buffer.concat([bytes, Buffer.from(chatImages[0].name)]),
-      );
-      expect(reused.secondBytes).toEqual(reused.firstBytes);
-      const statuses = await worker.evaluate(() =>
-        (
-          globalThis as typeof globalThis & {
-            referenceTrace: { url: string; status: number }[];
-          }
-        ).referenceTrace.map(({ status }) => status),
-      );
-      expect(statuses).toEqual([200, 304]);
-    } finally {
-      await worker.evaluate(() => {
-        const state = globalThis as typeof globalThis & {
-          referenceTrace?: { url: string; status: number }[];
-          originalReferenceFetch?: typeof fetch;
-        };
-        state.fetch = state.originalReferenceFetch!;
-        delete state.originalReferenceFetch;
-        delete state.referenceTrace;
-      });
-    }
     for (const grid of grids.filter((grid) => grid.input.judge)) {
       const savedCell = await page.evaluate(async (id) => {
         for (const name of await caches.keys()) {

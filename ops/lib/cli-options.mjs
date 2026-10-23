@@ -9,7 +9,7 @@ export const commands = {
     description:
       "Validate a committed candidate in an isolated workspace without deploying.",
     details:
-      "Runs the complete suite by default. Scoped tests select individual files. Deployment modes and skipped tests are not permitted.",
+      "Runs the complete suite by default. Scoped tests select individual files. Skipped tests and deployment modes other than the explicit default --mode=auto are not permitted.",
   },
   rehearse: {
     argument: "[REV]",
@@ -52,12 +52,20 @@ const options = {
     type: "string",
     value: "auto|soft|machinery",
     targets: ["staging", "production"],
+    // Validation intentionally permits the explicit default, but no deployment mode.
+    exceptions: { validate: (value) => value === "auto" },
+    error: (target) =>
+      target === "rehearse"
+        ? "Rehearsal does not accept deployment modes"
+        : "Validation requires tests and does not accept deployment modes",
     description:
       "Deployment mode (default: auto); soft rejects incompatible engine changes.",
   },
   "skip-tests": {
     type: "boolean",
     targets: ["rehearse", "staging", "production"],
+    error: () =>
+      "Validation requires tests and does not accept deployment modes",
     description:
       "Explicitly skip test suites, not required migrations or production authorization.",
   },
@@ -66,6 +74,7 @@ const options = {
     multiple: true,
     value: "FILE",
     targets: scopedTargets,
+    error: () => "Production requires the full suite or explicit --skip-tests",
     description: "Select a tests/*.test.ts file; repeat for more files.",
   },
   browser: {
@@ -73,13 +82,15 @@ const options = {
     multiple: true,
     value: "FILE",
     targets: scopedTargets,
+    error: () => "Production requires the full suite or explicit --skip-tests",
     description: "Select a tests/*.spec.ts file; repeat for more files.",
   },
   suite: {
     type: "string",
     value: "mock|real",
-    targets: scopedTargets,
-    description: "Scoped browser suite (default: mock).",
+    targets: deployments,
+    description:
+      "Scoped browser suite (default: mock); accepted but unused for full-suite runs.",
   },
   grep: {
     type: "string",
@@ -92,12 +103,14 @@ const options = {
     multiple: true,
     value: "ID",
     targets: ["staging"],
+    error: () => "Grid deletion is only permitted on staging",
     description:
       "Delete a selected staging grid after backup; repeat for more IDs.",
   },
   "recover-failed-start": {
     type: "boolean",
     targets: ["staging"],
+    error: () => "--recover-failed-start is only permitted on staging",
     description:
       "Recover an unpromoted staging engine that failed before readiness.",
   },
@@ -118,6 +131,19 @@ const parserOptions = Object.fromEntries(
     },
   ]),
 );
+
+export function assertOptionTargets(target, values) {
+  for (const [name, value] of Object.entries(values)) {
+    const option = options[name];
+    if (option.targets.includes(target) || option.exceptions?.[target]?.(value))
+      continue;
+    throw new Error(
+      target === "status"
+        ? "Status does not accept operational options"
+        : (option.error?.(target) ?? `--${name} is not permitted on ${target}`),
+    );
+  }
+}
 
 export function parseCommandLine(args) {
   let parsed;
@@ -164,8 +190,7 @@ export function parseCommandLine(args) {
   if (!target && Object.keys(values).some((name) => name !== "help"))
     throw new Error("A command is required for operational options");
   if (target === "status") {
-    if (Object.keys(values).some((name) => name !== "help"))
-      throw new Error("Status does not accept operational options");
+    assertOptionTargets(target, values);
     if (!help && !/^[a-zA-Z0-9-]+$/.test(argument ?? ""))
       throw new Error("Invalid run ID");
   }

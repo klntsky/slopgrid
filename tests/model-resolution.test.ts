@@ -2,8 +2,9 @@ import { generatorInputForCell } from "../server/generator-input.js";
 import { appFixture } from "./app-fixture.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { setImmediate as immediate } from "node:timers/promises";
 import { Provider, type Model } from "../server/provider.js";
-import { resolveGridModels } from "../server/model-resolution.js";
+import { prepareGridModels } from "../server/model-resolution.js";
 import {
   expandGrid,
   gridSchema,
@@ -12,11 +13,12 @@ import {
 } from "../server/domain.js";
 import { parameterValue, isCurrentGridInput } from "../server/parameters.js";
 import { currentDefinition } from "./current-grid-fixture.js";
-import {
-  generatorReferences,
-  judgeReferences,
-  selectedReferences,
-} from "../server/image-settings.js";
+import { selectedReferences } from "../server/image-settings.js";
+import { resolveCriteriaForCell } from "../server/judge-criteria.js";
+
+function resolveGridModels(input: GridInput, models: readonly Model[]) {
+  return prepareGridModels(input, models).input;
+}
 
 const input = currentDefinition({
   parameters: {
@@ -44,6 +46,14 @@ function models(target = "fixture/v1"): Model[] {
     reasoningMandatory: false,
   }));
 }
+
+test("model admission retains the resolved expansion for workflow creation", () => {
+  const prepared = prepareGridModels(gridSchema.parse(input), models());
+  assert.equal(parameterValue(prepared.input, "model", 0, 0), "fixture/v1");
+  assert.deepEqual(prepared.cells, expandGrid(prepared.input));
+  assert.equal(prepared.cells[0].model, "fixture/v1");
+});
+
 test("published alias targets resolve in both axis orientations and duplicate targets collapse", () => {
   assert.equal(
     parameterValue(resolveGridModels(input, models()), "model", 0, 0),
@@ -386,8 +396,10 @@ for (const format of ["markdown", "svg"] as const)
       caseAxis: "rows",
     });
     assert.deepEqual(selectedReferences(source), [common, variable, unused]);
-    assert.deepEqual(generatorReferences(source), [common, variable]);
-    assert.deepEqual(judgeReferences(source), [common, variable]);
+    assert.deepEqual(expandGrid(source)[0].messages?.[0].images, [
+      common,
+      variable,
+    ]);
     const catalog = judgeModels().map((model) => ({
       ...model,
       imageInput: model.id !== "fixture/v2",
@@ -461,8 +473,14 @@ for (const format of ["markdown", "svg"] as const)
         },
       },
     });
-    assert.deepEqual(generatorReferences(textOnly), []);
-    assert.deepEqual(judgeReferences(textOnly), []);
+    assert.deepEqual(
+      expandGrid(textOnly).flatMap(
+        (cell) =>
+          cell.messages?.flatMap((message) => message.images ?? []) ?? [],
+      ),
+      [],
+    );
+    assert.deepEqual(resolveCriteriaForCell(textOnly, 0, 0).images ?? [], []);
     if (format === "markdown")
       assert.equal(
         parameterValue(
@@ -1039,7 +1057,19 @@ for (const moving of [false, true])
       assert.ok(response.ok, await response.clone().text());
       return response.json();
     }
-    const settle = () => new Promise<void>((resolve) => setImmediate(resolve));
+    async function settle(calls: number) {
+      const deadline = Date.now() + 5000;
+      while (
+        provider.called.length < calls ||
+        store.all().some((grid) => grid.status === "running")
+      ) {
+        assert.ok(
+          Date.now() < deadline,
+          "Expected provider calls and settled grids",
+        );
+        await immediate();
+      }
+    }
     const selected = moving
       ? "fixture/chat-latest"
       : parameterValue(input, "model", 0, 0)!;
@@ -1054,13 +1084,13 @@ for (const moving of [false, true])
         },
       }),
     );
-    await settle();
+    await settle(1);
     const storedInput = store.get(created.id)!.input;
     assert.ok(isCurrentGridInput(storedInput));
     assert.equal(parameterValue(storedInput, "model", 0, 0), expected);
     provider.target = "fixture/v2";
     await post(`/grids/${created.id}/retry`);
-    await settle();
+    await settle(2);
     const edited = await post(`/grids/${created.id}/edit`);
     assert.equal(parameterValue(edited.input, "model", 0, 0), expected);
     await post("/grids", edited.input);
@@ -1070,7 +1100,7 @@ for (const moving of [false, true])
     ).json();
     assert.equal(parameterValue(published.input, "model", 0, 0), expected);
     await post("/grids", published.input);
-    await settle();
+    await settle(4);
     assert.deepEqual(provider.called, [expected, expected, expected, expected]);
     assert.ok(!JSON.stringify(store.all()).includes("~fixture/latest"));
   });

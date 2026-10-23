@@ -30,12 +30,8 @@ import {
   referenceJpeg,
   referenceWebp,
   orientedReferenceJpeg,
+  pixelPng as png,
 } from "./reference-image-fixture.js";
-
-const png = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
-  "base64",
-);
 
 for (const shared of [false, true])
   test(`reference uploads follow ownership, account claims, selected publication and fork access (shared=${shared})`, async (t) => {

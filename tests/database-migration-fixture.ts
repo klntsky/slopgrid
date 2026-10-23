@@ -97,7 +97,7 @@ export function legacyDatabase(version: number) {
   return db;
 }
 export const input = {
-  format: "markdown",
+  format: "image",
   prompt: "Hello {name}",
   model: "generator",
   effort: "none",
@@ -257,7 +257,7 @@ export function seedLegacy(db: Database.Database, version: number) {
     ).run(
       JSON.stringify({
         input: {
-          format: "markdown",
+          format: "image",
           model: "generator",
           effort: "none",
           prompt: "Accepted prompt",
@@ -267,7 +267,7 @@ export function seedLegacy(db: Database.Database, version: number) {
         output: {
           provenance: {
             signature: "saved-signature",
-            files: ["index.md"],
+            files: ["image"],
             templateSteps: [{ maxOutputTokens: 99, usage: { costUsd: 0.25 } }],
           },
           usage: { costUsd: 0.25, inputTokens: 10, outputTokens: 20 },

@@ -2,11 +2,7 @@ import type Database from "better-sqlite3";
 import type { Cell, StoredGridInput } from "./domain.js";
 import { generationPartitionKey } from "../shared/generation-key.js";
 import { migrateVariableInput } from "../shared/variable-migration.js";
-import {
-  expandLegacyGrid,
-  resolveLegacyCriteriaForCell,
-  type LegacyGridInput,
-} from "./legacy-grid-input.js";
+import { expandLegacyGrid, type LegacyGridInput } from "./legacy-grid-input.js";
 import { selectedReferences } from "./image-settings.js";
 
 const schemaVersion = 17;
@@ -340,11 +336,6 @@ function migrateWorkflow(db: Database.Database) {
             errorCode,
             results,
           } = cell.judge;
-          const { criteria, images } = resolveLegacyCriteriaForCell(
-            input,
-            cell.row,
-            cell.column,
-          );
           insertTask.run(
             judgmentId,
             grid.id,
@@ -357,8 +348,7 @@ function migrateWorkflow(db: Database.Database) {
               input: {
                 model,
                 effort,
-                criteria,
-                ...(images ? { images } : {}),
+                criteria: input.judge?.criteria ?? [],
               },
               attemptId,
               error,
