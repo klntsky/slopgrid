@@ -141,7 +141,6 @@ test("occupied backend fails without disturbing the existing listener", async (t
 for (const [name, change, expected] of [
   ["stale OAuth origin", (f) => f.writeEnvironment("APP_ORIGIN=https://old.invalid\n"), /origin/i],
   ["public credential file", (f) => chmodSync(f.envFile, 0o644), /private|permission|mode/i],
-  ["missing OAuth credentials", (f) => f.writeEnvironment("GITHUB_CLIENT_SECRET=\n"), /GitHub|OAuth|credential/i],
   ["invalid fixed backend port", (f) => f.writeEnvironment("PORT=0\n"), /port/i],
   ["output domain without its required hyphen", (f) => f.writeEnvironment("OUTPUT_DOMAIN=demo.example.invalid\n"), /OUTPUT_DOMAIN/i],
 ]) test(`demo rejects ${name} before starting the service`, async (t) => {

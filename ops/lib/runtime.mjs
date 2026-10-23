@@ -54,8 +54,6 @@ export function environment(target) {
     throw new Error(
       "Runtime environment needs HTTPS APP_ORIGIN, PORT, OUTPUT_DOMAIN and KEY_ENCRYPTION_SECRET",
     );
-  if (!env.GITHUB_CLIENT_ID || !env.GITHUB_CLIENT_SECRET)
-    throw new Error("Runtime environment needs GitHub OAuth credentials");
   return env;
 }
 

@@ -160,12 +160,12 @@ Tailscale Serve. Ask the host administrator to enable lingering for your account
 with `loginctl enable-linger USER` so the user manager survives logout.
 
 Create the dedicated demo environment file with mode `0600`. Set `PORT` to an
-unused loopback backend port. Supply dedicated `GITHUB_CLIENT_ID` and
-`GITHUB_CLIENT_SECRET` credentials and a demo-only `OUTPUT_DOMAIN`. The app origin
-uses the current node's Tailscale DNS name and `OPS_DEMO_HTTPS_PORT`. Register
-that exact origin with GitHub at `/api/auth/github/callback` and with OpenRouter
-at `/api/auth/callback`. If the environment file includes `APP_ORIGIN`, it must
-match the derived origin.
+unused loopback backend port and supply a demo-only `OUTPUT_DOMAIN`. To enable
+GitHub sign-in, also supply both `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`.
+Without them, the demo runs anonymously. The app origin uses the current node's
+Tailscale DNS name and `OPS_DEMO_HTTPS_PORT`. When enabling sign-in, register that
+exact origin with GitHub at `/api/auth/github/callback`. OpenRouter callbacks use
+`/api/auth/callback`. If `APP_ORIGIN` is present, it must match the derived origin.
 
 Tailscale Serve supplies HTTPS for the app hostname. HTML outputs still require
 independent wildcard DNS, trusted TLS, and proxy routing to the demo's backend

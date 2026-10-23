@@ -118,12 +118,15 @@ function readDemoEnvironment(request, origin) {
   const stat = lstatSync(path);
   if (!stat.isFile() || stat.uid !== process.getuid() || (stat.mode & 0o077) !== 0) throw new Error("Demo env file must be a private regular file owned by the current user");
   const original = parseEnv(readFileSync(path, "utf8"));
-  if (!original.GITHUB_CLIENT_ID || !original.GITHUB_CLIENT_SECRET) throw new Error("Demo needs dedicated GitHub OAuth credentials");
   if (!/^-[a-z0-9.:-]+$/.test(original.OUTPUT_DOMAIN ?? "") || !original.OUTPUT_DOMAIN.includes(".")) throw new Error("Demo needs a dedicated hyphen-prefixed OUTPUT_DOMAIN");
   if (original.APP_ORIGIN && original.APP_ORIGIN !== origin) throw new Error(`Demo APP_ORIGIN must match actual Tailscale origin ${origin}`);
   return {
-    GITHUB_CLIENT_ID: original.GITHUB_CLIENT_ID,
-    GITHUB_CLIENT_SECRET: original.GITHUB_CLIENT_SECRET,
+    ...(original.GITHUB_CLIENT_ID?.trim() && original.GITHUB_CLIENT_SECRET?.trim()
+      ? {
+          GITHUB_CLIENT_ID: original.GITHUB_CLIENT_ID.trim(),
+          GITHUB_CLIENT_SECRET: original.GITHUB_CLIENT_SECRET.trim(),
+        }
+      : {}),
     OUTPUT_DOMAIN: original.OUTPUT_DOMAIN,
     PORT: String(validPort(original.PORT, "backend")),
   };

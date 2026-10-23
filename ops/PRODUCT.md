@@ -101,7 +101,8 @@
       Independent validation and rehearsal remain available.
 13. Temporary demos run on the invoking user's local machine and account.
     - Serve the app privately over Tailscale after local candidate preparation.
-      Use dedicated demo credentials, storage, and output hosting.
+      Use dedicated demo storage and output hosting. Enable GitHub sign-in only
+      when both OAuth credentials are supplied; otherwise run anonymously.
     - Stop all demo runtime processes automatically after 24 hours of running,
       independently of the initiating command or SSH connection.
     - Preserve demo data and its encryption key after stopping. Leave deletion
