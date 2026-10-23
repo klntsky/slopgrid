@@ -56,6 +56,9 @@ smallest boundary their behavior requires; process-lifecycle and contention test
 retain independent service processes.
 Related scenario variants may share a private runtime within one test. Fresh pages
 isolate per-tab editor state; fresh contexts also isolate browser session state.
+The harness schedules isolated unit files and mock-browser cases independently in
+bounded worker pools. Live-provider and GitHub browser suites keep their shared
+runtime serial.
 
 The repository's `ops/` directory owns deployment orchestration for committed
 revisions, including release builds, update-mode selection, draining, promotion,
