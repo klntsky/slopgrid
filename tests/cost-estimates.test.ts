@@ -8,6 +8,7 @@ import {
 } from "../server/cost-estimates.js";
 import { parsePricing, effectivePricing } from "../server/model-pricing.js";
 import type { Model } from "../server/provider.js";
+import { chatText, expandGrid, type ChatMessage } from "../server/domain.js";
 import { currentInput } from "./current-grid-fixture.js";
 
 const model: Model = {
@@ -190,8 +191,133 @@ test("unknown chat capacity reserves the configured inference budget instead of 
     0.125,
   );
   assert.equal(
-    estimateCell(model, configured, "chat-template").support,
-    "unknown",
+    estimateCell({ ...model, pricing: undefined }, configured, "chat-template")
+      .reason,
+    "Pricing unavailable.",
   );
-  assert.equal(estimateCell(model, configured, "chat-template").costUsd, 0.125);
 });
+
+for (const finalUnfilled of [false, true]) {
+  test(`single-call chat estimates include all supplied roles with ${finalUnfilled ? "one final explicit unfilled turn" : "zero explicit unfilled turns"}`, () => {
+    const history: ChatMessage[] = [
+      { role: "system", content: "Use UTF-8: é" },
+      { role: "user", content: "First question" },
+      { role: "assistant", content: "Previous answer" },
+      { role: "user", content: "Next question" },
+    ];
+    const messages: ChatMessage[] = finalUnfilled
+      ? [...history, { role: "unfilled", content: "" }]
+      : history;
+    const priced = { ...model, pricing: { prompt: 0.001, completion: 0.001 } };
+    for (const budgetUsd of [3, 0.4]) {
+      const configured = {
+        ...cell,
+        prompt: "This stale prompt is not the inference input.",
+        messages,
+        budgetUsd,
+      };
+      const budget = generationBudget(priced, chatText(history), "", budgetUsd);
+      const estimate = estimateCell(priced, configured, "chat-template");
+      assert.equal(
+        estimate.costUsd,
+        budget.inputCost! +
+          budget.maxOutputTokens! * budget.pricing!.completion,
+      );
+      assert.equal(
+        estimate.maximumCostUsd,
+        budget.inputCost! + budget.ceiling! * budget.pricing!.completion,
+      );
+      assert.equal(
+        estimate.support,
+        budget.maxOutputTokens! < budget.ceiling! ? "unsupported" : "supported",
+      );
+      assert.equal(
+        estimate.support,
+        budgetUsd === 3 ? "supported" : "unsupported",
+      );
+    }
+  });
+}
+
+test("chat grid estimates use per-cell interpolated messages for prompt costs and context caps", () => {
+  const input = currentInput({
+    format: "chat-template",
+    caseAxes: ["rows"],
+    parameters: {
+      model: { kind: "common", value: model.id },
+      input: {
+        kind: "common",
+        value: [
+          { role: "system", content: "Instructions: $ROW1" },
+          { role: "user", content: "Question: $ROW1" },
+          { role: "assistant", content: "Prior: $ROW1" },
+          { role: "unfilled", content: "" },
+        ],
+      },
+    },
+    rows: [
+      { variable: [{ text: "é" }] },
+      { variable: [{ text: "x".repeat(100) }] },
+    ],
+  });
+  const cells = expandGrid(input);
+  for (const priced of [
+    { ...model, pricing: { prompt: 0.001, completion: 0.001 } },
+    { ...model, contextLength: 700, maxCompletionTokens: 1000 },
+  ]) {
+    const { estimates } = estimateGrid(input, [priced]);
+    const expected = cells.map((expanded) => {
+      const history = expanded.messages!.filter(
+        (message) => message.role !== "unfilled",
+      );
+      const budget = generationBudget(
+        priced,
+        chatText(history),
+        "",
+        expanded.budgetUsd,
+      );
+      return (
+        budget.inputCost! + budget.maxOutputTokens! * budget.pricing!.completion
+      );
+    });
+    assert.deepEqual(
+      estimates.map((estimate) => estimate.costUsd),
+      expected,
+    );
+    assert.deepEqual(
+      estimates.map((estimate) => estimate.support),
+      ["supported", "supported"],
+    );
+    assert.notEqual(estimates[0]!.costUsd, estimates[1]!.costUsd);
+  }
+});
+
+for (const implicitFinal of [false, true]) {
+  test(`multi-call chat estimates reserve the full budget ${implicitFinal ? "including an implicit final call after an explicit unfilled turn" : "for explicit unfilled turns"}`, () => {
+    const messages: ChatMessage[] = [
+      { role: "user", content: "First question" },
+      { role: "unfilled", content: "" },
+      { role: "user", content: "Next question" },
+      ...(implicitFinal ? [] : [{ role: "unfilled" as const, content: "" }]),
+    ];
+    const configured = { ...cell, messages, budgetUsd: 0.125 };
+    assert.deepEqual(estimateCell(model, configured, "chat-template"), {
+      costUsd: configured.budgetUsd,
+      support: "unknown",
+    });
+    for (const [incomplete, reason] of [
+      [{ ...model, pricing: undefined }, "Pricing unavailable."],
+      [{ ...model, contextLength: undefined }, "Token limits unavailable."],
+      [
+        { ...model, pricing: { ...model.pricing!, incomplete: true } },
+        "Total cost estimate unavailable.",
+      ],
+    ] as const) {
+      assert.deepEqual(estimateCell(incomplete, configured, "chat-template"), {
+        costUsd: configured.budgetUsd,
+        support: "unknown",
+        reason,
+      });
+    }
+  });
+}
