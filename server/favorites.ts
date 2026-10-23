@@ -4,7 +4,6 @@ import { presentIdentity } from "./grid-presentation.js";
 import type { GridListPage } from "./grid-listing.js";
 import type { Session, Store } from "./store.js";
 
-export type AccountViewer = Session & { userId: string };
 export type FavoriteIds = { ids: GridSummary["id"][] };
 export type FavoriteState = { gridId: GridSummary["id"]; starred: boolean };
 type FavoriteSetResult =
@@ -19,47 +18,76 @@ type SummaryRow = Pick<
   author: string | null;
 };
 
-export function createFavorites(store: Store) {
-  const visible = `f.user_id = ? AND (
+const favoriteStores = {
+  account: { table: "grid_favorites", ownerColumn: "user_id" },
+  anonymous: { table: "anonymous_grid_favorites", ownerColumn: "anonymous_id" },
+};
+
+function prepareFavoriteStore(
+  store: Store,
+  { table, ownerColumn }: (typeof favoriteStores)[keyof typeof favoriteStores],
+) {
+  const visible = `f.${ownerColumn} = ? AND (
     g.published = 1 OR g.owner_user_id = ? OR
     (COALESCE(g.owner_user_id, '') = '' AND g.owner = ?))`;
-  const ids = store.db.prepare<[string, string, string], { id: string }>(
-    `SELECT g.id FROM grid_favorites f JOIN grids g ON g.id=f.grid_id
-    WHERE ${visible} ORDER BY g.id`,
-  );
-  const count = store.db.prepare<[string, string, string], { total: number }>(
-    `SELECT COUNT(*) AS total FROM grid_favorites f JOIN grids g ON g.id=f.grid_id
-    WHERE ${visible}`,
-  );
-  const summaries = store.db.prepare<
-    [string, string, string, number, number],
-    SummaryRow
-  >(`SELECT g.id,g.slug,g.published,g.visibility,
-    json_extract(g.data,'$.title') AS title,
-    json_extract(g.data,'$.expanded_prompt_for_title') AS expanded_prompt_for_title,
-    json_extract(g.data,'$.input.format') AS format,
-    json_extract(g.data,'$.status') AS status,
-    CASE WHEN g.published=1 THEN json_extract(g.data,'$.author') ELSE u.data END AS author
-    FROM grid_favorites f JOIN grids g ON g.id=f.grid_id
-    LEFT JOIN users u ON u.id=g.owner_user_id
-    WHERE ${visible} ORDER BY g.created_at DESC,g.id ASC LIMIT ? OFFSET ?`);
+  return {
+    ids: store.db.prepare<[string, string | null, string], { id: string }>(
+      `SELECT g.id FROM ${table} f JOIN grids g ON g.id=f.grid_id
+      WHERE ${visible} ORDER BY g.id`,
+    ),
+    count: store.db.prepare<[string, string | null, string], { total: number }>(
+      `SELECT COUNT(*) AS total FROM ${table} f JOIN grids g ON g.id=f.grid_id
+      WHERE ${visible}`,
+    ),
+    summaries: store.db.prepare<
+      [string, string | null, string, number, number],
+      SummaryRow
+    >(`SELECT g.id,g.slug,g.published,g.visibility,
+      json_extract(g.data,'$.title') AS title,
+      json_extract(g.data,'$.expanded_prompt_for_title') AS expanded_prompt_for_title,
+      json_extract(g.data,'$.input.format') AS format,
+      json_extract(g.data,'$.status') AS status,
+      CASE WHEN g.published=1 THEN json_extract(g.data,'$.author') ELSE u.data END AS author
+      FROM ${table} f JOIN grids g ON g.id=f.grid_id
+      LEFT JOIN users u ON u.id=g.owner_user_id
+      WHERE ${visible} ORDER BY g.created_at DESC,g.id ASC LIMIT ? OFFSET ?`),
+    add: store.db.prepare(
+      `INSERT INTO ${table} (${ownerColumn},grid_id) VALUES (?,?)
+      ON CONFLICT(${ownerColumn},grid_id) DO NOTHING`,
+    ),
+    remove: store.db.prepare(
+      `DELETE FROM ${table} WHERE ${ownerColumn}=? AND grid_id=?`,
+    ),
+  };
+}
+
+export function createFavorites(store: Store) {
+  const stores = {
+    account: prepareFavoriteStore(store, favoriteStores.account),
+    anonymous: prepareFavoriteStore(store, favoriteStores.anonymous),
+  };
+  function owner(viewer: Session) {
+    const anonymousId = viewer.anonymousId ?? viewer.id;
+    return {
+      id: viewer.userId ?? anonymousId,
+      userId: viewer.userId ?? null,
+      anonymousId,
+      statements:
+        viewer.userId === undefined ? stores.anonymous : stores.account,
+    };
+  }
   const target = store.db.prepare<
     [string],
     { owner: string; ownerUserId: string | null; published: number }
   >(
     "SELECT owner,owner_user_id AS ownerUserId,published FROM grids WHERE id=?",
   );
-  const add = store.db.prepare(
-    "INSERT INTO grid_favorites (user_id,grid_id) VALUES (?,?) ON CONFLICT(user_id,grid_id) DO NOTHING",
-  );
-  const remove = store.db.prepare(
-    "DELETE FROM grid_favorites WHERE user_id=? AND grid_id=?",
-  );
   return {
-    ids({ viewer }: { viewer: AccountViewer }): FavoriteIds {
+    ids({ viewer }: { viewer: Session }): FavoriteIds {
+      const { id, userId, anonymousId, statements } = owner(viewer);
       return {
-        ids: ids
-          .all(viewer.userId, viewer.userId, viewer.anonymousId ?? viewer.id)
+        ids: statements.ids
+          .all(id, userId, anonymousId)
           .map(({ id }) => id),
       };
     },
@@ -67,25 +95,19 @@ export function createFavorites(store: Store) {
       viewer,
       page: requestedPage,
     }: {
-      viewer: AccountViewer;
+      viewer: Session;
       page: number;
     }): GridListPage {
+      const { id, userId, anonymousId, statements } = owner(viewer);
       return store.db.transaction(() => {
-        const owner = viewer.anonymousId ?? viewer.id;
-        const { total } = count.get(viewer.userId, viewer.userId, owner)!;
+        const { total } = statements.count.get(id, userId, anonymousId)!;
         const pageSize = 20;
         const page = Math.min(
           requestedPage,
           Math.max(1, Math.ceil(total / pageSize)),
         );
-        const grids = summaries
-          .all(
-            viewer.userId,
-            viewer.userId,
-            owner,
-            pageSize,
-            (page - 1) * pageSize,
-          )
+        const grids = statements.summaries
+          .all(id, userId, anonymousId, pageSize, (page - 1) * pageSize)
           .map((row): GridSummary => {
             const author: Identity | null = row.author
               ? JSON.parse(row.author)
@@ -109,9 +131,10 @@ export function createFavorites(store: Store) {
       viewer,
       gridId,
       starred,
-    }: { viewer: AccountViewer } & FavoriteState): FavoriteSetResult {
+    }: { viewer: Session } & FavoriteState): FavoriteSetResult {
+      const { id, statements } = owner(viewer);
       if (!starred) {
-        remove.run(viewer.userId, gridId);
+        statements.remove.run(id, gridId);
         return { kind: "saved", value: { gridId, starred: false } };
       }
       return store.db
@@ -129,7 +152,7 @@ export function createFavorites(store: Store) {
             )
           )
             return { kind: "not-found" };
-          add.run(viewer.userId, gridId);
+          statements.add.run(id, gridId);
           return { kind: "saved", value: { gridId, starred: true } };
         })
         .immediate();

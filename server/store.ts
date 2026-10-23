@@ -536,17 +536,29 @@ export class Store {
     })();
   }
   claim(anonymousId: string, userId: string) {
-    this.db
-      .prepare(
-        "UPDATE reference_images SET owner_user_id=? WHERE owner=? AND owner_user_id IS NULL",
-      )
-      .run(userId, anonymousId);
-    this.db
-      .prepare(
-        `UPDATE grids SET owner_user_id=?
-      WHERE owner=? AND owner_user_id IS NULL`,
-      )
-      .run(userId, anonymousId);
+    this.db.transaction(() => {
+      this.db
+        .prepare(
+          "UPDATE reference_images SET owner_user_id=? WHERE owner=? AND owner_user_id IS NULL",
+        )
+        .run(userId, anonymousId);
+      this.db
+        .prepare(
+          `UPDATE grids SET owner_user_id=?
+        WHERE owner=? AND owner_user_id IS NULL`,
+        )
+        .run(userId, anonymousId);
+      this.db
+        .prepare(
+          `INSERT INTO grid_favorites (user_id,grid_id)
+        SELECT ?,grid_id FROM anonymous_grid_favorites WHERE anonymous_id=?
+        ON CONFLICT(user_id,grid_id) DO NOTHING`,
+        )
+        .run(userId, anonymousId);
+      this.db
+        .prepare("DELETE FROM anonymous_grid_favorites WHERE anonymous_id=?")
+        .run(anonymousId);
+    }).immediate();
   }
   sessionForOwner(owner: string): Session | undefined {
     const row = this.db

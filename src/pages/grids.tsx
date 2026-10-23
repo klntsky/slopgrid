@@ -32,10 +32,10 @@ export function Home() {
           void navigate({ to: "/create" });
         }}
       />
-      {session.data?.user && favorites.isPending && (
+      {session.isSuccess && favorites.isPending && (
         <p role="status">Loading favorites...</p>
       )}
-      {session.data?.user && favorites.isError && !favorites.data?.total && (
+      {session.isSuccess && favorites.isError && !favorites.data?.total && (
         <div className="favorites-feedback">
           <ErrorMessage>{favorites.error.message}</ErrorMessage>
           <button
@@ -46,7 +46,7 @@ export function Home() {
           </button>
         </div>
       )}
-      {!!session.data?.user && !!favorites.data?.total && (
+      {session.isSuccess && !!favorites.data?.total && (
         <section
           className="favorite-grids"
           aria-labelledby="favorite-grids-title"

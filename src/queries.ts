@@ -69,9 +69,14 @@ export function usePublicGrids(page = 1) {
   return useGridList("public-grids", page);
 }
 
-function favoritePageOptions(userId: string | undefined, page: number) {
+function useFavoriteOwnerKey() {
+  const session = useSession();
+  return session.isSuccess ? (session.data.user?.id ?? "anonymous") : undefined;
+}
+
+function favoritePageOptions(ownerKey: string | undefined, page: number) {
   return {
-    queryKey: ["favorites", userId, "pages", page],
+    queryKey: ["favorites", ownerKey, "pages", page],
     queryFn: ({ signal }: { signal: AbortSignal }) =>
       api<GridListPage>(
         `/favorites?page=${page}`,
@@ -92,10 +97,9 @@ export function invalidateFavoritePages(cache: QueryClient) {
 }
 
 export function useFavoriteIds() {
-  const session = useSession();
-  const userId = session.data?.user?.id;
+  const ownerKey = useFavoriteOwnerKey();
   return useQuery({
-    queryKey: ["favorites", userId, "ids"],
+    queryKey: ["favorites", ownerKey, "ids"],
     queryFn: async ({ signal }): Promise<ReadonlySet<string>> => {
       const { ids } = await api<FavoriteIds>(
         "/favorites/ids",
@@ -106,40 +110,43 @@ export function useFavoriteIds() {
       );
       return new Set(ids);
     },
-    enabled: !!userId,
+    enabled: ownerKey !== undefined,
     staleTime: 30000,
   });
 }
 
 export function useFavoriteGrids(page = 1) {
   const cache = useQueryClient();
-  const session = useSession();
-  const userId = session.data?.user?.id;
+  const ownerKey = useFavoriteOwnerKey();
   const query = useQuery({
-    ...favoritePageOptions(userId, page),
-    enabled: !!userId,
+    ...favoritePageOptions(ownerKey, page),
+    enabled: ownerKey !== undefined,
     placeholderData: (previous, previousQuery) =>
-      previousQuery?.queryKey[1] === userId ? previous : undefined,
+      previousQuery?.queryKey[1] === ownerKey ? previous : undefined,
   });
   useEffect(() => {
-    if (!userId || !query.data || query.isPlaceholderData || query.isError)
+    if (
+      ownerKey === undefined ||
+      !query.data ||
+      query.isPlaceholderData ||
+      query.isError
+    )
       return;
     const last = Math.min(
       query.data.page + 2,
       Math.ceil(query.data.total / query.data.pageSize),
     );
     for (let next = query.data.page + 1; next <= last; next++)
-      void cache.prefetchQuery(favoritePageOptions(userId, next));
-  }, [cache, userId, query.data, query.isPlaceholderData, query.isError]);
+      void cache.prefetchQuery(favoritePageOptions(ownerKey, next));
+  }, [cache, ownerKey, query.data, query.isPlaceholderData, query.isError]);
   return query;
 }
 
 export function useSetFavorite(gridId: string) {
   const cache = useQueryClient();
-  const session = useSession();
-  const userId = session.data?.user?.id;
-  const idsKey = ["favorites", userId, "ids"];
-  const mutationKey = ["favorites", userId, "set", gridId];
+  const ownerKey = useFavoriteOwnerKey();
+  const idsKey = ["favorites", ownerKey, "ids"];
+  const mutationKey = ["favorites", ownerKey, "set", gridId];
   const pending = useIsMutating({ mutationKey, exact: true });
   const states = useMutationState({
     filters: { mutationKey, exact: true },
@@ -148,7 +155,7 @@ export function useSetFavorite(gridId: string) {
   const mutation = useMutation({
     mutationKey,
     mutationFn: (starred: boolean) => {
-      if (!userId) throw new Error("Sign in with GitHub to manage favorites.");
+      if (ownerKey === undefined) throw new Error("Loading favorites");
       return api<FavoriteState>(
         `/favorites/${gridId}`,
         starred ? "PUT" : "DELETE",
@@ -169,7 +176,7 @@ export function useSetFavorite(gridId: string) {
     onSettled: async (_data, error) => {
       await Promise.all([
         cache.invalidateQueries({ queryKey: idsKey }),
-        cache.invalidateQueries({ queryKey: ["favorites", userId, "pages"] }),
+        cache.invalidateQueries({ queryKey: ["favorites", ownerKey, "pages"] }),
         ...(error instanceof ApiError && error.status === 401
           ? [cache.invalidateQueries({ queryKey: ["session"] })]
           : []),

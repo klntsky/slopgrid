@@ -1,5 +1,4 @@
 import { useId } from "react";
-import { useLocation } from "@tanstack/react-router";
 import { Star } from "lucide-react";
 import { useFavoriteIds, useSession, useSetFavorite } from "../queries";
 import { tooltipRef } from "./use-tooltip";
@@ -8,27 +7,10 @@ export function FavoriteButton({ gridId }: { gridId: string }) {
   const session = useSession();
   const favorites = useFavoriteIds();
   const mutation = useSetFavorite(gridId);
-  const pathname = useLocation({ select: (location) => location.pathname });
   const errorId = useId();
-  if (session.isSuccess && !session.data.user && !session.data.signInEnabled)
-    return null;
-  if (session.isSuccess && !session.data.user) {
-    const label = "Sign in with GitHub to add to favorites";
-    return (
-      <a
-        className="favorite-button"
-        href={`/api/auth/github/start?returnTo=${encodeURIComponent(pathname)}`}
-        aria-label={label}
-        data-tooltip={label}
-        ref={tooltipRef}
-      >
-        <Star aria-hidden="true" />
-      </a>
-    );
-  }
   const starred = favorites.data?.has(gridId) ?? false;
   const error = session.error || favorites.error || mutation.error;
-  const ready = session.isSuccess && !!session.data.user && favorites.isSuccess;
+  const ready = session.isSuccess && favorites.isSuccess;
   const label = session.isPending
     ? "Loading account"
     : favorites.isPending && session.isSuccess

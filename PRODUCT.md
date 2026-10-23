@@ -557,11 +557,11 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
 
 ### 8.5. Starred grids
 
-1. Store starred grids on the backend for the signed-in user. Favorites persist across that account's browser sessions and remain separate from other accounts. Users can star any grid they can view, including another user's published grid. Starring preserves the grid's ownership and access rules.
-2. Render a clickable star in every grid listing and immediately to the left of the grid title on the grid page when the user is signed in or GitHub sign-in is available. Use a filled star for a favorite and an outline otherwise. Keep listing stars separate from navigation links.
+1. Store favorites on the backend for the signed-in account or the current anonymous browser identity. Anonymous favorites survive reloads and browser restarts while that browser identity remains available, including session rotation. Keep separate browsers and accounts isolated. On sign-in, merge the current anonymous favorites into the account without duplicates. Users can star any grid they can view without changing its ownership or access rules.
+2. Render a clickable star in every grid listing and immediately to the left of the grid title on the grid page, including when GitHub sign-in is disabled. Use a filled star for a favorite and an outline otherwise. Keep listing stars separate from navigation links.
 3. Show "Favorites" above "Your grids" when the user has starred grids. Hide Favorites after the last star is removed. Your grids continues to list all owned grids, including starred ones. Favorites can appear when the user owns no grids.
 4. Give Favorites independent pagination and list grids newest first. Include favorites beyond the currently loaded Your grids and Public grids pages. Preserve the other listings' selected pages when navigating Favorites.
-5. Use "Add to favorites" and "Remove from favorites" for accessible labels and tooltips. When GitHub sign-in is available, signed-out stars link to it with "Sign in with GitHub to add to favorites" and return to the current page afterward. Support keyboard activation and visible focus.
+5. Use "Add to favorites" and "Remove from favorites" for accessible labels and tooltips. Anonymous stars save directly without redirecting to sign-in. Support keyboard activation and visible focus.
 6. Keep copies of the same star in sync across listings and the grid page. Disable them while saving and show "Saving favorite". Preserve the confirmed state when a request fails, display the error with "Retry", and expose loading and retry controls when favorites cannot be read.
 
 ## 9. Availability and updates
