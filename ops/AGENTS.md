@@ -4,7 +4,9 @@
    deployments and `check.sh` for pipeline validation. Do not create temporary
    operational scripts, patch installed implementation files, synthesize status
    files, or manually perform steps owned by the deployment command.
-2. Production deployment requires an explicit request. Pass `--skip-tests` only
+2. Staging and production deployments each require an explicit user request.
+   Committing, pushing, or validating changes does not authorize deployment.
+   Pass `--skip-tests` only
    when the user has explicitly skipped tests after candidate validation.
    Production otherwise requires the complete isolated candidate suite and must
    always pass the authoritative master-tip gate.

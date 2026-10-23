@@ -9,7 +9,9 @@
 2. Local candidate validation must use independent build/source workspaces, temporary
    data, sockets, process-manager homes, and OS-assigned ports. Tests must not
    mutate shared staging or production runtimes. Explicit staging remains
-   an administrative target, isolated from production.
+   an administrative target, isolated from production. Staging and production
+   deployments each require an explicit user request; committing or validating
+   a candidate does not trigger deployment.
 3. Build once per run and promote that exact frontend artifact to production.
    Production defaults to the complete local unit, mock browser, and real-provider
    browser suites; an explicit `--skip-tests` records the decision and skips tests,
