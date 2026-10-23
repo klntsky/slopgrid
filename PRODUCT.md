@@ -277,6 +277,13 @@ Show a small-text footer on every page except the grid page, with "source code" 
 
 ### 3.8. Judged output
 
+A case is one grid-axis configuration and can own generator parameters, judge
+parameters, and a rubric. A criterion is one yes/no question within that rubric;
+adding a case and adding a criterion are separate operations. Case additions
+follow section 3.1 and copy the source case's complete configuration, including
+its rubric when criteria belong to that case dimension. Adding a criterion
+appends one empty question with expected answer YES to the selected rubric.
+
 1. Add optional judging as the numbered second-to-last creation section, immediately before "Inference provider setup", headed "Add a LLM judge" followed by a middle dot and "evaluates the output".
    - Enable or disable judging with a checkbox slightly larger than inline checkboxes, using the existing themed checkbox styling. Clicking the complete heading toggles it.
    - Keep the heading at the same viewport position when toggling adds or removes common parameters above it. Keep section numbering consecutive.
