@@ -69,7 +69,7 @@ function seedSecondReferenceGrid(f, secondGrid) {
       );
   seedReferenceLink(f.source, secondGrid);
 }
-function fixture(t, { shared = false } = {}) {
+function fixture(t, { shared = false, customize } = {}) {
   const root = mkdtempSync(join(tmpdir(), "grid-transfer-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const options = {
@@ -277,8 +277,7 @@ function fixture(t, { shared = false } = {}) {
   );
   seedReferenceLink(source, options.grid);
   target.prepare("INSERT INTO grids (id,data) VALUES ('unrelated','{}')").run();
-  for (const db of [source, target]) db.exec("COMMIT");
-  return {
+  const f = {
     options,
     source,
     target,
@@ -292,6 +291,9 @@ function fixture(t, { shared = false } = {}) {
     referenceSha256,
     referenceDimensions,
   };
+  customize?.(f);
+  for (const db of [source, target]) db.exec("COMMIT");
+  return f;
 }
 
 function shareWithSurvivor(f, db) {

@@ -212,12 +212,16 @@ test("shared opaque artifacts and traces copy once, reuse identical target bytes
     await t.test(
       existing ? "existing shared bytes" : "copy shared bytes",
       (child) => {
-        const f = fixture(child, { shared: true });
-        shareWithSurvivor(f, f.source);
-        if (existing) {
-          shareWithSurvivor(f, f.target);
-          copySharedBytes(f);
-        }
+        const f = fixture(child, {
+          shared: true,
+          customize(f) {
+            shareWithSurvivor(f, f.source);
+            if (existing) {
+              shareWithSurvivor(f, f.target);
+              copySharedBytes(f);
+            }
+          },
+        });
         transferGrid(Database, { ...f.options, apply: true });
         assert.ok(survivingTransferTask(f.source));
         if (existing) assert.ok(survivingTransferTask(f.target));
@@ -249,8 +253,7 @@ test("shared opaque artifacts and traces copy once, reuse identical target bytes
 });
 
 test("retaining shared execution keeps one ledger call and reattributes only a removed display cell", (t) => {
-  const f = fixture(t);
-  shareTransferExecution(f);
+  const f = fixture(t, { customize: shareTransferExecution });
   const original = transferCall(f.source, "call-0");
   const retainedJudge = transferCall(f.source, "judge-2");
   transferGrid(Database, { ...f.options, apply: true });
@@ -271,31 +274,36 @@ test("retaining shared execution keeps one ledger call and reattributes only a r
 });
 
 test("selective model removal rejects versioned case records without changing either grid", (t) => {
-  const f = fixture(t);
-  const row = transferGridRow(f.source, f.options.grid);
-  const data = JSON.parse(row.data);
-  data.input = {
-    inputVersion: 3,
-    format: "svg",
-    budgetUsd: 3,
-    judge: false,
-    parameters: {
-      input: {
-        kind: "common",
-        value: [{ role: "user", content: "horse" }],
-      },
-      model: { kind: "rows" },
-      effort: { kind: "common", value: "default" },
+  const f = fixture(t, {
+    customize(f) {
+      const row = transferGridRow(f.source, f.options.grid);
+      const data = JSON.parse(row.data);
+      data.input = {
+        inputVersion: 3,
+        format: "svg",
+        budgetUsd: 3,
+        judge: false,
+        parameters: {
+          input: {
+            kind: "common",
+            value: [{ role: "user", content: "horse" }],
+          },
+          model: { kind: "rows" },
+          effort: { kind: "common", value: "default" },
+        },
+        rows: ["first/model", "broken/model", "last/model"].map(
+          (model, index) => ({
+            id: `row-${index + 1}`,
+            model,
+          }),
+        ),
+        columns: [{ id: "column-1" }],
+      };
+      f.source
+        .prepare("UPDATE grids SET data=? WHERE id=?")
+        .run(JSON.stringify(data), f.options.grid);
     },
-    rows: ["first/model", "broken/model", "last/model"].map((model, index) => ({
-      id: `row-${index + 1}`,
-      model,
-    })),
-    columns: [{ id: "column-1" }],
-  };
-  f.source
-    .prepare("UPDATE grids SET data=? WHERE id=?")
-    .run(JSON.stringify(data), f.options.grid);
+  });
   const source = transferGrids(f.source);
   const target = transferGrids(f.target);
   for (const apply of [false, true])
@@ -375,8 +383,7 @@ test("unsafe transfers leave both databases and source files untouched", async (
     ["target schema16", (f) => setReferenceSchemaVersion(f.target, 16)],
   ])
     await t.test(name, (child) => {
-      const f = fixture(child);
-      change(f);
+      const f = fixture(child, { customize: change });
       const before = transferGrids(f.target);
       assert.throws(() =>
         transferGrid(Database, { ...f.options, apply: true }),
@@ -391,9 +398,12 @@ test("unsafe transfers leave both databases and source files untouched", async (
 });
 
 test("a target failure rolls back tasks and ledger and removes only newly copied bytes", (t) => {
-  const f = fixture(t);
-  copySharedBytes(f);
-  rejectTransferCells(f.target);
+  const f = fixture(t, {
+    customize(f) {
+      copySharedBytes(f);
+      rejectTransferCells(f.target);
+    },
+  });
   assert.throws(
     () => transferGrid(Database, { ...f.options, apply: true }),
     /controlled failure/,
@@ -429,8 +439,11 @@ test("a target failure rolls back tasks and ledger and removes only newly copied
 });
 
 test("source removal failure leaves source DB and bytes safe after destination commit", (t) => {
-  const f = fixture(t);
-  rejectSourceRemoval(f.source);
+  const f = fixture(t, {
+    customize(f) {
+      rejectSourceRemoval(f.source);
+    },
+  });
   assert.throws(
     () => transferGrid(Database, { ...f.options, apply: true }),
     /source removal failure/,
@@ -450,9 +463,12 @@ test("source removal failure leaves source DB and bytes safe after destination c
 });
 
 test("successive grid transfers reuse matching upload metadata and retain both usage links", (t) => {
-  const f = fixture(t);
   const secondGrid = "f".repeat(48);
-  seedSecondReferenceGrid(f, secondGrid);
+  const f = fixture(t, {
+    customize(f) {
+      seedSecondReferenceGrid(f, secondGrid);
+    },
+  });
   transferGrid(Database, { ...f.options, apply: true });
   const metadata = referenceImage(f.target);
   const blob = join(f.options.targetOutputs, ".references", f.referenceSha256);
@@ -486,23 +502,27 @@ test("shared upload metadata reuse rejects each ownership or content mismatch", 
     ["sha256", "0".repeat(64)],
   ])
     await t.test(field, (child) => {
-      const f = fixture(child);
-      const metadata = referenceImages(f.source)[0];
-      const existing = {
-        ...metadata,
-        owner_user_id: "target-owner",
-        [field]: value,
-      };
-      seedReferenceBlob(f.target, existing.sha256);
-      seedReferenceImage(
-        f.target,
-        existing.id,
-        existing.owner,
-        existing.owner_user_id,
-        existing.name,
-        existing.media_type,
-        existing.sha256,
-      );
+      let existing;
+      const f = fixture(child, {
+        customize(f) {
+          const metadata = referenceImages(f.source)[0];
+          existing = {
+            ...metadata,
+            owner_user_id: "target-owner",
+            [field]: value,
+          };
+          seedReferenceBlob(f.target, existing.sha256);
+          seedReferenceImage(
+            f.target,
+            existing.id,
+            existing.owner,
+            existing.owner_user_id,
+            existing.name,
+            existing.media_type,
+            existing.sha256,
+          );
+        },
+      });
       assert.throws(() =>
         transferGrid(Database, { ...f.options, apply: true }),
       );
@@ -516,20 +536,49 @@ test("shared uploads copy once or reuse target bytes without merging metadata or
   for (const blobState of ["absent", "unknown dimensions", "known dimensions"])
     await t.test(blobState, (child) => {
       const existing = blobState !== "absent";
-      const f = fixture(child);
       const survivor = "f".repeat(48);
-      seedReferenceImage(
-        f.source,
-        "reference-renamed",
-        "other-source-session",
-        null,
-        "different-name.webp",
-        "image/webp",
-        f.referenceSha256,
-      );
-      seedReferenceLink(f.source, f.options.grid, "reference-renamed");
-      seedSurvivingReferenceGrid(f.source, survivor);
-      seedReferenceLink(f.source, survivor, "reference-image");
+      const f = fixture(child, {
+        customize(f) {
+          seedReferenceImage(
+            f.source,
+            "reference-renamed",
+            "other-source-session",
+            null,
+            "different-name.webp",
+            "image/webp",
+            f.referenceSha256,
+          );
+          seedReferenceLink(f.source, f.options.grid, "reference-renamed");
+          seedSurvivingReferenceGrid(f.source, survivor);
+          seedReferenceLink(f.source, survivor, "reference-image");
+          if (existing) {
+            seedReferenceBlob(
+              f.target,
+              f.referenceSha256,
+              blobState === "known dimensions"
+                ? f.referenceDimensions.width
+                : null,
+              blobState === "known dimensions"
+                ? f.referenceDimensions.height
+                : null,
+            );
+            seedReferenceImage(
+              f.target,
+              "target-existing-reference",
+              "unrelated-target-session",
+              "unrelated-target-user",
+              "target-name.jpg",
+              "image/jpeg",
+              f.referenceSha256,
+            );
+            seedReferenceLink(
+              f.target,
+              "unrelated",
+              "target-existing-reference",
+            );
+          }
+        },
+      });
       const sourceMetadata = orderedReferenceImages(f.source);
       const sourcePath = join(
         f.options.sourceOutputs,
@@ -544,24 +593,6 @@ test("shared uploads copy once or reuse target bytes without merging metadata or
       const sourceInode = lstatSync(sourcePath).ino;
       let targetInode, targetMetadata;
       if (existing) {
-        seedReferenceBlob(
-          f.target,
-          f.referenceSha256,
-          blobState === "known dimensions" ? f.referenceDimensions.width : null,
-          blobState === "known dimensions"
-            ? f.referenceDimensions.height
-            : null,
-        );
-        seedReferenceImage(
-          f.target,
-          "target-existing-reference",
-          "unrelated-target-session",
-          "unrelated-target-user",
-          "target-name.jpg",
-          "image/jpeg",
-          f.referenceSha256,
-        );
-        seedReferenceLink(f.target, "unrelated", "target-existing-reference");
         mkdirSync(join(f.options.targetOutputs, ".references"));
         writeFileSync(targetPath, f.referenceBytes);
         targetInode = lstatSync(targetPath).ino;
@@ -636,11 +667,16 @@ test("shared uploads copy once or reuse target bytes without merging metadata or
 test("unavailable historical references preserve links and metadata without reading legacy upload paths", async (t) => {
   for (const missing of ["sha256", "file", "metadata"])
     await t.test(missing, (child) => {
-      const f = fixture(child);
-      if (missing === "sha256") clearReferenceHash(f.source);
-      if (missing === "file")
-        rmSync(join(f.options.sourceOutputs, ".references", f.referenceSha256));
-      if (missing === "metadata") removeReferenceMetadata(f.source);
+      const f = fixture(child, {
+        customize(f) {
+          if (missing === "sha256") clearReferenceHash(f.source);
+          if (missing === "file")
+            rmSync(
+              join(f.options.sourceOutputs, ".references", f.referenceSha256),
+            );
+          if (missing === "metadata") removeReferenceMetadata(f.source);
+        },
+      });
       const legacy = "reference-reference-image";
       mkdirSync(join(f.options.sourceOutputs, legacy));
       writeFileSync(
@@ -679,7 +715,15 @@ test("upload dimensions and bytes remain safe across destination rollback and so
       await t.test(
         `${failure}: ${existing ? "existing blob" : "new blob"}`,
         (child) => {
-          const f = fixture(child);
+          const f = fixture(child, {
+            customize(f) {
+              if (existing) seedReferenceBlob(f.target, f.referenceSha256);
+              rejectUploadTransfer(
+                failure === "target" ? f.target : f.source,
+                failure,
+              );
+            },
+          });
           const sourcePath = join(
             f.options.sourceOutputs,
             ".references",
@@ -692,15 +736,10 @@ test("upload dimensions and bytes remain safe across destination rollback and so
           );
           let targetInode;
           if (existing) {
-            seedReferenceBlob(f.target, f.referenceSha256);
             mkdirSync(join(f.options.targetOutputs, ".references"));
             writeFileSync(targetPath, f.referenceBytes);
             targetInode = lstatSync(targetPath).ino;
           }
-          rejectUploadTransfer(
-            failure === "target" ? f.target : f.source,
-            failure,
-          );
           assert.throws(
             () => transferGrid(Database, { ...f.options, apply: true }),
             /controlled upload failure/,
@@ -748,15 +787,18 @@ test("unknown source dimensions preserve known target dimensions or remain unava
           ? "unknown target dimensions"
           : "known target dimensions",
       (child) => {
-        const f = fixture(child);
-        setReferenceBlobDimensions(f.source, f.referenceSha256, null, null);
-        if (targetDimensions !== undefined)
-          seedReferenceBlob(
-            f.target,
-            f.referenceSha256,
-            targetDimensions?.width ?? null,
-            targetDimensions?.height ?? null,
-          );
+        const f = fixture(child, {
+          customize(f) {
+            setReferenceBlobDimensions(f.source, f.referenceSha256, null, null);
+            if (targetDimensions !== undefined)
+              seedReferenceBlob(
+                f.target,
+                f.referenceSha256,
+                targetDimensions?.width ?? null,
+                targetDimensions?.height ?? null,
+              );
+          },
+        });
         transferGrid(Database, { ...f.options, apply: true });
         assert.deepEqual(referenceBlobs(f.target), [
           {
@@ -779,13 +821,16 @@ test("incompatible shared blob dimensions reject preview and apply before side e
     { width: 480, height: 640 },
   ])
     await t.test(`${dimensions.width}x${dimensions.height}`, (child) => {
-      const f = fixture(child);
-      seedReferenceBlob(
-        f.target,
-        f.referenceSha256,
-        dimensions.width,
-        dimensions.height,
-      );
+      const f = fixture(child, {
+        customize(f) {
+          seedReferenceBlob(
+            f.target,
+            f.referenceSha256,
+            dimensions.width,
+            dimensions.height,
+          );
+        },
+      });
       const before = referenceBlobs(f.target);
       for (const apply of [false, true])
         assert.throws(
@@ -883,8 +928,7 @@ test("unsafe shared upload paths, bytes and metadata collisions fail before tran
     ],
   ])
     await t.test(name, (child) => {
-      const f = fixture(child);
-      change(f);
+      const f = fixture(child, { customize: change });
       const targetMetadata = referenceImages(f.target);
       assert.throws(() =>
         transferGrid(Database, { ...f.options, apply: true }),
@@ -898,8 +942,12 @@ test("unsafe shared upload paths, bytes and metadata collisions fail before tran
 });
 
 test("schema17 transfers and exports variable fields, expanded task images and unused configured references", (t) => {
-  const f = fixture(t);
-  const { first, unused, columns } = seedTransferVariableFields(f);
+  let first, unused, columns;
+  const f = fixture(t, {
+    customize(f) {
+      ({ first, unused, columns } = seedTransferVariableFields(f));
+    },
+  });
   const tasks = transferTasks(f.source).filter(
     (task) => task.id !== f.generations[1] && task.id !== f.judgments[1],
   );
