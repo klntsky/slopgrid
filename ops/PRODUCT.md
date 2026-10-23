@@ -14,7 +14,8 @@
    Production defaults to the complete unit, mock browser, and real-provider
    browser suites; an explicit `--skip-tests` records the decision and skips tests,
    but still requires the full production-data migration rehearsal.
-   `validate` also supports scoped tests and never deploys a persistent runtime.
+   `validate` uses fresh isolated data, requires tests, supports full or scoped
+   suites, and never deploys a persistent runtime.
    Production promotes only its configured runtime after authoritative-master
    authorization, independent of staging.
    - In validation run by `deploy.sh`, give each real-provider browser test up to
@@ -23,14 +24,16 @@
      Keep unit, mock-browser, and GitHub tests single-attempt. Direct browser-test
      commands remain single-attempt by default.
    - `rehearse` accepts any committed candidate and checks it against an isolated
-     full production-data copy on staging, preserving both shared runtimes.
+     full production-data copy, preserving both shared runtimes. Run the complete
+     suite by default, support scoped suites, and permit `--skip-tests` without
+     skipping migrations or data-integrity checks.
    - Before production promotion, take a transaction-consistent read-only SQLite
      backup and independent copies of all production output files.
    - Run the candidate's storage initialization against those copies, exercising
      SQL and file migrations before database-backed service tests. Keep
      schema-specific unit fixtures independent.
-   - Missing or unsafe source data, migration failure, failed SQLite integrity or
-     foreign key checks, or test failure must prevent promotion.
+   - Missing, unsafe, or unsupported source data, migration failure, failed SQLite
+     integrity or foreign key checks, or test failure must prevent promotion.
    - Keep production runtime credentials out of validation services. Remove the
      private database and output copies after success or failure, retaining only
      aggregate migration evidence in the run result.
@@ -51,19 +54,36 @@
    their records, call history, creation receipts, outputs, and thinking traces.
    Retain unselected grids, their shared artifacts and traces, and all sessions.
    Reject deletion for production, shared storage paths, and forced soft updates.
-9. Canonical-input grid transfers on schema 17 preserve generation and judgment
-   state, ordered inference history, generated outputs, and thinking traces.
-   Support settled private SVG grids with model rows and one column, omitting
-   one failed model. Source removal keeps bytes required by other grids. The
-   destination account identity must already exist; sessions and credentials
-   stay in their original environment.
-   Reuse an existing upload ID only when its destination account, filename,
-   media type, and content hash match; retain a separate usage link for each grid.
-   Require canonical version 3 case-record inputs; reject unsupported formats
-   without changing either environment.
+9. Grid transfers preserve generation and judgment state, ordered inference
+   history, generated outputs, and thinking traces. Support private paused or
+   complete SVG grids with model rows and one column by omitting exactly one
+   failed model row. Require at least one remaining cell and require every
+   retained cell to be complete.
+   - Preserve referenced uploaded-image identities and metadata, copy available
+     image contents, and assign destination ownership to its matching account.
+     Source removal keeps uploads, artifacts, and traces required by other grids.
+   - The destination account identity must already exist; sessions and credentials
+     stay in their original environment. Reuse an existing upload ID only when
+     its destination account, filename, media type, and content hash match.
+     Retain a separate usage link for each grid.
+   - Require both environments to use the supported current data format; reject
+     unsupported formats without changing either environment.
 10. Command and option help must cover validation, rehearsal, staging, production,
     and run status without requiring configuration, Git, SSH, or infrastructure.
     `--help` and `help [COMMAND]` show general or command-specific guidance.
     Interactive terminals support selecting help topics and exiting without
     running commands; non-interactive help prints and exits. Invoking the CLI
     without a command shows help and never starts a deployment.
+11. Match operational controls to the selected command:
+    - Offer deployment modes for staging and production. Rehearsal accepts no
+      explicit deployment mode; validation accepts only the explicit default
+      `--mode=auto`.
+    - Allow scoped unit and browser selections for validation, rehearsal, and
+      staging. Production requires the full suite or explicit `--skip-tests`.
+      Reject combinations of scoped selection and skipped tests.
+    - Browser filtering requires a browser-file selection. Browser-suite selection
+      affects scoped browser checks, not full-suite runs.
+    - Offer `--plan` for validation, rehearsal, staging, and production. Preview
+      the operation without uploading or changing runtime processes, while still
+      requiring configuration, candidate resolution, and production authorization
+      where applicable.
