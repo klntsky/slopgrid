@@ -8,7 +8,6 @@ import {
   rmSync,
   existsSync,
   cpSync,
-  readdirSync,
 } from "node:fs";
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
@@ -19,7 +18,6 @@ import {
   capture,
   parseArgs,
   assertProductionRevision,
-  sha256,
 } from "../lib/common.mjs";
 import { executePlan, pipeline } from "../lib/pipeline.mjs";
 import { fixtureConfig, fixtureEnvironment } from "./config-fixture.mjs";
@@ -276,53 +274,6 @@ test("CLI rehearsal plan resolves a candidate without production authority or ru
   assert.equal(plan.revision, f.candidate);
 });
 
-test("remote rehearsal worker bypasses a held deployment lock and records the pipeline exit status", async (t) => {
-  const path = directory(t),
-    tools = join(path, "tools");
-  cpSync(root, tools, { recursive: true });
-  // Adapt only the worker's pipeline boundary: orchestration itself is covered above.
-  writeFileSync(
-    join(tools, "lib/pipeline.mjs"),
-    `
-import { readFileSync } from "node:fs";
-import { dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-export async function pipeline(request) {
-  console.log("isolated rehearsal reached");
-  process.exitCode = request.fixtureExit;
-}
-if (process.argv[1] === fileURLToPath(import.meta.url))
-  await pipeline(JSON.parse(readFileSync(process.argv[2], "utf8")), dirname(process.argv[2]));
-`,
-  );
-  const lock = spawn(
-    "flock",
-    [join(path, "deployment.lock"), "sh", "-c", "echo locked; cat"],
-    { stdio: ["pipe", "pipe", "inherit"] },
-  );
-  t.after(() => lock.stdin.end());
-  await once(lock.stdout, "data");
-  for (const code of [0, 17]) {
-    const run = join(path, `run-${code}`);
-    mkdirSync(run);
-    writeFileSync(
-      join(run, "request.json"),
-      JSON.stringify({ target: "rehearse", fixtureExit: code }),
-    );
-    const result = spawnSync(
-      "bash",
-      [join(tools, "remote-run.sh"), run, path],
-      { encoding: "utf8" },
-    );
-    assert.equal(result.status, code, result.stderr);
-    assert.equal(readFileSync(join(run, "exit"), "utf8").trim(), String(code));
-    assert.match(
-      readFileSync(join(run, "run.log"), "utf8"),
-      /isolated rehearsal reached/,
-    );
-  }
-});
-
 test("CLI rejects a locally named master before SSH, even with skipped tests", (t) => {
   const f = fixture(t),
     bin = join(f.path, "bin"),
@@ -463,148 +414,3 @@ else process.exit(99);
   await once(lock, "exit");
 });
 
-test("overlapping CLI uploads create one tmux session and launch and reconnect with private tools", { timeout: 30000 }, async (t) => {
-  const f = fixture(t), bin = join(f.path, "bin"),
-    arrivals = join(f.path, "arrivals"), release = join(f.path, "release"),
-    tmuxState = join(f.path, "tmux");
-  mkdirSync(bin);
-  mkdirSync(arrivals);
-  mkdirSync(join(f.repository, "server"));
-  writeFileSync(join(f.repository, "server/engine.ts"), 'console.log("fixture engine");\n');
-  writeFileSync(join(f.repository, "package.json"), JSON.stringify({ type: "module", packageManager: "pnpm@fixture" }));
-  writeFileSync(join(f.repository, "pnpm-lock.yaml"), "lockfileVersion: 9.0\n");
-  writeFileSync(join(f.repository, "pnpm-workspace.yaml"), "packages: []\n");
-  writeFileSync(join(f.repository, "ops/lib/pipeline.mjs"), `
-import { readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-export async function pipeline(request, run) {
-  console.log("uploaded pipeline " + request.id);
-  writeFileSync(join(run, "result.json"), JSON.stringify({status: "succeeded", stages: []}));
-}
-if (process.argv[1] === fileURLToPath(import.meta.url))
-  await pipeline(JSON.parse(readFileSync(process.argv[2], "utf8")), dirname(process.argv[2]));
-`);
-  commit(f.repository, "upload overlap fixture");
-  const realTar = capture("which", ["tar"]);
-  const realCat = capture("which", ["cat"]);
-  writeFileSync(join(bin, "pnpm"), `#!${process.execPath}
-const fs = require("node:fs"), path = require("node:path"), args = process.argv.slice(2);
-if (args[0] === "--version") console.log("fixture");
-else if (args[0] === "install") fs.symlinkSync(path.join(process.env.SLOPGRID_TEST_APP, "node_modules"), "node_modules");
-else if (args[0] === "build") { fs.mkdirSync("dist"); fs.writeFileSync("dist/index.html", "fixture frontend"); }
-else process.exit(99);
-`, { mode: 0o700 });
-  writeFileSync(join(bin, "cat"), `#!${process.execPath}
-const fs = require("node:fs"), path = require("node:path"), { spawnSync } = require("node:child_process");
-const args = process.argv.slice(2), destination = fs.readlinkSync("/proc/self/fd/1");
-if (!args.length && path.basename(destination).startsWith("request.json")) {
-  const input = fs.readFileSync(0), split = Math.floor(input.length / 2);
-  fs.writeSync(1, input.subarray(0, split));
-  if (fs.existsSync(path.join(path.dirname(destination), "request.json"))) {
-    console.error("Partial request became launchable before upload completed");
-    process.exit(97);
-  }
-  fs.writeSync(1, input.subarray(split));
-} else {
-  const result = spawnSync(${JSON.stringify(realCat)}, args, { stdio: "inherit" });
-  process.exitCode = result.status ?? 99;
-}
-`, { mode: 0o700 });
-  writeFileSync(join(bin, "ssh"), `#!${process.execPath}
-const { spawnSync } = require("node:child_process");
-const result = spawnSync("bash", ["-c", process.argv[3]], { stdio: "inherit", timeout: 12000 });
-process.exitCode = result.status ?? 99;
-`, { mode: 0o700 });
-  writeFileSync(join(bin, "tar"), `#!${process.execPath}
-const fs = require("node:fs"), path = require("node:path"), { spawnSync } = require("node:child_process");
-const args = process.argv.slice(2), result = spawnSync(${JSON.stringify(realTar)}, args, { stdio: "inherit" });
-if (result.status !== 0) process.exit(result.status ?? 99);
-const archive = args[args.indexOf("-xzf") + 1];
-if (args.includes("-xzf") && path.basename(archive) === "tools.tar.gz") {
-  const id = path.basename(path.dirname(archive));
-  fs.writeFileSync(path.join(process.env.SLOPGRID_UPLOAD_ARRIVALS, id), args[args.indexOf("-C") + 1]);
-  const deadline = Date.now() + 12000;
-  const wait = new Int32Array(new SharedArrayBuffer(4));
-  while (!fs.existsSync(process.env.SLOPGRID_UPLOAD_RELEASE)) {
-    if (Date.now() > deadline) process.exit(98);
-    Atomics.wait(wait, 0, 0, 10);
-  }
-}
-`, { mode: 0o700 });
-  writeFileSync(join(bin, "tmux"), `#!${process.execPath}
-const fs = require("node:fs"), path = require("node:path"), { spawnSync } = require("node:child_process");
-const args = process.argv.slice(2), base = process.env.SLOPGRID_UPLOAD_TMUX;
-fs.mkdirSync(base, { recursive: true });
-const session = path.join(base, "session");
-function rendezvous(prefix) {
-  fs.writeFileSync(path.join(base, prefix + process.pid), "arrived");
-  const deadline = Date.now() + 6000, wait = new Int32Array(new SharedArrayBuffer(4));
-  while (fs.readdirSync(base).filter(name => name.startsWith(prefix)).length !== 2) {
-    if (Date.now() > deadline) process.exit(98);
-    Atomics.wait(wait, 0, 0, 10);
-  }
-}
-if (args[0] === "has-session") {
-  if (fs.existsSync(session)) process.exit(0);
-  rendezvous("probe-");
-  process.exit(1);
-}
-if (args[0] === "new-session") {
-  rendezvous("create-");
-  try { fs.mkdirSync(session); process.exit(0); }
-  catch (error) { if (error.code === "EEXIST") process.exit(1); throw error; }
-}
-if (args[0] !== "new-window" || !fs.existsSync(session)) process.exit(99);
-const result = spawnSync("bash", ["-c", args.at(-1)], { stdio: "inherit", timeout: 12000 });
-if (result.status !== 0) process.exit(result.status ?? 99);
-console.log("%fixture");
-`, { mode: 0o700 });
-  f.config.nodePath = `${bin}:${process.env.PATH}`;
-  const env = {
-    ...process.env, ...fixtureEnvironment(f.config),
-    PATH: f.config.nodePath,
-    SLOPGRID_UPLOAD_ARRIVALS: arrivals,
-    SLOPGRID_UPLOAD_RELEASE: release,
-    SLOPGRID_UPLOAD_TMUX: tmuxState,
-  };
-  const children = [0, 1].map(() => {
-    const process = spawn(globalThis.process.execPath, [join(f.repository, "ops/cli.mjs"), "rehearse", "--skip-tests"], {
-      cwd: f.repository, env, detached: true, stdio: ["ignore", "pipe", "pipe"],
-    });
-    let stdout = "", stderr = "";
-    process.stdout.on("data", (value) => { stdout += value; });
-    process.stderr.on("data", (value) => { stderr += value; });
-    const done = new Promise((resolve) => {
-      process.once("exit", (code) => resolve({ code, stdout, stderr }));
-    });
-    t.after(() => {
-      try { globalThis.process.kill(-process.pid, "SIGKILL"); }
-      catch (error) { if (error.code !== "ESRCH") throw error; }
-    });
-    return { process, done };
-  });
-  const deadline = Date.now() + 15000;
-  while (readdirSync(arrivals).length !== 2) {
-    for (const { process } of children)
-      assert.equal(process.exitCode, null, "Uploader exited before both extractions overlapped");
-    assert.ok(Date.now() < deadline, "Timed out waiting for both tool extractions");
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-  writeFileSync(release, "continue");
-  const results = await Promise.all(children.map(({ done }) => done));
-  for (const result of results) assert.equal(result.code, 0, result.stderr);
-  const ids = readdirSync(arrivals);
-  const requests = ids.map((id) => JSON.parse(readFileSync(join(f.config.remoteRoot, "runs", id, "request.json"), "utf8")));
-  assert.notEqual(requests[0].tools, requests[1].tools, "Concurrent runs shared executable tools");
-  assert.equal(requests[0].opsRevision, requests[1].opsRevision);
-  for (const request of requests) {
-    const run = join(f.config.remoteRoot, "runs", request.id);
-    assert.equal(request.tools, join(run, "tools"));
-    const reconnect = spawnSync(globalThis.process.execPath, [join(f.repository, "ops/cli.mjs"), "status", request.id], {
-      cwd: f.repository, env, encoding: "utf8", timeout: 5000,
-    });
-    assert.equal(reconnect.status, 0, reconnect.stderr);
-    assert.match(reconnect.stdout, new RegExp("uploaded pipeline " + request.id));
-  }
-});

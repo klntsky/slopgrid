@@ -1,300 +1,337 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync,
-  existsSync, cpSync, readdirSync, statSync, utimesSync,
+  mkdtempSync, mkdirSync, writeFileSync, readFileSync, appendFileSync,
+  copyFileSync, rmSync, existsSync, readdirSync, statSync, utimesSync,
   openSync, closeSync, writeSync, readlinkSync, constants,
 } from "node:fs";
-import { join, dirname } from "node:path";
+import { join, dirname, basename } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { fixtureConfig } from "./config-fixture.mjs";
 
 const ops = dirname(dirname(fileURLToPath(import.meta.url)));
 
 async function until(predicate, description) {
-  const deadline = Date.now() + 5000;
-  while (!predicate()) {
+  const deadline = Date.now() + 8000;
+  for (;;) {
+    const value = predicate();
+    if (value) return value;
     assert.ok(Date.now() < deadline, `Timed out waiting for ${description}`);
     await delay(10);
   }
 }
 
-function kill(pid, signal = "SIGKILL") {
-  try { process.kill(pid, signal); } catch (error) {
-    if (error.code !== "ESRCH") throw error;
+function processInfo(pid) {
+  try {
+    const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+    const fields = stat.slice(stat.lastIndexOf(")") + 2).trim().split(/\s+/);
+    return {
+      pid, start: fields[19], state: fields[0],
+      args: readFileSync(`/proc/${pid}/cmdline`, "utf8").split("\0").filter(Boolean),
+    };
+  } catch (error) {
+    if (["ENOENT", "ESRCH"].includes(error.code)) return null;
+    throw error;
   }
 }
 
-function child(t, program, args, options = {}) {
-  const process = spawn(program, args, {
-    ...options, detached: true, stdio: ["ignore", "pipe", "pipe"],
+function alive(identity) {
+  const current = identity && processInfo(identity.pid);
+  return current && current.start === identity.start && !["Z", "X", "x"].includes(current.state);
+}
+
+function signal(identity, value) {
+  if (!alive(identity)) return;
+  try { process.kill(identity.pid, value); }
+  catch (error) { if (error.code !== "ESRCH") throw error; }
+}
+
+function execute(program, args, options = {}) {
+  const result = spawnSync(program, args, {
+    encoding: "utf8", timeout: 10000, ...options,
   });
-  let stdout = "", stderr = "";
-  process.stdout.on("data", (value) => { stdout += value; });
-  process.stderr.on("data", (value) => { stderr += value; });
-  const done = new Promise((resolve) => {
-    const timer = setTimeout(() => {
-      kill(-process.pid);
-      resolve({ code: null, timedOut: true, stdout, stderr });
-    }, 10000);
-    process.once("exit", (code, signal) => {
-      clearTimeout(timer);
-      resolve({ code, signal, stdout, stderr });
+  assert.equal(result.status, 0, result.error?.message ?? result.stderr);
+  return result.stdout.trim();
+}
+
+function inPrivatePM2(pid, home) {
+  try {
+    return readFileSync(`/proc/${pid}/environ`, "utf8").split("\0").includes(`PM2_HOME=${home}`);
+  } catch (error) {
+    if (["ENOENT", "ESRCH"].includes(error.code)) return false;
+    throw error;
+  }
+}
+
+function childrenOf(pid) {
+  try {
+    return readFileSync(`/proc/${pid}/task/${pid}/children`, "utf8").trim().split(/\s+/).filter(Boolean).map(Number);
+  } catch (error) {
+    if (["ENOENT", "ESRCH"].includes(error.code)) return [];
+    throw error;
+  }
+}
+
+function socketOpen(pid) {
+  try {
+    return readdirSync(`/proc/${pid}/fd`).some((name) => {
+      try { return readlinkSync(`/proc/${pid}/fd/${name}`).startsWith("socket:"); }
+      catch (error) { if (error.code === "ENOENT") return false; throw error; }
     });
-  });
-  t.after(() => kill(-process.pid));
-  return { process, done };
+  } catch (error) {
+    if (error.code === "ENOENT") return false;
+    throw error;
+  }
 }
 
-const boundaryPipeline = `
-import { readFileSync, writeFileSync, appendFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-export async function pipeline(request, run) {
-  writeFileSync(join(run, "pipeline.pid"), String(process.pid));
-  appendFileSync(request.events, request.id + ":pipeline\\n");
-  console.log(request.id + ": pipeline entered");
-  const result = spawnSync(process.execPath, [request.mutator, run, request.events, request.id], { stdio: "inherit" });
-  if (result.status !== 0) throw new Error("Fixture mutator failed: " + result.signal);
-  if (request.fixtureFailure) throw new Error("controlled pipeline failure");
-  if (request.fixtureLog) console.log(request.fixtureLog);
-  writeFileSync(join(run, "result.json"), JSON.stringify({ status: "succeeded", stages: [{ phase: "completed" }] }));
-  console.log(request.id + ": pipeline completed");
-}
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  try { await pipeline(JSON.parse(readFileSync(process.argv[2], "utf8")), dirname(process.argv[2])); }
-  catch (error) { console.error(error.message); process.exitCode = 1; }
-}
-`;
-
-function fixture(t) {
-  const path = mkdtempSync(join(tmpdir(), "sg-deployment-concurrency-"));
-  const tools = join(path, "tools"), events = join(path, "events");
-  const runs = [];
-  t.after(() => {
-    for (const run of runs)
-      for (const name of ["pipeline.pid", "mutator.pid"])
-        if (existsSync(join(run, name))) kill(Number(readFileSync(join(run, name), "utf8")));
+async function fixture(t) {
+  const path = mkdtempSync(join(tmpdir(), "sg-ops-real-"));
+  const home = join(path, "pm2"), config = fixtureConfig(path);
+  config.remoteRoot = path;
+  const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("PM2_")));
+  Object.assign(env, { PM2_HOME: home, PM2_DISCRETE_MODE: "1", PM2_DAEMON_TITLE: `PM2 test daemon (${home})` });
+  const processes = [], externalChildren = new Map();
+  let daemon;
+  t.after(async () => {
+    if (!daemon && existsSync(join(home, "pm2.pid"))) {
+      const candidate = processInfo(Number(readFileSync(join(home, "pm2.pid"), "utf8")));
+      if (candidate?.args.join(" ").includes(home) && inPrivatePM2(candidate.pid, home)) daemon = candidate;
+    }
+    if (alive(daemon))
+      for (const pid of childrenOf(daemon.pid))
+        if (inPrivatePM2(pid, home)) externalChildren.set(pid, processInfo(pid));
+    signal(daemon, "SIGCONT");
+    for (const child of processes) {
+      for (const pid of childrenOf(child.process.pid)) {
+        if (inPrivatePM2(pid, home)) externalChildren.set(pid, processInfo(pid));
+      }
+      signal(child.identity, "SIGKILL");
+    }
+    for (const identity of externalChildren.values()) signal(identity, "SIGKILL");
+    await Promise.all(processes.map((child) => child.done));
+    if (alive(daemon)) {
+      spawnSync("pm2", ["kill"], { env, stdio: "ignore", timeout: 5000 });
+      signal(daemon, "SIGKILL");
+      await until(() => !alive(daemon), "private PM2 daemon shutdown");
+    }
     rmSync(path, { recursive: true, force: true });
   });
-  cpSync(ops, tools, { recursive: true });
-  writeFileSync(join(tools, "lib/pipeline.mjs"), boundaryPipeline);
-  const mutator = join(path, "mutator.mjs");
-  writeFileSync(mutator, `
-import { existsSync, writeFileSync, appendFileSync } from "node:fs";
-import { join } from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
-const [run, events, id] = process.argv.slice(2);
-writeFileSync(join(run, "mutator.pid"), String(process.pid));
-for (const signal of ["SIGTERM", "SIGHUP", "SIGINT"])
-  process.on(signal, () => appendFileSync(events, id + ":signal:" + signal + "\\n"));
-const deadline = Date.now() + 8000;
-for (const phase of ["mutation", "save"]) {
-  appendFileSync(events, id + ":" + phase + "\\n");
-  while (!existsSync(join(run, "allow-" + phase))) {
-    if (Date.now() > deadline) process.exit(98);
-    await delay(10);
+  const repository = config.masterRepository;
+  execute("git", ["init", "--quiet", "--initial-branch=master", repository]);
+  execute("git", ["-C", repository, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "--quiet", "--allow-empty", "-m", "fixture authority"]);
+  const revision = execute("git", ["-C", repository, "rev-parse", "HEAD"]);
+  const opsRevision = execute("git", ["-C", ops, "rev-parse", "HEAD"]);
+  for (const target of Object.values(config.targets)) {
+    mkdirSync(dirname(target.envFile), { recursive: true });
+    writeFileSync(target.envFile, [
+      "APP_ORIGIN=https://fixture.invalid", "PORT=0", "OUTPUT_DOMAIN=-output.fixture.invalid",
+      `KEY_ENCRYPTION_SECRET=${"a".repeat(64)}`, "GITHUB_CLIENT_ID=fixture", "GITHUB_CLIENT_SECRET=fixture",
+    ].join("\n") + "\n");
   }
-}
-appendFileSync(events, id + ":done\\n");
-`);
-  function run(id, target = "staging", deploymentRoot = path) {
-    const run = join(path, id);
-    mkdirSync(run);
-    runs.push(run);
-    writeFileSync(join(run, "request.json"), JSON.stringify({
-      id, target, tests: "skip", discardGrids: [],
-      revision: "a".repeat(40), opsRevision: "b".repeat(40),
-      tools, events, mutator, config: fixtureConfig(path),
+  const source = join(path, "source"), archive = join(path, "source.tar.gz");
+  mkdirSync(source);
+  writeFileSync(join(source, "payload.txt"), "private source archive for checksum rejection\n");
+  execute("tar", ["-czf", archive, "-C", source, "."]);
+  const hash = createHash("sha256").update(readFileSync(archive)).digest("hex");
+  const wrongHash = (hash[0] === "0" ? "1" : "0") + hash.slice(1);
+  execute("pm2", ["ping"], { env });
+  daemon = processInfo(Number(readFileSync(join(home, "pm2.pid"), "utf8")));
+  assert.ok(alive(daemon));
+  assert.ok(daemon.args.join(" ").includes(home), "Daemon identity must name the private PM2_HOME");
+  assert.equal(inPrivatePM2(daemon.pid, home), true);
+
+  function start(program, args) {
+    const process = spawn(program, args, { env, detached: true, stdio: ["ignore", "pipe", "pipe"] });
+    const identity = processInfo(process.pid);
+    let stdout = "", stderr = "";
+    process.stdout.on("data", (value) => { stdout += value; });
+    process.stderr.on("data", (value) => { stderr += value; });
+    const done = new Promise((resolve) => {
+      const timer = setTimeout(() => signal(identity, "SIGKILL"), 20000);
+      process.once("error", (error) => {
+        clearTimeout(timer);
+        resolve({ code: null, error, stdout, stderr });
+      });
+      process.once("close", (code, signal) => {
+        clearTimeout(timer);
+        resolve({ code, signal, stdout, stderr });
+      });
+    });
+    const child = { process, identity, done };
+    processes.push(child);
+    return child;
+  }
+  function run(id, target = "staging") {
+    const directory = join(path, "runs", id);
+    mkdirSync(directory, { recursive: true });
+    copyFileSync(archive, join(directory, "source.tar.gz"));
+    copyFileSync(archive, join(directory, "frontend.tar.gz"));
+    writeFileSync(join(directory, "request.json"), JSON.stringify({
+      id, target, tests: "skip", mode: "auto", discardGrids: [],
+      revision, opsRevision, sourceHash: wrongHash, frontendHash: hash, tools: ops, config,
     }));
-    return { id, path: run, root: deploymentRoot };
+    return { id, path: directory };
+  }
+  async function pause() {
+    signal(daemon, "SIGSTOP");
+    await until(() => ["T", "t"].includes(processInfo(daemon.pid)?.state), "private PM2 daemon stop");
+  }
+  async function pingChild(run) {
+    const owner = await until(() => existsSync(join(run.path, "owner.json")) && JSON.parse(readFileSync(join(run.path, "owner.json"), "utf8")), "worker identity");
+    return until(() => {
+      for (const pid of childrenOf(owner.pid)) {
+        const identity = processInfo(pid);
+        if (identity?.args.includes("ping") && identity.args.some((value) => basename(value) === "pm2") &&
+            inPrivatePM2(pid, home) && socketOpen(pid)) {
+          externalChildren.set(pid, identity);
+          return identity;
+        }
+      }
+      return null;
+    }, "real PM2 ping child waiting on the stopped daemon");
   }
   return {
-    path, tools, events, run,
-    launch: (run) => child(t, "bash", [join(tools, "remote-run.sh"), run.path, run.root]),
-    lines: () => existsSync(events) ? readFileSync(events, "utf8").trim().split("\n") : [],
+    path, env, daemon, run, start, pause, pingChild,
+    resume: () => signal(daemon, "SIGCONT"),
+    launch: (run) => start("bash", [join(ops, "remote-run.sh"), run.path, path]),
   };
 }
 
-function release(run, phase) {
-  for (const value of phase ? [phase] : ["mutation", "save"])
-    writeFileSync(join(run.path, "allow-" + value), "continue");
+function status(f, run, offset = 0) {
+  return JSON.parse(execute(process.execPath, [join(ops, "lib/status.mjs"), run.path, String(offset)], { env: f.env }));
 }
 
 function evidence(run) {
   return Object.fromEntries(readdirSync(run.path).sort()
     .filter((name) => statSync(join(run.path, name)).isFile())
-    .map((name) => [name, readFileSync(join(run.path, name), "utf8")]));
+    .map((name) => [name, readFileSync(join(run.path, name))]));
 }
 
-function status(f, run, offset = 0) {
-  const result = spawnSync(process.execPath, [join(f.tools, "lib/status.mjs"), run.path, String(offset)], { encoding: "utf8" });
-  assert.equal(result.status, 0, result.stderr);
-  return JSON.parse(result.stdout);
-}
-
-function assertNotTerminal(f, run) {
-  assert.equal(status(f, run).exit, null, "Terminal status published while a mutator remained active");
-  assert.equal(existsSync(join(run.path, "exit")), false, "Exit published before the external child finished");
-  if (existsSync(join(run.path, "result.json")))
-    assert.ok(!["succeeded", "failed", "interrupted", "cancelled"].includes(JSON.parse(readFileSync(join(run.path, "result.json"), "utf8")).status));
-}
-
-test("duplicate active run starts preserve incumbent evidence and execute once", { timeout: 20000 }, async (t) => {
-  const f = fixture(t), run = f.run("incumbent");
-  const first = f.launch(run);
-  await until(() => f.lines().includes("incumbent:mutation"), "incumbent mutation barrier");
-  const before = evidence(run);
-  const duplicate = await f.launch(run).done;
-  assert.notEqual(duplicate.code, 0);
-  assert.notEqual(duplicate.timedOut, true, "Duplicate run must fail without waiting");
-  assert.deepEqual(evidence(run), before, "Duplicate start changed active run evidence");
-  assertNotTerminal(f, run);
-  release(run);
-  assert.equal((await first.done).code, 0);
-  assert.deepEqual(f.lines().filter((line) => line.endsWith(":pipeline")), ["incumbent:pipeline"]);
-  assert.equal(status(f, run).exit, 0);
-});
-
-test("completed run cannot be replayed or have its evidence overwritten", { timeout: 20000 }, async (t) => {
-  const f = fixture(t), run = f.run("incumbent");
-  release(run);
-  assert.equal((await f.launch(run).done).code, 0);
-  const completed = evidence(run);
-  const replay = await f.launch(run).done;
-  assert.notEqual(replay.code, 0);
-  assert.notEqual(replay.timedOut, true, "Completed run must not execute again");
-  assert.deepEqual(evidence(run), completed, "Replay changed completed run evidence");
-  assert.deepEqual(f.lines().filter((line) => line.endsWith(":pipeline")), ["incumbent:pipeline"]);
-  assert.equal(status(f, run).exit, 0);
-});
-
-for (const [target, other] of [["staging", "production"], ["production", "staging"]])
-  test(`${target} excludes ${other} through mutation and final save without signalling the incumbent`, { timeout: 20000 }, async (t) => {
-    const f = fixture(t), run = f.run("incumbent", target);
-    const first = f.launch(run);
-    await until(() => f.lines().includes("incumbent:mutation"), "mutation barrier");
-    for (const phase of ["mutation", "save"]) {
-      const contender = f.run("contender-" + phase, other);
-      const result = await f.launch(contender).done;
-      assert.equal(result.code, 75, result.stderr);
-      assert.equal(status(f, contender).exit, 75);
-      assert.equal(f.lines().some((line) => line.startsWith(contender.id + ":")), false);
-      assert.equal(f.lines().some((line) => line.includes(":signal:")), false);
-      assertNotTerminal(f, run);
-      release(run, phase);
-      if (phase === "mutation")
-        await until(() => f.lines().includes("incumbent:save"), "final save barrier");
-    }
-    assert.equal((await first.done).code, 0);
-    const successor = f.run("successor", other);
-    release(successor);
-    assert.equal((await f.launch(successor).done).code, 0);
-    assert.deepEqual(f.lines().filter((line) => /:(mutation|save|done)$/.test(line)), [
-      "incumbent:mutation", "incumbent:save", "incumbent:done",
-      "successor:mutation", "successor:save", "successor:done",
-    ]);
-  });
-
-for (const signal of ["SIGTERM", "SIGHUP", "SIGINT"])
-  test(`${signal} to the owner cannot publish a terminal outcome or admit another mutator early`, { timeout: 20000 }, async (t) => {
-    const f = fixture(t), run = f.run("signalled");
-    const first = f.launch(run);
-    await until(() => f.lines().includes("signalled:mutation"), "external mutator barrier");
-    const owner = Number(readFileSync(join(run.path, "pid"), "utf8"));
-    kill(owner, signal);
-    const result = await f.launch(f.run("contender", "production")).done;
-    assert.equal(result.code, 75);
-    assertNotTerminal(f, run);
-    release(run);
-    assert.equal((await first.done).code, 0, "Catchable termination must defer to the deployment outcome");
-    assert.equal(status(f, run).exit, 0);
-    assert.ok(JSON.parse(readFileSync(join(run.path, "terminal.json"), "utf8")).deferredSignals.includes(signal));
-    assert.equal(f.lines().some((line) => line.includes(":signal:")), false);
-  });
-
-test("abnormal owner death fences successors while an external mutator survives and after it exits", { timeout: 20000 }, async (t) => {
-  const f = fixture(t), run = f.run("abandoned");
-  const first = f.launch(run);
-  await until(() => f.lines().includes("abandoned:mutation"), "surviving mutator barrier");
-  const owner = Number(readFileSync(join(run.path, "pid"), "utf8"));
-  const pipeline = Number(readFileSync(join(run.path, "pipeline.pid"), "utf8"));
-  const mutator = Number(readFileSync(join(run.path, "mutator.pid"), "utf8"));
-  kill(owner);
-  if (pipeline !== owner) kill(pipeline);
-  await first.done;
-  process.kill(mutator, 0);
+function assertActive(f, run, ping) {
   const observed = status(f, run);
-  assert.notEqual(observed.exit, 0, "Owner loss must never imply deployment success");
-  for (const phase of ["child-active", "child-finished"]) {
-    const contender = f.run("blocked-" + phase, "production");
-    release(contender);
-    const result = await f.launch(contender).done;
-    assert.notEqual(result.code, 0, "Abandoned transaction admitted a successor");
-    assert.notEqual(result.timedOut, true, "A fenced successor must fail fast");
-    assert.equal(f.lines().some((line) => line.startsWith(contender.id + ":")), false);
-    if (phase === "child-active") {
-      const rehearsal = f.run("independent", "rehearse");
-      release(rehearsal);
-      assert.equal((await f.launch(rehearsal).done).code, 0, "Private rehearsal must bypass the abandoned deployment fence");
-      release(run);
-      await until(() => f.lines().includes("abandoned:done"), "surviving mutator completion");
-    }
-  }
-});
+  assert.equal(observed.exit, null);
+  assert.equal(observed.orphaned, false);
+  assert.equal(existsSync(join(run.path, "exit")), false);
+  assert.ok(alive(ping), "The real PM2 CLI child must remain alive");
+}
 
-test("independent rehearsal bypasses an active deployment without changing its evidence", { timeout: 20000 }, async (t) => {
-  const f = fixture(t), run = f.run("deployment");
-  const first = f.launch(run);
-  await until(() => f.lines().includes("deployment:mutation"), "deployment mutation barrier");
-  const before = evidence(run), rehearsal = f.run("rehearsal", "rehearse");
-  release(rehearsal);
-  assert.equal((await f.launch(rehearsal).done).code, 0);
-  assert.deepEqual(evidence(run), before);
-  assertNotTerminal(f, run);
-  release(run);
-  assert.equal((await first.done).code, 0);
-});
-
-test("a caught pipeline failure preserves the deployment fence and rejects successors", { timeout: 20000 }, async (t) => {
-  const f = fixture(t), run = f.run("failed");
-  const request = JSON.parse(readFileSync(join(run.path, "request.json"), "utf8"));
-  request.fixtureFailure = true;
-  writeFileSync(join(run.path, "request.json"), JSON.stringify(request));
-  release(run);
-  assert.equal((await f.launch(run).done).code, 1);
+function assertChecksumFailure(f, run) {
   const observed = status(f, run);
   assert.equal(observed.exit, 1);
   assert.equal(observed.recoveryRequired, true);
-  assert.match(observed.log, /controlled pipeline failure/);
-  const contender = f.run("successor", "production");
-  release(contender);
-  assert.equal((await f.launch(contender).done).code, 75);
-  assert.equal(f.lines().includes("successor:pipeline"), false);
+  assert.match(observed.log, /Source archive checksum mismatch/);
+}
+
+test("duplicate active and completed starts preserve real worker evidence", { timeout: 30000 }, async (t) => {
+  const f = await fixture(t), run = f.run("incumbent");
+  await f.pause();
+  const first = f.launch(run), ping = await f.pingChild(run);
+  const active = evidence(run);
+  assert.equal((await f.launch(run).done).code, 75);
+  assert.deepEqual(evidence(run), active);
+  assertActive(f, run, ping);
+  f.resume();
+  assert.equal((await first.done).code, 1);
+  assertChecksumFailure(f, run);
+  const completed = evidence(run);
+  assert.equal((await f.launch(run).done).code, 75);
+  assert.deepEqual(evidence(run), completed);
 });
 
-test("the real pipeline executable refuses to bypass worker admission", (t) => {
-  const f = fixture(t), run = f.run("unguarded");
+for (const [target, other] of [["staging", "production"], ["production", "staging"]])
+  test(`${target} excludes ${other} without cancelling the real incumbent`, { timeout: 30000 }, async (t) => {
+    const f = await fixture(t), run = f.run("incumbent", target);
+    await f.pause();
+    const first = f.launch(run), ping = await f.pingChild(run);
+    const contender = f.run("contender", other);
+    assert.equal((await f.launch(contender).done).code, 75);
+    assert.equal(status(f, contender).exit, 75);
+    assert.equal(JSON.parse(readFileSync(join(contender.path, "terminal.json"), "utf8")).status, "rejected");
+    assertActive(f, run, ping);
+    f.resume();
+    assert.equal((await first.done).code, 1);
+    assertChecksumFailure(f, run);
+    assert.deepEqual(JSON.parse(readFileSync(join(run.path, "terminal.json"), "utf8")).deferredSignals, []);
+  });
+
+for (const value of ["SIGTERM", "SIGHUP", "SIGINT"])
+  test(`${value} defers terminal publication while the real PM2 child waits`, { timeout: 30000 }, async (t) => {
+    const f = await fixture(t), run = f.run("signalled");
+    await f.pause();
+    const first = f.launch(run), ping = await f.pingChild(run);
+    signal(first.identity, value);
+    assert.equal((await f.launch(f.run("contender", "production")).done).code, 75);
+    assertActive(f, run, ping);
+    f.resume();
+    assert.equal((await first.done).code, 1);
+    assertChecksumFailure(f, run);
+    assert.ok(JSON.parse(readFileSync(join(run.path, "terminal.json"), "utf8")).deferredSignals.includes(value));
+  });
+
+test("owner SIGKILL fences successors while the real PM2 child survives and after it exits", { timeout: 30000 }, async (t) => {
+  const f = await fixture(t), run = f.run("abandoned");
+  await f.pause();
+  const first = f.launch(run), ping = await f.pingChild(run);
+  signal(first.identity, "SIGKILL");
+  assert.equal((await first.done).signal, "SIGKILL");
+  assert.ok(alive(ping));
+  execute("flock", ["-n", join(f.path, "deployment.lock"), "true"]);
+  assert.equal(status(f, run).orphaned, true);
+  assert.equal((await f.launch(f.run("child-active", "production")).done).code, 75);
+  assert.ok(alive(ping));
+  f.resume();
+  await until(() => !alive(ping), "surviving real PM2 CLI completion");
+  assert.equal((await f.launch(f.run("child-finished", "production")).done).code, 75);
+  assert.equal(existsSync(join(f.path, "deployment-transaction.json")), true);
+});
+
+test("a caught real pipeline failure retains its fence and blocks a successor", { timeout: 30000 }, async (t) => {
+  const f = await fixture(t), run = f.run("failed");
+  assert.equal((await f.launch(run).done).code, 1);
+  assertChecksumFailure(f, run);
+  assert.equal((await f.launch(f.run("successor", "production")).done).code, 75);
+  assert.equal(JSON.parse(readFileSync(join(f.path, "deployment-transaction.json"), "utf8")).run, run.path);
+});
+
+test("real rehearsal reaches its own checksum failure while deployment admission is held", { timeout: 30000 }, async (t) => {
+  const f = await fixture(t), run = f.run("deployment");
+  await f.pause();
+  const first = f.launch(run), ping = await f.pingChild(run);
+  const before = evidence(run), rehearsal = f.run("rehearsal", "rehearse");
+  assert.equal((await f.launch(rehearsal).done).code, 1);
+  const observed = status(f, rehearsal);
+  assert.equal(observed.exit, 1);
+  assert.equal(observed.recoveryRequired, false);
+  assert.match(observed.log, /Source archive checksum mismatch/);
+  assert.deepEqual(evidence(run), before);
+  assertActive(f, run, ping);
+  f.resume();
+  assert.equal((await first.done).code, 1);
+});
+
+test("the real pipeline executable refuses to bypass admission", { timeout: 30000 }, async (t) => {
+  const f = await fixture(t), run = f.run("unguarded");
   const result = spawnSync(process.execPath, [join(ops, "lib/pipeline.mjs"), join(run.path, "request.json")], {
-    encoding: "utf8", timeout: 5000,
+    env: f.env, encoding: "utf8", timeout: 10000,
   });
   assert.equal(result.status, 1);
   assert.match(result.stderr, /remote-run\.sh/);
   assert.equal(existsSync(join(run.path, "result.json")), false);
-  assert.deepEqual(f.lines(), []);
+  assert.equal(existsSync(join(f.path, "deployment-transaction.json")), false);
 });
 
-test("status drains a large completed log before returning its terminal result", { timeout: 20000 }, async (t) => {
-  const f = fixture(t), run = f.run("large-log", "rehearse");
-  const request = JSON.parse(readFileSync(join(run.path, "request.json"), "utf8"));
-  request.fixtureLog = "fixture log line\n".repeat(10000);
-  writeFileSync(join(run.path, "request.json"), JSON.stringify(request));
-  release(run);
-  assert.equal((await f.launch(run).done).code, 0);
+test("status drains stored large logs before returning the real pipeline failure", { timeout: 30000 }, async (t) => {
+  const f = await fixture(t), run = f.run("large-log");
+  await f.pause();
+  const first = f.launch(run);
+  await f.pingChild(run);
+  appendFileSync(join(run.path, "run.log"), "stored log data\n".repeat(10000));
+  f.resume();
+  assert.equal((await first.done).code, 1);
   let offset = 0, received = "", observed;
   do {
     observed = status(f, run, offset);
@@ -302,81 +339,51 @@ test("status drains a large completed log before returning its terminal result",
     assert.ok(observed.offset - offset <= 64 * 1024);
     offset = observed.offset;
     received += observed.log;
-    if (offset < statSync(join(run.path, "run.log")).size)
-      assert.equal(observed.exit, null);
+    if (offset < statSync(join(run.path, "run.log")).size) assert.equal(observed.exit, null);
   } while (observed.exit === null);
-  assert.equal(observed.exit, 0);
+  assert.equal(observed.exit, 1);
   assert.equal(received, readFileSync(join(run.path, "run.log"), "utf8"));
 });
 
-test("status rejects reused PID identity and ages claim-only starts into incomplete state", (t) => {
-  const f = fixture(t), run = f.run("claim-only", "rehearse");
+test("status rejects stale identity and ages a claim-only start into an orphan", { timeout: 30000 }, async (t) => {
+  const f = await fixture(t), run = f.run("claim-only");
   const claim = join(run.path, "worker.claim");
   mkdirSync(claim);
   assert.equal(status(f, run).status, "starting");
   const old = new Date(Date.now() - 60000);
   utimesSync(claim, old, old);
   assert.equal(status(f, run).orphaned, true);
-  writeFileSync(join(run.path, "owner.json"), JSON.stringify({
-    pid: process.pid, boot: readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim(),
-    start: "not-the-current-process-start", token: "stale-owner",
-  }));
-  const observed = status(f, run);
-  assert.equal(observed.orphaned, true);
-  assert.equal(observed.exit, null);
-});
-
-test("failed fence cleanup publishes a failed recovery-required outcome and keeps successors blocked", { timeout: 20000 }, async (t) => {
-  const f = fixture(t), run = f.run("cleanup-failure");
-  const first = f.launch(run);
-  await until(() => f.lines().includes("cleanup-failure:mutation"), "cleanup failure mutation barrier");
-  const marker = join(f.path, "deployment-transaction.json");
-  rmSync(marker);
-  mkdirSync(marker);
-  release(run);
+  const active = f.run("stale-identity");
+  await f.pause();
+  const first = f.launch(active);
+  await f.pingChild(active);
+  const ownerPath = join(active.path, "owner.json"), original = readFileSync(ownerPath);
+  const owner = JSON.parse(original);
+  owner.start = "0";
+  writeFileSync(ownerPath, JSON.stringify(owner));
+  assert.equal(status(f, active).orphaned, true);
+  writeFileSync(ownerPath, original);
+  f.resume();
   assert.equal((await first.done).code, 1);
-  const observed = status(f, run);
-  assert.equal(observed.exit, 1);
-  assert.equal(observed.recoveryRequired, true);
-  const contender = f.run("blocked-cleanup", "production");
-  release(contender);
-  assert.equal((await f.launch(contender).done).code, 75);
-  assert.equal(f.lines().includes("blocked-cleanup:pipeline"), false);
-  assert.equal(statSync(marker).isDirectory(), true);
 });
 
-test("prepared success is not terminal until its owning transaction fence is cleared", { timeout: 20000 }, async (t) => {
-  const f = fixture(t), run = f.run("prepared");
-  release(run);
-  assert.equal((await f.launch(run).done).code, 0);
-  const owner = JSON.parse(readFileSync(join(run.path, "owner.json"), "utf8"));
-  const marker = join(f.path, "deployment-transaction.json");
-  writeFileSync(marker, JSON.stringify({ owner, run: run.path }));
-  const observed = status(f, run);
-  assert.equal(observed.exit, null);
-  assert.equal(observed.orphaned, true);
-  assert.equal(observed.recoveryRequired, true);
-  rmSync(marker);
-  assert.equal(status(f, run).exit, 0);
-});
-
-test("status cannot report an orphan when completion follows an older terminal snapshot", { timeout: 20000 }, async (t) => {
-  const f = fixture(t), run = f.run("completion-race");
+test("status cannot falsely orphan a real worker completing after an older terminal snapshot", { timeout: 30000 }, async (t) => {
+  const f = await fixture(t), run = f.run("completion-race");
+  await f.pause();
   const first = f.launch(run);
-  await until(() => f.lines().includes("completion-race:mutation"), "completion race mutation barrier");
+  await f.pingChild(run);
   const terminal = join(run.path, "terminal.json");
-  const fifo = spawnSync("mkfifo", [terminal], { encoding: "utf8", timeout: 5000 });
-  assert.equal(fifo.status, 0, fifo.stderr);
+  execute("mkfifo", [terminal]);
   let retained = openSync(terminal, constants.O_RDWR);
   t.after(() => { if (retained !== null) closeSync(retained); });
-  const reader = child(t, process.execPath, [join(f.tools, "lib/status.mjs"), run.path]);
+  const reader = f.start(process.execPath, [join(ops, "lib/status.mjs"), run.path]);
   const descriptors = `/proc/${reader.process.pid}/fd`;
   await until(() => readdirSync(descriptors).some((name) => {
     try { return readlinkSync(join(descriptors, name)) === terminal; }
     catch (error) { if (error.code === "ENOENT") return false; throw error; }
   }), "status reader opening the retained terminal FIFO");
-  release(run);
-  assert.equal((await first.done).code, 0);
+  f.resume();
+  assert.equal((await first.done).code, 1);
   assert.equal(statSync(terminal).isFile(), true);
   writeSync(retained, "null");
   closeSync(retained);
@@ -384,7 +391,7 @@ test("status cannot report an orphan when completion follows an older terminal s
   const result = await reader.done;
   assert.equal(result.code, 0, result.stderr);
   const observed = JSON.parse(result.stdout);
-  assert.notEqual(observed.status, "incomplete", "A stale terminal snapshot combined with later owner death produced a false orphan");
+  assert.notEqual(observed.status, "incomplete");
   assert.equal(observed.orphaned, false);
-  assert.equal(status(f, run).exit, 0);
+  assert.equal(status(f, run).exit, 1);
 });

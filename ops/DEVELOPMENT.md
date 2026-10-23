@@ -148,9 +148,11 @@ provided by deployment serialization.
 ./check.sh --test-name-pattern='argument policy' tests/pipeline.test.mjs
 ```
 
-The runner uses the local candidate application's dependencies and isolated
-fixtures. It needs no deployment configuration or SSH connection. Application
-fixture dependencies must be installed before running it.
+Install the local candidate application's dependencies before running the checks.
+Run them on Linux with `/proc`, Git, pnpm, tar, flock, rsync, and PM2 available on
+`PATH`. The runner needs no deployment configuration or SSH connection. It owns
+temporary data and private `PM2_HOME` directories; leave shared PM2 instances
+untouched.
 
 ## Data administration
 
