@@ -598,6 +598,9 @@ test("shared image settings transfer to axes, preserve equal values on removal, 
   await expect(
     page.getByRole("checkbox", { name: "Fixture image", exact: true }),
   ).toBeChecked();
+  await page
+    .getByRole("checkbox", { name: "transparent", exact: true })
+    .uncheck();
   await field("Columns").selectOption("quality");
   await field("Background").selectOption("auto");
   await field("Size").selectOption("auto");
