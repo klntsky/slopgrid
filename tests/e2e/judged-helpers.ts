@@ -91,3 +91,14 @@ export async function createJudged(page: Page, input: GridInput = judgedInput) {
   await page.goto(`/grid/${grid.id}`);
   return grid.id as string;
 }
+
+export async function seedJudged(page: Page, input: GridInput = judgedInput) {
+  await page.request.get("/api/grids");
+  const response = await page.request.post("/fixture/completed-judgment", {
+    data: input,
+  });
+  expect(response.status()).toBe(201);
+  const grid = await response.json();
+  await page.goto(`/grid/${grid.id}`);
+  return grid.id as string;
+}

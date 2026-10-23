@@ -1,6 +1,6 @@
 import { test, expect } from "./fixtures";
 import { scrollToRest } from "./helpers";
-import { createJudged, judgedInput } from "./judged-helpers";
+import { seedJudged, judgedInput } from "./judged-helpers";
 test("judgment hover retains synchronized positions across exit and source changes", async ({
   page,
 }) => {
@@ -22,7 +22,7 @@ test("judgment hover retains synchronized positions across exit and source chang
       }),
     },
   });
-  await createJudged(page, {
+  await seedJudged(page, {
     ...judgedInput,
     rows: [{ id: "row-1", judge_model: "fixture/text" }],
     columns: [
@@ -258,7 +258,7 @@ test("judgment hover aligns short criteria fractionally even when unequal views 
       }),
     },
   });
-  const id = await createJudged(page, {
+  const id = await seedJudged(page, {
     ...judgedInput,
     caseAxis: "rows",
     parameters: {
@@ -529,7 +529,7 @@ test("native judgment wheel aligns the criterion under a stationary cursor in un
       }),
     },
   });
-  const id = await createJudged(page, {
+  const id = await seedJudged(page, {
     ...judgedInput,
     caseAxis: "rows",
     parameters: {
@@ -707,7 +707,7 @@ test("judgment layout changes after desktop scrollend refresh a stationary curso
       }),
     },
   });
-  const id = await createJudged(page, {
+  const id = await seedJudged(page, {
     ...judgedInput,
     caseAxis: "rows",
     parameters: {

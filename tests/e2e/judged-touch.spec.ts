@@ -1,7 +1,7 @@
 import { test, expect } from "./fixtures";
 import { scrollToRest } from "./helpers";
 import {
-  createJudged,
+  seedJudged,
   judgedInput,
   expectJudgmentFocus,
   expectJudgmentAlignment,
@@ -30,7 +30,7 @@ test.describe("touch judgment following", () => {
         }),
       },
     });
-    const id = await createJudged(page, {
+    const id = await seedJudged(page, {
       ...judgedInput,
       rows: [{ id: "row-1", judge_model: "fixture/text" }],
       parameters: {
@@ -114,7 +114,7 @@ test.describe("touch judgment following", () => {
         }),
       },
     });
-    const id = await createJudged(page, {
+    const id = await seedJudged(page, {
       ...judgedInput,
       rows: [{ id: "row-1", judge_model: "fixture/text" }],
       columns: [
@@ -450,7 +450,7 @@ test.describe("touch judgment following", () => {
         }),
       },
     });
-    const id = await createJudged(page, {
+    const id = await seedJudged(page, {
       ...judgedInput,
       rows: [{ id: "row-1", judge_model: "fixture/text" }],
       columns: [

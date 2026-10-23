@@ -9,6 +9,7 @@ import { mkdirSync } from "node:fs";
 import { once } from "node:events";
 import { Store } from "../server/store.js";
 import { seedGridLists } from "./grid-list-fixture.js";
+import { seedCompletedJudgment } from "./completed-judgment-fixture.js";
 import { createSessionReader } from "../server/session.js";
 import { parseE2EPort } from "./e2e-port.js";
 const port = parseE2EPort(process.env.E2E_PORT);
@@ -479,6 +480,24 @@ app.post("/fixture/grids", (req, res) => {
   res.json(
     seedGridLists(store, session.anonymousId ?? session.id, req.body?.counts),
   );
+});
+app.post("/fixture/completed-judgment", (req, res) => {
+  const session = createSessionReader(store, new URL("https://localhost")).read(
+    req,
+  );
+  if (!session) return res.sendStatus(401);
+  if (judgeOutput === undefined)
+    return res
+      .status(400)
+      .json({ error: "Configure judgeOutput before seeding judgments" });
+  const id = seedCompletedJudgment(
+    store,
+    session.anonymousId ?? session.id,
+    req.body,
+    judgeOutput,
+    markdownOutput,
+  );
+  res.status(201).json({ id });
 });
 app.post("/fixture/reset", (req, res) => {
   store.db.exec("DROP TRIGGER IF EXISTS fail_reference_upload");

@@ -66,9 +66,27 @@ export async function kill(child: ChildProcess) {
   await exited;
 }
 
+type RuntimeCatalog = {
+  data: {
+    id: string;
+    name: string;
+    alias_target?: { slug: string };
+    pricing: { prompt: string; completion: string };
+    context_length: number;
+    top_provider: { max_completion_tokens: number };
+    architecture: { input_modalities: string[]; output_modalities: string[] };
+    supported_parameters: string[];
+  }[];
+};
+
 /** Real service processes with a controllable external HTTP provider. */
 export async function runtimeFixture(
-  options: { workers?: number; judges?: boolean; images?: boolean } = {},
+  options: {
+    workers?: number;
+    judges?: boolean;
+    images?: boolean;
+    configureCatalog?: (catalog: RuntimeCatalog) => void;
+  } = {},
 ) {
   const directory = mkdtempSync(join(tmpdir(), "slopgrid-runtime-"));
   const database = join(directory, "app.sqlite"),
@@ -79,18 +97,7 @@ export async function runtimeFixture(
   store.saveSession({ id: owner, key: "manual-test-key", created: Date.now() });
   const upstream = express();
   upstream.use(express.json());
-  const catalog: {
-    data: {
-      id: string;
-      name: string;
-      alias_target?: { slug: string };
-      pricing: { prompt: string; completion: string };
-      context_length: number;
-      top_provider: { max_completion_tokens: number };
-      architecture: { input_modalities: string[]; output_modalities: string[] };
-      supported_parameters: string[];
-    }[];
-  } = {
+  const catalog: RuntimeCatalog = {
     data: [
       {
         id: "fixture/text",
@@ -122,6 +129,8 @@ export async function runtimeFixture(
         : []),
     ],
   };
+  // Seed catalog variations before either service can cache the model list.
+  options.configureCatalog?.(catalog);
   const credits = { total_credits: 100, total_usage: 0 };
   upstream.get("/models", (_req, res) => res.json(catalog));
   upstream.get("/images/models", (_req, res) =>

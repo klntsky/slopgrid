@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 import { appFixture } from "./app-fixture.js";
+import { storeFixture } from "./store-fixture.js";
 import { Provider } from "../server/provider.js";
 import { Store } from "../server/store.js";
 import { expandGrid, gridSchema, type Grid } from "../server/domain.js";
@@ -313,7 +314,7 @@ for (const format of ["chat-template", "markdown", "svg", "html"] as const)
 
 for (const format of ["markdown", "svg", "html"] as const)
   test(`${format} common and variable references hydrate, persist and inherit grid access`, async (t) => {
-    const { store, database, secret } = await appFixture(t);
+    const { store, database, secret } = storeFixture(t);
     const uploader = { id: token(), created: 0 };
     const owner = { id: token(), created: 0 };
     const common = store.references.add(referencePng, "common.png", uploader)!;
@@ -394,7 +395,7 @@ for (const format of ["markdown", "svg", "html"] as const)
 
 for (const side of ["rows", "columns"] as const)
   test(`${side} input attachments hydrate every case and track unused fields without leaking them into generation`, async (t) => {
-    const { store, database, secret } = await appFixture(t);
+    const { store, database, secret } = storeFixture(t);
     const uploader = { id: token(), created: 0 };
     const first = store.references.add(referencePng, "first.png", uploader)!;
     const second = store.references.add(
@@ -552,7 +553,7 @@ test("reference uploads distinguish invalid files from storage failures and reco
 });
 
 test("reference loaders retain exact content by ID within each execution", async (t) => {
-  const { store } = await appFixture(t);
+  const { store } = storeFixture(t);
   const session = { id: token(), created: Date.now() };
   const other = Buffer.concat([png, Buffer.from("different")]);
   const first = store.references.add(png, "one.png", session)!;
@@ -581,7 +582,7 @@ test("reference loaders retain exact content by ID within each execution", async
 });
 
 test("grid creation records every configured field image atomically and keeps membership tied to immutable configuration", async (t) => {
-  const { store } = await appFixture(t);
+  const { store } = storeFixture(t);
   const uploader = { id: token(), created: 0 };
   const owner = { id: token(), created: 0 };
   const first = store.references.add(png, "first.png", uploader)!;
@@ -655,7 +656,7 @@ test("grid creation records every configured field image atomically and keeps me
 });
 
 test("identical uploads share one blob across private owners and grids without sharing metadata access", async (t) => {
-  const { store, database, secret } = await appFixture(t);
+  const { store, database, secret } = storeFixture(t);
   const alice = { id: token(), created: 0 };
   const bob = { id: token(), userId: "bob-account", created: 0 };
   const first = store.references.add(png, "alice.png", alice)!;
@@ -753,7 +754,7 @@ test("identical uploads share one blob across private owners and grids without s
 });
 
 test("concurrent identical uploads atomically install one shared blob", async (t) => {
-  const { store, database, secret } = await appFixture(t);
+  const { store, database, secret } = storeFixture(t);
   const gate = new SharedArrayBuffer(4);
   const workers = Array.from(
     { length: 4 },

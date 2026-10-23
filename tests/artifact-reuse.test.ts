@@ -1074,11 +1074,12 @@ test("effective model, prompt, effort and format determine actual reuse", async 
 });
 
 test("budget and token ceiling changes reuse outputs that fit through copies and restarts", async () => {
-  const f = await runtimeFixture();
+  const f = await runtimeFixture({
+    configureCatalog(catalog) {
+      catalog.data[0].pricing = { prompt: "0", completion: "0.001" };
+    },
+  });
   try {
-    f.catalog.data[0].pricing = { prompt: "0", completion: "0.001" };
-    await kill(f.web);
-    await f.startWeb();
     const config = currentDefinition({
       ...input,
       budgetUsd: 2,
@@ -1128,11 +1129,12 @@ test("budget and token ceiling changes reuse outputs that fit through copies and
 });
 
 test("reuse selects the first matching source whose actual usage fits the new limit", async () => {
-  const f = await runtimeFixture();
+  const f = await runtimeFixture({
+    configureCatalog(catalog) {
+      catalog.data[0].pricing = { prompt: "0", completion: "0.001" };
+    },
+  });
   try {
-    f.catalog.data[0].pricing = { prompt: "0", completion: "0.001" };
-    await kill(f.web);
-    await f.startWeb();
     const config = currentDefinition({
       ...input,
       budgetUsd: 1,
@@ -1185,11 +1187,12 @@ test("reuse selects the first matching source whose actual usage fits the new li
 });
 
 test("missing token usage reuses only when the original ceiling fits, including copies", async () => {
-  const f = await runtimeFixture();
+  const f = await runtimeFixture({
+    configureCatalog(catalog) {
+      catalog.data[0].pricing = { prompt: "0", completion: "0.001" };
+    },
+  });
   try {
-    f.catalog.data[0].pricing = { prompt: "0", completion: "0.001" };
-    await kill(f.web);
-    await f.startWeb();
     const config = currentDefinition({
       ...input,
       budgetUsd: 0.5,
@@ -1257,17 +1260,17 @@ test("stored artifacts with stale request signatures regenerate instead of reusi
 });
 
 test("duplicate effective prompts choose the first source cell and model alias retargeting forces generation", async () => {
-  const f = await runtimeFixture();
+  const f = await runtimeFixture({
+    configureCatalog(catalog) {
+      catalog.data.push({ ...catalog.data[0], id: "fixture/other" });
+      catalog.data.push({
+        ...catalog.data[0],
+        id: "fixture/latest",
+        alias_target: { slug: "fixture/text" },
+      });
+    },
+  });
   try {
-    f.catalog.data.push({ ...f.catalog.data[0], id: "fixture/other" });
-    f.catalog.data.push({
-      ...f.catalog.data[0],
-      id: "fixture/latest",
-      alias_target: { slug: "fixture/text" },
-    });
-    // The web process caches the catalog while preparing its frontend.
-    await kill(f.web);
-    await f.startWeb();
     const config = currentDefinition({
       ...input,
       parameters: {
@@ -1327,16 +1330,18 @@ test("duplicate effective prompts choose the first source cell and model alias r
 });
 
 test("reuse leaves preparation failures on individual cells and skips unsigned sources", async () => {
-  const f = await runtimeFixture();
+  const f = await runtimeFixture({
+    configureCatalog(catalog) {
+      catalog.data.push({
+        ...catalog.data[0],
+        id: "fixture/unpriced",
+        pricing: { prompt: "", completion: "" },
+        context_length: 0,
+        top_provider: { max_completion_tokens: 0 },
+      });
+    },
+  });
   try {
-    f.catalog.data.push({
-      ...f.catalog.data[0],
-      id: "fixture/unpriced",
-      pricing: { prompt: "", completion: "" },
-      context_length: 0,
-      top_provider: { max_completion_tokens: 0 },
-    });
-    await f.startWeb();
     const config = currentDefinition({
       ...input,
       parameters: {
