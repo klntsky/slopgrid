@@ -1,12 +1,4 @@
-import type {
-  Cell,
-  CaseRecord,
-  ChatMessage,
-  Effort,
-  GridInput,
-  ParameterSources,
-  VariableField,
-} from "./domain.js";
+import type { Cell, ChatMessage, Effort, VariableField } from "./domain.js";
 import type { ImageSettings, ReferenceImage } from "./image-settings.js";
 import type { Criterion } from "./judge-criteria.js";
 
@@ -25,8 +17,6 @@ export type LegacyGridAxis =
         | "input_references";
       values: string[];
     };
-export type LegacyJudgeCriteria =
-  Criterion[] | { axis: "rows" | "columns"; cases: Criterion[][] };
 
 // Persisted metadata only. This is deliberately not an admission/editor schema.
 export type LegacyGridInput = {
@@ -41,24 +31,9 @@ export type LegacyGridInput = {
   referenceGroups?: Record<string, ReferenceImage[]>;
   model: string;
   effort: Effort;
-  judge?: { criteria: LegacyJudgeCriteria; model: string; effort: Effort };
+  judge?: { criteria: Criterion[]; model: string; effort: Effort };
   parallelWorkers?: number;
   budgetUsd: number;
-};
-
-// Version 2 grids retain their accepted root-input metadata for read projections.
-// They are never parsed by the current admission or editor schemas.
-export type Version2GridInput = Omit<
-  GridInput,
-  "inputVersion" | "parameters" | "rows" | "columns" | "caseAxis"
-> & {
-  inputVersion: 2;
-  parameters: Omit<ParameterSources, "input">;
-  rows: Omit<CaseRecord, "input">[];
-  columns: Omit<CaseRecord, "input">[];
-  prompt: string;
-  promptImages: ReferenceImage[];
-  messages?: ChatMessage[];
 };
 
 export const legacyVariableToken = /\$(ROW|COLUMN)(\d*)(?![\p{L}\p{N}_])/gu;
@@ -113,18 +88,6 @@ export function interpolateLegacyVariables(
   return { text: expanded, ...(images.length ? { images } : {}) };
 }
 
-export function legacyCriteriaForCell(
-  input: Pick<LegacyGridInput, "judge">,
-  row: number,
-  column: number,
-): Criterion[] {
-  const source = input.judge?.criteria;
-  if (!source) return [];
-  return Array.isArray(source)
-    ? source
-    : (source.cases[source.axis === "rows" ? row : column] ?? []);
-}
-
 export function resolveLegacyCriteriaForCell(
   input: Pick<LegacyGridInput, "judge" | "rows" | "columns">,
   row: number,
@@ -132,19 +95,17 @@ export function resolveLegacyCriteriaForCell(
   options: LegacyInterpolationOptions = {},
 ): { criteria: Criterion[]; images?: ReferenceImage[] } {
   let images: ReferenceImage[] | undefined;
-  const criteria = legacyCriteriaForCell(input, row, column).map(
-    (criterion) => {
-      const expanded = interpolateLegacyVariables(
-        criterion.text,
-        input,
-        row,
-        column,
-        options,
-      );
-      images = mergeImages(images, expanded.images);
-      return { ...criterion, text: expanded.text };
-    },
-  );
+  const criteria = (input.judge?.criteria ?? []).map((criterion) => {
+    const expanded = interpolateLegacyVariables(
+      criterion.text,
+      input,
+      row,
+      column,
+      options,
+    );
+    images = mergeImages(images, expanded.images);
+    return { ...criterion, text: expanded.text };
+  });
   return { criteria, ...(images ? { images } : {}) };
 }
 

@@ -67,30 +67,24 @@ function discardFixture(t, version = 14) {
       ALTER TABLE cells ADD COLUMN judgment_id TEXT REFERENCES workflow_tasks(id);
       ALTER TABLE inference_calls ADD COLUMN task_id TEXT REFERENCES workflow_tasks(id);
     `);
-    if (version >= 15) {
+    if (version === 17) {
       db.exec(`
-        CREATE TABLE reference_blobs(sha256 TEXT PRIMARY KEY CHECK(length(sha256)=64)) STRICT;
+        CREATE TABLE reference_blobs(
+          sha256 TEXT PRIMARY KEY CHECK(length(sha256)=64),
+          width INTEGER CHECK(width IS NULL OR width > 0),
+          height INTEGER CHECK((width IS NULL AND height IS NULL) OR (width IS NOT NULL AND height IS NOT NULL AND height > 0))
+        ) STRICT;
         CREATE TABLE reference_images(id TEXT PRIMARY KEY,owner TEXT NOT NULL,owner_user_id TEXT,name TEXT NOT NULL,media_type TEXT NOT NULL,sha256 TEXT REFERENCES reference_blobs(sha256)) STRICT;
         CREATE INDEX reference_images_sha256 ON reference_images(sha256,id);
       `);
-      if (version >= 16)
-        db.exec(`
-          ALTER TABLE reference_blobs ADD COLUMN width INTEGER CHECK(width IS NULL OR width > 0);
-          ALTER TABLE reference_blobs ADD COLUMN height INTEGER CHECK((width IS NULL AND height IS NULL) OR (width IS NOT NULL AND height IS NOT NULL AND height > 0));
-        `);
       mkdirSync(join(env.OUTPUTS_PATH, ".references"));
       for (const [id, sha256, bytes] of [
         ["retained-reference", sharedUploadSha256, sharedUpload],
         ["selected-only-reference", selectedUploadSha256, selectedUpload],
       ]) {
-        if (version >= 16)
-          db.prepare(
-            "INSERT INTO reference_blobs (sha256,width,height) VALUES (?,?,?)",
-          ).run(sha256, 640, 480);
-        else
-          db.prepare("INSERT INTO reference_blobs (sha256) VALUES (?)").run(
-            sha256,
-          );
+        db.prepare(
+          "INSERT INTO reference_blobs (sha256,width,height) VALUES (?,?,?)",
+        ).run(sha256, 640, 480);
         db.prepare("INSERT INTO reference_images VALUES (?,?,?,?,?,?)").run(
           id,
           "upload-session",
@@ -123,7 +117,7 @@ function discardFixture(t, version = 14) {
           "INSERT INTO grid_reference_images VALUES (?,'retained-reference')",
         ).run(grid);
     }
-    if (version >= 15)
+    if (version === 17)
       db.prepare("INSERT INTO grid_reference_images VALUES (?,?)").run(
         selected,
         "selected-only-reference",
@@ -208,7 +202,7 @@ function discardFixture(t, version = 14) {
       ];
       if (version >= 13) tables.push("grid_reference_images");
       if (version >= 14) tables.push("workflow_tasks");
-      if (version >= 15) tables.push("reference_images", "reference_blobs");
+      if (version === 17) tables.push("reference_images", "reference_blobs");
       return Object.fromEntries(
         tables.map((table) => [
           table,

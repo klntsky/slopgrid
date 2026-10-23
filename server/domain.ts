@@ -33,7 +33,6 @@ import {
   type ParameterConfiguration,
 } from "./parameters.js";
 import type { LegacyGridInput } from "./legacy-grid-input.js";
-import type { Version2GridInput } from "./legacy-grid-input.js";
 import {
   generatorInputEntries,
   generatorInputForCell,
@@ -219,7 +218,7 @@ const gridInputSchema = z.discriminatedUnion("format", [
     .strict(),
 ]);
 export type GridInput = z.infer<typeof gridInputSchema>;
-export type StoredGridInput = GridInput | Version2GridInput | LegacyGridInput;
+export type StoredGridInput = GridInput | LegacyGridInput;
 export const modelSelectionIssueKind = "empty-model-selection";
 export const gridSchema = gridInputSchema
   .transform((g) => {

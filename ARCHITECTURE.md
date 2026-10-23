@@ -202,11 +202,13 @@ field rather than an independent parameter. Provider preparation keeps format
 instructions separate from multimodal input; judging reuses the same expanded
 context.
 
-Storage upgrades and historical read projections interpret old variable records.
-Browser drafts and configuration editing accept only current definitions.
-Accepted workflow inputs and immutable artifacts keep their original payloads;
-presentation metadata and current-grid references remain independent of reusable
-generated content.
+Storage upgrades and historical read projections interpret production variable
+records. A shared editor-boundary conversion restores faithfully representable
+production definitions as current structural drafts; capability reporting and
+Edit/Fork use the same decision. Canonical admission remains separate and accepts
+only current definitions. Accepted workflow inputs and immutable artifacts keep
+their original payloads; presentation metadata and current-grid references remain
+independent of reusable generated content.
 
 Image uploads have independent names and ownership records. Their bytes are
 SHA-256-addressed and shared across uploads and grids. SQLite links each grid to

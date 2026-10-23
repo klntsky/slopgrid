@@ -93,48 +93,6 @@ test("an empty legacy variable table is upgraded without inventing cases", () =>
   );
 });
 
-test("legacy numbered-token restoration visits every rubric in the active case source", () => {
-  const source = {
-    prompt: "Describe a shape.",
-    rows: { kind: "variable", values: ["literal $ROW", "second"] },
-    columns: { kind: "effort", values: ["none"] },
-    judge: {
-      model: "judge",
-      criteria: {
-        axis: "rows",
-        cases: [
-          [{ text: "Does $ROW match?", correctAnswer: false }],
-          [
-            { text: "Is $ROW blue?", correctAnswer: true },
-            { text: "$ROW1 $ROWS", correctAnswer: false },
-          ],
-        ],
-      },
-    },
-  };
-  assert.deepEqual(migrateVariableInput(source), {
-    ...source,
-    rows: {
-      kind: "variable",
-      values: [[{ text: "literal $ROW" }], [{ text: "second" }]],
-    },
-    judge: {
-      ...source.judge,
-      criteria: {
-        axis: "rows",
-        cases: [
-          [{ text: "Does $ROW1 match?", correctAnswer: false }],
-          [
-            { text: "Is $ROW1 blue?", correctAnswer: true },
-            { text: "$ROW1 $ROWS", correctAnswer: false },
-          ],
-        ],
-      },
-    },
-  });
-  assert.equal(source.judge.criteria.cases[0][0].text, "Does $ROW match?");
-});
-
 test("v3 message inputs and literal numbered-field contents need no legacy migration", () => {
   const input = currentDefinition({
     format: "chat-template",

@@ -15,7 +15,7 @@ export function initializeDatabase(db: Database.Database) {
   if (version === schemaVersion) return;
   if (
     typeof version !== "number" ||
-    ![0, 8, 9, 10, 11, 12, 13, 14, 15, 16].includes(version)
+    ![0, 8, 9, 10, 11, 12, 13, 14].includes(version)
   )
     throw new Error("Unsupported database version");
   db.transaction(() => {
@@ -152,22 +152,16 @@ export function initializeDatabase(db: Database.Database) {
       `);
       if (version !== 0) migrateWorkflow(db);
     }
-    if (version < 15)
-      db.exec(`
+    db.exec(`
       CREATE TABLE reference_blobs (
-        sha256 TEXT PRIMARY KEY CHECK (length(sha256)=64)
+        sha256 TEXT PRIMARY KEY CHECK (length(sha256)=64),
+        width INTEGER CHECK (width IS NULL OR width > 0),
+        height INTEGER CHECK ((width IS NULL AND height IS NULL) OR
+          (width IS NOT NULL AND height IS NOT NULL AND height > 0))
       ) STRICT;
       ALTER TABLE reference_images ADD COLUMN sha256 TEXT REFERENCES reference_blobs(sha256);
       CREATE INDEX reference_images_sha256 ON reference_images(sha256,id);
     `);
-    if (version < 16)
-      db.exec(`
-        ALTER TABLE reference_blobs ADD COLUMN width INTEGER
-          CHECK (width IS NULL OR width > 0);
-        ALTER TABLE reference_blobs ADD COLUMN height INTEGER
-          CHECK ((width IS NULL AND height IS NULL) OR
-            (width IS NOT NULL AND height IS NOT NULL AND height > 0));
-      `);
     migrateVariables(db);
     db.pragma(`user_version = ${schemaVersion}`);
   }).immediate();

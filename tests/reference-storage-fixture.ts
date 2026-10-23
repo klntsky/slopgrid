@@ -26,7 +26,11 @@ export function referenceBlob(db: Database.Database, sha256: string) {
 }
 
 export function referenceBlobs(db: Database.Database) {
-  return db.prepare("SELECT * FROM reference_blobs").all();
+  return db.prepare("SELECT * FROM reference_blobs").all() as {
+    sha256: string;
+    width: number | null;
+    height: number | null;
+  }[];
 }
 
 export function referenceUsageLinks(db: Database.Database) {
@@ -86,14 +90,6 @@ export function rejectReferenceGridCells(db: Database.Database) {
       SELECT RAISE(ABORT, 'Injected grid failure');
     END`);
   return () => db.exec("DROP TRIGGER fail_reference_grid");
-}
-
-export function restoreV15ReferenceSchema(db: Database.Database) {
-  db.exec(`
-    ALTER TABLE reference_blobs DROP COLUMN height;
-    ALTER TABLE reference_blobs DROP COLUMN width;
-    PRAGMA user_version=15;
-  `);
 }
 
 export function insertReferenceBlobDimensions(

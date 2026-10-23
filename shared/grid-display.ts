@@ -5,8 +5,7 @@ import type { Criterion } from "../server/judge-criteria.js";
 import { resolveCriteriaForCell } from "../server/judge-criteria.js";
 import {
   axisParameters,
-  isParameterGridInput,
-  parameterReadConfiguration,
+  isCurrentGridInput,
   parameterValue,
   type AxisSide,
   type ParameterId,
@@ -77,20 +76,19 @@ export function gridDimensions(input: StoredGridInput): {
   rows: number;
   columns: number;
 } {
-  return isParameterGridInput(input)
+  return isCurrentGridInput(input)
     ? { rows: input.rows.length, columns: input.columns.length }
     : { rows: input.rows.values.length, columns: input.columns.values.length };
 }
 
 export function gridDisplay(input: StoredGridInput): GridDisplay {
-  if (isParameterGridInput(input)) {
-    const configuration = parameterReadConfiguration(input);
+  if (isCurrentGridInput(input)) {
     const axis = (side: AxisSide): CaseDisplay[] => {
-      const kinds = axisParameters(configuration, side);
+      const kinds = axisParameters(input, side);
       return input[side].map((_, index) => {
         const parts = kinds.flatMap((kind) => {
           const value = parameterValue(
-            configuration,
+            input,
             kind,
             side === "rows" ? index : 0,
             side === "columns" ? index : 0,
@@ -106,16 +104,15 @@ export function gridDisplay(input: StoredGridInput): GridDisplay {
       });
     };
     const common: ParameterDisplayPart[] = [];
-    for (const kind of Object.keys(configuration.parameters) as ParameterId[]) {
-      if (input.inputVersion === 2 && kind === "input") continue;
-      const source = configuration.parameters[kind];
+    for (const kind of Object.keys(input.parameters) as ParameterId[]) {
+      const source = input.parameters[kind];
       if (source?.kind === "common") common.push(part(kind, source.value));
     }
     return {
       rows: axis("rows"),
       columns: axis("columns"),
       common,
-      promptImages: input.inputVersion === 2 ? input.promptImages : [],
+      promptImages: [],
       references: selectedReferences(input),
     };
   }
@@ -142,9 +139,6 @@ export function gridDisplay(input: StoredGridInput): GridDisplay {
         );
       else displayPart = part(axis.kind, axis.values[index]);
       const parts = [displayPart];
-      const criteria = legacy.judge?.criteria;
-      if (criteria && !Array.isArray(criteria) && criteria.axis === side)
-        parts.push(part("judge_criteria", criteria.cases[index] ?? []));
       const first = typeof value === "string" ? undefined : value[0];
       return {
         parts,
@@ -176,8 +170,7 @@ export function gridDisplay(input: StoredGridInput): GridDisplay {
       common.push(part("judge_model", legacy.judge.model));
     if (!axes.includes("judge_effort"))
       common.push(part("judge_effort", legacy.judge.effort));
-    if (Array.isArray(legacy.judge.criteria))
-      common.push(part("judge_criteria", legacy.judge.criteria));
+    common.push(part("judge_criteria", legacy.judge.criteria));
   }
   return {
     rows: axis("rows"),
@@ -196,8 +189,8 @@ export function readGridCriteria(
   row: number,
   column: number,
 ): Criterion[] {
-  return isParameterGridInput(input)
-    ? resolveCriteriaForCell(parameterReadConfiguration(input), row, column, {
+  return isCurrentGridInput(input)
+    ? resolveCriteriaForCell(input, row, column, {
         allowUnresolvedVariables: true,
       }).criteria
     : resolveLegacyCriteriaForCell(

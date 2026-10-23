@@ -33,7 +33,6 @@ import {
   referenceBlobs,
   referenceForeignKeyViolations,
   restoreV14ReferenceSchema,
-  restoreV15ReferenceSchema,
   removeStoredReferenceDimensions,
   rejectReferenceHashUpdates,
   allowReferenceHashUpdates,
@@ -45,7 +44,6 @@ import {
   validatedGrid,
   arrangeHistoricalGrid,
 } from "./grid-storage-fixture.js";
-import { restoreV16VariableInputs } from "./database-migration-fixture.js";
 import {
   referencePng,
   orientedReferenceJpeg,
@@ -697,7 +695,7 @@ test("reference migration refuses mismatched historical bytes without replacing 
   }
 });
 
-test("v15 CAS metadata backfills once per SHA, keeps missing images usable as metadata and survives restarts", () => {
+test("production v14 files retain unknown bytes and populate shared proportions that survive missing artifacts and restarts", async () => {
   const dir = mkdtempSync(join(tmpdir(), "slopgrid-dimension-migration-"));
   const database = join(dir, "app.sqlite");
   const secret = Buffer.alloc(32, 1);
@@ -709,10 +707,20 @@ test("v15 CAS metadata backfills once per SHA, keeps missing images usable as me
     const rotatedBytes = orientedReferenceJpeg(6);
     const rotated = store.references.add(rotatedBytes, "rotated.jpg", owner)!;
     const missing = store.references.add(referenceWebp, "missing.webp", owner)!;
-    const restoredPath = store.references.path(missing.id)!;
+    const unknown = store.references.add(
+      referencePng,
+      "historical.png",
+      owner,
+    )!;
+    const unknownBytes = Buffer.from("unrecognized historical image bytes");
+    const unknownHash = createHash("sha256").update(unknownBytes).digest("hex");
     const firstPath = store.references.path(first.id)!;
-    rmSync(restoredPath);
-    restoreV15ReferenceSchema(store.db);
+    restoreV14ReferenceSchema(store.db);
+    rmSync(join(store.files.root, ".references"), { recursive: true });
+    store.files.write(`reference-${first.id}`, { image: referencePng });
+    store.files.write(`reference-${duplicate.id}`, { image: referencePng });
+    store.files.write(`reference-${rotated.id}`, { image: rotatedBytes });
+    store.files.write(`reference-${unknown.id}`, { image: unknownBytes });
     store.db.close();
     store = new Store(database, secret);
     assert.equal(referenceBlobs(store.db).length, 3);
@@ -726,6 +734,23 @@ test("v15 CAS metadata backfills once per SHA, keeps missing images usable as me
       name: missing.name,
     });
     assert.equal(store.references.path(duplicate.id), firstPath);
+    assert.deepEqual(store.references.hydrate(unknown), {
+      id: unknown.id,
+      name: unknown.name,
+    });
+    assert.deepEqual(
+      (await store.references.loader()([unknown.id])).get(unknown.id),
+      { bytes: unknownBytes, mediaType: "image/png", sha256: unknownHash },
+    );
+    assert.deepEqual(
+      referenceBlobs(store.db).find(({ sha256 }) => sha256 === unknownHash),
+      { sha256: unknownHash, width: null, height: null },
+    );
+    for (const reference of [first, duplicate, rotated, unknown])
+      assert.equal(
+        existsSync(join(store.files.root, `reference-${reference.id}`)),
+        false,
+      );
     // Once recorded, proportions do not depend on reading the image on open or
     // view. A validation snapshot may intentionally omit all physical bytes.
     rmSync(join(store.files.root, ".references"), { recursive: true });
@@ -733,14 +758,11 @@ test("v15 CAS metadata backfills once per SHA, keeps missing images usable as me
     store = new Store(database, secret);
     assert.deepEqual(store.references.hydrate(first), first);
     assert.deepEqual(store.references.hydrate(rotated), rotated);
-    store.files.writeReference(
-      createHash("sha256").update(referenceWebp).digest("hex"),
-      referenceWebp,
-    );
+    store.files.write(`reference-${missing.id}`, { image: referenceWebp });
     store.db.close();
     store = new Store(database, secret);
     assert.deepEqual(store.references.hydrate(missing), missing);
-    assert.equal(referenceBlobs(store.db).length, 3);
+    assert.equal(referenceBlobs(store.db).length, 4);
     assert.deepEqual(referenceForeignKeyViolations(store.db), []);
   } finally {
     store.db.close();
@@ -748,7 +770,7 @@ test("v15 CAS metadata backfills once per SHA, keeps missing images usable as me
   }
 });
 
-test("v16 saved variable grids reopen read-only with accepted payloads intact", () => {
+test("production v14 variable grids reopen read-only with accepted payloads intact", () => {
   const dir = mkdtempSync(join(tmpdir(), "slopgrid-variable-migration-"));
   const database = join(dir, "app.sqlite");
   const secret = Buffer.alloc(32, 1);
@@ -766,7 +788,11 @@ test("v16 saved variable grids reopen read-only with accepted payloads intact", 
     const grid: Grid & { input: LegacyGridInput } = {
       id: token(),
       owner: "owner",
-      input,
+      input: {
+        ...input,
+        prompt: "Draw $ROW",
+        rows: { kind: "variable", values: ["literal $COLUMN"] },
+      },
       status: "running",
       published: false,
       visibility: "private",
@@ -793,11 +819,7 @@ test("v16 saved variable grids reopen read-only with accepted payloads intact", 
     arrangeHistoricalGrid(store, grid, [task]);
     const accepted = store.workflow(grid.id);
     const title = store.get(grid.id)!.expanded_prompt_for_title;
-    restoreV16VariableInputs(store.db, {
-      ...input,
-      prompt: "Draw $ROW",
-      rows: { kind: "variable", values: ["literal $COLUMN"] },
-    });
+    restoreV14ReferenceSchema(store.db);
     store.db.close();
     store = new Store(database, secret);
     const saved = store.get(grid.id)!;

@@ -9,7 +9,6 @@ import * as migration from "./database-migration-fixture.js";
 import {
   insertReferenceBlobDimensions,
   referenceBlobs,
-  restoreV15ReferenceSchema,
 } from "./reference-storage-fixture.js";
 
 const { legacyDatabase, seedLegacy, storedData, snapshot, input, createdAt } =
@@ -209,7 +208,7 @@ test("fresh databases use the canonical schema and reject invalid published flag
 });
 
 test("unsupported versions leave stored data untouched", () => {
-  for (const version of [7, 18]) {
+  for (const version of [7, 15, 16, 18]) {
     const db = legacyDatabase(version);
     try {
       seedLegacy(db, version);
@@ -601,45 +600,57 @@ test("legacy completed output without an attempt retains its own reported usage"
   }
 });
 
-test("v15 blob migration preserves content identity and enforces paired positive integer proportions", () => {
-  const db = new Database(":memory:");
-  try {
-    initializeDatabase(db);
-    insertReferenceBlobDimensions(db, "a".repeat(64), 7, 3);
-    restoreV15ReferenceSchema(db);
-    initializeDatabase(db);
-    assert.equal(migration.databaseVersion(db), 17);
-    assert.deepEqual(referenceBlobs(db), [
-      { sha256: "a".repeat(64), width: null, height: null },
-    ]);
-    insertReferenceBlobDimensions(db, "b".repeat(64), 3, 7);
-    for (const [width, height] of [
-      [null, 3],
-      [7, null],
-      [0, 3],
-      [7, -1],
-      [1.5, 3],
-      [7, 2.5],
-    ] as const)
-      assert.throws(
-        () => insertReferenceBlobDimensions(db, "c".repeat(64), width, height),
-        /CHECK constraint failed|cannot store REAL value/,
+test("fresh and production v14 upgrades enforce paired positive integer proportions", () => {
+  for (const version of [0, 14]) {
+    const db =
+      version === 0 ? new Database(":memory:") : legacyDatabase(version);
+    try {
+      if (version) seedLegacy(db, version);
+      const references = version ? migration.migratedReferenceImages(db) : [];
+      initializeDatabase(db);
+      assert.equal(migration.databaseVersion(db), 17);
+      assert.deepEqual(
+        migration.migratedReferenceImages(db),
+        references.map((reference) => ({ ...reference, sha256: null })),
       );
-    assert.deepEqual(referenceBlobs(db), [
-      { sha256: "a".repeat(64), width: null, height: null },
-      { sha256: "b".repeat(64), width: 3, height: 7 },
-    ]);
-    assert.deepEqual(migration.foreignKeyViolations(db), []);
-  } finally {
-    db.close();
+      assert.deepEqual(referenceBlobs(db), []);
+      insertReferenceBlobDimensions(db, "a".repeat(64), null, null);
+      insertReferenceBlobDimensions(db, "b".repeat(64), 3, 7);
+      insertReferenceBlobDimensions(db, "d".repeat(64), 1, 1);
+      for (const [width, height] of [
+        [null, 3],
+        [7, null],
+        [0, 3],
+        [-1, 3],
+        [7, 0],
+        [7, -1],
+        [1.5, 3],
+        [7, 2.5],
+      ] as const)
+        assert.throws(
+          () =>
+            insertReferenceBlobDimensions(db, "c".repeat(64), width, height),
+          /CHECK constraint failed|cannot store REAL value/,
+        );
+      assert.deepEqual(referenceBlobs(db), [
+        { sha256: "a".repeat(64), width: null, height: null },
+        { sha256: "b".repeat(64), width: 3, height: 7 },
+        { sha256: "d".repeat(64), width: 1, height: 1 },
+      ]);
+      assert.deepEqual(migration.foreignKeyViolations(db), []);
+      const stable = snapshot(db);
+      initializeDatabase(db);
+      assert.deepEqual(snapshot(db), stable);
+    } finally {
+      db.close();
+    }
   }
 });
 
-test("v16 variable migration changes templates only and preserves accepted tasks, receipts and metadata", () => {
-  const db = legacyDatabase(13);
+test("production v14 upgrades templates without changing accepted tasks, receipts or metadata", () => {
+  const db = legacyDatabase(14);
   try {
-    seedLegacy(db, 13);
-    initializeDatabase(db);
+    seedLegacy(db, 14);
     const legacyInput = {
       ...input,
       prompt: "Compare $ROW and $COLUMN; $ROW1 $ROWS $ROW_suffix",
@@ -654,16 +665,29 @@ test("v16 variable migration changes templates only and preserves accepted tasks
         ],
       },
     };
-    migration.restoreV16VariableInputs(db, legacyInput);
+    migration.replaceLegacyGridInputs(db, legacyInput);
     migration.retainExpandedVariableTaskText(db);
+    const references = migration.migratedReferenceImages(db);
+    const identities = migration.migratedRecordIdentities(db);
     const before = snapshot(db);
     initializeDatabase(db);
     const after = snapshot(db);
     assert.equal(after.version, 17);
-    assert.deepEqual(after.schema, before.schema);
+    assert.deepEqual(migration.migratedRecordIdentities(db), identities);
     assert.deepEqual(
-      after.rows.filter(([table]) => table !== "grids"),
-      before.rows.filter(([table]) => table !== "grids"),
+      migration.migratedReferenceImages(db),
+      references.map((reference) => ({ ...reference, sha256: null })),
+    );
+    assert.deepEqual(
+      after.rows.filter(
+        ([table]) =>
+          table !== "grids" &&
+          table !== "reference_images" &&
+          table !== "reference_blobs",
+      ),
+      before.rows.filter(
+        ([table]) => table !== "grids" && table !== "reference_images",
+      ),
     );
     const data = storedData(db, "grid");
     assert.deepEqual(data, {
@@ -687,12 +711,11 @@ test("v16 variable migration changes templates only and preserves accepted tasks
   }
 });
 
-test("v16 template migration rolls back all grids and the version when a later grid write fails", () => {
-  const db = legacyDatabase(13);
+test("production v14 upgrade rolls back its SQL, grids and version when a later template write fails", () => {
+  const db = legacyDatabase(14);
   try {
-    seedLegacy(db, 13);
-    initializeDatabase(db);
-    migration.restoreV16VariableInputs(db, {
+    seedLegacy(db, 14);
+    migration.replaceLegacyGridInputs(db, {
       ...input,
       prompt: "Hello $ROW",
     });
@@ -709,12 +732,11 @@ test("v16 template migration rolls back all grids and the version when a later g
   }
 });
 
-test("v17 backfills variable field and chat references while retaining historical usage links", () => {
-  const db = legacyDatabase(13);
+test("production v14 upgrade backfills variable and chat references while retaining historical usage links", () => {
+  const db = legacyDatabase(14);
   try {
-    seedLegacy(db, 13);
-    initializeDatabase(db);
-    migration.restoreV16VariableInputs(db, {
+    seedLegacy(db, 14);
+    migration.replaceLegacyGridInputs(db, {
       ...input,
       prompt: "$ROW1",
       rows: {
@@ -752,79 +774,61 @@ test("v17 backfills variable field and chat references while retaining historica
   }
 });
 
-test("legacy workflow restoration resolves the active rubric and images rather than storing a criteria source in tasks", () => {
+test("legacy workflow restoration resolves rubric variables and images into accepted tasks", () => {
   const images = [
     { id: "first-answer", name: "first.png" },
     { id: "second-answer", name: "second.png" },
   ];
-  for (const criteria of [
-    [{ text: "Does $ROW1 match?", correctAnswer: false }],
-    {
-      axis: "rows",
-      cases: [
-        [{ text: "Does $ROW1 match?", correctAnswer: false }],
-        [
-          { text: "Does $ROW1 match?", correctAnswer: true },
-          { text: "Is this red?", correctAnswer: false },
-        ],
-      ],
-    },
-  ]) {
-    const db = legacyDatabase(13);
-    try {
-      seedLegacy(db, 13);
-      const source = {
-        ...input,
-        prompt: "Describe a shape.",
-        inputReferences: undefined,
-        referenceGroups: undefined,
-        rows: {
-          kind: "variable",
-          values: images.map((image, index) => [
-            { text: `answer ${index}`, images: [image] },
-          ]),
-        },
-        columns: { kind: "effort", values: ["none"] },
-        judge: { model: "judge", effort: "high", criteria },
-      };
-      migration.replaceLegacyGridData(db, {
-        ...storedData(db, "grid"),
-        input: source,
-      });
-      migration.replaceLegacyCellData(db, { status: "pending" });
-      migration.insertLegacyGridCell(db, "second-case", 1, {
-        status: "pending",
-      });
-      initializeDatabase(db);
-      assert.equal(migration.databaseVersion(db), 17);
-      assert.deepEqual(storedData(db, "grid").input.judge.criteria, criteria);
-      const tasks = Object.fromEntries(
-        migration
-          .migratedTaskPayloads(db)
-          .map((row) => [row.id, JSON.parse(row.data)]),
-      );
-      assert.deepEqual(tasks["j:cell"].input, {
-        model: "judge",
-        effort: "high",
-        criteria: [{ text: "Does answer 0 match?", correctAnswer: false }],
-        images: [images[0]],
-      });
-      assert.deepEqual(tasks["j:second-case"].input, {
-        model: "judge",
-        effort: "high",
-        criteria: Array.isArray(criteria)
-          ? [{ text: "Does answer 1 match?", correctAnswer: false }]
-          : [
-              { text: "Does answer 1 match?", correctAnswer: true },
-              { text: "Is this red?", correctAnswer: false },
-            ],
-        images: [images[1]],
-      });
-      assert.equal(migration.migratedTaskCount(db, "generation"), 1);
-      assert.equal(tasks["g:cell"].input.prompt, source.prompt);
-      assert.equal(tasks["g:cell"].input.images, undefined);
-    } finally {
-      db.close();
-    }
+  const criteria = [{ text: "Does $ROW1 match?", correctAnswer: false }];
+  const db = legacyDatabase(13);
+  try {
+    seedLegacy(db, 13);
+    const source = {
+      ...input,
+      prompt: "Describe a shape.",
+      inputReferences: undefined,
+      referenceGroups: undefined,
+      rows: {
+        kind: "variable",
+        values: images.map((image, index) => [
+          { text: `answer ${index}`, images: [image] },
+        ]),
+      },
+      columns: { kind: "effort", values: ["none"] },
+      judge: { model: "judge", effort: "high", criteria },
+    };
+    migration.replaceLegacyGridData(db, {
+      ...storedData(db, "grid"),
+      input: source,
+    });
+    migration.replaceLegacyCellData(db, { status: "pending" });
+    migration.insertLegacyGridCell(db, "second-case", 1, {
+      status: "pending",
+    });
+    initializeDatabase(db);
+    assert.equal(migration.databaseVersion(db), 17);
+    assert.deepEqual(storedData(db, "grid").input.judge.criteria, criteria);
+    const tasks = Object.fromEntries(
+      migration
+        .migratedTaskPayloads(db)
+        .map((row) => [row.id, JSON.parse(row.data)]),
+    );
+    assert.deepEqual(tasks["j:cell"].input, {
+      model: "judge",
+      effort: "high",
+      criteria: [{ text: "Does answer 0 match?", correctAnswer: false }],
+      images: [images[0]],
+    });
+    assert.deepEqual(tasks["j:second-case"].input, {
+      model: "judge",
+      effort: "high",
+      criteria: [{ text: "Does answer 1 match?", correctAnswer: false }],
+      images: [images[1]],
+    });
+    assert.equal(migration.migratedTaskCount(db, "generation"), 1);
+    assert.equal(tasks["g:cell"].input.prompt, source.prompt);
+    assert.equal(tasks["g:cell"].input.images, undefined);
+  } finally {
+    db.close();
   }
 });

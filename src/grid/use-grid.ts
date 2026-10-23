@@ -4,10 +4,9 @@ import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { api, ApiError, type ViewGrid } from "../api";
 import { saveDraft } from "../create/draft";
-import { draftInputFromGridInput } from "../create/draft-input";
 import { cacheGrid, useOffline } from "../pwa";
 import { applyDelta, type GridStreamMessage } from "../../shared/grid-delta";
-import { isEditableGridInput } from "../../server/parameters";
+import { editableGridInput } from "../../server/editable-grid-input";
 export function useGrid(id: string) {
   const cache = useQueryClient(),
     navigate = useNavigate();
@@ -103,21 +102,22 @@ export function useGrid(id: string) {
   const configure = useMutation({
     mutationFn: async () => {
       const grid = query.data!;
-      if (!isEditableGridInput(grid.input) || grid.canConfigure === false)
+      if (!editableGridInput(grid.input) || grid.canConfigure === false)
         throw new Error(
           "This grid uses an older configuration and cannot be edited or forked.",
         );
       return grid.published ? grid : api<ViewGrid>(`/grids/${id}/edit`, "POST");
     },
     onSuccess: async (grid) => {
-      if (!isEditableGridInput(grid.input))
+      const input = editableGridInput(grid.input);
+      if (!input)
         throw new Error(
           "This grid uses an older configuration and cannot be edited or forked.",
         );
       cache.setQueryData(["grid", id], grid);
       saveDraft({
         formatSelected: true,
-        input: draftInputFromGridInput(grid.input),
+        input,
         sourceGridId: grid.id,
         reuseArtifacts: true,
       });

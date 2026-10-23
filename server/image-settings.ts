@@ -99,15 +99,9 @@ export function selectedReferences(
   input: StoredGridInput | GridDraftInput,
 ): ReferenceImage[] {
   if (input.inputVersion === undefined) return legacySelectedReferences(input);
-  const attachments =
-    input.inputVersion === 3
-      ? generatorInputEntries(input).flatMap(({ messages }) =>
-          messages.flatMap((message) => message.images ?? []),
-        )
-      : [
-          ...input.promptImages,
-          ...(input.messages ?? []).flatMap((message) => message.images ?? []),
-        ];
+  const attachments = generatorInputEntries(input).flatMap(({ messages }) =>
+    messages.flatMap((message) => message.images ?? []),
+  );
   return (
     mergeVariableImages(
       attachments,

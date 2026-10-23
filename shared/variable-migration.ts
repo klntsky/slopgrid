@@ -40,16 +40,7 @@ export function migrateVariableInput(input: unknown): unknown {
         : criterion,
     );
   const source = record(input.judge) ? input.judge.criteria : undefined;
-  const criteria = Array.isArray(source)
-    ? migrateRubric(source)
-    : record(source) && Array.isArray(source.cases)
-      ? {
-          ...source,
-          cases: source.cases.map((rubric) =>
-            Array.isArray(rubric) ? migrateRubric(rubric) : rubric,
-          ),
-        }
-      : source;
+  const criteria = Array.isArray(source) ? migrateRubric(source) : source;
   return {
     ...input,
     ...axes,

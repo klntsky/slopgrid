@@ -207,14 +207,9 @@ export function createImageReferences(
       Object.assign(hydrated, mapLegacyReferences(hydrated, hydrate));
       return hydrated;
     }
-    if (hydrated.inputVersion === 3) {
-      for (const { messages } of generatorInputEntries(hydrated))
-        for (const message of messages)
-          if (message.images) message.images = message.images.map(hydrate);
-    } else {
-      hydrated.promptImages = hydrated.promptImages.map(hydrate);
-      if (hydrated.messages) hydrated.messages = messages(hydrated.messages);
-    }
+    for (const { messages } of generatorInputEntries(hydrated))
+      for (const message of messages)
+        if (message.images) message.images = message.images.map(hydrate);
     for (const record of [...hydrated.rows, ...hydrated.columns]) {
       for (const field of record.variable ?? [])
         if (field?.images) field.images = field.images.map(hydrate);

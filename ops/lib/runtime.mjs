@@ -269,7 +269,7 @@ export function discardStagingGrids(name, release, env, productionEnv, ids) {
     // Discard runs after drain/backup, before the new engine migrates the DB.
     // Administer deployed v12/v13 in place; v14+ has shared task references.
     const version = db.pragma("user_version", { simple: true });
-    if (![12, 13, 14, 15, 16, 17].includes(version))
+    if (![12, 13, 14, 17].includes(version))
       throw new Error("Unsupported database schema for staging grid deletion");
     discarded = db
       .transaction(() => {

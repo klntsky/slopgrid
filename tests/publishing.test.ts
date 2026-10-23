@@ -376,7 +376,7 @@ test("publishing a paused grid exposes unfinished cells as Not generated and loc
   }
 });
 
-test("historical accepted outputs retain owner controls and publication but never configuration access", async (t) => {
+test("incompatible historical outputs retain owner controls and publication without configuration access", async (t) => {
   const { origin, store, database, secret } = await appFixture(t);
   const owner = token();
   const stranger = token();
@@ -384,15 +384,21 @@ test("historical accepted outputs retain owner controls and publication but neve
   store.saveSession({ id: stranger, created: Date.now() });
   const input: LegacyGridInput = {
     format: "markdown",
-    prompt: "Historical $ROW1 and $ROW2",
+    prompt: "Historical $ROW1 and $ROW2 wearing $COLUMN1",
     model: "metadata-model",
     effort: "none",
     budgetUsd: 1,
     rows: {
       kind: "variable",
-      values: [[{ text: "cat" }, { text: "second-field" }]],
+      values: [
+        [{ text: "cat" }, { text: "second-field" }],
+        [{ text: "dog" }, { text: "second-field" }],
+      ],
     },
-    columns: { kind: "effort", values: ["none"] },
+    columns: {
+      kind: "variable",
+      values: [[{ text: "hat" }], [{ text: "coat" }]],
+    },
   };
   const task: GenerationTask = {
     id: token(),
@@ -511,7 +517,7 @@ test("historical accepted outputs retain owner controls and publication but neve
     if (outputPath.endsWith("/download")) {
       assert.match(
         output.headers.get("content-disposition")!,
-        /\.cat\.none\.md/,
+        /\.cat\.hat\.md/,
       );
       assert.doesNotMatch(
         output.headers.get("content-disposition")!,

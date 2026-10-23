@@ -1,5 +1,4 @@
 import { generatorInputForCell } from "../server/generator-input.js";
-import type { Version2GridInput } from "../server/legacy-grid-input.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -11,10 +10,8 @@ import {
 import { readChatOutput } from "../shared/chat-output.js";
 import { appFixture } from "./app-fixture.js";
 import { currentDefinition, currentInput } from "./current-grid-fixture.js";
-import {
-  isCurrentGridInput,
-  isEditableGridInput,
-} from "../server/parameters.js";
+import { isCurrentGridInput } from "../server/parameters.js";
+import { editableGridInput } from "../server/editable-grid-input.js";
 import { draftInputFromGridInput } from "../src/create/draft-input.js";
 
 test("incomplete editor states preserve raw text but cannot create a grid", async (t) => {
@@ -1383,50 +1380,6 @@ test("every supported judge effort is accepted common and on an axis", () => {
   }
 });
 
-test("historical v2 compound axes remain readable but cannot enter the current editor", async () => {
-  const { isParameterGridInput, isCurrentGridInput, isEditableGridInput } =
-    await import("../server/parameters.js");
-  const { gridDisplay } = await import("../shared/grid-display.js");
-  const { draftInputFromGridInput } =
-    await import("../src/create/draft-input.js");
-  const accepted: Version2GridInput = {
-    inputVersion: 2,
-    format: "markdown",
-    prompt: "Draw a cat",
-    promptImages: [],
-    judge: false,
-    parallelWorkers: 2,
-    budgetUsd: 3,
-    parameters: { model: { kind: "rows" }, effort: { kind: "rows" } },
-    rows: [
-      { id: "old-row-a", model: "model/a", effort: "low" },
-      { id: "old-row-b", model: "model/b", effort: "high" },
-    ],
-    columns: [{ id: "old-column" }],
-  };
-  assert.equal(isParameterGridInput(accepted), true);
-  assert.equal(isCurrentGridInput(accepted), false);
-  assert.equal(isEditableGridInput(accepted), false);
-  assert.equal(gridSchema.safeParse(accepted).success, false);
-  assert.throws(
-    () => draftInputFromGridInput(accepted),
-    /cannot be edited or forked/,
-  );
-  assert.deepEqual(
-    gridDisplay(accepted).rows.map((row) => row.parts),
-    [
-      [
-        { kind: "model", value: "model/a" },
-        { kind: "effort", value: "low" },
-      ],
-      [
-        { kind: "model", value: "model/b" },
-        { kind: "effort", value: "high" },
-      ],
-    ],
-  );
-});
-
 for (const side of ["rows", "columns"] as const) {
   const other = side === "rows" ? "columns" : "rows";
   const token = side === "rows" ? "$ROW1" : "$COLUMN1";
@@ -1712,7 +1665,7 @@ test("current-version layouts with incompatible ownership cannot cross the Edit 
     for (const input of [compound, misplacedInput, wrongFields]) {
       const before = structuredClone(input);
       assert.equal(isCurrentGridInput(input), true);
-      assert.equal(isEditableGridInput(input), false);
+      assert.equal(editableGridInput(input), undefined);
       assert.throws(
         () => draftInputFromGridInput(input),
         /cannot be edited or forked/,
@@ -1720,7 +1673,7 @@ test("current-version layouts with incompatible ownership cannot cross the Edit 
       assert.deepEqual(input, before);
     }
     const editable = { ...compound, caseAxis: side };
-    assert.equal(isEditableGridInput(editable), true);
+    assert.ok(editableGridInput(editable));
     const draft = draftInputFromGridInput(editable);
     assert.deepEqual(draft, { ...editable, budgetUsd: "3" });
     draft[side][0].model = "changed";

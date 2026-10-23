@@ -6,19 +6,20 @@ import {
 } from "../../server/domain";
 import {
   axisParameters,
-  isEditableGridInput,
   newCase,
   parameterDefault,
 } from "../../server/parameters";
+import { editableGridInput } from "../../server/editable-grid-input";
 
 export function draftInputFromGridInput(
   input: StoredGridInput,
 ): GridDraftInput {
-  if (!isEditableGridInput(input))
+  const draft = editableGridInput(input);
+  if (!draft)
     throw new Error(
       "This grid uses an older configuration and cannot be edited or forked.",
     );
-  return structuredClone({ ...input, budgetUsd: String(input.budgetUsd) });
+  return draft;
 }
 
 export function validateDraftInput(draft: GridDraftInput) {

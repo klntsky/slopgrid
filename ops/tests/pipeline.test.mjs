@@ -777,12 +777,8 @@ test("real PM2 startup uses fresh logs and detects a failing replacement", async
   }
 });
 
-test("v15/v16/v17 discard keeps shared and unreferenced upload metadata and hash files without changing prior task cleanup", async (t) => {
+test("current-schema discard keeps shared and unreferenced uploads without changing prior task cleanup", async (t) => {
   for (const [version, all] of [
-    [15, false],
-    [15, true],
-    [16, false],
-    [16, true],
     [17, false],
     [17, true],
   ])

@@ -4,7 +4,6 @@ import type {
   GridInput,
   ParameterValues,
 } from "./domain.js";
-import type { Version2GridInput } from "./legacy-grid-input.js";
 
 export type ParameterId = keyof ParameterValues;
 export type CommonParameterId = Exclude<ParameterId, "variable">;
@@ -54,48 +53,6 @@ export function isCurrentGridInput(input: unknown): input is GridInput {
   );
 }
 
-// Recognizing persisted metadata is separate from admitting an editable input.
-export function isParameterGridInput(
-  input: unknown,
-): input is GridInput | Version2GridInput {
-  return (
-    isCurrentGridInput(input) ||
-    (typeof input === "object" &&
-      input !== null &&
-      "inputVersion" in input &&
-      input.inputVersion === 2)
-  );
-}
-
-export function parameterReadConfiguration(
-  input: GridInput | Version2GridInput,
-): ParameterConfiguration {
-  if (input.inputVersion === 3) return input;
-  return {
-    rows: input.rows,
-    columns: input.columns,
-    caseAxis: input.parameters.variable?.kind,
-    parameters: {
-      ...input.parameters,
-      input: {
-        kind: "common",
-        value:
-          input.format === "chat-template"
-            ? (input.messages ?? [])
-            : [
-                {
-                  role: "user",
-                  content: input.prompt,
-                  ...(input.promptImages.length
-                    ? { images: input.promptImages }
-                    : {}),
-                },
-              ],
-      },
-    },
-  };
-}
-
 export function axisParameters(
   input: Pick<ParameterConfiguration, "parameters">,
   side: AxisSide,
@@ -141,10 +98,6 @@ export function parameterLayoutIssue(
   input: ParameterConfiguration,
 ): string | undefined {
   return parameterLayoutIssues(input)[0]?.message;
-}
-
-export function isEditableGridInput(input: unknown): input is GridInput {
-  return isCurrentGridInput(input) && !parameterLayoutIssue(input);
 }
 
 const defaultValues: ParameterValues = {

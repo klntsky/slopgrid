@@ -72,6 +72,27 @@ export function legacyDatabase(version: number) {
       ) STRICT;
       CREATE INDEX grid_reference_images_reference ON grid_reference_images(reference_id,grid_id);
     `);
+  if (version >= 14)
+    db.exec(`
+      CREATE TABLE workflow_tasks (
+        id TEXT PRIMARY KEY,
+        grid_id TEXT NOT NULL REFERENCES grids(id) ON DELETE CASCADE,
+        kind TEXT NOT NULL, status TEXT NOT NULL,
+        dependency_id TEXT REFERENCES workflow_tasks(id),
+        artifact_id TEXT, thinking_source_id TEXT, data TEXT NOT NULL
+      ) STRICT;
+      CREATE INDEX workflow_tasks_grid ON workflow_tasks(grid_id);
+      CREATE INDEX workflow_tasks_artifact ON workflow_tasks(artifact_id)
+        WHERE artifact_id IS NOT NULL;
+      CREATE INDEX workflow_tasks_thinking_source ON workflow_tasks(thinking_source_id)
+        WHERE thinking_source_id IS NOT NULL;
+      ALTER TABLE cells ADD COLUMN generation_id TEXT REFERENCES workflow_tasks(id);
+      ALTER TABLE cells ADD COLUMN judgment_id TEXT REFERENCES workflow_tasks(id);
+      ALTER TABLE inference_calls ADD COLUMN task_id TEXT REFERENCES workflow_tasks(id);
+      DROP INDEX inference_calls_attempt;
+      CREATE INDEX inference_calls_attempt ON inference_calls(task_id,attempt_id,started_at);
+      CREATE INDEX inference_calls_task ON inference_calls(task_id,started_at);
+    `);
   db.pragma(`user_version = ${version}`);
   return db;
 }
@@ -136,12 +157,9 @@ export function seedLegacy(db: Database.Database, version: number) {
       inferenceConcurrency: 3,
     }),
   );
-  db.prepare("INSERT INTO cells VALUES (?,?,?,?)").run(
-    "cell",
-    "grid",
-    0,
-    '{"status":"complete","thinkingId":"trace"}',
-  );
+  db.prepare(
+    "INSERT INTO cells (id,grid_id,position,data) VALUES (?,?,?,?)",
+  ).run("cell", "grid", 0, '{"status":"complete","thinkingId":"trace"}');
   db.prepare("INSERT INTO users VALUES (?,?)").run(
     "account",
     '{"name":"User"}',
@@ -231,6 +249,37 @@ export function seedLegacy(db: Database.Database, version: number) {
           ('private-grid','reference'),('private-grid','missing-reference'),
           ('private-grid','unused-reference');
     `);
+  if (version >= 14) {
+    db.prepare(
+      `INSERT INTO workflow_tasks
+        (rowid,id,grid_id,kind,status,artifact_id,thinking_source_id,data)
+        VALUES (31,'g:cell','grid','generation','complete','cell','cell',?)`,
+    ).run(
+      JSON.stringify({
+        input: {
+          format: "markdown",
+          model: "generator",
+          effort: "none",
+          prompt: "Accepted prompt",
+          budgetUsd: 1,
+        },
+        attemptId: "attempt",
+        output: {
+          provenance: {
+            signature: "saved-signature",
+            files: ["index.md"],
+            templateSteps: [{ maxOutputTokens: 99, usage: { costUsd: 0.25 } }],
+          },
+          usage: { costUsd: 0.25, inputTokens: 10, outputTokens: 20 },
+          thinkingId: "trace",
+        },
+      }),
+    );
+    db.exec(`
+      UPDATE cells SET data='{}',generation_id='g:cell' WHERE id='cell';
+      UPDATE inference_calls SET task_id='g:cell';
+    `);
+  }
 }
 export function storedData(db: Database.Database, id: string) {
   const row = db
@@ -313,7 +362,14 @@ export function migratedOAuthIdentities(db: Database.Database) {
 }
 
 export function migratedReferenceImages(db: Database.Database) {
-  return db.prepare("SELECT * FROM reference_images").all();
+  return db.prepare("SELECT * FROM reference_images").all() as {
+    id: string;
+    owner: string;
+    owner_user_id: string | null;
+    name: string;
+    media_type: string;
+    sha256?: string | null;
+  }[];
 }
 
 export function generationEpoch(db: Database.Database) {
@@ -519,14 +575,10 @@ export function seedUnattributedLegacyCharge(db: Database.Database) {
   ).run(JSON.stringify({ usage: { inputTokens: 4, outputTokens: 6 } }));
 }
 
-export function restoreV16VariableInputs(
-  db: Database.Database,
-  input: unknown,
-) {
+export function replaceLegacyGridInputs(db: Database.Database, input: unknown) {
   db.prepare("UPDATE grids SET data=json_set(data,'$.input',json(?))").run(
     JSON.stringify(input),
   );
-  db.pragma("user_version=16");
 }
 
 export function rejectVariableTemplateMigration(db: Database.Database) {
