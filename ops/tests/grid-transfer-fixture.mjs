@@ -96,8 +96,10 @@ function fixture(t, { shared = false } = {}) {
     target.close();
   });
   for (const db of [source, target]) {
+    db.pragma("foreign_keys=ON");
     db.exec(`
-    PRAGMA user_version=17; PRAGMA foreign_keys=ON;
+    BEGIN;
+    PRAGMA user_version=17;
     CREATE TABLE grids(id TEXT PRIMARY KEY,data TEXT,owner TEXT,owner_user_id TEXT,published INTEGER,visibility TEXT,slug TEXT,created_at TEXT);
     CREATE TABLE workflow_tasks(id TEXT PRIMARY KEY,grid_id TEXT REFERENCES grids(id) ON DELETE CASCADE,kind TEXT,status TEXT,dependency_id TEXT REFERENCES workflow_tasks(id),artifact_id TEXT,thinking_source_id TEXT,data TEXT);
     CREATE TABLE cells(id TEXT PRIMARY KEY,grid_id TEXT REFERENCES grids(id) ON DELETE CASCADE,position INTEGER,data TEXT,generation_id TEXT REFERENCES workflow_tasks(id),judgment_id TEXT REFERENCES workflow_tasks(id),UNIQUE(grid_id,position));
@@ -275,6 +277,7 @@ function fixture(t, { shared = false } = {}) {
   );
   seedReferenceLink(source, options.grid);
   target.prepare("INSERT INTO grids (id,data) VALUES ('unrelated','{}')").run();
+  for (const db of [source, target]) db.exec("COMMIT");
   return {
     options,
     source,

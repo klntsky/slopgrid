@@ -40,6 +40,7 @@ function discardFixture(t, version = 14) {
     mkdirSync(env.OUTPUTS_PATH);
     const db = new Database(env.DATABASE_PATH);
     db.pragma("foreign_keys=ON");
+    db.exec("BEGIN");
     setReferenceSchemaVersion(db, version);
     db.exec(`
       CREATE TABLE grids(id TEXT PRIMARY KEY,data TEXT NOT NULL);
@@ -181,6 +182,7 @@ function discardFixture(t, version = 14) {
         `thinking-${trace}`,
       );
     }
+    db.exec("COMMIT");
     db.close();
     return env;
   };

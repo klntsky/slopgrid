@@ -398,8 +398,8 @@ test("a target failure rolls back tasks and ledger and removes only newly copied
     () => transferGrid(Database, { ...f.options, apply: true }),
     /controlled failure/,
   );
-  assert.equal(transferCellCount(f.source), 3);
-  assert.equal(transferGridCount(f.target), 1);
+  assert.equal(transferRowCount(f.source, "cells"), 3);
+  assert.equal(transferRowCount(f.target, "grids"), 1);
   for (const table of ["cells", "workflow_tasks", "inference_calls"])
     assert.equal(transferRowCount(f.target, table), 0);
   assert.equal(
@@ -473,7 +473,7 @@ test("successive grid transfers reuse matching upload metadata and retain both u
   ]);
   assert.equal(lstatSync(blob).ino, inode);
   assert.deepEqual(readFileSync(blob), f.referenceBytes);
-  assert.equal(transferGridCount(f.source), 0);
+  assert.equal(transferRowCount(f.source, "grids"), 0);
   for (const db of [f.source, f.target])
     assert.deepEqual(referenceForeignKeyViolations(db), []);
 });
@@ -794,8 +794,8 @@ test("incompatible shared blob dimensions reject preview and apply before side e
         );
       assert.deepEqual(referenceBlobs(f.target), before);
       assert.deepEqual(referenceImages(f.target), []);
-      assert.equal(transferGridCount(f.target), 1);
-      assert.equal(transferCellCount(f.source), 3);
+      assert.equal(transferRowCount(f.target, "grids"), 1);
+      assert.equal(transferRowCount(f.source, "cells"), 3);
       assert.equal(existsSync(f.options.backupDir), false);
       assert.equal(
         existsSync(join(f.options.targetOutputs, ".references")),
@@ -890,8 +890,8 @@ test("unsafe shared upload paths, bytes and metadata collisions fail before tran
         transferGrid(Database, { ...f.options, apply: true }),
       );
       assert.deepEqual(referenceImages(f.target), targetMetadata);
-      assert.equal(transferGridCount(f.target), 1);
-      assert.equal(transferCellCount(f.source), 3);
+      assert.equal(transferRowCount(f.target, "grids"), 1);
+      assert.equal(transferRowCount(f.source, "cells"), 3);
       assert.equal(existsSync(f.options.backupDir), false);
       assert.ok(transferredGridExists(f.source, f.options.grid));
     });

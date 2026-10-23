@@ -186,34 +186,34 @@ test("the criteria source rejects competing modes and malformed source objects",
   );
 });
 
-test("criteria validation retains actionable empty-rubric and empty-question messages in both modes", () => {
+test("empty rubric and question failures target their common or case-owned input", () => {
   const source = input("rows");
   for (const rubric of [
     [],
     [{ text: "   ", correctAnswer: false }],
   ] satisfies Criterion[][]) {
-    const message = rubric.length
-      ? "Enter a yes-or-no question for each criterion."
-      : "Add at least one criterion.";
-    assert.equal(
-      judgeCriteriaIssue({
-        ...source,
-        parameters: {
-          ...source.parameters,
-          judge_criteria: { kind: "common", value: rubric },
+    for (const [definition, path] of [
+      [
+        currentDefinition({
+          judge: true,
+          parameters: { judge_criteria: { kind: "common", value: rubric } },
+        }),
+        ["parameters", "judge_criteria", "value"],
+      ],
+      [
+        {
+          ...source,
+          rows: [source.rows[0], { ...source.rows[1], judge_criteria: rubric }],
         },
-        rows: source.rows.map(
-          ({ judge_criteria: _criteria, ...record }) => record,
-        ),
-      }),
-      message,
-    );
-    assert.equal(
-      judgeCriteriaIssue({
-        ...source,
-        rows: [source.rows[0], { ...source.rows[1], judge_criteria: rubric }],
-      }),
-      message,
-    );
+        ["rows", 1, "judge_criteria"],
+      ],
+    ] as const) {
+      const result = gridSchema.safeParse(definition);
+      assert.ok(!result.success);
+      assert.deepEqual(
+        result.error.issues.map((issue) => issue.path),
+        [[...path, ...(rubric.length ? [0, "text"] : [])]],
+      );
+    }
   }
 });
