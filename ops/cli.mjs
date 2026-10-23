@@ -280,11 +280,14 @@ function printDemo(lease, run) {
   if (lease.expiresAt) console.log(`24-hour runtime deadline: ${lease.expiresAt}`);
   if (lease.stoppedAt) console.log(`Stopped: ${lease.stoppedAt}`);
   console.log(`Data and encryption key retained until manually removed: ${lease.runtimeDir ?? run}`);
-  console.log(`Service: ${lease.unit ?? "slopgrid-demo.service"}. Log: ${join(run, "demo.log")}`);
+  console.log(`Service: ${lease.unit ?? "not recorded"}. Log: ${join(run, "demo.log")}`);
 }
 
 async function localDemo(options) {
-  const config = loadDemoConfig();
+  const config = loadDemoConfig(projectRoot, {
+    ...process.env,
+    ...(options.httpsPort === undefined ? {} : { OPS_DEMO_HTTPS_PORT: String(options.httpsPort) }),
+  });
   const caller = spawnSync("git", ["rev-parse", "--show-toplevel"], {
     encoding: "utf8", stdio: ["ignore", "pipe", "ignore"],
   });
@@ -307,11 +310,17 @@ async function localDemo(options) {
       stages: [
         "build committed candidate locally with fresh isolated data",
         options.tests === "skip" ? "skip test suites explicitly" : `run ${options.tests} test suites locally`,
-        "start foreground Tailscale HTTPS in a transient current-user service",
+        ...(options.reuseDemo === undefined ? [] : [
+          `require stopped, expired or failed local demo ${options.reuseDemo}; reject active or unsafe sources`,
+          "copy its SQLite and WAL to private scratch, take candidate-installed readonly SQLite backup and independently copy outputs",
+          "reuse its encryption key and same-origin session cookie name; create a fresh private environment, frontend and socket before normal app storage migration",
+        ]),
+        "start foreground Tailscale HTTPS in a per-run transient current-user service with an isolated session cookie name",
         "stop the full service control group after 24 hours",
         "retain all demo data and its encryption key until manually removed",
       ],
-      config: { repository: config.repository, stateRoot: config.demo.stateRoot },
+      config: { repository: config.repository, stateRoot: config.demo.stateRoot, httpsPort: config.demo.httpsPort },
+      ...(options.reuseDemo === undefined ? {} : { reuseDemo: options.reuseDemo }),
       note: "Runs as the current local user. No SSH, deployment lock, migration rehearsal or PM2 operations. Plan creates no state and changes no runtime processes.",
     }, null, 2));
     return;

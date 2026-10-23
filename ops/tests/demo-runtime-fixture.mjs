@@ -45,7 +45,7 @@ async function managerRequest(socketPath, command, args = []) {
   });
 }
 
-async function freePort() {
+export async function freePort() {
   const server = createServer();
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
@@ -151,7 +151,7 @@ export async function demoFixture(t, flags = {}) {
   });
   return {
     root, run, build: { path: buildPath }, port, httpsPort, envFile, writeEnvironment, control,
-    request: { target: "demo", id: "demo-fixture", revision: "a".repeat(40), config: { demo: { envFile, httpsPort, stateRoot: root } } },
+    request: { target: "demo", id: "run", revision: "a".repeat(40), config: { demo: { envFile, httpsPort, stateRoot: root } } },
     lease: () => readJSON(join(run, "demo.json")),
     audit: async () => (await control("audit")).audit,
   };
@@ -172,13 +172,14 @@ function splitExec(value) {
 async function runManager(configPath) {
   const config = readJSON(configPath);
   const audit = [];
-  let service;
-  let occupied = config.flags.occupiedUnit === true;
-  let stopping;
-  async function finish(result) {
-    if (!service || stopping) return stopping;
-    const current = service;
-    stopping = (async () => {
+  const defaultUnit = `slopgrid-demo-${basename(config.run)}.service`;
+  const services = new Map();
+  const occupied = new Set(config.flags.occupiedUnit ? [defaultUnit] : []);
+  const stopping = new Map();
+  async function finish(unit, result) {
+    if (!services.has(unit) || stopping.has(unit)) return stopping.get(unit);
+    const current = services.get(unit);
+    const finished = (async () => {
       const exited = current.child.exitCode !== null || current.child.signalCode !== null
         ? Promise.resolve() : once(current.child, "exit");
       for (const pid of [...descendants(current.child.pid), current.child.pid]) {
@@ -191,11 +192,12 @@ async function runManager(configPath) {
         stdio: "inherit",
       });
       if (finalized.status !== 0) throw new Error(`Demo finalizer exited ${finalized.status}`);
-      service = undefined;
-      occupied = false;
+      services.delete(unit);
+      occupied.delete(unit);
     })();
-    await stopping;
-    stopping = undefined;
+    stopping.set(unit, finished);
+    await finished;
+    stopping.delete(unit);
   }
   const server = createServer({ allowHalfOpen: true }, (socket) => {
     let input = "";
@@ -206,38 +208,51 @@ async function runManager(configPath) {
         audit.push({ command, args });
         let response = { status: 0, stdout: "" };
         if (command === "systemd-run") {
-          if (occupied || service) response = { status: 1, stderr: "Unit already exists" };
+          const unit = args.find((arg) => arg.startsWith("--unit="))?.slice(7);
+          if (!unit) throw new Error("Missing service unit");
+          if (occupied.has(unit) || services.has(unit)) response = { status: 1, stderr: "Unit already exists" };
           else {
             const properties = args.filter((arg) => arg.startsWith("--property=")).map((arg) => arg.slice(11));
             const property = (name) => properties.find((item) => item.startsWith(`${name}=`))?.slice(name.length + 1);
             const executable = args.indexOf(process.execPath);
             if (executable < 0) throw new Error("Missing foreground runtime command");
-            const env = { ...process.env, PATH: `${config.bin}:${process.env.PATH}`, SLOPGRID_DEMO_FIXTURE: configPath, NODE_EXTRA_CA_CERTS: config.cert, INVOCATION_ID: "fixture-invocation" };
+            const env = { ...process.env, PATH: `${config.bin}:${process.env.PATH}`, SLOPGRID_DEMO_FIXTURE: configPath, NODE_EXTRA_CA_CERTS: config.cert, INVOCATION_ID: `${unit}-invocation` };
             const logPath = property("StandardOutput").replace(/^append:/, "");
             const log = openSync(logPath, "a");
             const child = spawn(args[executable], args.slice(executable + 1), { env, stdio: ["ignore", log, log] });
             closeSync(log);
-            service = { child, env, finalize: property("ExecStopPost") };
-            occupied = true;
-            child.once("exit", () => { if (!stopping) void finish("exit-code"); });
+            services.set(unit, { child, env, finalize: property("ExecStopPost"), run: args.at(-1) });
+            occupied.add(unit);
+            child.once("exit", () => { if (!stopping.has(unit)) void finish(unit, "exit-code"); });
           }
         } else if (command === "systemctl") {
-          if (args.includes("stop")) await finish("success");
-          else if (args.includes("show")) response.stdout = args.some((arg) => arg.includes("InvocationID"))
-            ? (service ? "fixture-invocation\n" : occupied ? "foreign-invocation\n" : "\n")
-            : args.some((arg) => arg.includes("ActiveState")) ? (occupied ? "active\n" : "inactive\n") : (occupied ? "loaded\n" : "not-found\n");
-          else if (args.includes("is-active")) response = { status: service ? 0 : 3, stdout: service ? "active\n" : "inactive\n" };
+          const operation = ["stop", "show", "is-active"].find((word) => args.includes(word));
+          const unit = args[args.indexOf(operation) + 1];
+          const service = services.get(unit);
+          if (operation === "stop") await finish(unit, "success");
+          else if (operation === "show") response.stdout = args.some((arg) => arg.includes("InvocationID"))
+            ? (service ? `${service.env.INVOCATION_ID}\n` : occupied.has(unit) ? "foreign-invocation\n" : "\n")
+            : args.some((arg) => arg.includes("ExecStart")) ? (service ? join(service.run, "tools/demo.mjs") : "")
+            : args.some((arg) => arg.includes("ActiveState")) ? (occupied.has(unit) ? "active\n" : "inactive\n") : (occupied.has(unit) ? "loaded\n" : "not-found\n");
+          else if (operation === "is-active") response = { status: service ? 0 : 3, stdout: service ? "active\n" : "inactive\n" };
         } else if (command === "loginctl") response.stdout = config.flags.noLinger ? "no\n" : "yes\n";
         else if (command === "tailscale-status") response.stdout = JSON.stringify({ Self: { DNSName: "localhost." } });
-        else if (command === "tailscale-serve-status") response.stdout = JSON.stringify({
-          TCP: config.flags.occupiedServe ? { [args[0]]: { HTTPS: true } } : {},
-          Foreground: config.flags.occupiedForeground ? { existing: { TCP: { [args[0]]: { HTTPS: true } } } } : {},
-        });
-        else if (command === "expire") await finish("timeout");
-        else if (command === "foreign-service") occupied = true;
+        else if (command === "tailscale-serve-status") {
+          const foreground = {};
+          for (const [unit, service] of services) {
+            const lease = readJSON(join(service.run, "demo.json"));
+            foreground[unit] = { TCP: { [lease.httpsPort]: { HTTPS: true } } };
+          }
+          if (config.flags.occupiedForeground) foreground.existing = { TCP: { [args[0]]: { HTTPS: true } } };
+          response.stdout = JSON.stringify({
+            TCP: config.flags.occupiedServe ? { [args[0]]: { HTTPS: true } } : {},
+            Foreground: foreground,
+          });
+        } else if (command === "expire") await finish(args[0] ?? defaultUnit, "timeout");
+        else if (command === "foreign-service") occupied.add(args[0] ?? defaultUnit);
         else if (command === "audit") response.audit = audit;
         else if (command === "shutdown") {
-          await finish("success");
+          await Promise.all([...services.keys()].map((unit) => finish(unit, "success")));
           socket.end(JSON.stringify(response));
           server.close(() => process.exit(0));
           return;

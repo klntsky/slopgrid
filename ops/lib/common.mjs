@@ -143,9 +143,15 @@ export function deploymentOptions({ target, argument, values, help }) {
     plan: values.plan ?? false,
     recoverFailedStart: values["recover-failed-start"] ?? false,
     ...(values.grep === undefined ? {} : { grep: values.grep }),
+    ...(values["reuse-demo"] === undefined ? {} : { reuseDemo: values["reuse-demo"] }),
+    ...(values["https-port"] === undefined ? {} : { httpsPort: Number(values["https-port"]) }),
   };
   if (!["auto", "soft", "machinery"].includes(options.mode))
     throw new Error("Invalid deployment mode");
+  if (options.reuseDemo !== undefined && (typeof options.reuseDemo !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9-]{0,127}$/.test(options.reuseDemo)))
+    throw new Error("Invalid demo reuse run ID");
+  if (options.httpsPort !== undefined && (!/^\d+$/.test(values["https-port"]) || !Number.isInteger(options.httpsPort) || options.httpsPort < 1 || options.httpsPort > 65535))
+    throw new Error("Invalid demo HTTPS port");
   if (options.recoverFailedStart) {
     if (options.mode === "soft")
       throw new Error("--recover-failed-start requires a machinery deployment");

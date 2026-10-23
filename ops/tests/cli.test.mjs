@@ -40,11 +40,12 @@ function unconfiguredCli(t) {
     );
   return {
     root,
+    bin,
     touched,
-    run: (args) =>
+    run: (args, environment = {}) =>
       spawnSync("/bin/bash", [join(tools, "deploy.sh"), ...args], {
         cwd: root,
-        env: { PATH: bin, HOME: root },
+        env: { PATH: bin, HOME: root, ...environment },
         encoding: "utf8",
         timeout: 5000,
       }),
@@ -125,6 +126,54 @@ test("demo rejects persistent deployment and invalid validation options", () => 
   ]) assert.throws(() => parseArgs(["demo", ...flags]), undefined, flags.join(" "));
 });
 
+test("demo reuse accepts only a safe local run ID and remains absent on fresh requests", () => {
+  const id = "20261023180248349-NCchax";
+  assert.equal(parseArgs(["demo", "feature", "--reuse-demo", id, "--skip-tests"]).reuseDemo, id);
+  assert.equal(Object.hasOwn(parseArgs(["demo"]), "reuseDemo"), false);
+  for (const target of ["validate", "rehearse", "staging", "production"])
+    assert.throws(() => parseArgs([target, "--reuse-demo", id]), /only permitted on demo/);
+  assert.throws(() => parseCommandLine(["status", "run", "--reuse-demo", id]), /Status does not accept/);
+  for (const value of ["", "../run", "/run", "a/b", "a.b", "-run", "a\\nb", "x".repeat(129)])
+    assert.throws(() => parseArgs(["demo", `--reuse-demo=${value}`]), /argument|run ID/i);
+  assert.throws(() => parseArgs(["demo", "--reuse-demo"]), /argument/i);
+});
+
+test("HTTPS listener override is demo-only and accepts only real TCP ports", () => {
+  assert.equal(parseArgs(["demo", "--https-port=8446"]).httpsPort, 8446);
+  assert.equal(Object.hasOwn(parseArgs(["demo"]), "httpsPort"), false);
+  for (const target of ["validate", "rehearse", "staging", "production"])
+    assert.throws(() => parseArgs([target, "--https-port=8446"]), /only permitted on demo/);
+  for (const value of ["0", "65536", "-1", "1.5", "abc", "1e3"])
+    assert.throws(() => parseArgs(["demo", `--https-port=${value}`]), /HTTPS port/);
+});
+
+test("demo reuse plan explains copying and normal storage migration without reading or writing source state", (t) => {
+  const f = unconfiguredCli(t);
+  writeFileSync(join(f.bin, "git"), `#!${process.execPath}
+    import { writeFileSync } from "node:fs";
+    const args = process.argv.slice(2);
+    if (args.includes("--show-toplevel")) process.exit(1);
+    if (!args.includes("--verify")) { writeFileSync(${JSON.stringify(f.touched)}, "unexpected git mutation"); process.exit(99); }
+    process.stdout.write("${"a".repeat(40)}\\n");
+  `, { mode: 0o700 });
+  const stateRoot = join(f.root, "never-created-demos");
+  const result = f.run(["demo", "feature", "--reuse-demo=stopped-run", "--https-port=8446", "--skip-tests", "--plan"], {
+    OPS_DEMO_STATE_ROOT: stateRoot,
+    OPS_DEMO_ENV_FILE: join(f.root, "never-read.env"),
+    OPS_DEMO_HTTPS_PORT: "8445",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const plan = JSON.parse(result.stdout);
+  assert.equal(plan.reuseDemo, "stopped-run");
+  assert.equal(plan.config.httpsPort, 8446);
+  assert.match(plan.stages.join("\\n"), /stopped.*expired.*failed/);
+  assert.match(plan.stages.join("\\n"), /readonly SQLite backup/);
+  assert.match(plan.stages.join("\\n"), /storage migration/);
+  assert.equal(existsSync(stateRoot), false);
+  assert.equal(existsSync(f.touched), false);
+  assert.deepEqual(readdirSync(f.root).sort(), ["bin", "ops"]);
+});
+
 test("demo shell help is available without configuration or infrastructure", (t) => {
   const f = unconfiguredCli(t);
   for (const args of [["help", "demo"], ["demo", "--help"]]) {
@@ -133,6 +182,8 @@ test("demo shell help is available without configuration or infrastructure", (t)
     assert.match(result.stdout, /\.\/deploy\.sh demo \[REV\]/);
     assert.match(result.stdout, /24.hour|one.day/i);
     assert.match(result.stdout, /data.*retain|retain.*data/i);
+    assert.match(result.stdout, /--reuse-demo RUN_ID/);
+    assert.match(result.stdout, /--https-port PORT/);
     assert.doesNotMatch(result.stdout, /--mode |--discard-grid|--recover-failed-start|--ttl/);
   }
   assert.equal(existsSync(f.touched), false);

@@ -121,6 +121,22 @@ const options = {
     description:
       "Recover an unpromoted staging engine that failed before readiness.",
   },
+  "reuse-demo": {
+    type: "string",
+    value: "RUN_ID",
+    targets: ["demo"],
+    error: () => "--reuse-demo is only permitted on demo",
+    description:
+      "Snapshot a stopped local demo's database and outputs and retain its encryption key.",
+  },
+  "https-port": {
+    type: "string",
+    value: "PORT",
+    targets: ["demo"],
+    error: () => "--https-port is only permitted on demo",
+    description:
+      "Override the demo HTTPS listener port; use a distinct port for each concurrent demo.",
+  },
   plan: {
     type: "boolean",
     targets: deployments,

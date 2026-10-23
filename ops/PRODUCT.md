@@ -109,5 +109,6 @@
       to the operator.
     - Keep staging and production accounts, processes, data, and networking
       unchanged. A demo requires no remote deployment configuration.
-    - Support one active demo per user. Report its URL, runtime deadline,
-      retained data location, and observed lifecycle status.
+    - Support concurrent demos per user on independent HTTPS listener ports, with
+      separate services, browser session cookies, and storage. Report each demo's
+      URL, runtime deadline, retained data location, and observed lifecycle status.

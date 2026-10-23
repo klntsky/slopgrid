@@ -147,7 +147,7 @@ Configure these local settings in the ignored application-root `.env`:
 | Variable | Purpose |
 | -------- | ------- |
 | `OPS_DEMO_ENV_FILE` | Absolute path to a private local demo environment file |
-| `OPS_DEMO_HTTPS_PORT` | Unused Tailscale HTTPS listener port |
+| `OPS_DEMO_HTTPS_PORT` | Default unused Tailscale HTTPS listener port; overridden by `--https-port PORT` |
 | `OPS_DEMO_STATE_ROOT` | Optional absolute directory for retained demo runs |
 
 The default state directory is `$XDG_STATE_HOME/slopgrid/demos`, or
@@ -159,17 +159,19 @@ manager. Enable HTTPS for the tailnet and grant your user permission to use
 Tailscale Serve. Ask the host administrator to enable lingering for your account
 with `loginctl enable-linger USER` so the user manager survives logout.
 
-Create the dedicated demo environment file with mode `0600`. Set `PORT` to an
-unused loopback backend port and supply a demo-only `OUTPUT_DOMAIN`. To enable
-GitHub sign-in, also supply both `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`.
+Create the dedicated demo environment file with mode `0600`. Omit `PORT` or set
+it to `0` for an OS-assigned loopback backend port reported in the demo lease.
+A fixed backend port is also supported, but an occupied port is rejected.
+Supply a demo-only `OUTPUT_DOMAIN`. To enable GitHub sign-in, also supply both
+`GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`.
 Without them, the demo runs anonymously. The app origin uses the current node's
 Tailscale DNS name and `OPS_DEMO_HTTPS_PORT`. When enabling sign-in, register that
 exact origin with GitHub at `/api/auth/github/callback`. OpenRouter callbacks use
 `/api/auth/callback`. If `APP_ORIGIN` is present, it must match the derived origin.
 
 Tailscale Serve supplies HTTPS for the app hostname. HTML outputs still require
-independent wildcard DNS, trusted TLS, and proxy routing to the demo's backend
-`PORT`. Use a hyphen-prefixed `OUTPUT_DOMAIN` as required by the application.
+independent wildcard DNS, trusted TLS, and proxy routing to the backend port
+recorded in the lease. Use a hyphen-prefixed `OUTPUT_DOMAIN` as required by the application.
 Do not point that routing at staging or production. The demo command does not
 provision wildcard output hosting or OAuth applications.
 
@@ -178,15 +180,23 @@ provision wildcard output hosting or OAuth applications.
 ./deploy.sh demo
 ./deploy.sh demo HEAD --unit tests/publishing.test.ts
 ./deploy.sh demo HEAD --skip-tests
+./deploy.sh demo HEAD --https-port 8446 --skip-tests
 ./deploy.sh status RUN_ID
-systemctl --user stop slopgrid-demo.service
+systemctl --user stop slopgrid-demo-RUN_ID.service
 ```
 
 The command builds and validates committed source locally, then prints the
 private HTTPS URL, deadline, and data location. Full local validation is the
 default. Scoped selection and explicit skipped tests use the same controls as
 candidate validation. Runtime processes run as the invoking local user without
-SSH or PM2. One demo can run per user at a time.
+SSH or PM2. Multiple demos can run concurrently on distinct HTTPS listener ports.
+Every new run owns `slopgrid-demo-RUN_ID.service`, a private runtime, and a distinct
+`__Host-slopgrid-demo-RUN_ID` session cookie. Cookies ignore port numbers, so the
+separate names prevent browser identity sharing between demos on one hostname.
+Starting or stopping one run does not stop another run's service or listener.
+Use `--https-port PORT` for each additional demo and `PORT=0` for dynamic backends.
+Output hosting still needs independent routing for each demo's selected backend;
+one shared output-domain upstream cannot serve different retained data safely.
 
 The service stops after 24 hours of runtime, including startup. Expiry kills
 generation without draining accepted work. Upstream provider work can still
@@ -195,9 +205,72 @@ command shown above. Neither stop nor expiry deletes the database, outputs,
 generated environment, or encryption key. Keep the retained data private.
 Remove an old run directory manually only after its service has stopped.
 
+### Redeploy with a retained demo's data
+
+Fresh demos still start with an empty database and a new encryption key.
+`--reuse-demo RUN_ID` is available only for `demo`. It creates an independent
+snapshot of a retained local demo, preserving browser sessions, grids, outputs,
+and the encryption key needed to decrypt saved credentials. It does not borrow
+staging or production storage.
+
+Commit the candidate and operations changes first. Inspect the reuse plan before
+stopping the old demo, then stop the service explicitly and deploy:
+
+```sh
+./deploy.sh demo REV --reuse-demo RUN_ID --skip-tests --plan
+systemctl --user stop SOURCE_SERVICE_FROM_STATUS
+./deploy.sh demo REV --reuse-demo RUN_ID --skip-tests
+```
+
+Use the exact service printed by `status`. Older retained runs can still record
+`slopgrid-demo.service`; status and source checks use that recorded unit.
+
+`RUN_ID` names a direct child of the configured demo state directory. The source
+must have an existing `stopped`, `expired`, or `failed` demo lease and its runtime
+must be exactly `RUN_ID/demo`. An active service is rejected, never stopped
+implicitly. Paths must be canonical, current-user-owned directories or regular
+files, without symlinks, hardlinked files, or group/other write permissions.
+The source environment must be private, its database and output paths must point
+inside its own runtime, and its encryption key must contain exactly 64 hex digits.
+Unsafe or incomplete sources, including retained SQLite rollback journals, stop
+the deployment before service launch.
+
+The command copies the source SQLite database and optional WAL into private
+scratch storage. Candidate-installed `better-sqlite3` opens only that copy
+read-only and backs it up to the new runtime. It never opens source SQLite or
+copies its shared-memory file. Every output file, including hidden files, gets
+an independent copy. The source database, WAL, shared memory, outputs, environment,
+and lease remain unchanged. The new lease records only the source run ID.
+
+The destination gets a new socket, temporary directory, built frontend, and
+private environment. Reuse carries over the encryption key. At the same origin,
+it also preserves the source session cookie name, using `__Host-slopgrid` when an
+older source has no explicit name. Origin, ports, output domain, and OAuth
+settings come from the current demo configuration. At a different origin, reuse
+gets a fresh isolated cookie name; existing anonymous browser cookies are not
+carried across origins. Keep the same origin and output routing to retain
+browser sessions and output links. Candidate storage initialization performs
+migrations after copying and before readiness; a migration failure leaves both
+the original and failed destination data retained for inspection.
+
+Keep the source stopped throughout copying. Metadata and active-service checks
+reject observed changes, but this is not a lock against another same-user process
+editing or restarting the source. The database/filesystem pair is not a live
+atomic snapshot. Stopping the old demo before the command also means downtime
+during candidate installation and build; the CLI does not switch an active demo
+or roll back automatically. No source data or old frontend is deleted.
+
+For a focused deployment smoke, retain the original database, WAL, environment,
+and output hashes after stopping. After reuse, compare those hashes, confirm the
+new runtime uses different file inodes and the same encryption key without
+printing it, and use the existing browser cookie to open old grids and outputs
+at the unchanged origin. Confirm the new schema through normal app startup.
+`--plan` creates no run, reads no source data, and reports the copy and migration
+steps without launching services.
+
 Use `status` with the printed run ID to inspect a local demo before any remote
 status lookup. Runtime output is in the run's `demo.log`; the service journal
-is available with `journalctl --user -u slopgrid-demo.service`.
+is available with `journalctl --user -u SERVICE_FROM_STATUS`.
 
 ## Local pipeline checks
 

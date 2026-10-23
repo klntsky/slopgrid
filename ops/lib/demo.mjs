@@ -10,6 +10,8 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
+  realpathSync,
   renameSync,
   rmSync,
   writeFileSync,
@@ -20,13 +22,19 @@ import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseEnv } from "node:util";
 
-const unit = "slopgrid-demo.service";
 const durationSeconds = 86400;
 const startupMilliseconds = 60000;
 const modulePath = fileURLToPath(import.meta.url);
 const delay = (milliseconds) => new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
 const leasePath = (run) => join(run, "demo.json");
 const readJSON = (path) => JSON.parse(readFileSync(path, "utf8"));
+const validUnit = (value) => typeof value === "string" && /^slopgrid-demo(?:-[a-zA-Z0-9][a-zA-Z0-9-]{0,127})?\.service$/.test(value);
+
+function runUnit(run) {
+  const id = basename(run);
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9-]{0,127}$/.test(id)) throw new Error("Invalid demo run ID");
+  return `slopgrid-demo-${id}.service`;
+}
 
 function writeJSON(path, value) {
   writeFileSync(`${path}.next`, JSON.stringify(value, null, 2) + "\n", { mode: 0o600 });
@@ -44,7 +52,8 @@ function invoke(program, args, allowMissingUnit = false) {
   return result.stdout.trim();
 }
 
-function property(name) {
+function property(unit, name) {
+  if (!validUnit(unit)) throw new Error("Invalid demo lease unit");
   return invoke("systemctl", ["--user", "show", unit, `--property=${name}`, "--value"], true);
 }
 
@@ -56,6 +65,7 @@ export function demoServiceArguments({ runPath, durationSeconds: duration = dura
   if (typeof runPath !== "string" || !isAbsolute(runPath) || /[\r\n\0]/.test(runPath)) throw new Error("Demo run path must be absolute");
   if (!Number.isInteger(duration) || duration < 1) throw new Error("Demo service duration must be a positive integer");
   const executable = join(runPath, "tools/demo.mjs");
+  const unit = runUnit(runPath);
   return [
     "--user", `--unit=${unit}`, "--collect", "--quiet",
     "--property=Type=exec", `--property=RuntimeMaxSec=${duration}s`,
@@ -71,10 +81,10 @@ export function demoServiceArguments({ runPath, durationSeconds: duration = dura
 }
 
 function ownsActiveUnit(run, lease) {
-  const state = property("ActiveState");
+  const state = property(lease.unit, "ActiveState");
   if (!["active", "activating", "deactivating", "reloading"].includes(state)) return false;
-  if (lease.invocationId) return property("InvocationID") === lease.invocationId;
-  return property("ExecStart").includes(join(run, "tools/demo.mjs"));
+  if (lease.invocationId) return property(lease.unit, "InvocationID") === lease.invocationId;
+  return property(lease.unit, "ExecStart").includes(join(run, "tools/demo.mjs"));
 }
 
 export function readDemoStatus(run) {
@@ -94,7 +104,7 @@ export function readDemoStatus(run) {
 
 function validPort(value, name) {
   const port = typeof value === "string" && /^\d+$/.test(value) ? Number(value) : value;
-  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`Invalid demo ${name} port`);
+  if (!Number.isInteger(port) || port < (name === "backend" ? 0 : 1) || port > 65535) throw new Error(`Invalid demo ${name} port`);
   return port;
 }
 
@@ -128,7 +138,7 @@ function readDemoEnvironment(request, origin) {
         }
       : {}),
     OUTPUT_DOMAIN: original.OUTPUT_DOMAIN,
-    PORT: String(validPort(original.PORT, "backend")),
+    PORT: String(validPort(original.PORT ?? "0", "backend")),
   };
 }
 
@@ -139,6 +149,130 @@ function removeSocketDirectory(lease) {
   if (stat?.isDirectory() && stat.uid === process.getuid()) rmSync(path, { recursive: true, force: true });
 }
 
+function checkedReusePath(path, directory = false) {
+  const stat = lstatSync(path);
+  if (realpathSync(path) !== path || stat.uid !== process.getuid() ||
+      (directory ? !stat.isDirectory() : !stat.isFile() || stat.nlink !== 1) ||
+      (stat.mode & 0o022) !== 0) {
+    throw new Error(`Unsafe demo reuse ${directory ? "directory" : "file"}: ${path}`);
+  }
+  return stat;
+}
+
+function sourceStamp(stat) {
+  return [stat.dev, stat.ino, stat.mode, stat.uid, stat.nlink, stat.size, stat.mtimeMs, stat.ctimeMs].join(":");
+}
+
+function readReuseSource(request, run) {
+  if (request.reuseDemo === undefined) return undefined;
+  if (typeof request.reuseDemo !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9-]{0,127}$/.test(request.reuseDemo)) throw new Error("Invalid demo reuse run ID");
+  const root = request.config.demo.stateRoot;
+  if (typeof root !== "string" || !isAbsolute(root) || resolve(root) !== root || /[\r\n\0]/.test(root)) throw new Error("Demo reuse requires a canonical absolute stateRoot");
+  checkedReusePath(root, true);
+  const sourceRun = join(root, request.reuseDemo);
+  if (run === sourceRun || dirname(run) !== root) throw new Error("Demo reuse requires an independent run under the same demo stateRoot");
+  checkedReusePath(run, true);
+  const stamps = new Map();
+  const check = (path, directory = false) => {
+    const stat = checkedReusePath(path, directory);
+    const stamp = sourceStamp(stat);
+    if (stamps.has(path) && stamps.get(path).stamp !== stamp) throw new Error(`Demo reuse source changed during snapshot: ${path}`);
+    stamps.set(path, { directory, stamp });
+    return stat;
+  };
+  check(sourceRun, true);
+  check(leasePath(sourceRun));
+  const lease = readJSON(leasePath(sourceRun));
+  if (!validUnit(lease.unit) || !["stopped", "expired", "failed"].includes(lease.status)) throw new Error("Demo reuse requires a stopped, expired or failed source demo lease");
+  if (ownsActiveUnit(sourceRun, lease)) throw new Error("Cannot reuse an active demo");
+  const runtimeDir = join(sourceRun, "demo");
+  if (lease.runtimeDir !== runtimeDir) throw new Error("Demo reuse source runtimeDir must be its own run/demo directory");
+  check(runtimeDir, true);
+  const envPath = join(runtimeDir, "demo.env");
+  if ((check(envPath).mode & 0o077) !== 0) throw new Error("Demo reuse environment must be private");
+  const env = parseEnv(readFileSync(envPath, "utf8"));
+  const database = join(runtimeDir, "slopgrid.sqlite");
+  const outputs = join(runtimeDir, "outputs");
+  if (env.DATABASE_PATH !== database || env.OUTPUTS_PATH !== outputs) throw new Error("Demo reuse cannot borrow database or outputs outside its own runtime");
+  if (!/^[a-fA-F0-9]{64}$/.test(env.KEY_ENCRYPTION_SECRET ?? "")) throw new Error("Demo reuse source has an invalid encryption key");
+  const cookieName = env.SESSION_COOKIE_NAME ?? "__Host-slopgrid";
+  if (!/^__Host-[a-zA-Z0-9-]{1,180}$/.test(cookieName)) throw new Error("Demo reuse source has an invalid session cookie name");
+  check(database);
+  check(outputs, true);
+  const sidecars = new Map();
+  const journal = database + "-journal";
+  if (lstatSync(journal, { throwIfNoEntry: false })) throw new Error("Demo reuse does not support a retained SQLite rollback journal");
+  sidecars.set(journal, false);
+  for (const suffix of ["-wal", "-shm"]) {
+    const path = database + suffix;
+    const stat = lstatSync(path, { throwIfNoEntry: false });
+    sidecars.set(path, Boolean(stat));
+    if (stat) check(path);
+  }
+  return { sourceRun, runtimeDir, database, outputs, key: env.KEY_ENCRYPTION_SECRET, cookieName, lease, stamps, sidecars, check };
+}
+
+function assertReuseSourceUnchanged(source) {
+  if (ownsActiveUnit(source.sourceRun, source.lease)) throw new Error("Demo reuse source became active");
+  for (const [path, { directory, stamp }] of source.stamps) {
+    if (sourceStamp(checkedReusePath(path, directory)) !== stamp) throw new Error(`Demo reuse source changed during snapshot: ${path}`);
+  }
+  for (const [path, present] of source.sidecars) {
+    if (Boolean(lstatSync(path, { throwIfNoEntry: false })) !== present) throw new Error(`Demo reuse SQLite sidecar changed during snapshot: ${path}`);
+  }
+}
+
+function copyReuseOutputs(source, destination, from = source.outputs) {
+  source.check(from, true);
+  for (const name of readdirSync(from)) {
+    const path = join(from, name);
+    const target = join(destination, name);
+    const stat = lstatSync(path);
+    source.check(path, stat.isDirectory());
+    if (stat.isDirectory()) {
+      mkdirSync(target, { mode: 0o700 });
+      copyReuseOutputs(source, target, path);
+    } else {
+      copyFileSync(path, target);
+      chmodSync(target, 0o600);
+    }
+  }
+}
+
+function snapshotReuseDatabase(source, runtimeDir, buildPath) {
+  const scratch = mkdtempSync(join(runtimeDir, ".reuse-sqlite-"));
+  chmodSync(scratch, 0o700);
+  try {
+    const copied = join(scratch, "source.sqlite");
+    copyFileSync(source.database, copied);
+    chmodSync(copied, 0o600);
+    if (source.sidecars.get(source.database + "-wal")) {
+      copyFileSync(source.database + "-wal", copied + "-wal");
+      chmodSync(copied + "-wal", 0o600);
+    }
+    const destination = join(runtimeDir, "slopgrid.sqlite");
+    writeFileSync(destination, "", { mode: 0o600, flag: "wx" });
+    const env = { ...process.env };
+    delete env.NODE_OPTIONS;
+    delete env.NODE_PATH;
+    // Even readonly WAL connections can write shared memory. SQLite opens only the private scratch copy.
+    const result = spawnSync(process.execPath, ["--input-type=module", "--eval", `
+      import { createRequire } from "node:module";
+      import { join } from "node:path";
+      const [build, source, destination] = process.argv.slice(1);
+      const Database = createRequire(join(build, "package.json"))("better-sqlite3");
+      const db = new Database(source, { readonly: true, fileMustExist: true });
+      try { await db.backup(destination); } finally { db.close(); }
+    `, buildPath, copied, destination], {
+      env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 300000, maxBuffer: 1024 * 1024,
+    });
+    if (result.error || result.status !== 0) throw new Error(`Demo reuse SQLite snapshot failed: ${result.error?.message ?? result.stderr?.trim() ?? result.signal ?? result.status}`);
+    chmodSync(destination, 0o600);
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
 export async function startDemo(request, run, build) {
   const config = request.config?.demo;
   if (request.target !== "demo") throw new Error("Demo runtime requires demo target");
@@ -146,8 +280,10 @@ export async function startDemo(request, run, build) {
   const httpsPort = validPort(config.httpsPort, "HTTPS");
   if (!isAbsolute(run) || !isAbsolute(build.path)) throw new Error("Demo run and build paths must be absolute");
   if (existsSync(leasePath(run))) throw new Error("Demo run already has a lease; use a fresh run");
-  const loadState = property("LoadState");
-  if (loadState && loadState !== "not-found") throw new Error(`Demo service ${unit} already exists; stop it before starting another demo`);
+  const source = readReuseSource(request, run);
+  const unit = runUnit(run);
+  const loadState = property(unit, "LoadState");
+  if (loadState && loadState !== "not-found") throw new Error(`Demo service ${unit} already exists; use a fresh run`);
   if (invoke("loginctl", ["show-user", String(process.getuid()), "--property=Linger", "--value"]) !== "yes") throw new Error(`Demo needs current-user lingering to survive logout. Ask an administrator to enable lingering for ${process.env.USER ?? process.getuid()}`);
   const tailscale = JSON.parse(invoke("tailscale", ["status", "--json"]));
   const dnsName = tailscale.Self?.DNSName?.replace(/\.$/, "");
@@ -156,7 +292,7 @@ export async function startDemo(request, run, build) {
   if (listenerOccupied(JSON.parse(invoke("tailscale", ["serve", "status", "--json"])), httpsPort)) throw new Error(`Tailscale Serve HTTPS port ${httpsPort} is occupied`);
   const supplied = readDemoEnvironment(request, origin);
   const port = Number(supplied.PORT);
-  await assertBackendAvailable(port);
+  if (port !== 0) await assertBackendAvailable(port);
   mkdirSync(run, { recursive: true, mode: 0o700 });
   chmodSync(run, 0o700);
   const runtimeDir = join(run, "demo");
@@ -168,23 +304,31 @@ export async function startDemo(request, run, build) {
     status: "starting", unit, origin, httpsPort, port, startedAt,
     expiresAt: new Date(Date.parse(startedAt) + durationSeconds * 1000).toISOString(),
     runtimeDir, socketDir, revision: request.revision,
+    ...(source ? { reusedFrom: request.reuseDemo } : {}),
   };
   writeJSON(leasePath(run), lease);
   try {
     mkdirSync(join(runtimeDir, "outputs"), { mode: 0o700 });
     mkdirSync(join(runtimeDir, "tmp"), { mode: 0o700 });
     cpSync(join(build.path, "dist"), join(runtimeDir, "frontend"), { recursive: true, errorOnExist: true, force: false });
+    if (source) {
+      snapshotReuseDatabase(source, runtimeDir, build.path);
+      copyReuseOutputs(source, join(runtimeDir, "outputs"));
+      assertReuseSourceUnchanged(source);
+    }
     const env = {
       ...supplied, NODE_ENV: "production", BIND_ADDRESS: "127.0.0.1", APP_ORIGIN: origin,
       DATABASE_PATH: join(runtimeDir, "slopgrid.sqlite"), OUTPUTS_PATH: join(runtimeDir, "outputs"),
       GENERATION_SOCKET: join(socketDir, "generation.sock"), FRONTEND_PATH: join(runtimeDir, "frontend"),
-      KEY_ENCRYPTION_SECRET: randomBytes(32).toString("hex"), TMPDIR: join(runtimeDir, "tmp"),
+      KEY_ENCRYPTION_SECRET: source ? source.key : randomBytes(32).toString("hex"), TMPDIR: join(runtimeDir, "tmp"),
+      SESSION_COOKIE_NAME: source && source.lease.origin === origin ? source.cookieName : `__Host-slopgrid-demo-${basename(run)}`,
     };
     writeFileSync(join(runtimeDir, "demo.env"), Object.entries(env).map(([key, value]) => `${key}=${JSON.stringify(value)}`).join("\n") + "\n", { mode: 0o600 });
     writeJSON(join(runtimeDir, "runtime.json"), { buildPath: build.path, env });
     mkdirSync(join(run, "tools"), { mode: 0o700 });
     copyFileSync(modulePath, join(run, "tools/demo.mjs"));
     writeFileSync(join(run, "demo.log"), "", { mode: 0o600, flag: "wx" });
+    if (source) assertReuseSourceUnchanged(source);
     invoke("systemd-run", demoServiceArguments({ runPath: run }));
     const deadline = Date.now() + startupMilliseconds + 10000;
     while (Date.now() < deadline) {
@@ -267,8 +411,13 @@ async function runDemo(run) {
     await wait(new Promise((resolveReady, reject) => {
       web.on("message", (message) => {
         if (message?.type !== "ready") return;
-        if (message.port !== lease.port) reject(new Error("Demo web ready message has the wrong port"));
-        else resolveReady();
+        if (!Number.isInteger(message.port) || message.port < 1 || message.port > 65535 || (lease.port !== 0 && message.port !== lease.port)) {
+          reject(new Error("Demo web ready message has the wrong port"));
+        } else {
+          lease = { ...lease, port: message.port };
+          writeJSON(leasePath(run), lease);
+          resolveReady();
+        }
       });
     }));
     launch("Serve", "tailscale", ["serve", `--https=${lease.httpsPort}`, `http://127.0.0.1:${lease.port}`]);
