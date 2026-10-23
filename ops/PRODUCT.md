@@ -17,6 +17,11 @@
    `validate` also supports scoped tests and never deploys a persistent runtime.
    Production promotes only its configured runtime after authoritative-master
    authorization, independent of staging.
+   - In validation run by `deploy.sh`, give each real-provider browser test up to
+     three total attempts: one initial attempt and at most two retries. Stop
+     after the first successful attempt; failure on all three prevents promotion.
+     Keep unit, mock-browser, and GitHub tests single-attempt. Direct browser-test
+     commands remain single-attempt by default.
    - `rehearse` accepts any committed candidate and checks it against an isolated
      full production-data copy on staging, preserving both shared runtimes.
    - Before production promotion, take a transaction-consistent read-only SQLite

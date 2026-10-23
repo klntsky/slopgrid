@@ -18,6 +18,9 @@ This document explains responsibilities and boundaries. Product behavior is in
   retaining prior assets needed by open tabs across updates.
   Requests accepted during startup wait for engine and frontend initialization
   and are served once the HTTP routes are ready.
+  Parent supervisors receive readiness and the bound listener port after
+  initialization. Isolated fixtures let the web process allocate its own listener
+  instead of probing and releasing a port before the process starts.
 - The inference engine (`server/engine.ts`) owns admission, scheduling, provider
   requests, retries, cancellation, billing writes, and recovery. Its runtime
   holds active work and execution credentials that cannot be reconstructed from

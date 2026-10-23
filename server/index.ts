@@ -76,6 +76,7 @@ for (const [request, response] of pendingRequests)
   if (!response.destroyed) app(request, response);
 pendingRequests.length = 0;
 console.log(`slopgrid: ${origin}`);
+process.send?.({ type: "ready", port });
 // SSE clients reconnect to the replacement web process and receive an engine snapshot.
 for (const signal of ["SIGTERM", "SIGINT"] as const)
   process.on(signal, async () => {

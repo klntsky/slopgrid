@@ -2,7 +2,7 @@
 
 [Slopgrid](https://slopgrid.com) lets you compare AI-generated outputs side by side. Build a grid of models, thinking efforts, or prompt variations, then watch them produce Markdown, images, SVG, static websites, chat completions, or filled chat templates using your OpenRouter account.
 
-[![A Slopgrid comparison of SVG outputs across models and thinking efforts](docs/images/grid.png)](https://slopgrid.com/grid/e32b0dba878a2681035fd200b02019eae717496414a35181)
+[![A Slopgrid comparison of SVG outputs across models and thinking efforts](public/grid.png)](https://slopgrid.com/grid/e32b0dba878a2681035fd200b02019eae717496414a35181)
 
 ## Useful features
 

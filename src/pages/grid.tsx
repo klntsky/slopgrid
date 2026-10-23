@@ -65,7 +65,7 @@ export function GridPage({ id }: { id: string }) {
             continue.
           </p>
         )}
-        {streamLost && live && (
+        {((offline && g.live) || (streamLost && live)) && (
           <div role="status" className="connection-status">
             <LoaderCircle className="spinner" aria-hidden="true" />
             <span>Connection lost. Reconnecting…</span>

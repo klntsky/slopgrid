@@ -53,6 +53,7 @@ for (const [format, prompt] of Object.entries(prompts)) {
     // sending an unsupported explicit reasoning override.
     await columnValues
       .getByRole("checkbox", { name: "Model default", exact: true })
+
       .check();
     await page.getByLabel("Prompt", { exact: true }).fill(prompt);
     await page
