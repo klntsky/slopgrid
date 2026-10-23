@@ -18,10 +18,11 @@ Run the commands below from `ops/`.
 
 ## Configuration
 
-Operations code lives in `ops/` in the application repository. All local
+Operations code lives in `ops/` in the application repository and is versioned
+with the application. Deployment uploads the committed operations subtree from
+the invoking checkout alongside the selected application revision. All local
 infrastructure settings come from the application repository root `.env`, which
 is ignored by Git. Environment variables override file values for automation.
-No machine-specific JSON configuration or separate operations checkout is used.
 
 Configure these variables without committing their values:
 
