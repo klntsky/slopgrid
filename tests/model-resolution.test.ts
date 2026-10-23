@@ -15,6 +15,7 @@ import { parameterValue, isCurrentGridInput } from "../server/parameters.js";
 import { currentDefinition } from "./current-grid-fixture.js";
 import { selectedReferences } from "../server/image-settings.js";
 import { resolveCriteriaForCell } from "../server/judge-criteria.js";
+import { pixelPng } from "./reference-image-fixture.js";
 
 function resolveGridModels(input: GridInput, models: readonly Model[]) {
   return prepareGridModels(input, models).input;
@@ -243,7 +244,7 @@ test("image input admission checks every resolved generator in fixed and axis se
             model: { kind: side },
             input: {
               kind: "common",
-              value: generatorInputForCell(selected, 0, 0)?.map(
+              value: generatorInputForCell(source, 0, 0)?.map(
                 ({ role, content }) => ({
                   role,
                   content: role === "user" && !content ? "Text only." : content,
@@ -510,6 +511,9 @@ for (const format of ["markdown", "svg", "html"] as const)
       throw new Error("Generation must not start for an unsupported model");
     });
     const { origin, store } = await appFixture(t, { provider });
+    const session = { id: "a".repeat(48), created: Date.now() };
+    store.saveSession(session);
+    const image = store.references.add(pixelPng, "private.png", session)!;
     const source = currentDefinition({
       format,
       parameters: {
@@ -521,7 +525,7 @@ for (const format of ["markdown", "svg", "html"] as const)
             {
               role: "user",
               content: "",
-              images: [{ id: "private-image", name: "private.png" }],
+              images: [image],
             },
           ],
         },
@@ -555,6 +559,7 @@ for (const format of ["markdown", "svg", "html"] as const)
         headers: {
           "Content-Type": "application/json",
           Authorization: "Bearer fixture-key",
+          Cookie: `slopgrid=${session.id}`,
         },
         body: JSON.stringify(scenario.input),
       });

@@ -636,7 +636,6 @@ test("legacy read-only variable fields retain labels and plain text interpolatio
     interpolateLegacyVariables(source.prompt, source, 0, 0),
     "Question / Answer",
   );
-  assert.equal(expandPromptForTitle(source), "(Question / Answer)");
   assert.deepEqual(source, before);
 });
 

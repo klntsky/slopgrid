@@ -651,11 +651,14 @@ test("production v14 upgrades templates without changing accepted tasks, receipt
   const db = legacyDatabase(14);
   try {
     seedLegacy(db, 14);
+    const {
+      inputReferences: _references,
+      referenceGroups: _groups,
+      ...textInput
+    } = input;
     const legacyInput = {
-      ...input,
+      ...textInput,
       format: "chat-template",
-      inputReferences: undefined,
-      referenceGroups: undefined,
       prompt: "Compare $ROW and $COLUMN; $ROW1 $ROWS $ROW_suffix",
       rows: { kind: "variable", values: ["Literal $ROW", "two"] },
       columns: { kind: "variable", values: ["Literal $COLUMN"] },
