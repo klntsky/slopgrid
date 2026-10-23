@@ -366,11 +366,14 @@ for (const format of ["markdown", "svg", "html"] as const)
         variable,
         common,
       ]);
-      assert.deepEqual(saved.cells[0].images, [common, variable]);
+      assert.deepEqual(saved.cells[0].messages![0].images, [common, variable]);
       const generation = reopened
         .workflow(grid.id)
         .find((task) => task.kind === "generation")!;
-      assert.deepEqual(generation.input.images, [common, variable]);
+      assert.deepEqual(generation.input.messages![0].images, [
+        common,
+        variable,
+      ]);
       const ids = referenceIds(generation.input);
       assert.deepEqual(ids, [common.id, variable.id]);
       const references = await reopened.references.loader()(ids);

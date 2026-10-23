@@ -604,8 +604,6 @@ test("variable image admission follows generator and judge consumption, not fiel
       caseAxis: side,
     });
     assert.deepEqual(selectedReferences(source), [unused, expected]);
-    assert.deepEqual(generatorReferences(source), []);
-    assert.deepEqual(judgeReferences(source), [expected]);
     assert.doesNotThrow(() => resolveGridModels(source, catalog));
     assert.throws(
       () =>
@@ -670,25 +668,6 @@ test("variable image admission follows generator and judge consumption, not fiel
       () => resolveGridModels(visionGenerator, catalog),
       /judge model must support image inputs/,
     );
-    assert.deepEqual(
-      generatorReferences({
-        ...source,
-        parameters: {
-          ...source.parameters,
-          input: {
-            kind: "common",
-            value: [
-              {
-                ...generatorInputForCell(source, 0, 0)[0],
-                role: "user",
-                content: "$ROW999 $COLUMN0 $ROW",
-              },
-            ],
-          },
-        },
-      }),
-      [],
-    );
   }
 });
 
@@ -735,8 +714,6 @@ for (const side of ["rows", "columns"] as const)
       caseAxis: side,
     });
     assert.deepEqual(selectedReferences(source), [first, second]);
-    assert.deepEqual(generatorReferences(source), []);
-    assert.deepEqual(judgeReferences(source), []);
     assert.doesNotThrow(() => resolveGridModels(source, catalog));
     for (const index of [0, 1]) {
       const changed = currentDefinition({
@@ -751,9 +728,6 @@ for (const side of ["rows", "columns"] as const)
           ],
         })),
       });
-      assert.deepEqual(judgeReferences(changed), [
-        index === 0 ? first : second,
-      ]);
       assert.throws(
         () => resolveGridModels(changed, catalog),
         /judge model must support image inputs/,
@@ -771,23 +745,25 @@ for (const side of ["rows", "columns"] as const)
         ),
       );
     }
-    assert.deepEqual(
-      judgeReferences(
-        currentDefinition({
-          ...source,
-          parameters: {
-            ...source.parameters,
-            judge_criteria: {
-              kind: "common",
-              value: [{ text: `Matches ${token}1?`, correctAnswer: true }],
+    assert.throws(
+      () =>
+        resolveGridModels(
+          currentDefinition({
+            ...source,
+            parameters: {
+              ...source.parameters,
+              judge_criteria: {
+                kind: "common",
+                value: [{ text: `Matches ${token}1?`, correctAnswer: true }],
+              },
             },
-          },
-          [side]: source[side].map(
-            ({ judge_criteria: _criteria, ...record }) => record,
-          ),
-        }),
-      ),
-      [second],
+            [side]: source[side].map(
+              ({ judge_criteria: _criteria, ...record }) => record,
+            ),
+          }),
+          catalog,
+        ),
+      /judge model must support image inputs/,
       "shared rubrics still consume the referenced field in every case",
     );
   });

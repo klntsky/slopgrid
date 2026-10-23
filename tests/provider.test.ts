@@ -319,8 +319,17 @@ test("non-chat image signatures use content and keep empty-image requests unchan
   try {
     const base = cell("all", "default");
     for (const format of ["markdown", "svg", "html"] as const) {
-      const prepare = (images?: Cell["images"]) =>
-        h.provider.prepare(format, { ...base, images }, references);
+      const prepare = (
+        images?: NonNullable<Cell["messages"]>[number]["images"],
+      ) =>
+        h.provider.prepare(
+          format,
+          {
+            ...base,
+            messages: [{ role: "user", content: base.prompt, images }],
+          },
+          references,
+        );
       const plain = inferenceSignature(await prepare());
       assert.equal(inferenceSignature(await prepare([])), plain);
       const signature = inferenceSignature(

@@ -721,8 +721,8 @@ test("deleted variable slots preserve later values and image identity through ap
     "Draw $COLUMN2",
   );
   assert.deepEqual(
-    expandGrid(parsedSwap.data).map((cell) => [cell.prompt, cell.images]),
-    expected.map((cell) => [cell.prompt, cell.images]),
+    expandGrid(parsedSwap.data).map((cell) => [cell.prompt, cell.messages]),
+    expected.map((cell) => [cell.prompt, cell.messages]),
   );
 });
 

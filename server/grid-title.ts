@@ -38,7 +38,9 @@ function titlePrompt(
         const field = fields[index];
         return (
           field?.text ||
-          field?.images?.map((image) => image.name).join(", ") ||
+          (field && "images" in field
+            ? field.images?.map((image) => image.name).join(", ")
+            : "") ||
           ""
         );
       });

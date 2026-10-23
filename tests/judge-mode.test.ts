@@ -322,7 +322,7 @@ for (const side of ["rows", "columns"] as const) {
           images[side === "rows" ? cell.row : cell.column],
         ];
         assert.deepEqual(judgment.input.images, expectedImages);
-        assert.deepEqual(cell.images, expectedImages);
+        assert.deepEqual(cell.messages![0].images, expectedImages);
         return [cell.prompt, judgment.input.criteria];
       }),
       side === "rows"

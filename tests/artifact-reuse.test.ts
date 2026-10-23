@@ -129,7 +129,12 @@ test("generator grouping ignores judge-only fields and attachment display metada
   assert.notEqual(
     generationGroupKey(setup.format, {
       ...cells[0],
-      images: [{ id: "other", name: image.name }],
+      messages: [
+        {
+          ...cells[0].messages![0],
+          images: [{ id: "other", name: image.name }],
+        },
+      ],
     }),
     generationGroupKey(setup.format, cells[0]),
   );
