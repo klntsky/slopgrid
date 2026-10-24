@@ -120,5 +120,7 @@ The ignored application-root `.env` supplies deployment settings. Staging and
 production are explicit targets, and production accepts only the authoritative
 remote master tip. The pipeline uploads the locally validated frontend,
 rehearses production migrations remotely, and reports the final deployment
-status. For configuration, deployment modes, recovery, and data administration,
-see [operations development](ops/DEVELOPMENT.md).
+status. Use `./ops/deploy.sh demo [REV]` for a Tailscale-served candidate under
+your current local account. For configuration, demo prerequisites, deployment
+modes, recovery, and data administration, see
+[operations development](ops/DEVELOPMENT.md).

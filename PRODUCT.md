@@ -44,7 +44,7 @@ The following numbered requirements define the visible layout and interaction co
 25. Show the provider logo, OpenRouter name, and stacked connection status in a bordered identity card, with actions beside them and a visible logo in both themes.
 26. Expand API-key entry inline within the provider card, use its available width, and disable Connect until a nonempty key is supplied.
 27. Make Generate full-width with a 24px diagonal arrow at the right, 13px vertical padding, and 16px horizontal padding.
-28. Separate Settings sections with 28px vertical padding, use a 320px theme selector constrained to the available width, and show account controls, Inference heading, and small muted provider explanation.
+28. Separate Settings sections with 28px vertical padding, use a 320px theme selector constrained to the available width, and show account controls, including the filled account sign-in button for anonymous users, Inference heading, and small muted provider explanation.
 29. Use the established medium-weight grid title, muted prompt, starting position, and spacing.
 30. Place Pause or Resume after the title/prompt and before Edit.
 31. Display model IDs in grid axes with copy feedback and a chain link icon, rotating icons together with row text.

@@ -1,8 +1,8 @@
 import { parseArgs } from "node:util";
 import { createInterface } from "node:readline";
 
-const deployments = ["validate", "rehearse", "staging", "production"];
-const scopedTargets = ["validate", "rehearse", "staging"];
+const deployments = ["validate", "demo", "rehearse", "staging", "production"];
+const scopedTargets = ["validate", "demo", "rehearse", "staging"];
 export const commands = {
   validate: {
     argument: "[REV]",
@@ -10,6 +10,13 @@ export const commands = {
       "Validate a committed candidate locally in an isolated workspace without deploying.",
     details:
       "Runs the complete suite by default. Scoped tests select individual files. Skipped tests and deployment modes other than the explicit default --mode=auto are not permitted.",
+  },
+  demo: {
+    argument: "[REV]",
+    description:
+      "Run a private 24-hour demo as the current local user after isolated validation.",
+    details:
+      "Requires OPS_HOST, OPS_NODE_PATH and OPS_STAGING_ENV_FILE. Reads both required GitHub credentials from staging over SSH before building, including with --reuse-demo; unavailable credentials stop deployment. Local or retained credentials are never used. Ordinary demos separately try a private staging data snapshot and start fresh if it is unavailable or incompatible. Uses foreground Tailscale HTTPS and a transient user service. Data and its encryption key are retained after stopping until manually removed. Full, scoped or explicitly skipped local tests are supported. Runtime processes stay local without PM2 or shared runtime changes. Plans read no staging credentials or data and make no SSH calls.",
   },
   rehearse: {
     argument: "[REV]",
@@ -34,9 +41,9 @@ export const commands = {
   },
   status: {
     argument: "RUN_ID",
-    description: "Follow an existing remote run and return its exit status.",
+    description: "Inspect a local demo or follow an existing remote run.",
     details:
-      "Reconnect after SSH disconnects. Remote work continues in tmux bg.",
+      "Local demo status includes its deadline and retained data. Remote work continues in tmux bg after SSH disconnects.",
   },
 };
 
@@ -55,15 +62,15 @@ const options = {
     // Validation intentionally permits the explicit default, but no deployment mode.
     exceptions: { validate: (value) => value === "auto" },
     error: (target) =>
-      target === "rehearse"
-        ? "Rehearsal does not accept deployment modes"
+      target === "rehearse" || target === "demo"
+        ? `${target === "demo" ? "Demo" : "Rehearsal"} does not accept deployment modes`
         : "Validation requires tests and does not accept deployment modes",
     description:
       "Deployment mode (default: auto); soft rejects incompatible engine changes.",
   },
   "skip-tests": {
     type: "boolean",
-    targets: ["rehearse", "staging", "production"],
+    targets: ["demo", "rehearse", "staging", "production"],
     error: () =>
       "Validation requires tests and does not accept deployment modes",
     description:
@@ -113,6 +120,22 @@ const options = {
     error: () => "--recover-failed-start is only permitted on staging",
     description:
       "Recover an unpromoted staging engine that failed before readiness.",
+  },
+  "reuse-demo": {
+    type: "string",
+    value: "RUN_ID",
+    targets: ["demo"],
+    error: () => "--reuse-demo is only permitted on demo",
+    description:
+      "Snapshot a stopped local demo's database and outputs and retain its encryption key.",
+  },
+  "https-port": {
+    type: "string",
+    value: "PORT",
+    targets: ["demo"],
+    error: () => "--https-port is only permitted on demo",
+    description:
+      "Override the demo HTTPS listener port; use a distinct port for each concurrent demo.",
   },
   plan: {
     type: "boolean",
@@ -180,7 +203,7 @@ export function parseCommandLine(args) {
   }
   if (target && !Object.hasOwn(commands, target))
     throw new Error(
-      "Target must be validate, rehearse, staging, production or status",
+      "Target must be validate, demo, rehearse, staging, production or status",
     );
   if (positionals.length > 2 || argument?.startsWith("-"))
     throw new Error(
