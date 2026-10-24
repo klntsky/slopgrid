@@ -22,6 +22,15 @@ for (const entry of ["reload", "refetch", "pause", "edit"] as const) {
       ]);
       const grid = fixture.grid();
       const page = await context.newPage();
+      let unavailableReads = 0;
+      page.on("response", (response) => {
+        if (
+          new URL(response.url()).pathname === `/api/grids/${grid.id}` &&
+          response.request().method() === "GET" &&
+          response.status() === 503
+        )
+          unavailableReads++;
+      });
       await page.goto(`${fixture.origin}/grid/${grid.id}`);
       await page.getByRole("button", { name: "Resume generation" }).click();
       const call = await fixture.nextCall();
@@ -65,6 +74,10 @@ for (const entry of ["reload", "refetch", "pause", "edit"] as const) {
       await expect(
         page.getByRole("link", { name: "slopgrid", exact: true }),
       ).toBeVisible();
+      await expect
+        .poll(() => unavailableReads, { timeout: 10000 })
+        .toBeGreaterThan(4);
+      await expect(page.getByRole("alert")).toHaveCount(0);
       const outageDocument = await page.locator("html").elementHandle();
       await fixture.startEngine();
       await expect(preview).toContainText("Saved before service outage.", {
@@ -96,6 +109,54 @@ for (const entry of ["reload", "refetch", "pause", "edit"] as const) {
     }
   });
 }
+
+test("grid recovery stops on navigation and missing grids remain terminal", async ({
+  playwright,
+}) => {
+  const fixture = await runtimeFixture();
+  const browser = await playwright.chromium.launch();
+  const context = await browser.newContext({ ignoreHTTPSErrors: true });
+  try {
+    await context.addCookies([
+      {
+        name: fixture.cookieName,
+        secure: true,
+        httpOnly: true,
+        sameSite: "Lax",
+        value: fixture.owner,
+        url: fixture.origin,
+      },
+    ]);
+    const grid = fixture.grid();
+    await kill(fixture.engine.child);
+    const page = await context.newPage();
+    await page.clock.install();
+    let gridReads = 0;
+    let missingReads = 0;
+    page.on("request", (request) => {
+      const path = new URL(request.url()).pathname;
+      if (path === `/api/grids/${grid.id}`) gridReads++;
+      if (path === `/api/grids/${"0".repeat(48)}`) missingReads++;
+    });
+    await page.goto(`${fixture.origin}/grid/${grid.id}`);
+    await expect(page.locator(".connection-status")).toBeVisible();
+    await page.getByRole("link", { name: "slopgrid", exact: true }).click();
+    await expect(
+      page.getByRole("heading", { name: "Create your own AI model benchmark" }),
+    ).toBeVisible();
+    const readsBeforeAdvancing = gridReads;
+    await page.clock.runFor(5000);
+    expect(gridReads).toBe(readsBeforeAdvancing);
+    await page.goto(`${fixture.origin}/grid/${"0".repeat(48)}`);
+    await expect(page.getByRole("alert")).toContainText("Grid not found");
+    await page.clock.runFor(10000);
+    expect(missingReads).toBe(1);
+    await expect(page.locator(".connection-status")).toHaveCount(0);
+  } finally {
+    await browser.close();
+    await fixture.close();
+  }
+});
 
 test("open browsers reconnect to a replaced web process while markdown, thinking and website assets continue streaming", async ({
   playwright,

@@ -18,8 +18,9 @@ engine or transfer ownership of active inference to a request handler.
 
 The browser owns editor interaction, presentation preferences, and local drafts.
 Its cached state supports display and recovery but does not authorize server
-mutations or determine durable execution state. Development and test runtimes
-own independent storage and process resources.
+mutations or determine durable execution state. Browser queries own read retries
+and cancel recovery when a grid is no longer observed. Development and test
+runtimes own independent storage and process resources.
 
 Deployment orchestration belongs to [ops/](ops/ARCHITECTURE.md). The development
 launcher owns only its development runtime; neither it nor application request

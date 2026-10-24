@@ -1,3 +1,4 @@
+import pRetry from "p-retry";
 import { useInferenceMutation } from "../use-inference-mutation";
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
@@ -7,34 +8,43 @@ import { saveDraft } from "../create/draft";
 import { cacheGrid, useOffline } from "../pwa";
 import { applyDelta, type GridStreamMessage } from "../../shared/grid-delta";
 import { draftInputFromGridInput } from "../create/draft-input";
-function generationUnavailable(error: unknown) {
-  return error instanceof ApiError && error.code === "UNAVAILABLE";
-}
+import { generationUnavailable, gridRetryPolicies } from "./retry-policies";
 
 export function useGrid(id: string) {
   const cache = useQueryClient(),
     navigate = useNavigate();
+  const [dismissed, setDismissed] = useState(false),
+    [streamLost, setStreamLost] = useState(false),
+    [recoveringGrid, setRecoveringGrid] = useState<string | null>(null);
   const query = useQuery({
     queryKey: ["grid", id],
-    queryFn: () => api<ViewGrid>(`/grids/${id}`),
-    retry: (attempt, error) =>
-      navigator.onLine &&
-      (generationUnavailable(error) ||
-        (!(error instanceof ApiError && [404, 503].includes(error.status)) &&
-          attempt < 3)),
-    retryDelay: (attempt, error) =>
-      generationUnavailable(error)
-        ? 1000
-        : Math.min(1000 * 2 ** attempt, 30000),
+    queryFn: async ({ signal }) => {
+      try {
+        return await pRetry(
+          () =>
+            pRetry(() => api<ViewGrid>(`/grids/${id}`), {
+              ...gridRetryPolicies.reconnect,
+              signal,
+              onFailedAttempt: ({ error }) => {
+                if (!signal.aborted && generationUnavailable(error))
+                  setRecoveringGrid(id);
+              },
+            }),
+          { ...gridRetryPolicies.read, signal },
+        );
+      } finally {
+        if (!signal.aborted)
+          setRecoveringGrid((current) => (current === id ? null : current));
+      }
+    },
+    retry: false,
     refetchOnWindowFocus: (query) =>
       !(
         query.state.error instanceof ApiError &&
         query.state.error.status === 404
       ),
   });
-  const [dismissed, setDismissed] = useState(false),
-    [streamLost, setStreamLost] = useState(false),
-    [recoveringGrid, setRecoveringGrid] = useState<string | null>(null);
+  const unavailable = generationUnavailable(query.error);
   const offline = useOffline();
   const stream = useRef<{ id: string; cursor: string; grid?: ViewGrid }>({
     id,
@@ -50,7 +60,7 @@ export function useGrid(id: string) {
   const live =
     !offline &&
     !!query.data &&
-    (!query.isError || generationUnavailable(query.error)) &&
+    (!query.isError || unavailable) &&
     !query.data.published &&
     query.data.live;
   useEffect(() => {
@@ -152,11 +162,11 @@ export function useGrid(id: string) {
     dismissed,
     setDismissed,
     reconnecting:
-      (!query.isError || generationUnavailable(query.error)) &&
+      (!query.isError || unavailable) &&
       ((offline && !!query.data?.live) ||
         (streamLost && live) ||
         recoveringGrid === id ||
-        generationUnavailable(query.failureReason)),
+        unavailable),
     lowBalance: inference.lowBalance,
     setLowBalance: inference.setLowBalance,
     action,
