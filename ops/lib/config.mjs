@@ -65,24 +65,31 @@ export function loadDemoConfig(root = projectRoot, inherited = process.env) {
     throw new Error("Demo requires OPS_DEMO_ENV_FILE as an absolute local private env path");
   if (typeof port !== "string" || !/^\d+$/.test(port) || Number(port) < 1 || Number(port) > 65535)
     throw new Error("Demo requires OPS_DEMO_HTTPS_PORT as an integer from 1 to 65535");
-  const stagingSource = {
+  const githubSource = {
     host: values.OPS_HOST,
     nodePath: values.OPS_NODE_PATH,
     envFile: values.OPS_STAGING_ENV_FILE,
+  };
+  if (
+    !Object.values(githubSource).every(
+      (value) => typeof value === "string" && value.trim().length > 0 && !/[\x00-\x1f\x7f]/.test(value),
+    ) ||
+    /^[\s-]|\s/.test(githubSource.host) ||
+    !isAbsolute(githubSource.envFile)
+  ) throw new Error("Demo requires valid OPS_HOST, OPS_NODE_PATH and absolute OPS_STAGING_ENV_FILE for staging GitHub credentials");
+  const dataPaths = {
     applicationRoot: values.OPS_STAGING_APPLICATION_ROOT,
     config: values.OPS_STAGING_CONFIG,
   };
-  const configured =
-    Object.values(stagingSource).every(
-      (value) => typeof value === "string" && value.length > 0 && !/[\n\r\0]/.test(value),
-    ) &&
-    !/^[\s-]|\s/.test(stagingSource.host) &&
-    ["envFile", "applicationRoot", "config"].every((key) => isAbsolute(stagingSource[key]));
+  const configured = Object.values(dataPaths).every(
+    (value) => typeof value === "string" && isAbsolute(value) && !/[\x00-\x1f\x7f]/.test(value),
+  );
   return {
     repository: root,
     demo: {
       envFile, httpsPort: Number(port), stateRoot: stateRoot(values),
-      ...(configured ? { stagingSource } : {}),
+      githubSource,
+      ...(configured ? { stagingSource: { ...githubSource, ...dataPaths } } : {}),
     },
   };
 }

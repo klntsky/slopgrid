@@ -312,6 +312,7 @@ async function localDemo(options) {
     console.log(JSON.stringify({
       revision, opsRevision, target: "demo", validation: options.tests,
       stages: [
+        "read required GitHub client ID and secret from staging over SSH before building; fail if unavailable",
         "build committed candidate locally with fresh isolated validation data",
         options.tests === "skip" ? "skip test suites explicitly" : `run ${options.tests} test suites locally`,
         ...(options.reuseDemo === undefined ? [
@@ -329,13 +330,15 @@ async function localDemo(options) {
       ],
       config: { repository: config.repository, stateRoot: config.demo.stateRoot, httpsPort: config.demo.httpsPort },
       ...(options.reuseDemo === undefined ? {} : { reuseDemo: options.reuseDemo }),
-      note: "Runtime stays under the current local user. An optional staging snapshot uses SSH; no shared deployment lock, PM2 or service changes. This plan creates no state, reads no source data and makes no SSH calls.",
+      note: "Runtime stays under the current local user. Required staging GitHub credentials and optional staging data use separate SSH reads; no shared deployment lock, PM2 or service changes. This plan creates no state, reads no source data or credentials and makes no SSH calls.",
     }, null, 2));
     return;
   }
   for (const directory of [config.repository, root])
     if (capture("git", ["-C", directory, "status", "--porcelain", "--untracked-files=no"]))
       throw new Error(`Commit changes before deploying: ${directory}`);
+  const { readStagingGithubCredentials } = await import("./lib/demo-credentials.mjs");
+  const github = await readStagingGithubCredentials(config.demo.githubSource);
   const archived = spawnSync("git", [
     "-C", config.repository, "archive", "--format=tar.gz", revision,
   ], { maxBuffer: 256 * 1024 * 1024 });
@@ -361,7 +364,7 @@ async function localDemo(options) {
     result.stages.push({ phase: "validated", at: new Date().toISOString() });
     writeJSON(join(run, "result.json"), result);
     const { startDemo } = await import("./lib/demo.mjs");
-    const lease = await startDemo(request, run, local.build);
+    const lease = await startDemo(request, run, local.build, github);
     result.status = "succeeded";
     if (lease.seed) result.seed = lease.seed;
     result.stages.push({ phase: "started", at: new Date().toISOString() });

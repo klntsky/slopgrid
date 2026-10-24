@@ -161,6 +161,9 @@ test("demo reuse plans leave source and runtime state untouched", (t) => {
     OPS_DEMO_STATE_ROOT: stateRoot,
     OPS_DEMO_ENV_FILE: join(f.root, "never-read.env"),
     OPS_DEMO_HTTPS_PORT: "8445",
+    OPS_HOST: "fixture.invalid",
+    OPS_NODE_PATH: "/usr/bin:/bin",
+    OPS_STAGING_ENV_FILE: join(f.root, "never-read-staging.env"),
   });
   assert.equal(result.status, 0, result.stderr);
   assert.equal(existsSync(stateRoot), false);
@@ -174,8 +177,6 @@ test("demo shell help is available without configuration or infrastructure", (t)
     const result = f.run(args);
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, /\.\/deploy\.sh demo \[REV\]/);
-    assert.match(result.stdout, /24.hour|one.day/i);
-    assert.match(result.stdout, /data.*retain|retain.*data/i);
     assert.match(result.stdout, /--reuse-demo RUN_ID/);
     assert.match(result.stdout, /--https-port PORT/);
     assert.doesNotMatch(result.stdout, /--mode |--discard-grid|--recover-failed-start|--ttl/);

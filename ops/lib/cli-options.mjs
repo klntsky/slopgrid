@@ -16,7 +16,7 @@ export const commands = {
     description:
       "Run a private 24-hour demo as the current local user after isolated validation.",
     details:
-      "Uses foreground Tailscale HTTPS and a transient user service. Ordinary demos try a private staging snapshot and start fresh if it is unavailable or incompatible. Data and its encryption key are retained after stopping until manually removed. Full, scoped or explicitly skipped local tests are supported. Runtime processes stay local; optional staging snapshots use SSH without PM2 or shared runtime changes.",
+      "Requires OPS_HOST, OPS_NODE_PATH and OPS_STAGING_ENV_FILE. Reads both required GitHub credentials from staging over SSH before building, including with --reuse-demo; unavailable credentials stop deployment. Local or retained credentials are never used. Ordinary demos separately try a private staging data snapshot and start fresh if it is unavailable or incompatible. Uses foreground Tailscale HTTPS and a transient user service. Data and its encryption key are retained after stopping until manually removed. Full, scoped or explicitly skipped local tests are supported. Runtime processes stay local without PM2 or shared runtime changes. Plans read no staging credentials or data and make no SSH calls.",
   },
   rehearse: {
     argument: "[REV]",

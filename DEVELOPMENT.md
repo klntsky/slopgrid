@@ -15,10 +15,11 @@ pnpm install
 pnpm exec playwright install chromium firefox
 ```
 
-To enable GitHub sign-in, supply both `GITHUB_CLIENT_ID` and
-`GITHUB_CLIENT_SECRET` through private configuration. Without both, the app runs
-anonymously and hides the sign-in action. Load development credentials and
-provider settings separately from deployed runtime configuration.
+Supply nonblank `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` through private
+configuration before starting the app. Startup fails if either is missing or
+blank. Visitors remain anonymous by default and can always choose GitHub
+sign-in. OpenRouter connections remain independent. Load development
+credentials and provider settings separately from deployed runtime configuration.
 
 ## Running a development worktree
 
@@ -81,6 +82,9 @@ two retries for real-provider browser tests. Unit and mock tests do not retry.
 GitHub Actions is disabled; its workflow file is retained.
 
 ## GitHub integration
+
+Copying staging credentials to a demo does not change the OAuth app's registered
+callback URL. Keep staging's OAuth registration unchanged.
 
 Register the test origin followed by `/api/auth/github/callback` with GitHub.
 Use an available fixed `E2E_PORT` if the registered callback requires one.

@@ -272,6 +272,18 @@ test("private environment and backups preserve sessions and outputs without shel
       '\nGITHUB_CLIENT_ID=fixture\nGITHUB_CLIENT_SECRET="literal $() `quotes`"\n',
   );
   const env = environment(target);
+  const original = readFileSync(target.envFile, "utf8");
+  for (const key of ["GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET"]) {
+    for (const value of [undefined, "", "   "]) {
+      const values = parseEnv(original);
+      if (value === undefined) delete values[key];
+      else values[key] = value;
+      writeFileSync(target.envFile, Object.entries(values)
+        .map(([name, item]) => `${name}=${JSON.stringify(item)}`).join("\n"));
+      assert.throws(() => environment(target), /GITHUB_CLIENT_ID.*GITHUB_CLIENT_SECRET/);
+    }
+  }
+  writeFileSync(target.envFile, original);
   const processConfig = configureProcesses(
     target,
     "staging",

@@ -130,12 +130,6 @@ function readDemoEnvironment(request, origin) {
   if (!/^-[a-z0-9.:-]+$/.test(original.OUTPUT_DOMAIN ?? "") || !original.OUTPUT_DOMAIN.includes(".")) throw new Error("Demo needs a dedicated hyphen-prefixed OUTPUT_DOMAIN");
   if (original.APP_ORIGIN && original.APP_ORIGIN !== origin) throw new Error(`Demo APP_ORIGIN must match actual Tailscale origin ${origin}`);
   return {
-    ...(original.GITHUB_CLIENT_ID?.trim() && original.GITHUB_CLIENT_SECRET?.trim()
-      ? {
-          GITHUB_CLIENT_ID: original.GITHUB_CLIENT_ID.trim(),
-          GITHUB_CLIENT_SECRET: original.GITHUB_CLIENT_SECRET.trim(),
-        }
-      : {}),
     OUTPUT_DOMAIN: original.OUTPUT_DOMAIN,
     PORT: String(validPort(original.PORT ?? "0", "backend")),
   };
@@ -272,7 +266,12 @@ function snapshotReuseDatabase(source, runtimeDir, buildPath) {
   }
 }
 
-export async function startDemo(request, run, build) {
+export async function startDemo(request, run, build, github) {
+  if (
+    !github || typeof github !== "object" || Array.isArray(github) ||
+    typeof github.clientId !== "string" || !github.clientId.trim() ||
+    typeof github.clientSecret !== "string" || !github.clientSecret.trim()
+  ) throw new Error("Demo requires staging GitHub client ID and secret");
   const config = request.config?.demo;
   if (request.target !== "demo") throw new Error("Demo runtime requires demo target");
   if (!config || typeof config.envFile !== "string" || !isAbsolute(config.envFile) || /[\r\n\0]/.test(config.envFile)) throw new Error("Demo needs an absolute private envFile");
@@ -333,6 +332,7 @@ export async function startDemo(request, run, build) {
     mkdirSync(join(runtimeDir, "tmp"), { mode: 0o700 });
     cpSync(join(build.path, "dist"), join(runtimeDir, "frontend"), { recursive: true, errorOnExist: true, force: false });
     const env = {
+      GITHUB_CLIENT_ID: github.clientId.trim(), GITHUB_CLIENT_SECRET: github.clientSecret.trim(),
       ...supplied, NODE_ENV: "production", BIND_ADDRESS: "127.0.0.1", APP_ORIGIN: origin,
       DATABASE_PATH: join(runtimeDir, "slopgrid.sqlite"), OUTPUTS_PATH: join(runtimeDir, "outputs"),
       GENERATION_SOCKET: join(socketDir, "generation.sock"), FRONTEND_PATH: join(runtimeDir, "frontend"),

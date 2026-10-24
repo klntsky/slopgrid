@@ -18,9 +18,11 @@ authoritative Git repository before production changes; local branch naming
 does not establish production eligibility.
 
 Private initiating configuration selects independent target environments.
-Remote application credentials remain outside release source and local test
-services. The pipeline derives process configuration from the selected target
-rather than allowing candidate defaults to select persistent runtime state.
+The shared runtime environment boundary requires both nonblank GitHub OAuth
+credentials before deployment proceeds. Remote application credentials remain
+outside release source and local test services. The pipeline derives process
+configuration from the selected target rather than allowing candidate defaults
+to select persistent runtime state.
 
 ## Migration rehearsal and storage
 
@@ -57,8 +59,27 @@ Its runtime stays under the invoking user's account instead of crossing the
 remote deployment boundary. Run-owned source, credentials, and storage keep
 demo effects separate from staging and production.
 
-Optional staging acquisition crosses a read-only snapshot boundary. The
-installed SQLite driver reads staging data without invoking application
+Before archiving source, creating a run, or building, the CLI reads the required
+GitHub pair from the staging environment over SSH. This read is independent of
+data acquisition and also runs for retained-data reuse. A missing or unreadable
+pair stops deployment. Local, inherited, and retained GitHub credentials cannot
+replace it. Only the pair crosses this boundary, never the full environment,
+database, or release pointer. The reader caps stdout at 64 KiB, kills SSH after
+20 seconds, and reports fixed errors without remote output or exception details.
+
+The pair stays in a CLI local variable until an explicit fourth argument passes
+it to `startDemo`. That boundary validates it before runtime operations and maps
+only its two fields into private `demo.env` and `runtime.json` files. Requests,
+results, leases, logs, and process arguments never contain it. The copied
+standalone supervisor needs no credential-reader module. Local test validation
+keeps using separate fixture credentials. Plans validate source configuration
+without making SSH calls; help does not load configuration.
+
+The GitHub application's registered callback must already match the demo origin.
+Copying credentials does not modify the staging OAuth registration.
+
+Optional staging data acquisition crosses a separate read-only snapshot boundary.
+The installed SQLite driver reads staging data without invoking application
 initialization against the source or controlling its services. Candidate
 initialization runs only on an independently owned local copy and decides
 whether that data is usable. Operations discards a rejected import before

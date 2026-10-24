@@ -4,7 +4,6 @@ import { setOffline } from "./pwa";
 export type SessionInfo = {
   connected: boolean;
   user: User | null;
-  signInEnabled: boolean;
 };
 export type ViewGrid = ReturnType<GridPresenter>;
 export class ApiError extends Error {
