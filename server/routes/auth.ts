@@ -12,7 +12,6 @@ export function createAuthRoutes({
   rate,
   origin,
   authURL,
-  signInEnabled,
 }: {
   store: Store;
   provider: Provider;
@@ -20,7 +19,6 @@ export function createAuthRoutes({
   rate: RateLimiter;
   origin: string;
   authURL?: string;
-  signInEnabled: boolean;
 }) {
   const app = Router();
   app.get("/api/session", (req, res) => {
@@ -28,7 +26,6 @@ export function createAuthRoutes({
     res.json({
       connected: !!s.key,
       user: s.userId ? (store.user(s.userId) ?? null) : null,
-      signInEnabled,
     });
   });
   app.delete("/api/session/key", (req, res) => {

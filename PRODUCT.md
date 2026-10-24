@@ -14,10 +14,10 @@ The following numbered requirements define the visible layout and interaction co
 2. Use 48px medium-weight page headings, reducing to 38px on phones, and 19px medium-weight section headings.
 3. Use the warm beige and olive light palette and warm charcoal dark palette, including all panel, border, selection, link, and icon colors.
 4. Use an 88px ordinary-page navbar with 5vw horizontal margins on desktop and a compact 64px minimum-height grid navbar. Phone navigation wraps with 20px ordinary-page and 10px grid-page horizontal padding.
-5. When GitHub sign-in is enabled, show its labeled button before Billing and Settings on desktop.
+5. For anonymous users, show the labeled GitHub sign-in button before Billing and Settings on desktop.
 6. Underline the active Billing or Settings navigation link.
 7. Anchor the touch navigation trigger at the right edge, with a 300px popup constrained to the viewport and separated from its trigger by 4px.
-8. Include available account controls, Billing, and Settings in the touch popup, and change the open menu trigger to a close icon.
+8. Include account controls, Billing, and Settings in the touch popup, and change the open menu trigger to a close icon.
 9. Use the established filled primary buttons and borderless secondary actions, with matching padding, dimensions, hover states, and rounding.
 10. Use a 2px themed keyboard focus outline with a 3px offset on interactive controls.
 11. Present output formats as five equal vertical cards, with icons above labels, changing to two equal columns on phones.
@@ -44,7 +44,7 @@ The following numbered requirements define the visible layout and interaction co
 25. Show the provider logo, OpenRouter name, and stacked connection status in a bordered identity card, with actions beside them and a visible logo in both themes.
 26. Expand API-key entry inline within the provider card, use its available width, and disable Connect until a nonempty key is supplied.
 27. Make Generate full-width with a 24px diagonal arrow at the right, 13px vertical padding, and 16px horizontal padding.
-28. Separate Settings sections with 28px vertical padding, use a 320px theme selector constrained to the available width, and show the available account controls, Inference heading, and small muted provider explanation.
+28. Separate Settings sections with 28px vertical padding, use a 320px theme selector constrained to the available width, and show account controls, Inference heading, and small muted provider explanation.
 29. Use the established medium-weight grid title, muted prompt, starting position, and spacing.
 30. Place Pause or Resume after the title/prompt and before Edit.
 31. Display model IDs in grid axes with copy feedback and a chain link icon, rotating icons together with row text.
@@ -516,7 +516,7 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
 
 ### 8.1. Anonymous and GitHub accounts
 
-1. Users are anonymous by default. Enable GitHub sign-in only when both OAuth credentials are configured. Otherwise start normally with anonymous access and omit sign-in links. Settings contains an Account section with sign-in when available, or linked GitHub identity and sign-out when signed in, accessible on both touch and mouse devices. Show account-loading and retry states when session lookup is pending or fails.
+1. Require both GitHub OAuth credentials at startup. Fail if either is missing or blank. Users are anonymous by default and can always choose GitHub sign-in. Settings contains an Account section with sign-in for anonymous users, or linked GitHub identity and sign-out when signed in, accessible on both touch and mouse devices. Show account-loading and retry states when session lookup is pending or fails.
 2. A GitHub identity displays as the GitHub icon followed by a username linked to the profile. Otherwise display "by Anonymous". Show authors near grid titles and in public grid listings; omit authors from the owner's own grid list.
 3. Account ownership persists when a GitHub username changes. Refresh display identity on sign-in.
 4. On sign-in, atomically claim the current anonymous session's grids for the account, including their billing history. Never claim another account's grids.
@@ -558,7 +558,7 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
 ### 8.5. Starred grids
 
 1. Store favorites on the backend for the signed-in account or the current anonymous browser identity. Anonymous favorites survive reloads and browser restarts while that browser identity remains available, including session rotation. Keep separate browsers and accounts isolated. On sign-in, merge the current anonymous favorites into the account without duplicates. Users can star any grid they can view without changing its ownership or access rules.
-2. Render a clickable star in every grid listing and immediately to the left of the grid title on the grid page, including when GitHub sign-in is disabled. Use a filled star for a favorite and an outline otherwise. Keep listing stars separate from navigation links.
+2. Render a clickable star in every grid listing and immediately to the left of the grid title on the grid page. Use a filled star for a favorite and an outline otherwise. Keep listing stars separate from navigation links.
 3. Show "Favorites" above "Your grids" when the user has starred grids. Hide Favorites after the last star is removed. Your grids continues to list all owned grids, including starred ones. Favorites can appear when the user owns no grids.
 4. Give Favorites independent pagination and list grids newest first. Include favorites beyond the currently loaded Your grids and Public grids pages. Preserve the other listings' selected pages when navigating Favorites.
 5. Use "Add to favorites" and "Remove from favorites" for accessible labels and tooltips. Anonymous stars save directly without redirecting to sign-in. Support keyboard activation and visible focus.

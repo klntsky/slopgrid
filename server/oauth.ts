@@ -27,9 +27,12 @@ export interface OAuthProvider {
 export function githubCredentials(
   clientId?: string,
   clientSecret?: string,
-): OAuthCredentials | undefined {
-  if (!clientId?.trim() || !clientSecret?.trim()) return undefined;
-  return { clientId: clientId.trim(), clientSecret: clientSecret.trim() };
+): OAuthCredentials {
+  const id = clientId?.trim(),
+    secret = clientSecret?.trim();
+  if (!id || !secret)
+    throw new Error("GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET are required");
+  return { clientId: id, clientSecret: secret };
 }
 export type OAuthAttempt = {
   provider: string;

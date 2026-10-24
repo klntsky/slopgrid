@@ -94,7 +94,6 @@ export function createApp(config: Config) {
       rate,
       origin: config.origin,
       authURL: config.authURL,
-      signInEnabled: credentials !== undefined,
     }),
   );
   app.use(
@@ -103,7 +102,7 @@ export function createApp(config: Config) {
       session,
       rate,
       origin.origin,
-      credentials ? [githubProvider(credentials)] : [],
+      [githubProvider(credentials)],
     ),
   );
   app.use(createManualKeyRoutes(provider, session, rate));
