@@ -558,7 +558,7 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
 ### 8.5. Starred grids
 
 1. Store favorites on the backend for the signed-in account or the current anonymous browser identity. Anonymous favorites survive reloads and browser restarts while that browser identity remains available, including session rotation. Keep separate browsers and accounts isolated. On sign-in, merge the current anonymous favorites into the account without duplicates. Users can star any grid they can view without changing its ownership or access rules.
-2. Render a clickable star in every grid listing and immediately to the left of the grid title on the grid page. Use a filled star for a favorite and an outline otherwise. Keep listing stars separate from navigation links.
+2. Render a clickable star in every grid listing and inline beside the title editor on the grid page, without offsetting the byline. Use a filled star for a favorite and an outline otherwise. Keep listing stars separate from navigation links.
 3. Show "Favorites" above "Your grids" when the user has starred grids. Hide Favorites after the last star is removed. Your grids continues to list all owned grids, including starred ones. Favorites can appear when the user owns no grids.
 4. Give Favorites independent pagination and list grids newest first. Include favorites beyond the currently loaded Your grids and Public grids pages. Preserve the other listings' selected pages when navigating Favorites.
 5. Use "Add to favorites" and "Remove from favorites" for accessible labels and tooltips. Anonymous stars save directly without redirecting to sign-in. Support keyboard activation and visible focus.
