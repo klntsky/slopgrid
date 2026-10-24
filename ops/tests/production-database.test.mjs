@@ -29,6 +29,11 @@ import {
   seedProductionWalRecords,
   productionRecords,
 } from "./production-database-fixture.mjs";
+import {
+  archiveApplicationStorage,
+  seedApplicationProductionDatabase,
+  seedApplicationWalRecords,
+} from "./production-application-fixture.mjs";
 
 const application = process.env.SLOPGRID_TEST_APP;
 const Database = createRequire(join(application, "package.json"))(
@@ -37,6 +42,7 @@ const Database = createRequire(join(application, "package.json"))(
 const validationModule = new URL("../lib/validate.mjs", import.meta.url).href;
 
 function fixture(t, options = {}) {
+  const realApplication = options.candidate === "application";
   const root = mkdtempSync(join(tmpdir(), "slopgrid-production-database-"));
   let source;
   t.after(() => {
@@ -56,6 +62,8 @@ function fixture(t, options = {}) {
   for (const path of ["server", "tests"]) mkdirSync(join(candidate, path));
   writeFileSync(join(candidate, "package.json"), '{"type":"module"}\n');
   writeFileSync(join(candidate, "server/store.ts"), storeSource);
+  writeFileSync(join(candidate, "server/database.ts"), "export const schemaVersion = 17;\n");
+  if (realApplication) archiveApplicationStorage(candidate, application);
   writeFileSync(
     join(candidate, "tests/assert-database.ts"),
     databaseAssertionsSource,
@@ -101,6 +109,7 @@ export function assertCandidateDatabase(phase) {
       "package.json",
       "server",
       "tests",
+      ...(realApplication ? ["shared"] : []),
     ],
     { encoding: "utf8" },
   );
@@ -157,9 +166,14 @@ process.exit(result.status ?? 1);
       "PRODUCTION_ONLY_SECRET=must-not-reach-the-candidate",
     ].join("\n"),
   );
+  const applicationSource = realApplication
+    ? seedApplicationProductionDatabase(application, sourcePath, options.sourceVersion ?? 17, options.noncanonicalSource)
+    : undefined;
+  const canonicalVersion = applicationSource?.canonicalVersion ?? 17;
   if (!options.missingSource) {
     source = new Database(sourcePath);
-    seedProductionWalRecords(source, options.sourceVersion ?? 14);
+    if (realApplication) seedApplicationWalRecords(source);
+    else seedProductionWalRecords(source, options.sourceVersion ?? 14);
     // Prove the second row is absent from the main file. Keeping the live
     // connection open prevents close-time WAL checkpointing during validation.
     const mainFileOnly = join(root, "main-file-only.sqlite");
@@ -238,6 +252,8 @@ try {
       : [];
   return {
     root,
+    canonicalVersion,
+    sourceVersion: applicationSource?.sourceVersion ?? options.sourceVersion ?? 14,
     run,
     runtimeRoot,
     sourcePath,
@@ -319,7 +335,7 @@ try {
         [event.databaseDevice, event.databaseInode],
         [databaseStat.dev, databaseStat.ino],
       );
-      assert.equal(event.output, "transformed:" + artifact);
+      assert.equal(event.output, realApplication ? artifact : "transformed:" + artifact);
     },
     assertRuntimeRemoved() {
       assert.deepEqual(
@@ -373,6 +389,55 @@ test("production copies every output and WAL-only row, migrates file-dependent d
       schemaAfter: 17,
     },
   );
+  f.assertUnchangedSource();
+  f.assertRuntimeRemoved();
+});
+
+for (const sourceVersion of [14, 17, 18, "current"])
+  test(`rehearsal initializes actual application storage from schema ${sourceVersion} and preserves populated data`, (t) => {
+    const f = fixture(t, { candidate: "application", target: "rehearse", tests: "skip", sourceVersion });
+    assertExit(f.execute(), 0);
+    const [event] = f.events();
+    assert.equal(event.phase, "application-migrated");
+    assert.equal(event.version, f.canonicalVersion);
+    assert.deepEqual(event.records, [{ id: 1, value: "checkpointed" }, { id: 2, value: "wal-only" }]);
+    assert.deepEqual(event.inputs, [{ version: 3 }, { version: 3 }]);
+    assert.deepEqual(event.accounts, sourceVersion === 18 || sourceVersion === "current" ? [{ user_id: "favorite-owner", grid_id: "grid" }] : []);
+    assert.deepEqual(event.anonymous, sourceVersion === "current" ? [{ anonymous_id: "favorite-browser", grid_id: "grid" }] : []);
+    f.assertIndependentCopies(event);
+    assert.equal(f.result().migration, "passed");
+    assert.equal(f.result().productionData.schemaBefore, f.sourceVersion);
+    assert.equal(f.result().productionData.schemaAfter, f.canonicalVersion);
+    f.assertUnchangedSource();
+    f.assertRuntimeRemoved();
+  });
+
+for (const sourceVersion of [16, "future"])
+  test(`actual application initialization refuses unsupported schema ${sourceVersion} without changing production`, (t) => {
+    const f = fixture(t, { candidate: "application", tests: "skip", sourceVersion });
+    assertExit(f.execute(), 1);
+    assert.equal(f.result().status, "failed");
+    assert.equal(f.result().migration, undefined);
+    f.assertUnchangedSource();
+    f.assertRuntimeRemoved();
+  });
+
+for (const sourceVersion of [17, 18, "current"])
+  test(`noncanonical input in source schema ${sourceVersion} prevents application initialization`, (t) => {
+    const f = fixture(t, { candidate: "application", tests: "skip", sourceVersion, noncanonicalSource: true });
+    assertExit(f.execute(), 1);
+    assert.deepEqual(f.events(), []);
+    assert.equal(f.result().migration, undefined);
+    f.assertUnchangedSource();
+    f.assertRuntimeRemoved();
+  });
+
+test("a wrong migrated application version fails even when suites are skipped", (t) => {
+  const f = fixture(t, { candidate: "application", tests: "skip", versionFailure: true });
+  assertExit(f.execute(), 1);
+  assert.equal(f.events()[0].version, f.canonicalVersion - 1);
+  assert.equal(f.result().status, "failed");
+  assert.equal(f.result().migration, undefined);
   f.assertUnchangedSource();
   f.assertRuntimeRemoved();
 });
@@ -548,20 +613,14 @@ for (const [option, message] of [
   });
 }
 
-for (const sourceVersion of [8, 9, 10, 11, 12, 13, 15, 16, 17])
-  test(`rehearsal rejects unsupported or noncanonical source schema ${sourceVersion} before candidate startup`, (t) => {
-    const f = fixture(t, { tests: "skip", sourceVersion });
-    const child = f.execute();
-    assertExit(child, 1);
-    assert.match(child.stdout + child.stderr, sourceVersion === 17
-      ? /requires canonical inputVersion 3 grids/
-      : /requires source database schema 14 or canonical schema 17/);
-    assert.deepEqual(f.events(), []);
-    assert.equal(f.result().status, "failed");
-    assert.equal(f.result().migration, undefined);
-    f.assertUnchangedSource();
-    f.assertRuntimeRemoved();
-  });
+test("an uninitialized production source is refused instead of creating fresh storage", (t) => {
+  const f = fixture(t, { tests: "skip", sourceVersion: 0 });
+  assertExit(f.execute(), 1);
+  assert.deepEqual(f.events(), []);
+  assert.equal(f.result().migration, undefined);
+  f.assertUnchangedSource();
+  f.assertRuntimeRemoved();
+});
 
 for (const options of [
   { missingOutputs: true },

@@ -82,8 +82,9 @@ the master gate and migration rehearsal. Production updates only its own runtime
 Staging is a separately requested administrative target.
 
 `rehearse` and production promotion take a read-only SQLite backup and independent
-copies of all output files remotely, then initialize candidate storage and check
-integrity and foreign keys. Private copies are removed after success or failure.
+copies of all output files remotely. Validation requires the copied storage to
+reach the candidate's canonical format, then checks integrity and foreign keys.
+Private copies are removed after success or failure.
 The database backup is transaction-consistent; the filesystem copy is not an
 atomic checkpoint across both stores. Missing or unsafe sources and migration
 failures stop promotion. Rehearsal changes neither persistent runtime.
