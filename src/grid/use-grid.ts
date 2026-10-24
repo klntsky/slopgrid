@@ -7,6 +7,10 @@ import { saveDraft } from "../create/draft";
 import { cacheGrid, useOffline } from "../pwa";
 import { applyDelta, type GridStreamMessage } from "../../shared/grid-delta";
 import { draftInputFromGridInput } from "../create/draft-input";
+function generationUnavailable(error: unknown) {
+  return error instanceof ApiError && error.code === "UNAVAILABLE";
+}
+
 export function useGrid(id: string) {
   const cache = useQueryClient(),
     navigate = useNavigate();
@@ -15,8 +19,13 @@ export function useGrid(id: string) {
     queryFn: () => api<ViewGrid>(`/grids/${id}`),
     retry: (attempt, error) =>
       navigator.onLine &&
-      !(error instanceof ApiError && [404, 503].includes(error.status)) &&
-      attempt < 3,
+      (generationUnavailable(error) ||
+        (!(error instanceof ApiError && [404, 503].includes(error.status)) &&
+          attempt < 3)),
+    retryDelay: (attempt, error) =>
+      generationUnavailable(error)
+        ? 1000
+        : Math.min(1000 * 2 ** attempt, 30000),
     refetchOnWindowFocus: (query) =>
       !(
         query.state.error instanceof ApiError &&
@@ -24,7 +33,8 @@ export function useGrid(id: string) {
       ),
   });
   const [dismissed, setDismissed] = useState(false),
-    [streamLost, setStreamLost] = useState(false);
+    [streamLost, setStreamLost] = useState(false),
+    [recoveringGrid, setRecoveringGrid] = useState<string | null>(null);
   const offline = useOffline();
   const stream = useRef<{ id: string; cursor: string; grid?: ViewGrid }>({
     id,
@@ -38,7 +48,11 @@ export function useGrid(id: string) {
     if (completed && !offline) cacheGrid(id);
   }, [id, completed, offline]);
   const live =
-    !offline && query.isSuccess && !query.data.published && query.data.live;
+    !offline &&
+    !!query.data &&
+    (!query.isError || generationUnavailable(query.error)) &&
+    !query.data.published &&
+    query.data.live;
   useEffect(() => {
     setStreamLost(false);
     if (!live) return;
@@ -65,6 +79,7 @@ export function useGrid(id: string) {
           cursor = e.lastEventId;
           stream.current = { id, cursor, grid: previous };
           setStreamLost(false);
+          setRecoveringGrid((current) => (current === id ? null : current));
           cache.setQueryData(["grid", id], previous);
         } catch {
           previous = undefined;
@@ -94,10 +109,13 @@ export function useGrid(id: string) {
   function action(action: "retry" | "pause", continueWithLowBalance = false) {
     configure.reset();
     if (action === "retry") setDismissed(false);
-    inference.mutate({
-      path: `/grids/${id}/${action}`,
-      continueWithLowBalance,
-    });
+    inference.mutate(
+      {
+        path: `/grids/${id}/${action}`,
+        continueWithLowBalance,
+      },
+      { onError: recover },
+    );
   }
   const configure = useMutation({
     mutationFn: async () => {
@@ -117,20 +135,34 @@ export function useGrid(id: string) {
       await navigate({ to: "/create" });
     },
   });
+  function recover(error: Error) {
+    if (!generationUnavailable(error)) return;
+    inference.reset();
+    configure.reset();
+    setRecoveringGrid(id);
+    void query.refetch().then((result) => {
+      if (!generationUnavailable(result.error))
+        setRecoveringGrid((current) => (current === id ? null : current));
+    });
+  }
   return {
     query,
     error: inference.message || configure.error?.message || "",
     busy: inference.isPending || configure.isPending,
     dismissed,
     setDismissed,
-    streamLost,
-    live,
+    reconnecting:
+      (!query.isError || generationUnavailable(query.error)) &&
+      ((offline && !!query.data?.live) ||
+        (streamLost && live) ||
+        recoveringGrid === id ||
+        generationUnavailable(query.failureReason)),
     lowBalance: inference.lowBalance,
     setLowBalance: inference.setLowBalance,
     action,
     configure: () => {
       inference.reset();
-      configure.mutate();
+      configure.mutate(undefined, { onError: recover });
     },
   };
 }

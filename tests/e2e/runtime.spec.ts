@@ -2,6 +2,101 @@ import { test, expect } from "@playwright/test";
 import { runtimeFixture, kill } from "../runtime-fixture";
 import { currentDefinition } from "../current-grid-fixture";
 
+for (const entry of ["reload", "refetch", "pause", "edit"] as const) {
+  test(`generation service outage recovers automatically after ${entry}`, async ({
+    playwright,
+  }) => {
+    const fixture = await runtimeFixture();
+    const browser = await playwright.chromium.launch();
+    const context = await browser.newContext({ ignoreHTTPSErrors: true });
+    try {
+      await context.addCookies([
+        {
+          name: fixture.cookieName,
+          secure: true,
+          httpOnly: true,
+          sameSite: "Lax",
+          value: fixture.owner,
+          url: fixture.origin,
+        },
+      ]);
+      const grid = fixture.grid();
+      const page = await context.newPage();
+      await page.goto(`${fixture.origin}/grid/${grid.id}`);
+      await page.getByRole("button", { name: "Resume generation" }).click();
+      const call = await fixture.nextCall();
+      call.write({ content: "Saved before service outage." });
+      call.finish();
+      const preview = page.locator(".markdown-preview:visible").first();
+      await expect(preview).toContainText("Saved before service outage.");
+      await fixture.nextCall();
+      await expect(
+        page.getByRole("progressbar", { name: "Grid generation" }),
+      ).toHaveAttribute("value", "1");
+      const document = await preview.elementHandle();
+      await kill(fixture.engine.child);
+      if (entry === "reload") {
+        await page.reload();
+      } else {
+        const failure = page.waitForResponse(
+          (response) =>
+            response.url().includes(`/api/grids/${grid.id}`) &&
+            response.status() === 503,
+        );
+        if (entry === "refetch")
+          await page.evaluate(() =>
+            window.dispatchEvent(new Event("visibilitychange")),
+          );
+        else
+          await page
+            .getByRole("button", {
+              name: entry === "pause" ? "Pause generation" : "EDIT",
+              exact: true,
+            })
+            .click();
+        await failure;
+        await expect(preview).toContainText("Saved before service outage.");
+        expect(await document!.evaluate((node) => node.isConnected)).toBe(true);
+      }
+      await expect(page.locator(".connection-status")).toContainText(
+        "Connection lost. Reconnecting",
+      );
+      await expect(page.getByRole("alert")).toHaveCount(0);
+      await expect(
+        page.getByRole("link", { name: "slopgrid", exact: true }),
+      ).toBeVisible();
+      const outageDocument = await page.locator("html").elementHandle();
+      await fixture.startEngine();
+      await expect(preview).toContainText("Saved before service outage.", {
+        timeout: 15000,
+      });
+      await expect(page.locator(".connection-status")).toHaveCount(0);
+      await expect(page.getByRole("alert")).toHaveCount(0);
+      expect(await outageDocument!.evaluate((node) => node.isConnected)).toBe(
+        true,
+      );
+      await expect(
+        page.getByRole("button", { name: "Resume generation" }),
+      ).toBeVisible();
+      expect(fixture.calls).toHaveLength(2);
+      await page.getByRole("button", { name: "Resume generation" }).click();
+      const resumed = await fixture.nextCall();
+      resumed.write({ content: "After service recovery." });
+      resumed.finish();
+      await expect(
+        page.locator(".markdown-preview:visible").last(),
+      ).toContainText("After service recovery.");
+      await expect(
+        page.getByRole("progressbar", { name: "Grid generation" }),
+      ).toHaveAttribute("value", "2");
+      expect(fixture.calls).toHaveLength(3);
+    } finally {
+      await browser.close();
+      await fixture.close();
+    }
+  });
+}
+
 test("open browsers reconnect to a replaced web process while markdown, thinking and website assets continue streaming", async ({
   playwright,
 }) => {
