@@ -30,7 +30,7 @@ export const commands = {
     description:
       "Deploy the administrative staging runtime after isolated validation.",
     details:
-      "Grid deletion runs after draining and backup and requires machinery mode. Failed-start recovery requires runtime safety checks and machinery mode; neither option permits soft mode.",
+      "Grid deletion and --copy-production-data run only after staging drain and backup and require machinery mode. Production copying replaces staging storage and its encryption key once, preserving staging OAuth and origin settings without stopping production. Failed-start recovery requires runtime safety checks and machinery mode; none of these options permits soft mode.",
   },
   production: {
     argument: "[REV]",
@@ -120,6 +120,13 @@ const options = {
     error: () => "--recover-failed-start is only permitted on staging",
     description:
       "Recover an unpromoted staging engine that failed before readiness.",
+  },
+  "copy-production-data": {
+    type: "boolean",
+    targets: ["staging"],
+    error: () => "--copy-production-data is only permitted on staging",
+    description:
+      "Replace staging data once with a private production snapshot after drain and backup; requires machinery mode.",
   },
   "skip-data-cloning": {
     type: "boolean",

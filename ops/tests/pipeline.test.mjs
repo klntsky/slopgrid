@@ -98,6 +98,19 @@ test("selected grid deletion requires a draining update", () => {
   assert.throws(() => chooseMode("soft", "same", "same", true), /rejected/);
 });
 
+test("production data copy requests reject unsafe targets and modes before runtime work", async () => {
+  for (const request of [
+    { target: "production", copyProductionData: true },
+    { target: "demo", copyProductionData: true },
+    { target: "staging", copyProductionData: true, mode: "soft" },
+    { target: "staging", copyProductionData: "true" },
+  ])
+    await assert.rejects(
+      executePlan(request, {}),
+      /only permitted on staging|machinery|must be a boolean/,
+    );
+});
+
 test("configuration isolates staging resources from production", (t) => {
   const config = fixtureConfig(directory(t));
   assert.equal(validateConfig(config), config);
