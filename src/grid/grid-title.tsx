@@ -42,6 +42,7 @@ export function GridTitle({ grid }: { grid: ViewGrid }) {
   }, [inputText]);
   return (
     <div className="grid-title-line">
+      <FavoriteButton gridId={grid.id} />
       {grid.canEdit ? (
         <EditableTitle
           value={grid.title ?? ""}
@@ -63,7 +64,6 @@ export function GridTitle({ grid }: { grid: ViewGrid }) {
       ) : grid.title ? (
         <span className="grid-name">{grid.title}</span>
       ) : null}
-      <FavoriteButton gridId={grid.id} />
       {(grid.canEdit || grid.title) && (
         <span className="grid-title-dot" aria-hidden="true">
           ·

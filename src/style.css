@@ -2324,9 +2324,13 @@ header {
   font-size: inherit;
   text-decoration: underline;
 }
+.grid-title-line .favorite-control {
+  align-self: stretch;
+}
 .grid-title-line .favorite-button {
   width: 24px;
-  height: 24px;
+  height: auto;
+  align-self: stretch;
   padding: 4px;
 }
 .grid-title-line .favorite-button .lucide {
