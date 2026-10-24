@@ -21,6 +21,10 @@ Its cached state supports display and recovery but does not authorize server
 mutations or determine durable execution state. Development and test runtimes
 own independent storage and process resources.
 
+Each browser listing owns its transient layout and pagination position.
+Page navigation preserves the active controls without changing server-side
+pagination state or constraining the height of individual grid rows.
+
 Deployment orchestration belongs to [ops/](ops/ARCHITECTURE.md). The development
 launcher owns only its development runtime; neither it nor application request
 handlers own release promotion.
@@ -42,6 +46,10 @@ state. The favorites boundary scopes reads and writes to the authenticated
 account and applies grid access policy before exposing content. Browser
 membership caches support presentation; they do not grant grid access or own
 durable favorite state.
+
+The web process prepares personalized initial listings and the public session
+summary in one database snapshot. The frontend hydrates its query cache before
+rendering, using that same session identity for subsequent favorites queries.
 
 Generation commits a durable reference only after its artifact is installed.
 Live drafts and estimates belong to the engine until committed. The persistence

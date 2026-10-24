@@ -13,7 +13,8 @@ import {
 import type { GridInput } from "../server/domain";
 import type { GridListPage } from "../server/grid-listing";
 import type { FavoriteIds, FavoriteState } from "../server/favorites";
-import { api, ApiError, type SessionInfo } from "./api";
+import type { SessionInfo } from "../server/session";
+import { api, ApiError } from "./api";
 export { queryClient } from "./query-client";
 function gridListOptions(kind: "grids" | "public-grids", page: number) {
   return {
@@ -45,11 +46,14 @@ function useGridList(kind: "grids" | "public-grids", page: number) {
 export function useGrids(page = 1) {
   return useGridList("grids", page);
 }
-export function useSession() {
-  return useQuery({
+function sessionOptions() {
+  return {
     queryKey: ["session"],
     queryFn: () => api<SessionInfo>("/session"),
-  });
+  };
+}
+export function useSession() {
+  return useQuery(sessionOptions());
 }
 export function useConnection() {
   const key = useOpenRouterKey();
@@ -69,9 +73,13 @@ export function usePublicGrids(page = 1) {
   return useGridList("public-grids", page);
 }
 
+export function favoriteOwnerKey(session: SessionInfo) {
+  return session.user?.id ?? "anonymous";
+}
+
 function useFavoriteOwnerKey() {
   const session = useSession();
-  return session.isSuccess ? (session.data.user?.id ?? "anonymous") : undefined;
+  return session.data ? favoriteOwnerKey(session.data) : undefined;
 }
 
 function favoritePageOptions(ownerKey: string | undefined, page: number) {
@@ -87,6 +95,22 @@ function favoritePageOptions(ownerKey: string | undefined, page: number) {
       ),
     staleTime: 30000,
   };
+}
+
+export async function prepareFavoritePage({
+  cache,
+  page,
+}: {
+  cache: QueryClient;
+  page: number;
+}) {
+  if (!cache.getQueryData<SessionInfo>(["session"]))
+    await cache.prefetchQuery(sessionOptions());
+  const session = cache.getQueryData<SessionInfo>(["session"]);
+  if (!session) return;
+  const options = favoritePageOptions(favoriteOwnerKey(session), page);
+  if (cache.getQueryData(options.queryKey) === undefined)
+    await cache.prefetchQuery(options);
 }
 
 export function invalidateFavoritePages(cache: QueryClient) {
