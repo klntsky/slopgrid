@@ -27,12 +27,14 @@ const homeRoute = createRoute({
   component: Home,
   validateSearch: (
     search: Record<string, unknown>,
-  ): { yourPage?: number; publicPage?: number } => {
+  ): { yourPage?: number; publicPage?: number; favoritesPage?: number } => {
     const yourPage = gridPageNumber(search.yourPage);
     const publicPage = gridPageNumber(search.publicPage);
+    const favoritesPage = gridPageNumber(search.favoritesPage);
     return {
       yourPage: yourPage === 1 ? undefined : yourPage,
       publicPage: publicPage === 1 ? undefined : publicPage,
+      favoritesPage: favoritesPage === 1 ? undefined : favoritesPage,
     };
   },
 });

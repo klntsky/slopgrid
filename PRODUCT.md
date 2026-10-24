@@ -17,7 +17,7 @@ The following numbered requirements define the visible layout and interaction co
 5. For anonymous users, show the labeled GitHub sign-in button before Billing and Settings on desktop.
 6. Underline the active Billing or Settings navigation link.
 7. Anchor the touch navigation trigger at the right edge, with a 300px popup constrained to the viewport and separated from its trigger by 4px.
-8. Include GitHub account controls, Billing, and Settings in the touch popup, and change the open menu trigger to a close icon.
+8. Include account controls, Billing, and Settings in the touch popup, and change the open menu trigger to a close icon.
 9. Use the established filled primary buttons and borderless secondary actions, with matching padding, dimensions, hover states, and rounding.
 10. Use a 2px themed keyboard focus outline with a 3px offset on interactive controls.
 11. Present output formats as five equal vertical cards, with icons above labels, changing to two equal columns on phones.
@@ -44,7 +44,7 @@ The following numbered requirements define the visible layout and interaction co
 25. Show the provider logo, OpenRouter name, and stacked connection status in a bordered identity card, with actions beside them and a visible logo in both themes.
 26. Expand API-key entry inline within the provider card, use its available width, and disable Connect until a nonempty key is supplied.
 27. Make Generate full-width with a 24px diagonal arrow at the right, 13px vertical padding, and 16px horizontal padding.
-28. Separate Settings sections with 28px vertical padding, use a 320px theme selector constrained to the available width, and show the filled account sign-in button for anonymous users, Inference heading, and small muted provider explanation.
+28. Separate Settings sections with 28px vertical padding, use a 320px theme selector constrained to the available width, and show account controls, including the filled account sign-in button for anonymous users, Inference heading, and small muted provider explanation.
 29. Use the established medium-weight grid title, muted prompt, starting position, and spacing.
 30. Place Pause or Resume after the title/prompt and before Edit.
 31. Display model IDs in grid axes with copy feedback and a chain link icon, rotating icons together with row text.
@@ -540,7 +540,7 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
 4. Publication is allowed when every cell is complete or failed, or when the grid is paused with unfinished cells. Published unfinished cells without committed output appear as failed with the error reason "Not generated" and no error code. Preserve committed outputs, judgment state, and existing failures. Running cells prevent publication; published grids cannot resume inference.
 5. Publishing permanently locks generation inputs and outputs and prevents returning to private visibility. Public grids cannot be deleted so that benchmark data remains available. Title editing remains allowed independently.
 6. Provide an owner-visible route and control to promote an already link-accessible grid to public listing. A publicly listed grid cannot be demoted to link-only or private visibility.
-7. Link-accessible grids are readable by anyone with the link but excluded from public discovery. Public grids appear newest first on the home page beneath Your grids when present, or directly below output-format selection otherwise, including the owner's own public grids.
+7. Link-accessible grids are readable by anyone with the link but excluded from public discovery. Public grids appear newest first on the home page beneath Favorites and Your grids when present, or directly below output-format selection otherwise, including the owner's own public grids.
 8. Give public discovery its own loading, empty, and failure states, and refresh relevant lists after publication. Show format icons and authors without exposing ownership/session identifiers or nesting profile links inside grid links.
 9. Retain copy-link and fork controls for published grids. Dialogs must support keyboard operation, focus restoration, disabled controls while saving, and visible request errors.
 10. Public grids may have an optional, globally unique slug claimed by the owner when publishing or afterward if no slug has been claimed. Slugs contain only lowercase Latin letters, digits, and hyphens, with at least one hyphen. A claimed slug is permanent and cannot be changed or removed. Slug links use the root path, such as `/my-cool-grid-1`. Existing grid links remain accessible, while listing links and Copy link use the slug when present. A failed slug claim must not publish the grid.
@@ -554,6 +554,15 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
 3. Give each live generated website its own origin, isolating application cookies and site data and the cookies and site data of other outputs. Allow live iframe content the browser's normal capabilities, including network access, scripts, workers, WebAssembly, storage, forms, popups, downloads, audio, and permission-gated APIs. Browser permission prompts, user activation, and cross-origin rules still apply.
 4. Generated HTML must not access or modify application sessions or another output's private data. Authorize application-hosted output files against the requested output and its viewer; external resource requests remain available under normal browser rules.
 5. Offline website copies use self-contained cached resources and cannot access application cookies or site data. They make no network requests.
+
+### 8.5. Starred grids
+
+1. Store favorites on the backend for the signed-in account or the current anonymous browser identity. Anonymous favorites survive reloads and browser restarts while that browser identity remains available, including session rotation. Keep separate browsers and accounts isolated. On sign-in, merge the current anonymous favorites into the account without duplicates. Users can star any grid they can view without changing its ownership or access rules.
+2. Render a clickable star in every grid listing and immediately to the left of the grid title on the grid page. Use a filled star for a favorite and an outline otherwise. Keep listing stars separate from navigation links.
+3. Show "Favorites" above "Your grids" when the user has starred grids. Hide Favorites after the last star is removed. Your grids continues to list all owned grids, including starred ones. Favorites can appear when the user owns no grids.
+4. Give Favorites independent pagination and list grids newest first. Include favorites beyond the currently loaded Your grids and Public grids pages. Preserve the other listings' selected pages when navigating Favorites.
+5. Use "Add to favorites" and "Remove from favorites" for accessible labels and tooltips. Anonymous stars save directly without redirecting to sign-in. Support keyboard activation and visible focus.
+6. Keep copies of the same star in sync across listings and the grid page. Disable them while saving and show "Saving favorite". Preserve the confirmed state when a request fails, display the error with "Retry", and expose loading and retry controls when favorites cannot be read.
 
 ## 9. Availability and updates
 
