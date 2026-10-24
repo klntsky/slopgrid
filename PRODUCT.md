@@ -14,7 +14,7 @@ The following numbered requirements define the visible layout and interaction co
 2. Use 48px medium-weight page headings, reducing to 38px on phones, and 19px medium-weight section headings.
 3. Use the warm beige and olive light palette and warm charcoal dark palette, including all panel, border, selection, link, and icon colors.
 4. Use an 88px ordinary-page navbar with 5vw horizontal margins on desktop and a compact 64px minimum-height grid navbar. Phone navigation wraps with 20px ordinary-page and 10px grid-page horizontal padding.
-5. Show the labeled GitHub sign-in button before Billing and Settings on desktop.
+5. For anonymous users, show the labeled GitHub sign-in button before Billing and Settings on desktop.
 6. Underline the active Billing or Settings navigation link.
 7. Anchor the touch navigation trigger at the right edge, with a 300px popup constrained to the viewport and separated from its trigger by 4px.
 8. Include GitHub account controls, Billing, and Settings in the touch popup, and change the open menu trigger to a close icon.
@@ -44,7 +44,7 @@ The following numbered requirements define the visible layout and interaction co
 25. Show the provider logo, OpenRouter name, and stacked connection status in a bordered identity card, with actions beside them and a visible logo in both themes.
 26. Expand API-key entry inline within the provider card, use its available width, and disable Connect until a nonempty key is supplied.
 27. Make Generate full-width with a 24px diagonal arrow at the right, 13px vertical padding, and 16px horizontal padding.
-28. Separate Settings sections with 28px vertical padding, use a 320px theme selector constrained to the available width, and show the filled account sign-in button, Inference heading, and small muted provider explanation.
+28. Separate Settings sections with 28px vertical padding, use a 320px theme selector constrained to the available width, and show the filled account sign-in button for anonymous users, Inference heading, and small muted provider explanation.
 29. Use the established medium-weight grid title, muted prompt, starting position, and spacing.
 30. Place Pause or Resume after the title/prompt and before Edit.
 31. Display model IDs in grid axes with copy feedback and a chain link icon, rotating icons together with row text.
@@ -516,7 +516,7 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
 
 ### 8.1. Anonymous and GitHub accounts
 
-1. Users are anonymous by default. Offer recognizable GitHub sign-in in the interface. Settings contains an Account section with sign-in when anonymous, or linked GitHub identity and sign-out when signed in, accessible on both touch and mouse devices. Show account-loading and retry states when session lookup is pending or fails.
+1. Require both GitHub OAuth credentials at startup. Fail if either is missing or blank. Users are anonymous by default and can always choose GitHub sign-in. Settings contains an Account section with sign-in for anonymous users, or linked GitHub identity and sign-out when signed in, accessible on both touch and mouse devices. Show account-loading and retry states when session lookup is pending or fails.
 2. A GitHub identity displays as the GitHub icon followed by a username linked to the profile. Otherwise display "by Anonymous". Show authors near grid titles and in public grid listings; omit authors from the owner's own grid list.
 3. Account ownership persists when a GitHub username changes. Refresh display identity on sign-in.
 4. On sign-in, atomically claim the current anonymous session's grids for the account, including their billing history. Never claim another account's grids.

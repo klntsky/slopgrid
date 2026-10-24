@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { capture } from "../lib/common.mjs";
-import { configFromEnvironment, loadConfig } from "../lib/config.mjs";
+import { configFromEnvironment, loadConfig, loadDemoConfig } from "../lib/config.mjs";
 import { fixtureConfig, fixtureEnvironment } from "./config-fixture.mjs";
 
 function directory(t) {
@@ -72,6 +72,47 @@ test("missing root settings fail closed without an external JSON fallback", (t) 
   );
 });
 
+test("demo configuration requires staging credentials without requiring staging data or production settings", (t) => {
+  const root = directory(t),
+    envFile = join(root, "demo", "runtime.env"),
+    values = {
+      HOME: root, OPS_DEMO_ENV_FILE: envFile, OPS_DEMO_HTTPS_PORT: "8443",
+      OPS_HOST: "fixture.invalid", OPS_NODE_PATH: "/usr/bin:/bin",
+      OPS_STAGING_ENV_FILE: join(root, "staging.env"),
+    };
+  assert.equal(loadDemoConfig(root, values).demo.httpsPort, 8443);
+  assert.equal(Object.hasOwn(loadDemoConfig(root, values).demo, "stagingSource"), false);
+  assert.equal(loadDemoConfig(root, { ...values, XDG_STATE_HOME: join(root, "xdg") }).demo.stateRoot, join(root, "xdg/slopgrid/demos"));
+  assert.equal(loadDemoConfig(root, { ...values, OPS_DEMO_STATE_ROOT: join(root, "custom") }).demo.stateRoot, join(root, "custom"));
+  assert.equal(Object.hasOwn(configFromEnvironment(fixtureEnvironment(fixtureConfig(root)), root), "demo"), false);
+  for (const demo of [
+    { OPS_DEMO_ENV_FILE: undefined },
+    { OPS_DEMO_HTTPS_PORT: undefined },
+    { OPS_DEMO_ENV_FILE: "relative.env" },
+    { OPS_DEMO_STATE_ROOT: "relative" },
+    ...["OPS_HOST", "OPS_NODE_PATH", "OPS_STAGING_ENV_FILE"].flatMap(
+      (key) => [undefined, "", " ", 123, "invalid\u0001value"].map((value) => ({ [key]: value })),
+    ),
+    ...["-host", " host", "host name"].map((host) => ({ OPS_HOST: host })),
+    { OPS_STAGING_ENV_FILE: "relative.env" },
+    ...["", "0", "65536", "1.5", "443junk", "NaN"].map((port) => ({ OPS_DEMO_HTTPS_PORT: port })),
+  ]) assert.throws(() => loadDemoConfig(root, { ...values, ...demo }), /demo|OPS_DEMO/i);
+  for (const paths of [
+    { OPS_STAGING_APPLICATION_ROOT: join(root, "app") },
+    { OPS_STAGING_APPLICATION_ROOT: "relative", OPS_STAGING_CONFIG: join(root, "config") },
+    { OPS_STAGING_APPLICATION_ROOT: join(root, "app"), OPS_STAGING_CONFIG: "bad\u0001path" },
+  ]) assert.equal(Object.hasOwn(loadDemoConfig(root, { ...values, ...paths }).demo, "stagingSource"), false);
+  const withData = loadDemoConfig(root, {
+    ...values, OPS_STAGING_APPLICATION_ROOT: join(root, "app"), OPS_STAGING_CONFIG: join(root, "config"),
+  });
+  assert.equal(withData.demo.stagingSource.applicationRoot, join(root, "app"));
+  writeFileSync(join(root, ".env"), Object.entries({ ...values, OPS_DEMO_HTTPS_PORT: "443" })
+    .map(([key, value]) => `${key}=${JSON.stringify(value)}`).join("\n"));
+  assert.equal(loadDemoConfig(root, { HOME: root }).demo.httpsPort, 443);
+  assert.equal(loadDemoConfig(root, values).demo.httpsPort, 8443);
+  assert.throws(() => loadConfig(root, {}), /Missing or invalid config/);
+});
+
 test("nested operations transport archives only its committed subtree and never root dotenv", (t) => {
   const path = directory(t),
     repository = join(path, "app"),
@@ -84,6 +125,7 @@ test("nested operations transport archives only its committed subtree and never 
     "lib/config.mjs",
     "lib/common.mjs",
     "lib/cli-options.mjs",
+    "lib/process-identity.mjs",
   ])
     writeFileSync(
       join(repository, "ops", file),

@@ -6,8 +6,8 @@ import { validateBuild } from "./validate.mjs";
 import { capture, sha256 } from "./common.mjs";
 
 // The caller owns cleanup so validated artifacts remain available for upload.
-export async function prepareLocalCandidate(request, source) {
-  const run = mkdtempSync(join(tmpdir(), "sg-candidate-"));
+export async function prepareLocalCandidate(request, source, existingRun) {
+  const run = existingRun ?? mkdtempSync(join(tmpdir(), "sg-candidate-"));
   try {
     writeFileSync(join(run, "source.tar.gz"), source);
     const build = await prepareBuild(request, run);
@@ -29,9 +29,9 @@ export async function prepareLocalCandidate(request, source) {
       "build.json",
     ]);
     const frontend = readFileSync(join(run, "frontend.tar.gz"));
-    return { run, frontend, frontendHash: sha256(frontend), validation };
+    return { run, build, frontend, frontendHash: sha256(frontend), validation };
   } catch (error) {
-    rmSync(run, { recursive: true, force: true });
+    if (!existingRun) rmSync(run, { recursive: true, force: true });
     throw error;
   }
 }

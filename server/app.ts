@@ -27,6 +27,7 @@ import { createEventRoutes } from "./routes/events.js";
 import { createOutputAccess } from "./output-access.js";
 export type Config = {
   github?: OAuthCredentials;
+  sessionCookieName?: string;
   origin: string;
   outputDomain: string;
   database: string;
@@ -52,7 +53,11 @@ export function createApp(config: Config) {
   const origin = new URL(config.origin);
   const htmlHosts = createHtmlHosts(origin, config.outputDomain);
   const rate = createRateLimiter();
-  const session = createSessionReader(store, origin);
+  const session = createSessionReader(
+    store,
+    origin,
+    config.sessionCookieName ?? process.env.SESSION_COOKIE_NAME,
+  );
   const outputAccess = createOutputAccess(
     store,
     session,
@@ -91,9 +96,13 @@ export function createApp(config: Config) {
     }),
   );
   app.use(
-    createIdentityRoutes(store, session, rate, origin.origin, [
-      githubProvider(credentials),
-    ]),
+    createIdentityRoutes(
+      store,
+      session,
+      rate,
+      origin.origin,
+      [githubProvider(credentials)],
+    ),
   );
   app.use(createManualKeyRoutes(provider, session, rate));
   app.use(createModelRoutes(modelCatalog));

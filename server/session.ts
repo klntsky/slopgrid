@@ -17,9 +17,17 @@ export function anonymousOwner(s: Session) {
   return s.anonymousId ?? s.id;
 }
 
-export function createSessionReader(store: Store, origin: URL) {
-  const secure = origin.protocol === "https:",
-    cookieName = secure ? "__Host-slopgrid" : "slopgrid";
+export function createSessionReader(
+  store: Store,
+  origin: URL,
+  cookieName = origin.protocol === "https:" ? "__Host-slopgrid" : "slopgrid",
+) {
+  const secure = origin.protocol === "https:";
+  if (
+    !/^[A-Za-z0-9_-]+$/.test(cookieName) ||
+    (secure && !cookieName.startsWith("__Host-"))
+  )
+    throw new Error("Invalid session cookie name");
   function cookie(res: Response, id: string) {
     res.set("X-Slopgrid-Cache-Scope", cacheScope({ id }));
     // Rotation replaces any renewal already added to this response.

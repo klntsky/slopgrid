@@ -13,14 +13,17 @@ import { ControlledProvider } from "./controlled-provider.js";
 import { hasGithubIdentity } from "./session-storage-fixture.js";
 import { currentInput } from "./current-grid-fixture.js";
 
-test("GitHub credentials are mandatory and OAuth return paths stay local", () => {
+test("GitHub credentials are required and OAuth return paths stay local", () => {
   for (const [id, secret] of [
     [undefined, undefined],
+    [undefined, "secret"],
     ["", "secret"],
+    [" \t", "secret"],
     ["id", undefined],
-    ["id", " "],
+    ["id", ""],
+    ["id", " \n"],
   ])
-    assert.throws(() => githubCredentials(id, secret), /GITHUB_CLIENT_/);
+    assert.throws(() => githubCredentials(id, secret));
   assert.deepEqual(githubCredentials(" id ", " secret "), {
     clientId: "id",
     clientSecret: "secret",

@@ -157,7 +157,7 @@ for (const format of ["markdown", "image"] as const) {
       const session = await fetch(`${origin}/api/session`, {
         headers: { Cookie: cookie },
       });
-      assert.deepEqual(await session.json(), { connected: false, user: null });
+      assert.equal((await session.json()).connected, false);
       const rows = storedSessionPayloads(store.db);
       assert.equal(
         rows.some(

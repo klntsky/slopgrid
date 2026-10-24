@@ -49,13 +49,13 @@ export function environment(target) {
     !env.APP_ORIGIN?.startsWith("https://") ||
     !env.PORT ||
     !env.OUTPUT_DOMAIN ||
+    !env.GITHUB_CLIENT_ID?.trim() ||
+    !env.GITHUB_CLIENT_SECRET?.trim() ||
     !/^[a-fA-F0-9]{64}$/.test(env.KEY_ENCRYPTION_SECRET ?? "")
   )
     throw new Error(
-      "Runtime environment needs HTTPS APP_ORIGIN, PORT, OUTPUT_DOMAIN and KEY_ENCRYPTION_SECRET",
+      "Runtime environment needs HTTPS APP_ORIGIN, PORT, OUTPUT_DOMAIN, GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET and KEY_ENCRYPTION_SECRET",
     );
-  if (!env.GITHUB_CLIENT_ID || !env.GITHUB_CLIENT_SECRET)
-    throw new Error("Runtime environment needs GitHub OAuth credentials");
   return env;
 }
 

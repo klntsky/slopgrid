@@ -15,9 +15,11 @@ pnpm install
 pnpm exec playwright install chromium firefox
 ```
 
-Supply `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` through private configuration
-before starting the application. Both are required. Load development credentials
-and provider settings separately from deployed runtime configuration.
+Supply nonblank `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` through private
+configuration before starting the app. Startup fails if either is missing or
+blank. Visitors remain anonymous by default and can always choose GitHub
+sign-in. OpenRouter connections remain independent. Load development
+credentials and provider settings separately from deployed runtime configuration.
 
 ## Running a development worktree
 
@@ -81,6 +83,9 @@ GitHub Actions is disabled; its workflow file is retained.
 
 ## GitHub integration
 
+Copying staging credentials to a demo does not change the OAuth app's registered
+callback URL. Keep staging's OAuth registration unchanged.
+
 Register the test origin followed by `/api/auth/github/callback` with GitHub.
 Use an available fixed `E2E_PORT` if the registered callback requires one.
 Supply real GitHub credentials and the real-provider test key, then run
@@ -115,5 +120,7 @@ The ignored application-root `.env` supplies deployment settings. Staging and
 production are explicit targets, and production accepts only the authoritative
 remote master tip. The pipeline uploads the locally validated frontend,
 rehearses production migrations remotely, and reports the final deployment
-status. For configuration, deployment modes, recovery, and data administration,
-see [operations development](ops/DEVELOPMENT.md).
+status. Use `./ops/deploy.sh demo [REV]` for a Tailscale-served candidate under
+your current local account. For configuration, demo prerequisites, deployment
+modes, recovery, and data administration, see
+[operations development](ops/DEVELOPMENT.md).

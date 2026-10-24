@@ -1,4 +1,3 @@
-import { githubCredentials } from "./oauth.js";
 import { createFrontendRoutes } from "./frontend.js";
 import { createGridBootstrap } from "./grid-bootstrap.js";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -6,10 +5,6 @@ import { createApp } from "./app.js";
 import { generationClient } from "./generation-client.js";
 import { runtimeConfig } from "./runtime-config.js";
 
-const github = githubCredentials(
-  process.env.GITHUB_CLIENT_ID,
-  process.env.GITHUB_CLIENT_SECRET,
-);
 const production = process.env.NODE_ENV === "production";
 const pendingRequests: [IncomingMessage, ServerResponse][] = [];
 const queueRequest = (request: IncomingMessage, response: ServerResponse) => {
@@ -46,7 +41,6 @@ const config = runtimeConfig();
 const generation = generationClient(config.socket);
 await generation.status();
 const { app, modelCatalog, store, session } = createApp({
-  github,
   authURL: process.env.OPENROUTER_AUTH_URL,
   origin,
   outputDomain,

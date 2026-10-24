@@ -17,10 +17,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { generationClient } from "./generation-client.js";
-import { githubCredentials } from "./oauth.js";
 
 process.umask(0o077);
-githubCredentials(process.env.GITHUB_CLIENT_ID, process.env.GITHUB_CLIENT_SECRET);
 const root = realpathSync(process.cwd());
 const data = join(root, ".data");
 mkdirSync(data, { recursive: true, mode: 0o700 });

@@ -28,10 +28,11 @@ export function githubCredentials(
   clientId?: string,
   clientSecret?: string,
 ): OAuthCredentials {
-  if (!clientId?.trim()) throw new Error("GITHUB_CLIENT_ID is required");
-  if (!clientSecret?.trim())
-    throw new Error("GITHUB_CLIENT_SECRET is required");
-  return { clientId: clientId.trim(), clientSecret: clientSecret.trim() };
+  const id = clientId?.trim(),
+    secret = clientSecret?.trim();
+  if (!id || !secret)
+    throw new Error("GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET are required");
+  return { clientId: id, clientSecret: secret };
 }
 export type OAuthAttempt = {
   provider: string;
