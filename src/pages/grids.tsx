@@ -52,7 +52,7 @@ export function Home() {
           aria-labelledby="favorite-grids-title"
         >
           <h2 id="favorite-grids-title" className="grid-list-title">
-            Favorites
+            Your favorites
           </h2>
           <GridListing
             kind="favorites"
