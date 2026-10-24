@@ -293,56 +293,53 @@ async function accept(buildPath, directory, key) {
   } finally { clearTimeout(timer); }
 }
 
-export async function prepareDemoSeed({ source, buildPath, runtimeDir }) {
+function seedScratch(buildPath, runtimeDir) {
   if (!isAbsolute(buildPath) || !isAbsolute(runtimeDir)) throw new Error("Demo seed requires absolute paths");
   if (lstatSync(runtimeDir, { throwIfNoEntry: false })) throw new Error("Demo seed runtime already exists");
-  let scratch;
+  return mkdtempSync(join(dirname(runtimeDir), ".demo-seed-"));
+}
+
+export async function prepareDemoSeed({ source, buildPath, runtimeDir }) {
+  if (!source) throw new Error("Demo staging source is required; configure OPS_STAGING_APPLICATION_ROOT and OPS_STAGING_CONFIG or use --skip-data-cloning for empty storage");
+  const scratch = seedScratch(buildPath, runtimeDir);
   let transfer;
-  const discard = () => {
-    if (scratch) { rmSync(scratch, { recursive: true, force: true }); scratch = undefined; }
-  };
-  const empty = () => {
-    scratch = mkdtempSync(join(dirname(runtimeDir), ".demo-seed-"));
-    return scratch;
-  };
-  let reason = "unconfigured";
   try {
-    if (source) {
-      const valid = typeof source.host === "string" && source.host.length > 0 && !source.host.startsWith("-") && !/[\s\x00-\x1f\x7f]/.test(source.host)
-        && typeof source.nodePath === "string" && source.nodePath.length > 0 && !/[\x00-\x1f\x7f]/.test(source.nodePath)
-        && [source.envFile, source.applicationRoot, source.config].every((value) => typeof value === "string" && isAbsolute(value) && !/[\x00-\x1f\x7f]/.test(value));
-      reason = "source-rejected";
-      if (valid) {
-        transfer = mkdtempSync(join(dirname(runtimeDir), ".demo-transfer-"));
-        const archive = join(transfer, "source.tar");
-        const acquired = await acquire(source, archive);
-        reason = acquired === false ? "source-unavailable" : "source-rejected";
-        if (acquired === true) {
-          let key;
-          try { key = receive(archive, empty()); }
-          catch (error) { if (!(error instanceof Rejected)) throw error; }
-          if (key !== undefined) {
-            reason = "candidate-rejected";
-            if (await accept(buildPath, scratch, key)) {
-              rmSync(transfer, { recursive: true, force: true }); transfer = undefined;
-              renameSync(scratch, runtimeDir); scratch = undefined;
-              return { kind: "imported", key };
-            }
-          }
-          discard();
-        }
-        rmSync(transfer, { recursive: true, force: true }); transfer = undefined;
-      }
+    transfer = mkdtempSync(join(dirname(runtimeDir), ".demo-transfer-"));
+    const archive = join(transfer, "source.tar");
+    let acquired;
+    try { acquired = await acquire(source, archive); }
+    catch { throw new Error("Demo staging data acquisition failed; check staging SSH access and storage, or use --skip-data-cloning for empty storage"); }
+    if (acquired === false)
+      throw new Error("Demo staging data is unavailable; check staging SSH access, or use --skip-data-cloning for empty storage");
+    if (acquired !== true)
+      throw new Error("Demo staging snapshot was rejected; check the staging database, outputs and encryption key, or use --skip-data-cloning for empty storage");
+    let key;
+    try { key = receive(archive, scratch); }
+    catch (error) {
+      if (!(error instanceof Rejected)) throw error;
+      throw new Error("Demo staging archive was rejected; repair the staging data source, or use --skip-data-cloning for empty storage");
     }
-    discard();
+    if (!(await accept(buildPath, scratch, key)))
+      throw new Error("Demo staging data is incompatible with the candidate; use a compatible revision or --skip-data-cloning for empty storage");
+    rmSync(transfer, { recursive: true, force: true }); transfer = undefined;
+    renameSync(scratch, runtimeDir);
+    return { kind: "imported", key };
+  } finally {
+    try { rmSync(scratch, { recursive: true, force: true }); }
+    finally { if (transfer) rmSync(transfer, { recursive: true, force: true }); }
+  }
+}
+
+export async function initializeEmptyDemoSeed({ buildPath, runtimeDir }) {
+  const scratch = seedScratch(buildPath, runtimeDir);
+  try {
     const key = randomBytes(32).toString("hex");
-    mkdirSync(join(empty(), "outputs"), { mode: 0o700 });
+    mkdirSync(join(scratch, "outputs"), { mode: 0o700 });
     if (!(await accept(buildPath, scratch, key))) throw new Error("Demo seed fresh initialization rejected");
     chmodSync(join(scratch, "slopgrid.sqlite"), 0o600);
-    renameSync(scratch, runtimeDir); scratch = undefined;
-    return { kind: "skipped", key, reason };
+    renameSync(scratch, runtimeDir);
+    return { kind: "skipped", key, reason: "explicit-opt-out" };
   } finally {
-    try { discard(); }
-    finally { if (transfer) rmSync(transfer, { recursive: true, force: true }); }
+    rmSync(scratch, { recursive: true, force: true });
   }
 }
