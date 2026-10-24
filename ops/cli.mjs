@@ -279,6 +279,8 @@ function printDemo(lease, run) {
   console.log(`Demo ${lease.status}: ${lease.origin ?? "origin not ready"}`);
   if (lease.seed?.kind === "imported")
     console.log("Staging data imported into private demo storage.");
+  else if (lease.seed?.kind === "skipped" && lease.seed.reason === "explicit-opt-out")
+    console.log("Staging data cloning explicitly skipped (--skip-data-cloning). Using fresh empty storage.");
   else if (lease.seed?.kind === "skipped")
     console.log(`Staging data skipped. Using fresh data. Reason ${lease.seed.reason}.`);
   if (lease.expiresAt) console.log(`24-hour runtime deadline: ${lease.expiresAt}`);
@@ -291,7 +293,7 @@ async function localDemo(options) {
   const config = loadDemoConfig(projectRoot, {
     ...process.env,
     ...(options.httpsPort === undefined ? {} : { OPS_DEMO_HTTPS_PORT: String(options.httpsPort) }),
-  });
+  }, options);
   const caller = spawnSync("git", ["rev-parse", "--show-toplevel"], {
     encoding: "utf8", stdio: ["ignore", "pipe", "ignore"],
   });
@@ -315,14 +317,17 @@ async function localDemo(options) {
         "read required GitHub client ID and secret from staging over SSH before building; fail if unavailable",
         "build committed candidate locally with fresh isolated validation data",
         options.tests === "skip" ? "skip test suites explicitly" : `run ${options.tests} test suites locally`,
-        ...(options.reuseDemo === undefined ? [
-          "try a private staging database, outputs and encryption-key snapshot when staging is configured",
-          "check the snapshot with the candidate's existing storage initialization and recovery",
-          "skip unavailable or incompatible staging data and initialize fresh demo storage without adding migrations",
-        ] : [
+        ...(options.reuseDemo !== undefined ? [
           `require stopped, expired or failed local demo ${options.reuseDemo}; reject active or unsafe sources`,
           "copy its SQLite and WAL to private scratch, take candidate-installed readonly SQLite backup and independently copy outputs",
           "reuse its encryption key and same-origin session cookie name; create a fresh private environment, frontend and socket before normal app storage migration",
+        ] : options.skipDataCloning === true ? [
+          "explicitly skip staging data acquisition (--skip-data-cloning)",
+          "initialize fresh empty canonical demo storage with independent outputs and a new encryption key",
+        ] : [
+          "require a private staging database, outputs and encryption-key snapshot; fail if unavailable or unsafe",
+          "check the snapshot with the candidate's existing storage initialization and recovery; fail if incompatible",
+          "retain accepted cloned data and its encryption key in independent private demo storage",
         ]),
         "start foreground Tailscale HTTPS in a per-run transient current-user service with an isolated session cookie name",
         "stop the full service control group after 24 hours",
@@ -330,7 +335,7 @@ async function localDemo(options) {
       ],
       config: { repository: config.repository, stateRoot: config.demo.stateRoot, httpsPort: config.demo.httpsPort },
       ...(options.reuseDemo === undefined ? {} : { reuseDemo: options.reuseDemo }),
-      note: "Runtime stays under the current local user. Required staging GitHub credentials and optional staging data use separate SSH reads; no shared deployment lock, PM2 or service changes. This plan creates no state, reads no source data or credentials and makes no SSH calls.",
+      note: "Runtime stays under the current local user. Staging GitHub credentials are always required. Staging data cloning is required by default; --skip-data-cloning explicitly selects empty storage and --reuse-demo selects retained local data instead. No shared deployment lock, PM2 or service changes. This plan creates no state, reads no source data or credentials and makes no SSH calls.",
     }, null, 2));
     return;
   }
