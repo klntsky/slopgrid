@@ -18,9 +18,13 @@ engine or transfer ownership of active inference to a request handler.
 
 The browser owns editor interaction, presentation preferences, and local drafts.
 Its cached state supports display and recovery but does not authorize server
-mutations or determine durable execution state. Browser queries own read retries
-and cancel recovery when a grid is no longer observed. Development and test
-runtimes own independent storage and process resources.
+mutations or determine durable execution state. Browser queries own read recovery
+and cancel outstanding requests, including response-body reads, when a grid is no
+longer observed. Read recovery owns request deadlines; the HTTP transport preserves
+response status and server cooldown metadata even when an error body cannot be read.
+Live updates reconcile through the grid cache and can satisfy pending reads without
+resubmitting server mutations. Development and test runtimes own independent storage
+and process resources.
 
 Deployment orchestration belongs to [ops/](ops/ARCHITECTURE.md). The development
 launcher owns only its development runtime; neither it nor application request
