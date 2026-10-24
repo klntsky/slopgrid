@@ -1,5 +1,4 @@
 import { spawn, spawnSync } from "node:child_process";
-import { randomBytes } from "node:crypto";
 import { once } from "node:events";
 import {
   chmodSync,
@@ -296,7 +295,6 @@ export async function startDemo(request, run, build) {
   mkdirSync(run, { recursive: true, mode: 0o700 });
   chmodSync(run, 0o700);
   const runtimeDir = join(run, "demo");
-  mkdirSync(runtimeDir, { mode: 0o700 });
   const socketDir = mkdtempSync("/tmp/sg-demo-");
   chmodSync(socketDir, 0o700);
   const startedAt = new Date().toISOString();
@@ -308,19 +306,37 @@ export async function startDemo(request, run, build) {
   };
   writeJSON(leasePath(run), lease);
   try {
-    mkdirSync(join(runtimeDir, "outputs"), { mode: 0o700 });
-    mkdirSync(join(runtimeDir, "tmp"), { mode: 0o700 });
-    cpSync(join(build.path, "dist"), join(runtimeDir, "frontend"), { recursive: true, errorOnExist: true, force: false });
+    let key;
     if (source) {
+      mkdirSync(runtimeDir, { mode: 0o700 });
+      mkdirSync(join(runtimeDir, "outputs"), { mode: 0o700 });
       snapshotReuseDatabase(source, runtimeDir, build.path);
       copyReuseOutputs(source, join(runtimeDir, "outputs"));
       assertReuseSourceUnchanged(source);
+      key = source.key;
+    } else {
+      const { prepareDemoSeed } = await import("./demo-seed.mjs");
+      const seed = await prepareDemoSeed({
+        source: config.stagingSource,
+        buildPath: build.path,
+        runtimeDir,
+      });
+      key = seed.key;
+      lease = {
+        ...lease,
+        seed: seed.kind === "imported"
+          ? { kind: "imported" }
+          : { kind: "skipped", reason: seed.reason },
+      };
+      writeJSON(leasePath(run), lease);
     }
+    mkdirSync(join(runtimeDir, "tmp"), { mode: 0o700 });
+    cpSync(join(build.path, "dist"), join(runtimeDir, "frontend"), { recursive: true, errorOnExist: true, force: false });
     const env = {
       ...supplied, NODE_ENV: "production", BIND_ADDRESS: "127.0.0.1", APP_ORIGIN: origin,
       DATABASE_PATH: join(runtimeDir, "slopgrid.sqlite"), OUTPUTS_PATH: join(runtimeDir, "outputs"),
       GENERATION_SOCKET: join(socketDir, "generation.sock"), FRONTEND_PATH: join(runtimeDir, "frontend"),
-      KEY_ENCRYPTION_SECRET: source ? source.key : randomBytes(32).toString("hex"), TMPDIR: join(runtimeDir, "tmp"),
+      KEY_ENCRYPTION_SECRET: key, TMPDIR: join(runtimeDir, "tmp"),
       SESSION_COOKIE_NAME: source && source.lease.origin === origin ? source.cookieName : `__Host-slopgrid-demo-${basename(run)}`,
     };
     writeFileSync(join(runtimeDir, "demo.env"), Object.entries(env).map(([key, value]) => `${key}=${JSON.stringify(value)}`).join("\n") + "\n", { mode: 0o600 });

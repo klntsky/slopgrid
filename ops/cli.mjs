@@ -277,6 +277,10 @@ async function follow(remote, remoteNode, tools, run) {
 
 function printDemo(lease, run) {
   console.log(`Demo ${lease.status}: ${lease.origin ?? "origin not ready"}`);
+  if (lease.seed?.kind === "imported")
+    console.log("Staging data imported into private demo storage.");
+  else if (lease.seed?.kind === "skipped")
+    console.log(`Staging data skipped. Using fresh data. Reason ${lease.seed.reason}.`);
   if (lease.expiresAt) console.log(`24-hour runtime deadline: ${lease.expiresAt}`);
   if (lease.stoppedAt) console.log(`Stopped: ${lease.stoppedAt}`);
   console.log(`Data and encryption key retained until manually removed: ${lease.runtimeDir ?? run}`);
@@ -308,9 +312,13 @@ async function localDemo(options) {
     console.log(JSON.stringify({
       revision, opsRevision, target: "demo", validation: options.tests,
       stages: [
-        "build committed candidate locally with fresh isolated data",
+        "build committed candidate locally with fresh isolated validation data",
         options.tests === "skip" ? "skip test suites explicitly" : `run ${options.tests} test suites locally`,
-        ...(options.reuseDemo === undefined ? [] : [
+        ...(options.reuseDemo === undefined ? [
+          "try a private staging database, outputs and encryption-key snapshot when staging is configured",
+          "check the snapshot with the candidate's existing storage initialization and recovery",
+          "skip unavailable or incompatible staging data and initialize fresh demo storage without adding migrations",
+        ] : [
           `require stopped, expired or failed local demo ${options.reuseDemo}; reject active or unsafe sources`,
           "copy its SQLite and WAL to private scratch, take candidate-installed readonly SQLite backup and independently copy outputs",
           "reuse its encryption key and same-origin session cookie name; create a fresh private environment, frontend and socket before normal app storage migration",
@@ -321,7 +329,7 @@ async function localDemo(options) {
       ],
       config: { repository: config.repository, stateRoot: config.demo.stateRoot, httpsPort: config.demo.httpsPort },
       ...(options.reuseDemo === undefined ? {} : { reuseDemo: options.reuseDemo }),
-      note: "Runs as the current local user. No SSH, deployment lock, migration rehearsal or PM2 operations. Plan creates no state and changes no runtime processes.",
+      note: "Runtime stays under the current local user. An optional staging snapshot uses SSH; no shared deployment lock, PM2 or service changes. This plan creates no state, reads no source data and makes no SSH calls.",
     }, null, 2));
     return;
   }
@@ -355,6 +363,7 @@ async function localDemo(options) {
     const { startDemo } = await import("./lib/demo.mjs");
     const lease = await startDemo(request, run, local.build);
     result.status = "succeeded";
+    if (lease.seed) result.seed = lease.seed;
     result.stages.push({ phase: "started", at: new Date().toISOString() });
     printDemo(lease, run);
     console.log(`Startup handed off. Reconnect with: ./deploy.sh status ${request.id}`);

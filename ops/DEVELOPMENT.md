@@ -152,8 +152,8 @@ Configure these local settings in the ignored application-root `.env`:
 | `OPS_DEMO_STATE_ROOT` | Optional absolute directory for retained demo runs |
 
 The default state directory is `$XDG_STATE_HOME/slopgrid/demos`, or
-`$HOME/.local/state/slopgrid/demos` when `XDG_STATE_HOME` is unset. Demo commands
-do not require `OPS_HOST` or staging and production configuration.
+`$HOME/.local/state/slopgrid/demos` when `XDG_STATE_HOME` is unset.
+Fresh demos do not require remote deployment configuration.
 
 Install the local build dependencies listed above, Tailscale, and a systemd user
 manager. Enable HTTPS for the tailnet and grant your user permission to use
@@ -190,7 +190,8 @@ The command builds and validates committed source locally, then prints the
 private HTTPS URL, deadline, and data location. Full local validation is the
 default. Scoped selection and explicit skipped tests use the same controls as
 candidate validation. Runtime processes run as the invoking local user without
-SSH or PM2. Multiple demos can run concurrently on distinct HTTPS listener ports.
+PM2. Optional staging snapshots use SSH. Multiple demos can run concurrently
+on distinct HTTPS listener ports.
 Every new run owns `slopgrid-demo-RUN_ID.service`, a private runtime, and a distinct
 `__Host-slopgrid-demo-RUN_ID` session cookie. Cookies ignore port numbers, so the
 separate names prevent browser identity sharing between demos on one hostname.
@@ -206,13 +207,47 @@ command shown above. Neither stop nor expiry deletes the database, outputs,
 generated environment, or encryption key. Keep the retained data private.
 Remove an old run directory manually only after its service has stopped.
 
+### Use staging data in a demo
+
+Ordinary `demo` commands try to seed their storage from staging. Configure
+`OPS_HOST`, `OPS_NODE_PATH`, `OPS_STAGING_ENV_FILE`,
+`OPS_STAGING_APPLICATION_ROOT`, and `OPS_STAGING_CONFIG` in the ignored
+application-root `.env`. No production settings or remote deployment process
+names are required for this read.
+
+SSH reads the staging environment and uses the installed release's SQLite
+driver to take an online database backup. Staging stays running. The command
+copies outputs, including hidden reference and thinking files, and the
+encryption key into private local storage. It does not copy staging OAuth
+settings, listener addresses, or cookie names.
+
+The prepared candidate checks this copy through its existing storage
+initialization and interrupted-work recovery. It uses only migrations already
+in that candidate. An unavailable, unsafe, or incompatible snapshot is skipped.
+The entire rejected import is discarded before an empty database, empty outputs,
+and a new key are initialized. The demo continues with fresh data. CLI output
+and `status` report whether staging data was imported or skipped.
+`--skip-tests` skips suites, not this storage compatibility check.
+
+Imported data retains its ownership and visibility. Public grids remain visible;
+private account-owned grids require signing into the same account in the demo.
+A new anonymous browser does not gain access to anonymous private staging grids.
+Use the demo's separately configured OAuth application when sign-in is needed.
+Copied sessions can contain usable provider credentials, so protect retained
+demo storage and its encryption key as private staging data.
+
+The database and output tree are sequential copies, not one atomic snapshot.
+Changes during copying can cause the import to be skipped. Normal recovery
+pauses interrupted work without starting inference. Resuming copied work later
+can incur charges independently of any work still running in staging.
+Local storage failures and later service-start failures remain deployment errors.
+
 ### Redeploy with a retained demo's data
 
-Fresh demos still start with an empty database and a new encryption key.
-`--reuse-demo RUN_ID` is available only for `demo`. It creates an independent
-snapshot of a retained local demo, preserving browser sessions, grids, outputs,
-and the encryption key needed to decrypt saved credentials. It does not borrow
-staging or production storage.
+`--reuse-demo RUN_ID` takes priority over staging import and is available only
+for `demo`. It creates an independent snapshot of a retained local demo,
+preserving browser sessions, grids, outputs, and the encryption key needed to
+decrypt saved credentials. It does not borrow staging or production storage.
 
 Commit the candidate and operations changes first. Inspect the reuse plan before
 stopping the old demo, then stop the service explicitly and deploy:

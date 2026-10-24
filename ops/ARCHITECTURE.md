@@ -57,6 +57,19 @@ Its runtime stays under the invoking user's account instead of crossing the
 remote deployment boundary. Run-owned source, credentials, and storage keep
 demo effects separate from staging and production.
 
+Optional staging acquisition crosses a read-only snapshot boundary. The
+installed SQLite driver reads staging data without invoking application
+initialization against the source or controlling its services. Candidate
+initialization runs only on an independently owned local copy and decides
+whether that data is usable. Operations discards a rejected import before
+publishing fresh storage, so incompatible staging data does not become a
+runtime dependency or a reason to repair staging.
+
+Imported ownership and access rules remain application responsibilities.
+Separate demo cookies prevent ambient browser identity sharing, while private
+storage protects the copied session credentials and encryption key. Importing
+data does not authorize a new anonymous browser to read private staging grids.
+
 The systemd user manager owns the demo process group and enforces its lifetime
 outside the initiating command. Tailscale owns the private HTTPS listener through
 the foreground Serve session in that group. Stopping the group removes that

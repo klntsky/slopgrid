@@ -16,7 +16,7 @@ export const commands = {
     description:
       "Run a private 24-hour demo as the current local user after isolated validation.",
     details:
-      "Uses foreground Tailscale HTTPS and a transient user service. Data and its encryption key are retained after stopping until manually removed. Full, scoped or explicitly skipped local tests are supported. No SSH, PM2 or shared runtime changes.",
+      "Uses foreground Tailscale HTTPS and a transient user service. Ordinary demos try a private staging snapshot and start fresh if it is unavailable or incompatible. Data and its encryption key are retained after stopping until manually removed. Full, scoped or explicitly skipped local tests are supported. Runtime processes stay local; optional staging snapshots use SSH without PM2 or shared runtime changes.",
   },
   rehearse: {
     argument: "[REV]",

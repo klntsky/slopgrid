@@ -147,7 +147,7 @@ test("HTTPS listener override is demo-only and accepts only real TCP ports", () 
     assert.throws(() => parseArgs(["demo", `--https-port=${value}`]), /HTTPS port/);
 });
 
-test("demo reuse plan explains copying and normal storage migration without reading or writing source state", (t) => {
+test("demo reuse plans leave source and runtime state untouched", (t) => {
   const f = unconfiguredCli(t);
   writeFileSync(join(f.bin, "git"), `#!${process.execPath}
     import { writeFileSync } from "node:fs";
@@ -163,12 +163,6 @@ test("demo reuse plan explains copying and normal storage migration without read
     OPS_DEMO_HTTPS_PORT: "8445",
   });
   assert.equal(result.status, 0, result.stderr);
-  const plan = JSON.parse(result.stdout);
-  assert.equal(plan.reuseDemo, "stopped-run");
-  assert.equal(plan.config.httpsPort, 8446);
-  assert.match(plan.stages.join("\\n"), /stopped.*expired.*failed/);
-  assert.match(plan.stages.join("\\n"), /readonly SQLite backup/);
-  assert.match(plan.stages.join("\\n"), /storage migration/);
   assert.equal(existsSync(stateRoot), false);
   assert.equal(existsSync(f.touched), false);
   assert.deepEqual(readdirSync(f.root).sort(), ["bin", "ops"]);

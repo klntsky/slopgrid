@@ -65,8 +65,24 @@ export function loadDemoConfig(root = projectRoot, inherited = process.env) {
     throw new Error("Demo requires OPS_DEMO_ENV_FILE as an absolute local private env path");
   if (typeof port !== "string" || !/^\d+$/.test(port) || Number(port) < 1 || Number(port) > 65535)
     throw new Error("Demo requires OPS_DEMO_HTTPS_PORT as an integer from 1 to 65535");
+  const stagingSource = {
+    host: values.OPS_HOST,
+    nodePath: values.OPS_NODE_PATH,
+    envFile: values.OPS_STAGING_ENV_FILE,
+    applicationRoot: values.OPS_STAGING_APPLICATION_ROOT,
+    config: values.OPS_STAGING_CONFIG,
+  };
+  const configured =
+    Object.values(stagingSource).every(
+      (value) => typeof value === "string" && value.length > 0 && !/[\n\r\0]/.test(value),
+    ) &&
+    !/^[\s-]|\s/.test(stagingSource.host) &&
+    ["envFile", "applicationRoot", "config"].every((key) => isAbsolute(stagingSource[key]));
   return {
     repository: root,
-    demo: { envFile, httpsPort: Number(port), stateRoot: stateRoot(values) },
+    demo: {
+      envFile, httpsPort: Number(port), stateRoot: stateRoot(values),
+      ...(configured ? { stagingSource } : {}),
+    },
   };
 }
