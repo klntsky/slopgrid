@@ -38,7 +38,7 @@ for (const entry of ["direct", "edit"] as const) {
         .locator(".history-row"),
     ).toHaveCount(20);
     await owned.getByRole("button", { name: "Next", exact: true }).click();
-    await expect(owned.locator(".history-row a").first()).toHaveAttribute(
+    await expect(owned.locator(".history-grid-link").first()).toHaveAttribute(
       "href",
       `/grid/${ids[20]}`,
     );
@@ -100,7 +100,7 @@ test("cached list pages survive unavailable page APIs and restore independent na
   await expect(owned.locator(".history-row")).toHaveCount(20);
   await expect(publicGrids.locator(".history-row")).toHaveCount(20);
   await owned.getByRole("button", { name: "Next", exact: true }).click();
-  await expect(owned.locator(".history-row a").first()).toHaveAttribute(
+  await expect(owned.locator(".history-grid-link").first()).toHaveAttribute(
     "href",
     `/grid/${ids[20]}`,
   );
@@ -109,7 +109,7 @@ test("cached list pages survive unavailable page APIs and restore independent na
     publicGrids.locator(".history-grid-link").first(),
   ).toHaveAttribute("href", publicPaths[20]);
   await page.reload();
-  await expect(owned.locator(".history-row a").first()).toHaveAttribute(
+  await expect(owned.locator(".history-grid-link").first()).toHaveAttribute(
     "href",
     `/grid/${ids[20]}`,
   );
@@ -117,7 +117,7 @@ test("cached list pages survive unavailable page APIs and restore independent na
     publicGrids.locator(".history-grid-link").first(),
   ).toHaveAttribute("href", publicPaths[20]);
   await owned.getByRole("button", { name: "Next", exact: true }).click();
-  await expect(owned.locator(".history-row a").first()).toHaveAttribute(
+  await expect(owned.locator(".history-grid-link").first()).toHaveAttribute(
     "href",
     `/grid/${ids[40]}`,
   );

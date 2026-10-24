@@ -27,8 +27,8 @@ handlers own release promotion.
 
 ## State and persistence
 
-The database owns identities, sessions, grid configuration, workflow state,
-content references, and the inference ledger. The artifact store owns generated
+The database owns identities, sessions, account favorites, grid configuration,
+workflow state, content references, and the inference ledger. The artifact store owns generated
 bodies, uploaded image bytes, and thinking traces. Access checks select content
 through authorized domain references rather than browser-supplied storage paths.
 
@@ -36,6 +36,12 @@ The storage initialization boundary owns migrations before normal runtime use.
 Historical input handling stays there, while runtime readers consume the current
 canonical representation. Accepted execution inputs and immutable generated
 content remain separate from editable configuration and presentation metadata.
+
+Account favorites belong to the web process, separate from shared grid execution
+state. The favorites boundary scopes reads and writes to the authenticated
+account and applies grid access policy before exposing content. Browser
+membership caches support presentation; they do not grant grid access or own
+durable favorite state.
 
 Generation commits a durable reference only after its artifact is installed.
 Live drafts and estimates belong to the engine until committed. The persistence

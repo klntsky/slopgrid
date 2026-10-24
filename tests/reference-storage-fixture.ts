@@ -53,6 +53,8 @@ export function restoreV14ReferenceSchema(db: Database.Database) {
       SELECT id,owner,owner_user_id,name,media_type FROM cas_reference_images;
     DROP TABLE cas_reference_images;
     DROP TABLE reference_blobs;
+    DROP TABLE anonymous_grid_favorites;
+    DROP TABLE grid_favorites;
     PRAGMA user_version=14;
   `);
 }

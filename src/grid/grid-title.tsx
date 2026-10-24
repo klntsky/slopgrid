@@ -6,6 +6,8 @@ import { CopyButton } from "../components/copy-button";
 import { EditableTitle } from "../components/editable-title";
 import { GridParameters } from "./grid-parameters";
 import { gridInputText } from "../../shared/grid-display";
+import { invalidateFavoritePages } from "../queries";
+import { FavoriteButton } from "../components/favorite-button";
 
 export function GridTitle({ grid }: { grid: ViewGrid }) {
   const cache = useQueryClient();
@@ -40,6 +42,7 @@ export function GridTitle({ grid }: { grid: ViewGrid }) {
   }, [inputText]);
   return (
     <div className="grid-title-line">
+      <FavoriteButton gridId={grid.id} />
       {grid.canEdit ? (
         <EditableTitle
           value={grid.title ?? ""}
@@ -55,6 +58,7 @@ export function GridTitle({ grid }: { grid: ViewGrid }) {
             cache.setQueryData(["grid", grid.id], updated);
             void cache.invalidateQueries({ queryKey: ["grids"] });
             void cache.invalidateQueries({ queryKey: ["public-grids"] });
+            void invalidateFavoritePages(cache);
           }}
         />
       ) : grid.title ? (

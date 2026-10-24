@@ -32,14 +32,14 @@ test("owned and public grids page independently and restore after navigation", a
     owned.getByRole("button", { name: "Previous", exact: true }),
   ).toBeDisabled();
   await owned.getByRole("button", { name: "Next", exact: true }).click();
-  await expect(rows.first().getByRole("link")).toHaveAttribute(
+  await expect(rows.first().locator(".history-grid-link")).toHaveAttribute(
     "href",
     `/grid/${ids[20]}`,
   );
   await expect(page).toHaveURL(/yourPage=2/);
   await expect(owned.locator(".grid-pagination")).toContainText("21-40 of 43");
   const ownedLinks = await rows
-    .getByRole("link")
+    .locator(".history-grid-link")
     .evaluateAll((links) => links.map((link) => link.getAttribute("href")));
   await publicGrids.getByRole("button", { name: "Next", exact: true }).click();
   await expect(publicGrids.locator(".history-row")).toHaveCount(
@@ -59,21 +59,21 @@ test("owned and public grids page independently and restore after navigation", a
   );
   expect(
     await rows
-      .getByRole("link")
+      .locator(".history-grid-link")
       .evaluateAll((links) => links.map((link) => link.getAttribute("href"))),
   ).toEqual(ownedLinks);
   await page.reload();
   await expect(publicGrids.locator(".history-row")).toHaveCount(
     publicPageTwo.length,
   );
-  await expect(rows.first().getByRole("link")).toHaveAttribute(
+  await expect(rows.first().locator(".history-grid-link")).toHaveAttribute(
     "href",
     `/grid/${ids[20]}`,
   );
-  await rows.first().getByRole("link").click();
+  await rows.first().locator(".history-grid-link").click();
   await expect(page).toHaveURL(new RegExp(`/grid/${ids[20]}$`));
   await page.goBack();
-  await expect(rows.first().getByRole("link")).toHaveAttribute(
+  await expect(rows.first().locator(".history-grid-link")).toHaveAttribute(
     "href",
     `/grid/${ids[20]}`,
   );

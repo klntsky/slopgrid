@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Eye, Upload } from "lucide-react";
 import { api, type ViewGrid } from "../api";
 import { PublishDialog, type Publication } from "../components/publish-dialog";
+import { invalidateFavoritePages } from "../queries";
 
 export function PublishGrid({
   grid,
@@ -22,6 +23,7 @@ export function PublishGrid({
       await Promise.all([
         cache.invalidateQueries({ queryKey: ["grids"] }),
         cache.invalidateQueries({ queryKey: ["public-grids"] }),
+        invalidateFavoritePages(cache),
       ]);
     },
   });
