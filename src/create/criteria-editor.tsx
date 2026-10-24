@@ -47,6 +47,7 @@ export function CriteriaEditor({
           <col className="criteria-handle-column" />
           <col />
           <col className="criteria-answer-column" />
+          <col className="criteria-weight-column" />
         </colgroup>
         <tbody>
           {criteria.map((criterion, index) => (
@@ -123,6 +124,25 @@ export function CriteriaEditor({
                   )}
                 </ValidationField>
               </td>
+              <td className="criteria-weight-column">
+                <ValidationField path={[index, "weight"]}>
+                  {(validation) => (
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="0.1"
+                      max="10"
+                      aria-label={`Weight for criterion ${index + 1}`}
+                      {...validation}
+                      value={criterion.weight ?? 1}
+                      className="criteria-weight-input"
+                      onChange={(event) =>
+                        update(index, { weight: parseFloat(event.target.value) || 1 })
+                      }
+                    />
+                  )}
+                </ValidationField>
+              </td>
             </tr>
           ))}
         </tbody>
@@ -133,7 +153,7 @@ export function CriteriaEditor({
         ref={tooltipRef}
         data-tooltip="Add a criterion to this criteria list"
         onClick={() =>
-          onChange([...criteria, { text: "", correctAnswer: true }])
+          onChange([...criteria, { text: "", correctAnswer: true, weight: 1 }])
         }
       >
         <Plus size={16} aria-hidden="true" />

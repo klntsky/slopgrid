@@ -8,6 +8,8 @@ export type JudgmentSummary = {
   results: NonNullable<ViewGrid["cells"][number]["judge"]>["results"];
   correct: number | undefined;
   total: number;
+  weightedScore: number | undefined;
+  maxWeightedScore: number | undefined;
   running: boolean;
   state: string;
   label: string;
@@ -49,10 +51,27 @@ export function summarizeJudgment(
   const label = results
     ? `Judgment: ${correct} of ${criteria.length} correct`
     : state;
+  const totalWeight = criteria.reduce(
+    (sum, c) => sum + (c.weight ?? 1),
+    0,
+  );
+  const weightedScore =
+    results && totalWeight > 0
+      ? results.reduce(
+          (score, result, index) =>
+            score +
+            Number(result.verdict === criteria[index].correctAnswer) *
+              (criteria[index].weight ?? 1),
+          0,
+        )
+      : undefined;
+  const maxWeightedScore = totalWeight > 0 ? totalWeight : undefined;
   return {
     results,
     correct,
     total: criteria.length,
+    weightedScore,
+    maxWeightedScore,
     running:
       judge.status === "running" && gridStatus !== "paused" && !judge.retrying,
     state,
@@ -84,6 +103,12 @@ export function JudgeResultButton({
       <span className="judge-result-score" aria-hidden="true">
         {summary.running ? (
           <LoaderCircle className="spinner" aria-hidden="true" />
+        ) : summary.weightedScore !== undefined ? (
+          <>
+            <span>{summary.weightedScore}</span>
+            <span>/</span>
+            <span>{summary.maxWeightedScore}</span>
+          </>
         ) : (
           (summary.correct ?? "-")
         )}
@@ -165,6 +190,7 @@ export function JudgeResults({
                 <span
                   className={`judge-result-criterion${result ? (matches ? " judge-correct" : " judge-incorrect") : ""}`}
                 >
+                  <span className="judge-criterion-weight">[{criterion.weight}]</span>{" "}
                   {criterion.correctAnswer
                     ? criterion.text
                     : `not(${criterion.text})`}

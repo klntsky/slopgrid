@@ -189,6 +189,7 @@ export function migrateProductionInput(value: unknown): GridInput {
       old.judge.criteria.map((criterion) => ({
         ...criterion,
         text: literal(criterion.text),
+        weight: 1,
       })),
     );
   }

@@ -9,6 +9,8 @@ import { ContainedImage } from "../contained-image";
 import { OutputCell, type CellView } from "./output-cell";
 import { useItemScrollSync } from "./use-item-scroll-sync";
 import type { ReferenceImage } from "../../server/image-settings";
+import { ScoreboardPanel } from "./scoreboard";
+import "./scoreboard.css";
 import {
   gridDisplay,
   readGridCriteria,
@@ -289,6 +291,7 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
           </table>
         </GridViewport>
       </div>
+      <ScoreboardPanel grid={g} />
       {reference && (
         <section
           className="expanded-markdown"

@@ -17,6 +17,7 @@ const draftCriterionSchema = z
   .object({
     text: z.string(),
     correctAnswer: z.boolean(),
+    weight: z.number().min(0.1).max(10).optional(),
   })
   .strict();
 const criterionSchema = draftCriterionSchema.extend({

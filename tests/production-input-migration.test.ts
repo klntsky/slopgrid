@@ -123,7 +123,7 @@ test("production criteria remain literal instead of becoming live template refer
   for (let row = 0; row < 2; row++)
     for (let column = 0; column < 2; column++)
       assert.deepEqual(resolveCriteriaForCell(migrated, row, column), {
-        criteria,
+        criteria: criteria.map((c) => ({ ...c, weight: 1 })),
       });
   assert.deepEqual(migrated.rows[0].variable?.[0], { text: "shape" });
   assert.deepEqual(

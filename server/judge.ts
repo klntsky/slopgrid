@@ -63,7 +63,7 @@ export async function judgeInference(
           [
             {
               role: "user",
-              content: `Criteria:\n${input.criteria.map((criterion, index) => `${index + 1}. ${criterion.text}`).join("\n")}`,
+              content: `Criteria:\n${input.criteria.map((criterion, index) => `${index + 1}. [weight: ${criterion.weight}] ${criterion.text}`).join("\n")}`,
               images: input.images,
             },
           ],

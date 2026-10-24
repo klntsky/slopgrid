@@ -96,3 +96,11 @@
   color: var(--muted);
   text-align: center;
 }
+
+.judge-criterion-weight {
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 0.85em;
+  flex-shrink: 0;
+  margin-right: 2px;
+}

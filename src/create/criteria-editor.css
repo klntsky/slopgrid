@@ -91,3 +91,24 @@
     min-height: 36px;
   }
 }
+.criteria-weight-column {
+  width: 4.5rem;
+  padding-left: 2px;
+  padding-right: 2px;
+}
+
+.criteria-weight-input {
+  width: 100%;
+  text-align: center;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  font-size: 0.875rem;
+  padding: 2px 4px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.criteria-weight-input:focus {
+  border-bottom-color: var(--focus);
+}
