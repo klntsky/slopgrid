@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState } from "react";
+import { Brain, ChartNoAxesColumn, PanelsTopLeft, Scale } from "lucide-react";
 import "./grid-workspace.css";
 import type { ViewGrid } from "../api";
 import { ModelName } from "../model-name";
@@ -38,6 +39,16 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
   const [views, setViews] = useState<
     Record<string, { mode?: CellView; judgeComplete?: boolean }>
   >({});
+  const [gridView, setGridView] = useState<CellView>();
+  function selectGridView(mode: CellView) {
+    setGridView(mode);
+    setViews({});
+  }
+  function cellView(cell: ViewGrid["cells"][number]) {
+    return views[cell.id]?.judgeComplete === (cell.judge?.status === "complete")
+      ? (views[cell.id]?.mode ?? gridView)
+      : gridView;
+  }
   function setView(
     id: string,
     view: { mode?: CellView; judgeComplete?: boolean },
@@ -66,7 +77,13 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
   const returnButton = useRef<HTMLButtonElement>(null);
   const workspace = useRef<HTMLDivElement>(null);
   const scrollSync = useItemScrollSync(workspace);
-  useLayoutEffect(scrollSync.refresh, [g.cells, expandedId, views, scrollSync]);
+  useLayoutEffect(scrollSync.refresh, [
+    g.cells,
+    expandedId,
+    views,
+    gridView,
+    scrollSync,
+  ]);
   function expand(
     kind: "output" | "reference",
     id: string,
@@ -262,12 +279,7 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
                           }
                           title={title(cell)}
                           expanded={expanded?.id === cell.id}
-                          view={
-                            views[cell.id]?.judgeComplete ===
-                            (cell.judge?.status === "complete")
-                              ? views[cell.id]?.mode
-                              : undefined
-                          }
+                          view={cellView(cell)}
                           onChangeView={(mode) =>
                             setView(cell.id, {
                               mode,
@@ -310,6 +322,41 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
             </div>
           </article>
         </section>
+      )}
+      {g.input.judge && (
+        <div className="grid-view-bar">
+          <div
+            className="markdown-actions grid-view-actions"
+            role="group"
+            aria-label="Grid view"
+          >
+            {(
+              [
+                ["output", "Outputs", PanelsTopLeft],
+                ["thinking", "Thinking", Brain],
+                ["judgment", "Judge results", Scale],
+              ] as const
+            ).map(([mode, label, Icon]) => (
+              <button
+                key={mode}
+                type="button"
+                className="secondary"
+                aria-pressed={
+                  gridView === mode &&
+                  g.cells.every((cell) => cellView(cell) === mode)
+                }
+                onClick={() => selectGridView(mode)}
+              >
+                <Icon aria-hidden="true" />
+                {label}
+              </button>
+            ))}
+            <button type="button" className="secondary" disabled>
+              <ChartNoAxesColumn aria-hidden="true" />
+              Benchmark results
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

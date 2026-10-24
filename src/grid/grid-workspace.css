@@ -8,6 +8,7 @@
 .grid-workspace {
   position: relative;
   contain: layout;
+  flex-direction: column;
 }
 .grid-table-view[data-expanded="true"] {
   visibility: hidden;
@@ -60,4 +61,25 @@ th[scope="row"] .axis-reference-previews {
   flex-direction: column;
   align-items: center;
   margin: 6px 0 0;
+}
+.grid-view-bar {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: center;
+  padding: 6px 8px;
+  border-top: 1px solid var(--line);
+  background: var(--paper);
+}
+.grid-view-actions.markdown-actions {
+  position: static;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.grid-view-actions.markdown-actions > button {
+  width: auto;
+  flex-shrink: 0;
+  gap: 6px;
+  padding-inline: 10px;
+  white-space: nowrap;
+  font-size: 13px;
 }
