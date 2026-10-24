@@ -22,10 +22,10 @@
 
 11. Keep deployment implementation in `ops/` and use its single `ops/deploy.sh` command. Run `validate [REV]` for isolated committed candidates without deploying a shared runtime. Invoke it from the candidate application worktree to select that worktree's HEAD by default. Production remains a single runtime, and its resolved revision must equal the authoritative remote `master` tip; historical master commits and divergent feature commits are not publishable. The pipeline checks this before upload and again remotely before production changes, including when tests are explicitly skipped. Configure `OPS_MASTER_REPOSITORY` and all infrastructure values in the ignored repository-root `.env`, and provide Git read access on both initiating and remote hosts. The command owns builds, isolated validation, mode selection, promotion, and final status. Production runs full isolated validation unless explicitly skipped after the complete candidate suites pass; `production --skip-tests` does not bypass the master gate. Staging is an explicit administrative deployment, not a common testing target. Do not create per-task deployment scripts, patch installed deployment code, or manually fabricate status files. Never commit infrastructure values or secrets. Update the pipeline when infrastructure changes.
 
-    Deploy new demos with a private clone of staging data by default.
+    Deploy demos with staging data by default and verify that the private clone was accepted before reporting readiness.
     Configure `OPS_STAGING_APPLICATION_ROOT` and `OPS_STAGING_CONFIG` alongside the staging credential-source settings in the ignored repository-root `.env`.
-    Verify that a new demo reports a successful staging import before presenting it as ready.
-    If the import is skipped, resolve or report the reason rather than silently accepting fresh data.
+    Use `--skip-data-cloning` only for an explicit fresh-data deployment.
+    `--skip-tests` does not skip required data cloning.
     Always update an existing demo for the task after changes and before reporting completion.
     Preserve its data and browser sessions through the retained-demo workflow at the same URL.
 

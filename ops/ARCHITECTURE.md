@@ -61,11 +61,12 @@ demo effects separate from staging and production.
 
 Before archiving source, creating a run, or building, the CLI reads the required
 GitHub pair from the staging environment over SSH. This read is independent of
-data acquisition and also runs for retained-data reuse. A missing or unreadable
-pair stops deployment. Local, inherited, and retained GitHub credentials cannot
-replace it. Only the pair crosses this boundary, never the full environment,
-database, or release pointer. The reader caps stdout at 64 KiB, kills SSH after
-20 seconds, and reports fixed errors without remote output or exception details.
+data acquisition and also runs for retained-data reuse and explicit fresh-data
+deployments. A missing or unreadable pair stops deployment. Local, inherited,
+and retained GitHub credentials cannot replace it. Only the pair crosses this
+boundary, never the full environment, database, or release pointer. The reader
+caps stdout at 64 KiB, kills SSH after 20 seconds, and reports fixed errors
+without remote output or exception details.
 
 The pair stays in a CLI local variable until an explicit fourth argument passes
 it to `startDemo`. That boundary validates it before runtime operations and maps
@@ -78,13 +79,17 @@ without making SSH calls; help does not load configuration.
 The GitHub application's registered callback must already match the demo origin.
 Copying credentials does not modify the staging OAuth registration.
 
-Optional staging data acquisition crosses a separate read-only snapshot boundary.
-The installed SQLite driver reads staging data without invoking application
-initialization against the source or controlling its services. Candidate
-initialization runs only on an independently owned local copy and decides
-whether that data is usable. Operations discards a rejected import before
-publishing fresh storage, so incompatible staging data does not become a
-runtime dependency or a reason to repair staging.
+Default demo configuration requires a staging data source. Data acquisition
+crosses a separate read-only snapshot boundary. The installed SQLite driver
+reads staging data without invoking application initialization against the
+source or controlling its services. Candidate initialization runs only on an
+independently owned local copy and decides whether that data is usable. The
+publication boundary requires an accepted clone before starting a demo service
+or listener; acquisition or compatibility failures cannot select empty storage.
+
+Explicit fresh-data requests use a separate initialization path. They do not
+acquire staging data and do not weaken credential or canonical-storage checks.
+Retained-demo reuse keeps its own source validation and independent-copy boundary.
 
 Imported ownership and access rules remain application responsibilities.
 Separate demo cookies prevent ambient browser identity sharing, while private

@@ -57,7 +57,7 @@ export function demoStateRoot(root = projectRoot, inherited = process.env) {
   return stateRoot(demoValues(root, inherited));
 }
 
-export function loadDemoConfig(root = projectRoot, inherited = process.env) {
+export function loadDemoConfig(root = projectRoot, inherited = process.env, options = {}) {
   const values = demoValues(root, inherited),
     envFile = values.OPS_DEMO_ENV_FILE,
     port = values.OPS_DEMO_HTTPS_PORT;
@@ -77,19 +77,23 @@ export function loadDemoConfig(root = projectRoot, inherited = process.env) {
     /^[\s-]|\s/.test(githubSource.host) ||
     !isAbsolute(githubSource.envFile)
   ) throw new Error("Demo requires valid OPS_HOST, OPS_NODE_PATH and absolute OPS_STAGING_ENV_FILE for staging GitHub credentials");
-  const dataPaths = {
-    applicationRoot: values.OPS_STAGING_APPLICATION_ROOT,
-    config: values.OPS_STAGING_CONFIG,
-  };
-  const configured = Object.values(dataPaths).every(
-    (value) => typeof value === "string" && isAbsolute(value) && !/[\x00-\x1f\x7f]/.test(value),
-  );
+  let stagingSource;
+  if (options.skipDataCloning !== true && options.reuseDemo === undefined) {
+    const dataPaths = {
+      applicationRoot: values.OPS_STAGING_APPLICATION_ROOT,
+      config: values.OPS_STAGING_CONFIG,
+    };
+    if (!Object.values(dataPaths).every(
+      (value) => typeof value === "string" && isAbsolute(value) && !/[\x00-\x1f\x7f]/.test(value),
+    )) throw new Error("Demo requires absolute OPS_STAGING_APPLICATION_ROOT and OPS_STAGING_CONFIG for staging data cloning; use --skip-data-cloning to explicitly initialize empty storage");
+    stagingSource = { ...githubSource, ...dataPaths };
+  }
   return {
     repository: root,
     demo: {
       envFile, httpsPort: Number(port), stateRoot: stateRoot(values),
       githubSource,
-      ...(configured ? { stagingSource: { ...githubSource, ...dataPaths } } : {}),
+      ...(stagingSource ? { stagingSource } : {}),
     },
   };
 }
