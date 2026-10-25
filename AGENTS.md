@@ -26,9 +26,10 @@
     Configure `OPS_STAGING_APPLICATION_ROOT` and `OPS_STAGING_CONFIG` alongside the staging credential-source settings in the ignored repository-root `.env`.
     Use `--skip-data-cloning` only for an explicit fresh-data deployment.
     `--skip-tests` does not skip required data cloning.
-    Always update an existing demo for the task after changes and before reporting completion.
+    While the task PR is open, update its existing demo after changes and before reporting completion.
     Preserve its data and browser sessions through the retained-demo workflow at the same URL.
-    Use one demo and one PR per branch. Update the existing branch demo and PR instead of creating additional ones.
+    Use one demo and one PR per branch. While the PR is open, update the existing branch demo and PR instead of creating additional ones.
+    After the PR is merged, discard its demo. Do not update or redeploy it.
 
 12. Keep current product requirements, including UI behavior and visible text, in PRODUCT.md. Structure requirements with meaningful numbered items and bullets for human readers. Specify functional behavior rather than lists of things not to add. Keep architectural responsibilities and system boundaries in ARCHITECTURE.md. Implementation details belong in the code and do not need documentation; remove them from product requirements without moving them to another document. DEVELOPMENT.md is the operational guide for developers: setup, configuration, local execution, build and test commands, credentials, debugging, and deployment operations. Keep test scenarios and coverage descriptions in test source rather than Markdown. Keep agent instructions and workflow rules in AGENTS.md, and keep README.md within the introduction scope defined above. Do not duplicate product requirements in ARCHITECTURE.md or DEVELOPMENT.md; link to PRODUCT.md where context is needed. Update the appropriate document when a requirement changes, and remove superseded requirements and their references.
 
