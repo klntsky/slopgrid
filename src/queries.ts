@@ -15,6 +15,10 @@ import type { GridListPage } from "../server/grid-listing";
 import type { FavoriteIds, FavoriteState } from "../server/favorites";
 import type { SessionInfo } from "../server/session";
 import { api, ApiError } from "./api";
+import {
+  publishFavoriteChange,
+  subscribeFavoriteChanges,
+} from "./favorite-changes";
 export { queryClient } from "./query-client";
 function gridListOptions(kind: "grids" | "public-grids", page: number) {
   return {
@@ -109,8 +113,7 @@ export async function prepareFavoritePage({
   const session = cache.getQueryData<SessionInfo>(["session"]);
   if (!session) return;
   const options = favoritePageOptions(favoriteOwnerKey(session), page);
-  if (cache.getQueryData(options.queryKey) === undefined)
-    await cache.prefetchQuery(options);
+  await cache.prefetchQuery(options);
 }
 
 export function invalidateFavoritePages(cache: QueryClient) {
@@ -118,6 +121,44 @@ export function invalidateFavoritePages(cache: QueryClient) {
     predicate: ({ queryKey }) =>
       queryKey[0] === "favorites" && queryKey[2] === "pages",
   });
+}
+
+async function refreshFavorites({
+  cache,
+  signal,
+}: {
+  cache: QueryClient;
+  signal?: AbortSignal;
+}) {
+  if (signal?.aborted) return;
+  await cache.cancelQueries({ queryKey: ["favorites"] });
+  if (signal?.aborted) return;
+  await cache.invalidateQueries({ queryKey: ["favorites"] });
+}
+
+export function useFavoriteSynchronization() {
+  const cache = useQueryClient();
+  useEffect(() => {
+    const lifetime = new AbortController();
+    const refresh = () => {
+      void refreshFavorites({ cache, signal: lifetime.signal });
+    };
+    const visible = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    const unsubscribe = subscribeFavoriteChanges(refresh);
+    window.addEventListener("focus", refresh);
+    window.addEventListener("pageshow", refresh);
+    document.addEventListener("visibilitychange", visible);
+    refresh();
+    return () => {
+      lifetime.abort();
+      unsubscribe();
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("pageshow", refresh);
+      document.removeEventListener("visibilitychange", visible);
+    };
+  }, [cache]);
 }
 
 export function useFavoriteIds() {
@@ -186,21 +227,10 @@ export function useSetFavorite(gridId: string) {
       );
     },
     onMutate: () => cache.cancelQueries({ queryKey: idsKey }),
-    onSuccess: async (saved) => {
-      await cache.cancelQueries({ queryKey: idsKey });
-      cache.setQueryData<ReadonlySet<string>>(idsKey, (previous) => {
-        if (!previous || previous.has(saved.gridId) === saved.starred)
-          return previous;
-        const next = new Set(previous);
-        if (saved.starred) next.add(saved.gridId);
-        else next.delete(saved.gridId);
-        return next;
-      });
-    },
+    onSuccess: publishFavoriteChange,
     onSettled: async (_data, error) => {
       await Promise.all([
-        cache.invalidateQueries({ queryKey: idsKey }),
-        cache.invalidateQueries({ queryKey: ["favorites", ownerKey, "pages"] }),
+        refreshFavorites({ cache }),
         ...(error instanceof ApiError && error.status === 401
           ? [cache.invalidateQueries({ queryKey: ["session"] })]
           : []),

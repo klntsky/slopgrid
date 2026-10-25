@@ -562,7 +562,8 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
 3. Show "Your favorites" above "Your grids" when the user has starred grids. Render it with the initial grid lists rather than a separate favorites-loading message. Hide Your favorites after the last star is removed. Your grids continues to list all owned grids, including starred ones. Your favorites can appear when the user owns no grids.
 4. Give Your favorites independent pagination and list grids newest first. Include favorites beyond the currently loaded Your grids and Public grids pages. Preserve the other listings' selected pages when navigating Your favorites.
 5. Use "Add to favorites" and "Remove from favorites" for accessible labels and tooltips. Anonymous stars save directly without redirecting to sign-in. Support keyboard activation and visible focus.
-6. Keep copies of the same star in sync across listings and the grid page. Disable them while saving and show "Saving favorite". Preserve the confirmed state when a request fails, display the error with "Retry", and expose retry controls when favorites cannot be read.
+6. Keep copies of the same star in sync across listings, the grid page, and open application tabs. Saving or removing a star in one tab updates the other tabs' favorite lists, totals, pagination, and visible stars without a reload or return to those tabs. Refresh missed changes when a suspended tab resumes or becomes active again.
+7. Disable stars while saving and show "Saving favorite". Preserve the confirmed state when a request fails, display the error with "Retry", and expose retry controls when favorites cannot be read.
 
 ## 9. Availability and updates
 

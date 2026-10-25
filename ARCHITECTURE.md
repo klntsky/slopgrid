@@ -51,6 +51,12 @@ The web process prepares personalized initial listings and the public session
 summary in one database snapshot. The frontend hydrates its query cache before
 rendering, using that same session identity for subsequent favorites queries.
 
+Each application document owns its favorite-change subscription and recovery
+lifecycle. Browser notifications request authorized rereads rather than carry
+favorite membership or account identity. The query reconciliation boundary
+prevents pre-change reads from replacing refreshed favorite state, while the
+backend remains the authority across tabs.
+
 Generation commits a durable reference only after its artifact is installed.
 Live drafts and estimates belong to the engine until committed. The persistence
 boundary coordinates provider-call records and task transitions so recovery
