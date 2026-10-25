@@ -214,6 +214,7 @@ export async function runtimeFixture(
     judges?: boolean;
     images?: boolean;
     configureCatalog?: (catalog: RuntimeCatalog) => void;
+    observeRequest?: RequestListener;
   } = {},
 ) {
   const directory = mkdtempSync(join(tmpdir(), "slopgrid-runtime-"));
@@ -425,7 +426,10 @@ export async function runtimeFixture(
       secret,
       providerURL,
       port,
-      intercept: transport.intercept,
+      intercept: (request, response) => {
+        options.observeRequest?.(request, response);
+        return transport.intercept(request, response);
+      },
     });
     origin = web.origin;
     port = Number(new URL(origin).port);

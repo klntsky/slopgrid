@@ -1,7 +1,12 @@
 import pRetry from "p-retry";
 import { useInferenceMutation } from "../use-inference-mutation";
 import { useState, useEffect, useRef } from "react";
-import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
+import {
+  useQuery,
+  useQueryClient,
+  useMutation,
+  type Query,
+} from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { api, ApiError, type ViewGrid } from "../api";
 import { saveDraft } from "../create/draft";
@@ -27,6 +32,19 @@ export function useGrid(id: string) {
     resolve: (grid: ViewGrid) => void;
   } | null>(null);
   const retryAfter = useRef<{ id: string; at: number } | null>(null);
+  const stream = useRef<{
+    id: string;
+    cursor: string;
+    grid?: ViewGrid;
+    failures: number;
+    checkedRead: boolean;
+  }>({ id, cursor: "", failures: 0, checkedRead: false });
+  const automaticRead = (query: Query<ViewGrid>) =>
+    (!query.state.error || temporaryReadFailure(query.state.error)) &&
+    (!query.state.data?.live ||
+      query.state.data.published ||
+      stream.current.id !== id ||
+      !stream.current.cursor);
   const serverRetryAt = () =>
     retryAfter.current?.id === id ? retryAfter.current.at : 0;
   function rememberRetryAt(error: Error) {
@@ -70,21 +88,23 @@ export function useGrid(id: string) {
       }
     },
     retry: false,
-    refetchOnWindowFocus: (query) =>
-      !query.state.error || temporaryReadFailure(query.state.error),
+    refetchOnWindowFocus: automaticRead,
+    refetchOnReconnect: automaticRead,
   });
   const unavailable = temporaryReadFailure(query.error);
   const offline = useOffline();
-  const stream = useRef<{ id: string; cursor: string; grid?: ViewGrid }>({
-    id,
-    cursor: "",
-  });
   const completed = query.data?.cells
-    .filter((cell) => cell.status === "complete")
-    .map((cell) => cell.id)
+    .filter((cell) => cell.outputReady || cell.status === "complete")
+    .map((cell) => {
+      const judgment =
+        cell.judge?.status === "complete" || cell.judge?.status === "error"
+          ? `${cell.judge.status}:${cell.judge.attemptId ?? ""}`
+          : "";
+      return `${cell.id}:${cell.generationId}:${judgment}`;
+    })
     .join(",");
   useEffect(() => {
-    if (completed && !offline) cacheGrid(id);
+    if (completed && !offline && query.data) cacheGrid(query.data);
   }, [id, completed, offline]);
   const live =
     !offline &&
@@ -97,9 +117,9 @@ export function useGrid(id: string) {
     if (!live) return;
     const controller = new AbortController();
     const signal = controller.signal;
-    let failures = 0;
-    let checkedRead = false;
-    if (stream.current.id !== id) stream.current = { id, cursor: "" };
+    if (stream.current.id !== id)
+      stream.current = { id, cursor: "", failures: 0, checkedRead: false };
+    const episode = stream.current;
     let cursor = stream.current.cursor,
       previous = stream.current.grid;
     async function connect() {
@@ -108,7 +128,15 @@ export function useGrid(id: string) {
       if (cursor) params.set("since", cursor);
       const events = new EventSource(`/api/grids/${id}/events?${params}`);
       const connection = Promise.withResolvers<void>();
+      let firstMessageAt: number | undefined;
+      const deadline = setTimeout(disconnected, 15000);
       function close() {
+        clearTimeout(deadline);
+        if (
+          firstMessageAt !== undefined &&
+          Date.now() - firstMessageAt >= 30000
+        )
+          episode.failures = 0;
         events.close();
         signal.removeEventListener("abort", abort);
         events.onerror = null;
@@ -125,8 +153,8 @@ export function useGrid(id: string) {
           return;
         }
         setStreamLost(true);
-        if (!checkedRead) {
-          checkedRead = true;
+        if (!episode.checkedRead && (!cursor || firstMessageAt === undefined)) {
+          episode.checkedRead = true;
           void query.refetch({ cancelRefetch: false });
         }
         connection.reject(new Error("Live update connection lost"));
@@ -143,9 +171,11 @@ export function useGrid(id: string) {
             previous = applyDelta(previous, message.delta) as ViewGrid;
           }
           cursor = event.lastEventId;
-          stream.current = { id, cursor, grid: previous };
-          failures = 0;
-          checkedRead = false;
+          firstMessageAt ??= Date.now();
+          clearTimeout(deadline);
+          episode.cursor = cursor;
+          episode.grid = previous;
+          episode.checkedRead = false;
           setStreamLost(false);
           setRecoveringGrid((current) => (current === id ? null : current));
           cache.setQueryData(["grid", id], previous);
@@ -154,7 +184,8 @@ export function useGrid(id: string) {
         } catch {
           previous = undefined;
           cursor = "";
-          stream.current = { id, cursor };
+          episode.cursor = cursor;
+          episode.grid = undefined;
           disconnected();
         }
       };
@@ -168,7 +199,7 @@ export function useGrid(id: string) {
         if (signal.aborted) return;
         await waitForRecovery({
           signal,
-          delayMs: gridRetryDelay(++failures),
+          delayMs: gridRetryDelay(++episode.failures),
           retryAt: serverRetryAt,
         });
       },

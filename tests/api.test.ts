@@ -235,3 +235,38 @@ test("API leaves malformed successful JSON terminal", async (t) => {
     return true;
   });
 });
+
+test(
+  "a controller that ignores read-control messages does not block HTTP grid errors",
+  { timeout: 5000 },
+  async (t) => {
+    const worker = Object.getOwnPropertyDescriptor(navigator, "serviceWorker");
+    Object.defineProperty(navigator, "serviceWorker", {
+      configurable: true,
+      value: { controller: { postMessage() {} } },
+    });
+    t.after(() => {
+      if (worker) Object.defineProperty(navigator, "serviceWorker", worker);
+      else Reflect.deleteProperty(navigator, "serviceWorker");
+    });
+    await transport(t, (_request, response) => {
+      response.writeHead(404, { "Content-Type": "application/json" });
+      response.end('{"code":"NOT_FOUND","error":"Grid not found"}');
+    });
+    await assert.rejects(
+      client.api(
+        `/grids/${"a".repeat(48)}`,
+        "GET",
+        undefined,
+        undefined,
+        t.signal,
+      ),
+      (error: unknown) => {
+        assert.ok(error instanceof client.ApiError);
+        assert.equal(error.status, 404);
+        assert.equal(error.code, "NOT_FOUND");
+        return true;
+      },
+    );
+  },
+);

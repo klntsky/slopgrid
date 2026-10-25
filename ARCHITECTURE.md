@@ -22,9 +22,10 @@ mutations or determine durable execution state. Browser queries own read recover
 and cancel outstanding requests, including response-body reads, when a grid is no
 longer observed. Read recovery owns request deadlines; the HTTP transport preserves
 response status and server cooldown metadata even when an error body cannot be read.
-Live updates reconcile through the grid cache and can satisfy pending reads without
-resubmitting server mutations. Development and test runtimes own independent storage
-and process resources.
+Live streams own cursor recovery before query fallback and can satisfy pending
+reads without resubmitting server mutations. Browser queries own the lifetime
+and freshness of completed output bodies. Development and test runtimes own
+independent storage and process resources.
 
 Deployment orchestration belongs to [ops/](ops/ARCHITECTURE.md). The development
 launcher owns only its development runtime; neither it nor application request
@@ -112,10 +113,15 @@ scope, so an output URL or previously issued cookie is not an independent grant
 to another viewer's content. Browser messaging used for preview interaction
 does not grant application or filesystem access.
 
-The service worker owns session-partitioned offline content. Cached website
-representations served from application paths use an opaque sandbox to separate
-generated code from application cookies, storage, and the parent document.
-Offline retention does not replace the server's authorization policy.
+The service worker owns session-partitioned offline content and coalesces grid
+reads for foreground queries and offline retention. It preserves a shared
+upstream read while another consumer needs it and propagates cancellation when
+the last consumer releases it. Only server-authorized responses can populate
+the cache; client completion notifications cannot supply cached grid contents.
+Cached website representations served from application paths use an opaque
+sandbox to separate generated code from application cookies, storage, and the
+parent document. Offline retention does not replace the server's authorization
+policy.
 
 ## Shared content ownership
 

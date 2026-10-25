@@ -6,6 +6,7 @@ export function textOutput(url: string, raw = true) {
   return queryOptions({
     queryKey: ["text-output", source.href],
     staleTime: Infinity,
+    refetchOnReconnect: true,
     retry: false,
     queryFn: async ({ signal }) => {
       const response = await fetch(source, { signal });
