@@ -1,4 +1,4 @@
-import { useFavoriteGrids, useGrids, useSession } from "../queries";
+import { useFavoriteGrids, useGrids } from "../queries";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { FormatPicker } from "../components/format-picker";
 import { startDraft } from "../create/draft";
@@ -8,7 +8,6 @@ import { ErrorMessage } from "../components/feedback-message";
 export function Home() {
   const search = useSearch({ from: "/" });
   const history = useGrids(search.yourPage);
-  const session = useSession();
   const favorites = useFavoriteGrids(search.favoritesPage);
   const navigate = useNavigate();
   const changePage = (
@@ -32,10 +31,7 @@ export function Home() {
           void navigate({ to: "/create" });
         }}
       />
-      {session.isSuccess && favorites.isPending && (
-        <p role="status">Loading favorites...</p>
-      )}
-      {session.isSuccess && favorites.isError && !favorites.data?.total && (
+      {favorites.isError && !favorites.data?.total && (
         <div className="favorites-feedback">
           <ErrorMessage>{favorites.error.message}</ErrorMessage>
           <button
@@ -46,7 +42,7 @@ export function Home() {
           </button>
         </div>
       )}
-      {session.isSuccess && !!favorites.data?.total && (
+      {!!favorites.data?.total && (
         <section
           className="favorite-grids"
           aria-labelledby="favorite-grids-title"
@@ -57,6 +53,7 @@ export function Home() {
           <GridListing
             kind="favorites"
             query={favorites}
+            requestedPage={search.favoritesPage ?? 1}
             onPageChange={(page) => changePage("favoritesPage", page)}
           />
         </section>
@@ -69,6 +66,7 @@ export function Home() {
           <GridListing
             query={history}
             kind="owned"
+            requestedPage={search.yourPage ?? 1}
             onPageChange={(page) => changePage("yourPage", page)}
           />
         </section>
