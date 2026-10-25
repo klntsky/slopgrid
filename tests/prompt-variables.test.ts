@@ -1,11 +1,13 @@
 import { generatorInputForCell } from "../server/generator-input.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { expandGrid, gridSchema } from "../server/domain.js";
+import { expandGrid, gridDraftSchema, gridSchema } from "../server/domain.js";
 import { currentDefinition } from "./current-grid-fixture.js";
 import {
   interpolateVariables,
   promptVariableIssue,
+  variableName,
+  createVariableIndex,
 } from "../server/prompt-variables.js";
 import { selectedReferences } from "../server/image-settings.js";
 import { resolveCriteriaForCell } from "../server/judge-criteria.js";
@@ -53,7 +55,7 @@ for (const side of ["rows", "columns"] as const) {
       expandGrid(gridSchema.parse(source))[0].prompt,
       "field10 | $COLUMN1 $ROW10 $& | field12 | column | field10",
     );
-    const literal = `${token}1suffix $ROWS ${token}1_name ${token}1é`;
+    const literal = `${token}1suffix ${token}1_name ${token}1é`;
     assert.equal(interpolateVariables(literal, source, 0, 0).text, literal);
   });
 
@@ -605,7 +607,6 @@ test("zero-case compatibility previews remain safe with unresolved deleted-field
   }
 });
 
-
 for (const side of ["rows", "columns"] as const) {
   const token = side === "rows" ? "$ROW" : "$COLUMN";
 
@@ -720,3 +721,261 @@ for (const side of ["rows", "columns"] as const) {
     assert.match(promptVariableIssue(source) ?? "", /Unknown prompt variable/);
   });
 }
+
+test("variable names accept ASCII digits and underscores without reserving numbered-looking names", () => {
+  for (const name of ["TOPIC", "0", "_", "ROW", "COLUMN", "ROW01", "A_12"]) {
+    const source = input();
+    source.variableNames = { rows: [name] };
+    generatorInputForCell(source, 0, 0)[0].content = `$${name}`;
+    const parsed = gridSchema.parse(source);
+    assert.equal(variableName(parsed, "rows", 0), name);
+    assert.deepEqual(createVariableIndex(parsed).get(name), {
+      side: "rows",
+      index: 0,
+    });
+    assert.equal(expandGrid(parsed)[0].prompt, "row");
+    if (name !== "ROW1")
+      assert.equal(createVariableIndex(parsed).get("ROW1"), undefined);
+  }
+});
+
+test("invalid and globally duplicate overrides report the metadata slot even when unused", () => {
+  const source = currentDefinition({
+    caseAxes: ["rows", "columns"],
+    parameters: {
+      input: {
+        kind: "common",
+        value: [{ role: "user", content: "$ROW1 $COLUMN1" }],
+      },
+    },
+    rows: [{ variable: [{ text: "row" }, { text: "unused row" }] }],
+    columns: [{ variable: [{ text: "column" }, { text: "unused column" }] }],
+  });
+  for (const name of ["", "lower", "A-B", "A B", "É", "A💡"]) {
+    const result = gridSchema.safeParse({
+      ...source,
+      variableNames: { rows: [null, name] },
+    });
+    assert.equal(result.success, false, name);
+    if (!result.success)
+      assert.ok(
+        result.error.issues.some(
+          (issue) =>
+            JSON.stringify(issue.path) ===
+            JSON.stringify(["variableNames", "rows", 1]),
+        ),
+        name,
+      );
+  }
+  for (const variableNames of [
+    { rows: [null, "ROW1"] },
+    { rows: [null, "COLUMN1"] },
+    { rows: [null, "UNUSED"], columns: [null, "UNUSED"] },
+  ]) {
+    const result = gridSchema.safeParse({ ...source, variableNames });
+    assert.equal(result.success, false);
+    if (!result.success)
+      assert.ok(
+        result.error.issues.some((issue) => issue.path[0] === "variableNames"),
+      );
+  }
+  assert.equal(
+    gridSchema.safeParse({
+      ...source,
+      variableNames: {
+        rows: [null, "UNUSED_ROW"],
+        columns: [null, "UNUSED_COLUMN"],
+      },
+    }).success,
+    true,
+  );
+});
+
+test("named row and column fields expand once with original generator and judge image ownership", () => {
+  const source = currentDefinition({
+    format: "chat-template",
+    judge: true,
+    caseAxes: ["rows", "columns"],
+    variableNames: {
+      rows: ["CONTEXT", null, "EXPECTED"],
+      columns: ["QUESTION"],
+    },
+    parameters: {
+      model: { kind: "common", value: "plain" },
+      judge_model: { kind: "common", value: "plain" },
+      input: {
+        kind: "common",
+        value: [
+          { role: "system", content: "$CONTEXT" },
+          { role: "user", content: "$QUESTION $QUESTION", images: [first] },
+        ],
+      },
+      judge_criteria: {
+        kind: "common",
+        value: [{ text: "Compare $EXPECTED", correctAnswer: true }],
+      },
+    },
+    rows: [
+      {
+        variable: [
+          { text: "Literal $QUESTION" },
+          null,
+          { text: "answer", images: [third] },
+        ],
+      },
+      { variable: [{ text: "Other context" }, null, { text: "other answer" }] },
+    ],
+    columns: [{ variable: [{ text: "question", images: [second, first] }] }],
+  });
+  const parsed = gridSchema.parse(source);
+  assert.deepEqual(expandGrid(parsed)[0].messages, [
+    { role: "system", content: "Literal $QUESTION" },
+    { role: "user", content: "question question", images: [first, second] },
+  ]);
+  assert.deepEqual(resolveCriteriaForCell(parsed, 0, 0), {
+    criteria: [{ text: "Compare answer", correctAnswer: true }],
+    images: [third],
+  });
+  assert.deepEqual(createVariableIndex(parsed).get("ROW2"), undefined);
+  assert.equal(
+    expandPromptForTitle(parsed),
+    "system: (Literal $QUESTION|Other context)\n\nuser: (question) (question)",
+  );
+  assert.equal(
+    interpolateVariables("$CONTEXTsuffix $QUESTIONé", parsed, 0, 0).text,
+    "$CONTEXTsuffix $QUESTIONé",
+  );
+  const plain = {
+    id: "plain",
+    name: "Plain",
+    text: true,
+    image: false,
+    imageInput: false,
+    reasoning: false,
+    reasoningMandatory: false,
+    structuredOutputs: true,
+  };
+  const blocking = analyzeGridCompatibility(parsed, [plain]).issues.filter(
+    (issue) => issue.blocking,
+  );
+  assert.ok(
+    blocking.some(
+      (issue) =>
+        issue.parameters.includes("model") &&
+        issue.origins.some(
+          (origin) =>
+            origin.parameter === "variable" &&
+            origin.source === "columns" &&
+            origin.fieldIndex === 0,
+        ),
+    ),
+  );
+  assert.ok(
+    blocking.some(
+      (issue) =>
+        issue.parameters.includes("judge_model") &&
+        issue.origins.some(
+          (origin) =>
+            origin.parameter === "variable" &&
+            origin.source === "rows" &&
+            origin.caseIndex === 0 &&
+            origin.fieldIndex === 2,
+        ),
+    ),
+  );
+  assert.equal(
+    blocking.some(
+      (issue) =>
+        issue.parameters.includes("model") &&
+        issue.origins.some(
+          (origin) =>
+            origin.parameter === "variable" && origin.source === "rows",
+        ),
+    ),
+    false,
+  );
+  source.rows[1].variable![0]!.images = [third];
+  const invalid = gridSchema.safeParse(source);
+  assert.equal(invalid.success, false);
+  if (!invalid.success)
+    assert.ok(
+      invalid.error.issues.some(
+        (issue) =>
+          JSON.stringify(issue.path) ===
+          JSON.stringify(["rows", 1, "variable", 0, "images"]),
+      ),
+    );
+});
+
+test("case names override download labels while preserving parameter parts and unnamed fallback", () => {
+  const source = input();
+  source.rows[0].name = "  Reference case  ";
+  const named = gridSchema.parse(source);
+  const display = gridDisplay(named).rows[0];
+  assert.equal(display.name, "Reference case");
+  assert.equal(display.downloadLabel, "Reference case");
+  assert.deepEqual(display.parts, [
+    { kind: "variable", value: [{ text: "row" }] },
+  ]);
+  source.rows[0].name = "   ";
+  const fallback = gridDisplay(gridSchema.parse(source)).rows[0];
+  assert.equal(fallback.name, undefined);
+  assert.equal(fallback.downloadLabel, "row");
+  const unnamed = input();
+  assert.equal("variableNames" in gridSchema.parse(unnamed), false);
+  assert.equal("name" in gridSchema.parse(unnamed).rows[0], false);
+});
+
+test("unknown custom names and deleted named slots cannot resolve or revive on append", () => {
+  const source = input();
+  source.rows[0].variable = [{ text: "row" }, null];
+  source.variableNames = { rows: [null, "DELETED"] };
+  assert.equal(gridSchema.safeParse(source).success, true);
+  source.rows[0].variable.push({ text: "later", images: [first] });
+  assert.equal(variableName(source, "rows", 2), "ROW3");
+  assert.equal(createVariableIndex(source).get("DELETED"), undefined);
+  assert.equal(interpolateVariables("$ROW3", source, 0, 0).text, "later");
+  for (const token of ["$DELETED", "$UNKNOWN_CUSTOM", "$ROW2"]) {
+    generatorInputForCell(source, 0, 0)[0].content = token;
+    assert.match(promptVariableIssue(source) ?? "", /Unknown prompt variable/);
+    assert.equal(gridSchema.safeParse(source).success, false);
+    assert.throws(
+      () => interpolateVariables(token, source, 0, 0),
+      /Missing prompt variable/,
+    );
+  }
+});
+
+test("draft parsing preserves optional names and rejects invalid or ambiguous metadata", () => {
+  const source = input();
+  const draft = { ...source, budgetUsd: "3" };
+  assert.equal("variableNames" in gridDraftSchema.parse(draft), false);
+  assert.equal(
+    gridDraftSchema.safeParse({
+      ...draft,
+      variableNames: { rows: ["TOPIC"] },
+    }).success,
+    true,
+  );
+  for (const name of ["bad", "A-B"]) {
+    const result = gridDraftSchema.safeParse({
+      ...draft,
+      variableNames: { rows: [name] },
+    });
+    assert.equal(result.success, false);
+    if (!result.success)
+      assert.deepEqual(result.error.issues[0].path, [
+        "variableNames",
+        "rows",
+        0,
+      ]);
+  }
+  const duplicate = gridDraftSchema.safeParse({
+    ...draft,
+    rows: [
+      { ...source.rows[0], variable: [{ text: "first" }, { text: "second" }] },
+    ],
+    variableNames: { rows: ["TOPIC", "TOPIC"] },
+  });
+  assert.equal(duplicate.success, false);
+});

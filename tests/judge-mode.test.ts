@@ -423,7 +423,12 @@ test("draft reload and format changes retain both case sources until Website rem
       assert.deepEqual(saved.input.rows, original.rows);
       assert.deepEqual(saved.input.caseAxes, ["rows", "columns"]);
       assert.deepEqual(
-        saved.input.columns.map(({ id, variable }: GridDraftInput["columns"][number]) => ({ id, variable })),
+        saved.input.columns.map(
+          ({ id, variable }: GridDraftInput["columns"][number]) => ({
+            id,
+            variable,
+          }),
+        ),
         original.columns.map(({ id, variable }) => ({ id, variable })),
       );
       assert.equal(saved.sourceGridId, "fork-source");
@@ -434,7 +439,12 @@ test("draft reload and format changes retain both case sources until Website rem
     assert.equal(saved.input.parameters.judge_criteria, undefined);
     assert.deepEqual(saved.input.caseAxes, ["rows", "columns"]);
     assert.deepEqual(
-      saved.input.columns.map(({ id, variable }: GridDraftInput["columns"][number]) => ({ id, variable })),
+      saved.input.columns.map(
+        ({ id, variable }: GridDraftInput["columns"][number]) => ({
+          id,
+          variable,
+        }),
+      ),
       original.columns.map(({ id, variable }) => ({ id, variable })),
     );
     assert.ok(
@@ -708,7 +718,9 @@ test("both case axes retain generator records, numbered slots and identities whe
   assert.deepEqual(enabled.rows, disabled.rows);
   assert.deepEqual(enabled.columns, disabled.columns);
   for (const parameter of [
-    "judge_model", "judge_effort", "judge_criteria",
+    "judge_model",
+    "judge_effort",
+    "judge_criteria",
   ] as const)
     assert.deepEqual(enabled.parameters[parameter], {
       kind: "common",
@@ -735,20 +747,24 @@ test("column-owned rubrics resolve both namespaces for every row-column case pai
   for (const index of [0, 1])
     draft = reduceInput(
       draft,
-      caseValueAction("columns", index, "judge_criteria", [{
-        text: "Does $ROW2 match $COLUMN1?",
-        correctAnswer: index === 0,
-      }]),
+      caseValueAction("columns", index, "judge_criteria", [
+        {
+          text: "Does $ROW2 match $COLUMN1?",
+          correctAnswer: index === 0,
+        },
+      ]),
     );
   const parsed = validateDraftInput(draft).parsed;
   assert.ok(parsed.success);
   const cells = expandGrid(parsed.data);
-  assert.deepEqual(cells.map((cell) => cell.prompt), [
-    "a red", "a blue", "c red", "c blue",
-  ]);
   assert.deepEqual(
-    cells.map((cell) =>
-      resolveCriteriaForCell(parsed.data, cell.row, cell.column).criteria,
+    cells.map((cell) => cell.prompt),
+    ["a red", "a blue", "c red", "c blue"],
+  );
+  assert.deepEqual(
+    cells.map(
+      (cell) =>
+        resolveCriteriaForCell(parsed.data, cell.row, cell.column).criteria,
     ),
     [
       [{ text: "Does a match red?", correctAnswer: true }],
@@ -757,4 +773,89 @@ test("column-owned rubrics resolve both namespaces for every row-column case pai
       [{ text: "Does c match blue?", correctAnswer: false }],
     ],
   );
+});
+
+test("named variables rewrite shared and case rubrics and preserve custom names through a colliding axis swap", () => {
+  let draft = input();
+  draft.rows[0].name = "Named row";
+  draft.rows[0].variable![0]!.images = [{ id: "subject", name: "subject.png" }];
+  const original = structuredClone(draft);
+  draft = reduceInput(draft, {
+    type: "rename-variable",
+    side: "rows",
+    index: 0,
+    name: "COLUMN2",
+  });
+  assert.deepEqual(parameterValue(draft, "judge_criteria", 0, 0), [
+    { text: "Does $COLUMN2 match $ROW2?", correctAnswer: false },
+    { text: "Is $ROW2 blue?", correctAnswer: true },
+  ]);
+  const shared = reduceInput(draft, { type: "swap" });
+  assert.equal(shared.variableNames?.columns?.[0], "COLUMN2");
+  assert.equal(shared.variableNames?.columns?.[1], "COLUMN3");
+  assert.equal(shared.columns[0].name, "Named row");
+  assert.equal(
+    generatorInputForCell(shared, 0, 0)[0].content,
+    "$COLUMN2 $COLUMN3",
+  );
+  assert.deepEqual(parameterValue(shared, "judge_criteria", 0, 0), [
+    { text: "Does $COLUMN2 match $COLUMN3?", correctAnswer: false },
+    { text: "Is $COLUMN3 blue?", correctAnswer: true },
+  ]);
+  assert.deepEqual(
+    shared.columns.map((entry) => entry.variable),
+    original.rows.map((entry) => entry.variable),
+  );
+  draft = reduceInput(draft, {
+    type: "to-axis",
+    side: "rows",
+    parameter: "judge_criteria",
+  });
+  const swapped = reduceInput(draft, { type: "swap" });
+  assert.equal(swapped.parameters.judge_criteria?.kind, "columns");
+  assert.deepEqual(
+    swapped.columns[0].judge_criteria,
+    parameterValue(shared, "judge_criteria", 0, 0),
+  );
+  const parsed = validateDraftInput(swapped).parsed;
+  assert.ok(parsed.success);
+  assert.deepEqual(
+    expandGrid(parsed.data).map((cell) => cell.prompt),
+    ["$ROW1 literal a", "b c", "$ROW1 literal a", "b c"],
+  );
+  assert.deepEqual(resolveCriteriaForCell(parsed.data, 0, 0).criteria, [
+    { text: "Does $ROW1 literal match a?", correctAnswer: false },
+    { text: "Is a blue?", correctAnswer: true },
+  ]);
+});
+
+test("swap never turns a deleted variable reference into an active custom name", () => {
+  let draft = input();
+  draft.parameters.input = {
+    kind: "common",
+    value: [{ role: "user", content: "$COLUMN2 $ROW2" }],
+  };
+  draft = reduceInput(draft, {
+    type: "rename-variable",
+    side: "rows",
+    index: 0,
+    name: "COLUMN2",
+  });
+  draft.parameters.input = {
+    kind: "common",
+    value: [{ role: "user", content: "$ROW2 $COLUMN2" }],
+  };
+  draft = reduceInput(draft, {
+    type: "remove-variable",
+    side: "rows",
+    index: 1,
+  });
+  const swapped = reduceInput(draft, { type: "swap" });
+  assert.equal(swapped.variableNames?.columns?.[0], "COLUMN2");
+  assert.equal(swapped.columns[0].variable![1], null);
+  assert.equal(
+    generatorInputForCell(swapped, 0, 0)[0].content,
+    "$ROW2 $COLUMN2",
+  );
+  assert.equal(validateDraftInput(swapped).parsed.success, false);
 });

@@ -9,6 +9,7 @@ import type {
 import { token } from "./ids.js";
 import { generationPartitionKey } from "../shared/generation-key.js";
 import { resolveCriteriaForCell } from "./judge-criteria.js";
+import { createVariableIndex, type VariableIndex } from "./prompt-variables.js";
 
 export function createWorkflow(
   input: ValidatedGridInput,
@@ -16,6 +17,7 @@ export function createWorkflow(
 ): WorkflowTask[] {
   const tasks: WorkflowTask[] = [];
   const groups = new Map<string, GenerationTask>();
+  let variableIndex: VariableIndex | undefined;
   for (const cell of cells) {
     const key = generationPartitionKey(input.format, cell);
     let generation = groups.get(key);
@@ -39,10 +41,12 @@ export function createWorkflow(
     }
     cell.generationId = generation.id;
     if (cell.judge && input.judge) {
+      variableIndex ??= createVariableIndex(input);
       const { criteria, images } = resolveCriteriaForCell(
         input,
         cell.row,
         cell.column,
+        { variableIndex },
       );
       const judgment: JudgmentTask = {
         id: token(),

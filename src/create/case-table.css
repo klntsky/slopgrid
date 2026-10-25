@@ -119,6 +119,46 @@
   line-height: 1.2;
   max-height: none;
 }
+.variable-table .editable-title {
+  min-width: 28px;
+  min-height: 28px;
+  max-width: 100%;
+  flex-shrink: 1;
+  gap: 0;
+  font-size: inherit;
+  white-space: nowrap;
+}
+.variable-table .editable-title > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.variable-table .editable-title-input {
+  width: 180px;
+  min-width: 120px;
+  max-width: 100%;
+  font-size: inherit;
+}
+.variable-table .row-label:has(.editable-title-input) {
+  writing-mode: horizontal-tb;
+  transform: none;
+  flex-wrap: wrap;
+  width: 220px;
+  white-space: normal;
+  background: var(--grid-header);
+}
+.variable-table
+  :is(.case-header-rail, .layout-parameter-heading)
+  > .feedback-message {
+  max-width: 240px;
+  white-space: normal;
+  writing-mode: horizontal-tb;
+}
+@media (pointer: coarse) {
+  .variable-table .editable-title {
+    min-width: 36px;
+    min-height: 36px;
+  }
+}
 .case-table-footer {
   padding: 8px;
 }

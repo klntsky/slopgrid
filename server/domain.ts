@@ -9,10 +9,12 @@ import {
   type ReferenceImage,
 } from "./image-settings.js";
 import {
+  createVariableIndex,
   interpolateVariables,
   mergeVariableImages,
   promptVariableIssues,
   referencedVariableFields,
+  variableNameIssues,
   type VariableInterpolationOptions,
 } from "./prompt-variables.js";
 import {
@@ -95,6 +97,7 @@ const caseSchema = parameterValuesSchema
       .string()
       .min(1)
       .default(() => globalThis.crypto.randomUUID()),
+    name: z.string().trim().optional(),
   })
   .strict();
 export type CaseRecord = z.infer<typeof caseSchema>;
@@ -185,6 +188,13 @@ const draftGridFields = {
     ),
   rows: z.array(caseSchema),
   columns: z.array(caseSchema),
+  variableNames: z
+    .object({
+      rows: z.array(z.string().nullable()).optional(),
+      columns: z.array(z.string().nullable()).optional(),
+    })
+    .strict()
+    .optional(),
   parameters: parameterSourcesSchema,
   judge: z.boolean().default(false),
   parallelWorkers: z.number().int().min(1).optional(),
@@ -194,7 +204,11 @@ export const gridDraftSchema = z
     ...draftGridFields,
     budgetUsd: z.string(),
   })
-  .strict();
+  .strict()
+  .superRefine((input, context) => {
+    for (const issue of variableNameIssues(input))
+      context.addIssue({ code: "custom", ...issue });
+  });
 export type GridDraftInput = z.infer<typeof gridDraftSchema>;
 const gridInputSchema = z.discriminatedUnion("format", [
   z
@@ -216,6 +230,8 @@ export type GridInput = z.infer<typeof gridInputSchema>;
 export const modelSelectionIssueKind = "empty-model-selection";
 export const gridSchema = gridInputSchema
   .transform((g) => {
+    for (const record of [...g.rows, ...g.columns])
+      if (record.name === "") delete record.name;
     for (const kind of [
       "model",
       "judge_model",
@@ -340,7 +356,11 @@ export const gridSchema = gridInputSchema
           ]);
         ids.add(record.id);
         for (const key of Object.keys(record))
-          if (key !== "id" && !owned.has(key as keyof ParameterValues))
+          if (
+            key !== "id" &&
+            key !== "name" &&
+            !owned.has(key as keyof ParameterValues)
+          )
             issue(`${key} is not owned by ${side}.`, [side, index, key]);
       }
     }
@@ -366,7 +386,9 @@ export const gridSchema = gridInputSchema
     }
     if (!g.rows.length || !g.columns.length)
       for (const item of judgeCriteriaIssues(g)) issue(item.message, item.path);
-    for (const item of promptVariableIssues(g)) issue(item.message, item.path);
+    const variableIndex = createVariableIndex(g);
+    for (const item of promptVariableIssues(g, variableIndex))
+      issue(item.message, item.path);
     const expandedIssue = (
       item: ValidationIssue,
       path: (string | number)[],
@@ -382,6 +404,7 @@ export const gridSchema = gridInputSchema
           g,
           row,
           column,
+          variableIndex,
         ))
           issue(message, [...reference.path, "text"]);
     };
@@ -391,6 +414,7 @@ export const gridSchema = gridInputSchema
         const inputPath = parameterValuePath(g, "input", row, column);
         const messages = expandGeneratorInput(g, row, column, {
           allowUnresolvedVariables: true,
+          variableIndex,
         });
         for (const item of chatInputIssues(messages))
           expandedIssue(
@@ -414,6 +438,7 @@ export const gridSchema = gridInputSchema
         if (g.judge) {
           const resolved = resolveCriteriaForCell(g, row, column, {
             allowUnresolvedVariables: true,
+            variableIndex,
           });
           const criteria = judgeCriteriaSchema.safeParse(resolved.criteria);
           if (!criteria.success) {
@@ -597,13 +622,16 @@ export function expandGeneratorInput(
   column: number,
   options: VariableInterpolationOptions = {},
 ): ChatMessage[] {
+  const interpolationOptions = options.variableIndex
+    ? options
+    : { ...options, variableIndex: createVariableIndex(input) };
   return generatorInputForCell(input, row, column).map((message) => {
     const expanded = interpolateVariables(
       message.content,
       input,
       row,
       column,
-      options,
+      interpolationOptions,
     );
     const images = mergeVariableImages(
       message.images,
@@ -621,6 +649,9 @@ export function expandGrid(
   input: GridInput,
   options: VariableInterpolationOptions = {},
 ): Omit<Cell, "id">[] {
+  const interpolationOptions = options.variableIndex
+    ? options
+    : { ...options, variableIndex: createVariableIndex(input) };
   return input.rows.flatMap((_, row) =>
     input.columns.map((_, column) => {
       const model = parameterValue(input, "model", row, column) ?? "";
@@ -638,7 +669,12 @@ export function expandGrid(
         for (const kind of imageKinds) {
           imageSettings[kind] = parameterValue(input, kind, row, column);
         }
-      const messages = expandGeneratorInput(input, row, column, options);
+      const messages = expandGeneratorInput(
+        input,
+        row,
+        column,
+        interpolationOptions,
+      );
       const prompt = isChatFormat(input.format)
         ? chatText(messages)
         : (messages[0]?.content ?? "");

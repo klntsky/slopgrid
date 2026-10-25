@@ -1334,10 +1334,10 @@ for (const side of ["rows", "columns"] as const) {
     input = reduceInput(input, { type: "move-case", side, index: 2, to: 0 });
     assert.equal(input[side][0].id, copy.id);
     input = reduceInput(input, { type: "remove-case", side, index: 1 });
-    assert.deepEqual(input[side].map((entry) => entry.id), [
-      copy.id,
-      original[side][1].id,
-    ]);
+    assert.deepEqual(
+      input[side].map((entry) => entry.id),
+      [copy.id, original[side][1].id],
+    );
     assert.deepEqual(input[other], opposite);
     assert.deepEqual(input.caseAxes, ["rows", "columns"]);
     assert.deepEqual(reduceInput(input, { type: "swap" }).caseAxes, [
@@ -1358,12 +1358,12 @@ for (const side of ["rows", "columns"] as const) {
       parameter: "effort",
       side: other,
     });
-    input = reduceInput(
-      input,
-      caseValueAction(other, 1, "effort", "low"),
-    );
+    input = reduceInput(input, caseValueAction(other, 1, "effort", "low"));
     const opposite = structuredClone(input[other]);
-    const common = reduceInput(input, { type: "to-common", parameter: "model" });
+    const common = reduceInput(input, {
+      type: "to-common",
+      parameter: "model",
+    });
     assert.deepEqual(common[side], bothCaseAxes()[side]);
     assert.deepEqual(common[other], opposite);
     assert.deepEqual(common.caseAxes, ["rows", "columns"]);
@@ -1429,14 +1429,18 @@ test("both-axis swapping moves template namespaces and owners but keeps literal 
     parameter: "judge_criteria",
     side: "columns",
   });
-  input.rows[0].input = [{
-    role: "user",
-    content: "$ROW1 / $COLUMN2 / $ROW12 / $COLUMN1_suffix",
-  }];
-  input.columns[0].judge_criteria = [{
-    text: "Does $COLUMN2 match $ROW1?",
-    correctAnswer: false,
-  }];
+  input.rows[0].input = [
+    {
+      role: "user",
+      content: "$ROW1 / $COLUMN2 / $ROW12 / $COLUMN1_suffix",
+    },
+  ];
+  input.columns[0].judge_criteria = [
+    {
+      text: "Does $COLUMN2 match $ROW1?",
+      correctAnswer: false,
+    },
+  ];
   input.rows[0].variable = [null, { text: "$COLUMN2 literal" }];
   input.columns[0].variable = [null, { text: "$ROW2 literal" }];
   const original = structuredClone(input);
@@ -1447,10 +1451,12 @@ test("both-axis swapping moves template namespaces and owners but keeps literal 
     swapped.columns[0].input![0].content,
     "$COLUMN1 / $ROW2 / $COLUMN12 / $COLUMN1_suffix",
   );
-  assert.deepEqual(swapped.rows[0].judge_criteria, [{
-    text: "Does $ROW2 match $COLUMN1?",
-    correctAnswer: false,
-  }]);
+  assert.deepEqual(swapped.rows[0].judge_criteria, [
+    {
+      text: "Does $ROW2 match $COLUMN1?",
+      correctAnswer: false,
+    },
+  ]);
   assert.deepEqual(swapped.rows[0].variable, original.columns[0].variable);
   assert.deepEqual(swapped.columns[0].variable, original.rows[0].variable);
   assert.deepEqual(reduceInput(swapped, { type: "swap" }), original);
@@ -1478,7 +1484,9 @@ test("both-axis draft hydration retains independent slots and exposes every refe
   assert.notEqual(hydrated.rows[0].variable, draft.rows[0].variable);
   assert.notEqual(hydrated.columns[0].input, draft.columns[0].input);
   assert.deepEqual(
-    referenceLists(hydrated).flat().map((image) => image.id),
+    referenceLists(hydrated)
+      .flat()
+      .map((image) => image.id),
     ["history-0", "history-1", "rows-0", "rows-1", "columns-0", "columns-1"],
   );
   assert.deepEqual(
@@ -1490,4 +1498,234 @@ test("both-axis draft hydration retains independent slots and exposes every refe
       "Draw second with right",
     ],
   );
+});
+
+test("renaming a variable rewrites whole references once without changing values, images or case identities", () => {
+  let input = bothCaseAxes();
+  input.parameters.input = {
+    kind: "common",
+    value: [
+      {
+        role: "user",
+        content: "$ROW1 $ROW10 $ROW1x $ROW1_ $ROW1é $COLUMN1",
+        images: [{ id: "prompt", name: "prompt.png" }],
+      },
+    ],
+  };
+  input.rows[0].variable![0] = {
+    text: "$ROW1 literal",
+    images: [{ id: "variable", name: "variable.png" }],
+  };
+  input.rows[0].input = [{ role: "system", content: "$ROW1" }];
+  input.columns[0].input = [{ role: "user", content: "$ROW1 $COLUMN1" }];
+  input.rows[0].judge_criteria = [{ text: "$ROW1?", correctAnswer: false }];
+  input.columns[0].judge_criteria = [{ text: "$ROW1?", correctAnswer: true }];
+  const original = structuredClone(input);
+  const renamed = reduceInput(input, {
+    type: "rename-variable",
+    side: "rows",
+    index: 0,
+    name: "SUBJECT",
+  });
+  assert.equal(
+    generatorInputForCell(renamed, 0, 0)[0].content,
+    "$SUBJECT $ROW10 $ROW1x $ROW1_ $ROW1é $COLUMN1",
+  );
+  assert.equal(renamed.rows[0].input![0].content, "$SUBJECT");
+  assert.equal(renamed.columns[0].input![0].content, "$SUBJECT $COLUMN1");
+  assert.deepEqual(renamed.rows[0].judge_criteria, [
+    { text: "$SUBJECT?", correctAnswer: false },
+  ]);
+  assert.deepEqual(renamed.columns[0].judge_criteria, [
+    { text: "$SUBJECT?", correctAnswer: true },
+  ]);
+  for (const side of ["rows", "columns"] as const) {
+    assert.deepEqual(
+      renamed[side].map((entry) => entry.id),
+      input[side].map((entry) => entry.id),
+    );
+    assert.deepEqual(
+      renamed[side].map((entry) => entry.variable),
+      input[side].map((entry) => entry.variable),
+    );
+  }
+  assert.deepEqual(
+    renamed.parameters.input.kind === "common" &&
+      renamed.parameters.input.value[0].images,
+    [{ id: "prompt", name: "prompt.png" }],
+  );
+  assert.deepEqual(input, original);
+});
+
+test("variable renaming rejects invalid and duplicate names, allows leading digits, and resets defaults only when free", () => {
+  let input = bothCaseAxes();
+  for (const name of ["lowercase", "HAS SPACE", "NO!", "é", "ß", "COLUMN1"])
+    assert.equal(
+      reduceInput(input, {
+        type: "rename-variable",
+        side: "rows",
+        index: 0,
+        name,
+      }),
+      input,
+    );
+  input = reduceInput(input, {
+    type: "rename-variable",
+    side: "rows",
+    index: 0,
+    name: "1_SUBJECT",
+  });
+  assert.equal(input.variableNames?.rows?.[0], "1_SUBJECT");
+  input = reduceInput(input, {
+    type: "rename-variable",
+    side: "columns",
+    index: 0,
+    name: "ROW1",
+  });
+  assert.equal(
+    reduceInput(input, {
+      type: "rename-variable",
+      side: "rows",
+      index: 0,
+      name: "",
+    }),
+    input,
+  );
+  input = reduceInput(input, {
+    type: "rename-variable",
+    side: "columns",
+    index: 0,
+    name: "",
+  });
+  input = reduceInput(input, {
+    type: "rename-variable",
+    side: "rows",
+    index: 0,
+    name: "",
+  });
+  assert.equal(input.variableNames, undefined);
+  assert.equal(
+    generatorInputForCell(input, 0, 0)[0].content,
+    "Draw $ROW1 with $COLUMN1",
+  );
+});
+
+test("case names follow records through cloning, moving, swapping and hydration, and clear when leaving case mode", () => {
+  let input = bothCaseAxes();
+  input = reduceInput(input, {
+    type: "rename-variable",
+    side: "rows",
+    index: 0,
+    name: "SUBJECT",
+  });
+  input = reduceInput(input, {
+    type: "rename-case",
+    side: "rows",
+    index: 0,
+    name: "  Named case  ",
+  });
+  assert.equal(input.rows[0].name, "Named case");
+  const copied = reduceInput(
+    input,
+    addCaseAction(input, "rows", input.rows[0]),
+  );
+  assert.equal(copied.rows.at(-1)!.name, "Named case");
+  assert.notEqual(copied.rows.at(-1)!.id, input.rows[0].id);
+  const moved = reduceInput(copied, {
+    type: "move-case",
+    side: "rows",
+    index: 0,
+    to: 1,
+  });
+  assert.equal(moved.rows[1].id, input.rows[0].id);
+  assert.equal(moved.rows[1].name, "Named case");
+  const swapped = reduceInput(moved, { type: "swap" });
+  assert.equal(swapped.columns[1].name, "Named case");
+  assert.equal(swapped.variableNames?.columns?.[0], "SUBJECT");
+  const parsed = validateDraftInput(swapped).parsed;
+  assert.ok(parsed.success);
+  assert.deepEqual(draftInputFromGridInput(parsed.data), swapped);
+  const cleared = reduceInput(input, {
+    type: "rename-case",
+    side: "rows",
+    index: 0,
+    name: "  ",
+  });
+  assert.ok(!Object.hasOwn(cleared.rows[0], "name"));
+  for (const action of [
+    { type: "single", side: "rows" },
+    { type: "dimension", side: "rows", parameter: "model" },
+  ] as const) {
+    const next = reduceInput(input, action);
+    assert.equal(next.variableNames?.rows, undefined);
+    assert.ok(next.rows.every((entry) => !Object.hasOwn(entry, "name")));
+  }
+});
+
+test("adding fields avoids active generated-name collisions and does not revive a deleted custom token", () => {
+  let input = bothCaseAxes();
+  input = reduceInput(input, {
+    type: "rename-variable",
+    side: "columns",
+    index: 0,
+    name: "ROW2",
+  });
+  const added = reduceInput(input, { type: "add-variable", side: "rows" });
+  assert.equal(added.variableNames?.rows?.[1], "ROW3");
+  const renamed = reduceInput(added, {
+    type: "rename-variable",
+    side: "rows",
+    index: 0,
+    name: "ROW4",
+  });
+  const removed = reduceInput(renamed, {
+    type: "remove-variable",
+    side: "rows",
+    index: 0,
+  });
+  const extended = reduceInput(
+    reduceInput(removed, { type: "add-variable", side: "rows" }),
+    { type: "add-variable", side: "rows" },
+  );
+  assert.equal(extended.variableNames?.rows?.[2], "ROW5");
+  assert.equal(extended.variableNames?.rows?.[3], "ROW6");
+  assert.equal(
+    generatorInputForCell(extended, 0, 0)[0].content,
+    "Draw $ROW4 with $ROW2",
+  );
+  assert.equal(extended.rows[0].variable![0], null);
+  assert.equal(validateDraftInput(extended).parsed.success, false);
+});
+
+test("adding the first field defines a default reference already entered in the prompt", () => {
+  const input = initial("svg", "rows");
+  input.rows = input.rows.map((entry) => ({ ...entry, variable: [] }));
+  const added = reduceInput(input, { type: "add-variable", side: "rows" });
+  added.rows.forEach((entry) => {
+    entry.variable![0]!.text = "cat";
+  });
+  const parsed = validateDraftInput(added).parsed;
+  assert.ok(parsed.success);
+  assert.equal(expandGrid(parsed.data)[0].prompt, "Draw cat");
+});
+
+test("appending a field replaces trailing metadata without making an accepted saved setup ambiguous", () => {
+  let input = reduceInput(initial("svg", "rows"), {
+    type: "rename-variable",
+    side: "rows",
+    index: 0,
+    name: "TOPIC",
+  });
+  input.variableNames!.rows!.push("TOPIC");
+  const saved = validateDraftInput(input).parsed;
+  assert.ok(saved.success);
+  input = draftInputFromGridInput(saved.data)!;
+  const added = reduceInput(input, { type: "add-variable", side: "rows" });
+  const parsed = validateDraftInput(added).parsed;
+  assert.ok(parsed.success);
+  assert.deepEqual(
+    expandGrid(parsed.data).map((cell) => cell.prompt),
+    expandGrid(saved.data).map((cell) => cell.prompt),
+  );
+  assert.deepEqual(draftInputFromGridInput(parsed.data), added);
 });
