@@ -372,6 +372,10 @@ appends one empty question with expected answer YES to the selected rubric.
    - Its tooltip is always "Expand", in both expanded and collapsed states.
 9. Grids configured with a judge show a compact, left-aligned bottom mode switcher. Outputs, Thinking, Judge results, and Benchmark results form one borderless segmented control with vertical separators. The bottom panel fits the control without extra vertical padding. Outputs, Thinking, and Judge results select the corresponding view across all cells while preserving individual cell controls and expansion. Benchmark results remains visible and disabled until implemented. Grids without a judge do not show this bar.
    - Outputs uses a palette icon.
+   - Derive pressed states from the views displayed in every cell, including automatic initial judgments and individual cell changes. Opening a grid with completed judgments shows and presses Judge results.
+   - Judge results is pressed exactly when all cells show judgments. Outputs is pressed exactly when all cells show rendered output. Raw source does not count as rendered output.
+   - Show Thinking only when at least one cell has a thinking trace. It is pressed exactly when all cells with traces show thinking; cells without traces do not affect this state, regardless of the view they display.
+   - Preserve the same visibly recessed pressed treatment as the cell mode controls.
 
 ### 5.2. Markdown
 

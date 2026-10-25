@@ -98,8 +98,9 @@ th[scope="row"] .axis-reference-previews {
 }
 .grid-view-actions > button[aria-pressed="true"],
 .grid-view-actions > button[aria-pressed="true"]:hover {
+  border-color: var(--selected-border);
   background: var(--selected);
-  box-shadow: none;
+  box-shadow: inset 0 2px 4px var(--shadow);
 }
 .grid-view-actions > button:focus-visible {
   outline-offset: -3px;
