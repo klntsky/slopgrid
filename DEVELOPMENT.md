@@ -108,6 +108,37 @@ Direct browser runs make one attempt by default. Deployment validation permits
 two retries for real-provider browser tests. Unit and mock tests do not retry.
 GitHub Actions is disabled; its workflow file is retained.
 
+### Measure variable editing and validation
+
+Run the benchmarks from an isolated candidate worktree:
+
+```sh
+pnpm exec tsx scripts/benchmark-variable-validation.ts --sizes=100,200,400,800 --output=/tmp/variable-validation.json --workloads=/tmp/variable-workloads.json
+```
+
+The command records raw durations, medians, and p95 values for variable checks,
+canonical validation, compatibility, budgeting, and combined edit analysis.
+Use `--rows` and `--columns` to vary cell counts, `--references=last` for one
+reference to the last field, `--numbered` for default names, and `--judge` for
+judged input. Set `--samples` and `--warmup` to control sampling.
+Use `--repeat-variable-guard` to measure the former edit-analysis path that
+rechecked variables after successful canonical validation.
+
+Build and launch that candidate with private local data and an OS-assigned
+loopback port. Measure the real editor at its printed HTTPS origin:
+
+```sh
+node scripts/measure-variable-editing.mjs --origin https://localhost:PORT --workloads /tmp/variable-workloads.json --output /tmp/variable-editing.json
+```
+
+The browser command opens its own Chromium context and hydrates synthetic drafts
+through session storage. It sends keyboard input to the real variable editor and
+records input-to-persistence and input-to-frame durations. The frame endpoint is
+a `requestAnimationFrame` callback with a layout read, not a painted frame.
+The command makes no provider calls and accepts only loopback origins.
+Keep the same workloads, browser, sampling, and CPU settings when comparing
+candidates. Do not run other suites during timing collection.
+
 ## GitHub integration
 
 Copying staging credentials to a demo does not change the OAuth app's registered

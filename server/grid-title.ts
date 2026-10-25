@@ -1,14 +1,19 @@
 import { chatText, type ChatMessage, type GridInput } from "./domain.js";
 import { generatorInputForCell } from "./generator-input.js";
-import { resolveVariable, variableToken } from "./prompt-variables.js";
+import {
+  createVariableIndex,
+  variableToken,
+  type VariableIndex,
+} from "./prompt-variables.js";
 
 function titlePrompt(
   input: GridInput,
   prompt: string,
+  variableIndex: VariableIndex,
   cell?: { row: number; column: number },
 ): string {
   return prompt.replace(variableToken, (token, name: string) => {
-    const resolved = resolveVariable(input, name);
+    const resolved = variableIndex.get(name);
     if (!resolved) return token;
     const { side, index } = resolved;
     if (cell) {
@@ -49,11 +54,13 @@ function messagesForTitle(input: GridInput, messages: ChatMessage[]): string {
 }
 
 export function expandPromptForTitle(input: GridInput) {
+  const variableIndex = createVariableIndex(input);
   const expanded =
     input.parameters.input.kind === "common"
       ? titlePrompt(
           input,
           messagesForTitle(input, input.parameters.input.value),
+          variableIndex,
         )
       : [
           ...new Set(
@@ -62,10 +69,12 @@ export function expandPromptForTitle(input: GridInput) {
                 const messages = generatorInputForCell(input, row, column).map(
                   (message) => ({
                     ...message,
-                    content: titlePrompt(input, message.content, {
-                      row,
-                      column,
-                    }),
+                    content: titlePrompt(
+                      input,
+                      message.content,
+                      variableIndex,
+                      { row, column },
+                    ),
                   }),
                 );
                 return messagesForTitle(input, messages);

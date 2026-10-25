@@ -15,7 +15,10 @@ import {
   type CommonParameterId,
   type ParameterId,
 } from "../../server/parameters";
-import { variableName, resolveVariable } from "../../server/prompt-variables";
+import {
+  variableName,
+  createVariableIndex,
+} from "../../server/prompt-variables";
 import {
   referencedVariableNames,
   rewriteVariableReferences,
@@ -319,7 +322,7 @@ export function variableRenameError(
   if (name && !/^[A-Z0-9_]+$/.test(name))
     return "Use only ASCII letters, digits, and underscores.";
   const effective = name || `${side === "rows" ? "ROW" : "COLUMN"}${index + 1}`;
-  const existing = resolveVariable(input, effective);
+  const existing = createVariableIndex(input).get(effective);
   if (existing && (existing.side !== side || existing.index !== index))
     return `The variable $${effective} is already in use.`;
 }
@@ -635,9 +638,10 @@ export function reduceInput(
           }
         }
       }
+      const variableIndex = createVariableIndex(input);
       const unresolved = new Map<string, string>();
       for (const name of referencedVariableNames(input)) {
-        if (resolveVariable(input, name)) continue;
+        if (variableIndex.get(name)) continue;
         const swapped = name.replace(
           /^(ROW|COLUMN)([1-9]\d*)$/,
           (_, axis: string, number: string) =>

@@ -9,6 +9,7 @@ import {
   type ReferenceImage,
 } from "./image-settings.js";
 import {
+  createVariableIndex,
   interpolateVariables,
   mergeVariableImages,
   promptVariableIssues,
@@ -385,7 +386,9 @@ export const gridSchema = gridInputSchema
     }
     if (!g.rows.length || !g.columns.length)
       for (const item of judgeCriteriaIssues(g)) issue(item.message, item.path);
-    for (const item of promptVariableIssues(g)) issue(item.message, item.path);
+    const variableIndex = createVariableIndex(g);
+    for (const item of promptVariableIssues(g, variableIndex))
+      issue(item.message, item.path);
     const expandedIssue = (
       item: ValidationIssue,
       path: (string | number)[],
@@ -401,6 +404,7 @@ export const gridSchema = gridInputSchema
           g,
           row,
           column,
+          variableIndex,
         ))
           issue(message, [...reference.path, "text"]);
     };
@@ -410,6 +414,7 @@ export const gridSchema = gridInputSchema
         const inputPath = parameterValuePath(g, "input", row, column);
         const messages = expandGeneratorInput(g, row, column, {
           allowUnresolvedVariables: true,
+          variableIndex,
         });
         for (const item of chatInputIssues(messages))
           expandedIssue(
@@ -433,6 +438,7 @@ export const gridSchema = gridInputSchema
         if (g.judge) {
           const resolved = resolveCriteriaForCell(g, row, column, {
             allowUnresolvedVariables: true,
+            variableIndex,
           });
           const criteria = judgeCriteriaSchema.safeParse(resolved.criteria);
           if (!criteria.success) {
@@ -616,13 +622,16 @@ export function expandGeneratorInput(
   column: number,
   options: VariableInterpolationOptions = {},
 ): ChatMessage[] {
+  const interpolationOptions = options.variableIndex
+    ? options
+    : { ...options, variableIndex: createVariableIndex(input) };
   return generatorInputForCell(input, row, column).map((message) => {
     const expanded = interpolateVariables(
       message.content,
       input,
       row,
       column,
-      options,
+      interpolationOptions,
     );
     const images = mergeVariableImages(
       message.images,
@@ -640,6 +649,9 @@ export function expandGrid(
   input: GridInput,
   options: VariableInterpolationOptions = {},
 ): Omit<Cell, "id">[] {
+  const interpolationOptions = options.variableIndex
+    ? options
+    : { ...options, variableIndex: createVariableIndex(input) };
   return input.rows.flatMap((_, row) =>
     input.columns.map((_, column) => {
       const model = parameterValue(input, "model", row, column) ?? "";
@@ -657,7 +669,12 @@ export function expandGrid(
         for (const kind of imageKinds) {
           imageSettings[kind] = parameterValue(input, kind, row, column);
         }
-      const messages = expandGeneratorInput(input, row, column, options);
+      const messages = expandGeneratorInput(
+        input,
+        row,
+        column,
+        interpolationOptions,
+      );
       const prompt = isChatFormat(input.format)
         ? chatText(messages)
         : (messages[0]?.content ?? "");

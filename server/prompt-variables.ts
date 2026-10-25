@@ -29,14 +29,20 @@ export function variableName(
   );
 }
 
-export function resolveVariable(
+type VariableSlot = { side: AxisSide; index: number };
+export type VariableIndex = ReadonlyMap<string, VariableSlot>;
+
+export function createVariableIndex(
   input: ParameterConfiguration,
-  name: string,
-): { side: AxisSide; index: number } | undefined {
+): VariableIndex {
+  const variables = new Map<string, VariableSlot>();
   for (const side of input.caseAxes)
-    for (const [index, field] of (input[side][0]?.variable ?? []).entries())
-      if (field && variableName(input, side, index) === name)
-        return { side, index };
+    for (const [index, field] of (input[side][0]?.variable ?? []).entries()) {
+      if (!field) continue;
+      const name = variableName(input, side, index);
+      if (!variables.has(name)) variables.set(name, { side, index });
+    }
+  return variables;
 }
 
 export function variableNameIssues(
@@ -88,6 +94,7 @@ export function mergeVariableImages(
 
 export type VariableInterpolationOptions = {
   allowUnresolvedVariables?: boolean;
+  variableIndex?: VariableIndex;
 };
 
 export function interpolateVariables(
@@ -97,10 +104,11 @@ export function interpolateVariables(
   column: number,
   options: VariableInterpolationOptions = {},
 ): { text: string; images?: ReferenceImage[] } {
+  const variableIndex = options.variableIndex ?? createVariableIndex(input);
   const images: ReferenceImage[] = [];
   const seen = new Set<string>();
   const expanded = text.replace(variableToken, (token, name: string) => {
-    const resolved = resolveVariable(input, name);
+    const resolved = variableIndex.get(name);
     const field =
       resolved &&
       input[resolved.side][resolved.side === "rows" ? row : column]?.variable?.[
@@ -125,11 +133,12 @@ export function referencedVariableFields(
   input: VariableInput,
   row: number,
   column: number,
+  variableIndex: VariableIndex = createVariableIndex(input),
 ): { field: VariableField; path: (string | number)[] }[] {
   const fields: { field: VariableField; path: (string | number)[] }[] = [];
   const seen = new Set<string>();
   for (const [, name] of text.matchAll(variableToken)) {
-    const resolved = resolveVariable(input, name);
+    const resolved = variableIndex.get(name);
     if (!resolved) continue;
     const { side, index: fieldIndex } = resolved;
     const caseIndex = side === "rows" ? row : column;
@@ -168,7 +177,10 @@ export function caseSetupIssue(
     };
 }
 
-export function promptVariableIssues(input: TemplateInput): ValidationIssue[] {
+export function promptVariableIssues(
+  input: TemplateInput,
+  variableIndex: VariableIndex = createVariableIndex(input),
+): ValidationIssue[] {
   const issues: ValidationIssue[] = variableNameIssues(input);
   for (const side of ["rows", "columns"] as const) {
     if (!axisHasVariables(input, side)) continue;
@@ -220,7 +232,7 @@ export function promptVariableIssues(input: TemplateInput): ValidationIssue[] {
         );
       for (const { text, role, path } of templates)
         for (const [token, name] of text.matchAll(variableToken)) {
-          const resolved = resolveVariable(input, name);
+          const resolved = variableIndex.get(name);
           if (!resolved) {
             issues.push({
               message: `Unknown prompt variable ${token}`,

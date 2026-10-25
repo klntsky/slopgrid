@@ -7,7 +7,7 @@ import {
   interpolateVariables,
   promptVariableIssue,
   variableName,
-  resolveVariable,
+  createVariableIndex,
 } from "../server/prompt-variables.js";
 import { selectedReferences } from "../server/image-settings.js";
 import { resolveCriteriaForCell } from "../server/judge-criteria.js";
@@ -729,10 +729,13 @@ test("variable names accept ASCII digits and underscores without reserving numbe
     generatorInputForCell(source, 0, 0)[0].content = `$${name}`;
     const parsed = gridSchema.parse(source);
     assert.equal(variableName(parsed, "rows", 0), name);
-    assert.deepEqual(resolveVariable(parsed, name), { side: "rows", index: 0 });
+    assert.deepEqual(createVariableIndex(parsed).get(name), {
+      side: "rows",
+      index: 0,
+    });
     assert.equal(expandGrid(parsed)[0].prompt, "row");
     if (name !== "ROW1")
-      assert.equal(resolveVariable(parsed, "ROW1"), undefined);
+      assert.equal(createVariableIndex(parsed).get("ROW1"), undefined);
   }
 });
 
@@ -833,7 +836,7 @@ test("named row and column fields expand once with original generator and judge 
     criteria: [{ text: "Compare answer", correctAnswer: true }],
     images: [third],
   });
-  assert.deepEqual(resolveVariable(parsed, "ROW2"), undefined);
+  assert.deepEqual(createVariableIndex(parsed).get("ROW2"), undefined);
   assert.equal(
     expandPromptForTitle(parsed),
     "system: (Literal $QUESTION|Other context)\n\nuser: (question) (question)",
@@ -930,7 +933,7 @@ test("unknown custom names and deleted named slots cannot resolve or revive on a
   assert.equal(gridSchema.safeParse(source).success, true);
   source.rows[0].variable.push({ text: "later", images: [first] });
   assert.equal(variableName(source, "rows", 2), "ROW3");
-  assert.equal(resolveVariable(source, "DELETED"), undefined);
+  assert.equal(createVariableIndex(source).get("DELETED"), undefined);
   assert.equal(interpolateVariables("$ROW3", source, 0, 0).text, "later");
   for (const token of ["$DELETED", "$UNKNOWN_CUSTOM", "$ROW2"]) {
     generatorInputForCell(source, 0, 0)[0].content = token;
