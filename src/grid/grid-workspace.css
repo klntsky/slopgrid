@@ -8,6 +8,7 @@
 .grid-workspace {
   position: relative;
   contain: layout;
+  flex-direction: column;
 }
 .grid-table-view[data-expanded="true"] {
   visibility: hidden;
@@ -60,4 +61,56 @@ th[scope="row"] .axis-reference-previews {
   flex-direction: column;
   align-items: center;
   margin: 6px 0 0;
+}
+.grid-view-bar {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: flex-start;
+  padding-inline: 8px;
+  border-top: 1px solid var(--line);
+  background: var(--paper);
+}
+.grid-view-actions {
+  display: inline-flex;
+  max-width: 100%;
+  overflow-x: auto;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--paper) 94%, var(--text));
+  scrollbar-width: none;
+}
+.grid-view-actions > button {
+  position: relative;
+  flex-shrink: 0;
+  height: 30px;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 0;
+  white-space: nowrap;
+  font-size: 13px;
+}
+.grid-view-actions > button + button::before {
+  content: "";
+  position: absolute;
+  inset: 7px auto 7px 0;
+  width: 1px;
+  background: var(--line);
+}
+.grid-view-actions > button[aria-pressed="true"],
+.grid-view-actions > button[aria-pressed="true"]:hover {
+  border-color: var(--selected-border);
+  background: var(--selected);
+  box-shadow: inset 0 2px 4px var(--shadow);
+}
+.grid-view-actions > button:focus-visible {
+  outline-offset: -3px;
+}
+.grid-view-actions .lucide {
+  width: 16px;
+  height: 16px;
+}
+@media (hover: none), (pointer: coarse) {
+  .grid-view-actions > button[aria-pressed="false"]:hover {
+    background: transparent;
+  }
 }

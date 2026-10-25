@@ -18,6 +18,7 @@ import {
   engineFingerprint,
 } from "./artifacts.mjs";
 import { validateRemoteBuild } from "./validate.mjs";
+import { copyProductionData } from "./staging-data.mjs";
 import {
   environment,
   engineEnvironment,
@@ -34,7 +35,18 @@ import {
   verifyStaging,
 } from "./runtime.mjs";
 
-function validateRecoveryRequest(request) {
+function validateRuntimeRequest(request) {
+  if (
+    request.copyProductionData !== undefined &&
+    typeof request.copyProductionData !== "boolean"
+  )
+    throw new Error("copyProductionData must be a boolean");
+  if (request.copyProductionData) {
+    if (request.target !== "staging")
+      throw new Error("Production data copying is only permitted on staging");
+    if (request.mode === "soft")
+      throw new Error("Production data copying requires a machinery deployment");
+  }
   if (
     request.recoverFailedStart !== undefined &&
     typeof request.recoverFailedStart !== "boolean"
@@ -55,7 +67,7 @@ function validateRecoveryRequest(request) {
 
 // This ordering is shared by the real pipeline and orchestration regression tests.
 export async function executePlan(request, operations) {
-  validateRecoveryRequest(request);
+  validateRuntimeRequest(request);
   assertProductionRevision(request);
   const build = await operations.build();
   const validation = await operations.validate(build);
@@ -83,7 +95,7 @@ export async function executePlan(request, operations) {
 
 export async function pipeline(request, run) {
   validateConfig(request.config);
-  validateRecoveryRequest(request);
+  validateRuntimeRequest(request);
   if (
     !/^[a-f0-9]{40}$/.test(request.revision) ||
     !/^[a-f0-9]{40}$/.test(request.opsRevision)
@@ -112,7 +124,7 @@ export async function pipeline(request, run) {
     command("pm2", ["ping"], { stdio: "ignore" });
     environments[request.target] = environment(config.targets[request.target]);
   }
-  if (request.discardGrids.length) {
+  if (request.discardGrids.length || request.copyProductionData) {
     environments.production = environment(config.targets.production);
     for (const key of [
       "DATABASE_PATH",
@@ -156,12 +168,15 @@ export async function pipeline(request, run) {
         const before =
           current.running &&
           !request.recoverFailedStart &&
+          !request.copyProductionData &&
           envCompatible &&
           current.interpreter === process.execPath
             ? await engineFingerprint(current.path)
             : undefined;
         const mode = chooseMode(
-          request.recoverFailedStart ? "machinery" : request.mode,
+          request.recoverFailedStart || request.copyProductionData
+            ? "machinery"
+            : request.mode,
           before,
           build.manifest.fingerprint,
           request.discardGrids.length > 0,
@@ -198,6 +213,19 @@ export async function pipeline(request, run) {
             record({ phase: "stopped", target: name });
             const path = await backup(target, release, env, request.id);
             record({ phase: "backed-up", target: name, path });
+            if (request.copyProductionData) {
+              Object.assign(
+                env,
+                await copyProductionData(
+                  target,
+                  release,
+                  env,
+                  environments.production,
+                  run,
+                ),
+              );
+              record({ phase: "production-data-copied", target: name });
+            }
             if (request.discardGrids.length) {
               const discarded = discardStagingGrids(
                 name,

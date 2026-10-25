@@ -142,6 +142,7 @@ export function deploymentOptions({ target, argument, values, help }) {
     discardGrids: values["discard-grid"] ?? [],
     plan: values.plan ?? false,
     recoverFailedStart: values["recover-failed-start"] ?? false,
+    ...(values["copy-production-data"] === true ? { copyProductionData: true } : {}),
     ...(values.grep === undefined ? {} : { grep: values.grep }),
     ...(values["skip-data-cloning"] === true ? { skipDataCloning: true } : {}),
     ...(values["reuse-demo"] === undefined ? {} : { reuseDemo: values["reuse-demo"] }),
@@ -159,6 +160,8 @@ export function deploymentOptions({ target, argument, values, help }) {
     if (options.mode === "soft")
       throw new Error("--recover-failed-start requires a machinery deployment");
   }
+  if (options.copyProductionData && options.mode === "soft")
+    throw new Error("--copy-production-data requires a machinery deployment");
   if (!["mock", "real"].includes(options.suite))
     throw new Error("Invalid browser suite");
   const scoped = options.units.length + options.browsers.length > 0;

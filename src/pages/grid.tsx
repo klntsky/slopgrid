@@ -72,7 +72,7 @@ export function GridPage({ id }: { id: string }) {
           </div>
         )}
         <ErrorMessage>{error}</ErrorMessage>
-        <OutputGrid grid={g} />
+        <OutputGrid key={g.id} grid={g} />
         {lowBalance !== null && (
           <LowBalanceDialog
             balanceUsd={lowBalance}

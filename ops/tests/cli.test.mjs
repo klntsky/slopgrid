@@ -117,6 +117,20 @@ test("parser preserves validation, production, scoped-test and path safety polic
   assert.equal(deploymentOptions(invocation).plan, true);
 });
 
+test("production data copying is an explicit staging-only machinery operation", () => {
+  const request = parseArgs(["staging", "--copy-production-data"]);
+  assert.equal(request.copyProductionData, true);
+  for (const target of ["validate", "demo", "rehearse", "production"])
+    assert.throws(
+      () => parseArgs([target, "--copy-production-data"]),
+      /only permitted on staging/,
+    );
+  assert.throws(
+    () => parseArgs(["staging", "--copy-production-data", "--mode=soft"]),
+    /machinery/,
+  );
+});
+
 test("demo rejects persistent deployment and invalid validation options", () => {
   for (const flags of [
     ["--mode=auto"], ["--mode=soft"], ["--mode=machinery"],
