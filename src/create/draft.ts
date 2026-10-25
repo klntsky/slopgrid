@@ -149,7 +149,12 @@ function selectDraftFormat(
     input[side] = input[side].map((entry) => {
       const next = { ...entry };
       for (const key of Object.keys(entry)) {
-        if (key === "id") continue;
+        if (key === "id" || (key === "name" && isCaseAxis(input, side)))
+          continue;
+        if (key === "name") {
+          delete next.name;
+          continue;
+        }
         const parameter = key as ParameterId;
         if (parameter === "variable") {
           if (isCaseAxis(input, side)) continue;

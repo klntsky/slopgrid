@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { token } from "./ids.js";
 import { createHash } from "node:crypto";
 import type { Store, Session } from "./store.js";
+import type { User } from "./domain.js";
 
 // Browsers cap persistent cookies at 400 days; renew them during use.
 export const cookieMaxAge = 400 * 86400000;
@@ -15,6 +16,24 @@ export function cacheScope(session?: Pick<Session, "id">) {
 
 export function anonymousOwner(s: Session) {
   return s.anonymousId ?? s.id;
+}
+
+export type SessionInfo = {
+  connected: boolean;
+  user: User | null;
+};
+
+export function presentSession({
+  store,
+  viewer,
+}: {
+  store: Store;
+  viewer: Session;
+}): SessionInfo {
+  return {
+    connected: !!viewer.key,
+    user: viewer.userId ? (store.user(viewer.userId) ?? null) : null,
+  };
 }
 
 export function createSessionReader(

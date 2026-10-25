@@ -12,6 +12,7 @@ import { modelCatalog } from "../model-catalog";
 import { effortLabel } from "../../server/compatibility";
 import { tooltipRef } from "../components/use-tooltip";
 import { ErrorMessage, WarningMessage } from "../components/feedback-message";
+import { variableName } from "../../server/prompt-variables";
 
 export type CompatibilityTables = Partial<
   Record<CompatibilityParameter, ReactNode>
@@ -40,7 +41,7 @@ function matchesOrigin(
   );
 }
 
-function sourceLabel(origin: CompatibilityOrigin) {
+function sourceLabel(input: GridInput, origin: CompatibilityOrigin) {
   const source =
     origin.source === "common"
       ? "Common"
@@ -50,9 +51,9 @@ function sourceLabel(origin: CompatibilityOrigin) {
   const caseLabel =
     origin.caseIndex === undefined ? "" : ` case ${origin.caseIndex + 1}`;
   const fieldLabel =
-    origin.fieldIndex === undefined
+    origin.fieldIndex === undefined || origin.source === "common"
       ? ""
-      : `, $${origin.source === "rows" ? "ROW" : "COLUMN"}${origin.fieldIndex + 1}`;
+      : `, $${variableName(input, origin.source, origin.fieldIndex)}`;
   const messageLabel =
     origin.messageIndex === undefined ? "" : ` ${origin.messageIndex + 1}`;
   return `${source}${caseLabel}: ${parameterNames[origin.parameter]}${messageLabel}${fieldLabel}`;
@@ -132,9 +133,11 @@ export function CompatibilityFeedback({
       </>
     );
   }
-  const caption = `${sourceLabel(origin)} compatibility`;
+  const caption = `${sourceLabel(input, origin)} compatibility`;
   function caseLabel(side: "rows" | "columns", index: number) {
-    return input[side].length ? `Case ${index + 1}` : "Not selected (preview)";
+    return input[side].length
+      ? (input[side][index]?.name ?? `Case ${index + 1}`)
+      : "Not selected (preview)";
   }
   return (
     <div className="compatibility-table-scroll">
@@ -157,7 +160,11 @@ export function CompatibilityFeedback({
               <tr key={index}>
                 <th scope="row">{caseLabel("rows", issue.row)}</th>
                 <td>{caseLabel("columns", issue.column)}</td>
-                <td>{issue.origins.map(sourceLabel).join("; ")}</td>
+                <td>
+                  {issue.origins
+                    .map((origin) => sourceLabel(input, origin))
+                    .join("; ")}
+                </td>
                 <td
                   data-support={issue.support}
                   aria-label={`Row ${issue.row + 1} / Column ${issue.column + 1}: ${status}`}

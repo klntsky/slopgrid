@@ -13,13 +13,11 @@ export function FavoriteButton({ gridId }: { gridId: string }) {
   const ready = session.isSuccess && favorites.isSuccess;
   const label = session.isPending
     ? "Loading account"
-    : favorites.isPending && session.isSuccess
-      ? "Loading favorites"
-      : mutation.isPending
-        ? "Saving favorite"
-        : starred
-          ? "Remove from favorites"
-          : "Add to favorites";
+    : mutation.isPending
+      ? "Saving favorite"
+      : starred
+        ? "Remove from favorites"
+        : "Add to favorites";
   return (
     <div className="favorite-control">
       <button

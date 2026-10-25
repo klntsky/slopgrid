@@ -38,7 +38,7 @@ import { Connection } from "../components/connection";
 import { ErrorMessage } from "../components/feedback-message";
 import { LowBalanceDialog } from "../components/inference-dialogs";
 import { useTooltip } from "../components/use-tooltip";
-import { caseSetupIssue } from "../../server/prompt-variables";
+import { caseSetupIssue, variableName } from "../../server/prompt-variables";
 import { GridLayoutTable } from "../create/case-table";
 import {
   ValidationFeedback,
@@ -128,9 +128,7 @@ export function Create() {
   );
   const promptVariables = caseSides.flatMap((side) =>
     (input[side][0]?.variable ?? []).flatMap((field, index) =>
-      field === null
-        ? []
-        : [`$${side === "rows" ? "ROW" : "COLUMN"}${index + 1}`],
+      field === null ? [] : [`$${variableName(input, side, index)}`],
     ),
   );
   const criteriaSource = input.parameters.judge_criteria;

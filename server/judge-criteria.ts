@@ -7,6 +7,7 @@ import {
   type ValidationIssue,
 } from "./parameters.js";
 import {
+  createVariableIndex,
   interpolateVariables,
   mergeVariableImages,
   type VariableInterpolationOptions,
@@ -55,6 +56,9 @@ export function resolveCriteriaForCell(
   column: number,
   options: VariableInterpolationOptions = {},
 ): { criteria: Criterion[]; images?: ReferenceImage[] } {
+  const interpolationOptions = options.variableIndex
+    ? options
+    : { ...options, variableIndex: createVariableIndex(input) };
   let images: ReferenceImage[] | undefined;
   const criteria = criteriaForCell(input, row, column).map((criterion) => {
     const expanded = interpolateVariables(
@@ -62,7 +66,7 @@ export function resolveCriteriaForCell(
       input,
       row,
       column,
-      options,
+      interpolationOptions,
     );
     images = mergeVariableImages(images, expanded.images);
     return { ...criterion, text: expanded.text };

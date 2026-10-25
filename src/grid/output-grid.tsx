@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState } from "react";
+import { Brain, ChartNoAxesColumn, Palette, Scale } from "lucide-react";
 import "./grid-workspace.css";
 import type { ViewGrid } from "../api";
 import { ModelName } from "../model-name";
@@ -7,6 +8,7 @@ import { dimensionNames, displayValue } from "../format";
 import { ExpandButton } from "../components/expand-button";
 import { ContainedImage } from "../contained-image";
 import { OutputCell, type CellView } from "./output-cell";
+import { summarizeJudgment } from "./judge-result-button";
 import { useItemScrollSync } from "./use-item-scroll-sync";
 import type { ReferenceImage } from "../../server/image-settings";
 import {
@@ -14,6 +16,7 @@ import {
   readGridCriteria,
   type ParameterDisplayPart,
 } from "../../shared/grid-display";
+import { variableName } from "../../server/prompt-variables";
 function ResizeHandle({
   axis,
   index,
@@ -38,12 +41,53 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
   const [views, setViews] = useState<
     Record<string, { mode?: CellView; judgeComplete?: boolean }>
   >({});
+  const [gridView, setGridView] = useState<CellView>();
+  function selectGridView(mode: CellView) {
+    setGridView(mode);
+    setViews({});
+  }
+  function cellView(cell: ViewGrid["cells"][number]) {
+    return views[cell.id]?.judgeComplete === (cell.judge?.status === "complete")
+      ? (views[cell.id]?.mode ?? gridView)
+      : gridView;
+  }
   function setView(
     id: string,
     view: { mode?: CellView; judgeComplete?: boolean },
   ) {
     setViews((current) => ({ ...current, [id]: { ...current[id], ...view } }));
   }
+  const cellViews = g.cells.map((cell) => {
+    const criteria = cell.judge
+      ? (cell.judge.criteria ??
+        readGridCriteria(g.input, cell.row, cell.column))
+      : undefined;
+    const judgment =
+      cell.outputReady && cell.judge && criteria
+        ? summarizeJudgment(cell.judge, criteria, g.status)
+        : undefined;
+    const hasThinking = !!(cell.thinking || cell.thinkingURL);
+    const hasOutput =
+      cell.outputReady ||
+      !!(g.input.format === "html" ? cell.previewURL : cell.draft?.trim());
+    const requested =
+      cellView(cell) ??
+      (judgment?.results
+        ? "judgment"
+        : hasThinking &&
+            !cell.outputReady &&
+            cell.status === "running" &&
+            !hasOutput
+          ? "thinking"
+          : "output");
+    const view: CellView =
+      (requested === "thinking" && !hasThinking) ||
+      (requested === "judgment" && !judgment)
+        ? "output"
+        : requested;
+    return { cell, criteria, judgment, hasThinking, view };
+  });
+  const hasThinking = cellViews.some((cell) => cell.hasThinking);
   const [selection, setSelection] = useState<{
     kind: "output" | "reference";
     id: string;
@@ -66,7 +110,13 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
   const returnButton = useRef<HTMLButtonElement>(null);
   const workspace = useRef<HTMLDivElement>(null);
   const scrollSync = useItemScrollSync(workspace);
-  useLayoutEffect(scrollSync.refresh, [g.cells, expandedId, views, scrollSync]);
+  useLayoutEffect(scrollSync.refresh, [
+    g.cells,
+    expandedId,
+    views,
+    gridView,
+    scrollSync,
+  ]);
   function expand(
     kind: "output" | "reference",
     id: string,
@@ -119,9 +169,11 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
   }, [expandedId]);
   const title = (cell: ViewGrid["cells"][number]) => {
     const row =
+      display.rows[cell.row].name ||
       display.rows[cell.row].parts.map(displayValue).join(" · ") ||
       `Case ${cell.row + 1}`;
     const column =
+      display.columns[cell.column].name ||
       display.columns[cell.column].parts.map(displayValue).join(" · ") ||
       `Case ${cell.column + 1}`;
     return `${row} / ${column}`;
@@ -160,8 +212,7 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
             field === null ? null : (
               <span className="variable-axis-field" key={index}>
                 <span>
-                  ${side === "rows" ? "ROW" : "COLUMN"}
-                  {index + 1}: {field.text}
+                  ${variableName(g.input, side, index)}: {field.text}
                 </span>
                 {!!field.images?.length && referencePreviews(field.images)}
               </span>
@@ -189,7 +240,13 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
     );
   }
   function axisLabel(index: number, side: "rows" | "columns") {
-    const { parts } = display[side][index];
+    const { name, parts } = display[side][index];
+    if (name)
+      return (
+        <span className={side === "rows" ? "row-label" : undefined}>
+          {name}
+        </span>
+      );
     if (!parts.length)
       return (
         <span className={side === "rows" ? "row-label" : undefined}>
@@ -242,8 +299,8 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
                     <ResizeHandle axis="rows" index={row} />
                   </th>
                   {display.columns.map((_, column) => {
-                    const cell = g.cells.find(
-                      (c) => c.row === row && c.column === column,
+                    const { cell, criteria, judgment, view } = cellViews.find(
+                      ({ cell }) => cell.row === row && cell.column === column,
                     )!;
                     return (
                       <td
@@ -254,20 +311,11 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
                           cell={cell}
                           format={g.input.format}
                           gridStatus={g.status}
-                          criteria={
-                            cell.judge
-                              ? (cell.judge.criteria ??
-                                readGridCriteria(g.input, row, column))
-                              : undefined
-                          }
+                          criteria={criteria}
+                          judgment={judgment}
                           title={title(cell)}
                           expanded={expanded?.id === cell.id}
-                          view={
-                            views[cell.id]?.judgeComplete ===
-                            (cell.judge?.status === "complete")
-                              ? views[cell.id]?.mode
-                              : undefined
-                          }
+                          view={view}
                           onChangeView={(mode) =>
                             setView(cell.id, {
                               mode,
@@ -310,6 +358,45 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
             </div>
           </article>
         </section>
+      )}
+      {g.input.judge && (
+        <div className="grid-view-bar">
+          <div
+            className="grid-view-actions"
+            role="group"
+            aria-label="Grid view"
+          >
+            {(
+              [
+                ["output", "Outputs", Palette],
+                ["thinking", "Thinking", Brain],
+                ["judgment", "Judge results", Scale],
+              ] as const
+            ).map(([mode, label, Icon]) => {
+              if (mode === "thinking" && !hasThinking) return null;
+              return (
+                <button
+                  key={mode}
+                  type="button"
+                  className="secondary"
+                  aria-pressed={cellViews.every(
+                    (cell) =>
+                      cell.view === mode ||
+                      (mode === "thinking" && !cell.hasThinking),
+                  )}
+                  onClick={() => selectGridView(mode)}
+                >
+                  <Icon aria-hidden="true" />
+                  {label}
+                </button>
+              );
+            })}
+            <button type="button" className="secondary" disabled>
+              <ChartNoAxesColumn aria-hidden="true" />
+              Benchmark results
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

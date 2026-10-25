@@ -4,8 +4,10 @@ import { useEffect, useState, useRef, createContext } from "react";
 import { Link, Outlet, useLocation } from "@tanstack/react-router";
 import { Menu, X, Sun, Moon } from "lucide-react";
 import { isGridSlug } from "../shared/grid-slug";
+import { useFavoriteSynchronization } from "./queries";
 export const GridHeaderTarget = createContext<HTMLDivElement | null>(null);
 export function Layout() {
+  useFavoriteSynchronization();
   // Secondary touch devices and spoofed touch counts do not change mouse navigation.
   const hasTouchscreen =
     navigator.maxTouchPoints > 0 && matchMedia("(pointer: coarse)").matches;

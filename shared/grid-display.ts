@@ -16,6 +16,7 @@ export type ParameterDisplayPart = {
   [K in ParameterId]: { kind: K; value: ParameterValues[K] };
 }[ParameterId];
 export type CaseDisplay = {
+  name?: string;
   parts: ParameterDisplayPart[];
   downloadLabel: string;
 };
@@ -66,7 +67,7 @@ export function gridDimensions(input: GridInput): {
 export function gridDisplay(input: GridInput): GridDisplay {
   const axis = (side: AxisSide): CaseDisplay[] => {
     const kinds = axisParameters(input, side);
-    return input[side].map((_, index) => {
+    return input[side].map((record, index) => {
       const parts = kinds.flatMap((kind) => {
         const value = parameterValue(
           input,
@@ -77,11 +78,15 @@ export function gridDisplay(input: GridInput): GridDisplay {
         );
         return value === undefined ? [] : [part(kind, value)];
       });
+      const name = record.name?.trim();
       return {
+        ...(name ? { name } : {}),
         parts,
-        downloadLabel: parts.length
-          ? parts.map(downloadPart).filter(Boolean).join(" ")
-          : `Case ${index + 1}`,
+        downloadLabel:
+          name ||
+          (parts.length
+            ? parts.map(downloadPart).filter(Boolean).join(" ")
+            : `Case ${index + 1}`),
       };
     });
   };

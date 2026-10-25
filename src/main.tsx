@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import { router } from "./router";
-import { queryClient } from "./queries";
+import { favoriteOwnerKey, queryClient } from "./queries";
 import { ThemeProvider } from "./theme";
 import "./style.css";
 import type { GridListsBootstrap } from "../server/grid-bootstrap";
@@ -15,12 +15,23 @@ declare global {
   }
 }
 
-for (const [kind, pages] of [
-  ["grids", window.__SLOPGRID_GRIDS__?.owned],
-  ["public-grids", window.__SLOPGRID_GRIDS__?.public],
-] as const)
-  for (const { key, data } of pages ?? [])
-    queryClient.setQueryData([kind, key], data);
+if (window.__SLOPGRID_GRIDS__) {
+  const bootstrap = window.__SLOPGRID_GRIDS__;
+  queryClient.setQueryData(["session"], bootstrap.session);
+  const ownerKey = favoriteOwnerKey(bootstrap.session);
+  queryClient.setQueryData(
+    ["favorites", ownerKey, "ids"],
+    new Set(bootstrap.favoriteIds.ids),
+  );
+  for (const { key, data } of bootstrap.favorites)
+    queryClient.setQueryData(["favorites", ownerKey, "pages", key], data);
+  for (const [kind, pages] of [
+    ["grids", bootstrap.owned],
+    ["public-grids", bootstrap.public],
+  ] as const)
+    for (const { key, data } of pages)
+      queryClient.setQueryData([kind, key], data);
+}
 delete window.__SLOPGRID_GRIDS__;
 
 void registerPwa().then(() => {

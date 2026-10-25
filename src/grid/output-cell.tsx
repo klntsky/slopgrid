@@ -26,7 +26,7 @@ import { useOffline } from "../pwa";
 import {
   JudgeResultButton,
   JudgeResults,
-  summarizeJudgment,
+  type JudgmentSummary,
 } from "./judge-result-button";
 export type CellView = "output" | "raw" | "thinking" | "judgment";
 export function OutputCell({
@@ -34,6 +34,7 @@ export function OutputCell({
   format,
   gridStatus,
   criteria,
+  judgment,
   title,
   expanded = false,
   view,
@@ -44,9 +45,10 @@ export function OutputCell({
   format: GridInput["format"];
   gridStatus: ViewGrid["status"];
   criteria?: Criterion[];
+  judgment?: JudgmentSummary;
   title: string;
   expanded?: boolean;
-  view?: CellView;
+  view: CellView;
   onChangeView?: (view: CellView) => void;
   onToggleExpand?: (button: HTMLButtonElement) => void;
 }) {
@@ -70,25 +72,14 @@ export function OutputCell({
   const hasThinking = !!(cell.thinking || cell.thinkingURL);
   const hasOutput =
     complete || !!(format === "html" ? cell.previewURL : cell.draft?.trim());
-  const judgment =
-    complete && cell.judge && criteria
-      ? summarizeJudgment(cell.judge, criteria, gridStatus)
-      : undefined;
-  const activeView =
-    view ??
-    (judgment?.results
-      ? "judgment"
-      : hasThinking && !complete && cell.status === "running" && !hasOutput
-        ? "thinking"
-        : "output");
-  const raw = activeView === "raw";
-  const thinking = hasThinking && activeView === "thinking";
-  const judging = !!judgment && activeView === "judgment";
+  const raw = view === "raw";
+  const thinking = hasThinking && view === "thinking";
+  const judging = !!judgment && view === "judgment";
   const expandable =
     complete || cell.status === "running" || thinking || judging || expanded;
   const expandLabel = `${expanded ? "Collapse" : "Expand"} ${judging ? "judgment" : thinking ? "thinking" : formatNames[format]}`;
   function toggleView(mode: CellView) {
-    onChangeView?.(activeView === mode ? "output" : mode);
+    onChangeView?.(view === mode ? "output" : mode);
   }
   return (
     <article

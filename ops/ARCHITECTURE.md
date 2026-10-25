@@ -36,6 +36,16 @@ deployment. Its evidence describes migration success without retaining copied
 private records. Runtime backup and offline transfer respect the application's
 shared-content ownership boundary.
 
+An explicit staging data replacement stays inside the deployment admission
+boundary. Operations drains and backs up staging before installing a privately
+validated production copy. The production boundary permits read-only database
+backup and independent file reads without stopping its runtime. Application
+initialization owns migration, interrupted-work recovery, and credential
+decryption on the copy. Only the storage encryption secret crosses into staging
+configuration; staging retains its own network and authentication settings.
+The deployment fence protects failures during the separate storage and
+configuration replacements; it does not make them a single atomic transaction.
+
 ## Release and process lifecycle
 
 Releases are immutable. The pipeline retains frontend assets needed by open

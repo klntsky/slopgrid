@@ -2,7 +2,7 @@ import { Router } from "express";
 import { startOAuth, validOAuth, codeChallenge } from "../oauth.js";
 import type { Store } from "../store.js";
 import type { Provider } from "../provider.js";
-import type { SessionReader } from "../session.js";
+import { presentSession, type SessionReader } from "../session.js";
 import type { RateLimiter } from "../rate-limit.js";
 
 export function createAuthRoutes({
@@ -22,11 +22,7 @@ export function createAuthRoutes({
 }) {
   const app = Router();
   app.get("/api/session", (req, res) => {
-    const s = session(req, res);
-    res.json({
-      connected: !!s.key,
-      user: s.userId ? (store.user(s.userId) ?? null) : null,
-    });
+    res.json(presentSession({ store, viewer: session(req, res) }));
   });
   app.delete("/api/session/key", (req, res) => {
     const s = session(req, res);

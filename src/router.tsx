@@ -15,6 +15,7 @@ import { gridPageNumber } from "../shared/grid-page";
 import { isGridSlug } from "../shared/grid-slug";
 import { api } from "./api";
 import { ErrorMessage } from "./components/feedback-message";
+import { prepareFavoritePage, queryClient } from "./queries";
 const rootRoute = createRootRoute({ component: Layout });
 const createRoutePage = createRoute({
   getParentRoute: () => rootRoute,
@@ -25,6 +26,12 @@ const homeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
   component: Home,
+  loaderDeps: ({ search }) => ({ favoritesPage: search.favoritesPage ?? 1 }),
+  loader: {
+    staleReloadMode: "blocking",
+    handler: ({ deps }) =>
+      prepareFavoritePage({ cache: queryClient, page: deps.favoritesPage }),
+  },
   validateSearch: (
     search: Record<string, unknown>,
   ): { yourPage?: number; publicPage?: number; favoritesPage?: number } => {

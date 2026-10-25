@@ -351,6 +351,39 @@ untouched.
 
 ## Data administration
 
+### Replace staging with production data once
+
+```sh
+./deploy.sh staging REV --copy-production-data --plan
+./deploy.sh staging REV --copy-production-data --mode machinery
+```
+
+This explicitly replaces staging's database, outputs, and encryption key with
+an independent production snapshot. It is a one-time operation, not ongoing
+synchronization. Choose a staging revision that supports production's current
+storage format. The flag rejects soft mode; auto mode selects machinery.
+
+The pipeline holds the deployment lock, drains and stops staging, and retains
+its existing data and configuration in the normal backup. Production stays
+running. A read-only SQLite backup and independent copies of all outputs,
+including hidden content, are prepared privately. The candidate migrates and
+validates that copy and checks saved-session decryption before installation.
+Staging keeps its own origin, OAuth configuration, listener, and process names.
+Its encryption key changes so copied sessions and provider credentials work.
+Interrupted copied work is recovered without starting inference.
+
+The database and output tree are separate snapshots, not an atomic pair.
+Changing or unsafe files can reject the copy. Installation is not atomic across
+storage and configuration; a failure retains the deployment fence and staging
+backup for operator reconciliation. No automatic rollback is attempted.
+`--skip-tests` skips suites, not copying, validation, backup, or restart.
+
+After staging is ready, deploy a demo normally to take a fresh staging clone.
+Do not use `--reuse-demo` when the intention is to replace old demo data with
+the refreshed staging data.
+
+### Other data administration
+
 Use repeated `staging --discard-grid ID` arguments to remove explicitly selected
 staging grids after validation, drain, and backup. This requires machinery mode
 and retains unselected grids and shared content.

@@ -13,7 +13,12 @@ import {
 import type { GridInput } from "../server/domain";
 import type { GridListPage } from "../server/grid-listing";
 import type { FavoriteIds, FavoriteState } from "../server/favorites";
-import { api, ApiError, type SessionInfo } from "./api";
+import type { SessionInfo } from "../server/session";
+import { api, ApiError } from "./api";
+import {
+  publishFavoriteChange,
+  subscribeFavoriteChanges,
+} from "./favorite-changes";
 export { queryClient } from "./query-client";
 function gridListOptions(kind: "grids" | "public-grids", page: number) {
   return {
@@ -45,11 +50,14 @@ function useGridList(kind: "grids" | "public-grids", page: number) {
 export function useGrids(page = 1) {
   return useGridList("grids", page);
 }
-export function useSession() {
-  return useQuery({
+function sessionOptions() {
+  return {
     queryKey: ["session"],
     queryFn: () => api<SessionInfo>("/session"),
-  });
+  };
+}
+export function useSession() {
+  return useQuery(sessionOptions());
 }
 export function useConnection() {
   const key = useOpenRouterKey();
@@ -69,9 +77,13 @@ export function usePublicGrids(page = 1) {
   return useGridList("public-grids", page);
 }
 
+export function favoriteOwnerKey(session: SessionInfo) {
+  return session.user?.id ?? "anonymous";
+}
+
 function useFavoriteOwnerKey() {
   const session = useSession();
-  return session.isSuccess ? (session.data.user?.id ?? "anonymous") : undefined;
+  return session.data ? favoriteOwnerKey(session.data) : undefined;
 }
 
 function favoritePageOptions(ownerKey: string | undefined, page: number) {
@@ -89,11 +101,64 @@ function favoritePageOptions(ownerKey: string | undefined, page: number) {
   };
 }
 
+export async function prepareFavoritePage({
+  cache,
+  page,
+}: {
+  cache: QueryClient;
+  page: number;
+}) {
+  if (!cache.getQueryData<SessionInfo>(["session"]))
+    await cache.prefetchQuery(sessionOptions());
+  const session = cache.getQueryData<SessionInfo>(["session"]);
+  if (!session) return;
+  const options = favoritePageOptions(favoriteOwnerKey(session), page);
+  await cache.prefetchQuery(options);
+}
+
 export function invalidateFavoritePages(cache: QueryClient) {
   return cache.invalidateQueries({
     predicate: ({ queryKey }) =>
       queryKey[0] === "favorites" && queryKey[2] === "pages",
   });
+}
+
+async function refreshFavorites({
+  cache,
+  signal,
+}: {
+  cache: QueryClient;
+  signal?: AbortSignal;
+}) {
+  if (signal?.aborted) return;
+  await cache.cancelQueries({ queryKey: ["favorites"] });
+  if (signal?.aborted) return;
+  await cache.invalidateQueries({ queryKey: ["favorites"] });
+}
+
+export function useFavoriteSynchronization() {
+  const cache = useQueryClient();
+  useEffect(() => {
+    const lifetime = new AbortController();
+    const refresh = () => {
+      void refreshFavorites({ cache, signal: lifetime.signal });
+    };
+    const visible = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    const unsubscribe = subscribeFavoriteChanges(refresh);
+    window.addEventListener("focus", refresh);
+    window.addEventListener("pageshow", refresh);
+    document.addEventListener("visibilitychange", visible);
+    refresh();
+    return () => {
+      lifetime.abort();
+      unsubscribe();
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("pageshow", refresh);
+      document.removeEventListener("visibilitychange", visible);
+    };
+  }, [cache]);
 }
 
 export function useFavoriteIds() {
@@ -162,21 +227,10 @@ export function useSetFavorite(gridId: string) {
       );
     },
     onMutate: () => cache.cancelQueries({ queryKey: idsKey }),
-    onSuccess: async (saved) => {
-      await cache.cancelQueries({ queryKey: idsKey });
-      cache.setQueryData<ReadonlySet<string>>(idsKey, (previous) => {
-        if (!previous || previous.has(saved.gridId) === saved.starred)
-          return previous;
-        const next = new Set(previous);
-        if (saved.starred) next.add(saved.gridId);
-        else next.delete(saved.gridId);
-        return next;
-      });
-    },
+    onSuccess: publishFavoriteChange,
     onSettled: async (_data, error) => {
       await Promise.all([
-        cache.invalidateQueries({ queryKey: idsKey }),
-        cache.invalidateQueries({ queryKey: ["favorites", ownerKey, "pages"] }),
+        refreshFavorites({ cache }),
         ...(error instanceof ApiError && error.status === 401
           ? [cache.invalidateQueries({ queryKey: ["session"] })]
           : []),

@@ -126,6 +126,14 @@ async function main() {
               options.tests === "skip"
                 ? "skip test suites explicitly"
                 : `run ${options.tests} test suites locally`,
+              ...(options.copyProductionData
+                ? [
+                    "drain and stop staging, then retain a backup of its data and configuration",
+                    "take a read-only production SQLite backup and copy all outputs into private scratch storage",
+                    "migrate and validate the copy before replacing staging storage and its encryption key",
+                    "restart staging with its own origin, OAuth configuration and process names",
+                  ]
+                : []),
               ...(["validate", "rehearse"].includes(options.target)
                 ? []
                 : [`deploy ${options.target}`]),
@@ -133,6 +141,7 @@ async function main() {
             mode: options.mode,
             discardGrids: options.discardGrids,
             recoverFailedStart: options.recoverFailedStart,
+            copyProductionData: options.copyProductionData === true,
             config: { host: config.host, remoteRoot: config.remoteRoot },
             note: ["validate", "rehearse"].includes(options.target)
               ? "No deployment lock, persistent runtime preparation, promotion or PM2 operations. Plan uploads no files and changes no runtime processes."

@@ -10,7 +10,7 @@ export type CommonParameterId = Exclude<ParameterId, "variable">;
 export type AxisSide = "rows" | "columns";
 export type ParameterConfiguration = Pick<
   GridInput,
-  "parameters" | "rows" | "columns" | "caseAxes"
+  "parameters" | "rows" | "columns" | "caseAxes" | "variableNames"
 >;
 
 export type ValidationIssue = {

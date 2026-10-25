@@ -17,6 +17,7 @@ import { CriteriaEditor } from "./criteria-editor";
 import {
   addCaseAction,
   caseValueAction,
+  variableRenameError,
   type InputAction,
   type ParameterSetter,
 } from "./change-axis";
@@ -26,6 +27,8 @@ import { ScalarControl } from "./scalar-control";
 import { tooltipRef } from "../components/use-tooltip";
 import { ReorderHandle } from "./reorder-handle";
 import { ValidationFeedback, ValidationScope } from "./validation-feedback";
+import { EditableTitle } from "../components/editable-title";
+import { variableName } from "../../server/prompt-variables";
 import "./case-table.css";
 
 type LayoutField =
@@ -185,7 +188,7 @@ export function GridLayoutTable({
     : entries.map(() => (chatInput ? 420 : 300));
   const requiredWidth = `calc(var(--case-label-width) + ${columnWidths.reduce((sum, width) => sum + width, 0)}px)`;
   function token(side: AxisSide, index: number) {
-    return `$${side === "rows" ? "ROW" : "COLUMN"}${index + 1}`;
+    return `$${variableName(input, side, index)}`;
   }
   function sideName(side: AxisSide) {
     return side === "rows" ? "row" : "column";
@@ -217,7 +220,15 @@ export function GridLayoutTable({
               setDragTarget(target);
             }}
           />
-          <span>Case {index + 1}</span>
+          <EditableTitle
+            value={entries[index].name ?? ""}
+            placeholder={`Case ${index + 1}`}
+            label={`${side === "rows" ? "Row" : "Column"} case ${index + 1} name`}
+            editLabel={`Rename ${name} case ${index + 1}`}
+            onSave={(name) =>
+              onAction({ type: "rename-case", side, index, name })
+            }
+          />
           <CaseHeaderRemove
             label={`Remove ${name} case ${index + 1}`}
             tooltip={
@@ -261,7 +272,38 @@ export function GridLayoutTable({
         <div
           className={`layout-parameter-heading${vertical ? " row-label" : ""}`}
         >
-          <span>{label}</span>
+          {field.parameter === "variable" ? (
+            <EditableTitle
+              value={input.variableNames?.[side]?.[field.index] ?? ""}
+              icon={
+                input.variableNames?.[side]?.[field.index] ? "$" : undefined
+              }
+              trim={false}
+              placeholder={label}
+              label={`${side === "rows" ? "Row" : "Column"} variable ${field.index + 1} name`}
+              editLabel={`Rename ${sideName(side)} variable ${field.index + 1}`}
+              onSave={(value) => {
+                const name = value.replace(/[a-z]/g, (letter) =>
+                  letter.toUpperCase(),
+                );
+                const error = variableRenameError(
+                  input,
+                  side,
+                  field.index,
+                  name,
+                );
+                if (error) throw new Error(error);
+                onAction({
+                  type: "rename-variable",
+                  side,
+                  index: field.index,
+                  name,
+                });
+              }}
+            />
+          ) : (
+            <span>{label}</span>
+          )}
           {field.parameter === "variable" ? (
             <CaseHeaderRemove
               label={`Remove ${label}`}

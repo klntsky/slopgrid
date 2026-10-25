@@ -26,8 +26,10 @@
     Configure `OPS_STAGING_APPLICATION_ROOT` and `OPS_STAGING_CONFIG` alongside the staging credential-source settings in the ignored repository-root `.env`.
     Use `--skip-data-cloning` only for an explicit fresh-data deployment.
     `--skip-tests` does not skip required data cloning.
-    Always update an existing demo for the task after changes and before reporting completion.
+    While the task PR is open, update its existing demo after changes and before reporting completion.
     Preserve its data and browser sessions through the retained-demo workflow at the same URL.
+    Use one demo and one PR per branch. While the PR is open, update the existing branch demo and PR instead of creating additional ones.
+    After the PR is merged, discard its demo. Do not update or redeploy it.
 
 12. Keep current product requirements, including UI behavior and visible text, in PRODUCT.md. Structure requirements with meaningful numbered items and bullets for human readers. Specify functional behavior rather than lists of things not to add. Keep architectural responsibilities and system boundaries in ARCHITECTURE.md. Implementation details belong in the code and do not need documentation; remove them from product requirements without moving them to another document. DEVELOPMENT.md is the operational guide for developers: setup, configuration, local execution, build and test commands, credentials, debugging, and deployment operations. Keep test scenarios and coverage descriptions in test source rather than Markdown. Keep agent instructions and workflow rules in AGENTS.md, and keep README.md within the introduction scope defined above. Do not duplicate product requirements in ARCHITECTURE.md or DEVELOPMENT.md; link to PRODUCT.md where context is needed. Update the appropriate document when a requirement changes, and remove superseded requirements and their references.
 
@@ -36,3 +38,5 @@
 14. Always migrate old persistent data to the current canonical format before normal runtime use. Never add runtime adapters, dual-format readers, or legacy compatibility branches for old data. Keep old-format handling confined to the migration boundary, and remove obsolete runtime code and callers after the migration.
 
 15. Use test-driven development for meaningful behavior changes. Assert observable behavior across the affected responsibility boundary, with real application code, storage, transport, and browser behavior where relevant. Control external providers and faults rather than replacing application methods. Use accessible controls and explicit synchronization; keep test state, ports, and data isolated. Avoid static-copy assertions, trivial tests, and tests that merely mirror implementation. Test scenarios and coverage belong in test source; document only how developers operate the test tooling in DEVELOPMENT.md.
+
+16. Keep the test suite small while preserving distinct behavior and failure coverage. Consolidate overlapping scenarios and use representative combinations for shared behavior instead of repeating full Cartesian matrices. Retain focused tests for distinct format, transport, storage and layout branches, and record coverage rationale beside the affected tests.

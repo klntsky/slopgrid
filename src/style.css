@@ -2158,6 +2158,12 @@ header {
 .favorite-grids {
   margin-top: 40px;
 }
+.grid-list-footprint {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  overflow-anchor: none;
+}
 .grid-pagination {
   display: flex;
   align-items: center;
