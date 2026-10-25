@@ -196,6 +196,27 @@ export function analyzeGridCompatibility(
         modelFailure.message,
       );
     if (cell.model && !modelFailure) {
+      if (input.format === "chat-template" && model?.text !== true)
+        issue(
+          [scalarOrigin(input, cell, "model")],
+          model?.text === false ? "unsupported" : "unknown",
+          true,
+          "Chat completion requires a model that supports text output.",
+        );
+      if (
+        input.format === "chat-template" &&
+        model?.chatImageOutput &&
+        cell.messages
+          ?.slice(0, -1)
+          .some((message) => message.role === "unfilled") &&
+        model.imageInput !== true
+      )
+        issue(
+          [scalarOrigin(input, cell, "model")],
+          "unsupported",
+          true,
+          "The selected model must support image inputs for generated chat history.",
+        );
       if (generator.consumed.size && model?.imageInput !== true)
         issue(
           [scalarOrigin(input, cell, "model"), ...generator.origins],
@@ -258,7 +279,9 @@ export function analyzeGridCompatibility(
     const judgeIssue = judgeModelIssue(
       judge,
       input.format,
-      generator.consumed.size > 0 || criterionImages.size > 0,
+      generator.consumed.size > 0 ||
+        criterionImages.size > 0 ||
+        (input.format === "chat-template" && model?.chatImageOutput === true),
     );
     if (judgeIssue) {
       const origins = [scalarOrigin(input, cell, "judge_model")];

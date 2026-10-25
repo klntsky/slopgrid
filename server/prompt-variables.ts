@@ -193,9 +193,9 @@ export function promptVariableIssues(input: TemplateInput): ValidationIssue[] {
             });
             continue;
           }
-          if (role !== "user" && field.images?.length) {
+          if (role !== "user" && role !== "assistant" && field.images?.length) {
             const message =
-              "Variable images can only be attached to user messages.";
+              "Variable images can only be attached to user and assistant messages.";
             issues.push(
               { message, path },
               {

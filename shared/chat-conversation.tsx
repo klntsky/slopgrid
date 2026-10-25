@@ -1,7 +1,9 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { LoaderCircle } from "lucide-react";
-import type { FilledChatMessage } from "../server/domain.js";
-import type { ReferenceImage } from "../server/image-settings.js";
+import type {
+  ChatImage as ChatImageAttachment,
+  FilledChatMessage,
+} from "../server/domain.js";
 import { MarkdownContent } from "./markdown.js";
 
 function ChatImage({
@@ -9,7 +11,7 @@ function ChatImage({
   src,
   showImageLoader,
 }: {
-  image: ReferenceImage;
+  image: ChatImageAttachment;
   src: string;
   showImageLoader: boolean;
 }) {
@@ -60,11 +62,14 @@ function ChatImage({
 
 export function ChatConversation({
   messages,
-  imageSource = (image) => `/api/references/${encodeURIComponent(image.id)}`,
+  imageSource = (image) =>
+    "kind" in image
+      ? image.dataUrl
+      : `/api/references/${encodeURIComponent(image.id)}`,
   showImageLoader = true,
 }: {
   messages: FilledChatMessage[];
-  imageSource?: (image: ReferenceImage) => string;
+  imageSource?: (image: ChatImageAttachment) => string;
   showImageLoader?: boolean;
 }) {
   return (
@@ -72,13 +77,13 @@ export function ChatConversation({
       {messages.map((message, index) => (
         <li className="chat-message-row" key={index}>
           <div className="chat-bubble" data-role={message.role}>
-            {message.role === "user" && !!message.images?.length && (
+            {!!message.images?.length && (
               <div className="chat-message-images">
                 {message.images.map((image, imageIndex) => {
                   const src = imageSource(image);
                   return (
                     <ChatImage
-                      key={`${image.id}-${imageIndex}-${src}`}
+                      key={`${imageIndex}-${src}`}
                       image={image}
                       src={src}
                       showImageLoader={showImageLoader}

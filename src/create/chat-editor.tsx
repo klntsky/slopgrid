@@ -10,14 +10,11 @@ import {
 import { DeletableInput } from "./deletable-input";
 import { ReorderHandle } from "./reorder-handle";
 import { ImageList, ImagePicker } from "./image-input";
-import { tooltipRef } from "../components/use-tooltip";
 import {
   ValidationFeedback,
   ValidationField,
   ValidationScope,
 } from "./validation-feedback";
-
-const imageRoleHint = "Remove images before changing this message’s role.";
 
 export function ChatEditor({
   messages,
@@ -127,29 +124,22 @@ export function ChatEditor({
                   setDragTarget(target);
                 }}
               />
-              <span
-                className="chat-role-hint"
-                ref={tooltipRef}
-                data-tooltip={
-                  message.images?.length ? imageRoleHint : undefined
-                }
-                tabIndex={message.images?.length ? 0 : undefined}
-              >
+              <span className="chat-role-hint">
                 <button
                   type="button"
                   className={`model-badge chat-role chat-role-${message.role}`}
                   aria-label={`Message ${index + 1} role: ${message.role}`}
-                  disabled={reading || !!message.images?.length}
-                  aria-describedby={
-                    message.images?.length
-                      ? `${descriptionId}-${index}`
-                      : undefined
-                  }
+                  disabled={reading}
                   onClick={() => {
-                    if (reads.current || message.images?.length) return;
+                    if (reads.current) return;
                     update(index, (current) => {
-                      const role =
-                        roles[(roles.indexOf(current.role) + 1) % roles.length];
+                      const role = current.images?.length
+                        ? current.role === "user"
+                          ? "assistant"
+                          : "user"
+                        : roles[
+                            (roles.indexOf(current.role) + 1) % roles.length
+                          ];
                       return {
                         role,
                         ...(role === "unfilled" && { content: "" }),
@@ -159,32 +149,28 @@ export function ChatEditor({
                 >
                   {message.role}
                 </button>
-                {!!message.images?.length && (
-                  <span className="sr-only" id={`${descriptionId}-${index}`}>
-                    {imageRoleHint}
-                  </span>
-                )}
               </span>
             </div>
-            {message.role === "user" && !!message.images?.length && (
-              <div className="chat-message-images">
-                <ImageList
-                  images={message.images}
-                  disabled={reading}
-                  removeLabel={(image) =>
-                    `Remove ${image.name} from message ${index + 1}`
-                  }
-                  onRemove={(imageIndex) => {
-                    if (reads.current) return;
-                    update(index, (current) => ({
-                      images: current.images?.filter(
-                        (_, i) => i !== imageIndex,
-                      ),
-                    }));
-                  }}
-                />
-              </div>
-            )}
+            {(message.role === "user" || message.role === "assistant") &&
+              !!message.images?.length && (
+                <div className="chat-message-images">
+                  <ImageList
+                    images={message.images}
+                    disabled={reading}
+                    removeLabel={(image) =>
+                      `Remove ${image.name} from message ${index + 1}`
+                    }
+                    onRemove={(imageIndex) => {
+                      if (reads.current) return;
+                      update(index, (current) => ({
+                        images: current.images?.filter(
+                          (_, i) => i !== imageIndex,
+                        ),
+                      }));
+                    }}
+                  />
+                </div>
+              )}
             <ValidationField>
               {(validation) => (
                 <>
@@ -212,7 +198,8 @@ export function ChatEditor({
                         }}
                       />
                     )}
-                    {message.role === "user" && (
+                    {(message.role === "user" ||
+                      message.role === "assistant") && (
                       <ImagePicker
                         pasteTarget={`${descriptionId}-message-${index}`}
                         accessibleLabel={`Add images to message ${index + 1}`}

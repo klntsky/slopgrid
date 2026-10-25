@@ -25,8 +25,8 @@ export async function fillChatTemplate(
     budget: TextBudget,
     onChunk: (progress: InferenceProgress) => void,
   ) => Promise<{
-    files: Record<string, string | Uint8Array>;
     usage?: Cell["usage"];
+    assistant: FilledChatMessage;
   }>,
   onChunk: (progress: InferenceProgress) => void,
   signal?: AbortSignal,
@@ -51,7 +51,11 @@ export async function fillChatTemplate(
       latest = progress;
       const messages: FilledChatMessage[] = [
         ...history,
-        { role: "assistant", content: progress.text },
+        {
+          role: "assistant",
+          content: progress.text,
+          ...(progress.images?.length ? { images: progress.images } : {}),
+        },
       ];
       onChunk({
         text: JSON.stringify(messages, null, 2),
@@ -63,8 +67,8 @@ export async function fillChatTemplate(
         currentCallCostUsd: progress.estimatedUsage?.costUsd,
       });
     });
-    const content = result.files["index.md"];
-    if (typeof content !== "string")
+    const assistant = result.assistant;
+    if (!assistant || (!assistant.content.trim() && !assistant.images?.length))
       throw new Error("Missing chat completion output.");
     const usage = result.usage;
     const costUsd =
@@ -85,7 +89,7 @@ export async function fillChatTemplate(
       costUsd,
     });
     callsRemaining--;
-    history.push({ role: "assistant", content });
+    history.push(assistant);
     thinking += latest?.thinking ?? "";
   }
   const text = JSON.stringify(history, null, 2);

@@ -3,11 +3,19 @@ import type { ReferenceInputs } from "./image-references.js";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { z } from "zod";
-import type { GenerationParameters, GridInput } from "./domain.js";
+import type {
+  FilledChatMessage,
+  GenerationParameters,
+  GridInput,
+} from "./domain.js";
 import type { TextBudget } from "./generation-budget.js";
 import { instruction, websiteSchema } from "./output-format.js";
 import { canonical } from "../shared/canonical.js";
-import { chatMessages } from "./chat-messages.js";
+import {
+  chatMessages,
+  chatWireMessages,
+  type ReplayDetails,
+} from "./chat-messages.js";
 
 const dependencies = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf8"),
@@ -15,7 +23,7 @@ const dependencies = JSON.parse(
 // Bump the local revision when adapter semantics change without an SDK update.
 const adapterVersion = `1/ai:${dependencies.ai}/openrouter:${dependencies["@openrouter/ai-sdk-provider"]}`;
 export type SingleOutputFormat = Exclude<GridInput["format"], "chat-template">;
-function common(cell: GenerationParameters) {
+function common(cell: Pick<GenerationParameters, "model" | "prompt">) {
   return {
     adapterVersion,
     model: cell.model,
@@ -43,79 +51,29 @@ export function prepareImageInference(
 }
 export function prepareTextInference(
   format: Exclude<GridInput["format"], "image">,
-  cell: GenerationParameters,
+  cell: Omit<GenerationParameters, "messages"> & {
+    messages?: (
+      NonNullable<GenerationParameters["messages"]>[number] | FilledChatMessage
+    )[];
+  },
   budget: TextBudget,
   structured: boolean,
   cache?: { sessionId: string; previousPrefixLength: number },
   references?: ReferenceInputs,
+  chatImageOutput = false,
+  replay?: ReadonlyMap<number, ReplayDetails>,
 ) {
   const messages = cell.messages
     ? chatMessages(cell.messages, references)
     : undefined;
-  // OpenRouter 3.1.0's convertToOpenRouterChatMessages flattens assistant text
-  // parts (dropping part providerOptions) and puts message cacheControl beside
-  // content, not on a content block. Native providerOptions therefore cannot
-  // mark our previous-prefix and final boundaries as documented content blocks;
-  // request-level automatic caching does not express both explicit boundaries.
-  // extraBody.messages replaces the whole SDK message array, so encode image
-  // parts here too. Keep this wire-only adaptation out of the saved transcript.
-  let firstImage = -1;
-  let lastImage = -1;
-  if (cache && messages)
-    for (const [index, message] of messages.entries())
-      if (
-        Array.isArray(message.content) &&
-        message.content.some((part) => part.type === "file")
-      ) {
-        if (firstImage < 0) firstImage = index;
-        lastImage = index;
-      }
-  const cachedMessages =
-    cache &&
-    messages?.map((message, index) => {
-      const content =
-        typeof message.content === "string"
-          ? message.content
-          : message.content.map((part, i, parts) =>
-              part.type === "text"
-                ? part
-                : {
-                    type: "image_url" as const,
-                    image_url: {
-                      url: `data:${part.mediaType};base64,${part.data.toString("base64")}`,
-                    },
-                    // Two image checkpoints leave room for both text boundaries.
-                    ...((index === firstImage || index === lastImage) &&
-                      parts[i + 1]?.type !== "file" && {
-                        cache_control: { type: "ephemeral" as const },
-                      }),
-                  },
-            );
-      const boundary =
-        index === messages.length - 1 ||
-        index === cache.previousPrefixLength - 1;
-      return {
-        role: message.role,
-        content: !boundary
-          ? content
-          : typeof content === "string"
-            ? [
-                {
-                  type: "text" as const,
-                  text: content,
-                  cache_control: { type: "ephemeral" as const },
-                },
-              ]
-            : content.map((part, i) =>
-                i === content.length - 1
-                  ? { ...part, cache_control: { type: "ephemeral" as const } }
-                  : part,
-              ),
-      };
-    });
+  const wireMessages =
+    format === "chat-template" && messages
+      ? chatWireMessages(messages, cache, replay)
+      : undefined;
   return {
     ...common(cell),
     format: format === "chat-template" ? ("markdown" as const) : format,
+    chat: format === "chat-template",
     pricing: budget.pricing,
     text: {
       messages,
@@ -124,11 +82,14 @@ export function prepareTextInference(
       schema: structured ? z.toJSONSchema(websiteSchema) : undefined,
       options: {
         extraBody: {
-          modalities: ["text"],
+          modalities:
+            format === "chat-template" && chatImageOutput
+              ? ["text", "image"]
+              : ["text"],
           ...(cache && {
             session_id: cache.sessionId,
           }),
-          ...(cachedMessages && { messages: cachedMessages }),
+          ...(wireMessages && { messages: wireMessages }),
           ...(cell.effort !== "default"
             ? {
                 reasoning:
@@ -148,42 +109,39 @@ export type PreparedInference =
   | ReturnType<typeof prepareImageInference>;
 export function inferenceSignature(prepared: PreparedInference): string {
   if (prepared.format !== "image") {
-    const { pricing: _estimation, ...request } = prepared;
+    const { pricing: _estimation, chat, ...request } = prepared;
     const { maxOutputTokens: _limit, ...text } = request.text;
     const history = text.messages;
-    // A single plain user message is the same request as the former prompt input.
-    const messages =
+    const singlePromptMessage =
       history?.length === 1 &&
       history[0].role === "user" &&
-      history[0].content === request.prompt
-        ? undefined
-        : history?.map((message) =>
-            typeof message.content === "string"
-              ? message
-              : {
-                  ...message,
-                  content: message.content.map((part) =>
-                    part.type === "file"
-                      ? {
-                          type: part.type,
-                          mediaType: part.mediaType,
-                          sha256: createHash("sha256")
-                            .update(part.data)
-                            .digest("hex"),
-                        }
-                      : part,
-                  ),
-                },
-          );
-    // Explicit text-only output is equivalent to the adapter's former default.
-    // Keep historical request identities without rewriting saved provenance.
-    const { modalities, ...body } = text.options.extraBody;
-    const extraBody =
-      modalities?.length === 1 && modalities[0] === "text"
-        ? body
-        : text.options.extraBody;
+      history[0].content === request.prompt;
+    const messages = singlePromptMessage
+      ? undefined
+      : history?.map((message) =>
+          typeof message.content === "string"
+            ? message
+            : {
+                ...message,
+                content: message.content.map((part) =>
+                  part.type === "file"
+                    ? {
+                        type: part.type,
+                        mediaType: part.mediaType,
+                        sha256: createHash("sha256")
+                          .update(part.data)
+                          .digest("hex"),
+                      }
+                    : part,
+                ),
+              },
+        );
+    const { modalities, messages: _wire, ...body } = text.options.extraBody;
+    const textOnly = modalities?.length === 1 && modalities[0] === "text";
+    const extraBody = textOnly ? body : { ...body, modalities };
     return digest({
       ...request,
+      ...(chat && { chat: true }),
       text: {
         ...text,
         messages,
@@ -215,7 +173,7 @@ export function templateSignature(
   return digest({
     ...common(cell),
     format: "chat-template",
-    templateVersion: 4,
+    templateVersion: 5,
     effort: cell.effort,
     messages: cell.messages?.map(({ role, content, images }) => ({
       role,

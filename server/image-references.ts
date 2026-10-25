@@ -3,7 +3,12 @@ import { readFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { imageSize } from "image-size";
-import type { ChatMessage, GridInput, WorkflowTask } from "./domain.js";
+import type {
+  ChatMessage,
+  FilledChatMessage,
+  GridInput,
+  WorkflowTask,
+} from "./domain.js";
 import { generatorInputEntries } from "./generator-input.js";
 import type { ReferenceImage } from "./image-settings.js";
 import { readChatOutput } from "../shared/chat-output.js";
@@ -191,10 +196,19 @@ export function createImageReferences(
         : {}),
     };
   }
-  function messages<T extends ChatMessage>(messages: T[] | undefined) {
+  function messages(
+    messages: ChatMessage[] | undefined,
+  ): ChatMessage[] | undefined;
+  function messages(messages: FilledChatMessage[]): FilledChatMessage[];
+  function messages(messages: (ChatMessage | FilledChatMessage)[] | undefined) {
     return messages?.map((message) =>
       message.images
-        ? { ...message, images: message.images.map(hydrate) }
+        ? {
+            ...message,
+            images: message.images.map((image) =>
+              "kind" in image ? image : hydrate(image),
+            ),
+          }
         : message,
     );
   }

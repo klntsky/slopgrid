@@ -5,6 +5,7 @@ import {
   type GridDraftInput,
 } from "../../server/domain";
 import { type ReferenceImage } from "../../server/image-settings";
+import { modelAliasResolver } from "../../server/model-alias";
 import {
   defaultGridDraft,
   axisParameters,
@@ -170,7 +171,14 @@ function selectDraftFormat(
     const source = input.parameters[parameter];
     const compatible = (value: string | undefined) => {
       if (!value) return true;
-      const model = modelCatalog.find((model) => model.id === value);
+      const catalog = new Map(modelCatalog.map((model) => [model.id, model]));
+      let id: string;
+      try {
+        id = modelAliasResolver(catalog)(value);
+      } catch {
+        return false;
+      }
+      const model = catalog.get(id);
       if (!model) return true;
       // Missing structured-output metadata is not evidence of incompatibility.
       if (parameter === "judge_model" && model.structuredOutputs === undefined)

@@ -153,19 +153,34 @@ export function createOutputRoutes(
     }
     const file = store.files.path(output.artifactId, filename);
     if (!file) return res.sendStatus(404);
-    if (output.format === "chat-template")
-      return res
-        .type(mediaType)
-        .send(
-          JSON.stringify(
-            withChatImages(
-              readChatOutput(readFileSync(file, "utf8")),
-              output.messages,
-            ),
-            null,
-            2,
-          ),
-        );
+    if (output.format === "chat-template") {
+      const messages = withChatImages(
+        readChatOutput(readFileSync(file, "utf8")),
+        output.messages,
+      );
+      const load = store.references.loader();
+      const portable = await Promise.all(
+        messages.map(async (message) => ({
+          ...message,
+          ...(message.images?.length
+            ? {
+                images: await Promise.all(
+                  message.images.map(async (image) => {
+                    if ("kind" in image) return image;
+                    const reference = (await load([image.id])).get(image.id)!;
+                    return {
+                      ...image,
+                      mediaType: reference.mediaType,
+                      dataUrl: `data:${reference.mediaType};base64,${reference.bytes.toString("base64")}`,
+                    };
+                  }),
+                ),
+              }
+            : {}),
+        })),
+      );
+      return res.type(mediaType).send(JSON.stringify(portable, null, 2));
+    }
     return res.type(mediaType).sendFile(file, { dotfiles: "allow" });
   });
   app.get("/outputs/:id", async (req, res) => {
@@ -231,7 +246,10 @@ export function createOutputRoutes(
       const load = store.references.loader();
       const ids = new Set(
         messages.flatMap(
-          (message) => message.images?.map((image) => image.id) ?? [],
+          (message) =>
+            message.images?.flatMap((image) =>
+              "kind" in image ? [] : [image.id],
+            ) ?? [],
         ),
       );
       const encoded = new Map<string, string>();
@@ -267,7 +285,7 @@ export function createOutputRoutes(
         hr,th,td{border-color:light-dark(#d1cabd,#45423e)}
         img{max-width:100%}
         ${messages ? conversationStyle : ""}
-      </style></head><body>${renderToStaticMarkup(messages ? createElement(ChatConversation, { messages, imageSource: (image) => imageSources.get(image.id)!, showImageLoader: false }) : createElement(MarkdownContent, { markdown: readFileSync(file, "utf8") }))}</body></html>`,
+      </style></head><body>${renderToStaticMarkup(messages ? createElement(ChatConversation, { messages, imageSource: (image) => ("kind" in image ? image.dataUrl : imageSources.get(image.id)!), showImageLoader: false }) : createElement(MarkdownContent, { markdown: readFileSync(file, "utf8") }))}</body></html>`,
     );
   });
   return app;

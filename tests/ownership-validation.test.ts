@@ -175,7 +175,7 @@ for (const side of ["rows", "columns"] as const) {
             },
           ],
         }).success,
-        false,
+        role === "assistant",
       );
     }
     const unsupported = {

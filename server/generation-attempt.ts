@@ -14,6 +14,7 @@ import {
   templateSignature,
 } from "./prepared-inference.js";
 import { fillChatTemplate } from "./chat-template.js";
+import type { ReplayDetails } from "./chat-messages.js";
 
 export type AttemptResult = Awaited<ReturnType<Provider["generate"]>> & {
   templateSteps?: TemplateStep[];
@@ -48,11 +49,16 @@ export async function generateAttempt(
   );
   if (!model)
     throw new PreparationError(`Pricing is unavailable for ${cell.model}.`);
+  if (!model.text)
+    throw new PreparationError(
+      "Chat completion requires a model that supports text output.",
+    );
   let previousPrefixLength = 0;
+  const replay = new Map<number, ReplayDetails>();
   const result = await fillChatTemplate(
     cell,
     (prompt, dollars) => generationBudget(model, prompt, "", dollars),
-    (messages, budget, progress) => {
+    async (messages, budget, progress) => {
       const prepared = prepareTextInference(
         "chat-template",
         { ...cell, prompt: chatText(messages), messages },
@@ -60,9 +66,15 @@ export async function generateAttempt(
         false,
         { sessionId: taskId, previousPrefixLength },
         references,
+        model.chatImageOutput,
+        replay,
       );
       previousPrefixLength = messages.length;
-      return provider.request(key, prepared, progress, context);
+      const result = await provider.request(key, prepared, progress, context);
+      if (result.reasoningDetails?.length)
+        replay.set(messages.length, result.reasoningDetails);
+      if (!result.assistant) throw new Error("Missing chat completion output.");
+      return { assistant: result.assistant, usage: result.usage };
     },
     onChunk,
     context.signal,

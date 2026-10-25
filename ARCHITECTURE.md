@@ -83,6 +83,14 @@ transport, and usage interpretation. Output strategies may coordinate several
 provider calls within one task attempt. Every call crosses the same cancellation
 and durable billing boundary.
 
+Chat execution owns the filled conversation within an attempt. Provider adapters
+validate generated raster images and preserve the continuation state needed by
+later calls. That opaque state stays in attempt-local provider history, separate
+from visible thinking, progress snapshots, and saved output. Transcript artifacts
+own generated image bytes, so the existing output authorization and offline
+partition boundaries also govern those images. Supplied attachments retain their
+input ownership when completed artifacts are reused.
+
 The presentation boundary projects current task state and authorized content
 without becoming an execution authority. Live-update transport and browser
 reconciliation preserve ordering independently of provider streaming. Recovering

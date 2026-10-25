@@ -21,6 +21,27 @@ import { referencePng } from "./reference-image-fixture.js";
 import { removeStoredReferenceDimensions } from "./reference-storage-fixture.js";
 import { validatedGrid } from "./grid-storage-fixture.js";
 import { currentInput } from "./current-grid-fixture.js";
+import type { TranscriptMessageJSON } from "./chat-image-output-fixture.js";
+
+function assertPortableChat(
+  actual: TranscriptMessageJSON[],
+  expected: readonly FilledChatMessage[],
+  dataUrl: string,
+) {
+  assert.deepEqual(
+    actual.map(({ role, content }) => ({ role, content })),
+    expected.map(({ role, content }) => ({ role, content })),
+  );
+  actual.forEach((message, index) => {
+    assert.deepEqual(
+      message.images?.map((image) => image.name),
+      expected[index].images?.map((image) => image.name),
+    );
+    for (const image of message.images ?? [])
+      assert.equal("dataUrl" in image ? image.dataUrl : undefined, dataUrl);
+  });
+  assert.doesNotMatch(JSON.stringify(actual), /\/api\/references\//);
+}
 
 function completedChatGrid(
   store: Store,
@@ -648,7 +669,7 @@ test("reused chat outputs render and download destination-owned per-message atta
     { role: "user", content: "First question", images: [first] },
     { role: "unfilled", content: "" },
     { role: "user", content: "", images: [duplicate, first] },
-    { role: "assistant", content: "Supplied answer" },
+    { role: "assistant", content: "Supplied answer", images: [first] },
     { role: "unfilled", content: "" },
   ];
   const completed: FilledChatMessage[] = [
@@ -708,7 +729,14 @@ test("reused chat outputs render and download destination-owned per-message atta
           response.headers.get("content-disposition")!,
           /attachment;/,
         );
-      assert.deepEqual(await response.json(), expected);
+      const messages: TranscriptMessageJSON[] = await response.json();
+      if (path.endsWith("/download"))
+        assertPortableChat(
+          messages,
+          expected,
+          `data:image/png;base64,${png.toString("base64")}`,
+        );
+      else assert.deepEqual(messages, expected);
     }
     const response = await fetch(`${origin}/outputs/${id}`, { headers });
     assert.equal(response.status, 200);
@@ -730,8 +758,8 @@ test("reused chat outputs render and download destination-owned per-message atta
     );
     assert.match(turns[3], /alt="Destination duplicate"/);
     assert.doesNotMatch(turns[3], /<p>/);
-    for (const index of [0, 2, 4, 5])
-      assert.doesNotMatch(turns[index], /<img\b/);
+    assert.equal(turns[4].includes(`src="${dataURL}"`), true);
+    for (const index of [0, 2, 5]) assert.doesNotMatch(turns[index], /<img\b/);
     assert.doesNotMatch(html, /\/api\/references\//);
     assert.doesNotMatch(html, new RegExp(sourceImage.id));
     for (const image of [destinationImage, duplicateImage]) {
@@ -946,7 +974,14 @@ for (const side of ["rows", "columns"] as const)
           );
           assert.equal(response.status, 200);
           assert.equal(response.headers.get("X-Slopgrid-Output-Ready"), "1");
-          assert.deepEqual(await response.json(), expected[index]);
+          const messages: TranscriptMessageJSON[] = await response.json();
+          if (suffix === "/download")
+            assertPortableChat(
+              messages,
+              expected[index],
+              `data:image/png;base64,${referencePng.toString("base64")}`,
+            );
+          else assert.deepEqual(messages, expected[index]);
         }
         const response = await fetch(`${origin}/outputs/${cell.id}`, {
           headers,
