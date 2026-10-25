@@ -24,7 +24,7 @@ const sortedModelCatalog = [...modelCatalog].sort(
     a.id.localeCompare(b.id, "en"),
 );
 
-function useBudgetEstimate(input: GridInput) {
+function useBudgetEstimate(input: GridInput, validated: boolean) {
   const [minute, setMinute] = useState(() => Math.floor(Date.now() / 60000));
   useEffect(() => {
     const timer = setInterval(
@@ -35,10 +35,10 @@ function useBudgetEstimate(input: GridInput) {
   }, []);
   return useMemo(
     () =>
-      input.format === "image" || promptVariableIssue(input)
+      input.format === "image" || (!validated && promptVariableIssue(input))
         ? undefined
         : estimateGrid(input, modelCatalog, new Date(minute * 60000)),
-    [input, minute],
+    [input, minute, validated],
   );
 }
 
@@ -59,7 +59,10 @@ export function useCreateForm() {
     input.format,
   );
   const cellCount = input.rows.length * input.columns.length;
-  const estimated = useBudgetEstimate(validation.candidate);
+  const estimated = useBudgetEstimate(
+    validation.candidate,
+    validation.parsed.success,
+  );
   const parallelWorkers =
     input.format === "image"
       ? Math.max(1, Math.min(cellCount, capacity.data?.parallelWorkers ?? 1))

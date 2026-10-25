@@ -6,13 +6,13 @@ import {
   thinkingEffortSupport,
 } from "./compatibility.js";
 import { criteriaForCell, resolveCriteriaForCell } from "./judge-criteria.js";
-import { variableToken } from "./prompt-variables.js";
-import type { Model } from "./provider.js";
 import {
-  isCaseAxis,
-  type CommonParameterId,
-  type ParameterId,
-} from "./parameters.js";
+  createVariableIndex,
+  referencedVariableFields,
+  type VariableIndex,
+} from "./prompt-variables.js";
+import type { Model } from "./provider.js";
+import { type CommonParameterId, type ParameterId } from "./parameters.js";
 import { ModelResolutionError, modelAliasResolver } from "./model-alias.js";
 import { generatorInputForCell } from "./generator-input.js";
 
@@ -75,21 +75,23 @@ function variableImageOrigins(
   input: GridInput,
   cell: ExpandedCell,
   consumed: ReadonlySet<string>,
+  variableIndex: VariableIndex,
 ): CompatibilityOrigin[] {
   const origins: CompatibilityOrigin[] = [];
-  for (const [, name, number] of text.matchAll(variableToken)) {
-    if (!/^[1-9]\d*$/.test(number)) continue;
-    const source = name === "ROW" ? "rows" : "columns";
-    const axis = input[source];
-    const caseIndex = source === "rows" ? cell.row : cell.column;
-    const fieldIndex = Number(number) - 1;
-    if (
-      isCaseAxis(input, source) &&
-      axis[caseIndex]?.variable?.[fieldIndex]?.images?.some((image) =>
-        consumed.has(image.id),
-      )
-    )
-      origins.push({ parameter: "variable", source, caseIndex, fieldIndex });
+  for (const { field, path } of referencedVariableFields(
+    text,
+    input,
+    cell.row,
+    cell.column,
+    variableIndex,
+  )) {
+    if (field.images?.some((image) => consumed.has(image.id)))
+      origins.push({
+        parameter: "variable",
+        source: path[0] as "rows" | "columns",
+        caseIndex: path[1] as number,
+        fieldIndex: path[3] as number,
+      });
   }
   return distinctOrigins(origins);
 }
@@ -97,6 +99,7 @@ function variableImageOrigins(
 function generatorImageContext(
   input: GridInput,
   cell: ExpandedCell,
+  variableIndex: VariableIndex,
 ): { consumed: Set<string>; origins: CompatibilityOrigin[] } {
   const consumed = new Set(
     cell.messages?.flatMap((message) =>
@@ -120,7 +123,13 @@ function generatorImageContext(
         messageIndex,
       });
       origins.push(
-        ...variableImageOrigins(message.content, input, cell, images),
+        ...variableImageOrigins(
+          message.content,
+          input,
+          cell,
+          images,
+          variableIndex,
+        ),
       );
     },
   );
@@ -130,14 +139,16 @@ function generatorImageContext(
 export function analyzeGridCompatibility(
   input: GridInput,
   models: readonly Model[],
-  cells = expandGrid(input, { allowUnresolvedVariables: true }),
+  cells?: ExpandedCell[],
 ): GridCompatibilityAnalysis {
   const catalog = new Map(models.map((model) => [model.id, model]));
   const resolve = modelAliasResolver(catalog);
   const issues: GridCompatibilityIssue[] = [];
   // Canonical admission validates tokens strictly. Advisory previews must still
   // expose known cell settings while unrelated draft templates are unfinished.
-  const options = { allowUnresolvedVariables: true };
+  const variableIndex = createVariableIndex(input);
+  const options = { allowUnresolvedVariables: true, variableIndex };
+  cells ??= expandGrid(input, options);
   for (const cell of cells) {
     let model: Model | undefined;
     let modelFailure: ModelResolutionError | undefined;
@@ -147,7 +158,7 @@ export function analyzeGridCompatibility(
       if (!(error instanceof ModelResolutionError)) throw error;
       modelFailure = error;
     }
-    const generator = generatorImageContext(input, cell);
+    const generator = generatorImageContext(input, cell, variableIndex);
     function issue(
       origins: CompatibilityOrigin[],
       support: GridCompatibilityIssue["support"],
@@ -277,6 +288,7 @@ export function analyzeGridCompatibility(
                 input,
                 cell,
                 criterionImages,
+                variableIndex,
               ),
             );
         }

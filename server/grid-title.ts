@@ -1,45 +1,44 @@
 import { chatText, type ChatMessage, type GridInput } from "./domain.js";
 import { generatorInputForCell } from "./generator-input.js";
-import { variableToken } from "./prompt-variables.js";
-import { isCaseAxis } from "./parameters.js";
+import {
+  createVariableIndex,
+  variableToken,
+  type VariableIndex,
+} from "./prompt-variables.js";
 
 function titlePrompt(
   input: GridInput,
   prompt: string,
+  variableIndex: VariableIndex,
   cell?: { row: number; column: number },
 ): string {
-  return prompt.replace(
-    variableToken,
-    (token, name: string, number: string) => {
-      if (!/^[1-9]\d*$/.test(number)) return token;
-      const side = name === "ROW" ? "rows" : "columns";
-      if (!isCaseAxis(input, side)) return token;
-      const index = Number(number) - 1;
-      if (cell) {
-        const field =
-          input[side][side === "rows" ? cell.row : cell.column]?.variable?.[
-            index
-          ];
-        return field
-          ? field.text ||
-              field.images?.map((image) => image.name).join(", ") ||
-              ""
-          : token;
-      }
-      const values = input[side].map((record) => record.variable ?? []);
-      if (!values.length || values.some((fields) => !fields[index]))
-        return token;
-      const expanded = values.map((fields) => {
-        const field = fields[index];
-        return (
-          field?.text ||
-          field?.images?.map((image) => image.name).join(", ") ||
-          ""
-        );
-      });
-      return `(${expanded.join("|")})`;
-    },
-  );
+  return prompt.replace(variableToken, (token, name: string) => {
+    const resolved = variableIndex.get(name);
+    if (!resolved) return token;
+    const { side, index } = resolved;
+    if (cell) {
+      const field =
+        input[side][side === "rows" ? cell.row : cell.column]?.variable?.[
+          index
+        ];
+      return field
+        ? field.text ||
+            field.images?.map((image) => image.name).join(", ") ||
+            ""
+        : token;
+    }
+    const values = input[side].map((record) => record.variable ?? []);
+    if (!values.length || values.some((fields) => !fields[index])) return token;
+    const expanded = values.map((fields) => {
+      const field = fields[index];
+      return (
+        field?.text ||
+        field?.images?.map((image) => image.name).join(", ") ||
+        ""
+      );
+    });
+    return `(${expanded.join("|")})`;
+  });
 }
 
 function messagesForTitle(input: GridInput, messages: ChatMessage[]): string {
@@ -55,11 +54,13 @@ function messagesForTitle(input: GridInput, messages: ChatMessage[]): string {
 }
 
 export function expandPromptForTitle(input: GridInput) {
+  const variableIndex = createVariableIndex(input);
   const expanded =
     input.parameters.input.kind === "common"
       ? titlePrompt(
           input,
           messagesForTitle(input, input.parameters.input.value),
+          variableIndex,
         )
       : [
           ...new Set(
@@ -68,10 +69,12 @@ export function expandPromptForTitle(input: GridInput) {
                 const messages = generatorInputForCell(input, row, column).map(
                   (message) => ({
                     ...message,
-                    content: titlePrompt(input, message.content, {
-                      row,
-                      column,
-                    }),
+                    content: titlePrompt(
+                      input,
+                      message.content,
+                      variableIndex,
+                      { row, column },
+                    ),
                   }),
                 );
                 return messagesForTitle(input, messages);
