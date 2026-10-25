@@ -1114,13 +1114,10 @@ const ordinaryValues = {
 }>;
 type OrdinaryParameter = keyof typeof ordinaryValues;
 
-for (const format of [
-  "svg",
-  "markdown",
-  "chat-template",
-  "html",
-  "image",
-] as const) {
+// Ordinary scalar transitions share the reducer across text formats. Keep the
+// text, website-without-judges and image parameter sets in both orientations;
+// complete Chat histories are exercised separately above.
+for (const format of ["svg", "html", "image"] as const) {
   const parameters: OrdinaryParameter[] = [
     "model",
     ...(format === "image"

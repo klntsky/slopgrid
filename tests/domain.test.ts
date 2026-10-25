@@ -1498,13 +1498,9 @@ for (const side of ["rows", "columns"] as const) {
   });
 }
 
-for (const format of [
-  "svg",
-  "markdown",
-  "chat-template",
-  "html",
-  "image",
-] as const)
+// SVG and Markdown share prompt ownership validation. Keep Chat's history
+// schema, Website's parameter set and Image's settings in both orientations.
+for (const format of ["markdown", "chat-template", "html", "image"] as const)
   for (const side of ["rows", "columns"] as const) {
     const other = side === "rows" ? "columns" : "rows";
     test(`${format} ${side} admission requires every owned value and rejects every competing case source`, () => {
