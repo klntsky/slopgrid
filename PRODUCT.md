@@ -370,7 +370,8 @@ appends one empty question with expected answer YES to the selected rubric.
    - Raw source uses the preview's default font size in a monospace font, preserves the source text and line breaks, and wraps words and long tokens to the available width. Use vertical scrolling rather than content-fit zoom for Markdown source and chat JSON, including expanded cells.
 8. Expand has an independent pressed state while the cell is expanded. Expanding or collapsing preserves the selected content mode, and switching content modes preserves expansion.
    - Its tooltip is always "Expand", in both expanded and collapsed states.
-9. Grids configured with a judge show a compact bottom mode switcher styled like the cell mode controls. Outputs, Thinking, and Judge results select the corresponding view across all cells while preserving individual cell controls and expansion. Benchmark results remains visible and disabled until implemented. Grids without a judge do not show this bar.
+9. Grids configured with a judge show a compact, left-aligned bottom mode switcher. Outputs, Thinking, Judge results, and Benchmark results form one borderless segmented control with vertical separators. The bottom panel fits the control without extra vertical padding. Outputs, Thinking, and Judge results select the corresponding view across all cells while preserving individual cell controls and expansion. Benchmark results remains visible and disabled until implemented. Grids without a judge do not show this bar.
+   - Outputs uses a palette icon.
 
 ### 5.2. Markdown
 

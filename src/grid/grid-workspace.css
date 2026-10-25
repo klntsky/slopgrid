@@ -65,21 +65,51 @@ th[scope="row"] .axis-reference-previews {
 .grid-view-bar {
   flex-shrink: 0;
   display: flex;
-  justify-content: center;
-  padding: 6px 8px;
+  justify-content: flex-start;
+  padding-inline: 8px;
   border-top: 1px solid var(--line);
   background: var(--paper);
 }
-.grid-view-actions.markdown-actions {
-  position: static;
+.grid-view-actions {
+  display: inline-flex;
   max-width: 100%;
   overflow-x: auto;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--paper) 94%, var(--text));
+  scrollbar-width: none;
 }
-.grid-view-actions.markdown-actions > button {
-  width: auto;
+.grid-view-actions > button {
+  position: relative;
   flex-shrink: 0;
+  height: 30px;
   gap: 6px;
-  padding-inline: 10px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 0;
   white-space: nowrap;
   font-size: 13px;
+}
+.grid-view-actions > button + button::before {
+  content: "";
+  position: absolute;
+  inset: 7px auto 7px 0;
+  width: 1px;
+  background: var(--line);
+}
+.grid-view-actions > button[aria-pressed="true"],
+.grid-view-actions > button[aria-pressed="true"]:hover {
+  background: var(--selected);
+  box-shadow: none;
+}
+.grid-view-actions > button:focus-visible {
+  outline-offset: -3px;
+}
+.grid-view-actions .lucide {
+  width: 16px;
+  height: 16px;
+}
+@media (hover: none), (pointer: coarse) {
+  .grid-view-actions > button[aria-pressed="false"]:hover {
+    background: transparent;
+  }
 }

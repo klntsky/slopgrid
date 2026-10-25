@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from "react";
-import { Brain, ChartNoAxesColumn, PanelsTopLeft, Scale } from "lucide-react";
+import { Brain, ChartNoAxesColumn, Palette, Scale } from "lucide-react";
 import "./grid-workspace.css";
 import type { ViewGrid } from "../api";
 import { ModelName } from "../model-name";
@@ -326,13 +326,13 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
       {g.input.judge && (
         <div className="grid-view-bar">
           <div
-            className="markdown-actions grid-view-actions"
+            className="grid-view-actions"
             role="group"
             aria-label="Grid view"
           >
             {(
               [
-                ["output", "Outputs", PanelsTopLeft],
+                ["output", "Outputs", Palette],
                 ["thinking", "Thinking", Brain],
                 ["judgment", "Judge results", Scale],
               ] as const
