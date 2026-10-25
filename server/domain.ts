@@ -13,6 +13,7 @@ import {
   mergeVariableImages,
   promptVariableIssues,
   referencedVariableFields,
+  variableNameIssues,
   type VariableInterpolationOptions,
 } from "./prompt-variables.js";
 import {
@@ -95,6 +96,7 @@ const caseSchema = parameterValuesSchema
       .string()
       .min(1)
       .default(() => globalThis.crypto.randomUUID()),
+    name: z.string().trim().optional(),
   })
   .strict();
 export type CaseRecord = z.infer<typeof caseSchema>;
@@ -185,6 +187,13 @@ const draftGridFields = {
     ),
   rows: z.array(caseSchema),
   columns: z.array(caseSchema),
+  variableNames: z
+    .object({
+      rows: z.array(z.string().nullable()).optional(),
+      columns: z.array(z.string().nullable()).optional(),
+    })
+    .strict()
+    .optional(),
   parameters: parameterSourcesSchema,
   judge: z.boolean().default(false),
   parallelWorkers: z.number().int().min(1).optional(),
@@ -194,7 +203,11 @@ export const gridDraftSchema = z
     ...draftGridFields,
     budgetUsd: z.string(),
   })
-  .strict();
+  .strict()
+  .superRefine((input, context) => {
+    for (const issue of variableNameIssues(input))
+      context.addIssue({ code: "custom", ...issue });
+  });
 export type GridDraftInput = z.infer<typeof gridDraftSchema>;
 const gridInputSchema = z.discriminatedUnion("format", [
   z
@@ -216,6 +229,8 @@ export type GridInput = z.infer<typeof gridInputSchema>;
 export const modelSelectionIssueKind = "empty-model-selection";
 export const gridSchema = gridInputSchema
   .transform((g) => {
+    for (const record of [...g.rows, ...g.columns])
+      if (record.name === "") delete record.name;
     for (const kind of [
       "model",
       "judge_model",
@@ -340,7 +355,11 @@ export const gridSchema = gridInputSchema
           ]);
         ids.add(record.id);
         for (const key of Object.keys(record))
-          if (key !== "id" && !owned.has(key as keyof ParameterValues))
+          if (
+            key !== "id" &&
+            key !== "name" &&
+            !owned.has(key as keyof ParameterValues)
+          )
             issue(`${key} is not owned by ${side}.`, [side, index, key]);
       }
     }

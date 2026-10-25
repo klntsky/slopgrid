@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from "react";
+import { useId, useRef, useState, type ReactNode } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { ErrorMessage } from "./feedback-message";
 
@@ -8,6 +8,7 @@ export function EditableTitle({
   editLabel,
   placeholder = "Set Title",
   maxLength,
+  trim = true,
   disabled = false,
   icon,
   onSave,
@@ -17,11 +18,13 @@ export function EditableTitle({
   editLabel: string;
   placeholder?: string;
   maxLength?: number;
+  trim?: boolean;
   disabled?: boolean;
   icon?: ReactNode;
   onSave: (title: string) => void | Promise<void>;
 }) {
   const [editing, setEditing] = useState(false);
+  const errorId = useId();
   const button = useRef<HTMLButtonElement>(null);
   const save = useMutation({
     mutationFn: async (title: string) => onSave(title),
@@ -33,12 +36,16 @@ export function EditableTitle({
         <input
           className="editable-title-input"
           aria-label={label}
+          aria-invalid={!!save.error || undefined}
+          aria-describedby={save.error ? errorId : undefined}
           defaultValue={value}
           maxLength={maxLength}
           autoFocus
           disabled={disabled || save.isPending}
           onBlur={(event) => {
-            const title = event.currentTarget.value.trim();
+            const title = trim
+              ? event.currentTarget.value.trim()
+              : event.currentTarget.value;
             if (title === value) setEditing(false);
             else save.mutate(title);
           }}
@@ -70,7 +77,7 @@ export function EditableTitle({
           <span>{value || placeholder}</span>
         </button>
       )}
-      <ErrorMessage>{save.error?.message}</ErrorMessage>
+      <ErrorMessage id={errorId}>{save.error?.message}</ErrorMessage>
     </>
   );
 }

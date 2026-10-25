@@ -6,13 +6,9 @@ import {
   thinkingEffortSupport,
 } from "./compatibility.js";
 import { criteriaForCell, resolveCriteriaForCell } from "./judge-criteria.js";
-import { variableToken } from "./prompt-variables.js";
+import { referencedVariableFields } from "./prompt-variables.js";
 import type { Model } from "./provider.js";
-import {
-  isCaseAxis,
-  type CommonParameterId,
-  type ParameterId,
-} from "./parameters.js";
+import { type CommonParameterId, type ParameterId } from "./parameters.js";
 import { ModelResolutionError, modelAliasResolver } from "./model-alias.js";
 import { generatorInputForCell } from "./generator-input.js";
 
@@ -77,19 +73,19 @@ function variableImageOrigins(
   consumed: ReadonlySet<string>,
 ): CompatibilityOrigin[] {
   const origins: CompatibilityOrigin[] = [];
-  for (const [, name, number] of text.matchAll(variableToken)) {
-    if (!/^[1-9]\d*$/.test(number)) continue;
-    const source = name === "ROW" ? "rows" : "columns";
-    const axis = input[source];
-    const caseIndex = source === "rows" ? cell.row : cell.column;
-    const fieldIndex = Number(number) - 1;
-    if (
-      isCaseAxis(input, source) &&
-      axis[caseIndex]?.variable?.[fieldIndex]?.images?.some((image) =>
-        consumed.has(image.id),
-      )
-    )
-      origins.push({ parameter: "variable", source, caseIndex, fieldIndex });
+  for (const { field, path } of referencedVariableFields(
+    text,
+    input,
+    cell.row,
+    cell.column,
+  )) {
+    if (field.images?.some((image) => consumed.has(image.id)))
+      origins.push({
+        parameter: "variable",
+        source: path[0] as "rows" | "columns",
+        caseIndex: path[1] as number,
+        fieldIndex: path[3] as number,
+      });
   }
   return distinctOrigins(origins);
 }

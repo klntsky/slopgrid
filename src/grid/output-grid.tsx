@@ -14,6 +14,7 @@ import {
   readGridCriteria,
   type ParameterDisplayPart,
 } from "../../shared/grid-display";
+import { variableName } from "../../server/prompt-variables";
 function ResizeHandle({
   axis,
   index,
@@ -119,9 +120,11 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
   }, [expandedId]);
   const title = (cell: ViewGrid["cells"][number]) => {
     const row =
+      display.rows[cell.row].name ||
       display.rows[cell.row].parts.map(displayValue).join(" · ") ||
       `Case ${cell.row + 1}`;
     const column =
+      display.columns[cell.column].name ||
       display.columns[cell.column].parts.map(displayValue).join(" · ") ||
       `Case ${cell.column + 1}`;
     return `${row} / ${column}`;
@@ -160,8 +163,7 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
             field === null ? null : (
               <span className="variable-axis-field" key={index}>
                 <span>
-                  ${side === "rows" ? "ROW" : "COLUMN"}
-                  {index + 1}: {field.text}
+                  ${variableName(g.input, side, index)}: {field.text}
                 </span>
                 {!!field.images?.length && referencePreviews(field.images)}
               </span>
@@ -189,7 +191,13 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
     );
   }
   function axisLabel(index: number, side: "rows" | "columns") {
-    const { parts } = display[side][index];
+    const { name, parts } = display[side][index];
+    if (name)
+      return (
+        <span className={side === "rows" ? "row-label" : undefined}>
+          {name}
+        </span>
+      );
     if (!parts.length)
       return (
         <span className={side === "rows" ? "row-label" : undefined}>
