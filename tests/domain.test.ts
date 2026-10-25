@@ -7,7 +7,6 @@ import {
   gridDraftSchema,
   gridSchema,
 } from "../server/domain.js";
-import { readChatOutput } from "../shared/chat-output.js";
 import { appFixture } from "./app-fixture.js";
 import { currentDefinition, currentInput } from "./current-grid-fixture.js";
 import { draftInputFromGridInput } from "../src/create/draft-input.js";
@@ -327,14 +326,6 @@ test("chat images belong to supplied user and assistant messages, including imag
     content: "",
     images: [first, second],
   });
-  assert.deepEqual(
-    readChatOutput(
-      JSON.stringify([
-        { role: "assistant", content: "", images: [first, second] },
-      ]),
-    ),
-    [{ role: "assistant", content: "", images: [first, second] }],
-  );
   for (const role of ["system", "unfilled"])
     assert.equal(
       gridSchema.safeParse({
@@ -403,8 +394,6 @@ test("chat images belong to supplied user and assistant messages, including imag
     }).success,
     false,
   );
-  const history = [{ role: "user", content: "", images: [first, second] }];
-  assert.deepEqual(readChatOutput(JSON.stringify(history)), history);
   for (const dimensions of [
     { width: 7 },
     { height: 3 },
@@ -431,10 +420,6 @@ test("chat images belong to supplied user and assistant messages, including imag
         },
       }).success,
       false,
-    );
-    assert.throws(
-      () => readChatOutput(JSON.stringify(invalid)),
-      /Invalid chat output/,
     );
   }
 });

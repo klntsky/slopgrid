@@ -1,6 +1,6 @@
 import sharp from "sharp";
 import { z } from "zod";
-import type { GeneratedChatImage } from "./domain.js";
+import type { ChatImage } from "./domain.js";
 import type { ReplayDetails } from "./chat-messages.js";
 
 const imagePart = z.object({
@@ -15,10 +15,7 @@ const envelope = z.object({
 });
 const maximumBytes = 20 * 1024 * 1024;
 
-async function decodeImage(
-  url: string,
-  index: number,
-): Promise<GeneratedChatImage> {
+async function decodeImage(url: string, index: number): Promise<ChatImage> {
   const match =
     /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/]*={0,2})$/.exec(url);
   if (!match || !match[2] || match[2].length > Math.ceil(maximumBytes / 3) * 4)
@@ -54,7 +51,6 @@ async function decodeImage(
       metadata.orientation >= 5 &&
       metadata.orientation <= 8;
     return {
-      kind: "generated",
       name: `image-${index + 1}.${metadata.format === "jpeg" ? "jpg" : metadata.format}`,
       mediaType,
       width: rotated ? metadata.height : metadata.width,
@@ -67,7 +63,7 @@ async function decodeImage(
 }
 
 export function chatImageResponse() {
-  const images: GeneratedChatImage[] = [];
+  const images: ChatImage[] = [];
   const reasoningDetails: ReplayDetails = [];
   const indexed = new Map<number, Record<string, unknown>>();
   let failure: Error | undefined;

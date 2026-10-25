@@ -8,10 +8,13 @@ import {
   rmSync,
   statSync,
   writeFileSync,
+  readFileSync,
+  readdirSync,
 } from "node:fs";
 import { join, dirname } from "node:path";
 import { readdir, readFile, access, stat } from "node:fs/promises";
 import { constants } from "node:fs";
+import { createHash } from "node:crypto";
 
 export type ArtifactBundle = {
   files: Record<string, Uint8Array>;
@@ -59,6 +62,47 @@ export class OutputFiles {
     } finally {
       if (!installed) rmSync(temporary, { recursive: true, force: true });
     }
+  }
+  writeImmutable(files: Record<string, string | Uint8Array>): string {
+    const paths = Object.keys(files).sort();
+    if (!paths.length || paths.some((path) => !safePath(path)))
+      throw new Error("Output files need safe relative paths");
+    const hash = createHash("sha256");
+    for (const path of paths) {
+      const content = files[path];
+      const bytes =
+        typeof content === "string" ? Buffer.from(content) : content;
+      hash.update(JSON.stringify([path, bytes.byteLength]));
+      hash.update(bytes);
+    }
+    const id = `canonical-${hash.digest("hex")}`;
+    const directory = this.directory(id);
+    if (!existsSync(directory)) {
+      this.write(id, files);
+      return id;
+    }
+    const installed: string[] = [];
+    const collect = (relative: string) => {
+      for (const entry of readdirSync(join(directory, relative), {
+        withFileTypes: true,
+      })) {
+        const path = relative ? `${relative}/${entry.name}` : entry.name;
+        if (entry.isDirectory()) collect(path);
+        else if (entry.isFile()) installed.push(path);
+        else throw new Error("Canonical artifact contains an unexpected entry");
+      }
+    };
+    collect("");
+    if (JSON.stringify(installed.sort()) !== JSON.stringify(paths))
+      throw new Error("Canonical artifact inventory does not match");
+    for (const path of paths) {
+      const content = files[path];
+      const expected =
+        typeof content === "string" ? Buffer.from(content) : content;
+      if (!readFileSync(join(directory, path)).equals(expected))
+        throw new Error("Canonical artifact content does not match");
+    }
+    return id;
   }
   writeReference(sha256: string, data: Uint8Array) {
     if (!/^[a-f0-9]{64}$/.test(sha256))

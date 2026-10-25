@@ -65,7 +65,6 @@ export async function generateAttempt(
         budget,
         false,
         { sessionId: taskId, previousPrefixLength },
-        references,
         model.chatImageOutput,
         replay,
       );
@@ -78,6 +77,7 @@ export async function generateAttempt(
     },
     onChunk,
     context.signal,
+    references,
   );
   return { ...result, signature: templateSignature(cell, references) };
 }

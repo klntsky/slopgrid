@@ -33,9 +33,11 @@ bodies, uploaded image bytes, and thinking traces. Access checks select content
 through authorized domain references rather than browser-supplied storage paths.
 
 The storage initialization boundary owns migrations before normal runtime use.
-Historical input handling stays there, while runtime readers consume the current
-canonical representation. Accepted execution inputs and immutable generated
-content remain separate from editable configuration and presentation metadata.
+Historical input and artifact formats are accepted only at that boundary. Readers
+consume the current canonical representation. Conversion failure keeps source
+content available for retry and prevents the store from opening. Accepted
+execution inputs and immutable generated content remain separate from editable
+configuration and presentation metadata.
 
 Account favorites belong to the web process, separate from shared grid execution
 state. The favorites boundary scopes reads and writes to the authenticated
@@ -86,10 +88,11 @@ and durable billing boundary.
 Chat execution owns the filled conversation within an attempt. Provider adapters
 validate generated raster images and preserve the continuation state needed by
 later calls. That opaque state stays in attempt-local provider history, separate
-from visible thinking, progress snapshots, and saved output. Transcript artifacts
-own generated image bytes, so the existing output authorization and offline
-partition boundaries also govern those images. Supplied attachments retain their
-input ownership when completed artifacts are reused.
+from visible thinking, progress snapshots, and saved output. Execution and reuse
+persist complete transcripts with their supplied and generated image content.
+Presentation and judging consume those artifacts without reconstructing them from
+input templates. Output authorization and offline partitions govern the saved
+images. Configured attachments retain their separate input ownership.
 
 The presentation boundary projects current task state and authorized content
 without becoming an execution authority. Live-update transport and browser

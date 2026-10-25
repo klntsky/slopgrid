@@ -22,28 +22,21 @@ function ChatImage({
     if (element.current?.complete) setLoading(false);
   }, []);
   const { width, height } = image;
-  const hasDimensions =
-    typeof width === "number" &&
-    typeof height === "number" &&
-    Number.isInteger(width) &&
-    Number.isInteger(height) &&
-    width > 0 &&
-    height > 0;
   return (
     <div
       className="chat-image-frame"
       aria-busy={showImageLoader && loading}
       style={{
-        width: hasDimensions ? width * Math.min(1, 320 / height) : 320,
-        aspectRatio: hasDimensions ? `${width} / ${height}` : "4 / 3",
+        width: width * Math.min(1, 320 / height),
+        aspectRatio: `${width} / ${height}`,
       }}
     >
       <img
         ref={element}
         src={src}
         alt={image.name}
-        width={hasDimensions ? width : undefined}
-        height={hasDimensions ? height : undefined}
+        width={width}
+        height={height}
         onLoad={() => setLoading(false)}
         onError={() => setLoading(false)}
       />
@@ -62,14 +55,9 @@ function ChatImage({
 
 export function ChatConversation({
   messages,
-  imageSource = (image) =>
-    "kind" in image
-      ? image.dataUrl
-      : `/api/references/${encodeURIComponent(image.id)}`,
   showImageLoader = true,
 }: {
   messages: FilledChatMessage[];
-  imageSource?: (image: ChatImageAttachment) => string;
   showImageLoader?: boolean;
 }) {
   return (
@@ -80,7 +68,7 @@ export function ChatConversation({
             {!!message.images?.length && (
               <div className="chat-message-images">
                 {message.images.map((image, imageIndex) => {
-                  const src = imageSource(image);
+                  const src = image.dataUrl;
                   return (
                     <ChatImage
                       key={`${imageIndex}-${src}`}

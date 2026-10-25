@@ -121,10 +121,9 @@ const parameterSourcesSchema = z
   .strict();
 export type ParameterSources = z.infer<typeof parameterSourcesSchema>;
 const budgetSchema = z.number().finite().positive();
-export const generatedChatImageSchema = z
+export const chatImageSchema = z
   .strictObject({
-    kind: z.literal("generated"),
-    name: z.string().min(1).max(255),
+    name: z.string().min(1),
     mediaType: z.enum(["image/png", "image/jpeg", "image/webp"]),
     width: z.number().int().positive(),
     height: z.number().int().positive(),
@@ -140,8 +139,7 @@ export const generatedChatImageSchema = z
       /^[A-Za-z0-9+/]*={0,2}$/.test(data)
     );
   });
-export type GeneratedChatImage = z.infer<typeof generatedChatImageSchema>;
-export type ChatImage = ReferenceImage | GeneratedChatImage;
+export type ChatImage = z.infer<typeof chatImageSchema>;
 export type FilledChatMessage = {
   role: "system" | "user" | "assistant";
   content: string;
@@ -483,7 +481,7 @@ export type Completion = {
 export type InferenceProgress = {
   text: string;
   thinking: string;
-  images?: GeneratedChatImage[];
+  images?: ChatImage[];
   estimatedUsage?: Cell["usage"];
   currentCallCostUsd?: number;
 };

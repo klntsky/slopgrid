@@ -16,6 +16,8 @@ import {
   type InferenceProgress,
 } from "../server/domain.js";
 import { currentInput } from "./current-grid-fixture.js";
+import { referencePng } from "./reference-image-fixture.js";
+import { referencePngOutput } from "./chat-image-output-fixture.js";
 
 async function upstream(streamError?: Record<string, unknown>) {
   const requests: Record<string, unknown>[] = [];
@@ -189,7 +191,7 @@ function cell(model: string, effort: string): Cell {
 
 test("non-chat prompt images preserve output instructions and text-only requests", async () => {
   const h = await upstream();
-  const bytes = Buffer.from("prompt image");
+  const bytes = referencePng;
   const references = new Map([
     [
       "input",
@@ -302,14 +304,16 @@ test("non-chat prompt images preserve output instructions and text-only requests
 test("non-chat image signatures use content and keep empty-image requests unchanged", async () => {
   const h = await upstream();
   const first = {
-    bytes: Buffer.from("first"),
+    bytes: referencePng,
     mediaType: "image/png",
-    sha256: createHash("sha256").update("first").digest("hex"),
+    sha256: createHash("sha256").update(referencePng).digest("hex"),
   };
   const changed = {
-    bytes: Buffer.from("changed"),
+    bytes: Buffer.concat([referencePng, Buffer.from("changed")]),
     mediaType: "image/png",
-    sha256: createHash("sha256").update("changed").digest("hex"),
+    sha256: createHash("sha256")
+      .update(Buffer.concat([referencePng, Buffer.from("changed")]))
+      .digest("hex"),
   };
   const references = new Map([
     ["first", first],
@@ -456,7 +460,7 @@ test("chat templates fill blanks sequentially and complete trailing history", as
 test("chat images stay on their user turns through long sequential SDK requests", async () => {
   const h = await upstream();
   const images = Array.from({ length: 6 }, (_, index) => {
-    const bytes = Buffer.from(`image ${index}`);
+    const bytes = Buffer.concat([referencePng, Buffer.from(`image ${index}`)]);
     return {
       bytes,
       mediaType: "image/png",
@@ -557,14 +561,24 @@ test("chat images stay on their user turns through long sequential SDK requests"
       assert.deepEqual(boundaries, requestIndex ? [3, 29] : [3]);
       assert.ok(markers <= 4, "OpenRouter allows at most four block markers");
     }
-    const completed = [
+    const completedHistory: NonNullable<Cell["messages"]> = [
       ...histories[1],
       { role: "assistant", content: "# Output" },
     ];
+    const completed = completedHistory.map(({ images, ...message }) => ({
+      ...message,
+      ...(images?.length
+        ? {
+            images: images.map((image) =>
+              referencePngOutput(image.name, references.get(image.id)!.bytes),
+            ),
+          }
+        : {}),
+    }));
     assert.deepEqual(JSON.parse(updates.at(-1)!.text), completed);
     assert.deepEqual(
       JSON.parse(result.files["messages.json"] as string),
-      completed.map(({ role, content }) => ({ role, content })),
+      completed,
     );
     assert.equal(result.signature, templateSignature(parameters, references));
   } finally {
@@ -670,7 +684,7 @@ test("Image preparation follows selected IDs in order and preserves duplicates",
 
 test("different user questions share an explicitly cached image prefix", async () => {
   const h = await upstream();
-  const bytes = Buffer.from("shared image");
+  const bytes = referencePng;
   const references = new Map([
     [
       "shared",

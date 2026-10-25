@@ -1,21 +1,12 @@
 import { z } from "zod";
-import {
-  generatedChatImageSchema,
-  type ChatMessage,
-  type FilledChatMessage,
-} from "../server/domain.js";
-import { referenceImageSchema } from "../server/image-settings.js";
+import { chatImageSchema, type FilledChatMessage } from "../server/domain.js";
 
 const outputSchema = z.array(
   z
     .strictObject({
       role: z.enum(["system", "user", "assistant"]),
       content: z.string(),
-      images: z
-        .array(
-          z.union([generatedChatImageSchema, referenceImageSchema.strict()]),
-        )
-        .optional(),
+      images: z.array(chatImageSchema).optional(),
     })
     .refine((message) => !message.images?.length || message.role !== "system"),
 );
@@ -33,31 +24,9 @@ export function writeChatOutput(
     messages.map(({ role, content, images }) => ({
       role,
       content,
-      ...(images?.some((image) => "kind" in image)
-        ? {
-            images: images.filter((image) => "kind" in image),
-          }
-        : {}),
+      ...(images?.length ? { images } : {}),
     })),
     null,
     2,
   );
-}
-
-export function withChatImages(
-  messages: readonly FilledChatMessage[],
-  template: readonly ChatMessage[] = [],
-): FilledChatMessage[] {
-  return messages.map((message, index) => {
-    const images = message.images?.length
-      ? message.images
-      : template[index]?.images;
-    return {
-      ...message,
-      ...((message.role === "user" || message.role === "assistant") &&
-      images?.length
-        ? { images }
-        : {}),
-    };
-  });
 }

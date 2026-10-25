@@ -55,7 +55,9 @@ export function createWorkflowExecutor(store: Store, provider: Provider) {
           throw new Error("The generated output is unavailable for judging.");
         const ids = [
           ...new Set([
-            ...referenceIds(generation.input),
+            ...(generation.input.format === "chat-template"
+              ? []
+              : referenceIds(generation.input)),
             ...(task.input.images?.map((image) => image.id) ?? []),
           ]),
         ];

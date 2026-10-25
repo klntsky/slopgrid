@@ -59,6 +59,22 @@ export function restoreV14ReferenceSchema(db: Database.Database) {
   `);
 }
 
+export function restoreV19UnhashedReferences(db: Database.Database) {
+  db.exec(`
+    UPDATE reference_images SET sha256=NULL;
+    DELETE FROM reference_blobs;
+    PRAGMA user_version=19;
+  `);
+}
+
+export function storedReferenceHash(db: Database.Database, id: string) {
+  return db
+    .prepare<[string], { sha256: string | null }>(
+      "SELECT sha256 FROM reference_images WHERE id=?",
+    )
+    .get(id)!.sha256;
+}
+
 export function referenceForeignKeyViolations(db: Database.Database) {
   return db.pragma("foreign_key_check");
 }

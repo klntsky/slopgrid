@@ -1,9 +1,13 @@
 import type { GenerationTask } from "./domain.js";
 import type { Store } from "./store.js";
 import type { ReferenceContent, ReferenceInputs } from "./image-references.js";
-import { readChatOutput, withChatImages } from "../shared/chat-output.js";
+import { readChatOutput } from "../shared/chat-output.js";
 import { rasterizeSvg } from "./svg-raster.js";
-import { chatMessages, type ChatInputMessage } from "./chat-messages.js";
+import {
+  chatMessages,
+  inputChatMessages,
+  type ChatInputMessage,
+} from "./chat-messages.js";
 import { referenceIds } from "./image-settings.js";
 
 const artifacts = new WeakMap<Store, Map<string, Promise<ReferenceContent>>>();
@@ -42,21 +46,15 @@ export async function loadJudgeMessages(
   if (!data)
     throw new Error("The generated output is unavailable for judging.");
   const bytes = Buffer.from(data.buffer, data.byteOffset, data.byteLength);
+  if (format === "chat-template")
+    return chatMessages(readChatOutput(bytes.toString("utf8")));
   const ids = referenceIds(generation.input);
   const references =
     inputReferences ??
     (ids.length ? await store.references.loader()(ids) : undefined);
   signal?.throwIfAborted();
-  if (format === "chat-template")
-    return chatMessages(
-      withChatImages(
-        readChatOutput(bytes.toString("utf8")),
-        generation.input.messages,
-      ),
-      references,
-    );
   const sourceMessages = ids.length
-    ? chatMessages(
+    ? inputChatMessages(
         [
           {
             role: "user",

@@ -5,7 +5,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MarkdownContent } from "../../shared/markdown.js";
 import { ChatConversation } from "../../shared/chat-conversation.js";
-import { readChatOutput, withChatImages } from "../../shared/chat-output.js";
+import { readChatOutput } from "../../shared/chat-output.js";
 import type { FilledChatMessage } from "../domain.js";
 import type { Store } from "../store.js";
 import type { RateLimiter } from "../rate-limit.js";
@@ -14,7 +14,6 @@ import { downloadFilename } from "../download-filename.js";
 import { canViewGrid } from "../grid-policy.js";
 import type { SessionReader } from "../session.js";
 import { offlineWebsite, offlineWebsitePolicy } from "../offline-website.js";
-import { ReferenceImageUnavailableError } from "../image-references.js";
 
 const markdownFont = readFileSync(
   new URL("../../public/fonts/DejaVuSansMono.woff2", import.meta.url),
@@ -153,34 +152,6 @@ export function createOutputRoutes(
     }
     const file = store.files.path(output.artifactId, filename);
     if (!file) return res.sendStatus(404);
-    if (output.format === "chat-template") {
-      const messages = withChatImages(
-        readChatOutput(readFileSync(file, "utf8")),
-        output.messages,
-      );
-      const load = store.references.loader();
-      const portable = await Promise.all(
-        messages.map(async (message) => ({
-          ...message,
-          ...(message.images?.length
-            ? {
-                images: await Promise.all(
-                  message.images.map(async (image) => {
-                    if ("kind" in image) return image;
-                    const reference = (await load([image.id])).get(image.id)!;
-                    return {
-                      ...image,
-                      mediaType: reference.mediaType,
-                      dataUrl: `data:${reference.mediaType};base64,${reference.bytes.toString("base64")}`,
-                    };
-                  }),
-                ),
-              }
-            : {}),
-        })),
-      );
-      return res.type(mediaType).send(JSON.stringify(portable, null, 2));
-    }
     return res.type(mediaType).sendFile(file, { dotfiles: "allow" });
   });
   app.get("/outputs/:id", async (req, res) => {
@@ -215,21 +186,16 @@ export function createOutputRoutes(
           );
       }
     }
+    if (req.query.raw === "1")
+      return res
+        .type(output.format === "markdown" ? "text/plain" : mediaType)
+        .sendFile(file, { dotfiles: "allow" });
     const messages: FilledChatMessage[] | undefined =
       output.format === "chat-template"
-        ? withChatImages(
-            readChatOutput(readFileSync(file, "utf8")),
-            output.messages,
-          )
+        ? readChatOutput(readFileSync(file, "utf8"))
         : undefined;
-    if (messages && req.query.raw === "1")
-      return res
-        .type("application/json")
-        .send(JSON.stringify(messages, null, 2));
-    if (!isMarkdownFormat(output.format) || req.query.raw === "1")
-      return res
-        .type(isMarkdownFormat(output.format) ? "text/plain" : mediaType)
-        .sendFile(file, { dotfiles: "allow" });
+    if (!isMarkdownFormat(output.format))
+      return res.type(mediaType).sendFile(file, { dotfiles: "allow" });
     const colorScheme =
       req.query.theme === "dark"
         ? "dark"
@@ -241,37 +207,6 @@ export function createOutputRoutes(
       "Content-Security-Policy",
       `${res.get("Content-Security-Policy")}; font-src data:`,
     );
-    const imageSources = new Map<string, string>();
-    if (messages) {
-      const load = store.references.loader();
-      const ids = new Set(
-        messages.flatMap(
-          (message) =>
-            message.images?.flatMap((image) =>
-              "kind" in image ? [] : [image.id],
-            ) ?? [],
-        ),
-      );
-      const encoded = new Map<string, string>();
-      await Promise.all(
-        [...ids].map(async (id) => {
-          let reference;
-          try {
-            reference = (await load([id])).get(id)!;
-          } catch (error) {
-            if (!(error instanceof ReferenceImageUnavailableError)) throw error;
-            imageSources.set(id, `/api/references/${encodeURIComponent(id)}`);
-            return;
-          }
-          let source = encoded.get(reference.sha256);
-          if (!source) {
-            source = `data:${reference.mediaType};base64,${reference.bytes.toString("base64")}`;
-            encoded.set(reference.sha256, source);
-          }
-          imageSources.set(id, source);
-        }),
-      );
-    }
     return res.type("html").send(
       `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>
         @font-face{font-family:"Slopgrid Mono";src:url(data:font/woff2;base64,${markdownFont}) format("woff2");font-display:block}
@@ -285,7 +220,7 @@ export function createOutputRoutes(
         hr,th,td{border-color:light-dark(#d1cabd,#45423e)}
         img{max-width:100%}
         ${messages ? conversationStyle : ""}
-      </style></head><body>${renderToStaticMarkup(messages ? createElement(ChatConversation, { messages, imageSource: (image) => ("kind" in image ? image.dataUrl : imageSources.get(image.id)!), showImageLoader: false }) : createElement(MarkdownContent, { markdown: readFileSync(file, "utf8") }))}</body></html>`,
+      </style></head><body>${renderToStaticMarkup(messages ? createElement(ChatConversation, { messages, showImageLoader: false }) : createElement(MarkdownContent, { markdown: readFileSync(file, "utf8") }))}</body></html>`,
     );
   });
   return app;

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
 import { initializeDatabase } from "../server/database.js";
+import { OutputFiles } from "../server/files.js";
 
 let directory: string | undefined;
 let database: string | undefined;
@@ -38,7 +39,10 @@ export function blankTestDatabase() {
     try {
       db.pragma("journal_mode = WAL");
       db.pragma("foreign_keys = ON");
-      initializeDatabase(db);
+      initializeDatabase(
+        db,
+        new OutputFiles(join(resourceDirectory(), "blank-output")),
+      );
       db.pragma("wal_checkpoint(TRUNCATE)");
     } finally {
       db.close();

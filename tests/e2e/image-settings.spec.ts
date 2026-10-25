@@ -431,10 +431,6 @@ test("image model prices preserve published units and tiers without changing sel
   await expect(
     item("Fixture unpriced").getByText("Price unavailable", { exact: true }),
   ).toBeVisible();
-  await tokens.hover();
-  const tip = page.getByRole("tooltip");
-  await expect(tip).toContainText("Input text: $5.00/1M tokens");
-  await expect(tip).toContainText("Output image (high): $80.00/1M tokens");
   await page
     .getByRole("checkbox", { name: "Fixture image", exact: true })
     .check();

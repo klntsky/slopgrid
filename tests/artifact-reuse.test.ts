@@ -218,7 +218,9 @@ test("common input image reuse follows bytes rather than upload ids or display m
         });
         const savedCopy = await settled(f, copy.id);
         assert.equal(savedCopy.cells.length, 2);
-        assert.deepEqual(gridSchema.parse(savedCopy.input).caseAxes, ["columns"]);
+        assert.deepEqual(gridSchema.parse(savedCopy.input).caseAxes, [
+          "columns",
+        ]);
         assert.deepEqual(
           parameterValue(gridSchema.parse(savedCopy.input), "input", 0, 0)![0]
             .images,
@@ -425,7 +427,7 @@ test("chat reuse matches attachment content across uploads but not moved attachm
       reuseArtifacts: true,
     });
     assert.equal(copy.status, "complete");
-    assert.equal(
+    assert.notEqual(
       f.store.outputMetadata(copy.cells[0].id)!.artifactId,
       f.store.outputMetadata(original.cells[0].id)!.artifactId,
     );
@@ -475,138 +477,152 @@ test("chat reuse matches attachment content across uploads but not moved attachm
 test("template reuse preserves usage metadata and requires every completion", async (t) => {
   const f = await runtimeFixture();
   try {
-    await t.test("consecutive blanks preserve per-call usage and JSON downloads", async () => {
-      const template = currentDefinition({
-        ...input,
-        format: "chat-template",
-        parameters: {
-          input: {
-            kind: "common",
-            value: [
-              { role: "user", content: "$ROW1 one" },
-              { role: "unfilled", content: "" },
-              { role: "unfilled", content: "" },
-            ],
+    await t.test(
+      "consecutive blanks preserve per-call usage and JSON downloads",
+      async () => {
+        const template = currentDefinition({
+          ...input,
+          format: "chat-template",
+          parameters: {
+            input: {
+              kind: "common",
+              value: [
+                { role: "user", content: "$ROW1 one" },
+                { role: "unfilled", content: "" },
+                { role: "unfilled", content: "" },
+              ],
+            },
+            model: { kind: "common", value: "fixture/text" },
+            effort: { kind: "columns" },
           },
-          model: { kind: "common", value: "fixture/text" },
-          effort: { kind: "columns" },
-        },
-        budgetUsd: 1,
-        rows: [{ variable: [{ text: "cat" }] }],
-      });
-      const source = await create(f, template);
-      finish(await f.nextCall(), "First answer");
-      const second = await f.nextCall();
-      assert.equal(second.request.messages.at(-1)!.role, "assistant");
-      assert.equal(
-        messageText(second.request.messages.at(-1)!.content),
-        "First answer",
-      );
-      finish(second, "Second answer");
-      await settled(f, source.id);
-      const saved = f.store.get(source.id)!;
-      assertCost(saved.cells[0].usage!.costUsd!, 0.0246);
-      const calls = f.calls.length;
-      const copy = await create(f, {
-        ...template,
-        sourceGridId: source.id,
-        reuseArtifacts: true,
-      });
-      assert.equal(copy.cells[0].status, "complete");
-      assert.equal(f.calls.length, calls);
-      const artifactId = f.store.outputMetadata(copy.cells[0].id)!.artifactId;
-      assert.equal(artifactId, saved.cells[0].artifactId);
-      assertCost(f.store.get(copy.id)!.cells[0].usage!.costUsd!, 0.0246);
-      const conversation = await f.request(`/outputs/${copy.cells[0].id}?raw=1`);
-      assert.match(
-        conversation.headers.get("content-type")!,
-        /application\/json/,
-      );
-      assert.deepEqual(await conversation.json(), [
-        { role: "user", content: "cat one" },
-        { role: "assistant", content: "First answer" },
-        { role: "assistant", content: "Second answer" },
-      ]);
-      const download = await f.request(`/outputs/${copy.cells[0].id}/download`);
-      assert.equal(download.status, 200);
-      assert.match(download.headers.get("content-type")!, /application\/json/);
-      assert.match(download.headers.get("content-disposition")!, /\.json/);
-      assert.deepEqual(await download.json(), [
-        { role: "user", content: "cat one" },
-        { role: "assistant", content: "First answer" },
-        { role: "assistant", content: "Second answer" },
-      ]);
-      assert.equal(
-        (await f.fetch(f.origin + `/outputs/${copy.cells[0].id}?raw=1`)).status,
-        404,
-      );
-      removeTemplateInputTokenUsage(f.store.db, copy.cells[0].generationId);
-      const regenerated = await create(f, {
-        ...template,
-        sourceGridId: copy.id,
-        reuseArtifacts: true,
-      });
-      assert.notEqual(regenerated.cells[0].status, "complete");
-      finish(await f.nextCall(), "Fresh first answer");
-      finish(await f.nextCall(), "Fresh second answer");
-      assert.equal((await settled(f, regenerated.id)).status, "complete");
-      assert.equal(f.calls.length, calls + 2);
-    });
-    await t.test("trailing supplied history still requires the final completion", async () => {
-      const calls = f.calls.length;
-      const template = currentDefinition({
-        ...input,
-        format: "chat-template",
-        parameters: {
-          input: {
-            kind: "common",
-            value: [
-              { role: "user", content: "$ROW1 one" },
-              { role: "unfilled", content: "" },
-              { role: "user", content: "Final question" },
-            ],
-          },
-          model: { kind: "common", value: "fixture/text" },
-          effort: { kind: "columns" },
-        },
-        budgetUsd: 1,
-        rows: [{ variable: [{ text: "cat" }] }],
-      });
-      const source = await create(f, template);
-      finish(await f.nextCall(), "First answer");
-      const last = await f.nextCall();
-      assert.deepEqual(
-        last.request.messages.map((m) => ({
-          role: m.role,
-          content: messageText(m.content),
-        })),
-        [
+          budgetUsd: 1,
+          rows: [{ variable: [{ text: "cat" }] }],
+        });
+        const source = await create(f, template);
+        finish(await f.nextCall(), "First answer");
+        const second = await f.nextCall();
+        assert.equal(second.request.messages.at(-1)!.role, "assistant");
+        assert.equal(
+          messageText(second.request.messages.at(-1)!.content),
+          "First answer",
+        );
+        finish(second, "Second answer");
+        await settled(f, source.id);
+        const saved = f.store.get(source.id)!;
+        assertCost(saved.cells[0].usage!.costUsd!, 0.0246);
+        const calls = f.calls.length;
+        const copy = await create(f, {
+          ...template,
+          sourceGridId: source.id,
+          reuseArtifacts: true,
+        });
+        assert.equal(copy.cells[0].status, "complete");
+        assert.equal(f.calls.length, calls);
+        const artifactId = f.store.outputMetadata(copy.cells[0].id)!.artifactId;
+        assert.equal(artifactId, saved.cells[0].artifactId);
+        assertCost(f.store.get(copy.id)!.cells[0].usage!.costUsd!, 0.0246);
+        const conversation = await f.request(
+          `/outputs/${copy.cells[0].id}?raw=1`,
+        );
+        assert.match(
+          conversation.headers.get("content-type")!,
+          /application\/json/,
+        );
+        assert.deepEqual(await conversation.json(), [
           { role: "user", content: "cat one" },
           { role: "assistant", content: "First answer" },
-          { role: "user", content: "Final question" },
-        ],
-      );
-      finish(last, "Final answer");
-      await settled(f, source.id);
-      const copy = await create(f, {
-        ...template,
-        sourceGridId: source.id,
-        reuseArtifacts: true,
-      });
-      assert.equal(copy.status, "complete");
-      assert.equal(f.calls.length, calls + 2);
-      removeSecondTemplateStep(f.store.db, source.cells[0].generationId);
-      const regenerated = await create(f, {
-        ...template,
-        sourceGridId: source.id,
-        reuseArtifacts: true,
-      });
-      assert.notEqual(regenerated.status, "complete");
-      finish(await f.nextCall(), "Fresh first answer");
-      finish(await f.nextCall(), "Fresh final answer");
-      await settled(f, regenerated.id);
-      assert.equal(f.calls.length, calls + 4);
-    });
+          { role: "assistant", content: "Second answer" },
+        ]);
+        const download = await f.request(
+          `/outputs/${copy.cells[0].id}/download`,
+        );
+        assert.equal(download.status, 200);
+        assert.match(
+          download.headers.get("content-type")!,
+          /application\/json/,
+        );
+        assert.match(download.headers.get("content-disposition")!, /\.json/);
+        assert.deepEqual(await download.json(), [
+          { role: "user", content: "cat one" },
+          { role: "assistant", content: "First answer" },
+          { role: "assistant", content: "Second answer" },
+        ]);
+        assert.equal(
+          (await f.fetch(f.origin + `/outputs/${copy.cells[0].id}?raw=1`))
+            .status,
+          404,
+        );
+        removeTemplateInputTokenUsage(f.store.db, copy.cells[0].generationId);
+        const regenerated = await create(f, {
+          ...template,
+          sourceGridId: copy.id,
+          reuseArtifacts: true,
+        });
+        assert.notEqual(regenerated.cells[0].status, "complete");
+        finish(await f.nextCall(), "Fresh first answer");
+        finish(await f.nextCall(), "Fresh second answer");
+        assert.equal((await settled(f, regenerated.id)).status, "complete");
+        assert.equal(f.calls.length, calls + 2);
+      },
+    );
+    await t.test(
+      "trailing supplied history still requires the final completion",
+      async () => {
+        const calls = f.calls.length;
+        const template = currentDefinition({
+          ...input,
+          format: "chat-template",
+          parameters: {
+            input: {
+              kind: "common",
+              value: [
+                { role: "user", content: "$ROW1 one" },
+                { role: "unfilled", content: "" },
+                { role: "user", content: "Final question" },
+              ],
+            },
+            model: { kind: "common", value: "fixture/text" },
+            effort: { kind: "columns" },
+          },
+          budgetUsd: 1,
+          rows: [{ variable: [{ text: "cat" }] }],
+        });
+        const source = await create(f, template);
+        finish(await f.nextCall(), "First answer");
+        const last = await f.nextCall();
+        assert.deepEqual(
+          last.request.messages.map((m) => ({
+            role: m.role,
+            content: messageText(m.content),
+          })),
+          [
+            { role: "user", content: "cat one" },
+            { role: "assistant", content: "First answer" },
+            { role: "user", content: "Final question" },
+          ],
+        );
+        finish(last, "Final answer");
+        await settled(f, source.id);
+        const copy = await create(f, {
+          ...template,
+          sourceGridId: source.id,
+          reuseArtifacts: true,
+        });
+        assert.equal(copy.status, "complete");
+        assert.equal(f.calls.length, calls + 2);
+        removeSecondTemplateStep(f.store.db, source.cells[0].generationId);
+        const regenerated = await create(f, {
+          ...template,
+          sourceGridId: source.id,
+          reuseArtifacts: true,
+        });
+        assert.notEqual(regenerated.status, "complete");
+        finish(await f.nextCall(), "Fresh first answer");
+        finish(await f.nextCall(), "Fresh final answer");
+        await settled(f, regenerated.id);
+        assert.equal(f.calls.length, calls + 4);
+      },
+    );
   } finally {
     await f.close();
   }
@@ -1486,14 +1502,14 @@ test("reuse shares one generation per judge group without copying judgments or a
       res.writeHead(404).end();
     }
   });
-  t.after(() => new Promise<void>((resolve) => upstream.close(() => resolve())));
+  t.after(
+    () => new Promise<void>((resolve) => upstream.close(() => resolve())),
+  );
   upstream.listen(0, "127.0.0.1");
   await once(upstream, "listening");
   const address = upstream.address();
   assert.ok(address && typeof address !== "string");
-  const provider = new Provider(
-    `http://127.0.0.1:${address.port}`,
-  );
+  const provider = new Provider(`http://127.0.0.1:${address.port}`);
   const config = currentDefinition({
     ...input,
     caseAxes: [],
@@ -1525,7 +1541,10 @@ test("reuse shares one generation per judge group without copying judgments or a
     createdAt: new Date().toISOString(),
     cells: expandGrid(config).map((cell) => ({ ...cell, id: token() })),
   };
-  const sourceTasks = createWorkflow(gridSchema.parse(config), sourceGrid.cells);
+  const sourceTasks = createWorkflow(
+    gridSchema.parse(config),
+    sourceGrid.cells,
+  );
   const sourceGeneration = sourceTasks.find(
     (task) => task.kind === "generation",
   )!;
@@ -1622,7 +1641,10 @@ test("reuse shares one generation per judge group without copying judgments or a
   const restored = store.get(destination.id)!;
   assert.equal(restored.cells[0].judge?.status, "complete");
   assert.equal(restored.cells[0].judge?.attemptId, "fresh-judge-attempt");
-  assert.deepEqual(restored.cells[0].judge?.results, judgments[0].output.results);
+  assert.deepEqual(
+    restored.cells[0].judge?.results,
+    judgments[0].output.results,
+  );
   assert.equal(restored.cells[1].judge?.status, "error");
   assert.equal(restored.cells[1].judge?.attemptId, "failed-judge-attempt");
   assert.equal(restored.cells[1].judge?.error, "Temporary error");

@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { rasterizeSvg } from "../server/svg-raster.js";
 import type { Worker } from "node:worker_threads";
-import type { GenerationTask } from "../server/domain.js";
+import type { FilledChatMessage, GenerationTask } from "../server/domain.js";
 import { Store } from "../server/store.js";
 import { loadJudgeMessages } from "../server/judge-artifact.js";
 const requestSchema = z.object({
@@ -272,12 +272,20 @@ test("judge SDK continues native conversations with images in place and trailing
   );
   try {
     for (const format of ["chat-template", "image"] as const) {
-      const transcript = [
+      const transcript: FilledChatMessage[] = [
         { role: "system" as const, content: "Be concise." },
         {
           role: "user" as const,
           content: "Describe this image.",
-          images: [{ id: "first", name: "first.png" }],
+          images: [
+            {
+              name: "first.png",
+              mediaType: "image/png",
+              width: 1,
+              height: 1,
+              dataUrl: `data:image/png;base64,${references.get("first")!.bytes.toString("base64")}`,
+            },
+          ],
         },
         {
           role: "assistant" as const,
@@ -287,8 +295,20 @@ test("judge SDK continues native conversations with images in place and trailing
           role: "user" as const,
           content: "",
           images: [
-            { id: "second", name: "second.png" },
-            { id: "first", name: "first.png" },
+            {
+              name: "second.png",
+              mediaType: "image/png",
+              width: 1,
+              height: 1,
+              dataUrl: `data:image/png;base64,${references.get("second")!.bytes.toString("base64")}`,
+            },
+            {
+              name: "first.png",
+              mediaType: "image/png",
+              width: 1,
+              height: 1,
+              dataUrl: `data:image/png;base64,${references.get("first")!.bytes.toString("base64")}`,
+            },
           ],
         },
         {
@@ -298,7 +318,7 @@ test("judge SDK continues native conversations with images in place and trailing
       ];
       const history =
         format === "chat-template"
-          ? chatMessages(transcript, references)
+          ? chatMessages(transcript)
           : [
               {
                 role: "user" as const,

@@ -3,7 +3,7 @@ import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { z } from "zod";
 import type { JudgmentInput, JudgeResult } from "./domain.js";
 import {
-  chatMessages,
+  inputChatMessages,
   chatWireMessages,
   type ChatInputMessage,
 } from "./chat-messages.js";
@@ -48,7 +48,7 @@ export async function judgeInference(
     const history: ChatInputMessage[] = [
       ...messages,
       { role: "system", content: judgeSystem },
-      ...chatMessages(
+      ...inputChatMessages(
         [
           {
             role: "user",

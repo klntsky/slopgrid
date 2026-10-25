@@ -9,6 +9,7 @@ import { inferenceSignature, templateSignature } from "./prepared-inference.js";
 import { templateFits, templateSequence } from "./chat-template.js";
 import { referenceIds } from "./image-settings.js";
 import type { ReferenceInputs } from "./image-references.js";
+import { readChatOutput, writeChatOutput } from "../shared/chat-output.js";
 
 export async function reuseArtifacts(
   store: Store,
@@ -111,7 +112,43 @@ export async function reuseArtifacts(
         available.set(key, content);
       }
       if (!(await content)) continue;
-      task.output = structuredClone(output);
+      const reused = structuredClone(output);
+      if (format === "chat-template") {
+        const bundle = await store.files.readArtifact(
+          output.artifactId,
+          output.provenance.files,
+        );
+        if (!bundle?.files["messages.json"]) continue;
+        const original = Buffer.from(bundle.files["messages.json"]).toString(
+          "utf8",
+        );
+        const messages = readChatOutput(original);
+        let changed = false;
+        for (const [index, configured] of (
+          parameters.messages ?? []
+        ).entries()) {
+          if (configured.role === "unfilled" || !configured.images?.length)
+            continue;
+          const images = messages[index]?.images;
+          if (!images || images.length !== configured.images.length)
+            throw new Error(
+              "Canonical chat output does not match its accepted input",
+            );
+          for (const [imageIndex, supplied] of configured.images.entries()) {
+            if (images[imageIndex].name === supplied.name) continue;
+            images[imageIndex].name = supplied.name;
+            changed = true;
+          }
+        }
+        if (changed) {
+          const replacement = {
+            ...bundle.files,
+            "messages.json": Buffer.from(writeChatOutput(messages)),
+          };
+          reused.artifactId = store.files.writeImmutable(replacement);
+        }
+      }
+      task.output = reused;
       task.status = "complete";
       break;
     }

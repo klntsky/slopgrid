@@ -1,4 +1,18 @@
 import { pixelPng, referencePng } from "./reference-image-fixture.js";
+import type { ChatImage } from "../server/domain.js";
+
+export function referencePngOutput(
+  name: string,
+  bytes = referencePng,
+): ChatImage {
+  return {
+    name,
+    mediaType: "image/png",
+    width: 7,
+    height: 3,
+    dataUrl: `data:image/png;base64,${bytes.toString("base64")}`,
+  };
+}
 
 export const generatedPng = pixelPng;
 export const generatedDataUrl = `data:image/png;base64,${generatedPng.toString("base64")}`;
@@ -14,8 +28,7 @@ export function imageDelta(url = generatedDataUrl) {
   return { images: [{ type: "image_url", image_url: { url } }] };
 }
 
-export type GeneratedImageJSON = {
-  kind: "generated";
+export type ChatImageJSON = {
   name: string;
   mediaType: string;
   width: number;
@@ -25,5 +38,5 @@ export type GeneratedImageJSON = {
 export type TranscriptMessageJSON = {
   role: string;
   content: string;
-  images?: (GeneratedImageJSON | { id: string; name: string })[];
+  images?: ChatImageJSON[];
 };

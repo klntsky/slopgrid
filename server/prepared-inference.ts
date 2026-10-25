@@ -52,20 +52,15 @@ export function prepareImageInference(
 export function prepareTextInference(
   format: Exclude<GridInput["format"], "image">,
   cell: Omit<GenerationParameters, "messages"> & {
-    messages?: (
-      NonNullable<GenerationParameters["messages"]>[number] | FilledChatMessage
-    )[];
+    messages?: FilledChatMessage[];
   },
   budget: TextBudget,
   structured: boolean,
   cache?: { sessionId: string; previousPrefixLength: number },
-  references?: ReferenceInputs,
   chatImageOutput = false,
   replay?: ReadonlyMap<number, ReplayDetails>,
 ) {
-  const messages = cell.messages
-    ? chatMessages(cell.messages, references)
-    : undefined;
+  const messages = cell.messages ? chatMessages(cell.messages) : undefined;
   const wireMessages =
     format === "chat-template" && messages
       ? chatWireMessages(messages, cache, replay)

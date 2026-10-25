@@ -11,6 +11,7 @@ import type {
   InferenceProgress,
 } from "../server/domain.js";
 import { readChatOutput } from "../shared/chat-output.js";
+import { referencePngOutput } from "./chat-image-output-fixture.js";
 
 const model = {
   name: "Test",
@@ -264,6 +265,40 @@ test("chat output rejects malformed JSON and invalid message roles or content", 
     [{ role: "assistant", content: 42 }],
   ])
     assert.throws(() => readChatOutput(JSON.stringify(value)));
+});
+
+test("saved chat images require complete inline bytes and dimensions and preserve ordered names", () => {
+  const first = referencePngOutput("first.png");
+  const second = referencePngOutput("a".repeat(2000) + ".png");
+  const messages = [
+    { role: "user", content: "", images: [first, second, first] },
+    { role: "assistant", content: "", images: [second] },
+  ];
+  assert.deepEqual(readChatOutput(JSON.stringify(messages)), messages);
+  const { name: _name, ...withoutName } = first;
+  const { mediaType: _mediaType, ...withoutMediaType } = first;
+  const { width: _width, ...withoutWidth } = first;
+  const { height: _height, ...withoutHeight } = first;
+  const { dataUrl: _dataUrl, ...withoutDataUrl } = first;
+  for (const image of [
+    withoutName,
+    withoutMediaType,
+    withoutWidth,
+    withoutHeight,
+    withoutDataUrl,
+    { ...first, width: 0 },
+    { ...first, height: -1 },
+    { ...first, width: 1.5 },
+    { ...first, height: "3" },
+    { ...first, dataUrl: "data:image/jpeg;base64,AAAA" },
+  ])
+    assert.throws(
+      () =>
+        readChatOutput(
+          JSON.stringify([{ role: "user", content: "", images: [image] }]),
+        ),
+      /Invalid chat output/,
+    );
 });
 
 test("cancellation and exhausted shared budget prevent subsequent calls", async () => {

@@ -1,5 +1,10 @@
-import type { ChatMessage, FilledChatMessage } from "./domain.js";
+import {
+  chatImageSchema,
+  type ChatMessage,
+  type FilledChatMessage,
+} from "./domain.js";
 import type { ReferenceInputs } from "./image-references.js";
+import { imageDimensions } from "./image-dimensions.js";
 
 type ChatContent =
   | string
@@ -13,8 +18,69 @@ export type ChatInputMessage =
   | { role: "assistant"; content: ChatContent };
 export type ReplayDetails = Record<string, unknown>[];
 
+export function materializeChatMessages(
+  messages: readonly ChatMessage[],
+  references?: ReferenceInputs,
+): FilledChatMessage[] {
+  return messages.map(({ role, content, images }) => {
+    if (role === "unfilled")
+      throw new Error("Unfilled messages must be expanded before inference.");
+    if (role === "system" && images?.length)
+      throw new Error("System messages do not support image inputs.");
+    return {
+      role,
+      content,
+      ...(images?.length
+        ? {
+            images: images.map((image) => {
+              const reference = references?.get(image.id);
+              if (!reference) throw new Error("Reference image is unavailable");
+              const dimensions = imageDimensions(reference.bytes);
+              if (!dimensions)
+                throw new Error("Reference image has invalid dimensions");
+              return chatImageSchema.parse({
+                name: image.name,
+                mediaType: reference.mediaType,
+                ...dimensions,
+                dataUrl: `data:${reference.mediaType};base64,${reference.bytes.toString("base64")}`,
+              });
+            }),
+          }
+        : {}),
+    };
+  });
+}
+
 export function chatMessages(
-  history: readonly (ChatMessage | FilledChatMessage)[],
+  messages: readonly FilledChatMessage[],
+): ChatInputMessage[] {
+  return messages.map(({ role, content, images }): ChatInputMessage => {
+    if (role === "system") {
+      if (images?.length)
+        throw new Error("System messages do not support image inputs.");
+      return { role, content };
+    }
+    return {
+      role,
+      content: !images?.length
+        ? content
+        : [
+            ...images.map((image) => ({
+              type: "file" as const,
+              data: Buffer.from(
+                image.dataUrl.slice(image.dataUrl.indexOf(",") + 1),
+                "base64",
+              ),
+              mediaType: image.mediaType,
+            })),
+            ...(content ? [{ type: "text" as const, text: content }] : []),
+          ],
+    };
+  });
+}
+
+export function inputChatMessages(
+  history: readonly ChatMessage[],
   references?: ReferenceInputs,
 ): ChatInputMessage[] {
   return history.map(({ role, content, images }): ChatInputMessage => {
@@ -25,30 +91,23 @@ export function chatMessages(
         throw new Error("System messages do not support image inputs.");
       return { role, content };
     }
-    const body: ChatContent = !images?.length
-      ? content
-      : [
-          ...images.map((image) => {
-            if ("kind" in image)
+    return {
+      role,
+      content: !images?.length
+        ? content
+        : [
+            ...images.map((image) => {
+              const reference = references?.get(image.id);
+              if (!reference) throw new Error("Reference image is unavailable");
               return {
                 type: "file" as const,
-                data: Buffer.from(
-                  image.dataUrl.slice(image.dataUrl.indexOf(",") + 1),
-                  "base64",
-                ),
-                mediaType: image.mediaType,
+                data: reference.bytes,
+                mediaType: reference.mediaType,
               };
-            const reference = references?.get(image.id);
-            if (!reference) throw new Error("Reference image is unavailable");
-            return {
-              type: "file" as const,
-              data: reference.bytes,
-              mediaType: reference.mediaType,
-            };
-          }),
-          ...(content ? [{ type: "text" as const, text: content }] : []),
-        ];
-    return { role, content: body };
+            }),
+            ...(content ? [{ type: "text" as const, text: content }] : []),
+          ],
+    };
   });
 }
 

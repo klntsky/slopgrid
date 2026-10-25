@@ -10,6 +10,8 @@ import {
 import type { TextBudget } from "./generation-budget.js";
 import { sumUsage } from "./usage.js";
 import { writeChatOutput } from "../shared/chat-output.js";
+import { materializeChatMessages } from "./chat-messages.js";
+import type { ReferenceInputs } from "./image-references.js";
 
 export function templateSequence(messages: ChatMessage[]): ChatMessage[] {
   return messages.length && messages.at(-1)!.role !== "unfilled"
@@ -30,6 +32,7 @@ export async function fillChatTemplate(
   }>,
   onChunk: (progress: InferenceProgress) => void,
   signal?: AbortSignal,
+  references?: ReferenceInputs,
 ) {
   const history: FilledChatMessage[] = [];
   const templateSteps: TemplateStep[] = [];
@@ -40,7 +43,7 @@ export async function fillChatTemplate(
   for (const message of sequence) {
     signal?.throwIfAborted();
     if (message.role !== "unfilled") {
-      history.push({ ...message, role: message.role });
+      history.push(...materializeChatMessages([message], references));
       continue;
     }
     const prompt = chatText(history);

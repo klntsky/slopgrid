@@ -15,7 +15,10 @@ import { parsePricing, type ModelPricing } from "./model-pricing.js";
 import type { CallObserver } from "./billing.js";
 import { upstreamFetch } from "./http.js";
 import { judgeInference } from "./judge.js";
-import type { ChatInputMessage } from "./chat-messages.js";
+import {
+  materializeChatMessages,
+  type ChatInputMessage,
+} from "./chat-messages.js";
 import {
   efforts,
   type Cell,
@@ -324,11 +327,14 @@ export class Provider {
     );
     return prepareTextInference(
       format,
-      cell,
+      {
+        ...cell,
+        messages: cell.messages
+          ? materializeChatMessages(cell.messages, references)
+          : undefined,
+      },
       budget,
       format === "html" && pricedModel.structuredOutputs === true,
-      undefined,
-      references,
     );
   }
 }

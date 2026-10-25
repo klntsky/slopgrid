@@ -147,14 +147,22 @@ test("assistant upload and generated image-only replies survive template follow-
   const outputPath = `/outputs/${cellId}`;
   const rawResponse = await page.request.get(`${outputPath}?raw=1`);
   expect(rawResponse.ok()).toBe(true);
+  const saved = await rawResponse.text();
   const raw: TranscriptMessageJSON[] = await rawResponse.json();
-  expect(raw[1].images).toEqual(grid.input.parameters.input.value[1].images);
+  expect(raw[1].images).toEqual([
+    {
+      name: grid.input.parameters.input.value[1].images[0].name,
+      mediaType: "image/png",
+      width: 7,
+      height: 3,
+      dataUrl: suppliedUrl,
+    },
+  ]);
   expect(raw[3].content).toBe("");
   expect(raw[5].content).toBe("");
   for (const index of [3, 5]) {
     expect(raw[index].images).toEqual([
       expect.objectContaining({
-        kind: "generated",
         mediaType: "image/png",
         width: 1,
         height: 1,
@@ -185,6 +193,7 @@ test("assistant upload and generated image-only replies survive template follow-
     })
     .toEqual(raw);
   expect(copied).toContain(generatedDataUrl);
+  expect(copied).toBe(saved);
   expect(copied).not.toMatch(
     /opaque-fixture|reasoning_details|reasoning\.encrypted/,
   );
@@ -193,6 +202,7 @@ test("assistant upload and generated image-only replies survive template follow-
     .getAttribute("href");
   const download = await page.request.get(downloadURL!);
   expect(download.headers()["content-type"]).toContain("application/json");
+  expect(await download.text()).toBe(saved);
   const portable: TranscriptMessageJSON[] = await download.json();
   expect(JSON.stringify(portable[1].images)).toContain(suppliedUrl);
   expect(JSON.stringify(portable)).not.toContain("/api/references/");
@@ -241,29 +251,25 @@ test("assistant upload and generated image-only replies survive template follow-
     .toBe(true);
   await expect
     .poll(() =>
-      page.evaluate(
-        async ({ cellId, referenceId }) => {
-          const paths = [
-            `/outputs/${cellId}?raw=1`,
-            `/outputs/${cellId}?theme=light`,
-            `/outputs/${cellId}?theme=dark`,
-            `/outputs/${cellId}/download`,
-            `/api/references/${referenceId}`,
-          ];
-          const all = await Promise.all(
-            (await caches.keys()).map((name) => caches.open(name)),
-          );
-          return Promise.all(
-            paths.map(async (path) => {
-              for (const cache of all) if (await cache.match(path)) return true;
-              return false;
-            }),
-          );
-        },
-        { cellId, referenceId },
-      ),
+      page.evaluate(async (cellId) => {
+        const paths = [
+          `/outputs/${cellId}?raw=1`,
+          `/outputs/${cellId}?theme=light`,
+          `/outputs/${cellId}?theme=dark`,
+          `/outputs/${cellId}/download`,
+        ];
+        const all = await Promise.all(
+          (await caches.keys()).map((name) => caches.open(name)),
+        );
+        return Promise.all(
+          paths.map(async (path) => {
+            for (const cache of all) if (await cache.match(path)) return true;
+            return false;
+          }),
+        );
+      }, cellId),
     )
-    .toEqual([true, true, true, true, true]);
+    .toEqual([true, true, true, true]);
   const ownerCookies = await context.cookies();
   await context.setOffline(true);
   try {
