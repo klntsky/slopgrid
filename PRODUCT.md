@@ -5,6 +5,7 @@ This document defines Slopgrid's product behavior and user experience.
 ## Website metadata
 
 1. Provide Open Graph link previews using `slopgrid` as the title and site name, the site description, and the same grid screenshot shown in the README. Use the exact site description as the preview image alt text.
+2. Provide search engines with structured metadata identifying the Slopgrid website and browser-based application as related entities. Reuse the site name, description, public URL, and application screenshot, and make the metadata available in the initial HTML.
 
 ## Presentation and interaction requirements
 
