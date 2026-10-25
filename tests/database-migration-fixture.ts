@@ -1,4 +1,6 @@
 import Database from "better-sqlite3";
+import { encrypt, decrypt } from "../server/encryption.js";
+import { migrateProductionGrid } from "../server/production-input-migration.js";
 
 // Frozen production v14 schema. Do not derive this fixture from the initializer.
 export function productionDatabase() {
@@ -56,6 +58,45 @@ export function productionDatabase() {
   `);
   setDatabaseVersion(db, 14);
   return db;
+}
+
+export function productionV17Database() {
+  const db = productionDatabase();
+  seedProduction(db);
+  db.transaction(() => {
+    db.exec(`
+      CREATE TABLE reference_blobs (
+        sha256 TEXT PRIMARY KEY CHECK (length(sha256)=64),
+        width INTEGER CHECK (width IS NULL OR width > 0),
+        height INTEGER CHECK ((width IS NULL AND height IS NULL) OR
+          (width IS NOT NULL AND height IS NOT NULL AND height > 0))
+      ) STRICT;
+      ALTER TABLE reference_images ADD COLUMN sha256 TEXT REFERENCES reference_blobs(sha256);
+      CREATE INDEX reference_images_sha256 ON reference_images(sha256,id);
+    `);
+    for (const { id, data } of db
+      .prepare<[], { id: string; data: string }>("SELECT id,data FROM grids")
+      .all())
+      db.prepare("UPDATE grids SET data=? WHERE id=?").run(
+        JSON.stringify(migrateProductionGrid(JSON.parse(data))),
+        id,
+      );
+    db.prepare(
+      "UPDATE sessions SET data=json_set(data,'$.key',?) WHERE id='session'",
+    ).run(encrypt("production-browser-key", Buffer.alloc(32, 17)));
+    setDatabaseVersion(db, 17);
+  })();
+  return db;
+}
+
+export function productionSessionKey(db: Database.Database) {
+  const row = db
+    .prepare<[], { key: string }>(
+      "SELECT json_extract(data,'$.key') AS key FROM sessions WHERE id='session'",
+    )
+    .get();
+  if (!row) throw new Error("Expected the preserved production session");
+  return decrypt(row.key, Buffer.alloc(32, 17));
 }
 
 export const input = {

@@ -14,7 +14,7 @@ import {
   temporaryReadFailure,
 } from "./retry-policies";
 import { recoverGridRead, waitForRecovery } from "./recovery";
-
+import { invalidateFavoritePages } from "../queries";
 export function useGrid(id: string) {
   const cache = useQueryClient(),
     navigate = useNavigate();
@@ -44,9 +44,13 @@ export function useGrid(id: string) {
         return await Promise.race([
           recoverGridRead({
             run: (attemptSignal) =>
-              api<ViewGrid>(`/grids/${id}`, "GET", undefined, undefined, {
-                signal: attemptSignal,
-              }),
+              api<ViewGrid>(
+                `/grids/${id}`,
+                "GET",
+                undefined,
+                undefined,
+                attemptSignal,
+              ),
             signal,
             retryAt: serverRetryAt,
             onFailure: (error) => {
@@ -204,7 +208,10 @@ export function useGrid(id: string) {
         sourceGridId: grid.id,
         reuseArtifacts: true,
       });
-      await cache.invalidateQueries({ queryKey: ["grids"] });
+      await Promise.all([
+        cache.invalidateQueries({ queryKey: ["grids"] }),
+        invalidateFavoritePages(cache),
+      ]);
       await navigate({ to: "/create" });
     },
   });

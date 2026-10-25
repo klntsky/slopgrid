@@ -275,6 +275,8 @@ export async function startDemo(request, run, build, github) {
   const config = request.config?.demo;
   if (request.target !== "demo") throw new Error("Demo runtime requires demo target");
   if (!config || typeof config.envFile !== "string" || !isAbsolute(config.envFile) || /[\r\n\0]/.test(config.envFile)) throw new Error("Demo needs an absolute private envFile");
+  if (request.reuseDemo === undefined && request.skipDataCloning !== true && !config.stagingSource)
+    throw new Error("Demo staging source is required; configure OPS_STAGING_APPLICATION_ROOT and OPS_STAGING_CONFIG or use --skip-data-cloning for empty storage");
   const httpsPort = validPort(config.httpsPort, "HTTPS");
   if (!isAbsolute(run) || !isAbsolute(build.path)) throw new Error("Demo run and build paths must be absolute");
   if (existsSync(leasePath(run))) throw new Error("Demo run already has a lease; use a fresh run");
@@ -314,12 +316,10 @@ export async function startDemo(request, run, build, github) {
       assertReuseSourceUnchanged(source);
       key = source.key;
     } else {
-      const { prepareDemoSeed } = await import("./demo-seed.mjs");
-      const seed = await prepareDemoSeed({
-        source: config.stagingSource,
-        buildPath: build.path,
-        runtimeDir,
-      });
+      const { prepareDemoSeed, initializeEmptyDemoSeed } = await import("./demo-seed.mjs");
+      const seed = request.skipDataCloning === true
+        ? await initializeEmptyDemoSeed({ buildPath: build.path, runtimeDir })
+        : await prepareDemoSeed({ source: config.stagingSource, buildPath: build.path, runtimeDir });
       key = seed.key;
       lease = {
         ...lease,

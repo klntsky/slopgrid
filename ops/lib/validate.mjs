@@ -179,12 +179,12 @@ export async function validateBuild(request, build, run) {
           result.productionData.schemaBefore = snapshot.pragma("user_version", {
             simple: true,
           });
-          if (![14, 17].includes(result.productionData.schemaBefore))
+          if (result.productionData.schemaBefore === 0)
             throw new Error(
-              "Production data rehearsal requires source database schema 14 or canonical schema 17",
+              "Production data rehearsal requires an initialized database",
             );
           if (
-            result.productionData.schemaBefore === 17 &&
+            result.productionData.schemaBefore !== 14 &&
             snapshot
               .prepare(
                 "SELECT 1 FROM grids WHERE json_extract(data,'$.input.inputVersion') IS NOT 3 LIMIT 1",
@@ -192,7 +192,7 @@ export async function validateBuild(request, build, run) {
               .get()
           )
             throw new Error(
-              "Production schema 17 requires canonical inputVersion 3 grids",
+              "Production data rehearsal requires canonical inputVersion 3 grids",
             );
         } finally {
           snapshot.close();
@@ -205,8 +205,15 @@ export async function validateBuild(request, build, run) {
             "--input-type=module",
             "--eval",
             `import { Store } from "./server/store.ts";
+import { schemaVersion } from "./server/database.ts";
+if (!Number.isSafeInteger(schemaVersion) || schemaVersion <= 0)
+  throw new Error("Candidate database schema version must be a positive integer");
 const store = new Store(process.env.DATABASE_PATH, Buffer.from(process.env.KEY_ENCRYPTION_SECRET, "hex"), process.env.OUTPUTS_PATH);
-store.db.close();`,
+try {
+  const observed = store.db.pragma("user_version", { simple: true });
+  if (observed !== schemaVersion)
+    throw new Error(\`Production data rehearsal must produce database schema \${schemaVersion}, observed \${observed}\`);
+} finally { store.db.close(); }`,
           ],
           { cwd: workspace, env },
         );
@@ -227,10 +234,6 @@ store.db.close();`,
           result.productionData.schemaAfter = migrated.pragma("user_version", {
             simple: true,
           });
-          if (result.productionData.schemaAfter !== 17)
-            throw new Error(
-              "Production data rehearsal must produce database schema 17",
-            );
           if (
             migrated
               .prepare(

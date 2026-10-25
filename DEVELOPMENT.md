@@ -21,6 +21,33 @@ blank. Visitors remain anonymous by default and can always choose GitHub
 sign-in. OpenRouter connections remain independent. Load development
 credentials and provider settings separately from deployed runtime configuration.
 
+## Explicit-only gstack skills
+
+The `vendor/gstack` submodule pins the [GitHub fork](https://github.com/klntsky/gstack).
+Initialize it and install its runtime dependencies with Bun 1.4.2 or newer:
+
+```sh
+git submodule update --init vendor/gstack
+(cd vendor/gstack && bun install --frozen-lockfile && GSTACK_RENDER_HOSTS=opencode bun run build && bun x playwright install chromium)
+node scripts/install-gstack.mjs
+```
+
+The installer uses upstream's portable skill renderer and adapts its output for
+OMP in the ignored project-local `.omp/skills/` directory. It leaves other skills
+alone and sets `disable-model-invocation: true` on every installed gstack skill.
+It does not register startup hooks, auto-updates, or a global skill installation.
+Restart OMP after installation. Invoke skills explicitly, for example
+`/skill:gstack-review`, `/skill:gstack-office-hours`, or `/skill:gstack-qa`.
+`/skill:gstack` opens the suite's router.
+
+Update the submodule's pinned revision deliberately and rerun the build and
+installer; do not use upstream's setup or auto-upgrade commands for this install.
+On hosts that deny Chromium's sandbox, its browser cannot launch by default.
+For a trusted isolated local fixture only, the upstream
+`GSTACK_CHROMIUM_NO_SANDBOX=1` environment override permits a one-run smoke check.
+It disables browser sandboxing; do not enable it globally or use it for
+untrusted pages.
+
 ## Running a development worktree
 
 ```sh

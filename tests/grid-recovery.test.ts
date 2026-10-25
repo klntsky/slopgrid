@@ -102,7 +102,7 @@ test(
     t.after(() => controller.abort());
     const pending = recovery.recoverGridRead({
       run: (signal) =>
-        client.api("/grid", "GET", undefined, undefined, { signal }),
+        client.api("/grid", "GET", undefined, undefined, signal),
       signal: controller.signal,
       onFailure: (error) => observed[failures++]?.resolve(error),
     });
@@ -150,7 +150,7 @@ test(
     t.after(() => controller.abort());
     const pending = recovery.recoverGridRead({
       run: (signal) =>
-        client.api("/grid", "GET", undefined, undefined, { signal }),
+        client.api("/grid", "GET", undefined, undefined, signal),
       signal: controller.signal,
       onFailure: (error) => {
         failure.resolve(error);
@@ -182,7 +182,7 @@ for (const scenario of [
     await assert.rejects(
       recovery.recoverGridRead({
         run: (signal) =>
-          client.api("/grid", "GET", undefined, undefined, { signal }),
+          client.api("/grid", "GET", undefined, undefined, signal),
         signal: controller.signal,
       }),
       { name: scenario.error },
@@ -205,7 +205,7 @@ test("an unavailable offline cache entry is surfaced instead of polled", async (
   await assert.rejects(
     recovery.recoverGridRead({
       run: (signal) =>
-        client.api("/grid", "GET", undefined, undefined, { signal }),
+        client.api("/grid", "GET", undefined, undefined, signal),
       signal: controller.signal,
     }),
     (error: unknown) => {
@@ -254,7 +254,7 @@ test(
     t.after(() => controller.abort());
     const pending = recovery.recoverGridRead({
       run: (signal) =>
-        client.api("/grid", "GET", undefined, undefined, { signal }),
+        client.api("/grid", "GET", undefined, undefined, signal),
       signal: controller.signal,
       onFailure: (error) => {
         failure.resolve(error);

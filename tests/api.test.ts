@@ -180,9 +180,13 @@ test(
       finish.resolve(() => response.end("{}"));
     });
     const controller = new AbortController();
-    const request = client.api("/grid", "GET", undefined, undefined, {
-      signal: controller.signal,
-    });
+    const request = client.api(
+      "/grid",
+      "GET",
+      undefined,
+      undefined,
+      controller.signal,
+    );
     const rejected = assert.rejects(request, { name: "AbortError" });
     await received.promise;
     controller.abort();
@@ -203,9 +207,13 @@ for (const status of [200, 503]) {
         finish.resolve(() => response.end('"Busy"}'));
       });
       const controller = new AbortController();
-      const request = client.api("/grid", "GET", undefined, undefined, {
-        signal: controller.signal,
-      });
+      const request = client.api(
+        "/grid",
+        "GET",
+        undefined,
+        undefined,
+        controller.signal,
+      );
       const rejected = assert.rejects(request, { name: "AbortError" });
       await connection.headersReceived;
       await setImmediate();

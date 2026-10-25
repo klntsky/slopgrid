@@ -72,19 +72,22 @@ test("missing root settings fail closed without an external JSON fallback", (t) 
   );
 });
 
-test("demo configuration requires staging credentials without requiring staging data or production settings", (t) => {
+test("demo configuration requires valid staging data paths without production settings", (t) => {
   const root = directory(t),
-    envFile = join(root, "demo", "runtime.env"),
     values = {
-      HOME: root, OPS_DEMO_ENV_FILE: envFile, OPS_DEMO_HTTPS_PORT: "8443",
+      HOME: root, OPS_DEMO_ENV_FILE: join(root, "demo/runtime.env"), OPS_DEMO_HTTPS_PORT: "8443",
       OPS_HOST: "fixture.invalid", OPS_NODE_PATH: "/usr/bin:/bin",
       OPS_STAGING_ENV_FILE: join(root, "staging.env"),
+      OPS_STAGING_APPLICATION_ROOT: join(root, "app"), OPS_STAGING_CONFIG: join(root, "config"),
     };
-  assert.equal(loadDemoConfig(root, values).demo.httpsPort, 8443);
-  assert.equal(Object.hasOwn(loadDemoConfig(root, values).demo, "stagingSource"), false);
+  const config = loadDemoConfig(root, values);
+  assert.equal(config.demo.httpsPort, 8443);
+  assert.deepEqual(config.demo.stagingSource, {
+    host: values.OPS_HOST, nodePath: values.OPS_NODE_PATH, envFile: values.OPS_STAGING_ENV_FILE,
+    applicationRoot: values.OPS_STAGING_APPLICATION_ROOT, config: values.OPS_STAGING_CONFIG,
+  });
   assert.equal(loadDemoConfig(root, { ...values, XDG_STATE_HOME: join(root, "xdg") }).demo.stateRoot, join(root, "xdg/slopgrid/demos"));
   assert.equal(loadDemoConfig(root, { ...values, OPS_DEMO_STATE_ROOT: join(root, "custom") }).demo.stateRoot, join(root, "custom"));
-  assert.equal(Object.hasOwn(configFromEnvironment(fixtureEnvironment(fixtureConfig(root)), root), "demo"), false);
   for (const demo of [
     { OPS_DEMO_ENV_FILE: undefined },
     { OPS_DEMO_HTTPS_PORT: undefined },
@@ -97,20 +100,37 @@ test("demo configuration requires staging credentials without requiring staging 
     { OPS_STAGING_ENV_FILE: "relative.env" },
     ...["", "0", "65536", "1.5", "443junk", "NaN"].map((port) => ({ OPS_DEMO_HTTPS_PORT: port })),
   ]) assert.throws(() => loadDemoConfig(root, { ...values, ...demo }), /demo|OPS_DEMO/i);
-  for (const paths of [
-    { OPS_STAGING_APPLICATION_ROOT: join(root, "app") },
-    { OPS_STAGING_APPLICATION_ROOT: "relative", OPS_STAGING_CONFIG: join(root, "config") },
-    { OPS_STAGING_APPLICATION_ROOT: join(root, "app"), OPS_STAGING_CONFIG: "bad\u0001path" },
-  ]) assert.equal(Object.hasOwn(loadDemoConfig(root, { ...values, ...paths }).demo, "stagingSource"), false);
-  const withData = loadDemoConfig(root, {
-    ...values, OPS_STAGING_APPLICATION_ROOT: join(root, "app"), OPS_STAGING_CONFIG: join(root, "config"),
-  });
-  assert.equal(withData.demo.stagingSource.applicationRoot, join(root, "app"));
+  for (const key of ["OPS_STAGING_APPLICATION_ROOT", "OPS_STAGING_CONFIG"])
+    for (const value of [undefined, "", "relative", 123, "/bad\u0001path"])
+      assert.throws(() => loadDemoConfig(root, { ...values, [key]: value }), /OPS_STAGING_APPLICATION_ROOT|OPS_STAGING_CONFIG/);
+  assert.throws(() => loadDemoConfig(root, {
+    ...values, OPS_STAGING_APPLICATION_ROOT: undefined, OPS_STAGING_CONFIG: undefined,
+  }), /OPS_STAGING_APPLICATION_ROOT|OPS_STAGING_CONFIG/);
   writeFileSync(join(root, ".env"), Object.entries({ ...values, OPS_DEMO_HTTPS_PORT: "443" })
     .map(([key, value]) => `${key}=${JSON.stringify(value)}`).join("\n"));
   assert.equal(loadDemoConfig(root, { HOME: root }).demo.httpsPort, 443);
   assert.equal(loadDemoConfig(root, values).demo.httpsPort, 8443);
   assert.throws(() => loadConfig(root, {}), /Missing or invalid config/);
+});
+
+test("explicit fresh and retained demo selections ignore staging data settings, not GitHub requirements", (t) => {
+  const root = directory(t),
+    values = {
+      HOME: root, OPS_DEMO_ENV_FILE: join(root, "demo.env"), OPS_DEMO_HTTPS_PORT: "8443",
+      OPS_HOST: "fixture.invalid", OPS_NODE_PATH: "/usr/bin:/bin",
+      OPS_STAGING_ENV_FILE: join(root, "staging.env"),
+    };
+  for (const options of [{ skipDataCloning: true }, { reuseDemo: "stopped-run" }]) {
+    for (const paths of [
+      {},
+      { OPS_STAGING_APPLICATION_ROOT: "relative", OPS_STAGING_CONFIG: "/bad\u0001path" },
+      { OPS_STAGING_APPLICATION_ROOT: join(root, "app"), OPS_STAGING_CONFIG: join(root, "config") },
+    ]) {
+      assert.equal(loadDemoConfig(root, { ...values, ...paths }, options).demo.githubSource.envFile, values.OPS_STAGING_ENV_FILE);
+      for (const key of ["OPS_HOST", "OPS_NODE_PATH", "OPS_STAGING_ENV_FILE"])
+        assert.throws(() => loadDemoConfig(root, { ...values, ...paths, [key]: undefined }, options), /GitHub credentials/);
+    }
+  }
 });
 
 test("nested operations transport archives only its committed subtree and never root dotenv", (t) => {

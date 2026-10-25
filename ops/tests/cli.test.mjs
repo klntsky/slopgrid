@@ -138,6 +138,33 @@ test("demo reuse accepts only a safe local run ID and remains absent on fresh re
   assert.throws(() => parseArgs(["demo", "--reuse-demo"]), /argument/i);
 });
 
+test("fresh-storage opt-out is demo-only and contradicts retained demo reuse", () => {
+  assert.equal(parseArgs(["demo", "--skip-data-cloning", "--skip-tests"]).skipDataCloning, true);
+  for (const target of ["validate", "rehearse", "staging", "production"])
+    assert.throws(() => parseArgs([target, "--skip-data-cloning"]), /only permitted on demo/);
+  assert.throws(() => parseCommandLine(["status", "run", "--skip-data-cloning"]), /Status does not accept/);
+  assert.throws(() => parseArgs(["demo", "--reuse-demo=stopped-run", "--skip-data-cloning"]), /--reuse-demo.*--skip-data-cloning|--skip-data-cloning.*--reuse-demo/);
+});
+
+test("demo refuses missing staging data before Git, SSH or runtime state, including plans and skipped tests", (t) => {
+  const f = unconfiguredCli(t),
+    stateRoot = join(f.root, "never-created-demos"),
+    values = {
+      OPS_DEMO_STATE_ROOT: stateRoot, OPS_DEMO_ENV_FILE: join(f.root, "never-read.env"),
+      OPS_DEMO_HTTPS_PORT: "8445", OPS_HOST: "fixture.invalid", OPS_NODE_PATH: "/usr/bin:/bin",
+      OPS_STAGING_ENV_FILE: join(f.root, "never-read-staging.env"),
+    };
+  for (const flags of [[], ["--plan"], ["--skip-tests"], ["--skip-tests", "--plan"]]) {
+    const result = f.run(["demo", ...flags], values);
+    assert.equal(result.status, 1, result.stderr);
+    assert.match(result.stderr, /OPS_STAGING_APPLICATION_ROOT|OPS_STAGING_CONFIG/);
+    assert.match(result.stderr, /--skip-data-cloning/);
+    assert.equal(existsSync(f.touched), false);
+    assert.equal(existsSync(stateRoot), false);
+  }
+  assert.deepEqual(readdirSync(f.root).sort(), ["bin", "ops"]);
+});
+
 test("HTTPS listener override is demo-only and accepts only real TCP ports", () => {
   assert.equal(parseArgs(["demo", "--https-port=8446"]).httpsPort, 8446);
   assert.equal(Object.hasOwn(parseArgs(["demo"]), "httpsPort"), false);
@@ -147,7 +174,7 @@ test("HTTPS listener override is demo-only and accepts only real TCP ports", () 
     assert.throws(() => parseArgs(["demo", `--https-port=${value}`]), /HTTPS port/);
 });
 
-test("demo reuse plans leave source and runtime state untouched", (t) => {
+test("demo plans describe each data selection without reading sources or creating state", (t) => {
   const f = unconfiguredCli(t);
   writeFileSync(join(f.bin, "git"), `#!${process.execPath}
     import { writeFileSync } from "node:fs";
@@ -157,15 +184,24 @@ test("demo reuse plans leave source and runtime state untouched", (t) => {
     process.stdout.write("${"a".repeat(40)}\\n");
   `, { mode: 0o700 });
   const stateRoot = join(f.root, "never-created-demos");
-  const result = f.run(["demo", "feature", "--reuse-demo=stopped-run", "--https-port=8446", "--skip-tests", "--plan"], {
-    OPS_DEMO_STATE_ROOT: stateRoot,
-    OPS_DEMO_ENV_FILE: join(f.root, "never-read.env"),
-    OPS_DEMO_HTTPS_PORT: "8445",
-    OPS_HOST: "fixture.invalid",
-    OPS_NODE_PATH: "/usr/bin:/bin",
-    OPS_STAGING_ENV_FILE: join(f.root, "never-read-staging.env"),
-  });
-  assert.equal(result.status, 0, result.stderr);
+  for (const flags of [[], ["--skip-data-cloning"], ["--reuse-demo=stopped-run"]]) {
+    const result = f.run(["demo", "feature", ...flags, "--https-port=8446", "--skip-tests", "--plan"], {
+      OPS_DEMO_STATE_ROOT: stateRoot,
+      OPS_DEMO_ENV_FILE: join(f.root, "never-read.env"),
+      OPS_DEMO_HTTPS_PORT: "8445",
+      OPS_HOST: "fixture.invalid",
+      OPS_NODE_PATH: "/usr/bin:/bin",
+      OPS_STAGING_ENV_FILE: join(f.root, "never-read-staging.env"),
+      OPS_STAGING_APPLICATION_ROOT: flags.length ? "ignored-relative" : join(f.root, "never-read-app"),
+      OPS_STAGING_CONFIG: flags.length ? "ignored-relative" : join(f.root, "never-read-config"),
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const plan = JSON.parse(result.stdout);
+    assert.equal(plan.validation, "skip");
+    assert.equal(plan.target, "demo");
+    assert.equal(plan.config.httpsPort, 8446);
+    assert.equal(plan.reuseDemo, flags[0]?.startsWith("--reuse-demo=") ? "stopped-run" : undefined);
+  }
   assert.equal(existsSync(stateRoot), false);
   assert.equal(existsSync(f.touched), false);
   assert.deepEqual(readdirSync(f.root).sort(), ["bin", "ops"]);

@@ -2154,7 +2154,8 @@ header {
 .home-page > section[aria-labelledby] {
   border: 0;
 }
-.owned-grids {
+.owned-grids,
+.favorite-grids {
   margin-top: 40px;
 }
 .grid-pagination {
@@ -2275,13 +2276,74 @@ header {
 .history-row small {
   white-space: nowrap;
 }
+.favorite-control {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  gap: 8px;
+}
+.favorite-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  padding: 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  text-decoration: none;
+}
+.favorite-button:hover:not(:disabled) {
+  background: var(--selected);
+}
+.favorite-button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+.favorite-button .lucide {
+  width: 20px;
+  height: 20px;
+}
+.favorite-button.is-favorite {
+  color: var(--accent);
+}
+.favorite-button.is-favorite .lucide {
+  fill: currentColor;
+}
+.favorite-feedback {
+  max-width: 200px;
+  color: var(--error-text);
+  font-size: 12px;
+}
+.favorite-feedback button {
+  padding: 0;
+  color: inherit;
+  font-size: inherit;
+  text-decoration: underline;
+}
+.grid-title-line .favorite-control {
+  align-self: stretch;
+}
+.grid-title-line .favorite-button {
+  width: 24px;
+  height: auto;
+  align-self: stretch;
+  padding: 4px;
+}
+.grid-title-line .favorite-button .lucide {
+  width: 16px;
+  height: 16px;
+}
 @media (max-width: 700px) {
   .history-row {
     flex-wrap: wrap;
     gap: 8px 16px;
   }
   .history-grid-link {
-    flex-basis: 100%;
+    flex-basis: calc(100% - 52px);
   }
 }
 

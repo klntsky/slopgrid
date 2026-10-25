@@ -16,7 +16,7 @@ export const commands = {
     description:
       "Run a private 24-hour demo as the current local user after isolated validation.",
     details:
-      "Requires OPS_HOST, OPS_NODE_PATH and OPS_STAGING_ENV_FILE. Reads both required GitHub credentials from staging over SSH before building, including with --reuse-demo; unavailable credentials stop deployment. Local or retained credentials are never used. Ordinary demos separately try a private staging data snapshot and start fresh if it is unavailable or incompatible. Uses foreground Tailscale HTTPS and a transient user service. Data and its encryption key are retained after stopping until manually removed. Full, scoped or explicitly skipped local tests are supported. Runtime processes stay local without PM2 or shared runtime changes. Plans read no staging credentials or data and make no SSH calls.",
+      "Requires OPS_HOST, OPS_NODE_PATH and OPS_STAGING_ENV_FILE. Reads both required GitHub credentials from staging over SSH before building, including with --reuse-demo or --skip-data-cloning; unavailable credentials stop deployment. Local or retained credentials are never used. By default, requires OPS_STAGING_APPLICATION_ROOT and OPS_STAGING_CONFIG and a usable private staging database, outputs and encryption-key snapshot; unavailable, unsafe or incompatible data stops deployment. --skip-data-cloning explicitly initializes empty storage without acquiring staging data. --reuse-demo instead snapshots a stopped local demo and cannot be combined with --skip-data-cloning. --skip-tests never skips required data cloning. Uses foreground Tailscale HTTPS and a transient user service. Data and its encryption key are retained after stopping until manually removed. Full, scoped or explicitly skipped local tests are supported. Runtime processes stay local without PM2 or shared runtime changes. Plans read no staging credentials or data and make no SSH calls.",
   },
   rehearse: {
     argument: "[REV]",
@@ -120,6 +120,13 @@ const options = {
     error: () => "--recover-failed-start is only permitted on staging",
     description:
       "Recover an unpromoted staging engine that failed before readiness.",
+  },
+  "skip-data-cloning": {
+    type: "boolean",
+    targets: ["demo"],
+    error: () => "--skip-data-cloning is only permitted on demo",
+    description:
+      "Initialize empty demo storage instead of cloning staging data; staging GitHub credentials remain required.",
   },
   "reuse-demo": {
     type: "string",

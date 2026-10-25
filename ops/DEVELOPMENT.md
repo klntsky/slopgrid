@@ -82,8 +82,9 @@ the master gate and migration rehearsal. Production updates only its own runtime
 Staging is a separately requested administrative target.
 
 `rehearse` and production promotion take a read-only SQLite backup and independent
-copies of all output files remotely, then initialize candidate storage and check
-integrity and foreign keys. Private copies are removed after success or failure.
+copies of all output files remotely. Validation requires the copied storage to
+reach the candidate's canonical format, then checks integrity and foreign keys.
+Private copies are removed after success or failure.
 The database backup is transaction-consistent; the filesystem copy is not an
 atomic checkpoint across both stores. Missing or unsafe sources and migration
 failures stop promotion. Rehearsal changes neither persistent runtime.
@@ -154,6 +155,8 @@ Configure these local settings in the ignored application-root `.env`:
 | `OPS_HOST` | Required staging SSH destination |
 | `OPS_NODE_PATH` | Required remote executable search path |
 | `OPS_STAGING_ENV_FILE` | Required absolute staging environment path for GitHub credentials |
+| `OPS_STAGING_APPLICATION_ROOT` | Required absolute staging application root for default data cloning |
+| `OPS_STAGING_CONFIG` | Required absolute staging configuration directory for default data cloning |
 
 The default state directory is `$XDG_STATE_HOME/slopgrid/demos`, or
 `$HOME/.local/state/slopgrid/demos` when `XDG_STATE_HOME` is unset.
@@ -172,11 +175,12 @@ Tailscale DNS name and `OPS_DEMO_HTTPS_PORT`. If `APP_ORIGIN` is present, it mus
 match that derived origin.
 
 Every demo reads both GitHub credentials from staging before archiving source,
-creating a run, or building, including `--reuse-demo`. Missing, blank, partial,
-or unreadable staging credentials stop deployment. Credentials in the local
-demo file, inherited environment, or retained demo are ignored. The SSH read
-returns only the credential pair, with a 20-second deadline and a bounded
-response. Failures never print remote output or credential values.
+creating a run, or building, including `--reuse-demo` and `--skip-data-cloning`.
+Missing, blank, partial, or unreadable staging credentials stop deployment.
+Credentials in the local demo file, inherited environment, or retained demo
+are ignored. The SSH read returns only the credential pair, with a 20-second
+deadline and a bounded response. Failures never print remote output or
+credential values.
 
 Copying these credentials does not change GitHub's registered callback. The
 OAuth application must already allow the demo's exact origin at
@@ -195,6 +199,7 @@ provision wildcard output hosting or OAuth applications.
 ./deploy.sh demo HEAD --unit tests/publishing.test.ts
 ./deploy.sh demo HEAD --skip-tests
 ./deploy.sh demo HEAD --https-port 8446 --skip-tests
+./deploy.sh demo HEAD --skip-data-cloning --skip-tests
 ./deploy.sh status RUN_ID
 systemctl --user stop slopgrid-demo-RUN_ID.service
 ```
@@ -221,13 +226,13 @@ command shown above. Neither stop nor expiry deletes the database, outputs,
 generated environment, or encryption key. Keep the retained data private.
 Remove an old run directory manually only after its service has stopped.
 
-### Use staging data in a demo
+### Clone staging data by default
 
-Ordinary `demo` commands also try to seed their storage from staging. Add valid
-absolute `OPS_STAGING_APPLICATION_ROOT` and `OPS_STAGING_CONFIG` paths alongside
-the required credential-source settings. Missing or invalid data paths disable
-this optional import without blocking the credential read. No production
-settings or remote deployment process names are required.
+Ordinary `demo` commands require a staging data clone. Configure valid absolute
+`OPS_STAGING_APPLICATION_ROOT` and `OPS_STAGING_CONFIG` paths alongside the
+credential-source settings. Missing or invalid data paths stop the command
+before Git, SSH, build work, or run creation. No production settings or remote
+deployment process names are required.
 
 A separate SSH read uses the installed release's SQLite driver to take an online
 database backup. Staging stays running. The command copies outputs, including
@@ -237,11 +242,16 @@ or cookie names.
 
 The prepared candidate checks this copy through its existing storage
 initialization and interrupted-work recovery. It uses only migrations already
-in that candidate. An unavailable, unsafe, or incompatible snapshot is skipped.
-The entire rejected import is discarded before an empty database, empty outputs,
-and a new key are initialized. The demo continues with fresh data. CLI output
-and `status` report whether staging data was imported or skipped.
-`--skip-tests` skips suites, not this storage compatibility check.
+in that candidate. An unavailable, unsafe, or incompatible snapshot stops
+deployment before a demo service or listener starts. Rejected imports are
+discarded without installing empty replacement storage. `--skip-tests` skips
+suites, not required cloning or storage compatibility checks.
+
+Use `--skip-data-cloning` to explicitly initialize an empty database, independent
+outputs, and a new encryption key. This flag makes no staging data copy, even
+when the source is configured. It does not require staging data paths, but the
+staging GitHub credential source remains required. CLI output and `status`
+distinguish imported data from an explicit fresh-data deployment.
 
 Imported data retains its ownership and visibility. Public grids remain visible;
 private account-owned grids require signing into the same account in the demo.
@@ -251,9 +261,9 @@ Copied sessions can contain usable provider credentials, so protect retained
 demo storage and its encryption key as private staging data.
 
 The database and output tree are sequential copies, not one atomic snapshot.
-Changes during copying can cause the import to be skipped. Normal recovery
-pauses interrupted work without starting inference. Resuming copied work later
-can incur charges independently of any work still running in staging.
+Changes during copying can cause import rejection and stop deployment. Normal
+recovery pauses interrupted work without starting inference. Resuming copied
+work later can incur charges independently of any work still running in staging.
 Local storage failures and later service-start failures remain deployment errors.
 
 ### Redeploy with a retained demo's data
@@ -262,6 +272,8 @@ Local storage failures and later service-start failures remain deployment errors
 for `demo`. It creates an independent snapshot of a retained local demo,
 preserving browser sessions, grids, outputs, and the encryption key needed to
 decrypt saved credentials. It does not borrow staging or production storage.
+It does not require staging data paths and cannot be combined with
+`--skip-data-cloning`.
 
 Commit the candidate and operations changes first. Inspect the reuse plan before
 stopping the old demo, then stop the service explicitly and deploy:

@@ -24,11 +24,11 @@ export async function api<T>(
   method = "GET",
   body?: unknown,
   key?: string,
-  options?: { signal?: AbortSignal },
+  signal?: AbortSignal,
 ): Promise<T> {
   const response = await fetch(`/api${path}`, {
     method,
-    signal: options?.signal,
+    signal,
     headers: {
       ...(body ? { "Content-Type": "application/json" } : {}),
       ...(key ? { Authorization: `Bearer ${key}` } : {}),
@@ -47,10 +47,10 @@ export async function api<T>(
     data = await response.json();
   } catch (error) {
     if (
-      options?.signal?.aborted &&
+      signal?.aborted &&
       !(
-        options.signal.reason instanceof DOMException &&
-        options.signal.reason.name === "TimeoutError"
+        signal.reason instanceof DOMException &&
+        signal.reason.name === "TimeoutError"
       )
     )
       throw error;
