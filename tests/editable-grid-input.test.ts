@@ -1,7 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { gridDraftSchema, gridSchema, type GridInput } from "../server/domain.js";
-import { draftInputFromGridInput } from "../src/create/draft-input.js";
+import {
+  draftInputFromGridInput,
+  validateDraftInput,
+} from "../src/create/draft-input.js";
 import { currentDefinition } from "./current-grid-fixture.js";
 
 test("opening a canonical editor draft does not require generation validity or a provider catalog", () => {
@@ -54,3 +57,39 @@ test("unsupported versions and malformed canonical structures are not repaired b
     assert.deepEqual(malformed, before);
   }
 });
+
+// Common, row-owned and column-owned inputs cross the same draft/run boundary.
+for (const owner of ["common", "rows", "columns"] as const) {
+  test(`${owner} unfilled messages retain draft text without supplying it to generation`, () => {
+    const messages = [
+      { role: "user" as const, content: "  Question\n" },
+      { role: "unfilled" as const, content: "$UNKNOWN hidden draft text" },
+      { role: "assistant" as const, content: "  Supplied answer\n" },
+    ];
+    const definition = currentDefinition({
+      format: "chat-template",
+      ...(owner === "common"
+        ? { parameters: { input: { kind: "common", value: messages } } }
+        : {
+            caseAxes: [owner],
+            parameters: { input: { kind: owner } },
+            [owner]: [{ input: messages }],
+          }),
+    });
+    const draft = { ...definition, budgetUsd: "3" };
+    const before = structuredClone(draft);
+    const { candidate, parsed } = validateDraftInput(draft);
+    assert.ok(parsed.success);
+    const expected = messages.map((message) =>
+      message.role === "unfilled" ? { ...message, content: "" } : message,
+    );
+    for (const input of [candidate, parsed.data]) {
+      const runMessages =
+        input.parameters.input.kind === "common"
+          ? input.parameters.input.value
+          : input[input.parameters.input.kind][0].input;
+      assert.deepEqual(runMessages, expected);
+    }
+    assert.deepEqual(draft, before);
+  });
+}

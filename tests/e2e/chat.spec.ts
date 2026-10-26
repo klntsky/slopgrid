@@ -2,6 +2,7 @@ import { test, expect } from "./fixtures";
 import type { Page } from "@playwright/test";
 import {
   connectOpenRouter,
+  defineCases,
   expectProgress,
   selectModel,
   setVariableValues,
@@ -30,6 +31,71 @@ async function setMessageRole(
       .nth(index - 1)
       .click();
 }
+
+test("role changes preserve message text through unfilled, draft reloads and case ownership", async ({
+  page,
+  request,
+}) => {
+  await request.post("/fixture/reset", {
+    data: { markdownOutput: "Generated reply" },
+  });
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "Chat completion", exact: true })
+    .click();
+  await page.getByLabel("Message 1", { exact: true }).fill("Answer the question.");
+  await page.getByRole("button", { name: "Add message", exact: true }).click();
+  await setMessageRole(page, 2, "assistant");
+  const input = page.getByLabel("Message 2", { exact: true });
+  const original = "  A draft reply\nwith whitespace.  ";
+  await input.fill(original);
+
+  // Exercise both editor placements and persist while the body is hidden.
+  for (const caseOwned of [false, true]) {
+    if (caseOwned) {
+      await page
+        .getByRole("combobox", { name: "Rows", exact: true })
+        .selectOption("variable");
+      await defineCases(page, "chat history");
+    }
+    await page
+      .getByRole("button", { name: "Message 2 role: assistant", exact: true })
+      .click();
+    await expect(input).toHaveCount(0);
+    await page.reload();
+    await expect(
+      page.getByRole("button", { name: "Message 2 role: unfilled", exact: true }),
+    ).toBeVisible();
+    for (const [from, to] of [
+      ["unfilled", "system"],
+      ["system", "user"],
+      ["user", "assistant"],
+    ]) {
+      await page
+        .getByRole("button", { name: `Message 2 role: ${from}`, exact: true })
+        .click();
+      await expect(
+        page.getByRole("button", { name: `Message 2 role: ${to}`, exact: true }),
+      ).toBeVisible();
+      await expect(input).toHaveValue(original);
+    }
+  }
+
+  // Hidden draft text must not become supplied content or block generation.
+  await input.fill("$UNKNOWN is only a saved draft");
+  await page
+    .getByRole("button", { name: "Message 2 role: assistant", exact: true })
+    .click();
+  await page
+    .getByRole("combobox", { name: "Columns", exact: true })
+    .selectOption("single");
+  await selectModel(page, "fixture/text");
+  await connectOpenRouter(page);
+  await page.getByRole("button", { name: "Generate", exact: true }).click();
+  await expectProgress(page, 1, 1);
+  await expect(page.locator(".chat-bubble")).toHaveCount(2);
+  await expect(page.locator(".chat-bubble").last()).toHaveText("Generated reply");
+});
 
 test("chat editing, ordering, persistence and completion without explicit blanks", async ({
   page,
@@ -266,10 +332,9 @@ test("every chat control works from the keyboard, including an empty history", a
       );
     else
       await expect(page.getByLabel("Message 1", { exact: true })).toHaveValue(
-        next === "assistant" ? "First\nline" : "",
+        "First\nline",
       );
   }
-  await page.getByLabel("Message 1", { exact: true }).fill("First\nline");
   await role.focus();
   await page.keyboard.press("Tab");
   await page.keyboard.press("Tab");

@@ -36,6 +36,29 @@ export function validateDraftInput(draft: GridDraftInput) {
     ...draft,
     budgetUsd: draft.budgetUsd.trim() ? Number(draft.budgetUsd) : Number.NaN,
   };
+  const source = draft.parameters.input;
+  if (source.kind === "common") {
+    candidate.parameters = {
+      ...draft.parameters,
+      input: {
+        ...source,
+        value: source.value.map((message) =>
+          message.role === "unfilled" ? { ...message, content: "" } : message,
+        ),
+      },
+    };
+  } else {
+    candidate[source.kind] = draft[source.kind].map((entry) =>
+      entry.input
+        ? {
+            ...entry,
+            input: entry.input.map((message) =>
+              message.role === "unfilled" ? { ...message, content: "" } : message,
+            ),
+          }
+        : entry,
+    );
+  }
   return { candidate, parsed: gridSchema.safeParse(candidate) };
 }
 

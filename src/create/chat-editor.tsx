@@ -150,10 +150,7 @@ export function ChatEditor({
                     update(index, (current) => {
                       const role =
                         roles[(roles.indexOf(current.role) + 1) % roles.length];
-                      return {
-                        role,
-                        ...(role === "unfilled" && { content: "" }),
-                      };
+                      return { role };
                     });
                   }}
                 >
