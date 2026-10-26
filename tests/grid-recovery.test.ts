@@ -3,6 +3,7 @@ import { once } from "node:events";
 import { createServer, type RequestListener } from "node:http";
 import { after, before, test, type TestContext } from "node:test";
 import { setImmediate } from "node:timers/promises";
+import { QueryClient } from "@tanstack/react-query";
 import type * as ApiClient from "../src/api.js";
 import type * as Recovery from "../src/grid/recovery.js";
 import type * as Policies from "../src/grid/retry-policies.js";
@@ -67,6 +68,25 @@ async function transport(t: TestContext, listener: RequestListener) {
   return { headersReceived: headers.promise };
 }
 
+function startRead(t: TestContext, onFailure?: (error: Error) => void) {
+  const cache = new QueryClient();
+  cache.mount();
+  const options = recovery.gridReadOptions({ id: "a".repeat(48) });
+  const unsubscribe = cache.getQueryCache().subscribe((event) => {
+    if (event.type === "updated" && event.action.type === "failed")
+      onFailure?.(event.action.error);
+  });
+  t.after(() => {
+    unsubscribe();
+    cache.clear();
+    cache.unmount();
+  });
+  return {
+    pending: cache.fetchQuery(options),
+    cancel: () => cache.cancelQueries({ queryKey: options.queryKey }),
+  };
+}
+
 test(
   "grid reads survive mixed temporary failures beyond fast retries and return the actual response",
   { timeout: 5000 },
@@ -98,14 +118,9 @@ test(
       apis: ["Date", "setTimeout"],
       now: Date.UTC(2026, 0, 1),
     });
-    const controller = new AbortController();
-    t.after(() => controller.abort());
-    const pending = recovery.recoverGridRead({
-      run: (signal) =>
-        client.api("/grid", "GET", undefined, undefined, signal),
-      signal: controller.signal,
-      onFailure: (error) => observed[failures++]?.resolve(error),
-    });
+    const { pending } = startRead(t, (error) =>
+      observed[failures++]?.resolve(error),
+    );
     const settled = pending.then(
       (value) => ({ kind: "resolved" as const, value }),
       (error: unknown) => ({ kind: "rejected" as const, error }),
@@ -146,24 +161,17 @@ test(
       apis: ["Date", "setTimeout"],
       now: Date.UTC(2026, 0, 1),
     });
-    const controller = new AbortController();
-    t.after(() => controller.abort());
-    const pending = recovery.recoverGridRead({
-      run: (signal) =>
-        client.api("/grid", "GET", undefined, undefined, signal),
-      signal: controller.signal,
-      onFailure: (error) => {
-        failure.resolve(error);
-        controller.abort();
-      },
+    const { pending, cancel } = startRead(t, (error) => {
+      failure.resolve(error);
+      void cancel();
     });
-    const rejected = assert.rejects(pending, { name: "AbortError" });
+    const settled = pending.catch(() => {});
     await connection.headersReceived;
     await setImmediate();
     t.mock.timers.tick(20000);
     assert.equal((await failure.promise).name, "TimeoutError");
     await disconnected.promise;
-    await rejected;
+    await settled;
   },
 );
 
@@ -178,15 +186,8 @@ for (const scenario of [
       response.writeHead(scenario.status);
       response.end(scenario.body);
     });
-    const controller = new AbortController();
-    await assert.rejects(
-      recovery.recoverGridRead({
-        run: (signal) =>
-          client.api("/grid", "GET", undefined, undefined, signal),
-        signal: controller.signal,
-      }),
-      { name: scenario.error },
-    );
+    const { pending } = startRead(t);
+    await assert.rejects(pending, { name: scenario.error });
     assert.equal(requests, 1);
   });
 }
@@ -201,20 +202,13 @@ test("an unavailable offline cache entry is surfaced instead of polled", async (
     });
     response.end('{"error":"Offline cache entry is unavailable"}');
   });
-  const controller = new AbortController();
-  await assert.rejects(
-    recovery.recoverGridRead({
-      run: (signal) =>
-        client.api("/grid", "GET", undefined, undefined, signal),
-      signal: controller.signal,
-    }),
-    (error: unknown) => {
-      assert.ok(error instanceof client.ApiError);
-      assert.equal(error.offline, true);
-      assert.equal(error.status, 503);
-      return true;
-    },
-  );
+  const { pending } = startRead(t);
+  await assert.rejects(pending, (error: unknown) => {
+    assert.ok(error instanceof client.ApiError);
+    assert.equal(error.offline, true);
+    assert.equal(error.status, 503);
+    return true;
+  });
   assert.equal(requests, 1);
 });
 
@@ -250,18 +244,11 @@ test(
       now: Date.UTC(2026, 0, 1),
     });
     const retryAt = Date.now() + 90000;
-    const controller = new AbortController();
-    t.after(() => controller.abort());
-    const pending = recovery.recoverGridRead({
-      run: (signal) =>
-        client.api("/grid", "GET", undefined, undefined, signal),
-      signal: controller.signal,
-      onFailure: (error) => {
-        failure.resolve(error);
-        controller.abort();
-      },
+    const { pending, cancel } = startRead(t, (error) => {
+      failure.resolve(error);
+      void cancel();
     });
-    const rejected = assert.rejects(pending, { name: "AbortError" });
+    const settled = pending.catch(() => {});
     await connection.headersReceived;
     await setImmediate();
     t.mock.timers.tick(20000);
@@ -270,6 +257,6 @@ test(
     assert.equal(error.status, 503);
     assert.equal(error.retryAt, retryAt);
     await disconnected.promise;
-    await rejected;
+    await settled;
   },
 );

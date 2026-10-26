@@ -18,14 +18,15 @@ engine or transfer ownership of active inference to a request handler.
 
 The browser owns editor interaction, presentation preferences, and local drafts.
 Its cached state supports display and recovery but does not authorize server
-mutations or determine durable execution state. Browser queries own read recovery
-and cancel outstanding requests, including response-body reads, when a grid is no
-longer observed. Read recovery owns request deadlines; the HTTP transport preserves
-response status and server cooldown metadata even when an error body cannot be read.
-Live streams own cursor recovery before query fallback and can satisfy pending
-reads without resubmitting server mutations. Browser queries own the lifetime
-and freshness of completed output bodies. Development and test runtimes own
-independent storage and process resources.
+mutations or determine durable execution state. TanStack Query owns read retries,
+connectivity suspension, failure state, and request cancellation when a grid is no
+longer observed. Grid recovery enforces request deadlines and shared server
+cooldowns; the HTTP transport preserves response status and cooldown metadata even
+when an error body cannot be read. Live streams own cursor recovery before query
+fallback and cancel redundant reads before publishing fresh state, without
+resubmitting server mutations. Browser queries own the lifetime and freshness of
+completed output bodies. Development and test runtimes own independent storage
+and process resources.
 
 Deployment orchestration belongs to [ops/](ops/ARCHITECTURE.md). The development
 launcher owns only its development runtime; neither it nor application request

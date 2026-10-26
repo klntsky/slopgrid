@@ -86,6 +86,10 @@ async function trafficGrid(playwright: PlaywrightWorkerArgs["playwright"]) {
       content: `<!--${"x".repeat(128 * 1024)}-->\n\nLarge live draft.`,
     });
     const page = await context.newPage();
+    const cdp = await context.newCDPSession(page);
+    await cdp.send("Network.enable");
+    let messages = 0;
+    cdp.on("Network.eventSourceMessageReceived", () => messages++);
     await page.clock.install();
     await page.goto(`${fixture.origin}/grid/${grid.id}`);
     await expect(
@@ -123,7 +127,7 @@ async function trafficGrid(playwright: PlaywrightWorkerArgs["playwright"]) {
         flap = false;
       },
       async online() {
-        const before = streams.filter((stream) => stream.valid).length;
+        const before = messages;
         let advanced = 0;
         await context.setOffline(false);
         await expect
@@ -133,11 +137,13 @@ async function trafficGrid(playwright: PlaywrightWorkerArgs["playwright"]) {
                 await page.clock.runFor(100);
                 advanced += 100;
               }
-              return streams.filter((stream) => stream.valid).length;
+              return messages;
             },
             { intervals: [10] },
           )
           .toBeGreaterThan(before);
+        await page.evaluate(() => undefined);
+        await page.clock.runFor(1);
       },
       async close() {
         await browser.close();

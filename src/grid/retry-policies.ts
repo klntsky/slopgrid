@@ -19,12 +19,6 @@ export function gridRetryDelay(failures: number) {
 }
 
 export const gridRetryPolicies = {
-  read: {
-    retries: Infinity,
-    minTimeout: 0,
-    maxTimeout: 0,
-    shouldRetry: ({ error }) => temporaryReadFailure(error),
-  },
   stream: {
     retries: Infinity,
     minTimeout: 0,

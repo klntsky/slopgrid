@@ -275,7 +275,10 @@ function finishedGridRead(page: Page, id: string) {
   };
   page.on("requestfinished", finished);
   page.on("requestfailed", finished);
-  return promise.then(() => page.evaluate(() => undefined));
+  return promise.then(async () => {
+    await page.evaluate(() => undefined);
+    await page.clock.runFor(1);
+  });
 }
 
 async function refetchGrid(page: Page, id: string) {
@@ -369,10 +372,12 @@ for (const status of [401, 403, 404]) {
       await refetchGrid(page, grid.id);
       expect(transport.reads).toBe(initialReads + 1);
       await scenario.reconnectEvents();
+      const denied = finishedGridRead(page, grid.id);
       transport.fail([], { kind: "html", status });
       transport.blockEvents();
       await expect(page.locator(".connection-status")).toBeVisible();
       await page.clock.runFor(4001);
+      await denied;
       await expect(page.getByRole("alert")).toBeVisible();
       await expect(
         page.getByText("Private saved output survives read failures."),

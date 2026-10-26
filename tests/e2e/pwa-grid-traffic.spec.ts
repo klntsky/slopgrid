@@ -68,8 +68,16 @@ for (const exists of [true, false]) {
       const offlineReads = reads;
       await page.clock.runFor(120000);
       expect(reads).toBe(offlineReads);
+      const restored = page.waitForEvent("requestfinished", {
+        predicate: (request) =>
+          request.method() === "GET" &&
+          new URL(request.url()).pathname === gridPath,
+      });
       await context.setOffline(false);
       await page.clock.runFor(1001);
+      await restored;
+      await page.evaluate(() => undefined);
+      await page.clock.runFor(1);
       if (exists) {
         await expect(
           page.getByRole("button", { name: "Resume generation" }),

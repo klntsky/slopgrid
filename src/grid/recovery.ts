@@ -1,17 +1,6 @@
-import pRetry from "p-retry";
-import { ApiError } from "../api";
-import {
-  gridRetryDelay,
-  gridRetryPolicies,
-  temporaryReadFailure,
-} from "./retry-policies";
-
-export type GridReadRecovery<T> = {
-  run: (signal: AbortSignal) => Promise<T>;
-  signal: AbortSignal;
-  onFailure?: (error: Error) => void;
-  retryAt?: () => number;
-};
+import { queryOptions } from "@tanstack/react-query";
+import { api, ApiError, type ViewGrid } from "../api";
+import { gridRetryDelay, temporaryReadFailure } from "./retry-policies";
 
 type RecoveryWait = {
   signal: AbortSignal;
@@ -71,10 +60,7 @@ export function waitForRecovery({
   return promise;
 }
 
-async function readAttempt<T>(
-  run: GridReadRecovery<T>["run"],
-  signal: AbortSignal,
-): Promise<T> {
+async function readAttempt(id: string, signal: AbortSignal): Promise<ViewGrid> {
   const deadline = new AbortController();
   const timer = setTimeout(
     () =>
@@ -82,7 +68,13 @@ async function readAttempt<T>(
     15000,
   );
   try {
-    return await run(AbortSignal.any([signal, deadline.signal]));
+    return await api<ViewGrid>(
+      `/grids/${id}`,
+      "GET",
+      undefined,
+      undefined,
+      AbortSignal.any([signal, deadline.signal]),
+    );
   } catch (error) {
     signal.throwIfAborted();
     if (deadline.signal.aborted && !(error instanceof ApiError))
@@ -93,38 +85,34 @@ async function readAttempt<T>(
   }
 }
 
-export function recoverGridRead<T>({
-  run,
-  signal,
-  onFailure,
+export function gridReadOptions({
+  id,
   retryAt,
-}: GridReadRecovery<T>): Promise<T> {
+  onRetryAt,
+}: {
+  id: string;
+  retryAt?: () => number;
+  onRetryAt?: (at: number) => void;
+}) {
   let serverDue = 0;
   const nextAllowedRead = () => Math.max(serverDue, retryAt?.() ?? 0);
-  return pRetry(
-    async (attemptNumber) => {
-      if (
-        attemptNumber > 1 ||
-        navigator.onLine ||
-        nextAllowedRead() > Date.now()
-      )
+  return queryOptions({
+    queryKey: ["grid", id],
+    networkMode: "offlineFirst",
+    retry: (_, error) => temporaryReadFailure(error),
+    retryDelay: (failures) => gridRetryDelay(failures + 1),
+    queryFn: async ({ signal }) => {
+      if (navigator.onLine || nextAllowedRead() > Date.now())
         await waitForRecovery({ signal, retryAt: nextAllowedRead });
-      return readAttempt(run, signal);
-    },
-    {
-      ...gridRetryPolicies.read,
-      signal,
-      onFailedAttempt: async ({ error, attemptNumber }) => {
-        if (signal.aborted || !temporaryReadFailure(error)) return;
-        if (error instanceof ApiError && error.retryAt !== undefined)
+      try {
+        return await readAttempt(id, signal);
+      } catch (error) {
+        if (error instanceof ApiError && error.retryAt !== undefined) {
           serverDue = Math.max(serverDue, error.retryAt);
-        onFailure?.(error);
-        await waitForRecovery({
-          signal,
-          delayMs: gridRetryDelay(attemptNumber),
-          retryAt: nextAllowedRead,
-        });
-      },
+          onRetryAt?.(serverDue);
+        }
+        throw error;
+      }
     },
-  );
+  });
 }

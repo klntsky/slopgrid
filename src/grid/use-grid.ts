@@ -18,19 +18,13 @@ import {
   gridRetryPolicies,
   temporaryReadFailure,
 } from "./retry-policies";
-import { recoverGridRead, waitForRecovery } from "./recovery";
+import { gridReadOptions, waitForRecovery } from "./recovery";
 import { invalidateFavoritePages } from "../queries";
 export function useGrid(id: string) {
   const cache = useQueryClient(),
     navigate = useNavigate();
   const [dismissed, setDismissed] = useState(false),
-    [streamLost, setStreamLost] = useState(false),
-    [recoveringGrid, setRecoveringGrid] = useState<string | null>(null);
-  const pendingRead = useRef<{
-    id: string;
-    controller: AbortController;
-    resolve: (grid: ViewGrid) => void;
-  } | null>(null);
+    [streamLost, setStreamLost] = useState(false);
   const retryAfter = useRef<{ id: string; at: number } | null>(null);
   const stream = useRef<{
     id: string;
@@ -39,7 +33,7 @@ export function useGrid(id: string) {
     failures: number;
     checkedRead: boolean;
   }>({ id, cursor: "", failures: 0, checkedRead: false });
-  const automaticRead = (query: Query<ViewGrid>) =>
+  const automaticRead = (query: Pick<Query<ViewGrid>, "state">) =>
     (!query.state.error ||
       (query.state.error instanceof ApiError && query.state.error.offline) ||
       temporaryReadFailure(query.state.error)) &&
@@ -49,51 +43,19 @@ export function useGrid(id: string) {
       !stream.current.cursor);
   const serverRetryAt = () =>
     retryAfter.current?.id === id ? retryAfter.current.at : 0;
-  function rememberRetryAt(error: Error) {
-    if (error instanceof ApiError && error.retryAt !== undefined)
-      retryAfter.current = { id, at: Math.max(serverRetryAt(), error.retryAt) };
+  function rememberRetryAt(at: number) {
+    retryAfter.current = { id, at: Math.max(serverRetryAt(), at) };
   }
   const query = useQuery({
-    queryKey: ["grid", id],
-    queryFn: async ({ signal: querySignal }) => {
-      const controller = new AbortController();
-      const signal = AbortSignal.any([querySignal, controller.signal]);
-      const snapshot = Promise.withResolvers<ViewGrid>();
-      pendingRead.current = { id, controller, resolve: snapshot.resolve };
-      try {
-        return await Promise.race([
-          recoverGridRead({
-            run: (attemptSignal) =>
-              api<ViewGrid>(
-                `/grids/${id}`,
-                "GET",
-                undefined,
-                undefined,
-                attemptSignal,
-              ),
-            signal,
-            retryAt: serverRetryAt,
-            onFailure: (error) => {
-              if (signal.aborted) return;
-              rememberRetryAt(error);
-              setRecoveringGrid(id);
-            },
-          }),
-          snapshot.promise,
-        ]);
-      } finally {
-        controller.abort();
-        if (pendingRead.current?.controller === controller)
-          pendingRead.current = null;
-        if (!querySignal.aborted)
-          setRecoveringGrid((current) => (current === id ? null : current));
-      }
-    },
-    retry: false,
+    ...gridReadOptions({
+      id,
+      retryAt: serverRetryAt,
+      onRetryAt: rememberRetryAt,
+    }),
     refetchOnWindowFocus: automaticRead,
     refetchOnReconnect: automaticRead,
   });
-  const unavailable = temporaryReadFailure(query.error);
+  const unavailable = temporaryReadFailure(query.failureReason ?? query.error);
   const offline = useOffline();
   const completed = query.data?.cells
     .filter((cell) => cell.outputReady || cell.status === "complete")
@@ -179,10 +141,8 @@ export function useGrid(id: string) {
           episode.grid = previous;
           episode.checkedRead = false;
           setStreamLost(false);
-          setRecoveringGrid((current) => (current === id ? null : current));
+          void cache.cancelQueries({ queryKey: ["grid", id], exact: true });
           cache.setQueryData(["grid", id], previous);
-          if (pendingRead.current?.id === id)
-            pendingRead.current.resolve(previous);
         } catch {
           previous = undefined;
           cursor = "";
@@ -250,18 +210,19 @@ export function useGrid(id: string) {
   });
   function recover(error: Error) {
     if (!temporaryReadFailure(error)) return;
-    inference.reset();
-    configure.reset();
-    rememberRetryAt(error);
-    setRecoveringGrid(id);
-    void query.refetch({ cancelRefetch: false }).then((result) => {
-      if (!temporaryReadFailure(result.error))
-        setRecoveringGrid((current) => (current === id ? null : current));
+    if (error instanceof ApiError && error.retryAt !== undefined)
+      rememberRetryAt(error.retryAt);
+    void query.refetch({ cancelRefetch: false }).then(() => {
+      inference.reset();
+      configure.reset();
     });
   }
   return {
     query,
-    error: inference.message || configure.error?.message || "",
+    error:
+      (temporaryReadFailure(inference.error) ? "" : inference.message) ||
+      (temporaryReadFailure(configure.error) ? "" : configure.error?.message) ||
+      "",
     busy: inference.isPending || configure.isPending,
     dismissed,
     setDismissed,
@@ -269,7 +230,9 @@ export function useGrid(id: string) {
       (!query.isError || unavailable) &&
       ((offline && !!query.data?.live) ||
         (streamLost && live) ||
-        recoveringGrid === id ||
+        query.isPaused ||
+        temporaryReadFailure(inference.error) ||
+        temporaryReadFailure(configure.error) ||
         unavailable),
     lowBalance: inference.lowBalance,
     setLowBalance: inference.setLowBalance,
