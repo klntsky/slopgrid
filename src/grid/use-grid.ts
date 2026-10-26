@@ -40,7 +40,9 @@ export function useGrid(id: string) {
     checkedRead: boolean;
   }>({ id, cursor: "", failures: 0, checkedRead: false });
   const automaticRead = (query: Query<ViewGrid>) =>
-    (!query.state.error || temporaryReadFailure(query.state.error)) &&
+    (!query.state.error ||
+      (query.state.error instanceof ApiError && query.state.error.offline) ||
+      temporaryReadFailure(query.state.error)) &&
     (!query.state.data?.live ||
       query.state.data.published ||
       stream.current.id !== id ||

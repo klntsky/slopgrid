@@ -18,6 +18,92 @@ async function cachedGrid(
   }, id);
 }
 
+for (const exists of [true, false]) {
+  test(`an uncached offline ${exists ? "grid restores" : "missing grid fails once"} when connectivity returns`, async ({
+    playwright,
+  }) => {
+    let reads = 0;
+    let gridPath = "";
+    const fixture = await runtimeFixture({
+      observeRequest(request) {
+        if (request.method === "GET" && request.url === gridPath) reads++;
+      },
+    });
+    const browser = await playwright.chromium.launch({
+      args: ["--ignore-certificate-errors"],
+    });
+    const context = await browser.newContext({ ignoreHTTPSErrors: true });
+    try {
+      await context.addCookies([
+        {
+          name: fixture.cookieName,
+          value: fixture.owner,
+          url: fixture.origin,
+          secure: true,
+          httpOnly: true,
+          sameSite: "Lax",
+        },
+      ]);
+      const grid = fixture.grid();
+      const id = exists ? grid.id : "0".repeat(48);
+      gridPath = `/api/grids/${id}`;
+      const page = await context.newPage();
+      await page.goto(fixture.origin);
+      await expect
+        .poll(() => page.evaluate(() => !!navigator.serviceWorker.controller))
+        .toBe(true);
+      expect(await cachedGrid(page, id)).toBeUndefined();
+      await page.clock.install();
+      await context.setOffline(true);
+      await page.goto(`${fixture.origin}/grid/${id}`);
+      await expect(page.getByRole("alert")).toContainText(
+        "This page isn't available offline.",
+      );
+      await expect(
+        page.getByRole("button", { name: "Retry", exact: true }),
+      ).toBeVisible();
+      await page.clock.pauseAt(
+        new Date(await page.evaluate(() => Date.now() + 1000)),
+      );
+      const offlineReads = reads;
+      await page.clock.runFor(120000);
+      expect(reads).toBe(offlineReads);
+      await context.setOffline(false);
+      await page.clock.runFor(1001);
+      if (exists) {
+        await expect(
+          page.getByRole("button", { name: "Resume generation" }),
+        ).toBeVisible();
+        await expect(page.getByRole("alert")).toHaveCount(0);
+        expect(reads - offlineReads).toBe(1);
+        await page.clock.resume();
+        await page.getByRole("button", { name: "Resume generation" }).click();
+        const call = await fixture.nextCall();
+        call.write({
+          content: "Live output after offline cache-miss recovery.",
+        });
+        await expect(
+          page.locator(".markdown-preview:visible").first(),
+        ).toContainText("Live output after offline cache-miss recovery.");
+        await expect(page.locator(".connection-status")).toHaveCount(0);
+      } else {
+        await expect(page.getByRole("alert")).toContainText("Grid not found");
+        expect(reads - offlineReads).toBe(1);
+        await page.evaluate(() =>
+          document.dispatchEvent(
+            new Event("visibilitychange", { bubbles: true }),
+          ),
+        );
+        await page.clock.runFor(120000);
+        expect(reads - offlineReads).toBe(1);
+      }
+    } finally {
+      await browser.close();
+      await fixture.close();
+    }
+  });
+}
+
 for (const scenario of [
   "online restoration",
   "unchanged completion",
