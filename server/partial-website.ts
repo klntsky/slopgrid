@@ -19,13 +19,32 @@ type StringToken = {
 export class PartialWebsite {
   readonly files: Record<string, string> = Object.create(null);
   readonly changed = new Set<string>();
+  private directories = new Set<string>();
   private offset = 0;
   private frames: Frame[] = [];
   private string?: StringToken;
+  private acceptPath(path: string): boolean {
+    if (Object.hasOwn(this.files, path)) return true;
+    if (!safePath(path) || this.directories.has(path)) return false;
+    for (
+      let slash = path.indexOf("/");
+      slash !== -1;
+      slash = path.indexOf("/", slash + 1)
+    )
+      if (Object.hasOwn(this.files, path.slice(0, slash))) return false;
+    for (
+      let slash = path.indexOf("/");
+      slash !== -1;
+      slash = path.indexOf("/", slash + 1)
+    )
+      this.directories.add(path.slice(0, slash));
+    return true;
+  }
   update(source: string): boolean {
     let changed = false;
     const publish = (path: string | undefined, content: string | undefined) => {
-      if (!path || !safePath(path) || content === undefined) return;
+      if (path === undefined || content === undefined || !this.acceptPath(path))
+        return;
       this.files[path] = content;
       this.changed.add(path);
       changed = true;

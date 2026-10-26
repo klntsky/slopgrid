@@ -18,3 +18,46 @@ test("website entries stream escaped contents and tolerate either property order
   assert.equal(preview.files["../private"], undefined);
   assert.equal(preview.files["index.html"], "<h1>Growing</h1>\n");
 });
+
+test("website previews retain the first non-conflicting path and keep streaming", () => {
+  for (const paths of [
+    ["assets", "assets/js/app.js"],
+    ["assets/js/app.js", "assets"],
+  ]) {
+    const preview = new PartialWebsite();
+    const source = JSON.stringify({
+      files: [
+        { path: paths[0], content: "first asset" },
+        { content: "conflicting asset", path: paths[1] },
+        { path: "assets-other", content: "separate asset" },
+        { path: "index.html", content: "<h1>Still streaming</h1>" },
+      ],
+    });
+    for (let length = 1; length <= source.length; length++)
+      preview.update(source.slice(0, length));
+    assert.equal(preview.files[paths[0]], "first asset");
+    assert.equal(preview.files[paths[1]], undefined);
+    assert.equal(preview.files["assets-other"], "separate asset");
+    assert.equal(preview.files["index.html"], "<h1>Still streaming</h1>");
+  }
+});
+
+test("superseded paths without content do not block streaming files", () => {
+  // JSON object properties can repeat; final parsing uses the last path.
+  for (const [superseded, path] of [
+    ["index.html/page.html", "index.html"],
+    ["assets/app.js", "assets"],
+    ["assets", "assets/app.js"],
+  ]) {
+    const preview = new PartialWebsite();
+    const source =
+      `{"files":[{"path":${JSON.stringify(superseded)},` +
+      `"path":${JSON.stringify(path)},"content":"Growing`;
+    for (let length = 1; length <= source.length; length++)
+      preview.update(source.slice(0, length));
+    assert.equal(preview.files[path], "Growing");
+    assert.equal(preview.files[superseded], undefined);
+    preview.update(source + ' page"}]}');
+    assert.equal(preview.files[path], "Growing page");
+  }
+});

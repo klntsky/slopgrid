@@ -21,9 +21,17 @@ export function parseOutput(
       throw new Error("The bundle contains duplicate file paths");
     if (!Object.hasOwn(files, "index.html"))
       throw new Error("The bundle needs index.html");
-    for (const path of Object.keys(files))
+    for (const path of Object.keys(files)) {
       if (!safePath(path))
         throw new Error("Use safe relative static file paths");
+      for (
+        let slash = path.indexOf("/");
+        slash !== -1;
+        slash = path.indexOf("/", slash + 1)
+      )
+        if (Object.hasOwn(files, path.slice(0, slash)))
+          throw new Error("The bundle contains conflicting file paths");
+    }
     return files;
   }
   throw new Error("Images are returned as image data");
