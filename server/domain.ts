@@ -66,6 +66,7 @@ export const kinds = [
   "judge_model",
   "judge_effort",
   "judge_criteria",
+  "judge_system",
   "variable",
   ...imageKinds,
 ] as const;
@@ -86,6 +87,7 @@ export const parameterValueSchemas = {
   judge_model: z.string(),
   judge_effort: z.enum(efforts),
   judge_criteria: draftJudgeCriteriaSchema,
+  judge_system: z.string(),
   variable: z.array(variableFieldSchema.nullable()),
 };
 const parameterValuesSchema = z.object(parameterValueSchemas);
@@ -120,6 +122,7 @@ const parameterSourcesSchema = z
     judge_model: source(parameterValueSchemas.judge_model).optional(),
     judge_effort: source(parameterValueSchemas.judge_effort).optional(),
     judge_criteria: source(parameterValueSchemas.judge_criteria).optional(),
+    judge_system: source(parameterValueSchemas.judge_system).optional(),
   })
   .strict();
 export type ParameterSources = z.infer<typeof parameterSourcesSchema>;
@@ -295,6 +298,7 @@ export const gridSchema = gridInputSchema
       applicable.add("judge_model");
       applicable.add("judge_effort");
       applicable.add("judge_criteria");
+      applicable.add("judge_system");
     }
     for (const kind of kinds) {
       if (kind === "variable") continue;
@@ -569,6 +573,7 @@ export type GenerationTask = Task<GenerationInput, GenerationOutput> & {
 export type JudgmentInput = {
   model: string;
   effort: string;
+  systemPrompt: string;
   criteria: Criterion[];
   images?: ReferenceImage[];
 };

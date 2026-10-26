@@ -56,6 +56,8 @@ export function displayValue(part: ParameterDisplayPart): string {
             `${criterion.text} (expected ${criterion.correctAnswer ? "YES" : "NO"})`,
         )
         .join(" | ");
+    case "judge_system":
+      return part.value;
     case "effort":
     case "judge_effort":
       return effortLabel(part.value);

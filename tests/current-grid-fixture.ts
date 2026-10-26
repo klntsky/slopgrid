@@ -55,6 +55,7 @@ export function currentDefinition(
       ? {
           judge_model: common("judge_model", "fixture/text"),
           judge_effort: common("judge_effort"),
+          judge_system: common("judge_system"),
           judge_criteria: common("judge_criteria", [
             { text: "Is this a cat?", correctAnswer: true },
           ]),

@@ -7,6 +7,7 @@ import {
   isCaseAxis,
   type AxisSide,
   parameterValuePath,
+  parameterValue,
   type ParameterConfiguration,
   type ValidationIssue,
 } from "./parameters.js";
@@ -218,6 +219,11 @@ export function promptVariableIssues(
       );
       if (input.judge)
         templates.push(
+          {
+            text: parameterValue(input, "judge_system", row, column) ?? "",
+            role: "system" as const,
+            path: parameterValuePath(input, "judge_system", row, column),
+          },
           ...criteriaForCell(input, row, column).map(
             ({ text }, criterionIndex) => ({
               text,
