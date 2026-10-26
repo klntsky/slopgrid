@@ -41,3 +41,23 @@ test("website previews retain the first non-conflicting path and keep streaming"
     assert.equal(preview.files["index.html"], "<h1>Still streaming</h1>");
   }
 });
+
+test("superseded paths without content do not block streaming files", () => {
+  // JSON object properties can repeat; final parsing uses the last path.
+  for (const [superseded, path] of [
+    ["index.html/page.html", "index.html"],
+    ["assets/app.js", "assets"],
+    ["assets", "assets/app.js"],
+  ]) {
+    const preview = new PartialWebsite();
+    const source =
+      `{"files":[{"path":${JSON.stringify(superseded)},` +
+      `"path":${JSON.stringify(path)},"content":"Growing`;
+    for (let length = 1; length <= source.length; length++)
+      preview.update(source.slice(0, length));
+    assert.equal(preview.files[path], "Growing");
+    assert.equal(preview.files[superseded], undefined);
+    preview.update(source + ' page"}]}');
+    assert.equal(preview.files[path], "Growing page");
+  }
+});

@@ -24,8 +24,8 @@ export class PartialWebsite {
   private frames: Frame[] = [];
   private string?: StringToken;
   private acceptPath(path: string): boolean {
-    if (!safePath(path) || this.directories.has(path)) return false;
     if (Object.hasOwn(this.files, path)) return true;
+    if (!safePath(path) || this.directories.has(path)) return false;
     for (
       let slash = path.indexOf("/");
       slash !== -1;
@@ -43,7 +43,8 @@ export class PartialWebsite {
   update(source: string): boolean {
     let changed = false;
     const publish = (path: string | undefined, content: string | undefined) => {
-      if (!path || content === undefined) return;
+      if (path === undefined || content === undefined || !this.acceptPath(path))
+        return;
       this.files[path] = content;
       this.changed.add(path);
       changed = true;
@@ -96,9 +97,7 @@ export class PartialWebsite {
           } else {
             const entry = token.frame.entry;
             if (entry && token.frame.key === "path") {
-              entry.path = this.acceptPath(token.value)
-                ? token.value
-                : undefined;
+              entry.path = token.value;
               publish(entry.path, entry.content);
             }
             token.frame.state = "comma";
