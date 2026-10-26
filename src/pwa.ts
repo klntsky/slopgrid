@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import type { ViewGrid } from "./api";
 
 let offline = !navigator.onLine;
 const listeners = new Set<() => void>();
@@ -51,6 +52,19 @@ export async function registerPwa() {
     /* Browsing still works when storage or service workers are unavailable. */
   }
 }
-export function cacheGrid(id: string) {
-  navigator.serviceWorker?.controller?.postMessage({ type: "cache-grid", id });
+export function cacheGrid(grid: ViewGrid) {
+  navigator.serviceWorker?.controller?.postMessage({
+    type: "cache-grid",
+    id: grid.id,
+    completed: grid.cells
+      .filter((cell) => cell.outputReady || cell.status === "complete")
+      .map((cell) => ({
+        id: cell.id,
+        generationId: cell.generationId,
+        judgment:
+          cell.judge?.status === "complete" || cell.judge?.status === "error"
+            ? { status: cell.judge.status, attemptId: cell.judge.attemptId }
+            : undefined,
+      })),
+  });
 }

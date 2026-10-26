@@ -178,3 +178,49 @@ test("website output rejects duplicate paths and schema violations", () => {
   ])
     assert.throws(() => parseOutput("html", JSON.stringify({ files })));
 });
+
+test("website output rejects file/directory collisions in either entry order", () => {
+  // Check every ancestor, not just adjacent sorted paths or the immediate parent.
+  for (const [file, nested] of [
+    ["assets", "assets/app.js"],
+    ["assets", "assets/js/app.js"],
+    ["assets/js", "assets/js/app.js"],
+    ["index.html", "index.html/page.html"],
+    ["__proto__", "__proto__/app.js"],
+  ]) {
+    for (const paths of [
+      [file, nested],
+      [nested, file],
+    ]) {
+      const files = [
+        ...(!paths.includes("index.html")
+          ? [{ path: "index.html", content: "<h1>Website</h1>" }]
+          : []),
+        ...paths.map((path) => ({ path, content: "asset" })),
+      ];
+      assert.throws(
+        () => parseOutput("html", JSON.stringify({ files })),
+        /conflicting file paths/i,
+      );
+    }
+  }
+  const files = {
+    "index.html": "<h1>Website</h1>",
+    "assets.js": "script",
+    "assets/js/app.js": "nested script",
+    "assets/js/style.css": "style",
+    "assets-other": "separate file",
+  };
+  assert.deepEqual(
+    parseOutput(
+      "html",
+      JSON.stringify({
+        files: Object.entries(files).map(([path, content]) => ({
+          path,
+          content,
+        })),
+      }),
+    ),
+    files,
+  );
+});

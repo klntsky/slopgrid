@@ -18,8 +18,15 @@ engine or transfer ownership of active inference to a request handler.
 
 The browser owns editor interaction, presentation preferences, and local drafts.
 Its cached state supports display and recovery but does not authorize server
-mutations or determine durable execution state. Development and test runtimes
-own independent storage and process resources.
+mutations or determine durable execution state. TanStack Query owns read retries,
+connectivity suspension, failure state, and request cancellation when a grid is no
+longer observed. Grid recovery enforces request deadlines and shared server
+cooldowns; the HTTP transport preserves response status and cooldown metadata even
+when an error body cannot be read. Live streams own cursor recovery before query
+fallback and cancel redundant reads before publishing fresh state, without
+resubmitting server mutations. Browser queries own the lifetime and freshness of
+completed output bodies. Development and test runtimes own independent storage
+and process resources.
 
 Each browser listing owns its transient layout and pagination position.
 Page navigation preserves the active controls without changing server-side
@@ -132,10 +139,15 @@ scope, so an output URL or previously issued cookie is not an independent grant
 to another viewer's content. Browser messaging used for preview interaction
 does not grant application or filesystem access.
 
-The service worker owns session-partitioned offline content. Cached website
-representations served from application paths use an opaque sandbox to separate
-generated code from application cookies, storage, and the parent document.
-Offline retention does not replace the server's authorization policy.
+The service worker owns session-partitioned offline content and coalesces grid
+reads for foreground queries and offline retention. It preserves a shared
+upstream read while another consumer needs it and propagates cancellation when
+the last consumer releases it. Only server-authorized responses can populate
+the cache; client completion notifications cannot supply cached grid contents.
+Cached website representations served from application paths use an opaque
+sandbox to separate generated code from application cookies, storage, and the
+parent document. Offline retention does not replace the server's authorization
+policy.
 
 ## Shared content ownership
 

@@ -1,5 +1,6 @@
 import { type ChildProcess } from "node:child_process";
 import { once } from "node:events";
+import { type RequestListener, type ServerResponse } from "node:http";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -80,6 +81,133 @@ type RuntimeCatalog = {
     supported_parameters: string[];
   }[];
 };
+export type GridReadFault =
+  | {
+      kind: "json";
+      status: number;
+      code: string;
+      retryAfter?: string;
+    }
+  | { kind: "html"; status: number; retryAfter?: string }
+  | { kind: "reset" }
+  | { kind: "stall" };
+
+function gridTransport() {
+  const controls = new Map<
+    string,
+    {
+      faults: GridReadFault[];
+      fallback: GridReadFault | undefined;
+      reads: number;
+      mutations: number;
+      eventsBlocked: boolean;
+      events: Set<ServerResponse>;
+      readers: Map<number, (() => void)[]>;
+    }
+  >();
+  function forGrid(id: string) {
+    let state = controls.get(id);
+    if (!state) {
+      state = {
+        faults: [],
+        fallback: undefined,
+        reads: 0,
+        mutations: 0,
+        eventsBlocked: false,
+        events: new Set(),
+        readers: new Map(),
+      };
+      controls.set(id, state);
+    }
+    const current = state;
+    return {
+      get reads() {
+        return current.reads;
+      },
+      get mutations() {
+        return current.mutations;
+      },
+      fail(faults: GridReadFault[], fallback?: GridReadFault) {
+        current.faults = [...faults];
+        current.fallback = fallback;
+      },
+      pass() {
+        current.faults = [];
+        current.fallback = undefined;
+      },
+      blockEvents(blocked = true) {
+        current.eventsBlocked = blocked;
+        if (blocked) for (const response of current.events) response.destroy();
+      },
+      waitForRead(count: number) {
+        if (current.reads >= count) return Promise.resolve();
+        const { promise, resolve } = Promise.withResolvers<void>();
+        const readers = current.readers.get(count) ?? [];
+        readers.push(resolve);
+        current.readers.set(count, readers);
+        return promise;
+      },
+    };
+  }
+  const intercept = ((
+    request: Parameters<RequestListener>[0],
+    response: Parameters<RequestListener>[1],
+  ) => {
+    const path = request.url?.split("?")[0];
+    for (const [id, state] of controls) {
+      const gridPath = `/api/grids/${id}`;
+      if (path !== gridPath && !path?.startsWith(`${gridPath}/`)) continue;
+      if (request.method !== "GET") {
+        state.mutations++;
+        return false;
+      }
+      if (path === `${gridPath}/events`) {
+        if (state.eventsBlocked) {
+          response.writeHead(503).end();
+          return true;
+        }
+        state.events.add(response);
+        response.once("close", () => state.events.delete(response));
+        return false;
+      }
+      if (path !== gridPath) return false;
+      state.reads++;
+      for (const resolve of state.readers.get(state.reads) ?? []) resolve();
+      state.readers.delete(state.reads);
+      const fault = state.faults.shift() ?? state.fallback;
+      if (!fault) return false;
+      if (fault.kind === "reset") {
+        request.socket.destroy();
+        return true;
+      }
+      if (fault.kind === "stall") {
+        response.writeHead(200, {
+          "content-type": "application/json",
+          "cache-control": "no-store",
+        });
+        response.write('{"id":');
+        return true;
+      }
+      response.writeHead(fault.status, {
+        "content-type":
+          fault.kind === "json" ? "application/json" : "text/html",
+        "cache-control": "no-store",
+        ...(fault.retryAfter ? { "retry-after": fault.retryAfter } : {}),
+      });
+      response.end(
+        fault.kind === "json"
+          ? JSON.stringify({
+              error: "Controlled grid read failure",
+              code: fault.code,
+            })
+          : "<!doctype html><title>Upstream temporarily unavailable</title>",
+      );
+      return true;
+    }
+    return false;
+  }) satisfies NonNullable<Parameters<typeof webFixture>[0]["intercept"]>;
+  return { forGrid, intercept };
+}
 
 /** Real service processes with a controllable external HTTP provider. */
 export async function runtimeFixture(
@@ -89,6 +217,7 @@ export async function runtimeFixture(
     images?: boolean;
     chatImages?: boolean;
     configureCatalog?: (catalog: RuntimeCatalog) => void;
+    observeRequest?: RequestListener;
   } = {},
 ) {
   const directory = mkdtempSync(join(tmpdir(), "slopgrid-runtime-"));
@@ -96,6 +225,7 @@ export async function runtimeFixture(
     secret = Buffer.alloc(32, 9);
   seedTestDatabase(database);
   const store = new Store(database, secret);
+  const transport = gridTransport();
   const owner = token();
   store.saveSession({ id: owner, key: "manual-test-key", created: Date.now() });
   const upstream = express();
@@ -345,6 +475,10 @@ export async function runtimeFixture(
       secret,
       providerURL,
       port,
+      intercept: (request, response) => {
+        options.observeRequest?.(request, response);
+        return transport.intercept(request, response);
+      },
     });
     origin = web.origin;
     port = Number(new URL(origin).port);
@@ -385,6 +519,7 @@ export async function runtimeFixture(
     calls,
     imageCalls,
     providerImageRequests,
+    gridTransport: transport.forGrid,
     close,
     startWeb,
     startEngine,

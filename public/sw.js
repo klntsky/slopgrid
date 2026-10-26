@@ -9,6 +9,9 @@ let scope;
 let epoch = 0;
 let writes = Promise.resolve();
 const pending = new Map();
+const gridReaders = new Map();
+const cancelledGridReads = new Map();
+let gridReaderWatch;
 
 function serial(work) {
   const result = writes.then(work);
@@ -173,6 +176,146 @@ async function reference(request, event) {
   }
   return (await work).clone();
 }
+function releaseGridFlight(flight) {
+  if (
+    flight.bodySettled ||
+    flight.persistent ||
+    flight.background ||
+    flight.readers.size
+  )
+    return;
+  if (pending.get(flight.key) === flight) pending.delete(flight.key);
+  flight.controller.abort();
+}
+function watchGridReaders() {
+  if (!gridReaders.size) {
+    clearInterval(gridReaderWatch);
+    gridReaderWatch = undefined;
+  } else if (gridReaderWatch === undefined) {
+    gridReaderWatch = setInterval(async () => {
+      const readers = [...gridReaders];
+      const clients = new Map();
+      for (const [, reader] of readers)
+        if (!clients.has(reader.clientId))
+          clients.set(reader.clientId, self.clients.get(reader.clientId));
+      for (const [key, reader] of readers) {
+        if (
+          !(await clients.get(reader.clientId)) &&
+          gridReaders.get(key) === reader
+        )
+          cancelGridReader(key, reader);
+      }
+    }, 5000);
+  }
+}
+function finishGridFlight(flight) {
+  flight.bodySettled = true;
+  for (const key of flight.readers) {
+    const reader = gridReaders.get(key);
+    if (reader?.flight !== flight) continue;
+    gridReaders.delete(key);
+    reader.flight = undefined;
+  }
+  flight.readers.clear();
+  watchGridReaders();
+}
+function cancelGridReader(key, reader) {
+  gridReaders.delete(key);
+  reader.cancelled = true;
+  const flight = reader.flight;
+  reader.flight = undefined;
+  flight.readers.delete(key);
+  releaseGridFlight(flight);
+  watchGridReaders();
+}
+async function gridRequest(request, event, background = false) {
+  const key = `grid:${epoch}:${request.url}`;
+  const id = request.headers.get("X-Slopgrid-Grid-Read");
+  const readerKey = id && !background ? `${event.clientId}:${id}` : undefined;
+  if (readerKey && cancelledGridReads.delete(readerKey))
+    return Response.error();
+  const reader = readerKey
+    ? { clientId: event.clientId, cancelled: false, flight: undefined }
+    : undefined;
+  if (reader) gridReaders.set(readerKey, reader);
+  let flight = pending.get(key);
+  if (!flight) {
+    const controller = new AbortController();
+    const headers = new Headers(request.headers);
+    headers.delete("X-Slopgrid-Grid-Read");
+    flight = {
+      key,
+      controller,
+      readers: new Set(),
+      background: 0,
+      persistent: false,
+      bodySettled: false,
+      work: undefined,
+    };
+    pending.set(key, flight);
+    flight.work = network(
+      new Request(request, { headers, signal: controller.signal }),
+      event,
+      flight,
+    )
+      .then((response) => {
+        if (flight.bodySettled || !response.body) {
+          finishGridFlight(flight);
+          return response;
+        }
+        const body = response.body.getReader();
+        return new Response(
+          new ReadableStream({
+            async pull(controller) {
+              try {
+                const { done, value } = await body.read();
+                if (done) {
+                  finishGridFlight(flight);
+                  controller.close();
+                } else controller.enqueue(value);
+              } catch (error) {
+                finishGridFlight(flight);
+                controller.error(error);
+              }
+            },
+            cancel(reason) {
+              finishGridFlight(flight);
+              return body.cancel(reason);
+            },
+          }),
+          {
+            status: response.status,
+            statusText: response.statusText,
+            headers: response.headers,
+          },
+        );
+      })
+      .finally(() => {
+        if (pending.get(key) === flight) pending.delete(key);
+        flight.work = undefined;
+        if (flight.bodySettled || controller.signal.aborted)
+          finishGridFlight(flight);
+      });
+  }
+  if (background) flight.background++;
+  else if (reader) {
+    flight.readers.add(readerKey);
+    reader.flight = flight;
+  } else flight.persistent = true;
+  watchGridReaders();
+  try {
+    const response = await flight.work;
+    return reader?.cancelled ? Response.error() : response.clone();
+  } catch (error) {
+    if (flight.controller.signal.aborted) return Response.error();
+    throw error;
+  } finally {
+    if (background) {
+      flight.background--;
+      releaseGridFlight(flight);
+    }
+  }
+}
 async function saveReference(id, expected) {
   if (!/^[a-f0-9]{48}$/.test(id) || expected !== epoch) return;
   const request = new Request(
@@ -225,6 +368,46 @@ async function saveGridOutputs(grid, expected) {
     await Promise.all(urls.map((url) => saveOutput(url, expected)));
   }
 }
+async function cacheCompletedGrid(id, completed, event) {
+  const request = new Request(
+    new URL(`/api/grids/${id}`, self.location.origin),
+  );
+  const expected = epoch;
+  const flight = pending.get(`grid:${expected}:${request.url}`);
+  if (flight) {
+    flight.background++;
+    try {
+      await flight.work;
+    } finally {
+      flight.background--;
+      releaseGridFlight(flight);
+    }
+  }
+  await writes;
+  if (expected !== epoch) return;
+  const saved = await cached(request.url);
+  if (expected !== epoch) return;
+  if (saved) {
+    const grid = await saved.json();
+    if (expected !== epoch) return;
+    const covered = completed.every((completion) =>
+      grid.cells.some(
+        (cell) =>
+          outputAvailable(cell) &&
+          cell.id === completion.id &&
+          cell.generationId === completion.generationId &&
+          (!completion.judgment ||
+            (cell.judge?.status === completion.judgment.status &&
+              cell.judge?.attemptId === completion.judgment.attemptId)),
+      ),
+    );
+    if (covered) {
+      await saveGridOutputs(grid, expected);
+      return;
+    }
+  }
+  if (expected === epoch) await gridRequest(request, event, true);
+}
 const pagePath = (path) =>
   ["/", "/create", "/grids", "/settings", "/billing", "/index.html"].includes(
     path,
@@ -238,17 +421,25 @@ const apiPath = (path) =>
     "/api/billing",
   ].includes(path) || /^\/api\/(?:grids|references)\/[a-f0-9]{48}$/.test(path);
 const referencePath = (path) => /^\/api\/references\/[a-f0-9]{48}$/.test(path);
+const gridPath = (path) => /^\/api\/grids\/[a-f0-9]{48}$/.test(path);
+const staleGrid = () =>
+  json(
+    { error: "This page isn't available offline." },
+    { "X-Slopgrid-Offline": "1" },
+    503,
+  );
 const outputPath = (path) =>
   /^\/outputs\/[a-f0-9]{48}(?:\/download|\/thinking\/[a-f0-9]{48})?$/.test(
     path,
   );
 const offlinePath = (path) => /^\/offline\/outputs\/[a-f0-9]{48}\//.test(path);
 
-async function network(request, event) {
+async function network(request, event, gridFlight) {
   const url = new URL(request.url);
   const previous = await currentScope();
   const started = epoch;
   const image = referencePath(url.pathname);
+  const grid = gridPath(url.pathname);
   const savedImage = image ? await cached(request.url) : undefined;
   let response;
   try {
@@ -268,11 +459,13 @@ async function network(request, event) {
         }),
       );
     } else response = await fetch(request);
-  } catch {
+  } catch (error) {
+    if (request.signal.aborted) throw error;
     if (offlinePath(url.pathname))
       return (await cached(request.url)) ?? unavailable(true);
     const saved = await cached(request.url);
-    if (image && started !== epoch) return unavailable(true);
+    if ((image || grid) && started !== epoch)
+      return grid ? staleGrid() : unavailable(true);
     if (saved) {
       if (url.pathname.startsWith("/api/")) {
         const headers = new Headers(saved.headers);
@@ -314,7 +507,9 @@ async function network(request, event) {
     await store(request.url, savedImage, started);
     return started === epoch ? savedImage : unavailable(true);
   }
-  if (!next || !(await partition(next, previous, started))) return response;
+  if (grid && started !== epoch && previous === next) return staleGrid();
+  if (!next || !(await partition(next, previous, started)))
+    return grid && next ? staleGrid() : response;
   const expected = epoch;
   if (!response.ok) {
     // An authoritative denial must never fall back to private cached content.
@@ -324,14 +519,17 @@ async function network(request, event) {
     });
     return response;
   }
-  if (/^\/api\/grids\/[a-f0-9]{48}$/.test(url.pathname)) {
+  if (grid) {
     const grid = await response.clone().json();
+    if (gridFlight) gridFlight.bodySettled = true;
     await store(
       request.url,
       json(cleanGrid(grid), { "X-Slopgrid-Cache-Scope": next }),
       expected,
     );
     event.waitUntil(saveGridOutputs(grid, expected));
+    if (expected !== epoch || next !== (await currentScope()))
+      return staleGrid();
   } else if (
     pagePath(url.pathname) ||
     apiPath(url.pathname) ||
@@ -442,8 +640,12 @@ self.addEventListener("fetch", (event) => {
     const work = (
       referencePath(url.pathname)
         ? reference(request, event)
-        : network(request, event)
-    ).catch(async () => {
+        : gridPath(url.pathname)
+          ? gridRequest(request, event)
+          : network(request, event)
+    ).catch(async (error) => {
+      if (gridPath(url.pathname) && error?.name === "AbortError")
+        return Response.error();
       try {
         return await fetch(request);
       } catch {
@@ -467,16 +669,41 @@ self.addEventListener("message", (event) => {
   )
     return;
   if (
+    event.data?.type === "cancel-grid-read" &&
+    typeof event.data.id === "string" &&
+    event.data.id.length <= 128
+  ) {
+    const key = `${event.source.id}:${event.data.id}`;
+    const reader = gridReaders.get(key);
+    if (reader) {
+      cancelGridReader(key, reader);
+    } else {
+      cancelledGridReads.set(key, true);
+      if (cancelledGridReads.size > 256)
+        cancelledGridReads.delete(cancelledGridReads.keys().next().value);
+    }
+    return;
+  }
+  if (
     event.data?.type === "cache-grid" &&
-    /^[a-f0-9]{48}$/.test(event.data.id)
+    /^[a-f0-9]{48}$/.test(event.data.id) &&
+    Array.isArray(event.data.completed) &&
+    event.data.completed.every(
+      (cell) =>
+        cell &&
+        /^[a-f0-9]{48}$/.test(cell.id) &&
+        /^[a-f0-9]{48}$/.test(cell.generationId) &&
+        (cell.judgment === undefined ||
+          (cell.judgment &&
+            ["complete", "error"].includes(cell.judgment.status) &&
+            (cell.judgment.attemptId === undefined ||
+              /^[a-f0-9]{48}$/.test(cell.judgment.attemptId)))),
+    )
   ) {
     event.waitUntil(
-      network(
-        new Request(
-          new URL(`/api/grids/${event.data.id}`, self.location.origin),
-        ),
-        event,
-      ).catch(() => {}),
+      cacheCompletedGrid(event.data.id, event.data.completed, event).catch(
+        () => {},
+      ),
     );
   }
 });

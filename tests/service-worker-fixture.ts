@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
+import type { ViewGrid } from "../src/api";
 
 const origin = "https://slopgrid.test";
 const key = (request: Request | string) =>
@@ -57,6 +58,8 @@ export function serviceWorkerFixture(
   caches = new WorkerStorage(),
 ) {
   const handlers = new Map<string, (event: WorkerEvent) => void>();
+  let clientAlive = true;
+  let sweepClients: (() => Promise<void>) | undefined;
   const source = readFileSync(
     new URL("../public/sw.js", import.meta.url),
     "utf8",
@@ -67,7 +70,10 @@ export function serviceWorkerFixture(
   runInNewContext(source, {
     self: {
       location: { origin },
-      clients: { claim: async () => {} },
+      clients: {
+        claim: async () => {},
+        get: async () => (clientAlive ? { id: "fixture-client" } : undefined),
+      },
       addEventListener: (type: string, handler: (event: WorkerEvent) => void) =>
         handlers.set(type, handler),
     },
@@ -78,6 +84,15 @@ export function serviceWorkerFixture(
     Response,
     Headers,
     URL,
+    AbortController,
+    ReadableStream,
+    setInterval: (work: () => Promise<void>) => {
+      sweepClients = work;
+      return 1;
+    },
+    clearInterval: () => {
+      sweepClients = undefined;
+    },
   });
 
   function dispatch(type: string, data: Record<string, unknown>) {
@@ -101,16 +116,58 @@ export function serviceWorkerFixture(
 
   return {
     caches,
+    closeClient() {
+      clientAlive = false;
+    },
+    sweepClients() {
+      return sweepClients?.();
+    },
     activate() {
       return dispatch("activate", {}).settled();
     },
-    fetch(path: string, method = "GET") {
-      return dispatch("fetch", { request: new Request(key(path), { method }) });
+    fetch(path: string, method = "GET", readId?: string) {
+      return dispatch("fetch", {
+        clientId: "fixture-client",
+        request: new Request(key(path), {
+          method,
+          headers: readId ? { "X-Slopgrid-Grid-Read": readId } : undefined,
+        }),
+      });
     },
-    retainGrid(id: string) {
+    cancelGridRead(id: string) {
+      return dispatch("message", {
+        source: { url: origin, id: "fixture-client" },
+        data: { type: "cancel-grid-read", id },
+      }).settled();
+    },
+    retainGrid(
+      grid: Pick<ViewGrid, "id"> & {
+        cells: Pick<
+          ViewGrid["cells"][number],
+          "id" | "generationId" | "status" | "outputReady" | "judge"
+        >[];
+      },
+    ) {
       return dispatch("message", {
         source: { url: origin },
-        data: { type: "cache-grid", id },
+        data: {
+          type: "cache-grid",
+          id: grid.id,
+          completed: grid.cells
+            .filter((cell) => cell.outputReady || cell.status === "complete")
+            .map((cell) => ({
+              id: cell.id,
+              generationId: cell.generationId,
+              judgment:
+                cell.judge?.status === "complete" ||
+                cell.judge?.status === "error"
+                  ? {
+                      status: cell.judge.status,
+                      attemptId: cell.judge.attemptId,
+                    }
+                  : undefined,
+            })),
+        },
       }).settled();
     },
   };

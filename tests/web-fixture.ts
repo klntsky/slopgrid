@@ -16,9 +16,14 @@ export async function webFixture(config: {
   authURL?: string;
   controls?: RequestListener;
   hostname?: string;
+  intercept?: (
+    req: Parameters<RequestListener>[0],
+    res: Parameters<RequestListener>[1],
+  ) => boolean;
 }) {
   let backend: number;
   const handleRequest: RequestListener = (req, res) => {
+    if (config.intercept?.(req, res)) return;
     if (
       config.controls &&
       (req.url?.startsWith("/fixture/") || req.url?.startsWith("/svg-probe"))
