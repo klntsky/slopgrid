@@ -20,20 +20,13 @@ export function GridPage({ id }: { id: string }) {
     busy,
     dismissed,
     setDismissed,
-    streamLost,
-    live,
+    reconnecting,
     lowBalance,
     setLowBalance,
     action,
     configure,
   } = useGrid(id);
-  if (query.isPending)
-    return (
-      <main>
-        <p>Loading grid…</p>
-      </main>
-    );
-  if (query.isError)
+  if (query.isError && !reconnecting)
     return (
       <main>
         <ErrorMessage>{query.error.message}</ErrorMessage>
@@ -43,6 +36,10 @@ export function GridPage({ id }: { id: string }) {
           </button>
         )}
       </main>
+    );
+  if (!query.data)
+    return (
+      <main>{reconnecting ? <ConnectionStatus /> : <p>Loading grid…</p>}</main>
     );
   const g = query.data;
   const paused = g.status === "paused" && g.canEdit && !g.published;
@@ -65,12 +62,7 @@ export function GridPage({ id }: { id: string }) {
             continue.
           </p>
         )}
-        {((offline && g.live) || (streamLost && live)) && (
-          <div role="status" className="connection-status">
-            <LoaderCircle className="spinner" aria-hidden="true" />
-            <span>Connection lost. Reconnecting…</span>
-          </div>
-        )}
+        {reconnecting && <ConnectionStatus />}
         <ErrorMessage>{error}</ErrorMessage>
         <OutputGrid key={g.id} grid={g} />
         {lowBalance !== null && (
@@ -95,5 +87,14 @@ export function GridPage({ id }: { id: string }) {
           )}
       </main>
     </>
+  );
+}
+
+function ConnectionStatus() {
+  return (
+    <div role="status" className="connection-status">
+      <LoaderCircle className="spinner" aria-hidden="true" />
+      <span>Connection lost. Reconnecting…</span>
+    </div>
   );
 }

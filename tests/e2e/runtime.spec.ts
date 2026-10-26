@@ -1,6 +1,686 @@
-import { test, expect } from "@playwright/test";
-import { runtimeFixture, kill } from "../runtime-fixture";
+import {
+  test,
+  expect,
+  type PlaywrightWorkerArgs,
+  type Page,
+  type Request,
+} from "@playwright/test";
+import { runtimeFixture, kill, type GridReadFault } from "../runtime-fixture";
+import type { IncomingMessage } from "node:http";
 import { currentDefinition } from "../current-grid-fixture";
+
+for (const entry of ["reload", "stream", "pause", "edit"] as const) {
+  test(`generation service outage recovers automatically after ${entry}`, async ({
+    playwright,
+  }) => {
+    test.setTimeout(60000);
+    const fixture = await runtimeFixture();
+    const browser = await playwright.chromium.launch();
+    const context = await browser.newContext({ ignoreHTTPSErrors: true });
+    try {
+      await context.addCookies([
+        {
+          name: fixture.cookieName,
+          secure: true,
+          httpOnly: true,
+          sameSite: "Lax",
+          value: fixture.owner,
+          url: fixture.origin,
+        },
+      ]);
+      const grid = fixture.grid();
+      const page = await context.newPage();
+      let unavailableReads = 0;
+      page.on("response", (response) => {
+        if (
+          new URL(response.url()).pathname === `/api/grids/${grid.id}` &&
+          response.request().method() === "GET" &&
+          response.status() === 503
+        )
+          unavailableReads++;
+      });
+      await page.goto(`${fixture.origin}/grid/${grid.id}`);
+      await page.getByRole("button", { name: "Resume generation" }).click();
+      const call = await fixture.nextCall();
+      call.write({ content: "Saved before service outage." });
+      call.finish();
+      const preview = page.locator(".markdown-preview:visible").first();
+      await expect(preview).toContainText("Saved before service outage.");
+      await fixture.nextCall();
+      await expect(
+        page.getByRole("progressbar", { name: "Grid generation" }),
+      ).toHaveAttribute("value", "1");
+      const document = await preview.elementHandle();
+      await kill(fixture.engine.child);
+      if (entry === "reload") {
+        await page.reload();
+      } else {
+        const failure = page.waitForResponse(
+          (response) =>
+            response.url().includes(`/api/grids/${grid.id}`) &&
+            response.status() === 503,
+        );
+        if (entry !== "stream")
+          await page
+            .getByRole("button", {
+              name: entry === "pause" ? "Pause generation" : "EDIT",
+              exact: true,
+            })
+            .click();
+        await failure;
+        await expect(preview).toContainText("Saved before service outage.");
+        expect(await document!.evaluate((node) => node.isConnected)).toBe(true);
+      }
+      await expect(page.locator(".connection-status")).toContainText(
+        "Connection lost. Reconnecting",
+      );
+      await expect(page.getByRole("alert")).toHaveCount(0);
+      await expect(
+        page.getByRole("link", { name: "slopgrid", exact: true }),
+      ).toBeVisible();
+      await expect
+        .poll(() => unavailableReads, { timeout: 30000 })
+        .toBeGreaterThan(4);
+      await expect(page.getByRole("alert")).toHaveCount(0);
+      const outageDocument = await page.locator("html").elementHandle();
+      await fixture.startEngine();
+      await expect(preview).toContainText("Saved before service outage.", {
+        timeout: 15000,
+      });
+      await expect(page.locator(".connection-status")).toHaveCount(0, {
+        timeout: 20000,
+      });
+      await expect(page.getByRole("alert")).toHaveCount(0);
+      expect(await outageDocument!.evaluate((node) => node.isConnected)).toBe(
+        true,
+      );
+      await expect(
+        page.getByRole("button", { name: "Resume generation" }),
+      ).toBeVisible();
+      expect(fixture.calls).toHaveLength(2);
+      await page.getByRole("button", { name: "Resume generation" }).click();
+      const resumed = await fixture.nextCall();
+      resumed.write({ content: "After service recovery." });
+      resumed.finish();
+      await expect(
+        page.locator(".markdown-preview:visible").last(),
+      ).toContainText("After service recovery.");
+      await expect(
+        page.getByRole("progressbar", { name: "Grid generation" }),
+      ).toHaveAttribute("value", "2");
+      expect(fixture.calls).toHaveLength(3);
+    } finally {
+      await browser.close();
+      await fixture.close();
+    }
+  });
+}
+
+test("grid recovery stops on navigation and missing grids remain terminal", async ({
+  playwright,
+}) => {
+  const fixture = await runtimeFixture();
+  const browser = await playwright.chromium.launch();
+  const context = await browser.newContext({ ignoreHTTPSErrors: true });
+  try {
+    await context.addCookies([
+      {
+        name: fixture.cookieName,
+        secure: true,
+        httpOnly: true,
+        sameSite: "Lax",
+        value: fixture.owner,
+        url: fixture.origin,
+      },
+    ]);
+    const grid = fixture.grid();
+    await kill(fixture.engine.child);
+    const page = await context.newPage();
+    await page.clock.install();
+    let gridReads = 0;
+    let missingReads = 0;
+    page.on("request", (request) => {
+      const path = new URL(request.url()).pathname;
+      if (path === `/api/grids/${grid.id}`) gridReads++;
+      if (path === `/api/grids/${"0".repeat(48)}`) missingReads++;
+    });
+    await page.goto(`${fixture.origin}/grid/${grid.id}`);
+    await expect(page.locator(".connection-status")).toBeVisible();
+    await page.getByRole("link", { name: "slopgrid", exact: true }).click();
+    await expect(
+      page.getByRole("heading", { name: "Create your own AI model benchmark" }),
+    ).toBeVisible();
+    const readsBeforeAdvancing = gridReads;
+    await page.clock.runFor(5000);
+    expect(gridReads).toBe(readsBeforeAdvancing);
+    await page.goto(`${fixture.origin}/grid/${"0".repeat(48)}`);
+    await expect(page.getByRole("alert")).toContainText("Grid not found");
+    await page.clock.runFor(10000);
+    expect(missingReads).toBe(1);
+    await expect(page.locator(".connection-status")).toHaveCount(0);
+  } finally {
+    await browser.close();
+    await fixture.close();
+  }
+});
+
+async function loadedRecoveryGrid(
+  playwright: PlaywrightWorkerArgs["playwright"],
+) {
+  const fixture = await runtimeFixture();
+  const browser = await playwright.chromium.launch();
+  const context = await browser.newContext({
+    ignoreHTTPSErrors: true,
+    serviceWorkers: "block",
+  });
+  try {
+    await context.addCookies([
+      {
+        name: fixture.cookieName,
+        secure: true,
+        httpOnly: true,
+        sameSite: "Lax",
+        value: fixture.owner,
+        url: fixture.origin,
+      },
+    ]);
+    const grid = fixture.grid();
+    const transport = fixture.gridTransport(grid.id);
+    await fixture.engine.api.startGrid({
+      gridId: grid.id,
+      sessionId: fixture.owner,
+    });
+    const saved = await fixture.nextCall();
+    saved.write({ content: "Private saved output survives read failures." });
+    saved.finish();
+    const active = await fixture.nextCall();
+    let streamMessages = 0;
+    const page = await context.newPage();
+    const cdp = await context.newCDPSession(page);
+    await cdp.send("Network.enable");
+    cdp.on("Network.eventSourceMessageReceived", () => streamMessages++);
+    await page.clock.install();
+    await page.goto(`${fixture.origin}/grid/${grid.id}`);
+    const preview = page.locator(".markdown-preview:visible").first();
+    await expect(preview).toContainText(
+      "Private saved output survives read failures.",
+    );
+    await expect.poll(() => streamMessages).toBeGreaterThan(0);
+    await page.evaluate(() => undefined);
+    await page.clock.pauseAt(
+      new Date(await page.evaluate(() => Date.now() + 1000)),
+    );
+    const document = await preview.elementHandle();
+    return {
+      fixture,
+      browser,
+      context,
+      grid,
+      transport,
+      active,
+      page,
+      preview,
+      document,
+      async reconnectEvents() {
+        const before = streamMessages;
+        let advanced = 0;
+        transport.blockEvents(false);
+        await expect
+          .poll(
+            async () => {
+              if (advanced < 20000) {
+                await page.clock.runFor(250);
+                advanced += 250;
+              }
+              return streamMessages;
+            },
+            { intervals: [10] },
+          )
+          .toBeGreaterThan(before);
+        await expect(page.locator(".connection-status")).toHaveCount(0);
+      },
+      async close() {
+        await browser.close();
+        await fixture.close();
+      },
+    };
+  } catch (error) {
+    await browser.close();
+    await fixture.close();
+    throw error;
+  }
+}
+
+async function gridVisibility(page: Page, state: "visible" | "hidden") {
+  await page.evaluate((visibilityState) => {
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: visibilityState,
+    });
+    document.dispatchEvent(new Event("visibilitychange", { bubbles: true }));
+  }, state);
+}
+
+function finishedGridRead(page: Page, id: string) {
+  const { promise, resolve } = Promise.withResolvers<void>();
+  const finished = (request: Request) => {
+    if (
+      request.method() !== "GET" ||
+      new URL(request.url()).pathname !== `/api/grids/${id}`
+    )
+      return;
+    page.off("requestfinished", finished);
+    page.off("requestfailed", finished);
+    resolve();
+  };
+  page.on("requestfinished", finished);
+  page.on("requestfailed", finished);
+  return promise.then(async () => {
+    await page.evaluate(() => undefined);
+    await page.clock.runFor(1);
+  });
+}
+
+async function refetchGrid(page: Page, id: string) {
+  const finished = finishedGridRead(page, id);
+  await expect(page.locator(".connection-status")).toBeVisible();
+  await page.clock.runFor(1001);
+  await finished;
+}
+
+test("mixed temporary grid read failures preserve output beyond fast retries and recover without replaying mutations", async ({
+  playwright,
+}) => {
+  const scenario = await loadedRecoveryGrid(playwright);
+  const { page, grid, transport, preview, document, fixture } = scenario;
+  try {
+    const faults: GridReadFault[] = [
+      { kind: "json", status: 503, code: "UNAVAILABLE" },
+      { kind: "json", status: 502, code: "BAD_GATEWAY" },
+      { kind: "html", status: 502 },
+      { kind: "json", status: 503, code: "PERSISTENCE_UNAVAILABLE" },
+      { kind: "html", status: 503 },
+      { kind: "json", status: 504, code: "GATEWAY_TIMEOUT" },
+      { kind: "html", status: 504 },
+      { kind: "reset" },
+    ];
+    const initialReads = transport.reads;
+    transport.fail(faults, { kind: "html", status: 503 });
+    transport.blockEvents();
+    await refetchGrid(page, grid.id);
+    while (transport.reads < initialReads + faults.length + 4) {
+      await expect(page.locator(".connection-status")).toContainText(
+        "Connection lost. Reconnecting",
+      );
+      await expect(page.getByRole("alert")).toHaveCount(0);
+      await expect(preview).toContainText(
+        "Private saved output survives read failures.",
+      );
+      expect(await document!.evaluate((node) => node.isConnected)).toBe(true);
+      const nextRead = finishedGridRead(page, grid.id);
+      await page.clock.runFor(20000);
+      await nextRead;
+    }
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    const recoveredRead = finishedGridRead(page, grid.id);
+    transport.pass();
+    await page.clock.runFor(20000);
+    await recoveredRead;
+    await scenario.reconnectEvents();
+    await expect(preview).toContainText(
+      "Private saved output survives read failures.",
+    );
+    expect(await document!.evaluate((node) => node.isConnected)).toBe(true);
+    expect(transport.mutations).toBe(0);
+    expect(fixture.calls).toHaveLength(2);
+  } finally {
+    await scenario.close();
+  }
+});
+
+for (const status of [401, 403, 404]) {
+  test(`terminal ${status} grid reads hide protected output without retrying`, async ({
+    playwright,
+  }) => {
+    const scenario = await loadedRecoveryGrid(playwright);
+    const { page, grid, transport } = scenario;
+    try {
+      const initialReads = transport.reads;
+      transport.fail([], { kind: "html", status });
+      transport.blockEvents();
+      await refetchGrid(page, grid.id);
+      await expect(page.getByRole("alert")).toBeVisible();
+      await expect(
+        page.getByText("Private saved output survives read failures."),
+      ).toHaveCount(0);
+      await expect(page.locator(".connection-status")).toHaveCount(0);
+      await page.clock.runFor(120000);
+      expect(transport.reads).toBe(initialReads + 1);
+      expect(transport.mutations).toBe(0);
+    } finally {
+      await scenario.close();
+    }
+  });
+  test(`terminal ${status} after a brief successful resume still rechecks permissions`, async ({
+    playwright,
+  }) => {
+    const scenario = await loadedRecoveryGrid(playwright);
+    const { page, grid, transport } = scenario;
+    try {
+      const initialReads = transport.reads;
+      transport.blockEvents();
+      await refetchGrid(page, grid.id);
+      expect(transport.reads).toBe(initialReads + 1);
+      await scenario.reconnectEvents();
+      const denied = finishedGridRead(page, grid.id);
+      transport.fail([], { kind: "html", status });
+      transport.blockEvents();
+      await expect(page.locator(".connection-status")).toBeVisible();
+      await page.clock.runFor(4001);
+      await denied;
+      await expect(page.getByRole("alert")).toBeVisible();
+      await expect(
+        page.getByText("Private saved output survives read failures."),
+      ).toHaveCount(0);
+      await expect(page.locator(".connection-status")).toHaveCount(0);
+      await page.clock.runFor(120000);
+      expect(transport.reads).toBe(initialReads + 2);
+      expect(transport.mutations).toBe(0);
+    } finally {
+      await scenario.close();
+    }
+  });
+}
+
+for (const format of ["delta-seconds", "HTTP-date"] as const) {
+  test(`grid recovery honors ${format} Retry-After before another HTTP read`, async ({
+    playwright,
+  }) => {
+    const scenario = await loadedRecoveryGrid(playwright);
+    const { page, grid, transport, preview } = scenario;
+    try {
+      const initialReads = transport.reads;
+      const now = await page.evaluate(() => Date.now());
+      transport.fail([
+        {
+          kind: "html",
+          status: 503,
+          retryAfter:
+            format === "delta-seconds"
+              ? "90"
+              : new Date(now + 92000).toUTCString(),
+        },
+      ]);
+      transport.blockEvents();
+      await refetchGrid(page, grid.id);
+      await expect(page.locator(".connection-status")).toBeVisible();
+      await page.clock.runFor(89000);
+      expect(transport.reads).toBe(initialReads + 1);
+      await expect(page.getByRole("alert")).toHaveCount(0);
+      const nextRead = finishedGridRead(page, grid.id);
+      await page.clock.runFor(3000);
+      await nextRead;
+      await scenario.reconnectEvents();
+      await expect(preview).toContainText(
+        "Private saved output survives read failures.",
+      );
+      expect(transport.reads).toBe(initialReads + 2);
+    } finally {
+      await scenario.close();
+    }
+  });
+}
+
+for (const suspension of ["hidden", "offline"] as const) {
+  for (const cooldown of [false, true]) {
+    test(`grid recovery suspends while ${suspension} and resumes ${cooldown ? "after server cooldown" : "immediately when usable"}`, async ({
+      playwright,
+    }) => {
+      const scenario = await loadedRecoveryGrid(playwright);
+      const { page, grid, context, transport, preview } = scenario;
+      try {
+        const initialReads = transport.reads;
+        transport.fail([], {
+          kind: "html",
+          status: 503,
+          ...(cooldown ? { retryAfter: "90" } : {}),
+        });
+        transport.blockEvents();
+        await refetchGrid(page, grid.id);
+        await expect(page.locator(".connection-status")).toBeVisible();
+        if (suspension === "hidden") await gridVisibility(page, "hidden");
+        else await context.setOffline(true);
+        await page.clock.runFor(30000);
+        expect(transport.reads).toBe(initialReads + 1);
+        await expect(preview).toContainText(
+          "Private saved output survives read failures.",
+        );
+        await expect(page.getByRole("alert")).toHaveCount(0);
+        transport.pass();
+        const nextRead = finishedGridRead(page, grid.id);
+        if (suspension === "hidden") await gridVisibility(page, "visible");
+        else await context.setOffline(false);
+        if (cooldown) {
+          await page.clock.runFor(59000);
+          expect(transport.reads).toBe(initialReads + 1);
+          await page.clock.runFor(2000);
+        } else {
+          await page.clock.runFor(1001);
+        }
+        await nextRead;
+        await scenario.reconnectEvents();
+        expect(transport.reads).toBe(initialReads + 2);
+        expect(transport.mutations).toBe(0);
+      } finally {
+        await scenario.close();
+      }
+    });
+  }
+}
+
+test("valid SSE state stops redundant GET recovery while live output continues", async ({
+  playwright,
+}) => {
+  const scenario = await loadedRecoveryGrid(playwright);
+  const { page, grid, transport, active, fixture } = scenario;
+  try {
+    transport.fail([], { kind: "html", status: 503 });
+    transport.blockEvents();
+    await refetchGrid(page, grid.id);
+    await expect(page.locator(".connection-status")).toBeVisible();
+    active.write({ content: "Fresh state arrived over real SSE." });
+    await scenario.reconnectEvents();
+    await expect(
+      page.locator(".markdown-preview:visible").last(),
+    ).toContainText("Fresh state arrived over real SSE.");
+    await expect(page.locator(".connection-status")).toHaveCount(0);
+    const readsAfterState = transport.reads;
+    await page.clock.runFor(120000);
+    expect(transport.reads).toBe(readsAfterState);
+    active.write({ content: " Streaming is still connected." });
+    await expect(
+      page.locator(".markdown-preview:visible").last(),
+    ).toContainText("Streaming is still connected.");
+    expect(transport.mutations).toBe(0);
+    expect(fixture.calls).toHaveLength(2);
+  } finally {
+    await scenario.close();
+  }
+});
+
+test("valid SSE state promptly aborts an unfinished grid GET response body", async ({
+  playwright,
+}) => {
+  const scenario = await loadedRecoveryGrid(playwright);
+  const { page, grid, transport, active, document, fixture } = scenario;
+  try {
+    const initialReads = transport.reads;
+    const startedAt = await page.evaluate(() => Date.now());
+    transport.fail([], { kind: "stall" });
+    transport.blockEvents();
+    const responseArrived = page.waitForResponse(
+      (response) =>
+        response.request().method() === "GET" &&
+        new URL(response.url()).pathname === `/api/grids/${grid.id}`,
+    );
+    await expect(page.locator(".connection-status")).toBeVisible();
+    await page.clock.runFor(1001);
+    await transport.waitForRead(initialReads + 1);
+    const response = await responseArrived;
+    expect(response.status()).toBe(200);
+    const request = response.request();
+    expect(request.failure()).toBeNull();
+    await expect(page.locator(".connection-status")).toBeVisible();
+    const aborted = page.waitForEvent("requestfailed", {
+      predicate: (failed) => failed === request,
+      timeout: 5000,
+    });
+    active.write({ content: "SSE state supersedes the stalled read." });
+    await scenario.reconnectEvents();
+    const failed = await aborted;
+    expect(failed.failure()).not.toBeNull();
+    expect(await page.evaluate(() => Date.now())).toBeLessThan(
+      startedAt + 5000,
+    );
+    await expect(
+      page.locator(".markdown-preview:visible").last(),
+    ).toContainText("SSE state supersedes the stalled read.");
+    await expect(page.locator(".connection-status")).toHaveCount(0);
+    expect(await document!.evaluate((node) => node.isConnected)).toBe(true);
+    expect(transport.reads).toBe(initialReads + 1);
+    await page.clock.runFor(120000);
+    expect(transport.reads).toBe(initialReads + 1);
+    active.write({ content: " Live output still advances." });
+    await expect(
+      page.locator(".markdown-preview:visible").last(),
+    ).toContainText("Live output still advances.");
+    expect(transport.mutations).toBe(0);
+    expect(fixture.calls).toHaveLength(2);
+  } finally {
+    await scenario.close();
+  }
+});
+
+for (const recovery of ["SSE", "hard navigation"] as const) {
+  test(`worker-controlled ${recovery} aborts the real stalled full-grid transport before its body deadline`, async ({
+    playwright,
+  }) => {
+    let gridPath = "";
+    let stall = false;
+    let reads = 0;
+    let proxyClosed = false;
+    let upstreamClosed = false;
+    const ready = Promise.withResolvers<void>();
+    const fixture = await runtimeFixture({
+      observeRequest(request, response) {
+        if (request.method !== "GET" || request.url !== gridPath) return;
+        reads++;
+        if (!stall) return;
+        response.once("close", () => (proxyClosed = true));
+        response.once("pipe", (source: IncomingMessage) => {
+          source.unpipe(response);
+          source.pause();
+          source.once("close", () => (upstreamClosed = true));
+          response.write('{"id":');
+          ready.resolve();
+        });
+      },
+    });
+    const browser = await playwright.chromium.launch({
+      args: ["--ignore-certificate-errors"],
+    });
+    const context = await browser.newContext({ ignoreHTTPSErrors: true });
+    try {
+      await context.addCookies([
+        {
+          name: fixture.cookieName,
+          value: fixture.owner,
+          secure: true,
+          httpOnly: true,
+          sameSite: "Lax",
+          url: fixture.origin,
+        },
+      ]);
+      const grid = fixture.grid({ rows: [{ variable: [{ text: "cat" }] }] });
+      gridPath = `/api/grids/${grid.id}`;
+      const transport = fixture.gridTransport(grid.id);
+      await fixture.engine.api.startGrid({
+        gridId: grid.id,
+        sessionId: fixture.owner,
+      });
+      const active = await fixture.nextCall();
+      active.write({ content: "Worker-controlled live output." });
+      const page = await context.newPage();
+      const cdp = await context.newCDPSession(page);
+      await cdp.send("Network.enable");
+      let streamMessages = 0;
+      cdp.on("Network.eventSourceMessageReceived", () => streamMessages++);
+      await page.clock.install();
+      await page.goto(`${fixture.origin}/grid/${grid.id}`);
+      await expect
+        .poll(() => page.evaluate(() => !!navigator.serviceWorker.controller))
+        .toBe(true);
+      await expect.poll(() => streamMessages).toBeGreaterThan(0);
+      await page.evaluate(async (path) => {
+        const response = await fetch(path);
+        await response.text();
+      }, gridPath);
+      await page.clock.pauseAt(
+        new Date(await page.evaluate(() => Date.now() + 1000)),
+      );
+      const initialReads = reads;
+      const startedAt = await page.evaluate(() => Date.now());
+      stall = true;
+      transport.blockEvents();
+      await expect(page.locator(".connection-status")).toBeVisible();
+      await page.clock.runFor(1001);
+      await ready.promise;
+      const stalledAt = Date.now();
+      expect(reads).toBe(initialReads + 1);
+      if (recovery === "SSE") {
+        const before = streamMessages;
+        active.write({ content: " SSE superseded the worker's stalled read." });
+        transport.blockEvents(false);
+        let advanced = 0;
+        await expect
+          .poll(
+            async () => {
+              if (advanced < 4000) {
+                await page.clock.runFor(250);
+                advanced += 250;
+              }
+              return streamMessages;
+            },
+            { intervals: [10] },
+          )
+          .toBeGreaterThan(before);
+        await expect(page.locator(".markdown-preview:visible")).toContainText(
+          "SSE superseded the worker's stalled read.",
+        );
+        await expect(page.locator(".connection-status")).toHaveCount(0);
+      } else {
+        await page.goto(`${fixture.origin}/`);
+        await expect(
+          page.getByRole("heading", {
+            name: "Create your own AI model benchmark",
+          }),
+        ).toBeVisible();
+      }
+      await expect.poll(() => proxyClosed && upstreamClosed).toBe(true);
+      expect(Date.now() - stalledAt).toBeLessThan(15000);
+      expect(await page.evaluate(() => Date.now())).toBeLessThan(
+        startedAt + 15000,
+      );
+      await page.clock.runFor(30000);
+      expect(reads).toBe(initialReads + 1);
+      expect(transport.mutations).toBe(0);
+      expect(fixture.calls).toHaveLength(1);
+    } finally {
+      await browser.close();
+      await fixture.close();
+    }
+  });
+}
 
 test("open browsers reconnect to a replaced web process while markdown, thinking and website assets continue streaming", async ({
   playwright,

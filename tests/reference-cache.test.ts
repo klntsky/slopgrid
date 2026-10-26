@@ -9,6 +9,7 @@ import { serviceWorkerFixture } from "./service-worker-fixture.js";
 import { validatedGrid } from "./grid-storage-fixture.js";
 import { currentInput } from "./current-grid-fixture.js";
 import { pixelPng as png } from "./reference-image-fixture.js";
+import type { ViewGrid } from "../src/api.js";
 
 test("reference SHA validators reuse bytes only after authorization, including account and publication changes", async (t) => {
   const { origin, store } = await appFixture(t);
@@ -162,6 +163,16 @@ test("completed chat retention deduplicates image downloads and respects denial,
   const later = "b".repeat(48);
   const gridId = "c".repeat(48);
   const cell = "d".repeat(48);
+  const completed = {
+    id: cell,
+    generationId: token(),
+    status: "complete",
+    outputReady: true,
+    judge: undefined,
+  } satisfies Pick<
+    ViewGrid["cells"][number],
+    "id" | "generationId" | "status" | "outputReady" | "judge"
+  >;
   const path = `/api/references/${image}`;
   const laterPath = `/api/references/${later}`;
   let scope = "alice";
@@ -178,6 +189,7 @@ test("completed chat retention deduplicates image downloads and respects denial,
     if (url.pathname === `/api/grids/${gridId}`)
       return Response.json(
         {
+          id: gridId,
           input: {
             inputVersion: 3,
             format: "chat-template",
@@ -203,8 +215,7 @@ test("completed chat retention deduplicates image downloads and respects denial,
           },
           cells: [
             {
-              id: cell,
-              status: "complete",
+              ...completed,
               messages: [{ role: "user", images: [{ id: image }] }],
             },
           ],
@@ -234,9 +245,9 @@ test("completed chat retention deduplicates image downloads and respects denial,
     });
   };
   const worker = serviceWorkerFixture(network);
-  await worker.retainGrid(gridId);
+  await worker.retainGrid({ id: gridId, cells: [completed] });
   assert.equal(imageRequests, 2);
-  await worker.retainGrid(gridId);
+  await worker.retainGrid({ id: gridId, cells: [completed] });
   assert.equal(imageRequests, 2);
   offline = true;
   for (const url of [path, laterPath])
@@ -273,3 +284,257 @@ test("completed chat retention deduplicates image downloads and respects denial,
   offline = true;
   assert.equal((await worker.fetch(path).response!).status, 503);
 });
+
+for (const change of ["logout", "account switch"] as const) {
+  test(`a held authorized grid response is not exposed after ${change}`, async (t) => {
+    const { origin, store } = await appFixture(t);
+    const alice = { id: token(), created: Date.now() };
+    const bob = { id: token(), created: Date.now() };
+    store.saveSession(alice);
+    store.saveSession(bob);
+    const input = currentInput();
+    const grid: Grid = {
+      id: token(),
+      owner: alice.id,
+      input,
+      status: "paused",
+      published: false,
+      visibility: "private",
+      createdAt: new Date().toISOString(),
+      cells: expandGrid(input).map((cell) => ({ ...cell, id: token() })),
+    };
+    store.insert(validatedGrid(grid));
+    const path = `/api/grids/${grid.id}`;
+    let session = alice.id;
+    let offline = false;
+    let gridReads = 0;
+    const { promise: held, resolve: release } = Promise.withResolvers<void>();
+    const { promise: entered, resolve: enter } = Promise.withResolvers<void>();
+    const worker = serviceWorkerFixture(async (request) => {
+      if (offline) throw new TypeError("offline");
+      const url = new URL(request.url);
+      const response = await fetch(`${origin}${url.pathname}`, {
+        method: request.method,
+        headers: { Cookie: `slopgrid=${session}` },
+      });
+      if (url.pathname === path) {
+        gridReads++;
+        assert.equal(response.status, 200);
+        enter();
+        await held;
+      }
+      return response;
+    });
+    await worker.fetch("/api/session").response;
+    const first = worker.fetch(path);
+    const second = worker.fetch(path);
+    await entered;
+    if (change === "logout") {
+      const logout = worker.fetch("/api/auth/logout", "POST");
+      await logout.response;
+      await logout.settled();
+    } else {
+      session = bob.id;
+      await worker.fetch("/api/session").response;
+    }
+    release();
+    assert.equal((await first.response!).status, 503);
+    assert.equal((await second.response!).status, 503);
+    await first.settled();
+    await second.settled();
+    assert.equal(gridReads, 1);
+    offline = true;
+    assert.equal((await worker.fetch(path).response!).status, 503);
+  });
+}
+
+for (const retained of ["none", "foreground", "background"] as const) {
+  test(
+    `grid read cancellation preserves ${retained} remaining consumers`,
+    { timeout: 5000 },
+    async () => {
+      const grid = { id: token(), cells: [] };
+      const path = `/api/grids/${grid.id}`;
+      const entered = Promise.withResolvers<void>();
+      const body = Promise.withResolvers<void>();
+      let reads = 0;
+      let aborted = false;
+      const worker = serviceWorkerFixture(async (request) => {
+        reads++;
+        const value = JSON.stringify(grid);
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode(value.slice(0, 6)));
+            request.signal.addEventListener(
+              "abort",
+              () => {
+                aborted = true;
+                controller.error(new DOMException("Canceled", "AbortError"));
+              },
+              { once: true },
+            );
+            void body.promise.then(() => {
+              if (aborted) return;
+              controller.enqueue(new TextEncoder().encode(value.slice(6)));
+              controller.close();
+            });
+          },
+        });
+        entered.resolve();
+        return new Response(stream, {
+          headers: {
+            "Content-Type": "application/json",
+            "X-Slopgrid-Cache-Scope": "public",
+          },
+        });
+      });
+      const first = worker.fetch(path, "GET", "first");
+      await entered.promise;
+      if (retained === "none") {
+        await worker.cancelGridRead("first");
+        assert.equal((await first.response!).type, "error");
+        await first.settled();
+        assert.equal(aborted, true);
+      } else {
+        const second =
+          retained === "foreground"
+            ? worker.fetch(path, "GET", "second")
+            : undefined;
+        const background =
+          retained === "background" ? worker.retainGrid(grid) : undefined;
+        await worker.cancelGridRead("first");
+        assert.equal(aborted, false);
+        body.resolve();
+        if (second) {
+          const response = await second.response!;
+          assert.deepEqual(await response.json(), grid);
+          await second.settled();
+        }
+        await background;
+        assert.equal((await first.response!).type, "error");
+        await first.settled();
+        await worker.cancelGridRead("second");
+      }
+      assert.equal(reads, 1);
+    },
+  );
+}
+
+test(
+  "canceling a worker grid error body keeps response status headers and does not retry",
+  { timeout: 5000 },
+  async () => {
+    const grid = token();
+    const entered = Promise.withResolvers<void>();
+    let aborted = false;
+    let reads = 0;
+    const worker = serviceWorkerFixture(async (request) => {
+      reads++;
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"error":'));
+          request.signal.addEventListener(
+            "abort",
+            () => {
+              aborted = true;
+              controller.error(new DOMException("Canceled", "AbortError"));
+            },
+            { once: true },
+          );
+        },
+      });
+      entered.resolve();
+      return new Response(stream, {
+        status: 503,
+        headers: {
+          "Retry-After": "7",
+          "X-Slopgrid-Cache-Scope": "public",
+        },
+      });
+    });
+    const read = worker.fetch(`/api/grids/${grid}`, "GET", "error-reader");
+    await entered.promise;
+    const response = await read.response!;
+    assert.equal(response.status, 503);
+    assert.equal(response.headers.get("Retry-After"), "7");
+    const consumption = response.json();
+    await worker.cancelGridRead("error-reader");
+    await assert.rejects(consumption);
+    await read.settled();
+    assert.equal(aborted, true);
+    assert.equal(reads, 1);
+  },
+);
+
+test("a grid cancellation delivered before its fetch prevents a network read", async () => {
+  let reads = 0;
+  const worker = serviceWorkerFixture(async () => {
+    reads++;
+    throw new Error("Canceled grid fetch reached the network");
+  });
+  await worker.cancelGridRead("not-dispatched");
+  const read = worker.fetch(`/api/grids/${token()}`, "GET", "not-dispatched");
+  assert.equal((await read.response!).type, "error");
+  await read.settled();
+  assert.equal(reads, 0);
+});
+
+test("a lost renderer releases its sole stalled worker grid transport", async () => {
+  const entered = Promise.withResolvers<void>();
+  let aborted = false;
+  let reads = 0;
+  const worker = serviceWorkerFixture(async (request) => {
+    reads++;
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"id":'));
+        request.signal.addEventListener(
+          "abort",
+          () => {
+            aborted = true;
+            controller.error(new DOMException("Renderer closed", "AbortError"));
+          },
+          { once: true },
+        );
+      },
+    });
+    entered.resolve();
+    return new Response(stream, {
+      headers: { "X-Slopgrid-Cache-Scope": "public" },
+    });
+  });
+  const read = worker.fetch(`/api/grids/${token()}`, "GET", "lost-renderer");
+  await entered.promise;
+  worker.closeClient();
+  await worker.sweepClients();
+  assert.equal(aborted, true);
+  assert.equal((await read.response!).type, "error");
+  await read.settled();
+  assert.equal(reads, 1);
+});
+
+for (const status of [200, 503]) {
+  test(`a finished ${status} grid body releases worker reader ownership without a page message`, async () => {
+    let aborted = false;
+    const grid = { id: token(), cells: [] };
+    const worker = serviceWorkerFixture(async (request) => {
+      request.signal.addEventListener(
+        "abort",
+        () => {
+          aborted = true;
+        },
+        { once: true },
+      );
+      return Response.json(grid, {
+        status,
+        headers: { "X-Slopgrid-Cache-Scope": "public" },
+      });
+    });
+    const read = worker.fetch(`/api/grids/${grid.id}`, "GET", "finished-body");
+    assert.deepEqual(await (await read.response!).json(), grid);
+    await read.settled();
+    worker.closeClient();
+    await worker.sweepClients();
+    assert.equal(aborted, false);
+  });
+}

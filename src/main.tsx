@@ -8,6 +8,7 @@ import { ThemeProvider } from "./theme";
 import "./style.css";
 import type { GridListsBootstrap } from "../server/grid-bootstrap";
 import { registerPwa, cacheGrid } from "./pwa";
+import type { ViewGrid } from "./api";
 
 declare global {
   interface Window {
@@ -35,9 +36,11 @@ if (window.__SLOPGRID_GRIDS__) {
 delete window.__SLOPGRID_GRIDS__;
 
 void registerPwa().then(() => {
-  for (const query of queryClient.getQueryCache().getAll())
-    if (query.queryKey[0] === "grid" && typeof query.queryKey[1] === "string")
-      cacheGrid(query.queryKey[1]);
+  for (const query of queryClient.getQueryCache().getAll()) {
+    if (query.queryKey[0] !== "grid") continue;
+    const grid = queryClient.getQueryData<ViewGrid>(query.queryKey);
+    if (grid) cacheGrid(grid);
+  }
 });
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
