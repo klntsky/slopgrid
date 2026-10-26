@@ -124,7 +124,13 @@ export async function webFixture(config: {
     if (!ready.port)
       throw new Error("Web backend did not report its bound port");
     backend = ready.port;
-    return { child, origin, close, fetch: fetchLocal };
+    return {
+      child,
+      origin,
+      backendOrigin: `http://127.0.0.1:${backend}`,
+      close,
+      fetch: fetchLocal,
+    };
   } catch (error) {
     await close();
     throw error;
