@@ -24,6 +24,10 @@ const test = base.extend<{ resistFingerprinting: boolean }>({
   ],
 });
 
+// Isolate Firefox profiles from Chromium workers and from concurrent launches.
+test.use({ browserName: "firefox" });
+test.describe.configure({ mode: "default" });
+
 for (const resistFingerprinting of [false, true]) {
   test.describe(`Firefox desktop with fingerprinting resistance ${resistFingerprinting}`, () => {
     test.use({ resistFingerprinting });
