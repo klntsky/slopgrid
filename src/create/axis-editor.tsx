@@ -130,6 +130,7 @@ export function AxisValues({
     !parameter ||
     parameter === "variable" ||
     parameter === "judge_criteria" ||
+    parameter === "judge_system" ||
     parameter === "input"
   )
     return null;

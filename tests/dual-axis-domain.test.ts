@@ -13,6 +13,7 @@ import {
   axisHasVariables,
   axisParameters,
   isCaseAxis,
+  parameterDefault,
   parameterValue,
   parameterValuePath,
 } from "../server/parameters.js";
@@ -162,6 +163,10 @@ test("row inputs and column rubrics can cross-reference the other axis", () => {
   input.judge = true;
   input.parameters.judge_model = { kind: "common", value: "judge" };
   input.parameters.judge_effort = { kind: "common", value: "default" };
+  input.parameters.judge_system = {
+    kind: "common",
+    value: parameterDefault("judge_system"),
+  };
   input.parameters.judge_criteria = { kind: "columns" };
   input.rows.forEach((record, index) => {
     record.input = [{ role: "user", content: `input ${index}: $COLUMN1` }];
@@ -223,6 +228,10 @@ test("empty expanded column rubrics are rejected for every row combination", () 
   input.judge = true;
   input.parameters.judge_model = { kind: "common", value: "judge" };
   input.parameters.judge_effort = { kind: "common", value: "default" };
+  input.parameters.judge_system = {
+    kind: "common",
+    value: parameterDefault("judge_system"),
+  };
   input.parameters.judge_criteria = { kind: "columns" };
   input.columns[0].judge_criteria = [
     { text: "constant?", correctAnswer: true },
@@ -285,6 +294,10 @@ test("both axes merge current text and images in cell and rubric order without d
   input.judge = true;
   input.parameters.judge_model = { kind: "common", value: "judge" };
   input.parameters.judge_effort = { kind: "common", value: "default" };
+  input.parameters.judge_system = {
+    kind: "common",
+    value: parameterDefault("judge_system"),
+  };
   input.parameters.judge_criteria = {
     kind: "common",
     value: [{ text: "$ROW1 $COLUMN1?", correctAnswer: true }],
@@ -313,6 +326,7 @@ test("both axes merge current text and images in cell and rubric order without d
       background: { kind: "common", value: "auto" },
       judge_model: parsed.parameters.judge_model,
       judge_effort: parsed.parameters.judge_effort,
+      judge_system: parsed.parameters.judge_system,
       judge_criteria: parsed.parameters.judge_criteria,
     },
   };

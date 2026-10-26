@@ -1,5 +1,5 @@
 import { useId, useLayoutEffect, useRef, useState } from "react";
-import { Search, X } from "lucide-react";
+import { Filter, X } from "lucide-react";
 import type { ModelInfo } from "../../server/model-catalog";
 import type { GridInput } from "../../server/domain";
 import { tooltipRef } from "../components/use-tooltip";
@@ -90,7 +90,7 @@ export function ModelSelector({
   return (
     <>
       <div className="model-search">
-        <Search aria-hidden="true" />
+        <Filter aria-hidden="true" />
         <input
           ref={filterInput}
           type="search"

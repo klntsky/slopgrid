@@ -188,6 +188,18 @@ test("different case rubrics judge one reused generation independently and survi
     .getByLabel("Prompt", { exact: true })
     .fill("Answer independently of judge-only reference material.");
   await defineCases(page, "judge criteria");
+  await judgeSection(page)
+    .getByLabel("Judge system prompt", { exact: true })
+    .fill(
+      "Evaluate each criterion against $ROW1. Return ordered boolean verdicts with explanations.",
+    );
+  await defineCases(page, "judge system prompt");
+  await layoutTable(page)
+    .getByRole("textbox", {
+      name: "Row case 2 Judge system prompt",
+      exact: true,
+    })
+    .fill("Use $ROW1 as reference. Evaluate each criterion independently.");
   await page.getByRole("button", { name: "new case", exact: true }).click();
   await expect(rubric(page, "Row", 3)).toBeVisible();
   await rubric(page, "Row", 3)
@@ -236,6 +248,14 @@ test("different case rubrics judge one reused generation independently and survi
   await expect(
     rubric(page, "Column", 2).getByLabel("Criterion 2", { exact: true }),
   ).toHaveValue("Does the answer respect $COLUMN1?");
+  await expect(
+    layoutTable(page).getByRole("textbox", {
+      name: "Column case 2 Judge system prompt",
+      exact: true,
+    }),
+  ).toHaveValue(
+    "Use $COLUMN1 as reference. Evaluate each criterion independently.",
+  );
   await swap.click();
   await page.reload();
   await judgeSection(page)
@@ -253,6 +273,14 @@ test("different case rubrics judge one reused generation independently and survi
   await expect(
     rubric(page, "Row", 2).getByLabel("Criterion 2", { exact: true }),
   ).toHaveValue("Does the answer respect $ROW1?");
+  await expect(
+    layoutTable(page).getByRole("textbox", {
+      name: "Row case 1 Judge system prompt",
+      exact: true,
+    }),
+  ).toHaveValue(
+    "Evaluate each criterion against $ROW1. Return ordered boolean verdicts with explanations.",
+  );
   await connectOpenRouter(page);
   const originalId = await generate(page);
   await expectProgress(page, 2, 2);
@@ -274,6 +302,26 @@ test("different case rubrics judge one reused generation independently and survi
     expect.arrayContaining([
       expect.stringContaining("Does the answer match Alpha reference?"),
       expect.stringContaining("Does the answer respect Beta reference?"),
+    ]),
+  );
+  const systemPrompts = (
+    await (await request.get("/fixture/judge-requests")).json()
+  ).map(
+    (call: {
+      messages: { role: string; content: string | { text?: string }[] }[];
+    }) =>
+      call.messages
+        .filter(({ role }) => role === "system")
+        .map((message) => requestText({ messages: [message] })),
+  );
+  expect(systemPrompts).toEqual(
+    expect.arrayContaining([
+      [
+        "Evaluate each criterion against Alpha reference. Return ordered boolean verdicts with explanations.",
+      ],
+      [
+        "Use Beta reference as reference. Evaluate each criterion independently.",
+      ],
     ]),
   );
   const judgmentButton = page.getByRole("button", {
@@ -301,6 +349,14 @@ test("different case rubrics judge one reused generation independently and survi
   await expect(
     judgeSection(page).getByLabel("Judge thinking effort", { exact: true }),
   ).toHaveValue("high");
+  await expect(
+    layoutTable(page).getByRole("textbox", {
+      name: "Row case 2 Judge system prompt",
+      exact: true,
+    }),
+  ).toHaveValue(
+    "Use $ROW1 as reference. Evaluate each criterion independently.",
+  );
   await rubric(page, "Row", 2)
     .getByLabel("Criterion 2", { exact: true })
     .fill("Does the answer agree with $ROW1?");
@@ -346,6 +402,14 @@ test("different case rubrics judge one reused generation independently and survi
   await expect(
     rubric(page, "Row", 2).getByLabel("Correct answer", { exact: true }).nth(0),
   ).toHaveAttribute("aria-pressed", "false");
+  await expect(
+    layoutTable(page).getByRole("textbox", {
+      name: "Row case 2 Judge system prompt",
+      exact: true,
+    }),
+  ).toHaveValue(
+    "Use $ROW1 as reference. Evaluate each criterion independently.",
+  );
 });
 
 for (const side of ["Rows", "Columns"] as const) {
@@ -479,4 +543,3 @@ for (const side of ["Rows", "Columns"] as const) {
     );
   });
 }
-

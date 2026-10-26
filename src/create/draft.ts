@@ -58,6 +58,15 @@ function readDraft(): Draft {
   try {
     const saved = JSON.parse(sessionStorage.getItem(storageKey) ?? "null");
     if (!saved || saved.input?.inputVersion !== 3) return initial();
+    if (
+      saved.input.judge === true &&
+      saved.input.parameters &&
+      !Object.hasOwn(saved.input.parameters, "judge_system")
+    )
+      saved.input.parameters.judge_system = {
+        kind: "common",
+        value: parameterDefault("judge_system"),
+      };
     return { ...saved, input: gridDraftSchema.parse(saved.input) };
   } catch {
     return initial();
@@ -118,7 +127,12 @@ function selectDraftFormat(
   const applicable = new Set<CommonParameterId>([
     ...(Object.keys(defaults.parameters) as CommonParameterId[]),
     ...(previous.judge && format !== "html"
-      ? (["judge_model", "judge_effort", "judge_criteria"] as const)
+      ? ([
+          "judge_model",
+          "judge_effort",
+          "judge_system",
+          "judge_criteria",
+        ] as const)
       : []),
   ]);
   let input: GridDraftInput = {
@@ -210,7 +224,10 @@ function selectDraftFormat(
   for (const side of ["rows", "columns"] as const) {
     if (isCaseAxis(input, side)) continue;
     const owned = axisParameters(input, side);
-    const native = owned.find((parameter) => parameter !== "judge_criteria");
+    const native = owned.find(
+      (parameter) =>
+        parameter !== "judge_criteria" && parameter !== "judge_system",
+    );
     for (const parameter of owned)
       if (parameter !== native && parameter !== "variable") collapse(parameter);
     input = neutralDimension(input, side);

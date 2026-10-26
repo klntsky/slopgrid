@@ -21,12 +21,16 @@ import {
   type InputAction,
   type ParameterSetter,
 } from "./change-axis";
-import { VariableInput } from "./variable-input";
+import { VariableInput, VariableTextInput } from "./variable-input";
 import { CompleteInputEditor } from "./complete-input-editor";
 import { ScalarControl } from "./scalar-control";
 import { tooltipRef } from "../components/use-tooltip";
 import { ReorderHandle } from "./reorder-handle";
-import { ValidationFeedback, ValidationScope } from "./validation-feedback";
+import {
+  ValidationFeedback,
+  ValidationField,
+  ValidationScope,
+} from "./validation-feedback";
 import { EditableTitle } from "../components/editable-title";
 import { variableName } from "../../server/prompt-variables";
 import "./case-table.css";
@@ -98,7 +102,7 @@ function CaseValue({
 }: {
   input: GridDraftInput;
   entry: CaseRecord;
-  parameter: Exclude<CommonParameterId, "input">;
+  parameter: Exclude<CommonParameterId, "input" | "judge_system">;
   models: Model[];
   judgeModels: Model[];
   modelFilters?: ModelFilters;
@@ -379,6 +383,28 @@ export function GridLayoutTable({
         </div>
       );
     }
+    if (parameter === "judge_system") {
+      const label = `${side === "rows" ? "Row" : "Column"} case ${caseIndex + 1} ${parameterNames.judge_system}`;
+      return (
+        <div role="group" className="case-prompt-editor" aria-label={label}>
+          <ValidationField>
+            {(validation) => (
+              <div className="variable-cell-input">
+                <VariableTextInput
+                  id={`case-${entry.id}-judge-system`}
+                  label={label}
+                  text={entry.judge_system!}
+                  validation={validation}
+                  onChange={(value) =>
+                    onAction(caseValueAction(side, caseIndex, parameter, value))
+                  }
+                />
+              </div>
+            )}
+          </ValidationField>
+        </div>
+      );
+    }
     return (
       <div
         role="group"
@@ -415,6 +441,7 @@ export function GridLayoutTable({
         key={rowCases ? fieldKey(field) : entries[caseIndex].id}
         className={
           field.parameter === "variable" ||
+          field.parameter === "judge_system" ||
           (field.parameter === "input" && !isChatFormat(input.format))
             ? "case-prompt-cell"
             : undefined

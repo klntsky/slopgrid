@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   runtimeFixture,
   until,
+  messageText,
   type RuntimeCall,
   type RuntimeFixture,
 } from "./runtime-fixture.js";
@@ -52,17 +53,39 @@ async function finishBeforeJudgeWithShortBusyTimeout(
   }
 }
 
-test("pause and engine restart preserve generation and settled judgments; reused grids judge afresh", async () => {
+test("per-case judge system prompts survive pause, restart and generation reuse without replaying settled judgments", async () => {
   const fixture = await runtimeFixture({ judges: true });
   try {
     const body = currentDefinition({
       ...pair,
       parallelWorkers: 1,
+      caseAxes: ["rows"],
+      parameters: { ...pair.parameters, judge_system: { kind: "rows" } },
+      rows: pair.rows.map((record, index) => ({
+        ...record,
+        variable: [{ text: "$ROW1 literal" }],
+        judge_system: index === 0 ? "Evaluate $ROW1" : "",
+      })),
     });
     const id = await create(fixture, body);
-    finish(await fixture.nextCall(), "# Durable artifact", 0.1);
-    finish(await fixture.nextCall(), JSON.stringify(verdicts), 0.2);
+    const generation = await fixture.nextCall();
+    assert.equal(
+      JSON.stringify(generation.request).includes("Evaluate"),
+      false,
+    );
+    finish(generation, "# Durable artifact", 0.1);
+    const first = await fixture.nextCall();
+    assert.equal(
+      messageText(first.request.messages.at(-2)!.content),
+      "Evaluate $ROW1 literal",
+    );
+    assert.equal(first.request.messages.at(-2)!.role, "system");
+    finish(first, JSON.stringify(verdicts), 0.2);
     const interrupted = await fixture.nextCall();
+    assert.equal(
+      interrupted.request.messages.some(({ role }) => role === "system"),
+      false,
+    );
     const pause = await fixture.request(`/api/grids/${id}/pause`, {});
     assert.equal(pause.status, 200);
     await until(() => interrupted.aborted, Boolean);
@@ -72,6 +95,17 @@ test("pause and engine restart preserve generation and settled judgments; reused
     assert.equal(resumed.status, 200);
     const retry = await fixture.nextCall();
     assert.equal(judgeArtifact(retry), "# Durable artifact");
+    assert.equal(
+      retry.request.messages.some(({ role }) => role === "system"),
+      false,
+    );
+    assert.deepEqual(
+      fixture.store
+        .workflow(id)
+        .filter((task) => task.kind === "judge")
+        .map((task) => task.input.systemPrompt),
+      ["Evaluate $ROW1 literal", ""],
+    );
     finish(retry, JSON.stringify(verdicts), 0.3);
     await until(
       () => fixture.store.get(id)!,
@@ -79,11 +113,21 @@ test("pause and engine restart preserve generation and settled judgments; reused
     );
     const reusedId = await create(fixture, {
       ...body,
+      rows: body.rows.map((record, index) => ({
+        ...record,
+        judge_system: index === 0 ? "Reevaluate $ROW1" : "",
+      })),
       sourceGridId: id,
       reuseArtifacts: true,
     });
     for (let i = 0; i < 2; i++) {
       const call = await fixture.nextCall();
+      assert.deepEqual(
+        call.request.messages
+          .filter(({ role }) => role === "system")
+          .map(({ content }) => messageText(content)),
+        i === 0 ? ["Reevaluate $ROW1 literal"] : [],
+      );
       assert.equal(judgeArtifact(call), "# Durable artifact");
       finish(call, JSON.stringify(verdicts), 0.4);
     }
