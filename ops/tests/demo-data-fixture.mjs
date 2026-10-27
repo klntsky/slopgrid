@@ -53,9 +53,10 @@ export function demoDataFixture(t, fault = "") {
   };
   return {
     root, staging, destinations, calls, source,
-    run(selection = "clone", name = "runtime", selectedSource = source) {
+    run(selection = "clone", name = "runtime", selectedSource = source, capacity = { migrationWorkers: "30" }) {
       return spawnSync(process.execPath, [helper, "seed", selection, JSON.stringify({
         source: selectedSource, buildPath: process.env.SLOPGRID_TEST_APP, runtimeDir: join(destinations, name),
+        ...capacity,
       })], {
         encoding: "utf8", timeout: 90000,
         env: {

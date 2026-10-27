@@ -266,7 +266,7 @@ test("pausing a streamed SVG discards its partial image and Resume generates it 
   }
 });
 for (const action of ["publish", "resume"] as const)
-  test(`failed cells count toward progress and allow ${action} after settlement`, async ({
+  test(`failed cells count toward progress and allow ${action === "publish" ? "publication after settlement" : "resume with an unfinished sibling"}`, async ({
     page,
     request,
   }) => {
@@ -304,6 +304,39 @@ for (const action of ["publish", "resume"] as const)
         })
       ).status(),
     ).toBe(409);
+    if (action === "resume") {
+      await page
+        .getByRole("button", { name: "Pause generation", exact: true })
+        .click();
+      await expect(
+        page.getByRole("button", { name: "Resume generation", exact: true }),
+      ).toBeVisible();
+      await page.reload();
+      await expectProgress(page, 2, 3);
+      await expect(
+        page.locator('.progress-segment[data-status="error"]'),
+      ).toHaveCount(1);
+      await request.post("/fixture/reset", { data: { holdGenerations: true } });
+      await page.getByRole("button", { name: "Resume generation" }).click();
+      await expectProgress(page, 1, 3);
+      await expect(
+        page.locator('.progress-segment[data-status="error"]'),
+      ).toHaveCount(0);
+      await request.post("/fixture/release", { data: { all: true } });
+      await expectProgress(page, 3, 3);
+      await expect(progress).toHaveAttribute(
+        "aria-valuetext",
+        "3 of 3 outputs complete",
+      );
+      await expect(page.getByRole("button", { name: "PUBLISH" })).toBeEnabled();
+      await expect(
+        page.getByRole("button", { name: "Resume generation" }),
+      ).toHaveCount(0);
+      await expect(
+        page.getByRole("button", { name: "EDIT", exact: true }),
+      ).toHaveCount(0);
+      return;
+    }
     await request.post("/fixture/release", { data: { all: true } });
     await expectProgress(page, 3, 3);
     await expect(progress).toHaveAttribute(
@@ -311,47 +344,35 @@ for (const action of ["publish", "resume"] as const)
       "3 of 3 outputs finished: 2 complete, 1 failed",
     );
     await expect(page.getByRole("button", { name: "PUBLISH" })).toBeEnabled();
-    if (action === "publish") {
-      await page.getByRole("button", { name: "PUBLISH" }).click();
-      await finishPublishing(page);
-      await expect(
-        page.getByRole("button", { name: "FORK", exact: true }),
-      ).toBeVisible();
-      const publicGrid = await request.get(`/api/grids/${id}`);
-      expect(publicGrid.status()).toBe(200);
-      expect(
-        (await publicGrid.json()).cells.map(
-          (cell: { status: string }) => cell.status,
-        ),
-      ).toEqual(["complete", "error", "complete"]);
-      await page.reload();
-      await expectProgress(page, 3, 3);
-      await expect(
-        page.locator('.progress-segment[data-status="error"]'),
-      ).toHaveCount(1);
-      await expect(
-        page.getByRole("button", { name: "FORK", exact: true }),
-      ).toBeVisible();
-      await expect(
-        page.getByRole("button", { name: "Resume generation" }),
-      ).toHaveCount(0);
-      return;
-    }
+    await expect(
+      page.getByRole("button", { name: "Resume generation" }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "EDIT", exact: true }),
+    ).toHaveCount(0);
+    await page.getByRole("button", { name: "PUBLISH" }).click();
+    await finishPublishing(page);
+    await expect(
+      page.getByRole("button", { name: "FORK", exact: true }),
+    ).toBeVisible();
+    const publicGrid = await request.get(`/api/grids/${id}`);
+    expect(publicGrid.status()).toBe(200);
+    expect(
+      (await publicGrid.json()).cells.map(
+        (cell: { status: string }) => cell.status,
+      ),
+    ).toEqual(["complete", "error", "complete"]);
     await page.reload();
     await expectProgress(page, 3, 3);
-    await request.post("/fixture/reset", { data: { holdGenerations: true } });
-    await page.getByRole("button", { name: "Resume generation" }).click();
-    await expectProgress(page, 2, 3);
     await expect(
       page.locator('.progress-segment[data-status="error"]'),
+    ).toHaveCount(1);
+    await expect(
+      page.getByRole("button", { name: "FORK", exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Resume generation" }),
     ).toHaveCount(0);
-    await request.post("/fixture/release", { data: { all: true } });
-    await expectProgress(page, 3, 3);
-    await expect(progress).toHaveAttribute(
-      "aria-valuetext",
-      "3 of 3 outputs complete",
-    );
-    await expect(page.getByRole("button", { name: "PUBLISH" })).toBeEnabled();
   });
 
 test("a dropped event stream reconnects and receives completed generation", async ({
@@ -760,7 +781,7 @@ test("OpenRouter balance sets automatic parallel capacity and Resume recalculate
   }
 });
 
-test("cost excludes failed attempts while owner spending retains them through streaming, retries and publication", async ({
+test("cost excludes failed attempts while owner spending retains them through streaming, unfinished retries and publication", async ({
   page,
   request,
   browser,
@@ -769,7 +790,10 @@ test("cost excludes failed attempts while owner spending retains them through st
     data: { costStreaming: true, holdGenerations: true },
   });
   try {
-    await create(page, { format: "Markdown", rowValues: ["cat", "dog"] });
+    await create(page, {
+      format: "Markdown",
+      rowValues: ["cat", "dog", "owl"],
+    });
     const cells = page.locator("article.cell");
     const total = page.locator(".grid-cost");
     const spent = page.locator(".grid-spent");
@@ -847,7 +871,7 @@ test("cost excludes failed attempts while owner spending retains them through st
     ).toContainText("Literal thinking");
     await page.getByRole("button", { name: "Collapse thinking" }).click();
     await release("cat");
-    await expectProgress(page, 1, 2);
+    await expectProgress(page, 1, 3);
     await expect(
       cells.nth(0).locator('[data-tooltip="OpenRouter reported cost"]'),
     ).toHaveText("$0.019876");
@@ -881,6 +905,11 @@ test("cost excludes failed attempts while owner spending retains them through st
     await expect(tokenCounts(1)).toHaveCount(0);
     await expectTotal("$0.01", false);
     await expect(spent).toHaveAttribute("aria-label", "Total spent: $0.03");
+    await expectProgress(page, 2, 3);
+    await page.getByRole("button", { name: "Pause generation" }).click();
+    await expect(
+      page.getByRole("button", { name: "Resume generation" }),
+    ).toBeVisible();
     await page.reload();
     await expectTotal("$0.01", false);
     await cells.nth(1).getByRole("button", { name: "Show thinking" }).click();
@@ -895,7 +924,7 @@ test("cost excludes failed attempts while owner spending retains them through st
         async () =>
           (await (await request.get("/fixture/workers")).json()).held.length,
       )
-      .toBe(1);
+      .toBe(2);
     await release("dog");
     await expectTotal("$0.02");
     await expect(spent).toHaveAttribute(
@@ -914,10 +943,19 @@ test("cost excludes failed attempts while owner spending retains them through st
     await expect(tokenCounts(1)).toHaveCount(0);
     await expectTotal("$0.01", false);
     await expect(spent).toHaveAttribute("aria-label", "Total spent: $0.05");
+    await expectProgress(page, 2, 3);
+    await page.getByRole("button", { name: "Pause generation" }).click();
+    await expect(
+      page.getByRole("button", { name: "Resume generation" }),
+    ).toBeVisible();
     const history = await (await page.request.get("/api/billing")).json();
     expect(history.costUsd).toBeCloseTo(0.059876, 6);
     await page.getByRole("button", { name: "PUBLISH", exact: true }).click();
     await finishPublishing(page);
+    await expectProgress(page, 3, 3);
+    await expect(page.getByText("Not generated", { exact: true })).toHaveCount(
+      1,
+    );
     const viewer = await browser.newContext();
     try {
       const publicPage = await viewer.newPage();
@@ -926,6 +964,10 @@ test("cost excludes failed attempts while owner spending retains them through st
         "aria-label",
         "Total cost: $0.01",
       );
+      await expectProgress(publicPage, 3, 3);
+      await expect(
+        publicPage.getByText("Not generated", { exact: true }),
+      ).toHaveCount(1);
       await expect(publicPage.locator(".grid-spent")).toHaveCount(0);
     } finally {
       await viewer.close();

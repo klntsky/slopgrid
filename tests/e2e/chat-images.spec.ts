@@ -4,6 +4,8 @@ import {
   connectOpenRouter,
   expectProgress,
   finishPublishing,
+  forkReadonlyGrid,
+  generateToPausedEdit,
   mockModels,
   selectModel,
   setVariableValues,
@@ -173,6 +175,21 @@ test("message attachments gate every model and reach only their own completion t
   await expectMessagePreview(page, 1, firstImage.name);
   await expectMessagePreview(page, 3, laterImage.name);
   await expect(generate).toBeEnabled();
+  await generateToPausedEdit(page, { markdownOutput: answer });
+  await page.reload();
+  await expect(
+    page
+      .locator(".chat-message")
+      .nth(0)
+      .getByRole("img", { name: firstImage.name, exact: true }),
+  ).toBeVisible();
+  await expect(
+    page
+      .locator(".chat-message")
+      .nth(2)
+      .getByRole("img", { name: laterImage.name, exact: true }),
+  ).toBeVisible();
+  await expect(generate).toBeEnabled();
   await generate.click();
   await expectProgress(page, 1, 1);
   const sent = await (await request.get("/fixture/chat-requests")).json();
@@ -209,22 +226,6 @@ test("message attachments gate every model and reach only their own completion t
       )
     ).body(),
   ).toEqual(laterImage.buffer);
-  await page.getByRole("button", { name: "EDIT", exact: true }).click();
-  await expect(page).toHaveURL("/create");
-  await page.reload();
-  await expect(
-    page
-      .locator(".chat-message")
-      .nth(0)
-      .getByRole("img", { name: firstImage.name, exact: true }),
-  ).toBeVisible();
-  await expect(
-    page
-      .locator(".chat-message")
-      .nth(2)
-      .getByRole("img", { name: laterImage.name, exact: true }),
-  ).toBeVisible();
-  await expect(generate).toBeEnabled();
 });
 
 test("image-only message attachments follow reorder, cancelled format loss, Edit and Fork", async ({
@@ -307,6 +308,19 @@ test("image-only message attachments follow reorder, cancelled format loss, Edit
   ).toBeVisible();
   await variableAxis(page);
   await selectModel(page, "fixture/text");
+  await generateToPausedEdit(page, { markdownOutput: "Image understood." });
+  await expect(
+    page
+      .locator(".chat-message")
+      .nth(0)
+      .getByRole("img", { name: laterImage.name, exact: true }),
+  ).toBeVisible();
+  await expect(
+    page
+      .locator(".chat-message")
+      .nth(1)
+      .getByRole("img", { name: firstImage.name, exact: true }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Generate", exact: true }).click();
   await expectProgress(page, 1, 1);
   const sent = await (await request.get("/fixture/chat-requests")).json();
@@ -314,37 +328,15 @@ test("image-only message attachments follow reorder, cancelled format loss, Edit
     { text: "", images: [dataURL(laterImage)] },
     { text: "First question one one", images: [dataURL(firstImage)] },
   ]);
-  const gridURL = page.url();
-  await page.getByRole("button", { name: "EDIT", exact: true }).click();
-  await expect(
-    page
-      .locator(".chat-message")
-      .nth(0)
-      .getByRole("img", { name: laterImage.name, exact: true }),
-  ).toBeVisible();
-  await expect(
-    page
-      .locator(".chat-message")
-      .nth(1)
-      .getByRole("img", { name: firstImage.name, exact: true }),
-  ).toBeVisible();
-  await page.goto(gridURL);
   await page.getByRole("button", { name: "PUBLISH", exact: true }).click();
   await finishPublishing(page);
-  await page.getByRole("button", { name: "FORK", exact: true }).click();
-  await page.reload();
-  await expect(page.getByLabel("Message 1", { exact: true })).toHaveValue("");
+  await forkReadonlyGrid(page);
+  const preview = page.locator(".markdown-preview");
   await expect(
-    page
-      .locator(".chat-message")
-      .nth(0)
-      .getByRole("img", { name: laterImage.name, exact: true }),
+    preview.getByRole("img", { name: laterImage.name, exact: true }),
   ).toBeVisible();
   await expect(
-    page
-      .locator(".chat-message")
-      .nth(1)
-      .getByRole("img", { name: firstImage.name, exact: true }),
+    preview.getByRole("img", { name: firstImage.name, exact: true }),
   ).toBeVisible();
 });
 

@@ -120,7 +120,6 @@ export function migrateChatOutputs(
   db: Database.Database,
   files: OutputFiles,
 ): void {
-  // Materialize one message at a time; never retain image bytes for an entire grid.
   const findReference = db.prepare(
     "SELECT sha256,media_type AS mediaType FROM reference_images WHERE id=?",
   );

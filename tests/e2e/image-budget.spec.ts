@@ -14,7 +14,9 @@ test("image generation preserves text budgets through format changes and reload"
         const page = await context.newPage();
         await page.goto("/");
         await page.getByRole("button", { name: "SVG", exact: true }).click();
-        const budget = page.getByLabel("Budget limit per cell", { exact: true });
+        const budget = page.getByLabel("Budget limit per cell", {
+          exact: true,
+        });
         await budget.fill(budgetValue);
         await page.getByRole("button", { name: "Image", exact: true }).click();
         await expect(budget).toHaveCount(0);
@@ -26,7 +28,9 @@ test("image generation preserves text budgets through format changes and reload"
           .check();
         await page
           .getByLabel("Prompt", { exact: true })
-          .fill(`Draw a landscape with text budget ${JSON.stringify(budgetValue)}`);
+          .fill(
+            `Draw a landscape with text budget ${JSON.stringify(budgetValue)}`,
+          );
         await connectOpenRouter(page);
         const generate = page.getByRole("button", {
           name: "Generate",
@@ -48,12 +52,16 @@ test("image generation preserves text budgets through format changes and reload"
           Number(budgetValue) > 0 ? Number(budgetValue) : 3,
         );
         await expectProgress(page, 1, 1);
-        const sent = await (await request.get("/fixture/image-requests")).json();
+        const sent = await (
+          await request.get("/fixture/image-requests")
+        ).json();
         const generated = sent.slice(before);
         expect(generated).toHaveLength(1);
         expect(generated[0]).not.toHaveProperty("max_tokens");
-        await page.getByRole("button", { name: "EDIT", exact: true }).click();
-        await expect(generate).toBeEnabled();
+        await expect(
+          page.getByRole("button", { name: "EDIT", exact: true }),
+        ).toHaveCount(0);
+        await expect(generate).toHaveCount(0);
       } finally {
         await context.close();
       }

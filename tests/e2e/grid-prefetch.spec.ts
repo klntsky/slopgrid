@@ -1,4 +1,5 @@
 import { test, expect } from "./fixtures";
+import { create, editHeldGrid } from "./helpers";
 
 for (const entry of ["direct", "edit"] as const) {
   test(`returning home through ${entry} creation entry preserves usable paginated lists`, async ({
@@ -15,8 +16,11 @@ for (const entry of ["direct", "edit"] as const) {
       );
       await page.goto("/create");
     } else {
-      await page.goto(`/grid/${ids[0]}`);
-      await page.getByRole("button", { name: "EDIT", exact: true }).click();
+      await page.request.post("/fixture/reset", {
+        data: { holdGenerations: true },
+      });
+      await create(page, { format: "Markdown", rowValues: ["prefetch"] });
+      await editHeldGrid(page);
     }
     await expect(page).toHaveURL("/create");
     await expect(page.getByLabel("Prompt", { exact: true })).toBeVisible();
@@ -40,7 +44,7 @@ for (const entry of ["direct", "edit"] as const) {
     await owned.getByRole("button", { name: "Next", exact: true }).click();
     await expect(owned.locator(".history-grid-link").first()).toHaveAttribute(
       "href",
-      `/grid/${ids[20]}`,
+      `/grid/${ids[entry === "direct" ? 20 : 19]}`,
     );
   });
 }

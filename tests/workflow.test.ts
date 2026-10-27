@@ -425,6 +425,7 @@ for (const side of ["rows", "columns"] as const)
     unjudged.judge = false;
     delete unjudged.parameters.judge_model;
     delete unjudged.parameters.judge_effort;
+    delete unjudged.parameters.judge_system;
     delete unjudged.parameters.judge_criteria;
     for (const record of unjudged[side]) delete record.judge_criteria;
     const ordinary = workflow(unjudged);

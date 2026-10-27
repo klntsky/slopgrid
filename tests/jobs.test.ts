@@ -32,7 +32,7 @@ async function harness(limit?: number) {
       parameters: {
         input: {
           kind: "common",
-          value: [{ role: "user", content: " " }],
+          value: [{ role: "user", content: "$ROW1 $ROW2" }],
         },
         effort: { kind: "common", value: "none" },
       },

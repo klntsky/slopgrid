@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3";
 import type { GenerationParameters, ChatOutputMode } from "./domain.js";
 import type { Model } from "./provider.js";
+import { modelAliasResolver } from "./model-alias.js";
 
 type StoredTask = {
   id: string;
@@ -22,6 +23,7 @@ export function migrateChatExecutionPlans(
   imageOutputs: ReadonlySet<string>,
 ): void {
   const catalog = new Map(models.map((model) => [model.id, model]));
+  const resolve = modelAliasResolver(catalog);
   const tasks = db.prepare<[], StoredTask>(
     "SELECT id,grid_id,kind,dependency_id,data FROM workflow_tasks",
   ).all();
@@ -38,7 +40,9 @@ export function migrateChatExecutionPlans(
     const data = JSON.parse(task.data);
     const input = data.input;
     if (input.format !== "chat-template") continue;
-    const model = catalog.get(input.model);
+    const model = catalog.has(input.model)
+      ? catalog.get(resolve(input.model))
+      : undefined;
     const invalid = (reason: string): never => {
       throw new InvalidHistoricalChat(task.grid_id, reason);
     };
@@ -54,7 +58,9 @@ export function migrateChatExecutionPlans(
       ? "text-and-images" : "text";
     for (const judgment of judges.get(task.id) ?? []) {
       const judgeInput = JSON.parse(judgment.data).input;
-      const judge = catalog.get(judgeInput.model);
+      const judge = catalog.has(judgeInput.model)
+        ? catalog.get(resolve(judgeInput.model))
+        : undefined;
       if (judge && (!judge.text || !judge.structuredOutputs))
         invalid("the judging model does not support structured text output");
       const existingImages = suppliedImages || imageOutputs.has(task.id) || !!judgeInput.images?.length;

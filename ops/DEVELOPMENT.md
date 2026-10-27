@@ -34,6 +34,15 @@ and engine environment files and a process-manager definition in the target's
 configuration directory. Release pointers select web and engine code separately.
 Source archives exclude the initiating `.env` and remote credentials.
 
+Set `STARTUP_DATA_MIGRATION_PARALLEL_WORKERS` to a positive safe integer in the
+initiating `.env` for local validation and in each target's private application
+environment. For example, use `30`. The generated web and engine environments
+preserve the configured capacity. It limits concurrent grid-migration workers;
+missing or invalid values fail before runtime replacement, without a fallback.
+Remote validation and migration rehearsal read the selected target's private
+environment for its migration capacity and model catalog endpoint. They do not
+require separate exports in the remote shell.
+
 Both machines need Git read access to the authoritative repository. Locally,
 install Node, the application's declared pnpm version, tar, Git, and the browser
 dependencies described in [application development](../DEVELOPMENT.md). Remote
@@ -94,6 +103,10 @@ and the Node executable remain compatible. `--mode soft` rejects incompatible
 changes. `--mode machinery` drains accepted work, stops processes, backs up data,
 and replaces the engine and web process. Soft updates replace only web code and
 retain the engine. Keep database, outputs, and encryption keys together in backups.
+Storage upgrades require both old web and engine processes to be stopped. The
+pipeline verifies that the stopped process identities are gone before copying
+or migrating their data. Keep both processes stopped throughout migration;
+startup locking coordinates new initializers, not already-open older runtimes.
 
 `--plan` uploads nothing and changes no runtime; a production plan still queries
 the Git authority. Remote work continues in tmux `bg` after SSH disconnection.

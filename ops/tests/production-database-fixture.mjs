@@ -24,9 +24,9 @@ export class Store {
   private constructor(databasePath, key, outputsPath) {
     appendFileSync(process.env.SLOPGRID_FIXTURE_EVENTS, JSON.stringify({
       phase: "migration-start", databasePath, outputsPath,
+      migrationWorkers: process.env.STARTUP_DATA_MIGRATION_PARALLEL_WORKERS,
     }) + "\\n");
     assert.equal(key.length, 32);
-    assert.equal(process.env.STARTUP_DATA_MIGRATION_PARALLEL_WORKERS, "30");
     assert.notEqual(key.toString("hex"), "${"ab".repeat(32)}");
     assert.notEqual(process.env.GITHUB_CLIENT_ID, "production-client");
     assert.notEqual(process.env.GITHUB_CLIENT_SECRET, "production-secret");
@@ -81,7 +81,6 @@ import { join } from "node:path";
 import Database from "better-sqlite3";
 export function assertCandidateDatabase(phase) {
   assert.equal(process.env.NODE_ENV, "test");
-  assert.equal(process.env.STARTUP_DATA_MIGRATION_PARALLEL_WORKERS, "30");
   assert.equal(process.env.SLOPGRID_TEST_DATABASE, process.env.DATABASE_PATH);
   const db = new Database(process.env.SLOPGRID_TEST_DATABASE, { readonly: true, fileMustExist: true });
   try {

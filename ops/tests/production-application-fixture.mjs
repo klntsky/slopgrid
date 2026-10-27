@@ -8,6 +8,7 @@ import { archivedFixtureModels } from "./model-catalog-fixture.mjs";
 const helper = fileURLToPath(import.meta.url);
 
 export function archiveApplicationStorage(candidate, application) {
+  copyFileSync(join(application, "package.json"), join(candidate, "package.json"));
   for (const name of ["server", "shared"])
     cpSync(join(application, name), join(candidate, name), { recursive: true });
   copyFileSync(join(candidate, "server/store.ts"), join(candidate, "server/application-store.ts"));
@@ -18,7 +19,7 @@ import { appendFileSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 export class Store {
   static async open(...args) {
-    const store = await ApplicationStore.open(args[0], args[1], args[2], { models: async () => ${JSON.stringify(archivedFixtureModels)} });
+    const store = await ApplicationStore.open(...args);
     if (process.env.SLOPGRID_FIXTURE_VERSION_FAILURE === "1")
       store.db.pragma("user_version=" + (schemaVersion - 1));
     const output = join(args[2], "nested/production-only.html");
@@ -30,6 +31,7 @@ export class Store {
       inputs: store.db.prepare("SELECT json_extract(data,'$.input.inputVersion') AS version FROM grids ORDER BY id").all(),
       accounts: store.db.prepare("SELECT user_id,grid_id FROM grid_favorites ORDER BY user_id,grid_id").all(),
       anonymous: store.db.prepare("SELECT anonymous_id,grid_id FROM anonymous_grid_favorites ORDER BY anonymous_id,grid_id").all(),
+      policies: store.db.prepare("SELECT id,json_extract(data,'$.input.chatOutputMode') AS mode FROM workflow_tasks WHERE id='catalog-policy'").all(),
       output: readFileSync(output, "utf8"),
       outputInode: outputStat.ino, outputDevice: outputStat.dev,
       databaseInode: databaseStat.ino, databaseDevice: databaseStat.dev,
@@ -59,6 +61,17 @@ export function seedApplicationWalRecords(database) {
   database.exec("CREATE TABLE records(id INTEGER PRIMARY KEY,value TEXT NOT NULL); INSERT INTO records VALUES (1,'checkpointed')");
   database.pragma("wal_checkpoint(TRUNCATE)");
   database.exec("INSERT INTO records VALUES (2,'wal-only')");
+}
+
+export function seedCatalogPolicyTask(database) {
+  database.prepare(
+    "INSERT INTO workflow_tasks(id,grid_id,kind,status,data) VALUES ('catalog-policy','private-grid','generation','pending',?)",
+  ).run(JSON.stringify({
+    input: {
+      format: "chat-template", model: "fixture/text", effort: "none", budgetUsd: 1,
+      messages: [{ role: "user", content: "Historical prompt" }, { role: "unfilled", content: "" }],
+    },
+  }));
 }
 
 if (process.argv[1] === helper) {

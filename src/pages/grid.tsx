@@ -7,6 +7,7 @@ import { GridHeader } from "../grid/grid-header";
 import { OutputGrid } from "../grid/output-grid";
 import { ErrorMessage } from "../components/feedback-message";
 import { useOffline } from "../pwa";
+import { isGridFinished } from "../../server/domain";
 import {
   LowBalanceDialog,
   BillingDialog,
@@ -42,7 +43,8 @@ export function GridPage({ id }: { id: string }) {
       <main>{reconnecting ? <ConnectionStatus /> : <p>Loading grid…</p>}</main>
     );
   const g = query.data;
-  const paused = g.status === "paused" && g.canEdit && !g.published;
+  const paused =
+    g.status === "paused" && g.canEdit && !g.published && !isGridFinished(g);
   return (
     <>
       {headerTarget &&
@@ -65,7 +67,7 @@ export function GridPage({ id }: { id: string }) {
         {reconnecting && <ConnectionStatus />}
         <ErrorMessage>{error}</ErrorMessage>
         <OutputGrid key={g.id} grid={g} />
-        {lowBalance !== null && (
+        {paused && lowBalance !== null && (
           <LowBalanceDialog
             balanceUsd={lowBalance}
             busy={busy}

@@ -4,6 +4,8 @@ import {
   connectOpenRouter,
   expectProgress,
   finishPublishing,
+  forkReadonlyGrid,
+  generateToPausedEdit,
   mockModels,
   selectModel,
   setVariableValues,
@@ -111,47 +113,9 @@ for (const format of ["Markdown", "SVG", "Static website"] as const) {
     await expect(
       page.getByRole("img", { name: variable.name, exact: true }),
     ).toBeVisible();
-    const created = page.waitForResponse(
-      (response) =>
-        response.request().method() === "POST" &&
-        new URL(response.url()).pathname === "/api/grids",
-    );
-    await generate.click();
-    const creation = await created;
-    expect(creation.status()).toBe(201);
-    const { id } = await creation.json();
-    await expect(page).toHaveURL(new RegExp(`/grid/${id}$`));
-    await expectProgress(page, 1, 1);
-    const sent = await (await request.get("/fixture/chat-requests")).json();
-    expect(sent).toHaveLength(1);
-    expect(sent[0].modalities).toEqual(["text"]);
-    expect(userContent(sent[0].messages)).toEqual([
-      {
-        text: "Recreate shape under context",
-        images: [dataURL(common), dataURL(variable)],
-      },
-    ]);
-    if (format === "Static website") {
-      await expect(
-        page
-          .frameLocator("iframe:visible")
-          .first()
-          .getByRole("heading", { name: "A generated site", exact: true }),
-      ).toBeVisible();
-    } else {
-      const url = await page
-        .getByRole("link", { name: "Open output", exact: true })
-        .getAttribute("href");
-      const rawURL = new URL(url!, page.url());
-      rawURL.searchParams.set("raw", "1");
-      const output = await page.request.get(rawURL.href);
-      expect(await output.text()).toContain(
-        format === "SVG" ? "<svg" : "# Prompt image output",
-      );
-    }
-    const gridURL = page.url();
-    await page.getByRole("button", { name: "EDIT", exact: true }).click();
-    await expect(page).toHaveURL(/\/create$/);
+    await generateToPausedEdit(page, {
+      markdownOutput: "# Prompt image output",
+    });
     await page.reload();
     await expect(
       page.getByRole("img", { name: common.name, exact: true }),
@@ -194,17 +158,63 @@ for (const format of ["Markdown", "SVG", "Static website"] as const) {
     await expect(page.getByLabel("Prompt", { exact: true })).toHaveValue(
       "Recreate $ROW1 under context",
     );
-    await page.goto(gridURL);
-    await page.getByRole("button", { name: "PUBLISH", exact: true }).click();
-    await finishPublishing(page);
-    await page.getByRole("button", { name: "FORK", exact: true }).click();
-    await expect(page).toHaveURL(/\/create$/);
-    await page.reload();
+    await page
+      .getByLabel("Add images to prompt", { exact: true })
+      .setInputFiles(common);
     await expect(
       page.getByRole("img", { name: common.name, exact: true }),
     ).toBeVisible();
+    const created = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        new URL(response.url()).pathname === "/api/grids",
+    );
+    await generate.click();
+    const creation = await created;
+    expect(creation.status()).toBe(201);
+    const { id } = await creation.json();
+    await expect(page).toHaveURL(new RegExp(`/grid/${id}$`));
+    await expectProgress(page, 1, 1);
+    const sent = await (await request.get("/fixture/chat-requests")).json();
+    expect(sent).toHaveLength(1);
+    expect(sent[0].modalities).toEqual(["text"]);
+    expect(userContent(sent[0].messages)).toEqual([
+      {
+        text: "Recreate shape under context",
+        images: [dataURL(common), dataURL(variable)],
+      },
+    ]);
+    if (format === "Static website") {
+      await expect(
+        page
+          .frameLocator("iframe:visible")
+          .first()
+          .getByRole("heading", { name: "A generated site", exact: true }),
+      ).toBeVisible();
+    } else {
+      const url = await page
+        .getByRole("link", { name: "Open output", exact: true })
+        .getAttribute("href");
+      const rawURL = new URL(url!, page.url());
+      rawURL.searchParams.set("raw", "1");
+      const output = await page.request.get(rawURL.href);
+      expect(await output.text()).toContain(
+        format === "SVG" ? "<svg" : "# Prompt image output",
+      );
+    }
+    await page.getByRole("button", { name: "PUBLISH", exact: true }).click();
+    await finishPublishing(page);
+    await forkReadonlyGrid(page);
+    await page.getByRole("button", { name: "Parameters", exact: true }).click();
     await expect(
-      page.getByRole("img", { name: variable.name, exact: true }),
+      page
+        .getByRole("dialog", { name: "Parameters", exact: true })
+        .getByRole("img", { name: common.name, exact: true }),
+    ).toBeVisible();
+    await expect(
+      page
+        .getByRole("rowheader")
+        .getByRole("img", { name: variable.name, exact: true }),
     ).toBeVisible();
   });
 }

@@ -2,6 +2,7 @@ import { test, expect } from "./fixtures";
 import {
   connectOpenRouter,
   expectProgress,
+  editHeldGrid,
   mockModels,
   defineCases,
   selectModel,
@@ -529,6 +530,9 @@ for (const side of ["Rows", "Columns"] as const) {
     // submission and the shared Edit flow need one complete workflow.
     if (side === "Columns") return;
     await connectOpenRouter(page);
+    await page.request.post("/fixture/reset", {
+      data: { holdGenerations: true },
+    });
     const created = page.waitForResponse(
       (response) =>
         response.request().method() === "POST" &&
@@ -538,14 +542,14 @@ for (const side of ["Rows", "Columns"] as const) {
     const response = await created;
     expect(response.status()).toBe(201);
     const { id } = await response.json();
-    await expectProgress(page, 2, 2);
+    await expectProgress(page, 0, 2);
     const grid = await (await page.request.get(`/api/grids/${id}`)).json();
     expect(grid.input.inputVersion).toBe(3);
     expect(grid.cells.map((cell: { prompt: string }) => cell.prompt)).toEqual([
       "Draw a complete blue landscape",
       "Paint a distinct red portrait",
     ]);
-    await page.getByRole("button", { name: "EDIT", exact: true }).click();
+    await editHeldGrid(page);
     const confirmation = page.waitForEvent("dialog");
     const demote = table
       .getByRole("button", { name: "Make prompt common", exact: true })

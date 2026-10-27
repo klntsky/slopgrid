@@ -1,6 +1,5 @@
 import { OutputFiles } from "./files.js";
 
-// Source lookup is confined to startup migration. All writes go to private staging.
 export class MigrationOutputFiles extends OutputFiles {
   private readonly source: OutputFiles;
   constructor(root: string, sourceRoot: string) {

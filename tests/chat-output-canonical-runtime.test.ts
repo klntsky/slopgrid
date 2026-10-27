@@ -4,6 +4,7 @@ import { rmSync } from "node:fs";
 import type { ViewGrid } from "../src/api.js";
 import type { ChatMessage } from "../server/domain.js";
 import { currentDefinition } from "./current-grid-fixture.js";
+import { reuseCandidate } from "./artifact-reuse-fixture.js";
 import {
   runtimeFixture,
   until,
@@ -212,11 +213,12 @@ test("changed chat image display names regenerate without rewriting source trans
     const completed = await settled(f, source.id);
     assert.equal(completed.status, "complete");
     const sourceExport = await assertExactExports(f, completed.cells[0]);
-    const copy = await create(f, {
-      ...input(destinationImage),
-      sourceGridId: source.id,
-      reuseArtifacts: true,
-    });
+    const copy = await reuseCandidate(
+      f,
+      input(destinationImage),
+      source.id,
+      true,
+    );
     assert.notEqual(copy.status, "complete");
     const destinationCall = await f.nextCall();
     destinationCall.write({ content: "Generated frame." });
@@ -268,11 +270,12 @@ test("changed chat image display names regenerate without rewriting source trans
       [source.id, sourceImage, sourceExport],
       [copy.id, destinationImage, destinationExport],
     ] as const) {
-      const repeated = await create(f, {
-        ...input(image),
+      const repeated = await reuseCandidate(
+        f,
+        input(image),
         sourceGridId,
-        reuseArtifacts: true,
-      });
+        true,
+      );
       assert.equal(repeated.status, "complete");
       const exported = await assertExactExports(f, repeated.cells[0]);
       assert.equal(exported.artifactId, expectedExport.artifactId);

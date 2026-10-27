@@ -150,7 +150,10 @@ test("per-case rubrics persist as one source while resolved judgments and reused
         { verdict: false, explanation: "Not the second answer." },
       ],
     ];
-    const id = await create(fixture, source);
+    const id = await create(fixture, {
+      ...source,
+      rows: [...source.rows, { ...source.rows[1], id: "row-3" }],
+    });
     const generation = await fixture.nextCall();
     assert.equal(
       JSON.stringify(generation.request).includes("secret answer"),
@@ -181,9 +184,16 @@ test("per-case rubrics persist as one source while resolved judgments and reused
       );
       finish(judge, JSON.stringify({ results: results[index] }), 0.25);
     }
-    const complete = await settled(fixture, id);
+    const unfinished = await fixture.nextCall();
+    assert.equal(
+      (await fixture.request(`/api/grids/${id}/pause`, {})).status,
+      200,
+    );
+    await until(() => unfinished.aborted, Boolean);
+    const complete = await settled(fixture, id, "paused");
+    assert.equal(complete.cells[2].judge?.status, "pending");
     assert.deepEqual(
-      complete.cells.map((cell) => cell.judge?.results),
+      complete.cells.slice(0, 2).map((cell) => cell.judge?.results),
       results,
     );
     assert.deepEqual(complete.input.parameters.judge_criteria, {
@@ -191,7 +201,7 @@ test("per-case rubrics persist as one source while resolved judgments and reused
     });
     assert.deepEqual(
       complete.input.rows.map((record) => record.judge_criteria),
-      source.rows.map((record) => record.judge_criteria),
+      [...source.rows, source.rows[1]].map((record) => record.judge_criteria),
     );
     const artifactId = complete.cells[0].artifactId;
     assert.ok(complete.cells.every((cell) => cell.artifactId === artifactId));
@@ -205,17 +215,17 @@ test("per-case rubrics persist as one source while resolved judgments and reused
     });
     assert.deepEqual(
       restored.input.rows.map((record) => record.judge_criteria),
-      source.rows.map((record) => record.judge_criteria),
+      [...source.rows, source.rows[1]].map((record) => record.judge_criteria),
     );
     assert.deepEqual(
-      restored.cells.map((cell) => cell.judge?.results),
+      restored.cells.slice(0, 2).map((cell) => cell.judge?.results),
       results,
     );
     const judgments = fixture.store
       .workflow(id)
       .filter((task) => task.kind === "judge");
     assert.deepEqual(
-      judgments.map((task) => task.input.criteria),
+      judgments.slice(0, 2).map((task) => task.input.criteria),
       [
         [{ text: "Does secret answer 0 match?", correctAnswer: false }],
         [
@@ -225,10 +235,11 @@ test("per-case rubrics persist as one source while resolved judgments and reused
       ],
     );
     assert.deepEqual(
-      judgments.map((task) => task.input.images),
+      judgments.slice(0, 2).map((task) => task.input.images),
       images.map((image) => [image]),
     );
-    assert.equal(fixture.calls.length, 3);
+    assert.equal(judgments[2].status, "pending");
+    assert.equal(fixture.calls.length, 4);
     const changed: GridInput = currentDefinition({
       ...source,
       rows: source.rows.map((record, index) => ({
@@ -257,7 +268,7 @@ test("per-case rubrics persist as one source while resolved judgments and reused
     const reused = await settled(fixture, reusedId);
     assert.equal(
       fixture.calls.length,
-      5,
+      6,
       "criteria-only edits run fresh judgments, not generation",
     );
     assert.deepEqual(reused.input.parameters.judge_criteria, { kind: "rows" });
@@ -273,6 +284,7 @@ test("per-case rubrics persist as one source while resolved judgments and reused
       assert.equal(cell.artifactId, artifactId);
       assert.equal(attempts.includes(cell.judge!.attemptId), false);
     }
+    assert.deepEqual(fixture.store.get(id), restored);
   } finally {
     await fixture.close();
   }
@@ -787,4 +799,3 @@ test("chat judgments share the complete saved message sequence, including litera
     await fixture.close();
   }
 });
-

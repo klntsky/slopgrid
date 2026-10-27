@@ -2,7 +2,104 @@ import { expect } from "@playwright/test";
 import type { Locator, Page } from "@playwright/test";
 import type { ModelInfo } from "../../server/model-catalog";
 import { createHash } from "node:crypto";
+import { unzipSync } from "fflate";
 import type { Effort, GridDraftInput } from "../../server/domain";
+import type { ViewGrid } from "../../src/api";
+
+export async function editHeldGrid(page: Page) {
+  await expect
+    .poll(
+      async () =>
+        (await (await page.request.get("/fixture/workers")).json()).held.length,
+    )
+    .toBeGreaterThan(0);
+  await page
+    .getByRole("button", { name: "Pause generation", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Resume generation", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "EDIT", exact: true }).click();
+  await expect(page).toHaveURL("/create");
+  await page.request.post("/fixture/release", { data: { all: true } });
+}
+
+export async function generateToPausedEdit(
+  page: Page,
+  provider: Record<string, unknown> = {},
+) {
+  await page.request.post("/fixture/reset", {
+    data: { ...provider, holdGenerations: true },
+  });
+  await page.getByRole("button", { name: "Generate", exact: true }).click();
+  await editHeldGrid(page);
+  await page.request.post("/fixture/reset", { data: provider });
+}
+
+export async function forkReadonlyGrid(page: Page) {
+  const sourceURL = page.url();
+  const sourceId = new URL(sourceURL).pathname.split("/").pop()!;
+  const readGrid = async (id: string): Promise<ViewGrid> =>
+    (await page.request.get(`/api/grids/${id}`)).json();
+  const source = await readGrid(sourceId);
+  const inference = async () =>
+    Promise.all(
+      ["calls", "chat-requests", "image-requests", "judge-requests"].map(
+        async (path) => (await page.request.get(`/fixture/${path}`)).json(),
+      ),
+    );
+  const before = await inference();
+  const readOutput = async (id: string) => {
+    const response = await page.request.get(`/outputs/${id}/download`);
+    expect(response.ok()).toBe(true);
+    const body = await response.body();
+    if (source.input.format !== "html") return body;
+    const files = unzipSync(body);
+    expect(Object.keys(files)).toContain("index.html");
+    return Object.fromEntries(
+      Object.entries(files).map(([path, bytes]) => [path, Buffer.from(bytes)]),
+    );
+  };
+  const outputs = await Promise.all(
+    source.cells.map((cell) => readOutput(cell.id)),
+  );
+  await page.getByRole("button", { name: "FORK", exact: true }).click();
+  await expect(page).toHaveURL(
+    (url) => url.pathname.startsWith("/grid/") && url.href !== sourceURL,
+  );
+  await expectProgress(page, source.cells.length, source.cells.length);
+  const copy = await readGrid(new URL(page.url()).pathname.split("/").pop()!);
+  expect(copy.id).not.toBe(source.id);
+  expect(copy.visibility).toBe("private");
+  expect(copy.published).toBe(false);
+  expect(copy.status).toBe("complete");
+  expect(copy.spentUsd).toBe(0);
+  expect(copy.input).toEqual(source.input);
+  expect(copy.cells.map((cell) => cell.usage)).toEqual(
+    source.cells.map((cell) => cell.usage),
+  );
+  for (const name of [
+    "EDIT",
+    "Generate",
+    "Pause generation",
+    "Resume generation",
+    "FORK",
+  ])
+    await expect(page.getByRole("button", { name, exact: true })).toHaveCount(
+      0,
+    );
+  for (const [index, cell] of copy.cells.entries()) {
+    expect(await readOutput(cell.id)).toEqual(outputs[index]);
+    expect(await readOutput(source.cells[index].id)).toEqual(outputs[index]);
+  }
+  await page.reload();
+  await expectProgress(page, copy.cells.length, copy.cells.length);
+  expect(await inference()).toEqual(before);
+  const { version: _beforeVersion, ...sourceBefore } = source;
+  const { version: _afterVersion, ...sourceAfter } = await readGrid(sourceId);
+  expect(sourceAfter).toEqual(sourceBefore);
+  return { source, copy };
+}
 
 export async function savedInput(page: Page): Promise<GridDraftInput> {
   return page.evaluate(
@@ -116,7 +213,9 @@ export async function setVariableValues(
   const dualCases = (await savedInput(page)).caseAxes.length === 2;
   const table = page.getByRole("table", {
     name: dualCases
-      ? side === "Rows" ? "Row cases" : "Column cases"
+      ? side === "Rows"
+        ? "Row cases"
+        : "Column cases"
       : "Grid layout parameters",
     exact: true,
   });

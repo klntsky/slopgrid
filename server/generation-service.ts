@@ -5,6 +5,7 @@ import type { Store } from "./store.js";
 import type { Provider } from "./provider.js";
 import { createWorkflowExecutor } from "./workflow-executor.js";
 import { ownsGrid } from "./grid-policy.js";
+import { isGridFinished } from "./domain.js";
 import {
   generationFailure,
   generationProtocol,
@@ -54,7 +55,12 @@ export function createGenerationService(
   const api: GenerationAPI = {
     async startGrid({ gridId, sessionId, manualKey }) {
       const { grid, session } = authorized(gridId, sessionId);
-      if (jobs.isRunning(gridId) || grid.status === "complete") return grid;
+      if (
+        jobs.isRunning(gridId) ||
+        grid.status === "complete" ||
+        isGridFinished(grid)
+      )
+        return grid;
       // Persist admission under the publication lock; install runtime state and
       // notify only after the outer transaction has committed successfully.
       jobs.start(grid, manualKey, session, (write) =>
@@ -79,6 +85,7 @@ export function createGenerationService(
     },
     async pauseGrid({ gridId, sessionId }) {
       const { grid } = authorized(gridId, sessionId);
+      if (isGridFinished(grid)) return grid;
       jobs.pause(grid);
       return getGrid(gridId);
     },

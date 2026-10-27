@@ -125,8 +125,6 @@ async function migrateGrids(snapshot: string, directory: string, sourceOutputs: 
 
 function mergeGrid(db: Database.Database, result: GridResult): void {
   if (result.drop) {
-    // Foreign keys are disabled while publishing the private snapshot. Delete only
-    // the authorized grid and its actual dependents, retaining shared references.
     db.transaction(() => {
       db.prepare("DELETE FROM inference_calls WHERE cell_id IN (SELECT id FROM cells WHERE grid_id=?) OR task_id IN (SELECT id FROM workflow_tasks WHERE grid_id=?)").run(result.gridId, result.gridId);
       for (const table of ["creation_requests", "grid_favorites", "anonymous_grid_favorites", "grid_reference_images", "cells", "workflow_tasks"])

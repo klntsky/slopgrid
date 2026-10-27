@@ -7,6 +7,7 @@ import {
   type ChatOutputMigrationFixture,
 } from "./chat-output-migration-fixture.js";
 import {
+  addHistoricalImageOnlyChat,
   addHistoricalTextPolicyGrid,
   expectedStartupMessages,
   outputFileInventory,
@@ -23,9 +24,14 @@ async function openStore(
   fixture: ChatOutputMigrationFixture,
   models = startupMigrationModels,
 ) {
-  const store = await Store.open(fixture.database, fixture.secret, fixture.outputs, {
-    models: async () => models,
-  });
+  const store = await Store.open(
+    fixture.database,
+    fixture.secret,
+    fixture.outputs,
+    {
+      models: async () => models,
+    },
+  );
   t.after(() => {
     if (store.db.open) store.db.close();
   });
@@ -88,7 +94,11 @@ test("successful multi-grid startup publishes canonical output for each grid and
   assert.deepEqual(after.foreignKeyViolations, []);
   for (const table of Object.keys(before.tables)) {
     if (table === "grids" || table === "workflow_tasks") continue;
-    assert.deepEqual(after.tables[table], before.tables[table], `${table} is preserved`);
+    assert.deepEqual(
+      after.tables[table],
+      before.tables[table],
+      `${table} is preserved`,
+    );
   }
   for (const task of storedChatTasks(fixture.database)) {
     const original = originalTasks.find(({ id }) => id === task.id)!;
@@ -110,7 +120,9 @@ test("successful multi-grid startup publishes canonical output for each grid and
   const markdown = store.outputDownload("cell-markdown")!;
   assert.equal(markdown.artifactId, "markdown-artifact");
   assert.equal(
-    Buffer.from((await store.files.bundle(markdown.artifactId))["index.md"]).toString(),
+    Buffer.from(
+      (await store.files.bundle(markdown.artifactId))["index.md"],
+    ).toString(),
     "Unrelated Markdown stays byte-for-byte intact.\n",
   );
 });
@@ -155,7 +167,9 @@ test("historical mixed-output generation with a text-only judge migrates to dura
       after.grid.input.parameters[parameter],
       before.grid.input.parameters[parameter],
     );
-  const generation = after.tasks.find((task) => task.id === "task-text-policy")!;
+  const generation = after.tasks.find(
+    (task) => task.id === "task-text-policy",
+  )!;
   const original = before.tasks.find((task) => task.id === generation.id)!;
   assert.deepEqual(generation, {
     ...original,
@@ -164,6 +178,10 @@ test("historical mixed-output generation with a text-only judge migrates to dura
       input: { ...original.data.input, chatOutputMode: "text" },
     },
   });
+  assert.deepEqual(
+    after.tasks.find((task) => task.id === "judge-text-policy"),
+    before.tasks.find((task) => task.id === "judge-text-policy"),
+  );
   const runtime = store.get("text-policy")!;
   assert.equal(runtime.status, "paused");
   assert.equal(runtime.cells[0].status, "pending");
@@ -184,6 +202,108 @@ test("historical mixed-output generation with a text-only judge migrates to dura
   assert.deepEqual(outputFileInventory(fixture.outputs), files);
 });
 
+test("historical model aliases use their published targets' capabilities without rewriting saved choices", async (t) => {
+  const fixture = startupMigrationFixture(t);
+  addHistoricalTextPolicyGrid(fixture);
+  const before = storedTextPolicy(fixture.database);
+  const models = [
+    {
+      ...startupMigrationModels[0],
+      aliasTarget: "snapshot/multimodal",
+    },
+    {
+      ...startupMigrationModels[1],
+      imageInput: true,
+      aliasTarget: "snapshot/text-judge",
+    },
+    { ...startupMigrationModels[0], id: "snapshot/multimodal" },
+    { ...startupMigrationModels[1], id: "snapshot/text-judge" },
+  ];
+  const store = await openStore(t, fixture, models);
+  const generation = store
+    .workflow("text-policy")
+    .find((task) => task.kind === "generation");
+  assert.ok(
+    generation?.kind === "generation" &&
+      generation.input.format === "chat-template",
+  );
+  assert.equal(generation.input.chatOutputMode, "text");
+  assert.equal(generation.input.model, "retired/multimodal");
+  const after = storedTextPolicy(fixture.database);
+  for (const parameter of ["model", "judge_model"])
+    assert.deepEqual(
+      after.grid.input.parameters[parameter],
+      before.grid.input.parameters[parameter],
+    );
+  await assertCanonicalOutputs(store);
+});
+
+test("an historical alias targeting an image-only model fails closed without publishing any converted grid", async (t) => {
+  const fixture = startupMigrationFixture(t);
+  addHistoricalImageOnlyChat(fixture, "unapproved-image-only-alias");
+  const before = startupMigrationDatabaseState(fixture.database);
+  const files = outputFileInventory(fixture.outputs);
+  const models = [
+    ...startupMigrationModels,
+    {
+      ...startupMigrationModels[0],
+      id: "historical/image-only",
+      aliasTarget: "snapshot/image-only",
+    },
+    {
+      ...startupMigrationModels[0],
+      id: "snapshot/image-only",
+      text: false,
+      chatImageOutput: false,
+    },
+  ];
+  await assert.rejects(
+    () => openStore(t, fixture, models),
+    /the generation model does not support text output/,
+  );
+  assert.deepEqual(startupMigrationDatabaseState(fixture.database), before);
+  assert.deepEqual(outputFileInventory(fixture.outputs), files);
+});
+for (const gridId of [
+  "9f400f3b9e10187aac5bb688b26cacdb323882837d900b1c",
+  "unapproved-invalid-chat",
+]) {
+  test(`startup confines image-only chat deletion to the explicitly authorized grid (${gridId})`, async (t) => {
+    const fixture = startupMigrationFixture(t);
+    addHistoricalImageOnlyChat(fixture, gridId);
+    const before = startupMigrationDatabaseState(fixture.database);
+    const files = outputFileInventory(fixture.outputs);
+    const models = [
+      ...startupMigrationModels,
+      {
+        ...startupMigrationModels[0],
+        id: "historical/image-only",
+        text: false,
+        chatImageOutput: false,
+      },
+    ];
+    if (gridId === "unapproved-invalid-chat") {
+      await assert.rejects(
+        () => openStore(t, fixture, models),
+        /the generation model does not support text output/,
+      );
+      assert.deepEqual(startupMigrationDatabaseState(fixture.database), before);
+      assert.deepEqual(outputFileInventory(fixture.outputs), files);
+      return;
+    }
+    const store = await openStore(t, fixture, models);
+    assert.equal(store.get(gridId), undefined);
+    assert.deepEqual(store.workflow(gridId), []);
+    await assertCanonicalOutputs(store);
+    const after = startupMigrationDatabaseState(fixture.database);
+    for (const table of Object.keys(before.tables)) {
+      if (["grids", "workflow_tasks", "cells"].includes(table)) continue;
+      assert.deepEqual(after.tables[table], before.tables[table]);
+    }
+    assert.deepEqual(after.foreignKeyViolations, []);
+  });
+}
+
 for (const workers of [undefined, "0", "1.5", "Infinity", "30workers"]) {
   test(`startup configuration rejects ${workers === undefined ? "missing" : JSON.stringify(workers)} migration worker capacity instead of silently defaulting`, (t) => {
     startupConfigFixture(t, workers);
@@ -195,17 +315,34 @@ test("compatible historical image policy survives restart without consulting una
   const fixture = startupMigrationFixture(t);
   addHistoricalTextPolicyGrid(fixture);
   const models = startupMigrationModels.map((model) =>
-    model.id === "historical/text-judge" ? { ...model, imageInput: true } : model,
+    model.id === "historical/text-judge"
+      ? { ...model, imageInput: true }
+      : model,
   );
   const store = await openStore(t, fixture, models);
-  const task = store.workflow("text-policy").find((entry) => entry.kind === "generation");
-  assert.ok(task?.kind === "generation" && task.input.format === "chat-template");
+  const task = store
+    .workflow("text-policy")
+    .find((entry) => entry.kind === "generation");
+  assert.ok(
+    task?.kind === "generation" && task.input.format === "chat-template",
+  );
   assert.equal(task.input.chatOutputMode, "text-and-images");
   store.db.close();
-  const restarted = await Store.open(fixture.database, fixture.secret, fixture.outputs, {
-    models: async () => { throw new Error("Catalog metadata is unavailable"); },
+  const restarted = await Store.open(
+    fixture.database,
+    fixture.secret,
+    fixture.outputs,
+    {
+      models: async () => {
+        throw new Error("Catalog metadata is unavailable");
+      },
+    },
+  );
+  t.after(() => {
+    if (restarted.db.open) restarted.db.close();
   });
-  t.after(() => { if (restarted.db.open) restarted.db.close(); });
-  const persisted = restarted.workflow("text-policy").find((entry) => entry.kind === "generation");
+  const persisted = restarted
+    .workflow("text-policy")
+    .find((entry) => entry.kind === "generation");
   assert.deepEqual(persisted?.input, task.input);
 });

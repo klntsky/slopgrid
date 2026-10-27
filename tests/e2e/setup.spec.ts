@@ -4,6 +4,7 @@ import {
   connectOpenRouter,
   create,
   expectProgress,
+  editHeldGrid,
   selectModel,
   mockModels,
   setVariableValues,
@@ -856,7 +857,7 @@ for (const format of ["SVG", "Static website", "Markdown"]) {
     page,
     request,
   }) => {
-    await request.post("/fixture/reset", { data: {} });
+    await request.post("/fixture/reset", { data: { holdGenerations: true } });
     await page.goto("/");
     await page.getByRole("button", { name: format, exact: true }).click();
     const rows = page.getByRole("combobox", { name: "Rows", exact: true });
@@ -887,8 +888,8 @@ for (const format of ["SVG", "Static website", "Markdown"]) {
     await page.reload();
     await expect(defaultEffort).not.toBeChecked();
     await page.getByRole("button", { name: "Generate", exact: true }).click();
-    await expectProgress(page, 1, 1);
-    await page.getByRole("button", { name: "EDIT", exact: true }).click();
+    await expectProgress(page, 0, 1);
+    await editHeldGrid(page);
     await expect(modelKind).toHaveValue("model");
     await expect(effortKind).toHaveValue("effort");
     await expect(defaultEffort).not.toBeChecked();
@@ -906,6 +907,11 @@ for (const format of ["SVG", "Static website", "Markdown"]) {
     await expect(modelKind).toHaveValue("model");
     await expect(effortKind).toHaveValue("variable");
     await expect(variableValues).toHaveValue("landscape");
+    await page
+      .getByLabel("Prompt", { exact: true })
+      .fill(format === "Markdown" ? "Draw $ROW1" : "Draw $COLUMN1");
+    await page.getByRole("button", { name: "Generate", exact: true }).click();
+    await expectProgress(page, 1, 1);
   });
 }
 
@@ -973,14 +979,17 @@ test("incomplete chat, criteria and raw budget survive reload and OAuth before c
   await budget.fill("");
   await expect(generate).toBeDisabled();
   await budget.fill("0.25");
+  await request.post("/fixture/reset", { data: { holdGenerations: true } });
   const sent = page.waitForRequest(
     (r) => r.method() === "POST" && new URL(r.url()).pathname === "/api/grids",
   );
   await generate.click();
   expect((await sent).postDataJSON().budgetUsd).toBe(0.25);
-  await expectProgress(page, 1, 1);
-  await page.getByRole("button", { name: "EDIT", exact: true }).click();
+  await expectProgress(page, 0, 1);
+  await editHeldGrid(page);
   await expect(budget).toHaveValue("0.25");
   await expect(message).toHaveValue("  Draw $ROW1  ");
   await expect(criterion).toHaveValue("Is it a cat?");
+  await generate.click();
+  await expectProgress(page, 1, 1);
 });

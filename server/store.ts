@@ -5,6 +5,7 @@ import { Billing } from "./billing.js";
 import type Database from "better-sqlite3";
 import { encrypt, decrypt } from "./encryption.js";
 import {
+  isGridFinished,
   type Grid,
   type StoredGrid,
   type ValidatedGridInput,
@@ -368,6 +369,8 @@ export class Store {
     return this.db
       .transaction(() => {
         const grid = this.get(id)!;
+        if (slug !== undefined && isGridFinished(grid))
+          return "Finished grids allow only title and visibility changes.";
         const error = publicationError(grid, visibility);
         if (error) return error;
         if (slug && visibility !== "public")

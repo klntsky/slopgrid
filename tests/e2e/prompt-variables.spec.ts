@@ -4,6 +4,8 @@ import {
   connectOpenRouter,
   expectProgress,
   finishPublishing,
+  editHeldGrid,
+  forkReadonlyGrid,
   mockModels,
   selectModel,
   setVariableValues,
@@ -75,7 +77,7 @@ test("variable records merge images per message, interpolate judge references an
     image("reference.png", "blue"),
   ]);
   await request.post("/fixture/reset", {
-    data: { markdownOutput: "Finished." },
+    data: { markdownOutput: "Finished.", holdJudges: true },
   });
   await page.goto("/create");
   await page
@@ -169,7 +171,12 @@ test("variable records merge images per message, interpolate judge references an
   await selectJudge(page, "fixture/text");
   await connectOpenRouter(page);
   await page.getByRole("button", { name: "Generate", exact: true }).click();
-  await expectProgress(page, 2, 2);
+  await expect
+    .poll(
+      async () =>
+        (await (await request.get("/fixture/workers")).json()).held.length,
+    )
+    .toBe(2);
   const sent: WireRequest[] = await (
     await request.get("/fixture/chat-requests")
   ).json();
@@ -227,7 +234,7 @@ test("variable records merge images per message, interpolate judge references an
       `/api/grids/${new URL(sourceURL).pathname.split("/").pop()}`,
     )
   ).json();
-  await page.getByRole("button", { name: "EDIT", exact: true }).click();
+  await editHeldGrid(page);
   await expect(page.getByLabel("$ROW2, case 1", { exact: true })).toHaveValue(
     "Secret alpha reference",
   );
@@ -274,15 +281,11 @@ test("variable records merge images per message, interpolate judge references an
   );
   await page.getByRole("button", { name: "PUBLISH", exact: true }).click();
   await finishPublishing(page);
-  await page.getByRole("button", { name: "FORK", exact: true }).click();
-  await page.reload();
-  await expect(page.getByLabel("$ROW2, case 1", { exact: true })).toHaveValue(
-    "Updated alpha reference",
-  );
+  const { copy } = await forkReadonlyGrid(page);
+  expect(copy.input).toEqual(updated.input);
+  const headers = page.getByRole("rowheader");
   await expect(
-    page
-      .getByRole("table", { name: "Grid layout parameters", exact: true })
-      .getByRole("img", { name: blue.name, exact: true }),
+    headers.getByRole("img", { name: blue.name, exact: true }),
   ).toHaveCount(2);
 });
 

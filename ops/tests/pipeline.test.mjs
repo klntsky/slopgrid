@@ -29,7 +29,7 @@ import {
 } from "../lib/common.mjs";
 import { engineFingerprint } from "../lib/artifacts.mjs";
 import { validationCommands, validationEnvironment } from "../lib/validate.mjs";
-import { executePlan } from "../lib/pipeline.mjs";
+import { executePlan, pipeline } from "../lib/pipeline.mjs";
 import { prepareLocalCandidate } from "../lib/local.mjs";
 import {
   environment,
@@ -267,15 +267,59 @@ test("one isolated build validates before single production promotion, with fail
   );
 });
 
-test("isolated validation configures thirty migration workers independently of inherited values", () => {
-  const env = validationEnvironment(
-    "/private/candidate",
-    "/private/runtime",
-    { STARTUP_DATA_MIGRATION_PARALLEL_WORKERS: "2" },
-    { STARTUP_DATA_MIGRATION_PARALLEL_WORKERS: "1" },
-  );
-  assert.equal(env.STARTUP_DATA_MIGRATION_PARALLEL_WORKERS, "30");
-  assert.equal(env.DATABASE_PATH, "/private/runtime/slopgrid.sqlite");
+test("validation rejects missing or invalid migration capacity rather than falling back", () => {
+  for (const value of [undefined, "", " ", "0", "-1", "1.5", "01", "1e2", "9007199254740992"]) {
+    assert.throws(
+      () => validationEnvironment("/private/candidate", "/private/runtime", {}, {
+        STARTUP_DATA_MIGRATION_PARALLEL_WORKERS: value,
+      }),
+      /STARTUP_DATA_MIGRATION_PARALLEL_WORKERS must be a positive safe integer/,
+    );
+    if (value !== undefined)
+      assert.throws(
+        () => validationEnvironment("/private/candidate", "/private/runtime", {
+          STARTUP_DATA_MIGRATION_PARALLEL_WORKERS: value,
+        }, { STARTUP_DATA_MIGRATION_PARALLEL_WORKERS: "30" }),
+        /STARTUP_DATA_MIGRATION_PARALLEL_WORKERS must be a positive safe integer/,
+      );
+  }
+});
+
+test("deployment rejects missing or invalid target capacity before stopping existing processes", async (t) => {
+  const path = directory(t), config = fixtureConfig(path);
+  const bin = join(path, "bin"), calls = join(path, "calls");
+  mkdirSync(bin);
+  for (const name of ["pnpm", "pm2", "rsync", "tar"])
+    writeFileSync(join(bin, name), `#!${process.execPath}
+require("node:fs").appendFileSync(${JSON.stringify(calls)}, JSON.stringify([${JSON.stringify(name)}, ...process.argv.slice(2)]) + "\\n");
+`, { mode: 0o700 });
+  const previousPath = process.env.PATH;
+  const previousCapacity = process.env.STARTUP_DATA_MIGRATION_PARALLEL_WORKERS;
+  process.env.PATH = `${bin}:${previousPath}`;
+  process.env.STARTUP_DATA_MIGRATION_PARALLEL_WORKERS = "30";
+  t.after(() => {
+    process.env.PATH = previousPath;
+    if (previousCapacity === undefined) delete process.env.STARTUP_DATA_MIGRATION_PARALLEL_WORKERS;
+    else process.env.STARTUP_DATA_MIGRATION_PARALLEL_WORKERS = previousCapacity;
+  });
+  const target = config.targets.staging;
+  mkdirSync(dirname(target.envFile), { recursive: true });
+  const request = {
+    config, target: "staging", tests: "skip", discardGrids: [],
+    revision: "a".repeat(40), opsRevision: "b".repeat(40),
+  };
+  for (const value of [undefined, "", " ", "0", "-1", "1.5", "01", "1e2", "9007199254740992"]) {
+    writeFileSync(target.envFile, value === undefined ? "" :
+      `STARTUP_DATA_MIGRATION_PARALLEL_WORKERS=${JSON.stringify(value)}\n`);
+    writeFileSync(calls, "");
+    await assert.rejects(
+      pipeline(request, join(path, "run")),
+      /STARTUP_DATA_MIGRATION_PARALLEL_WORKERS must be a positive safe integer/,
+    );
+    assert.deepEqual(readFileSync(calls, "utf8").trim().split("\n").map(JSON.parse), [["pm2", "ping"]]);
+    assert.throws(() => lstatSync(target.state), /ENOENT/);
+    assert.throws(() => lstatSync(join(path, "run")), /ENOENT/);
+  }
 });
 
 test("private environment and backups preserve sessions and outputs without shell expansion", async (t) => {
@@ -293,10 +337,10 @@ test("private environment and backups preserve sessions and outputs without shel
     target.envFile,
     'APP_ORIGIN="https://example.invalid"\nPORT=49001\nOUTPUT_DOMAIN="-output.example.invalid"\nKEY_ENCRYPTION_SECRET=' +
       "a".repeat(64) +
-      '\nGITHUB_CLIENT_ID=fixture\nGITHUB_CLIENT_SECRET="literal $() `quotes`"\n',
+      '\nGITHUB_CLIENT_ID=fixture\nGITHUB_CLIENT_SECRET="literal $() `quotes`"\nSTARTUP_DATA_MIGRATION_PARALLEL_WORKERS=1\n',
   );
   const env = environment(target);
-  assert.equal(env.STARTUP_DATA_MIGRATION_PARALLEL_WORKERS, "30");
+  assert.equal(env.STARTUP_DATA_MIGRATION_PARALLEL_WORKERS, "1");
   const original = readFileSync(target.envFile, "utf8");
   for (const key of ["GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET"]) {
     for (const value of [undefined, "", "   "]) {
@@ -331,7 +375,7 @@ test("private environment and backups preserve sessions and outputs without shel
     assert.equal(
       parseEnv(readFileSync(join(target.config, `staging-${role}.env`), "utf8"))
         .STARTUP_DATA_MIGRATION_PARALLEL_WORKERS,
-      "30",
+      "1",
     );
   assert.match(processConfig.apps[0].out_file, /unique-run/);
   const require = createRequire(join(app, "package.json")),

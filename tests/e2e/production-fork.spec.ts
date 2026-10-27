@@ -2,7 +2,11 @@ import { test, expect } from "@playwright/test";
 import { runtimeFixture } from "../runtime-fixture";
 import { arrangeHistoricalGrid } from "../grid-storage-fixture";
 import { currentInput } from "../current-grid-fixture";
-import { expandGrid, type GenerationTask, type Grid } from "../../server/domain";
+import {
+  expandGrid,
+  type GenerationTask,
+  type Grid,
+} from "../../server/domain";
 import { token } from "../../server/ids";
 import { expectProgress, finishPublishing } from "./helpers";
 
@@ -41,9 +45,7 @@ for (const format of ["markdown", "chat-template"] as const) {
         rows: chat
           ? [{ variable: [{ text: "cat" }] }, { variable: [{ text: "dog" }] }]
           : [{ model: "fixture/text" }],
-        columns: chat
-          ? [{ model: "fixture/text" }]
-          : [{ effort: "default" }],
+        columns: chat ? [{ model: "fixture/text" }] : [{ effort: "default" }],
       });
       const grid: Grid = {
         id: token(),
@@ -95,11 +97,19 @@ for (const format of ["markdown", "chat-template"] as const) {
       const tasksBefore = f.store.workflow(grid.id);
       await page.goto(`${f.origin}/grid/${grid.id}`);
       await expectProgress(page, grid.cells.length, grid.cells.length);
-      await expect(page.getByRole("button", { name: "EDIT", exact: true })).toHaveCount(0);
-      await expect(page.getByRole("button", { name: "Generate", exact: true })).toHaveCount(0);
+      await expect(
+        page.getByRole("button", { name: "EDIT", exact: true }),
+      ).toHaveCount(0);
+      await expect(
+        page.getByRole("button", { name: "Generate", exact: true }),
+      ).toHaveCount(0);
       if (!chat) {
-        await expect(page.getByRole("button", { name: "FORK", exact: true })).toHaveCount(0);
-        await page.getByRole("button", { name: "PUBLISH", exact: true }).click();
+        await expect(
+          page.getByRole("button", { name: "FORK", exact: true }),
+        ).toHaveCount(0);
+        await page
+          .getByRole("button", { name: "PUBLISH", exact: true })
+          .click();
         await finishPublishing(page);
       }
       const publishedSource = f.store.get(grid.id)!;
@@ -107,12 +117,20 @@ for (const format of ["markdown", "chat-template"] as const) {
       expect(f.store.workflow(grid.id)).toEqual(tasksBefore);
       const sourceURL = page.url();
       await page.getByRole("button", { name: "FORK", exact: true }).click();
-      await expect(page).toHaveURL(/\/grid\/[^/]+$/);
+      await expect(page).toHaveURL(
+        (url) => /^\/grid\/[^/]+$/.test(url.pathname) && url.href !== sourceURL,
+      );
       expect(page.url()).not.toBe(sourceURL);
       await expectProgress(page, grid.cells.length, grid.cells.length);
-      await expect(page.getByRole("button", { name: "EDIT", exact: true })).toHaveCount(0);
-      await expect(page.getByRole("button", { name: "Generate", exact: true })).toHaveCount(0);
-      await expect(page.getByLabel("Budget limit per cell", { exact: true })).toHaveCount(0);
+      await expect(
+        page.getByRole("button", { name: "EDIT", exact: true }),
+      ).toHaveCount(0);
+      await expect(
+        page.getByRole("button", { name: "Generate", exact: true }),
+      ).toHaveCount(0);
+      await expect(
+        page.getByLabel("Budget limit per cell", { exact: true }),
+      ).toHaveCount(0);
       const copyId = new URL(page.url()).pathname.split("/").pop()!;
       const destination = f.store.get(copyId)!;
       expect(destination.id).not.toBe(grid.id);
@@ -125,10 +143,16 @@ for (const format of ["markdown", "chat-template"] as const) {
         expect(cell.prompt).toBe(sourceCell.prompt);
         expect(cell.messages).toEqual(sourceCell.messages);
         expect(cell.artifactId).toBe(sourceCell.artifactId);
-        const sourceTask = tasksBefore.find((task) => task.id === sourceCell.generationId)!;
-        const copiedTask = copyTasks.find((task) => task.id === cell.generationId)!;
+        const sourceTask = tasksBefore.find(
+          (task) => task.id === sourceCell.generationId,
+        )!;
+        const copiedTask = copyTasks.find(
+          (task) => task.id === cell.generationId,
+        )!;
         expect(copiedTask.input).toEqual(sourceTask.input);
-        const sourceOutput = await f.request(`/outputs/${sourceCell.id}/download`);
+        const sourceOutput = await f.request(
+          `/outputs/${sourceCell.id}/download`,
+        );
         const copiedOutput = await f.request(`/outputs/${cell.id}/download`);
         expect(sourceOutput.status).toBe(200);
         expect(copiedOutput.status).toBe(200);
@@ -136,7 +160,9 @@ for (const format of ["markdown", "chat-template"] as const) {
       }
       await page.reload();
       await expectProgress(page, grid.cells.length, grid.cells.length);
-      await expect(page.getByRole("button", { name: "EDIT", exact: true })).toHaveCount(0);
+      await expect(
+        page.getByRole("button", { name: "EDIT", exact: true }),
+      ).toHaveCount(0);
       expect(f.store.get(grid.id)).toEqual(publishedSource);
       expect(f.store.workflow(grid.id)).toEqual(tasksBefore);
       expect(f.calls).toHaveLength(0);

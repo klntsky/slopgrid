@@ -64,12 +64,14 @@ export function stagingDataFixture(t, options = {}) {
     GITHUB_CLIENT_SECRET: "private-staging-oauth-secret", PORT: "3100",
     GENERATION_SOCKET: join(staging, "engine.sock"), STAGING_ONLY: "keep this value",
     OPENROUTER_BASE_URL: startFixtureCatalog(t, root),
+    STARTUP_DATA_MIGRATION_PARALLEL_WORKERS: "30",
   };
   const productionEnv = {
     DATABASE_PATH: join(production, "production.sqlite"), OUTPUTS_PATH: join(production, "outputs"),
     KEY_ENCRYPTION_SECRET: productionKey, APP_ORIGIN: "https://production.invalid",
     GITHUB_CLIENT_ID: "production-client", GITHUB_CLIENT_SECRET: "private-production-oauth-secret",
     PRODUCTION_ONLY: "must not reach staging",
+    STARTUP_DATA_MIGRATION_PARALLEL_WORKERS: "30",
   };
   const stagingEnvText = [
     "# Preserve staging settings, comments, and quoted values.",

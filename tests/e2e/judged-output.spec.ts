@@ -1,6 +1,12 @@
 import { test, expect } from "./fixtures";
 import { generatorInputForCell } from "../../server/generator-input";
-import { connectOpenRouter, finishPublishing, selectModel } from "./helpers";
+import {
+  connectOpenRouter,
+  finishPublishing,
+  forkReadonlyGrid,
+  generateToPausedEdit,
+  selectModel,
+} from "./helpers";
 import { currentInput } from "../current-grid-fixture";
 import { createJudged, judgedCriteria, judgedInput } from "./judged-helpers";
 
@@ -547,6 +553,10 @@ test("judge answers and axes survive draft reload, OAuth, Edit, and Fork", async
   await expectRestored();
   await connectOpenRouter(page);
   await expectRestored();
+  await generateToPausedEdit(page);
+  await expectRestored();
+  await page.reload();
+  await expectRestored();
   await page.getByRole("button", { name: "Generate", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "Judgment: 2 of 2 correct", exact: true }),
@@ -568,33 +578,19 @@ test("judge answers and axes survive draft reload, OAuth, Edit, and Fork", async
   expect(
     (await (await page.request.get("/fixture/judge-requests")).json()).length,
   ).toBe(4);
-  await page.getByRole("button", { name: "EDIT", exact: true }).click();
-  await expectRestored();
-  await page.reload();
-  await expectRestored();
-  await page.goto(original);
   await page.getByRole("button", { name: "PUBLISH", exact: true }).click();
   await finishPublishing(page);
-  await page.getByRole("button", { name: "FORK", exact: true }).click();
-  await expectRestored();
-  await page.reload();
-  await expectRestored();
-  await expect(
-    page.getByLabel("Reuse existing artifacts from the previous version", {
-      exact: true,
-    }),
-  ).toBeChecked();
-  await page.getByRole("button", { name: "Generate", exact: true }).click();
+  await forkReadonlyGrid(page);
   await expect(
     page.getByRole("button", { name: "Judgment: 2 of 2 correct", exact: true }),
   ).toHaveCount(4);
   expect(page.url()).not.toBe(original);
   expect((await (await page.request.get("/fixture/calls")).json()).length).toBe(
-    9,
+    5,
   );
   expect(
     (await (await page.request.get("/fixture/judge-requests")).json()).length,
-  ).toBe(8);
+  ).toBe(4);
 });
 
 for (const format of ["svg", "image"] as const) {
@@ -733,13 +729,14 @@ for (const format of ["svg", "image"] as const) {
       details.getByText("There is no blue circle.", { exact: true }),
     ).not.toBeVisible();
     if (format === "svg") {
-      await page.getByRole("button", { name: "EDIT", exact: true }).click();
-      await page
-        .getByRole("region", { name: "Judge", exact: true })
-        .getByLabel("Correct answer", { exact: true })
-        .nth(0)
-        .click();
-      await page.getByRole("button", { name: "Generate", exact: true }).click();
+      const changed = structuredClone(input);
+      if (changed.parameters.judge_criteria?.kind !== "common")
+        throw new Error("Expected common judge criteria");
+      changed.parameters.judge_criteria.value[0].correctAnswer = true;
+      const response = await page.request.post("/api/grids", { data: changed });
+      expect(response.status()).toBe(201);
+      const next = await response.json();
+      await page.goto(`/grid/${next.id}`);
       await expect(
         page.getByRole("button", {
           name: "Judgment: 1 of 2 correct",
@@ -756,7 +753,7 @@ for (const format of ["svg", "image"] as const) {
       ).toBeVisible();
       expect(
         (await (await page.request.get("/fixture/calls")).json()).length,
-      ).toBe(9);
+      ).toBe(10);
       expect(
         (await (await page.request.get("/fixture/judge-requests")).json())
           .length,

@@ -1,10 +1,10 @@
 import Database from "better-sqlite3";
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { fileURLToPath } from "node:url";
 import {
   copyFileSync,
-  existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -12,7 +12,6 @@ import {
   rmSync,
   statSync,
   writeFileSync,
-  watch,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -22,6 +21,7 @@ import { generatedDataUrl } from "./chat-image-output-fixture.js";
 import { pixelPng, referencePng } from "./reference-image-fixture.js";
 import type { Model } from "../server/provider.js";
 import { migrationWorkerEnvironment } from "./database-output-fixture.js";
+import { crashCheckpoint, type CrashCheckpoint } from "./crash-checkpoint.js";
 
 export const chatMigrationModels: readonly Model[] = [
   {
@@ -588,7 +588,9 @@ export function corruptInstalledChatReplacement(root: string) {
   return () => writeFileSync(path, original);
 }
 
-export async function preserveLegacyChatDatabase(fixture: ChatOutputMigrationFixture) {
+export async function preserveLegacyChatDatabase(
+  fixture: ChatOutputMigrationFixture,
+) {
   const saved = join(fixture.directory, "legacy.sqlite");
   const db = new Database(fixture.database);
   try {
@@ -605,14 +607,26 @@ export async function killMigrationBeforeArtifactRepoint(
   fixture: ChatOutputMigrationFixture,
 ) {
   const db = new Database(fixture.database);
-  let journalMode: string;
   try {
-    journalMode = db.pragma("journal_mode = WAL", { simple: true }) as string;
+    db.pragma("journal_mode = WAL");
   } finally {
     db.close();
   }
   const source = `
     import { Store } from ${JSON.stringify(new URL("../server/store.ts", import.meta.url).href)};
+    import * as inspector from "node:inspector";
+    const startup = Promise.withResolvers();
+    process.on("disconnect", () => process.exit(0));
+    process.on("message", (message) => {
+      if (message.inspect) {
+        inspector.open(0, "127.0.0.1");
+        process.send(inspector.url());
+      } else if (message.start) {
+        startup.resolve();
+      }
+    });
+    process.send({ ready: true });
+    await startup.promise;
     const store = await Store.open(
       ${JSON.stringify(fixture.database)},
       Buffer.from(${JSON.stringify(fixture.secret.toString("hex"))}, "hex"),
@@ -621,8 +635,9 @@ export async function killMigrationBeforeArtifactRepoint(
     );
     store.db.close();
   `;
-  const watcher = watch(fixture.outputs);
-  const ready = Promise.withResolvers<{ artifactId: string }>();
+  const controller = new AbortController();
+  let checkpoint: CrashCheckpoint | undefined;
+  let expectedKill = false;
   let stderr = "";
   const child = spawn(
     process.execPath,
@@ -630,19 +645,11 @@ export async function killMigrationBeforeArtifactRepoint(
     {
       cwd: fileURLToPath(new URL("../", import.meta.url)),
       env: { ...process.env, STARTUP_DATA_MIGRATION_PARALLEL_WORKERS: "30" },
-      stdio: ["ignore", "ignore", "pipe"],
+      stdio: ["ignore", "ignore", "pipe", "ipc"],
     },
   );
-  watcher.on("change", (_event, filename) => {
-    const artifactId = filename?.toString();
-    if (!artifactId?.startsWith("canonical-")) return;
-    if (!existsSync(join(fixture.outputs, artifactId, "messages.json"))) return;
-    child.kill("SIGSTOP");
-    ready.resolve({ artifactId });
-  });
-  watcher.once("error", ready.reject);
-  child.stderr.setEncoding("utf8");
-  child.stderr.on("data", (chunk: string) => {
+  child.stderr!.setEncoding("utf8");
+  child.stderr!.on("data", (chunk: string) => {
     stderr += chunk;
   });
   const exited = Promise.withResolvers<{
@@ -650,34 +657,77 @@ export async function killMigrationBeforeArtifactRepoint(
     signal: NodeJS.Signals | null;
   }>();
   child.once("error", (error) => {
-    ready.reject(error);
+    child.kill("SIGKILL");
+    controller.abort(error);
     exited.reject(error);
   });
   child.once("exit", (code, signal) => {
-    ready.reject(
-      new Error(`Migration exited before SIGKILL (code ${code}, signal ${signal}): ${stderr}`),
-    );
+    if (!expectedKill)
+      controller.abort(
+        new Error(
+          `Migration exited before SIGKILL (code ${code}, signal ${signal}): ${stderr}`,
+        ),
+      );
     exited.resolve({ code, signal });
   });
-  const deadline = setTimeout(
-    () => ready.reject(new Error(`Migration did not install a canonical artifact: ${stderr}`)),
-    15000,
-  );
+  const deadline = setTimeout(() => {
+    child.kill("SIGKILL");
+    controller.abort(
+      new Error(`Migration did not reach publication checkpoint: ${stderr}`),
+    );
+  }, 15000);
   void exited.promise.catch(() => {});
   try {
-    const { artifactId } = await ready.promise;
+    const [ready] = await once(child, "message", { signal: controller.signal });
+    if (
+      !ready ||
+      typeof ready !== "object" ||
+      !("ready" in ready) ||
+      ready.ready !== true
+    )
+      throw new Error("Migration child did not acknowledge loaded modules");
+    checkpoint = await crashCheckpoint(
+      child,
+      "startup-data-migration.ts",
+      "syncPath(outputsPath)",
+      undefined,
+      controller.signal,
+    );
+    child.send({ start: true });
+    await checkpoint.paused;
+    const replacement = outputFileInventory(fixture.outputs).find(
+      (file) =>
+        file.path.startsWith("canonical-") &&
+        file.path.endsWith("/messages.json"),
+    );
+    if (!replacement)
+      throw new Error(
+        "Migration checkpoint has no installed canonical artifact",
+      );
+    const artifactId = replacement.path.split("/")[0]!;
+    const messages: CanonicalMessageJSON[] = JSON.parse(
+      readFileSync(join(fixture.outputs, replacement.path), "utf8"),
+    );
+    const source = new Database(fixture.database, { readonly: true });
+    let journalMode: string;
+    try {
+      journalMode = source.pragma("journal_mode", { simple: true }) as string;
+    } finally {
+      source.close();
+    }
+    expectedKill = true;
     child.kill("SIGKILL");
     const exit = await exited.promise;
-    const messages: CanonicalMessageJSON[] = JSON.parse(
-      readFileSync(join(fixture.outputs, artifactId, "messages.json"), "utf8"),
-    );
     return { artifactId, journalMode, ...exit, messages };
   } finally {
     clearTimeout(deadline);
-    watcher.close();
+    expectedKill = true;
     if (child.exitCode === null && child.signalCode === null) {
       child.kill("SIGKILL");
       await exited.promise.catch(() => {});
     }
+    controller.abort();
+    checkpoint?.close();
+    if (child.connected) child.disconnect();
   }
 }

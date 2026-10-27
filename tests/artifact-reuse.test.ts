@@ -36,10 +36,12 @@ import {
   removeArtifactSourceGrid,
   restorePlainPromptGeneration,
   masterPlainPrompt,
+  reuseCandidate,
 } from "./artifact-reuse-fixture.js";
 import { validatedGrid } from "./grid-storage-fixture.js";
 import { storeFixture } from "./store-fixture.js";
-import { fixtureModels,
+import {
+  fixtureModels,
   currentDefinition,
   currentInput,
   type CurrentGridOverrides,
@@ -125,7 +127,11 @@ test("generator grouping ignores judge-only fields and attachment display metada
     generationGroupKey(setup.format, cells[0]),
     generationGroupKey(setup.format, cells[1]),
   );
-  const workflow = createWorkflow(gridSchema.parse(setup), cells, fixtureModels);
+  const workflow = createWorkflow(
+    gridSchema.parse(setup),
+    cells,
+    fixtureModels,
+  );
   assert.equal(workflow.filter((task) => task.kind === "generation").length, 1);
   assert.equal(workflow.filter((task) => task.kind === "judge").length, 2);
   assert.notEqual(
@@ -195,27 +201,30 @@ test("common input image reuse follows bytes rather than upload ids or display m
         );
         finish(call, output);
         await settled(f, source.id);
-        const copy = await create(f, {
-          ...setup,
-          caseAxes: ["columns"],
-          parameters: {
-            ...setup.parameters,
-            input: { kind: "columns" },
+        const copy = await reuseCandidate(
+          f,
+          {
+            ...setup,
+            caseAxes: ["columns"],
+            parameters: {
+              ...setup.parameters,
+              input: { kind: "columns" },
+            },
+            columns: ["first", "second"].map((id) => ({
+              id,
+              effort: "none",
+              input: [
+                {
+                  role: "user",
+                  content: "Describe the shape.",
+                  images: [{ ...copied, width: 900, height: 2 }],
+                },
+              ],
+            })),
           },
-          columns: ["first", "second"].map((id) => ({
-            id,
-            effort: "none",
-            input: [
-              {
-                role: "user",
-                content: "Describe the shape.",
-                images: [{ ...copied, width: 900, height: 2 }],
-              },
-            ],
-          })),
-          sourceGridId: source.id,
-          reuseArtifacts: true,
-        });
+          source.id,
+          true,
+        );
         const savedCopy = await settled(f, copy.id);
         assert.equal(savedCopy.cells.length, 2);
         assert.deepEqual(gridSchema.parse(savedCopy.input).caseAxes, [
@@ -236,28 +245,31 @@ test("common input image reuse follows bytes rather than upload ids or display m
           f.store.outputMetadata(copy.cells[1].id)!.artifactId,
           f.store.outputMetadata(source.cells[0].id)!.artifactId,
         );
-        const different = await create(f, {
-          ...setup,
-          caseAxes: ["rows"],
-          parameters: {
-            ...setup.parameters,
-            input: { kind: "rows" },
-            model: { kind: "common", value: "fixture/text" },
-          },
-          rows: [
-            {
-              input: [
-                {
-                  role: "user",
-                  content: "Describe the shape.",
-                  images: [changed],
-                },
-              ],
+        const different = await reuseCandidate(
+          f,
+          {
+            ...setup,
+            caseAxes: ["rows"],
+            parameters: {
+              ...setup.parameters,
+              input: { kind: "rows" },
+              model: { kind: "common", value: "fixture/text" },
             },
-          ],
-          sourceGridId: source.id,
-          reuseArtifacts: true,
-        });
+            rows: [
+              {
+                input: [
+                  {
+                    role: "user",
+                    content: "Describe the shape.",
+                    images: [changed],
+                  },
+                ],
+              },
+            ],
+          },
+          source.id,
+          true,
+        );
         finish(await f.nextCall(), output.replace("Shape", "Different shape"));
         await settled(f, different.id);
         assert.equal(f.calls.length, calls + 2);
@@ -313,20 +325,23 @@ test("non-chat image reuse follows content and ignores changed judge-only fields
       '{"results":[{"verdict":true,"explanation":"Matches."}]}',
     );
     await settled(f, source.id);
-    const copy = await create(f, {
-      ...setup,
-      rows: [
-        {
-          id: "row-1",
-          variable: [
-            { text: "Describe this shape.", images: [copiedImage] },
-            { text: "changed expected answer", images: [originalImage] },
-          ],
-        },
-      ],
-      sourceGridId: source.id,
-      reuseArtifacts: true,
-    });
+    const copy = await reuseCandidate(
+      f,
+      {
+        ...setup,
+        rows: [
+          {
+            id: "row-1",
+            variable: [
+              { text: "Describe this shape.", images: [copiedImage] },
+              { text: "changed expected answer", images: [originalImage] },
+            ],
+          },
+        ],
+      },
+      source.id,
+      true,
+    );
     const judge = await f.nextCall();
     assert.match(
       messageText(judge.request.messages.at(-1)!.content),
@@ -339,20 +354,23 @@ test("non-chat image reuse follows content and ignores changed judge-only fields
       f.store.outputMetadata(copy.cells[0].id)!.artifactId,
       f.store.outputMetadata(source.cells[0].id)!.artifactId,
     );
-    const changed = await create(f, {
-      ...setup,
-      rows: [
-        {
-          id: "row-1",
-          variable: [
-            { text: "Describe this shape.", images: [changedImage] },
-            { text: "first expected answer", images: [changedImage] },
-          ],
-        },
-      ],
-      sourceGridId: source.id,
-      reuseArtifacts: true,
-    });
+    const changed = await reuseCandidate(
+      f,
+      {
+        ...setup,
+        rows: [
+          {
+            id: "row-1",
+            variable: [
+              { text: "Describe this shape.", images: [changedImage] },
+              { text: "first expected answer", images: [changedImage] },
+            ],
+          },
+        ],
+      },
+      source.id,
+      true,
+    );
     finish(await f.nextCall(), "Changed shape");
     finish(
       await f.nextCall(),
@@ -403,45 +421,57 @@ test("chat reuse matches same-name attachment content across uploads but regener
     finish(await f.nextCall(), "Both images");
     const original = await settled(f, source.id);
     const duplicate = f.store.references.add(png, first.name, session)!;
-    const contentCopy = await create(f, {
-      ...template,
-      parameters: {
-        ...template.parameters,
-        input: {
-          kind: "common",
-          value: [{ ...messages[0], images: [duplicate] }, ...messages.slice(1)],
+    const contentCopy = await reuseCandidate(
+      f,
+      {
+        ...template,
+        parameters: {
+          ...template.parameters,
+          input: {
+            kind: "common",
+            value: [
+              { ...messages[0], images: [duplicate] },
+              ...messages.slice(1),
+            ],
+          },
         },
       },
-      sourceGridId: source.id,
-      reuseArtifacts: true,
-    });
+      source.id,
+      true,
+    );
     assert.equal(contentCopy.status, "complete");
-    assert.equal(f.store.get(contentCopy.id)!.cells[0].artifactId, original.cells[0].artifactId);
+    assert.equal(
+      f.store.get(contentCopy.id)!.cells[0].artifactId,
+      original.cells[0].artifactId,
+    );
     assert.equal(f.calls.length, 1);
-    const copy = await create(f, {
-      ...template,
-      caseAxes: ["columns"],
-      parameters: {
-        input: { kind: "columns" },
-        model: { kind: "rows" },
-        effort: { kind: "common", value: "none" },
-      },
-      rows: [{ model: "fixture/text" }],
-      columns: [
-        {
-          input: [
-            {
-              ...messages[0],
-              content: "Describe cat one",
-              images: [{ ...renamed, width: 900, height: 2 }],
-            },
-            ...messages.slice(1),
-          ],
+    const copy = await reuseCandidate(
+      f,
+      {
+        ...template,
+        caseAxes: ["columns"],
+        parameters: {
+          input: { kind: "columns" },
+          model: { kind: "rows" },
+          effort: { kind: "common", value: "none" },
         },
-      ],
-      sourceGridId: source.id,
-      reuseArtifacts: true,
-    });
+        rows: [{ model: "fixture/text" }],
+        columns: [
+          {
+            input: [
+              {
+                ...messages[0],
+                content: "Describe cat one",
+                images: [{ ...renamed, width: 900, height: 2 }],
+              },
+              ...messages.slice(1),
+            ],
+          },
+        ],
+      },
+      source.id,
+      true,
+    );
     assert.notEqual(copy.status, "complete");
     finish(await f.nextCall(), "Both images with the renamed attachment");
     const copied = await settled(f, copy.id);
@@ -455,22 +485,25 @@ test("chat reuse matches same-name attachment content across uploads but regener
       parameterValue(gridSchema.parse(copy.input), "input", 0, 0)![0].images,
       [renamed],
     );
-    const changed = await create(f, {
-      ...template,
-      parameters: {
-        ...template.parameters,
-        input: {
-          kind: "common",
-          value: [
-            { ...messages[0], images: undefined },
-            messages[1],
-            { ...messages[2], images: [first, second] },
-          ],
+    const changed = await reuseCandidate(
+      f,
+      {
+        ...template,
+        parameters: {
+          ...template.parameters,
+          input: {
+            kind: "common",
+            value: [
+              { ...messages[0], images: undefined },
+              messages[1],
+              { ...messages[2], images: [first, second] },
+            ],
+          },
         },
       },
-      sourceGridId: source.id,
-      reuseArtifacts: true,
-    });
+      source.id,
+      true,
+    );
     finish(await f.nextCall(), "Moved image");
     const complete = await settled(f, changed.id);
     assert.equal(complete.status, "complete");
@@ -530,11 +563,7 @@ test("template reuse preserves usage metadata and requires every completion", as
         const saved = f.store.get(source.id)!;
         assertCost(saved.cells[0].usage!.costUsd!, 0.0246);
         const calls = f.calls.length;
-        const copy = await create(f, {
-          ...template,
-          sourceGridId: source.id,
-          reuseArtifacts: true,
-        });
+        const copy = await reuseCandidate(f, { ...template }, source.id, true);
         assert.equal(copy.cells[0].status, "complete");
         assert.equal(f.calls.length, calls);
         const artifactId = f.store.outputMetadata(copy.cells[0].id)!.artifactId;
@@ -572,11 +601,12 @@ test("template reuse preserves usage metadata and requires every completion", as
           404,
         );
         removeTemplateInputTokenUsage(f.store.db, copy.cells[0].generationId);
-        const regenerated = await create(f, {
-          ...template,
-          sourceGridId: copy.id,
-          reuseArtifacts: true,
-        });
+        const regenerated = await reuseCandidate(
+          f,
+          { ...template },
+          copy.id,
+          true,
+        );
         assert.notEqual(regenerated.cells[0].status, "complete");
         finish(await f.nextCall(), "Fresh first answer");
         finish(await f.nextCall(), "Fresh second answer");
@@ -622,19 +652,16 @@ test("template reuse preserves usage metadata and requires every completion", as
         );
         finish(last, "Final answer");
         await settled(f, source.id);
-        const copy = await create(f, {
-          ...template,
-          sourceGridId: source.id,
-          reuseArtifacts: true,
-        });
+        const copy = await reuseCandidate(f, { ...template }, source.id, true);
         assert.equal(copy.status, "complete");
         assert.equal(f.calls.length, calls + 2);
         removeSecondTemplateStep(f.store.db, source.cells[0].generationId);
-        const regenerated = await create(f, {
-          ...template,
-          sourceGridId: source.id,
-          reuseArtifacts: true,
-        });
+        const regenerated = await reuseCandidate(
+          f,
+          { ...template },
+          source.id,
+          true,
+        );
         assert.notEqual(regenerated.status, "complete");
         finish(await f.nextCall(), "Fresh first answer");
         finish(await f.nextCall(), "Fresh final answer");
@@ -710,11 +737,13 @@ test("edit shares exact completed artifacts through reorder, cancellation, web r
       columns: [{ effort: "low" }, { effort: "none" }],
     });
     const callsBeforeEdit = f.calls.length;
-    const next = await create(f, {
+    const edited = await f.request("/api/grids", {
       ...changed,
       sourceGridId: source.id,
       reuseArtifacts: true,
     });
+    assert.equal(edited.status, 201, await edited.clone().text());
+    const next = (await edited.json()) as ViewGrid;
     assert.deepEqual(
       next.cells
         .filter((c) => c.status === "complete")
@@ -762,11 +791,15 @@ test("edit shares exact completed artifacts through reorder, cancellation, web r
     );
     await f.engine.close();
     await f.startEngine();
-    const again = await create(f, {
-      ...changed,
-      sourceGridId: next.id,
-      reuseArtifacts: true,
+    const published = await f.request(`/api/grids/${next.id}/publish`, {
+      visibility: "unlisted",
     });
+    assert.equal(published.status, 200, await published.clone().text());
+    const forked = await f.request(`/api/grids/${next.id}/fork`, {
+      creationRequestId: token(),
+    });
+    assert.equal(forked.status, 201, await forked.clone().text());
+    const again = (await forked.json()) as ViewGrid;
     assert.equal(again.status, "complete");
     assert.equal(f.calls.length, callsBeforeEdit + expectedRequests.length);
     assert.equal((await f.engine.api.getGrid(again.id)).spentUsd, 0);
@@ -817,11 +850,7 @@ test("reuse requires intact content and retains shared artifacts while either gr
       f.store.files.path(completed.cells[4].artifactId!, "index.html")!,
       0,
     );
-    const copied = await create(f, {
-      ...config,
-      sourceGridId: source.id,
-      reuseArtifacts: true,
-    });
+    const copied = await reuseCandidate(f, { ...config }, source.id, true);
     assert.deepEqual(
       copied.cells.filter((c) => c.status === "complete").map((c) => c.row),
       [0],
@@ -859,7 +888,7 @@ test("reuse requires intact content and retains shared artifacts while either gr
   }
 });
 
-test("forks isolate access and billing while preserving artifact costs and admission prerequisites", async () => {
+test("immutable forks retain historical output costs without requiring inference credentials or balance", async () => {
   const f = await runtimeFixture();
   try {
     const config = currentDefinition({
@@ -868,141 +897,63 @@ test("forks isolate access and billing while preserving artifact costs and admis
     });
     const source = await create(f, config);
     finish(await f.nextCall());
-    await settled(f, source.id);
+    const original = await settled(f, source.id);
     f.store.claim(f.owner, "source-user");
+    assert.equal(f.store.publish(source.id, "public", null), undefined);
     f.store.saveSession({
       ...f.store.session(f.owner)!,
       userId: "destination-user",
+      key: undefined,
     });
-    const before = readdirSync(f.store.files.root);
-    assert.equal(
-      (
-        await f.request("/api/grids", {
-          ...config,
-          sourceGridId: source.id,
-          reuseArtifacts: true,
-        })
-      ).status,
-      404,
-    );
-    assert.deepEqual(readdirSync(f.store.files.root), before);
-    assert.equal(f.calls.length, 1);
-    assert.equal(f.store.publish(source.id, "public", null), undefined);
-    const destination = await create(f, {
-      ...config,
-      rows: ["cat", "dog"].map((text, index) => ({
-        id: `row-${index + 1}`,
-        variable: [{ text }],
-      })),
-      sourceGridId: source.id,
-      reuseArtifacts: true,
-    });
-    const failed = await f.nextCall();
-    failed.write({ content: "Incomplete" });
-    failed.finish(0.02, { reason: "length", outputTokens: 4 });
-    const completed = await settled(f, destination.id);
-    const accepted = f.store.workflow(destination.id);
-    assert.equal(
-      (await f.request(`/api/grids/${destination.id}/retry`, {})).status,
-      409,
-    );
-    assert.deepEqual(f.store.workflow(destination.id), accepted);
-    assert.equal(completed.spentUsd, 0.02);
-    assert.equal(completed.cells[0].usage?.costUsd, 0.0123);
-    assert.equal(completed.cells[1].status, "error");
-    assert.equal(
-      f.store.billing.page(f.owner, 0, "source-user").costUsd,
-      0.0123,
-    );
-    assert.equal(f.store.billing.page(f.owner, 0, "destination-user").total, 1);
-    const cell = completed.cells[0];
-    const sourceCell = f.store.get(source.id)!.cells[0];
-    assert.equal(cell.artifactId, sourceCell.artifactId);
-    assert.equal(cell.thinkingSourceId, sourceCell.thinkingSourceId);
-    assert.equal(cell.thinkingId, sourceCell.thinkingId);
-    assert.notEqual(cell.id, sourceCell.id);
-    for (const path of [
-      `/api/grids/${completed.id}`,
-      `/outputs/${cell.id}`,
-      `/outputs/${cell.id}/thinking/${cell.thinkingId}`,
-    ])
-      assert.equal((await f.fetch(f.origin + path)).status, 404);
-    const all = await create(f, {
-      ...config,
-      sourceGridId: source.id,
-      reuseArtifacts: true,
-    });
-    assert.equal(all.status, "complete");
-    assert.equal(f.calls.length, 2);
-    assert.equal((await f.engine.api.getGrid(all.id)).spentUsd, 0);
-    const session = f.store.session(f.owner)!;
-    f.store.saveSession({ ...session, key: undefined });
-    assert.equal(
-      (
-        await f.fetch(f.origin + "/api/grids", {
+    const artifacts = readdirSync(f.store.files.root).sort();
+    for (const balance of [0, Number.NaN]) {
+      f.credits.total_credits = balance;
+      const response = await f.fetch(
+        f.origin + `/api/grids/${source.id}/fork`,
+        {
           method: "POST",
           headers: {
             cookie: f.cookie,
             origin: f.origin,
             "content-type": "application/json",
           },
-          body: JSON.stringify({
-            ...config,
-            sourceGridId: source.id,
-            reuseArtifacts: true,
-          }),
-        })
-      ).status,
-      401,
-    );
-    f.credits.total_credits = 0;
+          body: JSON.stringify({ creationRequestId: token() }),
+        },
+      );
+      assert.equal(response.status, 201, await response.clone().text());
+      const copy = (await response.json()) as ViewGrid;
+      const saved = f.store.get(copy.id)!;
+      assert.equal(copy.status, "complete");
+      assert.equal(copy.spentUsd, 0);
+      assert.equal(saved.cells[0].artifactId, original.cells[0].artifactId);
+      assert.equal(
+        saved.cells[0].thinkingSourceId,
+        original.cells[0].thinkingSourceId,
+      );
+      assert.equal(saved.cells[0].thinkingId, original.cells[0].thinkingId);
+      assert.equal(
+        copy.cells[0].usage?.costUsd,
+        original.cells[0].usage?.costUsd,
+      );
+      assert.notEqual(copy.cells[0].id, original.cells[0].id);
+      assert.equal(
+        (await f.fetch(f.origin + `/outputs/${copy.cells[0].id}`)).status,
+        404,
+      );
+      assert.equal(
+        f.store.billing.page(f.owner, 0, "destination-user").total,
+        0,
+      );
+    }
+    assert.equal(f.store.billing.page(f.owner, 0, "source-user").total, 1);
+    assert.equal(f.calls.length, 1);
+    assert.deepEqual(readdirSync(f.store.files.root).sort(), artifacts);
     assert.equal(
-      (
-        await f.request("/api/grids", {
-          ...config,
-          sourceGridId: source.id,
-          reuseArtifacts: true,
-        })
-      ).status,
-      201,
-    );
-    assert.equal(f.calls.length, 2);
-    await f.request(`/api/grids/${destination.id}/publish`, {
-      visibility: "public",
-    });
-    assert.equal((await f.fetch(f.origin + `/outputs/${cell.id}`)).status, 200);
-    assert.equal(
-      (
-        await f.fetch(
-          f.origin + `/outputs/${cell.id}/thinking/${cell.thinkingId}`,
-        )
-      ).status,
-      200,
-    );
-    const artifacts = readdirSync(f.store.files.root).sort();
-    const traces = readdirSync(join(f.store.files.root, ".thinking")).sort();
-    f.credits.total_credits = Number.NaN;
-    assert.equal(
-      (
-        await f.request("/api/grids", {
-          ...config,
-          rows: ["cat", "new"].map((text, index) => ({
-            id: `row-${index + 1}`,
-            variable: [{ text }],
-          })),
-          sourceGridId: source.id,
-          reuseArtifacts: true,
-        })
-      ).status,
-      502,
-    );
-    await until(
-      () => ({
-        artifacts: readdirSync(f.store.files.root).sort(),
-        traces: readdirSync(join(f.store.files.root, ".thinking")).sort(),
-      }),
-      (current) =>
-        JSON.stringify(current) === JSON.stringify({ artifacts, traces }),
+      readFileSync(
+        f.store.files.path(original.cells[0].artifactId!, "index.md")!,
+        "utf8",
+      ),
+      "Artifact",
     );
   } finally {
     await f.close();
@@ -1064,23 +1015,24 @@ test("effective model, prompt, effort and format determine actual reuse", async 
       },
     ];
     for (const scenario of cases) {
-      const next = await create(f, {
-        ...currentDefinition({ ...config, ...scenario.input }),
-        sourceGridId: source.id,
-        reuseArtifacts: true,
-      });
+      const next = await reuseCandidate(
+        f,
+        { ...currentDefinition({ ...config, ...scenario.input }) },
+        source.id,
+        true,
+      );
       assert.notEqual(next.cells[0].status, "complete", scenario.name);
       const call = await f.nextCall();
       scenario.verify(call);
       finish(call, scenario.input.format === "svg" ? "<svg/>" : "Changed");
       await settled(f, next.id);
     }
-    const positive = await create(f, {
-      ...config,
-      parallelWorkers: 3,
-      sourceGridId: source.id,
-      reuseArtifacts: true,
-    });
+    const positive = await reuseCandidate(
+      f,
+      { ...config, parallelWorkers: 3 },
+      source.id,
+      true,
+    );
     assert.equal(positive.status, "complete");
     assert.equal(f.calls.length, 1 + cases.length);
     f.catalog.data[0].top_provider.max_completion_tokens = 500;
@@ -1088,17 +1040,9 @@ test("effective model, prompt, effort and format determine actual reuse", async 
     await f.startWeb();
     await f.engine.close();
     await f.startEngine();
-    const ceiling = await create(f, {
-      ...config,
-      sourceGridId: source.id,
-      reuseArtifacts: true,
-    });
+    const ceiling = await reuseCandidate(f, { ...config }, source.id, true);
     assert.equal(ceiling.status, "complete");
-    const disabled = await create(f, {
-      ...config,
-      sourceGridId: ceiling.id,
-      reuseArtifacts: false,
-    });
+    const disabled = await reuseCandidate(f, { ...config }, ceiling.id, false);
     finish(await f.nextCall());
     await settled(f, disabled.id);
     assert.equal(f.calls.length, 2 + cases.length);
@@ -1131,12 +1075,12 @@ test("budget and token ceiling changes reuse outputs that fit through copies and
     await settled(f, source.id);
     let previous = source;
     for (const budgetUsd of [1.5, 3, 0.8, 0.6, 2]) {
-      previous = await create(f, {
-        ...config,
-        budgetUsd,
-        sourceGridId: previous.id,
-        reuseArtifacts: true,
-      });
+      previous = await reuseCandidate(
+        f,
+        { ...config, budgetUsd },
+        previous.id,
+        true,
+      );
       assert.equal(previous.status, "complete", `budget ${budgetUsd}`);
       assert.equal(previous.cells[0].usage?.outputTokens, 600);
       assert.equal(previous.spentUsd, 0);
@@ -1146,12 +1090,12 @@ test("budget and token ceiling changes reuse outputs that fit through copies and
     await f.startEngine();
     await kill(f.web);
     await f.startWeb();
-    const tooSmall = await create(f, {
-      ...config,
-      budgetUsd: 0.599,
-      sourceGridId: previous.id,
-      reuseArtifacts: true,
-    });
+    const tooSmall = await reuseCandidate(
+      f,
+      { ...config, budgetUsd: 0.599 },
+      previous.id,
+      true,
+    );
     const fresh = await f.nextCall();
     assert.equal(fresh.request.max_tokens, 599);
     finish(fresh);
@@ -1180,22 +1124,22 @@ test("missing token usage reuses only when the original ceiling fits, including 
     removeInferenceOutputTokenUsage(f.store.db, source.cells[0].id);
     let previous = source;
     for (const budgetUsd of [0.5, 1, 0.75]) {
-      previous = await create(f, {
-        ...config,
-        budgetUsd,
-        sourceGridId: previous.id,
-        reuseArtifacts: true,
-      });
+      previous = await reuseCandidate(
+        f,
+        { ...config, budgetUsd },
+        previous.id,
+        true,
+      );
       assert.equal(previous.status, "complete");
       assert.equal(previous.cells[0].usage?.outputTokens, undefined);
       assert.equal(f.calls.length, 1);
     }
-    const smaller = await create(f, {
-      ...config,
-      budgetUsd: 0.49,
-      sourceGridId: previous.id,
-      reuseArtifacts: true,
-    });
+    const smaller = await reuseCandidate(
+      f,
+      { ...config, budgetUsd: 0.49 },
+      previous.id,
+      true,
+    );
     const call = await f.nextCall();
     assert.equal(call.request.max_tokens, 490);
     finish(call);
@@ -1217,11 +1161,7 @@ test("stored artifacts with stale request signatures regenerate instead of reusi
     finish(await f.nextCall(), "Old output");
     const saved = await settled(f, source.id);
     staleGenerationProvenance(f.store.db, saved.cells[0].generationId!);
-    const regenerated = await create(f, {
-      ...config,
-      sourceGridId: source.id,
-      reuseArtifacts: true,
-    });
+    const regenerated = await reuseCandidate(f, { ...config }, source.id, true);
     assert.notEqual(regenerated.cells[0].status, "complete");
     finish(await f.nextCall(), "Fresh compatible output");
     const completed = await settled(f, regenerated.id);
@@ -1277,11 +1217,7 @@ test("duplicate effective prompts choose the first source cell and model alias r
       completedSource.cells.map((cell) => cell.usage?.outputTokens),
       [600, 20, 20, 20],
     );
-    const copied = await create(f, {
-      ...config,
-      sourceGridId: source.id,
-      reuseArtifacts: true,
-    });
+    const copied = await reuseCandidate(f, { ...config }, source.id, true);
     assert.equal(copied.status, "complete");
     assert.equal(f.calls.length, 4);
     assert.deepEqual(
@@ -1299,12 +1235,12 @@ test("duplicate effective prompts choose the first source cell and model alias r
         ),
         `Output ${index === 3 ? 0 : index}`,
       );
-    const fitting = await create(f, {
-      ...config,
-      budgetUsd: 0.5,
-      sourceGridId: source.id,
-      reuseArtifacts: true,
-    });
+    const fitting = await reuseCandidate(
+      f,
+      { ...config, budgetUsd: 0.5 },
+      source.id,
+      true,
+    );
     assert.equal(fitting.status, "complete");
     assert.deepEqual(
       fitting.cells.map((cell) => cell.usage?.outputTokens),
@@ -1327,11 +1263,7 @@ test("duplicate effective prompts choose the first source cell and model alias r
     await f.startWeb();
     await f.engine.close();
     await f.startEngine();
-    const changed = await create(f, {
-      ...config,
-      sourceGridId: source.id,
-      reuseArtifacts: true,
-    });
+    const changed = await reuseCandidate(f, { ...config }, source.id, true);
     for (const cell of changed.cells) {
       const call = await f.nextCall();
       assert.equal(call.request.model, "fixture/other");
@@ -1370,15 +1302,18 @@ test("reuse leaves preparation failures on individual cells and skips unsigned s
     const source = await create(f, config);
     finish(await f.nextCall());
     await settled(f, source.id);
-    const mixed = await create(f, {
-      ...config,
-      columns: ["fixture/text", "fixture/unpriced"].map((model, index) => ({
-        id: `column-${index + 1}`,
-        model,
-      })),
-      sourceGridId: source.id,
-      reuseArtifacts: true,
-    });
+    const mixed = await reuseCandidate(
+      f,
+      {
+        ...config,
+        columns: ["fixture/text", "fixture/unpriced"].map((model, index) => ({
+          id: `column-${index + 1}`,
+          model,
+        })),
+      },
+      source.id,
+      true,
+    );
     finish(await f.nextCall());
     const result = await settled(f, mixed.id);
     assert.deepEqual(
@@ -1386,31 +1321,31 @@ test("reuse leaves preparation failures on individual cells and skips unsigned s
       ["complete", "complete"],
     );
     assert.equal(f.calls.length, 2);
-    const copied = await create(f, {
-      ...config,
-      columns: [{ id: "column-1", model: "fixture/unpriced" }],
-      sourceGridId: mixed.id,
-      reuseArtifacts: true,
-    });
+    const copied = await reuseCandidate(
+      f,
+      { ...config, columns: [{ id: "column-1", model: "fixture/unpriced" }] },
+      mixed.id,
+      true,
+    );
     assert.equal(copied.cells[0].status, "complete");
     assert.equal(f.calls.length, 2);
-    const small = await create(f, {
-      ...config,
-      budgetUsd: 0.000001,
-      sourceGridId: source.id,
-      reuseArtifacts: true,
-    });
+    const small = await reuseCandidate(
+      f,
+      { ...config, budgetUsd: 0.000001 },
+      source.id,
+      true,
+    );
     assert.match(
       (await settled(f, small.id)).cells[0].error!,
       /budget is too small/,
     );
     removeGridGenerationProvenance(f.store.db, source.id);
-    const unsigned = await create(f, {
-      ...config,
-      budgetUsd: 0.000001,
-      sourceGridId: source.id,
-      reuseArtifacts: true,
-    });
+    const unsigned = await reuseCandidate(
+      f,
+      { ...config, budgetUsd: 0.000001 },
+      source.id,
+      true,
+    );
     assert.match(
       (await settled(f, unsigned.id)).cells[0].error!,
       /budget is too small/,
@@ -1476,7 +1411,11 @@ test("generation failures reach every judged group member while ordinary cells r
     ...cell,
     id: `unjudged-${index}`,
   }));
-  const independent = createWorkflow(gridSchema.parse(unjudged), ordinary, fixtureModels);
+  const independent = createWorkflow(
+    gridSchema.parse(unjudged),
+    ordinary,
+    fixtureModels,
+  );
   independent[0].status = "error";
   independent[0].error = "Generation failed";
   projectWorkflow({ ...grid, input: unjudged, cells: ordinary }, independent);
@@ -1561,7 +1500,11 @@ test("reuse shares one generation per judge group without copying judgments or a
     createdAt: new Date().toISOString(),
     cells: expandGrid(config).map((cell) => ({ ...cell, id: token() })),
   };
-  const sourceTasks = createWorkflow(gridSchema.parse(config), sourceGrid.cells, fixtureModels);
+  const sourceTasks = createWorkflow(
+    gridSchema.parse(config),
+    sourceGrid.cells,
+    fixtureModels,
+  );
   const sourceGeneration = sourceTasks.find(
     (task) => task.kind === "generation",
   )!;
@@ -1614,7 +1557,11 @@ test("reuse shares one generation per judge group without copying judgments or a
     status: "paused",
     cells: expandGrid(judged).map((cell) => ({ ...cell, id: token() })),
   };
-  const tasks = createWorkflow(gridSchema.parse(judged), destination.cells, fixtureModels);
+  const tasks = createWorkflow(
+    gridSchema.parse(judged),
+    destination.cells,
+    fixtureModels,
+  );
   assert.equal(tasks.filter((task) => task.kind === "generation").length, 1);
   const before = readdirSync(store.files.root).sort();
   await reuseArtifacts(store, provider, source, tasks);
@@ -1705,11 +1652,7 @@ test("unified user-message inputs reuse master plain-prompt artifacts", async ()
       completed.cells[0].generationId!,
       masterPlainPrompt.signature,
     );
-    const copy = await create(f, {
-      ...setup,
-      sourceGridId: source.id,
-      reuseArtifacts: true,
-    });
+    const copy = await reuseCandidate(f, { ...setup }, source.id, true);
     assert.equal(copy.status, "complete");
     const artifactId = f.store.outputMetadata(copy.cells[0].id)?.artifactId;
     assert.ok(artifactId);

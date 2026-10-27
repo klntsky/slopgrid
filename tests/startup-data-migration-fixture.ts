@@ -104,7 +104,9 @@ function sourceUsesOnlyAvailableImage(database: string) {
   try {
     db.transaction(() => {
       const grid = db
-        .prepare<[], { data: string }>("SELECT data FROM grids WHERE id='source'")
+        .prepare<[], { data: string }>(
+          "SELECT data FROM grids WHERE id='source'",
+        )
         .get()!;
       const task = db
         .prepare<[], { data: string }>(
@@ -176,13 +178,17 @@ export function expectedStartupMessages(
   return messages;
 }
 
-export function addHistoricalTextPolicyGrid(fixture: ChatOutputMigrationFixture) {
+export function addHistoricalTextPolicyGrid(
+  fixture: ChatOutputMigrationFixture,
+) {
   const db = new Database(fixture.database);
   try {
     db.pragma("foreign_keys = ON");
     db.transaction(() => {
       const source = db
-        .prepare<[], { data: string }>("SELECT data FROM grids WHERE id='source'")
+        .prepare<[], { data: string }>(
+          "SELECT data FROM grids WHERE id='source'",
+        )
         .get()!;
       const grid = JSON.parse(source.data) as HistoricalGrid;
       const messages = [
@@ -232,7 +238,9 @@ export function addHistoricalTextPolicyGrid(fixture: ChatOutputMigrationFixture)
           input: {
             model: "historical/text-judge",
             effort: "none",
-            criteria: [{ text: "Is the description concise?", correctAnswer: true }],
+            criteria: [
+              { text: "Is the description concise?", correctAnswer: true },
+            ],
             systemPrompt: "Evaluate the description.",
           },
         }),
@@ -246,12 +254,74 @@ export function addHistoricalTextPolicyGrid(fixture: ChatOutputMigrationFixture)
     db.close();
   }
 }
+export function addHistoricalImageOnlyChat(
+  fixture: ChatOutputMigrationFixture,
+  gridId: string,
+) {
+  const db = new Database(fixture.database);
+  try {
+    db.pragma("foreign_keys = ON");
+    db.transaction(() => {
+      const source = db
+        .prepare<[], { data: string }>(
+          "SELECT data FROM grids WHERE id='source'",
+        )
+        .get()!;
+      const grid = JSON.parse(source.data) as HistoricalGrid;
+      const messages = [
+        { role: "user", content: "Describe a blue square." },
+        { role: "unfilled", content: "" },
+      ];
+      grid.input.judge = false;
+      grid.input.caseAxes = [];
+      grid.input.rows = [{ id: "row-1" }];
+      grid.input.columns = [{ id: "column-1" }];
+      grid.input.parameters = {
+        input: { kind: "common", value: messages },
+        model: { kind: "common", value: "historical/image-only" },
+        effort: { kind: "common", value: "none" },
+      };
+      grid.status = "paused";
+      const taskId = `task-${gridId}`;
+      db.prepare(
+        `INSERT INTO grids
+          (id,data,owner,owner_user_id,published,visibility,created_at)
+         VALUES (?,?,'anonymous-owner','account',0,'private',?)`,
+      ).run(gridId, JSON.stringify(grid), "2025-06-07T08:09:12.000Z");
+      db.prepare(
+        `INSERT INTO workflow_tasks (id,grid_id,kind,status,data)
+         VALUES (?,?,'generation','pending',?)`,
+      ).run(
+        taskId,
+        gridId,
+        JSON.stringify({
+          input: {
+            format: "chat-template",
+            model: "historical/image-only",
+            effort: "none",
+            prompt: "Describe a blue square.",
+            messages,
+            budgetUsd: 1,
+          },
+        }),
+      );
+      db.prepare(
+        `INSERT INTO cells (id,grid_id,position,data,generation_id)
+         VALUES (?,?,0,'{}',?)`,
+      ).run(`cell-${gridId}`, gridId, taskId);
+    })();
+  } finally {
+    db.close();
+  }
+}
 
 export function storedTextPolicy(database: string) {
   const db = new Database(database, { readonly: true });
   try {
     const grid = db
-      .prepare<[], { data: string }>("SELECT data FROM grids WHERE id='text-policy'")
+      .prepare<[], { data: string }>(
+        "SELECT data FROM grids WHERE id='text-policy'",
+      )
       .get()!;
     const tasks = db
       .prepare<[], { id: string; status: string; data: string }>(

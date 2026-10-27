@@ -67,7 +67,17 @@ test("per-case judge system prompts survive pause, restart and generation reuse 
         judge_system: index === 0 ? "Evaluate $ROW1" : "",
       })),
     });
-    const id = await create(fixture, body);
+    const id = await create(fixture, {
+      ...body,
+      rows: [
+        ...body.rows,
+        {
+          ...body.rows[1],
+          id: "row-3",
+          judge_system: "An unfinished comparison",
+        },
+      ],
+    });
     const generation = await fixture.nextCall();
     assert.equal(
       JSON.stringify(generation.request).includes("Evaluate"),
@@ -104,12 +114,23 @@ test("per-case judge system prompts survive pause, restart and generation reuse 
         .workflow(id)
         .filter((task) => task.kind === "judge")
         .map((task) => task.input.systemPrompt),
-      ["Evaluate $ROW1 literal", ""],
+      ["Evaluate $ROW1 literal", "", "An unfinished comparison"],
     );
     finish(retry, JSON.stringify(verdicts), 0.3);
-    await until(
-      () => fixture.store.get(id)!,
-      (grid) => grid.status === "complete",
+    const unfinished = await fixture.nextCall();
+    assert.equal(
+      messageText(unfinished.request.messages.at(-2)!.content),
+      "An unfinished comparison",
+    );
+    assert.equal(
+      (await fixture.request(`/api/grids/${id}/pause`, {})).status,
+      200,
+    );
+    await until(() => unfinished.aborted, Boolean);
+    const source = await settled(fixture, id, "paused");
+    assert.deepEqual(
+      source.cells.map((cell) => cell.judge?.status),
+      ["complete", "complete", "pending"],
     );
     const reusedId = await create(fixture, {
       ...body,
@@ -144,6 +165,7 @@ test("per-case judge system prompts survive pause, restart and generation reuse 
       reused.cells.map((cell) => cell.judge?.results),
       [verdicts.results, verdicts.results],
     );
+    assert.deepEqual(fixture.store.get(id), source);
   } finally {
     await fixture.close();
   }

@@ -132,6 +132,7 @@ function readDemoEnvironment(request, origin) {
   return {
     OUTPUT_DOMAIN: original.OUTPUT_DOMAIN,
     PORT: String(validPort(original.PORT ?? "0", "backend")),
+    STARTUP_DATA_MIGRATION_PARALLEL_WORKERS: original.STARTUP_DATA_MIGRATION_PARALLEL_WORKERS,
   };
 }
 
@@ -291,6 +292,8 @@ export async function startDemo(request, run, build, github) {
   const origin = `https://${dnsName}${httpsPort === 443 ? "" : `:${httpsPort}`}`;
   if (listenerOccupied(JSON.parse(invoke("tailscale", ["serve", "status", "--json"])), httpsPort)) throw new Error(`Tailscale Serve HTTPS port ${httpsPort} is occupied`);
   const supplied = readDemoEnvironment(request, origin);
+  const { migrationCapacity } = await import("./runtime.mjs");
+  const migrationWorkers = migrationCapacity(supplied.STARTUP_DATA_MIGRATION_PARALLEL_WORKERS);
   const port = Number(supplied.PORT);
   if (port !== 0) await assertBackendAvailable(port);
   mkdirSync(run, { recursive: true, mode: 0o700 });
@@ -318,8 +321,8 @@ export async function startDemo(request, run, build, github) {
     } else {
       const { prepareDemoSeed, initializeEmptyDemoSeed } = await import("./demo-seed.mjs");
       const seed = request.skipDataCloning === true
-        ? await initializeEmptyDemoSeed({ buildPath: build.path, runtimeDir })
-        : await prepareDemoSeed({ source: config.stagingSource, buildPath: build.path, runtimeDir });
+        ? await initializeEmptyDemoSeed({ buildPath: build.path, runtimeDir, migrationWorkers })
+        : await prepareDemoSeed({ source: config.stagingSource, buildPath: build.path, runtimeDir, migrationWorkers });
       key = seed.key;
       lease = {
         ...lease,
@@ -334,7 +337,6 @@ export async function startDemo(request, run, build, github) {
     const env = {
       GITHUB_CLIENT_ID: github.clientId.trim(), GITHUB_CLIENT_SECRET: github.clientSecret.trim(),
       ...supplied, NODE_ENV: "production", BIND_ADDRESS: "127.0.0.1", APP_ORIGIN: origin,
-      STARTUP_DATA_MIGRATION_PARALLEL_WORKERS: "30",
       DATABASE_PATH: join(runtimeDir, "slopgrid.sqlite"), OUTPUTS_PATH: join(runtimeDir, "outputs"),
       GENERATION_SOCKET: join(socketDir, "generation.sock"), FRONTEND_PATH: join(runtimeDir, "frontend"),
       KEY_ENCRYPTION_SECRET: key, TMPDIR: join(runtimeDir, "tmp"),

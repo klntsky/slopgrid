@@ -1,6 +1,10 @@
 import { migrationWorkerEnvironment } from "./database-output-fixture.js";
 import { beforeEach, test } from "node:test";
-beforeEach((context) => migrationWorkerEnvironment(context as Parameters<typeof migrationWorkerEnvironment>[0]));
+beforeEach((context) =>
+  migrationWorkerEnvironment(
+    context as Parameters<typeof migrationWorkerEnvironment>[0],
+  ),
+);
 import assert from "node:assert/strict";
 import Database from "better-sqlite3";
 import {
@@ -38,7 +42,8 @@ import {
   allowReferenceHashUpdates,
 } from "./reference-storage-fixture.js";
 import { holdDatabaseWrites } from "./database-lock.js";
-import { insertCurrentGrid,
+import {
+  insertCurrentGrid,
   removeStoredGrid,
   rejectStoredGridUpdates,
   validatedGrid,
@@ -58,13 +63,17 @@ test("initialized store reads remain available while another connection holds th
   const dir = mkdtempSync(join(tmpdir(), "slopgrid-store-lock-"));
   const database = join(dir, "app.sqlite");
   const secret = Buffer.alloc(32, 1);
-  const writer = await Store.open(database, secret, undefined, { models: async () => [...fixtureModels.values()] });
+  const writer = await Store.open(database, secret, undefined, {
+    models: async () => [...fixtureModels.values()],
+  });
   let reader: Store | undefined;
   let unlock = () => {};
   try {
     writer.saveSession({ id: "browser", created: 1 });
     unlock = holdDatabaseWrites(writer);
-    reader = await Store.open(database, secret, undefined, { models: async () => [...fixtureModels.values()] });
+    reader = await Store.open(database, secret, undefined, {
+      models: async () => [...fixtureModels.values()],
+    });
     assert.deepEqual(reader.session("browser"), { id: "browser", created: 1 });
   } finally {
     reader?.db.close();
@@ -78,7 +87,9 @@ test("list prompts are expanded and truncated once, then persist independently o
   const dir = mkdtempSync(join(tmpdir(), "slopgrid-list-title-"));
   const database = join(dir, "app.sqlite");
   const secret = Buffer.alloc(32, 1);
-  let store = await Store.open(database, secret, undefined, { models: async () => [...fixtureModels.values()] });
+  let store = await Store.open(database, secret, undefined, {
+    models: async () => [...fixtureModels.values()],
+  });
   try {
     const cases = [
       {
@@ -160,7 +171,9 @@ test("list prompts are expanded and truncated once, then persist independently o
       store.setTitle(grid.id, "");
     }
     store.db.close();
-    store = await Store.open(database, secret, undefined, { models: async () => [...fixtureModels.values()] });
+    store = await Store.open(database, secret, undefined, {
+      models: async () => [...fixtureModels.values()],
+    });
     for (const [index, scenario] of cases.entries())
       assert.equal(
         store.get(`grid-${index}`)!.expanded_prompt_for_title,
@@ -168,7 +181,9 @@ test("list prompts are expanded and truncated once, then persist independently o
       );
     rejectStoredGridUpdates(store.db);
     store.db.close();
-    store = await Store.open(database, secret, undefined, { models: async () => [...fixtureModels.values()] });
+    store = await Store.open(database, secret, undefined, {
+      models: async () => [...fixtureModels.values()],
+    });
     assert.equal(
       store.get("grid-0")!.expanded_prompt_for_title,
       cases[0].expected,
@@ -181,7 +196,12 @@ test("list prompts are expanded and truncated once, then persist independently o
 
 test("saved outputs and traces remain readable after publication and reject artifact mutation or path traversal", async () => {
   const dir = mkdtempSync(join(tmpdir(), "slopgrid-storage-"));
-  const store = await Store.open(join(dir, "app.sqlite"), Buffer.alloc(32, 1), undefined, { models: async () => [...fixtureModels.values()] });
+  const store = await Store.open(
+    join(dir, "app.sqlite"),
+    Buffer.alloc(32, 1),
+    undefined,
+    { models: async () => [...fixtureModels.values()] },
+  );
   try {
     const input = currentInput({
       format: "html",
@@ -190,7 +210,7 @@ test("saved outputs and traces remain readable after publication and reject arti
       parameters: {
         input: {
           kind: "common",
-          value: [{ role: "user", content: "Draw " }],
+          value: [{ role: "user", content: "Draw $ROW1" }],
         },
         effort: { kind: "columns" },
       },
@@ -277,7 +297,12 @@ test("saved outputs and traces remain readable after publication and reject arti
 
 test("shared artifact and independent trace references survive deletion until the last workflow is removed", async () => {
   const dir = mkdtempSync(join(tmpdir(), "slopgrid-shared-"));
-  const store = await Store.open(join(dir, "app.sqlite"), Buffer.alloc(32, 1), undefined, { models: async () => [...fixtureModels.values()] });
+  const store = await Store.open(
+    join(dir, "app.sqlite"),
+    Buffer.alloc(32, 1),
+    undefined,
+    { models: async () => [...fixtureModels.values()] },
+  );
   try {
     const input = currentInput({
       format: "html",
@@ -341,7 +366,11 @@ test("shared artifact and independent trace references survive deletion until th
         createdAt: new Date().toISOString(),
         cells: expandGrid(input).map((cell) => ({ ...cell, id: token() })),
       };
-      const tasks = createWorkflow(gridSchema.parse(input), grid.cells, fixtureModels);
+      const tasks = createWorkflow(
+        gridSchema.parse(input),
+        grid.cells,
+        fixtureModels,
+      );
       const generation = tasks.find((task) => task.kind === "generation")!;
       generation.status = "complete";
       generation.output = {
@@ -389,7 +418,9 @@ for (const available of [true, false])
     const dir = mkdtempSync(join(tmpdir(), "slopgrid-reference-migration-"));
     const database = join(dir, "app.sqlite");
     const secret = Buffer.alloc(32, 1);
-    let store = await Store.open(database, secret, undefined, { models: async () => [...fixtureModels.values()] });
+    let store = await Store.open(database, secret, undefined, {
+      models: async () => [...fixtureModels.values()],
+    });
     try {
       const png = referencePng;
       const changed = Buffer.concat([png, Buffer.from([2])]);
@@ -493,7 +524,9 @@ for (const available of [true, false])
         store.files.write(`reference-${different.id}`, { image: changed });
       }
       store.db.close();
-      store = await Store.open(database, secret, undefined, { models: async () => [...fixtureModels.values()] });
+      store = await Store.open(database, secret, undefined, {
+        models: async () => [...fixtureModels.values()],
+      });
       assert.deepEqual(store.workflow(grid.id), expectedTasks);
       const migrated = store.get(grid.id)!.input;
       assert.equal(migrated.inputVersion, 3);
@@ -540,7 +573,9 @@ for (const available of [true, false])
       store.files.write(`reference-${unavailable.id}`, { image: png });
       assert.equal(store.references.path(unavailable.id), undefined);
       store.db.close();
-      store = await Store.open(database, secret, undefined, { models: async () => [...fixtureModels.values()] });
+      store = await Store.open(database, secret, undefined, {
+        models: async () => [...fixtureModels.values()],
+      });
       await assert.rejects(
         store.references.loader()([unavailable.id]),
         /unavailable/,
@@ -551,7 +586,9 @@ for (const available of [true, false])
         recursive: true,
         force: true,
       });
-      store = await Store.open(database, secret, undefined, { models: async () => [...fixtureModels.values()] });
+      store = await Store.open(database, secret, undefined, {
+        models: async () => [...fixtureModels.values()],
+      });
       assert.equal(store.references.path(first.id), undefined);
       await assert.rejects(
         store.references.loader()([first.id]),
@@ -570,7 +607,9 @@ for (const failure of ["blob write", "metadata commit"] as const)
     const dir = mkdtempSync(join(tmpdir(), "slopgrid-reference-retry-"));
     const database = join(dir, "app.sqlite");
     const secret = Buffer.alloc(32, 1);
-    let store = await Store.open(database, secret, undefined, { models: async () => [...fixtureModels.values()] });
+    let store = await Store.open(database, secret, undefined, {
+      models: async () => [...fixtureModels.values()],
+    });
     try {
       const image = store.references.add(referencePng, "original.png", {
         id: "owner",
@@ -586,27 +625,29 @@ for (const failure of ["blob write", "metadata commit"] as const)
       else writeFileSync(join(store.files.root, ".references"), "blocked");
       store.db.close();
       await assert.rejects(
-              async () => await Store.open(database, secret, undefined, { models: async () => [...fixtureModels.values()] }),
-              failure === "metadata commit"
-                ? /Injected reference migration failure/
-                : /EEXIST|ENOTDIR/,
-            );
+        async () =>
+          await Store.open(database, secret, undefined, {
+            models: async () => [...fixtureModels.values()],
+          }),
+        failure === "metadata commit"
+          ? /Injected reference migration failure/
+          : /EEXIST|ENOTDIR/,
+      );
       assert.deepEqual(readFileSync(legacyPath), referencePng);
       const snapshot = new Database(database);
       try {
         assert.equal(storedReferenceHash(snapshot, image.id), null);
         assert.deepEqual(referenceBlobs(snapshot), []);
         if (failure === "metadata commit") {
-          assert.deepEqual(
-            readFileSync(join(store.files.root, ".references", sha256)),
-            referencePng,
-          );
+          assert.equal(store.files.referencePath(sha256), undefined);
           allowReferenceHashUpdates(snapshot);
         } else rmSync(join(store.files.root, ".references"));
       } finally {
         snapshot.close();
       }
-      store = await Store.open(database, secret, undefined, { models: async () => [...fixtureModels.values()] });
+      store = await Store.open(database, secret, undefined, {
+        models: async () => [...fixtureModels.values()],
+      });
       assert.deepEqual(store.references.hydrate(image), image);
       assert.equal(store.references.get(image.id)!.ownerUserId, "account");
       assert.equal(store.references.get(image.id)!.name, "original.png");
@@ -630,7 +671,9 @@ test("reference migration refuses mismatched historical bytes without replacing 
   const dir = mkdtempSync(join(tmpdir(), "slopgrid-reference-hash-"));
   const database = join(dir, "app.sqlite");
   const secret = Buffer.alloc(32, 1);
-  let store = await Store.open(database, secret, undefined, { models: async () => [...fixtureModels.values()] });
+  let store = await Store.open(database, secret, undefined, {
+    models: async () => [...fixtureModels.values()],
+  });
   try {
     const owner = { id: "owner", created: 0 };
     const image = store.references.add(referencePng, "original.png", owner)!;
@@ -642,16 +685,21 @@ test("reference migration refuses mismatched historical bytes without replacing 
     setDatabaseVersion(store.db, 19);
     store.db.close();
     await assert.rejects(
-          async () => await Store.open(database, secret, undefined, { models: async () => [...fixtureModels.values()] }),
-          /Legacy reference content does not match its hash/,
-        );
+      async () =>
+        await Store.open(database, secret, undefined, {
+          models: async () => [...fixtureModels.values()],
+        }),
+      /Legacy reference content does not match its hash/,
+    );
     assert.deepEqual(readFileSync(sharedPath), referencePng);
     assert.deepEqual(readFileSync(legacyPath), mismatched);
     assert.deepEqual(readdirSync(join(store.files.root, ".references")), [
       createHash("sha256").update(referencePng).digest("hex"),
     ]);
     writeFileSync(legacyPath, referencePng);
-    store = await Store.open(database, secret, undefined, { models: async () => [...fixtureModels.values()] });
+    store = await Store.open(database, secret, undefined, {
+      models: async () => [...fixtureModels.values()],
+    });
     assert.equal(store.references.path(duplicate.id), sharedPath);
     assert.deepEqual(
       (await store.references.loader()([image.id, duplicate.id])).get(
@@ -670,7 +718,9 @@ test("production v14 files retain unknown bytes and populate shared proportions 
   const dir = mkdtempSync(join(tmpdir(), "slopgrid-dimension-migration-"));
   const database = join(dir, "app.sqlite");
   const secret = Buffer.alloc(32, 1);
-  let store = await Store.open(database, secret, undefined, { models: async () => [...fixtureModels.values()] });
+  let store = await Store.open(database, secret, undefined, {
+    models: async () => [...fixtureModels.values()],
+  });
   try {
     const owner = { id: "owner", created: 0 };
     const first = store.references.add(referencePng, "wide.png", owner)!;
@@ -693,7 +743,9 @@ test("production v14 files retain unknown bytes and populate shared proportions 
     store.files.write(`reference-${rotated.id}`, { image: rotatedBytes });
     store.files.write(`reference-${unknown.id}`, { image: unknownBytes });
     store.db.close();
-    store = await Store.open(database, secret, undefined, { models: async () => [...fixtureModels.values()] });
+    store = await Store.open(database, secret, undefined, {
+      models: async () => [...fixtureModels.values()],
+    });
     assert.equal(referenceBlobs(store.db).length, 3);
     for (const reference of [first, duplicate, rotated])
       assert.deepEqual(
@@ -721,12 +773,16 @@ test("production v14 files retain unknown bytes and populate shared proportions 
     // view. A validation snapshot may intentionally omit all physical bytes.
     rmSync(join(store.files.root, ".references"), { recursive: true });
     store.db.close();
-    store = await Store.open(database, secret, undefined, { models: async () => [...fixtureModels.values()] });
+    store = await Store.open(database, secret, undefined, {
+      models: async () => [...fixtureModels.values()],
+    });
     assert.deepEqual(store.references.hydrate(first), first);
     assert.deepEqual(store.references.hydrate(rotated), rotated);
     store.files.write(`reference-${missing.id}`, { image: referenceWebp });
     store.db.close();
-    store = await Store.open(database, secret, undefined, { models: async () => [...fixtureModels.values()] });
+    store = await Store.open(database, secret, undefined, {
+      models: async () => [...fixtureModels.values()],
+    });
     assert.deepEqual(store.references.hydrate(missing), {
       id: missing.id,
       name: missing.name,
@@ -747,7 +803,9 @@ test("canonical variable grids reopen editable with accepted payloads intact", a
   const dir = mkdtempSync(join(tmpdir(), "slopgrid-variable-migration-"));
   const database = join(dir, "app.sqlite");
   const secret = Buffer.alloc(32, 1);
-  let store = await Store.open(database, secret, undefined, { models: async () => [...fixtureModels.values()] });
+  let store = await Store.open(database, secret, undefined, {
+    models: async () => [...fixtureModels.values()],
+  });
   try {
     const input = currentInput({
       format: "markdown",
@@ -756,11 +814,11 @@ test("canonical variable grids reopen editable with accepted payloads intact", a
       parameters: {
         input: {
           kind: "common",
-          value: [{ role: "user", content: "Draw " }],
+          value: [{ role: "user", content: "Draw $ROW1" }],
         },
         effort: { kind: "columns" },
       },
-      rows: [{ variable: [{ text: "literal " }] }],
+      rows: [{ variable: [{ text: "literal $COLUMN" }] }],
       columns: [{ effort: "none" }],
     });
     const grid: Grid = {
@@ -786,7 +844,7 @@ test("canonical variable grids reopen editable with accepted payloads intact", a
         format: "markdown",
         model: "fixture/text",
         effort: "none",
-        prompt: "Draw literal ",
+        prompt: "Draw literal $COLUMN",
         budgetUsd: 1,
       },
     };
@@ -794,16 +852,20 @@ test("canonical variable grids reopen editable with accepted payloads intact", a
     const accepted = store.workflow(grid.id);
     const title = store.get(grid.id)!.expanded_prompt_for_title;
     store.db.close();
-    store = await Store.open(database, secret, undefined, { models: async () => [...fixtureModels.values()] });
+    store = await Store.open(database, secret, undefined, {
+      models: async () => [...fixtureModels.values()],
+    });
     const saved = store.get(grid.id)!;
     assert.deepEqual(saved.input, input);
-    assert.equal(saved.cells[0].prompt, "Draw literal ");
+    assert.equal(saved.cells[0].prompt, "Draw literal $COLUMN");
     assert.equal(saved.expanded_prompt_for_title, title);
     assert.deepEqual(store.workflow(grid.id), accepted);
     assert.equal(saved.input.inputVersion, 3);
     assert.equal(gridSchema.safeParse(saved.input).success, true);
     store.db.close();
-    store = await Store.open(database, secret, undefined, { models: async () => [...fixtureModels.values()] });
+    store = await Store.open(database, secret, undefined, {
+      models: async () => [...fixtureModels.values()],
+    });
     assert.deepEqual(store.get(grid.id)!.input, input);
     assert.deepEqual(store.workflow(grid.id), accepted);
   } finally {
@@ -814,148 +876,152 @@ test("canonical variable grids reopen editable with accepted payloads intact", a
 
 for (const format of ["markdown", "chat-template", "image"] as const)
   test(`${format} variable fields and expanded tasks hydrate authoritative dimensions and retain all configured reference links`, async () => {
-      const dir = mkdtempSync(join(tmpdir(), "slopgrid-variable-references-"));
-      const database = join(dir, "app.sqlite");
-      const secret = Buffer.alloc(32, 1);
-      let store = await Store.open(database, secret, undefined, { models: async () => [...fixtureModels.values()] });
-      try {
-        const owner = { id: "uploader", created: 0 };
-        const generator = store.references.add(
-          referencePng,
-          "generator.png",
-          owner,
-        )!;
-        const criterion = store.references.add(
-          referencePng,
-          "criterion.png",
-          owner,
-        )!;
-        const unused = store.references.add(referencePng, "unused.png", owner)!;
-        const explicit = store.references.add(
-          referencePng,
-          "explicit.png",
-          owner,
-        )!;
-        const forged = (image: typeof generator) => ({
-          ...image,
-          width: 999,
-          height: 999,
-        });
-        const input = currentInput({
-          format,
-          caseAxes: ["rows"],
-          budgetUsd: 1,
-          judge: true,
-          parameters: {
-            input: {
-              kind: "common",
-              value: [
-                {
-                  role: "user",
-                  content: "Describe ",
-                  images: [forged(explicit)],
-                },
-              ],
-            },
-            ...(format !== "image"
-              ? { effort: { kind: "common" as const, value: "none" as const } }
-              : {}),
-            judge_model: { kind: "columns" },
-            judge_effort: { kind: "common", value: "none" },
-            judge_criteria: {
-              kind: "common",
-              value: [{ text: "Matches ?", correctAnswer: false }],
-            },
-          },
-          rows: [
-            {
-              variable: [
-                { text: "generator", images: [forged(generator)] },
-                { text: "unused", images: [forged(unused)] },
-                { text: "criterion", images: [forged(criterion)] },
-              ],
-            },
-          ],
-          columns: [{ judge_model: "fixture/judge" }],
-        });
-        const grid: Grid = {
-          id: token(),
-          owner: owner.id,
-          input,
-          status: "paused",
-          published: false,
-          visibility: "private",
-          createdAt: "2026-01-01T00:00:00.000Z",
-          cells: expandGrid(input).map((cell) => ({ ...cell, id: token() })),
-        };
-        insertCurrentGrid(store, validatedGrid(grid));
-        removeStoredReferenceDimensions(store.db);
-        store.db.close();
-        store = await Store.open(database, secret, undefined, { models: async () => [...fixtureModels.values()] });
-        const saved = store.get(grid.id)!;
-        assert.equal(saved.input.inputVersion, 3);
-        assert.deepEqual(saved.input.caseAxes, ["rows"]);
-        assert.deepEqual(saved.input.rows[0].variable![0]!.images, [generator]);
-        assert.deepEqual(parameterValue(saved.input, "input", 0, 0)![0].images, [
-          explicit,
-        ]);
-        assert.deepEqual(saved.input.rows[0].variable![1]!.images, [unused]);
-        assert.deepEqual(saved.input.rows[0].variable![2]!.images, [criterion]);
-        const tasks = store.workflow(grid.id);
-        const generation = tasks.find((task) => task.kind === "generation")!;
-        const judgment = tasks.find((task) => task.kind === "judge")!;
-        if (format === "chat-template")
-          assert.deepEqual(generation.input.messages![0].images, [
-            explicit,
-            generator,
-          ]);
-        else if (format === "image")
-          assert.deepEqual(generation.input.imageSettings?.input_references, [
-            explicit.id,
-            generator.id,
-          ]);
-        else {
-          assert.deepEqual(generation.input.messages![0].images, [
-            explicit,
-            generator,
-          ]);
-          assert.deepEqual(saved.cells[0].messages![0].images, [
-            explicit,
-            generator,
-          ]);
-        }
-        assert.deepEqual(judgment.input.images, [criterion]);
-        assert.deepEqual(
-          referenceUsageLinks(store.db)
-            .map((link) => link.reference_id)
-            .sort(),
-          [generator, criterion, unused, explicit].map(({ id }) => id).sort(),
-        );
-        assert.equal(
-          store.references.path(generator.id),
-          store.references.path(criterion.id),
-        );
-        const fork: Grid = {
-          ...saved,
-          id: token(),
-          owner: "fork-owner",
-          input: saved.input,
-          cells: expandGrid(saved.input).map((cell) => ({
-            ...cell,
-            id: token(),
-          })),
-        };
-        insertCurrentGrid(store, validatedGrid(fork));
-        removeStoredGrid(store.db, grid.id);
-        for (const image of [generator, criterion, unused, explicit])
-          assert.equal(
-            store.references.allowed(image.id, { id: "fork-owner", created: 0 }),
-            true,
-          );
-        assert.deepEqual(store.get(fork.id)!.input, saved.input);
-        assert.deepEqual(referenceForeignKeyViolations(store.db), []);
-      } finally {
-        store.db.close();
-        rmSync(dir, { recursive: true, force: true });
-      }
+    const dir = mkdtempSync(join(tmpdir(), "slopgrid-variable-references-"));
+    const database = join(dir, "app.sqlite");
+    const secret = Buffer.alloc(32, 1);
+    let store = await Store.open(database, secret, undefined, {
+      models: async () => [...fixtureModels.values()],
     });
+    try {
+      const owner = { id: "uploader", created: 0 };
+      const generator = store.references.add(
+        referencePng,
+        "generator.png",
+        owner,
+      )!;
+      const criterion = store.references.add(
+        referencePng,
+        "criterion.png",
+        owner,
+      )!;
+      const unused = store.references.add(referencePng, "unused.png", owner)!;
+      const explicit = store.references.add(
+        referencePng,
+        "explicit.png",
+        owner,
+      )!;
+      const forged = (image: typeof generator) => ({
+        ...image,
+        width: 999,
+        height: 999,
+      });
+      const input = currentInput({
+        format,
+        caseAxes: ["rows"],
+        budgetUsd: 1,
+        judge: true,
+        parameters: {
+          input: {
+            kind: "common",
+            value: [
+              {
+                role: "user",
+                content: "Describe $ROW1",
+                images: [forged(explicit)],
+              },
+            ],
+          },
+          ...(format !== "image"
+            ? { effort: { kind: "common" as const, value: "none" as const } }
+            : {}),
+          judge_model: { kind: "columns" },
+          judge_effort: { kind: "common", value: "none" },
+          judge_criteria: {
+            kind: "common",
+            value: [{ text: "Matches $ROW3?", correctAnswer: false }],
+          },
+        },
+        rows: [
+          {
+            variable: [
+              { text: "generator", images: [forged(generator)] },
+              { text: "unused", images: [forged(unused)] },
+              { text: "criterion", images: [forged(criterion)] },
+            ],
+          },
+        ],
+        columns: [{ judge_model: "fixture/judge" }],
+      });
+      const grid: Grid = {
+        id: token(),
+        owner: owner.id,
+        input,
+        status: "paused",
+        published: false,
+        visibility: "private",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        cells: expandGrid(input).map((cell) => ({ ...cell, id: token() })),
+      };
+      insertCurrentGrid(store, validatedGrid(grid));
+      removeStoredReferenceDimensions(store.db);
+      store.db.close();
+      store = await Store.open(database, secret, undefined, {
+        models: async () => [...fixtureModels.values()],
+      });
+      const saved = store.get(grid.id)!;
+      assert.equal(saved.input.inputVersion, 3);
+      assert.deepEqual(saved.input.caseAxes, ["rows"]);
+      assert.deepEqual(saved.input.rows[0].variable![0]!.images, [generator]);
+      assert.deepEqual(parameterValue(saved.input, "input", 0, 0)![0].images, [
+        explicit,
+      ]);
+      assert.deepEqual(saved.input.rows[0].variable![1]!.images, [unused]);
+      assert.deepEqual(saved.input.rows[0].variable![2]!.images, [criterion]);
+      const tasks = store.workflow(grid.id);
+      const generation = tasks.find((task) => task.kind === "generation")!;
+      const judgment = tasks.find((task) => task.kind === "judge")!;
+      if (format === "chat-template")
+        assert.deepEqual(generation.input.messages![0].images, [
+          explicit,
+          generator,
+        ]);
+      else if (format === "image")
+        assert.deepEqual(generation.input.imageSettings?.input_references, [
+          explicit.id,
+          generator.id,
+        ]);
+      else {
+        assert.deepEqual(generation.input.messages![0].images, [
+          explicit,
+          generator,
+        ]);
+        assert.deepEqual(saved.cells[0].messages![0].images, [
+          explicit,
+          generator,
+        ]);
+      }
+      assert.deepEqual(judgment.input.images, [criterion]);
+      assert.deepEqual(
+        referenceUsageLinks(store.db)
+          .map((link) => link.reference_id)
+          .sort(),
+        [generator, criterion, unused, explicit].map(({ id }) => id).sort(),
+      );
+      assert.equal(
+        store.references.path(generator.id),
+        store.references.path(criterion.id),
+      );
+      const fork: Grid = {
+        ...saved,
+        id: token(),
+        owner: "fork-owner",
+        input: saved.input,
+        cells: expandGrid(saved.input).map((cell) => ({
+          ...cell,
+          id: token(),
+        })),
+      };
+      insertCurrentGrid(store, validatedGrid(fork));
+      removeStoredGrid(store.db, grid.id);
+      for (const image of [generator, criterion, unused, explicit])
+        assert.equal(
+          store.references.allowed(image.id, { id: "fork-owner", created: 0 }),
+          true,
+        );
+      assert.deepEqual(store.get(fork.id)!.input, saved.input);
+      assert.deepEqual(referenceForeignKeyViolations(store.db), []);
+    } finally {
+      store.db.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });

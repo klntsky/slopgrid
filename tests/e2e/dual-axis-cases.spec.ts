@@ -3,6 +3,7 @@ import { test, expect } from "./fixtures";
 import {
   connectOpenRouter,
   expectProgress,
+  generateToPausedEdit,
   savedInput,
   selectModel,
 } from "./helpers";
@@ -201,6 +202,15 @@ test("dual case axes keep independent editors, cross-axis parameters and the Car
   ).toHaveCount(1);
 
   await connectOpenRouter(page);
+  await generateToPausedEdit(page);
+  await expect(rows).toBeVisible();
+  await expect(columns).toBeVisible();
+  await prompt(rows, "Row", 2).fill("Updated $ROW1 / $COLUMN1");
+  await page.reload();
+  await expect(prompt(rows, "Row", 2)).toHaveValue("Updated $ROW1 / $COLUMN1");
+  await expect(
+    columns.getByLabel("$COLUMN1, case 1", { exact: true }),
+  ).toHaveValue("One");
   const created = page.waitForResponse(
     (response) =>
       response.request().method() === "POST" &&
@@ -222,18 +232,9 @@ test("dual case axes keep independent editors, cross-axis parameters and the Car
   ).toEqual([
     [0, 0, "Pair Alpha / One"],
     [0, 1, "Pair Alpha / Two"],
-    [1, 0, "Pair Beta / One"],
-    [1, 1, "Pair Beta / Two"],
+    [1, 0, "Updated Beta / One"],
+    [1, 1, "Updated Beta / Two"],
   ]);
-  await page.getByRole("button", { name: "EDIT", exact: true }).click();
-  await expect(rows).toBeVisible();
-  await expect(columns).toBeVisible();
-  await prompt(rows, "Row", 2).fill("Updated $ROW1 / $COLUMN1");
-  await page.reload();
-  await expect(prompt(rows, "Row", 2)).toHaveValue("Updated $ROW1 / $COLUMN1");
-  await expect(
-    columns.getByLabel("$COLUMN1, case 1", { exact: true }),
-  ).toHaveValue("One");
 });
 
 test("images from both variable namespaces reach only their Cartesian cell inputs", async ({

@@ -289,11 +289,19 @@ test("visited pages and completed outputs survive offline reload without retaini
     for (const grid of grids) {
       await page.goto(`${web.origin}/grid/${grid.id}`);
       await expect(page.locator("article.cell")).toHaveCount(1);
-      const configure = page.getByRole("button", {
-        name: grid.published ? "FORK" : "EDIT",
-        exact: true,
-      });
-      await expect(configure).toBeEnabled();
+      await expect(
+        page.getByRole("button", { name: "EDIT", exact: true }),
+      ).toHaveCount(
+        !grid.published &&
+          grid.cells.some(
+            (cell) => cell.status !== "complete" && cell.status !== "error",
+          )
+          ? 1
+          : 0,
+      );
+      const fork = page.getByRole("button", { name: "FORK", exact: true });
+      if (grid.published) await expect(fork).toBeEnabled();
+      else await expect(fork).toHaveCount(0);
       // Completion is observable through CacheStorage rather than a timing delay.
       await expect
         .poll(() =>
@@ -433,11 +441,19 @@ test("visited pages and completed outputs survive offline reload without retaini
       }
       await page.reload();
       await expect(page.locator("article.cell")).toHaveCount(1);
-      const configure = page.getByRole("button", {
-        name: grid.published ? "FORK" : "EDIT",
-        exact: true,
-      });
-      await expect(configure).toBeEnabled();
+      await expect(
+        page.getByRole("button", { name: "EDIT", exact: true }),
+      ).toHaveCount(
+        !grid.published &&
+          grid.cells.some(
+            (cell) => cell.status !== "complete" && cell.status !== "error",
+          )
+          ? 1
+          : 0,
+      );
+      const fork = page.getByRole("button", { name: "FORK", exact: true });
+      if (grid.published) await expect(fork).toBeEnabled();
+      else await expect(fork).toHaveCount(0);
       if (grid.input.format === "chat-template") {
         for (const image of chatImages)
           await expect

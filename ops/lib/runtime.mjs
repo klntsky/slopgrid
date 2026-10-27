@@ -12,7 +12,7 @@ import { parseEnv } from "node:util";
 import { createRequire } from "node:module";
 import { connect } from "node:net";
 import { command, capture, atomic } from "./common.mjs";
-import { processIdentity, processAlive } from "./process-identity.mjs";
+import { processIdentity, sameProcess } from "./process-identity.mjs";
 
 export const engineEnvironment = (env) =>
   Object.fromEntries(
@@ -30,8 +30,21 @@ export const engineEnvironment = (env) =>
       .map((key) => [key, env[key]]),
   );
 
+export function migrationCapacity(value) {
+  if (
+    typeof value !== "string" ||
+    !/^[1-9]\d*$/.test(value) ||
+    !Number.isSafeInteger(Number(value))
+  )
+    throw new Error(
+      "STARTUP_DATA_MIGRATION_PARALLEL_WORKERS must be a positive safe integer",
+    );
+  return value;
+}
+
 export function environment(target) {
   const original = parseEnv(readFileSync(target.envFile, "utf8"));
+  migrationCapacity(original.STARTUP_DATA_MIGRATION_PARALLEL_WORKERS);
   const database = resolve(
     target.applicationRoot,
     original.DATABASE_PATH ?? ".data/slopgrid.sqlite",
@@ -39,7 +52,6 @@ export function environment(target) {
   const env = {
     ...original,
     NODE_ENV: "production",
-    STARTUP_DATA_MIGRATION_PARALLEL_WORKERS: "30",
     DATABASE_PATH: database,
     OUTPUTS_PATH: resolve(
       target.applicationRoot,
@@ -396,14 +408,33 @@ export function configureProcesses(target, name, engine, web, env, runId) {
   return config;
 }
 
+function runningIdentity(pid) {
+  try {
+    return processIdentity(pid);
+  } catch (error) {
+    if (
+      error.code !== "ESRCH" &&
+      !(error.code === "ENOENT" && error.path === `/proc/${pid}/stat`)
+    )
+      throw error;
+  }
+}
+
 export function stopProcess(name, remove = false) {
   const registered = processes().filter((item) => item.name === name);
-  const identities = registered
-    .filter((item) => Number.isInteger(item.pid) && item.pid > 0)
-    .map((item) => processIdentity(item.pid));
+  const identities = [];
+  for (const item of registered) {
+    if (!Number.isInteger(item.pid) || item.pid <= 0) continue;
+    const identity = runningIdentity(item.pid);
+    if (identity) identities.push(identity);
+  }
   if (registered.length)
     command("pm2", [remove ? "delete" : "stop", name], { stdio: "ignore" });
-  if (identities.some((identity) => processAlive(identity)))
+  if (
+    identities.some((identity) =>
+      sameProcess(identity, runningIdentity(identity.pid)),
+    )
+  )
     throw new Error(`${name} still has a running old process after stopping`);
   if (
     processes().some(

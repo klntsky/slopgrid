@@ -21,6 +21,7 @@ import { createRequire } from "node:module";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { isDeepStrictEqual, parseEnv } from "node:util";
+import { migrationCapacity } from "./runtime.mjs";
 
 const overlaps = (a, b) =>
   a === b || a.startsWith(b + sep) || b.startsWith(a + sep);
@@ -166,7 +167,7 @@ function replacementEnvironment(original, key) {
   return result;
 }
 
-function initializeCopy(release, scratch, key, providerBaseURL) {
+function initializeCopy(release, scratch, key, stagingEnv) {
   const require = createRequire(join(release, "package.json"));
   const loader = pathToFileURL(require.resolve("tsx/esm")).href;
   const program = `
@@ -210,8 +211,8 @@ function initializeCopy(release, scratch, key, providerBaseURL) {
         ...(process.env.PATH === undefined ? {} : { PATH: process.env.PATH }),
         ...(process.env.HOME === undefined ? {} : { HOME: process.env.HOME }),
         NODE_ENV: "production",
-        STARTUP_DATA_MIGRATION_PARALLEL_WORKERS: "30",
-        ...(providerBaseURL === undefined ? {} : { OPENROUTER_BASE_URL: providerBaseURL }),
+        STARTUP_DATA_MIGRATION_PARALLEL_WORKERS: stagingEnv.STARTUP_DATA_MIGRATION_PARALLEL_WORKERS,
+        ...(stagingEnv.OPENROUTER_BASE_URL === undefined ? {} : { OPENROUTER_BASE_URL: stagingEnv.OPENROUTER_BASE_URL }),
         DATABASE_PATH: join(scratch, "slopgrid.sqlite"),
         OUTPUTS_PATH: join(scratch, "outputs"),
         KEY_ENCRYPTION_SECRET: key,
@@ -225,6 +226,7 @@ function initializeCopy(release, scratch, key, providerBaseURL) {
 }
 
 export async function copyProductionData(target, release, stagingEnv, productionEnv, run) {
+  migrationCapacity(stagingEnv.STARTUP_DATA_MIGRATION_PARALLEL_WORKERS);
   const key = productionEnv.KEY_ENCRYPTION_SECRET;
   if (!/^[a-fA-F0-9]{64}$/.test(key ?? ""))
     throw new Error("Production data copying requires a valid encryption key");
@@ -270,7 +272,7 @@ export async function copyProductionData(target, release, stagingEnv, production
     } finally {
       snapshot.close();
     }
-    initializeCopy(release, scratch, key, stagingEnv.OPENROUTER_BASE_URL);
+    initializeCopy(release, scratch, key, stagingEnv);
     regular(join(scratch, "slopgrid.sqlite"), "file");
     inspectTree(join(scratch, "outputs"), new Set());
     assertStorage(paths);

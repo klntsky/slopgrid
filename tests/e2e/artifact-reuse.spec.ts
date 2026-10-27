@@ -7,6 +7,8 @@ import {
   create,
   expectProgress,
   finishPublishing,
+  editHeldGrid,
+  forkReadonlyGrid,
   setVariableValues,
 } from "./helpers";
 
@@ -28,18 +30,60 @@ async function generate(page: Page, body: object): Promise<ViewGrid> {
     .toBe("complete");
   return readGrid(page, grid.id);
 }
+
+async function unfinishedSource(page: Page, body: object, completed: number) {
+  await page.request.post("/fixture/reset", {
+    data: { holdGenerations: true },
+  });
+  const grid = await createGrid(page, body);
+  await page.goto(`/grid/${grid.id}`);
+  await expect
+    .poll(async () => {
+      const workers = await (await page.request.get("/fixture/workers")).json();
+      for (const prompt of workers.held as string[])
+        if (!prompt.includes("browser-pending"))
+          await page.request.post("/fixture/release", { data: { prompt } });
+      return (await readGrid(page, grid.id)).cells.filter(
+        (cell) => cell.status === "complete",
+      ).length;
+    })
+    .toBe(completed);
+  await expectProgress(page, completed, completed + 1);
+  await page
+    .getByRole("button", { name: "Pause generation", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Resume generation", exact: true }),
+  ).toBeVisible();
+  await page.request.post("/fixture/release", { data: { all: true } });
+  return readGrid(page, grid.id);
+}
 const label = "Reuse existing artifacts from the previous version";
-test("reuse selection survives Edit, reload, OAuth and Fork, and unchecked drafts regenerate every cell", async ({
+test("reuse selection survives unfinished Edit, reload and OAuth; unchecked drafts regenerate and published forks copy results", async ({
   page,
   request,
 }) => {
-  await request.post("/fixture/reset", { data: { textCost: 0.25 } });
+  await request.post("/fixture/reset", {
+    data: { textCost: 0.25, holdGenerations: true },
+  });
   await page.goto("/");
   await expect(page.getByRole("checkbox", { name: label })).toHaveCount(0);
-  await create(page, { format: "Markdown", rowValues: ["dog"] });
-  await expectProgress(page, 1, 1);
+  await create(page, {
+    format: "Markdown",
+    rowValues: ["dog", "source-pending"],
+  });
+  await expect
+    .poll(
+      async () =>
+        (await (await request.get("/fixture/workers")).json()).held.length,
+    )
+    .toBe(2);
+  await request.post("/fixture/release", {
+    data: { prompt: "Draw dog wearing a hat" },
+  });
+  await expectProgress(page, 1, 2);
   const source = await readGrid(page);
-  await page.getByRole("button", { name: "EDIT", exact: true }).click();
+  await editHeldGrid(page);
   const reuse = page.getByRole("checkbox", { name: label });
   await expect(reuse).toBeChecked();
   await reuse.uncheck();
@@ -81,7 +125,12 @@ test("reuse selection survives Edit, reload, OAuth and Fork, and unchecked draft
     "10 input tokens, 20 output tokens",
   );
   await expect(page.locator(".grid-spent")).toContainText("$0.25");
+  await page.goto(`/grid/${source.id}`);
   await page.getByRole("button", { name: "EDIT", exact: true }).click();
+  await expect(page).toHaveURL("/create");
+  await expect(reuse).toBeChecked();
+  await setVariableValues(page, "Rows", ["dog", "cat"]);
+  await page.getByLabel("Budget limit per cell", { exact: true }).fill("0.5");
   await reuse.uncheck();
   await page.reload();
   await expect(reuse).not.toBeChecked();
@@ -94,12 +143,8 @@ test("reuse selection survives Edit, reload, OAuth and Fork, and unchecked draft
   );
   await page.getByRole("button", { name: "PUBLISH", exact: true }).click();
   await finishPublishing(page);
-  await page.getByRole("button", { name: "FORK", exact: true }).click();
-  await expect(reuse).toBeChecked();
-  await page.reload();
-  await expect(reuse).toBeChecked();
-  await page.getByRole("button", { name: "Generate", exact: true }).click();
-  await expectProgress(page, 2, 2);
+  await forkReadonlyGrid(page);
+  await expect(reuse).toHaveCount(0);
   expect((await readGrid(page)).spentUsd).toBe(0);
   await expect(page.locator(".grid-cost")).toHaveAttribute(
     "aria-label",
@@ -151,8 +196,19 @@ test("image reuse follows ordered reference bytes and effective image settings t
     ],
     columns: [{ size: "1K" }],
   });
-  const source = await generate(page, input);
-  let count = 2;
+  const source = await unfinishedSource(
+    page,
+    {
+      ...input,
+      rows: [...input.rows, { variable: [{ text: "browser-pending" }] }],
+    },
+    2,
+  );
+  const sourceRequests = await (
+    await request.get("/fixture/image-requests")
+  ).json();
+  await request.post("/fixture/reset", { data: {} });
+  let count = 0;
   const copied = await createGrid(page, {
     ...input,
     budgetUsd: 1,
@@ -178,7 +234,7 @@ test("image reuse follows ordered reference bytes and effective image settings t
     (await (await request.get("/fixture/image-requests")).json()).length,
   ).toBe(count);
   expect(copied.cells.map((c) => c.usage)).toEqual(
-    source.cells.map((c) => c.usage),
+    source.cells.slice(0, 2).map((c) => c.usage),
   );
   expect(copied.spentUsd).toBe(0);
   for (const cell of copied.cells) {
@@ -211,8 +267,8 @@ test("image reuse follows ordered reference bytes and effective image settings t
     ).toBe(count);
   }
   const sent = await (await request.get("/fixture/image-requests")).json();
-  expect(sent[2].input_references[0].image_url.url).toBe(
-    sent[0].input_references[1].image_url.url,
+  expect(sent[0].input_references[0].image_url.url).toBe(
+    sourceRequests[0].input_references[1].image_url.url,
   );
 });
 
@@ -244,20 +300,31 @@ for (const [kind, initial, changed] of [
       rows: [{ variable: [{ text: "landscape" }] }],
       columns: [{ [kind]: initial }],
     });
-    const source = await generate(page, config);
+    const source = await unfinishedSource(
+      page,
+      {
+        ...config,
+        rows: [...config.rows, { variable: [{ text: "browser-pending" }] }],
+      },
+      1,
+    );
+    const sourceRequests = await (
+      await request.get("/fixture/image-requests")
+    ).json();
+    expect(sourceRequests[0][kind]).toBe(initial);
+    await request.post("/fixture/reset", { data: {} });
     const reuse = { ...config, sourceGridId: source.id, reuseArtifacts: true };
     const copy = await createGrid(page, reuse);
     expect(copy.status).toBe("complete");
     expect(
       await (await request.get("/fixture/image-requests")).json(),
-    ).toHaveLength(1);
+    ).toHaveLength(0);
     await generate(page, {
       ...reuse,
       columns: [{ id: "column-1", [kind]: changed }],
     });
     const sent = await (await request.get("/fixture/image-requests")).json();
-    expect(sent).toHaveLength(2);
-    expect(sent[0][kind]).toBe(initial);
-    expect(sent[1][kind]).toBe(changed);
+    expect(sent).toHaveLength(1);
+    expect(sent[0][kind]).toBe(changed);
   });
 }

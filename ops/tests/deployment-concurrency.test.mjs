@@ -130,6 +130,7 @@ async function fixture(t) {
     writeFileSync(target.envFile, [
       "APP_ORIGIN=https://fixture.invalid", "PORT=0", "OUTPUT_DOMAIN=-output.fixture.invalid",
       `KEY_ENCRYPTION_SECRET=${"a".repeat(64)}`, "GITHUB_CLIENT_ID=fixture", "GITHUB_CLIENT_SECRET=fixture",
+      "STARTUP_DATA_MIGRATION_PARALLEL_WORKERS=30",
     ].join("\n") + "\n");
   }
   const source = join(path, "source"), archive = join(path, "source.tar.gz");

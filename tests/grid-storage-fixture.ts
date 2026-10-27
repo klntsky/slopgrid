@@ -87,7 +87,9 @@ export function storedGridCount(db: Database.Database) {
 }
 
 export function storedOwnerGridIds(db: Database.Database, owner: string) {
-  return db.prepare("SELECT id FROM grids WHERE owner=?").all(owner);
+  return db
+    .prepare<[string], { id: string }>("SELECT id FROM grids WHERE owner=?")
+    .all(owner);
 }
 
 export function removeStoredGrid(db: Database.Database, gridId: string) {

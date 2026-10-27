@@ -337,12 +337,12 @@ export function createGridRoutes({
       return res
         .status(409)
         .json({ error: "This grid's configuration cannot be edited." });
-    res.json(
-      snapshot(
-        await generation.pauseGrid({ gridId: g.id, sessionId: s.id }),
-        s,
-      ),
-    );
+    const current = await generation.pauseGrid({ gridId: g.id, sessionId: s.id });
+    if (isGridFinished(current))
+      return res
+        .status(409)
+        .json({ error: "This grid's configuration cannot be edited." });
+    res.json(snapshot(current, s));
   });
   app.post("/api/grids/:id/publish", async (req, res) => {
     const found = readGrid(req, res);

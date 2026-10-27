@@ -76,6 +76,20 @@ test("production copy migrates historical application storage and recovers inter
   assert.deepEqual(f.sourceState(), sourceBefore);
 });
 
+test("production copy rejects missing or invalid target migration capacity without changing storage", async (t) => {
+  const f = stagingDataFixture(t);
+  const stagingBefore = f.stagingState(), sourceBefore = f.sourceState();
+  for (const value of [undefined, "", "0", "-1", "1.5", "9007199254740992"]) {
+    const stagingEnv = { ...f.stagingEnv };
+    if (value === undefined) delete stagingEnv.STARTUP_DATA_MIGRATION_PARALLEL_WORKERS;
+    else stagingEnv.STARTUP_DATA_MIGRATION_PARALLEL_WORKERS = value;
+    await assert.rejects(copy(f, stagingEnv),
+      /STARTUP_DATA_MIGRATION_PARALLEL_WORKERS must be a positive safe integer/);
+    assert.deepEqual(f.stagingState(), stagingBefore);
+    assert.deepEqual(f.sourceState(), sourceBefore);
+  }
+});
+
 for (const fault of ["invalid-database", "future-version", "wrong-key", "foreign-key", "migration-rejected"])
   test(`production copy rejects ${fault} before changing staging storage or environment`, async (t) => {
     const f = stagingDataFixture(t, { fault, legacy: fault === "migration-rejected", sidecars: true });
