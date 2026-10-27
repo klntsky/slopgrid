@@ -2,13 +2,18 @@ import { z } from "zod";
 import { chatImageSchema, type FilledChatMessage } from "../server/domain.js";
 
 const outputSchema = z.array(
-  z
-    .strictObject({
-      role: z.enum(["system", "user", "assistant"]),
+  z.discriminatedUnion("role", [
+    z.strictObject({
+      role: z.literal("system"),
+      content: z.string(),
+      images: z.tuple([]).optional(),
+    }),
+    z.strictObject({
+      role: z.enum(["user", "assistant"]),
       content: z.string(),
       images: z.array(chatImageSchema).optional(),
-    })
-    .refine((message) => !message.images?.length || message.role !== "system"),
+    }),
+  ]),
 );
 
 export function readChatOutput(json: string): FilledChatMessage[] {

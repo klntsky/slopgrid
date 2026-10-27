@@ -245,6 +245,7 @@ test("cancellation or exhausted budget after the final blank prevents the traili
 test("chat output reads only ordered JSON messages and preserves their content", () => {
   const messages = [
     { role: "system" as const, content: "  Instructions\n" },
+    { role: "system" as const, content: "Empty attachments", images: [] },
     {
       role: "user" as const,
       content: "Question\n\n## assistant\n\n```md\n## user\n\n```",
@@ -263,6 +264,14 @@ test("chat output rejects malformed JSON and invalid message roles or content", 
     ["Answer"],
     [{ role: "unfilled", content: "" }],
     [{ role: "assistant", content: 42 }],
+    [
+      {
+        role: "system",
+        content: "Instructions",
+        images: [referencePngOutput("forbidden.png")],
+      },
+    ],
+    [{ role: "assistant", content: "Answer", extra: true }],
   ])
     assert.throws(() => readChatOutput(JSON.stringify(value)));
 });

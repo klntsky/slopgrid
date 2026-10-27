@@ -40,3 +40,5 @@
 15. Use test-driven development for meaningful behavior changes. Assert observable behavior across the affected responsibility boundary, with real application code, storage, transport, and browser behavior where relevant. Control external providers and faults rather than replacing application methods. Use accessible controls and explicit synchronization; keep test state, ports, and data isolated. Avoid static-copy assertions, trivial tests, and tests that merely mirror implementation. Test scenarios and coverage belong in test source; document only how developers operate the test tooling in DEVELOPMENT.md.
 
 16. Keep the test suite small while preserving distinct behavior and failure coverage. Consolidate overlapping scenarios and use representative combinations for shared behavior instead of repeating full Cartesian matrices. Retain focused tests for distinct format, transport, storage and layout branches, and record coverage rationale beside the affected tests.
+
+17. Use statically defined schema variants instead of runtime refinements when the variants can express the same constraint.
