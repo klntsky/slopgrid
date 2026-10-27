@@ -15,7 +15,10 @@ import { parsePricing, type ModelPricing } from "./model-pricing.js";
 import type { CallObserver } from "./billing.js";
 import { upstreamFetch } from "./http.js";
 import { judgeInference } from "./judge.js";
-import type { ChatInputMessage } from "./chat-messages.js";
+import {
+  materializeChatMessages,
+  type ChatInputMessage,
+} from "./chat-messages.js";
 import {
   efforts,
   type Cell,
@@ -32,6 +35,7 @@ export type Model = {
   image: boolean;
   imageInput: boolean;
   text: boolean;
+  chatImageOutput?: boolean;
   reasoning: boolean;
   reasoningMandatory: boolean;
   structuredOutputs?: boolean;
@@ -138,6 +142,13 @@ export class Provider {
       ),
     );
     const imageIds = new Set(imageCatalog.data.map((m) => m.id));
+    const chatImageIds = new Set(
+      textCatalog.data
+        .filter((model) =>
+          model.architecture?.output_modalities?.includes("image"),
+        )
+        .map((model) => model.id),
+    );
     const byId = new Map<string, Model>();
     for (const m of [...textCatalog.data, ...imageCatalog.data]) {
       if (
@@ -187,6 +198,7 @@ export class Provider {
           m.top_provider?.max_completion_tokens ??
           undefined,
         image: imageIds.has(m.id),
+        chatImageOutput: chatImageIds.has(m.id),
         imageInput:
           previous?.imageInput ||
           m.architecture.input_modalities?.includes("image") ||
@@ -205,7 +217,9 @@ export class Provider {
           : reasoningEfforts,
       });
     }
-    const models = [...byId.values()].filter((m) => m.text || m.image);
+    const models = [...byId.values()].filter(
+      (m) => m.text || m.image || m.chatImageOutput,
+    );
     this.catalog = { at: Date.now(), models };
     return models;
   }
@@ -313,11 +327,14 @@ export class Provider {
     );
     return prepareTextInference(
       format,
-      cell,
+      {
+        ...cell,
+        messages: cell.messages
+          ? materializeChatMessages(cell.messages, references)
+          : undefined,
+      },
       budget,
       format === "html" && pricedModel.structuredOutputs === true,
-      undefined,
-      references,
     );
   }
 }

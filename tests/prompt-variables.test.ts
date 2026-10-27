@@ -381,7 +381,7 @@ test("setup rejects missing numbered fields, bare tokens and references to scala
   assert.equal(typeof promptVariableIssue({ ...source, rows: [] }), "string");
 });
 
-test("chat substitution preserves supplied whitespace and merges images once per referencing user message", () => {
+test("chat substitution preserves supplied whitespace and merges images once per referencing user or assistant message", () => {
   const source = currentDefinition({
     format: "chat-template",
     parameters: {
@@ -433,7 +433,7 @@ test("chat substitution preserves supplied whitespace and merges images once per
           },
         },
       }).success,
-      false,
+      role === "assistant",
     );
   // A later case containing an image must not escape setup validation.
   assert.equal(
@@ -574,7 +574,7 @@ test("deleted slots keep judge-only images out of Chat while retaining original 
           },
         },
       }).success,
-      false,
+      role === "assistant",
     );
   const laterCaseImage = structuredClone(source);
   laterCaseImage.rows[1].variable![1]!.images = [second];

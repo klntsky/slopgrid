@@ -83,12 +83,12 @@ export class Store {
     try {
       this.db.pragma("journal_mode = WAL");
       this.db.pragma("foreign_keys = ON");
-      initializeDatabase(this.db);
-      this.billing = new Billing(this.db);
       this.files = new OutputFiles(
         resolve(outputsPath ?? join(dirname(path), "outputs")),
         (id) => this.artifactReferenced(id),
       );
+      initializeDatabase(this.db, this.files);
+      this.billing = new Billing(this.db);
       this.references = createImageReferences(this.db, this.files);
     } catch (error) {
       this.db.close();
@@ -246,10 +246,6 @@ export class Store {
     return rows.map((row) => {
       const task = readTask(row);
       this.references.task(task);
-      if (task.kind === "generation") {
-        if (task.input.format === "chat-template" && task.progress?.draft)
-          task.progress.draft = this.references.draft(task.progress.draft);
-      }
       if (task.kind === "generation" && (task.attemptId || !task.output)) {
         const billing = this.billing.task(task.id, task.attemptId);
         if (billing) {
@@ -436,7 +432,6 @@ export class Store {
       published: row.published === 1,
       format: input.format,
       generationId: row.generationId,
-      messages: this.references.messages(generation.input.messages),
       thinkingId:
         generation.progress?.thinkingId ?? generation.output?.thinkingId,
       thinkingSourceId: row.thinkingSourceId ?? undefined,
@@ -469,7 +464,6 @@ export class Store {
       format: input.format,
       mediaType: output.mediaType,
       artifactId: output.artifactId!,
-      messages: output.messages,
       thinkingSourceId: output.thinkingSourceId,
     };
   }
@@ -536,29 +530,31 @@ export class Store {
     })();
   }
   claim(anonymousId: string, userId: string) {
-    this.db.transaction(() => {
-      this.db
-        .prepare(
-          "UPDATE reference_images SET owner_user_id=? WHERE owner=? AND owner_user_id IS NULL",
-        )
-        .run(userId, anonymousId);
-      this.db
-        .prepare(
-          `UPDATE grids SET owner_user_id=?
+    this.db
+      .transaction(() => {
+        this.db
+          .prepare(
+            "UPDATE reference_images SET owner_user_id=? WHERE owner=? AND owner_user_id IS NULL",
+          )
+          .run(userId, anonymousId);
+        this.db
+          .prepare(
+            `UPDATE grids SET owner_user_id=?
         WHERE owner=? AND owner_user_id IS NULL`,
-        )
-        .run(userId, anonymousId);
-      this.db
-        .prepare(
-          `INSERT INTO grid_favorites (user_id,grid_id)
+          )
+          .run(userId, anonymousId);
+        this.db
+          .prepare(
+            `INSERT INTO grid_favorites (user_id,grid_id)
         SELECT ?,grid_id FROM anonymous_grid_favorites WHERE anonymous_id=?
         ON CONFLICT(user_id,grid_id) DO NOTHING`,
-        )
-        .run(userId, anonymousId);
-      this.db
-        .prepare("DELETE FROM anonymous_grid_favorites WHERE anonymous_id=?")
-        .run(anonymousId);
-    }).immediate();
+          )
+          .run(userId, anonymousId);
+        this.db
+          .prepare("DELETE FROM anonymous_grid_favorites WHERE anonymous_id=?")
+          .run(anonymousId);
+      })
+      .immediate();
   }
   sessionForOwner(owner: string): Session | undefined {
     const row = this.db

@@ -2,7 +2,11 @@ import { streamText, Output } from "ai";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { z } from "zod";
 import type { JudgmentInput, JudgeResult } from "./domain.js";
-import { chatMessages, type ChatInputMessage } from "./chat-messages.js";
+import {
+  inputChatMessages,
+  chatWireMessages,
+  type ChatInputMessage,
+} from "./chat-messages.js";
 import type { ReferenceInputs } from "./image-references.js";
 import type { CallRecorder } from "./billing.js";
 import { completionFailure } from "./failures.js";
@@ -12,6 +16,7 @@ import {
   reportedCost,
   type InferenceContext,
 } from "./inference.js";
+import { safeProviderError } from "./chat-image-response.js";
 
 export const judgmentSchema = z.strictObject({
   results: z.array(
@@ -38,12 +43,29 @@ export async function judgeInference(
     }),
   });
   try {
+    const history: ChatInputMessage[] = [
+      ...messages,
+      ...(input.systemPrompt
+        ? [{ role: "system" as const, content: input.systemPrompt }]
+        : []),
+      ...inputChatMessages(
+        [
+          {
+            role: "user",
+            content: `Criteria:\n${input.criteria.map((criterion, index) => `${index + 1}. ${criterion.text}`).join("\n")}`,
+            images: input.images,
+          },
+        ],
+        references,
+      ),
+    ];
     let failure: unknown;
     const result = streamText({
       model: provider.chat(input.model, {
         provider: { require_parameters: true },
         extraBody: {
           modalities: ["text"],
+          messages: chatWireMessages(history),
           ...(input.effort === "default"
             ? {}
             : {
@@ -54,22 +76,7 @@ export async function judgeInference(
               }),
         },
       }),
-      messages: [
-        ...messages,
-        ...(input.systemPrompt
-          ? [{ role: "system" as const, content: input.systemPrompt }]
-          : []),
-        ...chatMessages(
-          [
-            {
-              role: "user",
-              content: `Criteria:\n${input.criteria.map((criterion, index) => `${index + 1}. ${criterion.text}`).join("\n")}`,
-              images: input.images,
-            },
-          ],
-          references,
-        ),
-      ],
+      messages: history,
       allowSystemInMessages: true,
       output: Output.object({ schema: judgmentSchema, name: "judgment" }),
       maxRetries: 0,
@@ -111,7 +118,7 @@ export async function judgeInference(
         !Object.hasOwn(failure, "responseHeaders")
       )
         Object.assign(failure, { responseHeaders: response?.headers });
-      throw failure;
+      throw safeProviderError(failure);
     }
     const completionError = completionFailure(finishReason);
     if (completionError) throw new Error(completionError);
@@ -121,7 +128,8 @@ export async function judgeInference(
     call?.complete(completion, recordedUsage);
     return parsed.data;
   } catch (error) {
-    call?.fail(error, context.signal?.aborted === true);
-    throw error;
+    const safe = safeProviderError(error);
+    call?.fail(safe, context.signal?.aborted === true);
+    throw safe;
   }
 }

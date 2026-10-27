@@ -4,6 +4,9 @@ import { parseOutput } from "./output-format.js";
 import { generateImage, streamText, Output, jsonSchema } from "ai";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { z } from "zod";
+import { chatImageResponse, safeProviderError } from "./chat-image-response.js";
+import type { FilledChatMessage } from "./domain.js";
+import type { ReplayDetails } from "./chat-messages.js";
 import type { CallObserver, CallRecorder } from "./billing.js";
 import { upstreamFetch } from "./http.js";
 import {
@@ -103,6 +106,8 @@ export async function generateInference(
   files: Record<string, string | Uint8Array>;
   mediaType?: string;
   usage?: Cell["usage"];
+  assistant?: FilledChatMessage;
+  reasoningDetails?: ReplayDetails;
 }> {
   const { format } = prepared;
   const { signal } = context;
@@ -110,7 +115,9 @@ export async function generateInference(
   let call: CallRecorder | undefined;
   let imageFinishReason: string | undefined;
   let imageCost: number | undefined;
-  const inferenceFetch = observedFetch(
+  const chatResponse =
+    format !== "image" && prepared.chat ? chatImageResponse() : undefined;
+  const observed = observedFetch(
     phase,
     context,
     (current) => {
@@ -133,6 +140,10 @@ export async function generateInference(
       }
     },
   );
+  const inferenceFetch: typeof upstreamFetch = async (input, init) => {
+    const response = await observed(input, init);
+    return chatResponse ? chatResponse.wrap(response) : response;
+  };
   try {
     let usage: Cell["usage"];
     function recordCompletion(completion: Completion, current: Cell["usage"]) {
@@ -221,6 +232,7 @@ export async function generateInference(
     let text = "",
       thinking = "",
       outputBytes = 0;
+    let publishedImages = 0;
     for await (const chunk of result.fullStream) {
       if (chunk.type === "text-delta") {
         outputBytes += Buffer.byteLength(chunk.text, "utf8");
@@ -229,14 +241,20 @@ export async function generateInference(
         // The adapter omits reasoning deltas after text starts. Raw events retain
         // interleaved thinking; ignoring normalized reasoning avoids duplicates.
         const delta = thinkingText(chunk.rawValue);
-        if (!delta) continue;
+        if (
+          !delta &&
+          (!chatResponse || chatResponse.images.length === publishedImages)
+        )
+          continue;
         thinking += delta;
         outputBytes += Buffer.byteLength(delta, "utf8");
       } else if (chunk.type !== "start-step") continue;
+      publishedImages = chatResponse?.images.length ?? 0;
       const outputTokens = Math.ceil(outputBytes / 4);
       onChunk({
         text,
         thinking,
+        ...(chatResponse?.images.length ? { images: chatResponse.images } : {}),
         estimatedUsage: {
           inputTokens,
           outputTokens,
@@ -269,6 +287,7 @@ export async function generateInference(
         costUsd: reportedCost(metadata?.openrouter?.usage),
       },
     );
+    if (chatResponse?.failure) throw chatResponse.failure;
     if (failure) {
       if (
         failure !== null &&
@@ -277,7 +296,7 @@ export async function generateInference(
       ) {
         Object.assign(failure, { responseHeaders: streamResponse?.headers });
       }
-      throw failure;
+      throw safeProviderError(failure);
     }
     if (
       finishReason === "length" &&
@@ -294,12 +313,32 @@ export async function generateInference(
       );
     }
     requireSuccess(finishReason);
+    if (chatResponse && !text.trim() && !chatResponse.images.length)
+      throw new Error("The model returned an empty chat completion.");
+    if (chatResponse)
+      onChunk({
+        text,
+        thinking,
+        images: chatResponse.images,
+        estimatedUsage: usage,
+      });
     return {
-      files: parseOutput(format, text),
+      files: chatResponse ? {} : parseOutput(format, text),
+      ...(chatResponse && {
+        assistant: {
+          role: "assistant" as const,
+          content: text,
+          ...(chatResponse.images.length
+            ? { images: chatResponse.images }
+            : {}),
+        },
+        reasoningDetails: chatResponse.reasoningDetails,
+      }),
       usage,
     };
   } catch (error) {
-    call?.fail(error, signal?.aborted === true);
-    throw error;
+    const safe = chatResponse?.failure ?? safeProviderError(error);
+    call?.fail(safe, signal?.aborted === true);
+    throw safe;
   }
 }

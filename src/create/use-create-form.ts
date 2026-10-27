@@ -11,6 +11,7 @@ import { promptVariableIssue } from "../../server/prompt-variables";
 import { compatibilityPreviewInput, validateDraftInput } from "./draft-input";
 import type { InputAction } from "./change-axis";
 import type { ZodIssue } from "zod";
+import { modelAliasResolver } from "../../server/model-alias";
 
 function isDeferredModelIssue(issue: ZodIssue) {
   return (
@@ -23,6 +24,15 @@ const sortedModelCatalog = [...modelCatalog].sort(
     a.name.localeCompare(b.name, "en", { sensitivity: "base" }) ||
     a.id.localeCompare(b.id, "en"),
 );
+const catalogById = new Map(modelCatalog.map((model) => [model.id, model]));
+const resolveModel = modelAliasResolver(catalogById);
+function eligibleModel(model: (typeof modelCatalog)[number]) {
+  try {
+    return catalogById.get(resolveModel(model.id));
+  } catch {
+    return undefined;
+  }
+}
 
 function useBudgetEstimate(input: GridInput, validated: boolean) {
   const [minute, setMinute] = useState(() => Math.floor(Date.now() / 60000));
@@ -87,9 +97,10 @@ export function useCreateForm() {
   const blockingCompatibilityIssues = compatibilityIssues.filter(
     (issue) => issue.blocking,
   );
-  const judgeModels = sortedModelCatalog.filter((model) =>
-    canJudge(model, input.format),
-  );
+  const judgeModels = sortedModelCatalog.filter((model) => {
+    const effective = eligibleModel(model);
+    return effective && canJudge(effective, input.format);
+  });
   const submission = useCreateSubmission({
     draft,
     blocked:
@@ -112,9 +123,10 @@ export function useCreateForm() {
     submission.reset();
     editing.selectFormat(format);
   }
-  const models = sortedModelCatalog.filter((model) =>
-    input.format === "image" ? model.image : model.text,
-  );
+  const models = sortedModelCatalog.filter((model) => {
+    const effective = eligibleModel(model);
+    return input.format === "image" ? effective?.image : effective?.text;
+  });
   const generateReasons = [
     submission.busy && "Starting generation.",
     submission.uploading && "Uploading reference images.",

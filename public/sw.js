@@ -4,7 +4,7 @@ const SHELL = "/offline-shell.html?release=" + __PWA_VERSION__;
 const STATIC = "slopgrid-static-v1";
 const POLICY = __PWA_POLICY__;
 const STATE = "slopgrid-state-v1";
-const PREFIX = "slopgrid-data-v2-";
+const PREFIX = "slopgrid-data-v3-";
 let scope;
 let epoch = 0;
 let writes = Promise.resolve();
@@ -344,9 +344,11 @@ async function saveGridOutputs(grid, expected) {
     ];
     const ids = new Set([
       ...configuredImages.map((image) => image.id),
-      ...messages
-        .filter((message) => message.role === "user")
-        .flatMap((message) => (message.images ?? []).map((image) => image.id)),
+      ...messages.flatMap((message) =>
+        (message.images ?? [])
+          .filter((image) => image.id)
+          .map((image) => image.id),
+      ),
     ]);
     await Promise.all([...ids].map((id) => saveReference(id, expected)));
   }
@@ -357,7 +359,8 @@ async function saveGridOutputs(grid, expected) {
     const urls =
       grid.input.format === "html"
         ? [root + "/offline"]
-        : grid.input.format === "markdown"
+        : grid.input.format === "markdown" ||
+            grid.input.format === "chat-template"
           ? [root + "?raw=1", root + "?theme=light", root + "?theme=dark"]
           : [root];
     if (cell.thinkingURL) urls.push(cell.thinkingURL);
@@ -584,7 +587,10 @@ self.addEventListener("activate", (event) => {
     caches.keys().then(async (names) => {
       await Promise.all(
         names
-          .filter((name) => name.startsWith("slopgrid-data-v1-"))
+          .filter(
+            (name) =>
+              name.startsWith("slopgrid-data-") && !name.startsWith(PREFIX),
+          )
           .map((name) => caches.delete(name)),
       );
       await self.clients.claim();

@@ -55,7 +55,7 @@ const draftChatMessageSchema = z
   .object({
     role: z.enum(["system", "user", "assistant", "unfilled"]),
     content: z.string(),
-    images: z.array(referenceImageSchema).optional(),
+    images: z.array(referenceImageSchema.strict()).optional(),
   })
   .strict();
 export type ChatMessage = z.infer<typeof draftChatMessageSchema>;
@@ -73,7 +73,7 @@ export const kinds = [
 const variableFieldSchema = z
   .object({
     text: z.string(),
-    images: z.array(referenceImageSchema).optional(),
+    images: z.array(referenceImageSchema.strict()).optional(),
   })
   .strict();
 export const parameterValueSchemas = {
@@ -127,8 +127,29 @@ const parameterSourcesSchema = z
   .strict();
 export type ParameterSources = z.infer<typeof parameterSourcesSchema>;
 const budgetSchema = z.number().finite().positive();
-export type FilledChatMessage = ChatMessage & {
+export const chatImageSchema = z
+  .strictObject({
+    name: z.string().min(1),
+    mediaType: z.enum(["image/png", "image/jpeg", "image/webp"]),
+    width: z.number().int().positive(),
+    height: z.number().int().positive(),
+    dataUrl: z.string().max(28_000_000),
+  })
+  .refine((image) => {
+    const prefix = `data:${image.mediaType};base64,`;
+    const data = image.dataUrl.slice(prefix.length);
+    return (
+      image.dataUrl.startsWith(prefix) &&
+      data.length > 0 &&
+      data.length % 4 === 0 &&
+      /^[A-Za-z0-9+/]*={0,2}$/.test(data)
+    );
+  });
+export type ChatImage = z.infer<typeof chatImageSchema>;
+export type FilledChatMessage = {
   role: "system" | "user" | "assistant";
+  content: string;
+  images?: ChatImage[];
 };
 export function isChatFormat(format: GridInput["format"]): boolean {
   return format === "chat-template";
@@ -142,9 +163,13 @@ export function chatInputIssues(
   if (!messages.length) return [{ message: "Add a message.", path: [] }];
   const issues: ValidationIssue[] = [];
   messages.forEach((message, index) => {
-    if (message.images?.length && message.role !== "user")
+    if (
+      message.images?.length &&
+      message.role !== "user" &&
+      message.role !== "assistant"
+    )
       issues.push({
-        message: "Images can only be attached to user messages.",
+        message: "Images can only be attached to user and assistant messages.",
         path: [index, "images"],
       });
   });
@@ -152,7 +177,10 @@ export function chatInputIssues(
     if (
       message.role !== "unfilled" &&
       !message.content.trim() &&
-      !(message.role === "user" && message.images?.length)
+      !(
+        (message.role === "user" || message.role === "assistant") &&
+        message.images?.length
+      )
     )
       issues.push({
         message: "Enter a message or attach an image.",
@@ -174,7 +202,9 @@ export function chatInputIssues(
   return issues;
 }
 
-export function chatText(messages: ChatMessage[]): string {
+export function chatText(
+  messages: readonly (ChatMessage | FilledChatMessage)[],
+): string {
   return messages
     .map(({ role, content }) => `${role}: ${content}`)
     .join("\n\n");
@@ -480,6 +510,7 @@ export type Completion = {
 export type InferenceProgress = {
   text: string;
   thinking: string;
+  images?: ChatImage[];
   estimatedUsage?: Cell["usage"];
   currentCallCostUsd?: number;
 };
@@ -640,7 +671,9 @@ export function expandGeneratorInput(
     );
     const images = mergeVariableImages(
       message.images,
-      message.role === "user" ? expanded.images : undefined,
+      message.role === "user" || message.role === "assistant"
+        ? expanded.images
+        : undefined,
     );
     return {
       ...message,
