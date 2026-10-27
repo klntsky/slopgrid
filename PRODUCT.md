@@ -448,6 +448,7 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
    - Report "Could not render this SVG for judging." when rendering fails, preserving the SVG and leaving judging failed.
    - Unavailable generated output reports "The generated output is unavailable for judging."
 6. Completed generation remains available for output, raw view, thinking, copy, and download while judging runs or fails, subject to ordinary access control. Cache ready output independently of judgment completion; display cached verdicts as saved results.
+   - Wheel scrolling over judgment results scrolls their contents first. When the results cannot scroll further in that direction, scroll the grid page.
 7. Synchronize judgment reading positions across the whole ordered criteria list, accounting for different criterion heights, spacing, and scrollable ranges.
    - Map the full bounds of each ordered vertical area, including padding and unused space, and interpolate corresponding positions continuously around the interaction's vertical focus.
    - On every hover, confirmed tap, and native-scroll update, align the corresponding fractional area position at the same percentage of each viewport's height, subject only to native scroll limits.
