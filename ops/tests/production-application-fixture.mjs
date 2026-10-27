@@ -3,10 +3,12 @@ import { copyFileSync, cpSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { archivedFixtureModels } from "./model-catalog-fixture.mjs";
 
 const helper = fileURLToPath(import.meta.url);
 
 export function archiveApplicationStorage(candidate, application) {
+  copyFileSync(join(application, "package.json"), join(candidate, "package.json"));
   for (const name of ["server", "shared"])
     cpSync(join(application, name), join(candidate, name), { recursive: true });
   copyFileSync(join(candidate, "server/store.ts"), join(candidate, "server/application-store.ts"));
@@ -15,24 +17,26 @@ import { Store as ApplicationStore } from "./application-store.ts";
 import { schemaVersion } from "./database.ts";
 import { appendFileSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-export class Store extends ApplicationStore {
-  constructor(...args) {
-    super(...args);
+export class Store {
+  static async open(...args) {
+    const store = await ApplicationStore.open(...args);
     if (process.env.SLOPGRID_FIXTURE_VERSION_FAILURE === "1")
-      this.db.pragma("user_version=" + (schemaVersion - 1));
+      store.db.pragma("user_version=" + (schemaVersion - 1));
     const output = join(args[2], "nested/production-only.html");
     const outputStat = statSync(output), databaseStat = statSync(args[0]);
     appendFileSync(process.env.SLOPGRID_FIXTURE_EVENTS, JSON.stringify({
       phase: "application-migrated", databasePath: args[0],
-      version: this.db.pragma("user_version", { simple: true }),
-      records: this.db.prepare("SELECT id,value FROM records ORDER BY id").all(),
-      inputs: this.db.prepare("SELECT json_extract(data,'$.input.inputVersion') AS version FROM grids ORDER BY id").all(),
-      accounts: this.db.prepare("SELECT user_id,grid_id FROM grid_favorites ORDER BY user_id,grid_id").all(),
-      anonymous: this.db.prepare("SELECT anonymous_id,grid_id FROM anonymous_grid_favorites ORDER BY anonymous_id,grid_id").all(),
+      version: store.db.pragma("user_version", { simple: true }),
+      records: store.db.prepare("SELECT id,value FROM records ORDER BY id").all(),
+      inputs: store.db.prepare("SELECT json_extract(data,'$.input.inputVersion') AS version FROM grids ORDER BY id").all(),
+      accounts: store.db.prepare("SELECT user_id,grid_id FROM grid_favorites ORDER BY user_id,grid_id").all(),
+      anonymous: store.db.prepare("SELECT anonymous_id,grid_id FROM anonymous_grid_favorites ORDER BY anonymous_id,grid_id").all(),
+      policies: store.db.prepare("SELECT id,json_extract(data,'$.input.chatOutputMode') AS mode FROM workflow_tasks WHERE id='catalog-policy'").all(),
       output: readFileSync(output, "utf8"),
       outputInode: outputStat.ino, outputDevice: outputStat.dev,
       databaseInode: databaseStat.ino, databaseDevice: databaseStat.dev,
     }) + "\\n");
+    return store;
   }
 }
 `);
@@ -42,7 +46,10 @@ export function seedApplicationProductionDatabase(application, database, version
   const loader = pathToFileURL(createRequire(join(application, "package.json")).resolve("tsx/esm")).href;
   const result = spawnSync(process.execPath, [
     "--import", loader, helper, application, database, String(version), String(noncanonical),
-  ], { encoding: "utf8", timeout: 60000 });
+  ], {
+    encoding: "utf8", timeout: 60000,
+    env: { ...process.env, STARTUP_DATA_MIGRATION_PARALLEL_WORKERS: "30" },
+  });
   if (result.error) throw result.error;
   if (result.status !== 0) throw new Error(result.stderr);
   return JSON.parse(result.stdout);
@@ -54,6 +61,17 @@ export function seedApplicationWalRecords(database) {
   database.exec("CREATE TABLE records(id INTEGER PRIMARY KEY,value TEXT NOT NULL); INSERT INTO records VALUES (1,'checkpointed')");
   database.pragma("wal_checkpoint(TRUNCATE)");
   database.exec("INSERT INTO records VALUES (2,'wal-only')");
+}
+
+export function seedCatalogPolicyTask(database) {
+  database.prepare(
+    "INSERT INTO workflow_tasks(id,grid_id,kind,status,data) VALUES ('catalog-policy','private-grid','generation','pending',?)",
+  ).run(JSON.stringify({
+    input: {
+      format: "chat-template", model: "fixture/text", effort: "none", budgetUsd: 1,
+      messages: [{ role: "user", content: "Historical prompt" }, { role: "unfilled", content: "" }],
+    },
+  }));
 }
 
 if (process.argv[1] === helper) {
@@ -76,7 +94,7 @@ if (process.argv[1] === helper) {
   } finally { source.close(); }
   const Database = createRequire(join(application, "package.json"))("better-sqlite3");
   if (![14, 17, 18].includes(version)) {
-    const store = new Store(path, Buffer.alloc(32, 17), join(dirname(path), "outputs"));
+    const store = await Store.open(path, Buffer.alloc(32, 17), join(dirname(path), "outputs"), { models: async () => archivedFixtureModels });
     try {
       favorites.insertAnonymousFavoriteMembership(store.db, "favorite-browser", "grid");
     } finally { store.db.close(); }

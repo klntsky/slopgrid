@@ -3,9 +3,9 @@ import { dirname } from "node:path";
 import { blankTestDatabase } from "./fixture-resources.js";
 
 /** Copy a closed snapshot or blank migrated template into a private database. */
-export function seedTestDatabase(database: string) {
+export async function seedTestDatabase(database: string) {
   const snapshot = process.env.SLOPGRID_TEST_DATABASE;
-  const source = snapshot || blankTestDatabase();
+  const source = snapshot || await blankTestDatabase();
   mkdirSync(dirname(database), { recursive: true, mode: 0o700 });
   copyFileSync(
     source,

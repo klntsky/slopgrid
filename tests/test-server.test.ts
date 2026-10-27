@@ -9,11 +9,11 @@ import { join } from "node:path";
 import { Store } from "../server/store.js";
 import { seedGridLists } from "./grid-list-fixture.js";
 
-function snapshotFixture(t: TestContext) {
+async function snapshotFixture(t: TestContext) {
   const directory = mkdtempSync(join(tmpdir(), "slopgrid-seeded-browser-"));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const database = join(directory, "snapshot.sqlite");
-  const source = new Store(database, Buffer.alloc(32, 6));
+  const source = await Store.open(database, Buffer.alloc(32, 6));
   const { publicIds } = seedGridLists(source, "snapshot-owner", {
     owned: 1,
     public: 1,
@@ -59,7 +59,7 @@ function snapshotFixture(t: TestContext) {
 
 test("populated browser fixtures release processes, TLS listeners and temporary data without changing their source", async (t) => {
   const previous = { ...process.env };
-  const snapshot = snapshotFixture(t);
+  const snapshot = await snapshotFixture(t);
   const dispatcher = new Agent({ connect: { rejectUnauthorized: false } });
   const request = (url: string) => fetch(url, { dispatcher } as RequestInit);
   process.env.GITHUB_CLIENT_ID = "fixture-client";
@@ -117,7 +117,7 @@ test("populated browser fixtures release processes, TLS listeners and temporary 
 test("concurrent real browser fixtures isolate populated snapshots and ignore ambient deployment paths", async (t) => {
   const previous = { ...process.env };
   const ambient = mkdtempSync(join(tmpdir(), "slopgrid-ambient-"));
-  const snapshot = snapshotFixture(t);
+  const snapshot = await snapshotFixture(t);
   const dispatcher = new Agent({ connect: { rejectUnauthorized: false } });
   const request = (url: string, init?: RequestInit) =>
     fetch(url, { ...init, dispatcher } as RequestInit);

@@ -1,5 +1,10 @@
 import { ownsGrid, publicationError } from "./grid-policy.js";
-import { hasCompletedOutput, type Grid, type Identity } from "./domain.js";
+import {
+  hasCompletedOutput,
+  isGridFinished,
+  type Grid,
+  type Identity,
+} from "./domain.js";
 import type { Store, Session } from "./store.js";
 import type { GenerationSnapshot } from "./generation-api.js";
 import { gridDisplay } from "../shared/grid-display.js";
@@ -30,7 +35,8 @@ export function createGridPresenter(store: Store, origin: URL) {
       input,
       author: gridAuthor(g, store),
       canEdit,
-      canConfigure: canEdit || g.published,
+      canConfigure: g.published || (canEdit && !isGridFinished(g)),
+      canClaimSlug: canEdit && !g.slug && !isGridFinished(g),
       display: gridDisplay(input),
       canPublish: canEdit && !publicationError(g, "public"),
       spentUsd: canEdit ? spentUsd : undefined,

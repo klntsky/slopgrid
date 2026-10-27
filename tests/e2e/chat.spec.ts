@@ -3,6 +3,7 @@ import type { Page } from "@playwright/test";
 import {
   connectOpenRouter,
   expectProgress,
+  generateToPausedEdit,
   selectModel,
   setVariableValues,
 } from "./helpers";
@@ -140,6 +141,16 @@ test("chat editing, ordering, persistence and completion without explicit blanks
   await expect(page.getByLabel("Message 3", { exact: true })).toHaveValue(
     "Answer prefix ",
   );
+  await generateToPausedEdit(page, { markdownOutput: answer });
+  await expect(
+    page.getByRole("button", { name: "Chat completion", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByLabel("Message 1", { exact: true })).toHaveValue(
+    "Use Markdown",
+  );
+  await expect(page.getByLabel("Message 3", { exact: true })).toHaveValue(
+    "Answer prefix ",
+  );
   await page.getByRole("button", { name: "Generate", exact: true }).click();
   await expectProgress(page, 1, 1);
   await expect(page.locator(".markdown-preview h1")).toHaveText("Chat result");
@@ -171,16 +182,9 @@ test("chat editing, ordering, persistence and completion without explicit blanks
   await page.reload();
   await expect(page.locator(".markdown-preview h1")).toHaveText("Chat result");
   await expect(page.locator(".chat-bubble")).toHaveCount(4);
-  await page.getByRole("button", { name: "EDIT", exact: true }).click();
   await expect(
-    page.getByRole("button", { name: "Chat completion", exact: true }),
-  ).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByLabel("Message 1", { exact: true })).toHaveValue(
-    "Use Markdown",
-  );
-  await expect(page.getByLabel("Message 3", { exact: true })).toHaveValue(
-    "Answer prefix ",
-  );
+    page.getByRole("button", { name: "EDIT", exact: true }),
+  ).toHaveCount(0);
 });
 
 test("chat dragging reorders messages into gaps before and after rows", async ({

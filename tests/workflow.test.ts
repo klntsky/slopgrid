@@ -7,7 +7,7 @@ import {
   type GridInput,
 } from "../server/domain.js";
 import { createWorkflow } from "../server/workflow.js";
-import { currentDefinition } from "./current-grid-fixture.js";
+import { fixtureModels, currentDefinition } from "./current-grid-fixture.js";
 
 const reference = { id: "reference", name: "answer.png" };
 const second = { id: "second", name: "second.png" };
@@ -17,7 +17,7 @@ function workflow(source: GridInput) {
     ...cell,
     id: String(index),
   }));
-  return { input, cells, tasks: createWorkflow(input, cells) };
+  return { input, cells, tasks: createWorkflow(input, cells, fixtureModels) };
 }
 function base(): GridInput {
   return currentDefinition({
@@ -425,6 +425,7 @@ for (const side of ["rows", "columns"] as const)
     unjudged.judge = false;
     delete unjudged.parameters.judge_model;
     delete unjudged.parameters.judge_effort;
+    delete unjudged.parameters.judge_system;
     delete unjudged.parameters.judge_criteria;
     for (const record of unjudged[side]) delete record.judge_criteria;
     const ordinary = workflow(unjudged);

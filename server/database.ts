@@ -8,73 +8,72 @@ import {
 } from "./chat-output-migration.js";
 import { defaultJudgeSystemPrompt } from "./parameters.js";
 
-export const schemaVersion = 21;
+export const schemaVersion = 22;
 
-export function initializeDatabase(db: Database.Database, files: OutputFiles) {
-  if (db.pragma("user_version", { simple: true }) === schemaVersion) return;
+export function initializeEmptyDatabase(db: Database.Database): void {
   db.transaction(() => {
-    const version = db.pragma("user_version", { simple: true });
-    if (version === schemaVersion) return;
-    if (
-      version !== 0 &&
-      version !== 14 &&
-      version !== 17 &&
-      version !== 18 &&
-      version !== 19 &&
-      version !== 20
-    )
-      throw new Error("Unsupported database version");
-    if (version === 0) initializeSchema(db);
-    else if (version === 14) {
-      db.exec(`
-        CREATE TABLE reference_blobs (
-          sha256 TEXT PRIMARY KEY CHECK (length(sha256)=64),
-          width INTEGER CHECK (width IS NULL OR width > 0),
-          height INTEGER CHECK ((width IS NULL AND height IS NULL) OR
-            (width IS NOT NULL AND height IS NOT NULL AND height > 0))
-        ) STRICT;
-        ALTER TABLE reference_images ADD COLUMN sha256 TEXT REFERENCES reference_blobs(sha256);
-        CREATE INDEX reference_images_sha256 ON reference_images(sha256,id);
-      `);
-      migrateProductionInputs(db);
-    }
-    if (version !== 18 && version !== 19 && version !== 20)
-      db.exec(`
-        CREATE TABLE grid_favorites (
-          user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-          grid_id TEXT NOT NULL REFERENCES grids(id) ON DELETE CASCADE,
-          PRIMARY KEY (user_id,grid_id)
-        ) STRICT;
-        CREATE INDEX grid_favorites_grid ON grid_favorites(grid_id);
-      `);
-    if (version !== 19 && version !== 20)
-      db.exec(`
-        CREATE TABLE anonymous_grid_favorites (
-          anonymous_id TEXT NOT NULL,
-          grid_id TEXT NOT NULL REFERENCES grids(id) ON DELETE CASCADE,
-          PRIMARY KEY (anonymous_id,grid_id)
-        ) STRICT;
-        CREATE INDEX anonymous_grid_favorites_grid ON anonymous_grid_favorites(grid_id);
-      `);
-    db.prepare(
-      `
-      UPDATE grids
-      SET data=json_set(data,'$.input.parameters.judge_system',json(?))
-      WHERE json_extract(data,'$.input.judge')=1
-        AND json_type(data,'$.input.parameters.judge_system') IS NULL
-    `,
-    ).run(JSON.stringify({ kind: "common", value: defaultJudgeSystemPrompt }));
-    db.prepare(
-      `
-      UPDATE workflow_tasks
-      SET data=json_set(data,'$.input.systemPrompt',?)
-      WHERE kind='judge' AND json_type(data,'$.input.systemPrompt') IS NULL
-    `,
-    ).run(defaultJudgeSystemPrompt);
-    migrateReferenceFiles(db, files);
-    migrateChatOutputs(db, files);
+    initializeSchema(db);
+    upgradeDatabaseStructure(db, 0);
     db.pragma(`user_version = ${schemaVersion}`);
   }).immediate();
+}
+
+export function upgradeDatabaseStructure(
+  db: Database.Database,
+  version: number,
+): void {
+  if (![0, 14, 17, 18, 19, 20, 21].includes(version))
+    throw new Error(`Unsupported database version ${version}`);
+  if (version === 14)
+    db.exec(`
+      CREATE TABLE reference_blobs (
+        sha256 TEXT PRIMARY KEY CHECK (length(sha256)=64),
+        width INTEGER CHECK (width IS NULL OR width > 0),
+        height INTEGER CHECK ((width IS NULL AND height IS NULL) OR
+          (width IS NOT NULL AND height IS NOT NULL AND height > 0))
+      ) STRICT;
+      ALTER TABLE reference_images ADD COLUMN sha256 TEXT REFERENCES reference_blobs(sha256);
+      CREATE INDEX reference_images_sha256 ON reference_images(sha256,id);
+    `);
+  if (version < 18)
+    db.exec(`
+      CREATE TABLE grid_favorites (
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        grid_id TEXT NOT NULL REFERENCES grids(id) ON DELETE CASCADE,
+        PRIMARY KEY (user_id,grid_id)
+      ) STRICT;
+      CREATE INDEX grid_favorites_grid ON grid_favorites(grid_id);
+    `);
+  if (version < 19)
+    db.exec(`
+      CREATE TABLE anonymous_grid_favorites (
+        anonymous_id TEXT NOT NULL,
+        grid_id TEXT NOT NULL REFERENCES grids(id) ON DELETE CASCADE,
+        PRIMARY KEY (anonymous_id,grid_id)
+      ) STRICT;
+      CREATE INDEX anonymous_grid_favorites_grid ON anonymous_grid_favorites(grid_id);
+    `);
+}
+
+export function migrateGridData(
+  db: Database.Database,
+  files: OutputFiles,
+  version: number,
+): void {
+  if (version === 14) migrateProductionInputs(db);
+  db.prepare(`
+    UPDATE grids
+    SET data=json_set(data,'$.input.parameters.judge_system',json(?))
+    WHERE json_extract(data,'$.input.judge')=1
+      AND json_type(data,'$.input.parameters.judge_system') IS NULL
+  `).run(JSON.stringify({ kind: "common", value: defaultJudgeSystemPrompt }));
+  db.prepare(`
+    UPDATE workflow_tasks
+    SET data=json_set(data,'$.input.systemPrompt',?)
+    WHERE kind='judge' AND json_type(data,'$.input.systemPrompt') IS NULL
+  `).run(defaultJudgeSystemPrompt);
+  migrateReferenceFiles(db, files);
+  if (version < 21) migrateChatOutputs(db, files);
 }
 
 function initializeSchema(db: Database.Database) {

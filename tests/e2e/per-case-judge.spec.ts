@@ -5,6 +5,8 @@ import {
   connectOpenRouter,
   expectProgress,
   finishPublishing,
+  editHeldGrid,
+  forkReadonlyGrid,
   defineCases,
   selectModel,
   setVariableValues,
@@ -174,7 +176,7 @@ test("different case rubrics judge one reused generation independently and survi
   request,
 }) => {
   await request.post("/fixture/reset", {
-    data: { markdownOutput: "A useful answer." },
+    data: { markdownOutput: "A useful answer.", holdJudges: true },
   });
   await start(page);
   await page
@@ -283,13 +285,12 @@ test("different case rubrics judge one reused generation independently and survi
   );
   await connectOpenRouter(page);
   const originalId = await generate(page);
-  await expectProgress(page, 2, 2);
-  await expect(
-    page.getByRole("button", { name: "Judgment: 1 of 1 correct", exact: true }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "Judgment: 2 of 2 correct", exact: true }),
-  ).toBeVisible();
+  await expect
+    .poll(
+      async () =>
+        (await (await request.get("/fixture/workers")).json()).held.length,
+    )
+    .toBe(2);
   const generation = await (await request.get("/fixture/chat-requests")).json();
   expect(generation).toHaveLength(1);
   expect(requestText(generation[0])).not.toContain("Alpha reference");
@@ -324,25 +325,10 @@ test("different case rubrics judge one reused generation independently and survi
       ],
     ]),
   );
-  const judgmentButton = page.getByRole("button", {
-    name: "Judgment: 2 of 2 correct",
-    exact: true,
-  });
-  if ((await judgmentButton.getAttribute("aria-pressed")) !== "true")
-    await judgmentButton.click();
-  const details = judgmentButton
-    .locator("xpath=ancestor::td[1]")
-    .getByRole("region", { name: "Judgment details", exact: true });
-  await expect(details.getByRole("listitem")).toHaveCount(2);
-  await expect(
-    details.getByText("not(Does the answer contain a blue circle?)", {
-      exact: true,
-    }),
-  ).toBeVisible();
   const original = await (
     await page.request.get(`/api/grids/${originalId}`)
   ).json();
-  await page.getByRole("button", { name: "EDIT", exact: true }).click();
+  await editHeldGrid(page);
   await expect(
     rubric(page, "Row", 2).getByLabel("Criterion 2", { exact: true }),
   ).toHaveValue("Does the answer respect $ROW1?");
@@ -371,6 +357,12 @@ test("different case rubrics judge one reused generation independently and survi
   });
   const revisedId = await generate(page);
   await expectProgress(page, 2, 2);
+  await expect(
+    page.getByRole("button", { name: "Judgment: 1 of 1 correct", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Judgment: 2 of 2 correct", exact: true }),
+  ).toBeVisible();
   expect(await (await request.get("/fixture/chat-requests")).json()).toEqual(
     [],
   );
@@ -391,25 +383,25 @@ test("different case rubrics judge one reused generation independently and survi
       expect.stringContaining("Does the answer agree with Beta reference?"),
     ]),
   );
-  await page.getByRole("button", { name: "PUBLISH", exact: true }).click();
-  await finishPublishing(page);
-  await page.getByRole("button", { name: "FORK", exact: true }).click();
-  await expect(page).toHaveURL(/\/create$/);
-  await page.reload();
+  const judgmentButton = page.getByRole("button", {
+    name: "Judgment: 2 of 2 correct",
+    exact: true,
+  });
+  if ((await judgmentButton.getAttribute("aria-pressed")) !== "true")
+    await judgmentButton.click();
+  const details = judgmentButton
+    .locator("xpath=ancestor::td[1]")
+    .getByRole("region", { name: "Judgment details", exact: true });
+  await expect(details.getByRole("listitem")).toHaveCount(2);
   await expect(
-    rubric(page, "Row", 2).getByLabel("Criterion 2", { exact: true }),
-  ).toHaveValue("Does the answer agree with $ROW1?");
-  await expect(
-    rubric(page, "Row", 2).getByLabel("Correct answer", { exact: true }).nth(0),
-  ).toHaveAttribute("aria-pressed", "false");
-  await expect(
-    layoutTable(page).getByRole("textbox", {
-      name: "Row case 2 Judge system prompt",
+    details.getByText("not(Does the answer contain a blue circle?)", {
       exact: true,
     }),
-  ).toHaveValue(
-    "Use $ROW1 as reference. Evaluate each criterion independently.",
-  );
+  ).toBeVisible();
+  await page.getByRole("button", { name: "PUBLISH", exact: true }).click();
+  await finishPublishing(page);
+  const { copy } = await forkReadonlyGrid(page);
+  expect(copy.input).toEqual(revised.input);
 });
 
 for (const side of ["Rows", "Columns"] as const) {

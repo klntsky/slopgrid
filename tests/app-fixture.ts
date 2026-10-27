@@ -11,6 +11,7 @@ import { serveGeneration } from "../server/generation-server.js";
 import { generationClient } from "../server/generation-client.js";
 import { createApp, type Config } from "../server/app.js";
 import { seedTestDatabase } from "./database-fixture.js";
+import { storedGridIds } from "./grid-storage-fixture.js";
 
 export async function appFixture(
   t: TestContext,
@@ -19,9 +20,9 @@ export async function appFixture(
   const directory = mkdtempSync(join(tmpdir(), "slopgrid-test-"));
   const database = join(directory, "db.sqlite"),
     secret = Buffer.alloc(32, 7);
-  seedTestDatabase(database);
+  await seedTestDatabase(database);
   const server = createServer();
-  const engineStore = new Store(database, secret);
+  const engineStore = await Store.open(database, secret);
   const { api, jobs, executor } = createGenerationService(
     engineStore,
     options.provider ?? new Provider(),
@@ -30,22 +31,20 @@ export async function appFixture(
   const socket = join(directory, "generation.sock");
   const engineServer = await serveGeneration(api, socket);
   const generation = generationClient(socket);
-  let application: ReturnType<typeof createApp> | undefined;
+  let closeApplication: (() => void) | undefined;
   t.after(async () => {
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
-    if (application) {
-      application.modelCatalog.close();
-      const grids = engineStore.db.prepare("SELECT id FROM grids").all() as {
-        id: string;
-      }[];
+    if (closeApplication) {
+      closeApplication();
+      const grids = storedGridIds(engineStore.db);
       for (const { id } of grids) jobs.pause(engineStore.get(id)!);
       await new Promise((resolve) => setImmediate(resolve));
       executor.previews.clearAll();
       engineServer.closeAllConnections();
       await new Promise<void>((resolve) => engineServer.close(() => resolve()));
       engineStore.db.close();
-      application.store.db.close();
+      closeApplication = undefined;
     }
     rmSync(directory, { recursive: true, force: true });
   });
@@ -53,7 +52,7 @@ export async function appFixture(
   await once(server, "listening");
   const port = (server.address() as { port: number }).port;
   const origin = `http://127.0.0.1:${port}`;
-  application = createApp({
+  const application = await createApp({
     github: {
       clientId: "route-test-client",
       clientSecret: "route-test-secret",
@@ -65,6 +64,10 @@ export async function appFixture(
     ...options,
     generation,
   });
+  closeApplication = () => {
+    application.modelCatalog.close();
+    application.store.db.close();
+  };
   server.on("request", application.app);
   return {
     ...application,

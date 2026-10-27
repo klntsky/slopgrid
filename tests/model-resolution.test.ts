@@ -2,7 +2,7 @@ import { generatorInputForCell } from "../server/generator-input.js";
 import { appFixture } from "./app-fixture.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { setImmediate as immediate } from "node:timers/promises";
+import { token } from "../server/ids.js";
 import { Provider, type Model } from "../server/provider.js";
 import { prepareGridModels } from "../server/model-resolution.js";
 import {
@@ -16,6 +16,7 @@ import { currentDefinition } from "./current-grid-fixture.js";
 import { selectedReferences } from "../server/image-settings.js";
 import { resolveCriteriaForCell } from "../server/judge-criteria.js";
 import { pixelPng } from "./reference-image-fixture.js";
+import { until } from "./runtime-fixture.js";
 
 function resolveGridModels(input: GridInput, models: readonly Model[]) {
   return prepareGridModels(input, models).input;
@@ -1035,6 +1036,8 @@ for (const moving of [false, true])
       }
       target = "fixture/v1";
       failOnce = true;
+      pending = Promise.withResolvers<void>();
+      released = false;
       called: string[] = [];
       override async models() {
         return models(this.target);
@@ -1042,12 +1045,25 @@ for (const moving of [false, true])
       override async generate(
         _key: string,
         _format: GridInput["format"],
-        cell: Cell,
+        cell: Parameters<Provider["generate"]>[2],
+        _onChunk: Parameters<Provider["generate"]>[3],
+        signal?: AbortSignal,
       ) {
         this.called.push(cell.model);
         if (this.failOnce) {
           this.failOnce = false;
           throw new Error("Fixture failure");
+        }
+        if (cell.prompt === "Pending sibling" && !this.released) {
+          const aborted = Promise.withResolvers<never>();
+          const abort = () => aborted.reject(signal?.reason);
+          signal?.addEventListener("abort", abort, { once: true });
+          try {
+            signal?.throwIfAborted();
+            await Promise.race([this.pending.promise, aborted.promise]);
+          } finally {
+            signal?.removeEventListener("abort", abort);
+          }
         }
         return {
           signature: "fixture-signature",
@@ -1072,19 +1088,6 @@ for (const moving of [false, true])
       assert.ok(response.ok, await response.clone().text());
       return response.json();
     }
-    async function settle(calls: number) {
-      const deadline = Date.now() + 5000;
-      while (
-        provider.called.length < calls ||
-        store.all().some((grid) => grid.status === "running")
-      ) {
-        assert.ok(
-          Date.now() < deadline,
-          "Expected provider calls and settled grids",
-        );
-        await immediate();
-      }
-    }
     const selected = moving
       ? "fixture/chat-latest"
       : parameterValue(input, "model", 0, 0)!;
@@ -1093,29 +1096,91 @@ for (const moving of [false, true])
       "/grids",
       currentDefinition({
         ...input,
+        caseAxes: ["rows"],
+        parallelWorkers: 1,
+        rows: [
+          { input: [{ role: "user", content: "Draw a cat with a hat" }] },
+          { input: [{ role: "user", content: "Pending sibling" }] },
+        ],
         parameters: {
           ...input.parameters,
+          input: { kind: "rows" },
           model: { kind: "common", value: selected },
         },
       }),
     );
-    await settle(1);
+    await until(
+      () => store.get(created.id)!,
+      (grid) =>
+        provider.called.length === 2 &&
+        grid.cells[0].status === "error" &&
+        grid.cells[1].status === "running",
+    );
+    await post(`/grids/${created.id}/pause`);
+    assert.deepEqual(
+      store.get(created.id)!.cells.map((cell) => cell.status),
+      ["error", "pending"],
+    );
     const storedInput = store.get(created.id)!.input;
     assert.equal(parameterValue(storedInput, "model", 0, 0), expected);
     provider.target = "fixture/v2";
     await post(`/grids/${created.id}/retry`);
-    await settle(2);
+    await until(
+      () => store.get(created.id)!,
+      (grid) =>
+        provider.called.length === 4 &&
+        grid.cells[0].status === "complete" &&
+        grid.cells[1].status === "running",
+    );
     const edited = await post(`/grids/${created.id}/edit`);
     assert.equal(parameterValue(edited.input, "model", 0, 0), expected);
-    await post("/grids", edited.input);
+    assert.deepEqual(
+      edited.cells.map((cell: Cell) => cell.status),
+      ["complete", "pending"],
+    );
+    provider.released = true;
+    provider.pending.resolve();
+    const editedCopy = await post("/grids", {
+      ...edited.input,
+      sourceGridId: created.id,
+      reuseArtifacts: false,
+    });
+    await post(`/grids/${created.id}/retry`);
+    await until(
+      () => [store.get(created.id)!, store.get(editedCopy.id)!],
+      (grids) => grids.every((grid) => grid.status === "complete"),
+    );
     await post(`/grids/${created.id}/publish`, { visibility: "unlisted" });
     const published = await (
       await fetch(`${origin}/api/grids/${created.id}`)
     ).json();
     assert.equal(parameterValue(published.input, "model", 0, 0), expected);
-    await post("/grids", published.input);
-    await settle(4);
-    assert.deepEqual(provider.called, [expected, expected, expected, expected]);
+    const sourceTasks = store.workflow(created.id);
+    const fork = await post(`/grids/${created.id}/fork`, {
+      creationRequestId: token(),
+    });
+    assert.equal(parameterValue(fork.input, "model", 0, 0), expected);
+    assert.equal(fork.status, "complete");
+    assert.equal(fork.published, false);
+    assert.equal(fork.visibility, "private");
+    assert.equal(fork.canConfigure, false);
+    const forkTasks = store.workflow(fork.id);
+    assert.deepEqual(
+      forkTasks.map(({ kind, status, input, output }) => ({
+        kind,
+        status,
+        input,
+        output,
+      })),
+      sourceTasks.map(({ kind, status, input, output }) => ({
+        kind,
+        status,
+        input,
+        output,
+      })),
+    );
+    assert.ok(forkTasks.every((task) => !task.attemptId));
+    assert.deepEqual(provider.called, Array(7).fill(expected));
     assert.ok(!JSON.stringify(store.all()).includes("~fixture/latest"));
   });
 

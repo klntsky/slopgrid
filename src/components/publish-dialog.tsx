@@ -20,11 +20,13 @@ function skipConfirmation() {
 export function PublishDialog({
   initialVisibility,
   initialSlug,
+  allowSlug,
   publish,
   onClose,
 }: {
   initialVisibility: GridVisibility;
   initialSlug?: string;
+  allowSlug: boolean;
   publish: UseMutationResult<ViewGrid, Error, Publication>;
   onClose: () => void;
 }) {
@@ -32,7 +34,7 @@ export function PublishDialog({
   const [visibility, setVisibility] = useState(initialVisibility);
   const [slug, setSlug] = useState(initialSlug ?? "");
   const validation =
-    visibility === "public" && slug && !isGridSlug(slug) ? slugNamingError : "";
+    allowSlug && visibility === "public" && slug && !isGridSlug(slug) ? slugNamingError : "";
   const published = initialVisibility !== "private";
   const [confirming, setConfirming] = useState(false);
   const [remember, setRemember] = useState(false);
@@ -49,7 +51,7 @@ export function PublishDialog({
     try {
       await publish.mutateAsync({
         visibility,
-        ...(visibility === "public" ? { slug } : {}),
+        ...(allowSlug && visibility === "public" ? { slug } : {}),
       });
       if (confirming && remember) {
         try {
@@ -80,7 +82,7 @@ export function PublishDialog({
       <h2 id="publish-title">
         {confirming
           ? "Confirm publishing"
-          : initialVisibility === "public"
+          : initialVisibility === "public" && allowSlug
             ? "Claim slug"
             : "Control who can see this grid"}
       </h2>
@@ -132,9 +134,9 @@ export function PublishDialog({
                       reset();
                     }}
                   />
-                  {value === "public" ? `${label}:` : label}
+                  {value === "public" && allowSlug ? `${label}:` : label}
                 </label>
-                {value === "public" && (
+                {value === "public" && allowSlug && (
                   <label className="publish-slug-input" htmlFor="publish-slug">
                     <span aria-hidden="true">slopgrid.com/</span>
                     <input
@@ -166,7 +168,7 @@ export function PublishDialog({
                     />
                   </label>
                 )}
-                {value === "public" && (
+                {value === "public" && allowSlug && (
                   <div className="publish-slug-error">
                     <ErrorMessage aria-hidden="true">
                       {slugNamingError}
@@ -199,7 +201,7 @@ export function PublishDialog({
           Cancel
         </button>
       </div>
-      {(confirming || visibility !== "public") && (
+      {(confirming || visibility !== "public" || !allowSlug) && (
         <ErrorMessage>{error?.message}</ErrorMessage>
       )}
     </Modal>

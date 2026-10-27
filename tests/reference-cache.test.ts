@@ -6,7 +6,7 @@ import { token } from "../server/ids.js";
 import { expandGrid, type Grid } from "../server/domain.js";
 import { appFixture } from "./app-fixture.js";
 import { serviceWorkerFixture } from "./service-worker-fixture.js";
-import { validatedGrid } from "./grid-storage-fixture.js";
+import { insertCurrentGrid, validatedGrid } from "./grid-storage-fixture.js";
 import { currentInput } from "./current-grid-fixture.js";
 import { pixelPng as png } from "./reference-image-fixture.js";
 import type { ViewGrid } from "../src/api.js";
@@ -90,7 +90,7 @@ test("reference SHA validators reuse bytes only after authorization, including a
     createdAt: new Date().toISOString(),
     cells: expandGrid(input).map((cell) => ({ ...cell, id: token() })),
   };
-  store.insert(validatedGrid(grid));
+  insertCurrentGrid(store, validatedGrid(grid));
   store.publish(grid.id, "unlisted", null);
   const publicImage = await read(image.id);
   assert.deepEqual(Buffer.from(await publicImage.arrayBuffer()), png);
@@ -303,7 +303,7 @@ for (const change of ["logout", "account switch"] as const) {
       createdAt: new Date().toISOString(),
       cells: expandGrid(input).map((cell) => ({ ...cell, id: token() })),
     };
-    store.insert(validatedGrid(grid));
+    insertCurrentGrid(store, validatedGrid(grid));
     const path = `/api/grids/${grid.id}`;
     let session = alice.id;
     let offline = false;

@@ -21,6 +21,11 @@ blank. Visitors remain anonymous by default and can always choose GitHub
 sign-in. OpenRouter connections remain independent. Load development
 credentials and provider settings separately from deployed runtime configuration.
 
+Export `STARTUP_DATA_MIGRATION_PARALLEL_WORKERS=30` before local application,
+engine, and test commands. Startup requires a positive whole-number worker
+capacity and has no fallback value. The environment example contains this setting.
+Startup locking requires `/usr/bin/flock` from util-linux.
+
 ## Explicit-only gstack skills
 
 The `vendor/gstack` submodule pins the [GitHub fork](https://github.com/klntsky/gstack).
@@ -142,6 +147,12 @@ Use `./ops/deploy.sh validate [REV]` for committed local candidate validation.
 The default revision is HEAD in the invoking application worktree. Select files
 with repeated `--unit FILE` and `--browser FILE` arguments. Builds and suites run
 locally with isolated data; validation does not deploy a runtime.
+
+For storage upgrades, let the deployment command own the drain, stop, backup,
+and startup sequence. Stop both web and engine before local offline upgrades too.
+Keep older processes stopped until the new runtime has opened the migrated
+database. A startup lock does not exclude an older process that already has the
+database open.
 
 The ignored application-root `.env` supplies deployment settings. Staging and
 production are explicit targets, and production accepts only the authoritative

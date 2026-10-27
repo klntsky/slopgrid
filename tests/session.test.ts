@@ -17,7 +17,7 @@ test("sessions retain identity and credentials regardless of age and renew persi
   });
   const old = { id, created: 0, userId: user.id, key: "retained-key" };
   store.saveSession(old);
-  const reopened = new Store(database, secret);
+  const reopened = await Store.open(database, secret);
   try {
     assert.deepEqual(reopened.session(id), old);
   } finally {
@@ -68,7 +68,7 @@ test("owner recovery selects the newest matching session and updates anonymous o
   });
   store.saveSession(original);
   assert.deepEqual(store.sessionForOwner(original.id), rotated);
-  const reopened = new Store(database, secret);
+  const reopened = await Store.open(database, secret);
   try {
     assert.deepEqual(reopened.sessionForOwner(original.id), rotated);
     const detached = {

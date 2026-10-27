@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import Database from "better-sqlite3";
 import { Billing } from "../server/billing.js";
-import { initializeDatabase } from "../server/database.js";
+import { beforeEach } from "node:test";
 import { expandGrid, gridDraftSchema, gridSchema } from "../server/domain.js";
 import { migrateProductionInput } from "../server/production-input-migration.js";
 import * as migration from "./database-migration-fixture.js";
@@ -25,14 +25,24 @@ import {
   storedFavoriteIds,
 } from "./favorites-storage-fixture.js";
 import { rejectStoredGridUpdates } from "./grid-storage-fixture.js";
-import { databaseOutputFiles } from "./database-output-fixture.js";
+import {
+  physicalDatabaseSnapshot,
+  physicalMigrationDatabase,
+  migratePhysicalDatabase,
+  migrationWorkerEnvironment,
+} from "./database-output-fixture.js";
 import { defaultJudgeSystemPrompt } from "../server/parameters.js";
 
-const { productionDatabase, seedProduction, snapshot, storedData, input } =
-  migration;
+const { productionDatabase, seedProduction, storedData, input } = migration;
 
-test("production v14 migrates directly to canonical persisted inputs without rewriting accepted work or accounting", () => {
-  const db = productionDatabase();
+beforeEach((context) =>
+  migrationWorkerEnvironment(
+    context as Parameters<typeof migrationWorkerEnvironment>[0],
+  ),
+);
+
+test("production v14 migrates directly to canonical persisted inputs without rewriting accepted work or accounting", async () => {
+  let db = await physicalMigrationDatabase(productionDatabase());
   try {
     seedProduction(db);
     const identities = migration.gridIdentitiesAndMetadata(db);
@@ -42,7 +52,7 @@ test("production v14 migrates directly to canonical persisted inputs without rew
     // production accounting through its frozen SQL fixture before migration.
     const accounting = migration.productionBillingSummary(db);
     const acceptedData = storedData(db, "grid");
-    initializeDatabase(db, databaseOutputFiles(db));
+    db = await migratePhysicalDatabase(db);
     assert.deepEqual(migration.gridIdentitiesAndMetadata(db), identities);
     assert.deepEqual(migration.unchangedProductionRecords(db), records);
     assert.deepEqual(
@@ -92,17 +102,17 @@ test("production v14 migrates directly to canonical persisted inputs without rew
       true,
     );
     assert.equal(expandGrid(canonical)[0].prompt, "Hello world");
-    const stable = snapshot(db);
-    initializeDatabase(db, databaseOutputFiles(db));
-    assert.deepEqual(snapshot(db), stable);
+    const stable = physicalDatabaseSnapshot(db);
+    db = await migratePhysicalDatabase(db);
+    assert.deepEqual(physicalDatabaseSnapshot(db), stable);
     assert.deepEqual(migration.foreignKeyViolations(db), []);
   } finally {
     db.close();
   }
 });
 
-test("production v14 migration preserves row-major cell identities and both variable axes", () => {
-  const db = productionDatabase();
+test("production v14 migration preserves row-major cell identities and both variable axes", async () => {
+  let db = await physicalMigrationDatabase(productionDatabase());
   try {
     seedProduction(db);
     const source = {
@@ -114,7 +124,7 @@ test("production v14 migration preserves row-major cell identities and both vari
     };
     migration.replaceLegacyGridInputs(db, source);
     const before = migration.unchangedProductionRecords(db);
-    initializeDatabase(db, databaseOutputFiles(db));
+    db = await migratePhysicalDatabase(db);
     const canonical = storedData(db, "grid").input;
     assert.deepEqual(canonical, migrateProductionInput(source));
     assert.deepEqual(
@@ -145,27 +155,27 @@ test("production v14 migration preserves row-major cell identities and both vari
   }
 });
 
-test("a failed direct v14 migration rolls back schema, every payload, indexes and version atomically", () => {
-  const db = productionDatabase();
+test("a failed direct v14 migration rolls back schema, every payload, indexes and version atomically", async () => {
+  let db = await physicalMigrationDatabase(productionDatabase());
   try {
     seedProduction(db);
     const unblock = migration.rejectProductionInputMigration(db);
-    const before = snapshot(db);
-    assert.throws(
-      () => initializeDatabase(db, databaseOutputFiles(db)),
+    const before = physicalDatabaseSnapshot(db);
+    await assert.rejects(
+      () => migratePhysicalDatabase(db),
       /production input migration blocked/,
     );
-    assert.deepEqual(snapshot(db), before);
+    assert.deepEqual(physicalDatabaseSnapshot(db), before);
     unblock();
-    initializeDatabase(db, databaseOutputFiles(db));
+    db = await migratePhysicalDatabase(db);
     assert.equal(storedData(db, "grid").input.inputVersion, 3);
   } finally {
     db.close();
   }
 });
 
-test("invalid production JSON shapes roll back the direct migration without catalog-dependent admission", () => {
-  const db = productionDatabase();
+test("invalid production JSON shapes roll back the direct migration without catalog-dependent admission", async () => {
+  let db = await physicalMigrationDatabase(productionDatabase());
   try {
     seedProduction(db);
     migration.replaceLegacyGridInputs(
@@ -173,78 +183,78 @@ test("invalid production JSON shapes roll back the direct migration without cata
       { ...input, rows: { kind: "variable", values: [42] } },
       "grid",
     );
-    const before = snapshot(db);
-    assert.throws(
-      () => initializeDatabase(db, databaseOutputFiles(db)),
+    const before = physicalDatabaseSnapshot(db);
+    await assert.rejects(
+      () => migratePhysicalDatabase(db),
       /Cannot migrate production input for grid grid/,
     );
-    assert.deepEqual(snapshot(db), before);
+    assert.deepEqual(physicalDatabaseSnapshot(db), before);
   } finally {
     db.close();
   }
 });
 
-test("direct migration backfills configured links without deleting accepted or historical reference links", () => {
-  const db = productionDatabase();
+test("direct migration backfills configured links without deleting accepted or historical reference links", async () => {
+  let db = await physicalMigrationDatabase(productionDatabase());
   try {
     seedProduction(db);
     migration.unlinkConfiguredReference(db);
-    initializeDatabase(db, databaseOutputFiles(db));
+    db = await migratePhysicalDatabase(db);
     assert.deepEqual(migration.migratedGridReferenceIds(db), [
       { reference_id: "missing-reference" },
       { reference_id: "reference" },
       { reference_id: "unused-reference" },
     ]);
-    const stable = snapshot(db);
-    initializeDatabase(db, databaseOutputFiles(db));
-    assert.deepEqual(snapshot(db), stable);
+    const stable = physicalDatabaseSnapshot(db);
+    db = await migratePhysicalDatabase(db);
+    assert.deepEqual(physicalDatabaseSnapshot(db), stable);
   } finally {
     db.close();
   }
 });
 
-test("unsupported pre-production and intermediate versions leave stored data untouched", () => {
-  for (const version of [1, 7, 8, 9, 10, 11, 12, 13, 15, 16, 21]) {
-    const db = productionDatabase();
+test("unsupported pre-production and intermediate versions leave stored data untouched", async () => {
+  for (const version of [1, 7, 8, 9, 10, 11, 12, 13, 15, 16, 23]) {
+    let db = await physicalMigrationDatabase(productionDatabase());
     try {
       seedProduction(db);
       migration.setDatabaseVersion(db, version);
-      const before = snapshot(db);
-      assert.throws(
-        () => initializeDatabase(db, databaseOutputFiles(db)),
+      const before = physicalDatabaseSnapshot(db);
+      await assert.rejects(
+        () => migratePhysicalDatabase(db),
         /Unsupported database version/,
       );
-      assert.deepEqual(snapshot(db), before);
+      assert.deepEqual(physicalDatabaseSnapshot(db), before);
     } finally {
       db.close();
     }
   }
 });
 
-test("fresh databases initialize once and preserve encrypted sessions", () => {
-  const db = new Database(":memory:");
+test("fresh databases initialize once and preserve encrypted sessions", async () => {
+  let db = await physicalMigrationDatabase(new Database(":memory:"));
   try {
-    initializeDatabase(db, databaseOutputFiles(db));
+    db = await migratePhysicalDatabase(db);
     migration.seedEncryptedMigrationSession(db);
-    const before = snapshot(db);
-    initializeDatabase(db, databaseOutputFiles(db));
-    assert.deepEqual(snapshot(db), before);
+    const before = physicalDatabaseSnapshot(db);
+    db = await migratePhysicalDatabase(db);
+    assert.deepEqual(physicalDatabaseSnapshot(db), before);
   } finally {
     db.close();
   }
 });
 
-test("v19 judging migration freezes missing defaults without changing accepted results or explicit blank prompts", () => {
-  const db = migration.productionV17Database();
+test("v19 judging migration freezes missing defaults without changing accepted results or explicit blank prompts", async () => {
+  let db = await physicalMigrationDatabase(migration.productionV17Database());
   try {
-    initializeDatabase(db, databaseOutputFiles(db));
+    db = await migratePhysicalDatabase(db);
     migration.prepareV19JudgePromptMigration(db);
     const beforeGrid = storedData(db, "grid");
     const beforePrivate = storedData(db, "private-grid");
     assert.equal(beforeGrid.input.judge, true);
     const beforeTask = migration.storedJudgmentTaskData(db);
     const beforeRecords = migration.unchangedProductionRecords(db);
-    initializeDatabase(db, databaseOutputFiles(db));
+    db = await migratePhysicalDatabase(db);
     assert.deepEqual(storedData(db, "grid"), {
       ...beforeGrid,
       input: {
@@ -271,45 +281,45 @@ test("v19 judging migration freezes missing defaults without changing accepted r
       "",
     );
     assert.deepEqual(migration.unchangedProductionRecords(db), beforeRecords);
-    const stable = snapshot(db);
-    initializeDatabase(db, databaseOutputFiles(db));
-    assert.deepEqual(snapshot(db), stable);
+    const stable = physicalDatabaseSnapshot(db);
+    db = await migratePhysicalDatabase(db);
+    assert.deepEqual(physicalDatabaseSnapshot(db), stable);
   } finally {
     db.close();
   }
 });
 
-test("v19 judge prompt migration rolls back grids and task defaults together", () => {
-  const db = migration.productionV17Database();
+test("v19 judge prompt migration rolls back grids and task defaults together", async () => {
+  let db = await physicalMigrationDatabase(migration.productionV17Database());
   try {
-    initializeDatabase(db, databaseOutputFiles(db));
+    db = await migratePhysicalDatabase(db);
     migration.prepareV19JudgePromptMigration(db);
     migration.rejectJudgePromptMigration(db);
-    const before = snapshot(db);
-    assert.throws(
-      () => initializeDatabase(db, databaseOutputFiles(db)),
+    const before = physicalDatabaseSnapshot(db);
+    await assert.rejects(
+      () => migratePhysicalDatabase(db),
       /judge prompt migration blocked/,
     );
-    assert.deepEqual(snapshot(db), before);
+    assert.deepEqual(physicalDatabaseSnapshot(db), before);
   } finally {
     db.close();
   }
 });
 
-test("a genuine v17 upgrade preserves canonical payloads, accounting and encrypted sessions without rewriting grids", () => {
-  const db = migration.productionV17Database();
+test("a genuine v17 upgrade preserves canonical payloads, accounting and encrypted sessions without rewriting grids", async () => {
+  let db = await physicalMigrationDatabase(migration.productionV17Database());
   try {
     rejectStoredGridUpdates(db);
     const before = favoriteMigrationPreservedState(db);
     assert.equal(migration.productionSessionKey(db), "production-browser-key");
-    initializeDatabase(db, databaseOutputFiles(db));
+    db = await migratePhysicalDatabase(db);
     assert.deepEqual(favoriteMigrationPreservedState(db), before);
     assert.equal(migration.productionSessionKey(db), "production-browser-key");
     assert.deepEqual(storedFavoriteIds(db, "account"), []);
     insertFavoriteMembership(db, "account", "grid");
-    const migrated = snapshot(db);
-    initializeDatabase(db, databaseOutputFiles(db));
-    assert.deepEqual(snapshot(db), migrated);
+    const migrated = physicalDatabaseSnapshot(db);
+    db = await migratePhysicalDatabase(db);
+    assert.deepEqual(physicalDatabaseSnapshot(db), migrated);
     assert.deepEqual(storedFavoriteIds(db, "account"), ["grid"]);
     assert.deepEqual(migration.foreignKeyViolations(db), []);
   } finally {
@@ -317,16 +327,16 @@ test("a genuine v17 upgrade preserves canonical payloads, accounting and encrypt
   }
 });
 
-test("a frozen v18 upgrade preserves every existing schema object and row, including account favorites", () => {
-  const db = productionV18Database();
+test("a frozen v18 upgrade preserves every existing schema object and row, including account favorites", async () => {
+  let db = await physicalMigrationDatabase(productionV18Database());
   try {
     insertFavoriteMembership(db, "account", "grid");
     insertFavoriteAccount(db, "another-account");
     insertFavoriteMembership(db, "another-account", "private-grid");
     rejectStoredGridUpdates(db);
     const before = anonymousFavoriteMigrationPreservedState(db);
-    initializeDatabase(db, databaseOutputFiles(db));
-    assert.equal(migration.databaseVersion(db), 21);
+    db = await migratePhysicalDatabase(db);
+    assert.equal(migration.databaseVersion(db), 22);
     assert.deepEqual(anonymousFavoriteMigrationPreservedState(db), before);
     assert.deepEqual(storedFavoriteIds(db, "account"), ["grid"]);
     assert.deepEqual(storedFavoriteIds(db, "another-account"), [
@@ -335,9 +345,9 @@ test("a frozen v18 upgrade preserves every existing schema object and row, inclu
     assert.equal(migration.productionSessionKey(db), "production-browser-key");
     assert.deepEqual(storedAnonymousFavoriteIds(db, "anonymous"), []);
     insertAnonymousFavoriteMembership(db, "anonymous", "grid");
-    const stable = snapshot(db);
-    initializeDatabase(db, databaseOutputFiles(db));
-    assert.deepEqual(snapshot(db), stable);
+    const stable = physicalDatabaseSnapshot(db);
+    db = await migratePhysicalDatabase(db);
+    assert.deepEqual(physicalDatabaseSnapshot(db), stable);
     assert.deepEqual(storedAnonymousFavoriteIds(db, "anonymous"), ["grid"]);
     assert.deepEqual(migration.foreignKeyViolations(db), []);
   } finally {
@@ -345,16 +355,16 @@ test("a frozen v18 upgrade preserves every existing schema object and row, inclu
   }
 });
 
-test("fresh, frozen v14, deployed v17 and v18 databases support separate durable favorites and cascading cleanup", () => {
+test("fresh, frozen v14, deployed v17 and v18 databases support separate durable favorites and cascading cleanup", async () => {
   for (const create of [
     () => new Database(":memory:"),
     productionDatabase,
     migration.productionV17Database,
     productionV18Database,
   ]) {
-    const db = create();
+    let db = await physicalMigrationDatabase(create());
     try {
-      initializeDatabase(db, databaseOutputFiles(db));
+      db = await migratePhysicalDatabase(db);
       insertFavoriteAccount(db, "favorite-account");
       migration.insertPublicationBoundaryGrid(
         db,
@@ -396,9 +406,9 @@ test("fresh, frozen v14, deployed v17 and v18 databases support separate durable
         () => insertFavoriteMembership(db, "favorite-account", "missing-grid"),
         /FOREIGN KEY constraint failed/,
       );
-      const stable = snapshot(db);
-      initializeDatabase(db, databaseOutputFiles(db));
-      assert.deepEqual(snapshot(db), stable);
+      const stable = physicalDatabaseSnapshot(db);
+      db = await migratePhysicalDatabase(db);
+      assert.deepEqual(physicalDatabaseSnapshot(db), stable);
       removeFavoriteGrid(db, "favorite-grid");
       assert.deepEqual(storedFavoriteIds(db, "favorite-account"), []);
       assert.deepEqual(storedAnonymousFavoriteIds(db, "browser-lineage"), []);
@@ -424,33 +434,30 @@ test("fresh, frozen v14, deployed v17 and v18 databases support separate durable
   }
 });
 
-test("a failed v17 favorites migration preserves the previous schema, rows and version atomically", () => {
-  const db = migration.productionV17Database();
+test("a failed v17 favorites migration preserves the previous schema, rows and version atomically", async () => {
+  let db = await physicalMigrationDatabase(migration.productionV17Database());
   try {
     obstructFavoritesMigration(db);
-    const before = snapshot(db);
-    assert.throws(
-      () => initializeDatabase(db, databaseOutputFiles(db)),
-      /grid_favorites/,
-    );
-    assert.deepEqual(snapshot(db), before);
+    const before = physicalDatabaseSnapshot(db);
+    await assert.rejects(() => migratePhysicalDatabase(db), /grid_favorites/);
+    assert.deepEqual(physicalDatabaseSnapshot(db), before);
     assert.equal(migration.productionSessionKey(db), "production-browser-key");
   } finally {
     db.close();
   }
 });
 
-test("a failed v18 anonymous favorites migration rolls back without touching existing account collections", () => {
-  const db = productionV18Database();
+test("a failed v18 anonymous favorites migration rolls back without touching existing account collections", async () => {
+  let db = await physicalMigrationDatabase(productionV18Database());
   try {
     insertFavoriteMembership(db, "account", "grid");
     obstructAnonymousFavoritesMigration(db);
-    const before = snapshot(db);
-    assert.throws(
-      () => initializeDatabase(db, databaseOutputFiles(db)),
+    const before = physicalDatabaseSnapshot(db);
+    await assert.rejects(
+      () => migratePhysicalDatabase(db),
       /anonymous_grid_favorites/,
     );
-    assert.deepEqual(snapshot(db), before);
+    assert.deepEqual(physicalDatabaseSnapshot(db), before);
     assert.equal(migration.databaseVersion(db), 18);
     assert.deepEqual(storedFavoriteIds(db, "account"), ["grid"]);
     assert.equal(migration.productionSessionKey(db), "production-browser-key");
@@ -459,12 +466,14 @@ test("a failed v18 anonymous favorites migration rolls back without touching exi
   }
 });
 
-test("fresh and direct production upgrades enforce publication, slug uniqueness and grid cleanup", () => {
+test("fresh and direct production upgrades enforce publication, slug uniqueness and grid cleanup", async () => {
   for (const production of [false, true]) {
-    const db = production ? productionDatabase() : new Database(":memory:");
+    let db = await physicalMigrationDatabase(
+      production ? productionDatabase() : new Database(":memory:"),
+    );
     try {
       if (production) seedProduction(db);
-      initializeDatabase(db, databaseOutputFiles(db));
+      db = await migratePhysicalDatabase(db);
       migration.insertPublicationBoundaryGrid(
         db,
         "constraint-grid",
@@ -504,12 +513,14 @@ test("fresh and direct production upgrades enforce publication, slug uniqueness 
   }
 });
 
-test("fresh and direct production upgrades enforce paired positive integer reference proportions", () => {
+test("fresh and direct production upgrades enforce paired positive integer reference proportions", async () => {
   for (const production of [false, true]) {
-    const db = production ? productionDatabase() : new Database(":memory:");
+    let db = await physicalMigrationDatabase(
+      production ? productionDatabase() : new Database(":memory:"),
+    );
     try {
       if (production) seedProduction(db);
-      initializeDatabase(db, databaseOutputFiles(db));
+      db = await migratePhysicalDatabase(db);
       assert.deepEqual(referenceBlobs(db), []);
       insertReferenceBlobDimensions(db, "a".repeat(64), null, null);
       insertReferenceBlobDimensions(db, "b".repeat(64), 3, 7);
@@ -532,9 +543,9 @@ test("fresh and direct production upgrades enforce paired positive integer refer
         { sha256: "a".repeat(64), width: null, height: null },
         { sha256: "b".repeat(64), width: 3, height: 7 },
       ]);
-      const stable = snapshot(db);
-      initializeDatabase(db, databaseOutputFiles(db));
-      assert.deepEqual(snapshot(db), stable);
+      const stable = physicalDatabaseSnapshot(db);
+      db = await migratePhysicalDatabase(db);
+      assert.deepEqual(physicalDatabaseSnapshot(db), stable);
     } finally {
       db.close();
     }

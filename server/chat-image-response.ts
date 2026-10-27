@@ -193,23 +193,56 @@ export function chatImageResponse() {
       if (!response.ok || !response.body) return response;
       const decoder = new TextDecoder();
       const encoder = new TextEncoder();
-      let pending = "";
+      const fragments: string[] = [];
+      let carriageReturn = false;
+      let lineFeed = false;
+      function append(text: string) {
+        if (!text) return;
+        if (lineFeed) {
+          fragments.push("\n");
+          lineFeed = false;
+        }
+        fragments.push(text);
+      }
+      async function consume(
+        text: string,
+        controller: TransformStreamDefaultController<Uint8Array>,
+      ) {
+        let start = 0;
+        for (let index = 0; index < text.length; index++) {
+          const code = text.charCodeAt(index);
+          if (carriageReturn) {
+            carriageReturn = false;
+            if (code !== 10) append("\r");
+          }
+          if (code !== 13 && code !== 10) continue;
+          append(text.slice(start, index));
+          start = index + 1;
+          if (code === 13) {
+            carriageReturn = true;
+            continue;
+          }
+          if (lineFeed) {
+            const event = fragments.join("");
+            fragments.length = 0;
+            lineFeed = false;
+            controller.enqueue(encoder.encode((await frame(event)) + "\n\n"));
+          } else lineFeed = true;
+        }
+        append(text.slice(start));
+      }
       const stream = response.body.pipeThrough(
         new TransformStream<Uint8Array, Uint8Array>({
           async transform(chunk, controller) {
-            pending += decoder.decode(chunk, { stream: true });
-            pending = pending.replace(/\r\n/g, "\n");
-            let end: number;
-            while ((end = pending.indexOf("\n\n")) >= 0) {
-              const event = pending.slice(0, end);
-              pending = pending.slice(end + 2);
-              controller.enqueue(encoder.encode((await frame(event)) + "\n\n"));
-            }
+            await consume(decoder.decode(chunk, { stream: true }), controller);
           },
           async flush(controller) {
-            pending += decoder.decode();
-            if (pending.trim()) {
-              controller.enqueue(encoder.encode(await frame(pending)));
+            await consume(decoder.decode(), controller);
+            if (carriageReturn) append("\r");
+            if (lineFeed) fragments.push("\n");
+            const event = fragments.join("");
+            if (event.trim()) {
+              controller.enqueue(encoder.encode(await frame(event)));
             }
           },
         }),

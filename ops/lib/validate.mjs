@@ -14,7 +14,7 @@ import { createRequire } from "node:module";
 import { isDeepStrictEqual } from "node:util";
 import { command, writeJSON, verifyManifest } from "./common.mjs";
 import { validationWorkspace } from "./artifacts.mjs";
-import { environment } from "./runtime.mjs";
+import { environment, migrationCapacity } from "./runtime.mjs";
 
 export function validationCommands(options, unitFiles) {
   if (options.tests === "skip") return [];
@@ -51,12 +51,17 @@ export function validationEnvironment(
   privateEnv = {},
   inherited = process.env,
 ) {
+  const migrationWorkers = migrationCapacity(
+    privateEnv.STARTUP_DATA_MIGRATION_PARALLEL_WORKERS ??
+      inherited.STARTUP_DATA_MIGRATION_PARALLEL_WORKERS,
+  );
   return {
     ...inherited,
     ...privateEnv,
     NODE_ENV: "test",
     GITHUB_CLIENT_ID: "fixture",
     GITHUB_CLIENT_SECRET: "fixture",
+    STARTUP_DATA_MIGRATION_PARALLEL_WORKERS: migrationWorkers,
     KEY_ENCRYPTION_SECRET: randomBytes(32).toString("hex"),
     DATABASE_PATH: join(runtime, "slopgrid.sqlite"),
     OUTPUTS_PATH: join(runtime, "outputs"),
@@ -133,6 +138,10 @@ export async function validateBuild(request, build, run) {
   let runtime;
   const productionData = ["production", "rehearse"].includes(request.target);
   try {
+    const target = productionData
+      ? "production"
+      : request.target === "staging" ? "staging" : undefined;
+    const source = target ? environment(request.config.targets[target]) : undefined;
     if (request.tests !== "skip" || productionData) {
       const workspace = validationWorkspace(build, run);
       const privateEnv =
@@ -140,12 +149,18 @@ export async function validateBuild(request, build, run) {
           ? parseEnv(readFileSync(request.config.testEnvFile, "utf8"))
           : {};
       runtime = mkdtempSync(join(tmpdir(), "sg-validation-"));
-      const env = validationEnvironment(workspace, runtime, privateEnv);
+      const env = validationEnvironment(workspace, runtime, {
+        ...privateEnv,
+        ...(source ? {
+          STARTUP_DATA_MIGRATION_PARALLEL_WORKERS:
+            source.STARTUP_DATA_MIGRATION_PARALLEL_WORKERS,
+          OPENROUTER_BASE_URL: source.OPENROUTER_BASE_URL,
+        } : {}),
+      });
       if (productionData) {
         console.log(
           "Rehearsing migrations on a private copy of the production database and all output files.",
         );
-        const source = environment(request.config.targets.production);
         if (!lstatSync(source.DATABASE_PATH).isFile())
           throw new Error(
             "Production database must be a regular file, not a symlink or special file",
@@ -208,7 +223,12 @@ export async function validateBuild(request, build, run) {
 import { schemaVersion } from "./server/database.ts";
 if (!Number.isSafeInteger(schemaVersion) || schemaVersion <= 0)
   throw new Error("Candidate database schema version must be a positive integer");
-const store = new Store(process.env.DATABASE_PATH, Buffer.from(process.env.KEY_ENCRYPTION_SECRET, "hex"), process.env.OUTPUTS_PATH);
+const store = await Store.open(process.env.DATABASE_PATH, Buffer.from(process.env.KEY_ENCRYPTION_SECRET, "hex"), process.env.OUTPUTS_PATH, {
+  models: async () => {
+    const { Provider } = await import("./server/provider.ts");
+    return new Provider(process.env.OPENROUTER_BASE_URL).models();
+  },
+});
 try {
   const observed = store.db.pragma("user_version", { simple: true });
   if (observed !== schemaVersion)

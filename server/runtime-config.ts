@@ -2,7 +2,17 @@ import { mkdirSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { resolve, dirname, join } from "node:path";
 
+export function startupDataMigrationParallelWorkers(): number {
+  const value = process.env.STARTUP_DATA_MIGRATION_PARALLEL_WORKERS;
+  if (!value || !/^[1-9]\d*$/.test(value) || !Number.isSafeInteger(Number(value)))
+    throw new Error(
+      "STARTUP_DATA_MIGRATION_PARALLEL_WORKERS must be a positive safe integer",
+    );
+  return Number(value);
+}
+
 export function runtimeConfig() {
+  const migrationWorkers = startupDataMigrationParallelWorkers();
   const database = resolve(
     process.env.DATABASE_PATH ?? ".data/slopgrid.sqlite",
   );
@@ -28,6 +38,7 @@ export function runtimeConfig() {
   }
   return {
     database,
+    startupDataMigrationParallelWorkers: migrationWorkers,
     secret,
     outputsPath: process.env.OUTPUTS_PATH,
     socket: resolve(

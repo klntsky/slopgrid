@@ -1,3 +1,4 @@
+import { fixtureModels } from "../current-grid-fixture.js";
 import { test, expect } from "@playwright/test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -18,7 +19,7 @@ test("private websites load in frames and direct tabs for the owning user across
     database: join(directory, "db.sqlite"),
     secret: Buffer.alloc(32, 7),
   });
-  const store = new Store(join(directory, "db.sqlite"), Buffer.alloc(32, 7));
+  const store = await Store.open(join(directory, "db.sqlite"), Buffer.alloc(32, 7));
   const web = await webFixture({
     hostname: "slopgrid.test",
     socket: join(directory, "db.sqlite.sock"),
@@ -74,7 +75,7 @@ test("private websites load in frames and direct tabs for the owning user across
         'import { message } from "./message.mjs"; document.querySelector("p").textContent = message;',
       "message.mjs": 'export const message = "Private module loaded";',
     };
-    const tasks = createWorkflow(input, grid.cells);
+    const tasks = createWorkflow(input, grid.cells, fixtureModels);
     const task = tasks.find((task) => task.kind === "generation")!;
     task.status = "complete";
     task.output = {

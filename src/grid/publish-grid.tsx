@@ -32,7 +32,7 @@ export function PublishGrid({
       <span
         className="publish-hint"
         data-tooltip={
-          grid.visibility === "public"
+          grid.visibility === "public" && grid.canClaimSlug
             ? "Claim slug"
             : grid.published
               ? "Change visibility"
@@ -48,7 +48,7 @@ export function PublishGrid({
             setOpen(true);
           }}
           aria-label={
-            grid.visibility === "public"
+            grid.visibility === "public" && grid.canClaimSlug
               ? "Claim slug"
               : grid.published
                 ? "Change visibility"
@@ -66,6 +66,7 @@ export function PublishGrid({
         <PublishDialog
           initialVisibility={grid.visibility}
           initialSlug={grid.slug}
+          allowSlug={grid.canClaimSlug}
           publish={publish}
           onClose={() => setOpen(false)}
         />

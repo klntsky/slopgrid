@@ -23,22 +23,22 @@ function isolatedResources(t: TestContext) {
   return { directory, secret: Buffer.alloc(32, 7) };
 }
 
-test("ordinary fixture writes cannot contaminate another fixture or the blank baseline", (t) => {
+test("ordinary fixture writes cannot contaminate another fixture or the blank baseline", async (t) => {
   const { directory, secret } = isolatedResources(t);
   const first = join(directory, "first", "app.sqlite");
   const second = join(directory, "second", "app.sqlite");
-  seedTestDatabase(first);
-  seedTestDatabase(second);
-  const writer = new Store(first, secret);
+  await seedTestDatabase(first);
+  await seedTestDatabase(second);
+  const writer = await Store.open(first, secret);
   try {
     writer.saveSession({ id: "only-first", created: 1 });
   } finally {
     writer.db.close();
   }
   const third = join(directory, "third", "app.sqlite");
-  seedTestDatabase(third);
+  await seedTestDatabase(third);
   for (const database of [second, third]) {
-    const reader = new Store(database, secret);
+    const reader = await Store.open(database, secret);
     try {
       assert.equal(reader.session("only-first"), undefined);
       reader.saveSession({ id: "private-writable-session", created: 2 });
@@ -49,10 +49,10 @@ test("ordinary fixture writes cannot contaminate another fixture or the blank ba
   }
 });
 
-test("a supplied populated snapshot overrides the blank template and remains unchanged by fixture writes", (t) => {
+test("a supplied populated snapshot overrides the blank template and remains unchanged by fixture writes", async (t) => {
   const { directory, secret } = isolatedResources(t);
   const source = join(directory, "source.sqlite");
-  const original = new Store(source, secret);
+  const original = await Store.open(source, secret);
   try {
     original.saveSession({ id: "historical-session", created: 3 });
   } finally {
@@ -60,15 +60,15 @@ test("a supplied populated snapshot overrides the blank template and remains unc
   }
   process.env.SLOPGRID_TEST_DATABASE = source;
   const copy = join(directory, "fixture", "app.sqlite");
-  seedTestDatabase(copy);
-  const fixture = new Store(copy, secret);
+  await seedTestDatabase(copy);
+  const fixture = await Store.open(copy, secret);
   try {
     assert.equal(fixture.session("historical-session")?.created, 3);
     fixture.saveSession({ id: "historical-session", created: 4 });
   } finally {
     fixture.db.close();
   }
-  const reopened = new Store(source, secret);
+  const reopened = await Store.open(source, secret);
   try {
     assert.equal(reopened.session("historical-session")?.created, 3);
   } finally {

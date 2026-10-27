@@ -576,9 +576,12 @@ export type GenerationParameters = Pick<
   Cell,
   "model" | "effort" | "prompt" | "messages" | "budgetUsd" | "imageSettings"
 >;
-export type GenerationInput = GenerationParameters & {
-  format: GridInput["format"];
-};
+export type ChatOutputMode = "text" | "text-and-images";
+export type GenerationInput = GenerationParameters &
+  (
+    | { format: "chat-template"; chatOutputMode: ChatOutputMode }
+    | { format: Exclude<GridInput["format"], "chat-template"> }
+  );
 export type GenerationOutput = {
   artifactId: string;
   mediaType?: string;
@@ -613,6 +616,10 @@ export type JudgmentTask = Task<JudgmentInput, { results: JudgeResult[] }> & {
   generationId: string;
 };
 export type WorkflowTask = GenerationTask | JudgmentTask;
+export function isGridFinished(grid: { cells: readonly Pick<Cell, "status">[] }): boolean {
+  return grid.cells.length > 0 &&
+    grid.cells.every((cell) => cell.status === "complete" || cell.status === "error");
+}
 export function hasCompletedOutput(cell: Pick<Cell, "artifactId">): boolean {
   return !!cell.artifactId;
 }

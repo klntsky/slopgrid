@@ -3,6 +3,7 @@ import { test, expect } from "./fixtures";
 import {
   connectOpenRouter,
   expectProgress,
+  editHeldGrid,
   selectModel,
   setVariableValues,
 } from "./helpers";
@@ -67,8 +68,18 @@ test("renamed variables preserve generation and named cases override headers thr
     page.getByRole("button", { name: "Rename row case 1", exact: true }),
   ).toHaveText("Feline");
   await connectOpenRouter(page);
+  await request.post("/fixture/reset", { data: { holdGenerations: true } });
   await page.getByRole("button", { name: "Generate", exact: true }).click();
-  await expectProgress(page, 2, 2);
+  await expect
+    .poll(
+      async () =>
+        (await (await request.get("/fixture/workers")).json()).held.length,
+    )
+    .toBe(2);
+  await request.post("/fixture/release", {
+    data: { prompt: "Draw cat wearing a hat" },
+  });
+  await expectProgress(page, 1, 2);
   const grid = page.locator(".output-grid");
   await expect(grid.locator('tbody th[scope="row"]').nth(0)).toHaveText(
     "Feline",
@@ -79,7 +90,7 @@ test("renamed variables preserve generation and named cases override headers thr
   await expect(grid.locator("thead th").nth(1)).toHaveText("Headwear");
   await expect(
     page.getByRole("img", { name: "Generated SVG", exact: true }),
-  ).toHaveCount(2);
+  ).toHaveCount(1);
   const calls = await (await request.get("/fixture/calls")).json();
   expect(JSON.stringify(calls)).toContain("Draw cat wearing a hat");
   expect(JSON.stringify(calls)).toContain("Draw dog wearing a hat");
@@ -87,7 +98,7 @@ test("renamed variables preserve generation and named cases override headers thr
   await expect(grid.locator('tbody th[scope="row"]').nth(0)).toHaveText(
     "Feline",
   );
-  await page.getByRole("button", { name: "EDIT", exact: true }).click();
+  await editHeldGrid(page);
   await expect(prompt).toHaveValue("Draw $ANIMAL_2 wearing a $ITEM");
   await rename(page, "row case 1", "");
   await expect(
@@ -99,6 +110,9 @@ test("renamed variables preserve generation and named cases override headers thr
   ).toHaveText("Case 1");
   await page.getByRole("button", { name: "Generate", exact: true }).click();
   await expectProgress(page, 2, 2);
+  await expect(
+    page.getByRole("img", { name: "Generated SVG", exact: true }),
+  ).toHaveCount(2);
   await expect(grid.locator('tbody th[scope="row"]').nth(0)).toContainText(
     "$ANIMAL_2: cat",
   );

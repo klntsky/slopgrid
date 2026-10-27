@@ -3,22 +3,19 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { Store } from "../server/store.js";
 import { generatedDataUrl, generatedPng } from "./chat-image-output-fixture.js";
-import {
-  chatOutputMigrationFixture,
-  chatMigrationDatabaseState,
-  corruptInstalledChatReplacement,
-  expectedMigratedMessages,
-  failChatArtifactRepoint,
-  killMigrationBeforeArtifactRepoint,
-  migrationDestinations,
-  outputFileInventory,
-  storedChatTasks,
-  type CanonicalMessageJSON,
-  type ChatOutputMigrationFixture,
-} from "./chat-output-migration-fixture.js";
+import { preserveLegacyChatDatabase, chatMigrationModels, chatOutputMigrationFixture, chatMigrationDatabaseState,
+corruptInstalledChatReplacement,
+expectedMigratedMessages,
+failChatArtifactRepoint,
+killMigrationBeforeArtifactRepoint,
+migrationDestinations,
+outputFileInventory,
+storedChatTasks,
+type CanonicalMessageJSON,
+type ChatOutputMigrationFixture, } from "./chat-output-migration-fixture.js";
 
-function openStore(t: TestContext, fixture: ChatOutputMigrationFixture) {
-  const store = new Store(fixture.database, fixture.secret, fixture.outputs);
+async function openStore(t: TestContext, fixture: ChatOutputMigrationFixture) {
+  const store = await Store.open(fixture.database, fixture.secret, fixture.outputs, { models: async () => chatMigrationModels });
   t.after(() => {
     if (store.db.open) store.db.close();
   });
@@ -59,7 +56,7 @@ for (const legacyReferenceFiles of [false, true]) {
     const fixture = chatOutputMigrationFixture(t, { legacyReferenceFiles });
     const before = chatMigrationDatabaseState(fixture.database);
     const oldTasks = storedChatTasks(fixture.database);
-    const store = openStore(t, fixture);
+    const store = await openStore(t, fixture);
 
     await assertCanonicalSavedMessages(store);
     const after = chatMigrationDatabaseState(fixture.database);
@@ -87,11 +84,7 @@ for (const legacyReferenceFiles of [false, true]) {
       assert.equal(task.id, old.id);
       assert.equal(task.status, old.status);
       assert.equal(task.thinking_source_id, old.thinking_source_id);
-      assert.deepEqual(
-        task.data.input,
-        old.data.input,
-        "accepted inputs retain their reference identities",
-      );
+      assert.deepEqual(task.data.input, task.id === "task-markdown" ? old.data.input : { ...old.data.input, chatOutputMode: "text-and-images" }, "accepted inputs retain their reference identities",);
       assert.deepEqual(
         task.data.output,
         old.data.output,
@@ -133,22 +126,22 @@ for (const legacyReferenceFiles of [false, true]) {
 
 test("a second Store construction preserves migrated artifact identities, database records and the complete file inventory", async (t) => {
   const fixture = chatOutputMigrationFixture(t);
-  const first = openStore(t, fixture);
+  const first = await openStore(t, fixture);
   const artifacts = await assertCanonicalSavedMessages(first);
   const state = chatMigrationDatabaseState(fixture.database);
   const inventory = outputFileInventory(fixture.outputs);
   first.db.close();
 
-  const second = openStore(t, fixture);
+  const second = await openStore(t, fixture);
   assert.deepEqual(await assertCanonicalSavedMessages(second), artifacts);
   assert.deepEqual(chatMigrationDatabaseState(fixture.database), state);
   assert.deepEqual(outputFileInventory(fixture.outputs), inventory);
 });
 
-test("failed and live chat prefixes are canonical in durable storage before runtime reads without changing accepted templates or task state", (t) => {
+test("failed and live chat prefixes are canonical in durable storage before runtime reads without changing accepted templates or task state", async (t) => {
   const fixture = chatOutputMigrationFixture(t);
   const oldTasks = storedChatTasks(fixture.database);
-  const store = openStore(t, fixture);
+  const store = await openStore(t, fixture);
   const tasks = storedChatTasks(fixture.database);
   for (const id of ["failed", "live"]) {
     const task = tasks.find((task) => task.id === `task-${id}`)!;
@@ -157,7 +150,7 @@ test("failed and live chat prefixes are canonical in durable storage before runt
     assert.equal(task.status, id === "failed" ? "error" : "running");
     assert.equal(task.data.attemptId, old.data.attemptId);
     assert.equal(task.data.error, old.data.error);
-    assert.deepEqual(task.data.input, old.data.input);
+    assert.deepEqual(task.data.input, { ...old.data.input, chatOutputMode: "text-and-images" });
     assert.deepEqual(
       JSON.parse(task.data.progress!.draft!),
       expectedMigratedMessages("source").slice(0, 5),
@@ -190,20 +183,13 @@ for (const fault of [
     assert.equal(before.version, 19);
     assert.deepEqual(before.foreignKeyViolations, []);
 
-    const startWithFault = () => {
-      const unexpected = new Store(
-        fixture.database,
-        fixture.secret,
-        fixture.outputs,
-      );
-      unexpected.db.close();
-    };
+    const startWithFault = async () => {
+          const unexpected = await Store.open(fixture.database, fixture.secret, fixture.outputs, { models: async () => chatMigrationModels });
+          unexpected.db.close();
+        };
     if (fault === "database repoint failure")
-      assert.throws(
-        startWithFault,
-        /fixture rejects canonical artifact repoint/,
-      );
-    else assert.throws(startWithFault);
+      await assert.rejects(startWithFault, /fixture rejects canonical artifact repoint/,);
+    else await assert.rejects(startWithFault);
     assert.deepEqual(
       chatMigrationDatabaseState(fixture.database),
       before,
@@ -218,7 +204,7 @@ for (const fault of [
       );
 
     restore();
-    const retried = openStore(t, fixture);
+    const retried = await openStore(t, fixture);
     const artifacts = await assertCanonicalSavedMessages(retried);
     assert.ok(chatMigrationDatabaseState(fixture.database).version > 19);
     assert.deepEqual(
@@ -229,7 +215,7 @@ for (const fault of [
     const migratedInventory = outputFileInventory(fixture.outputs);
     retried.db.close();
 
-    const reopened = openStore(t, fixture);
+    const reopened = await openStore(t, fixture);
     assert.deepEqual(await assertCanonicalSavedMessages(reopened), artifacts);
     assert.deepEqual(
       chatMigrationDatabaseState(fixture.database),
@@ -243,14 +229,14 @@ for (const status of ["pending", "running", "error"] as const)
   test(`startup converts every referenced chat artifact even when its task is ${status}`, async (t) => {
     const fixture = chatOutputMigrationFixture(t, { artifactStatus: status });
     const before = storedChatTasks(fixture.database);
-    const store = openStore(t, fixture);
+    const store = await openStore(t, fixture);
     for (const destination of migrationDestinations) {
       const task = storedChatTasks(fixture.database).find(
         (task) => task.id === `task-${destination}`,
       )!;
       const old = before.find((old) => old.id === task.id)!;
       assert.equal(task.status, status);
-      assert.deepEqual(task.data, old.data);
+      assert.deepEqual(task.data, { ...old.data, input: { ...old.data.input, chatOutputMode: "text-and-images" } });
       assert.equal(task.thinking_source_id, old.thinking_source_id);
       assert.ok(task.artifact_id);
       assert.notEqual(task.artifact_id, "shared-chat");
@@ -262,9 +248,9 @@ for (const status of ["pending", "running", "error"] as const)
     }
   });
 
-test("startup materializes only supplied turns already present in a partial prefix", (t) => {
+test("startup materializes only supplied turns already present in a partial prefix", async (t) => {
   const fixture = chatOutputMigrationFixture(t, { prefixLength: 2 });
-  openStore(t, fixture);
+  await openStore(t, fixture);
   for (const id of ["failed", "live"]) {
     const task = storedChatTasks(fixture.database).find(
       (task) => task.id === `task-${id}`,
@@ -279,21 +265,23 @@ test("startup materializes only supplied turns already present in a partial pref
 
 test("retry refuses an existing replacement with different bytes instead of overwriting it or committing pointers", async (t) => {
   const fixture = chatOutputMigrationFixture(t);
-  const unblock = failChatArtifactRepoint(fixture.database);
+  const restoreLegacyDatabase = await preserveLegacyChatDatabase(fixture);
   const before = chatMigrationDatabaseState(fixture.database);
-  const start = () => {
-    const store = new Store(fixture.database, fixture.secret, fixture.outputs);
-    store.db.close();
-  };
-  assert.throws(start, /fixture rejects canonical artifact repoint/);
-  unblock();
+  const migrated = await openStore(t, fixture);
+  await assertCanonicalSavedMessages(migrated);
+  migrated.db.close();
+  restoreLegacyDatabase();
+  const start = async () => {
+      const store = await Store.open(fixture.database, fixture.secret, fixture.outputs, { models: async () => chatMigrationModels });
+      store.db.close();
+    };
   const restore = corruptInstalledChatReplacement(fixture.outputs);
   const corrupted = outputFileInventory(fixture.outputs);
-  assert.throws(start);
+  await assert.rejects(start);
   assert.deepEqual(chatMigrationDatabaseState(fixture.database), before);
   assert.deepEqual(outputFileInventory(fixture.outputs), corrupted);
   restore();
-  await assertCanonicalSavedMessages(openStore(t, fixture));
+  await assertCanonicalSavedMessages(await openStore(t, fixture));
 });
 
 test(
@@ -310,7 +298,7 @@ test(
     assert.equal(killed.code, null);
     assert.equal(killed.signal, "SIGKILL");
     assert.notEqual(killed.artifactId, "shared-chat");
-    assert.deepEqual(killed.messages, expectedMigratedMessages("source"));
+    assert.ok(migrationDestinations.some((destination) => JSON.stringify(killed.messages) === JSON.stringify(expectedMigratedMessages(destination))));
     assert.equal(chatMigrationDatabaseState(fixture.database).version, 19);
     assert.deepEqual(chatMigrationDatabaseState(fixture.database), before);
     const interrupted = outputFileInventory(fixture.outputs);
@@ -326,10 +314,10 @@ test(
         `SIGKILL must retain legacy source ${source.path}`,
       );
 
-    const restarted = openStore(t, fixture);
+    const restarted = await openStore(t, fixture);
     const artifacts = await assertCanonicalSavedMessages(restarted);
-    assert.equal(artifacts[0], killed.artifactId);
-    assert.equal(chatMigrationDatabaseState(fixture.database).version, 21);
+    assert.ok(artifacts.includes(killed.artifactId));
+    assert.equal(chatMigrationDatabaseState(fixture.database).version, 22);
     const state = chatMigrationDatabaseState(fixture.database);
     const inventory = outputFileInventory(fixture.outputs);
     assert.deepEqual(
@@ -338,7 +326,7 @@ test(
       "restart must reuse the already-installed file without rewriting it",
     );
     restarted.db.close();
-    const repeated = openStore(t, fixture);
+    const repeated = await openStore(t, fixture);
     assert.deepEqual(await assertCanonicalSavedMessages(repeated), artifacts);
     assert.deepEqual(chatMigrationDatabaseState(fixture.database), state);
     assert.deepEqual(outputFileInventory(fixture.outputs), inventory);

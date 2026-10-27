@@ -40,7 +40,7 @@ if (
 const config = runtimeConfig();
 const generation = generationClient(config.socket);
 await generation.status();
-const { app, modelCatalog, store, session } = createApp({
+const { app, modelCatalog, store, session } = await createApp({
   authURL: process.env.OPENROUTER_AUTH_URL,
   origin,
   outputDomain,

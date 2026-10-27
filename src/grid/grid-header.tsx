@@ -6,6 +6,7 @@ import { Author } from "../components/identity";
 import { Square, Play, Pencil, GitBranch, Link2 } from "lucide-react";
 import type { ViewGrid } from "../api";
 import { useTooltip, tooltipRef } from "../components/use-tooltip";
+import { isGridFinished } from "../../server/domain";
 const totalUsd = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
@@ -24,7 +25,7 @@ export function GridHeader({
   onAction: (action: "retry" | "pause") => void;
   onConfigure: () => void;
 }) {
-  const canConfigure = g.canConfigure ?? (g.canEdit || g.published);
+  const canConfigure = g.canConfigure;
   const complete = g.cells.filter((c) => c.status === "complete").length,
     failed = g.cells.filter((c) => c.status === "error").length,
     finished = complete + failed,
@@ -85,7 +86,7 @@ export function GridHeader({
     <>
       <div className="grid-heading">
         <div className="grid-controls">
-          {g.canEdit && !g.published && g.status !== "complete" && (
+          {g.canEdit && !g.published && !isGridFinished(g) && (
             <button
               className="secondary inference-toggle"
               disabled={busy}
@@ -101,24 +102,15 @@ export function GridHeader({
             </button>
           )}
           <div className="actions">
-            {(g.canEdit || g.published) && (
+            {canConfigure && (
               <span
-                tabIndex={!canConfigure ? 0 : undefined}
-                data-tooltip={
-                  canConfigure
-                    ? g.published
-                      ? "Fork grid"
-                      : "Edit grid"
-                    : "This grid's configuration format is not supported by the current editor. Its outputs remain available."
-                }
+                data-tooltip={g.published ? "Fork grid" : "Edit grid"}
                 ref={tooltipRef}
               >
                 <button
                   className="secondary inference-toggle"
-                  disabled={busy || !canConfigure}
-                  onClick={() => {
-                    if (canConfigure) onConfigure();
-                  }}
+                  disabled={busy}
+                  onClick={onConfigure}
                   aria-label={g.published ? "FORK" : "EDIT"}
                 >
                   {g.published ? (
@@ -129,10 +121,9 @@ export function GridHeader({
                 </button>
               </span>
             )}
-            {g.canEdit &&
-              (!g.published || g.visibility === "unlisted" || !g.slug) && (
-                <PublishGrid grid={g} disabled={busy} />
-              )}
+            {g.canEdit && (
+              <PublishGrid grid={g} disabled={busy} />
+            )}
             {g.published && (
               <CopyButton
                 className="secondary inference-toggle"

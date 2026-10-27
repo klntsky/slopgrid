@@ -1,3 +1,4 @@
+import { fixtureModels } from "./current-grid-fixture.js";
 import {
   expandGrid,
   gridSchema,
@@ -31,7 +32,7 @@ export function seedCompletedJudgment(
     createdAt: new Date().toISOString(),
     cells: expandGrid(input).map((cell) => ({ ...cell, id: token() })),
   } satisfies Grid;
-  const tasks = createWorkflow(input, grid.cells);
+  const tasks = createWorkflow(input, grid.cells, fixtureModels);
   for (const task of tasks) {
     task.status = "complete";
     if (task.kind === "generation") {

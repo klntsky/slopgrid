@@ -7,6 +7,7 @@ import {
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { archivedFixtureModels, startFixtureCatalog } from "./model-catalog-fixture.mjs";
 
 const helper = fileURLToPath(import.meta.url);
 export const productionKey = "11".repeat(32);
@@ -27,7 +28,10 @@ function appCommand(release, action, env, option = "") {
   const loader = pathToFileURL(createRequire(join(release, "package.json")).resolve("tsx/esm")).href;
   const result = spawnSync(process.execPath, [
     "--import", loader, helper, action, release, JSON.stringify(env), option,
-  ], { encoding: "utf8", timeout: 90000 });
+  ], {
+    encoding: "utf8", timeout: 90000,
+    env: { ...process.env, STARTUP_DATA_MIGRATION_PARALLEL_WORKERS: "30" },
+  });
   if (result.error) throw result.error;
   if (result.status !== 0) throw new Error(result.stderr || `Storage fixture exited ${result.status}`);
   return result.stdout ? JSON.parse(result.stdout) : undefined;
@@ -59,12 +63,15 @@ export function stagingDataFixture(t, options = {}) {
     OUTPUT_DOMAIN: "outputs.staging.invalid", GITHUB_CLIENT_ID: "staging-client",
     GITHUB_CLIENT_SECRET: "private-staging-oauth-secret", PORT: "3100",
     GENERATION_SOCKET: join(staging, "engine.sock"), STAGING_ONLY: "keep this value",
+    OPENROUTER_BASE_URL: startFixtureCatalog(t, root),
+    STARTUP_DATA_MIGRATION_PARALLEL_WORKERS: "30",
   };
   const productionEnv = {
     DATABASE_PATH: join(production, "production.sqlite"), OUTPUTS_PATH: join(production, "outputs"),
     KEY_ENCRYPTION_SECRET: productionKey, APP_ORIGIN: "https://production.invalid",
     GITHUB_CLIENT_ID: "production-client", GITHUB_CLIENT_SECRET: "private-production-oauth-secret",
     PRODUCTION_ONLY: "must not reach staging",
+    STARTUP_DATA_MIGRATION_PARALLEL_WORKERS: "30",
   };
   const stagingEnvText = [
     "# Preserve staging settings, comments, and quoted values.",
@@ -150,7 +157,7 @@ if (process.argv[1] === helper) {
     } else {
       const { Store } = await import(pathToFileURL(join(release, "server/store.ts")).href);
       const { schemaVersion } = await import(pathToFileURL(join(release, "server/database.ts")).href);
-      const store = new Store(env.DATABASE_PATH, Buffer.from(env.KEY_ENCRYPTION_SECRET, "hex"), env.OUTPUTS_PATH);
+      const store = await Store.open(env.DATABASE_PATH, Buffer.from(env.KEY_ENCRYPTION_SECRET, "hex"), env.OUTPUTS_PATH, { models: async () => archivedFixtureModels });
       try {
         if (action === "initialize") {
           store.saveSession(kind === "production" ? productionSession : stagingSession);

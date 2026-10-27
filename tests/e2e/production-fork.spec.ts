@@ -2,12 +2,16 @@ import { test, expect } from "@playwright/test";
 import { runtimeFixture } from "../runtime-fixture";
 import { arrangeHistoricalGrid } from "../grid-storage-fixture";
 import { currentInput } from "../current-grid-fixture";
-import { expandGrid, type GenerationTask, type Grid } from "../../server/domain";
+import {
+  expandGrid,
+  type GenerationTask,
+  type Grid,
+} from "../../server/domain";
 import { token } from "../../server/ids";
-import { expectProgress } from "./helpers";
+import { expectProgress, finishPublishing } from "./helpers";
 
 for (const format of ["markdown", "chat-template"] as const) {
-  test(`production ${format} setup can be ${format === "markdown" ? "edited" : "forked"} without changing accepted history`, async ({
+  test(`finished production ${format} history stays read-only through publication and FORK`, async ({
     page,
     context,
   }) => {
@@ -41,9 +45,7 @@ for (const format of ["markdown", "chat-template"] as const) {
         rows: chat
           ? [{ variable: [{ text: "cat" }] }, { variable: [{ text: "dog" }] }]
           : [{ model: "fixture/text" }],
-        columns: chat
-          ? [{ model: "fixture/text" }]
-          : [{ effort: "default" }],
+        columns: chat ? [{ model: "fixture/text" }] : [{ effort: "default" }],
       });
       const grid: Grid = {
         id: token(),
@@ -75,7 +77,9 @@ for (const format of ["markdown", "chat-template"] as const) {
           kind: "generation",
           status: "complete",
           input: {
-            format,
+            ...(format === "chat-template"
+              ? { format, chatOutputMode: "text" as const }
+              : { format }),
             model: cell.model,
             effort: cell.effort,
             prompt: cell.prompt,
@@ -92,86 +96,76 @@ for (const format of ["markdown", "chat-template"] as const) {
       const sourceBefore = f.store.get(grid.id);
       const tasksBefore = f.store.workflow(grid.id);
       await page.goto(`${f.origin}/grid/${grid.id}`);
-      const configure = page.getByRole("button", {
-        name: chat ? "FORK" : "EDIT",
-        exact: true,
-      });
-      await expect(configure).toBeEnabled();
-      await configure.click();
-      await expect(page).toHaveURL(/\/create$/);
+      await expectProgress(page, grid.cells.length, grid.cells.length);
+      await expect(
+        page.getByRole("button", { name: "EDIT", exact: true }),
+      ).toHaveCount(0);
+      await expect(
+        page.getByRole("button", { name: "Generate", exact: true }),
+      ).toHaveCount(0);
+      if (!chat) {
+        await expect(
+          page.getByRole("button", { name: "FORK", exact: true }),
+        ).toHaveCount(0);
+        await page
+          .getByRole("button", { name: "PUBLISH", exact: true })
+          .click();
+        await finishPublishing(page);
+      }
+      const publishedSource = f.store.get(grid.id)!;
+      expect(publishedSource.input).toEqual(sourceBefore!.input);
+      expect(f.store.workflow(grid.id)).toEqual(tasksBefore);
+      const sourceURL = page.url();
+      await page.getByRole("button", { name: "FORK", exact: true }).click();
+      await expect(page).toHaveURL(
+        (url) => /^\/grid\/[^/]+$/.test(url.pathname) && url.href !== sourceURL,
+      );
+      expect(page.url()).not.toBe(sourceURL);
+      await expectProgress(page, grid.cells.length, grid.cells.length);
+      await expect(
+        page.getByRole("button", { name: "EDIT", exact: true }),
+      ).toHaveCount(0);
+      await expect(
+        page.getByRole("button", { name: "Generate", exact: true }),
+      ).toHaveCount(0);
       await expect(
         page.getByLabel("Budget limit per cell", { exact: true }),
-      ).toHaveValue("0.25");
-      if (chat) {
-        await expect(page.getByLabel("Message 1", { exact: true })).toHaveValue(
-          "Keep answers short.",
+      ).toHaveCount(0);
+      const copyId = new URL(page.url()).pathname.split("/").pop()!;
+      const destination = f.store.get(copyId)!;
+      expect(destination.id).not.toBe(grid.id);
+      expect(destination.input).toEqual(input);
+      expect(destination.published).toBe(false);
+      expect(destination.visibility).toBe("private");
+      const copyTasks = f.store.workflow(copyId);
+      for (const [index, cell] of destination.cells.entries()) {
+        const sourceCell = publishedSource.cells[index];
+        expect(cell.prompt).toBe(sourceCell.prompt);
+        expect(cell.messages).toEqual(sourceCell.messages);
+        expect(cell.artifactId).toBe(sourceCell.artifactId);
+        const sourceTask = tasksBefore.find(
+          (task) => task.id === sourceCell.generationId,
+        )!;
+        const copiedTask = copyTasks.find(
+          (task) => task.id === cell.generationId,
+        )!;
+        expect(copiedTask.input).toEqual(sourceTask.input);
+        const sourceOutput = await f.request(
+          `/outputs/${sourceCell.id}/download`,
         );
-        await expect(page.getByLabel("Message 2", { exact: true })).toHaveValue(
-          "  Question $ROW1\n",
-        );
-        await expect(
-          page.getByRole("button", {
-            name: "Message 3 role: unfilled",
-            exact: true,
-          }),
-        ).toBeVisible();
-        await expect(
-          page.getByLabel("$ROW1, case 1", { exact: true }),
-        ).toHaveValue("cat");
-        await expect(
-          page.getByLabel("$ROW1, case 2", { exact: true }),
-        ).toHaveValue("dog");
-        await page.getByLabel("$ROW1, case 1", { exact: true }).fill("owl");
-      } else {
-        await expect(page.getByLabel("Prompt", { exact: true })).toHaveValue(
-          prompt,
-        );
-        await expect(
-          page.getByRole("combobox", { name: "Rows", exact: true }),
-        ).toHaveValue("model");
-        await expect(
-          page.getByRole("combobox", { name: "Columns", exact: true }),
-        ).toHaveValue("effort");
-        await page.getByLabel("Prompt", { exact: true }).fill("Edited prompt");
+        const copiedOutput = await f.request(`/outputs/${cell.id}/download`);
+        expect(sourceOutput.status).toBe(200);
+        expect(copiedOutput.status).toBe(200);
+        expect(await copiedOutput.text()).toBe(await sourceOutput.text());
       }
       await page.reload();
-      if (chat)
-        await expect(
-          page.getByLabel("$ROW1, case 1", { exact: true }),
-        ).toHaveValue("owl");
-      else
-        await expect(page.getByLabel("Prompt", { exact: true })).toHaveValue(
-          "Edited prompt",
-        );
-      const created = page.waitForResponse(
-        (response) =>
-          response.url().endsWith("/api/grids") &&
-          response.request().method() === "POST",
-      );
-      await page.getByRole("button", { name: "Generate", exact: true }).click();
-      const response = await created;
-      expect(response.status()).toBe(201);
-      const destination = await response.json();
-      expect(destination.id).not.toBe(grid.id);
-      expect(destination.input.inputVersion).toBe(3);
-      const prompts: string[] = [];
-      for (let index = 0; index < grid.cells.length; index++) {
-        const call = await f.nextCall();
-        prompts.push(call.prompt);
-        call.write({ content: "New answer" });
-        call.finish();
-      }
-      expect(prompts).toEqual(
-        chat ? ["  Question owl\n", "  Question dog\n"] : ["Edited prompt"],
-      );
       await expectProgress(page, grid.cells.length, grid.cells.length);
-      expect(f.store.get(grid.id)).toEqual(sourceBefore);
+      await expect(
+        page.getByRole("button", { name: "EDIT", exact: true }),
+      ).toHaveCount(0);
+      expect(f.store.get(grid.id)).toEqual(publishedSource);
       expect(f.store.workflow(grid.id)).toEqual(tasksBefore);
-      for (const cell of grid.cells) {
-        const output = await f.request(`/outputs/${cell.id}/download`);
-        expect(output.status).toBe(200);
-        expect(await output.text()).toContain("Historical answer");
-      }
+      expect(f.calls).toHaveLength(0);
     } finally {
       await f.close();
     }

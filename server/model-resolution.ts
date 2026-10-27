@@ -13,6 +13,7 @@ import { isCaseAxis } from "./parameters.js";
 export type PreparedGridModels<T extends GridInput = GridInput> = {
   input: T;
   cells: Omit<Cell, "id">[];
+  models: ReadonlyMap<string, Model>;
 };
 
 export function prepareGridModels<T extends GridInput>(
@@ -62,5 +63,5 @@ export function prepareGridModels<T extends GridInput>(
     (issue) => issue.blocking,
   );
   if (issue) throw new ModelResolutionError(issue.reason);
-  return { input: resolved, cells };
+  return { input: resolved, cells, models: catalog };
 }

@@ -11,7 +11,7 @@ import { expandGrid, type Grid } from "../server/domain.js";
 import { token } from "../server/ids.js";
 import { webFixture } from "./web-fixture.js";
 import { seedTestDatabase } from "./database-fixture.js";
-import { validatedGrid } from "./grid-storage-fixture.js";
+import { insertCurrentGrid, validatedGrid } from "./grid-storage-fixture.js";
 import {
   currentInput,
   type CurrentGridOverrides,
@@ -223,8 +223,8 @@ export async function runtimeFixture(
   const directory = mkdtempSync(join(tmpdir(), "slopgrid-runtime-"));
   const database = join(directory, "app.sqlite"),
     secret = Buffer.alloc(32, 9);
-  seedTestDatabase(database);
-  const store = new Store(database, secret);
+  await seedTestDatabase(database);
+  const store = await Store.open(database, secret);
   const transport = gridTransport();
   const owner = token();
   store.saveSession({ id: owner, key: "manual-test-key", created: Date.now() });
@@ -584,7 +584,7 @@ export async function runtimeFixture(
         createdAt: new Date().toISOString(),
         cells: expandGrid(input).map((c) => ({ ...c, id: token() })),
       };
-      store.insert(validatedGrid(grid));
+      insertCurrentGrid(store, validatedGrid(grid));
       return grid;
     },
     call: (index: number) => until(() => calls[index], Boolean),

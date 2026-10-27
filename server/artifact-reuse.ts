@@ -9,7 +9,6 @@ import { inferenceSignature, templateSignature } from "./prepared-inference.js";
 import { templateFits, templateSequence } from "./chat-template.js";
 import { referenceIds } from "./image-settings.js";
 import type { ReferenceInputs } from "./image-references.js";
-import { readChatOutput, writeChatOutput } from "../shared/chat-output.js";
 
 export async function reuseArtifacts(
   store: Store,
@@ -32,7 +31,6 @@ export async function reuseArtifacts(
   const available = new Map<string, Promise<boolean>>();
   for (const task of tasks) {
     if (task.kind !== "generation") continue;
-    const { format } = task.input;
     const parameters = task.input;
     let matching: GenerationTask[] | undefined;
     let fits: (candidate: GenerationTask) => boolean = () => true;
@@ -41,7 +39,7 @@ export async function reuseArtifacts(
       const references = ids.length
         ? await (readReferences ??= store.references.loader())(ids)
         : undefined;
-      if (format === "chat-template") {
+      if (parameters.format === "chat-template") {
         matching = candidates.get(templateSignature(parameters, references));
         if (!matching) continue;
         const model = (await provider.models()).find(
@@ -67,7 +65,7 @@ export async function reuseArtifacts(
           }
         };
       } else {
-        const prepared = await provider.prepare(format, parameters, references);
+        const prepared = await provider.prepare(parameters.format, parameters, references);
         matching = candidates.get(inferenceSignature(prepared));
         fits = (candidate) => {
           if (
@@ -113,41 +111,6 @@ export async function reuseArtifacts(
       }
       if (!(await content)) continue;
       const reused = structuredClone(output);
-      if (format === "chat-template") {
-        const bundle = await store.files.readArtifact(
-          output.artifactId,
-          output.provenance.files,
-        );
-        if (!bundle?.files["messages.json"]) continue;
-        const original = Buffer.from(bundle.files["messages.json"]).toString(
-          "utf8",
-        );
-        const messages = readChatOutput(original);
-        let changed = false;
-        for (const [index, configured] of (
-          parameters.messages ?? []
-        ).entries()) {
-          if (configured.role === "unfilled" || !configured.images?.length)
-            continue;
-          const images = messages[index]?.images;
-          if (!images || images.length !== configured.images.length)
-            throw new Error(
-              "Canonical chat output does not match its accepted input",
-            );
-          for (const [imageIndex, supplied] of configured.images.entries()) {
-            if (images[imageIndex].name === supplied.name) continue;
-            images[imageIndex].name = supplied.name;
-            changed = true;
-          }
-        }
-        if (changed) {
-          const replacement = {
-            ...bundle.files,
-            "messages.json": Buffer.from(writeChatOutput(messages)),
-          };
-          reused.artifactId = store.files.writeImmutable(replacement);
-        }
-      }
       task.output = reused;
       task.status = "complete";
       break;

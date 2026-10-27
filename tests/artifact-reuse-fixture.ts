@@ -1,4 +1,14 @@
 import type Database from "better-sqlite3";
+import assert from "node:assert/strict";
+import type { ViewGrid } from "../src/api.js";
+import { gridSchema, type Grid } from "../server/domain.js";
+import { Provider } from "../server/provider.js";
+import { prepareGridModels } from "../server/model-resolution.js";
+import { createWorkflow, projectWorkflow } from "../server/workflow.js";
+import { reuseArtifacts } from "../server/artifact-reuse.js";
+import { token } from "../server/ids.js";
+import { validatedGrid } from "./grid-storage-fixture.js";
+import type { RuntimeFixture } from "./runtime-fixture.js";
 
 // Frozen from master ebd1243: Markdown, default effort, fixture/text at $1/M
 // input/output tokens. Unlike a current-adapter reconstruction, this detects
@@ -83,4 +93,44 @@ export function restorePlainPromptGeneration(
   db.prepare(
     "UPDATE workflow_tasks SET data=json_set(json_remove(data,'$.input.messages'),'$.output.provenance.signature',?) WHERE id=?",
   ).run(signature, generationId);
+}
+export async function reuseCandidate(
+  f: RuntimeFixture,
+  definition: unknown,
+  sourceId: string,
+  reuse: boolean,
+) {
+  const provider = new Provider(f.providerURL);
+  const prepared = prepareGridModels(
+    f.store.references.input(gridSchema.parse(definition)),
+    await provider.models(),
+  );
+  const grid: Grid = {
+    id: token(),
+    owner: f.owner,
+    ownerUserId: f.store.session(f.owner)?.userId,
+    input: prepared.input,
+    status: "paused",
+    published: false,
+    visibility: "private",
+    createdAt: new Date().toISOString(),
+    cells: prepared.cells.map((cell) => ({ ...cell, id: token() })),
+  };
+  const tasks = createWorkflow(prepared.input, grid.cells, prepared.models);
+  const source = f.store.get(sourceId);
+  assert.ok(source);
+  if (reuse) await reuseArtifacts(f.store, provider, source, tasks);
+  projectWorkflow(grid, tasks);
+  if (grid.cells.every((cell) => cell.status === "complete"))
+    grid.status = "complete";
+  f.store.insert(validatedGrid(grid), tasks);
+  if (grid.status !== "complete")
+    await f.engine.api.startGrid({
+      gridId: grid.id,
+      sessionId: f.owner,
+      manualKey: "manual-test-key",
+    });
+  const response = await f.request(`/api/grids/${grid.id}`);
+  assert.equal(response.status, 200, await response.clone().text());
+  return (await response.json()) as ViewGrid;
 }

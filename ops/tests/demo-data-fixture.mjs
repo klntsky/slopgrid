@@ -7,6 +7,7 @@ import {
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { archivedFixtureModels } from "./model-catalog-fixture.mjs";
 
 const helper = fileURLToPath(import.meta.url);
 export const stagingKey = "cd".repeat(32);
@@ -20,6 +21,7 @@ function appCommand(action, directory, key, fault = "") {
   const loader = pathToFileURL(createRequire(join(app, "package.json")).resolve("tsx/esm")).href;
   return spawnSync(process.execPath, ["--import", loader, helper, action, app, directory, key, fault], {
     encoding: "utf8", timeout: 90000,
+    env: { ...process.env, STARTUP_DATA_MIGRATION_PARALLEL_WORKERS: "30" },
   });
 }
 
@@ -51,9 +53,10 @@ export function demoDataFixture(t, fault = "") {
   };
   return {
     root, staging, destinations, calls, source,
-    run(selection = "clone", name = "runtime", selectedSource = source) {
+    run(selection = "clone", name = "runtime", selectedSource = source, capacity = { migrationWorkers: "30" }) {
       return spawnSync(process.execPath, [helper, "seed", selection, JSON.stringify({
         source: selectedSource, buildPath: process.env.SLOPGRID_TEST_APP, runtimeDir: join(destinations, name),
+        ...capacity,
       })], {
         encoding: "utf8", timeout: 90000,
         env: {
@@ -89,7 +92,7 @@ if (process.argv[1] === helper) {
       process.stdout.write(JSON.stringify(await operation(JSON.parse(directory))));
     } else {
       const { Store } = await import(pathToFileURL(join(app, "server/store.ts")).href);
-      const store = new Store(join(directory, "slopgrid.sqlite"), Buffer.from(key, "hex"), join(directory, "outputs"));
+      const store = await Store.open(join(directory, "slopgrid.sqlite"), Buffer.from(key, "hex"), join(directory, "outputs"), { models: async () => archivedFixtureModels });
       try {
         if (action === "initialize") {
           store.saveSession(retainedSession);

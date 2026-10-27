@@ -1,7 +1,6 @@
 import {
   chatText,
-  type GenerationParameters,
-  type GridInput,
+  type GenerationInput,
   type InferenceProgress,
   type TemplateStep,
 } from "./domain.js";
@@ -25,13 +24,13 @@ export type AttemptResult = Awaited<ReturnType<Provider["generate"]>> & {
 export async function generateAttempt(
   provider: Provider,
   key: string,
-  format: GridInput["format"],
-  cell: GenerationParameters,
+  cell: GenerationInput,
   taskId: string,
   onChunk: (progress: InferenceProgress) => void,
   context: InferenceContext,
   references?: ReferenceInputs,
 ): Promise<AttemptResult> {
+  const { format } = cell;
   if (format !== "chat-template")
     return provider.generate(
       key,
@@ -49,10 +48,6 @@ export async function generateAttempt(
   );
   if (!model)
     throw new PreparationError(`Pricing is unavailable for ${cell.model}.`);
-  if (!model.text)
-    throw new PreparationError(
-      "Chat completion requires a model that supports text output.",
-    );
   let previousPrefixLength = 0;
   const replay = new Map<number, ReplayDetails>();
   const result = await fillChatTemplate(
@@ -65,7 +60,7 @@ export async function generateAttempt(
         budget,
         false,
         { sessionId: taskId, previousPrefixLength },
-        model.chatImageOutput,
+        cell.chatOutputMode === "text-and-images",
         replay,
       );
       previousPrefixLength = messages.length;

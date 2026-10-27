@@ -132,6 +132,7 @@ function readDemoEnvironment(request, origin) {
   return {
     OUTPUT_DOMAIN: original.OUTPUT_DOMAIN,
     PORT: String(validPort(original.PORT ?? "0", "backend")),
+    STARTUP_DATA_MIGRATION_PARALLEL_WORKERS: original.STARTUP_DATA_MIGRATION_PARALLEL_WORKERS,
   };
 }
 
@@ -291,6 +292,8 @@ export async function startDemo(request, run, build, github) {
   const origin = `https://${dnsName}${httpsPort === 443 ? "" : `:${httpsPort}`}`;
   if (listenerOccupied(JSON.parse(invoke("tailscale", ["serve", "status", "--json"])), httpsPort)) throw new Error(`Tailscale Serve HTTPS port ${httpsPort} is occupied`);
   const supplied = readDemoEnvironment(request, origin);
+  const { migrationCapacity } = await import("./runtime.mjs");
+  const migrationWorkers = migrationCapacity(supplied.STARTUP_DATA_MIGRATION_PARALLEL_WORKERS);
   const port = Number(supplied.PORT);
   if (port !== 0) await assertBackendAvailable(port);
   mkdirSync(run, { recursive: true, mode: 0o700 });
@@ -318,8 +321,8 @@ export async function startDemo(request, run, build, github) {
     } else {
       const { prepareDemoSeed, initializeEmptyDemoSeed } = await import("./demo-seed.mjs");
       const seed = request.skipDataCloning === true
-        ? await initializeEmptyDemoSeed({ buildPath: build.path, runtimeDir })
-        : await prepareDemoSeed({ source: config.stagingSource, buildPath: build.path, runtimeDir });
+        ? await initializeEmptyDemoSeed({ buildPath: build.path, runtimeDir, migrationWorkers })
+        : await prepareDemoSeed({ source: config.stagingSource, buildPath: build.path, runtimeDir, migrationWorkers });
       key = seed.key;
       lease = {
         ...lease,
@@ -412,7 +415,7 @@ async function runDemo(run) {
     return child;
   }
   const inherited = Object.fromEntries(["PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "TZ"].filter((key) => process.env[key] !== undefined).map((key) => [key, process.env[key]]));
-  const engineKeys = ["NODE_ENV", "DATABASE_PATH", "OUTPUTS_PATH", "GENERATION_SOCKET", "KEY_ENCRYPTION_SECRET", "TMPDIR"];
+  const engineKeys = ["NODE_ENV", "DATABASE_PATH", "OUTPUTS_PATH", "GENERATION_SOCKET", "KEY_ENCRYPTION_SECRET", "TMPDIR", "STARTUP_DATA_MIGRATION_PARALLEL_WORKERS"];
   try {
     const engineEnv = { ...inherited, ...Object.fromEntries(engineKeys.map((key) => [key, env[key]])) };
     const engine = launch("engine", process.execPath, ["--import", "tsx", "server/engine.ts"], { env: engineEnv });

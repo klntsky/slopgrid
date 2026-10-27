@@ -1,3 +1,4 @@
+import { fixtureModels } from "../current-grid-fixture.js";
 import { test, expect } from "@playwright/test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -25,7 +26,7 @@ test("visited pages and completed outputs survive offline reload without retaini
   const database = join(directory, "db.sqlite");
   const secret = Buffer.alloc(32, 7);
   const generation = await startGenerationFixture({ database, secret });
-  const store = new Store(database, secret);
+  const store = await Store.open(database, secret);
   const web = await webFixture({
     database,
     secret,
@@ -104,7 +105,7 @@ test("visited pages and completed outputs survive offline reload without retaini
         createdAt: new Date().toISOString(),
         cells: expandGrid(input).map((cell) => ({ ...cell, id: token() })),
       } satisfies Grid;
-      const tasks = createWorkflow(input, grid.cells);
+      const tasks = createWorkflow(input, grid.cells, fixtureModels);
       const generation = tasks.find((task) => task.kind === "generation")!;
       generation.status = "complete";
       generation.output = {
@@ -288,11 +289,19 @@ test("visited pages and completed outputs survive offline reload without retaini
     for (const grid of grids) {
       await page.goto(`${web.origin}/grid/${grid.id}`);
       await expect(page.locator("article.cell")).toHaveCount(1);
-      const configure = page.getByRole("button", {
-        name: grid.published ? "FORK" : "EDIT",
-        exact: true,
-      });
-      await expect(configure).toBeEnabled();
+      await expect(
+        page.getByRole("button", { name: "EDIT", exact: true }),
+      ).toHaveCount(
+        !grid.published &&
+          grid.cells.some(
+            (cell) => cell.status !== "complete" && cell.status !== "error",
+          )
+          ? 1
+          : 0,
+      );
+      const fork = page.getByRole("button", { name: "FORK", exact: true });
+      if (grid.published) await expect(fork).toBeEnabled();
+      else await expect(fork).toHaveCount(0);
       // Completion is observable through CacheStorage rather than a timing delay.
       await expect
         .poll(() =>
@@ -432,11 +441,19 @@ test("visited pages and completed outputs survive offline reload without retaini
       }
       await page.reload();
       await expect(page.locator("article.cell")).toHaveCount(1);
-      const configure = page.getByRole("button", {
-        name: grid.published ? "FORK" : "EDIT",
-        exact: true,
-      });
-      await expect(configure).toBeEnabled();
+      await expect(
+        page.getByRole("button", { name: "EDIT", exact: true }),
+      ).toHaveCount(
+        !grid.published &&
+          grid.cells.some(
+            (cell) => cell.status !== "complete" && cell.status !== "error",
+          )
+          ? 1
+          : 0,
+      );
+      const fork = page.getByRole("button", { name: "FORK", exact: true });
+      if (grid.published) await expect(fork).toBeEnabled();
+      else await expect(fork).toHaveCount(0);
       if (grid.input.format === "chat-template") {
         for (const image of chatImages)
           await expect

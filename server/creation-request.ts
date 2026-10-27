@@ -47,7 +47,7 @@ export function creationRequest(
   }
   function insert(
     grid: Grid & { input: ValidatedGridInput },
-    tasks?: WorkflowTask[],
+    tasks: readonly WorkflowTask[],
   ) {
     return store.db
       .transaction(() => {

@@ -12,6 +12,7 @@ import { parseEnv } from "node:util";
 import { createRequire } from "node:module";
 import { connect } from "node:net";
 import { command, capture, atomic } from "./common.mjs";
+import { processIdentity, sameProcess } from "./process-identity.mjs";
 
 export const engineEnvironment = (env) =>
   Object.fromEntries(
@@ -22,14 +23,28 @@ export const engineEnvironment = (env) =>
       "GENERATION_SOCKET",
       "KEY_ENCRYPTION_SECRET",
       "WORKERS_MAX",
+      "STARTUP_DATA_MIGRATION_PARALLEL_WORKERS",
       "OPENROUTER_BASE_URL",
     ]
       .filter((key) => env[key] !== undefined)
       .map((key) => [key, env[key]]),
   );
 
+export function migrationCapacity(value) {
+  if (
+    typeof value !== "string" ||
+    !/^[1-9]\d*$/.test(value) ||
+    !Number.isSafeInteger(Number(value))
+  )
+    throw new Error(
+      "STARTUP_DATA_MIGRATION_PARALLEL_WORKERS must be a positive safe integer",
+    );
+  return value;
+}
+
 export function environment(target) {
   const original = parseEnv(readFileSync(target.envFile, "utf8"));
+  migrationCapacity(original.STARTUP_DATA_MIGRATION_PARALLEL_WORKERS);
   const database = resolve(
     target.applicationRoot,
     original.DATABASE_PATH ?? ".data/slopgrid.sqlite",
@@ -393,9 +408,42 @@ export function configureProcesses(target, name, engine, web, env, runId) {
   return config;
 }
 
+function runningIdentity(pid) {
+  try {
+    return processIdentity(pid);
+  } catch (error) {
+    if (
+      error.code !== "ESRCH" &&
+      !(error.code === "ENOENT" && error.path === `/proc/${pid}/stat`)
+    )
+      throw error;
+  }
+}
+
 export function stopProcess(name, remove = false) {
-  if (processes().some((item) => item.name === name))
+  const registered = processes().filter((item) => item.name === name);
+  const identities = [];
+  for (const item of registered) {
+    if (!Number.isInteger(item.pid) || item.pid <= 0) continue;
+    const identity = runningIdentity(item.pid);
+    if (identity) identities.push(identity);
+  }
+  if (registered.length)
     command("pm2", [remove ? "delete" : "stop", name], { stdio: "ignore" });
+  if (
+    identities.some((identity) =>
+      sameProcess(identity, runningIdentity(identity.pid)),
+    )
+  )
+    throw new Error(`${name} still has a running old process after stopping`);
+  if (
+    processes().some(
+      (item) =>
+        item.name === name &&
+        (item.pm2_env?.status === "online" || item.pid > 0),
+    )
+  )
+    throw new Error(`${name} is not fully stopped`);
 }
 
 export async function startProcess(target, app, marker) {

@@ -342,7 +342,7 @@ export function replaceLegacyGridInputs(
   ).run(JSON.stringify(value), gridId, gridId);
 }
 export function rejectProductionInputMigration(db: Database.Database) {
-  db.exec(`CREATE TEMP TRIGGER reject_production_input BEFORE UPDATE ON grids WHEN OLD.id='grid'
+  db.exec(`CREATE TRIGGER reject_production_input BEFORE UPDATE ON grids WHEN OLD.id='grid'
     BEGIN SELECT RAISE(ABORT,'production input migration blocked'); END`);
   return () => db.exec("DROP TRIGGER reject_production_input");
 }
@@ -444,7 +444,7 @@ export function prepareV19JudgePromptMigration(db: Database.Database) {
 
 export function rejectJudgePromptMigration(db: Database.Database) {
   db.exec(`
-    CREATE TEMP TRIGGER reject_judge_prompt BEFORE UPDATE ON workflow_tasks
+    CREATE TRIGGER reject_judge_prompt BEFORE UPDATE ON workflow_tasks
       BEGIN SELECT RAISE(ABORT,'judge prompt migration blocked'); END;
   `);
 }

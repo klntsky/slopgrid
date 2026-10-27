@@ -3,7 +3,7 @@ import { expandGrid, gridSchema, type Grid } from "../server/domain.js";
 import { validatedGrid } from "./grid-storage-fixture.js";
 import type { Store } from "../server/store.js";
 import { createWorkflow } from "../server/workflow.js";
-import { currentInput } from "./current-grid-fixture.js";
+import { fixtureModels, currentInput } from "./current-grid-fixture.js";
 
 export function seedGridLists(
   store: Store,
@@ -58,7 +58,7 @@ export function seedGridLists(
         error: "Fixture output",
       })),
     };
-    const tasks = createWorkflow(gridSchema.parse(input), grid.cells);
+    const tasks = createWorkflow(gridSchema.parse(input), grid.cells, fixtureModels);
     for (const task of tasks) {
       task.status = "error";
       task.error = "Fixture output";

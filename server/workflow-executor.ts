@@ -96,7 +96,6 @@ export function createWorkflowExecutor(store: Store, provider: Provider) {
       const result = await generateAttempt(
         provider,
         context.key,
-        task.input.format,
         task.input,
         task.id,
         ({ text, thinking, estimatedUsage, currentCallCostUsd }) => {

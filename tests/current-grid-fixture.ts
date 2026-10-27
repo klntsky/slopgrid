@@ -9,6 +9,62 @@ import {
   parameterDefault,
   type CommonParameterId,
 } from "../server/parameters.js";
+import type { Model } from "../server/provider.js";
+
+const textFixtureModels: Model[] = [
+  "fixture/text",
+  "fixture/judge",
+  "fixture/one",
+  "fixture/two",
+  "fixture/other",
+  "fixture/unpriced",
+  "fixture/generator",
+  "generator",
+  "generator-a",
+  "generator-b",
+  "judge",
+  "judge-a",
+  "judge-b",
+  "actual-judge",
+  "free-judge",
+  "example/model",
+  "cheap",
+].map((id) => ({
+  id,
+  name: `Text fixture ${id}`,
+  image: false,
+  imageInput: true,
+  text: true,
+  reasoning: true,
+  reasoningMandatory: false,
+  structuredOutputs: true,
+}));
+
+export const fixtureModels: ReadonlyMap<string, Model> = new Map(
+  [
+    ...textFixtureModels,
+    {
+      id: "fixture/multimodal",
+      name: "Fixture multimodal",
+      image: false,
+      imageInput: true,
+      text: true,
+      chatImageOutput: true,
+      reasoning: true,
+      reasoningMandatory: false,
+      structuredOutputs: true,
+    },
+    {
+      id: "fixture/image",
+      name: "Fixture image",
+      image: true,
+      imageInput: true,
+      text: false,
+      reasoning: false,
+      reasoningMandatory: false,
+    },
+  ].map((model): [string, Model] => [model.id, model]),
+);
 
 type FixtureCases = (Partial<ParameterValues> & { id?: string })[];
 export type CurrentGridOverrides = Omit<

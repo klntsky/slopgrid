@@ -1,9 +1,10 @@
 import Database from "better-sqlite3";
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { fileURLToPath } from "node:url";
 import {
-  existsSync,
+  copyFileSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -11,7 +12,6 @@ import {
   rmSync,
   statSync,
   writeFileSync,
-  watch,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -21,6 +21,22 @@ import { initializeDatabase } from "../server/database.js";
 import { OutputFiles } from "../server/files.js";
 import { generatedDataUrl } from "./chat-image-output-fixture.js";
 import { pixelPng, referencePng } from "./reference-image-fixture.js";
+import type { Model } from "../server/provider.js";
+import { migrationWorkerEnvironment } from "./database-output-fixture.js";
+import { crashCheckpoint, type CrashCheckpoint } from "./crash-checkpoint.js";
+
+export const chatMigrationModels: readonly Model[] = [
+  {
+    id: "retired/multimodal",
+    name: "Historical multimodal fixture",
+    image: false,
+    imageInput: true,
+    text: true,
+    chatImageOutput: true,
+    reasoning: false,
+    reasoningMandatory: false,
+  },
+];
 
 export type CanonicalImageJSON = {
   name: string;
@@ -192,6 +208,7 @@ export function chatOutputMigrationFixture(
     prefixLength?: number;
   } = {},
 ): ChatOutputMigrationFixture {
+  migrationWorkerEnvironment(t);
   const directory = mkdtempSync(join(tmpdir(), "slopgrid-chat-migration-"));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const database = join(directory, "app.sqlite");
@@ -514,73 +531,68 @@ export function corruptInstalledChatReplacement(root: string) {
   return () => writeFileSync(path, original);
 }
 
+export async function preserveLegacyChatDatabase(
+  fixture: ChatOutputMigrationFixture,
+) {
+  const saved = join(fixture.directory, "legacy.sqlite");
+  const db = new Database(fixture.database);
+  try {
+    await db.backup(saved);
+  } finally {
+    db.close();
+  }
+  return () => {
+    copyFileSync(saved, fixture.database);
+  };
+}
+
 export async function killMigrationBeforeArtifactRepoint(
   fixture: ChatOutputMigrationFixture,
 ) {
-  const marker = join(fixture.directory, "migration-checkpoint.json");
   const db = new Database(fixture.database);
   try {
     db.pragma("journal_mode = WAL");
-    db.exec(`
-      CREATE TRIGGER pause_chat_migration BEFORE UPDATE OF artifact_id ON workflow_tasks
-      WHEN OLD.id='task-source' AND NEW.artifact_id IS NOT OLD.artifact_id
-      BEGIN SELECT migration_checkpoint(NEW.artifact_id); END;
-    `);
   } finally {
     db.close();
   }
   const source = `
-    import Database from "better-sqlite3";
-    import { writeFileSync, renameSync } from "node:fs";
-    import { initializeDatabase } from ${JSON.stringify(new URL("../server/database.ts", import.meta.url).href)};
-    import { OutputFiles } from ${JSON.stringify(new URL("../server/files.ts", import.meta.url).href)};
-    const db = new Database(${JSON.stringify(fixture.database)});
-    db.pragma("foreign_keys = ON");
-    const journalMode = db.pragma("journal_mode", { simple: true });
-    db.function("migration_checkpoint", (artifactId) => {
-      writeFileSync(${JSON.stringify(marker + ".pending")}, JSON.stringify({
-        artifactId,
-        journalMode,
-      }));
-      renameSync(${JSON.stringify(marker + ".pending")}, ${JSON.stringify(marker)});
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0);
-      return 0;
+    import { Store } from ${JSON.stringify(new URL("../server/store.ts", import.meta.url).href)};
+    import * as inspector from "node:inspector";
+    const startup = Promise.withResolvers();
+    process.on("disconnect", () => process.exit(0));
+    process.on("message", (message) => {
+      if (message.inspect) {
+        inspector.open(0, "127.0.0.1");
+        process.send(inspector.url());
+      } else if (message.start) {
+        startup.resolve();
+      }
     });
-    initializeDatabase(db, new OutputFiles(${JSON.stringify(fixture.outputs)}));
-    db.close();
+    process.send({ ready: true });
+    await startup.promise;
+    const store = await Store.open(
+      ${JSON.stringify(fixture.database)},
+      Buffer.from(${JSON.stringify(fixture.secret.toString("hex"))}, "hex"),
+      ${JSON.stringify(fixture.outputs)},
+      { models: async () => ${JSON.stringify(chatMigrationModels)} },
+    );
+    store.db.close();
   `;
-  const watcher = watch(fixture.directory);
+  const controller = new AbortController();
+  let checkpoint: CrashCheckpoint | undefined;
+  let expectedKill = false;
   let stderr = "";
-  const ready = Promise.withResolvers<{
-    artifactId: string;
-    journalMode: string;
-  }>();
-  watcher.on("change", () => {
-    if (!existsSync(marker)) return;
-    try {
-      ready.resolve(JSON.parse(readFileSync(marker, "utf8")));
-    } catch (error) {
-      ready.reject(error);
-    }
-  });
-  watcher.once("error", ready.reject);
-  const deadline = setTimeout(
-    () =>
-      ready.reject(
-        new Error(`Migration did not reach its checkpoint: ${stderr}`),
-      ),
-    15000,
-  );
   const child = spawn(
     process.execPath,
     ["--import", "tsx", "--input-type=module", "--eval", source],
     {
       cwd: fileURLToPath(new URL("../", import.meta.url)),
-      stdio: ["ignore", "ignore", "pipe"],
+      env: { ...process.env, STARTUP_DATA_MIGRATION_PARALLEL_WORKERS: "30" },
+      stdio: ["ignore", "ignore", "pipe", "ipc"],
     },
   );
-  child.stderr.setEncoding("utf8");
-  child.stderr.on("data", (chunk: string) => {
+  child.stderr!.setEncoding("utf8");
+  child.stderr!.on("data", (chunk: string) => {
     stderr += chunk;
   });
   const exited = Promise.withResolvers<{
@@ -588,47 +600,77 @@ export async function killMigrationBeforeArtifactRepoint(
     signal: NodeJS.Signals | null;
   }>();
   child.once("error", (error) => {
-    ready.reject(error);
+    child.kill("SIGKILL");
+    controller.abort(error);
     exited.reject(error);
   });
   child.once("exit", (code, signal) => {
-    ready.reject(
-      new Error(
-        `Migration exited before SIGKILL (code ${code}, signal ${signal}): ${stderr}`,
-      ),
-    );
+    if (!expectedKill)
+      controller.abort(
+        new Error(
+          `Migration exited before SIGKILL (code ${code}, signal ${signal}): ${stderr}`,
+        ),
+      );
     exited.resolve({ code, signal });
   });
+  const deadline = setTimeout(() => {
+    child.kill("SIGKILL");
+    controller.abort(
+      new Error(`Migration did not reach publication checkpoint: ${stderr}`),
+    );
+  }, 15000);
   void exited.promise.catch(() => {});
   try {
-    const checkpoint = await ready.promise;
+    const [ready] = await once(child, "message", { signal: controller.signal });
+    if (
+      !ready ||
+      typeof ready !== "object" ||
+      !("ready" in ready) ||
+      ready.ready !== true
+    )
+      throw new Error("Migration child did not acknowledge loaded modules");
+    checkpoint = await crashCheckpoint(
+      child,
+      "startup-data-migration.ts",
+      "syncPath(outputsPath)",
+      undefined,
+      controller.signal,
+    );
+    child.send({ start: true });
+    await checkpoint.paused;
+    const replacement = outputFileInventory(fixture.outputs).find(
+      (file) =>
+        file.path.startsWith("canonical-") &&
+        file.path.endsWith("/messages.json"),
+    );
+    if (!replacement)
+      throw new Error(
+        "Migration checkpoint has no installed canonical artifact",
+      );
+    const artifactId = replacement.path.split("/")[0]!;
+    const messages: CanonicalMessageJSON[] = JSON.parse(
+      readFileSync(join(fixture.outputs, replacement.path), "utf8"),
+    );
+    const source = new Database(fixture.database, { readonly: true });
+    let journalMode: string;
+    try {
+      journalMode = source.pragma("journal_mode", { simple: true }) as string;
+    } finally {
+      source.close();
+    }
+    expectedKill = true;
     child.kill("SIGKILL");
     const exit = await exited.promise;
-    const messages: CanonicalMessageJSON[] = JSON.parse(
-      readFileSync(
-        join(
-          fixture.outputs,
-          encodeURIComponent(checkpoint.artifactId),
-          "messages.json",
-        ),
-        "utf8",
-      ),
-    );
-    return { ...checkpoint, ...exit, messages };
+    return { artifactId, journalMode, ...exit, messages };
   } finally {
     clearTimeout(deadline);
-    watcher.close();
+    expectedKill = true;
     if (child.exitCode === null && child.signalCode === null) {
       child.kill("SIGKILL");
       await exited.promise.catch(() => {});
     }
-    const cleanup = new Database(fixture.database);
-    try {
-      cleanup.exec("DROP TRIGGER pause_chat_migration");
-    } finally {
-      cleanup.close();
-    }
-    rmSync(marker, { force: true });
-    rmSync(marker + ".pending", { force: true });
+    controller.abort();
+    checkpoint?.close();
+    if (child.connected) child.disconnect();
   }
 }

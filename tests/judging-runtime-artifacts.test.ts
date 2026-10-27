@@ -15,6 +15,7 @@ import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { arrangeHistoricalGrid } from "./grid-storage-fixture.js";
 import { pixelPng as png } from "./reference-image-fixture.js";
+import { reuseCandidate } from "./artifact-reuse-fixture.js";
 import {
   judgeParameters,
   judging,
@@ -56,6 +57,38 @@ function committed(
   fixture.store.saveWorkflow(grid, [generation]);
   projectWorkflow(grid, tasks);
   return grid;
+}
+
+async function forkFailed(fixture: RuntimeFixture, id: string) {
+  assert.equal(
+    (await fixture.request(`/api/grids/${id}/retry`, {})).status,
+    409,
+  );
+  const published = await fixture.request(`/api/grids/${id}/publish`, {
+    visibility: "unlisted",
+  });
+  assert.equal(published.status, 200, await published.clone().text());
+  const source = fixture.store.get(id)!;
+  const calls = fixture.calls.length;
+  const billing = fixture.store.billing.page(fixture.owner, 0);
+  const response = await fixture.request(`/api/grids/${id}/fork`, {
+    creationRequestId: token(),
+  });
+  assert.equal(response.status, 201, await response.clone().text());
+  const copy = fixture.store.get((await response.json()).id)!;
+  assert.equal(copy.status, "paused");
+  assert.equal(copy.published, false);
+  assert.equal(copy.visibility, "private");
+  assert.ok(
+    fixture.store
+      .workflow(copy.id)
+      .every((task) => task.attemptId === undefined && task.status !== "error"),
+  );
+  assert.equal(fixture.calls.length, calls);
+  assert.deepEqual(fixture.store.billing.page(fixture.owner, 0), billing);
+  assert.equal(fixture.store.billing.gridSpent(copy.id, copy.cells), 0);
+  assert.deepEqual(fixture.store.get(id), source);
+  return copy;
 }
 
 test("malformed saved chat messages fail judging without making a provider request or losing the artifact", async () => {
@@ -423,7 +456,7 @@ test("an image artifact with SVG media type follows the renderer path while its 
   }
 });
 
-test("a render failure never calls the judge or loses the immutable SVG, including on retry", async () => {
+test("a render failure never calls the judge or loses the immutable SVG, including after FORK and Resume", async () => {
   const fixture = await runtimeFixture({ judges: true });
   try {
     const invalid = `<svg xmlns="http://www.w3.org/2000/svg" width="80" height="40"><image href="${fixture.providerURL}/unresolved.png" width="80" height="40"/></svg>`;
@@ -447,11 +480,14 @@ test("a render failure never calls the judge or loses the immutable SVG, includi
     );
     assert.equal(fixture.calls.length, 1);
     assert.equal(fixture.store.billing.page(fixture.owner, 0).total, 1);
+    const copy = await forkFailed(fixture, id);
+    assert.equal(copy.cells[0].artifactId, failed.cells[0].artifactId);
+    assert.equal(copy.cells[0].judge?.status, "pending");
     assert.equal(
-      (await fixture.request(`/api/grids/${id}/retry`, {})).status,
+      (await fixture.request(`/api/grids/${copy.id}/retry`, {})).status,
       200,
     );
-    const retried = await settled(fixture, id, "paused");
+    const retried = await settled(fixture, copy.id, "paused");
     assert.equal(fixture.calls.length, 1);
     assert.equal(retried.cells[0].artifactId, failed.cells[0].artifactId);
     assert.match(
@@ -466,6 +502,7 @@ test("a render failure never calls the judge or loses the immutable SVG, includi
       ).toString(),
       invalid,
     );
+    assert.deepEqual(fixture.store.get(id)!.cells, failed.cells);
   } finally {
     await fixture.close();
   }
@@ -479,12 +516,13 @@ test("missing shared committed output fails each judgment without regenerating o
     rmSync(join(fixture.store.files.root, encodeURIComponent(artifactId)), {
       recursive: true,
     });
+    let id = grid.id;
     for (let attempt = 0; attempt < 2; attempt++) {
       assert.equal(
-        (await fixture.request(`/api/grids/${grid.id}/retry`, {})).status,
+        (await fixture.request(`/api/grids/${id}/retry`, {})).status,
         200,
       );
-      const failed = await settled(fixture, grid.id, "paused");
+      const failed = await settled(fixture, id, "paused");
       for (const cell of failed.cells) {
         assert.equal(cell.status, "error");
         assert.equal(cell.judge?.status, "error");
@@ -495,6 +533,16 @@ test("missing shared committed output fails each judgment without regenerating o
       }
       assert.equal(fixture.calls.length, 0);
       assert.equal(fixture.store.billing.page(fixture.owner, 0).total, 0);
+      assert.equal(
+        new Set(failed.cells.map((cell) => cell.artifactId)).size,
+        1,
+      );
+      if (attempt === 0) {
+        const copy = await forkFailed(fixture, id);
+        assert.ok(copy.cells.every((cell) => cell.artifactId === artifactId));
+        assert.ok(copy.cells.every((cell) => cell.judge?.status === "pending"));
+        id = copy.id;
+      }
     }
     assert.equal(
       new Set(fixture.store.get(grid.id)!.cells.map((cell) => cell.artifactId))
@@ -553,7 +601,7 @@ test("a restart judges one shared immutable artifact and preserves every stored 
   }
 });
 
-test("a charged unsuccessful generation fails every dependent and retry produces the group only once", async () => {
+test("a charged unsuccessful generation fails every dependent and its resumed FORK produces the group only once", async () => {
   const fixture = await runtimeFixture({ workers: 4, judges: true });
   try {
     const id = await create(fixture);
@@ -570,8 +618,11 @@ test("a charged unsuccessful generation fails every dependent and retry produces
     );
     assert.equal(failed.cells[0].artifactId, undefined);
     assert.equal(fixture.store.billing.gridSpent(id, failed.cells), 0.125);
+    const copy = await forkFailed(fixture, id);
+    assert.ok(copy.cells.every((cell) => cell.status === "pending"));
+    assert.ok(copy.cells.every((cell) => !cell.artifactId));
     assert.equal(
-      (await fixture.request(`/api/grids/${id}/retry`, {})).status,
+      (await fixture.request(`/api/grids/${copy.id}/retry`, {})).status,
       200,
     );
     const generation = await fixture.nextCall();
@@ -584,9 +635,14 @@ test("a charged unsuccessful generation fails every dependent and retry produces
       assert.equal(judgeArtifact(judge), "Complete replacement");
       finish(judge, JSON.stringify(verdicts), 0.5);
     }
-    const complete = await settled(fixture, id);
+    const complete = await settled(fixture, copy.id);
     assert.equal(fixture.calls.length, 6);
-    assert.equal(fixture.store.billing.gridSpent(id, complete.cells), 2.375);
+    assert.equal(
+      fixture.store.billing.gridSpent(copy.id, complete.cells),
+      2.25,
+    );
+    assert.equal(fixture.store.billing.gridSpent(id, failed.cells), 0.125);
+    assert.deepEqual(fixture.store.get(id)!.cells, failed.cells);
     assert.ok(
       complete.cells.every(
         (cell) =>
@@ -599,14 +655,21 @@ test("a charged unsuccessful generation fails every dependent and retry produces
   }
 });
 
-test("a judge failure is local, reuse starts fresh judgments, and retry keeps the committed generation", async (t) => {
+test("a judge failure is local, direct reuse starts fresh judgments, and a resumed FORK keeps completed work", async (t) => {
   const fixture = await runtimeFixture({ workers: 4, judges: true });
   try {
-    const id = await create(fixture, pair);
+    const id = await create(fixture, { ...pair, parallelWorkers: 4 });
     finish(await fixture.nextCall(), "Reusable despite a failed judge", 0.125);
-    const failedJudge = await fixture.nextCall();
+    const judges = await Promise.all([fixture.nextCall(), fixture.nextCall()]);
+    const failedJudge = judges.find(
+      (call) => call.request.model === "fixture/text",
+    );
+    const successfulJudge = judges.find(
+      (call) => call.request.model === "fixture/judge-other",
+    );
+    assert.ok(failedJudge);
+    assert.ok(successfulJudge);
     finish(failedJudge, '{"results":[]}', 0.25);
-    const successfulJudge = await fixture.nextCall();
     finish(successfulJudge, JSON.stringify(verdicts), 0.5);
     const source = await settled(fixture, id, "paused");
     assert.deepEqual(
@@ -621,11 +684,8 @@ test("a judge failure is local, reuse starts fresh judgments, and retry keeps th
     await t.test(
       "reuse the still-failed source with fresh destination judgments",
       async () => {
-        const reusedId = await create(fixture, {
-          ...input,
-          sourceGridId: id,
-          reuseArtifacts: true,
-        });
+        const reusedGrid = await reuseCandidate(fixture, input, id, true);
+        const reusedId = reusedGrid.id;
         const judges = await Promise.all(
           Array.from({ length: 4 }, () => fixture.nextCall()),
         );
@@ -665,16 +725,25 @@ test("a judge failure is local, reuse starts fresh judgments, and retry keeps th
     );
 
     await t.test(
-      "retry only the failed source judgment without regenerating",
+      "FORK retries only the failed judgment without regenerating or changing the source",
       async () => {
+        const copy = await forkFailed(fixture, id);
+        const sourceBeforeResume = fixture.store.get(id)!;
+        assert.equal(copy.cells[0].judge?.status, "pending");
+        assert.equal(copy.cells[1].judge?.status, "complete");
+        assert.deepEqual(
+          copy.cells[1].judge?.results,
+          source.cells[1].judge?.results,
+        );
+        assert.equal(copy.cells[1].judge?.attemptId, undefined);
         const callsBeforeRetry = fixture.calls.length;
-        const resume = await fixture.request(`/api/grids/${id}/retry`, {});
+        const resume = await fixture.request(`/api/grids/${copy.id}/retry`, {});
         assert.equal(resume.status, 200);
         const retry = await fixture.nextCall();
         assert.equal(retry.request.model, failedJudge.request.model);
         assert.equal(judgeArtifact(retry), "Reusable despite a failed judge");
         finish(retry, JSON.stringify(verdicts), 0.375);
-        const complete = await settled(fixture, id);
+        const complete = await settled(fixture, copy.id);
         assert.equal(fixture.calls.length, callsBeforeRetry + 1);
         assert.equal(
           fixture.calls.filter((call) => !call.request.response_format).length,
@@ -685,15 +754,20 @@ test("a judge failure is local, reuse starts fresh judgments, and retry keeps th
           source.cells[0].judge?.attemptId,
         );
         assert.deepEqual(complete.cells[0].judge?.results, verdicts.results);
-        assert.deepEqual(complete.cells[1].judge, source.cells[1].judge);
+        assert.deepEqual(complete.cells[1].judge, copy.cells[1].judge);
         for (const [index, cell] of complete.cells.entries()) {
-          assert.equal(cell.attemptId, source.cells[index].attemptId);
-          assert.equal(cell.generationId, source.cells[index].generationId);
+          assert.equal(cell.attemptId, undefined);
+          assert.notEqual(cell.generationId, source.cells[index].generationId);
           assert.equal(cell.artifactId, source.cells[index].artifactId);
           assert.deepEqual(cell.provenance, source.cells[index].provenance);
           assert.deepEqual(cell.usage, source.cells[index].usage);
         }
-        assert.equal(fixture.store.billing.gridSpent(id, complete.cells), 1.25);
+        assert.equal(
+          fixture.store.billing.gridSpent(copy.id, complete.cells),
+          0.375,
+        );
+        assert.equal(fixture.store.billing.gridSpent(id, source.cells), 0.875);
+        assert.deepEqual(fixture.store.get(id), sourceBeforeResume);
         assert.equal(
           fixture.store.billing.page(fixture.owner, 0).costUsd,
           4.25,

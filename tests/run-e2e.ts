@@ -63,7 +63,7 @@ if (reuseBuild) {
   const result = await command(["build"]);
   if (result) process.exit(result);
 }
-process.env.SLOPGRID_TEST_RESOURCES = prepareTestResources();
+process.env.SLOPGRID_TEST_RESOURCES = await prepareTestResources();
 try {
   for (const project of suite === "all"
     ? (["mock", "real"] as const)

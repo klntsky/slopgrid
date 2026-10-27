@@ -111,7 +111,10 @@ export default {
       ? validationEnvironment(
           directory,
           runtime,
-          { SLOPGRID_REAL_TEST_RETRIES: "9" },
+          {
+            SLOPGRID_REAL_TEST_RETRIES: "9",
+            STARTUP_DATA_MIGRATION_PARALLEL_WORKERS: "30",
+          },
           { ...inherited, SLOPGRID_REAL_TEST_RETRIES: "8" },
         )
       : inherited;

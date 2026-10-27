@@ -3,7 +3,7 @@ import { expandGrid, type Grid } from "../server/domain.js";
 import { token } from "../server/ids.js";
 import type { Store } from "../server/store.js";
 import { createWorkflow } from "../server/workflow.js";
-import { currentInput } from "./current-grid-fixture.js";
+import { fixtureModels, currentInput } from "./current-grid-fixture.js";
 import { validatedGrid } from "./grid-storage-fixture.js";
 import { productionV17Database } from "./database-migration-fixture.js";
 
@@ -78,7 +78,7 @@ export function favoriteGrid(
     ...options,
     cells: expandGrid(input).map((cell) => ({ ...cell, id: `${id}-cell` })),
   };
-  const tasks = createWorkflow(input, grid.cells);
+  const tasks = createWorkflow(input, grid.cells, fixtureModels);
   for (const task of tasks) {
     task.status = "error";
     task.error = "Favorite fixture has no generation work";

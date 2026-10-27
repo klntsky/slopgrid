@@ -33,8 +33,10 @@ import {
   archiveApplicationStorage,
   seedApplicationProductionDatabase,
   seedApplicationWalRecords,
+  seedCatalogPolicyTask,
 } from "./production-application-fixture.mjs";
 
+import { archivedFixtureModels } from "./model-catalog-fixture.mjs";
 const application = process.env.SLOPGRID_TEST_APP;
 const Database = createRequire(join(application, "package.json"))(
   "better-sqlite3",
@@ -64,6 +66,36 @@ function fixture(t, options = {}) {
   writeFileSync(join(candidate, "server/store.ts"), storeSource);
   writeFileSync(join(candidate, "server/database.ts"), "export const schemaVersion = 17;\n");
   if (realApplication) archiveApplicationStorage(candidate, application);
+  const catalogEvents = join(root, "catalog-events.jsonl");
+  const transport = join(root, "catalog-transport.mjs");
+  if (realApplication) {
+    const catalog = archivedFixtureModels.map((model) => ({
+      id: model.id, name: model.name,
+      architecture: {
+        input_modalities: ["text", ...(model.imageInput ? ["image"] : [])],
+        output_modalities: model.image ? ["image"] : ["text"],
+      },
+      supported_parameters: model.reasoning ? ["reasoning"] : [],
+    }));
+    writeFileSync(transport, `
+import { appendFileSync } from "node:fs";
+globalThis.fetch = async (input) => {
+  const url = new URL(String(input));
+  if (!["https://production-catalog.invalid", "https://inherited-catalog.invalid", "https://openrouter.ai"].includes(url.origin))
+    throw new Error("Unexpected catalog transport: " + url);
+  appendFileSync(${JSON.stringify(catalogEvents)}, JSON.stringify(url.href) + "\\n");
+  const models = ${JSON.stringify(catalog)};
+  if (url.origin !== "https://inherited-catalog.invalid") {
+    const text = models.find((model) => model.id === "fixture/text");
+    text.architecture.output_modalities.push("image");
+  }
+  const imageCatalog = url.pathname.endsWith("/images/models");
+  return Response.json({ data: imageCatalog
+    ? models.filter((model) => model.architecture.output_modalities.includes("image"))
+    : models });
+};
+`);
+  }
   writeFileSync(
     join(candidate, "tests/assert-database.ts"),
     databaseAssertionsSource,
@@ -83,7 +115,7 @@ import { assertCandidateDatabase } from "./assert-database.ts";
 assertCandidateDatabase("e2e");
 `,
   );
-  if (options.target === "validate")
+  if (["validate", "staging"].includes(options.target))
     writeFileSync(
       join(candidate, "tests/assert-database.ts"),
       `
@@ -92,6 +124,7 @@ import { appendFileSync, existsSync } from "node:fs";
 export function assertCandidateDatabase(phase) {
   assert.equal(process.env.SLOPGRID_TEST_DATABASE, undefined);
   assert.equal(existsSync(process.env.DATABASE_PATH), false);
+  assert.equal(process.env.STARTUP_DATA_MIGRATION_PARALLEL_WORKERS, ${JSON.stringify(options.target === "staging" ? "7" : "30")});
   assert.equal(existsSync(process.env.OUTPUTS_PATH), false);
   appendFileSync(process.env.SLOPGRID_FIXTURE_EVENTS, JSON.stringify({
     phase, databasePath: process.env.DATABASE_PATH,
@@ -162,10 +195,23 @@ process.exit(result.status ?? 1);
       `KEY_ENCRYPTION_SECRET=${"ab".repeat(32)}`,
       "GITHUB_CLIENT_ID=production-client",
       "GITHUB_CLIENT_SECRET=production-secret",
+      ...(options.targetCapacity === null ? [] : [
+        `STARTUP_DATA_MIGRATION_PARALLEL_WORKERS=${JSON.stringify(options.targetCapacity ?? "1")}`,
+      ]),
+      ...(realApplication && options.productionEndpoint !== null
+        ? [`OPENROUTER_BASE_URL=${options.productionEndpoint ?? "https://production-catalog.invalid"}`]
+        : []),
       "",
       "PRODUCTION_ONLY_SECRET=must-not-reach-the-candidate",
     ].join("\n"),
   );
+  if (options.target === "staging") {
+    mkdirSync(dirname(config.targets.staging.envFile), { recursive: true });
+    writeFileSync(config.targets.staging.envFile, readFileSync(production.envFile, "utf8")
+      .replace(/STARTUP_DATA_MIGRATION_PARALLEL_WORKERS=.*\n/, options.targetCapacity === undefined
+        ? "STARTUP_DATA_MIGRATION_PARALLEL_WORKERS=7\n"
+        : `STARTUP_DATA_MIGRATION_PARALLEL_WORKERS=${JSON.stringify(options.targetCapacity)}\n`));
+  }
   const applicationSource = realApplication
     ? seedApplicationProductionDatabase(application, sourcePath, options.sourceVersion ?? 17, options.noncanonicalSource)
     : undefined;
@@ -190,6 +236,7 @@ process.exit(result.status ?? 1);
       withoutWal.close();
     }
   }
+  if (options.policyTask) seedCatalogPolicyTask(source);
   if (options.missingOutputs) rmSync(outputsPath, { recursive: true });
   if (options.symlink === "file")
     symlinkSync(artifactPath, join(outputsPath, "z-live-file"));
@@ -229,14 +276,20 @@ process.exit(result.status ?? 1);
     suite: "mock",
     config,
   };
+  if (options.remote) request.localValidation = {
+    revision: request.revision, sourceHash: request.sourceHash,
+    opsRevision: request.opsRevision, policy: request.tests,
+    units: request.units, browsers: request.browsers, suite: request.suite,
+    status: request.tests === "skip" ? "skipped" : "passed",
+  };
   const inputPath = join(root, "input.json");
   writeFileSync(inputPath, JSON.stringify({ request, build, run }));
   const runner = `
 import { readFileSync } from "node:fs";
-import { validateBuild } from ${JSON.stringify(validationModule)};
+import { validateBuild, validateRemoteBuild } from ${JSON.stringify(validationModule)};
 const { request, build, run } = JSON.parse(readFileSync(${JSON.stringify(inputPath)}, "utf8"));
 try {
-  await validateBuild(request, build, run);
+  await ${options.remote ? "validateRemoteBuild" : "validateBuild"}(request, build, run);
 } catch (error) {
   console.error(error);
   process.exitCode = 1;
@@ -267,6 +320,10 @@ try {
           timeout: 60_000,
           env: {
             ...process.env,
+            STARTUP_DATA_MIGRATION_PARALLEL_WORKERS: Object.hasOwn(options, "inheritedCapacity")
+              ? options.inheritedCapacity : "30",
+            OPENROUTER_BASE_URL: options.inheritedEndpoint,
+            NODE_OPTIONS: realApplication ? "--import=" + transport : undefined,
             NODE_TEST_CONTEXT: undefined,
             PATH: `${bin}:${process.env.PATH}`,
             TMPDIR: runtimeRoot,
@@ -294,6 +351,7 @@ try {
       );
     },
     events: () => lines(eventsPath),
+    catalogRequests: () => lines(catalogEvents),
     result: () =>
       JSON.parse(readFileSync(join(run, "validation.json"), "utf8")),
     assertUnchangedSource() {
@@ -374,6 +432,7 @@ test("production copies every output and WAL-only row, migrates file-dependent d
     ["migration-start", "migration-passed", "unit", "e2e"],
   );
   assertMigrated(f.events()[1]);
+  assert.equal(f.events()[0].migrationWorkers, "1");
   f.assertIndependentCopies(f.events()[1]);
   for (const event of f.events().slice(2))
     assert.deepEqual(event.rows, expectedRows);
@@ -392,6 +451,55 @@ test("production copies every output and WAL-only row, migrates file-dependent d
   f.assertUnchangedSource();
   f.assertRuntimeRemoved();
 });
+for (const target of ["production", "rehearse"])
+  for (const tests of ["full", "skip"])
+    test(`remote ${target} ${tests} uses production capacity without a remote-shell export`, (t) => {
+      const f = fixture(t, { target, tests, remote: true, inheritedCapacity: undefined });
+      assertExit(f.execute(), 0);
+      assert.equal(f.events()[0].migrationWorkers, "1");
+      assert.deepEqual(f.events().map((event) => event.phase), ["migration-start", "migration-passed"]);
+      f.assertUnchangedSource();
+      f.assertRuntimeRemoved();
+    });
+
+for (const remote of [false, true])
+  for (const tests of ["full", "skip"])
+    test(`staging ${tests} selects target capacity before validation (local reuse ${remote})`, (t) => {
+      const f = fixture(t, { target: "staging", tests, remote, inheritedCapacity: undefined });
+      assertExit(f.execute(), 0);
+      assert.deepEqual(f.events().map((event) => event.phase),
+        !remote && tests === "full" ? ["unit", "e2e"] : []);
+      f.assertUnchangedSource();
+      f.assertRuntimeRemoved();
+    });
+
+for (const target of ["rehearse", "staging"])
+  for (const tests of ["full", "skip"])
+    for (const targetCapacity of [null, "", "0", "9007199254740992"])
+      test(`remote ${target} ${tests} rejects target capacity ${JSON.stringify(targetCapacity)} despite valid inherited capacity`, (t) => {
+        const f = fixture(t, { target, tests, remote: true, targetCapacity });
+        const child = f.execute();
+        assertExit(child, 1);
+        assert.match(child.stdout + child.stderr, /STARTUP_DATA_MIGRATION_PARALLEL_WORKERS must be a positive safe integer/);
+        assert.deepEqual(f.events(), []);
+        f.assertUnchangedSource();
+        f.assertRuntimeRemoved();
+      });
+
+for (const productionEndpoint of ["https://production-catalog.invalid", null])
+  test(`remote rehearsal uses production catalog policy with ${productionEndpoint ?? "the default endpoint"}`, (t) => {
+    const f = fixture(t, {
+      candidate: "application", target: "rehearse", tests: "skip", sourceVersion: 17,
+      remote: true, policyTask: true, productionEndpoint,
+      inheritedEndpoint: "https://inherited-catalog.invalid",
+    });
+    assertExit(f.execute(), 0);
+    assert.deepEqual(f.events()[0].policies, [{ id: "catalog-policy", mode: "text-and-images" }]);
+    const base = productionEndpoint ?? "https://openrouter.ai/api/v1";
+    assert.deepEqual(f.catalogRequests().sort(), [`${base}/images/models`, `${base}/models`].sort());
+    f.assertUnchangedSource();
+    f.assertRuntimeRemoved();
+  });
 
 for (const sourceVersion of [14, 17, 18, "current"])
   test(`rehearsal initializes actual application storage from schema ${sourceVersion} and preserves populated data`, (t) => {

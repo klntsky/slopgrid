@@ -105,6 +105,14 @@ test("remote validation requires matching local evidence and never invokes suite
   // If a suite is attempted, the absent tests directory makes this fail.
   writeFileSync(join(source, "package.json"), "{}");
   capture("tar", ["-czf", join(run, "source.tar.gz"), "-C", source, "."]);
+  const envFile = join(root, "staging.env");
+  writeFileSync(envFile, [
+    "APP_ORIGIN=https://fixture.invalid", "PORT=0",
+    "OUTPUT_DOMAIN=-output.fixture.invalid",
+    `KEY_ENCRYPTION_SECRET=${"a".repeat(64)}`,
+    "GITHUB_CLIENT_ID=fixture", "GITHUB_CLIENT_SECRET=fixture",
+    "STARTUP_DATA_MIGRATION_PARALLEL_WORKERS=30",
+  ].join("\n"));
   const request = {
     target: "staging",
     tests: "scoped",
@@ -114,7 +122,7 @@ test("remote validation requires matching local evidence and never invokes suite
     units: ["tests/affected.test.ts"],
     browsers: [],
     suite: "mock",
-    config: {},
+    config: { targets: { staging: { envFile, applicationRoot: source, state: run } } },
   };
   const artifact = {
     path: build,

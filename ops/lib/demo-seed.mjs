@@ -10,6 +10,7 @@ import { dirname, isAbsolute, join } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { pathToFileURL } from "node:url";
 import { shell } from "./common.mjs";
+import { migrationCapacity } from "./runtime.mjs";
 
 class Rejected extends Error {}
 
@@ -248,7 +249,7 @@ function receive(archive, destination) {
   } finally { closeSync(fd); }
 }
 
-async function accept(buildPath, directory, key) {
+async function accept(buildPath, directory, key, migrationWorkers) {
   const require = createRequire(join(buildPath, "package.json"));
   const loader = pathToFileURL(require.resolve("tsx/esm")).href;
   const program = `
@@ -259,7 +260,12 @@ async function accept(buildPath, directory, key) {
     try {
       const { Store } = await import(pathToFileURL(join(build, 'server/store.ts')).href);
       const { recoverInterruptedGrids } = await import(pathToFileURL(join(build, 'server/recovery.ts')).href);
-      store = new Store(process.env.DATABASE_PATH, Buffer.from(process.env.KEY_ENCRYPTION_SECRET, 'hex'), process.env.OUTPUTS_PATH);
+      store = await Store.open(process.env.DATABASE_PATH, Buffer.from(process.env.KEY_ENCRYPTION_SECRET, 'hex'), process.env.OUTPUTS_PATH, {
+        models: async () => {
+          const { Provider } = await import(pathToFileURL(join(build, 'server/provider.ts')).href);
+          return new Provider(process.env.OPENROUTER_BASE_URL).models();
+        },
+      });
       recoverInterruptedGrids(store);
       for (const row of store.db.prepare('SELECT id FROM sessions').all()) store.session(row.id);
       const integrity = store.db.pragma('integrity_check');
@@ -274,6 +280,7 @@ async function accept(buildPath, directory, key) {
     ...(process.env.PATH === undefined ? {} : { PATH: process.env.PATH }),
     ...(process.env.HOME === undefined ? {} : { HOME: process.env.HOME }),
     DATABASE_PATH: join(directory, "slopgrid.sqlite"), OUTPUTS_PATH: join(directory, "outputs"), KEY_ENCRYPTION_SECRET: key,
+    STARTUP_DATA_MIGRATION_PARALLEL_WORKERS: migrationWorkers,
   };
   const child = spawn(process.execPath, ["--import", loader, "--input-type=module", "-", buildPath], { cwd: buildPath, env, stdio: ["pipe", "ignore", "pipe"] });
   child.stderr.on("data", () => {});
@@ -299,8 +306,9 @@ function seedScratch(buildPath, runtimeDir) {
   return mkdtempSync(join(dirname(runtimeDir), ".demo-seed-"));
 }
 
-export async function prepareDemoSeed({ source, buildPath, runtimeDir }) {
+export async function prepareDemoSeed({ source, buildPath, runtimeDir, migrationWorkers }) {
   if (!source) throw new Error("Demo staging source is required; configure OPS_STAGING_APPLICATION_ROOT and OPS_STAGING_CONFIG or use --skip-data-cloning for empty storage");
+  migrationCapacity(migrationWorkers);
   const scratch = seedScratch(buildPath, runtimeDir);
   let transfer;
   try {
@@ -319,7 +327,7 @@ export async function prepareDemoSeed({ source, buildPath, runtimeDir }) {
       if (!(error instanceof Rejected)) throw error;
       throw new Error("Demo staging archive was rejected; repair the staging data source, or use --skip-data-cloning for empty storage");
     }
-    if (!(await accept(buildPath, scratch, key)))
+    if (!(await accept(buildPath, scratch, key, migrationWorkers)))
       throw new Error("Demo staging data is incompatible with the candidate; use a compatible revision or --skip-data-cloning for empty storage");
     rmSync(transfer, { recursive: true, force: true }); transfer = undefined;
     renameSync(scratch, runtimeDir);
@@ -330,12 +338,13 @@ export async function prepareDemoSeed({ source, buildPath, runtimeDir }) {
   }
 }
 
-export async function initializeEmptyDemoSeed({ buildPath, runtimeDir }) {
+export async function initializeEmptyDemoSeed({ buildPath, runtimeDir, migrationWorkers }) {
+  migrationCapacity(migrationWorkers);
   const scratch = seedScratch(buildPath, runtimeDir);
   try {
     const key = randomBytes(32).toString("hex");
     mkdirSync(join(scratch, "outputs"), { mode: 0o700 });
-    if (!(await accept(buildPath, scratch, key))) throw new Error("Demo seed fresh initialization rejected");
+    if (!(await accept(buildPath, scratch, key, migrationWorkers))) throw new Error("Demo seed fresh initialization rejected");
     chmodSync(join(scratch, "slopgrid.sqlite"), 0o600);
     renameSync(scratch, runtimeDir);
     return { kind: "skipped", key, reason: "explicit-opt-out" };

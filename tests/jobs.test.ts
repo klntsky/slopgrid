@@ -14,13 +14,13 @@ import type {
   WorkflowCommit,
   WorkflowExecutor,
 } from "../server/workflow-executor.js";
-import { validatedGrid } from "./grid-storage-fixture.js";
+import { insertCurrentGrid, validatedGrid } from "./grid-storage-fixture.js";
 import { currentInput } from "./current-grid-fixture.js";
 
 const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
-function harness(limit?: number) {
+async function harness(limit?: number) {
   const dir = mkdtempSync(join(tmpdir(), "slopgrid-workers-"));
-  const store = new Store(":memory:", Buffer.alloc(32, 3), dir),
+  const store = await Store.open(":memory:", Buffer.alloc(32, 3), dir),
     provider = new ControlledProvider(),
     { jobs, api } = createGenerationService(store, provider, limit);
   const taskIds = new Map<string, string>();
@@ -57,7 +57,7 @@ function harness(limit?: number) {
         id: `${owner}/${name}/${i}`,
       })),
     };
-    store.insert(validatedGrid(g));
+    insertCurrentGrid(store, validatedGrid(g));
     for (const cell of g.cells) taskIds.set(cell.id, cell.generationId!);
     return g;
   }
@@ -87,7 +87,7 @@ function harness(limit?: number) {
 }
 
 test("streaming bursts expose the latest draft and persist the full reasoning trace", async () => {
-  const h = harness(1);
+  const h = await harness(1);
   try {
     const grid = h.grid("alice", "streaming", 8);
     h.jobs.start(grid);
@@ -124,7 +124,7 @@ test("streaming bursts expose the latest draft and persist the full reasoning tr
 });
 
 test("completed output is persisted before the next queued cell runs", async () => {
-  const h = harness(1);
+  const h = await harness(1);
   try {
     const grid = h.grid("alice", "writes", 8);
     h.jobs.start(grid);
@@ -149,7 +149,7 @@ test("completed output is persisted before the next queued cell runs", async () 
 });
 
 test("draft ordering survives metadata changes, pause, and recovery of a billing-paused grid", async () => {
-  const h = harness(2);
+  const h = await harness(2);
   try {
     const grid = h.grid("alice", "ordering", 3);
     h.jobs.start(grid);
@@ -200,7 +200,7 @@ test("draft ordering survives metadata changes, pause, and recovery of a billing
 });
 
 test("budget-specific 403 pauses queued work while active calls finish", async () => {
-  const h = harness(2);
+  const h = await harness(2);
   try {
     const g = h.grid("alice", "budget", 3);
     h.jobs.start(g);
@@ -232,7 +232,7 @@ test("budget-specific 403 pauses queued work while active calls finish", async (
 });
 
 test("grid requests cap their own workers when another grid raises the owner's limit", async () => {
-  const h = harness(4);
+  const h = await harness(4);
   try {
     const first = h.grid("alice", "first", 4);
     const second = h.grid("alice", "second", 4);
@@ -278,7 +278,7 @@ test("grid requests cap their own workers when another grid raises the owner's l
 });
 
 test("new users receive freed slots before a user with more workers, without interrupting active calls", async () => {
-  const h = harness(4);
+  const h = await harness(4);
   try {
     const alice = h.grid("alice", "grid", 8);
     const bob = h.grid("bob", "grid", 8);
@@ -320,7 +320,7 @@ test("new users receive freed slots before a user with more workers, without int
 });
 
 test("allocation is per user across grids and rotates equal users when capacity is scarce", async () => {
-  const h = harness(1);
+  const h = await harness(1);
   try {
     const grids = [
       h.grid("alice", "first", 2),
@@ -354,7 +354,7 @@ test("allocation is per user across grids and rotates equal users when capacity 
 });
 
 test("billing pauses queued work while other in-flight cells finish and completed cells survive retry", async () => {
-  const h = harness(3);
+  const h = await harness(3);
   try {
     const alice = h.grid("alice", "first", 6),
       other = h.grid("alice", "second", 2);
@@ -391,7 +391,7 @@ test("billing pauses queued work while other in-flight cells finish and complete
 });
 
 test("retrying a paused grid while another cell is active cannot generate that cell twice", async () => {
-  const h = harness(2);
+  const h = await harness(2);
   try {
     const g = h.grid("alice", "grid", 3);
     h.jobs.start(g);
@@ -412,7 +412,7 @@ test("retrying a paused grid while another cell is active cannot generate that c
 });
 
 test("manual pause aborts active cells, discards drafts and gives the released slots to waiting users", async () => {
-  const h = harness(2);
+  const h = await harness(2);
   try {
     const g = h.grid("alice", "grid", 3);
     h.jobs.start(g);
@@ -441,7 +441,7 @@ test("manual pause aborts active cells, discards drafts and gives the released s
 });
 
 test("a failed cell releases its slot without automatic retries and other cells can finish", async () => {
-  const h = harness(1);
+  const h = await harness(1);
   try {
     const g = h.grid("alice", "grid", 2);
     h.jobs.start(g);
@@ -467,7 +467,7 @@ test("a failed cell releases its slot without automatic retries and other cells 
 
 test("backoff releases workers to other users, honors Retry-After, and retries without losing completed cells", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: Date.now() });
-  const h = harness(1);
+  const h = await harness(1);
   try {
     const alice = h.grid("alice", "grid", 3);
     h.jobs.start(alice);
@@ -519,7 +519,7 @@ test("backoff releases workers to other users, honors Retry-After, and retries w
 
 test("billing failures without retry guidance pause until explicitly resumed", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: Date.now() });
-  const h = harness(1);
+  const h = await harness(1);
   try {
     const grid = h.grid("alice", "grid", 2);
     h.jobs.start(grid);
@@ -554,7 +554,7 @@ test("billing failures without retry guidance pause until explicitly resumed", a
 
 test("temporary budget failures with retry guidance back off, stop after five retries, and retain the final error", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: Date.now() });
-  const h = harness(1);
+  const h = await harness(1);
   try {
     const grid = h.grid("alice", "grid", 1);
     h.jobs.start(grid);
@@ -596,7 +596,7 @@ test("temporary budget failures with retry guidance back off, stop after five re
 
 test("pausing during backoff prevents the timer from restarting inference and Resume honors the cooldown", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: Date.now() });
-  const h = harness(1);
+  const h = await harness(1);
   try {
     const grid = h.grid("alice", "grid", 1);
     h.jobs.start(grid);
@@ -630,7 +630,7 @@ test("pausing during backoff prevents the timer from restarting inference and Re
 });
 
 test("non-pricing failures stay on their cells while queued grids keep generating", async () => {
-  const h = harness(1);
+  const h = await harness(1);
   try {
     const first = h.grid("alice", "first", 4);
     const second = h.grid("alice", "second", 2);
@@ -668,7 +668,7 @@ test("non-pricing failures stay on their cells while queued grids keep generatin
 });
 
 test("losing a queued grid's credential does not pause another grid with its own key", async () => {
-  const h = harness(1);
+  const h = await harness(1);
   try {
     const first = h.grid("alice", "first", 2);
     const second = h.grid("alice", "second", 2);
@@ -702,7 +702,7 @@ test("losing a queued grid's credential does not pause another grid with its own
 });
 
 test("task scheduling pins dispatch ownership until settlement and discards late commits after Pause/Resume", async () => {
-  const h = harness(2);
+  const h = await harness(2);
   const pending = new Map<string, (commit: WorkflowCommit) => void>();
   const executor: WorkflowExecutor = {
     run(task) {

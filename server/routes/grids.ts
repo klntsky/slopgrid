@@ -15,7 +15,7 @@ import type { GridPresenter } from "../grid-presentation.js";
 import { anonymousOwner } from "../session.js";
 import { presentIdentity } from "../grid-presentation.js";
 import { gridListPage } from "../grid-listing.js";
-import { gridSchema, type Grid, type ValidatedGridInput } from "../domain.js";
+import { gridSchema, isGridFinished, type Grid, type ValidatedGridInput } from "../domain.js";
 import {
   prepareGridModels,
   type PreparedGridModels,
@@ -170,6 +170,8 @@ export function createGridRoutes({
       : undefined;
     if (reuse.data.sourceGridId && (!source || !canViewGrid(source, s)))
       return res.status(404).json({ error: "Grid not found" });
+    if (source && (source.published || isGridFinished(source)))
+      return res.status(409).json({ error: "Finished or published grids cannot supply an editable configuration." });
     const definition = { ...req.body };
     delete definition.creationRequestId;
     delete definition.sourceGridId;
@@ -204,7 +206,7 @@ export function createGridRoutes({
     }
     const { input } = prepared;
     const cells = prepared.cells.map((cell) => ({ ...cell, id: token() }));
-    const tasks = createWorkflow(input, cells);
+    const tasks = createWorkflow(input, cells, prepared.models);
     if (!rate(`create:${s.id}`, 10) || !rate(`create-ip:${req.ip}`, 30))
       return res
         .status(429)
@@ -260,7 +262,7 @@ export function createGridRoutes({
     const found = readGrid(req, res);
     if (!found) return;
     const parsed = z
-      .object({ title: z.string().trim().max(40) })
+      .strictObject({ title: z.string().trim().max(40) })
       .safeParse(req.body);
     if (!parsed.success)
       return res
@@ -276,10 +278,10 @@ export function createGridRoutes({
     const found = readGrid(req, res);
     if (!found) return;
     const { g, s } = found;
-    if (g.published)
+    if (g.published || isGridFinished(g))
       return res
         .status(409)
-        .json({ error: "Published grids cannot be changed." });
+        .json({ error: "Finished or published grids cannot be changed." });
     const suppliedKey = manualKey(req);
     if (!(suppliedKey ?? s.key))
       return res
@@ -316,7 +318,7 @@ export function createGridRoutes({
     const found = readGrid(req, res);
     if (!found) return;
     const { g, s } = found;
-    if (g.published || g.status === "complete")
+    if (g.published || isGridFinished(g))
       return res
         .status(409)
         .json({ error: "This grid has finished generating." });
@@ -331,24 +333,27 @@ export function createGridRoutes({
     const found = readGrid(req, res);
     if (!found) return;
     const { g, s } = found;
-    if (g.published)
+    if (g.published || isGridFinished(g))
       return res
         .status(409)
-        .json({ error: "Published grids can only be forked." });
-    res.json(
-      snapshot(
-        await generation.pauseGrid({ gridId: g.id, sessionId: s.id }),
-        s,
-      ),
-    );
+        .json({ error: "This grid's configuration cannot be edited." });
+    const current = await generation.pauseGrid({ gridId: g.id, sessionId: s.id });
+    if (isGridFinished(current))
+      return res
+        .status(409)
+        .json({ error: "This grid's configuration cannot be edited." });
+    res.json(snapshot(current, s));
   });
   app.post("/api/grids/:id/publish", async (req, res) => {
     const found = readGrid(req, res);
     if (!found) return;
     const { g, s } = found;
+    if (isGridFinished(g) && req.body?.slug !== undefined)
+      return res.status(409).json({ error: "Finished grids allow only title and visibility changes." });
     const parsed = z
-      .object({
+      .strictObject({
         visibility: z.enum(["private", "unlisted", "public"]),
+        slug: z.string().optional(),
       })
       .safeParse(req.body);
     if (!parsed.success)

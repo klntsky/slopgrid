@@ -18,9 +18,13 @@ import { join } from "node:path";
 import Database from "better-sqlite3";
 export class Store {
   db;
-  constructor(databasePath, key, outputsPath) {
+  static async open(databasePath, key, outputsPath) {
+    return new Store(databasePath, key, outputsPath);
+  }
+  private constructor(databasePath, key, outputsPath) {
     appendFileSync(process.env.SLOPGRID_FIXTURE_EVENTS, JSON.stringify({
       phase: "migration-start", databasePath, outputsPath,
+      migrationWorkers: process.env.STARTUP_DATA_MIGRATION_PARALLEL_WORKERS,
     }) + "\\n");
     assert.equal(key.length, 32);
     assert.notEqual(key.toString("hex"), "${"ab".repeat(32)}");

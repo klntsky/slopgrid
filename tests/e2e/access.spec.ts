@@ -4,6 +4,7 @@ import {
   create,
   expectProgress,
   finishPublishing,
+  forkReadonlyGrid,
   selectModel,
   setVariableValues,
 } from "./helpers";
@@ -356,11 +357,9 @@ test("EDIT cancels inference and restores settings, while a public FORK creates 
     expect(page.url()).not.toBe(original);
     await page.setViewportSize({ width: 390, height: 844 });
     const publish = page.getByRole("button", { name: "PUBLISH", exact: true });
-    await page.getByRole("button", { name: "EDIT", exact: true }).click();
-    await expect(page.getByLabel("$ROW1, case 1", { exact: true })).toHaveValue(
-      "owl",
-    );
-    await page.goBack();
+    await expect(
+      page.getByRole("button", { name: "EDIT", exact: true }),
+    ).toHaveCount(0);
     await publish.click();
     await finishPublishing(page);
     const published = page.url();
@@ -377,20 +376,11 @@ test("EDIT cancels inference and restores settings, while a public FORK creates 
       await expect(
         visitor.getByRole("button", { name: "EDIT", exact: true }),
       ).toHaveCount(0);
-      await visitor.getByRole("button", { name: "FORK", exact: true }).click();
-      await expect(
-        visitor.getByLabel("$ROW1, case 1", { exact: true }),
-      ).toHaveValue("owl");
-      await setVariableValues(visitor, "Rows", ["fox"]);
-      await expect(visitor.getByLabel("Prompt", { exact: true })).toHaveValue(
-        "Draw $ROW1 wearing a hat",
+      const { source, copy } = await forkReadonlyGrid(visitor);
+      expect(copy.input).toEqual(source.input);
+      expect((await page.request.get(`/api/grids/${copy.id}`)).status()).toBe(
+        404,
       );
-      await connectOpenRouter(visitor);
-      await visitor
-        .getByRole("button", { name: "Generate", exact: true })
-        .click();
-      await expectProgress(visitor, 1, 1);
-      expect(visitor.url()).not.toBe(published);
       await page.reload();
       await expect(
         page.getByRole("button", { name: "FORK", exact: true }),
@@ -549,7 +539,18 @@ test("owners can list a link-only published grid publicly without regenerating o
     await dialog.getByRole("radio", { name: "Listed publicly" }).check();
     await dialog.getByRole("button", { name: "Save", exact: true }).click();
     await expect(dialog).toHaveCount(0);
-    await expect(visibility).toHaveCount(0);
+    await expect(visibility).toBeVisible();
+    await visibility.click();
+    await expect(
+      dialog.getByRole("radio", { name: "Listed publicly" }),
+    ).toBeChecked();
+    await expect(
+      dialog.getByRole("radio", { name: "Accessible by link" }),
+    ).toHaveCount(0);
+    await expect(
+      dialog.getByRole("radio", { name: "Keep private" }),
+    ).toHaveCount(0);
+    await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
     await expect(page.getByRole("button", { name: "Copy link" })).toBeVisible();
     expect(page.url()).toBe(url);
     await page.reload();
@@ -655,10 +656,12 @@ test("manual key entry persists in the browser, rejects invalid replacements, an
       .fill("fixture-manual-key");
     await page.getByRole("button", { name: "Connect API key" }).click();
     await expect(page.getByText("Connected", { exact: true })).toBeVisible();
-    expect(await (await page.request.get("/api/session")).json()).toMatchObject({
-      connected: false,
-      user: null,
-    });
+    expect(await (await page.request.get("/api/session")).json()).toMatchObject(
+      {
+        connected: false,
+        user: null,
+      },
+    );
     await expect(
       otherTab.getByText("Connected", { exact: true }),
     ).toBeVisible();

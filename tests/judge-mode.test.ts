@@ -15,7 +15,7 @@ import {
   reduceInput,
 } from "../src/create/change-axis.js";
 import { validateDraftInput } from "../src/create/draft-input.js";
-import { currentDefinition } from "./current-grid-fixture.js";
+import { fixtureModels, currentDefinition } from "./current-grid-fixture.js";
 import { createWorkflow } from "../server/workflow.js";
 import { resolveCriteriaForCell } from "../server/judge-criteria.js";
 
@@ -313,7 +313,7 @@ for (const side of ["rows", "columns"] as const) {
       ...cell,
       id: `cell-${index}`,
     }));
-    const tasks = createWorkflow(parsed.data, cells);
+    const tasks = createWorkflow(parsed.data, cells, fixtureModels);
     assert.deepEqual(
       cells.map((cell) => {
         const judgment = tasks.find((task) => task.id === cell.judgmentId);

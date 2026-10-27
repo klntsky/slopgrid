@@ -3,7 +3,11 @@ import { readFileSync } from "node:fs";
 export function processIdentity(pid = process.pid) {
   const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
   const fields = stat.slice(stat.lastIndexOf(")") + 2).trim().split(/\s+/);
-  if (["Z", "X"].includes(fields[0])) throw new Error("Worker is no longer running");
+  if (fields[0] === "Z" || fields[0] === "X") {
+    const error = new Error("Worker is no longer running");
+    error.code = "ESRCH";
+    throw error;
+  }
   return {
     pid,
     boot: readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim(),

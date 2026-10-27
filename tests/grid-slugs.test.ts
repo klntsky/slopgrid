@@ -6,7 +6,7 @@ import { expandGrid, gridSchema, type Grid } from "../server/domain.js";
 import { validatedGrid } from "./grid-storage-fixture.js";
 import { Store } from "../server/store.js";
 import { createWorkflow } from "../server/workflow.js";
-import { currentInput } from "./current-grid-fixture.js";
+import { fixtureModels, currentInput } from "./current-grid-fixture.js";
 
 test("public slug claims validate, serialize, persist and preserve existing links", async (t) => {
   const { origin, store, database, secret } = await appFixture(t);
@@ -33,17 +33,26 @@ test("public slug claims validate, serialize, persist and preserve existing link
       id,
       owner,
       input,
-      status: "complete",
+      status: "paused",
       published: false,
       visibility: "private",
       createdAt: new Date().toISOString(),
       cells: expandGrid(input).map((cell) => ({
         ...cell,
         id: `${id}-cell`,
-        status: "complete",
+        status: "pending",
       })),
     };
-    const tasks = createWorkflow(gridSchema.parse(input), grid.cells);
+    const tasks = createWorkflow(
+      gridSchema.parse(input),
+      grid.cells,
+      fixtureModels,
+    );
+    store.insert(validatedGrid(grid), tasks);
+  }
+  function finish(id: string) {
+    const grid = store.get(id)!;
+    const tasks = store.workflow(id);
     for (const task of tasks) {
       if (task.kind !== "generation") throw new Error("Expected generation");
       task.status = "complete";
@@ -51,8 +60,13 @@ test("public slug claims validate, serialize, persist and preserve existing link
         artifactId: `slug-output-${id}`,
         provenance: { signature: "slug-fixture", files: ["index.md"] },
       };
+      store.files.write(task.output.artifactId, {
+        "index.md": "Finished output",
+      });
     }
-    store.insert(validatedGrid(grid), tasks);
+    grid.status = "complete";
+    store.saveWorkflow(grid, tasks);
+    assert.ok(store.get(id)!.cells.every((cell) => cell.status === "complete"));
   }
   const publish = (
     id: string,
@@ -103,9 +117,12 @@ test("public slug claims validate, serialize, persist and preserve existing link
   assert.deepEqual(await (await resolve(slug)).json(), {
     id: winner,
   });
+  finish(loser);
+  assert.equal((await publish(loser, differentSlug)).status, 409);
   assert.equal((await publish(winner, slug)).status, 200);
   assert.equal((await publish(winner, differentSlug)).status, 409);
   assert.equal((await publish(winner, "")).status, 409);
+  finish(winner);
   assert.equal((await publish(winner)).status, 200);
   assert.equal(
     (await (await fetch(`${origin}/api/grids/${winner}`)).json()).slug,
@@ -113,6 +130,8 @@ test("public slug claims validate, serialize, persist and preserve existing link
   );
   assert.equal((await publish(third)).status, 200);
   assert.equal((await publish(third, lateSlug)).status, 200);
+  finish(third);
+  assert.deepEqual(await (await resolve(lateSlug)).json(), { id: third });
   let listedWinner;
   for (let page = 1; ; page++) {
     const listed = await (
@@ -123,7 +142,7 @@ test("public slug claims validate, serialize, persist and preserve existing link
   }
   assert.ok(listedWinner);
   assert.equal(listedWinner.slug, slug);
-  const reopened = new Store(database, secret);
+  const reopened = await Store.open(database, secret);
   try {
     assert.equal(reopened.get(winner)!.slug, slug);
   } finally {

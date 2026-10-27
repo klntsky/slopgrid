@@ -138,7 +138,9 @@ export function ChatEditor({
                       const next = { ...current };
                       const content = unfilledText.get(current) ?? current.content;
                       next.role = current.images?.length
-                        ? current.role === "user" ? "assistant" : "user"
+                        ? current.role === "user"
+                          ? "assistant"
+                          : "user"
                         : roles[(roles.indexOf(current.role) + 1) % roles.length];
                       next.content = next.role === "unfilled" ? "" : content;
                       if (next.role === "unfilled") unfilledText.set(next, content);

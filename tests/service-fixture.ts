@@ -21,6 +21,7 @@ export function serviceFixture(
       FRONTEND_PATH: undefined,
       GENERATION_SOCKET: undefined,
       KEY_ENCRYPTION_SECRET: undefined,
+      STARTUP_DATA_MIGRATION_PARALLEL_WORKERS: "30",
       ...env,
       FIXTURE_ENTRY: join(process.cwd(), entry),
     },

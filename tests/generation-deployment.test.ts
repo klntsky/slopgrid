@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import type { Grid } from "../server/domain.js";
 import { runtimeFixture, until, kill } from "./runtime-fixture.js";
-import { validatedGrid } from "./grid-storage-fixture.js";
+import { insertCurrentGrid, validatedGrid } from "./grid-storage-fixture.js";
 import { currentDefinition } from "./current-grid-fixture.js";
 
 test(
@@ -104,7 +104,7 @@ test(
           status: "pending" as const,
         })),
       };
-      store.insert(validatedGrid(blocked));
+      insertCurrentGrid(store, validatedGrid(blocked));
       await assert.rejects(
         engine.api.startGrid({
           gridId: blocked.id,
@@ -164,6 +164,176 @@ test(
       assert.notEqual((await engine.api.status()).instance, instance);
       assert.equal((await engine.api.getGrid(grid.id)).status, "complete");
       assert.equal(calls.length, 2);
+    } finally {
+      await fixture.close();
+    }
+  },
+);
+
+for (const terminal of ["complete", "error"] as const) {
+  for (const command of ["start", "pause"] as const) {
+    test(
+      `finished private ${terminal} grid ignores late engine ${command} commands`,
+      { timeout: 20000 },
+      async () => {
+        const fixture = await runtimeFixture();
+        const { engine, store, owner } = fixture;
+        try {
+          const body = {
+            ...currentDefinition({
+              caseAxes: ["rows"],
+              rows: [
+                { variable: [{ text: "cat" }] },
+                { variable: [{ text: "dog" }] },
+              ],
+              parameters: {
+                input: {
+                  kind: "common",
+                  value: [{ role: "user", content: "Draw $ROW1" }],
+                },
+              },
+              parallelWorkers: 1,
+            }),
+            creationRequestId: `finished-${terminal}-${command}-creation`,
+          };
+          const created = await fixture.request("/api/grids", body);
+          assert.equal(created.status, 201, await created.clone().text());
+          const grid = (await created.json()) as Grid;
+          const first = await fixture.nextCall();
+          first.write({
+            content: "Immutable completed output",
+            reasoning: "Immutable completed thinking",
+          });
+          first.finish();
+          const last = await fixture.nextCall();
+          if (terminal === "error") last.fail(500);
+          else {
+            last.write({ content: "Second completed output" });
+            last.finish();
+          }
+          const finished = await until(
+            () => engine.api.getGrid(grid.id),
+            (snapshot) =>
+              !snapshot.live &&
+              snapshot.cells[0].status === "complete" &&
+              snapshot.cells[1].status === terminal,
+          );
+          assert.equal(
+            finished.status,
+            terminal === "error" ? "paused" : "complete",
+          );
+          assert.equal(finished.visibility, "private");
+          assert.equal(finished.published, false);
+          const idle = await until(
+            () => engine.api.status(),
+            (status) =>
+              status.runningCalls === 0 &&
+              status.activeGrids === 0 &&
+              status.persistence.pendingOperations === 0,
+          );
+          const stored = store.get(grid.id);
+          const workflow = store.workflow(grid.id);
+          const billing = store.billing.page(owner, 0);
+          assert.equal(billing.total, 2);
+          assert.equal(billing.running, 0);
+          assert.equal(billing.costUsd, terminal === "error" ? 0.0123 : 0.0246);
+          assert.equal(fixture.calls.length, 2);
+          const { version: _finishedVersion, ...finishedState } = finished;
+
+          if (terminal === "complete" && command === "start") {
+            const acknowledged = await fixture.request("/api/grids", body);
+            assert.equal(
+              acknowledged.status,
+              200,
+              await acknowledged.clone().text(),
+            );
+            assert.equal(((await acknowledged.json()) as Grid).id, grid.id);
+          }
+
+          for (let delivery = 0; delivery < 2; delivery++) {
+            const request = { gridId: grid.id, sessionId: owner };
+            const result =
+              command === "start"
+                ? await engine.api.startGrid({
+                    ...request,
+                    manualKey: "manual-test-key",
+                  })
+                : await engine.api.pauseGrid(request);
+            const { version: _resultVersion, ...resultState } = result;
+            assert.deepEqual(
+              resultState,
+              finishedState,
+              `late ${command} delivery ${delivery + 1} must be a terminal no-op`,
+            );
+            assert.deepEqual(await engine.api.status(), idle);
+            assert.deepEqual(store.get(grid.id), stored);
+            assert.deepEqual(store.workflow(grid.id), workflow);
+            assert.deepEqual(store.billing.page(owner, 0), billing);
+            assert.equal(fixture.calls.length, 2);
+          }
+        } finally {
+          await fixture.close();
+        }
+      },
+    );
+  }
+}
+
+test(
+  "a genuinely unfinished private grid resumes without replaying completed cells",
+  { timeout: 20000 },
+  async () => {
+    const fixture = await runtimeFixture();
+    const { engine, store, owner } = fixture;
+    try {
+      const grid = fixture.grid();
+      await engine.api.startGrid({ gridId: grid.id, sessionId: owner });
+      const first = await fixture.nextCall();
+      first.write({
+        content: "Keep this completed output",
+        reasoning: "Keep this completed thinking",
+      });
+      first.finish();
+      const interrupted = await fixture.nextCall();
+      interrupted.write({ content: "Discard this interrupted draft" });
+      await until(
+        () => engine.api.getGrid(grid.id),
+        (snapshot) => !!snapshot.cells[1].draft,
+      );
+      await engine.api.pauseGrid({ gridId: grid.id, sessionId: owner });
+      await interrupted.closed;
+      const paused = await until(
+        () => engine.api.getGrid(grid.id),
+        (snapshot) =>
+          !snapshot.live &&
+          snapshot.status === "paused" &&
+          snapshot.cells[0].status === "complete" &&
+          snapshot.cells[1].status === "pending",
+      );
+      const completedCell = paused.cells[0];
+      const completedTask = store.workflow(grid.id)[0];
+      assert.equal(fixture.calls.length, 2);
+      assert.equal(store.billing.page(owner, 0).costUsd, 0.0123);
+
+      const resumed = await fixture.request(`/api/grids/${grid.id}/retry`, {});
+      assert.equal(resumed.status, 200, await resumed.clone().text());
+      const retry = await fixture.nextCall();
+      assert.equal(retry.prompt, interrupted.prompt);
+      retry.write({ content: "Fresh resumed output" });
+      retry.finish();
+      const complete = await until(
+        () => engine.api.getGrid(grid.id),
+        (snapshot) => !snapshot.live && snapshot.status === "complete",
+      );
+      assert.deepEqual(complete.cells[0], completedCell);
+      assert.deepEqual(store.workflow(grid.id)[0], completedTask);
+      assert.equal(complete.cells[1].status, "complete");
+      assert.equal(fixture.calls.length, 3);
+      assert.equal(interrupted.aborted, true);
+      const billing = store.billing.page(owner, 0);
+      assert.equal(billing.total, 3);
+      assert.equal(billing.running, 0);
+      assert.equal(billing.costUsd, 0.0246);
     } finally {
       await fixture.close();
     }

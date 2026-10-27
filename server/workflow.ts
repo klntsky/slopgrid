@@ -15,10 +15,12 @@ import {
   type VariableIndex,
 } from "./prompt-variables.js";
 import { parameterValue } from "./parameters.js";
+import type { Model } from "./provider.js";
 
 export function createWorkflow(
   input: ValidatedGridInput,
   cells: Cell[],
+  models: ReadonlyMap<string, Model>,
 ): WorkflowTask[] {
   const tasks: WorkflowTask[] = [];
   const groups = new Map<string, GenerationTask>();
@@ -32,7 +34,14 @@ export function createWorkflow(
         kind: "generation",
         status: "pending",
         input: {
-          format: input.format,
+          ...(input.format === "chat-template"
+            ? {
+                format: "chat-template" as const,
+                chatOutputMode: models.get(cell.model)!.chatImageOutput
+                  ? ("text-and-images" as const)
+                  : ("text" as const),
+              }
+            : { format: input.format }),
           model: cell.model,
           effort: cell.effort,
           prompt: cell.prompt,

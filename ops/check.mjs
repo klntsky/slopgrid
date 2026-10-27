@@ -10,7 +10,11 @@ const result = spawnSync(
   {
     cwd: root,
     stdio: "inherit",
-    env: { ...process.env, SLOPGRID_TEST_APP: resolve(root, "..") },
+    env: {
+      ...process.env,
+      SLOPGRID_TEST_APP: resolve(root, ".."),
+      STARTUP_DATA_MIGRATION_PARALLEL_WORKERS: "30",
+    },
   },
 );
 if (result.error) throw result.error;

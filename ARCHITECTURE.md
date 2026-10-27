@@ -50,6 +50,14 @@ content available for retry and prevents the store from opening. Accepted
 execution inputs and immutable generated content remain separate from editable
 configuration and presentation metadata.
 
+Migration workers own disjoint private grid data and staged content. The
+coordinator alone owns dataset publication and rollback. Worker success does not
+make an individual grid authoritative; normal storage access begins only after
+the complete candidate is ready. The startup lock serializes cooperating storage
+initializers. Deployment owns stopping already-running web and engine writers
+before a storage upgrade; that operational boundary protects against older
+processes that do not participate in startup locking.
+
 Account favorites belong to the web process, separate from shared grid execution
 state. The favorites boundary scopes reads and writes to the authenticated
 account and applies grid access policy before exposing content. Browser
@@ -93,6 +101,12 @@ dependencies. Cells project task results for presentation. Shared or reused
 generation refers to immutable content; judgment remains an independent task
 with its own execution and billing.
 
+Admission owns model eligibility, while workflow planning owns the accepted
+output policy stored with each task. Execution consumes that policy without
+reopening historical compatibility decisions. The migration boundary compiles
+historical policies from a single catalog snapshot before normal storage access.
+Provider availability and pricing remain ordinary execution concerns.
+
 ## Scheduling and content execution
 
 The scheduler owns worker allocation, attempt identity, admission, retries,
@@ -109,10 +123,11 @@ and durable billing boundary.
 Chat execution owns the filled conversation within an attempt. Provider adapters
 validate generated raster images and preserve the continuation state needed by
 later calls. That opaque state stays in attempt-local provider history, separate
-from visible thinking, progress snapshots, and saved output. Execution and reuse
-persist complete transcripts with their supplied and generated image content.
-Presentation and judging consume those artifacts without reconstructing them from
-input templates. Output authorization and offline partitions govern the saved
+from visible thinking, progress snapshots, and saved output. Execution persists
+complete transcripts with their supplied and generated image content. Reuse and
+forking reference those immutable bodies rather than rewriting them for a new
+grid. Presentation and judging consume the artifacts without reconstructing them
+from input templates. Output authorization and offline partitions govern saved
 images. Configured attachments retain their separate input ownership.
 
 The presentation boundary projects current task state and authorized content
@@ -124,6 +139,15 @@ a connection does not create a new inference request.
 
 Application identity and inference-provider authorization are separate concerns.
 Grid policy centralizes ownership, publication visibility, and mutation access.
+The web mutation boundary applies workflow lifecycle policy as well as identity
+and visibility. The engine independently enforces terminal workflow state before
+dispatch or cancellation, so a delayed web request cannot restart finished work.
+Publication owns a write transaction that rechecks current lifecycle eligibility
+while excluding engine commits. The edit boundary grants configuration access
+only after the engine acknowledges paused, unfinished work.
+Browser controls cannot grant configuration edits to a finished grid. Forking
+owns new grid and task identities while retaining immutable content references;
+it does not create provider attempts or transfer billing ownership.
 Signing into an account changes ownership through that policy rather than
 copying inference credentials between browsers.
 
@@ -148,6 +172,11 @@ Cached website representations served from application paths use an opaque
 sandbox to separate generated code from application cookies, storage, and the
 parent document. Offline retention does not replace the server's authorization
 policy.
+
+A coordinated handoff between an updated page and an older controlling worker is
+not currently enforced. A new page can receive a superseded cached transcript
+before worker activation removes it. This remains a known limitation to address
+in a future update.
 
 ## Shared content ownership
 

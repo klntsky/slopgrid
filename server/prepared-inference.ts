@@ -6,6 +6,7 @@ import { z } from "zod";
 import type {
   FilledChatMessage,
   GenerationParameters,
+  GenerationInput,
   GridInput,
 } from "./domain.js";
 import type { TextBudget } from "./generation-budget.js";
@@ -162,21 +163,22 @@ function digest(request: unknown) {
 }
 
 export function templateSignature(
-  cell: GenerationParameters,
+  cell: GenerationInput & { format: "chat-template" },
   references?: ReferenceInputs,
 ): string {
   return digest({
     ...common(cell),
     format: "chat-template",
-    templateVersion: 5,
+    templateVersion: 6,
+    chatOutputMode: cell.chatOutputMode,
     effort: cell.effort,
     messages: cell.messages?.map(({ role, content, images }) => ({
       role,
       content,
       images: images?.length
-        ? images.map(({ id }) => {
+        ? images.map(({ id, name }) => {
             const { mediaType, sha256 } = referenceContent(references, id);
-            return { mediaType, sha256 };
+            return { name, mediaType, sha256 };
           })
         : undefined,
     })),

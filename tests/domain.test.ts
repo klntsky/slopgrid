@@ -8,7 +8,7 @@ import {
   gridSchema,
 } from "../server/domain.js";
 import { appFixture } from "./app-fixture.js";
-import { currentDefinition, currentInput } from "./current-grid-fixture.js";
+import { fixtureModels, currentDefinition, currentInput } from "./current-grid-fixture.js";
 import { draftInputFromGridInput } from "../src/create/draft-input.js";
 import { createWorkflow } from "../server/workflow.js";
 
@@ -1707,13 +1707,10 @@ for (const side of ["rows", "columns"] as const) {
       })),
     });
     const parsed = gridSchema.parse(source);
-    const tasks = createWorkflow(
-      parsed,
-      expandGrid(parsed).map((cell, index) => ({
-        ...cell,
-        id: `cell-${index}`,
-      })),
-    );
+    const tasks = createWorkflow(parsed, expandGrid(parsed).map((cell, index) => ({
+      ...cell,
+      id: `cell-${index}`,
+    })), fixtureModels);
     assert.equal(tasks.filter((task) => task.kind === "generation").length, 1);
     assert.deepEqual(
       tasks

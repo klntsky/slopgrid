@@ -8,6 +8,143 @@ import {
 import { runtimeFixture, kill, type GridReadFault } from "../runtime-fixture";
 import type { IncomingMessage } from "node:http";
 import { currentDefinition } from "../current-grid-fixture";
+import { referencePng } from "../reference-image-fixture";
+import { expectProgress, finishPublishing } from "./helpers";
+
+for (const prompt of ["billing", "low balance"] as const) {
+  test(`terminal billing interruption removes the ${prompt} recovery prompt without blocking another grid's recovery`, async ({
+    playwright,
+  }) => {
+    const fixture = await runtimeFixture({ workers: 2, images: true });
+    const browser = await playwright.chromium.launch();
+    const context = await browser.newContext({ ignoreHTTPSErrors: true });
+    try {
+      await context.addCookies([
+        {
+          name: fixture.cookieName,
+          secure: true,
+          httpOnly: true,
+          sameSite: "Lax",
+          value: fixture.owner,
+          url: fixture.origin,
+        },
+      ]);
+      // Seed only saved definitions; the UI and real engine produce every lifecycle transition.
+      const definition = currentDefinition({
+        format: "image",
+        budgetUsd: 0.1,
+        parallelWorkers: 2,
+        caseAxes: ["rows"],
+        rows: [
+          { variable: [{ text: "cat" }] },
+          { variable: [{ text: "dog" }] },
+        ],
+        parameters: {
+          input: {
+            kind: "common",
+            value: [{ role: "user", content: "Draw $ROW1" }],
+          },
+        },
+      });
+      const terminal = fixture.grid(definition);
+      const unfinished = fixture.grid(definition);
+      const page = await context.newPage();
+      const adjacent = await context.newPage();
+      await page.goto(`${fixture.origin}/grid/${terminal.id}`);
+      await page.getByRole("button", { name: "Resume generation" }).click();
+      const completed = await fixture.nextImageCall();
+      const last = await fixture.nextImageCall();
+      completed.finish(referencePng);
+      await expectProgress(page, 1, 2);
+      const output = page.getByRole("img", {
+        name: "Generated image",
+        exact: true,
+      });
+      await expect(output).toBeVisible();
+      const savedOutput = await output.getAttribute("src");
+
+      await adjacent.goto(`${fixture.origin}/grid/${unfinished.id}`);
+      await adjacent.getByRole("button", { name: "Resume generation" }).click();
+      (await fixture.nextImageCall()).fail(402);
+      for (const view of [page, adjacent])
+        await expect(
+          view.getByRole("dialog", {
+            name: "OpenRouter credits needed",
+            exact: true,
+          }),
+        ).toBeVisible();
+      expect(last.aborted).toBe(false);
+
+      if (prompt === "low balance") {
+        fixture.credits.total_credits = 1;
+        await page.getByRole("button", { name: "Retry unfinished cells" }).click();
+        await expect(
+          page.getByRole("dialog", {
+            name: "Top up your OpenRouter credits",
+            exact: true,
+          }),
+        ).toBeVisible();
+      }
+      last.fail(400);
+      await expectProgress(page, 2, 2);
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+      await expect(
+        page.getByRole("button", { name: "Resume generation" }),
+      ).toHaveCount(0);
+      await expect(output).toHaveAttribute("src", savedOutput!);
+      await expect(output).toBeVisible();
+      await expect
+        .poll(() => fixture.store.get(terminal.id))
+        .toMatchObject({
+          status: "paused",
+          interruption: "billing",
+          cells: [{ status: "complete" }, { status: "error" }],
+        });
+      await page.reload();
+      await expectProgress(page, 2, 2);
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+      await expect(output).toHaveAttribute("src", savedOutput!);
+
+      fixture.credits.total_credits = 1;
+      await adjacent.getByRole("button", { name: "Retry unfinished cells" }).click();
+      const lowBalance = adjacent.getByRole("dialog", {
+        name: "Top up your OpenRouter credits",
+        exact: true,
+      });
+      await expect(lowBalance).toBeVisible();
+      await lowBalance.getByRole("button", { name: "Continue anyway" }).click();
+      (await fixture.nextImageCall()).finish(referencePng);
+      (await fixture.nextImageCall()).finish(referencePng);
+      await expectProgress(adjacent, 2, 2);
+      await expect(adjacent.getByRole("dialog")).toHaveCount(0);
+      expect(fixture.imageCalls).toHaveLength(5);
+
+      await page.getByRole("button", { name: "Set Title", exact: true }).click();
+      const title = page.getByRole("textbox", { name: "Grid title", exact: true });
+      await title.fill("Finished billing grid");
+      await title.press("Enter");
+      await expect(
+        page.getByRole("button", { name: "Edit title", exact: true }),
+      ).toHaveText("Finished billing grid");
+      await page.getByRole("button", { name: "PUBLISH", exact: true }).click();
+      await finishPublishing(page);
+      await expect(
+        page.getByRole("button", { name: "FORK", exact: true }),
+      ).toBeEnabled();
+      await expect(
+        page.getByRole("button", { name: "Change visibility", exact: true }),
+      ).toBeEnabled();
+      await expect(
+        page.getByRole("button", { name: "Copy link", exact: true }),
+      ).toBeEnabled();
+      await expect(output).toHaveAttribute("src", savedOutput!);
+      expect(fixture.imageCalls).toHaveLength(5);
+    } finally {
+      await browser.close();
+      await fixture.close();
+    }
+  });
+}
 
 for (const entry of ["reload", "stream", "pause", "edit"] as const) {
   test(`generation service outage recovers automatically after ${entry}`, async ({

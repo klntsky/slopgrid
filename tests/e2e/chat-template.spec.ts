@@ -1,6 +1,7 @@
 import { test, expect } from "./fixtures";
 import {
   connectOpenRouter,
+  editHeldGrid,
   expectProgress,
   selectModel,
   setVariableValues,
@@ -100,6 +101,20 @@ test("chat template editing, persistence, sequential output and exports", async 
   await expect(preview.locator('[data-role="assistant"] h1')).toHaveText(
     "Answer",
   );
+  await editHeldGrid(page);
+  await expect(page.locator(".chat-role-unfilled")).toHaveCount(2);
+  await expect(page.getByLabel("Message 1", { exact: true })).toHaveValue(
+    "Question $ROW1",
+  );
+  await page
+    .getByRole("button", { name: "Chat completion", exact: true })
+    .click();
+  await expect(page).toHaveURL(/\/$/);
+  await page
+    .getByRole("button", { name: "Chat completion", exact: true })
+    .click();
+  await expect(page.locator(".chat-role-unfilled")).toHaveCount(2);
+  await page.getByRole("button", { name: "Generate", exact: true }).click();
   await request.post("/fixture/release", { data: { all: true } });
   await expectProgress(page, 1, 1);
   await expect(preview.locator(".chat-bubble")).toHaveCount(6);
@@ -165,17 +180,4 @@ test("chat template editing, persistence, sequential output and exports", async 
   await page.reload();
   await expect(page.locator(".markdown-preview h1")).toHaveCount(3);
   await expect(preview.locator(".chat-bubble")).toHaveCount(6);
-  await page.getByRole("button", { name: "EDIT", exact: true }).click();
-  await expect(page.locator(".chat-role-unfilled")).toHaveCount(2);
-  await expect(page.getByLabel("Message 1", { exact: true })).toHaveValue(
-    "Question $ROW1",
-  );
-  await page
-    .getByRole("button", { name: "Chat completion", exact: true })
-    .click();
-  await expect(page).toHaveURL(/\/$/);
-  await page
-    .getByRole("button", { name: "Chat completion", exact: true })
-    .click();
-  await expect(page.locator(".chat-role-unfilled")).toHaveCount(2);
 });

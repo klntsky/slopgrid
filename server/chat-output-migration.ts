@@ -120,11 +120,11 @@ export function migrateChatOutputs(
   db: Database.Database,
   files: OutputFiles,
 ): void {
-  const references = new Map<string, ReferenceContent>();
   const findReference = db.prepare(
     "SELECT sha256,media_type AS mediaType FROM reference_images WHERE id=?",
   );
   function supplied(message: ChatMessage): FilledChatMessage {
+    const references = new Map<string, ReferenceContent>();
     for (const image of message.images ?? []) {
       if (references.has(image.id)) continue;
       const reference = findReference.get(image.id) as

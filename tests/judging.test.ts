@@ -687,7 +687,7 @@ test("SVG rasterization rejects malformed input and cancellation terminates its 
 
 test("cancelling SVG preparation does not cancel another generation sharing its artifact", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "slopgrid-shared-svg-"));
-  const store = new Store(join(directory, "app.sqlite"), Buffer.alloc(32, 7));
+  const store = await Store.open(join(directory, "app.sqlite"), Buffer.alloc(32, 7));
   const firstController = new AbortController();
   const secondController = new AbortController();
   const deliveries: (() => void)[] = [];
