@@ -1,6 +1,7 @@
 import { ScalarControl } from "../create/scalar-control";
 import { CompleteInputEditor } from "../create/complete-input-editor";
 import { CriteriaEditor } from "../create/criteria-editor";
+import { VariableTextInput } from "../create/variable-input";
 import { ImageOptions } from "../create/image-options";
 import { FormatPicker } from "../components/format-picker";
 import { useNavigate } from "@tanstack/react-router";
@@ -132,6 +133,7 @@ export function Create() {
     ),
   );
   const criteriaSource = input.parameters.judge_criteria;
+  const judgeSystemSource = input.parameters.judge_system;
   const inputSource = input.parameters.input;
   const caseLayoutActive = caseSides.length > 0;
   function toAxis(parameter: CommonParameterId, side: AxisSide) {
@@ -487,6 +489,45 @@ export function Create() {
                   {commonJudgeModel && commonControl("judge_model")}
                   {commonJudgeEffort && commonControl("judge_effort")}
                 </div>
+                {judgeSystemSource?.kind === "common" && (
+                  <>
+                    <div className="parameter-header">
+                      <label
+                        className="parameter-name"
+                        htmlFor="common-judge-system"
+                      >
+                        {parameterNames.judge_system}
+                      </label>
+                      <CommonParameterActions
+                        input={input}
+                        parameter="judge_system"
+                        onMove={toAxis}
+                        disabled={submission.uploading || busy}
+                      />
+                    </div>
+                    <ValidationField
+                      path={["parameters", "judge_system", "value"]}
+                    >
+                      {(validation) => (
+                        <div className="variable-cell-input">
+                          <VariableTextInput
+                            id="common-judge-system"
+                            label={parameterNames.judge_system}
+                            text={judgeSystemSource.value}
+                            validation={validation}
+                            onChange={(value) =>
+                              dispatch({
+                                type: "common",
+                                parameter: "judge_system",
+                                value,
+                              })
+                            }
+                          />
+                        </div>
+                      )}
+                    </ValidationField>
+                  </>
+                )}
                 {criteriaSource?.kind === "common" && (
                   <>
                     <div className="parameter-header">

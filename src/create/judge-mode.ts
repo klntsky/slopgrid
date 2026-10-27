@@ -12,10 +12,13 @@ export function referencedVariableNames(input: GridDraftInput): Set<string> {
   const criteria = input.parameters.judge_criteria;
   if (criteria?.kind === "common")
     for (const criterion of criteria.value) read(criterion.text);
+  const system = input.parameters.judge_system;
+  if (system?.kind === "common") read(system.value);
   for (const side of ["rows", "columns"] as const)
     for (const entry of input[side]) {
       for (const message of entry.input ?? []) read(message.content);
       for (const criterion of entry.judge_criteria ?? []) read(criterion.text);
+      if (entry.judge_system !== undefined) read(entry.judge_system);
     }
   return names;
 }
@@ -34,6 +37,9 @@ export function rewriteVariableReferences(
           ...message,
           content: text(message.content),
         })),
+      }),
+      ...(entry.judge_system !== undefined && {
+        judge_system: text(entry.judge_system),
       }),
       ...(entry.judge_criteria && {
         judge_criteria: entry.judge_criteria.map((criterion) => ({
@@ -60,6 +66,12 @@ export function rewriteVariableReferences(
         ...criterion,
         text: text(criterion.text),
       })),
+    };
+  const system = parameters.judge_system;
+  if (system?.kind === "common")
+    parameters.judge_system = {
+      kind: "common",
+      value: text(system.value),
     };
   return {
     ...input,

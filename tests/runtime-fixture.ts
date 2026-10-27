@@ -532,6 +532,9 @@ export async function runtimeFixture(
     get origin() {
       return origin;
     },
+    get backendOrigin() {
+      return web!.backendOrigin;
+    },
     cookie: `__Host-slopgrid=${owner}`,
     cookieName: "__Host-slopgrid",
     fetch: (url: string, init?: RequestInit) => web!.fetch(url, init),

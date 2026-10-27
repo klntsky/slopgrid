@@ -507,6 +507,20 @@ test("draft reload and format changes retain both case sources until Website rem
       );
       assert.equal(saved.sourceGridId, "saved-source");
     }
+    // Upgrade saved drafts at the storage boundary without dropping unfinished work.
+    const legacy = input();
+    delete legacy.parameters.judge_system;
+    saveDraft({ formatSelected: true, input: legacy, sourceGridId: "legacy-source" });
+    startDraft("svg");
+    saved = JSON.parse(storage.get("slopgrid-draft")!);
+    assert.deepEqual(saved.input, {
+      ...legacy,
+      parameters: {
+        ...legacy.parameters,
+        judge_system: { kind: "common", value: parameterDefault("judge_system") },
+      },
+    });
+    assert.equal(saved.sourceGridId, "legacy-source");
     const obsolete = { ...input(), inputVersion: 1 };
     storage.set(
       "slopgrid-draft",

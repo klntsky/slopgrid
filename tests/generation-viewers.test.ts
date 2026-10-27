@@ -8,14 +8,15 @@ import { runtimeFixture, until } from "./runtime-fixture.js";
 
 async function stalled(options: RequestOptions) {
   return new Promise<IncomingMessage>((resolve, reject) => {
-    const req = (options.socketPath ? request : secureRequest)(
-      { ...options, rejectUnauthorized: false },
-      (res) => {
-        res.on("error", () => {});
-        res.pause();
-        resolve(res);
-      },
-    );
+    const req = (
+      options.socketPath || options.protocol === "http:"
+        ? request
+        : secureRequest
+    )({ ...options, rejectUnauthorized: false }, (res) => {
+      res.on("error", () => {});
+      res.pause();
+      resolve(res);
+    });
     req.on("error", reject);
     req.end();
   });
@@ -57,14 +58,15 @@ test(
       })();
       void reading.catch(() => {});
       await until(() => latest, Boolean);
-      const url = new URL(f.origin);
+      const url = new URL(f.backendOrigin);
       for (let index = 0; index < 4; index++)
         slow.push(
           await stalled({
             hostname: url.hostname,
             port: url.port,
+            protocol: url.protocol,
             path: endpoint,
-            headers: { cookie: f.cookie },
+            headers: { cookie: f.cookie, host: new URL(f.origin).host },
           }),
         );
       assert.equal((await f.request(endpoint)).status, 429);
@@ -72,8 +74,9 @@ test(
         socketPath: f.database + ".sock",
         path: `/v1/grids/${grid.id}/events`,
       });
-      // Paused readers stop draining their actual sockets. Successive snapshots
-      // exceed socket buffers while the healthy client acknowledges each update.
+      // Stall the application sockets directly; the HTTPS fixture proxy adds
+      // buffers that can absorb snapshots without backpressuring the web writer.
+      // The healthy viewer still acknowledges every update through HTTPS.
       const chunk = "Streaming payload. ".repeat(30000);
       for (let index = 1; index <= 8; index++) {
         call.write({ content: chunk });

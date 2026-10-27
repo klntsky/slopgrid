@@ -10,6 +10,7 @@ import {
   currentDefinition,
   type CurrentGridOverrides,
 } from "./current-grid-fixture.js";
+import { defaultJudgeSystemPrompt } from "../server/parameters.js";
 
 export const judgeParameters: Partial<ParameterSources> = {
   input: {
@@ -18,6 +19,7 @@ export const judgeParameters: Partial<ParameterSources> = {
   },
   judge_model: { kind: "rows" },
   judge_effort: { kind: "columns" },
+  judge_system: { kind: "common", value: defaultJudgeSystemPrompt },
   judge_criteria: {
     kind: "common",
     value: [
@@ -75,7 +77,13 @@ export const pair: GridInput = currentDefinition({
   ],
 });
 export function judgeArtifact(call: RuntimeCall): string {
-  return messageText(call.request.messages.at(-3)!.content);
+  const beforeCriteria = call.request.messages.at(-2)!;
+  return messageText(
+    (beforeCriteria.role === "system"
+      ? call.request.messages.at(-3)!
+      : beforeCriteria
+    ).content,
+  );
 }
 export function judgeImage(call: RuntimeCall) {
   const parts = call.request.messages.flatMap((message) =>

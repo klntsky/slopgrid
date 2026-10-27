@@ -3,6 +3,7 @@ import { runtimeFixture, kill } from "../runtime-fixture";
 import { holdDatabaseWrites } from "../database-lock";
 
 test.setTimeout(60000);
+test.use({ serviceWorkers: "block" });
 
 test("a delayed paused response cannot reopen streaming after the engine restarts", async ({
   page,
@@ -16,10 +17,9 @@ test("a delayed paused response cannot reopen streaming after the engine restart
   });
   page.on("requestfailed", (request) => streams.delete(request));
   page.on("requestfinished", (request) => streams.delete(request));
-  let release!: () => void;
-  const gate = new Promise<void>((resolve) => {
-    release = resolve;
-  });
+  const gate = Promise.withResolvers<void>();
+  const held = Promise.withResolvers<Request>();
+  const settled = Promise.withResolvers<void>();
   try {
     await page
       .context()
@@ -34,6 +34,7 @@ test("a delayed paused response cannot reopen streaming after the engine restart
       },
       rows: [{ variable: [{ text: "cat" }] }],
     });
+    const transport = f.gridTransport(grid.id);
     await f.engine.api.startGrid({ gridId: grid.id, sessionId: f.owner });
     await f.call(0);
     unlock = holdDatabaseWrites(f.store);
@@ -44,37 +45,37 @@ test("a delayed paused response cannot reopen streaming after the engine restart
     ).toBeVisible();
     await expect.poll(() => streams.size).toBe(1);
     const endpoint = `${f.origin}/api/grids/${grid.id}`;
-    let captured!: () => void;
-    const held = new Promise<void>((resolve) => {
-      captured = resolve;
-    });
-    let delivered!: () => void;
-    const delivery = new Promise<void>((resolve) => {
-      delivered = resolve;
-    });
     await page.route(
       endpoint,
       async (route) => {
-        const response = await route.fetch();
-        captured();
-        await gate;
-        await route.fulfill({ response });
-        delivered();
+        try {
+          const response = await route.fetch();
+          held.resolve(route.request());
+          await gate.promise;
+          if (!route.request().failure()) await route.fulfill({ response });
+        } catch (error) {
+          held.reject(error);
+          if (!route.request().failure()) throw error;
+        } finally {
+          settled.resolve();
+        }
       },
       { times: 1 },
     );
-    await page.evaluate(() =>
-      window.dispatchEvent(new Event("visibilitychange")),
-    );
-    await held;
+    transport.blockEvents();
+    const request = await held.promise;
+    expect(request.failure()).toBeNull();
     await f.engine.close();
     unlock();
     f.store.setTitle(grid.id, "Recovered engine");
     await f.startEngine();
+    transport.blockEvents(false);
+    // Recovery retains its backoff through the blocked stream and engine restart.
     // The title proves the replacement snapshot reached the browser cache.
     const title = page.getByRole("button", { name: "Edit title", exact: true });
-    await expect(title).toHaveText("Recovered engine");
+    await expect(title).toHaveText("Recovered engine", { timeout: 20000 });
     await expect.poll(() => streams.size).toBe(0);
+    await expect.poll(() => request.failure()).not.toBeNull();
     let newStreams = 0;
     page.on("request", (request) => {
       if (
@@ -83,8 +84,8 @@ test("a delayed paused response cannot reopen streaming after the engine restart
       )
         newStreams++;
     });
-    release();
-    await delivery;
+    gate.resolve();
+    await settled.promise;
     await page.evaluate(
       () =>
         new Promise((resolve) =>
@@ -98,7 +99,7 @@ test("a delayed paused response cannot reopen streaming after the engine restart
     ).toBeVisible();
   } finally {
     unlock();
-    release();
+    gate.resolve();
     try {
       await page.unrouteAll({ behavior: "ignoreErrors" });
       await page.close();

@@ -15,6 +15,7 @@ import type { Worker } from "node:worker_threads";
 import type { FilledChatMessage, GenerationTask } from "../server/domain.js";
 import { Store } from "../server/store.js";
 import { loadJudgeMessages } from "../server/judge-artifact.js";
+import { defaultJudgeSystemPrompt } from "../server/parameters.js";
 const requestSchema = z.object({
   max_tokens: z.number().optional(),
   max_completion_tokens: z.number().optional(),
@@ -54,6 +55,14 @@ const requestSchema = z.object({
       .passthrough(),
   ),
 });
+
+function messageText(
+  content: z.infer<typeof requestSchema>["messages"][number]["content"],
+) {
+  return typeof content === "string"
+    ? content
+    : content.map((part) => part.text ?? "").join("");
+}
 
 async function fixture(output: string, finish = "stop") {
   const requests: z.infer<typeof requestSchema>[] = [];
@@ -136,6 +145,8 @@ for (const sample of [
       const input = {
         model: "judge",
         effort: "high",
+        systemPrompt:
+          "Use this custom evaluation rubric, not the output instructions.",
         criteria: [
           { text: "Is there a circle?", correctAnswer: true },
           { text: "Is there a rectangle?", correctAnswer: false },
@@ -202,6 +213,10 @@ for (const sample of [
         request.messages.map((message) => message.role),
         ["assistant", "system", "user"],
       );
+      assert.equal(
+        messageText(request.messages[1].content),
+        input.systemPrompt,
+      );
       assert.match(
         JSON.stringify(request.messages.at(-1)),
         /1\. Is there a circle\?/,
@@ -216,6 +231,42 @@ for (const sample of [
   });
 }
 
+test("blank judge system omits only the custom message and preserves saved conversation roles", async () => {
+  const upstream = await fixture(
+    '{"results":[{"verdict":true,"explanation":"Matches."}]}',
+  );
+  try {
+    await upstream.provider.judge(
+      "key",
+      {
+        model: "judge",
+        effort: "default",
+        systemPrompt: "",
+        criteria: [{ text: "Matches?", correctAnswer: true }],
+      },
+      [
+        { role: "system", content: "Saved generator system message." },
+        { role: "user", content: "Saved request." },
+        { role: "assistant", content: "Saved output." },
+      ],
+    );
+    assert.deepEqual(
+      upstream.requests[0].messages.map(({ role, content }) => ({
+        role,
+        content: messageText(content),
+      })),
+      [
+        { role: "system", content: "Saved generator system message." },
+        { role: "user", content: "Saved request." },
+        { role: "assistant", content: "Saved output." },
+        { role: "user", content: "Criteria:\n1. Matches?" },
+      ],
+    );
+  } finally {
+    await upstream.close();
+  }
+});
+
 test("judge real SDK sends artifact PNG bytes without generation caps", async () => {
   const upstream = await fixture(
     '{"results":[{"verdict":false,"explanation":"No circle."}]}',
@@ -227,6 +278,7 @@ test("judge real SDK sends artifact PNG bytes without generation caps", async ()
       {
         model: "judge",
         effort: "none",
+        systemPrompt: defaultJudgeSystemPrompt,
         criteria: [{ text: "Circle?", correctAnswer: true }],
       },
       [
@@ -344,6 +396,7 @@ test("judge SDK continues native conversations with images in place and trailing
         {
           model: "judge",
           effort: "default",
+          systemPrompt: defaultJudgeSystemPrompt,
           criteria: [
             {
               text: "Does the output describe the input images?",
@@ -388,12 +441,8 @@ test("judge SDK continues native conversations with images in place and trailing
           : []),
       ]);
       if (format === "chat-template") {
-        const text = (content: (typeof messages)[number]["content"]) =>
-          typeof content === "string"
-            ? content
-            : content.map((part) => part.text ?? "").join("");
-        assert.equal(text(messages[0].content), transcript[0].content);
-        assert.equal(text(messages[2].content), transcript[2].content);
+        assert.equal(messageText(messages[0].content), transcript[0].content);
+        assert.equal(messageText(messages[2].content), transcript[2].content);
         assert.ok(
           (messages[1].content as { text?: string }[]).some(
             (part) => part.text === transcript[1].content,
@@ -444,6 +493,7 @@ test("judge persistence barrier prevents dispatch when cancelled", async () => {
         {
           model: "judge",
           effort: "default",
+          systemPrompt: defaultJudgeSystemPrompt,
           criteria: [{ text: "Yes?", correctAnswer: true }],
         },
         [{ role: "assistant", content: "Text" }],

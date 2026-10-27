@@ -9,7 +9,12 @@ import type {
 import { token } from "./ids.js";
 import { generationPartitionKey } from "../shared/generation-key.js";
 import { resolveCriteriaForCell } from "./judge-criteria.js";
-import { createVariableIndex, type VariableIndex } from "./prompt-variables.js";
+import {
+  createVariableIndex,
+  interpolateVariables,
+  type VariableIndex,
+} from "./prompt-variables.js";
+import { parameterValue } from "./parameters.js";
 
 export function createWorkflow(
   input: ValidatedGridInput,
@@ -56,6 +61,13 @@ export function createWorkflow(
         input: {
           model: cell.judge.model,
           effort: cell.judge.effort,
+          systemPrompt: interpolateVariables(
+            parameterValue(input, "judge_system", cell.row, cell.column)!,
+            input,
+            cell.row,
+            cell.column,
+            { variableIndex },
+          ).text,
           criteria,
           ...(images ? { images } : {}),
         },

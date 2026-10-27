@@ -9,6 +9,7 @@
 - Allows you to limit inference spending in USD per inference call;
 - Tries to prevent hitting inference budget limits by pre-checking your openrouter allowance and running as many parallel inferences as possible, with some safety margin
 - Easy sharing and collaboration via forking; your data is private by default; deletion of public grids is impossible on purpose - we don't want important benchmark data to disappear
+- LLM judges: set criteria, get stats for different models and inference configs
 
 ## Supported grid layouts
 

@@ -194,6 +194,7 @@ parameterTests("model", "generator/first", "generator/second");
 parameterTests("effort", "low", "max");
 parameterTests("judge_model", "judge/first", "judge/second");
 parameterTests("judge_effort", "none", "high");
+parameterTests("judge_system", "Evaluate strictly.", "");
 parameterTests(
   "judge_criteria",
   [{ text: "First?", correctAnswer: false }],

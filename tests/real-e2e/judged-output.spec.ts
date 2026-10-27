@@ -5,7 +5,11 @@ import type { BillingPage } from "../../server/billing";
 import { criteriaForCell } from "../../server/judge-criteria";
 import type { ReferenceImage } from "../../server/image-settings";
 import { rasterizeSvg } from "../../server/svg-raster";
-import { judgeSystem } from "../../server/judge";
+import {
+  defaultJudgeSystemPrompt,
+  parameterValue,
+} from "../../server/parameters";
+import { interpolateVariables } from "../../server/prompt-variables";
 
 const judges = ["openai/gpt-5-mini", "openai/gpt-5-nano"];
 const textGenerator = "openai/gpt-4.1-mini";
@@ -172,7 +176,12 @@ async function inspect(page: Page, grid: Snapshot, submitted: GridInput) {
         criteria: expected,
         expectedVerdicts: criteria.map((criterion) => criterion.correctAnswer),
         judge: cell.judge,
-        judgeSystem,
+        judgeSystem: interpolateVariables(
+          parameterValue(grid.input, "judge_system", cell.row, cell.column)!,
+          grid.input,
+          cell.row,
+          cell.column,
+        ).text,
         judgeCriteriaMessage: `Criteria:\n${expected.map((criterion, index) => `${index + 1}. ${criterion.text}`).join("\n")}`,
         ...(grid.input.format === "chat-template"
           ? {
@@ -390,6 +399,7 @@ for (const format of ["markdown", "chat-template", "image", "svg"] as const) {
             ? { kind: "common", value: "low" }
             : { kind: "columns" },
         judge_criteria: { kind: "common", value: criteria },
+        judge_system: { kind: "common", value: defaultJudgeSystemPrompt },
       },
       rows:
         format === "svg" || format === "chat-template"

@@ -1,19 +1,16 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Request } from "@playwright/test";
 import { runtimeFixture, kill } from "../runtime-fixture";
 
-test("delayed HTTP snapshots cannot replace newer streamed drafts", async ({
+test.use({ serviceWorkers: "block" });
+
+test("stream recovery cancels stale HTTP snapshots without rolling back output or thinking", async ({
   page,
   context,
 }) => {
   const f = await runtimeFixture();
-  let release!: () => void;
-  const gate = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  let delivered!: () => void;
-  const delivery = new Promise<void>((resolve) => {
-    delivered = resolve;
-  });
+  const gate = Promise.withResolvers<void>();
+  const held = Promise.withResolvers<Request>();
+  const settled = Promise.withResolvers<void>();
   try {
     await context.addCookies([
       { name: f.cookieName, value: f.owner, url: f.origin },
@@ -28,6 +25,7 @@ test("delayed HTTP snapshots cannot replace newer streamed drafts", async ({
       },
       rows: [{ variable: [{ text: "cat" }] }],
     });
+    const transport = f.gridTransport(grid.id);
     await f.engine.api.startGrid({ gridId: grid.id, sessionId: f.owner });
     const call = await f.call(0);
     call.write({
@@ -38,32 +36,36 @@ test("delayed HTTP snapshots cannot replace newer streamed drafts", async ({
     await expect(page.locator(".markdown-preview:visible")).toContainText(
       "Earlier output.",
     );
-    let captured!: () => void;
-    const held = new Promise<void>((resolve) => {
-      captured = resolve;
-    });
     await page.route(
       `${f.origin}/api/grids/${grid.id}`,
       async (route) => {
-        const response = await route.fetch();
-        captured();
-        await gate;
-        await route.fulfill({ response });
-        delivered();
+        try {
+          const response = await route.fetch();
+          held.resolve(route.request());
+          await gate.promise;
+          if (!route.request().failure()) await route.fulfill({ response });
+        } catch (error) {
+          held.reject(error);
+          if (!route.request().failure()) throw error;
+        } finally {
+          settled.resolve();
+        }
       },
       { times: 1 },
     );
-    await page.evaluate(() =>
-      window.dispatchEvent(new Event("visibilitychange")),
-    );
-    await held;
+    transport.blockEvents();
+    const request = await held.promise;
+    const reads = transport.reads;
+    expect(request.failure()).toBeNull();
     call.write({ content: "Newer output.", reasoning: "Newer thinking." });
+    transport.blockEvents(false);
     await expect(page.locator(".markdown-preview:visible")).toContainText(
       "Newer output.",
     );
-    // No further chunks can repair a rollback after the delayed query arrives.
-    release();
-    await delivery;
+    await expect.poll(() => request.failure()).not.toBeNull();
+    expect(transport.reads).toBe(reads);
+    gate.resolve();
+    await settled.promise;
     await page.evaluate(
       () =>
         new Promise((resolve) =>
@@ -81,7 +83,7 @@ test("delayed HTTP snapshots cannot replace newer streamed drafts", async ({
     ).toContainText("Newer thinking.");
     call.finish();
   } finally {
-    release();
+    gate.resolve();
     await page.unrouteAll({ behavior: "ignoreErrors" });
     await f.close();
   }
@@ -111,6 +113,7 @@ test("late HTTP and reconnected stream snapshots cannot roll back content, think
       rows: [{ variable: [{ text: "cat" }] }],
     });
     const endpoint = `${f.origin}/api/grids/${grid.id}`;
+    const transport = f.gridTransport(grid.id);
     await f.engine.api.startGrid({ gridId: grid.id, sessionId: f.owner });
     const call = await f.call(0);
     call.write({
@@ -121,36 +124,39 @@ test("late HTTP and reconnected stream snapshots cannot roll back content, think
     await expect(page.locator(".markdown-preview:visible")).toContainText(
       "Earlier output",
     );
-    let captured!: (body: string) => void;
-    const held = new Promise<string>((resolve) => {
-      captured = resolve;
-    });
-    let delivered!: () => void;
-    const delivery = new Promise<void>((resolve) => {
-      delivered = resolve;
-    });
+    const held = Promise.withResolvers<{ request: Request; body: string }>();
+    const settled = Promise.withResolvers<void>();
     await page.route(
       endpoint,
       async (route) => {
-        const response = await route.fetch();
-        captured(await response.text());
-        await gate;
-        await route.fulfill({ response });
-        delivered();
+        try {
+          const response = await route.fetch();
+          held.resolve({
+            request: route.request(),
+            body: await response.text(),
+          });
+          await gate;
+          if (!route.request().failure()) await route.fulfill({ response });
+        } catch (error) {
+          held.reject(error);
+          if (!route.request().failure()) throw error;
+        } finally {
+          settled.resolve();
+        }
       },
       { times: 1 },
     );
-    // Trigger the real query's focus refetch, then delay its real HTTP response.
-    await page.evaluate(() =>
-      window.dispatchEvent(new Event("visibilitychange")),
-    );
-    const oldSnapshot = await held;
+    transport.blockEvents();
+    const { request, body: oldSnapshot } = await held.promise;
+    const reads = transport.reads;
+    expect(request.failure()).toBeNull();
     call.write({ content: "Newer output.\n", reasoning: "Newer thinking." });
     await f.request(
       `/api/grids/${grid.id}/title`,
       { title: "Newer title" },
       "PATCH",
     );
+    transport.blockEvents(false);
     const title = page.getByRole("button", { name: "Edit title", exact: true });
     await expect(title).toHaveText("Newer title");
     await expect(page.locator(".markdown-preview:visible")).toContainText(
@@ -162,6 +168,8 @@ test("late HTTP and reconnected stream snapshots cannot roll back content, think
     await expect(
       page.getByRole("region", { name: /^Thinking:/ }),
     ).toContainText("Newer thinking.");
+    await expect.poll(() => request.failure()).not.toBeNull();
+    expect(transport.reads).toBe(reads);
     // Observe every DOM commit, so a transient rollback followed by recovery fails too.
     const observations = await page.evaluateHandle(() => {
       const states: {
@@ -226,10 +234,10 @@ test("late HTTP and reconnected stream snapshots cannot roll back content, think
       expect(state.content).toContain("Newer output.");
       expect(state.content).toContain("Newer thinking.");
     }
-    // The outstanding HTTP response says "running" and has the old estimate.
-    // Deliver it after completion: it must not reopen streaming or restore that price.
+    // Releasing the canceled HTTP snapshot after completion must not reopen
+    // streaming or restore its old estimate.
     release();
-    await delivery;
+    await settled.promise;
     await page.evaluate(
       () =>
         new Promise((resolve) =>

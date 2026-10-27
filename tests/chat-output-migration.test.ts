@@ -329,7 +329,7 @@ test(
     const restarted = openStore(t, fixture);
     const artifacts = await assertCanonicalSavedMessages(restarted);
     assert.equal(artifacts[0], killed.artifactId);
-    assert.equal(chatMigrationDatabaseState(fixture.database).version, 20);
+    assert.equal(chatMigrationDatabaseState(fixture.database).version, 21);
     const state = chatMigrationDatabaseState(fixture.database);
     const inventory = outputFileInventory(fixture.outputs);
     assert.deepEqual(

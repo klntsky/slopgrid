@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import Database from "better-sqlite3";
 import { Billing } from "../server/billing.js";
 import { initializeDatabase } from "../server/database.js";
-import { expandGrid, gridDraftSchema } from "../server/domain.js";
+import { expandGrid, gridDraftSchema, gridSchema } from "../server/domain.js";
 import { migrateProductionInput } from "../server/production-input-migration.js";
 import * as migration from "./database-migration-fixture.js";
 import {
@@ -26,6 +26,7 @@ import {
 } from "./favorites-storage-fixture.js";
 import { rejectStoredGridUpdates } from "./grid-storage-fixture.js";
 import { databaseOutputFiles } from "./database-output-fixture.js";
+import { defaultJudgeSystemPrompt } from "../server/parameters.js";
 
 const { productionDatabase, seedProduction, snapshot, storedData, input } =
   migration;
@@ -77,6 +78,12 @@ test("production v14 migrates directly to canonical persisted inputs without rew
     );
     const canonical = storedData(db, "grid").input;
     assert.equal(canonical.inputVersion, 3);
+    assert.equal(canonical.judge, false);
+    assert.equal(canonical.parameters.judge_system, undefined);
+    assert.equal(
+      migration.storedJudgmentTaskData(db).input.systemPrompt,
+      defaultJudgeSystemPrompt,
+    );
     assert.equal(
       gridDraftSchema.safeParse({
         ...canonical,
@@ -227,6 +234,68 @@ test("fresh databases initialize once and preserve encrypted sessions", () => {
   }
 });
 
+test("v19 judging migration freezes missing defaults without changing accepted results or explicit blank prompts", () => {
+  const db = migration.productionV17Database();
+  try {
+    initializeDatabase(db, databaseOutputFiles(db));
+    migration.prepareV19JudgePromptMigration(db);
+    const beforeGrid = storedData(db, "grid");
+    const beforePrivate = storedData(db, "private-grid");
+    assert.equal(beforeGrid.input.judge, true);
+    const beforeTask = migration.storedJudgmentTaskData(db);
+    const beforeRecords = migration.unchangedProductionRecords(db);
+    initializeDatabase(db, databaseOutputFiles(db));
+    assert.deepEqual(storedData(db, "grid"), {
+      ...beforeGrid,
+      input: {
+        ...beforeGrid.input,
+        parameters: {
+          ...beforeGrid.input.parameters,
+          judge_system: { kind: "common", value: defaultJudgeSystemPrompt },
+        },
+      },
+    });
+    assert.deepEqual(storedData(db, "private-grid"), beforePrivate);
+    assert.equal(
+      gridSchema.safeParse(storedData(db, "grid").input).success,
+      true,
+    );
+    const task = migration.storedJudgmentTaskData(db);
+    const originalTask = beforeTask;
+    assert.deepEqual(task, {
+      ...originalTask,
+      input: { ...originalTask.input, systemPrompt: defaultJudgeSystemPrompt },
+    });
+    assert.equal(
+      migration.storedJudgmentTaskData(db, "blank-judge").input.systemPrompt,
+      "",
+    );
+    assert.deepEqual(migration.unchangedProductionRecords(db), beforeRecords);
+    const stable = snapshot(db);
+    initializeDatabase(db, databaseOutputFiles(db));
+    assert.deepEqual(snapshot(db), stable);
+  } finally {
+    db.close();
+  }
+});
+
+test("v19 judge prompt migration rolls back grids and task defaults together", () => {
+  const db = migration.productionV17Database();
+  try {
+    initializeDatabase(db, databaseOutputFiles(db));
+    migration.prepareV19JudgePromptMigration(db);
+    migration.rejectJudgePromptMigration(db);
+    const before = snapshot(db);
+    assert.throws(
+      () => initializeDatabase(db, databaseOutputFiles(db)),
+      /judge prompt migration blocked/,
+    );
+    assert.deepEqual(snapshot(db), before);
+  } finally {
+    db.close();
+  }
+});
+
 test("a genuine v17 upgrade preserves canonical payloads, accounting and encrypted sessions without rewriting grids", () => {
   const db = migration.productionV17Database();
   try {
@@ -257,7 +326,7 @@ test("a frozen v18 upgrade preserves every existing schema object and row, inclu
     rejectStoredGridUpdates(db);
     const before = anonymousFavoriteMigrationPreservedState(db);
     initializeDatabase(db, databaseOutputFiles(db));
-    assert.equal(migration.databaseVersion(db), 20);
+    assert.equal(migration.databaseVersion(db), 21);
     assert.deepEqual(anonymousFavoriteMigrationPreservedState(db), before);
     assert.deepEqual(storedFavoriteIds(db, "account"), ["grid"]);
     assert.deepEqual(storedFavoriteIds(db, "another-account"), [

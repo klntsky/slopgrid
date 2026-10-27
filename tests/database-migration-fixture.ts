@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 import { encrypt, decrypt } from "../server/encryption.js";
 import { migrateProductionGrid } from "../server/production-input-migration.js";
+import { defaultJudgeSystemPrompt } from "../server/parameters.js";
 
 // Frozen production v14 schema. Do not derive this fixture from the initializer.
 export function productionDatabase() {
@@ -81,6 +82,9 @@ export function productionV17Database() {
         JSON.stringify(migrateProductionGrid(JSON.parse(data))),
         id,
       );
+    db.prepare(
+      "UPDATE workflow_tasks SET data=json_set(data,'$.input.systemPrompt',?) WHERE kind='judge'",
+    ).run(defaultJudgeSystemPrompt);
     db.prepare(
       "UPDATE sessions SET data=json_set(data,'$.key',?) WHERE id='session'",
     ).run(encrypt("production-browser-key", Buffer.alloc(32, 17)));
@@ -293,7 +297,15 @@ export function unchangedProductionRecords(db: Database.Database) {
     "grid_reference_images",
   ].map((table) => [
     table,
-    db.prepare(`SELECT rowid,* FROM ${table} ORDER BY rowid`).all(),
+    db
+      .prepare(
+        table === "workflow_tasks"
+          ? `SELECT rowid,id,grid_id,kind,status,dependency_id,artifact_id,thinking_source_id,
+              json_remove(data,'$.input.systemPrompt') AS data
+            FROM workflow_tasks ORDER BY rowid`
+          : `SELECT rowid,* FROM ${table} ORDER BY rowid`,
+      )
+      .all(),
   ]);
 }
 export function gridIdentitiesAndMetadata(db: Database.Database) {
@@ -385,4 +397,54 @@ export function productionBillingSummary(db: Database.Database) {
     COUNT(*)-COUNT(cost_usd) unavailable,SUM(status='running') running FROM inference_calls`,
     )
     .get();
+}
+
+export function storedJudgmentTaskData(
+  db: Database.Database,
+  id = "accepted-judge",
+) {
+  return JSON.parse(
+    db
+      .prepare<[string], { data: string }>(
+        "SELECT data FROM workflow_tasks WHERE id=? AND kind='judge'",
+      )
+      .get(id)!.data,
+  );
+}
+
+export function prepareV19JudgePromptMigration(db: Database.Database) {
+  const task = storedJudgmentTaskData(db);
+  const judged = migrateProductionGrid({
+    input: {
+      ...input,
+      judge: {
+        model: task.input.model,
+        effort: task.input.effort,
+        criteria: task.input.criteria,
+      },
+    },
+  }).input;
+  replaceLegacyGridInputs(db, judged);
+  db.exec(`
+    UPDATE grids SET data=json_remove(data,'$.input.parameters.judge_system')
+      WHERE id='grid';
+    UPDATE grids SET data=json_set(data,'$.input.parameters.judge_system',
+      json('{"kind":"common","value":""}')) WHERE id='private-grid';
+    UPDATE workflow_tasks SET status='complete',
+      data=json_set(json_remove(data,'$.input.systemPrompt'),'$.output',
+        json('{"results":[{"verdict":false,"explanation":"Accepted result."}]}'))
+      WHERE kind='judge';
+    INSERT INTO workflow_tasks (id,grid_id,kind,status,dependency_id,data)
+      SELECT 'blank-judge',grid_id,kind,status,dependency_id,
+        json_set(data,'$.input.systemPrompt','')
+      FROM workflow_tasks WHERE id='accepted-judge';
+    PRAGMA user_version=19;
+  `);
+}
+
+export function rejectJudgePromptMigration(db: Database.Database) {
+  db.exec(`
+    CREATE TEMP TRIGGER reject_judge_prompt BEFORE UPDATE ON workflow_tasks
+      BEGIN SELECT RAISE(ABORT,'judge prompt migration blocked'); END;
+  `);
 }

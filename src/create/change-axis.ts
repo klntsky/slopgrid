@@ -42,7 +42,7 @@ type CaseValueAction = {
 }[ParameterId];
 export type ScalarParameterId = Exclude<
   CommonParameterId,
-  "input" | "judge_criteria"
+  "input" | "judge_criteria" | "judge_system"
 >;
 type CaseValuesAction = {
   [K in ScalarParameterId]: {
@@ -461,6 +461,7 @@ export function reduceInput(
         source?.kind === other ||
         !source ||
         action.parameter === "judge_criteria" ||
+        action.parameter === "judge_system" ||
         action.parameter === "input"
       )
         return input;
@@ -698,7 +699,12 @@ export function reduceInput(
       )
         return input;
       const parameters = { ...input.parameters };
-      const kinds = ["judge_model", "judge_effort", "judge_criteria"] as const;
+      const kinds = [
+        "judge_model",
+        "judge_effort",
+        "judge_system",
+        "judge_criteria",
+      ] as const;
       if (action.enabled) {
         for (const kind of kinds)
           Object.assign(parameters, {
