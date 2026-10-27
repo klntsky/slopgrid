@@ -266,10 +266,9 @@ test("every chat control works from the keyboard, including an empty history", a
       );
     else
       await expect(page.getByLabel("Message 1", { exact: true })).toHaveValue(
-        next === "assistant" ? "First\nline" : "",
+        "First\nline",
       );
   }
-  await page.getByLabel("Message 1", { exact: true }).fill("First\nline");
   await role.focus();
   await page.keyboard.press("Tab");
   await page.keyboard.press("Tab");
