@@ -37,6 +37,7 @@ export function ChatEditor({
     "unfilled",
   ];
   const root = useRef<HTMLDivElement>(null);
+  const [unfilledText] = useState(() => new WeakMap<ChatMessage, string>());
   const inserted = useRef<number | undefined>(undefined);
   const descriptionId = useId();
   const reads = useRef(0);
@@ -147,10 +148,17 @@ export function ChatEditor({
                   }
                   onClick={() => {
                     if (reads.current || message.images?.length) return;
-                    update(index, (current) => {
-                      const role =
+                    onChange((messages) => {
+                      const current = messages[index];
+                      const next = { ...current };
+                      const content = unfilledText.get(current) ?? current.content;
+                      next.role =
                         roles[(roles.indexOf(current.role) + 1) % roles.length];
-                      return { role };
+                      next.content = next.role === "unfilled" ? "" : content;
+                      if (next.role === "unfilled") unfilledText.set(next, content);
+                      return messages.map((message, i) =>
+                        i === index ? next : message,
+                      );
                     });
                   }}
                 >
