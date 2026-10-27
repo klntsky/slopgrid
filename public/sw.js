@@ -582,7 +582,8 @@ self.addEventListener("install", (event) => {
 });
 self.addEventListener("activate", (event) => {
   // Retain hashed assets referenced by previously cached pages and open tabs.
-  // Activation follows the browser lifecycle instead of replacing a live worker.
+  // gstack-shortcut(dec-138be35a-5527-418c-8c0d-f1b9fb6bfe30): No coordinated
+  // client format handoff; upgrade when that handoff is implemented and verified.
   event.waitUntil(
     caches.keys().then(async (names) => {
       await Promise.all(

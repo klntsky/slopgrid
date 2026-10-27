@@ -7,7 +7,7 @@ import type { Request, Response } from "express";
 import { createInferenceGuard } from "../server/inference-policy.js";
 import { expandGrid } from "../server/domain.js";
 import { createWorkflow } from "../server/workflow.js";
-import { currentInput } from "./current-grid-fixture.js";
+import { fixtureModels, currentInput } from "./current-grid-fixture.js";
 
 test("admission sums individual costs, preserves automatic selection, and skips completed cells on resume", async (t) => {
   class Provider extends ControlledProvider {
@@ -149,7 +149,7 @@ test("automatic judged admission reserves one generation per source and each unf
     ...cell,
     id: `reservation-${index}`,
   }));
-  createWorkflow(input, cells);
+  createWorkflow(input, cells, fixtureModels);
   assert.equal(
     await allow(req, res, session, undefined, input.format, cells),
     true,
@@ -193,7 +193,7 @@ test("automatic judged admission reserves one generation per source and each unf
     ...cell,
     id: `image-reservation-${index}`,
   }));
-  createWorkflow(imageInput, images);
+  createWorkflow(imageInput, images, fixtureModels);
   assert.equal(
     await allow(req, res, session, undefined, "image", images),
     true,

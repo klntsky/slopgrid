@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import type { Grid } from "../server/domain.js";
 import { runtimeFixture, until, kill } from "./runtime-fixture.js";
-import { validatedGrid } from "./grid-storage-fixture.js";
+import { insertCurrentGrid, validatedGrid } from "./grid-storage-fixture.js";
 import { currentDefinition } from "./current-grid-fixture.js";
 
 test(
@@ -104,7 +104,7 @@ test(
           status: "pending" as const,
         })),
       };
-      store.insert(validatedGrid(blocked));
+      insertCurrentGrid(store, validatedGrid(blocked));
       await assert.rejects(
         engine.api.startGrid({
           gridId: blocked.id,

@@ -334,6 +334,7 @@ export async function startDemo(request, run, build, github) {
     const env = {
       GITHUB_CLIENT_ID: github.clientId.trim(), GITHUB_CLIENT_SECRET: github.clientSecret.trim(),
       ...supplied, NODE_ENV: "production", BIND_ADDRESS: "127.0.0.1", APP_ORIGIN: origin,
+      STARTUP_DATA_MIGRATION_PARALLEL_WORKERS: "30",
       DATABASE_PATH: join(runtimeDir, "slopgrid.sqlite"), OUTPUTS_PATH: join(runtimeDir, "outputs"),
       GENERATION_SOCKET: join(socketDir, "generation.sock"), FRONTEND_PATH: join(runtimeDir, "frontend"),
       KEY_ENCRYPTION_SECRET: key, TMPDIR: join(runtimeDir, "tmp"),
@@ -412,7 +413,7 @@ async function runDemo(run) {
     return child;
   }
   const inherited = Object.fromEntries(["PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "TZ"].filter((key) => process.env[key] !== undefined).map((key) => [key, process.env[key]]));
-  const engineKeys = ["NODE_ENV", "DATABASE_PATH", "OUTPUTS_PATH", "GENERATION_SOCKET", "KEY_ENCRYPTION_SECRET", "TMPDIR"];
+  const engineKeys = ["NODE_ENV", "DATABASE_PATH", "OUTPUTS_PATH", "GENERATION_SOCKET", "KEY_ENCRYPTION_SECRET", "TMPDIR", "STARTUP_DATA_MIGRATION_PARALLEL_WORKERS"];
   try {
     const engineEnv = { ...inherited, ...Object.fromEntries(engineKeys.map((key) => [key, env[key]])) };
     const engine = launch("engine", process.execPath, ["--import", "tsx", "server/engine.ts"], { env: engineEnv });

@@ -24,6 +24,7 @@ import { createManualKeyRoutes } from "./manual-keys.js";
 import { createAuthRoutes } from "./routes/auth.js";
 import { createModelRoutes } from "./routes/models.js";
 import { createGridRoutes } from "./routes/grids.js";
+import { createGridForkRoutes } from "./routes/grid-fork.js";
 import { createEventRoutes } from "./routes/events.js";
 import { createOutputAccess } from "./output-access.js";
 export type Config = {
@@ -39,15 +40,20 @@ export type Config = {
   generation: GenerationAPI;
 };
 
-export function createApp(config: Config) {
+export async function createApp(config: Config) {
   const credentials = githubCredentials(
     config.github?.clientId ?? process.env.GITHUB_CLIENT_ID,
     config.github?.clientSecret ?? process.env.GITHUB_CLIENT_SECRET,
   );
   const app = express();
-  const store = new Store(config.database, config.secret, config.outputsPath);
   const provider =
     config.provider ?? new Provider(process.env.OPENROUTER_BASE_URL);
+  const store = await Store.open(
+    config.database,
+    config.secret,
+    config.outputsPath,
+    { models: () => provider.models() },
+  );
   const modelCatalog = createModelCatalog(provider);
   const updates = new EventEmitter().setMaxListeners(0);
   const generation = config.generation;
@@ -121,6 +127,7 @@ export function createApp(config: Config) {
       updates,
     }),
   );
+  app.use(createGridForkRoutes({ store, session, snapshot, generation, rate }));
   app.use(createEventRoutes({ store, generation, session, snapshot, updates }));
   app.use("/api", (_req, res) => res.status(404).json({ error: "Not found" }));
   app.use(

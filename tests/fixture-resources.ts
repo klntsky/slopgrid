@@ -2,12 +2,10 @@ import { execFileSync } from "node:child_process";
 import { chmodSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import Database from "better-sqlite3";
-import { initializeDatabase } from "../server/database.js";
-import { OutputFiles } from "../server/files.js";
+import { Store } from "../server/store.js";
 
 let directory: string | undefined;
-let database: string | undefined;
+let database: Promise<string> | undefined;
 let tls: { key: string; cert: string } | undefined;
 
 function resourceDirectory() {
@@ -32,25 +30,25 @@ export function closeTestResources() {
 
 /** The template is checkpointed and closed before any fixture copies it. */
 export function blankTestDatabase() {
-  if (database) return database;
+  return (database ??= createBlankTestDatabase());
+}
+
+async function createBlankTestDatabase() {
   const path = join(resourceDirectory(), "blank.sqlite");
   if (!process.env.SLOPGRID_TEST_RESOURCES) {
-    const db = new Database(path);
+    const store = await Store.open(
+      path,
+      Buffer.alloc(32, 7),
+      join(resourceDirectory(), "blank-output"),
+    );
     try {
-      db.pragma("journal_mode = WAL");
-      db.pragma("foreign_keys = ON");
-      initializeDatabase(
-        db,
-        new OutputFiles(join(resourceDirectory(), "blank-output")),
-      );
-      db.pragma("wal_checkpoint(TRUNCATE)");
+      store.db.pragma("wal_checkpoint(TRUNCATE)");
     } finally {
-      db.close();
+      store.db.close();
     }
     chmodSync(path, 0o400);
   }
-  database = path;
-  return database;
+  return path;
 }
 
 /** TLS material is immutable; servers, ports, and client agents stay private. */
@@ -90,8 +88,8 @@ export function localhostTestTLS() {
 }
 
 /** Prepare once in the runner, then inherit read-only resources in supervisors. */
-export function prepareTestResources() {
-  if (!process.env.SLOPGRID_TEST_DATABASE) blankTestDatabase();
+export async function prepareTestResources() {
+  if (!process.env.SLOPGRID_TEST_DATABASE) await blankTestDatabase();
   localhostTestTLS();
   return resourceDirectory();
 }

@@ -537,7 +537,7 @@ const generation = await startGenerationFixture({
   providerURL: `${upstreamOrigin}/api/v1`,
   workersMax: 2,
 });
-const store = new Store(`${data}/.data/db.sqlite`, Buffer.alloc(32, 1));
+const store = await Store.open(`${data}/.data/db.sqlite`, Buffer.alloc(32, 1));
 const app = express();
 app.use(express.json());
 app.post("/fixture/grids", (req, res) => {

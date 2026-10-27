@@ -39,7 +39,7 @@ import {
 } from "./artifact-reuse-fixture.js";
 import { validatedGrid } from "./grid-storage-fixture.js";
 import { storeFixture } from "./store-fixture.js";
-import {
+import { fixtureModels,
   currentDefinition,
   currentInput,
   type CurrentGridOverrides,
@@ -125,7 +125,7 @@ test("generator grouping ignores judge-only fields and attachment display metada
     generationGroupKey(setup.format, cells[0]),
     generationGroupKey(setup.format, cells[1]),
   );
-  const workflow = createWorkflow(gridSchema.parse(setup), cells);
+  const workflow = createWorkflow(gridSchema.parse(setup), cells, fixtureModels);
   assert.equal(workflow.filter((task) => task.kind === "generation").length, 1);
   assert.equal(workflow.filter((task) => task.kind === "judge").length, 2);
   assert.notEqual(
@@ -369,7 +369,7 @@ test("non-chat image reuse follows content and ignores changed judge-only fields
   }
 });
 
-test("chat reuse matches attachment content across uploads but not moved attachments", async () => {
+test("chat reuse matches same-name attachment content across uploads but regenerates changed display names or positions", async () => {
   const f = await runtimeFixture();
   try {
     const session = { id: f.owner, created: 0 };
@@ -402,6 +402,22 @@ test("chat reuse matches attachment content across uploads but not moved attachm
     const source = await create(f, template);
     finish(await f.nextCall(), "Both images");
     const original = await settled(f, source.id);
+    const duplicate = f.store.references.add(png, first.name, session)!;
+    const contentCopy = await create(f, {
+      ...template,
+      parameters: {
+        ...template.parameters,
+        input: {
+          kind: "common",
+          value: [{ ...messages[0], images: [duplicate] }, ...messages.slice(1)],
+        },
+      },
+      sourceGridId: source.id,
+      reuseArtifacts: true,
+    });
+    assert.equal(contentCopy.status, "complete");
+    assert.equal(f.store.get(contentCopy.id)!.cells[0].artifactId, original.cells[0].artifactId);
+    assert.equal(f.calls.length, 1);
     const copy = await create(f, {
       ...template,
       caseAxes: ["columns"],
@@ -426,12 +442,15 @@ test("chat reuse matches attachment content across uploads but not moved attachm
       sourceGridId: source.id,
       reuseArtifacts: true,
     });
-    assert.equal(copy.status, "complete");
+    assert.notEqual(copy.status, "complete");
+    finish(await f.nextCall(), "Both images with the renamed attachment");
+    const copied = await settled(f, copy.id);
+    assert.equal(copied.status, "complete");
     assert.notEqual(
       f.store.outputMetadata(copy.cells[0].id)!.artifactId,
       f.store.outputMetadata(original.cells[0].id)!.artifactId,
     );
-    assert.equal(f.calls.length, 1);
+    assert.equal(f.calls.length, 2);
     assert.deepEqual(
       parameterValue(gridSchema.parse(copy.input), "input", 0, 0)![0].images,
       [renamed],
@@ -459,7 +478,7 @@ test("chat reuse matches attachment content across uploads but not moved attachm
       f.store.outputMetadata(complete.cells[0].id)!.artifactId,
       f.store.outputMetadata(original.cells[0].id)!.artifactId,
     );
-    assert.equal(f.calls.length, 2);
+    assert.equal(f.calls.length, 3);
     const denied = await f.request("/api/grids", {
       ...template,
       parameters: {
@@ -468,7 +487,7 @@ test("chat reuse matches attachment content across uploads but not moved attachm
       },
     });
     assert.equal(denied.status, 400);
-    assert.equal(f.calls.length, 2);
+    assert.equal(f.calls.length, 3);
   } finally {
     await f.close();
   }
@@ -881,20 +900,21 @@ test("forks isolate access and billing while preserving artifact costs and admis
     const failed = await f.nextCall();
     failed.write({ content: "Incomplete" });
     failed.finish(0.02, { reason: "length", outputTokens: 4 });
-    await settled(f, destination.id);
-    await f.request(`/api/grids/${destination.id}/retry`, {});
-    finish(await f.nextCall());
     const completed = await settled(f, destination.id);
-    assert.equal(completed.spentUsd, 0.0323);
+    const accepted = f.store.workflow(destination.id);
     assert.equal(
-      completed.cells.reduce((sum, c) => sum + (c.usage?.costUsd ?? 0), 0),
-      0.0246,
+      (await f.request(`/api/grids/${destination.id}/retry`, {})).status,
+      409,
     );
+    assert.deepEqual(f.store.workflow(destination.id), accepted);
+    assert.equal(completed.spentUsd, 0.02);
+    assert.equal(completed.cells[0].usage?.costUsd, 0.0123);
+    assert.equal(completed.cells[1].status, "error");
     assert.equal(
       f.store.billing.page(f.owner, 0, "source-user").costUsd,
       0.0123,
     );
-    assert.equal(f.store.billing.page(f.owner, 0, "destination-user").total, 2);
+    assert.equal(f.store.billing.page(f.owner, 0, "destination-user").total, 1);
     const cell = completed.cells[0];
     const sourceCell = f.store.get(source.id)!.cells[0];
     assert.equal(cell.artifactId, sourceCell.artifactId);
@@ -913,7 +933,7 @@ test("forks isolate access and billing while preserving artifact costs and admis
       reuseArtifacts: true,
     });
     assert.equal(all.status, "complete");
-    assert.equal(f.calls.length, 3);
+    assert.equal(f.calls.length, 2);
     assert.equal((await f.engine.api.getGrid(all.id)).spentUsd, 0);
     const session = f.store.session(f.owner)!;
     f.store.saveSession({ ...session, key: undefined });
@@ -946,7 +966,7 @@ test("forks isolate access and billing while preserving artifact costs and admis
       ).status,
       201,
     );
-    assert.equal(f.calls.length, 3);
+    assert.equal(f.calls.length, 2);
     await f.request(`/api/grids/${destination.id}/publish`, {
       visibility: "public",
     });
@@ -1424,7 +1444,7 @@ test("generation failures reach every judged group member while ordinary cells r
     ...cell,
     id: `group-${index}`,
   }));
-  const tasks = createWorkflow(gridSchema.parse(judged), cells);
+  const tasks = createWorkflow(gridSchema.parse(judged), cells, fixtureModels);
   const generation = tasks.find((task) => task.kind === "generation")!;
   generation.status = "error";
   generation.error = "Generation failed";
@@ -1456,7 +1476,7 @@ test("generation failures reach every judged group member while ordinary cells r
     ...cell,
     id: `unjudged-${index}`,
   }));
-  const independent = createWorkflow(gridSchema.parse(unjudged), ordinary);
+  const independent = createWorkflow(gridSchema.parse(unjudged), ordinary, fixtureModels);
   independent[0].status = "error";
   independent[0].error = "Generation failed";
   projectWorkflow({ ...grid, input: unjudged, cells: ordinary }, independent);
@@ -1472,7 +1492,7 @@ test("generation failures reach every judged group member while ordinary cells r
 });
 
 test("reuse shares one generation per judge group without copying judgments or attempts", async (t) => {
-  const { store } = storeFixture(t);
+  const { store } = await storeFixture(t);
   const requests: string[] = [];
   const upstream = createServer((req, res) => {
     requests.push(req.url!);
@@ -1541,10 +1561,7 @@ test("reuse shares one generation per judge group without copying judgments or a
     createdAt: new Date().toISOString(),
     cells: expandGrid(config).map((cell) => ({ ...cell, id: token() })),
   };
-  const sourceTasks = createWorkflow(
-    gridSchema.parse(config),
-    sourceGrid.cells,
-  );
+  const sourceTasks = createWorkflow(gridSchema.parse(config), sourceGrid.cells, fixtureModels);
   const sourceGeneration = sourceTasks.find(
     (task) => task.kind === "generation",
   )!;
@@ -1597,7 +1614,7 @@ test("reuse shares one generation per judge group without copying judgments or a
     status: "paused",
     cells: expandGrid(judged).map((cell) => ({ ...cell, id: token() })),
   };
-  const tasks = createWorkflow(gridSchema.parse(judged), destination.cells);
+  const tasks = createWorkflow(gridSchema.parse(judged), destination.cells, fixtureModels);
   assert.equal(tasks.filter((task) => task.kind === "generation").length, 1);
   const before = readdirSync(store.files.root).sort();
   await reuseArtifacts(store, provider, source, tasks);

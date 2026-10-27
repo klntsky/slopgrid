@@ -18,7 +18,7 @@ function fitTextarea(input: HTMLTextAreaElement) {
   input.style.flexGrow = "";
 }
 
-function VariableTextInput({
+export function VariableTextInput({
   id,
   label,
   text,

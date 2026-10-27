@@ -184,7 +184,7 @@ test("fresh chat output and live prefixes encode supplied and generated images o
   }
 });
 
-test("reuse writes destination filenames into a canonical artifact once without changing image bytes or generated turns or making provider calls", async () => {
+test("changed chat image display names regenerate without rewriting source transcripts, while matching plans reuse exact canonical artifacts", async () => {
   const f = await runtimeFixture({ chatImages: true });
   try {
     const session = { id: f.owner, created: 0 };
@@ -217,7 +217,13 @@ test("reuse writes destination filenames into a canonical artifact once without 
       sourceGridId: source.id,
       reuseArtifacts: true,
     });
-    assert.equal(copy.status, "complete");
+    assert.notEqual(copy.status, "complete");
+    const destinationCall = await f.nextCall();
+    destinationCall.write({ content: "Generated frame." });
+    destinationCall.write(imageDelta());
+    destinationCall.finish();
+    const copied = await settled(f, copy.id);
+    assert.equal(copied.status, "complete");
     const destinationExport = await assertExactExports(f, copy.cells[0]);
     assert.notEqual(destinationExport.artifactId, sourceExport.artifactId);
     const expected = structuredClone(sourceExport.messages);
@@ -258,19 +264,22 @@ test("reuse writes destination filenames into a canonical artifact once without 
       assert.equal(rendered.status, 200);
       assert.ok((await rendered.text()).includes('alt="destination.png"'));
     }
-    for (const sourceGridId of [source.id, copy.id]) {
+    for (const [sourceGridId, image, expectedExport] of [
+      [source.id, sourceImage, sourceExport],
+      [copy.id, destinationImage, destinationExport],
+    ] as const) {
       const repeated = await create(f, {
-        ...input(destinationImage),
+        ...input(image),
         sourceGridId,
         reuseArtifacts: true,
       });
       assert.equal(repeated.status, "complete");
       const exported = await assertExactExports(f, repeated.cells[0]);
-      assert.equal(exported.artifactId, destinationExport.artifactId);
-      assert.equal(exported.saved, destinationExport.saved);
+      assert.equal(exported.artifactId, expectedExport.artifactId);
+      assert.equal(exported.saved, expectedExport.saved);
     }
     assert.deepEqual(outputFileInventory(f.store.files.root), inventory);
-    assert.equal(f.calls.length, 1);
+    assert.equal(f.calls.length, 2);
   } finally {
     await f.close();
   }

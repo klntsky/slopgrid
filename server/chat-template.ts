@@ -50,8 +50,17 @@ export async function fillChatTemplate(
     const allowance = remaining / callsRemaining;
     const budget = budgetFor(prompt, allowance);
     let latest: InferenceProgress | undefined;
-    const result = await run(history, budget, (progress) => {
-      latest = progress;
+    let pending = false;
+    let active = true;
+    let emittedAt: number | undefined;
+    let timer: NodeJS.Timeout | undefined;
+    const flush = () => {
+      clearTimeout(timer);
+      timer = undefined;
+      if (!active || !pending || !latest) return;
+      pending = false;
+      emittedAt = Date.now();
+      const progress = latest;
       const messages: FilledChatMessage[] = [
         ...history,
         {
@@ -69,10 +78,35 @@ export async function fillChatTemplate(
         ]),
         currentCallCostUsd: progress.estimatedUsage?.costUsd,
       });
-    });
+    };
+    let result: {
+      usage?: Cell["usage"];
+      assistant: FilledChatMessage;
+    };
+    try {
+      result = await run(history, budget, (progress) => {
+        if (!active) return;
+        latest = progress;
+        pending = true;
+        const delay =
+          emittedAt === undefined
+            ? 0
+            : Math.max(0, 300 - (Date.now() - emittedAt));
+        if (!delay) flush();
+        else if (timer === undefined) timer = setTimeout(flush, delay);
+      });
+      const assistant = result.assistant;
+      if (!assistant || (!assistant.content.trim() && !assistant.images?.length))
+        throw new Error("Missing chat completion output.");
+      if (callsRemaining > 1) flush();
+    } catch (error) {
+      flush();
+      throw error;
+    } finally {
+      active = false;
+      clearTimeout(timer);
+    }
     const assistant = result.assistant;
-    if (!assistant || (!assistant.content.trim() && !assistant.images?.length))
-      throw new Error("Missing chat completion output.");
     const usage = result.usage;
     const costUsd =
       usage?.costUsd ??

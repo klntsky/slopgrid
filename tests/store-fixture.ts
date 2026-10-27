@@ -6,7 +6,7 @@ import { Store } from "../server/store.js";
 import { seedTestDatabase } from "./database-fixture.js";
 
 /** A real Store with a private seeded database and filesystem output root. */
-export function storeFixture(t: TestContext) {
+export async function storeFixture(t: TestContext) {
   const directory = mkdtempSync(join(tmpdir(), "slopgrid-store-test-"));
   const database = join(directory, "db.sqlite");
   const secret = Buffer.alloc(32, 7);
@@ -18,7 +18,7 @@ export function storeFixture(t: TestContext) {
       rmSync(directory, { recursive: true, force: true });
     }
   });
-  seedTestDatabase(database);
-  store = new Store(database, secret);
+  await seedTestDatabase(database);
+  store = await Store.open(database, secret);
   return { store, database, secret };
 }

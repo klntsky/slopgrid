@@ -149,6 +149,11 @@ sandbox to separate generated code from application cookies, storage, and the
 parent document. Offline retention does not replace the server's authorization
 policy.
 
+A coordinated handoff between an updated page and an older controlling worker is
+not currently enforced. A new page can receive a superseded cached transcript
+before worker activation removes it. This remains a known limitation to address
+in a future update.
+
 ## Shared content ownership
 
 Uploads, grids, and tasks can reference shared physical content. Their domain

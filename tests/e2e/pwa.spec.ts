@@ -1,3 +1,4 @@
+import { fixtureModels } from "../current-grid-fixture.js";
 import { test, expect } from "@playwright/test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -25,7 +26,7 @@ test("visited pages and completed outputs survive offline reload without retaini
   const database = join(directory, "db.sqlite");
   const secret = Buffer.alloc(32, 7);
   const generation = await startGenerationFixture({ database, secret });
-  const store = new Store(database, secret);
+  const store = await Store.open(database, secret);
   const web = await webFixture({
     database,
     secret,
@@ -104,7 +105,7 @@ test("visited pages and completed outputs survive offline reload without retaini
         createdAt: new Date().toISOString(),
         cells: expandGrid(input).map((cell) => ({ ...cell, id: token() })),
       } satisfies Grid;
-      const tasks = createWorkflow(input, grid.cells);
+      const tasks = createWorkflow(input, grid.cells, fixtureModels);
       const generation = tasks.find((task) => task.kind === "generation")!;
       generation.status = "complete";
       generation.output = {

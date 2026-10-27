@@ -57,6 +57,7 @@ export function validationEnvironment(
     NODE_ENV: "test",
     GITHUB_CLIENT_ID: "fixture",
     GITHUB_CLIENT_SECRET: "fixture",
+    STARTUP_DATA_MIGRATION_PARALLEL_WORKERS: "30",
     KEY_ENCRYPTION_SECRET: randomBytes(32).toString("hex"),
     DATABASE_PATH: join(runtime, "slopgrid.sqlite"),
     OUTPUTS_PATH: join(runtime, "outputs"),
@@ -208,7 +209,12 @@ export async function validateBuild(request, build, run) {
 import { schemaVersion } from "./server/database.ts";
 if (!Number.isSafeInteger(schemaVersion) || schemaVersion <= 0)
   throw new Error("Candidate database schema version must be a positive integer");
-const store = new Store(process.env.DATABASE_PATH, Buffer.from(process.env.KEY_ENCRYPTION_SECRET, "hex"), process.env.OUTPUTS_PATH);
+const store = await Store.open(process.env.DATABASE_PATH, Buffer.from(process.env.KEY_ENCRYPTION_SECRET, "hex"), process.env.OUTPUTS_PATH, {
+  models: async () => {
+    const { Provider } = await import("./server/provider.ts");
+    return new Provider(process.env.OPENROUTER_BASE_URL).models();
+  },
+});
 try {
   const observed = store.db.pragma("user_version", { simple: true });
   if (observed !== schemaVersion)

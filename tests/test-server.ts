@@ -23,16 +23,15 @@ export async function startTestServer(
   const log = openSync(join(data, "server.log"), "w", 0o600);
   let child: ChildProcess;
   try {
-    seedTestDatabase(
-      project === "mock"
-        ? join(data, ".data/db.sqlite")
-        : join(data, "app.sqlite"),
-    );
+    await seedTestDatabase(project === "mock"
+      ? join(data, ".data/db.sqlite")
+      : join(data, "app.sqlite"),);
     child = fork(join(process.cwd(), "tests/e2e-process.ts"), [project], {
       execArgv: ["--import", "tsx"],
       stdio: ["ignore", log, log, "ipc"],
       env: {
         ...process.env,
+        STARTUP_DATA_MIGRATION_PARALLEL_WORKERS: "30",
         OPENROUTER_API_KEY: undefined,
         E2E_PORT: String(requestedPort),
         FIXTURE_DATA: data,

@@ -16,7 +16,7 @@ import {
   validatedGrid,
   arrangeHistoricalGrid,
 } from "./grid-storage-fixture.js";
-import { currentInput } from "./current-grid-fixture.js";
+import { fixtureModels, currentInput } from "./current-grid-fixture.js";
 
 // Exercise the real session, ownership, persistence, and publishing routes.
 test("publishing is permanent, link grids are unlisted, and public summaries omit private data", async (t) => {
@@ -72,7 +72,7 @@ test("publishing is permanent, link grids are unlisted, and public summaries omi
         status,
       })),
     };
-    const tasks = createWorkflow(gridSchema.parse(input), grid.cells);
+    const tasks = createWorkflow(gridSchema.parse(input), grid.cells, fixtureModels);
     for (const task of tasks) {
       task.status = status;
       if (task.kind === "generation" && status === "complete")
@@ -260,7 +260,7 @@ test("publishing is permanent, link grids are unlisted, and public summaries omi
   assert.equal((await publish(ids.link, { visibility: "public" })).status, 200);
   for (const visibility of ["private", "unlisted"])
     assert.equal((await publish(ids.link, { visibility })).status, 409);
-  const reopened = new Store(database, secret);
+  const reopened = await Store.open(database, secret);
   try {
     assert.equal(reopened.get(ids.listed)!.visibility, "public");
     assert.equal(reopened.get(ids.link)!.visibility, "public");
@@ -304,7 +304,7 @@ test("publishing a paused grid exposes unfinished cells as Not generated and loc
       ...(index === 2 ? { error: "Insufficient credits", errorCode: 402 } : {}),
     })),
   };
-  const tasks = createWorkflow(gridSchema.parse(input), grid.cells);
+  const tasks = createWorkflow(gridSchema.parse(input), grid.cells, fixtureModels);
   const states = ["complete", "error", "pending"] as const;
   tasks.forEach((task, index) => {
     task.status = states[index];
@@ -361,7 +361,7 @@ test("publishing a paused grid exposes unfinished cells as Not generated and loc
     ).status,
     409,
   );
-  const reopened = new Store(database, secret);
+  const reopened = await Store.open(database, secret);
   try {
     assert.equal(reopened.get(grid.id)!.published, true);
     assert.equal(reopened.get(grid.id)!.visibility, "public");
@@ -370,7 +370,7 @@ test("publishing a paused grid exposes unfinished cells as Not generated and loc
   }
 });
 
-test("canonical historical outputs retain configuration, owner controls, and publication", async (t) => {
+test("canonical historical finished outputs retain immutable configuration, title and visibility controls", async (t) => {
   const { origin, store, database, secret } = await appFixture(t);
   const owner = token();
   const stranger = token();
@@ -471,14 +471,14 @@ test("canonical historical outputs retain configuration, owner controls, and pub
         headers: ownerHeaders,
       })
     ).status,
-    200,
+    409,
   );
   assert.deepEqual(store.get(grid.id), before);
   const privateView = await (
     await fetch(origin + path, { headers: ownerHeaders })
   ).json();
   assert.equal(privateView.canEdit, true);
-  assert.equal(privateView.canConfigure, true);
+  assert.equal(privateView.canConfigure, false);
   assert.equal(privateView.canPublish, true);
   assert.equal(privateView.spentUsd, 0.25);
   assert.equal(privateView.input.inputVersion, 3);
@@ -502,10 +502,10 @@ test("canonical historical outputs retain configuration, owner controls, and pub
   assert.equal(publication.status, 200);
   const publishedOwner = await publication.json();
   assert.equal(publishedOwner.canEdit, true);
-  assert.equal(publishedOwner.canConfigure, true);
+  assert.equal(publishedOwner.canConfigure, false);
   const publicView = await (await fetch(origin + path)).json();
   assert.equal(publicView.canEdit, false);
-  assert.equal(publicView.canConfigure, true);
+  assert.equal(publicView.canConfigure, false);
   assert.equal(publicView.spentUsd, undefined);
   assert.equal(publicView.title, "Historical custom title");
   assert.equal(publicView.cells[0].prompt, task.input.prompt);
@@ -527,7 +527,7 @@ test("canonical historical outputs retain configuration, owner controls, and pub
     }
     assert.match(await output.text(), new RegExp(expected));
   }
-  const reopened = new Store(database, secret);
+  const reopened = await Store.open(database, secret);
   try {
     assert.deepEqual(reopened.get(grid.id)!.input, input);
     assert.deepEqual(reopened.workflow(grid.id), accepted);

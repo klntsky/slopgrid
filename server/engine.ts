@@ -33,10 +33,16 @@ try {
 } catch (error) {
   if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
 }
-const store = new Store(config.database, config.secret, config.outputsPath);
+const provider = new Provider(process.env.OPENROUTER_BASE_URL);
+const store = await Store.open(
+  config.database,
+  config.secret,
+  config.outputsPath,
+  { models: () => provider.models() },
+);
 const { api, executor } = createGenerationService(
   store,
-  new Provider(process.env.OPENROUTER_BASE_URL),
+  provider,
   Number(process.env.WORKERS_MAX ?? 100),
 );
 executor.previews.clearAll();

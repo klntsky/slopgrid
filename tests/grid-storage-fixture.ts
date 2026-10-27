@@ -3,10 +3,23 @@ import { gridSchema, type Grid, type WorkflowTask } from "../server/domain.js";
 import { selectedReferences } from "../server/image-settings.js";
 import { expandPromptForTitle } from "../server/grid-title.js";
 import type { Store } from "../server/store.js";
-import { projectWorkflow } from "../server/workflow.js";
+import { createWorkflow, projectWorkflow } from "../server/workflow.js";
+import { fixtureModels } from "./current-grid-fixture.js";
 
 export function validatedGrid(grid: Grid) {
   return Object.assign(grid, { input: gridSchema.parse(grid.input) });
+}
+
+export function insertCurrentGrid(store: Store, grid: Grid) {
+  const accepted = validatedGrid(grid);
+  store.insert(
+    accepted,
+    createWorkflow(accepted.input, accepted.cells, fixtureModels),
+  );
+}
+
+export function storedGridIds(db: Database.Database) {
+  return db.prepare<[], { id: string }>("SELECT id FROM grids").all();
 }
 
 // Arrange already-accepted historical storage, never current API admission.

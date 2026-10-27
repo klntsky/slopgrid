@@ -13,13 +13,18 @@ import { failureDetails } from "../server/failures.js";
 import {
   expandGrid,
   type Cell,
+  type GenerationInput,
+  type GenerationParameters,
   type InferenceProgress,
 } from "../server/domain.js";
 import { currentInput } from "./current-grid-fixture.js";
 import { referencePng } from "./reference-image-fixture.js";
 import { referencePngOutput } from "./chat-image-output-fixture.js";
 
-async function upstream(streamError?: Record<string, unknown>) {
+async function upstream(
+  streamError?: Record<string, unknown>,
+  mixedOutputCatalog = false,
+) {
   const requests: Record<string, unknown>[] = [];
   const imageEndpoints: Record<string, unknown>[] = [];
   const catalog = [
@@ -59,7 +64,8 @@ async function upstream(streamError?: Record<string, unknown>) {
     top_provider: { max_completion_tokens: 128000 },
     architecture: {
       input_modalities: m.id === "all" ? ["text", "image"] : ["text"],
-      output_modalities: ["text"],
+      output_modalities:
+        mixedOutputCatalog && m.id === "all" ? ["text", "image"] : ["text"],
     },
   }));
   const server = createServer(async (req, res) => {
@@ -188,6 +194,49 @@ function cell(model: string, effort: string): Cell {
     status: "running",
   };
 }
+
+function chatInput(
+  input: GenerationParameters,
+): Extract<GenerationInput, { format: "chat-template" }> {
+  return { ...input, format: "chat-template", chatOutputMode: "text" };
+}
+
+test("frozen chat output modes select request modalities independently of current model capabilities", async () => {
+  const h = await upstream(undefined, true);
+  try {
+    const models = await h.provider.models();
+    assert.equal(models.find((model) => model.id === "all")!.chatImageOutput, true);
+    assert.equal(models.find((model) => model.id === "required")!.chatImageOutput, false);
+    for (const [model, chatOutputMode] of [
+      ["all", "text"],
+      ["required", "text-and-images"],
+    ] as const) {
+      await generateAttempt(
+        h.provider,
+        "key",
+        {
+          ...chatInput({
+            ...cell(model, "default"),
+            messages: [{ role: "user", content: "Continue the saved conversation." }],
+          }),
+          chatOutputMode,
+        },
+        `persisted-${chatOutputMode}`,
+        () => {},
+        {},
+      );
+    }
+    assert.deepEqual(
+      h.requests.map(({ model, modalities }) => ({ model, modalities })),
+      [
+        { model: "all", modalities: ["text"] },
+        { model: "required", modalities: ["text", "image"] },
+      ],
+    );
+  } finally {
+    await h.close();
+  }
+});
 
 test("non-chat prompt images preserve output instructions and text-only requests", async () => {
   const h = await upstream();
@@ -371,15 +420,9 @@ test("chat templates fill blanks sequentially and complete trailing history", as
       { role: "user", content: "Trailing text" },
     ];
     const updates: InferenceProgress[] = [];
-    const result = await generateAttempt(
-      h.provider,
-      "key",
-      "chat-template",
-      { ...cell("required", "default"), messages },
-      "template-generation",
-      (p) => updates.push(p),
-      {},
-    );
+    const result = await generateAttempt(h.provider, "key", chatInput({ ...cell("required", "default"), messages }), "template-generation",
+    (p) => updates.push(p),
+    {},);
     assert.equal(h.requests.length, 4);
     const histories = h.requests.map((request) =>
       (
@@ -493,16 +536,10 @@ test("chat images stay on their user turns through long sequential SDK requests"
     ];
     const parameters = { ...cell("all", "default"), messages };
     const updates: InferenceProgress[] = [];
-    const result = await generateAttempt(
-      h.provider,
-      "key",
-      "chat-template",
-      parameters,
-      "image-template",
-      (progress) => updates.push(progress),
-      {},
-      references,
-    );
+    const result = await generateAttempt(h.provider, "key", chatInput(parameters), "image-template",
+    (progress) => updates.push(progress),
+    {},
+    references,);
     assert.equal(h.requests.length, 2);
     const histories: NonNullable<Cell["messages"]>[] = [
       messages.slice(0, 4),
@@ -580,13 +617,13 @@ test("chat images stay on their user turns through long sequential SDK requests"
       JSON.parse(result.files["messages.json"] as string),
       completed,
     );
-    assert.equal(result.signature, templateSignature(parameters, references));
+    assert.equal(result.signature, templateSignature(chatInput(parameters), references));
   } finally {
     await h.close();
   }
 });
 
-test("chat reuse signatures use attachment positions and ordered content, not upload metadata", () => {
+test("chat reuse signatures retain ordered image content, display names and the frozen output mode but ignore upload identities", () => {
   const first = {
     bytes: Buffer.from("first"),
     mediaType: "image/png",
@@ -617,32 +654,39 @@ test("chat reuse signatures use attachment positions and ordered content, not up
       { role: "user" as const, content: "Inspect." },
     ],
   };
-  const signature = templateSignature(parameters, references);
+  const signature = templateSignature(chatInput(parameters), references);
   const renamed = structuredClone(parameters);
   renamed.messages[0].images![0] = { id: "copy", name: "renamed.png" };
-  assert.equal(templateSignature(renamed, references), signature);
+  assert.notEqual(templateSignature(chatInput(renamed), references), signature);
+  const copied = structuredClone(parameters);
+  copied.messages[0].images![0].id = "copy";
+  assert.equal(templateSignature(chatInput(copied), references), signature);
+  assert.notEqual(
+    templateSignature(
+      { ...chatInput(parameters), chatOutputMode: "text-and-images" },
+      references,
+    ),
+    signature,
+  );
   assert.equal(
-    templateSignature(parameters, new Map([...references].reverse())),
+    templateSignature(chatInput(parameters), new Map([...references].reverse())),
     signature,
   );
   const reordered = structuredClone(parameters);
   reordered.messages[0].images!.reverse();
-  assert.notEqual(templateSignature(reordered, references), signature);
+  assert.notEqual(templateSignature(chatInput(reordered), references), signature);
   const moved = structuredClone(parameters);
   moved.messages[2].images = moved.messages[0].images;
   delete moved.messages[0].images;
-  assert.notEqual(templateSignature(moved, references), signature);
+  assert.notEqual(templateSignature(chatInput(moved), references), signature);
   assert.notEqual(
-    templateSignature(
-      parameters,
-      new Map([
-        ...references,
-        ["first", { ...first, mediaType: "image/jpeg" }],
-      ]),
-    ),
+    templateSignature(chatInput(parameters), new Map([
+      ...references,
+      ["first", { ...first, mediaType: "image/jpeg" }],
+    ])),
     signature,
   );
-  assert.throws(() => templateSignature(parameters), /unavailable/);
+  assert.throws(() => templateSignature(chatInput(parameters)), /unavailable/);
 });
 
 test("Image preparation follows selected IDs in order and preserves duplicates", async () => {
@@ -697,26 +741,20 @@ test("different user questions share an explicitly cached image prefix", async (
   ]);
   try {
     for (const question of ["Describe the colors.", "Describe the shapes."])
-      await generateAttempt(
-        h.provider,
-        "key",
-        "chat-template",
-        {
-          ...cell("all", "default"),
-          messages: [
-            { role: "system", content: "Inspect the supplied image." },
-            {
-              role: "user",
-              content: question,
-              images: [{ id: "shared", name: "shared.png" }],
-            },
-          ],
-        },
-        question,
-        () => {},
-        {},
-        references,
-      );
+      await generateAttempt(h.provider, "key", chatInput({
+        ...cell("all", "default"),
+        messages: [
+          { role: "system", content: "Inspect the supplied image." },
+          {
+            role: "user",
+            content: question,
+            images: [{ id: "shared", name: "shared.png" }],
+          },
+        ],
+      }), question,
+      () => {},
+      {},
+      references,);
     const imagePrefix = (request: Record<string, unknown>) => {
       const messages = request.messages as {
         role: string;
@@ -759,15 +797,9 @@ test("template caching preserves long prefixes and isolates generation routing",
         { role, content: "Finish" },
       ];
       const original = JSON.stringify(messages);
-      const result = await generateAttempt(
-        h.provider,
-        "key",
-        "chat-template",
-        { ...cell("all", "high"), messages },
-        role,
-        () => {},
-        {},
-      );
+      const result = await generateAttempt(h.provider, "key", chatInput({ ...cell("all", "high"), messages }), role,
+      () => {},
+      {},);
       const [first, last] = h.requests.slice(-2);
       assert.equal(first.session_id, role);
       assert.equal(last.session_id, role);
@@ -808,15 +840,9 @@ test("chat completion without blanks sends the exact history and saves a convers
       { role: "assistant" as const, content: "Once upon a time " },
     ];
     const input = { ...cell("required", "default"), messages };
-    const result = await generateAttempt(
-      h.provider,
-      "key",
-      "chat-template",
-      input,
-      "chat-generation",
-      () => {},
-      {},
-    );
+    const result = await generateAttempt(h.provider, "key", chatInput(input), "chat-generation",
+    () => {},
+    {},);
     assert.deepEqual(
       h.requests[0].messages,
       messages.map((message, index) => ({

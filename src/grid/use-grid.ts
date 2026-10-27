@@ -26,6 +26,7 @@ export function useGrid(id: string) {
   const [dismissed, setDismissed] = useState(false),
     [streamLost, setStreamLost] = useState(false);
   const retryAfter = useRef<{ id: string; at: number } | null>(null);
+  const forkRequest = useRef<{ sourceId: string; creationRequestId: string } | null>(null);
   const stream = useRef<{
     id: string;
     cursor: string;
@@ -190,9 +191,24 @@ export function useGrid(id: string) {
   const configure = useMutation({
     mutationFn: async () => {
       const grid = query.data!;
-      return grid.published ? grid : api<ViewGrid>(`/grids/${id}/edit`, "POST");
+      if (!grid.canConfigure) throw new Error("This grid's configuration cannot be changed.");
+      if (!grid.published) return api<ViewGrid>(`/grids/${id}/edit`, "POST");
+      if (forkRequest.current?.sourceId !== id)
+        forkRequest.current = { sourceId: id, creationRequestId: crypto.randomUUID() };
+      return api<ViewGrid>(`/grids/${id}/fork`, "POST", {
+        creationRequestId: forkRequest.current.creationRequestId,
+      });
     },
     onSuccess: async (grid) => {
+      if (query.data?.published) {
+        cache.setQueryData(["grid", grid.id], grid);
+        await Promise.all([
+          cache.invalidateQueries({ queryKey: ["grids"] }),
+          invalidateFavoritePages(cache),
+        ]);
+        await navigate({ to: "/grid/$id", params: { id: grid.id } });
+        return;
+      }
       const input = draftInputFromGridInput(grid.input);
       cache.setQueryData(["grid", id], grid);
       saveDraft({

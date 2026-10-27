@@ -12,6 +12,7 @@ import { parseEnv } from "node:util";
 import { createRequire } from "node:module";
 import { connect } from "node:net";
 import { command, capture, atomic } from "./common.mjs";
+import { processIdentity, processAlive } from "./process-identity.mjs";
 
 export const engineEnvironment = (env) =>
   Object.fromEntries(
@@ -22,6 +23,7 @@ export const engineEnvironment = (env) =>
       "GENERATION_SOCKET",
       "KEY_ENCRYPTION_SECRET",
       "WORKERS_MAX",
+      "STARTUP_DATA_MIGRATION_PARALLEL_WORKERS",
       "OPENROUTER_BASE_URL",
     ]
       .filter((key) => env[key] !== undefined)
@@ -37,6 +39,7 @@ export function environment(target) {
   const env = {
     ...original,
     NODE_ENV: "production",
+    STARTUP_DATA_MIGRATION_PARALLEL_WORKERS: "30",
     DATABASE_PATH: database,
     OUTPUTS_PATH: resolve(
       target.applicationRoot,
@@ -394,8 +397,22 @@ export function configureProcesses(target, name, engine, web, env, runId) {
 }
 
 export function stopProcess(name, remove = false) {
-  if (processes().some((item) => item.name === name))
+  const registered = processes().filter((item) => item.name === name);
+  const identities = registered
+    .filter((item) => Number.isInteger(item.pid) && item.pid > 0)
+    .map((item) => processIdentity(item.pid));
+  if (registered.length)
     command("pm2", [remove ? "delete" : "stop", name], { stdio: "ignore" });
+  if (identities.some((identity) => processAlive(identity)))
+    throw new Error(`${name} still has a running old process after stopping`);
+  if (
+    processes().some(
+      (item) =>
+        item.name === name &&
+        (item.pm2_env?.status === "online" || item.pid > 0),
+    )
+  )
+    throw new Error(`${name} is not fully stopped`);
 }
 
 export async function startProcess(target, app, marker) {

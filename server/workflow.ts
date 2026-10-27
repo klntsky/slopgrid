@@ -9,11 +9,18 @@ import type {
 import { token } from "./ids.js";
 import { generationPartitionKey } from "../shared/generation-key.js";
 import { resolveCriteriaForCell } from "./judge-criteria.js";
-import { createVariableIndex, type VariableIndex } from "./prompt-variables.js";
+import {
+  createVariableIndex,
+  interpolateVariables,
+  type VariableIndex,
+} from "./prompt-variables.js";
+import { parameterValue } from "./parameters.js";
+import type { Model } from "./provider.js";
 
 export function createWorkflow(
   input: ValidatedGridInput,
   cells: Cell[],
+  models: ReadonlyMap<string, Model>,
 ): WorkflowTask[] {
   const tasks: WorkflowTask[] = [];
   const groups = new Map<string, GenerationTask>();
@@ -27,7 +34,14 @@ export function createWorkflow(
         kind: "generation",
         status: "pending",
         input: {
-          format: input.format,
+          ...(input.format === "chat-template"
+            ? {
+                format: "chat-template" as const,
+                chatOutputMode: models.get(cell.model)!.chatImageOutput
+                  ? ("text-and-images" as const)
+                  : ("text" as const),
+              }
+            : { format: input.format }),
           model: cell.model,
           effort: cell.effort,
           prompt: cell.prompt,
@@ -56,6 +70,13 @@ export function createWorkflow(
         input: {
           model: cell.judge.model,
           effort: cell.judge.effort,
+          systemPrompt: interpolateVariables(
+            parameterValue(input, "judge_system", cell.row, cell.column)!,
+            input,
+            cell.row,
+            cell.column,
+            { variableIndex },
+          ).text,
           criteria,
           ...(images ? { images } : {}),
         },

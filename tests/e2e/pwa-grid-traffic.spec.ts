@@ -74,17 +74,14 @@ for (const exists of [true, false]) {
           new URL(request.url()).pathname === gridPath,
       });
       await context.setOffline(false);
-      await page.clock.runFor(1001);
+      await page.clock.resume();
       await restored;
-      await page.evaluate(() => undefined);
-      await page.clock.runFor(1);
       if (exists) {
         await expect(
           page.getByRole("button", { name: "Resume generation" }),
         ).toBeVisible();
         await expect(page.getByRole("alert")).toHaveCount(0);
         expect(reads - offlineReads).toBe(1);
-        await page.clock.resume();
         await page.getByRole("button", { name: "Resume generation" }).click();
         const call = await fixture.nextCall();
         call.write({
@@ -101,6 +98,9 @@ for (const exists of [true, false]) {
           document.dispatchEvent(
             new Event("visibilitychange", { bubbles: true }),
           ),
+        );
+        await page.clock.pauseAt(
+          new Date(await page.evaluate(() => Date.now() + 1000)),
         );
         await page.clock.runFor(120000);
         expect(reads - offlineReads).toBe(1);

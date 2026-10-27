@@ -5,7 +5,11 @@ import {
   type GridInput,
   type ParameterValues,
 } from "./domain.js";
-import type { AxisSide, CommonParameterId } from "./parameters.js";
+import {
+  defaultJudgeSystemPrompt,
+  type AxisSide,
+  type CommonParameterId,
+} from "./parameters.js";
 
 // Frozen production v14 shapes: migration must not depend on today's model
 // catalog, capability admission, or provider-specific setting choices.
@@ -164,6 +168,7 @@ export function migrateProductionInput(value: unknown): GridInput {
   if (old.judge) {
     common("judge_model", old.judge.model);
     common("judge_effort", old.judge.effort);
+    common("judge_system", defaultJudgeSystemPrompt);
   }
   for (const side of sides) {
     const axis = old[side];

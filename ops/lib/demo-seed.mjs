@@ -259,7 +259,12 @@ async function accept(buildPath, directory, key) {
     try {
       const { Store } = await import(pathToFileURL(join(build, 'server/store.ts')).href);
       const { recoverInterruptedGrids } = await import(pathToFileURL(join(build, 'server/recovery.ts')).href);
-      store = new Store(process.env.DATABASE_PATH, Buffer.from(process.env.KEY_ENCRYPTION_SECRET, 'hex'), process.env.OUTPUTS_PATH);
+      store = await Store.open(process.env.DATABASE_PATH, Buffer.from(process.env.KEY_ENCRYPTION_SECRET, 'hex'), process.env.OUTPUTS_PATH, {
+        models: async () => {
+          const { Provider } = await import(pathToFileURL(join(build, 'server/provider.ts')).href);
+          return new Provider(process.env.OPENROUTER_BASE_URL).models();
+        },
+      });
       recoverInterruptedGrids(store);
       for (const row of store.db.prepare('SELECT id FROM sessions').all()) store.session(row.id);
       const integrity = store.db.pragma('integrity_check');
@@ -274,6 +279,7 @@ async function accept(buildPath, directory, key) {
     ...(process.env.PATH === undefined ? {} : { PATH: process.env.PATH }),
     ...(process.env.HOME === undefined ? {} : { HOME: process.env.HOME }),
     DATABASE_PATH: join(directory, "slopgrid.sqlite"), OUTPUTS_PATH: join(directory, "outputs"), KEY_ENCRYPTION_SECRET: key,
+    STARTUP_DATA_MIGRATION_PARALLEL_WORKERS: "30",
   };
   const child = spawn(process.execPath, ["--import", loader, "--input-type=module", "-", buildPath], { cwd: buildPath, env, stdio: ["pipe", "ignore", "pipe"] });
   child.stderr.on("data", () => {});

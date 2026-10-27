@@ -24,8 +24,8 @@ import {
   removeStoredReferenceDimensions,
   referenceUsageLinks,
 } from "./reference-storage-fixture.js";
-import { storedGridCount, validatedGrid } from "./grid-storage-fixture.js";
-import { currentDefinition, currentInput } from "./current-grid-fixture.js";
+import { insertCurrentGrid, storedGridCount, validatedGrid } from "./grid-storage-fixture.js";
+import { fixtureModels, currentDefinition, currentInput } from "./current-grid-fixture.js";
 import {
   referencePng,
   referenceJpeg,
@@ -149,7 +149,7 @@ for (const shared of [false, true])
         status: "complete",
       })),
     };
-    const tasks = createWorkflow(gridSchema.parse(input), grid.cells);
+    const tasks = createWorkflow(gridSchema.parse(input), grid.cells, fixtureModels);
     const artifactId = token();
     for (const task of tasks) {
       if (task.kind !== "generation") throw new Error("Expected generation");
@@ -200,18 +200,16 @@ for (const shared of [false, true])
     assert.equal((await read(spare.id)).status, 404);
     // A fork retains access independently of the original grid and uploader.
     const forkOwner = token();
-    store.insert(
-      validatedGrid({
-        ...grid,
-        id: token(),
-        owner: forkOwner,
-        ownerUserId: undefined,
-        published: false,
-        visibility: "private",
-        status: "paused",
-        cells: grid.cells.map((c) => ({ ...c, id: token() })),
-      }),
-    );
+    insertCurrentGrid(store, validatedGrid({
+      ...grid,
+      id: token(),
+      owner: forkOwner,
+      ownerUserId: undefined,
+      published: false,
+      visibility: "private",
+      status: "paused",
+      cells: grid.cells.map((c) => ({ ...c, id: token() })),
+    }));
     removeReferenceGrid(store.db, grid.id);
     store.saveSession({ id: forkOwner, created: Date.now() });
     assert.equal((await read(image.id)).status, 404);
@@ -222,7 +220,7 @@ for (const shared of [false, true])
       png,
     );
     removeStoredReferenceDimensions(store.db);
-    const reopened = new Store(database, secret);
+    const reopened = await Store.open(database, secret);
     try {
       const fork = reopened.all().find((saved) => saved.owner === forkOwner)!;
       const forkInput = gridSchema.parse(fork.input);
@@ -313,7 +311,7 @@ for (const format of ["chat-template", "markdown", "svg", "html"] as const)
 
 for (const format of ["markdown", "svg", "html"] as const)
   test(`${format} common and variable references hydrate, persist and inherit grid access`, async (t) => {
-    const { store, database, secret } = storeFixture(t);
+    const { store, database, secret } = await storeFixture(t);
     const uploader = { id: token(), created: 0 };
     const owner = { id: token(), created: 0 };
     const common = store.references.add(referencePng, "common.png", uploader)!;
@@ -352,8 +350,8 @@ for (const format of ["markdown", "svg", "html"] as const)
       cells: expandGrid(input).map((cell) => ({ ...cell, id: token() })),
     };
     assert.equal(store.references.allowed(common.id, owner), false);
-    store.insert(validatedGrid(grid));
-    const reopened = new Store(database, secret);
+    insertCurrentGrid(store, validatedGrid(grid));
+    const reopened = await Store.open(database, secret);
     try {
       const saved = reopened.get(grid.id)!;
       const savedInput = gridSchema.parse(saved.input);
@@ -393,7 +391,7 @@ for (const format of ["markdown", "svg", "html"] as const)
 
 for (const side of ["rows", "columns"] as const)
   test(`${side} input attachments hydrate every case and track unused fields without leaking them into generation`, async (t) => {
-    const { store, database, secret } = storeFixture(t);
+    const { store, database, secret } = await storeFixture(t);
     const uploader = { id: token(), created: 0 };
     const first = store.references.add(referencePng, "first.png", uploader)!;
     const second = store.references.add(
@@ -451,8 +449,8 @@ for (const side of ["rows", "columns"] as const)
       };
       assert.equal(store.references.allowed(first.id, owner), false);
       assert.equal(store.references.allowed(second.id, owner), false);
-      store.insert(validatedGrid(grid));
-      const reopened = new Store(database, secret);
+      insertCurrentGrid(store, validatedGrid(grid));
+      const reopened = await Store.open(database, secret);
       try {
         const saved = gridSchema.parse(reopened.get(grid.id)!.input);
         assert.deepEqual(saved.caseAxes, [side]);
@@ -550,7 +548,7 @@ test("reference uploads distinguish invalid files from storage failures and reco
 });
 
 test("reference loaders retain exact content by ID within each execution", async (t) => {
-  const { store } = storeFixture(t);
+  const { store } = await storeFixture(t);
   const session = { id: token(), created: Date.now() };
   const other = Buffer.concat([png, Buffer.from("different")]);
   const first = store.references.add(png, "one.png", session)!;
@@ -579,7 +577,7 @@ test("reference loaders retain exact content by ID within each execution", async
 });
 
 test("grid creation records every configured field image atomically and keeps membership tied to immutable configuration", async (t) => {
-  const { store } = storeFixture(t);
+  const { store } = await storeFixture(t);
   const uploader = { id: token(), created: 0 };
   const owner = { id: token(), created: 0 };
   const first = store.references.add(png, "first.png", uploader)!;
@@ -619,7 +617,7 @@ test("grid creation records every configured field image atomically and keeps me
   const allowGridCells = rejectReferenceGridCells(store.db);
   try {
     assert.throws(
-      () => store.insert(validatedGrid(grid)),
+      () => insertCurrentGrid(store, validatedGrid(grid)),
       /Injected grid failure/,
     );
     assert.equal(store.get(grid.id), undefined);
@@ -627,7 +625,7 @@ test("grid creation records every configured field image atomically and keeps me
   } finally {
     allowGridCells();
   }
-  store.insert(validatedGrid(grid));
+  insertCurrentGrid(store, validatedGrid(grid));
   assert.equal(store.references.allowed(first.id, owner), true);
   assert.equal(store.references.allowed(second.id, owner), true);
   assert.equal(store.references.allowed(spare.id, owner), false);
@@ -646,13 +644,13 @@ test("grid creation records every configured field image atomically and keeps me
   assert.equal(store.references.allowed(spare.id, owner), false);
   removeReferenceGrid(store.db, grid.id);
   assert.equal(store.references.allowed(first.id, owner), false);
-  store.insert(validatedGrid(grid));
+  insertCurrentGrid(store, validatedGrid(grid));
   assert.equal(store.references.allowed(second.id, owner), false);
   assert.equal(store.references.allowed(spare.id, owner), true);
 });
 
 test("identical uploads share one blob across private owners and grids without sharing metadata access", async (t) => {
-  const { store, database, secret } = storeFixture(t);
+  const { store, database, secret } = await storeFixture(t);
   const alice = { id: token(), created: 0 };
   const bob = { id: token(), userId: "bob-account", created: 0 };
   const first = store.references.add(png, "alice.png", alice)!;
@@ -700,7 +698,7 @@ test("identical uploads share one blob across private owners and grids without s
       createdAt: "2026-01-01T00:00:00.000Z",
       cells: expandGrid(input).map((cell) => ({ ...cell, id: token() })),
     };
-    store.insert(validatedGrid(grid));
+    insertCurrentGrid(store, validatedGrid(grid));
     return grid;
   });
   const sha256 = createHash("sha256").update(png).digest("hex");
@@ -733,7 +731,7 @@ test("identical uploads share one blob across private owners and grids without s
     sharedReferenceUsage(store.db, sha256, first.id, second.id),
     [{ grid_id: grids[1].id, id: second.id }],
   );
-  const reopened = new Store(database, secret);
+  const reopened = await Store.open(database, secret);
   try {
     assert.equal(reopened.references.path(first.id), firstPath);
     assert.equal(reopened.references.path(second.id), firstPath);
@@ -750,7 +748,7 @@ test("identical uploads share one blob across private owners and grids without s
 });
 
 test("concurrent identical uploads atomically install one shared blob", async (t) => {
-  const { store, database, secret } = storeFixture(t);
+  const { store, database, secret } = await storeFixture(t);
   const gate = new SharedArrayBuffer(4);
   const workers = Array.from(
     { length: 4 },
@@ -760,7 +758,7 @@ test("concurrent identical uploads atomically install one shared blob", async (t
     const { parentPort, workerData } = require("node:worker_threads");
     const { require: tsxRequire } = require("tsx/cjs/api");
     const { Store } = tsxRequire(workerData.module, workerData.module);
-    const store = new Store(workerData.database, Buffer.from(workerData.secret));
+    Store.open(workerData.database, Buffer.from(workerData.secret)).then((store) => {
     parentPort.postMessage("ready");
     Atomics.wait(new Int32Array(workerData.gate), 0, 0);
     try {
@@ -772,6 +770,7 @@ test("concurrent identical uploads atomically install one shared blob", async (t
     } finally {
       store.db.close();
     }
+    });
   `,
         {
           eval: true,
@@ -867,7 +866,7 @@ test("uploads report stored display proportions for PNG, JPEG, WebP and EXIF axi
     });
     uploaded.push(image);
   }
-  const reopened = new Store(database, secret);
+  const reopened = await Store.open(database, secret);
   try {
     for (const image of uploaded) {
       const metadata = reopened.references.get(image.id)!;
@@ -947,7 +946,7 @@ test("input references hydrate authoritative dimensions while live canonical his
     createdAt: "2026-01-01T00:00:00.000Z",
     cells: expandGrid(input).map((cell) => ({ ...cell, id: token() })),
   };
-  const tasks = createWorkflow(gridSchema.parse(input), grid.cells);
+  const tasks = createWorkflow(gridSchema.parse(input), grid.cells, fixtureModels);
   const task = tasks[0];
   if (task.kind !== "generation") throw new Error("Expected generation");
   task.status = "running";

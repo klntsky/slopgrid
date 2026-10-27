@@ -2,7 +2,7 @@ import { createImageReferences } from "./image-references.js";
 import type { OAuthAttempt } from "./oauth.js";
 import { publicationError } from "./grid-policy.js";
 import { Billing } from "./billing.js";
-import Database from "better-sqlite3";
+import type Database from "better-sqlite3";
 import { encrypt, decrypt } from "./encryption.js";
 import {
   type Grid,
@@ -16,10 +16,10 @@ import {
 import { dirname, join, resolve } from "node:path";
 import { OutputFiles } from "./files.js";
 import { token } from "./ids.js";
-import { initializeDatabase } from "./database.js";
+import { openStartupDatabase, type StoreOpenOptions } from "./startup-data-migration.js";
 import { expandPromptForTitle } from "./grid-title.js";
 import { selectedReferences } from "./image-settings.js";
-import { createWorkflow, projectWorkflow } from "./workflow.js";
+import { projectWorkflow } from "./workflow.js";
 import {
   gridDimensions,
   gridDisplay,
@@ -70,30 +70,32 @@ export class Store {
   files: OutputFiles;
   billing: Billing;
   references: ReturnType<typeof createImageReferences>;
-  constructor(
-    path: string,
+  private constructor(
+    db: Database.Database,
     private secret: Buffer,
-    outputsPath?: string,
+    outputsPath: string,
   ) {
-    if (path === ":memory:" && !outputsPath)
-      throw new Error(
-        "An output directory is required for an in-memory database",
-      );
-    this.db = new Database(path);
+    this.db = db;
     try {
-      this.db.pragma("journal_mode = WAL");
-      this.db.pragma("foreign_keys = ON");
-      this.files = new OutputFiles(
-        resolve(outputsPath ?? join(dirname(path), "outputs")),
-        (id) => this.artifactReferenced(id),
-      );
-      initializeDatabase(this.db, this.files);
+      this.files = new OutputFiles(outputsPath, (id) => this.artifactReferenced(id));
       this.billing = new Billing(this.db);
       this.references = createImageReferences(this.db, this.files);
     } catch (error) {
-      this.db.close();
+      db.close();
       throw error;
     }
+  }
+  static async open(
+    path: string,
+    secret: Buffer,
+    outputsPath?: string,
+    options?: StoreOpenOptions,
+  ): Promise<Store> {
+    if (path === ":memory:" && !outputsPath)
+      throw new Error("An output directory is required for an in-memory database");
+    const root = resolve(outputsPath ?? join(dirname(path), "outputs"));
+    const database = path === ":memory:" ? path : resolve(path);
+    return new Store(await openStartupDatabase(database, root, options), secret, root);
   }
   all(): StoredGrid[] {
     return (
@@ -176,7 +178,7 @@ export class Store {
   // Creation is the only operation that writes both metadata and generation state.
   insert(
     grid: Grid & { input: ValidatedGridInput },
-    tasks = createWorkflow(grid.input, grid.cells),
+    tasks: readonly WorkflowTask[],
   ) {
     grid.input = this.references.input(grid.input);
     for (const task of tasks) this.references.task(task);

@@ -11,7 +11,7 @@ import { validatedGrid } from "./grid-storage-fixture.js";
 import { githubCredentials, oauthReturnTo } from "../server/oauth.js";
 import { ControlledProvider } from "./controlled-provider.js";
 import { hasGithubIdentity } from "./session-storage-fixture.js";
-import { currentInput } from "./current-grid-fixture.js";
+import { fixtureModels, currentInput } from "./current-grid-fixture.js";
 
 test("GitHub credentials are required and OAuth return paths stay local", () => {
   for (const [id, secret] of [
@@ -100,7 +100,7 @@ test("account ownership, frozen authors, browser credentials, and OAuth callback
         id: id + "-cell",
       })),
     };
-    const tasks = createWorkflow(gridSchema.parse(input), g.cells);
+    const tasks = createWorkflow(gridSchema.parse(input), g.cells, fixtureModels);
     if (published)
       for (const task of tasks) {
         if (task.kind !== "generation") throw new Error("Expected generation");

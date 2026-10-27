@@ -8,8 +8,9 @@ import {
   gridSchema,
 } from "../server/domain.js";
 import { appFixture } from "./app-fixture.js";
-import { currentDefinition, currentInput } from "./current-grid-fixture.js";
+import { fixtureModels, currentDefinition, currentInput } from "./current-grid-fixture.js";
 import { draftInputFromGridInput } from "../src/create/draft-input.js";
+import { createWorkflow } from "../server/workflow.js";
 
 test("incomplete editor states preserve raw text but cannot create a grid", async (t) => {
   const { origin, store } = await appFixture(t);
@@ -1664,3 +1665,75 @@ test("malformed current ownership cannot become a draft and canonical case layou
     assert.equal(editable[side][0].model, "model/a");
   }
 });
+
+test("judge system source is required only for judged grids and blank text remains valid", () => {
+  const source = currentDefinition({
+    judge: true,
+    parameters: { judge_system: { kind: "common", value: "" } },
+  });
+  assert.equal(gridSchema.safeParse(source).success, true);
+  const missing = structuredClone(source);
+  delete missing.parameters.judge_system;
+  assert.equal(gridSchema.safeParse(missing).success, false);
+  assert.equal(
+    gridSchema.safeParse({ ...source, judge: false }).success,
+    false,
+  );
+  assert.equal(
+    gridSchema.safeParse({
+      ...source,
+      parameters: {
+        ...source.parameters,
+        judge_system: { kind: "common", value: { text: "", images: [] } },
+      },
+    }).success,
+    false,
+  );
+});
+
+for (const side of ["rows", "columns"] as const) {
+  test(`judge system ${side} cases resolve both variable axes without changing generation identity`, () => {
+    const source = currentDefinition({
+      judge: true,
+      caseAxes: ["rows", "columns"],
+      parameters: { judge_system: { kind: side } },
+      rows: [0, 1].map((index) => ({
+        variable: [{ text: `row ${index}` }],
+        ...(side === "rows" ? { judge_system: "$ROW1 / $COLUMN1" } : {}),
+      })),
+      columns: [0, 1].map((index) => ({
+        variable: [{ text: `column ${index}` }],
+        ...(side === "columns" ? { judge_system: "$ROW1 / $COLUMN1" } : {}),
+      })),
+    });
+    const parsed = gridSchema.parse(source);
+    const tasks = createWorkflow(parsed, expandGrid(parsed).map((cell, index) => ({
+      ...cell,
+      id: `cell-${index}`,
+    })), fixtureModels);
+    assert.equal(tasks.filter((task) => task.kind === "generation").length, 1);
+    assert.deepEqual(
+      tasks
+        .filter((task) => task.kind === "judge")
+        .map((task) => task.input.systemPrompt),
+      [
+        "row 0 / column 0",
+        "row 0 / column 1",
+        "row 1 / column 0",
+        "row 1 / column 1",
+      ],
+    );
+    assert.equal(
+      gridSchema.safeParse({ ...source, caseAxes: [] }).success,
+      false,
+    );
+    const unknown = structuredClone(source);
+    unknown[side][0].judge_system = "$UNKNOWN";
+    assert.equal(gridSchema.safeParse(unknown).success, false);
+    const image = structuredClone(source);
+    image.rows[0].variable![0]!.images = [
+      { id: "reference", name: "image.png" },
+    ];
+    assert.equal(gridSchema.safeParse(image).success, false);
+  });
+}

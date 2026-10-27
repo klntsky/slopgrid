@@ -66,6 +66,7 @@ export const kinds = [
   "judge_model",
   "judge_effort",
   "judge_criteria",
+  "judge_system",
   "variable",
   ...imageKinds,
 ] as const;
@@ -86,6 +87,7 @@ export const parameterValueSchemas = {
   judge_model: z.string(),
   judge_effort: z.enum(efforts),
   judge_criteria: draftJudgeCriteriaSchema,
+  judge_system: z.string(),
   variable: z.array(variableFieldSchema.nullable()),
 };
 const parameterValuesSchema = z.object(parameterValueSchemas);
@@ -120,6 +122,7 @@ const parameterSourcesSchema = z
     judge_model: source(parameterValueSchemas.judge_model).optional(),
     judge_effort: source(parameterValueSchemas.judge_effort).optional(),
     judge_criteria: source(parameterValueSchemas.judge_criteria).optional(),
+    judge_system: source(parameterValueSchemas.judge_system).optional(),
   })
   .strict();
 export type ParameterSources = z.infer<typeof parameterSourcesSchema>;
@@ -325,6 +328,7 @@ export const gridSchema = gridInputSchema
       applicable.add("judge_model");
       applicable.add("judge_effort");
       applicable.add("judge_criteria");
+      applicable.add("judge_system");
     }
     for (const kind of kinds) {
       if (kind === "variable") continue;
@@ -572,9 +576,12 @@ export type GenerationParameters = Pick<
   Cell,
   "model" | "effort" | "prompt" | "messages" | "budgetUsd" | "imageSettings"
 >;
-export type GenerationInput = GenerationParameters & {
-  format: GridInput["format"];
-};
+export type ChatOutputMode = "text" | "text-and-images";
+export type GenerationInput = GenerationParameters &
+  (
+    | { format: "chat-template"; chatOutputMode: ChatOutputMode }
+    | { format: Exclude<GridInput["format"], "chat-template"> }
+  );
 export type GenerationOutput = {
   artifactId: string;
   mediaType?: string;
@@ -600,6 +607,7 @@ export type GenerationTask = Task<GenerationInput, GenerationOutput> & {
 export type JudgmentInput = {
   model: string;
   effort: string;
+  systemPrompt: string;
   criteria: Criterion[];
   images?: ReferenceImage[];
 };
@@ -608,6 +616,10 @@ export type JudgmentTask = Task<JudgmentInput, { results: JudgeResult[] }> & {
   generationId: string;
 };
 export type WorkflowTask = GenerationTask | JudgmentTask;
+export function isGridFinished(grid: { cells: readonly Pick<Cell, "status">[] }): boolean {
+  return grid.cells.length > 0 &&
+    grid.cells.every((cell) => cell.status === "complete" || cell.status === "error");
+}
 export function hasCompletedOutput(cell: Pick<Cell, "artifactId">): boolean {
   return !!cell.artifactId;
 }

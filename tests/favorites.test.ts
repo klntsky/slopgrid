@@ -168,7 +168,7 @@ test("favorites belong to the account across sessions, independently of ownershi
     assert.equal((await anonymous(`/${owned.id}`, "PUT")).status, 404);
     await setFavorite(anonymous, owned.id, false);
   }
-  const reopened = new Store(database, secret);
+  const reopened = await Store.open(database, secret);
   try {
     assert.equal(reopened.session(sessions.secondAlice)?.userId, alice.id);
     assert.deepEqual(storedFavoriteIds(reopened.db, alice.id), expected);
@@ -233,7 +233,7 @@ test("anonymous favorites persist through rotation and reopening, stay isolated,
   assert.equal(store.session(rotatedId)?.anonymousId, lineage);
   const afterRotation = favoriteClient(origin, rotatedId);
   assert.deepEqual(await favoriteIds(afterRotation), expected);
-  const reopened = new Store(database, secret);
+  const reopened = await Store.open(database, secret);
   try {
     const viewer = reopened.session(rotatedId)!;
     const favorites = createFavorites(reopened);

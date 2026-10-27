@@ -18,8 +18,8 @@ import { ChatConversation } from "../shared/chat-conversation.js";
 import { writeChatOutput } from "../shared/chat-output.js";
 import type { Store } from "../server/store.js";
 import { referencePng } from "./reference-image-fixture.js";
-import { validatedGrid } from "./grid-storage-fixture.js";
-import { currentInput } from "./current-grid-fixture.js";
+import { insertCurrentGrid, validatedGrid } from "./grid-storage-fixture.js";
+import { fixtureModels, currentInput } from "./current-grid-fixture.js";
 import { referencePngOutput } from "./chat-image-output-fixture.js";
 
 function completedChatGrid(
@@ -53,7 +53,7 @@ function completedChatGrid(
       status: "complete",
     })),
   };
-  const tasks = createWorkflow(gridSchema.parse(input), grid.cells);
+  const tasks = createWorkflow(gridSchema.parse(input), grid.cells, fixtureModels);
   const generation = tasks.find((task) => task.kind === "generation")!;
   generation.status = "complete";
   generation.output = {
@@ -100,7 +100,7 @@ test("private outputs require ownership, isolated grants are scoped and revoked 
         status: running ? "running" : "complete",
       })),
     };
-    const tasks = createWorkflow(gridSchema.parse(input), g.cells);
+    const tasks = createWorkflow(gridSchema.parse(input), g.cells, fixtureModels);
     const generation = tasks.find((task) => task.kind === "generation")!;
     const artifactId = token();
     if (running) generation.status = "running";
@@ -442,7 +442,7 @@ test("committed judged outputs stay readable and downloadable without weakening 
         createdAt: new Date().toISOString(),
         cells: [cell],
       };
-      const tasks = createWorkflow(gridSchema.parse(input), grid.cells);
+      const tasks = createWorkflow(gridSchema.parse(input), grid.cells, fixtureModels);
       const generation = tasks.find((task) => task.kind === "generation")!;
       const judgment = tasks.find((task) => task.kind === "judge")!;
       generation.status = "complete";
@@ -566,7 +566,7 @@ test("uncommitted judged files are not exposed before generation commits", async
       },
     ],
   };
-  store.insert(validatedGrid(grid));
+  insertCurrentGrid(store, validatedGrid(grid));
   store.files.write(token(), { "index.md": "Uncommitted artifact" });
   const headers = { cookie: `slopgrid=${owner}` };
   assert.equal(store.outputMetadata(cellId)?.outputReady, false);
@@ -925,7 +925,7 @@ for (const side of ["rows", "columns"] as const)
       createdAt: new Date().toISOString(),
       cells: expandGrid(input).map((cell) => ({ ...cell, id: token() })),
     };
-    const tasks = createWorkflow(input, grid.cells);
+    const tasks = createWorkflow(input, grid.cells, fixtureModels);
     for (const [index, cell] of grid.cells.entries()) {
       const generation = tasks.find((task) => task.id === cell.generationId)!;
       assert.equal(generation.kind, "generation");

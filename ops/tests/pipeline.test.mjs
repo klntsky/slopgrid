@@ -28,7 +28,7 @@ import {
   capture,
 } from "../lib/common.mjs";
 import { engineFingerprint } from "../lib/artifacts.mjs";
-import { validationCommands } from "../lib/validate.mjs";
+import { validationCommands, validationEnvironment } from "../lib/validate.mjs";
 import { executePlan } from "../lib/pipeline.mjs";
 import { prepareLocalCandidate } from "../lib/local.mjs";
 import {
@@ -267,6 +267,17 @@ test("one isolated build validates before single production promotion, with fail
   );
 });
 
+test("isolated validation configures thirty migration workers independently of inherited values", () => {
+  const env = validationEnvironment(
+    "/private/candidate",
+    "/private/runtime",
+    { STARTUP_DATA_MIGRATION_PARALLEL_WORKERS: "2" },
+    { STARTUP_DATA_MIGRATION_PARALLEL_WORKERS: "1" },
+  );
+  assert.equal(env.STARTUP_DATA_MIGRATION_PARALLEL_WORKERS, "30");
+  assert.equal(env.DATABASE_PATH, "/private/runtime/slopgrid.sqlite");
+});
+
 test("private environment and backups preserve sessions and outputs without shell expansion", async (t) => {
   const path = directory(t),
     app = process.env.SLOPGRID_TEST_APP;
@@ -285,6 +296,7 @@ test("private environment and backups preserve sessions and outputs without shel
       '\nGITHUB_CLIENT_ID=fixture\nGITHUB_CLIENT_SECRET="literal $() `quotes`"\n',
   );
   const env = environment(target);
+  assert.equal(env.STARTUP_DATA_MIGRATION_PARALLEL_WORKERS, "30");
   const original = readFileSync(target.envFile, "utf8");
   for (const key of ["GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET"]) {
     for (const value of [undefined, "", "   "]) {
@@ -315,6 +327,12 @@ test("private environment and backups preserve sessions and outputs without shel
       .GITHUB_CLIENT_SECRET,
     undefined,
   );
+  for (const role of ["web", "engine"])
+    assert.equal(
+      parseEnv(readFileSync(join(target.config, `staging-${role}.env`), "utf8"))
+        .STARTUP_DATA_MIGRATION_PARALLEL_WORKERS,
+      "30",
+    );
   assert.match(processConfig.apps[0].out_file, /unique-run/);
   const require = createRequire(join(app, "package.json")),
     Database = require("better-sqlite3");

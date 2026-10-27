@@ -166,7 +166,7 @@ function replacementEnvironment(original, key) {
   return result;
 }
 
-function initializeCopy(release, scratch, key) {
+function initializeCopy(release, scratch, key, providerBaseURL) {
   const require = createRequire(join(release, "package.json"));
   const loader = pathToFileURL(require.resolve("tsx/esm")).href;
   const program = `
@@ -177,7 +177,12 @@ function initializeCopy(release, scratch, key) {
     try {
       if (!Number.isSafeInteger(schemaVersion) || schemaVersion <= 0)
         throw new Error('invalid candidate schema');
-      store = new Store(process.env.DATABASE_PATH, Buffer.from(process.env.KEY_ENCRYPTION_SECRET, 'hex'), process.env.OUTPUTS_PATH);
+      store = await Store.open(process.env.DATABASE_PATH, Buffer.from(process.env.KEY_ENCRYPTION_SECRET, 'hex'), process.env.OUTPUTS_PATH, {
+        models: async () => {
+          const { Provider } = await import('./server/provider.ts');
+          return new Provider(process.env.OPENROUTER_BASE_URL).models();
+        },
+      });
       recoverInterruptedGrids(store);
       if (store.db.pragma('user_version', { simple: true }) !== schemaVersion)
         throw new Error('candidate schema mismatch');
@@ -205,6 +210,8 @@ function initializeCopy(release, scratch, key) {
         ...(process.env.PATH === undefined ? {} : { PATH: process.env.PATH }),
         ...(process.env.HOME === undefined ? {} : { HOME: process.env.HOME }),
         NODE_ENV: "production",
+        STARTUP_DATA_MIGRATION_PARALLEL_WORKERS: "30",
+        ...(providerBaseURL === undefined ? {} : { OPENROUTER_BASE_URL: providerBaseURL }),
         DATABASE_PATH: join(scratch, "slopgrid.sqlite"),
         OUTPUTS_PATH: join(scratch, "outputs"),
         KEY_ENCRYPTION_SECRET: key,
@@ -263,7 +270,7 @@ export async function copyProductionData(target, release, stagingEnv, production
     } finally {
       snapshot.close();
     }
-    initializeCopy(release, scratch, key);
+    initializeCopy(release, scratch, key, stagingEnv.OPENROUTER_BASE_URL);
     regular(join(scratch, "slopgrid.sqlite"), "file");
     inspectTree(join(scratch, "outputs"), new Set());
     assertStorage(paths);

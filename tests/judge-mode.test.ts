@@ -15,7 +15,7 @@ import {
   reduceInput,
 } from "../src/create/change-axis.js";
 import { validateDraftInput } from "../src/create/draft-input.js";
-import { currentDefinition } from "./current-grid-fixture.js";
+import { fixtureModels, currentDefinition } from "./current-grid-fixture.js";
 import { createWorkflow } from "../server/workflow.js";
 import { resolveCriteriaForCell } from "../server/judge-criteria.js";
 
@@ -313,7 +313,7 @@ for (const side of ["rows", "columns"] as const) {
       ...cell,
       id: `cell-${index}`,
     }));
-    const tasks = createWorkflow(parsed.data, cells);
+    const tasks = createWorkflow(parsed.data, cells, fixtureModels);
     assert.deepEqual(
       cells.map((cell) => {
         const judgment = tasks.find((task) => task.id === cell.judgmentId);
@@ -507,6 +507,20 @@ test("draft reload and format changes retain both case sources until Website rem
       );
       assert.equal(saved.sourceGridId, "saved-source");
     }
+    // Upgrade saved drafts at the storage boundary without dropping unfinished work.
+    const legacy = input();
+    delete legacy.parameters.judge_system;
+    saveDraft({ formatSelected: true, input: legacy, sourceGridId: "legacy-source" });
+    startDraft("svg");
+    saved = JSON.parse(storage.get("slopgrid-draft")!);
+    assert.deepEqual(saved.input, {
+      ...legacy,
+      parameters: {
+        ...legacy.parameters,
+        judge_system: { kind: "common", value: parameterDefault("judge_system") },
+      },
+    });
+    assert.equal(saved.sourceGridId, "legacy-source");
     const obsolete = { ...input(), inputVersion: 1 };
     storage.set(
       "slopgrid-draft",

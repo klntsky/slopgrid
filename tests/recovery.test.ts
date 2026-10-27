@@ -13,14 +13,14 @@ import { createWorkflow } from "../server/workflow.js";
 import { createWorkflowExecutor } from "../server/workflow-executor.js";
 import { token } from "../server/ids.js";
 import { firstStoredSessionPayload } from "./session-storage-fixture.js";
-import { currentInput } from "./current-grid-fixture.js";
+import { fixtureModels, currentInput } from "./current-grid-fixture.js";
 
 test("a restart preserves finished outputs and pauses interrupted work until an explicit retry", async () => {
   const dir = mkdtempSync(join(tmpdir(), "slopgrid-recovery-")),
     file = join(dir, "db.sqlite"),
     secret = Buffer.alloc(32, 2);
   try {
-    let store = new Store(file, secret);
+    let store = await Store.open(file, secret);
     store.saveSession({
       id: "owner",
       key: "private-openrouter-key",
@@ -71,7 +71,7 @@ test("a restart preserves finished outputs and pauses interrupted work until an 
         },
       ],
     };
-    const tasks = createWorkflow(gridSchema.parse(g.input), g.cells);
+    const tasks = createWorkflow(gridSchema.parse(g.input), g.cells, fixtureModels);
     const finished = tasks[0];
     if (finished.kind !== "generation") throw new Error("Expected generation");
     finished.status = "complete";
@@ -91,7 +91,7 @@ test("a restart preserves finished outputs and pauses interrupted work until an 
       "credentials must not be readable in SQLite",
     );
     store.db.close();
-    store = new Store(file, secret);
+    store = await Store.open(file, secret);
     assert.equal(
       store.get("grid")!.status,
       "running",
@@ -146,9 +146,9 @@ test("a restart preserves finished outputs and pauses interrupted work until an 
   }
 });
 
-test("recovery preserves a shared generation and settled judgment while requeuing only interrupted tasks", () => {
+test("recovery preserves a shared generation and settled judgment while requeuing only interrupted tasks", async () => {
   const dir = mkdtempSync(join(tmpdir(), "slopgrid-task-recovery-"));
-  const store = new Store(":memory:", Buffer.alloc(32, 2), dir);
+  const store = await Store.open(":memory:", Buffer.alloc(32, 2), dir);
   try {
     const input = currentInput({
       budgetUsd: 1,
@@ -182,7 +182,7 @@ test("recovery preserves a shared generation and settled judgment while requeuin
       status: "running",
       createdAt: new Date().toISOString(),
     };
-    const tasks = createWorkflow(gridSchema.parse(input), grid.cells);
+    const tasks = createWorkflow(gridSchema.parse(input), grid.cells, fixtureModels);
     const generation = tasks.find((task) => task.kind === "generation")!;
     const judgments = tasks.filter((task) => task.kind === "judge");
     const artifactId = token();

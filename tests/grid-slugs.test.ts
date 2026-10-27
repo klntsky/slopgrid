@@ -6,7 +6,7 @@ import { expandGrid, gridSchema, type Grid } from "../server/domain.js";
 import { validatedGrid } from "./grid-storage-fixture.js";
 import { Store } from "../server/store.js";
 import { createWorkflow } from "../server/workflow.js";
-import { currentInput } from "./current-grid-fixture.js";
+import { fixtureModels, currentInput } from "./current-grid-fixture.js";
 
 test("public slug claims validate, serialize, persist and preserve existing links", async (t) => {
   const { origin, store, database, secret } = await appFixture(t);
@@ -43,7 +43,7 @@ test("public slug claims validate, serialize, persist and preserve existing link
         status: "complete",
       })),
     };
-    const tasks = createWorkflow(gridSchema.parse(input), grid.cells);
+    const tasks = createWorkflow(gridSchema.parse(input), grid.cells, fixtureModels);
     for (const task of tasks) {
       if (task.kind !== "generation") throw new Error("Expected generation");
       task.status = "complete";
@@ -123,7 +123,7 @@ test("public slug claims validate, serialize, persist and preserve existing link
   }
   assert.ok(listedWinner);
   assert.equal(listedWinner.slug, slug);
-  const reopened = new Store(database, secret);
+  const reopened = await Store.open(database, secret);
   try {
     assert.equal(reopened.get(winner)!.slug, slug);
   } finally {
