@@ -219,7 +219,7 @@ Use `--https-port PORT` for each additional demo and `PORT=0` for dynamic backen
 Output hosting still needs independent routing for each demo's selected backend;
 one shared output-domain upstream cannot serve different retained data safely.
 
-The service stops after 24 hours of runtime, including startup. Expiry kills
+The service stops after 10 days of runtime, including startup. Expiry kills
 generation without draining accepted work. Upstream provider work can still
 incur charges after local processes stop. Early stop uses the same service
 command shown above. Neither stop nor expiry deletes the database, outputs,

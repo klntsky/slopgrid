@@ -339,7 +339,7 @@ async function localDemo(options) {
           "retain accepted cloned data and its encryption key in independent private demo storage",
         ]),
         "start foreground Tailscale HTTPS in a per-run transient current-user service with an isolated session cookie name",
-        "stop the full service control group after 24 hours",
+        "stop the full service control group after 10 days",
         "retain all demo data and its encryption key until manually removed",
       ],
       config: { repository: config.repository, stateRoot: config.demo.stateRoot, httpsPort: config.demo.httpsPort },

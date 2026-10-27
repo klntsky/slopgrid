@@ -21,7 +21,7 @@ import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseEnv } from "node:util";
 
-const durationSeconds = 86400;
+const durationSeconds = 10 * 24 * 60 * 60;
 const startupMilliseconds = 60000;
 const modulePath = fileURLToPath(import.meta.url);
 const delay = (milliseconds) => new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
