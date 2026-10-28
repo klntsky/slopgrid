@@ -4,18 +4,11 @@ import { test, expect } from "./fixtures";
 import { currentInput } from "../current-grid-fixture";
 import { runtimeFixture, type RuntimeCall } from "../runtime-fixture";
 
-async function expectScore(
-  table: Locator,
-  name: string,
-  axis: "Rows" | "Columns",
-  score: string,
-  coverage: string,
-) {
-  const row = table.getByRole("row").filter({
-    has: table.page().getByRole("rowheader", { name, exact: true }),
+async function expectScore(legend: Locator, name: string, score: string) {
+  const entry = legend.getByRole("listitem").filter({
+    has: legend.page().getByText(name, { exact: true }),
   });
-  await expect(row.getByRole("rowheader")).toHaveText(name);
-  await expect(row.getByRole("cell")).toHaveText([axis, score, coverage]);
+  await expect(entry).toContainText(score);
 }
 
 function finishJudge(call: RuntimeCall, verdicts: boolean[]) {
@@ -93,8 +86,12 @@ test("benchmark weights criteria across named asymmetric axes and updates while 
       name: "Benchmark results",
       exact: true,
     });
-    const table = results.getByRole("table", {
-      name: "Combined judge scores",
+    const rowLegend = results.getByRole("list", {
+      name: "Row score legend",
+      exact: true,
+    });
+    const columnLegend = results.getByRole("list", {
+      name: "Column score legend",
       exact: true,
     });
     const rowChart = results.getByRole("img", {
@@ -112,33 +109,18 @@ test("benchmark weights criteria across named asymmetric axes and updates while 
     await expect(columnChart).toBeVisible();
     await expect(page.locator(".output-grid")).toBeHidden();
     await expect(page.locator(".cell").first()).toBeHidden();
-    await expect(table.getByRole("columnheader")).toHaveText([
-      "Axis",
-      "Name",
-      "Score",
-      "Judged cells",
-    ]);
-    await expect(table.getByRole("row")).toHaveCount(6);
-    await expect(table.getByRole("rowheader")).toHaveText([
+    await expect(results.getByRole("table")).toHaveCount(0);
+    await expect(rowLegend.getByRole("listitem")).toContainText([
       "Short rubric",
       "Long rubric",
+    ]);
+    await expect(columnLegend.getByRole("listitem")).toContainText([
       "Primary",
       "Zero",
       "Waiting",
     ]);
-    await expect(
-      table.getByRole("cell", { name: "No completed judgments", exact: true }),
-    ).toHaveCount(5);
-    await expect(
-      results
-        .getByRole("list", { name: "Row score legend", exact: true })
-        .getByRole("listitem"),
-    ).toContainText(["Short rubric", "Long rubric"]);
-    await expect(
-      results
-        .getByRole("list", { name: "Column score legend", exact: true })
-        .getByRole("listitem"),
-    ).toContainText(["Primary", "Zero", "Waiting"]);
+    await expect(rowChart).toContainText("No completed judgments");
+    await expect(columnChart).toContainText("No completed judgments");
 
     for (const generator of generators) {
       generator.write({
@@ -166,20 +148,14 @@ test("benchmark weights criteria across named asymmetric axes and updates while 
       return judge!;
     };
     finishJudge(judgeFor("short", "primary"), [true]);
-    await expectScore(table, "Short rubric", "Rows", "0/1 (0%)", "1/3");
-    await expectScore(table, "Primary", "Columns", "0/1 (0%)", "1/2");
-    await expectScore(
-      table,
-      "Long rubric",
-      "Rows",
-      "No completed judgments",
-      "0/3",
-    );
+    await expectScore(rowLegend, "Short rubric", "0/1 (0%)");
+    await expectScore(columnLegend, "Primary", "0/1 (0%)");
+    await expectScore(rowLegend, "Long rubric", "No completed judgments");
     await expect(benchmark).toHaveAttribute("aria-pressed", "true");
 
     finishJudge(judgeFor("long", "primary"), [false, true]);
-    await expectScore(table, "Primary", "Columns", "2/3 (66.7%)", "2/2");
-    await expectScore(table, "Long rubric", "Rows", "2/2 (100%)", "1/3");
+    await expectScore(columnLegend, "Primary", "2/3 (66.7%)");
+    await expectScore(rowLegend, "Long rubric", "2/2 (100%)");
     finishJudge(judgeFor("short", "zero"), [true]);
     finishJudge(judgeFor("long", "zero"), [true, false]);
     judgeFor("short", "waiting").fail(400);
@@ -195,16 +171,12 @@ test("benchmark weights criteria across named asymmetric axes and updates while 
           .map((cell) => cell.judge?.status);
       })
       .toEqual(["error", "running"]);
-    await expectScore(table, "Short rubric", "Rows", "0/2 (0%)", "2/3");
-    await expectScore(table, "Long rubric", "Rows", "2/4 (50%)", "2/3");
-    await expectScore(table, "Zero", "Columns", "0/3 (0%)", "2/2");
-    await expectScore(
-      table,
-      "Waiting",
-      "Columns",
-      "No completed judgments",
-      "0/2",
-    );
+    await expectScore(rowLegend, "Short rubric", "0/2 (0%)");
+    await expectScore(rowLegend, "Long rubric", "2/4 (50%)");
+    await expectScore(columnLegend, "Zero", "0/3 (0%)");
+    await expectScore(columnLegend, "Waiting", "No completed judgments");
+    await expect(rowChart).toContainText("2/4 (50%)");
+    await expect(columnChart).toContainText("2/3 (66.7%)");
     await expect(benchmark).toHaveAttribute("aria-pressed", "true");
     await expect(rowChart).toBeVisible();
     await expect(columnChart).toBeVisible();

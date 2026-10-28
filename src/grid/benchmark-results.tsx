@@ -13,8 +13,6 @@ type AxisScore = {
   name: string;
   correct: number;
   total: number;
-  judgedCells: number;
-  cellCount: number;
 };
 
 const percentage = new Intl.NumberFormat("en-US", {
@@ -27,7 +25,7 @@ function scoreLabel(score: AxisScore): string {
     : "No completed judgments";
 }
 
-function axisScores(cases: CaseDisplay[], cellCount: number): AxisScore[] {
+function axisScores(cases: CaseDisplay[]): AxisScore[] {
   return cases.map((entry, index) => ({
     name:
       entry.name ||
@@ -35,8 +33,6 @@ function axisScores(cases: CaseDisplay[], cellCount: number): AxisScore[] {
       `Case ${index + 1}`,
     correct: 0,
     total: 0,
-    judgedCells: 0,
-    cellCount,
   }));
 }
 
@@ -113,8 +109,8 @@ function ScoreChart({
 
 export function BenchmarkResults({ grid }: { grid: ViewGrid }) {
   const display = grid.display ?? gridDisplay(grid.input);
-  const rows = axisScores(display.rows, display.columns.length);
-  const columns = axisScores(display.columns, display.rows.length);
+  const rows = axisScores(display.rows);
+  const columns = axisScores(display.columns);
   for (const cell of grid.cells) {
     if (!cell.outputReady || !cell.judge) continue;
     const criteria =
@@ -126,10 +122,8 @@ export function BenchmarkResults({ grid }: { grid: ViewGrid }) {
     const column = columns[cell.column];
     row.correct += summary.correct;
     row.total += summary.total;
-    row.judgedCells += 1;
     column.correct += summary.correct;
     column.total += summary.total;
-    column.judgedCells += 1;
   }
   return (
     <section
@@ -140,40 +134,6 @@ export function BenchmarkResults({ grid }: { grid: ViewGrid }) {
       <div className="benchmark-charts">
         <ScoreChart scores={rows} axis="row" />
         <ScoreChart scores={columns} axis="column" />
-      </div>
-      <div
-        className="benchmark-table-scroll"
-        role="region"
-        aria-label="Combined judge scores"
-        tabIndex={0}
-      >
-        <table className="benchmark-table" aria-label="Combined judge scores">
-          <thead>
-            <tr>
-              <th scope="col">Axis</th>
-              <th scope="col">Name</th>
-              <th scope="col">Score</th>
-              <th scope="col">Judged cells</th>
-            </tr>
-          </thead>
-          <tbody>
-            {[
-              { name: "Rows", scores: rows },
-              { name: "Columns", scores: columns },
-            ].flatMap((axis) =>
-              axis.scores.map((score, index) => (
-                <tr key={`${axis.name}-${index}`}>
-                  <td>{axis.name}</td>
-                  <th scope="row">{score.name}</th>
-                  <td className="benchmark-table-score">{scoreLabel(score)}</td>
-                  <td className="benchmark-table-coverage">
-                    {score.judgedCells}/{score.cellCount}
-                  </td>
-                </tr>
-              )),
-            )}
-          </tbody>
-        </table>
       </div>
     </section>
   );
