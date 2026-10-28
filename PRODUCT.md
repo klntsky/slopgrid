@@ -386,10 +386,9 @@ appends one empty question with expected answer YES to the selected rubric.
    - Show Thinking only when at least one cell has a thinking trace. It is pressed exactly when all cells with traces show thinking; cells without traces do not affect this state, regardless of the view they display.
    - Preserve the same visibly recessed pressed treatment as the cell mode controls.
    - Benchmark results is the only pressed mode while its results are displayed. Selecting Outputs, Thinking, or Judge results restores the grid in the selected cell view.
-   - Show a "Combined judge scores" table with Axis, Name, Score, and Judged cells columns, including every row and column in grid order. Combine correct criterion answers over all criterion answers from completed, valid judgments with available output. Compare each answer with its criterion's expected answer, including expected NO answers. Weight each criterion equally rather than averaging cell percentages.
+   - Show a score table with Axis, Name, Score, and Judged cells columns, including every row and column in grid order. Combine correct criterion answers over all criterion answers from completed, valid judgments with available output. Compare each answer with its criterion's expected answer, including expected NO answers. Weight each criterion equally rather than averaging cell percentages.
    - Show the correct/total score and percentage, alongside completed judged-cell coverage for each row and column. Exclude pending, failed, and invalid judgments from scores. Show "No completed judgments" when a group has no valid completed judgment, distinct from a completed 0% score. Update results as judgments complete.
    - Display both "Row scores" and "Column scores" bar charts with the corresponding row and column names in their legends. Use explicit case names when set, otherwise parameter-derived descriptions or "Case N" for unnamed cases without parameters. Keep all groups visible in their original order, with a common 0-100% scale. Fit both charts beside each other when space permits and stack them on narrow screens.
-   - Explain the score with "Scores combine correct criterion answers across completed judgments. Pending and failed judgments are excluded."
 
 ### 5.2. Markdown
 

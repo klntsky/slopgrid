@@ -137,10 +137,6 @@ export function BenchmarkResults({ grid }: { grid: ViewGrid }) {
       aria-label="Benchmark results"
       tabIndex={0}
     >
-      <p className="benchmark-description">
-        Scores combine correct criterion answers across completed judgments.
-        Pending and failed judgments are excluded.
-      </p>
       <div className="benchmark-charts">
         <ScoreChart scores={rows} axis="row" />
         <ScoreChart scores={columns} axis="column" />
@@ -151,8 +147,7 @@ export function BenchmarkResults({ grid }: { grid: ViewGrid }) {
         aria-label="Combined judge scores"
         tabIndex={0}
       >
-        <table className="benchmark-table">
-          <caption>Combined judge scores</caption>
+        <table className="benchmark-table" aria-label="Combined judge scores">
           <thead>
             <tr>
               <th scope="col">Axis</th>
