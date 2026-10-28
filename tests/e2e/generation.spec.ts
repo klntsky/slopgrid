@@ -861,7 +861,6 @@ test("cost excludes failed attempts while owner spending retains them through st
       "**Literal thinking** <b>not HTML</b>",
     );
     await page.reload();
-    await cells.nth(0).getByRole("button", { name: "Show thinking" }).click();
     await expect(thinkingView(0)).toContainText(
       "**Literal thinking** <b>not HTML</b>",
     );
