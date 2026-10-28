@@ -4,7 +4,7 @@ import { connectOpenRouter, selectModel, setVariableValues } from "./helpers";
 import { currentInput } from "../current-grid-fixture";
 import { runtimeFixture } from "../runtime-fixture";
 
-test("grid views switch every cell, retain expansion, and allow local overrides", async ({
+test("grid views switch every cell, retain expansion through benchmark, and allow local overrides", async ({
   page,
 }) => {
   await page.request.post("/fixture/reset", {
@@ -27,9 +27,11 @@ test("grid views switch every cell, retain expansion, and allow local overrides"
     name: "Judge results",
     exact: true,
   });
-  await expect(
-    bar.getByRole("button", { name: "Benchmark results", exact: true }),
-  ).toBeDisabled();
+  const benchmark = bar.getByRole("button", {
+    name: "Benchmark results",
+    exact: true,
+  });
+  await expect(benchmark).toBeEnabled();
   await thinking.click();
   for (const [index, cell] of (await cells.all()).entries()) {
     await expect(
@@ -56,10 +58,16 @@ test("grid views switch every cell, retain expansion, and allow local overrides"
     name: "Expand Markdown",
     exact: true,
   }).click();
+  await benchmark.click();
+  await expect(benchmark).toHaveAttribute("aria-pressed", "true");
+  await expect(outputs).toHaveAttribute("aria-pressed", "false");
+  await expect(thinking).toHaveAttribute("aria-pressed", "false");
+  await expect(judgments).toHaveAttribute("aria-pressed", "false");
   await judgments.click();
   await expect(
     page.getByRole("region", { name: /^Expanded output:/ }),
   ).toBeVisible();
+  await expect(benchmark).toHaveAttribute("aria-pressed", "false");
   await expect(details(0)).toContainText("Judging...");
   await cells.first().getByRole("button", {
     name: "Collapse judgment",

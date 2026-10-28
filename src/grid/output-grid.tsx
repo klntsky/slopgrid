@@ -9,6 +9,7 @@ import { ExpandButton } from "../components/expand-button";
 import { ContainedImage } from "../contained-image";
 import { OutputCell, type CellView } from "./output-cell";
 import { summarizeJudgment } from "./judge-result-button";
+import { BenchmarkResults } from "./benchmark-results";
 import { useItemScrollSync } from "./use-item-scroll-sync";
 import type { ReferenceImage } from "../../server/image-settings";
 import {
@@ -42,7 +43,9 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
     Record<string, { mode?: CellView; judgeComplete?: boolean }>
   >({});
   const [gridView, setGridView] = useState<CellView>();
+  const [benchmark, setBenchmark] = useState(false);
   function selectGridView(mode: CellView) {
+    setBenchmark(false);
     setGridView(mode);
     setViews({});
   }
@@ -115,6 +118,7 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
     expandedId,
     views,
     gridView,
+    benchmark,
     scrollSync,
   ]);
   function expand(
@@ -266,7 +270,13 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
   }
   return (
     <div className="grid-workspace" ref={workspace} {...scrollSync.events}>
-      <div className="grid-table-view" data-expanded={!!expandedId}>
+      {benchmark && <BenchmarkResults grid={g} />}
+      <div
+        className="grid-table-view"
+        data-expanded={!!expandedId}
+        hidden={benchmark}
+        inert={benchmark}
+      >
         <GridViewport
           key={g.id}
           gridId={g.id}
@@ -337,7 +347,7 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
           </table>
         </GridViewport>
       </div>
-      {reference && (
+      {!benchmark && reference && (
         <section
           className="expanded-markdown"
           aria-label={`Expanded reference: ${reference.name}`}
@@ -379,11 +389,14 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
                   key={mode}
                   type="button"
                   className="secondary"
-                  aria-pressed={cellViews.every(
-                    (cell) =>
-                      cell.view === mode ||
-                      (mode === "thinking" && !cell.hasThinking),
-                  )}
+                  aria-pressed={
+                    !benchmark &&
+                    cellViews.every(
+                      (cell) =>
+                        cell.view === mode ||
+                        (mode === "thinking" && !cell.hasThinking),
+                    )
+                  }
                   onClick={() => selectGridView(mode)}
                 >
                   <Icon aria-hidden="true" />
@@ -391,7 +404,12 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
                 </button>
               );
             })}
-            <button type="button" className="secondary" disabled>
+            <button
+              type="button"
+              className="secondary"
+              aria-pressed={benchmark}
+              onClick={() => setBenchmark(true)}
+            >
               <ChartNoAxesColumn aria-hidden="true" />
               Benchmark results
             </button>
