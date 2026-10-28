@@ -18,6 +18,7 @@ import { create, expectProgress } from "./helpers";
 import { parseE2EPort } from "../e2e-port";
 import { currentInput } from "../current-grid-fixture";
 import { pixelPng as bytes } from "../reference-image-fixture";
+import { selectJudgeResults } from "./judged-helpers";
 
 const port = parseE2EPort(process.env.E2E_PORT);
 
@@ -325,6 +326,7 @@ test("visited pages and completed outputs survive offline reload without retaini
     for (const grid of grids) {
       await page.locator(`a[href="/grid/${grid.id}"]`).click();
       if (grid.cells[0].judge?.status === "complete") {
+        await selectJudgeResults(page);
         const judgment = page.getByRole("region", {
           name: "Judgment details",
           exact: true,

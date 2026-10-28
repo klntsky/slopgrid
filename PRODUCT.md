@@ -381,7 +381,8 @@ appends one empty question with expected answer YES to the selected rubric.
    - Its tooltip is always "Expand", in both expanded and collapsed states.
 9. Grids configured with a judge show a compact, left-aligned bottom mode switcher. Outputs, Thinking, Judge results, and Benchmark results form one borderless segmented control with vertical separators. The bottom panel fits the control without extra vertical padding. Outputs, Thinking, and Judge results select the corresponding view across all cells while preserving individual cell controls and expansion. Benchmark results replaces the grid contents with combined judge scores and both row and column charts. Grids without a judge do not show this bar.
    - Outputs uses a palette icon.
-   - Derive pressed states from the views displayed in every cell, including automatic initial judgments and individual cell changes. Opening a grid with completed judgments shows and presses Judge results.
+   - Derive pressed states from the views displayed in every cell, including individual cell changes. When completed, valid judgments are available, show and press Benchmark results by default, including when the first judgment completes while the grid is open.
+   - Remember manually selected bottom-bar modes and individual cell modes for each grid in the current browser across reloads and navigation. Restore these selections instead of applying the default, and preserve them as further judgments complete. A selection on one grid does not change another grid's selection.
    - Judge results is pressed exactly when all cells show judgments. Outputs is pressed exactly when all cells show rendered output. Raw source does not count as rendered output.
    - Show Thinking only when at least one cell has a thinking trace. It is pressed exactly when all cells with traces show thinking; cells without traces do not affect this state, regardless of the view they display.
    - Preserve the same visibly recessed pressed treatment as the cell mode controls.
@@ -435,7 +436,7 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
 
 1. Show the scales control and its score in the top cell toolbar immediately after Thinking, once judged output generation has completed, including expanded cells. Y is the criteria count and X counts verdicts equal to their configured correct answers. The completed accessible name is "Judgment: {X} of {Y} correct".
    - Use "Show judge results" as the control's tooltip.
-2. Automatically show the judgment view when judging completes, and when opening a grid with completed judgments. The scales control switches between judgment and output; manual dismissal or choosing thinking remains in effect until the page is reopened.
+2. The scales control switches between judgment and output. Preserve manual cell selections as specified in section 5.1; completed judgments use the grid-level Benchmark results default when no mode has been selected.
    - Output, thinking, and judgment are alternate views. Selecting one replaces the other within the cell. Preserve the selected presentation across expansion and collapse.
    - Fill the available cell viewport edge to edge with a flat cell-colored results surface, including resized and expanded cells. Scroll within the results view when its content exceeds the viewport.
    - Show inset shadows only along the top and bottom edges where more results remain: top when scrolled away from the start, bottom when scrolled away from the end, and neither when all results fit.

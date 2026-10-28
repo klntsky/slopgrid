@@ -3,6 +3,7 @@ import { scrollToRest } from "./helpers";
 import {
   seedJudged,
   judgedInput,
+  selectJudgeResults,
   expectJudgmentFocus,
   expectJudgmentAlignment,
 } from "./judged-helpers";
@@ -45,6 +46,7 @@ test.describe("touch judgment following", () => {
       );
     }, id);
     await page.reload();
+    await selectJudgeResults(page);
     const grid = page.getByLabel("Generated output grid");
     const results = page.getByRole("region", {
       name: "Judgment details",
@@ -159,6 +161,7 @@ test.describe("touch judgment following", () => {
       );
     }, id);
     await page.reload();
+    await selectJudgeResults(page);
     const results = page.getByRole("region", {
       name: "Judgment details",
       exact: true,
@@ -495,6 +498,7 @@ test.describe("touch judgment following", () => {
       );
     }, id);
     await page.reload();
+    await selectJudgeResults(page);
     const results = page.getByRole("region", {
       name: "Judgment details",
       exact: true,

@@ -9,6 +9,7 @@ import {
   selectModel,
   setVariableValues,
 } from "./helpers";
+import { selectJudgeResults } from "./judged-helpers";
 
 const judgeSection = (page: Page) =>
   page.getByRole("region", { name: "Judge", exact: true });
@@ -284,6 +285,7 @@ test("different case rubrics judge one reused generation independently and survi
   await connectOpenRouter(page);
   const originalId = await generate(page);
   await expectProgress(page, 2, 2);
+  await selectJudgeResults(page);
   await expect(
     page.getByRole("button", { name: "Judgment: 1 of 1 correct", exact: true }),
   ).toBeVisible();
@@ -328,8 +330,6 @@ test("different case rubrics judge one reused generation independently and survi
     name: "Judgment: 2 of 2 correct",
     exact: true,
   });
-  if ((await judgmentButton.getAttribute("aria-pressed")) !== "true")
-    await judgmentButton.click();
   const details = judgmentButton
     .locator("xpath=ancestor::td[1]")
     .getByRole("region", { name: "Judgment details", exact: true });

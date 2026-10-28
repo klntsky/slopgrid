@@ -1,6 +1,6 @@
 import { test, expect } from "./fixtures";
 import { scrollToRest } from "./helpers";
-import { seedJudged, judgedInput } from "./judged-helpers";
+import { seedJudged, judgedInput, selectJudgeResults } from "./judged-helpers";
 test("judgment hover retains synchronized positions across exit and source changes", async ({
   page,
 }) => {
@@ -34,6 +34,7 @@ test("judgment hover retains synchronized positions across exit and source chang
       judge_criteria: { kind: "common", value: criteria },
     },
   });
+  await selectJudgeResults(page);
   const results = page.getByRole("region", {
     name: "Judgment details",
     exact: true,
@@ -286,6 +287,7 @@ test("judgment hover aligns short criteria fractionally even when unequal views 
     );
   }, id);
   await page.reload();
+  await selectJudgeResults(page);
   const results = page.getByRole("region", {
     name: "Judgment details",
     exact: true,
@@ -556,6 +558,7 @@ test("native judgment wheel aligns the criterion under a stationary cursor in un
     );
   }, id);
   await page.reload();
+  await selectJudgeResults(page);
   const results = page.getByRole("region", {
     name: "Judgment details",
     exact: true,
@@ -733,6 +736,7 @@ test("judgment layout changes after desktop scrollend refresh a stationary curso
     );
   }, id);
   await page.reload();
+  await selectJudgeResults(page);
   const results = page.getByRole("region", {
     name: "Judgment details",
     exact: true,

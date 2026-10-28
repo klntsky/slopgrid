@@ -79,6 +79,14 @@ export const judgedInput = currentInput({
   columns: [{ judge_effort: "none" }, { judge_effort: "high" }],
 });
 
+export async function selectJudgeResults(page: Page) {
+  const button = page
+    .getByRole("group", { name: "Grid view", exact: true })
+    .getByRole("button", { name: "Judge results", exact: true });
+  await button.click();
+  await expect(button).toHaveAttribute("aria-pressed", "true");
+}
+
 export async function createJudged(page: Page, input: GridInput = judgedInput) {
   await page.goto("/create");
   await connectOpenRouter(page);

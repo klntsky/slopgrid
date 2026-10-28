@@ -2,6 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { runtimeFixture } from "../runtime-fixture";
 import type { ViewGrid } from "../../src/api";
 import { single, verdicts } from "../judging-runtime-fixture";
+import { selectJudgeResults } from "./judged-helpers";
 
 async function cachedGrid(
   page: Page,
@@ -316,6 +317,7 @@ test("a delayed judgment refreshes the offline snapshot without redownloading co
     const beforeJudgment = outputReads.length;
     judge.write({ content: JSON.stringify(verdicts) });
     judge.finish();
+    await selectJudgeResults(page);
     await expect(
       page.getByRole("button", {
         name: "Judgment: 1 of 2 correct",
