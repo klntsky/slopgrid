@@ -1,6 +1,7 @@
 import { test, expect } from "./fixtures";
 import { connectOpenRouter, defineCases, expectProgress } from "./helpers";
 import { currentDefinition } from "../current-grid-fixture";
+import { selectJudgeResults } from "./judged-helpers";
 
 // The shared selector needs both model roles and both placements, rather than
 // their Cartesian product. Domain admission tests retain both roles per axis.
@@ -124,9 +125,11 @@ for (const [parameter, orientation] of [
     await generate.click();
     expect((await created).status()).toBe(201);
     await expectProgress(page, 1, 1);
-    if (parameter === "judge_model")
+    if (parameter === "judge_model") {
+      await selectJudgeResults(page);
       await expect(
         page.getByRole("button", { name: /^Judgment:/ }),
       ).toBeVisible();
+    }
   });
 }

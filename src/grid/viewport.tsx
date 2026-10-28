@@ -34,7 +34,7 @@ export function GridViewport({
     const columns = Array.from(table.querySelectorAll("col"));
     const headings = table.tHead!.rows[0],
       rows = Array.from(table.tBodies[0].rows);
-    const headingWidth = headings.cells[0].offsetWidth;
+    let headingWidth = 0;
     const storageKey = `slopgrid:grid:${gridId}:sizes`;
     const touchPointer = matchMedia("(any-pointer: coarse)");
     let sizes: Sizes | undefined,
@@ -150,6 +150,8 @@ export function GridViewport({
       table.style.setProperty("--grid-zoom", String(scale));
     }
     function reset() {
+      if (!viewport.clientWidth) return;
+      headingWidth ||= headings.cells[0].offsetWidth;
       const touch = navigator.maxTouchPoints > 0 || touchPointer.matches;
       viewport.dataset.touch = String(touch);
       pinch = undefined;

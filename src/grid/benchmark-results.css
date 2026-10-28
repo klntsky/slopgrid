@@ -1,0 +1,114 @@
+.benchmark-results {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: clamp(16px, 2vw, 28px);
+  background: var(--paper);
+  color: var(--text);
+}
+.benchmark-charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 25rem), 1fr));
+  gap: 20px;
+}
+.benchmark-chart {
+  min-width: 0;
+  margin: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+.benchmark-chart figcaption {
+  margin-bottom: 16px;
+  font-size: 16px;
+  font-weight: 600;
+}
+.benchmark-chart-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  column-gap: 16px;
+  row-gap: 12px;
+}
+.benchmark-chart-legend,
+.benchmark-chart-bars {
+  display: grid;
+  grid-template-rows: subgrid;
+  grid-row: 1 / -1;
+  row-gap: inherit;
+  min-width: 0;
+}
+.benchmark-chart-legend {
+  grid-column: 1;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.benchmark-chart-legend li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+.benchmark-legend-swatch {
+  flex: 0 0 8px;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.benchmark-chart-bars {
+  grid-column: 2;
+}
+.benchmark-bar-row {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 7px;
+  min-width: 0;
+}
+.benchmark-bar-score {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.benchmark-bar-track {
+  height: 14px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--progress-track);
+}
+.benchmark-bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+.benchmark-bar-row[data-completed="false"] .benchmark-bar-track {
+  border: 1px dashed var(--muted);
+  background: transparent;
+}
+.benchmark-empty {
+  margin: 0;
+  line-height: 1.6;
+}
+.benchmark-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+@media (forced-colors: active) {
+  .benchmark-bar-track {
+    border: 1px solid CanvasText;
+  }
+  .benchmark-bar-fill,
+  .benchmark-legend-swatch {
+    background: Highlight;
+    forced-color-adjust: none;
+  }
+}

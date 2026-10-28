@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { Brain, ChartNoAxesColumn, Palette, Scale } from "lucide-react";
+import { z } from "zod";
 import "./grid-workspace.css";
 import type { ViewGrid } from "../api";
 import { ModelName } from "../model-name";
@@ -9,6 +10,7 @@ import { ExpandButton } from "../components/expand-button";
 import { ContainedImage } from "../contained-image";
 import { OutputCell, type CellView } from "./output-cell";
 import { summarizeJudgment } from "./judge-result-button";
+import { BenchmarkResults } from "./benchmark-results";
 import { useItemScrollSync } from "./use-item-scroll-sync";
 import type { ReferenceImage } from "../../server/image-settings";
 import {
@@ -17,6 +19,25 @@ import {
   type ParameterDisplayPart,
 } from "../../shared/grid-display";
 import { variableName } from "../../server/prompt-variables";
+const cellViewSchema = z.enum(["output", "raw", "thinking", "judgment"]);
+const gridViewsSchema = z.object({
+  mode: cellViewSchema.or(z.literal("benchmark")).optional(),
+  cells: z.record(z.string(), cellViewSchema),
+});
+type GridViews = z.infer<typeof gridViewsSchema>;
+
+function readGridViews(gridId: string): GridViews {
+  try {
+    const saved = gridViewsSchema.safeParse(
+      JSON.parse(
+        localStorage.getItem(`slopgrid:grid:${gridId}:views`) ?? "null",
+      ),
+    );
+    if (saved.success) return saved.data;
+  } catch {}
+  return { cells: {} };
+}
+
 function ResizeHandle({
   axis,
   index,
@@ -38,24 +59,13 @@ function ResizeHandle({
 }
 export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
   const display = g.display ?? gridDisplay(g.input);
-  const [views, setViews] = useState<
-    Record<string, { mode?: CellView; judgeComplete?: boolean }>
-  >({});
-  const [gridView, setGridView] = useState<CellView>();
-  function selectGridView(mode: CellView) {
-    setGridView(mode);
-    setViews({});
-  }
-  function cellView(cell: ViewGrid["cells"][number]) {
-    return views[cell.id]?.judgeComplete === (cell.judge?.status === "complete")
-      ? (views[cell.id]?.mode ?? gridView)
-      : gridView;
-  }
-  function setView(
-    id: string,
-    view: { mode?: CellView; judgeComplete?: boolean },
-  ) {
-    setViews((current) => ({ ...current, [id]: { ...current[id], ...view } }));
+  const [views, setViews] = useState(() => readGridViews(g.id));
+  const gridView = views.mode === "benchmark" ? undefined : views.mode;
+  function saveViews(next: GridViews) {
+    setViews(next);
+    try {
+      localStorage.setItem(`slopgrid:grid:${g.id}:views`, JSON.stringify(next));
+    } catch {}
   }
   const cellViews = g.cells.map((cell) => {
     const criteria = cell.judge
@@ -71,7 +81,8 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
       cell.outputReady ||
       !!(g.input.format === "html" ? cell.previewURL : cell.draft?.trim());
     const requested =
-      cellView(cell) ??
+      views.cells[cell.id] ??
+      gridView ??
       (judgment?.results
         ? "judgment"
         : hasThinking &&
@@ -87,6 +98,14 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
         : requested;
     return { cell, criteria, judgment, hasThinking, view };
   });
+  const benchmark =
+    g.input.judge &&
+    (views.mode === "benchmark" ||
+      (views.mode === undefined &&
+        Object.keys(views.cells).length === 0 &&
+        cellViews.some(
+          ({ judgment }) => judgment?.results && judgment.total > 0,
+        )));
   const hasThinking = cellViews.some((cell) => cell.hasThinking);
   const [selection, setSelection] = useState<{
     kind: "output" | "reference";
@@ -115,6 +134,7 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
     expandedId,
     views,
     gridView,
+    benchmark,
     scrollSync,
   ]);
   function expand(
@@ -266,7 +286,13 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
   }
   return (
     <div className="grid-workspace" ref={workspace} {...scrollSync.events}>
-      <div className="grid-table-view" data-expanded={!!expandedId}>
+      {benchmark && <BenchmarkResults grid={g} />}
+      <div
+        className="grid-table-view"
+        data-expanded={!!expandedId}
+        hidden={benchmark}
+        inert={benchmark}
+      >
         <GridViewport
           key={g.id}
           gridId={g.id}
@@ -317,9 +343,9 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
                           expanded={expanded?.id === cell.id}
                           view={view}
                           onChangeView={(mode) =>
-                            setView(cell.id, {
-                              mode,
-                              judgeComplete: cell.judge?.status === "complete",
+                            saveViews({
+                              ...views,
+                              cells: { ...views.cells, [cell.id]: mode },
                             })
                           }
                           onToggleExpand={(button) =>
@@ -337,7 +363,7 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
           </table>
         </GridViewport>
       </div>
-      {reference && (
+      {!benchmark && reference && (
         <section
           className="expanded-markdown"
           aria-label={`Expanded reference: ${reference.name}`}
@@ -379,19 +405,27 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
                   key={mode}
                   type="button"
                   className="secondary"
-                  aria-pressed={cellViews.every(
-                    (cell) =>
-                      cell.view === mode ||
-                      (mode === "thinking" && !cell.hasThinking),
-                  )}
-                  onClick={() => selectGridView(mode)}
+                  aria-pressed={
+                    !benchmark &&
+                    cellViews.every(
+                      (cell) =>
+                        cell.view === mode ||
+                        (mode === "thinking" && !cell.hasThinking),
+                    )
+                  }
+                  onClick={() => saveViews({ mode, cells: {} })}
                 >
                   <Icon aria-hidden="true" />
                   {label}
                 </button>
               );
             })}
-            <button type="button" className="secondary" disabled>
+            <button
+              type="button"
+              className="secondary"
+              aria-pressed={benchmark}
+              onClick={() => saveViews({ ...views, mode: "benchmark" })}
+            >
               <ChartNoAxesColumn aria-hidden="true" />
               Benchmark results
             </button>

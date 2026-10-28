@@ -2,9 +2,14 @@ import { test, expect } from "./fixtures";
 import { generatorInputForCell } from "../../server/generator-input";
 import { connectOpenRouter, finishPublishing, selectModel } from "./helpers";
 import { currentInput } from "../current-grid-fixture";
-import { createJudged, judgedCriteria, judgedInput } from "./judged-helpers";
+import {
+  createJudged,
+  judgedCriteria,
+  judgedInput,
+  selectJudgeResults,
+} from "./judged-helpers";
 
-test("judgments open automatically on completion and reload as a scrollable full-cell view", async ({
+test("judgments open explicitly on completion and persist on reload as a scrollable full-cell view", async ({
   page,
 }) => {
   const finalExplanation = "The red rectangle is visible.";
@@ -45,6 +50,10 @@ test("judgments open automatically on completion and reload as a scrollable full
       },
     },
   });
+  await page
+    .getByRole("group", { name: "Grid view", exact: true })
+    .getByRole("button", { name: "Outputs", exact: true })
+    .click();
   await expect
     .poll(
       async () =>
@@ -78,6 +87,8 @@ test("judgments open automatically on completion and reload as a scrollable full
   await page.request.post("/fixture/release", { data: { all: true } });
   await expect(score).toHaveText("2/2");
   await expect(score).toHaveAttribute("aria-busy", "false");
+  await expect(details).toBeHidden();
+  await selectJudgeResults(page);
   await expect(details).toBeVisible();
   await expect(score).toHaveAttribute("aria-pressed", "true");
   await expect(details.getByRole("status")).toHaveCount(0);
@@ -99,6 +110,7 @@ test("judgments open automatically on completion and reload as a scrollable full
   await score.click();
   await expect(details).toBeHidden();
   await expect(image).toBeVisible();
+  await selectJudgeResults(page);
   await page.reload();
   await expect(score).toHaveAttribute("aria-pressed", "true");
   await expect(details).toBeVisible();
@@ -424,6 +436,7 @@ test("closing the page during judging does not stop completed judgments", async 
   });
   const reopened = await context.newPage();
   await reopened.goto(`${origin}/grid/${id}`);
+  await selectJudgeResults(reopened);
   await expect(
     reopened.getByRole("button", {
       name: "Judgment: 2 of 2 correct",
@@ -548,6 +561,7 @@ test("judge answers and axes survive draft reload, OAuth, Edit, and Fork", async
   await connectOpenRouter(page);
   await expectRestored();
   await page.getByRole("button", { name: "Generate", exact: true }).click();
+  await selectJudgeResults(page);
   await expect(
     page.getByRole("button", { name: "Judgment: 2 of 2 correct", exact: true }),
   ).toHaveCount(4);
@@ -585,6 +599,7 @@ test("judge answers and axes survive draft reload, OAuth, Edit, and Fork", async
     }),
   ).toBeChecked();
   await page.getByRole("button", { name: "Generate", exact: true }).click();
+  await selectJudgeResults(page);
   await expect(
     page.getByRole("button", { name: "Judgment: 2 of 2 correct", exact: true }),
   ).toHaveCount(4);
@@ -633,6 +648,7 @@ for (const format of ["svg", "image"] as const) {
       },
     });
     const id = await createJudged(page, input);
+    await selectJudgeResults(page);
     const scores = page.getByRole("button", {
       name: "Judgment: 2 of 2 correct",
       exact: true,
@@ -740,6 +756,8 @@ for (const format of ["svg", "image"] as const) {
         .nth(0)
         .click();
       await page.getByRole("button", { name: "Generate", exact: true }).click();
+      await page.waitForURL((url) => url.pathname !== `/grid/${id}`);
+      await selectJudgeResults(page);
       await expect(
         page.getByRole("button", {
           name: "Judgment: 1 of 2 correct",
@@ -861,6 +879,7 @@ test("output modes are exclusive and expansion retains the selected view", async
   await expectMode(null);
   await page.request.post("/fixture/release", { data: { all: true } });
   await expect(score).toHaveText("2/2");
+  await selectJudgeResults(page);
   await expect(details).toBeVisible();
   await expectMode("judgment");
 });

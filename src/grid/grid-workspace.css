@@ -10,6 +10,9 @@
   contain: layout;
   flex-direction: column;
 }
+.grid-table-view[hidden] {
+  display: none;
+}
 .grid-table-view[data-expanded="true"] {
   visibility: hidden;
 }

@@ -155,6 +155,10 @@ async function create(
 }
 
 async function inspect(page: Page, grid: Snapshot, submitted: GridInput) {
+  await page
+    .getByRole("group", { name: "Grid view", exact: true })
+    .getByRole("button", { name: "Judge results", exact: true })
+    .click();
   expect(new Set(grid.cells.map((cell) => cell.generationId)).size).toBe(1);
   const outputs: Buffer[] = [];
   const scores = page.locator(".judge-result-button");
