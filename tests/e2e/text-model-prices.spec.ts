@@ -36,11 +36,6 @@ test("text model prices convert token rates and retain free and missing pricing 
   await expect(price("Fixture text")).toContainText("$3.00 in / $20.00 out");
   await expect(price("Free model")).toContainText("$0.00 in / $0.00 out");
   await expect(price("Unpriced model")).toHaveText("Price unavailable");
-  await price("Fixture text").hover();
-  const tooltip = page.getByRole("tooltip").filter({ hasText: "Input:" });
-  await expect(tooltip).toContainText("Input: $3.00/1M tokens");
-  await expect(tooltip).toContainText("Output: $20.00/1M tokens");
-  await expect(tooltip).toContainText("Request: $0.001/request");
   const model = page.getByRole("checkbox", {
     name: "Fixture text",
     exact: true,
@@ -61,6 +56,4 @@ test("text model prices convert token rates and retain free and missing pricing 
     })
     .locator(".model-price");
   await expect(fixedPrice).toContainText("$3.00 in / $20.00 out");
-  await fixedPrice.focus();
-  await expect(tooltip).toContainText("Request: $0.001/request");
 });

@@ -33,6 +33,7 @@ import {
   orientedReferenceJpeg,
   pixelPng as png,
 } from "./reference-image-fixture.js";
+import { referencePngOutput } from "./chat-image-output-fixture.js";
 
 for (const shared of [false, true])
   test(`reference uploads follow ownership, account claims, selected publication and fork access (shared=${shared})`, async (t) => {
@@ -905,7 +906,7 @@ test("truncated image headers and zero dimensions are invalid uploads without me
   }
 });
 
-test("legacy workflow inputs and live chat histories project authoritative dimensions without reading image files", async (t) => {
+test("input references hydrate authoritative dimensions while live canonical histories remain independent of uploaded files", async (t) => {
   const { store, origin } = await appFixture(t);
   const session = { id: token(), created: 0 };
   store.saveSession(session);
@@ -914,7 +915,7 @@ test("legacy workflow inputs and live chat histories project authoritative dimen
     "Keep this input name",
     session,
   )!;
-  const legacy = { id: image.id, name: image.name };
+  const inputReference = { id: image.id, name: image.name };
   const input = currentInput({
     format: "chat-template",
     parameters: {
@@ -924,7 +925,7 @@ test("legacy workflow inputs and live chat histories project authoritative dimen
           {
             role: "user",
             content: "Describe",
-            images: [{ ...legacy, width: 2, height: 900 }],
+            images: [{ ...inputReference, width: 2, height: 900 }],
           },
           { role: "unfilled", content: "" },
         ],
@@ -951,7 +952,11 @@ test("legacy workflow inputs and live chat histories project authoritative dimen
   if (task.kind !== "generation") throw new Error("Expected generation");
   task.status = "running";
   const history = [
-    { role: "user", content: "Describe", images: [legacy] },
+    {
+      role: "user",
+      content: "Describe",
+      images: [referencePngOutput(image.name)],
+    },
     { role: "assistant", content: "Progressive answer" },
   ];
   task.progress = { draft: JSON.stringify(history) };
@@ -970,17 +975,16 @@ test("legacy workflow inputs and live chat histories project authoritative dimen
   const restored = store.workflow(grid.id)[0];
   if (restored.kind !== "generation") throw new Error("Expected generation");
   assert.deepEqual(restored.input.messages![0].images, [image]);
-  const expectedHistory = [{ ...history[0], images: [image] }, history[1]];
-  assert.deepEqual(JSON.parse(restored.progress!.draft!), expectedHistory);
+  assert.deepEqual(JSON.parse(restored.progress!.draft!), history);
   const response = await fetch(`${origin}/api/grids/${grid.id}`, {
     headers: { Cookie: `slopgrid=${session.id}` },
   });
   assert.equal(response.status, 200);
   const view = await response.json();
   assert.deepEqual(view.input.parameters.input.value[0].images, [image]);
-  assert.deepEqual(JSON.parse(view.cells[0].draft), expectedHistory);
+  assert.deepEqual(JSON.parse(view.cells[0].draft), history);
   assert.equal(
     view.input.parameters.input.value[0].images[0].name,
-    legacy.name,
+    inputReference.name,
   );
 });

@@ -7,7 +7,6 @@ import {
   gridDraftSchema,
   gridSchema,
 } from "../server/domain.js";
-import { readChatOutput } from "../shared/chat-output.js";
 import { appFixture } from "./app-fixture.js";
 import { currentDefinition, currentInput } from "./current-grid-fixture.js";
 import { draftInputFromGridInput } from "../src/create/draft-input.js";
@@ -256,7 +255,7 @@ test("chat histories preserve roles and whitespace while expanding multiple vari
   );
 });
 
-test("chat images belong to supplied user messages, including image-only turns", () => {
+test("chat images belong to supplied user and assistant messages, including image-only turns", () => {
   const first = { id: "first", name: "first.png", width: 7, height: 3 };
   const second = { id: "second", name: "second.png" };
   const source = currentDefinition({
@@ -309,7 +308,26 @@ test("chat images belong to supplied user messages, including image-only turns",
       images: [second, first],
     })),
   );
-  for (const role of ["system", "assistant", "unfilled"])
+  const suppliedAssistant = currentInput({
+    ...source,
+    parameters: {
+      ...source.parameters,
+      input: {
+        kind: "common",
+        value: [
+          { role: "user", content: "Question" },
+          { role: "assistant", content: "", images: [first, second] },
+          { role: "user", content: "Continue" },
+        ],
+      },
+    },
+  });
+  assert.deepEqual(expandGrid(suppliedAssistant)[0].messages![1], {
+    role: "assistant",
+    content: "",
+    images: [first, second],
+  });
+  for (const role of ["system", "unfilled"])
     assert.equal(
       gridSchema.safeParse({
         ...source,
@@ -377,8 +395,6 @@ test("chat images belong to supplied user messages, including image-only turns",
     }).success,
     false,
   );
-  const history = [{ role: "user", content: "", images: [first, second] }];
-  assert.deepEqual(readChatOutput(JSON.stringify(history)), history);
   for (const dimensions of [
     { width: 7 },
     { height: 3 },
@@ -405,10 +421,6 @@ test("chat images belong to supplied user messages, including image-only turns",
         },
       }).success,
       false,
-    );
-    assert.throws(
-      () => readChatOutput(JSON.stringify(invalid)),
-      /Invalid chat output/,
     );
   }
 });

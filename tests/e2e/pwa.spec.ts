@@ -5,11 +5,7 @@ import { join } from "node:path";
 import { startGenerationFixture } from "../generation-fixture";
 import { webFixture } from "../web-fixture";
 import { Store } from "../../server/store";
-import {
-  expandGrid,
-  type Grid,
-  type ChatMessage,
-} from "../../server/domain";
+import { expandGrid, type Grid, type ChatMessage } from "../../server/domain";
 import { token } from "../../server/ids";
 import { createWorkflow } from "../../server/workflow";
 import { cacheScope } from "../../server/session";
@@ -63,9 +59,33 @@ test("visited pages and completed outputs survive offline reload without retaini
       { role: "unfilled", content: "" },
     ];
     const chatOutput = JSON.stringify([
-      { role: "user", content: "First image" },
+      {
+        role: "user",
+        content: "First image",
+        images: [
+          {
+            name: chatImages[0].name,
+            mediaType: "image/png",
+            width: 1,
+            height: 1,
+            dataUrl: `data:image/png;base64,${Buffer.concat([bytes, Buffer.from(chatImages[0].name)]).toString("base64")}`,
+          },
+        ],
+      },
       { role: "assistant", content: "First answer" },
-      { role: "user", content: "Later image" },
+      {
+        role: "user",
+        content: "Later image",
+        images: [
+          {
+            name: chatImages[1].name,
+            mediaType: "image/png",
+            width: 1,
+            height: 1,
+            dataUrl: `data:image/png;base64,${Buffer.concat([bytes, Buffer.from(chatImages[1].name)]).toString("base64")}`,
+          },
+        ],
+      },
       { role: "assistant", content: "Later answer" },
     ]);
     function completedGrid(
@@ -229,22 +249,26 @@ test("visited pages and completed outputs survive offline reload without retaini
         parameters: {
           input: {
             kind: "common",
-            value: [{
-              role: "user",
-              content: "Offline canonical $ROW1 wearing a $COLUMN1",
-            }],
+            value: [
+              {
+                role: "user",
+                content: "Offline canonical $ROW1 wearing a $COLUMN1",
+              },
+            ],
           },
         },
         rows: [{ variable: [{ text: "cat" }] }],
         columns: [{ variable: [{ text: "hat" }] }],
       });
-      grids.push(completedGrid(
-        input,
-        { "index.md": "# Cached markdown\n\nSaved content" },
-        "Saved canonical thinking",
-        undefined,
-        published,
-      ));
+      grids.push(
+        completedGrid(
+          input,
+          { "index.md": "# Cached markdown\n\nSaved content" },
+          "Saved canonical thinking",
+          undefined,
+          published,
+        ),
+      );
     }
     const context = await browser.newContext({ ignoreHTTPSErrors: true });
     await context.addCookies([
@@ -284,6 +308,12 @@ test("visited pages and completed outputs survive offline reload without retaini
         .toBe(true);
     }
     for (const image of chatImages) {
+      expect(
+        await page.evaluate(
+          async (id) => (await fetch(`/api/references/${id}`)).ok,
+          image.id,
+        ),
+      ).toBe(true);
       await expect
         .poll(() =>
           page.evaluate(async (id) => {
@@ -508,6 +538,12 @@ test("visited pages and completed outputs survive offline reload without retaini
     ).toEqual({ status: 200, scope: cacheScope({ id: owner }) });
     const chat = grids.find((grid) => grid.input.format === "chat-template")!;
     await page.goto(`${web.origin}/grid/${chat.id}`);
+    await page.evaluate(
+      async (ids) => {
+        await Promise.all(ids.map((id) => fetch(`/api/references/${id}`)));
+      },
+      chatImages.map((image) => image.id),
+    );
     await expect
       .poll(() =>
         page.evaluate(

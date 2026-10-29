@@ -14,7 +14,6 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { token } from "../server/ids.js";
 import { Store } from "../server/store.js";
-import { initializeDatabase } from "../server/database.js";
 import {
   expandGrid,
   gridSchema,
@@ -30,6 +29,8 @@ import {
   referenceBlobs,
   referenceForeignKeyViolations,
   restoreV14ReferenceSchema,
+  restoreV19UnhashedReferences,
+  storedReferenceHash,
   removeStoredReferenceDimensions,
   rejectReferenceHashUpdates,
   allowReferenceHashUpdates,
@@ -41,14 +42,17 @@ import {
   validatedGrid,
   arrangeHistoricalGrid,
 } from "./grid-storage-fixture.js";
-import { replaceLegacyGridInputs } from "./database-migration-fixture.js";
+import {
+  replaceLegacyGridInputs,
+  setDatabaseVersion,
+} from "./database-migration-fixture.js";
 import {
   referencePng,
   orientedReferenceJpeg,
   referenceWebp,
 } from "./reference-image-fixture.js";
 
-test("an initialized store opens for reads while another connection holds the write lock", () => {
+test("initialized store reads remain available while another connection holds the write lock", () => {
   const dir = mkdtempSync(join(tmpdir(), "slopgrid-store-lock-"));
   const database = join(dir, "app.sqlite");
   const secret = Buffer.alloc(32, 1);
@@ -412,11 +416,13 @@ for (const available of [true, false])
         parameters: {
           input: {
             kind: "common",
-            value: [{
-              role: "user",
-              content: "Describe these images",
-              images: [first, second, unavailable],
-            }],
+            value: [
+              {
+                role: "user",
+                content: "Describe these images",
+                images: [first, second, unavailable],
+              },
+            ],
           },
           quality: { kind: "rows" },
           model: { kind: "columns" },
@@ -521,21 +527,6 @@ for (const available of [true, false])
           readdirSync(join(store.files.root, ".references")).length,
           2,
         );
-        for (const reference of [first, second, different])
-          assert.equal(
-            existsSync(join(store.files.root, `reference-${reference.id}`)),
-            false,
-          );
-        // Recreate a legacy copy as if migration stopped after committing its
-        // hash. Restart must finish cleanup rather than retain duplicate bytes.
-        store.files.write(`reference-${first.id}`, { image: png });
-        store.db.close();
-        store = new Store(database, secret);
-        assert.equal(store.references.path(first.id), path);
-        assert.equal(
-          existsSync(join(store.files.root, `reference-${first.id}`)),
-          false,
-        );
       } else {
         assert.equal(store.references.path(first.id), undefined);
         await assert.rejects(
@@ -544,38 +535,24 @@ for (const available of [true, false])
         );
         assert.deepEqual(referenceBlobs(store.db), []);
       }
-      // Unavailable historical metadata stays valid, and bytes restored later
-      // can be backfilled on startup; runtime reads never fall back to ID paths.
       store.files.write(`reference-${unavailable.id}`, { image: png });
       assert.equal(store.references.path(unavailable.id), undefined);
       store.db.close();
       store = new Store(database, secret);
-      expectedReferences[2] = unavailable;
-      assert.deepEqual(
-        (await store.references.loader()([unavailable.id])).get(unavailable.id),
-        {
-          bytes: png,
-          mediaType: "image/png",
-          sha256: createHash("sha256").update(png).digest("hex"),
-        },
-      );
-      assert.equal(
-        existsSync(join(store.files.root, `reference-${unavailable.id}`)),
-        false,
-      );
-      assert.deepEqual(referenceForeignKeyViolations(store.db), []);
-      // A current-schema validation snapshot also has hash metadata but no
-      // copied artifacts. Opening it must not require or manufacture the bytes.
-      store.db.close();
-      rmSync(join(store.files.root, ".references"), { recursive: true });
-      store = new Store(database, secret);
-      assert.equal(
-        store.references.get(unavailable.id)!.sha256,
-        createHash("sha256").update(png).digest("hex"),
-      );
-      assert.equal(store.references.path(unavailable.id), undefined);
       await assert.rejects(
         store.references.loader()([unavailable.id]),
+        /unavailable/,
+      );
+      assert.deepEqual(referenceForeignKeyViolations(store.db), []);
+      store.db.close();
+      rmSync(join(store.files.root, ".references"), {
+        recursive: true,
+        force: true,
+      });
+      store = new Store(database, secret);
+      assert.equal(store.references.path(first.id), undefined);
+      await assert.rejects(
+        store.references.loader()([first.id]),
         /unavailable/,
       );
       assert.deepEqual(store.workflow(grid.id), expectedTasks);
@@ -602,8 +579,7 @@ for (const failure of ["blob write", "metadata commit"] as const)
       store.files.write(`reference-${image.id}`, { image: referencePng });
       const legacyPath = store.files.path(`reference-${image.id}`, "image")!;
       rmSync(join(store.files.root, ".references"), { recursive: true });
-      restoreV14ReferenceSchema(store.db);
-      initializeDatabase(store.db);
+      restoreV19UnhashedReferences(store.db);
       if (failure === "metadata commit") rejectReferenceHashUpdates(store.db);
       else writeFileSync(join(store.files.root, ".references"), "blocked");
       store.db.close();
@@ -616,14 +592,7 @@ for (const failure of ["blob write", "metadata commit"] as const)
       assert.deepEqual(readFileSync(legacyPath), referencePng);
       const snapshot = new Database(database);
       try {
-        assert.equal(
-          snapshot
-            .prepare<[string], { sha256: string | null }>(
-              "SELECT sha256 FROM reference_images WHERE id=?",
-            )
-            .get(image.id)!.sha256,
-          null,
-        );
+        assert.equal(storedReferenceHash(snapshot, image.id), null);
         assert.deepEqual(referenceBlobs(snapshot), []);
         if (failure === "metadata commit") {
           assert.deepEqual(
@@ -639,7 +608,6 @@ for (const failure of ["blob write", "metadata commit"] as const)
       assert.deepEqual(store.references.hydrate(image), image);
       assert.equal(store.references.get(image.id)!.ownerUserId, "account");
       assert.equal(store.references.get(image.id)!.name, "original.png");
-      assert.equal(existsSync(legacyPath), false);
       assert.deepEqual(
         (await store.references.loader()([image.id])).get(image.id)!.bytes,
         referencePng,
@@ -669,6 +637,7 @@ test("reference migration refuses mismatched historical bytes without replacing 
     const mismatched = Buffer.concat([referencePng, Buffer.from("changed")]);
     store.files.write(`reference-${image.id}`, { image: mismatched });
     const legacyPath = store.files.path(`reference-${image.id}`, "image")!;
+    setDatabaseVersion(store.db, 19);
     store.db.close();
     assert.throws(
       () => new Store(database, secret),
@@ -681,7 +650,6 @@ test("reference migration refuses mismatched historical bytes without replacing 
     ]);
     writeFileSync(legacyPath, referencePng);
     store = new Store(database, secret);
-    assert.equal(existsSync(legacyPath), false);
     assert.equal(store.references.path(duplicate.id), sharedPath);
     assert.deepEqual(
       (await store.references.loader()([image.id, duplicate.id])).get(
@@ -747,11 +715,6 @@ test("production v14 files retain unknown bytes and populate shared proportions 
       referenceBlobs(store.db).find(({ sha256 }) => sha256 === unknownHash),
       { sha256: unknownHash, width: null, height: null },
     );
-    for (const reference of [first, duplicate, rotated, unknown])
-      assert.equal(
-        existsSync(join(store.files.root, `reference-${reference.id}`)),
-        false,
-      );
     // Once recorded, proportions do not depend on reading the image on open or
     // view. A validation snapshot may intentionally omit all physical bytes.
     rmSync(join(store.files.root, ".references"), { recursive: true });
@@ -762,8 +725,15 @@ test("production v14 files retain unknown bytes and populate shared proportions 
     store.files.write(`reference-${missing.id}`, { image: referenceWebp });
     store.db.close();
     store = new Store(database, secret);
-    assert.deepEqual(store.references.hydrate(missing), missing);
-    assert.equal(referenceBlobs(store.db).length, 4);
+    assert.deepEqual(store.references.hydrate(missing), {
+      id: missing.id,
+      name: missing.name,
+    });
+    await assert.rejects(
+      store.references.loader()([missing.id]),
+      /unavailable/,
+    );
+    assert.equal(referenceBlobs(store.db).length, 3);
     assert.deepEqual(referenceForeignKeyViolations(store.db), []);
   } finally {
     store.db.close();

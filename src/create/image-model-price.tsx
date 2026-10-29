@@ -28,15 +28,5 @@ export function ImageModelPrice({
         : `${formatCost(unit === "token" ? low * 1000000 : low)}–${rate(high, unit)}`;
     })
     .join(" · ");
-  const details = endpoints
-    .filter((endpoint) => endpoint.pricing.length)
-    .map((endpoint) => {
-      const lines = endpoint.pricing.map((price) => {
-        const name = price.billable.replaceAll("_", " ");
-        return `${name[0].toUpperCase()}${name.slice(1)}${price.variant ? ` (${price.variant})` : ""}: ${rate(price.cost_usd, price.unit)}`;
-      });
-      return `${endpoint.provider_name}: ${lines.join("; ")}.`;
-    })
-    .join(" ");
-  return <ModelPrice summary={summary} details={details} />;
+  return <ModelPrice summary={summary} />;
 }

@@ -25,6 +25,7 @@ import {
   storedFavoriteIds,
 } from "./favorites-storage-fixture.js";
 import { rejectStoredGridUpdates } from "./grid-storage-fixture.js";
+import { databaseOutputFiles } from "./database-output-fixture.js";
 import { defaultJudgeSystemPrompt } from "../server/parameters.js";
 
 const { productionDatabase, seedProduction, snapshot, storedData, input } =
@@ -41,7 +42,7 @@ test("production v14 migrates directly to canonical persisted inputs without rew
     // production accounting through its frozen SQL fixture before migration.
     const accounting = migration.productionBillingSummary(db);
     const acceptedData = storedData(db, "grid");
-    initializeDatabase(db);
+    initializeDatabase(db, databaseOutputFiles(db));
     assert.deepEqual(migration.gridIdentitiesAndMetadata(db), identities);
     assert.deepEqual(migration.unchangedProductionRecords(db), records);
     assert.deepEqual(
@@ -92,7 +93,7 @@ test("production v14 migrates directly to canonical persisted inputs without rew
     );
     assert.equal(expandGrid(canonical)[0].prompt, "Hello world");
     const stable = snapshot(db);
-    initializeDatabase(db);
+    initializeDatabase(db, databaseOutputFiles(db));
     assert.deepEqual(snapshot(db), stable);
     assert.deepEqual(migration.foreignKeyViolations(db), []);
   } finally {
@@ -113,7 +114,7 @@ test("production v14 migration preserves row-major cell identities and both vari
     };
     migration.replaceLegacyGridInputs(db, source);
     const before = migration.unchangedProductionRecords(db);
-    initializeDatabase(db);
+    initializeDatabase(db, databaseOutputFiles(db));
     const canonical = storedData(db, "grid").input;
     assert.deepEqual(canonical, migrateProductionInput(source));
     assert.deepEqual(
@@ -151,12 +152,12 @@ test("a failed direct v14 migration rolls back schema, every payload, indexes an
     const unblock = migration.rejectProductionInputMigration(db);
     const before = snapshot(db);
     assert.throws(
-      () => initializeDatabase(db),
+      () => initializeDatabase(db, databaseOutputFiles(db)),
       /production input migration blocked/,
     );
     assert.deepEqual(snapshot(db), before);
     unblock();
-    initializeDatabase(db);
+    initializeDatabase(db, databaseOutputFiles(db));
     assert.equal(storedData(db, "grid").input.inputVersion, 3);
   } finally {
     db.close();
@@ -174,7 +175,7 @@ test("invalid production JSON shapes roll back the direct migration without cata
     );
     const before = snapshot(db);
     assert.throws(
-      () => initializeDatabase(db),
+      () => initializeDatabase(db, databaseOutputFiles(db)),
       /Cannot migrate production input for grid grid/,
     );
     assert.deepEqual(snapshot(db), before);
@@ -188,14 +189,14 @@ test("direct migration backfills configured links without deleting accepted or h
   try {
     seedProduction(db);
     migration.unlinkConfiguredReference(db);
-    initializeDatabase(db);
+    initializeDatabase(db, databaseOutputFiles(db));
     assert.deepEqual(migration.migratedGridReferenceIds(db), [
       { reference_id: "missing-reference" },
       { reference_id: "reference" },
       { reference_id: "unused-reference" },
     ]);
     const stable = snapshot(db);
-    initializeDatabase(db);
+    initializeDatabase(db, databaseOutputFiles(db));
     assert.deepEqual(snapshot(db), stable);
   } finally {
     db.close();
@@ -210,7 +211,7 @@ test("unsupported pre-production and intermediate versions leave stored data unt
       migration.setDatabaseVersion(db, version);
       const before = snapshot(db);
       assert.throws(
-        () => initializeDatabase(db),
+        () => initializeDatabase(db, databaseOutputFiles(db)),
         /Unsupported database version/,
       );
       assert.deepEqual(snapshot(db), before);
@@ -223,10 +224,10 @@ test("unsupported pre-production and intermediate versions leave stored data unt
 test("fresh databases initialize once and preserve encrypted sessions", () => {
   const db = new Database(":memory:");
   try {
-    initializeDatabase(db);
+    initializeDatabase(db, databaseOutputFiles(db));
     migration.seedEncryptedMigrationSession(db);
     const before = snapshot(db);
-    initializeDatabase(db);
+    initializeDatabase(db, databaseOutputFiles(db));
     assert.deepEqual(snapshot(db), before);
   } finally {
     db.close();
@@ -236,14 +237,14 @@ test("fresh databases initialize once and preserve encrypted sessions", () => {
 test("v19 judging migration freezes missing defaults without changing accepted results or explicit blank prompts", () => {
   const db = migration.productionV17Database();
   try {
-    initializeDatabase(db);
+    initializeDatabase(db, databaseOutputFiles(db));
     migration.prepareV19JudgePromptMigration(db);
     const beforeGrid = storedData(db, "grid");
     const beforePrivate = storedData(db, "private-grid");
     assert.equal(beforeGrid.input.judge, true);
     const beforeTask = migration.storedJudgmentTaskData(db);
     const beforeRecords = migration.unchangedProductionRecords(db);
-    initializeDatabase(db);
+    initializeDatabase(db, databaseOutputFiles(db));
     assert.deepEqual(storedData(db, "grid"), {
       ...beforeGrid,
       input: {
@@ -271,7 +272,7 @@ test("v19 judging migration freezes missing defaults without changing accepted r
     );
     assert.deepEqual(migration.unchangedProductionRecords(db), beforeRecords);
     const stable = snapshot(db);
-    initializeDatabase(db);
+    initializeDatabase(db, databaseOutputFiles(db));
     assert.deepEqual(snapshot(db), stable);
   } finally {
     db.close();
@@ -281,12 +282,12 @@ test("v19 judging migration freezes missing defaults without changing accepted r
 test("v19 judge prompt migration rolls back grids and task defaults together", () => {
   const db = migration.productionV17Database();
   try {
-    initializeDatabase(db);
+    initializeDatabase(db, databaseOutputFiles(db));
     migration.prepareV19JudgePromptMigration(db);
     migration.rejectJudgePromptMigration(db);
     const before = snapshot(db);
     assert.throws(
-      () => initializeDatabase(db),
+      () => initializeDatabase(db, databaseOutputFiles(db)),
       /judge prompt migration blocked/,
     );
     assert.deepEqual(snapshot(db), before);
@@ -301,13 +302,13 @@ test("a genuine v17 upgrade preserves canonical payloads, accounting and encrypt
     rejectStoredGridUpdates(db);
     const before = favoriteMigrationPreservedState(db);
     assert.equal(migration.productionSessionKey(db), "production-browser-key");
-    initializeDatabase(db);
+    initializeDatabase(db, databaseOutputFiles(db));
     assert.deepEqual(favoriteMigrationPreservedState(db), before);
     assert.equal(migration.productionSessionKey(db), "production-browser-key");
     assert.deepEqual(storedFavoriteIds(db, "account"), []);
     insertFavoriteMembership(db, "account", "grid");
     const migrated = snapshot(db);
-    initializeDatabase(db);
+    initializeDatabase(db, databaseOutputFiles(db));
     assert.deepEqual(snapshot(db), migrated);
     assert.deepEqual(storedFavoriteIds(db, "account"), ["grid"]);
     assert.deepEqual(migration.foreignKeyViolations(db), []);
@@ -324,8 +325,8 @@ test("a frozen v18 upgrade preserves every existing schema object and row, inclu
     insertFavoriteMembership(db, "another-account", "private-grid");
     rejectStoredGridUpdates(db);
     const before = anonymousFavoriteMigrationPreservedState(db);
-    initializeDatabase(db);
-    assert.equal(migration.databaseVersion(db), 20);
+    initializeDatabase(db, databaseOutputFiles(db));
+    assert.equal(migration.databaseVersion(db), 21);
     assert.deepEqual(anonymousFavoriteMigrationPreservedState(db), before);
     assert.deepEqual(storedFavoriteIds(db, "account"), ["grid"]);
     assert.deepEqual(storedFavoriteIds(db, "another-account"), [
@@ -335,7 +336,7 @@ test("a frozen v18 upgrade preserves every existing schema object and row, inclu
     assert.deepEqual(storedAnonymousFavoriteIds(db, "anonymous"), []);
     insertAnonymousFavoriteMembership(db, "anonymous", "grid");
     const stable = snapshot(db);
-    initializeDatabase(db);
+    initializeDatabase(db, databaseOutputFiles(db));
     assert.deepEqual(snapshot(db), stable);
     assert.deepEqual(storedAnonymousFavoriteIds(db, "anonymous"), ["grid"]);
     assert.deepEqual(migration.foreignKeyViolations(db), []);
@@ -353,7 +354,7 @@ test("fresh, frozen v14, deployed v17 and v18 databases support separate durable
   ]) {
     const db = create();
     try {
-      initializeDatabase(db);
+      initializeDatabase(db, databaseOutputFiles(db));
       insertFavoriteAccount(db, "favorite-account");
       migration.insertPublicationBoundaryGrid(
         db,
@@ -396,7 +397,7 @@ test("fresh, frozen v14, deployed v17 and v18 databases support separate durable
         /FOREIGN KEY constraint failed/,
       );
       const stable = snapshot(db);
-      initializeDatabase(db);
+      initializeDatabase(db, databaseOutputFiles(db));
       assert.deepEqual(snapshot(db), stable);
       removeFavoriteGrid(db, "favorite-grid");
       assert.deepEqual(storedFavoriteIds(db, "favorite-account"), []);
@@ -428,7 +429,10 @@ test("a failed v17 favorites migration preserves the previous schema, rows and v
   try {
     obstructFavoritesMigration(db);
     const before = snapshot(db);
-    assert.throws(() => initializeDatabase(db), /grid_favorites/);
+    assert.throws(
+      () => initializeDatabase(db, databaseOutputFiles(db)),
+      /grid_favorites/,
+    );
     assert.deepEqual(snapshot(db), before);
     assert.equal(migration.productionSessionKey(db), "production-browser-key");
   } finally {
@@ -442,7 +446,10 @@ test("a failed v18 anonymous favorites migration rolls back without touching exi
     insertFavoriteMembership(db, "account", "grid");
     obstructAnonymousFavoritesMigration(db);
     const before = snapshot(db);
-    assert.throws(() => initializeDatabase(db), /anonymous_grid_favorites/);
+    assert.throws(
+      () => initializeDatabase(db, databaseOutputFiles(db)),
+      /anonymous_grid_favorites/,
+    );
     assert.deepEqual(snapshot(db), before);
     assert.equal(migration.databaseVersion(db), 18);
     assert.deepEqual(storedFavoriteIds(db, "account"), ["grid"]);
@@ -457,7 +464,7 @@ test("fresh and direct production upgrades enforce publication, slug uniqueness 
     const db = production ? productionDatabase() : new Database(":memory:");
     try {
       if (production) seedProduction(db);
-      initializeDatabase(db);
+      initializeDatabase(db, databaseOutputFiles(db));
       migration.insertPublicationBoundaryGrid(
         db,
         "constraint-grid",
@@ -502,7 +509,7 @@ test("fresh and direct production upgrades enforce paired positive integer refer
     const db = production ? productionDatabase() : new Database(":memory:");
     try {
       if (production) seedProduction(db);
-      initializeDatabase(db);
+      initializeDatabase(db, databaseOutputFiles(db));
       assert.deepEqual(referenceBlobs(db), []);
       insertReferenceBlobDimensions(db, "a".repeat(64), null, null);
       insertReferenceBlobDimensions(db, "b".repeat(64), 3, 7);
@@ -526,7 +533,7 @@ test("fresh and direct production upgrades enforce paired positive integer refer
         { sha256: "b".repeat(64), width: 3, height: 7 },
       ]);
       const stable = snapshot(db);
-      initializeDatabase(db);
+      initializeDatabase(db, databaseOutputFiles(db));
       assert.deepEqual(snapshot(db), stable);
     } finally {
       db.close();

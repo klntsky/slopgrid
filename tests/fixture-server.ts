@@ -12,6 +12,12 @@ import { seedGridLists } from "./grid-list-fixture.js";
 import { seedCompletedJudgment } from "./completed-judgment-fixture.js";
 import { createSessionReader } from "../server/session.js";
 import { parseE2EPort } from "./e2e-port.js";
+import {
+  encryptedReasoning,
+  generatedDataUrl,
+  imageDelta,
+  secondGeneratedDataUrl,
+} from "./chat-image-output-fixture.js";
 const port = parseE2EPort(process.env.E2E_PORT);
 let balanceUsd = 100;
 let tokenLimits: { model: string; max_tokens: number }[] = [];
@@ -25,6 +31,7 @@ let svgOutput: string | undefined;
 let streamBilling = false;
 let unsafe = false;
 let markdownOutput: string | undefined;
+let chatImageOutput: "mixed" | "image-only" | "multiple" | "invalid" = "mixed";
 let websiteStreaming = false;
 let costStreaming = false;
 let textCost = 0.000123;
@@ -117,6 +124,43 @@ upstream.get("/api/v1/models", (_req, res) =>
           "structured_outputs",
         ],
         reasoning: { mandatory: false, supported_efforts: null },
+      },
+      {
+        id: "fixture/multimodal",
+        name: "Fixture multimodal",
+        pricing: { prompt: "0.000003", completion: "0.00002" },
+        context_length: 1000000,
+        top_provider: { max_completion_tokens: 500000 },
+        architecture: {
+          input_modalities: ["text", "image"],
+          output_modalities: ["text", "image"],
+        },
+        supported_parameters: ["reasoning", "structured_outputs"],
+      },
+      {
+        id: "fixture/image-only",
+        name: "Fixture image only",
+        pricing: { prompt: "0", completion: "0" },
+        context_length: 1000000,
+        top_provider: { max_completion_tokens: 500000 },
+        architecture: {
+          input_modalities: ["text", "image"],
+          output_modalities: ["image"],
+        },
+        supported_parameters: [],
+      },
+      {
+        id: "~fixture/image-latest",
+        name: "Fixture image alias",
+        alias_target: { slug: "fixture/image-only" },
+        pricing: { prompt: "0", completion: "0" },
+        context_length: 1000000,
+        top_provider: { max_completion_tokens: 500000 },
+        architecture: {
+          input_modalities: ["text", "image"],
+          output_modalities: ["text"],
+        },
+        supported_parameters: [],
       },
     ],
   }),
@@ -349,9 +393,33 @@ upstream.post("/api/v1/chat/completions", async (req, res) => {
     id: "fixture",
     object: "chat.completion.chunk",
     created: Math.floor(Date.now() / 1000),
-    model: "fixture/text",
+    model: req.body.model,
   };
   res.set("Content-Type", "text/event-stream");
+  if (req.body.model === "fixture/multimodal") {
+    const event = (delta: object) =>
+      res.write(
+        `data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta, finish_reason: null }] })}\n\n`,
+      );
+    event({ content: "", reasoning_details: [encryptedReasoning] });
+    if (chatImageOutput !== "image-only")
+      event({ content: markdownOutput ?? "A generated image." });
+    event(
+      imageDelta(
+        chatImageOutput === "invalid"
+          ? "data:image/png;base64,bm90LWFuLWltYWdl"
+          : generatedDataUrl,
+      ),
+    );
+    if (chatImageOutput === "multiple") {
+      event(imageDelta(secondGeneratedDataUrl));
+      event(imageDelta());
+    }
+    res.end(
+      `data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30, cost: textCost } })}\n\ndata: [DONE]\n\n`,
+    );
+    return;
+  }
   if (costStreaming) {
     for (const delta of [
       { reasoning: "Thinking through the drawing. ".repeat(30) },
@@ -531,6 +599,7 @@ app.post("/fixture/reset", (req, res) => {
   billing = !!req.body.billing;
   unsafe = !!req.body.unsafe;
   markdownOutput = req.body.markdownOutput;
+  chatImageOutput = req.body.chatImageOutput ?? "mixed";
   streamBilling = !!req.body.streamBilling;
   calls = [];
   tokenLimits = [];

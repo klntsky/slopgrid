@@ -251,9 +251,15 @@ test("image-only message attachments follow reorder, cancelled format loss, Edit
   await expect(
     page.getByRole("img", { name: laterImage.name, exact: true }),
   ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "Message 3 role: user", exact: true }),
-  ).toBeDisabled();
+  await page
+    .getByRole("button", { name: "Message 3 role: user", exact: true })
+    .click();
+  await expectMessagePreview(page, 3, laterImage.name);
+  await page.reload();
+  await page
+    .getByRole("button", { name: "Message 3 role: assistant", exact: true })
+    .click();
+  await expectMessagePreview(page, 3, laterImage.name);
   await appendFinalCompletion(page);
   await page
     .getByRole("button", { name: "Move message 3", exact: true })
@@ -342,7 +348,7 @@ test("image-only message attachments follow reorder, cancelled format loss, Edit
   ).toBeVisible();
 });
 
-test("clipboard images attach to their user turn and disabled role badges retain tooltips", async ({
+test("clipboard images survive user and assistant role transitions and remain attached to their own turn", async ({
   page,
   request,
   context,
@@ -408,20 +414,16 @@ test("clipboard images attach to their user turn and disabled role badges retain
   await expectMessagePreview(page, 3, pastedName!);
   await expectMessagePreview(page, 1, firstImage.name);
   await expect(first).toHaveValue("Earlier $ROW1 one\nNotes");
-  const role = later.getByRole("button", {
-    name: "Message 3 role: user",
-    exact: true,
-  });
-  await expect(role).toBeDisabled();
-  const roleHint = /Remove images before changing this message.s role/;
-  await expect(role).toHaveAccessibleDescription(roleHint);
-  const roleTooltip = page.getByRole("tooltip", { name: roleHint });
-  await later.locator(".chat-role-hint").hover();
-  await expect(roleTooltip).toBeVisible();
-  await first.hover();
-  await expect(roleTooltip).toBeHidden();
-  await later.locator(".chat-role-hint").focus();
-  await expect(roleTooltip).toBeVisible();
+  await later
+    .getByRole("button", { name: "Message 3 role: user", exact: true })
+    .click();
+  await expectMessagePreview(page, 3, pastedName!);
+  await page.reload();
+  await expectMessagePreview(page, 3, pastedName!);
+  await later
+    .getByRole("button", { name: "Message 3 role: assistant", exact: true })
+    .click();
+  await expectMessagePreview(page, 3, pastedName!);
   await appendFinalCompletion(page);
   await page.reload();
   await expectMessagePreview(page, 3, pastedName!);

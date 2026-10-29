@@ -5,23 +5,24 @@ import {
   WorkerStorage,
 } from "./service-worker-fixture.js";
 
-test("activation discards production-format offline snapshots while keeping current data and hashed assets", async () => {
+test("activation discards superseded input and transcript snapshots while keeping current data and hashed assets", async () => {
   const caches = new WorkerStorage();
   const oldGrid = `/api/grids/${"a".repeat(48)}`;
-  for (const scope of ["public", "previous-account"]) {
-    const cache = await caches.open(`slopgrid-data-v1-${scope}`);
-    await cache.put(
-      oldGrid,
-      new Response(
-        JSON.stringify({
-          input: {
-            prompt: "old format",
-            rows: { kind: "variable", values: ["old"] },
-          },
-        }),
-      ),
-    );
-  }
+  for (const namespace of ["v1", "v2"])
+    for (const scope of ["public", "previous-account"]) {
+      const cache = await caches.open(`slopgrid-data-${namespace}-${scope}`);
+      await cache.put(
+        oldGrid,
+        new Response(
+          JSON.stringify({
+            input: {
+              prompt: "old format",
+              rows: { kind: "variable", values: ["old"] },
+            },
+          }),
+        ),
+      );
+    }
   const staticCache = await caches.open("slopgrid-static-v1");
   await staticCache.put(
     "/assets/prior-open-tab.js",
@@ -52,7 +53,7 @@ test("activation discards production-format offline snapshots while keeping curr
     "retained script",
   );
   assert.equal(
-    (await caches.keys()).some((name) => name.startsWith("slopgrid-data-v1-")),
+    (await caches.keys()).some((name) => /^slopgrid-data-v[12]-/.test(name)),
     false,
   );
 });

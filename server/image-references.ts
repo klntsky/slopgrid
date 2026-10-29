@@ -1,12 +1,10 @@
 import type Database from "better-sqlite3";
 import { readFile } from "node:fs/promises";
-import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { imageSize } from "image-size";
+import { imageDimensions, type Dimensions } from "./image-dimensions.js";
 import type { ChatMessage, GridInput, WorkflowTask } from "./domain.js";
 import { generatorInputEntries } from "./generator-input.js";
 import type { ReferenceImage } from "./image-settings.js";
-import { readChatOutput } from "../shared/chat-output.js";
 
 export type ReferenceContent = {
   bytes: Buffer;
@@ -27,28 +25,7 @@ export class ReferenceImageUnavailableError extends Error {
   }
 }
 
-type Dimensions = { width: number; height: number };
-
-function imageDimensions(bytes: Uint8Array): Dimensions | undefined {
-  try {
-    const { width, height, type, orientation } = imageSize(bytes);
-    if (
-      !["png", "jpg", "webp"].includes(type ?? "") ||
-      !Number.isInteger(width) ||
-      !Number.isInteger(height) ||
-      width <= 0 ||
-      height <= 0
-    )
-      return;
-    return orientation && orientation >= 5 && orientation <= 8
-      ? { width: height, height: width }
-      : { width, height };
-  } catch {
-    return;
-  }
-}
-
-function storedDimensions(db: Database.Database, sha256: string) {
+export function storedDimensions(db: Database.Database, sha256: string) {
   const blob = db
     .prepare("SELECT width,height FROM reference_blobs WHERE sha256=?")
     .get(sha256) as { width: number | null; height: number | null } | undefined;
@@ -57,7 +34,7 @@ function storedDimensions(db: Database.Database, sha256: string) {
     : undefined;
 }
 
-function saveBlob(
+export function saveBlob(
   db: Database.Database,
   sha256: string,
   dimensions?: Dimensions,
@@ -70,72 +47,10 @@ function saveBlob(
       "UPDATE reference_blobs SET width=?,height=? WHERE sha256=? AND width IS NULL",
     ).run(dimensions.width, dimensions.height, sha256);
 }
-function migrateReferences(db: Database.Database, files: OutputFiles) {
-  const references = db
-    .prepare("SELECT id,sha256 FROM reference_images")
-    .all() as { id: string; sha256: string | null }[];
-  for (const reference of references) {
-    let bytes: Buffer;
-    try {
-      const legacy = files.path(`reference-${reference.id}`, "image");
-      if (!legacy) continue;
-      bytes = readFileSync(legacy);
-    } catch (error) {
-      // Validation snapshots and historical uploads may not include artifacts.
-      if (
-        ["ENOENT", "ENOTDIR", "EACCES"].includes(
-          (error as NodeJS.ErrnoException).code ?? "",
-        )
-      )
-        continue;
-      throw error;
-    }
-    const sha256 = createHash("sha256").update(bytes).digest("hex");
-    if (reference.sha256 && reference.sha256 !== sha256)
-      throw new Error("Legacy reference content does not match its hash");
-    files.writeReference(sha256, bytes);
-    db.transaction(() => {
-      saveBlob(
-        db,
-        sha256,
-        storedDimensions(db, sha256) ?? imageDimensions(bytes),
-      );
-      db.prepare("UPDATE reference_images SET sha256=? WHERE id=?").run(
-        sha256,
-        reference.id,
-      );
-    }).immediate();
-    // Metadata is durable before removing the old copy. A restart also finishes
-    // cleanup if an earlier migration stopped between these two operations.
-    files.removeArtifact(`reference-${reference.id}`);
-  }
-  const blobs = db
-    .prepare("SELECT sha256 FROM reference_blobs WHERE width IS NULL")
-    .all() as { sha256: string }[];
-  for (const { sha256 } of blobs) {
-    let bytes: Buffer;
-    try {
-      const path = files.referencePath(sha256);
-      if (!path) continue;
-      bytes = readFileSync(path);
-    } catch (error) {
-      if (
-        ["ENOENT", "ENOTDIR", "EACCES"].includes(
-          (error as NodeJS.ErrnoException).code ?? "",
-        )
-      )
-        continue;
-      throw error;
-    }
-    const dimensions = imageDimensions(bytes);
-    if (dimensions) saveBlob(db, sha256, dimensions);
-  }
-}
 export function createImageReferences(
   db: Database.Database,
   files: OutputFiles,
 ) {
-  migrateReferences(db, files);
   function get(id: string) {
     const reference = db
       .prepare(
@@ -191,10 +106,15 @@ export function createImageReferences(
         : {}),
     };
   }
-  function messages<T extends ChatMessage>(messages: T[] | undefined) {
+  function messages(
+    messages: ChatMessage[] | undefined,
+  ): ChatMessage[] | undefined {
     return messages?.map((message) =>
       message.images
-        ? { ...message, images: message.images.map(hydrate) }
+        ? {
+            ...message,
+            images: message.images.map(hydrate),
+          }
         : message,
     );
   }
@@ -222,11 +142,6 @@ export function createImageReferences(
         if (task.input.images)
           task.input.images = task.input.images.map(hydrate);
       } else task.input.messages = messages(task.input.messages);
-    },
-    draft(draft: string | undefined) {
-      return draft
-        ? JSON.stringify(messages(readChatOutput(draft)), null, 2)
-        : draft;
     },
     add(data: Buffer, name: string, session: Session) {
       const mediaType = data

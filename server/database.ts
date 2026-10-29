@@ -1,22 +1,29 @@
 import type Database from "better-sqlite3";
 import { migrateProductionGrid } from "./production-input-migration.js";
 import { selectedReferences } from "./image-settings.js";
+import type { OutputFiles } from "./files.js";
+import {
+  migrateChatOutputs,
+  migrateReferenceFiles,
+} from "./chat-output-migration.js";
 import { defaultJudgeSystemPrompt } from "./parameters.js";
 
-export const schemaVersion = 20;
+export const schemaVersion = 21;
 
-export function initializeDatabase(db: Database.Database) {
-  const version = db.pragma("user_version", { simple: true });
-  if (version === schemaVersion) return;
-  if (
-    version !== 0 &&
-    version !== 14 &&
-    version !== 17 &&
-    version !== 18 &&
-    version !== 19
-  )
-    throw new Error("Unsupported database version");
+export function initializeDatabase(db: Database.Database, files: OutputFiles) {
+  if (db.pragma("user_version", { simple: true }) === schemaVersion) return;
   db.transaction(() => {
+    const version = db.pragma("user_version", { simple: true });
+    if (version === schemaVersion) return;
+    if (
+      version !== 0 &&
+      version !== 14 &&
+      version !== 17 &&
+      version !== 18 &&
+      version !== 19 &&
+      version !== 20
+    )
+      throw new Error("Unsupported database version");
     if (version === 0) initializeSchema(db);
     else if (version === 14) {
       db.exec(`
@@ -31,7 +38,7 @@ export function initializeDatabase(db: Database.Database) {
       `);
       migrateProductionInputs(db);
     }
-    if (version !== 18 && version !== 19)
+    if (version !== 18 && version !== 19 && version !== 20)
       db.exec(`
         CREATE TABLE grid_favorites (
           user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -40,7 +47,7 @@ export function initializeDatabase(db: Database.Database) {
         ) STRICT;
         CREATE INDEX grid_favorites_grid ON grid_favorites(grid_id);
       `);
-    if (version !== 19)
+    if (version !== 19 && version !== 20)
       db.exec(`
         CREATE TABLE anonymous_grid_favorites (
           anonymous_id TEXT NOT NULL,
@@ -64,6 +71,8 @@ export function initializeDatabase(db: Database.Database) {
       WHERE kind='judge' AND json_type(data,'$.input.systemPrompt') IS NULL
     `,
     ).run(defaultJudgeSystemPrompt);
+    migrateReferenceFiles(db, files);
+    migrateChatOutputs(db, files);
     db.pragma(`user_version = ${schemaVersion}`);
   }).immediate();
 }

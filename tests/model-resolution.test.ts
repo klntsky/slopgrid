@@ -55,6 +55,44 @@ test("model admission retains the resolved expansion for workflow creation", () 
   assert.equal(prepared.cells[0].model, "fixture/v1");
 });
 
+test("Chat completion requires text output after alias resolution in common and case model selections", () => {
+  const catalog = models().map((model) => ({
+    ...model,
+    text: model.id !== "fixture/v1",
+    image: model.id === "fixture/v1",
+    chatImageOutput: model.id === "fixture/v2",
+  }));
+  for (const model of ["fixture/v1", "~fixture/latest"]) {
+    for (const side of ["common", "rows", "columns"] as const) {
+      const source = currentDefinition({
+        format: "chat-template",
+        parameters: {
+          model:
+            side === "common"
+              ? { kind: "common", value: model }
+              : { kind: side },
+          input: {
+            kind: "common",
+            value: [{ role: "user", content: "Draw a cat" }],
+          },
+        },
+        ...(side === "common" ? {} : { [side]: [{ model }] }),
+      });
+      assert.throws(() => resolveGridModels(source, catalog));
+    }
+  }
+  for (const model of ["fixture/v2", "fixture/chat-latest"]) {
+    const source = currentDefinition({
+      format: "chat-template",
+      parameters: { model: { kind: "common", value: model } },
+    });
+    assert.equal(
+      parameterValue(resolveGridModels(source, catalog), "model", 0, 0),
+      model,
+    );
+  }
+});
+
 test("published alias targets resolve in both axis orientations and duplicate targets collapse", () => {
   assert.equal(
     parameterValue(resolveGridModels(input, models()), "model", 0, 0),
@@ -892,7 +930,7 @@ test("judge validation requires explicit capabilities for each supported output 
       format,
       judge: true,
       parameters: {
-        model: { kind: "common", value: "~fixture/latest" },
+        model: { kind: "common", value: "fixture/v2" },
         judge_model: { kind: "common", value: "~fixture/latest" },
       },
     });
@@ -916,13 +954,14 @@ test("judge validation requires explicit capabilities for each supported output 
           "The judge model must support image inputs for SVG and Image outputs.",
       });
     else assert.doesNotThrow(() => resolveGridModels(setup, noImageInput));
-    assert.throws(
-      () =>
-        resolveGridModels(
-          setup,
-          judgeModels().map((model) => ({ ...model, text: false })),
-        ),
-      { message: "The judge model must support structured outputs." },
+    assert.throws(() =>
+      resolveGridModels(
+        setup,
+        judgeModels().map((model) => ({
+          ...model,
+          text: model.id === "fixture/v2",
+        })),
+      ),
     );
   }
   assert.throws(

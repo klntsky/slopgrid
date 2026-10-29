@@ -11,6 +11,7 @@ import type {
   InferenceProgress,
 } from "../server/domain.js";
 import { readChatOutput } from "../shared/chat-output.js";
+import { referencePngOutput } from "./chat-image-output-fixture.js";
 
 const model = {
   name: "Test",
@@ -57,7 +58,7 @@ test("template budgets use actual prefixes and remaining allowance, and reuse ch
         estimatedUsage: { costUsd: 3 },
       });
       return {
-        files: { "index.md": "Answer" },
+        assistant: { role: "assistant", content: "Answer" },
         usage: { inputTokens: 20, outputTokens: 30, costUsd: 2 },
       };
     },
@@ -123,7 +124,7 @@ test("later failures preserve the emitted prefix and retries start again", async
       async (messages, _budget, onChunk) => {
         if (messages.length > 1) throw new Error("Later failure");
         onChunk({ text: "First answer", thinking: "" });
-        return { files: { "index.md": "First answer" } };
+        return { assistant: { role: "assistant", content: "First answer" } };
       },
       (p) => progress.push(p),
     );
@@ -148,7 +149,10 @@ test("conversation output preserves message boundaries through streaming and sto
     budgetFor,
     async (_messages, _budget, onChunk) => {
       onChunk({ text: answer, thinking: "" });
-      return { files: { "index.md": answer }, usage: { costUsd: 1 } };
+      return {
+        assistant: { role: "assistant", content: answer },
+        usage: { costUsd: 1 },
+      };
     },
     (p) => progress.push(p),
   );
@@ -178,7 +182,10 @@ test("supplied final messages get a completion using the complete history and sh
       async (history) => {
         histories.push(structuredClone(history));
         return {
-          files: { "index.md": `Answer ${histories.length}` },
+          assistant: {
+            role: "assistant",
+            content: `Answer ${histories.length}`,
+          },
           usage: { inputTokens: 20, outputTokens: 10, costUsd: 2 },
         };
       },
@@ -223,7 +230,7 @@ test("cancellation or exhausted budget after the final blank prevents the traili
           calls++;
           if (calls === 2 && cancel) controller.abort();
           return {
-            files: { "index.md": "Answer" },
+            assistant: { role: "assistant", content: "Answer" },
             usage: { costUsd: calls === 2 ? 10 : 1 },
           };
         },
@@ -238,6 +245,7 @@ test("cancellation or exhausted budget after the final blank prevents the traili
 test("chat output reads only ordered JSON messages and preserves their content", () => {
   const messages = [
     { role: "system" as const, content: "  Instructions\n" },
+    { role: "system" as const, content: "Empty attachments", images: [] },
     {
       role: "user" as const,
       content: "Question\n\n## assistant\n\n```md\n## user\n\n```",
@@ -256,8 +264,50 @@ test("chat output rejects malformed JSON and invalid message roles or content", 
     ["Answer"],
     [{ role: "unfilled", content: "" }],
     [{ role: "assistant", content: 42 }],
+    [
+      {
+        role: "system",
+        content: "Instructions",
+        images: [referencePngOutput("forbidden.png")],
+      },
+    ],
+    [{ role: "assistant", content: "Answer", extra: true }],
   ])
     assert.throws(() => readChatOutput(JSON.stringify(value)));
+});
+
+test("saved chat images require complete inline bytes and dimensions and preserve ordered names", () => {
+  const first = referencePngOutput("first.png");
+  const second = referencePngOutput("a".repeat(2000) + ".png");
+  const messages = [
+    { role: "user", content: "", images: [first, second, first] },
+    { role: "assistant", content: "", images: [second] },
+  ];
+  assert.deepEqual(readChatOutput(JSON.stringify(messages)), messages);
+  const { name: _name, ...withoutName } = first;
+  const { mediaType: _mediaType, ...withoutMediaType } = first;
+  const { width: _width, ...withoutWidth } = first;
+  const { height: _height, ...withoutHeight } = first;
+  const { dataUrl: _dataUrl, ...withoutDataUrl } = first;
+  for (const image of [
+    withoutName,
+    withoutMediaType,
+    withoutWidth,
+    withoutHeight,
+    withoutDataUrl,
+    { ...first, width: 0 },
+    { ...first, height: -1 },
+    { ...first, width: 1.5 },
+    { ...first, height: "3" },
+    { ...first, dataUrl: "data:image/jpeg;base64,AAAA" },
+  ])
+    assert.throws(
+      () =>
+        readChatOutput(
+          JSON.stringify([{ role: "user", content: "", images: [image] }]),
+        ),
+      /Invalid chat output/,
+    );
 });
 
 test("cancellation and exhausted shared budget prevent subsequent calls", async () => {
@@ -271,7 +321,10 @@ test("cancellation and exhausted shared budget prevent subsequent calls", async 
         async () => {
           calls++;
           if (cancel) controller.abort();
-          return { files: { "index.md": "Answer" }, usage: { costUsd: 10 } };
+          return {
+            assistant: { role: "assistant", content: "Answer" },
+            usage: { costUsd: 10 },
+          };
         },
         () => {},
         controller.signal,
@@ -290,7 +343,7 @@ test("missing reported cost uses token estimates and unknown metadata keeps prov
       return budgetFor(prompt, dollars);
     },
     async () => ({
-      files: { "index.md": "Answer" },
+      assistant: { role: "assistant", content: "Answer" },
       usage: { inputTokens: 10, outputTokens: 10 },
     }),
     () => {},
@@ -303,7 +356,7 @@ test("missing reported cost uses token estimates and unknown metadata keeps prov
       generationBudget({ name: "Unknown" }, prompt, "", dollars),
     async (_messages, budget) => {
       assert.equal(budget.maxOutputTokens, undefined);
-      return { files: { "index.md": "Answer" } };
+      return { assistant: { role: "assistant", content: "Answer" } };
     },
     () => {},
   );
@@ -328,7 +381,7 @@ test("template reuse uses reported input counts and current prices for each allo
     cell,
     (prompt, dollars) => generationBudget(tiered, prompt, "", dollars),
     async () => ({
-      files: { "index.md": "Long answer ".repeat(30) },
+      assistant: { role: "assistant", content: "Long answer ".repeat(30) },
       usage: {
         inputTokens: ++calls === 1 ? 100 : 500,
         outputTokens: 10,

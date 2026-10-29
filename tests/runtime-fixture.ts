@@ -23,8 +23,10 @@ export type CapturedRequest = {
     role: string;
     content:
       string | { type: string; text?: string; image_url?: { url: string } }[];
+    reasoning_details?: Record<string, unknown>[];
   }[];
   max_tokens?: number;
+  modalities?: string[];
   reasoning?: { effort?: string };
   provider?: { max_price?: Record<string, number> };
   response_format?: {
@@ -213,6 +215,7 @@ export async function runtimeFixture(
     workers?: number;
     judges?: boolean;
     images?: boolean;
+    chatImages?: boolean;
     configureCatalog?: (catalog: RuntimeCatalog) => void;
     observeRequest?: RequestListener;
   } = {},
@@ -226,7 +229,7 @@ export async function runtimeFixture(
   const owner = token();
   store.saveSession({ id: owner, key: "manual-test-key", created: Date.now() });
   const upstream = express();
-  upstream.use(express.json());
+  upstream.use(express.json({ limit: "64mb" }));
   const catalog: RuntimeCatalog = {
     data: [
       {
@@ -241,6 +244,47 @@ export async function runtimeFixture(
         },
         supported_parameters: ["reasoning", "structured_outputs"],
       },
+      ...(options.chatImages
+        ? [
+            {
+              id: "fixture/multimodal",
+              name: "Fixture multimodal",
+              pricing: { prompt: "0.000001", completion: "0.000001" },
+              context_length: 100000,
+              top_provider: { max_completion_tokens: 1000 },
+              architecture: {
+                input_modalities: ["text", "image"],
+                output_modalities: ["text", "image"],
+              },
+              supported_parameters: ["reasoning", "structured_outputs"],
+            },
+            {
+              id: "fixture/image-only",
+              name: "Fixture image only",
+              pricing: { prompt: "0", completion: "0" },
+              context_length: 100000,
+              top_provider: { max_completion_tokens: 1000 },
+              architecture: {
+                input_modalities: ["text", "image"],
+                output_modalities: ["image"],
+              },
+              supported_parameters: [],
+            },
+            {
+              id: "~fixture/image-latest",
+              name: "Fixture image alias",
+              alias_target: { slug: "fixture/image-only" },
+              pricing: { prompt: "0", completion: "0" },
+              context_length: 100000,
+              top_provider: { max_completion_tokens: 1000 },
+              architecture: {
+                input_modalities: ["text", "image"],
+                output_modalities: ["text"],
+              },
+              supported_parameters: [],
+            },
+          ]
+        : []),
       ...(options.judges
         ? [
             {
@@ -262,6 +306,11 @@ export async function runtimeFixture(
   // Seed catalog variations before either service can cache the model list.
   options.configureCatalog?.(catalog);
   const credits = { total_credits: 100, total_usage: 0 };
+  const providerImageRequests: string[] = [];
+  upstream.get("/provider-image-must-not-be-fetched.png", (req, res) => {
+    providerImageRequests.push(req.path);
+    res.sendStatus(418);
+  });
   upstream.get("/models", (_req, res) => res.json(catalog));
   upstream.get("/images/models", (_req, res) =>
     res.json({
@@ -353,7 +402,7 @@ export async function runtimeFixture(
       usage?: object,
     ) =>
       res.write(
-        `data: ${JSON.stringify({ id, object: "chat.completion.chunk", created: 1, model: "fixture/text", choices: [{ index: 0, delta, finish_reason }], usage })}\n\n`,
+        `data: ${JSON.stringify({ id, object: "chat.completion.chunk", created: 1, model: req.body.model, choices: [{ index: 0, delta, finish_reason }], usage })}\n\n`,
       );
     res.type("text/event-stream");
     res.flushHeaders();
@@ -469,6 +518,7 @@ export async function runtimeFixture(
     owner,
     calls,
     imageCalls,
+    providerImageRequests,
     gridTransport: transport.forGrid,
     close,
     startWeb,

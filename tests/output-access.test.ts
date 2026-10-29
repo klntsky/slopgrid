@@ -18,9 +18,9 @@ import { ChatConversation } from "../shared/chat-conversation.js";
 import { writeChatOutput } from "../shared/chat-output.js";
 import type { Store } from "../server/store.js";
 import { referencePng } from "./reference-image-fixture.js";
-import { removeStoredReferenceDimensions } from "./reference-storage-fixture.js";
 import { validatedGrid } from "./grid-storage-fixture.js";
 import { currentInput } from "./current-grid-fixture.js";
+import { referencePngOutput } from "./chat-image-output-fixture.js";
 
 function completedChatGrid(
   store: Store,
@@ -583,8 +583,8 @@ test("uncommitted judged files are not exposed before generation commits", async
   assert.equal(view.cells[0].outputURL, undefined);
 });
 
-test("chat conversation renders attachments in their user turns with encoded reference URLs", () => {
-  const image = { id: 'photo/a?b#c"&', name: '<Photo & "name">' };
+test("chat conversation renders inline attachments in their own turns with escaped names", () => {
+  const image = referencePngOutput('<Photo & "name">');
   const messages: FilledChatMessage[] = [
     { role: "system", content: "Instructions" },
     { role: "user", content: "", images: [image] },
@@ -600,26 +600,15 @@ test("chat conversation renders attachments in their user turns with encoded ref
   assert.equal(turns.length, 4);
   assert.doesNotMatch(turns[0], /<img\b/);
   assert.match(turns[1], /data-role="user"/);
-  assert.match(
-    turns[1],
-    new RegExp(`src="/api/references/${encodeURIComponent(image.id)}"`),
-  );
+  assert.ok(turns[1].includes(`src="${image.dataUrl}"`));
   assert.match(turns[1], /alt="&lt;Photo &amp; &quot;name&quot;&gt;"/);
   assert.doesNotMatch(turns[1], /<p>/);
   assert.doesNotMatch(turns[2], /<img\b/);
   assert.equal([...turns[3].matchAll(/<img\b/g)].length, 2);
   assert.match(turns[3], /<p>Compare<\/p>/);
-  const embedded = renderToStaticMarkup(
-    createElement(ChatConversation, {
-      messages,
-      imageSource: () => "data:image/png;base64,AAA=",
-    }),
-  );
-  assert.match(embedded, /src="data:image\/png;base64,AAA="/);
-  assert.doesNotMatch(embedded, /\/api\/references\//);
 });
 
-test("reused chat outputs render and download destination-owned per-message attachments without changing artifacts", async (t) => {
+test("saved chat outputs preserve per-message bytes and names across private and published access", async (t) => {
   const { origin, store } = await appFixture(t);
   const sourceOwner = token();
   const destinationOwner = token();
@@ -648,7 +637,7 @@ test("reused chat outputs render and download destination-owned per-message atta
     { role: "user", content: "First question", images: [first] },
     { role: "unfilled", content: "" },
     { role: "user", content: "", images: [duplicate, first] },
-    { role: "assistant", content: "Supplied answer" },
+    { role: "assistant", content: "Supplied answer", images: [first] },
     { role: "unfilled", content: "" },
   ];
   const completed: FilledChatMessage[] = [
@@ -659,23 +648,40 @@ test("reused chat outputs render and download destination-owned per-message atta
     { role: "assistant", content: "Supplied answer" },
     { role: "assistant", content: "Generated final answer" },
   ];
-  const artifactId = token();
-  const artifact = writeChatOutput(completed);
-  store.files.write(artifactId, { "messages.json": artifact });
+  const canonical = (messages: ChatMessage[]): FilledChatMessage[] =>
+    completed.map((message, index) => ({
+      ...message,
+      ...(messages[index].images?.length
+        ? {
+            images: messages[index].images!.map((image) =>
+              referencePngOutput(image.name),
+            ),
+          }
+        : {}),
+    }));
+  const sourceArtifactId = token();
+  store.files.write(sourceArtifactId, {
+    "messages.json": writeChatOutput(
+      canonical(template(sourceImage, sourceImage)),
+    ),
+  });
   const source = completedChatGrid(
     store,
     sourceOwner,
     template(sourceImage, sourceImage),
-    artifactId,
+    sourceArtifactId,
   );
   const destinationTemplate = template(destinationImage, duplicateImage);
+  const expected = canonical(destinationTemplate);
+  const artifactId = token();
+  const artifact = writeChatOutput(expected);
+  store.files.write(artifactId, { "messages.json": artifact });
   const destination = completedChatGrid(
     store,
     destinationOwner,
     destinationTemplate,
     artifactId,
   );
-  removeStoredReferenceDimensions(store.db);
   const id = destination.cells[0].id;
   const paths = [
     `/outputs/${id}`,
@@ -692,12 +698,6 @@ test("reused chat outputs render and download destination-owned per-message atta
       assert.equal(response.status, 404);
     }
   }
-  const expected = completed.map((message, index) => ({
-    ...message,
-    ...(destinationTemplate[index].images
-      ? { images: destinationTemplate[index].images }
-      : {}),
-  }));
   const assertOutput = async (headers: Record<string, string> = {}) => {
     for (const path of paths.slice(1, 3)) {
       const response = await fetch(origin + path, { headers });
@@ -708,7 +708,7 @@ test("reused chat outputs render and download destination-owned per-message atta
           response.headers.get("content-disposition")!,
           /attachment;/,
         );
-      assert.deepEqual(await response.json(), expected);
+      assert.equal(await response.text(), artifact);
     }
     const response = await fetch(`${origin}/outputs/${id}`, { headers });
     assert.equal(response.status, 200);
@@ -730,8 +730,8 @@ test("reused chat outputs render and download destination-owned per-message atta
     );
     assert.match(turns[3], /alt="Destination duplicate"/);
     assert.doesNotMatch(turns[3], /<p>/);
-    for (const index of [0, 2, 4, 5])
-      assert.doesNotMatch(turns[index], /<img\b/);
+    assert.equal(turns[4].includes(`src="${dataURL}"`), true);
+    for (const index of [0, 2, 5]) assert.doesNotMatch(turns[index], /<img\b/);
     assert.doesNotMatch(html, /\/api\/references\//);
     assert.doesNotMatch(html, new RegExp(sourceImage.id));
     for (const image of [destinationImage, duplicateImage]) {
@@ -757,7 +757,6 @@ test("reused chat outputs render and download destination-owned per-message atta
     readFileSync(store.files.path(artifactId, "messages.json")!, "utf8"),
     artifact,
   );
-  assert.doesNotMatch(artifact, /"images"|"id"|"name"|data:image/);
 });
 
 test("missing input image bytes do not hide a completed conversation or weaken inference loading", async (t) => {
@@ -777,7 +776,17 @@ test("missing input image bytes do not hide a completed conversation or weaken i
   )!;
   const artifactId = token();
   const artifact = writeChatOutput([
-    { role: "user", content: "Saved question" },
+    {
+      role: "user",
+      content: "Saved question",
+      images: [
+        referencePngOutput(available.name),
+        referencePngOutput(
+          missing.name,
+          Buffer.concat([referencePng, Buffer.from("different")]),
+        ),
+      ],
+    },
     { role: "assistant", content: "Durable answer" },
   ]);
   store.files.write(artifactId, { "messages.json": artifact });
@@ -811,7 +820,7 @@ test("missing input image bytes do not hide a completed conversation or weaken i
     headers,
   });
   assert.equal(raw.status, 200);
-  assert.equal((await raw.json())[1].content, "Durable answer");
+  assert.equal(await raw.text(), artifact);
   assert.equal(
     (await fetch(`${origin}/outputs/${grid.cells[0].id}`)).status,
     404,
@@ -880,12 +889,16 @@ for (const side of ["rows", "columns"] as const)
     });
     const expected: FilledChatMessage[][] = [
       [
-        { role: "user", content: "First question", images: [images[0]] },
+        {
+          role: "user",
+          content: "First question",
+          images: [referencePngOutput(images[0].name)],
+        },
         { role: "assistant", content: "First generated answer" },
         {
           role: "user",
           content: "Compare first field / first field",
-          images: [images[1]],
+          images: [referencePngOutput(images[1].name)],
         },
         { role: "assistant", content: "Later generated answer" },
       ],
@@ -894,7 +907,10 @@ for (const side of ["rows", "columns"] as const)
         {
           role: "user",
           content: "Inspect second field",
-          images: [images[3], images[4]],
+          images: [
+            referencePngOutput(images[3].name),
+            referencePngOutput(images[4].name),
+          ],
         },
         { role: "assistant", content: "Second generated answer" },
       ],
@@ -917,7 +933,6 @@ for (const side of ["rows", "columns"] as const)
         throw new Error("Missing generation");
       const artifactId = token();
       const artifact = writeChatOutput(expected[index]);
-      assert.doesNotMatch(artifact, /"images"|"id"|"name"/);
       store.files.write(artifactId, { "messages.json": artifact });
       generation.status = "complete";
       generation.output = {
@@ -946,7 +961,13 @@ for (const side of ["rows", "columns"] as const)
           );
           assert.equal(response.status, 200);
           assert.equal(response.headers.get("X-Slopgrid-Output-Ready"), "1");
-          assert.deepEqual(await response.json(), expected[index]);
+          const metadata = store.outputDownload(cell.id)!;
+          const saved = readFileSync(
+            store.files.path(metadata.artifactId, "messages.json")!,
+            "utf8",
+          );
+          assert.equal(await response.text(), saved);
+          assert.deepEqual(JSON.parse(saved), expected[index]);
         }
         const response = await fetch(`${origin}/outputs/${cell.id}`, {
           headers,
