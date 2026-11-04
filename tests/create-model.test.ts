@@ -5,6 +5,7 @@ import { parameterDefault } from "../server/parameters.js";
 import { referenceLists } from "../src/create/reference-lists.js";
 import { compatibilityPreviewInput } from "../src/create/draft-input.js";
 import { typescriptCreationMachine } from "../src/create/model.js";
+import { fstarCreationMachine } from "../src/create/fstar-machine.js";
 import {
   fromWireCreationMachine,
   toWireCreationMachine,
@@ -93,6 +94,7 @@ const adapters: [string, CreationMachine<unknown>][] = [
     "wire roundtrip",
     fromWireCreationMachine(toWireCreationMachine(typescriptCreationMachine)),
   ],
+  ["F* extracted through OCaml and JavaScript", fstarCreationMachine],
 ];
 
 for (const [name, machine] of adapters) {
@@ -768,4 +770,157 @@ test("compatibility previews use deterministic case identities without modifying
     compatibilityPreviewInput(input),
   );
   assert.deepEqual(input, before);
+});
+
+// Differential traces cover policy/edit interactions that isolated transition
+// assertions cannot: paired ownership, Unicode token boundaries, invalid draft
+// projections, format cutovers, and the admitted-versus-edited snapshot.
+function compareImplementations(initial: Draft, events: CreateEvent[]) {
+  const reference = session(typescriptCreationMachine, initial);
+  const extracted = session(fstarCreationMachine, initial);
+  assert.deepEqual(extracted.view(), reference.view(), "initial projection");
+  const apply = (event: CreateEvent) => {
+    const expected = reference.send(structuredClone(event));
+    const actual = extracted.send(structuredClone(event));
+    assert.deepEqual(actual, expected, JSON.stringify(event));
+    return expected.commands;
+  };
+  for (const event of events) {
+    for (const command of apply(event))
+      if (command.type === "confirm")
+        apply({
+          type: "confirmation-resolved",
+          id: command.id,
+          accepted: true,
+        });
+  }
+}
+
+test("extracted and TypeScript machines agree across paired chat cases, Unicode variables, judging and invalid budgets", () => {
+  compareImplementations(draft({ format: "chat-template" }), [
+    {
+      type: "common",
+      parameter: "input",
+      value: [
+        {
+          role: "user",
+          content: "Compare $ROW1, $ROW2, $COLUMN1 and $ROW1猫.",
+        },
+        { role: "assistant", content: "A remembered prefix" },
+      ],
+    },
+    { type: "dimension", side: "rows", parameter: "variable" },
+    { type: "add-variable", side: "rows" },
+    { type: "rename-variable", side: "rows", index: 0, name: "ANIMAL" },
+    {
+      type: "case-value",
+      side: "rows",
+      index: 0,
+      parameter: "variable",
+      value: [{ text: "cat" }, { text: "black" }],
+    },
+    {
+      type: "add-case",
+      side: "rows",
+      value: {
+        id: "template-only",
+        variable: [{ text: "dog" }, { text: "white" }],
+      },
+    },
+    { type: "dimension", side: "columns", parameter: "variable" },
+    {
+      type: "case-value",
+      side: "columns",
+      index: 0,
+      parameter: "variable",
+      value: [{ text: "wearing a hat" }],
+    },
+    { type: "to-axis", parameter: "input", side: "rows" },
+    {
+      type: "edit-input",
+      source: "rows",
+      caseIndex: 0,
+      edit: { type: "cycle-role", index: 1 },
+    },
+    { type: "judge", enabled: true },
+    { type: "common", parameter: "judge_model", value: "fixture/text" },
+    { type: "to-axis", parameter: "judge_criteria", side: "columns" },
+    {
+      type: "case-value",
+      side: "columns",
+      index: 0,
+      parameter: "judge_criteria",
+      value: [{ text: "Is this $ANIMAL $COLUMN1?", correctAnswer: true }],
+    },
+    { type: "swap" },
+    { type: "move-case", side: "columns", index: 0, to: 1 },
+    { type: "rename-case", side: "columns", index: 0, name: "Unicode 猫" },
+    { type: "remove-variable", side: "columns", index: 1 },
+    { type: "budget-changed", value: "-0" },
+    { type: "budget-changed", value: "1e309" },
+    { type: "budget-changed", value: "-1e309" },
+    { type: "budget-changed", value: "0x10" },
+    { type: "budget-changed", value: "1e20" },
+    { type: "generate-requested", continueWithLowBalance: false },
+    { type: "to-common", parameter: "input" },
+    { type: "format-selected", format: "html" },
+  ]);
+});
+
+test("extracted and TypeScript machines agree across image settings, format cutovers and captured submission input", () => {
+  const observed = (format: GridDraftInput["format"]): CreateEvent => ({
+    type: "provider-observed",
+    provider: context(format).provider,
+  });
+  compareImplementations(
+    draft({ ...currentDefinition({ format: "image" }), budgetUsd: "2.5" }),
+    [
+      { type: "dimension", side: "columns", parameter: "quality" },
+      {
+        type: "case-values",
+        side: "columns",
+        parameter: "quality",
+        values: ["low", "high"],
+      },
+      { type: "dimension", side: "rows", parameter: "aspect_ratio" },
+      {
+        type: "case-values",
+        side: "rows",
+        parameter: "aspect_ratio",
+        values: ["1:1", "16:9"],
+      },
+      { type: "judge", enabled: true },
+      { type: "common", parameter: "judge_model", value: "fixture/text" },
+      { type: "format-selected", format: "svg" },
+      { type: "common", parameter: "model", value: "fixture/text" },
+      observed("svg"),
+      { type: "format-selected", format: "markdown" },
+      { type: "format-selected", format: "html" },
+      { type: "format-selected", format: "chat-template" },
+      {
+        type: "edit-input",
+        source: "common",
+        edit: { type: "insert", index: 1 },
+      },
+      {
+        type: "edit-input",
+        source: "common",
+        edit: { type: "cycle-role", index: 1 },
+      },
+      { type: "budget-changed", value: "0.75" },
+      {
+        type: "common",
+        parameter: "input",
+        value: [{ role: "user", content: "Return a cat" }],
+      },
+      { type: "format-selected", format: "image" },
+      { type: "common", parameter: "model", value: "fixture/image" },
+      observed("image"),
+      { type: "generate-requested", continueWithLowBalance: false },
+      { type: "budget-changed", value: "4" },
+      { type: "references-prepared", id: 1 },
+      { type: "submission-succeeded", id: 1, gridId: "cross-engine-grid" },
+      { type: "submission-failed", id: 1, message: "stale", balanceUsd: null },
+    ],
+  );
 });

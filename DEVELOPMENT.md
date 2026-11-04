@@ -112,9 +112,10 @@ For creation-form development, run the focused checks against the candidate
 worktree:
 
 ```sh
+pnpm creation:ensure
 pnpm exec tsx --test tests/create-machine-codec.test.ts tests/create-model.test.ts tests/create-controller.test.ts tests/change-axis.test.ts tests/judge-mode.test.ts
 pnpm build
-E2E_PORT=0 pnpm exec tsx tests/run-e2e.ts --suite mock --reuse-build tests/e2e/create-state-machine.spec.ts tests/e2e/creation-machine-contract.spec.ts tests/e2e/case-format-transitions.spec.ts tests/e2e/chat.spec.ts tests/e2e/model-selection.spec.ts
+E2E_PORT=0 pnpm exec tsx tests/run-e2e.ts --suite mock --reuse-build tests/e2e/create-state-machine.spec.ts tests/e2e/creation-machine-contract.spec.ts tests/e2e/creation-machine-switch.spec.ts tests/e2e/case-format-transitions.spec.ts tests/e2e/chat.spec.ts tests/e2e/model-selection.spec.ts tests/e2e/image-settings.spec.ts
 ```
 
 The creation implementation can be imported directly in a Node process without
@@ -123,25 +124,57 @@ and provider observations, then replay explicit events and inspect public views
 and commands. Browser-only failures should be investigated through the isolated
 runtime and browser tooling described above.
 
-### Replacing the creation implementation
+### Selecting the creation implementation
+
+The extracted F* implementation is the default. Open
+`/?creationMachine=fstar` or `/?creationMachine=typescript` with a full page load
+to select an implementation. The choice is stored in session storage for the
+tab and survives navigation and provider connection. Both implementations use
+the same saved draft; switching starts a new machine lifecycle, not a conversion
+of an active state handle.
+
+### Rebuilding the extracted implementation
+
+Generated JavaScript, declarations, and fingerprints are ignored local build
+outputs, never committed. Development, builds, typechecking, and unit-test
+commands generate missing or stale outputs and reuse current outputs.
+Install the pinned toolchain before the first build, or when its pinned versions
+change. `creation:generate` explicitly rebuilds; `creation:check` verifies current
+outputs without rebuilding.
+
+Use Linux x86_64 with a C compiler, make, Git, tar, xz, and curl:
+
+```sh
+pnpm creation:setup
+pnpm creation:generate
+pnpm creation:check
+```
+
+Setup installs the pinned toolchain under
+`~/.local/share/slopgrid-creation-toolchain` without sudo. Set
+`CREATION_TOOLCHAIN_ROOT` consistently for setup and generation to use a
+different location. The generator checks F* and its proofs, extracts OCaml,
+compiles bytecode, and links JavaScript with js_of_ocaml. Commit only source and
+build configuration; do not add or hand-edit generated artifacts.
+
+### Implementation interface
 
 Implement `CreationMachine<State>` from `src/create/machine-contract.ts`, or
-provide a `WireCreationMachine<State>` and wrap it with
-`fromWireCreationMachine` from `src/create/machine-wire.ts`. Select the resulting
-implementation at the default argument in `src/create/create-controller.ts`.
-The form and homepage draft entry both use this composition point; neither
+provide a `WireCreationMachine<State>` through `fromWireCreationMachine`.
+Register selectable implementations in `src/create/machine-selection.ts`.
+The shared controller serves both the form and homepage draft entry; neither
 should import a backend directly.
 
-Keep state handles opaque and updates immutable. Follow the contract's explicit
-change outcomes and canonical data rules rather than relying on JavaScript
-object identity, omitted fields becoming null, or non-finite numbers surviving
-serialization. Use the codecs for the executable boundary contract. The update
-wire output contains outcomes and commands, not serialized machine state.
+Keep state handles opaque and updates immutable. Follow explicit change outcomes
+and canonical data rules rather than JavaScript object identity, omitted fields
+becoming null, or non-finite numbers surviving serialization. The codecs define
+the executable data contract. Wire update outputs contain outcomes and commands,
+not serialized machine state.
 
-Run the focused commands above after a replacement. The TypeScript
-implementation is the current executable reference, including admission and
-compatibility policy; the wire adapter supplies the language bridge, not an
-implementation of that policy or a formal proof.
+Run the focused commands above after regeneration or implementation changes.
+The TypeScript implementation remains available as an executable reference;
+the [architecture](ARCHITECTURE.md#creation-form-state-transitions) describes
+the formal guarantees and remaining trust boundary.
 
 ## GitHub integration
 

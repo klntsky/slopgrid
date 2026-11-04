@@ -7,7 +7,7 @@ import type {
   CreateView,
   CreationMachine,
 } from "./machine-contract";
-import { typescriptCreationMachine } from "./model";
+import { selectedCreationMachine } from "./machine-selection";
 
 export type CreationEffects = {
   publish?(view: CreateView): void;
@@ -17,7 +17,7 @@ export type CreationEffects = {
 export function createCreationController(
   initial: CreateInitial,
   context: CreateContext,
-  machine: CreationMachine<unknown> = typescriptCreationMachine,
+  machine: CreationMachine<unknown> = selectedCreationMachine,
 ) {
   let state = machine.init(initial, context);
   const dispatches: CreateOutcome[] = [];

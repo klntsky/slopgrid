@@ -91,6 +91,13 @@ data codecs enforce the language boundary, and the wire adapter separates
 serialized inputs and outputs from backend-owned state handles. Replacing the
 machine does not require changing React or the effect interpreter.
 
+The TypeScript reference and extracted F* implementation share this boundary.
+Each owns its transition and admission policy; the extracted implementation does
+not call back into TypeScript for those decisions. F* is compiled through OCaml
+to browser JavaScript. Selection belongs to the browser composition boundary
+and remains fixed for a page lifetime. Switching initializes a new machine from
+the canonical draft rather than transferring opaque execution state.
+
 The browser runtime owns confirmation dialogs, draft storage, file and HTTP
 operations, credentials, cancellation, and navigation. Storage hydration
 canonicalizes persistent drafts before machine initialization. Effect
@@ -102,10 +109,15 @@ independently.
 Presentation state such as focus, scrolling, drag indicators, and temporarily
 remembered chat text remains local to React. Any remembered value used to edit
 the draft enters the transition as explicit event data, without relying on
-message-object identity. The current machine and its admission policy remain
-TypeScript, not formally verified code. A verified replacement must supply the
-complete machine policy through the same boundary. Browser observations are
-inputs to that policy, not proof of provider state or authorization; server
+message-object identity. Advisory pricing calculations also remain outside the
+machine's admission boundary.
+
+F* checking establishes totality and selected request-ownership, captured-input,
+and logical-outcome properties of the pure machine. It does not establish full
+semantic equivalence with the TypeScript reference. Canonical data validation,
+generic native string and number bindings, serialization, and the compilation
+toolchain remain trusted parts of the language boundary. Browser observations
+are inputs to policy, not proof of provider state or authorization; server
 admission remains authoritative for creation and inference.
 
 ## Input admission and workflow planning

@@ -10,3 +10,7 @@ dist/
 *.log
 playwright-report/
 test-results/
+.creation-build/
+*.checked
+*.checked.lax
+src/create/fstar/creation-machine.generated.*

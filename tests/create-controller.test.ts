@@ -5,6 +5,7 @@ import {
   type CreationEffects,
 } from "../src/create/create-controller.js";
 import { typescriptCreationMachine } from "../src/create/model.js";
+import { fstarCreationMachine } from "../src/create/fstar-machine.js";
 import {
   fromWireCreationMachine,
   toWireCreationMachine,
@@ -23,6 +24,7 @@ const implementations: [string, () => CreationMachine<unknown>][] = [
     () =>
       fromWireCreationMachine(toWireCreationMachine(typescriptCreationMachine)),
   ],
+  ["F* extracted through OCaml and JavaScript", () => fstarCreationMachine],
 ];
 
 for (const [name, implementation] of implementations) {
