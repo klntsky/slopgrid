@@ -5,7 +5,7 @@ import {
   type GridDraftInput,
 } from "../../server/domain";
 import type { AxisSide } from "../../server/parameters";
-import type { InputAction } from "./change-axis";
+import type { InputAction, MessageEdit } from "./change-axis";
 import { ChatEditor } from "./chat-editor";
 import { PromptEditor } from "./prompt-editor";
 
@@ -26,8 +26,13 @@ export function CompleteInputEditor({
   onBusy: (busy: boolean) => void;
   compatibility: (messageIndex?: number) => ReactNode;
 }) {
-  function change(change: (current: ChatMessage[]) => ChatMessage[]) {
-    onAction({ type: "edit-input", source, caseIndex, change });
+  function change(edit: MessageEdit) {
+    onAction({
+      type: "edit-input",
+      source,
+      ...(caseIndex === undefined ? {} : { caseIndex }),
+      edit,
+    });
   }
   if (isChatFormat(format))
     return (
@@ -43,20 +48,15 @@ export function CompleteInputEditor({
       <PromptEditor
         prompt={messages[0]?.content ?? ""}
         onPromptChange={(content) =>
-          change((current) => [{ ...current[0], role: "user", content }])
+          change({ type: "prompt-content", content })
         }
         attachments={{
           images: messages[0]?.images ?? [],
           onBusy,
-          onChange: (images) =>
-            change((current) => [
-              {
-                ...current[0],
-                role: "user",
-                content: current[0]?.content ?? "",
-                images,
-              },
-            ]),
+          onAppend: (images) =>
+            change({ type: "prompt-append-images", images }),
+          onRemove: (imageIndex) =>
+            change({ type: "prompt-remove-image", imageIndex }),
         }}
       />
       {compatibility()}

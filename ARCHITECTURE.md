@@ -73,6 +73,32 @@ The ledger records actual provider calls independently of the grid's displayed
 generation cost. Billing reads follow grid ownership. Credentials and generated
 content do not belong in ledger diagnostics.
 
+## Creation-form state transitions
+
+The creation model owns the editable draft and its confirmation and submission
+lifecycle. A pure update boundary consumes explicit data events and a supplied
+model-catalog snapshot, then returns the next model and declarative commands.
+It does not read browser globals, storage, clocks, randomness, or network state.
+Case identity allocation is determined by model state. Events describe edits
+rather than carry callbacks that can execute arbitrary code inside a transition.
+
+React renders the model and derived advisory feedback. The browser runtime
+serializes dispatch against the current model and interprets commands outside
+rendering and state-updater callbacks. It owns confirmation dialogs, draft
+storage, file and HTTP operations, credentials, cancellation, and navigation.
+Effect completions return as events; the model's request ownership boundary
+rejects stale completions and prevents duplicate creation while a submission is
+active. Accepted submissions retain their own input snapshot while editing can
+continue independently.
+
+Presentation state such as focus, scrolling, drag indicators, and temporarily
+remembered chat text remains local to React. Any remembered value used to edit
+the draft enters the transition as explicit event data. Persistent draft
+hydration remains at the storage boundary, separate from the executable model.
+This separates the future formal-verification surface from browser effects;
+the current implementation is TypeScript, not a formally verified state machine.
+Server admission remains authoritative for creation and inference.
+
 ## Input admission and workflow planning
 
 The editor permits incomplete drafts. Authoritative admission validates and

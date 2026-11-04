@@ -3,13 +3,11 @@ import { modelSelectionIssueKind, type GridInput } from "../../server/domain";
 import { estimateGrid } from "../../server/cost-estimates";
 import { modelCatalog } from "../model-catalog";
 import { useConnection, useInferenceCapacity } from "../queries";
-import { useCreateDraft } from "./draft";
-import { useCreateSubmission } from "./use-create-submission";
+import { useCreateMachine } from "./use-create-machine";
 import { analyzeGridCompatibility } from "../../server/grid-compatibility";
 import { canJudge } from "../../server/compatibility";
 import { promptVariableIssue } from "../../server/prompt-variables";
 import { compatibilityPreviewInput, validateDraftInput } from "./draft-input";
-import type { InputAction } from "./change-axis";
 import type { ZodIssue } from "zod";
 
 function isDeferredModelIssue(issue: ZodIssue) {
@@ -43,8 +41,8 @@ function useBudgetEstimate(input: GridInput, validated: boolean) {
 }
 
 export function useCreateForm() {
-  const editing = useCreateDraft();
-  const { draft } = editing;
+  const { model, dispatch } = useCreateMachine();
+  const { draft } = model;
   const { formatSelected, input } = draft;
   const validation = useMemo(() => validateDraftInput(input), [input]);
   const validationIssues = validation.parsed.success
@@ -90,28 +88,21 @@ export function useCreateForm() {
   const judgeModels = sortedModelCatalog.filter((model) =>
     canJudge(model, input.format),
   );
-  const submission = useCreateSubmission({
-    draft,
+  const submission = {
+    attempted: model.attempted,
+    uploading:
+      model.pendingUploads > 0 || model.submission?.phase === "preparing",
+    busy:
+      model.submission?.phase === "submitting" ||
+      model.submission?.phase === "completed",
+    error: model.error,
+    lowBalance: model.lowBalance,
     blocked:
       blockingValidationIssues.length > 0 ||
       blockingCompatibilityIssues.length > 0 ||
       workersPending,
     parallelWorkers,
-    onReferenceUploaded: editing.replaceReference,
-  });
-  function update(change: Parameters<typeof editing.update>[0]) {
-    editing.update(change);
-    submission.reset();
-  }
-  function dispatch(action: InputAction) {
-    const applied = editing.dispatch(action);
-    if (applied) submission.reset();
-    return applied;
-  }
-  function selectFormat(format: GridInput["format"]) {
-    submission.reset();
-    editing.selectFormat(format);
-  }
+  };
   const models = sortedModelCatalog.filter((model) =>
     input.format === "image" ? model.image : model.text,
   );
@@ -138,11 +129,7 @@ export function useCreateForm() {
     ),
     compatibilityIssues,
     compatibilityCells,
-    update,
     dispatch,
-    selectFormat,
-    swapAxes: () => dispatch({ type: "swap" }),
-    setReuseArtifacts: editing.setReuseArtifacts,
     connection,
     capacity,
     estimated,

@@ -108,6 +108,20 @@ Direct browser runs make one attempt by default. Deployment validation permits
 two retries for real-provider browser tests. Unit and mock tests do not retry.
 GitHub Actions is disabled; its workflow file is retained.
 
+For creation-form development, run the focused checks against the candidate
+worktree:
+
+```sh
+pnpm exec tsx --test tests/create-model.test.ts tests/change-axis.test.ts tests/judge-mode.test.ts
+pnpm build
+E2E_PORT=0 pnpm exec tsx tests/run-e2e.ts --suite mock --reuse-build tests/e2e/create-state-machine.spec.ts tests/e2e/case-format-transitions.spec.ts tests/e2e/chat.spec.ts
+```
+
+The creation model can be imported directly in a Node process without browser
+globals. Supply its initial draft, identity prefix, events, and catalog explicitly
+when debugging a transition. Browser-only failures should be investigated through
+the isolated runtime and browser tooling described above.
+
 ## GitHub integration
 
 Copying staging credentials to a demo does not change the OAuth app's registered

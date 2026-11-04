@@ -15,6 +15,7 @@ import {
   reduceInput,
 } from "../src/create/change-axis.js";
 import { validateDraftInput } from "../src/create/draft-input.js";
+import { saveDraft } from "../src/create/draft.js";
 import { currentDefinition } from "./current-grid-fixture.js";
 import { createWorkflow } from "../server/workflow.js";
 import { resolveCriteriaForCell } from "../server/judge-criteria.js";
@@ -387,7 +388,7 @@ test("draft reload and format changes retain both case sources until Website rem
   });
   try {
     // Static import cannot work: the browser catalog reads window before the test installs its globals.
-    const { saveDraft, startDraft } = await import("../src/create/draft.js");
+    const { startDraft } = await import("../src/create/start-draft.js");
     const original = reduceInput(input(), {
       type: "to-axis",
       parameter: "judge_criteria",
@@ -510,14 +511,21 @@ test("draft reload and format changes retain both case sources until Website rem
     // Upgrade saved drafts at the storage boundary without dropping unfinished work.
     const legacy = input();
     delete legacy.parameters.judge_system;
-    saveDraft({ formatSelected: true, input: legacy, sourceGridId: "legacy-source" });
+    saveDraft({
+      formatSelected: true,
+      input: legacy,
+      sourceGridId: "legacy-source",
+    });
     startDraft("svg");
     saved = JSON.parse(storage.get("slopgrid-draft")!);
     assert.deepEqual(saved.input, {
       ...legacy,
       parameters: {
         ...legacy.parameters,
-        judge_system: { kind: "common", value: parameterDefault("judge_system") },
+        judge_system: {
+          kind: "common",
+          value: parameterDefault("judge_system"),
+        },
       },
     });
     assert.equal(saved.sourceGridId, "legacy-source");
@@ -609,7 +617,7 @@ for (const side of ["rows", "columns"] as const) {
     });
     try {
       // Static import cannot work: the browser catalog reads window before this test installs its globals.
-      const { saveDraft, startDraft } = await import("../src/create/draft.js");
+      const { startDraft } = await import("../src/create/start-draft.js");
       const image = { id: "case-input", name: "case.png" };
       const other = side === "rows" ? "columns" : "rows";
       const source: GridDraftInput = {

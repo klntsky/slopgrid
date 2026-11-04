@@ -12,7 +12,8 @@ export function PromptEditor({
   onPromptChange: (prompt: string) => void;
   attachments: {
     images: readonly ReferenceImage[];
-    onChange: (images: ReferenceImage[]) => void;
+    onAppend: (images: ReferenceImage[]) => void;
+    onRemove: (index: number) => void;
     onBusy: (busy: boolean) => void;
   };
 }) {
@@ -28,13 +29,7 @@ export function PromptEditor({
                 images={attachments.images}
                 disabled={reading}
                 removeLabel={(image) => `Remove ${image.name} from prompt`}
-                onRemove={(index) =>
-                  attachments.onChange(
-                    attachments.images.filter(
-                      (_, imageIndex) => imageIndex !== index,
-                    ),
-                  )
-                }
+                onRemove={attachments.onRemove}
               />
             )}
             <div className="prompt-input">
@@ -55,9 +50,7 @@ export function PromptEditor({
                   setReading(busy);
                   attachments.onBusy(busy);
                 }}
-                onSelect={(selected) =>
-                  attachments.onChange([...attachments.images, ...selected])
-                }
+                onSelect={attachments.onAppend}
               />
             </div>
           </div>

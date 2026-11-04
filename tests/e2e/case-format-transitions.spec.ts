@@ -1,5 +1,5 @@
 import type { Dialog, Page } from "@playwright/test";
-import type { Draft } from "../../src/create/draft";
+import type { Draft } from "../../src/create/model";
 import { defaultGridDraft, parameterDefault } from "../../server/parameters";
 import { test, expect } from "./fixtures";
 import { mockModels } from "./helpers";
@@ -61,7 +61,10 @@ function caseDraft(): Draft {
         judge_criteria: { kind: "rows" },
         judge_effort: { kind: "rows" },
         judge_model: { kind: "columns" },
-        judge_system: { kind: "common", value: parameterDefault("judge_system") },
+        judge_system: {
+          kind: "common",
+          value: parameterDefault("judge_system"),
+        },
       },
       rows: [
         {
