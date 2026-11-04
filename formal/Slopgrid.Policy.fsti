@@ -1,9 +1,9 @@
 module Slopgrid.Policy
 
 val evaluate :
-  draft:Slopgrid.Data.json ->
+  draft:Slopgrid.Domain.draft ->
   attempted:bool ->
   pending_uploads:nat ->
-  submission_phase:string ->
-  context:Slopgrid.Data.json ->
-  Tot Slopgrid.Data.json
+  submission_phase:Slopgrid.Domain.submission_phase ->
+  context:Slopgrid.Domain.context ->
+  Tot Slopgrid.Domain.policy

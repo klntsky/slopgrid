@@ -61,8 +61,13 @@ export type InputAction =
   | CaseValuesAction
   | {
       type: "edit-input";
-      source: "common" | AxisSide;
-      caseIndex?: number;
+      source: "common";
+      edit: MessageEdit;
+    }
+  | {
+      type: "edit-input";
+      source: AxisSide;
+      caseIndex: number;
       edit: MessageEdit;
     }
   | { type: "to-axis"; parameter: CommonParameterId; side: AxisSide }

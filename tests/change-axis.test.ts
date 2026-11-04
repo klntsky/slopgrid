@@ -1725,12 +1725,10 @@ for (const source of ["common", "rows", "columns"] as const) {
         parameter: "input",
       });
     const before = structuredClone(input);
-    const action = (edit: MessageEdit): InputAction => ({
-      type: "edit-input",
-      source,
-      ...(source === "common" ? {} : { caseIndex: 0 }),
-      edit,
-    });
+    const action = (edit: MessageEdit): InputAction =>
+      source === "common"
+        ? { type: "edit-input", source: "common", edit }
+        : { type: "edit-input", source, caseIndex: 0, edit };
     const events = [
       action({ type: "content", index: 0, content: "Latest content" }),
       action({
@@ -1766,11 +1764,21 @@ for (const source of ["common", "rows", "columns"] as const) {
       assert.deepEqual(next[source][1], input[source][1]);
     assert.deepEqual(input, before);
     assert.equal(
-      reduceInput(next, {
-        type: "edit-input",
-        source: source === "common" ? "rows" : "common",
-        edit: { type: "remove", index: 0 },
-      }),
+      reduceInput(
+        next,
+        source === "common"
+          ? {
+              type: "edit-input",
+              source: "rows",
+              caseIndex: 0,
+              edit: { type: "remove", index: 0 },
+            }
+          : {
+              type: "edit-input",
+              source: "common",
+              edit: { type: "remove", index: 0 },
+            },
+      ),
       next,
     );
   });

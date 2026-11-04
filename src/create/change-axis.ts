@@ -464,7 +464,7 @@ export function reduceInput(
     case "edit-input": {
       const source = input.parameters.input;
       if (source.kind !== action.source) return input;
-      if (source.kind === "common")
+      if (action.source === "common" && source.kind === "common")
         return reduceInput(
           input,
           {
@@ -474,15 +474,16 @@ export function reduceInput(
           },
           createCase,
         );
+      if (action.source === "common") return input;
       const index = action.caseIndex;
-      if (index === undefined || !input[source.kind][index]) return input;
+      if (!input[action.source][index]) return input;
       return reduceInput(
         input,
         caseValueAction(
-          source.kind,
+          action.source,
           index,
           "input",
-          editMessages(input[source.kind][index].input ?? [], action.edit),
+          editMessages(input[action.source][index].input ?? [], action.edit),
         ),
         createCase,
       );

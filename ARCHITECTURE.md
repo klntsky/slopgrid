@@ -98,6 +98,12 @@ to browser JavaScript. Selection belongs to the browser composition boundary
 and remains fixed for a page lifetime. Switching initializes a new machine from
 the canonical draft rather than transferring opaque execution state.
 
+The F* core operates on domain records and variants, not a JSON syntax tree.
+Parameter-indexed values exclude mismatched parameter payloads inside the core.
+The OCaml serialization boundary validates incoming JSON and constructs those
+typed values before initialization or dispatch; malformed data fails there,
+before a transition runs. JSON encoding and decoding remain outside F*.
+
 The browser runtime owns confirmation dialogs, draft storage, file and HTTP
 operations, credentials, cancellation, and navigation. Storage hydration
 canonicalizes persistent drafts before machine initialization. Effect
@@ -113,12 +119,15 @@ message-object identity. Advisory pricing calculations also remain outside the
 machine's admission boundary.
 
 F* checking establishes totality and selected request-ownership, captured-input,
-and logical-outcome properties of the pure machine. It does not establish full
-semantic equivalence with the TypeScript reference. Canonical data validation,
-generic native string and number bindings, serialization, and the compilation
-toolchain remain trusted parts of the language boundary. Browser observations
-are inputs to policy, not proof of provider state or authorization; server
-admission remains authoritative for creation and inference.
+upload-counter, logical-outcome, and transpose-cardinality properties of the pure
+machine. The typed admission boundary requires finite positive budgets and
+nonempty grid axes before a submission snapshot can be constructed. These
+guarantees do not establish full semantic equivalence with the TypeScript
+reference. The OCaml codecs, native string and IEEE-754 scalar bindings, and
+compilation toolchain remain trusted; their contracts connect the checked core
+to browser values. Browser observations are inputs to policy, not proof of
+provider state or authorization; server admission remains authoritative for
+creation and inference.
 
 ## Input admission and workflow planning
 

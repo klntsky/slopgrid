@@ -1,579 +1,465 @@
 module Slopgrid.Input
 
-module D = Slopgrid.Data
+module D = Slopgrid.Domain
 module L = FStar.List.Tot.Base
 module N = Slopgrid.Native
 module P = Slopgrid.Parameters
-open Slopgrid.Data
+open Slopgrid.Domain
 open Prims
 
 let cat = N.concat
-let other_side (side:string) : Tot string = if side = "rows" then "columns" else "rows"
-let source (input:D.json) (parameter:string) : Tot D.json = D.get (D.get input "parameters") parameter
-let source_kind input parameter = D.str (D.get (source input parameter) "kind")
-let entries input side = D.items (D.get input side)
-let set_entries input side values = D.set input side (JArray values)
-let set_source input parameter value = D.set input "parameters" (D.set (D.get input "parameters") parameter value)
-let common value = JObject [("kind", JString "common"); ("value", value)]
-let owned side = JObject [("kind", JString side)]
-let member (value:string) (values:list string) : Tot bool = L.existsb (fun x -> x = value) values
+let at = P.at
+let entries = P.entries
+let other_side (side:axis) : Tot axis = if side = Rows then Columns else Rows
+let set_entries (input:layout) (side:axis) (values:list case_record) : Tot layout =
+  if side = Rows then {input with rows=values} else {input with columns=values}
+let set_source (input:layout) (p:common_parameter) (value:source p) : Tot layout =
+  {input with parameters=P.set_source input.parameters p value}
+let member (#a:eqtype) (value:a) (values:list a) : Tot bool = L.existsb (fun x -> x = value) values
 let rec map_i_from #a #b (f:nat -> a -> Tot b) (index:nat) (values:list a) : Tot (list b) (decreases values) =
-  match values with
-  | [] -> []
-  | value::rest -> f index value :: map_i_from f (index + 1) rest
+  match values with | [] -> [] | value::rest -> f index value :: map_i_from f (index + 1) rest
 let map_i #a #b (f:nat -> a -> Tot b) (values:list a) : Tot (list b) = map_i_from f 0 values
 let rec fold #a #b (f:b -> a -> Tot b) (state:b) (values:list a) : Tot b (decreases values) =
-  match values with
-  | [] -> state
-  | value::rest -> fold f (f state value) rest
-
-let rec comparison_value (value:D.json) : Tot D.json (decreases value) =
-  match value with
-  | JArray values -> JArray (comparison_items values)
-  | JObject fields -> JObject (comparison_fields fields)
-  | _ -> value
-and comparison_items (values:list D.json) : Tot (list D.json) (decreases values) =
-  match values with
-  | [] -> []
-  | value::rest -> comparison_value value :: comparison_items rest
-and comparison_fields (values:list (string & D.json)) : Tot (list (string & D.json)) (decreases values) =
-  match values with
-  | [] -> []
-  | (key, child)::rest ->
-    if key = "images" && D.equal child (JArray []) then comparison_fields rest
-    else (key, comparison_value child)::comparison_fields rest
-let parameter_values_equal left right = D.equal (comparison_value left) (comparison_value right)
-let has_parameter_value parameter value =
-  not (D.equal value JNull) && not (parameter_values_equal value (P.parameter_default parameter))
-
-let case_ids input = L.map (fun entry -> D.str (D.get entry "id"))
-  (L.append (entries input "rows") (entries input "columns"))
+  match values with | [] -> state | value::rest -> fold f (f state value) rest
+let rec replace_at #a (values:list a) (index:nat) (value:a) : Tot (list a) =
+  match values with | [] -> [] | first::rest -> if index = 0 then value::rest else first::replace_at rest (index - 1) value
+let rec remove_at #a (values:list a) (index:nat) : Tot (list a) =
+  match values with | [] -> [] | first::rest -> if index = 0 then rest else first::remove_at rest (index - 1)
+let rec insert_at #a (values:list a) (index:nat) (value:a) : Tot (list a) =
+  match values with | [] -> [value] | first::rest -> if index = 0 then value::values else first::insert_at rest (index - 1) value
+let move #a (values:list a) (index:nat) (target:nat) : Tot (list a) =
+  if target >= L.length values || index = target then values else
+  match at values index with | None -> values | Some value -> insert_at (remove_at values index) target value
+let option_list #a (value:option (list a)) : Tot (list a) = match value with | None -> [] | Some values -> values
+let case_axes (input:layout) : Tot (list axis) = match input.case_ownership with
+  | NoCaseAxes -> [] | OneCaseAxis side -> [side] | BothCaseAxes first -> [first; other_side first]
+let remove_case_axis (input:layout) (side:axis) : Tot layout =
+  {input with case_ownership=match input.case_ownership with
+    | NoCaseAxes -> NoCaseAxes | OneCaseAxis owner -> if owner = side then NoCaseAxes else OneCaseAxis owner
+    | BothCaseAxes _ -> OneCaseAxis (other_side side)}
+let add_case_axis (input:layout) (side:axis) : Tot layout =
+  {input with case_ownership=match input.case_ownership with
+    | NoCaseAxes -> OneCaseAxis side | OneCaseAxis owner -> if owner = side then OneCaseAxis owner else BothCaseAxes owner
+    | BothCaseAxes first -> BothCaseAxes first}
+let normalize_messages (messages:list message) : Tot (list message) =
+  L.map (fun message -> {message with images=match message.images with | Some [] -> None | other -> other}) messages
+let normalize_fields (fields:list (option variable_field)) : Tot (list (option variable_field)) =
+  L.map (fun field -> match field with | None -> None | Some field -> Some {field with field_images=match field.field_images with | Some [] -> None | other -> other}) fields
+let comparison_value (value:value) : Tot (value_for (value_parameter value)) = match value with
+  | InputValue messages -> InputValue (normalize_messages messages)
+  | VariableValue fields -> VariableValue (normalize_fields fields)
+  | other -> other
+let parameter_values_equal (left:value) (right:value) : Tot bool = comparison_value left = comparison_value right
+let optional_values_equal (p:parameter) (left:option (value_for p)) (right:option (value_for p)) : Tot bool = match left,right with
+  | None,None -> true | Some left,Some right -> parameter_values_equal left right | _ -> false
+let has_parameter_value (p:parameter) (value:option (value_for p)) : Tot bool =
+  match value with | None -> false | Some value -> not (parameter_values_equal value (P.parameter_default p))
+let case_ids (input:layout) : Tot (list string) = L.map (fun entry -> entry.case_id) (L.append input.rows input.columns)
 let rec available_id (fuel:nat) (ids:list string) (prefix:string) (counter:nat) : Tot (string & nat) (decreases fuel) =
   let id = cat prefix (N.nat_string counter) in
-  if member id ids && fuel > 0 then available_id (fuel - 1) ids prefix (counter + 1)
-  else (id, counter + 1)
-let new_case input allocation counter values =
-  let prefix, reserved = allocation in
+  if member id ids && fuel > 0 then available_id (fuel - 1) ids prefix (counter + 1) else (id,counter + 1)
+let new_case (input:layout) (allocation:string & list string) (counter:nat) (values:case_values) : Tot (case_record & nat) =
+  let prefix,reserved = allocation in
   let ids = L.append reserved (case_ids input) in
-  let id, next = available_id (L.length ids + 1) ids prefix counter in
-  (D.set values "id" (JString id), next)
-
-let neutral_dimension input side prefix counter =
-  if P.is_case_axis input side || L.length (P.axis_parameters input side) > 0 then (input, counter)
+  let id,next = available_id (L.length ids + 1) ids prefix counter in
+  ({case_id=id; case_name=None; values=values},next)
+let neutral_dimension (input:layout) (side:axis) allocation counter =
+  if P.is_case_axis input side || L.length (P.axis_parameters input side) > 0 then (input,counter)
   else match entries input side with
-  | first::_ -> (set_entries input side [JObject [("id", D.get first "id")]], counter)
-  | [] -> let entry, next = new_case input prefix counter (JObject []) in
-      (set_entries input side [entry], next)
-
-let remove_parameter input parameter prefix counter =
-  let kind = source_kind input parameter in
-  let next = D.set input "parameters" (D.omit (D.get input "parameters") parameter) in
-  if kind = "" || kind = "common" then (next, counter)
-  else neutral_dimension (set_entries next kind (L.map (fun entry -> D.omit entry parameter) (entries input kind))) kind prefix counter
-
-let differing input parameter =
-  let kind = source_kind input parameter in
-  if kind = "" || kind = "common" then false
-  else let values = L.map (fun entry -> D.get entry parameter) (entries input kind) in
-    L.existsb (fun value -> not (parameter_values_equal value (D.at values 0))) values
-
-let collapse input parameter prefix counter =
-  let kind = source_kind input parameter in
-  if kind = "" || kind = "common" then (input, counter)
-  else let values = entries input kind in
-    let value = if L.length values > 0 && not (differing input parameter)
-      then let v = D.get (D.at values 0) parameter in
-        if D.equal v JNull then P.parameter_default parameter else v
-      else P.parameter_default parameter in
-    let next, count = remove_parameter input parameter prefix counter in
-    (set_source next parameter (common value), count)
-
-let strip_variables input side =
-  let names = D.omit (D.get input "variableNames") side in
-  let next = if L.length (D.fields names) = 0 then D.omit input "variableNames"
-    else D.set input "variableNames" names in
-  set_entries next side (L.map (fun entry -> D.omit (D.omit entry "variable") "name") (entries input side))
-
-let case_defaults input side =
-  JObject (L.map (fun parameter ->
-    let value = if parameter = "variable" then
-      JArray (L.map (fun field -> if D.equal field JNull then JNull else JObject [("text", JString "")])
-        (D.items (D.get (D.at (entries input side) 0) "variable")))
-      else P.parameter_default parameter in
-    (parameter, value)) (P.axis_parameters input side))
-
-let own input parameter side prefix counter =
-  let kind = source_kind input parameter in
-  if kind = side || (kind <> "" && kind <> "common") then (input, counter)
-  else let value = if kind = "common" then D.get (source input parameter) "value" else P.parameter_default parameter in
-    let values, count = if L.length (entries input side) > 0 then (entries input side, counter)
-      else let entry, next = new_case input prefix counter (case_defaults input side) in ([entry], next) in
-    (set_entries (set_source input parameter (owned side)) side
-      (L.map (fun entry -> D.set entry parameter value) values), count)
-
-let collapse_parameters input parameters prefix counter =
-  fold (fun (current, count) parameter ->
-    if parameter = "variable" then (current, count) else collapse current parameter prefix count)
-    (input, counter) parameters
-
-let generated_name (side:string) (index:nat) : Tot string = cat (if side = "rows" then "ROW" else "COLUMN") (N.nat_string (index + 1))
-let variable_name input side index =
-  let name = D.at (D.items (D.get (D.get input "variableNames") side)) index in
-  if D.equal name JNull then generated_name side index else D.str name
-let variable_index input : Tot (list (string & string & nat)) =
-  fold (fun result side ->
-    fold (fun acc (index, field) ->
-      if D.equal field JNull then acc else
-      let name = variable_name input side index in
-      if L.existsb (fun (n, _, _) -> n = name) acc then acc
-      else L.append acc [(name, side, index)]) result
-      (map_i (fun i field -> (i, field)) (D.items (D.get (D.at (entries input side) 0) "variable"))))
-    [] (D.strings (D.get input "caseAxes"))
-
-let ascii_token_char c =
-  member c ["A"; "B"; "C"; "D"; "E"; "F"; "G"; "H"; "I"; "J"; "K"; "L"; "M";
-    "N"; "O"; "P"; "Q"; "R"; "S"; "T"; "U"; "V"; "W"; "X"; "Y"; "Z";
-    "0"; "1"; "2"; "3"; "4"; "5"; "6"; "7"; "8"; "9"; "_"]
+    | first::_ -> (set_entries input side [{first with case_name=None; values=P.empty_case_values}],counter)
+    | [] -> let entry,next = new_case input allocation counter P.empty_case_values in (set_entries input side [entry],next)
+let differing (input:layout) (p:common_parameter) : Tot bool =
+  match P.get_source input.parameters p with
+  | Some (OnAxis side) -> let values = L.map (fun entry -> P.get_case_value entry.values p) (entries input side) in
+    (match values with | [] -> false | first::_ -> L.existsb (fun (value:option (value_for p)) -> not (optional_values_equal p value first)) values)
+  | _ -> false
+let collapse (input:layout) (p:common_parameter) allocation counter =
+  match P.get_source input.parameters p with
+  | Some (OnAxis side) ->
+    let value = if differing input p then P.parameter_default p else
+      match at (entries input side) 0 with | None -> P.parameter_default p | Some entry ->
+        (match P.get_case_value entry.values p with | None -> P.parameter_default p | Some value -> value) in
+    let next = set_source input p (Common value) in
+    let next = {next with parameters={next.parameters with source_order=L.append (L.filter (fun (key:common_parameter) -> key<>p) next.parameters.source_order) [p]}} in
+    neutral_dimension (set_entries next side (L.map (fun entry -> {entry with values=P.remove_case_value entry.values p}) (entries input side))) side allocation counter
+  | _ -> (input,counter)
+let remove_parameter (input:layout) (p:common_parameter{p <> PInput /\ p <> PModel}) allocation counter =
+  let owner = P.get_source input.parameters p in
+  let next = {input with parameters=P.remove_source input.parameters p} in
+  match owner with | Some (OnAxis side) ->
+    neutral_dimension (set_entries next side (L.map (fun entry -> {entry with values=P.remove_case_value entry.values p}) (entries input side))) side allocation counter
+  | _ -> (next,counter)
+let name_fields (input:layout) (side:axis) : Tot (option (list (option string))) =
+  match input.variable_names with | None -> None | Some names -> if side = Rows then names.row_names else names.column_names
+let put_name_fields (input:layout) (side:axis) (fields:option (list (option string))) : Tot layout =
+  let names = match input.variable_names with | None -> {row_names=None; column_names=None} | Some names -> names in
+  let names = if side = Rows then {names with row_names=fields} else {names with column_names=fields} in
+  {input with variable_names=if names.row_names=None && names.column_names=None then None else Some names}
+let strip_variables (input:layout) (side:axis) : Tot layout =
+  let next = put_name_fields input side None in
+  set_entries next side (L.map (fun entry -> {entry with case_name=None; values=P.remove_case_value entry.values PVariable}) (entries input side))
+let variable_fields (input:layout) (side:axis) : Tot (list (option variable_field)) =
+  match at (entries input side) 0 with | None -> [] | Some entry -> option_list entry.values.variable_value
+let case_defaults (input:layout) (side:axis) : Tot case_values =
+  fold (fun values p -> P.set_case_value values (if p = PVariable then
+    VariableValue (L.map (fun field -> match field with | None -> None | Some _ -> Some {text=""; field_images=None}) (variable_fields input side))
+    else P.parameter_default p)) P.empty_case_values (P.axis_parameters input side)
+let own (input:layout) (p:common_parameter) (side:axis) allocation counter =
+  match P.get_source input.parameters p with
+  | Some (OnAxis _) -> (input,counter)
+  | owner ->
+    let value = match owner with | Some (Common value) -> value | _ -> P.parameter_default p in
+    let values,count = match entries input side with | [] -> let entry,next = new_case input allocation counter (case_defaults input side) in ([entry],next) | values -> (values,counter) in
+    (set_entries (set_source input p (OnAxis side)) side (L.map (fun entry -> {entry with values=P.set_case_value entry.values value}) values),count)
+let collapse_parameters (input:layout) (parameters:list parameter) allocation counter =
+  fold (fun (current,count) (p:parameter) -> if p = PVariable then (current,count) else collapse current p allocation count) (input,counter) parameters
+let generated_name (side:axis) (index:nat) : Tot string = cat (if side = Rows then "ROW" else "COLUMN") (N.nat_string (index + 1))
+let variable_name (input:layout) (side:axis) (index:nat) : Tot string =
+  match at (option_list (name_fields input side)) index with | Some (Some name) -> name | _ -> generated_name side index
+let variable_index (input:layout) : Tot (list (string & axis & nat)) =
+  fold (fun result side -> fold (fun acc (index,field) -> match field with | None -> acc | Some _ ->
+    let name = variable_name input side index in
+    if L.existsb (fun (n,_,_) -> n=name) acc then acc else L.append acc [(name,side,index)]) result (map_i (fun i field -> (i,field)) (variable_fields input side))) [] (case_axes input)
+let ascii_token_char c = member c ["A"; "B"; "C"; "D"; "E"; "F"; "G"; "H"; "I"; "J"; "K"; "L"; "M"; "N"; "O"; "P"; "Q"; "R"; "S"; "T"; "U"; "V"; "W"; "X"; "Y"; "Z"; "0"; "1"; "2"; "3"; "4"; "5"; "6"; "7"; "8"; "9"; "_"]
 let rec token_length (fuel:nat) (text:string) (position:nat) : Tot nat (decreases fuel) =
-  if fuel = 0 || not (ascii_token_char (N.char_at text position)) then 0
-  else 1 + token_length (fuel - 1) text (position + 1)
-let token_at text position =
+  if fuel=0 || not (ascii_token_char (N.char_at text position)) then 0 else 1 + token_length (fuel - 1) text (position + 1)
+let token_at (text:string) (position:nat) : Tot (option (string & nat)) =
   if N.char_at text position <> "$" then None else
   let count = token_length (N.length text) text (position + 1) in
   let last = position + 1 + count in
-  if count = 0 || N.char_at text last = "_" || N.unicode_alphanumeric_at text last then None
-  else Some (N.slice text (position + 1) count, count + 1)
+  if count=0 || N.char_at text last="_" || N.unicode_alphanumeric_at text last then None else Some (N.slice text (position + 1) count,count + 1)
 let rec rewrite_scan (fuel:nat) (rename:string -> Tot string) (text:string) (position:nat) : Tot string (decreases fuel) =
-  if fuel = 0 || position >= N.length text then "" else
-  match token_at text position with
-  | Some (name, count) -> cat (cat "$" (rename name)) (rewrite_scan (fuel - 1) rename text (position + count))
+  if fuel=0 || position >= N.length text then "" else match token_at text position with
+  | Some (name,count) -> cat (cat "$" (rename name)) (rewrite_scan (fuel - 1) rename text (position + count))
   | None -> cat (N.char_at text position) (rewrite_scan (fuel - 1) rename text (position + 1))
 let rewrite_text rename text = rewrite_scan (N.length text) rename text 0
 let rec token_scan (fuel:nat) (text:string) (position:nat) : Tot (list string) (decreases fuel) =
-  if fuel = 0 || position >= N.length text then [] else
-  match token_at text position with
-  | Some (name, count) -> name :: token_scan (fuel - 1) text (position + count)
+  if fuel=0 || position >= N.length text then [] else match token_at text position with
+  | Some (name,count) -> name :: token_scan (fuel - 1) text (position + count)
   | None -> token_scan (fuel - 1) text (position + 1)
 let variable_tokens text = token_scan (N.length text) text 0
-
-let rewrite_array_field rename values key = JArray (L.map (fun value -> D.set value key (JString (rewrite_text rename (D.str (D.get value key))))) (D.items values))
-let rewrite_case rename entry =
-  let next = if D.has entry "input" then D.set entry "input" (rewrite_array_field rename (D.get entry "input") "content") else entry in
-  let next = if D.has entry "judge_system" then D.set next "judge_system" (JString (rewrite_text rename (D.str (D.get entry "judge_system")))) else next in
-  if D.has entry "judge_criteria" then D.set next "judge_criteria" (rewrite_array_field rename (D.get entry "judge_criteria") "text") else next
-let rewrite_references input rename =
-  let next = fold (fun current parameter ->
-    if source_kind input parameter <> "common" then current else
-    let value = D.get (source input parameter) "value" in
-    let rewritten = if parameter = "judge_system" then JString (rewrite_text rename (D.str value))
-      else rewrite_array_field rename value (if parameter = "input" then "content" else "text") in
-    set_source current parameter (common rewritten)) input ["input"; "judge_criteria"; "judge_system"] in
-  fold (fun current side -> set_entries current side (L.map (rewrite_case rename) (entries input side))) next ["rows"; "columns"]
-let referenced_names input =
-  let from_value parameter value = if parameter = "judge_system" then variable_tokens (D.str value)
-    else L.collect (fun item -> variable_tokens (D.str (D.get item (if parameter = "input" then "content" else "text")))) (D.items value) in
-  let common_names = L.collect (fun parameter -> if source_kind input parameter = "common" then from_value parameter (D.get (source input parameter) "value") else [])
-    ["input"; "judge_criteria"; "judge_system"] in
-  D.unique_strings (L.append common_names (L.collect (fun side -> L.collect (fun entry ->
-    L.collect (fun parameter -> from_value parameter (D.get entry parameter)) ["input"; "judge_criteria"; "judge_system"])
-    (entries input side)) ["rows"; "columns"]))
-
-let rec trim_null_end (values:list D.json) : Tot (list D.json) =
-  match values with
-  | [] -> []
-  | value::rest -> let tail = trim_null_end rest in
-    if D.equal value JNull && L.length tail = 0 then [] else value::tail
-let rec fill_to (count:nat) (values:list D.json) : Tot (list D.json) (decreases count) =
-  if count = 0 then values else match values with
-  | [] -> JNull :: fill_to (count - 1) []
-  | value::rest -> value :: fill_to (count - 1) rest
+let rewrite_value (rename:string -> Tot string) (value:value) : Tot (value_for (value_parameter value)) =
+  match value with
+  | InputValue messages -> InputValue (L.map (fun message -> {message with content=rewrite_text rename message.content}) messages)
+  | JudgeCriteriaValue criteria -> JudgeCriteriaValue (L.map (fun criterion -> {criterion with criterion_text=rewrite_text rename criterion.criterion_text}) criteria)
+  | JudgeSystemValue text -> JudgeSystemValue (rewrite_text rename text)
+  | other -> other
+let text_parameters : list common_parameter = [PInput; PJudgeCriteria; PJudgeSystem]
+let rec map_preserving #a #b (f:a -> Tot b) (values:list a) : Tot (result:list b{L.length result=L.length values}) =
+  match values with | [] -> [] | value::rest -> f value :: map_preserving f rest
+let rewrite_references (input:layout) (rename:string -> Tot string)
+  : Tot (result:layout{L.length result.rows=L.length input.rows /\ L.length result.columns=L.length input.columns}) =
+  let parameters = fold (fun current p -> match P.get_source current p with
+    | Some (Common value) -> P.set_source current p (Common (rewrite_value rename value)) | _ -> current) input.parameters text_parameters in
+  let rewrite_case entry = {entry with values=fold (fun values (p:common_parameter) -> match P.get_case_value values p with
+    | None -> values | Some value -> P.set_case_value values (rewrite_value rename value)) entry.values text_parameters} in
+  {input with parameters=parameters; rows=map_preserving rewrite_case input.rows; columns=map_preserving rewrite_case input.columns}
+let value_tokens (value:value) : Tot (list string) = match value with
+  | InputValue messages -> L.collect (fun message -> variable_tokens message.content) messages
+  | JudgeCriteriaValue criteria -> L.collect (fun criterion -> variable_tokens criterion.criterion_text) criteria
+  | JudgeSystemValue text -> variable_tokens text | _ -> []
+let unique (#a:eqtype) (values:list a) : Tot (list a) = fold (fun acc value -> if member value acc then acc else L.append acc [value]) [] values
+let referenced_names (input:layout) : Tot (list string) =
+  let common_names = L.collect (fun p -> match P.get_source input.parameters p with | Some (Common value) -> value_tokens value | _ -> []) text_parameters in
+  unique (L.append common_names (L.collect (fun side -> L.collect (fun entry -> L.collect (fun (p:common_parameter) -> match P.get_case_value entry.values p with | None -> [] | Some value -> value_tokens value) text_parameters) (entries input side)) [Rows; Columns]))
+let rec trim_null_end #a (values:list (option a)) : Tot (list (option a)) = match values with
+  | [] -> [] | value::rest -> let tail=trim_null_end rest in match value with | None -> if L.length tail=0 then [] else value::tail | Some _ -> value::tail
+let rec fill_to #a (count:nat) (values:list (option a)) : Tot (list (option a)) (decreases count) =
+  if count=0 then values else match values with | [] -> None::fill_to (count - 1) [] | value::rest -> value::fill_to (count - 1) rest
 let set_variable_name input side index name =
-  let names = D.items (D.get (D.get input "variableNames") side) in
-  let names = trim_null_end (D.replace_at (fill_to (index + 1) names) index name) in
-  let all = if L.length names = 0 then D.omit (D.get input "variableNames") side
-    else D.set (D.get input "variableNames") side (JArray names) in
-  if L.length (D.fields all) = 0 then D.omit input "variableNames" else D.set input "variableNames" all
+  let names=trim_null_end (replace_at (fill_to (index + 1) (option_list (name_fields input side))) index name) in
+  put_name_fields input side (if L.length names=0 then None else Some names)
 let valid_variable_name name = N.length name > 0 && token_length (N.length name) name 0 = N.length name
 let variable_rename_valid input side index name =
-  (name = "" || valid_variable_name name) &&
-  (let effective = if name = "" then generated_name side index else name in
-  not (L.existsb (fun (n, s, i) -> n = effective && (s <> side || i <> index)) (variable_index input)))
-let rec unused_name (fuel:nat) (side:string) (index:nat) (used:list string) : Tot string (decreases fuel) =
-  let name = generated_name side index in
-  if member name used && fuel > 0 then unused_name (fuel - 1) side (index + 1) used else name
+  (name="" || valid_variable_name name) &&
+  (let effective=if name="" then generated_name side index else name in
+   not (L.existsb (fun (n,s,i) -> n=effective && (s<>side || i<>index)) (variable_index input)))
+let rec unused_name (fuel:nat) (side:axis) (index:nat) (used:list string) : Tot string (decreases fuel) =
+  let name=generated_name side index in if member name used && fuel>0 then unused_name (fuel - 1) side (index + 1) used else name
 let unused_generated_name side index used = unused_name (L.length used + 1) side index used
-
-let edit_messages (messages:list D.json) (edit:D.json) : Tot (list D.json) =
-  let kind = D.str (D.get edit "type") in
-  let index = D.natural (D.get edit "index") in
-  let image_index = D.natural (D.get edit "imageIndex") in
-  if kind = "prompt-content" then
-    [D.set (D.set (D.at messages 0) "role" (JString "user")) "content" (D.get edit "content")]
-  else if kind = "prompt-append-images" || kind = "prompt-remove-image" then
-    let message = D.at messages 0 in
-    let images = D.items (D.get message "images") in
-    let images = if kind = "prompt-append-images" then L.append images (D.items (D.get edit "images"))
-      else D.remove_at images image_index in
-    [D.set (D.set (D.set message "role" (JString "user")) "content"
-       (if D.has message "content" then D.get message "content" else JString "")) "images" (JArray images)]
-  else if kind = "insert" then
-    let previous_role = if index = 0 then "" else D.str (D.get (D.at messages (index - 1)) "role") in
-    D.insert_at messages index (JObject [("role", JString (if previous_role = "user" then "unfilled" else "user")); ("content", JString "")])
-  else if kind = "remove" then D.remove_at messages index
-  else if kind = "move" then D.move messages index (D.natural (D.get edit "to"))
-  else map_i (fun i message ->
-    if i <> index then message
-    else if kind = "content" then D.set message "content" (D.get edit "content")
-    else if kind = "append-images" then D.set message "images" (JArray (L.append (D.items (D.get message "images")) (D.items (D.get edit "images"))))
-    else if kind = "remove-image" then
-      if D.has message "images" then D.set message "images" (JArray (D.remove_at (D.items (D.get message "images")) image_index)) else message
-    else if kind = "cycle-role" && L.length (D.items (D.get message "images")) = 0 then
-      let previous = D.str (D.get message "role") in
-      let role = if previous = "system" then "user" else if previous = "user" then "assistant"
-        else if previous = "assistant" then "unfilled" else "system" in
-      let content = if role = "unfilled" then JString ""
-        else if previous = "unfilled" && D.has edit "rememberedContent" then D.get edit "rememberedContent"
-        else D.get message "content" in
-      D.set (D.set message "role" (JString role)) "content" content
-    else message) messages
-
-let dropped_parameters input action =
-  let kind = D.str (D.get action "type") in
-  let side = D.str (D.get action "side") in
-  let parameter = D.str (D.get action "parameter") in
-  let removed = if kind = "single" then P.axis_parameters input side
-    else if kind = "to-common" then [parameter]
-    else if kind = "dimension" then L.filter (fun p -> p <> parameter) (P.axis_parameters input side)
-    else [] in
-  L.filter (fun p ->
-    if p <> "variable" then differing input p
-    else (kind = "single" || kind = "dimension") &&
-      L.existsb (fun entry -> L.existsb (fun field ->
-        not (D.equal field JNull) &&
-        (N.length (D.str (D.get field "text")) > 0 || L.length (D.items (D.get field "images")) > 0))
-        (D.items (D.get entry "variable"))) (entries input side)) removed
-
-let confirmation (input:D.json) (event:D.json) : Tot (option string) =
-  let dropped = dropped_parameters input event in
-  if L.length dropped = 0 then None else
-  let restored = L.filter (fun p -> p <> "variable") dropped in
-  Some (cat (cat "Changing the " (D.join ", " (L.map P.parameter_name dropped)))
+let empty_message : message = {message_role=UserRole; content=""; images=None}
+let edit_messages (messages:list message) (edit:message_edit) : Tot (list message) =
+  let first=match at messages 0 with | None -> empty_message | Some message -> message in
+  match edit with
+  | PromptContent content -> [{first with message_role=UserRole; content=content}]
+  | AppendPromptImages images -> [{first with message_role=UserRole; images=Some (L.append (option_list first.images) images)}]
+  | RemovePromptImage index -> [{first with message_role=UserRole; images=Some (remove_at (option_list first.images) index)}]
+  | InsertMessage index ->
+    let previous=if index=0 then None else at messages (index - 1) in
+    insert_at messages index {empty_message with message_role=match previous with | Some message -> if message.message_role=UserRole then UnfilledRole else UserRole | None -> UserRole}
+  | RemoveMessage index -> remove_at messages index
+  | MoveMessage index target -> move messages index target
+  | _ -> map_i (fun i message -> match edit with
+    | MessageContent index content -> if i=index then {message with content=content} else message
+    | AppendMessageImages index images -> if i=index then {message with images=Some (L.append (option_list message.images) images)} else message
+    | RemoveMessageImage index image_index -> if i=index then {message with images=match message.images with | None -> None | Some images -> Some (remove_at images image_index)} else message
+    | CycleRole index remembered -> if i<>index || L.length (option_list message.images)>0 then message else
+      let role=match message.message_role with | SystemRole -> UserRole | UserRole -> AssistantRole | AssistantRole -> UnfilledRole | UnfilledRole -> SystemRole in
+      {message with message_role=role; content=if role=UnfilledRole then "" else if message.message_role=UnfilledRole then (match remembered with | None -> message.content | Some content -> content) else message.content}
+    | _ -> message) messages
+let dropped_parameters (input:layout) (action:input_action) : Tot (list parameter) =
+  let removed : list parameter = match action with | SingleDimension side -> P.axis_parameters input side | MoveToCommon p -> [(p <: parameter)]
+    | SelectDimension side p -> L.filter (fun key -> key<>p) (P.axis_parameters input side) | _ -> [] in
+  L.filter (fun (p:parameter) -> if p<>PVariable then differing input p else match action with
+    | SingleDimension side | SelectDimension side _ -> L.existsb (fun entry -> L.existsb (fun field -> match field with | None -> false | Some field -> N.length field.text>0 || L.length (option_list field.field_images)>0) (option_list entry.values.variable_value)) (entries input side)
+    | _ -> false) removed
+let rec join (separator:string) (values:list string) : Tot string = match values with | [] -> "" | [value] -> value | value::rest -> cat value (cat separator (join separator rest))
+let confirmation (input:layout) (action:input_action) : Tot (option string) =
+  let dropped=dropped_parameters input action in if L.length dropped=0 then None else
+  let restored=L.filter (fun p -> p<>PVariable) dropped in
+  Some (cat (cat "Changing the " (join ", " (L.map P.parameter_name dropped)))
     (cat " setup will discard values. Drop these values?"
-      (cat (if member "variable" dropped then " The prompt-variable text and images will be discarded." else "")
-        (if L.length restored = 0 then ""
-         else cat " " (cat (D.join ", " (L.map P.parameter_name restored)) " will return to their common defaults.")))))
+      (cat (if member PVariable dropped then " The prompt-variable text and images will be discarded." else "")
+        (if L.length restored=0 then "" else cat " " (cat (join ", " (L.map P.parameter_name restored)) " will return to their common defaults.")))))
 
-let rec take_match (parameter:string) (value:D.json) (values:list D.json) : Tot (option D.json & list D.json) =
-  match values with
-  | [] -> (None, [])
-  | entry::rest ->
-    if parameter_values_equal (D.get entry parameter) value then (Some entry, rest)
-    else let found, remaining = take_match parameter value rest in (found, entry::remaining)
-let rec match_values (parameter:string) (values:list D.json) (remaining:list D.json)
-  : Tot (list (option D.json) & list D.json) (decreases values) =
-  match values with
-  | [] -> ([], remaining)
-  | value::rest ->
-    let found, left = take_match parameter value remaining in
-    let matches, final = match_values parameter rest left in
-    (found::matches, final)
-let rec fill_values input side parameter prefix counter values matches remaining
-  : Tot (list D.json & nat) (decreases values) =
-  match values with
-  | [] -> ([], counter)
-  | value::rest ->
-    let matched = match matches with | [] -> None | found::_ -> found in
-    let matches = match matches with | [] -> [] | _::tail -> tail in
-    let entry, remaining, next = match matched with
-      | Some entry -> (entry, remaining, counter)
-      | None -> match remaining with
-        | entry::tail -> (entry, tail, counter)
-        | [] -> let entry, next = new_case input prefix counter (case_defaults input side) in (entry, [], next) in
-    let tail, count = fill_values input side parameter prefix next rest matches remaining in
-    (D.set entry parameter value :: tail, count)
-
+let rec take_match (p:parameter) (value:value_for p) (values:list case_record) : Tot (option case_record & list case_record) =
+  match values with | [] -> (None,[]) | entry::rest ->
+    if optional_values_equal p (P.get_case_value entry.values p) (Some value) then (Some entry,rest)
+    else let found,remaining=take_match p value rest in (found,entry::remaining)
+let rec match_values (p:parameter) (values:list (value_for p)) (remaining:list case_record) : Tot (list (option case_record) & list case_record) =
+  match values with | [] -> ([],remaining) | value::rest ->
+    let found,left=take_match p value remaining in
+    let matches,final=match_values p rest left in (found::matches,final)
+let rec fill_values (input:layout) (side:axis) (p:parameter) allocation counter (values:list (value_for p)) (matches:list (option case_record)) (remaining:list case_record)
+  : Tot (list case_record & nat) (decreases values) =
+  match values with | [] -> ([],counter) | value::rest ->
+    let matched=match matches with | [] -> None | found::_ -> found in
+    let matches=match matches with | [] -> [] | _::tail -> tail in
+    let entry,remaining,next=match matched with | Some entry -> (entry,remaining,counter) | None ->
+      (match remaining with | entry::tail -> (entry,tail,counter)
+       | [] -> let entry,next=new_case input allocation counter (case_defaults input side) in (entry,[],next)) in
+    let tail,count=fill_values input side p allocation next rest matches remaining in
+    ({entry with values=P.set_case_value entry.values value}::tail,count)
 let swap_numeric_name name =
-  let prefix, target = if N.starts_with name "ROW" then ("ROW", "COLUMN")
-    else if N.starts_with name "COLUMN" then ("COLUMN", "ROW") else ("", "") in
-  let suffix = N.slice name (N.length prefix) (N.length name) in
+  let prefix,target=if N.starts_with name "ROW" then ("ROW","COLUMN") else if N.starts_with name "COLUMN" then ("COLUMN","ROW") else ("","") in
+  let suffix=N.slice name (N.length prefix) (N.length name) in
   let rec digits (fuel:nat) (index:nat) : Tot bool (decreases fuel) =
-    if fuel = 0 then true
-    else member (N.char_at suffix index) ["0"; "1"; "2"; "3"; "4"; "5"; "6"; "7"; "8"; "9"] && digits (fuel - 1) (index + 1) in
-  if prefix <> "" && N.length suffix > 0 && N.char_at suffix 0 <> "0" && digits (N.length suffix) 0
-  then cat target suffix else name
+    if fuel=0 then true else member (N.char_at suffix index) ["0";"1";"2";"3";"4";"5";"6";"7";"8";"9"] && digits (fuel - 1) (index + 1) in
+  if prefix<>"" && N.length suffix>0 && N.char_at suffix 0<>"0" && digits (N.length suffix) 0 then cat target suffix else name
+let lookup (mapping:list (string & string)) name = fold (fun found (key,value) -> if key=name then Some value else found) None mapping
+let swap (input:layout) : Tot (result:layout{L.length result.rows=L.length input.columns /\ L.length result.columns=L.length input.rows}) =
+  let names,renamed,used=fold (fun (names,renamed,used) side ->
+    if not (P.is_case_axis input side) then (names,renamed,used) else
+    let names=match name_fields input side with | None -> names | Some fields -> put_name_fields names (other_side side) (Some fields) in
+    fold (fun (names,renamed,used) (index,field) ->
+      let custom=match at (option_list (name_fields input side)) index with | Some (Some name) -> name | _ -> "" in
+      if field=None || custom="" then (names,renamed,used) else (names,L.append renamed [(custom,custom)],L.append used [custom]))
+      (names,renamed,used) (map_i (fun i field -> (i,field)) (variable_fields input side)))
+    ({input with variable_names=None},[],[]) [Rows;Columns] in
+  let index=variable_index input in
+  let unresolved,used=fold (fun (mapping,used) name ->
+    if L.existsb (fun (n,_,_) -> n=name) index then (mapping,used) else
+    let swapped=swap_numeric_name name in let target=if member swapped used then name else swapped in
+    (L.append mapping [(name,target)],L.append used [target])) ([],used) (referenced_names input) in
+  let names,renamed,_=fold (fun (names,renamed,used) side ->
+    if not (P.is_case_axis input side) then (names,renamed,used) else
+    let other=other_side side in
+    fold (fun (names,renamed,used) (index,field) ->
+      let custom=match at (option_list (name_fields input side)) index with | Some (Some name) -> name | _ -> "" in
+      if field=None || custom<>"" then (names,renamed,used) else
+      let name=unused_generated_name other index used in
+      let names=if name=generated_name other index then names else set_variable_name names other index (Some name) in
+      (names,L.append renamed [(variable_name input side index,name)],L.append used [name]))
+      (names,renamed,used) (map_i (fun i field -> (i,field)) (variable_fields input side)))
+    (names,renamed,used) [Rows;Columns] in
+  let rewritten=rewrite_references input (fun name -> match lookup renamed name with | Some value -> value | None -> (match lookup unresolved name with | Some value -> value | None -> name)) in
+  let parameters=fold (fun current p -> match P.get_source current p with
+    | Some (OnAxis side) -> P.set_source current p (OnAxis (other_side side)) | _ -> current) rewritten.parameters rewritten.parameters.source_order in
+  {rewritten with parameters=parameters; rows=rewritten.columns; columns=rewritten.rows;
+    case_ownership=(match input.case_ownership with | NoCaseAxes -> NoCaseAxes | OneCaseAxis side -> OneCaseAxis (other_side side) | BothCaseAxes first -> BothCaseAxes (other_side first));
+    variable_names=(match names.variable_names with | None -> rewritten.variable_names | Some names -> Some names)}
+let judge_parameters : list (p:common_parameter{p<>PInput /\ p<>PModel}) =
+  [PJudgeModel; PJudgeEffort; PJudgeSystem; PJudgeCriteria]
+let source_on_axis (input:layout) (p:parameter) (side:axis) : Tot bool =
+  if p=PVariable then false else match P.get_source input.parameters p with | Some (OnAxis owner) -> owner=side | _ -> false
+let reduce (input:layout) (action:input_action) (prefix:string) (counter:nat) : Tot (layout & nat) =
+  let allocation=(prefix,case_ids input) in
+  match action with
+  | RenameVariable side index name ->
+    if not (P.is_case_axis input side) || (match at (variable_fields input side) index with | Some (Some _) -> false | _ -> true)
+      || not (variable_rename_valid input side index name) then (input,counter) else
+    let previous=variable_name input side index in
+    let next=set_variable_name input side index (if name="" then None else Some name) in
+    let name=variable_name next side index in
+    (rewrite_references next (fun token -> if token=previous then name else token),counter)
+  | RenameCase side index name ->
+    if not (P.is_case_axis input side) then (input,counter) else let name=N.trim name in
+    (set_entries input side (map_i (fun i entry -> if i<>index then entry else {entry with case_name=if name="" then None else Some name}) (entries input side)),counter)
+  | EditInput target edit ->
+    (match target,input.parameters.input_source with
+     | CommonInput,Common (InputValue messages) -> (set_source input PInput (Common (InputValue (edit_messages messages edit))),counter)
+     | CaseInput side index,OnAxis owner -> if side<>owner then (input,counter) else
+       (set_entries input side (map_i (fun i entry -> if i<>index then entry else
+         {entry with values=P.set_case_value entry.values (InputValue (edit_messages (option_list entry.values.input_value) edit))}) (entries input side)),counter)
+     | _ -> (input,counter))
+  | SetCommon value ->
+    let p=value_parameter value in
+    ((match P.get_source input.parameters p with | Some (Common _) -> set_source input p (Common value) | _ -> input),counter)
+  | MoveToAxis p side ->
+    if not (P.is_case_axis input side) then (input,counter) else
+    (match P.get_source input.parameters p with | Some (Common _) -> own input p side allocation counter | _ -> (input,counter))
+  | MoveToCommon p -> collapse input p allocation counter
+  | SingleDimension side ->
+    let next=remove_case_axis input side in
+    let next,count=collapse_parameters next (P.axis_parameters input side) allocation counter in
+    neutral_dimension (strip_variables next side) side allocation count
+  | SelectDimension side p ->
+    if p=PVariable then
+      if P.is_case_axis input side then (input,counter) else
+      let next,count=collapse_parameters input (P.axis_parameters input side) allocation counter in
+      let entry,count=new_case next allocation count P.empty_case_values in
+      (set_entries (add_case_axis next side) side [entry],count)
+    else
+      (match P.get_source input.parameters p with
+       | None -> (input,counter)
+       | Some owner ->
+         if p=PJudgeCriteria || p=PJudgeSystem || p=PInput || source_on_axis input p (other_side side)
+           || (source_on_axis input p side && not (P.is_case_axis input side)) then (input,counter) else
+         let retained=if source_on_axis input p side then Some (L.map (fun entry ->
+           {entry with case_name=None; values=match P.get_case_value entry.values p with | None -> P.empty_case_values | Some value -> P.set_case_value P.empty_case_values value}) (entries input side)) else None in
+         let next=remove_case_axis input side in
+         let next,count=collapse_parameters next (P.axis_parameters input side) allocation counter in
+         let next=set_source (strip_variables next side) p (OnAxis side) in
+         match retained with | Some values -> (set_entries next side values,count) | None ->
+           let value=match owner with | Common value -> value | OnAxis _ -> P.parameter_default p in
+           if (match value with | ModelValue "" | JudgeModelValue "" -> true | _ -> false) then (set_entries next side [],count)
+           else let entry,count=new_case next allocation count (P.set_case_value P.empty_case_values value) in (set_entries next side [entry],count))
+  | SetCaseValue side index value ->
+    let p=value_parameter value in
+    if (if p=PVariable then not (P.is_case_axis input side) || not (P.axis_has_variables input side) else not (source_on_axis input p side)) then (input,counter)
+    else (set_entries input side (map_i (fun i entry -> if i=index then {entry with values=P.set_case_value entry.values value} else entry) (entries input side)),counter)
+  | SetCaseValues p side selected ->
+    if not (source_on_axis input p side) || P.is_case_axis input side || L.length (P.axis_parameters input side)<>1 then (input,counter) else
+    let matches,remaining=match_values p selected (entries input side) in
+    let values,count=fill_values input side p allocation counter selected matches remaining in
+    (set_entries input side values,count)
+  | AddCase side value -> ((if P.is_case_axis input side then set_entries input side (L.append (entries input side) [value]) else input),counter)
+  | RemoveCase side index -> ((if P.is_case_axis input side && L.length (entries input side)>1 then set_entries input side (remove_at (entries input side) index) else input),counter)
+  | MoveCase side index target -> ((if P.is_case_axis input side then set_entries input side (move (entries input side) index target) else input),counter)
+  | AddVariable side ->
+    if not (P.is_case_axis input side) || L.length (entries input side)=0 then (input,counter) else
+    let index=L.length (variable_fields input side) in
+    let used=L.append (L.collect (fun s -> L.collect (fun name -> match name with | Some name -> if name="" then [] else [name] | None -> []) (option_list (name_fields input s))) [Rows;Columns])
+      (L.collect (fun s -> if not (P.is_case_axis input s) then [] else L.collect (fun (i,field) -> match field with | None -> [] | Some _ -> [variable_name input s i]) (map_i (fun i field -> (i,field)) (variable_fields input s))) [Rows;Columns]) in
+    let name=unused_generated_name side index used in
+    let next=set_entries input side (L.map (fun entry -> {entry with values=P.set_case_value entry.values (VariableValue (L.append (option_list entry.values.variable_value) [Some {text=""; field_images=None}]))}) (entries input side)) in
+    (set_variable_name next side index (if name=generated_name side index then None else Some name),counter)
+  | RemoveVariable side index ->
+    if not (P.is_case_axis input side) || (match at (variable_fields input side) index with | Some (Some _) -> false | _ -> true) then (input,counter) else
+    (set_entries input side (L.map (fun entry -> {entry with values=P.set_case_value entry.values (VariableValue (replace_at (option_list entry.values.variable_value) index None))}) (entries input side)),counter)
+  | SwapAxes -> (swap input,counter)
+  | SetJudging enabled ->
+    if enabled=input.judging || (enabled && input.output_format=Html) then (input,counter)
+    else if enabled then (fold (fun current (p:common_parameter{p<>PInput /\ p<>PModel}) -> set_source current p (Common (P.parameter_default p))) {input with judging=true} judge_parameters,counter)
+    else
+      let next=fold (fun current p -> {current with parameters=P.remove_source current.parameters p}) {input with judging=false} judge_parameters in
+      let next=fold (fun current side -> set_entries current side (L.map (fun entry -> {entry with values=fold (fun values (p:common_parameter{p<>PInput /\ p<>PModel}) -> P.remove_case_value values p) entry.values judge_parameters}) (entries current side))) next [Rows;Columns] in
+      fold (fun (current,count) side -> neutral_dimension current side allocation count) (next,counter) [Rows;Columns]
 
-let swap input =
-  let names, renamed, used = fold (fun (names, renamed, used) side ->
-    if not (P.is_case_axis input side) then (names, renamed, used) else
-    let other = other_side side in
-    let names = if D.has (D.get input "variableNames") side then
-      D.set names other (D.get (D.get input "variableNames") side) else names in
-    fold (fun (names, renamed, used) (index, field) ->
-      let custom = D.str (D.at (D.items (D.get (D.get input "variableNames") side)) index) in
-      if D.equal field JNull || custom = "" then (names, renamed, used)
-      else (names, L.append renamed [(custom, custom)], L.append used [custom]))
-      (names, renamed, used) (map_i (fun i field -> (i, field)) (D.items (D.get (D.at (entries input side) 0) "variable"))))
-    (JObject [], [], []) ["rows"; "columns"] in
-  let index = variable_index input in
-  let unresolved, used = fold (fun (mapping, used) name ->
-    if L.existsb (fun (n, _, _) -> n = name) index then (mapping, used) else
-    let swapped = swap_numeric_name name in
-    let target = if member swapped used then name else swapped in
-    (L.append mapping [(name, target)], L.append used [target])) ([], used) (referenced_names input) in
-  let names, renamed, _ = fold (fun (names, renamed, used) side ->
-    if not (P.is_case_axis input side) then (names, renamed, used) else
-    let other = other_side side in
-    fold (fun (names, renamed, used) (index, field) ->
-      let custom = D.str (D.at (D.items (D.get (D.get input "variableNames") side)) index) in
-      if D.equal field JNull || custom <> "" then (names, renamed, used) else
-      let name = unused_generated_name other index used in
-      let names = if name = generated_name other index then names else
-        D.set names other (JArray (D.replace_at (fill_to (index + 1) (D.items (D.get names other))) index (JString name))) in
-      (names, L.append renamed [(variable_name input side index, name)], L.append used [name]))
-      (names, renamed, used) (map_i (fun i field -> (i, field)) (D.items (D.get (D.at (entries input side) 0) "variable"))))
-    (names, renamed, used) ["rows"; "columns"] in
-  let lookup mapping name = fold (fun found (key, value) -> if key = name then Some value else found) None mapping in
-  let rewritten = rewrite_references input (fun name ->
-    match lookup renamed name with
-    | Some value -> value
-    | None -> match lookup unresolved name with | Some value -> value | None -> name) in
-  let parameters = JObject (L.map (fun (parameter, value) ->
-    let kind = D.str (D.get value "kind") in
-    (parameter, (if kind = "rows" || kind = "columns" then owned (other_side kind) else value))) (D.fields (D.get rewritten "parameters"))) in
-  let next = D.set (D.set rewritten "parameters" parameters) "caseAxes"
-    (JArray (L.map (fun side -> JString (other_side (D.str side))) (D.items (D.get input "caseAxes")))) in
-  let next = if L.length (D.fields names) > 0 then D.set next "variableNames" names else next in
-  D.set (D.set next "rows" (D.get rewritten "columns")) "columns" (D.get rewritten "rows")
-
-let judge_parameters = ["judge_model"; "judge_effort"; "judge_system"; "judge_criteria"]
-let reduce (input:D.json) (event:D.json) (prefix:string) (counter:nat) : Tot (D.json & nat) =
-  let prefix = (prefix, case_ids input) in
-  let kind = D.str (D.get event "type") in
-  let side = D.str (D.get event "side") in
-  let parameter = D.str (D.get event "parameter") in
-  let index = D.natural (D.get event "index") in
-  let value = D.get event "value" in
-  let values = entries input side in
-  let active_field = not (D.equal (D.at (D.items (D.get (D.at values 0) "variable")) index) JNull) in
-  if kind = "rename-variable" then
-    let name = D.str (D.get event "name") in
-    if not (P.is_case_axis input side) || not active_field || not (variable_rename_valid input side index name)
-    then (input, counter) else
-    let previous = variable_name input side index in
-    let next = set_variable_name input side index (if name = "" then JNull else JString name) in
-    let name = variable_name next side index in
-    (rewrite_references next (fun token -> if token = previous then name else token), counter)
-  else if kind = "rename-case" then
-    if not (P.is_case_axis input side) || index >= L.length values then (input, counter) else
-    let name = N.trim (D.str (D.get event "name")) in
-    (set_entries input side (map_i (fun i entry -> if i <> index then entry
-      else if name = "" then D.omit entry "name" else D.set entry "name" (JString name)) values), counter)
-  else if kind = "edit-input" then
-    let kind = source_kind input "input" in
-    if kind <> D.str (D.get event "source") then (input, counter)
-    else if kind = "common" then
-      (set_source input "input" (common (JArray (edit_messages (D.items (D.get (source input "input") "value")) (D.get event "edit")))), counter)
-    else let case_index = D.natural (D.get event "caseIndex") in
-      if not (D.has event "caseIndex") || case_index >= L.length (entries input kind) then (input, counter)
-      else (set_entries input kind (map_i (fun i entry -> if i <> case_index then entry else
-        D.set entry "input" (JArray (edit_messages (D.items (D.get entry "input")) (D.get event "edit")))) (entries input kind)), counter)
-  else if kind = "common" then
-    ((if source_kind input parameter = "common" then set_source input parameter (common value) else input), counter)
-  else if kind = "to-axis" then
-    if not (P.is_case_axis input side) || source_kind input parameter <> "common" then (input, counter)
-    else own input parameter side prefix counter
-  else if kind = "to-common" then collapse input parameter prefix counter
-  else if kind = "single" then
-    let next = D.set input "caseAxes" (JArray (L.filter (fun item -> D.str item <> side) (D.items (D.get input "caseAxes")))) in
-    let next, count = collapse_parameters next (P.axis_parameters input side) prefix counter in
-    neutral_dimension (strip_variables next side) side prefix count
-  else if kind = "dimension" then
-    if parameter = "variable" then
-      if P.is_case_axis input side then (input, counter) else
-      let next, count = collapse_parameters input (P.axis_parameters input side) prefix counter in
-      let entry, count = new_case next prefix count (JObject []) in
-      (set_entries (D.set next "caseAxes" (JArray (L.append (D.items (D.get next "caseAxes")) [JString side]))) side [entry], count)
-    else let owner = source_kind input parameter in
-      if owner = other_side side || owner = "" || parameter = "judge_criteria" || parameter = "judge_system" || parameter = "input"
-        || (owner = side && not (P.is_case_axis input side)) then (input, counter)
-      else let retained = if owner = side then Some (L.map (fun entry -> JObject [("id", D.get entry "id"); (parameter, D.get entry parameter)]) values) else None in
-        let next = D.set input "caseAxes" (JArray (L.filter (fun item -> D.str item <> side) (D.items (D.get input "caseAxes")))) in
-        let next, count = collapse_parameters next (P.axis_parameters input side) prefix counter in
-        let next = set_source (strip_variables next side) parameter (owned side) in
-        match retained with
-        | Some retained -> (set_entries next side retained, count)
-        | None ->
-          let value = if owner = "common" then D.get (source input parameter) "value" else P.parameter_default parameter in
-          if (parameter = "model" || parameter = "judge_model") && D.str value = ""
-          then (set_entries next side [], count)
-          else let entry, count = new_case next prefix count (JObject [(parameter, value)]) in
-            (set_entries next side [entry], count)
-  else if kind = "case-value" then
-    if (if parameter = "variable" then not (P.is_case_axis input side) || not (P.axis_has_variables input side)
-        else source_kind input parameter <> side) then (input, counter)
-    else (set_entries input side (map_i (fun i entry -> if i = index then D.set entry parameter value else entry) values), counter)
-  else if kind = "case-values" then
-    if source_kind input parameter <> side || P.is_case_axis input side || L.length (P.axis_parameters input side) <> 1 then (input, counter)
-    else let selected = D.items (D.get event "values") in
-      let matches, remaining = match_values parameter selected values in
-      let values, count = fill_values input side parameter prefix counter selected matches remaining in
-      (set_entries input side values, count)
-  else if kind = "add-case" then
-    ((if P.is_case_axis input side then set_entries input side (L.append values [value]) else input), counter)
-  else if kind = "remove-case" then
-    ((if P.is_case_axis input side && L.length values > 1 then set_entries input side (D.remove_at values index) else input), counter)
-  else if kind = "add-variable" then
-    if not (P.is_case_axis input side) || L.length values = 0 then (input, counter)
-    else let index = L.length (D.items (D.get (D.at values 0) "variable")) in
-      let used = L.append
-        (L.filter (fun name -> name <> "") (L.collect (fun (_, names) -> L.map D.str (D.items names)) (D.fields (D.get input "variableNames"))))
-        (L.collect (fun s -> if not (P.is_case_axis input s) then [] else
-          L.collect (fun (i, field) -> if D.equal field JNull then [] else [variable_name input s i])
-            (map_i (fun i field -> (i, field)) (D.items (D.get (D.at (entries input s) 0) "variable")))) ["rows"; "columns"]) in
-      let name = unused_generated_name side index used in
-      let next = set_entries input side (L.map (fun entry -> D.set entry "variable"
-        (JArray (L.append (D.items (D.get entry "variable")) [JObject [("text", JString "")]]))) values) in
-      (set_variable_name next side index (if name = generated_name side index then JNull else JString name), counter)
-  else if kind = "remove-variable" then
-    if not (P.is_case_axis input side) || not active_field then (input, counter)
-    else (set_entries input side (L.map (fun entry -> D.set entry "variable"
-      (JArray (D.replace_at (D.items (D.get entry "variable")) index JNull))) values), counter)
-  else if kind = "move-case" then
-    ((if P.is_case_axis input side then set_entries input side (D.move values index (D.natural (D.get event "to"))) else input), counter)
-  else if kind = "swap" then (swap input, counter)
-  else if kind = "judge" then
-    let enabled = D.boolean (D.get event "enabled") in
-    if enabled = D.boolean (D.get input "judge") || (enabled && D.str (D.get input "format") = "html") then (input, counter)
-    else if enabled then
-      (fold (fun current p -> set_source current p (common (P.parameter_default p))) (D.set input "judge" (JBool true)) judge_parameters, counter)
-    else let next = fold (fun current p -> D.set current "parameters" (D.omit (D.get current "parameters") p)) (D.set input "judge" (JBool false)) judge_parameters in
-      let next = fold (fun current s -> set_entries current s (L.map (fun entry -> fold D.omit entry judge_parameters) (entries input s))) next ["rows"; "columns"] in
-      fold (fun (current, count) s -> neutral_dimension current s prefix count) (next, counter) ["rows"; "columns"]
-  else (input, counter)
-
-let default_grid format allocation counter =
-  let image = format = "image" in
-  let model_rows = image || format = "svg" || format = "html" in
-  let input = JObject [
-    ("inputVersion", D.number 3); ("format", JString format); ("budgetUsd", JString "3");
-    ("judge", JBool false); ("caseAxes", JArray []);
-    ("parameters", JObject (L.append [
-      ("input", common (P.parameter_default "input"));
-      ("model", owned (if model_rows then "rows" else "columns"))]
-      (if image then [
-        ("quality", owned "columns"); ("size", common (JString "auto"));
-        ("aspect_ratio", common (JString "auto")); ("background", common (JString "auto"))]
-      else [("effort", owned (if model_rows then "columns" else "rows"))])));
-    ("rows", JArray []); ("columns", JArray [])] in
-  let entry, next = new_case input allocation counter
-    (JObject [((if image then "quality" else "effort"), JString (if image then "auto" else "default"))]) in
-  (set_entries input (if model_rows then "columns" else "rows") [entry], next)
-
-let without_case_ids input =
-  fold (fun current side -> set_entries current side (L.map (fun entry -> D.omit entry "id") (entries input side)))
-    input ["rows"; "columns"]
-let add_dropped dropped parameter = if member parameter dropped then dropped else L.append dropped [parameter]
-
-let strip_format_cases input side dropped =
-  let cases, dropped = fold (fun (cases, dropped) entry ->
-    let entry, dropped = fold (fun (current, dropped) (key, value) ->
-      if key = "id" || (key = "name" && P.is_case_axis input side) then (current, dropped)
-      else if key = "name" then (D.omit current key, dropped)
-      else if (key = "variable" && P.is_case_axis input side) ||
-              (key <> "variable" && source_kind input key = side)
-      then (current, dropped)
-      else (D.omit current key, (if has_parameter_value key value then add_dropped dropped key else dropped)))
-      (entry, dropped) (D.fields entry) in
-    (L.append cases [entry], dropped)) ([], dropped) (entries input side) in
-  (set_entries input side cases, dropped)
-
-let rec find_model (models:list D.json) (id:string) : Tot (option D.json) =
-  match models with
-  | [] -> None
-  | model::rest -> if D.str (D.get model "id") = id then Some model else find_model rest id
-let format_model_compatible models format parameter value =
-  let id = D.str value in
-  if id = "" then true else match find_model models id with
-  | None -> true
-  | Some model ->
-    if parameter <> "judge_model" then D.boolean (D.get model (if format = "image" then "image" else "text"))
-    else if not (D.has model "structuredOutputs") then
-      D.boolean (D.get model "text") && ((format <> "svg" && format <> "image") || D.boolean (D.get model "imageInput"))
-    else format <> "html" && D.boolean (D.get model "text") && D.boolean (D.get model "structuredOutputs") &&
-      ((format <> "svg" && format <> "image") || D.boolean (D.get model "imageInput"))
-
-let convert_format_models input models format dropped =
-  fold (fun (current, dropped) parameter ->
-    let kind = source_kind current parameter in
-    if kind = "common" then
-      if format_model_compatible models format parameter (D.get (source current parameter) "value")
-      then (current, dropped)
-      else (set_source current parameter (common (JString "")), add_dropped dropped parameter)
-    else if kind = "" then (current, dropped)
-    else let cases, dropped = fold (fun (cases, dropped) entry ->
-      if format_model_compatible models format parameter (D.get entry parameter)
-      then (L.append cases [entry], dropped)
-      else (L.append cases [D.set entry parameter (JString "")], add_dropped dropped parameter))
-      ([], dropped) (entries current kind) in
-      (set_entries current kind cases, dropped)) (input, dropped) ["model"; "judge_model"]
-
+let default_grid (format:format) allocation counter : Tot (draft_input & nat) =
+  let image=format=Image in
+  let model_rows=image || format=Svg || format=Html in
+  let input : layout = {
+    output_format=format; case_ownership=NoCaseAxes; rows=[]; columns=[];
+    variable_names=None; judging=false; parallel_workers=None;
+    parameters={
+      source_order=(if image then [PInput;PModel;PQuality;PSize;PAspectRatio;PBackground] else [PInput;PModel;PEffort]);
+      input_source=Common (P.parameter_default PInput);
+      model_source=OnAxis (if model_rows then Rows else Columns);
+      effort_source=(if image then None else Some (OnAxis (if model_rows then Columns else Rows)));
+      quality_source=(if image then Some (OnAxis Columns) else None);
+      size_source=(if image then Some (Common (SizeValue "auto")) else None);
+      aspect_ratio_source=(if image then Some (Common (AspectRatioValue "auto")) else None);
+      background_source=(if image then Some (Common (BackgroundValue "auto")) else None);
+      judge_model_source=None; judge_effort_source=None; judge_criteria_source=None; judge_system_source=None}} in
+  let entry,next=new_case input allocation counter (P.set_case_value P.empty_case_values (if image then QualityValue "auto" else EffortValue DefaultEffort)) in
+  ({draft_layout=set_entries input (if model_rows then Columns else Rows) [entry]; budget_text="3"},next)
+let layout_data (input:layout) : Tot layout =
+  let normalize_case entry = {entry with values={entry.values with value_order=[]}} in
+  {input with parameters={input.parameters with source_order=[]};
+    rows=L.map normalize_case input.rows; columns=L.map normalize_case input.columns}
+let without_case_ids (input:layout) : Tot layout =
+  let next=layout_data input in
+  let normalize_case entry = {entry with case_id=""; values=fold (fun values p -> match P.get_case_value values p with
+    | None -> values | Some value -> P.set_case_value values (comparison_value value)) entry.values P.parameter_names} in
+  let next={next with rows=L.map normalize_case next.rows; columns=L.map normalize_case next.columns} in
+  let next=fold (fun current p -> match P.get_source current.parameters p with
+    | Some (Common value) -> set_source current p (Common (comparison_value value)) | _ -> current) next P.common_parameters in
+  layout_data next
+let add_dropped (dropped:list parameter) (p:parameter) : Tot (list parameter) = if member p dropped then dropped else L.append dropped [p]
+let strip_format_cases (input:layout) (side:axis) (dropped:list parameter) : Tot (layout & list parameter) =
+  let cases,dropped=fold (fun (cases,dropped) entry ->
+    let values,dropped=fold (fun (values,dropped) p ->
+      if (p=PVariable && P.is_case_axis input side) || source_on_axis input p side then (values,dropped) else
+      (P.remove_case_value values p,(if has_parameter_value p (P.get_case_value entry.values p) then add_dropped dropped p else dropped)))
+      (entry.values,dropped) entry.values.value_order in
+    (L.append cases [{entry with values=values; case_name=if P.is_case_axis input side then entry.case_name else None}],dropped))
+    ([],dropped) (entries input side) in
+  (set_entries input side cases,dropped)
+let rec find_model (models:list catalog_model) (id:string) : Tot (option catalog_model) =
+  match models with | [] -> None | model::rest -> if model.model_id=id then Some model else find_model rest id
+let format_model_compatible (models:list catalog_model) (format:format) (p:parameter) (id:string) : Tot bool =
+  if id="" then true else match find_model models id with | None -> true | Some model ->
+    if p<>PJudgeModel then (if format=Image then model.generates_images else model.generates_text)
+    else match model.structured_outputs with
+      | None -> model.generates_text && ((format<>Svg && format<>Image) || model.accepts_images)
+      | Some structured -> format<>Html && model.generates_text && structured && ((format<>Svg && format<>Image) || model.accepts_images)
+let model_id_value (value:value) : Tot string = match value with | ModelValue id | JudgeModelValue id -> id | _ -> ""
+let convert_format_models (input:layout) models format dropped =
+  fold (fun (current,dropped) (p:common_parameter) -> match P.get_source current.parameters p with
+    | Some (Common value) -> if format_model_compatible models format p (model_id_value value) then (current,dropped)
+      else (set_source current p (Common (P.parameter_default p)),add_dropped dropped p)
+    | None -> (current,dropped)
+    | Some (OnAxis side) ->
+      let cases,dropped=fold (fun (cases,dropped) entry ->
+        let id=match P.get_case_value entry.values p with | None -> "" | Some value -> model_id_value value in
+        if format_model_compatible models format p id then (L.append cases [entry],dropped)
+        else (L.append cases [{entry with values=P.set_case_value entry.values (P.parameter_default p)}],add_dropped dropped p)) ([],dropped) (entries current side) in
+      (set_entries current side cases,dropped)) (input,dropped) ([PModel;PJudgeModel] <: list common_parameter)
 let normalize_format_axes input allocation counter dropped =
-  fold (fun (current, count, dropped) side ->
-    if P.is_case_axis current side then (current, count, dropped) else
-    let parameters = P.axis_parameters current side in
-    let native = fold (fun selected parameter ->
-      if selected <> "" || parameter = "judge_criteria" || parameter = "judge_system" then selected else parameter) "" parameters in
-    let current, count, dropped = fold (fun (current, count, dropped) parameter ->
-      if parameter = native || parameter = "variable" then (current, count, dropped) else
-      let dropped = fold add_dropped dropped
-        (dropped_parameters current (JObject [("type", JString "to-common"); ("parameter", JString parameter)])) in
-      let next, count = collapse current parameter allocation count in (next, count, dropped))
-      (current, count, dropped) parameters in
-    let next, count = neutral_dimension current side allocation count in (next, count, dropped))
-    (input, counter, dropped) ["rows"; "columns"]
-
-let valid_prompt_messages value =
-  let messages = D.items value in
-  L.length messages = 1 && D.str (D.get (D.at messages 0) "role") = "user"
-let normalize_prompt_format input format dropped =
-  if format = "chat-template" then (input, dropped) else
-  let kind = source_kind input "input" in
-  if kind = "common" then
-    if valid_prompt_messages (D.get (source input "input") "value") then (input, dropped)
-    else (set_source input "input" (common (P.parameter_default "input")), add_dropped dropped "input")
-  else let cases, dropped = fold (fun (cases, dropped) entry ->
-    if valid_prompt_messages (D.get entry "input") then (L.append cases [entry], dropped)
-    else (L.append cases [D.set entry "input" (P.parameter_default "input")], add_dropped dropped "input"))
-    ([], dropped) (entries input kind) in
-    (set_entries input kind cases, dropped)
-
-let select_format (draft:D.json) (format:string) (catalog:D.json) (prefix:string) (counter:nat)
-  : Tot (D.json & nat & list string) =
-  let previous = D.get draft "input" in
-  if D.str (D.get previous "format") = format then (D.set draft "formatSelected" (JBool true), counter, [])
-  else let allocation = (prefix, case_ids previous) in
-    let defaults, counter = default_grid format allocation counter in
-    let previous_defaults, counter = default_grid (D.str (D.get previous "format")) allocation counter in
-    if parameter_values_equal (without_case_ids previous) (without_case_ids previous_defaults)
-    then (D.set (D.set draft "input" defaults) "formatSelected" (JBool true), counter, [])
-    else let applicable = L.append (L.map (fun (key, _) -> key) (D.fields (D.get defaults "parameters")))
-      (if D.boolean (D.get previous "judge") && format <> "html" then judge_parameters else []) in
-      let input = D.set (D.set previous "format" (JString format)) "judge"
-        (JBool (D.boolean (D.get previous "judge") && format <> "html")) in
-      let input, counter, dropped = fold (fun (current, count, dropped) (parameter, value) ->
-        if member parameter applicable then (current, count, dropped) else
-        let kind = D.str (D.get value "kind") in
-        let lost = if kind = "common" then has_parameter_value parameter (D.get value "value")
-          else L.existsb (fun entry -> has_parameter_value parameter (D.get entry parameter)) (entries current kind) in
-        let dropped = if lost then add_dropped dropped parameter else dropped in
-        let next, count = remove_parameter current parameter allocation count in (next, count, dropped))
-        (input, counter, []) (D.fields (D.get input "parameters")) in
-      let input, dropped = fold (fun (current, dropped) side -> strip_format_cases current side dropped)
-        (input, dropped) ["rows"; "columns"] in
-      let input = fold (fun current parameter ->
-        if D.has (D.get current "parameters") parameter then current
-        else set_source current parameter (common (P.parameter_default parameter))) input applicable in
-      let input, dropped = convert_format_models input (D.items catalog) format dropped in
-      let input, counter, dropped = normalize_format_axes input allocation counter dropped in
-      let input, dropped = normalize_prompt_format input format dropped in
-      (D.set (D.set draft "input" input) "formatSelected" (JBool true), counter, dropped)
+  fold (fun (current,count,dropped) side ->
+    if P.is_case_axis current side then (current,count,dropped) else
+    let parameters=P.axis_parameters current side in
+    let native=fold (fun selected p -> match selected with | Some _ -> selected | None -> if p=PJudgeCriteria || p=PJudgeSystem then None else Some p) None parameters in
+    let current,count,dropped=fold (fun (current,count,dropped) (p:parameter) ->
+      if native=Some p || p=PVariable then (current,count,dropped) else
+      let dropped=fold add_dropped dropped (dropped_parameters current (MoveToCommon p)) in
+      let next,count=collapse current p allocation count in (next,count,dropped)) (current,count,dropped) parameters in
+    let next,count=neutral_dimension current side allocation count in (next,count,dropped)) (input,counter,dropped) [Rows;Columns]
+let valid_prompt_messages (messages:list message) : Tot bool =
+  match messages with | [message] -> message.message_role=UserRole | _ -> false
+let normalize_prompt_format (input:layout) format dropped =
+  if format=ChatTemplate then (input,dropped) else match input.parameters.input_source with
+  | Common (InputValue messages) -> if valid_prompt_messages messages then (input,dropped)
+    else (set_source input PInput (Common (P.parameter_default PInput)),add_dropped dropped PInput)
+  | OnAxis side ->
+    let cases,dropped=fold (fun (cases,dropped) entry ->
+      if valid_prompt_messages (option_list entry.values.input_value) then (L.append cases [entry],dropped)
+      else (L.append cases [{entry with values=P.set_case_value entry.values (P.parameter_default PInput)}],add_dropped dropped PInput)) ([],dropped) (entries input side) in
+    (set_entries input side cases,dropped)
+let select_format (draft:draft) (format:format) (catalog:list catalog_model) (prefix:string) (counter:nat) : Tot (D.draft & nat & list parameter) =
+  let previous=draft.editable.draft_layout in
+  if previous.output_format=format then ({draft with format_selected=true},counter,[]) else
+  let allocation=(prefix,case_ids previous) in
+  let defaults,counter=default_grid format allocation counter in
+  let previous_defaults,counter=default_grid previous.output_format allocation counter in
+  if draft.editable.budget_text=previous_defaults.budget_text && without_case_ids previous=without_case_ids previous_defaults.draft_layout
+  then ({draft with editable=defaults; format_selected=true},counter,[]) else
+  let applicable=L.append defaults.draft_layout.parameters.source_order (if previous.judging && format<>Html then L.map (fun (p:common_parameter{p<>PInput /\ p<>PModel}) -> (p <: common_parameter)) judge_parameters else []) in
+  let input={previous with output_format=format; judging=previous.judging && format<>Html} in
+  let input,counter,dropped=fold (fun (current,count,dropped) (p:common_parameter) ->
+    if member p applicable then (current,count,dropped) else
+    if p=PInput || p=PModel then (current,count,dropped) else
+    let lost=match P.get_source current.parameters p with
+      | None -> false | Some (Common value) -> has_parameter_value p (Some value)
+      | Some (OnAxis side) -> L.existsb (fun entry -> has_parameter_value p (P.get_case_value entry.values p)) (entries current side) in
+    let dropped=if lost then add_dropped dropped p else dropped in
+    let next,count=remove_parameter current p allocation count in (next,count,dropped))
+    (input,counter,[]) input.parameters.source_order in
+  let input,dropped=fold (fun (current,dropped) side -> strip_format_cases current side dropped) (input,dropped) [Rows;Columns] in
+  let input=fold (fun current p -> match P.get_source current.parameters p with
+    | Some _ -> current | None -> set_source current p (Common (P.parameter_default p))) input applicable in
+  let input,dropped=convert_format_models input catalog format dropped in
+  let input,counter,dropped=normalize_format_axes input allocation counter dropped in
+  let input,dropped=normalize_prompt_format input format dropped in
+  ({draft with editable={draft.editable with draft_layout=input}; format_selected=true},counter,dropped)

@@ -113,7 +113,7 @@ worktree:
 
 ```sh
 pnpm creation:ensure
-pnpm exec tsx --test tests/create-machine-codec.test.ts tests/create-model.test.ts tests/create-controller.test.ts tests/change-axis.test.ts tests/judge-mode.test.ts
+pnpm exec tsx --test tests/create-machine-codec.test.ts tests/create-typed-boundary.test.ts tests/create-model.test.ts tests/create-controller.test.ts tests/change-axis.test.ts tests/judge-mode.test.ts
 pnpm build
 E2E_PORT=0 pnpm exec tsx tests/run-e2e.ts --suite mock --reuse-build tests/e2e/create-state-machine.spec.ts tests/e2e/creation-machine-contract.spec.ts tests/e2e/creation-machine-switch.spec.ts tests/e2e/case-format-transitions.spec.ts tests/e2e/chat.spec.ts tests/e2e/model-selection.spec.ts tests/e2e/image-settings.spec.ts
 ```

@@ -9,30 +9,35 @@ import type { InputAction, MessageEdit } from "./input-events";
 import { ChatEditor } from "./chat-editor";
 import { PromptEditor } from "./prompt-editor";
 
-export function CompleteInputEditor({
-  format,
-  messages,
-  source,
-  caseIndex,
-  onAction,
-  onBusy,
-  compatibility,
-}: {
-  format: GridDraftInput["format"];
-  messages: ChatMessage[];
-  source: "common" | AxisSide;
-  caseIndex?: number;
-  onAction: (action: InputAction) => void;
-  onBusy: (busy: boolean) => void;
-  compatibility: (messageIndex?: number) => ReactNode;
-}) {
+export function CompleteInputEditor(
+  props: (
+    | {
+        source: "common";
+      }
+    | {
+        source: AxisSide;
+        caseIndex: number;
+      }
+  ) & {
+    format: GridDraftInput["format"];
+    messages: ChatMessage[];
+    onAction: (action: InputAction) => void;
+    onBusy: (busy: boolean) => void;
+    compatibility: (messageIndex?: number) => ReactNode;
+  },
+) {
+  const { format, messages, onAction, onBusy, compatibility } = props;
   function change(edit: MessageEdit) {
-    onAction({
-      type: "edit-input",
-      source,
-      ...(caseIndex === undefined ? {} : { caseIndex }),
-      edit,
-    });
+    onAction(
+      props.source === "common"
+        ? { type: "edit-input", source: "common", edit }
+        : {
+            type: "edit-input",
+            source: props.source,
+            caseIndex: props.caseIndex,
+            edit,
+          },
+    );
   }
   if (isChatFormat(format))
     return (

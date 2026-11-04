@@ -1,351 +1,310 @@
 module Slopgrid.Machine
 
-module D = Slopgrid.Data
+module D = Slopgrid.Domain
+module Num = Slopgrid.Number
 module N = Slopgrid.Native
 module L = FStar.List.Tot.Base
 module I = Slopgrid.Input
 module P = Slopgrid.Parameters
 module Policy = Slopgrid.Policy
+open Slopgrid.Domain
 
-type phase =
-  | Preparing : phase
-  | Submitting : phase
-  | Completed : phase
-
-type submission = {
+let request_phase = phase:D.submission_phase{phase <> D.Idle}
+noeq type submission = {
   request_id:pos;
-  request_phase:phase;
-  request_input:D.json;
-  source_grid_id:option D.json;
+  request_phase:request_phase;
+  request_input:D.admitted_input;
+  source_grid_id:option string;
   reuse_artifacts:bool;
   continue_low_balance:bool
 }
-
-type confirmation = { confirmation_id:pos; proposed_draft:D.json }
-
-type state = {
-  draft:D.json;
+type confirmation = { confirmation_id:pos; proposed_draft:D.draft }
+noeq type state = {
+  draft:D.draft;
   attempted:bool;
   pending_uploads:nat;
   error:string;
-  low_balance:D.json;
+  low_balance:option Num.finite;
   active:option submission;
   case_prefix:string;
   next_case:nat;
   next_confirmation:pos;
   next_request:pos;
   pending_confirmation:option confirmation;
-  context:D.json
+  context:D.context
+}
+noeq type step = { next_state:state; change:D.change; commands:list D.command }
+
+let init (initial:D.initial) (context:D.context) : Tot state = {
+  draft=initial.initial_draft; attempted=false; pending_uploads=0; error="";
+  low_balance=None; active=None; case_prefix=initial.case_id_prefix;
+  next_case=0; next_confirmation=1; next_request=1;
+  pending_confirmation=None; context=context
 }
 
-type outcome = {
-  state_changed:bool;
-  draft_changed:b:bool{b ==> state_changed}
-}
-
-type step = { next_state:state; outcome:outcome; commands:list D.json }
-
-let init (initial:D.json) (context:D.json) : Tot state = {
-  draft=D.get initial "draft";
-  attempted=false;
-  pending_uploads=0;
-  error="";
-  low_balance=D.JNull;
-  active=None;
-  case_prefix=D.str (D.get initial "caseIdPrefix");
-  next_case=0;
-  next_confirmation=1;
-  next_request=1;
-  pending_confirmation=None;
-  context=context
-}
-
-let phase_name (value:phase) : Tot string =
-  match value with
-  | Preparing -> "preparing"
-  | Submitting -> "submitting"
-  | Completed -> "completed"
-
-let submission_phase (model:state) : Tot string =
-  match model.active with | None -> "idle" | Some request -> phase_name request.request_phase
+let submission_phase (model:state) : Tot D.submission_phase =
+  match model.active with | None -> D.Idle | Some request -> request.request_phase
 
 let has_submission (model:state) : Tot bool =
   match model.active with | None -> false | Some _ -> true
 
-let owns (model:state) (id:nat) (expected:phase) : Tot bool =
+let owns (model:state) (id:pos) (expected:request_phase) : Tot bool =
   match model.active with
   | Some request -> request.request_id = id && request.request_phase = expected
   | None -> false
 
-let owns_confirmation (model:state) (id:nat) : Tot bool =
+let owns_confirmation (model:state) (id:pos) : Tot bool =
   match model.pending_confirmation with
   | Some proposal -> proposal.confirmation_id = id
   | None -> false
 
-let unchanged (model:state) : Tot step = {
-  next_state=model;
-  outcome={state_changed=false; draft_changed=false};
-  commands=[]
-}
+let transition (model:state) (change:D.change) (commands:list D.command) : Tot step =
+  {next_state=model; change=change; commands=commands}
+let unchanged (model:state) : Tot step = transition model D.NoChange []
+let metadata (model:state) (commands:list D.command) : Tot step =
+  transition model D.MetadataChanged commands
 
-let changed (model:state) (commands:list D.json) (draft_changed:bool) : Tot step = {
-  next_state=model;
-  outcome={state_changed=true; draft_changed=draft_changed};
-  commands=commands
-}
+let draft_for_comparison (draft:D.draft) : Tot D.draft =
+  {draft with editable={draft.editable with draft_layout=I.layout_data draft.editable.draft_layout}}
+let draft_equal (left:D.draft) (right:D.draft) : Tot bool =
+  draft_for_comparison left = draft_for_comparison right
 
-let command (name:string) (entries:list (string & D.json)) : Tot D.json =
-  D.object (("type",D.JString name)::entries)
-
-let edit (model:state) (draft:D.json) (next_case:nat) : Tot step =
-  let different = not (D.equal draft model.draft) in
+let edit (model:state) (draft:D.draft) (next_case:nat) : Tot step =
+  let different = not (draft_equal draft model.draft) in
   let confirming = match model.pending_confirmation with | None -> false | Some _ -> true in
   if not different && not model.attempted && model.error = "" && not confirming
   then unchanged model
-  else
-    changed {
-      model with
-      draft=(if different then draft else model.draft);
-      next_case=next_case;
-      attempted=false;
-      error="";
-      pending_confirmation=None
-    } (if different then [command "persist-draft" [("draft",draft)]] else []) different
+  else transition {
+    model with draft=(if different then draft else model.draft);
+    next_case=next_case; attempted=false; error=""; pending_confirmation=None
+  } (if different then D.DraftChanged else D.MetadataChanged)
+    (if different then [D.PersistDraft draft] else [])
 
-let input_source (input:D.json) : Tot D.json = D.get (D.get input "parameters") "input"
+let input_messages (value:D.value_for D.PInput) : Tot (list D.message) =
+  match value with | D.InputValue messages -> messages
 
-let generator_messages (input:D.json) : Tot (list D.json) =
-  let source = input_source input in
-  if D.str (D.get source "kind") = "common"
-  then D.items (D.get source "value")
-  else L.flatten (L.map (fun entry -> D.items (D.get entry "input"))
-    (D.items (D.get input (D.str (D.get source "kind")))))
+let axis_entries (layout:D.layout) (axis:D.axis) : Tot (list D.case_record) =
+  match axis with | D.Rows -> layout.rows | D.Columns -> layout.columns
 
-let reference_images (input:D.json) : Tot (list D.json) =
-  let messages = L.flatten (L.map (fun message -> D.items (D.get message "images"))
-    (generator_messages input)) in
-  let entries = L.append (D.items (D.get input "rows")) (D.items (D.get input "columns")) in
+let generator_messages (layout:D.layout) : Tot (list D.message) =
+  match layout.parameters.input_source with
+  | D.Common value -> input_messages value
+  | D.OnAxis axis -> L.flatten (L.map (fun entry ->
+      match entry.values.input_value with | None -> [] | Some messages -> messages)
+      (axis_entries layout axis))
+
+let attachment_images (images:option (list D.reference_image)) : Tot (list D.reference_image) =
+  match images with | None -> [] | Some images -> images
+
+let reference_images (layout:D.layout) : Tot (list D.reference_image) =
+  let messages = L.flatten (L.map (fun message -> attachment_images message.images)
+    (generator_messages layout)) in
   let variables = L.flatten (L.map (fun entry ->
-    L.flatten (L.map (fun field -> D.items (D.get field "images"))
-      (D.items (D.get entry "variable")))) entries) in
+    match entry.values.variable_value with
+    | None -> []
+    | Some fields -> L.flatten (L.map (fun field ->
+      match field with | None -> [] | Some field -> attachment_images field.field_images) fields))
+    (L.append layout.rows layout.columns)) in
   L.append messages variables
 
-let contains_reference (input:D.json) (id:string) : Tot bool =
-  L.existsb (fun image -> D.str (D.get image "id") = id) (reference_images input)
+let contains_reference (layout:D.layout) (id:string) : Tot bool =
+  L.existsb (fun image -> image.reference_id = id) (reference_images layout)
+let has_local_references (layout:D.layout) : Tot bool =
+  L.existsb (fun image -> N.starts_with image.reference_id "local-") (reference_images layout)
 
-let has_local_references (input:D.json) : Tot bool =
-  L.existsb (fun image -> N.starts_with (D.str (D.get image "id")) "local-")
-    (reference_images input)
+let replace_images (images:option (list D.reference_image)) (local_id:string)
+  (replacement:D.reference_image) : Tot (option (list D.reference_image)) =
+  match images with
+  | None -> None
+  | Some images -> Some (L.map (fun image ->
+      if image.reference_id = local_id then replacement else image) images)
 
-let replace_image_list (images:D.json) (local_id:string) (replacement:D.json) : Tot D.json =
-  D.JArray (L.map (fun image ->
-    if D.str (D.get image "id") = local_id then replacement else image) (D.items images))
+let replace_messages (messages:list D.message) (local_id:string)
+  (replacement:D.reference_image) : Tot (list D.message) =
+  L.map (fun message -> {message with images=replace_images message.images local_id replacement}) messages
 
-let replace_attachment (value:D.json) (local_id:string) (replacement:D.json) : Tot D.json =
-  if D.has value "images"
-  then D.set value "images" (replace_image_list (D.get value "images") local_id replacement)
-  else value
+let rec map_cases (f:D.case_record -> Tot D.case_record) (entries:list D.case_record)
+  : Tot (result:list D.case_record{
+    L.length result = L.length entries /\ (result = [] <==> entries = [])}) =
+  match entries with
+  | [] -> []
+  | entry::rest -> f entry :: map_cases f rest
 
-let replace_messages (messages:D.json) (local_id:string) (replacement:D.json) : Tot D.json =
-  D.JArray (L.map (fun message -> replace_attachment message local_id replacement)
-    (D.items messages))
+let replace_case_messages (entry:D.case_record) (local_id:string)
+  (replacement:D.reference_image) : Tot D.case_record =
+  match entry.values.input_value with
+  | None -> entry
+  | Some messages -> {entry with values={entry.values with
+      input_value=Some (replace_messages messages local_id replacement)}}
 
-let replace_references (input:D.json) (local_id:string) (replacement:D.json) : Tot D.json =
-  let source = input_source input in
-  let side = D.str (D.get source "kind") in
-  let input =
-    if side = "common" then
-      D.set input "parameters" (D.set (D.get input "parameters") "input"
-        (D.set source "value" (replace_messages (D.get source "value") local_id replacement)))
-    else D.set input side (D.JArray (L.map (fun entry ->
-      if D.has entry "input" then
-        D.set entry "input" (replace_messages (D.get entry "input") local_id replacement)
-      else entry) (D.items (D.get input side)))) in
-  L.fold_left (fun result dimension ->
-    D.set result dimension (D.JArray (L.map (fun entry ->
-      if D.has entry "variable" then
-        D.set entry "variable" (D.JArray (L.map
-          (fun field -> replace_attachment field local_id replacement)
-          (D.items (D.get entry "variable"))))
-      else entry) (D.items (D.get result dimension))))) input ["rows";"columns"]
+let replace_case_variables (entry:D.case_record) (local_id:string)
+  (replacement:D.reference_image) : Tot D.case_record =
+  match entry.values.variable_value with
+  | None -> entry
+  | Some fields -> {entry with values={entry.values with variable_value=Some
+      (L.map (fun field -> match field with
+        | None -> None
+        | Some field -> Some {field with field_images=replace_images field.field_images local_id replacement}) fields)}}
+
+let replace_references (layout:D.layout) (local_id:string) (replacement:D.reference_image)
+  : Tot (result:D.layout{
+    (result.rows = [] <==> layout.rows = []) /\
+    (result.columns = [] <==> layout.columns = [])}) =
+  let with_input = match layout.parameters.input_source with
+    | D.Common value -> {layout with parameters={layout.parameters with
+        input_source=D.Common (D.InputValue (replace_messages (input_messages value) local_id replacement))}}
+    | D.OnAxis D.Rows -> {layout with rows=map_cases
+        (fun entry -> replace_case_messages entry local_id replacement) layout.rows}
+    | D.OnAxis D.Columns -> {layout with columns=map_cases
+        (fun entry -> replace_case_messages entry local_id replacement) layout.columns} in
+  {with_input with
+    rows=map_cases (fun entry -> replace_case_variables entry local_id replacement) with_input.rows;
+    columns=map_cases (fun entry -> replace_case_variables entry local_id replacement) with_input.columns}
 
 let generate (model:state) (continue_low_balance:bool) : Tot step =
   if has_submission model then unchanged model
   else
     let policy = Policy.evaluate model.draft model.attempted model.pending_uploads
       (submission_phase model) model.context in
-    if not (D.boolean (D.get (D.get policy "eligibility") "canAttempt"))
-    then unchanged model
-    else
-      let input = D.get policy "admittedInput" in
-      if D.equal input D.JNull then
-        if model.attempted then unchanged model
-        else changed {model with attempted=true} [] false
-      else
-        let request = {
-          request_id=model.next_request;
-          request_phase=Preparing;
-          request_input=input;
-          source_grid_id=(if D.has model.draft "sourceGridId"
-            then Some (D.get model.draft "sourceGridId") else None);
-          reuse_artifacts=(not (D.has model.draft "reuseArtifacts") ||
-            D.boolean (D.get model.draft "reuseArtifacts"));
-          continue_low_balance=continue_low_balance
-        } in
-        changed {model with attempted=true; error=""; active=Some request;
-          next_request=model.next_request + 1}
-          [command "prepare-references" [("id",D.number request.request_id);("input",input)]] false
+    match policy.decision with
+    | D.CannotAttempt _ -> unchanged model
+    | D.IncompleteSelection ->
+      if model.attempted then unchanged model else metadata {model with attempted=true} []
+    | D.ReadyToSubmit input ->
+      let request = {
+        request_id=model.next_request; request_phase=D.Preparing; request_input=input;
+        source_grid_id=model.draft.source_grid_id;
+        reuse_artifacts=(match model.draft.reuse_artifacts with | None -> true | Some value -> value);
+        continue_low_balance=continue_low_balance
+      } in
+      metadata {model with attempted=true; error=""; active=Some request;
+        next_request=model.next_request + 1}
+        [D.PrepareReferences request.request_id input]
 
-let references_prepared (model:state) (id:nat) : Tot step =
-  if not (owns model id Preparing) then unchanged model
+let references_prepared (model:state) (id:pos) : Tot step =
+  if not (owns model id D.Preparing) then unchanged model
   else match model.active with
   | None -> unchanged model
   | Some request ->
-    if has_local_references request.request_input then unchanged model
-    else
-      let entries = [
-        ("id",D.number request.request_id);
-        ("input",request.request_input);
-        ("reuseArtifacts",D.JBool request.reuse_artifacts);
-        ("continueWithLowBalance",D.JBool request.continue_low_balance)
-      ] in
-      let entries = match request.source_grid_id with
-        | None -> entries | Some source -> L.append entries [("sourceGridId",source)] in
-      changed {model with active=Some {request with request_phase=Submitting}}
-        [command "submit-grid" entries] false
+    if has_local_references request.request_input.admitted_layout then unchanged model
+    else metadata {model with active=Some {request with request_phase=D.Submitting}}
+      [D.SubmitGrid request.request_id request.request_input request.source_grid_id
+        request.reuse_artifacts request.continue_low_balance]
 
-let submission_succeeded (model:state) (id:nat) (grid_id:string) : Tot step =
-  if not (owns model id Submitting) then unchanged model
+let submission_succeeded (model:state) (id:pos) (grid_id:string) : Tot step =
+  if not (owns model id D.Submitting) then unchanged model
   else match model.active with
   | None -> unchanged model
-  | Some request ->
-    changed {model with low_balance=D.JNull;
-      active=Some {request with request_phase=Completed}}
-      [command "creation-completed" [("id",D.number id);("gridId",D.JString grid_id)]] false
+  | Some request -> metadata {model with low_balance=None;
+      active=Some {request with request_phase=D.Completed}}
+      [D.CreationCompleted id grid_id]
 
-let submission_failed (model:state) (id:nat) (message:string) (balance:D.json) : Tot step =
+let submission_failed (model:state) (id:pos) (message:string)
+  (balance:option Num.finite) : Tot step =
   match model.active with
   | None -> unchanged model
   | Some request ->
-    if request.request_id <> id || request.request_phase = Completed then unchanged model
-    else
-      let low = not (D.equal balance D.JNull) in
-      changed {model with active=None;
-        error=(if low then "" else message);
-        low_balance=(if low then balance else model.low_balance)} [] false
+    if request.request_id <> id || request.request_phase = D.Completed then unchanged model
+    else match balance with
+      | None -> metadata {model with active=None; error=message} []
+      | Some balance -> metadata {model with active=None; error=""; low_balance=Some balance} []
 
-let completion_failed (model:state) (id:nat) (message:string) : Tot step =
-  if not (owns model id Completed) then unchanged model
-  else changed {model with active=None; error=message} [] false
+let completion_failed (model:state) (id:pos) (message:string) : Tot step =
+  if not (owns model id D.Completed) then unchanged model
+  else metadata {model with active=None; error=message} []
 
-let confirmation_resolved (model:state) (id:nat) (accepted:bool) : Tot step =
+let confirmation_resolved (model:state) (id:pos) (accepted:bool) : Tot step =
   if not (owns_confirmation model id) then unchanged model
   else match model.pending_confirmation with
   | None -> unchanged model
   | Some proposal ->
     if accepted then edit model proposal.proposed_draft model.next_case
-    else changed {model with pending_confirmation=None} [] false
+    else metadata {model with pending_confirmation=None} []
 
-let reference_uploaded (model:state) (id:nat) (local_id:string) (image:D.json) : Tot step =
-  if not (owns model id Preparing) then unchanged model
+let reference_uploaded (model:state) (id:pos) (local_id:string)
+  (image:D.reference_image) : Tot step =
+  if not (owns model id D.Preparing) then unchanged model
   else match model.active with
   | None -> unchanged model
   | Some request ->
-    if not (N.starts_with local_id "local-") ||
-      N.starts_with (D.str (D.get image "id")) "local-" ||
-      not (contains_reference request.request_input local_id)
+    if not (N.starts_with local_id "local-") || N.starts_with image.reference_id "local-" ||
+      not (contains_reference request.request_input.admitted_layout local_id)
     then unchanged model
     else
-      let input = replace_references request.request_input local_id image in
-      let draft_input = D.get model.draft "input" in
-      let result = if contains_reference draft_input local_id then
-        edit model (D.set model.draft "input" (replace_references draft_input local_id image))
-          model.next_case
+      let input = {request.request_input with admitted_layout=
+        replace_references request.request_input.admitted_layout local_id image} in
+      let editable = model.draft.editable in
+      let result = if contains_reference editable.draft_layout local_id then
+        edit model {model.draft with editable={editable with draft_layout=
+          replace_references editable.draft_layout local_id image}} model.next_case
         else unchanged model in
-      changed {result.next_state with active=Some {request with request_input=input}}
-        (L.append result.commands [command "remove-reference-file" [("localId",D.JString local_id)]])
-        result.outcome.draft_changed
+      let next = {result.next_state with active=Some {request with request_input=input}} in
+      transition next (if result.change = D.DraftChanged then D.DraftChanged else D.MetadataChanged)
+        (L.append result.commands [D.RemoveReferenceFile local_id])
 
-let propose_edit (model:state) (event:D.json) : Tot step =
-  let draft,next_case,message =
-    if D.str (D.get event "type") = "format-selected" then
-      let next,counter,dropped = I.select_format model.draft
-        (D.str (D.get event "format")) (D.get model.context "catalog")
-        model.case_prefix model.next_case in
-      let message = if L.length dropped = 0 then None else
-        Some (N.concat "Changing format will discard incompatible or differing "
-          (N.concat (D.join ", " (L.map P.parameter_name dropped))
-            " settings and case values. Differing values that become common will return to their defaults. Continue?")) in
-      next,counter,message
-    else
-      let previous = D.get model.draft "input" in
-      let message = I.confirmation previous event in
-      let input,counter = I.reduce previous event model.case_prefix model.next_case in
-      if D.equal input previous then model.draft,model.next_case,None
-      else D.set model.draft "input" input,counter,message in
+let propose_draft (model:state) (draft:D.draft) (next_case:nat)
+  (message:option string) : Tot step =
   match message with
   | None -> edit model draft next_case
   | Some text ->
     let id = model.next_confirmation in
-    changed {model with next_case=next_case; next_confirmation=id + 1;
+    metadata {model with next_case=next_case; next_confirmation=id + 1;
       pending_confirmation=Some {confirmation_id=id; proposed_draft=draft}}
-      [command "confirm" [("id",D.number id);("message",D.JString text)]] false
+      [D.Confirm id text]
 
-let update_step (model:state) (event:D.json) : Tot step =
-  let kind = D.str (D.get event "type") in
-  match kind with
-  | "format-cleared" ->
-    let result = edit model (D.set model.draft "formatSelected" (D.JBool false)) model.next_case in
-    {result with commands=L.append result.commands [command "navigate-home" []]}
-  | "budget-changed" ->
-    edit model (D.set model.draft "input"
-      (D.set (D.get model.draft "input") "budgetUsd" (D.get event "value"))) model.next_case
-  | "reuse-artifacts-changed" ->
-    edit model (D.set model.draft "reuseArtifacts" (D.get event "value")) model.next_case
-  | "provider-observed" ->
-    if D.equal (D.get model.context "provider") (D.get event "provider") then unchanged model
-    else changed {model with context=D.set model.context "provider" (D.get event "provider")} [] false
-  | "reference-uploaded" -> reference_uploaded model (D.natural (D.get event "id"))
-    (D.str (D.get event "localId")) (D.get event "image")
-  | "upload-status-changed" ->
-    let pending = if D.boolean (D.get event "busy") then model.pending_uploads + 1
+let edit_input (model:state) (action:D.input_action) : Tot step =
+  let before = model.draft.editable.draft_layout in
+  let after,counter = I.reduce before action model.case_prefix model.next_case in
+  let comparable = {model.draft with editable={model.draft.editable with draft_layout=after}} in
+  if draft_equal model.draft comparable then edit model model.draft model.next_case
+  else propose_draft model comparable counter (I.confirmation before action)
+
+let select_format (model:state) (format:D.format) : Tot step =
+  let draft,counter,dropped = I.select_format model.draft format model.context.catalog
+    model.case_prefix model.next_case in
+  let message = match dropped with
+    | [] -> None
+    | _ -> Some (N.concat "Changing format will discard incompatible or differing "
+        (N.concat (I.join ", " (L.map P.parameter_name dropped))
+          " settings and case values. Differing values that become common will return to their defaults. Continue?")) in
+  propose_draft model draft counter message
+
+let update_step (model:state) (event:D.event) : Tot step =
+  match event with
+  | D.InputAction action -> edit_input model action
+  | D.SelectFormat format -> select_format model format
+  | D.ClearFormat ->
+    let result = edit model {model.draft with format_selected=false} model.next_case in
+    {result with commands=L.append result.commands [D.NavigateHome]}
+  | D.ChangeBudget value ->
+    edit model {model.draft with editable={model.draft.editable with budget_text=value}} model.next_case
+  | D.ChangeArtifactReuse value -> edit model {model.draft with reuse_artifacts=Some value} model.next_case
+  | D.ObserveProvider provider ->
+    if model.context.provider = provider then unchanged model
+    else metadata {model with context={model.context with provider=provider}} []
+  | D.ReferenceUploaded id local_id image -> reference_uploaded model id local_id image
+  | D.UploadStatus busy ->
+    let pending = if busy then model.pending_uploads + 1
       else if model.pending_uploads = 0 then 0 else model.pending_uploads - 1 in
     if pending = model.pending_uploads then unchanged model
-    else changed {model with pending_uploads=pending} [] false
-  | "confirmation-resolved" -> confirmation_resolved model (D.natural (D.get event "id"))
-    (D.boolean (D.get event "accepted"))
-  | "generate-requested" -> generate model (D.boolean (D.get event "continueWithLowBalance"))
-  | "references-prepared" -> references_prepared model (D.natural (D.get event "id"))
-  | "submission-succeeded" -> submission_succeeded model (D.natural (D.get event "id"))
-    (D.str (D.get event "gridId"))
-  | "submission-failed" -> submission_failed model (D.natural (D.get event "id"))
-    (D.str (D.get event "message")) (D.get event "balanceUsd")
-  | "completion-failed" -> completion_failed model (D.natural (D.get event "id"))
-    (D.str (D.get event "message"))
-  | "low-balance-dismissed" ->
-    if D.equal model.low_balance D.JNull then unchanged model
-    else changed {model with low_balance=D.JNull} [] false
-  | _ -> propose_edit model event
+    else metadata {model with pending_uploads=pending} []
+  | D.ConfirmationResolved id accepted -> confirmation_resolved model id accepted
+  | D.GenerateRequested continue_low_balance -> generate model continue_low_balance
+  | D.ReferencesPrepared id -> references_prepared model id
+  | D.SubmissionSucceeded id grid_id -> submission_succeeded model id grid_id
+  | D.SubmissionFailed id message balance -> submission_failed model id message balance
+  | D.CompletionFailed id message -> completion_failed model id message
+  | D.DismissLowBalance ->
+    match model.low_balance with | None -> unchanged model
+    | Some _ -> metadata {model with low_balance=None} []
 
-let update (model:state) (event:D.json) : Tot (state & D.json) =
+let update (model:state) (event:D.event) : Tot (state & D.output) =
   let result = update_step model event in
-  result.next_state,D.object [
-    ("outcome",D.object [
-      ("stateChanged",D.JBool result.outcome.state_changed);
-      ("draftChanged",D.JBool result.outcome.draft_changed)]);
-    ("commands",D.JArray result.commands)]
+  result.next_state,{D.change=result.change; D.commands=result.commands}
 
-let view (model:state) : Tot D.json =
-  let phase = submission_phase model in
-  let policy = Policy.evaluate model.draft model.attempted model.pending_uploads phase model.context in
-  D.object [
-    ("draft",model.draft);
-    ("attempted",D.JBool model.attempted);
-    ("pendingUploads",D.number model.pending_uploads);
-    ("error",D.JString model.error);
-    ("lowBalance",model.low_balance);
-    ("submissionPhase",D.JString phase);
-    ("validationIssues",D.get policy "validationIssues");
-    ("compatibilityIssues",D.get policy "compatibilityIssues");
-    ("compatibilityCells",D.get policy "compatibilityCells");
-    ("eligibility",D.get policy "eligibility")]
+let view (model:state) : Tot D.view = {
+  view_draft=model.draft; attempted=model.attempted; pending_uploads=model.pending_uploads;
+  error=model.error; low_balance=model.low_balance; submission_phase=submission_phase model;
+  policy=Policy.evaluate model.draft model.attempted model.pending_uploads
+    (submission_phase model) model.context
+}

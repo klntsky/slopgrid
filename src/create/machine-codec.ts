@@ -401,8 +401,15 @@ export const creationEventCodec = codec<CreateEvent>(
     z
       .object({
         type: z.literal("edit-input"),
-        source: z.enum(["common", "rows", "columns"]),
-        caseIndex: index.optional(),
+        source: z.literal("common"),
+        edit: messageEdit,
+      })
+      .strict(),
+    z
+      .object({
+        type: z.literal("edit-input"),
+        source: side,
+        caseIndex: index,
         edit: messageEdit,
       })
       .strict(),

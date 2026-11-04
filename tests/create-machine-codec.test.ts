@@ -259,6 +259,17 @@ test("event codec validates correlated parameter payloads and representative mes
       source: "common",
       edit: { type: "content", index: 0, content: 1 },
     },
+    {
+      type: "edit-input",
+      source: "rows",
+      edit: { type: "content", index: 0, content: "missing case" },
+    },
+    {
+      type: "edit-input",
+      source: "common",
+      caseIndex: 0,
+      edit: { type: "content", index: 0, content: "irrelevant case" },
+    },
     { type: "format-cleared", callback() {} },
     { type: "unknown" },
   ])

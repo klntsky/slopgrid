@@ -24,11 +24,7 @@ let lower_fn : Js.Unsafe.any = Js.Unsafe.js_expr "(function(s){return s.toLowerC
 let replace_fn : Js.Unsafe.any = Js.Unsafe.js_expr "(function(s,n,r){return s.replaceAll(n,function(){return r})})"
 let starts_fn : Js.Unsafe.any = Js.Unsafe.js_expr "(function(s,p){return s.startsWith(p)})"
 let ends_fn : Js.Unsafe.any = Js.Unsafe.js_expr "(function(s,p){return s.endsWith(p)})"
-let number_fn : Js.Unsafe.any = Js.Unsafe.js_expr "(function(s){var n=Number(s);return Number.isFinite(n)?String(n):''})"
-let positive_fn : Js.Unsafe.any = Js.Unsafe.js_expr "(function(s){return Number(s)>0})"
-let compare_fn : Js.Unsafe.any = Js.Unsafe.js_expr "(function(a,b){a=Number(a);b=Number(b);return a<b?-1:a>b?1:0})"
 let natural_fn : Js.Unsafe.any = Js.Unsafe.js_expr "(function(s){var n=Number(s);return Number.isFinite(n)&&Number.isInteger(n)&&n>=0?BigInt(n).toString():''})"
-let multiply_fn : Js.Unsafe.any = Js.Unsafe.js_expr "(function(a,b){return String(Number(a)*Number(b))})"
 let unicode_alphanumeric_fn : Js.Unsafe.any = Js.Unsafe.js_expr "(function(s){return /^[\\p{L}\\p{N}]/u.test(s)})"
 
 let trim value = string_result (js_call trim_fn [|string_arg value|])
@@ -37,20 +33,12 @@ let replace_all value needle replacement =
   string_result (js_call replace_fn [|string_arg value; string_arg needle; string_arg replacement|])
 let starts_with value prefix = bool_result (js_call starts_fn [|string_arg value; string_arg prefix|])
 let ends_with value suffix = bool_result (js_call ends_fn [|string_arg value; string_arg suffix|])
-let parse_number value =
-  match string_result (js_call number_fn [|string_arg value|]) with
-  | "" -> None
-  | number -> Some number
-let positive_number value = bool_result (js_call positive_fn [|string_arg value|])
-let compare_number left right =
-  Z.of_int (Js.Unsafe.coerce (js_call compare_fn [|string_arg left; string_arg right|]) |> Js.float_of_number |> int_of_float)
 let parse_nat value =
   match string_result (js_call natural_fn [|string_arg value|]) with
   | "" -> None
   | number -> Some (Z.of_string number)
 let nat_string = Z.to_string
 let concat left right = left ^ right
-let multiply_number left right = string_result (js_call multiply_fn [|string_arg left; string_arg right|])
 let unicode_alphanumeric_at value index =
   let size = String.length value in
   let start = bounded_index index size in
@@ -66,5 +54,3 @@ let unicode_alphanumeric_at value index =
     in
     let codepoint = String.sub value start (min width (size - start)) in
     bool_result (js_call unicode_alphanumeric_fn [|string_arg codepoint|])
-let number_kind_fn : Js.Unsafe.any = Js.Unsafe.js_expr "(function(s){var n=Number(s);return Number.isNaN(n)?'nan':Number.isFinite(n)?'finite':'infinite'})"
-let number_kind value = string_result (js_call number_kind_fn [|string_arg value|])
