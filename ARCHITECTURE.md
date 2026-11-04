@@ -118,16 +118,30 @@ the draft enters the transition as explicit event data, without relying on
 message-object identity. Advisory pricing calculations also remain outside the
 machine's admission boundary.
 
-F* checking establishes totality and selected request-ownership, captured-input,
-upload-counter, logical-outcome, and transpose-cardinality properties of the pure
-machine. The typed admission boundary requires finite positive budgets and
-nonempty grid axes before a submission snapshot can be constructed. These
-guarantees do not establish full semantic equivalence with the TypeScript
-reference. The OCaml codecs, native string and IEEE-754 scalar bindings, and
-compilation toolchain remain trusted; their contracts connect the checked core
-to browser values. Browser observations are inputs to policy, not proof of
-provider state or authorization; server admission remains authoritative for
-creation and inference.
+The checked core is related to an independent definition of effective cell
+inputs. Ownership resolution excludes inactive sources. Moving a common value
+into existing cases preserves cell meaning; collapsing complete, semantically
+equal case values preserves corresponding cell meanings, including when an
+ordinary dimension becomes one neutral position. Transpose preserves expanded
+generator histories, attachments, settings, judge inputs, and unresolved-reference
+status at exchanged coordinates. Applying it twice preserves those observations,
+without requiring identical name metadata.
+
+Confirmation proposals preserve the complete draft until resolution. Matching
+acceptance commits the proposal atomically, cancellation preserves the draft,
+and confirmation identity prevents old acceptance from overwriting later edits.
+The checked transition laws also cover selected request-ownership, captured-input,
+upload-counter, and logical-outcome properties. Typed admission requires finite
+positive budgets and nonempty axes before constructing a submission snapshot.
+
+These guarantees do not establish complete admission-policy correctness or full
+semantic equivalence with TypeScript. The OCaml codecs, native byte/string and
+IEEE-754 scalar contracts, Unicode classification, and compilation toolchain
+remain trusted. Template parsing, rewriting, and one-pass expansion laws are
+proved outside the native boundary; the native contracts do not assume those
+business laws. React rendering, persistence, transport, and provider behavior
+remain separate obligations. Browser observations are policy inputs rather than
+proof of provider state or authorization; server admission remains authoritative.
 
 ## Input admission and workflow planning
 

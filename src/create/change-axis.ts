@@ -696,59 +696,46 @@ export function reduceInput(
       return { ...input, [action.side]: entries };
     }
     case "swap": {
-      const renamed = new Map<string, string>();
-      const used = new Set<string>();
-      const variableNames: NonNullable<GridDraftInput["variableNames"]> = {};
+      const customNames = new Set<string>();
       for (const side of ["rows", "columns"] as const) {
         if (!isCaseAxis(input, side)) continue;
-        const other = side === "rows" ? "columns" : "rows";
-        const names = input.variableNames?.[side];
-        if (names) variableNames[other] = [...names];
         for (const [index, field] of (
           input[side][0]?.variable ?? []
         ).entries()) {
-          if (!field) continue;
-          const custom = names?.[index];
-          if (custom) {
-            used.add(custom);
-            renamed.set(custom, custom);
-          }
+          const custom = input.variableNames?.[side]?.[index];
+          if (field && custom) customNames.add(custom);
         }
       }
-      const variableIndex = createVariableIndex(input);
-      const unresolved = new Map<string, string>();
-      for (const name of referencedVariableNames(input)) {
-        if (variableIndex.get(name)) continue;
+      const rename = (name: string) => {
         const swapped = name.replace(
           /^(ROW|COLUMN)([1-9]\d*)$/,
           (_, axis: string, number: string) =>
             `${axis === "ROW" ? "COLUMN" : "ROW"}${number}`,
         );
-        const target = used.has(swapped) ? name : swapped;
-        unresolved.set(name, target);
-        used.add(target);
-      }
+        return customNames.has(name) || customNames.has(swapped)
+          ? name
+          : swapped;
+      };
+      const variableNames: NonNullable<GridDraftInput["variableNames"]> = {};
       for (const side of ["rows", "columns"] as const) {
-        if (!isCaseAxis(input, side)) continue;
         const other = side === "rows" ? "columns" : "rows";
-        for (const [index, field] of (
-          input[side][0]?.variable ?? []
-        ).entries()) {
-          if (!field || input.variableNames?.[side]?.[index]) continue;
-          const name = unusedGeneratedName(other, index, used);
-          renamed.set(variableName(input, side, index), name);
-          if (name !== `${other === "rows" ? "ROW" : "COLUMN"}${index + 1}`) {
-            const names = variableNames[other] ?? [];
+        const originalNames = input.variableNames?.[side];
+        const names = [...(originalNames ?? [])];
+        if (isCaseAxis(input, side))
+          for (const [index, field] of (
+            input[side][0]?.variable ?? []
+          ).entries()) {
+            if (!field) continue;
+            const name = rename(variableName(input, side, index));
+            const generated = `${other === "rows" ? "ROW" : "COLUMN"}${index + 1}`;
             while (names.length <= index) names.push(null);
-            names[index] = name;
-            variableNames[other] = names;
+            names[index] =
+              originalNames?.[index] || name !== generated ? name : null;
           }
-        }
+        while (names.length && names.at(-1) === null) names.pop();
+        if (names.length) variableNames[other] = names;
       }
-      const rewritten = rewriteVariableReferences(
-        input,
-        (name) => renamed.get(name) ?? unresolved.get(name) ?? name,
-      );
+      const rewritten = rewriteVariableReferences(input, rename);
       const parameters = { ...rewritten.parameters };
       for (const parameter of Object.keys(parameters) as CommonParameterId[]) {
         const source = parameters[parameter];
@@ -757,16 +744,18 @@ export function reduceInput(
             [parameter]: { kind: source.kind === "rows" ? "columns" : "rows" },
           });
       }
-      return {
+      const next: GridDraftInput = {
         ...rewritten,
         parameters,
         caseAxes: input.caseAxes.map((side) =>
           side === "rows" ? "columns" : "rows",
         ),
-        ...(Object.keys(variableNames).length ? { variableNames } : {}),
         rows: rewritten.columns,
         columns: rewritten.rows,
       };
+      if (Object.keys(variableNames).length) next.variableNames = variableNames;
+      else delete next.variableNames;
+      return next;
     }
     case "judge": {
       if (

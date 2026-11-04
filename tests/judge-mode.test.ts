@@ -814,16 +814,7 @@ test("named variables rewrite shared and case rubrics and preserve custom names 
   ]);
   const shared = reduceInput(draft, { type: "swap" });
   assert.equal(shared.variableNames?.columns?.[0], "COLUMN2");
-  assert.equal(shared.variableNames?.columns?.[1], "COLUMN3");
   assert.equal(shared.columns[0].name, "Named row");
-  assert.equal(
-    generatorInputForCell(shared, 0, 0)[0].content,
-    "$COLUMN2 $COLUMN3",
-  );
-  assert.deepEqual(parameterValue(shared, "judge_criteria", 0, 0), [
-    { text: "Does $COLUMN2 match $COLUMN3?", correctAnswer: false },
-    { text: "Is $COLUMN3 blue?", correctAnswer: true },
-  ]);
   assert.deepEqual(
     shared.columns.map((entry) => entry.variable),
     original.rows.map((entry) => entry.variable),

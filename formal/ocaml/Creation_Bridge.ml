@@ -300,7 +300,7 @@ let source_field (s:D.parameter_sources) = function
   | D.PJudgeCriteria -> s.D.judge_criteria_source | D.PJudgeSystem -> s.D.judge_system_source
   | D.PVariable -> fail "variable source in domain"
 let jsources (s:D.parameter_sources) =
-  `Assoc (List.concat_map (fun p -> field (jparameter p) jsource (source_field s p)) s.D.source_order)
+  `Assoc (List.concat_map (fun p -> field (jparameter p) jsource (source_field s p)) (Slopgrid_Parameters.source_parameters s))
 let value_field (v:D.case_values) = function
   | D.PInput -> Option.map (fun x -> D.InputValue x) v.D.input_value
   | D.PModel -> Option.map (fun x -> D.ModelValue x) v.D.model_value
@@ -316,7 +316,7 @@ let value_field (v:D.case_values) = function
   | D.PVariable -> Option.map (fun x -> D.VariableValue x) v.D.variable_value
 let jcase (c:D.case_record) =
   `Assoc (["id", jstring c.D.case_id] @ field "name" jstring c.D.case_name @
-    List.concat_map (fun p -> field (jparameter p) jvalue (value_field c.D.values p)) c.D.values.D.value_order)
+    List.concat_map (fun p -> field (jparameter p) jvalue (value_field c.D.values p)) (Slopgrid_Parameters.case_parameters c.D.values))
 let jvariable_names (names:D.variable_names) =
   `Assoc (field "rows" (jlist (jnullable jstring)) names.D.row_names @ field "columns" (jlist (jnullable jstring)) names.D.column_names)
 let jlayout (g:D.layout) budget =

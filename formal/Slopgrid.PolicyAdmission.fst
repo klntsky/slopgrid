@@ -77,7 +77,7 @@ let ownership_issues (g:D.layout) : Tot (list D.validation_issue) =
       match rest with | [] -> [] | record::tail ->
       (if B.member record.case_id ids then [B.issue "Case IDs must be distinct within an axis." [D.Property (B.axis_key side);D.Index index;D.Property "id"]] else []) @
       B.flatmap (fun p -> if B.member p owned then [] else
-        [B.issue (B.cat (P.parameter_key p) (B.cat " is not owned by " (B.cat (B.axis_key side) "."))) [D.Property (B.axis_key side);D.Index index;D.Property (P.parameter_key p)]]) record.values.value_order @
+        [B.issue (B.cat (P.parameter_key p) (B.cat " is not owned by " (B.cat (B.axis_key side) "."))) [D.Property (B.axis_key side);D.Index index;D.Property (P.parameter_key p)]]) (P.case_parameters record.values) @
       records tail (index+1) (record.case_id::ids) in
     records (B.records g side) 0 []) B.sides
 let first_path_index (path:list D.path_segment) : Tot nat = match path with | D.Index i::_ -> i | _ -> 0

@@ -68,10 +68,14 @@ let neutral_dimension (input:layout) (side:axis) allocation counter =
   else match entries input side with
     | first::_ -> (set_entries input side [{first with case_name=None; values=P.empty_case_values}],counter)
     | [] -> let entry,next = new_case input allocation counter P.empty_case_values in (set_entries input side [entry],next)
+let rec differs_from (p:common_parameter) (reference:option (value_for p)) (values:list case_record) : Tot bool =
+  match values with | [] -> false | entry::rest ->
+    not (optional_values_equal p (P.get_case_value entry.values p) reference) || differs_from p reference rest
 let differing (input:layout) (p:common_parameter) : Tot bool =
   match P.get_source input.parameters p with
-  | Some (OnAxis side) -> let values = L.map (fun entry -> P.get_case_value entry.values p) (entries input side) in
-    (match values with | [] -> false | first::_ -> L.existsb (fun (value:option (value_for p)) -> not (optional_values_equal p value first)) values)
+  | Some (OnAxis side) ->
+    (match entries input side with | [] -> false | first::_ ->
+      differs_from p (P.get_case_value first.values p) (entries input side))
   | _ -> false
 let collapse (input:layout) (p:common_parameter) allocation counter =
   match P.get_source input.parameters p with
@@ -104,13 +108,14 @@ let case_defaults (input:layout) (side:axis) : Tot case_values =
   fold (fun values p -> P.set_case_value values (if p = PVariable then
     VariableValue (L.map (fun field -> match field with | None -> None | Some _ -> Some {text=""; field_images=None}) (variable_fields input side))
     else P.parameter_default p)) P.empty_case_values (P.axis_parameters input side)
+let own_value (input:layout) (p:common_parameter) (side:axis) (value:value_for p) allocation counter =
+  let values,count = match entries input side with | [] -> let entry,next = new_case input allocation counter (case_defaults input side) in ([entry],next) | values -> (values,counter) in
+  (set_entries (set_source input p (OnAxis side)) side (L.map (fun entry -> {entry with values=P.set_case_value entry.values value}) values),count)
 let own (input:layout) (p:common_parameter) (side:axis) allocation counter =
   match P.get_source input.parameters p with
   | Some (OnAxis _) -> (input,counter)
-  | owner ->
-    let value = match owner with | Some (Common value) -> value | _ -> P.parameter_default p in
-    let values,count = match entries input side with | [] -> let entry,next = new_case input allocation counter (case_defaults input side) in ([entry],next) | values -> (values,counter) in
-    (set_entries (set_source input p (OnAxis side)) side (L.map (fun entry -> {entry with values=P.set_case_value entry.values value}) values),count)
+  | Some (Common value) -> own_value input p side value allocation counter
+  | None -> own_value input p side (P.parameter_default p) allocation counter
 let collapse_parameters (input:layout) (parameters:list parameter) allocation counter =
   fold (fun (current,count) (p:parameter) -> if p = PVariable then (current,count) else collapse current p allocation count) (input,counter) parameters
 let generated_name (side:axis) (index:nat) : Tot string = cat (if side = Rows then "ROW" else "COLUMN") (N.nat_string (index + 1))
@@ -120,14 +125,15 @@ let variable_index (input:layout) : Tot (list (string & axis & nat)) =
   fold (fun result side -> fold (fun acc (index,field) -> match field with | None -> acc | Some _ ->
     let name = variable_name input side index in
     if L.existsb (fun (n,_,_) -> n=name) acc then acc else L.append acc [(name,side,index)]) result (map_i (fun i field -> (i,field)) (variable_fields input side))) [] (case_axes input)
-let ascii_token_char c = member c ["A"; "B"; "C"; "D"; "E"; "F"; "G"; "H"; "I"; "J"; "K"; "L"; "M"; "N"; "O"; "P"; "Q"; "R"; "S"; "T"; "U"; "V"; "W"; "X"; "Y"; "Z"; "0"; "1"; "2"; "3"; "4"; "5"; "6"; "7"; "8"; "9"; "_"]
+let ascii_token_byte (value:int) : Tot bool =
+  (value >= 65 && value <= 90) || (value >= 48 && value <= 57) || value=95
 let rec token_length (fuel:nat) (text:string) (position:nat) : Tot nat (decreases fuel) =
-  if fuel=0 || not (ascii_token_char (N.char_at text position)) then 0 else 1 + token_length (fuel - 1) text (position + 1)
+  if fuel=0 || not (ascii_token_byte (N.byte_at text position)) then 0 else 1 + token_length (fuel - 1) text (position + 1)
 let token_at (text:string) (position:nat) : Tot (option (string & nat)) =
-  if N.char_at text position <> "$" then None else
+  if N.byte_at text position <> 36 then None else
   let count = token_length (N.length text) text (position + 1) in
   let last = position + 1 + count in
-  if count=0 || N.char_at text last="_" || N.unicode_alphanumeric_at text last then None else Some (N.slice text (position + 1) count,count + 1)
+  if count=0 || N.byte_at text last=95 || N.unicode_alphanumeric_at text last then None else Some (N.slice text (position + 1) count,count + 1)
 let rec rewrite_scan (fuel:nat) (rename:string -> Tot string) (text:string) (position:nat) : Tot string (decreases fuel) =
   if fuel=0 || position >= N.length text then "" else match token_at text position with
   | Some (name,count) -> cat (cat "$" (rename name)) (rewrite_scan (fuel - 1) rename text (position + count))
@@ -147,13 +153,23 @@ let rewrite_value (rename:string -> Tot string) (value:value) : Tot (value_for (
 let text_parameters : list common_parameter = [PInput; PJudgeCriteria; PJudgeSystem]
 let rec map_preserving #a #b (f:a -> Tot b) (values:list a) : Tot (result:list b{L.length result=L.length values}) =
   match values with | [] -> [] | value::rest -> f value :: map_preserving f rest
+let rewrite_case_values (rename:string -> Tot string) (values:case_values) : Tot case_values =
+  {values with
+    input_value=(match values.input_value with | None -> None | Some messages ->
+      Some (L.map (fun message -> {message with content=rewrite_text rename message.content}) messages));
+    judge_criteria_value=(match values.judge_criteria_value with | None -> None | Some criteria ->
+      Some (L.map (fun criterion -> {criterion with criterion_text=rewrite_text rename criterion.criterion_text}) criteria));
+    judge_system_value=(match values.judge_system_value with | None -> None | Some text -> Some (rewrite_text rename text))}
+let rewrite_sources (rename:string -> Tot string) (sources:parameter_sources) : Tot parameter_sources =
+  {sources with
+    input_source=(match sources.input_source with | Common value -> Common (rewrite_value rename value) | OnAxis side -> OnAxis side);
+    judge_criteria_source=(match sources.judge_criteria_source with | Some (Common value) -> Some (Common (rewrite_value rename value)) | other -> other);
+    judge_system_source=(match sources.judge_system_source with | Some (Common value) -> Some (Common (rewrite_value rename value)) | other -> other)}
 let rewrite_references (input:layout) (rename:string -> Tot string)
   : Tot (result:layout{L.length result.rows=L.length input.rows /\ L.length result.columns=L.length input.columns}) =
-  let parameters = fold (fun current p -> match P.get_source current p with
-    | Some (Common value) -> P.set_source current p (Common (rewrite_value rename value)) | _ -> current) input.parameters text_parameters in
-  let rewrite_case entry = {entry with values=fold (fun values (p:common_parameter) -> match P.get_case_value values p with
-    | None -> values | Some value -> P.set_case_value values (rewrite_value rename value)) entry.values text_parameters} in
-  {input with parameters=parameters; rows=map_preserving rewrite_case input.rows; columns=map_preserving rewrite_case input.columns}
+  let rewrite_case entry = {entry with values=rewrite_case_values rename entry.values} in
+  {input with parameters=rewrite_sources rename input.parameters;
+    rows=map_preserving rewrite_case input.rows; columns=map_preserving rewrite_case input.columns}
 let value_tokens (value:value) : Tot (list string) = match value with
   | InputValue messages -> L.collect (fun message -> variable_tokens message.content) messages
   | JudgeCriteriaValue criteria -> L.collect (fun criterion -> variable_tokens criterion.criterion_text) criteria
@@ -230,44 +246,65 @@ let rec fill_values (input:layout) (side:axis) (p:parameter) allocation counter 
        | [] -> let entry,next=new_case input allocation counter (case_defaults input side) in (entry,[],next)) in
     let tail,count=fill_values input side p allocation next rest matches remaining in
     ({entry with values=P.set_case_value entry.values value}::tail,count)
+let rec decimal_digits (fuel:nat) (text:string) (position:nat) : Tot bool (decreases fuel) =
+  if fuel=0 then true else
+  let value=N.byte_at text position in
+  value>=48 && value<=57 && decimal_digits (fuel - 1) text (position + 1)
 let swap_numeric_name name =
   let prefix,target=if N.starts_with name "ROW" then ("ROW","COLUMN") else if N.starts_with name "COLUMN" then ("COLUMN","ROW") else ("","") in
   let suffix=N.slice name (N.length prefix) (N.length name) in
-  let rec digits (fuel:nat) (index:nat) : Tot bool (decreases fuel) =
-    if fuel=0 then true else member (N.char_at suffix index) ["0";"1";"2";"3";"4";"5";"6";"7";"8";"9"] && digits (fuel - 1) (index + 1) in
-  if prefix<>"" && N.length suffix>0 && N.char_at suffix 0<>"0" && digits (N.length suffix) 0 then cat target suffix else name
-let lookup (mapping:list (string & string)) name = fold (fun found (key,value) -> if key=name then Some value else found) None mapping
+  if prefix<>"" && N.length suffix>0 && N.byte_at suffix 0<>48 && decimal_digits (N.length suffix) suffix 0 then cat target suffix else name
+let swap_source (#p:common_parameter) (owner:source p) : Tot (source p) =
+  match owner with | Common value -> Common value | OnAxis side -> OnAxis (other_side side)
+let swap_sources (sources:parameter_sources) : Tot parameter_sources =
+  {sources with
+    input_source=swap_source sources.input_source;
+    model_source=swap_source sources.model_source;
+    effort_source=(match sources.effort_source with | None -> None | Some source -> Some (swap_source source));
+    size_source=(match sources.size_source with | None -> None | Some source -> Some (swap_source source));
+    aspect_ratio_source=(match sources.aspect_ratio_source with | None -> None | Some source -> Some (swap_source source));
+    quality_source=(match sources.quality_source with | None -> None | Some source -> Some (swap_source source));
+    background_source=(match sources.background_source with | None -> None | Some source -> Some (swap_source source));
+    judge_model_source=(match sources.judge_model_source with | None -> None | Some source -> Some (swap_source source));
+    judge_effort_source=(match sources.judge_effort_source with | None -> None | Some source -> Some (swap_source source));
+    judge_criteria_source=(match sources.judge_criteria_source with | None -> None | Some source -> Some (swap_source source));
+    judge_system_source=(match sources.judge_system_source with | None -> None | Some source -> Some (swap_source source))}
+let rec custom_names_from (fields:list (option variable_field)) (names:list (option string)) : Tot (list string) =
+  match fields,names with
+  | field::fields,name::names ->
+    let rest=custom_names_from fields names in
+    (match field,name with | Some _,Some name -> name::rest | _ -> rest)
+  | _ -> []
+let custom_names_on (input:layout) (side:axis) : Tot (list string) =
+  if P.is_case_axis input side then
+    custom_names_from (variable_fields input side) (option_list (name_fields input side)) else []
+let custom_variable_names (input:layout) : Tot (list string) =
+  L.append (custom_names_on input Rows) (custom_names_on input Columns)
+let swap_rename (input:layout) (name:string) : Tot string =
+  let swapped=swap_numeric_name name in
+  let custom=custom_variable_names input in
+  if member name custom || member swapped custom then name else swapped
+let swapped_name_entry (input:layout) (side:axis) (index:nat) (custom:option string) : Tot (option string) =
+  match at (variable_fields input side) index with
+  | Some (Some _) ->
+    let name=swap_rename input (variable_name input side index) in
+    if custom=None && name=generated_name (other_side side) index then None else Some name
+  | _ -> custom
+let swap_name_fields (input:layout) (side:axis) : Tot (option (list (option string))) =
+  if not (P.is_case_axis input side) then name_fields input side else
+  let fields=variable_fields input side in
+  let names=fill_to (L.length fields) (option_list (name_fields input side)) in
+  let names=map_i (swapped_name_entry input side) names in
+  let names=trim_null_end names in
+  if names=[] then None else Some names
 let swap (input:layout) : Tot (result:layout{L.length result.rows=L.length input.columns /\ L.length result.columns=L.length input.rows}) =
-  let names,renamed,used=fold (fun (names,renamed,used) side ->
-    if not (P.is_case_axis input side) then (names,renamed,used) else
-    let names=match name_fields input side with | None -> names | Some fields -> put_name_fields names (other_side side) (Some fields) in
-    fold (fun (names,renamed,used) (index,field) ->
-      let custom=match at (option_list (name_fields input side)) index with | Some (Some name) -> name | _ -> "" in
-      if field=None || custom="" then (names,renamed,used) else (names,L.append renamed [(custom,custom)],L.append used [custom]))
-      (names,renamed,used) (map_i (fun i field -> (i,field)) (variable_fields input side)))
-    ({input with variable_names=None},[],[]) [Rows;Columns] in
-  let index=variable_index input in
-  let unresolved,used=fold (fun (mapping,used) name ->
-    if L.existsb (fun (n,_,_) -> n=name) index then (mapping,used) else
-    let swapped=swap_numeric_name name in let target=if member swapped used then name else swapped in
-    (L.append mapping [(name,target)],L.append used [target])) ([],used) (referenced_names input) in
-  let names,renamed,_=fold (fun (names,renamed,used) side ->
-    if not (P.is_case_axis input side) then (names,renamed,used) else
-    let other=other_side side in
-    fold (fun (names,renamed,used) (index,field) ->
-      let custom=match at (option_list (name_fields input side)) index with | Some (Some name) -> name | _ -> "" in
-      if field=None || custom<>"" then (names,renamed,used) else
-      let name=unused_generated_name other index used in
-      let names=if name=generated_name other index then names else set_variable_name names other index (Some name) in
-      (names,L.append renamed [(variable_name input side index,name)],L.append used [name]))
-      (names,renamed,used) (map_i (fun i field -> (i,field)) (variable_fields input side)))
-    (names,renamed,used) [Rows;Columns] in
-  let rewritten=rewrite_references input (fun name -> match lookup renamed name with | Some value -> value | None -> (match lookup unresolved name with | Some value -> value | None -> name)) in
-  let parameters=fold (fun current p -> match P.get_source current p with
-    | Some (OnAxis side) -> P.set_source current p (OnAxis (other_side side)) | _ -> current) rewritten.parameters rewritten.parameters.source_order in
-  {rewritten with parameters=parameters; rows=rewritten.columns; columns=rewritten.rows;
+  let row_names=swap_name_fields input Columns in
+  let column_names=swap_name_fields input Rows in
+  let rewritten=rewrite_references input (swap_rename input) in
+  {rewritten with parameters=swap_sources rewritten.parameters;
+    rows=rewritten.columns; columns=rewritten.rows;
     case_ownership=(match input.case_ownership with | NoCaseAxes -> NoCaseAxes | OneCaseAxis side -> OneCaseAxis (other_side side) | BothCaseAxes first -> BothCaseAxes (other_side first));
-    variable_names=(match names.variable_names with | None -> rewritten.variable_names | Some names -> Some names)}
+    variable_names=if row_names=None && column_names=None then None else Some {row_names=row_names; column_names=column_names}}
 let judge_parameters : list (p:common_parameter{p<>PInput /\ p<>PModel}) =
   [PJudgeModel; PJudgeEffort; PJudgeSystem; PJudgeCriteria]
 let source_on_axis (input:layout) (p:parameter) (side:axis) : Tot bool =
@@ -392,7 +429,7 @@ let strip_format_cases (input:layout) (side:axis) (dropped:list parameter) : Tot
     let values,dropped=fold (fun (values,dropped) p ->
       if (p=PVariable && P.is_case_axis input side) || source_on_axis input p side then (values,dropped) else
       (P.remove_case_value values p,(if has_parameter_value p (P.get_case_value entry.values p) then add_dropped dropped p else dropped)))
-      (entry.values,dropped) entry.values.value_order in
+      (entry.values,dropped) (P.case_parameters entry.values) in
     (L.append cases [{entry with values=values; case_name=if P.is_case_axis input side then entry.case_name else None}],dropped))
     ([],dropped) (entries input side) in
   (set_entries input side cases,dropped)
@@ -445,7 +482,7 @@ let select_format (draft:draft) (format:format) (catalog:list catalog_model) (pr
   let previous_defaults,counter=default_grid previous.output_format allocation counter in
   if draft.editable.budget_text=previous_defaults.budget_text && without_case_ids previous=without_case_ids previous_defaults.draft_layout
   then ({draft with editable=defaults; format_selected=true},counter,[]) else
-  let applicable=L.append defaults.draft_layout.parameters.source_order (if previous.judging && format<>Html then L.map (fun (p:common_parameter{p<>PInput /\ p<>PModel}) -> (p <: common_parameter)) judge_parameters else []) in
+  let applicable=L.append (P.source_parameters defaults.draft_layout.parameters) (if previous.judging && format<>Html then L.map (fun (p:common_parameter{p<>PInput /\ p<>PModel}) -> (p <: common_parameter)) judge_parameters else []) in
   let input={previous with output_format=format; judging=previous.judging && format<>Html} in
   let input,counter,dropped=fold (fun (current,count,dropped) (p:common_parameter) ->
     if member p applicable then (current,count,dropped) else
@@ -455,7 +492,7 @@ let select_format (draft:draft) (format:format) (catalog:list catalog_model) (pr
       | Some (OnAxis side) -> L.existsb (fun entry -> has_parameter_value p (P.get_case_value entry.values p)) (entries current side) in
     let dropped=if lost then add_dropped dropped p else dropped in
     let next,count=remove_parameter current p allocation count in (next,count,dropped))
-    (input,counter,[]) input.parameters.source_order in
+    (input,counter,[]) (P.source_parameters input.parameters) in
   let input,dropped=fold (fun (current,dropped) side -> strip_format_cases current side dropped) (input,dropped) [Rows;Columns] in
   let input=fold (fun current p -> match P.get_source current.parameters p with
     | Some _ -> current | None -> set_source current p (Common (P.parameter_default p))) input applicable in

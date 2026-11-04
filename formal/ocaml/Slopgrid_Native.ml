@@ -18,11 +18,14 @@ let slice value start count =
   String.sub value start count
 
 let char_at value index = slice value index Z.one
+let byte_at value index =
+  let size = String.length value in
+  let index = bounded_index index size in
+  Z.of_int (if index = size then -1 else Char.code value.[index])
 
 let trim_fn : Js.Unsafe.any = Js.Unsafe.js_expr "(function(s){return s.trim()})"
 let lower_fn : Js.Unsafe.any = Js.Unsafe.js_expr "(function(s){return s.toLowerCase()})"
 let replace_fn : Js.Unsafe.any = Js.Unsafe.js_expr "(function(s,n,r){return s.replaceAll(n,function(){return r})})"
-let starts_fn : Js.Unsafe.any = Js.Unsafe.js_expr "(function(s,p){return s.startsWith(p)})"
 let ends_fn : Js.Unsafe.any = Js.Unsafe.js_expr "(function(s,p){return s.endsWith(p)})"
 let natural_fn : Js.Unsafe.any = Js.Unsafe.js_expr "(function(s){var n=Number(s);return Number.isFinite(n)&&Number.isInteger(n)&&n>=0?BigInt(n).toString():''})"
 let unicode_alphanumeric_fn : Js.Unsafe.any = Js.Unsafe.js_expr "(function(s){return /^[\\p{L}\\p{N}]/u.test(s)})"
@@ -31,7 +34,7 @@ let trim value = string_result (js_call trim_fn [|string_arg value|])
 let lower value = string_result (js_call lower_fn [|string_arg value|])
 let replace_all value needle replacement =
   string_result (js_call replace_fn [|string_arg value; string_arg needle; string_arg replacement|])
-let starts_with value prefix = bool_result (js_call starts_fn [|string_arg value; string_arg prefix|])
+let starts_with value prefix = String.starts_with ~prefix value
 let ends_with value suffix = bool_result (js_call ends_fn [|string_arg value; string_arg suffix|])
 let parse_nat value =
   match string_result (js_call natural_fn [|string_arg value|]) with

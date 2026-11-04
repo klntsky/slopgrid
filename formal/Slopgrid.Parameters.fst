@@ -134,12 +134,18 @@ let remove_case_value (values:case_values) (p:parameter) : Tot case_values =
   | PJudgeCriteria -> {values with judge_criteria_value=None}
   | PJudgeSystem -> {values with judge_system_value=None}
   | PVariable -> {values with variable_value=None}
+let source_parameters (sources:parameter_sources) : Tot (list common_parameter) =
+  let missing = L.filter (fun p -> not (L.mem p sources.source_order) && get_source sources p <> None) common_parameters in
+  if missing=[] then sources.source_order else L.append sources.source_order missing
+let case_parameters (values:case_values) : Tot (list parameter) =
+  let missing = L.filter (fun p -> not (L.mem p values.value_order) && get_case_value values p <> None) parameter_names in
+  if missing=[] then values.value_order else L.append values.value_order missing
 let is_case_axis (input:layout) (side:axis) : Tot bool = match input.case_ownership with
   | NoCaseAxes -> false | OneCaseAxis owner -> owner = side | BothCaseAxes _ -> true
 let axis_has_variables (input:layout) (side:axis) : Tot bool =
   L.existsb (fun entry -> match entry.values.variable_value with | None -> false | Some fields -> L.length fields > 0) (entries input side)
 let axis_parameters (input:layout) (side:axis) : Tot (list parameter) =
-  let owned : list parameter = L.map (fun (p:common_parameter) -> (p <: parameter)) (L.filter (fun p -> match get_source input.parameters p with | Some (OnAxis owner) -> owner = side | _ -> false) input.parameters.source_order) in
+  let owned : list parameter = L.map (fun (p:common_parameter) -> (p <: parameter)) (L.filter (fun p -> match get_source input.parameters p with | Some (OnAxis owner) -> owner = side | _ -> false) (source_parameters input.parameters)) in
   if axis_has_variables input side then L.append owned [PVariable] else owned
 let parameter_layout_issues (input:layout) : Tot (list validation_issue) =
   L.collect (fun side ->
@@ -166,3 +172,108 @@ let parameter_value_path (input:layout) (p:parameter) (row:nat) (column:nat) (si
   if p = PVariable then (match side with | None -> fallback | Some owner -> axis_path owner)
   else match get_source input.parameters p with
     | None -> fallback | Some (Common _) -> L.append fallback [Property "value"] | Some (OnAxis owner) -> axis_path owner
+
+let get_set_source (sources:parameter_sources) (p:common_parameter)
+  (value:source p) (q:common_parameter)
+  : Lemma (get_source (set_source sources p value) q ==
+    (if p=q then Some value else get_source sources q)) =
+  match p,q with
+  | PInput,_ | PModel,_ | PEffort,_ | PSize,_ | PAspectRatio,_
+  | PQuality,_ | PBackground,_ | PJudgeModel,_ | PJudgeEffort,_
+  | PJudgeCriteria,_ | PJudgeSystem,_ -> ()
+
+let get_set_case_value (values:case_values) (value:value) (q:parameter)
+  : Lemma (get_case_value (set_case_value values value) q ==
+    (if value_parameter value=q then Some value else get_case_value values q)) =
+  match value,q with
+  | InputValue _,_ | ModelValue _,_ | EffortValue _,_ | SizeValue _,_
+  | AspectRatioValue _,_ | QualityValue _,_ | BackgroundValue _,_
+  | JudgeModelValue _,_ | JudgeEffortValue _,_ | JudgeCriteriaValue _,_
+  | JudgeSystemValue _,_ | VariableValue _,_ -> ()
+
+let get_remove_case_value (values:case_values) (p:parameter) (q:parameter)
+  : Lemma (get_case_value (remove_case_value values p) q ==
+    (if p=q then None else get_case_value values q)) =
+  match p,q with
+  | PInput,_ | PModel,_ | PEffort,_ | PSize,_ | PAspectRatio,_
+  | PQuality,_ | PBackground,_ | PJudgeModel,_ | PJudgeEffort,_
+  | PJudgeCriteria,_ | PJudgeSystem,_ | PVariable,_ -> ()
+
+let rec mem_append (#a:eqtype) (value:a) (left:list a) (right:list a)
+  : Lemma (L.mem value (L.append left right) == (L.mem value left || L.mem value right)) =
+  match left with | [] -> () | _::rest -> mem_append value rest right
+
+let rec mem_filter (#a:eqtype) (value:a) (predicate:a -> Tot bool) (values:list a)
+  : Lemma (L.mem value (L.filter predicate values) == (L.mem value values && predicate value)) =
+  match values with | [] -> () | _::rest -> mem_filter value predicate rest
+
+#push-options "--fuel 16 --ifuel 1"
+let common_parameter_is_enumerated (p:common_parameter)
+  : Lemma (L.mem p common_parameters) =
+  match p with
+  | PInput | PModel | PEffort | PSize | PAspectRatio | PQuality | PBackground
+  | PJudgeModel | PJudgeEffort | PJudgeCriteria | PJudgeSystem -> ()
+
+let parameter_is_enumerated (p:parameter)
+  : Lemma (L.mem p parameter_names) =
+  match p with
+  | PInput | PModel | PEffort | PSize | PAspectRatio | PQuality | PBackground
+  | PJudgeModel | PJudgeEffort | PJudgeCriteria | PJudgeSystem | PVariable -> ()
+#pop-options
+
+let source_parameters_complete (sources:parameter_sources) (p:common_parameter)
+  : Lemma
+    (requires (get_source sources p <> None))
+    (ensures (L.mem p (source_parameters sources))) =
+  common_parameter_is_enumerated p;
+  mem_filter p (fun q -> not (L.mem q sources.source_order) && get_source sources q <> None) common_parameters;
+  mem_append p sources.source_order
+    (L.filter (fun q -> not (L.mem q sources.source_order) && get_source sources q <> None) common_parameters)
+
+let case_parameters_complete (values:case_values) (p:parameter)
+  : Lemma
+    (requires (get_case_value values p <> None))
+    (ensures (L.mem p (case_parameters values))) =
+  parameter_is_enumerated p;
+  mem_filter p (fun q -> not (L.mem q values.value_order) && get_case_value values q <> None) parameter_names;
+  mem_append p values.value_order
+    (L.filter (fun q -> not (L.mem q values.value_order) && get_case_value values q <> None) parameter_names)
+
+let rec common_map_mem (values:list common_parameter) (p:common_parameter)
+  : Lemma (L.mem p values == L.mem (p <: parameter) (L.map (fun (q:common_parameter) -> (q <: parameter)) values)) =
+  match values with | [] -> () | _::rest -> common_map_mem rest p
+
+let axis_owner_is_enumerated (input:layout) (p:common_parameter) (side:axis)
+  : Lemma
+    (requires (get_source input.parameters p == Some (OnAxis side)))
+    (ensures (L.mem (p <: parameter) (axis_parameters input side))) =
+  source_parameters_complete input.parameters p;
+  let owned_sources = L.filter (fun q -> match get_source input.parameters q with
+    | Some (OnAxis owner) -> owner=side | _ -> false) (source_parameters input.parameters) in
+  mem_filter p (fun q -> match get_source input.parameters q with
+    | Some (OnAxis owner) -> owner=side | _ -> false) (source_parameters input.parameters);
+  common_map_mem owned_sources p;
+  mem_append (p <: parameter)
+    (L.map (fun (q:common_parameter) -> (q <: parameter)) owned_sources) [PVariable]
+
+let axis_variable_is_enumerated (input:layout) (side:axis)
+  : Lemma
+    (requires (axis_has_variables input side))
+    (ensures (L.mem PVariable (axis_parameters input side))) =
+  let owned = L.map (fun (p:common_parameter) -> (p <: parameter))
+    (L.filter (fun p -> match get_source input.parameters p with
+      | Some (OnAxis owner) -> owner=side | _ -> false) (source_parameters input.parameters)) in
+  mem_append PVariable owned [PVariable]
+
+let member_has_positive_length (#a:eqtype) (value:a) (values:list a)
+  : Lemma
+    (requires (L.mem value values))
+    (ensures (L.length values > 0)) =
+  match values with | [] -> () | _::_ -> ()
+
+let axis_owner_prevents_neutralization (input:layout) (p:common_parameter) (side:axis)
+  : Lemma
+    (requires (get_source input.parameters p == Some (OnAxis side)))
+    (ensures (L.length (axis_parameters input side) > 0)) =
+  axis_owner_is_enumerated input p side;
+  member_has_positive_length (p <: parameter) (axis_parameters input side)
