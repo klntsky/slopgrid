@@ -6,7 +6,6 @@ import {
 } from "../../server/domain";
 import {
   axisParameters,
-  newCase,
   parameterDefault,
   parameterLayoutIssue,
 } from "../../server/parameters";
@@ -43,7 +42,7 @@ export function compatibilityPreviewInput(input: GridInput): GridInput {
   const preview = { ...input };
   for (const side of ["rows", "columns"] as const) {
     if (input[side].length) continue;
-    const entry = newCase();
+    const entry = { id: `compatibility-preview-${side}` };
     for (const parameter of axisParameters(input, side))
       Object.assign(entry, { [parameter]: parameterDefault(parameter) });
     preview[side] = [entry];

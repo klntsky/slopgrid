@@ -54,7 +54,7 @@ export async function saveReferenceFile(file: File): Promise<ReferenceImage> {
 }
 
 export async function uploadReferences(
-  input: ValidatedGridInput,
+  input: GridInput,
   uploaded: (localId: string, image: ReferenceImage) => void,
   signal: AbortSignal,
 ): Promise<ValidatedGridInput> {

@@ -1,17 +1,21 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { GridDraftInput } from "../server/domain.js";
-import type { ModelInfo } from "../server/model-catalog.js";
 import { parameterDefault } from "../server/parameters.js";
-import { validateDraftInput } from "../src/create/draft-input.js";
 import { referenceLists } from "../src/create/reference-lists.js";
+import { compatibilityPreviewInput } from "../src/create/draft-input.js";
+import { typescriptCreationMachine } from "../src/create/model.js";
 import {
-  createModel,
-  updateCreateModel,
-  type CreateCommand,
-  type CreateEvent,
-  type Draft,
-} from "../src/create/model.js";
+  fromWireCreationMachine,
+  toWireCreationMachine,
+} from "../src/create/machine-wire.js";
+import type {
+  CreateCommand,
+  CreateContext,
+  CreateEvent,
+  CreationMachine,
+  Draft,
+} from "../src/create/machine-contract.js";
 import { currentDefinition } from "./current-grid-fixture.js";
 
 function draft(input: Partial<GridDraftInput> = {}): Draft {
@@ -21,69 +25,99 @@ function draft(input: Partial<GridDraftInput> = {}): Draft {
   };
 }
 
+function context(format: GridDraftInput["format"] = "markdown"): CreateContext {
+  return {
+    catalog: [
+      {
+        id: "fixture/text",
+        name: "Text model",
+        text: true,
+        image: false,
+        imageInput: true,
+        reasoning: false,
+        reasoningMandatory: false,
+        structuredOutputs: true,
+      },
+      {
+        id: "fixture/image",
+        name: "Image model",
+        text: false,
+        image: true,
+        imageInput: true,
+        reasoning: false,
+        reasoningMandatory: false,
+      },
+    ],
+    provider: {
+      connected: true,
+      capacity: { format, status: "ready", parallelWorkers: 8 },
+    },
+  };
+}
+
 function command<T extends CreateCommand["type"]>(
   commands: CreateCommand[],
   type: T,
 ): Extract<CreateCommand, { type: T }> {
-  const result = commands.find((entry) => entry.type === type);
-  assert.ok(result, `Missing ${type} command`);
-  return result as Extract<CreateCommand, { type: T }>;
+  const found = commands.find((entry) => entry.type === type);
+  assert.ok(found, `Missing ${type} command`);
+  return found as Extract<CreateCommand, { type: T }>;
 }
 
-function freeze<T>(value: T): T {
-  if (value && typeof value === "object") {
-    Object.freeze(value);
-    for (const child of Object.values(value)) freeze(child);
-  }
-  return value;
+function session(
+  machine: CreationMachine<unknown>,
+  initial = draft(),
+  facts = context(initial.input.format),
+) {
+  let state = machine.init({ draft: initial, caseIdPrefix: "case-" }, facts);
+  return {
+    view: () => machine.view(state),
+    send(event: CreateEvent) {
+      const result = machine.update(state, event);
+      state = result.state;
+      return {
+        outcome: result.outcome,
+        commands: result.commands,
+        view: machine.view(state),
+      };
+    },
+  };
 }
-
-const catalog: ModelInfo[] = [
-  {
-    id: "fixture/text",
-    name: "Text model",
-    text: true,
-    image: false,
-    imageInput: true,
-    reasoning: false,
-    reasoningMandatory: false,
-    structuredOutputs: true,
-  },
+const generate = {
+  type: "generate-requested",
+  continueWithLowBalance: false,
+} as const;
+const adapters: [string, CreationMachine<unknown>][] = [
+  ["native", typescriptCreationMachine],
+  [
+    "wire roundtrip",
+    fromWireCreationMachine(toWireCreationMachine(typescriptCreationMachine)),
+  ],
 ];
 
-test("replaying serialized events is deterministic, immutable and collision-free", () => {
-  const starting = freeze(draft({ rows: [{ id: "case-0" }] }));
-  const events: CreateEvent[] = [
-    { type: "dimension", side: "rows", parameter: "variable" },
-    { type: "single", side: "rows" },
-    { type: "dimension", side: "rows", parameter: "variable" },
-    { type: "format-selected", format: "markdown" },
-  ];
-  function replay() {
-    let model = createModel(starting, "case-");
-    const transitions = [];
-    for (const event of events) {
-      const before = structuredClone(model);
-      const result = updateCreateModel(freeze(model), freeze(event), catalog);
-      assert.deepEqual(model, before);
-      assert.deepEqual(JSON.parse(JSON.stringify(result)), result);
-      transitions.push(result);
-      model = result.model;
-    }
-    return transitions;
-  }
-  const first = replay();
-  assert.deepEqual(first, replay());
-  const firstId = first[0].model.draft.input.rows[0].id;
-  const secondId = first[2].model.draft.input.rows[0].id;
-  assert.notEqual(firstId, "case-0");
-  assert.notEqual(secondId, firstId);
-  assert.deepEqual(starting.input.rows, [{ id: "case-0" }]);
-});
+for (const [name, machine] of adapters) {
+  test(`${name}: deterministic replay preserves ownership and case IDs`, () => {
+    const starting = draft({ rows: [{ id: "case-0" }] });
+    const events: CreateEvent[] = [
+      { type: "dimension", side: "rows", parameter: "variable" },
+      { type: "single", side: "rows" },
+      { type: "dimension", side: "rows", parameter: "variable" },
+      { type: "format-selected", format: "markdown" },
+    ];
+    const replay = () => {
+      const s = session(machine, starting);
+      return events.map((event) => s.send(structuredClone(event)));
+    };
+    const first = replay();
+    assert.deepEqual(first, replay());
+    const firstId = first[0].view.draft.input.rows[0].id;
+    assert.notEqual(firstId, "case-0");
+    assert.notEqual(first[2].view.draft.input.rows[0].id, firstId);
+    assert.deepEqual(starting.input.rows, [{ id: "case-0" }]);
+  });
 
-test("confirmation proposals defer edits, rejection preserves drafts and stale acceptance cannot overwrite edits", () => {
-  const initial = createModel(
-    draft({
+  test(`${name}: confirmations defer edits, reject safely and cannot overwrite subsequent edits`, () => {
+    const initial = draft({
       parameters: {
         ...currentDefinition().parameters,
         effort: { kind: "rows" },
@@ -92,110 +126,301 @@ test("confirmation proposals defer edits, rejection preserves drafts and stale a
         { id: "r1", effort: "low" },
         { id: "r2", effort: "high" },
       ],
-    }),
-    "case-",
-  );
-  const action = { type: "to-common", parameter: "effort" } as const;
-  const proposal = updateCreateModel(initial, action, catalog);
-  const confirm = command(proposal.commands, "confirm");
-  assert.deepEqual(proposal.model.draft, initial.draft);
-  assert.equal(
-    proposal.commands.some((entry) => entry.type === "persist-draft"),
-    false,
-  );
-  const rejected = updateCreateModel(
-    proposal.model,
-    {
+    });
+    const s = session(machine, initial);
+    const action = { type: "to-common", parameter: "effort" } as const;
+    const proposal = s.send(action);
+    const confirm = command(proposal.commands, "confirm");
+    assert.deepEqual(proposal.outcome, {
+      stateChanged: true,
+      draftChanged: false,
+    });
+    assert.deepEqual(proposal.view.draft, initial);
+    assert.equal(
+      proposal.commands.some((c) => c.type === "persist-draft"),
+      false,
+    );
+    const rejected = s.send({
       type: "confirmation-resolved",
       id: confirm.id,
       accepted: false,
-    },
-    catalog,
-  );
-  assert.deepEqual(rejected.model.draft, initial.draft);
-  assert.deepEqual(rejected.commands, []);
-  const accepted = updateCreateModel(
-    proposal.model,
-    {
+    });
+    assert.deepEqual(rejected.view.draft, initial);
+    assert.deepEqual(rejected.commands, []);
+    const second = command(s.send(action).commands, "confirm");
+    const accepted = s.send({
       type: "confirmation-resolved",
-      id: confirm.id,
+      id: second.id,
       accepted: true,
-    },
-    catalog,
-  );
-  assert.deepEqual(accepted.model.draft.input.parameters.effort, {
-    kind: "common",
-    value: parameterDefault("effort"),
+    });
+    assert.deepEqual(accepted.view.draft.input.parameters.effort, {
+      kind: "common",
+      value: parameterDefault("effort"),
+    });
+    assert.deepEqual(accepted.outcome, {
+      stateChanged: true,
+      draftChanged: true,
+    });
+    command(accepted.commands, "persist-draft");
+    const staleSession = session(machine, initial);
+    const staleId = command(staleSession.send(action).commands, "confirm").id;
+    staleSession.send({ type: "budget-changed", value: "7" });
+    const stale = staleSession.send({
+      type: "confirmation-resolved",
+      id: staleId,
+      accepted: true,
+    });
+    assert.deepEqual(stale.outcome, {
+      stateChanged: false,
+      draftChanged: false,
+    });
+    assert.equal(stale.view.draft.input.budgetUsd, "7");
+    assert.deepEqual(stale.view.draft.input.parameters.effort, {
+      kind: "rows",
+    });
   });
-  command(accepted.commands, "persist-draft");
-  const edited = updateCreateModel(
-    proposal.model,
-    {
-      type: "budget-changed",
-      value: "7",
-    },
-    catalog,
-  );
-  const stale = updateCreateModel(
-    edited.model,
-    {
-      type: "confirmation-resolved",
-      id: confirm.id,
-      accepted: true,
-    },
-    catalog,
-  );
-  assert.deepEqual(stale.model, edited.model);
-  assert.deepEqual(stale.commands, []);
-});
 
-test("format transitions use the supplied catalog and confirm losses without applying early", () => {
-  const initial = createModel(draft(), "case-");
-  const proposal = updateCreateModel(
-    initial,
-    { type: "format-selected", format: "image" },
-    catalog,
-  );
-  const confirm = command(proposal.commands, "confirm");
-  assert.equal(proposal.model.draft.input.format, "markdown");
-  const accepted = updateCreateModel(
-    proposal.model,
-    {
+  test(`${name}: format changes use stored catalog and require fresh capacity observations`, () => {
+    const s = session(machine);
+    const proposal = s.send({ type: "format-selected", format: "image" });
+    const confirm = command(proposal.commands, "confirm");
+    assert.equal(proposal.view.draft.input.format, "markdown");
+    const accepted = s.send({
       type: "confirmation-resolved",
       id: confirm.id,
       accepted: true,
-    },
-    catalog,
-  );
-  assert.equal(accepted.model.draft.input.format, "image");
-  assert.deepEqual(accepted.model.draft.input.parameters.model, {
-    kind: "common",
-    value: "",
+    });
+    assert.equal(accepted.view.draft.input.format, "image");
+    assert.deepEqual(accepted.view.draft.input.parameters.model, {
+      kind: "common",
+      value: "",
+    });
+    assert.equal(accepted.view.draft.input.parameters.effort, undefined);
+    assert.equal(accepted.view.eligibility.canAttempt, false);
+    assert.ok(
+      accepted.view.eligibility.reasons.includes(
+        "Checking the automatic worker count.",
+      ),
+    );
+    assert.deepEqual(s.send(generate).commands, []);
+    s.send({ type: "provider-observed", provider: context("image").provider });
+    s.send({ type: "common", parameter: "model", value: "fixture/image" });
+    assert.equal(s.view().eligibility.canSubmit, true);
+    const cleared = s.send({ type: "format-cleared" });
+    assert.equal(cleared.view.draft.formatSelected, false);
+    command(cleared.commands, "navigate-home");
+    assert.deepEqual(s.send(generate).commands, []);
+    const selected = s.send({ type: "format-selected", format: "image" });
+    assert.equal(selected.view.draft.formatSelected, true);
+    command(selected.commands, "persist-draft");
   });
-  assert.equal(accepted.model.draft.input.parameters.effort, undefined);
-  assert.equal(initial.draft.input.format, "markdown");
-  const cleared = updateCreateModel(
-    accepted.model,
-    { type: "format-cleared" },
-    catalog,
-  );
-  assert.equal(cleared.model.draft.formatSelected, false);
-  command(cleared.commands, "navigate-home");
-  const selected = updateCreateModel(
-    cleared.model,
-    { type: "format-selected", format: "image" },
-    catalog,
-  );
-  assert.equal(selected.model.draft.formatSelected, true);
-  command(selected.commands, "persist-draft");
-});
 
-test("uploaded references replace every shared occurrence without changing unrelated content", () => {
-  const local = { id: "local-shared", name: "shared.png" };
-  const retained = { id: "local-other", name: "other.png" };
-  const uploaded = { id: "uploaded-shared", name: "shared.png" };
-  const initial = freeze(
-    createModel(
+  test(`${name}: admission owns provider, validation, compatibility and deferred missing-model feedback`, () => {
+    const disconnected = context();
+    disconnected.provider.connected = false;
+    const offline = session(machine, draft(), disconnected);
+    assert.ok(
+      offline.view().eligibility.reasons.includes("Connect OpenRouter."),
+    );
+    assert.deepEqual(offline.send(generate).commands, []);
+    const pending = context();
+    pending.provider.capacity.status = "pending";
+    assert.deepEqual(
+      session(machine, draft(), pending).send(generate).commands,
+      [],
+    );
+    pending.provider.capacity.status = "error";
+    assert.ok(
+      session(machine, draft(), pending)
+        .view()
+        .eligibility.reasons.includes(
+          "Could not determine the automatic worker count.",
+        ),
+    );
+    for (const budgetUsd of ["", "not a number", "1e309"]) {
+      const invalid = session(machine, draft({ budgetUsd }));
+      assert.equal(invalid.view().draft.input.budgetUsd, budgetUsd);
+      assert.equal(invalid.view().eligibility.canAttempt, false);
+      assert.deepEqual(invalid.send(generate).commands, []);
+      assert.ok(invalid.view().compatibilityCells.length > 0);
+      for (const cell of invalid.view().compatibilityCells)
+        assert.equal(cell.budgetUsd, null);
+    }
+    for (const budgetUsd of ["9007199254740992", "1e20"]) {
+      const large = session(machine, draft({ budgetUsd }));
+      assert.equal(large.view().eligibility.canSubmit, true);
+      for (const cell of large.view().compatibilityCells)
+        assert.equal(cell.budgetUsd, Number(budgetUsd));
+      assert.equal(
+        command(large.send(generate).commands, "prepare-references").input
+          .budgetUsd,
+        Number(budgetUsd),
+      );
+    }
+    const missing = session(
+      machine,
+      draft({
+        parameters: {
+          ...currentDefinition().parameters,
+          model: { kind: "rows" },
+        },
+        rows: [],
+      }),
+    );
+    assert.equal(missing.view().eligibility.canAttempt, true);
+    assert.equal(missing.view().eligibility.canSubmit, false);
+    assert.deepEqual(missing.view().validationIssues, []);
+    const attempted = missing.send(generate);
+    assert.equal(attempted.view.attempted, true);
+    assert.ok(attempted.view.validationIssues.length > 0);
+    assert.deepEqual(attempted.commands, []);
+    const incompatible = context();
+    incompatible.catalog = incompatible.catalog.map((m) => ({
+      ...m,
+      imageInput: false,
+    }));
+    const images = draft({
+      parameters: {
+        ...currentDefinition().parameters,
+        input: {
+          kind: "common",
+          value: [
+            {
+              role: "user",
+              content: "Look",
+              images: [{ id: "uploaded-image", name: "a.png" }],
+            },
+          ],
+        },
+      },
+    });
+    const blocked = session(machine, images, incompatible);
+    assert.ok(
+      blocked.view().compatibilityIssues.some((issue) => issue.blocking),
+    );
+    assert.equal(blocked.view().eligibility.canAttempt, false);
+    assert.deepEqual(blocked.send(generate).commands, []);
+  });
+
+  test(`${name}: no-op outcomes use data semantics and upload counters never become negative`, () => {
+    const s = session(machine);
+    for (const event of [
+      { type: "budget-changed", value: "3" },
+      { type: "low-balance-dismissed" },
+      { type: "upload-status-changed", busy: false },
+      { type: "provider-observed", provider: context().provider },
+      {
+        type: "common",
+        parameter: "input",
+        value: [{ role: "user", content: "Draw a cat" }],
+      },
+    ] as CreateEvent[]) {
+      const result = s.send(event);
+      assert.deepEqual(result.outcome, {
+        stateChanged: false,
+        draftChanged: false,
+      });
+      assert.deepEqual(result.commands, []);
+    }
+    s.send({ type: "upload-status-changed", busy: true });
+    assert.deepEqual(s.send(generate).commands, []);
+    assert.equal(s.view().attempted, false);
+    assert.ok(
+      s.view().eligibility.reasons.includes("Uploading reference images."),
+    );
+    s.send({ type: "upload-status-changed", busy: false });
+    assert.equal(s.view().pendingUploads, 0);
+  });
+
+  test(`${name}: snapshots preserve source, reuse, model, budget and worker policy through edits`, () => {
+    const input = {
+      ...currentDefinition({
+        format: "image",
+        parameters: { quality: { kind: "rows" } },
+        rows: [
+          { id: "r1", quality: "auto" },
+          { id: "r2", quality: "low" },
+        ],
+      }),
+      budgetUsd: "3",
+    };
+    const s = session(machine, {
+      formatSelected: true,
+      input,
+      sourceGridId: "source-grid",
+      reuseArtifacts: false,
+    });
+    const prepare = command(s.send(generate).commands, "prepare-references");
+    assert.equal(prepare.input.parallelWorkers, 2);
+    assert.equal(s.view().submissionPhase, "preparing");
+    assert.deepEqual(s.send(generate).commands, []);
+    s.send({ type: "budget-changed", value: "9" });
+    s.send({ type: "reuse-artifacts-changed", value: true });
+    s.send({ type: "common", parameter: "model", value: "new-model" });
+    s.send({
+      type: "provider-observed",
+      provider: {
+        connected: false,
+        capacity: { format: "image", status: "pending", parallelWorkers: null },
+      },
+    });
+    assert.deepEqual(
+      s.send({ type: "references-prepared", id: prepare.id + 1 }).commands,
+      [],
+    );
+    const submitted = s.send({ type: "references-prepared", id: prepare.id });
+    assert.deepEqual(command(submitted.commands, "submit-grid"), {
+      type: "submit-grid",
+      id: prepare.id,
+      input: prepare.input,
+      sourceGridId: "source-grid",
+      reuseArtifacts: false,
+      continueWithLowBalance: false,
+    });
+    assert.equal(submitted.view.submissionPhase, "submitting");
+    assert.deepEqual(
+      s.send({
+        type: "submission-succeeded",
+        id: prepare.id + 1,
+        gridId: "wrong",
+      }).outcome,
+      { stateChanged: false, draftChanged: false },
+    );
+    const completed = s.send({
+      type: "submission-succeeded",
+      id: prepare.id,
+      gridId: "grid-1",
+    });
+    assert.equal(completed.view.submissionPhase, "completed");
+    command(completed.commands, "creation-completed");
+    assert.deepEqual(s.send(generate).commands, []);
+    assert.deepEqual(
+      s.send({
+        type: "submission-failed",
+        id: prepare.id,
+        message: "late",
+        balanceUsd: null,
+      }).commands,
+      [],
+    );
+    assert.equal(s.view().submissionPhase, "completed");
+    assert.equal(s.view().draft.input.budgetUsd, "9");
+    const text = session(machine);
+    assert.equal(
+      Object.hasOwn(
+        command(text.send(generate).commands, "prepare-references").input,
+        "parallelWorkers",
+      ),
+      false,
+    );
+  });
+
+  test(`${name}: only matching uploads replace captured references and release files`, () => {
+    const local = { id: "local-shared", name: "shared.png" };
+    const retained = { id: "local-other", name: "other.png" };
+    const uploaded = { id: "uploaded-shared", name: "shared.png" };
+    const s = session(
+      machine,
       draft({
         caseAxes: ["rows"],
         parameters: {
@@ -213,239 +438,334 @@ test("uploaded references replace every shared occurrence without changing unrel
         },
         rows: [{ id: "r1", variable: [{ text: "first", images: [local] }] }],
       }),
-      "case-",
-    ),
-  );
-  const result = updateCreateModel(
-    initial,
-    { type: "reference-uploaded", localId: local.id, image: uploaded },
-    catalog,
-  );
-  assert.deepEqual(referenceLists(result.model.draft.input), [
-    [uploaded, retained],
-    [uploaded],
-  ]);
-  assert.deepEqual(
-    result.model.draft.input.rows[0].variable?.[0]?.text,
-    "first",
-  );
-  assert.deepEqual(referenceLists(initial.draft.input), [
-    [local, retained],
-    [local],
-  ]);
-  command(result.commands, "persist-draft");
-  assert.deepEqual(command(result.commands, "remove-reference-file"), {
-    type: "remove-reference-file",
-    localId: local.id,
+    );
+    const first = command(s.send(generate).commands, "prepare-references");
+    for (const event of [
+      {
+        type: "reference-uploaded",
+        id: first.id + 1,
+        localId: local.id,
+        image: uploaded,
+      },
+      {
+        type: "reference-uploaded",
+        id: first.id,
+        localId: "local-unknown",
+        image: uploaded,
+      },
+    ] as CreateEvent[]) {
+      const stale = s.send(event);
+      assert.deepEqual(stale.outcome, {
+        stateChanged: false,
+        draftChanged: false,
+      });
+      assert.deepEqual(stale.commands, []);
+    }
+    assert.deepEqual(
+      s.send({ type: "references-prepared", id: first.id }).commands,
+      [],
+    );
+    s.send({ type: "budget-changed", value: "9" });
+    const replaced = s.send({
+      type: "reference-uploaded",
+      id: first.id,
+      localId: local.id,
+      image: uploaded,
+    });
+    assert.deepEqual(referenceLists(replaced.view.draft.input), [
+      [uploaded, retained],
+      [uploaded],
+    ]);
+    assert.equal(
+      replaced.view.draft.input.rows[0].variable?.[0]?.text,
+      "first",
+    );
+    assert.equal(replaced.view.draft.input.budgetUsd, "9");
+    command(replaced.commands, "remove-reference-file");
+    command(replaced.commands, "persist-draft");
+    assert.deepEqual(
+      s.send({
+        type: "reference-uploaded",
+        id: first.id,
+        localId: local.id,
+        image: uploaded,
+      }).commands,
+      [],
+    );
+    assert.deepEqual(
+      s.send({ type: "references-prepared", id: first.id }).commands,
+      [],
+    );
+    s.send({
+      type: "reference-uploaded",
+      id: first.id,
+      localId: retained.id,
+      image: { id: "uploaded-other", name: retained.name },
+    });
+    const submit = command(
+      s.send({ type: "references-prepared", id: first.id }).commands,
+      "submit-grid",
+    );
+    assert.equal(submit.input.budgetUsd, 3);
+    assert.deepEqual(referenceLists(submit.input), [
+      [uploaded, { id: "uploaded-other", name: retained.name }],
+      [uploaded],
+    ]);
+    assert.deepEqual(
+      s.send({
+        type: "reference-uploaded",
+        id: first.id,
+        localId: local.id,
+        image: uploaded,
+      }).commands,
+      [],
+    );
   });
-});
 
-test("generation guards block attempts and file-read counts never become negative", () => {
-  const initial = createModel(draft(), "case-");
-  const generate = {
-    type: "generate-requested",
-    blocked: true,
-    parallelWorkers: 2,
-  } as const;
-  assert.deepEqual(updateCreateModel(initial, generate, catalog), {
-    model: initial,
-    commands: [],
+  test(`${name}: upload completion updates only snapshot references when the draft has replaced them`, () => {
+    const local = { id: "local-original", name: "original.png" };
+    const s = session(
+      machine,
+      draft({
+        parameters: {
+          ...currentDefinition().parameters,
+          input: {
+            kind: "common",
+            value: [
+              { role: "user", content: "Original prompt", images: [local] },
+            ],
+          },
+        },
+      }),
+    );
+    const prepare = command(s.send(generate).commands, "prepare-references");
+    s.send({
+      type: "common",
+      parameter: "input",
+      value: [
+        {
+          role: "user",
+          content: "New prompt",
+          images: [{ id: "local-new", name: "new.png" }],
+        },
+      ],
+    });
+    const image = { id: "uploaded-original", name: local.name };
+    const uploaded = s.send({
+      type: "reference-uploaded",
+      id: prepare.id,
+      localId: local.id,
+      image,
+    });
+    image.id = "mutated-upload-event";
+    assert.deepEqual(uploaded.outcome, {
+      stateChanged: true,
+      draftChanged: false,
+    });
+    assert.deepEqual(uploaded.commands, [
+      { type: "remove-reference-file", localId: local.id },
+    ]);
+    assert.deepEqual(referenceLists(uploaded.view.draft.input), [
+      [{ id: "local-new", name: "new.png" }],
+    ]);
+    const submit = command(
+      s.send({ type: "references-prepared", id: prepare.id }).commands,
+      "submit-grid",
+    );
+    assert.deepEqual(submit.input.parameters.input, {
+      kind: "common",
+      value: [
+        {
+          role: "user",
+          content: "Original prompt",
+          images: [{ id: "uploaded-original", name: local.name }],
+        },
+      ],
+    });
   });
-  const uploading = updateCreateModel(
-    initial,
-    { type: "upload-status-changed", busy: true },
-    catalog,
-  ).model;
-  const blocked = updateCreateModel(
-    uploading,
-    { ...generate, blocked: false },
-    catalog,
-  );
-  assert.equal(blocked.model.attempted, false);
-  assert.deepEqual(blocked.commands, []);
-  const idle = updateCreateModel(
-    uploading,
-    { type: "upload-status-changed", busy: false },
-    catalog,
-  ).model;
-  const extra = updateCreateModel(
-    idle,
-    { type: "upload-status-changed", busy: false },
-    catalog,
-  ).model;
-  assert.equal(extra.pendingUploads, 0);
-  const invalid = updateCreateModel(
-    createModel(draft({ budgetUsd: "" }), "case-"),
-    { ...generate, blocked: false },
-    catalog,
-  );
-  assert.equal(invalid.model.attempted, true);
-  assert.equal(invalid.model.submission, null);
-  assert.deepEqual(invalid.commands, []);
-});
 
-test("submission snapshots survive edits, guard duplicates and ignore stale completions", () => {
-  const initialDraft = {
-    ...draft(),
-    sourceGridId: "source-grid",
-    reuseArtifacts: false,
-  };
-  const initial = createModel(initialDraft, "case-");
-  const event = {
-    type: "generate-requested",
-    blocked: false,
-    parallelWorkers: 2,
-  } as const;
-  const started = updateCreateModel(initial, event, catalog);
-  const prepare = command(started.commands, "prepare-references");
-  assert.equal(started.model.submission?.phase, "preparing");
-  assert.equal(started.model.attempted, true);
-  assert.equal(prepare.input.parallelWorkers, 2);
-  assert.equal(
-    validateDraftInput({ ...initialDraft.input, parallelWorkers: 2 }).parsed
-      .success,
-    true,
-  );
-  assert.deepEqual(
-    updateCreateModel(started.model, event, catalog).commands,
-    [],
-  );
-  const edited = updateCreateModel(
-    started.model,
-    { type: "budget-changed", value: "9" },
-    catalog,
-  ).model;
-  const changedReuse = updateCreateModel(
-    edited,
-    { type: "reuse-artifacts-changed", value: true },
-    catalog,
-  ).model;
-  assert.equal(prepare.input.budgetUsd, 3);
-  const stalePrepared = updateCreateModel(
-    changedReuse,
-    { type: "references-prepared", id: prepare.id + 1, input: prepare.input },
-    catalog,
-  );
-  assert.deepEqual(stalePrepared, { model: changedReuse, commands: [] });
-  const prepared = updateCreateModel(
-    changedReuse,
-    { type: "references-prepared", id: prepare.id, input: prepare.input },
-    catalog,
-  );
-  assert.deepEqual(command(prepared.commands, "submit-grid"), {
-    type: "submit-grid",
-    id: prepare.id,
-    input: prepare.input,
-    sourceGridId: "source-grid",
-    reuseArtifacts: false,
-    continueWithLowBalance: false,
+  test(`${name}: old request uploads cannot affect a new submission`, () => {
+    const local = { id: "local-photo", name: "photo.png" };
+    const s = session(
+      machine,
+      draft({
+        parameters: {
+          ...currentDefinition().parameters,
+          input: {
+            kind: "common",
+            value: [{ role: "user", content: "Look", images: [local] }],
+          },
+        },
+      }),
+    );
+    const first = command(s.send(generate).commands, "prepare-references");
+    s.send({
+      type: "submission-failed",
+      id: first.id,
+      message: "Upload failed",
+      balanceUsd: null,
+    });
+    const second = command(s.send(generate).commands, "prepare-references");
+    assert.notEqual(first.id, second.id);
+    const stale = s.send({
+      type: "reference-uploaded",
+      id: first.id,
+      localId: local.id,
+      image: { id: "uploaded-old", name: local.name },
+    });
+    assert.deepEqual(stale.outcome, {
+      stateChanged: false,
+      draftChanged: false,
+    });
+    assert.deepEqual(stale.commands, []);
+    assert.deepEqual(referenceLists(stale.view.draft.input), [[local]]);
   });
-  assert.equal(prepared.model.submission?.phase, "submitting");
-  assert.deepEqual(
-    updateCreateModel(prepared.model, event, catalog).commands,
-    [],
-  );
-  assert.deepEqual(
-    updateCreateModel(
-      prepared.model,
-      { type: "submission-succeeded", id: prepare.id + 1, gridId: "wrong" },
-      catalog,
-    ),
-    { model: prepared.model, commands: [] },
-  );
-  const completed = updateCreateModel(
-    prepared.model,
-    { type: "submission-succeeded", id: prepare.id, gridId: "grid-1" },
-    catalog,
-  );
-  assert.equal(completed.model.submission?.phase, "completed");
-  assert.deepEqual(command(completed.commands, "creation-completed"), {
-    type: "creation-completed",
-    id: prepare.id,
-    gridId: "grid-1",
-  });
-  assert.deepEqual(
-    updateCreateModel(completed.model, event, catalog).commands,
-    [],
-  );
-  assert.equal(completed.model.draft.input.budgetUsd, "9");
-});
 
-test("preparation failures and low-balance failures release requests and allow explicit continuation", () => {
-  const generate = {
-    type: "generate-requested",
-    blocked: false,
-    parallelWorkers: undefined,
-  } as const;
-  const started = updateCreateModel(
-    createModel(draft(), "case-"),
-    generate,
-    catalog,
-  );
-  const first = command(started.commands, "prepare-references");
-  const failed = updateCreateModel(
-    started.model,
-    { type: "submission-failed", id: first.id, message: "Upload failed" },
-    catalog,
-  );
-  assert.equal(failed.model.submission, null);
-  assert.equal(failed.model.error, "Upload failed");
-  assert.equal(failed.model.lowBalance, null);
-  const reset = updateCreateModel(
-    failed.model,
-    { type: "budget-changed", value: "4" },
-    catalog,
-  );
-  assert.equal(reset.model.attempted, false);
-  assert.equal(reset.model.error, "");
-  const retry = updateCreateModel(reset.model, generate, catalog);
-  const second = command(retry.commands, "prepare-references");
-  assert.notEqual(second.id, first.id);
-  assert.deepEqual(
-    updateCreateModel(
-      retry.model,
-      { type: "submission-failed", id: first.id, message: "stale" },
-      catalog,
-    ),
-    { model: retry.model, commands: [] },
-  );
-  const submitted = updateCreateModel(
-    retry.model,
-    { type: "references-prepared", id: second.id, input: second.input },
-    catalog,
-  );
-  const low = updateCreateModel(
-    submitted.model,
-    {
+  test(`${name}: only matching completed requests accept completion failures and can recover`, () => {
+    const s = session(machine);
+    const prepare = command(s.send(generate).commands, "prepare-references");
+    const failure = {
+      type: "completion-failed",
+      id: prepare.id,
+      message: "Navigation failed",
+    } as const;
+    assert.deepEqual(s.send(failure).outcome, {
+      stateChanged: false,
+      draftChanged: false,
+    });
+    s.send({ type: "references-prepared", id: prepare.id });
+    assert.deepEqual(s.send(failure).outcome, {
+      stateChanged: false,
+      draftChanged: false,
+    });
+    s.send({
+      type: "submission-succeeded",
+      id: prepare.id,
+      gridId: "created-grid",
+    });
+    assert.deepEqual(s.send({ ...failure, id: prepare.id + 1 }).outcome, {
+      stateChanged: false,
+      draftChanged: false,
+    });
+    assert.equal(s.view().submissionPhase, "completed");
+    const failed = s.send(failure);
+    assert.deepEqual(failed.outcome, {
+      stateChanged: true,
+      draftChanged: false,
+    });
+    assert.equal(failed.view.submissionPhase, "idle");
+    assert.equal(failed.view.error, "Navigation failed");
+    assert.equal(failed.view.eligibility.canSubmit, true);
+    assert.deepEqual(failed.commands, []);
+    assert.deepEqual(s.send(failure).outcome, {
+      stateChanged: false,
+      draftChanged: false,
+    });
+    const retry = command(s.send(generate).commands, "prepare-references");
+    assert.notEqual(retry.id, prepare.id);
+    const submit = command(
+      s.send({ type: "references-prepared", id: retry.id }).commands,
+      "submit-grid",
+    );
+    assert.deepEqual(submit.input, prepare.input);
+    assert.equal(s.view().error, "");
+  });
+
+  test(`${name}: preparation failures, low balance and explicit continuation preserve retry behavior`, () => {
+    const s = session(machine);
+    const first = command(s.send(generate).commands, "prepare-references");
+    const failed = s.send({
+      type: "submission-failed",
+      id: first.id,
+      message: "Upload failed",
+      balanceUsd: null,
+    });
+    assert.equal(failed.view.submissionPhase, "idle");
+    assert.equal(failed.view.error, "Upload failed");
+    const reset = s.send({ type: "budget-changed", value: "4" });
+    assert.equal(reset.view.attempted, false);
+    assert.equal(reset.view.error, "");
+    const second = command(s.send(generate).commands, "prepare-references");
+    assert.deepEqual(
+      s.send({
+        type: "submission-failed",
+        id: first.id,
+        message: "stale",
+        balanceUsd: null,
+      }).commands,
+      [],
+    );
+    s.send({ type: "references-prepared", id: second.id });
+    const low = s.send({
       type: "submission-failed",
       id: second.id,
       message: "Low balance",
       balanceUsd: 0,
-    },
-    catalog,
+    });
+    assert.equal(low.view.lowBalance, 0);
+    assert.equal(low.view.error, "");
+    assert.equal(
+      s.send({ type: "low-balance-dismissed" }).view.lowBalance,
+      null,
+    );
+    const third = command(
+      s.send({ ...generate, continueWithLowBalance: true }).commands,
+      "prepare-references",
+    );
+    assert.equal(
+      command(
+        s.send({ type: "references-prepared", id: third.id }).commands,
+        "submit-grid",
+      ).continueWithLowBalance,
+      true,
+    );
+  });
+
+  test(`${name}: initial values, context, events, projections and commands are detached`, () => {
+    const initial = draft();
+    const facts = context();
+    const s = session(machine, initial, facts);
+    initial.input.budgetUsd = "99";
+    facts.provider.connected = false;
+    facts.catalog[0].imageInput = false;
+    const view = s.view();
+    view.draft.input.budgetUsd = "88";
+    view.eligibility.reasons.push("not real");
+    assert.equal(s.view().draft.input.budgetUsd, "3");
+    assert.equal(s.view().eligibility.canSubmit, true);
+    const messages = [{ role: "user" as const, content: "Original" }];
+    const edited = s.send({
+      type: "common",
+      parameter: "input",
+      value: messages,
+    });
+    messages[0].content = "Mutated event";
+    command(edited.commands, "persist-draft").draft.input.budgetUsd = "77";
+    const provider = context().provider;
+    s.send({ type: "provider-observed", provider });
+    provider.connected = false;
+    const prepare = command(s.send(generate).commands, "prepare-references");
+    prepare.input.budgetUsd = 66;
+    const submit = command(
+      s.send({ type: "references-prepared", id: prepare.id }).commands,
+      "submit-grid",
+    );
+    assert.equal(submit.input.budgetUsd, 3);
+    assert.deepEqual(submit.input.parameters.input, {
+      kind: "common",
+      value: [{ role: "user", content: "Original" }],
+    });
+    submit.input.budgetUsd = 55;
+    assert.equal(s.view().draft.input.budgetUsd, "3");
+  });
+}
+
+test("compatibility previews use deterministic case identities without modifying input", () => {
+  const input = currentDefinition({ rows: [], columns: [] });
+  const before = structuredClone(input);
+  assert.deepEqual(
+    compatibilityPreviewInput(input),
+    compatibilityPreviewInput(input),
   );
-  assert.equal(low.model.submission, null);
-  assert.equal(low.model.lowBalance, 0);
-  assert.equal(low.model.error, "");
-  const dismissed = updateCreateModel(
-    low.model,
-    { type: "low-balance-dismissed" },
-    catalog,
-  );
-  assert.equal(dismissed.model.lowBalance, null);
-  const continued = updateCreateModel(
-    dismissed.model,
-    { ...generate, continueWithLowBalance: true },
-    catalog,
-  );
-  const third = command(continued.commands, "prepare-references");
-  const continuedSubmission = updateCreateModel(
-    continued.model,
-    { type: "references-prepared", id: third.id, input: third.input },
-    catalog,
-  );
-  assert.equal(
-    command(continuedSubmission.commands, "submit-grid").continueWithLowBalance,
-    true,
-  );
+  assert.deepEqual(input, before);
 });

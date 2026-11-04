@@ -1,5 +1,5 @@
 import type { Dialog, Page } from "@playwright/test";
-import type { Draft } from "../../src/create/model";
+import type { Draft } from "../../src/create/machine-contract";
 import { defaultGridDraft, parameterDefault } from "../../server/parameters";
 import { test, expect } from "./fixtures";
 import { mockModels } from "./helpers";

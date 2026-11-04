@@ -75,29 +75,38 @@ content do not belong in ledger diagnostics.
 
 ## Creation-form state transitions
 
-The creation model owns the editable draft and its confirmation and submission
-lifecycle. A pure update boundary consumes explicit data events and a supplied
-model-catalog snapshot, then returns the next model and declarative commands.
-It does not read browser globals, storage, clocks, randomness, or network state.
-Case identity allocation is determined by model state. Events describe edits
-rather than carry callbacks that can execute arbitrary code inside a transition.
+The creation machine owns the editable draft, validation and compatibility
+feedback, generation eligibility, and confirmation and submission lifecycle.
+Its deterministic boundary consumes explicit data events. Catalog capabilities
+and provider observations enter as data, rather than being read from browser
+globals. Case identity allocation is determined by machine state. Updates return
+an opaque state handle, explicit logical-change outcomes, and declarative
+commands; rendering and effect execution cannot inspect the implementation's
+state representation.
 
-React renders the model and derived advisory feedback. The browser runtime
-serializes dispatch against the current model and interprets commands outside
-rendering and state-updater callbacks. It owns confirmation dialogs, draft
-storage, file and HTTP operations, credentials, cancellation, and navigation.
-Effect completions return as events; the model's request ownership boundary
-rejects stale completions and prevents duplicate creation while a submission is
-active. Accepted submissions retain their own input snapshot while editing can
-continue independently.
+React renders a detached public view. A shared controller serializes dispatch
+for both the creation page and homepage draft entry, using explicit outcomes
+rather than object identity to decide whether an edit was accepted. Canonical
+data codecs enforce the language boundary, and the wire adapter separates
+serialized inputs and outputs from backend-owned state handles. Replacing the
+machine does not require changing React or the effect interpreter.
+
+The browser runtime owns confirmation dialogs, draft storage, file and HTTP
+operations, credentials, cancellation, and navigation. Storage hydration
+canonicalizes persistent drafts before machine initialization. Effect
+completions return as events; the machine's request ownership boundary rejects
+stale completions and prevents duplicate creation while a submission is active.
+Accepted submissions retain their own input snapshot while editing can continue
+independently.
 
 Presentation state such as focus, scrolling, drag indicators, and temporarily
 remembered chat text remains local to React. Any remembered value used to edit
-the draft enters the transition as explicit event data. Persistent draft
-hydration remains at the storage boundary, separate from the executable model.
-This separates the future formal-verification surface from browser effects;
-the current implementation is TypeScript, not a formally verified state machine.
-Server admission remains authoritative for creation and inference.
+the draft enters the transition as explicit event data, without relying on
+message-object identity. The current machine and its admission policy remain
+TypeScript, not formally verified code. A verified replacement must supply the
+complete machine policy through the same boundary. Browser observations are
+inputs to that policy, not proof of provider state or authorization; server
+admission remains authoritative for creation and inference.
 
 ## Input admission and workflow planning
 

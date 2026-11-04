@@ -16,7 +16,7 @@ import {
   ValidationField,
   ValidationScope,
 } from "./validation-feedback";
-import type { MessageEdit } from "./change-axis";
+import type { MessageEdit } from "./input-events";
 
 const imageRoleHint = "Remove images before changing this message’s role.";
 
@@ -32,10 +32,7 @@ export function ChatEditor({
   compatibility: (messageIndex: number) => ReactNode;
 }) {
   const root = useRef<HTMLDivElement>(null);
-  const [unfilledText] = useState(() => new WeakMap<ChatMessage, string>());
-  const remembering = useRef<{ index: number; content: string } | undefined>(
-    undefined,
-  );
+  const unfilledText = useRef<(string | undefined)[]>([]);
   const inserted = useRef<number | undefined>(undefined);
   const descriptionId = useId();
   const reads = useRef(0);
@@ -46,12 +43,6 @@ export function ChatEditor({
     onBusy(busy);
   }
   useLayoutEffect(() => {
-    if (remembering.current) {
-      const { index, content } = remembering.current;
-      const message = messages[index];
-      if (message?.role === "unfilled") unfilledText.set(message, content);
-      remembering.current = undefined;
-    }
     if (inserted.current === undefined) return;
     const row = root.current?.querySelector(
       `[data-message-index="${inserted.current}"]`,
@@ -64,17 +55,27 @@ export function ChatEditor({
   }, [messages]);
   const [dragTarget, setDragTarget] = useState<number>();
   const [dragging, setDragging] = useState<number>();
+  function memory() {
+    unfilledText.current.length = messages.length;
+    return unfilledText.current;
+  }
   function remove(index: number) {
     if (reads.current) return;
+    memory().splice(index, 1);
     onChange({ type: "remove", index });
   }
   function move(from: number, to: number) {
     if (reads.current) return;
+    if (from === to || to < 0 || to >= messages.length || !messages[from])
+      return;
+    const remembered = memory();
+    remembered.splice(to, 0, remembered.splice(from, 1)[0]);
     onChange({ type: "move", index: from, to });
   }
   function insert(index: number) {
     if (reads.current) return;
     inserted.current = index;
+    memory().splice(index, 0, undefined);
     onChange({ type: "insert", index });
   }
   return (
@@ -131,14 +132,14 @@ export function ChatEditor({
                   onClick={() => {
                     if (reads.current || message.images?.length) return;
                     if (message.role === "assistant")
-                      remembering.current = { index, content: message.content };
+                      unfilledText.current[index] = message.content;
                     onChange({
                       type: "cycle-role",
                       index,
                       ...(message.role === "unfilled"
                         ? {
                             rememberedContent:
-                              unfilledText.get(message) ?? message.content,
+                              unfilledText.current[index] ?? message.content,
                           }
                         : {}),
                     });

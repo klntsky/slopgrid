@@ -8,7 +8,7 @@ import {
   type CommonParameterId,
 } from "../../server/parameters";
 import { ScalarControl } from "./scalar-control";
-import type { InputAction } from "./change-axis";
+import type { InputAction } from "./input-events";
 import { CommonParameterActions } from "./axis-editor";
 import { ValidationScope } from "./validation-feedback";
 

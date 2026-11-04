@@ -51,7 +51,6 @@ export function Create() {
   usePublicGrids();
   const {
     draft,
-    candidate,
     validationIssues,
     compatibilityIssues,
     compatibilityCells,
@@ -89,8 +88,6 @@ export function Create() {
   function generate(continueWithLowBalance = false) {
     dispatch({
       type: "generate-requested",
-      blocked: submission.blocked,
-      parallelWorkers: submission.parallelWorkers,
       continueWithLowBalance,
     });
   }
@@ -98,19 +95,19 @@ export function Create() {
     dispatch({ type: "upload-status-changed", busy });
   }
   const compatibility = compatibilityTables({
-    input: candidate,
+    input,
     issues: compatibilityIssues,
     cells: compatibilityCells,
   });
   const axisCompatibility = {
     rows: compatibilityTables({
-      input: candidate,
+      input,
       issues: compatibilityIssues,
       cells: compatibilityCells,
       source: "rows",
     }),
     columns: compatibilityTables({
-      input: candidate,
+      input,
       issues: compatibilityIssues,
       cells: compatibilityCells,
       source: "columns",
@@ -351,7 +348,7 @@ export function Create() {
                       messageIndex,
                     ) => (
                       <CompatibilityFeedback
-                        input={candidate}
+                        input={input}
                         issues={compatibilityIssues}
                         origin={{
                           parameter,
@@ -438,7 +435,7 @@ export function Create() {
                 onBusy={onUploading}
                 compatibility={(messageIndex) => (
                   <CompatibilityFeedback
-                    input={candidate}
+                    input={input}
                     issues={compatibilityIssues}
                     origin={{
                       parameter: "input",

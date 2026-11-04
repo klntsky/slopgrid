@@ -12,9 +12,8 @@ import {
   inputActionConfirmation,
   droppedParameters,
   reduceInput,
-  type InputAction,
-  type MessageEdit,
 } from "../src/create/change-axis.js";
+import type { InputAction, MessageEdit } from "../src/create/input-events.js";
 import { criteriaForCell } from "../server/judge-criteria.js";
 import {
   draftInputFromGridInput,

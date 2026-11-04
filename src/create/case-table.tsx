@@ -18,9 +18,8 @@ import {
   addCaseAction,
   caseValueAction,
   variableRenameError,
-  type InputAction,
-  type ParameterSetter,
 } from "./change-axis";
+import type { InputAction, ParameterSetter } from "./input-events";
 import { VariableInput, VariableTextInput } from "./variable-input";
 import { CompleteInputEditor } from "./complete-input-editor";
 import { ScalarControl } from "./scalar-control";

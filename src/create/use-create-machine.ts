@@ -5,61 +5,73 @@ import { modelCatalog } from "../model-catalog";
 import { getOpenRouterKey } from "../openrouter-key";
 import { queryClient } from "../queries";
 import { clearDraft, creationSubmission, readDraft, saveDraft } from "./draft";
-import {
-  createModel,
-  updateCreateModel,
-  type CreateCommand,
-  type CreateEvent,
-} from "./model";
+import { createCreationController } from "./create-controller";
+import type { CreateCommand, CreateEvent } from "./machine-contract";
 import { removeReferenceFile, uploadReferences } from "./reference-files";
 
 export function useCreateMachine() {
   const navigate = useNavigate();
-  const [model, setModel] = useState(() =>
-    createModel({ ...readDraft(), formatSelected: true }, crypto.randomUUID()),
-  );
-  const current = useRef(model);
+  const [controller] = useState(() => {
+    const draft = { ...readDraft(), formatSelected: true };
+    return createCreationController(
+      { draft, caseIdPrefix: crypto.randomUUID() },
+      {
+        catalog: modelCatalog,
+        provider: {
+          connected: false,
+          capacity: {
+            format: draft.input.format,
+            status: "pending",
+            parallelWorkers: null,
+          },
+        },
+      },
+    );
+  });
+  const [view, setView] = useState(() => controller.view());
   const mounted = useRef(true);
   const requests = useRef(new Set<AbortController>());
 
   useEffect(() => {
     mounted.current = true;
-    saveDraft(current.current.draft);
+    saveDraft(controller.view().draft);
     return () => {
       mounted.current = false;
       for (const controller of requests.current) controller.abort();
       requests.current.clear();
     };
-  }, []);
+  }, [controller]);
 
   const dispatch = useCallback(
     function dispatch(event: CreateEvent): boolean {
       if (!mounted.current) return false;
-      const before = current.current.draft;
-      const result = updateCreateModel(current.current, event, modelCatalog);
-      if (result.model !== current.current) {
-        current.current = result.model;
-        setModel(result.model);
-      }
 
       function request(
         id: number,
         run: (signal: AbortSignal) => Promise<void>,
+        failure:
+          "submission-failed" | "completion-failed" = "submission-failed",
       ) {
         const controller = new AbortController();
         requests.current.add(controller);
         void run(controller.signal)
           .catch((error: unknown) => {
             if (controller.signal.aborted || !mounted.current) return;
+            const message =
+              error instanceof Error ? error.message : String(error);
+            if (failure === "completion-failed") {
+              dispatch({ type: failure, id, message });
+              return;
+            }
             const lowBalance =
               error instanceof ApiError && error.code === "LOW_BALANCE"
                 ? error.balanceUsd
                 : undefined;
             dispatch({
-              type: "submission-failed",
+              type: failure,
               id,
-              message: error instanceof Error ? error.message : String(error),
-              ...(lowBalance === undefined ? {} : { balanceUsd: lowBalance }),
+              message,
+              balanceUsd: lowBalance ?? null,
             });
           })
           .finally(() => requests.current.delete(controller));
@@ -79,17 +91,21 @@ export function useCreateMachine() {
             break;
           case "prepare-references":
             request(command.id, async (signal) => {
-              const input = await uploadReferences(
+              await uploadReferences(
                 command.input,
                 (localId, image) =>
-                  dispatch({ type: "reference-uploaded", localId, image }),
+                  dispatch({
+                    type: "reference-uploaded",
+                    id: command.id,
+                    localId,
+                    image,
+                  }),
                 signal,
               );
               if (!signal.aborted)
                 dispatch({
                   type: "references-prepared",
                   id: command.id,
-                  input,
                 });
             });
             break;
@@ -119,15 +135,19 @@ export function useCreateMachine() {
             });
             break;
           case "creation-completed":
-            request(command.id, async (signal) => {
-              await queryClient.invalidateQueries({ queryKey: ["grids"] });
-              if (signal.aborted) return;
-              clearDraft();
-              await navigate({
-                to: "/grid/$id",
-                params: { id: command.gridId },
-              });
-            });
+            request(
+              command.id,
+              async (signal) => {
+                await queryClient.invalidateQueries({ queryKey: ["grids"] });
+                if (signal.aborted) return;
+                clearDraft();
+                await navigate({
+                  to: "/grid/$id",
+                  params: { id: command.gridId },
+                });
+              },
+              "completion-failed",
+            );
             break;
           case "navigate-home":
             void navigate({ to: "/" });
@@ -138,11 +158,13 @@ export function useCreateMachine() {
         }
       }
 
-      for (const command of result.commands) execute(command);
-      return current.current.draft !== before;
+      return controller.dispatch(event, {
+        publish: setView,
+        execute,
+      }).draftChanged;
     },
-    [navigate],
+    [controller, navigate],
   );
 
-  return { model, dispatch };
+  return { view, dispatch };
 }

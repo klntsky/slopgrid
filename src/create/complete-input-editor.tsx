@@ -5,7 +5,7 @@ import {
   type GridDraftInput,
 } from "../../server/domain";
 import type { AxisSide } from "../../server/parameters";
-import type { InputAction, MessageEdit } from "./change-axis";
+import type { InputAction, MessageEdit } from "./input-events";
 import { ChatEditor } from "./chat-editor";
 import { PromptEditor } from "./prompt-editor";
 

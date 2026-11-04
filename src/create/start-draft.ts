@@ -1,31 +1,49 @@
 import type { GridDraftInput } from "../../server/domain";
 import { modelCatalog } from "../model-catalog";
 import { readDraft, saveDraft } from "./draft";
-import { createModel, updateCreateModel, type CreateEvent } from "./model";
+import {
+  createCreationController,
+  type CreationEffects,
+} from "./create-controller";
 
 export function startDraft(format: GridDraftInput["format"]) {
-  let model = createModel(readDraft(), crypto.randomUUID());
-  function dispatch(event: CreateEvent) {
-    const result = updateCreateModel(model, event, modelCatalog);
-    model = result.model;
-    for (const command of result.commands) {
+  const draft = readDraft();
+  const controller = createCreationController(
+    { draft, caseIdPrefix: crypto.randomUUID() },
+    {
+      catalog: modelCatalog,
+      provider: {
+        connected: false,
+        capacity: {
+          format: draft.input.format,
+          status: "pending",
+          parallelWorkers: null,
+        },
+      },
+    },
+  );
+  const effects: CreationEffects = {
+    execute(command) {
       switch (command.type) {
         case "persist-draft":
           saveDraft(command.draft);
           break;
         case "confirm":
-          dispatch({
-            type: "confirmation-resolved",
-            id: command.id,
-            accepted: window.confirm(command.message),
-          });
+          controller.dispatch(
+            {
+              type: "confirmation-resolved",
+              id: command.id,
+              accepted: window.confirm(command.message),
+            },
+            effects,
+          );
           break;
         default:
           throw new Error(
             `Unexpected format-selection command: ${command.type}`,
           );
       }
-    }
-  }
-  dispatch({ type: "format-selected", format });
+    },
+  };
+  controller.dispatch({ type: "format-selected", format }, effects);
 }

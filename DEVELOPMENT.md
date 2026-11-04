@@ -112,15 +112,36 @@ For creation-form development, run the focused checks against the candidate
 worktree:
 
 ```sh
-pnpm exec tsx --test tests/create-model.test.ts tests/change-axis.test.ts tests/judge-mode.test.ts
+pnpm exec tsx --test tests/create-machine-codec.test.ts tests/create-model.test.ts tests/create-controller.test.ts tests/change-axis.test.ts tests/judge-mode.test.ts
 pnpm build
-E2E_PORT=0 pnpm exec tsx tests/run-e2e.ts --suite mock --reuse-build tests/e2e/create-state-machine.spec.ts tests/e2e/case-format-transitions.spec.ts tests/e2e/chat.spec.ts
+E2E_PORT=0 pnpm exec tsx tests/run-e2e.ts --suite mock --reuse-build tests/e2e/create-state-machine.spec.ts tests/e2e/creation-machine-contract.spec.ts tests/e2e/case-format-transitions.spec.ts tests/e2e/chat.spec.ts tests/e2e/model-selection.spec.ts
 ```
 
-The creation model can be imported directly in a Node process without browser
-globals. Supply its initial draft, identity prefix, events, and catalog explicitly
-when debugging a transition. Browser-only failures should be investigated through
-the isolated runtime and browser tooling described above.
+The creation implementation can be imported directly in a Node process without
+browser globals. Initialize it with a draft, identity prefix, catalog capabilities,
+and provider observations, then replay explicit events and inspect public views
+and commands. Browser-only failures should be investigated through the isolated
+runtime and browser tooling described above.
+
+### Replacing the creation implementation
+
+Implement `CreationMachine<State>` from `src/create/machine-contract.ts`, or
+provide a `WireCreationMachine<State>` and wrap it with
+`fromWireCreationMachine` from `src/create/machine-wire.ts`. Select the resulting
+implementation at the default argument in `src/create/create-controller.ts`.
+The form and homepage draft entry both use this composition point; neither
+should import a backend directly.
+
+Keep state handles opaque and updates immutable. Follow the contract's explicit
+change outcomes and canonical data rules rather than relying on JavaScript
+object identity, omitted fields becoming null, or non-finite numbers surviving
+serialization. Use the codecs for the executable boundary contract. The update
+wire output contains outcomes and commands, not serialized machine state.
+
+Run the focused commands above after a replacement. The TypeScript
+implementation is the current executable reference, including admission and
+compatibility policy; the wire adapter supplies the language bridge, not an
+implementation of that policy or a formal proof.
 
 ## GitHub integration
 
