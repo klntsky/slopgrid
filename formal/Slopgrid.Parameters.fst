@@ -173,6 +173,8 @@ let parameter_value_path (input:layout) (p:parameter) (row:nat) (column:nat) (si
   else match get_source input.parameters p with
     | None -> fallback | Some (Common _) -> L.append fallback [Property "value"] | Some (OnAxis owner) -> axis_path owner
 
+(* Setting one parameter's owner or common value makes that source readable
+   and leaves every other parameter's source unchanged. *)
 let get_set_source (sources:parameter_sources) (p:common_parameter)
   (value:source p) (q:common_parameter)
   : Lemma (get_source (set_source sources p value) q ==
@@ -182,6 +184,8 @@ let get_set_source (sources:parameter_sources) (p:common_parameter)
   | PQuality,_ | PBackground,_ | PJudgeModel,_ | PJudgeEffort,_
   | PJudgeCriteria,_ | PJudgeSystem,_ -> ()
 
+(* Setting a typed case value updates only its own parameter; looking up any
+   other parameter returns the previous value. *)
 let get_set_case_value (values:case_values) (value:value) (q:parameter)
   : Lemma (get_case_value (set_case_value values value) q ==
     (if value_parameter value=q then Some value else get_case_value values q)) =
@@ -191,6 +195,8 @@ let get_set_case_value (values:case_values) (value:value) (q:parameter)
   | JudgeModelValue _,_ | JudgeEffortValue _,_ | JudgeCriteriaValue _,_
   | JudgeSystemValue _,_ | VariableValue _,_ -> ()
 
+(* Removing a case parameter makes its lookup absent and preserves every
+   other parameter's lookup. *)
 let get_remove_case_value (values:case_values) (p:parameter) (q:parameter)
   : Lemma (get_case_value (remove_case_value values p) q ==
     (if p=q then None else get_case_value values q)) =
@@ -199,21 +205,28 @@ let get_remove_case_value (values:case_values) (p:parameter) (q:parameter)
   | PQuality,_ | PBackground,_ | PJudgeModel,_ | PJudgeEffort,_
   | PJudgeCriteria,_ | PJudgeSystem,_ | PVariable,_ -> ()
 
+(* A value belongs to an appended list exactly when it belongs to either
+   constituent list. *)
 let rec mem_append (#a:eqtype) (value:a) (left:list a) (right:list a)
   : Lemma (L.mem value (L.append left right) == (L.mem value left || L.mem value right)) =
   match left with | [] -> () | _::rest -> mem_append value rest right
 
+(* Filtering retains a value exactly when it was present in the original list
+   and satisfies the filtering predicate. *)
 let rec mem_filter (#a:eqtype) (value:a) (predicate:a -> Tot bool) (values:list a)
   : Lemma (L.mem value (L.filter predicate values) == (L.mem value values && predicate value)) =
   match values with | [] -> () | _::rest -> mem_filter value predicate rest
 
 #push-options "--fuel 16 --ifuel 1"
+(* The canonical common-parameter enumeration contains every common parameter. *)
 let common_parameter_is_enumerated (p:common_parameter)
   : Lemma (L.mem p common_parameters) =
   match p with
   | PInput | PModel | PEffort | PSize | PAspectRatio | PQuality | PBackground
   | PJudgeModel | PJudgeEffort | PJudgeCriteria | PJudgeSystem -> ()
 
+(* The complete parameter enumeration includes every parameter, including
+   variable fields as well as common-capable parameters. *)
 let parameter_is_enumerated (p:parameter)
   : Lemma (L.mem p parameter_names) =
   match p with
@@ -221,6 +234,8 @@ let parameter_is_enumerated (p:parameter)
   | PJudgeModel | PJudgeEffort | PJudgeCriteria | PJudgeSystem | PVariable -> ()
 #pop-options
 
+(* Every physically present parameter source is enumerated, even if its name
+   was omitted from the stored source-order metadata. *)
 let source_parameters_complete (sources:parameter_sources) (p:common_parameter)
   : Lemma
     (requires (get_source sources p <> None))
@@ -230,6 +245,8 @@ let source_parameters_complete (sources:parameter_sources) (p:common_parameter)
   mem_append p sources.source_order
     (L.filter (fun q -> not (L.mem q sources.source_order) && get_source sources q <> None) common_parameters)
 
+(* Every physically present case value is enumerated, even if its parameter
+   was omitted from the stored value-order metadata. *)
 let case_parameters_complete (values:case_values) (p:parameter)
   : Lemma
     (requires (get_case_value values p <> None))
@@ -239,10 +256,14 @@ let case_parameters_complete (values:case_values) (p:parameter)
   mem_append p values.value_order
     (L.filter (fun q -> not (L.mem q values.value_order) && get_case_value values q <> None) parameter_names)
 
+(* Widening common parameters to the full parameter type preserves membership
+   in a list. *)
 let rec common_map_mem (values:list common_parameter) (p:common_parameter)
   : Lemma (L.mem p values == L.mem (p <: parameter) (L.map (fun (q:common_parameter) -> (q <: parameter)) values)) =
   match values with | [] -> () | _::rest -> common_map_mem rest p
 
+(* Any common-capable parameter owned by an axis appears in that axis's
+   parameter enumeration. *)
 let axis_owner_is_enumerated (input:layout) (p:common_parameter) (side:axis)
   : Lemma
     (requires (get_source input.parameters p == Some (OnAxis side)))
@@ -256,6 +277,8 @@ let axis_owner_is_enumerated (input:layout) (p:common_parameter) (side:axis)
   mem_append (p <: parameter)
     (L.map (fun (q:common_parameter) -> (q <: parameter)) owned_sources) [PVariable]
 
+(* An axis with variable fields includes the variable parameter in its
+   parameter enumeration. *)
 let axis_variable_is_enumerated (input:layout) (side:axis)
   : Lemma
     (requires (axis_has_variables input side))
@@ -265,12 +288,15 @@ let axis_variable_is_enumerated (input:layout) (side:axis)
       | Some (OnAxis owner) -> owner=side | _ -> false) (source_parameters input.parameters)) in
   mem_append PVariable owned [PVariable]
 
+(* A list containing a member has strictly positive length. *)
 let member_has_positive_length (#a:eqtype) (value:a) (values:list a)
   : Lemma
     (requires (L.mem value values))
     (ensures (L.length values > 0)) =
   match values with | [] -> () | _::_ -> ()
 
+(* An axis that owns a parameter has a nonempty parameter enumeration, so
+   the enumeration cannot classify it as an ownerless neutral dimension. *)
 let axis_owner_prevents_neutralization (input:layout) (p:common_parameter) (side:axis)
   : Lemma
     (requires (get_source input.parameters p == Some (OnAxis side)))

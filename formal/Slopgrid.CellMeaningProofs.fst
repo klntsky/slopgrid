@@ -7,6 +7,9 @@ module TP = Slopgrid.TemplateProofs
 module L = FStar.List.Tot.Base
 open Slopgrid.Domain
 
+(* A valid identifier renaming preserves expanded text bytes and ordered resolved
+   fields when the new environment maps every renamed identifier to its original
+   field. The claim is equality of meanings, not literal template strings. *)
 let text_rewrite (rename:string -> Tot string{TP.valid_renamer rename})
   (before:M.environment) (after:M.environment) (content:string)
   : Lemma
@@ -15,6 +18,9 @@ let text_rewrite (rename:string -> Tot string{TP.valid_renamer rename})
   TP.rewrite_expansion rename (M.field_bytes before) (M.field_bytes after) content;
   TP.rewrite_resolution rename before after content
 
+(* Rewriting message references with a valid renamer preserves the full message
+   meaning, including role and image projections, if renamed lookups return the
+   original fields. *)
 let message_rewrite (rename:string -> Tot string{TP.valid_renamer rename})
   (before:M.environment) (after:M.environment) (message:message)
   : Lemma
@@ -22,6 +28,8 @@ let message_rewrite (rename:string -> Tot string{TP.valid_renamer rename})
     (ensures M.message after {message with content=I.rewrite_text rename message.content} == M.message before message) =
   text_rewrite rename before after message.content
 
+(* Rewriting each message's references preserves the ordered list of message
+   meanings under a valid renamer and corresponding renamed-field lookups. *)
 let rec messages_rewrite (rename:string -> Tot string{TP.valid_renamer rename})
   (before:M.environment) (after:M.environment) (messages:list message)
   : Lemma
@@ -32,6 +40,8 @@ let rec messages_rewrite (rename:string -> Tot string{TP.valid_renamer rename})
     message_rewrite rename before after message;
     messages_rewrite rename before after rest
 
+(* Rewriting a criterion's references preserves its text meaning, expected
+   answer, and derived images when a valid renaming preserves field lookups. *)
 let criterion_rewrite (rename:string -> Tot string{TP.valid_renamer rename})
   (before:M.environment) (after:M.environment) (criterion:criterion)
   : Lemma
@@ -39,6 +49,8 @@ let criterion_rewrite (rename:string -> Tot string{TP.valid_renamer rename})
     (ensures M.criterion after {criterion with criterion_text=I.rewrite_text rename criterion.criterion_text} == M.criterion before criterion) =
   text_rewrite rename before after criterion.criterion_text
 
+(* Rewriting every criterion preserves the ordered list of criterion meanings
+   under a valid renamer and corresponding renamed-field lookups. *)
 let rec criteria_rewrite (rename:string -> Tot string{TP.valid_renamer rename})
   (before:M.environment) (after:M.environment) (criteria:list criterion)
   : Lemma
@@ -49,6 +61,9 @@ let rec criteria_rewrite (rename:string -> Tot string{TP.valid_renamer rename})
     criterion_rewrite rename before after criterion;
     criteria_rewrite rename before after rest
 
+(* Rewriting references throughout a parameter value preserves its interpreted
+   meaning when identifier renaming is valid and the environments agree at
+   corresponding names; scalar values are unchanged. *)
 let value_rewrite (rename:string -> Tot string{TP.valid_renamer rename})
   (before:M.environment) (after:M.environment) (value:value)
   : Lemma
@@ -61,6 +76,8 @@ let value_rewrite (rename:string -> Tot string{TP.valid_renamer rename})
   | ModelValue _ | EffortValue _ | SizeValue _ | AspectRatioValue _ | QualityValue _
   | BackgroundValue _ | JudgeModelValue _ | JudgeEffortValue _ | VariableValue _ -> ()
 
+(* Pointwise-equal field environments produce identical expanded bytes and
+   ordered field-resolution results for a list of template byte parts. *)
 let rec parts_environment (before:M.environment) (after:M.environment) (parts:list (list Slopgrid.Native.byte))
   : Lemma
     (requires forall name. after name == before name)
@@ -70,6 +87,8 @@ let rec parts_environment (before:M.environment) (after:M.environment) (parts:li
     parts_environment before after rest;
     match T.reference_part part with | None -> () | Some (name,_) -> ()
 
+(* Pointwise-equal field environments give any text identical expanded bytes
+   and ordered resolved fields. *)
 let text_environment (before:M.environment) (after:M.environment) (content:string)
   : Lemma
     (requires forall name. after name == before name)
@@ -77,6 +96,8 @@ let text_environment (before:M.environment) (after:M.environment) (content:strin
   match T.split_dollar (Slopgrid.Native.byte_view content) with
   | [] -> () | _::parts -> parts_environment before after parts
 
+(* Pointwise-equal field environments preserve the ordered list of interpreted
+   messages, including their content and image projections. *)
 let rec messages_environment (before:M.environment) (after:M.environment) (messages:list message)
   : Lemma
     (requires forall name. after name == before name)
@@ -85,6 +106,8 @@ let rec messages_environment (before:M.environment) (after:M.environment) (messa
     text_environment before after message.content;
     messages_environment before after rest
 
+(* Pointwise-equal field environments preserve the ordered list of interpreted
+   criteria, including their text and derived images. *)
 let rec criteria_environment (before:M.environment) (after:M.environment) (criteria:list criterion)
   : Lemma
     (requires forall name. after name == before name)
@@ -93,6 +116,8 @@ let rec criteria_environment (before:M.environment) (after:M.environment) (crite
     text_environment before after criterion.criterion_text;
     criteria_environment before after rest
 
+(* Pointwise-equal field environments preserve the interpreted meaning of any
+   parameter value, including values containing template text. *)
 let value_environment (before:M.environment) (after:M.environment) (value:value)
   : Lemma
     (requires forall name. after name == before name)
@@ -104,6 +129,8 @@ let value_environment (before:M.environment) (after:M.environment) (value:value)
   | ModelValue _ | EffortValue _ | SizeValue _ | AspectRatioValue _ | QualityValue _
   | BackgroundValue _ | JudgeModelValue _ | JudgeEffortValue _ | VariableValue _ -> ()
 
+(* Canonicalizing optional message image lists preserves all interpreted message
+   meanings; absent images and an explicitly empty image list mean the same thing. *)
 let rec messages_canonical (env:M.environment) (messages:list message)
   : Lemma (T.map_g (M.message env) (Slopgrid.CellSemantics.normalize_messages messages) ==
     T.map_g (M.message env) messages) =
@@ -111,6 +138,8 @@ let rec messages_canonical (env:M.environment) (messages:list message)
     messages_canonical env rest;
     match message.images with | None -> () | Some images -> match images with | [] | _::_ -> ()
 
+(* Canonicalizing a common-capable parameter value preserves its interpreted
+   meaning in any field environment. *)
 let value_canonical (env:M.environment) (p:common_parameter) (value:value_for p)
   : Lemma (M.value env (Slopgrid.CellSemantics.canonical_value value) == M.value env value) =
   match value with
@@ -119,6 +148,9 @@ let value_canonical (env:M.environment) (p:common_parameter) (value:value_for p)
   | BackgroundValue _ | JudgeModelValue _ | JudgeEffortValue _ | JudgeCriteriaValue _
   | JudgeSystemValue _ -> ()
 
+(* Semantically equivalent optional values of the same common-capable parameter
+   yield identical optional meanings in pointwise-equal environments. This does
+   not require literal equality of their unnormalized image-list metadata. *)
 let equivalent_values (before:M.environment) (after:M.environment) (p:common_parameter)
   (left:option (value_for p)) (right:option (value_for p))
   : Lemma

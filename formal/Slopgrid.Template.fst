@@ -14,6 +14,8 @@ let rec no_dollar (values:list byte) : Tot bool =
   match values with | [] -> true | first::rest -> first<>36 && no_dollar rest
 let stopped (values:list byte) : Tot bool =
   match values with | [] -> true | first::_ -> not (name_byte first)
+(* Split off the maximal prefix of identifier-name bytes, leaving an empty tail
+   or a tail starting with a non-name byte; concatenation and lengths are preserved. *)
 let rec span_name (values:list byte)
   : Tot (result:(list byte & list byte){let name,tail=result in
     name_bytes name /\ stopped tail /\ L.append name tail=values /\
@@ -21,6 +23,8 @@ let rec span_name (values:list byte)
   match values with | [] -> ([],[]) | first::rest ->
     if name_byte first then let name,tail=span_name rest in (first::name,tail)
     else ([],values)
+(* Splitting at dollar bytes produces a nonempty list of dollar-free byte lists,
+   including empty parts at consecutive or boundary delimiters. *)
 let rec split_dollar (values:list byte)
   : Tot (parts:list (list byte){parts<>[] /\ L.for_all no_dollar parts}) =
   match values with | [] -> [[]] | first::rest ->
@@ -47,10 +51,14 @@ let rec expand_parts (resolve:identifier -> GTot (list byte)) (parts:list (list 
 let expand_template (resolve:identifier -> GTot (list byte)) (parts:list (list byte)) : GTot (list byte) =
   match parts with | [] -> [] | literal::references -> L.append literal (expand_parts resolve references)
 
+(* A prefix consisting of name bytes is exactly the span returned when its tail
+   is empty or starts with a non-name byte. *)
 let rec span_append (name:list byte{name_bytes name}) (tail:list byte{stopped tail})
   : Lemma (span_name (L.append name tail) == (name,tail)) =
   match name with | [] -> (match tail with | [] -> () | _::_ -> ()) | _::rest -> span_append rest tail
 
+(* Renaming leaves an unrecognized reference part unchanged. A recognized part
+   still parses as a reference to the renamed identifier with the same tail. *)
 let rename_reference (rename:identifier -> GTot identifier) (part:list byte)
   : Lemma
     (ensures (match reference_part part with
@@ -60,6 +68,8 @@ let rename_reference (rename:identifier -> GTot identifier) (part:list byte)
   let name,tail=span_name part in
   if name=[] || N.unicode_alphanumeric_prefix tail then () else span_append (rename name) tail
 
+(* Expanding renamed reference parts gives identical bytes when the new resolver
+   agrees with the old resolver on every renamed identifier. *)
 let rec expand_renamed_parts
   (rename:identifier -> GTot identifier)
   (before:identifier -> GTot (list byte))
@@ -72,6 +82,8 @@ let rec expand_renamed_parts
     rename_reference rename part;
     expand_renamed_parts rename before after rest
 
+(* Renaming a template preserves its expanded bytes, including its literal
+   prefix, provided corresponding old and renamed identifiers resolve identically. *)
 let expansion_renaming
   (rename:identifier -> GTot identifier)
   (before:identifier -> GTot (list byte))
@@ -82,14 +94,17 @@ let expansion_renaming
     (ensures expand_template after (rename_template rename parts) == expand_template before parts) =
   match parts with | [] -> () | _::rest -> expand_renamed_parts rename before after rest
 
+(* A list consisting entirely of identifier-name bytes contains no dollar byte. *)
 let rec name_has_no_dollar (name:list byte{name_bytes name})
   : Lemma (no_dollar name) =
   match name with | [] -> () | _::rest -> name_has_no_dollar rest
 
+(* Concatenating two dollar-free byte lists yields a dollar-free byte list. *)
 let rec no_dollar_append (left:list byte{no_dollar left}) (right:list byte{no_dollar right})
   : Lemma (no_dollar (L.append left right)) =
   match left with | [] -> () | _::rest -> no_dollar_append rest right
 
+(* Joining the dollar-separated parts of any byte list reconstructs it exactly. *)
 let rec join_split (bytes:list byte)
   : Lemma (join_dollar (split_dollar bytes) == bytes) =
   match bytes with | [] -> () | first::rest ->
@@ -99,11 +114,15 @@ let rec join_split (bytes:list byte)
 let prepend_part (prefix:list byte) (parts:list (list byte)) : Tot (list (list byte)) =
   match parts with | [] -> [prefix] | first::rest -> L.append prefix first::rest
 
+(* A dollar-free prefix merges into the first part when concatenated bytes are
+   split at dollars; the remaining split parts are unchanged. *)
 let rec split_prefix (prefix:list byte{no_dollar prefix}) (bytes:list byte)
   : Lemma (split_dollar (L.append prefix bytes) == prepend_part prefix (split_dollar bytes)) =
   match prefix with | [] -> (match split_dollar bytes with | [] -> () | _::_ -> ())
   | _::rest -> split_prefix rest bytes; match split_dollar bytes with | [] -> () | _::_ -> ()
 
+(* Splitting a joined nonempty list of dollar-free parts recovers those exact
+   parts, including any empty parts. *)
 let rec split_join (parts:list (list byte){parts<>[] /\ L.for_all no_dollar parts})
   : Lemma (split_dollar (join_dollar parts) == parts) =
   match parts with | [] -> () | [part] ->
@@ -112,23 +131,30 @@ let rec split_join (parts:list (list byte){parts<>[] /\ L.for_all no_dollar part
     FStar.List.Tot.Properties.append_l_nil part;
     split_join rest; split_prefix part (36::join_dollar rest)
 
+(* Renaming a reference within a dollar-free part cannot introduce dollar bytes,
+   since renamed identifiers also consist only of name bytes. *)
 let rename_no_dollar (rename:identifier -> GTot identifier) (part:list byte{no_dollar part})
   : Lemma (no_dollar (rename_part rename part)) =
   let name,tail=span_name part in
   match reference_part part with | None -> () | Some (name,tail) ->
     name_has_no_dollar (rename name);
+    (* A suffix of a dollar-free concatenation is itself dollar-free. *)
     let rec suffix_no_dollar (prefix:list byte) (suffix:list byte)
       : Lemma (requires no_dollar (L.append prefix suffix)) (ensures no_dollar suffix) =
       match prefix with | [] -> () | _::rest -> suffix_no_dollar rest suffix in
     suffix_no_dollar name tail;
     no_dollar_append (rename name) tail
 
+(* Renaming each reference part preserves the property that every part is
+   dollar-free. *)
 let rec renamed_parts_no_dollar (rename:identifier -> GTot identifier)
   (parts:list (list byte){L.for_all no_dollar parts})
   : Lemma (L.for_all no_dollar (map_g (rename_part rename) parts)) =
   match parts with | [] -> () | part::rest ->
     rename_no_dollar rename part; renamed_parts_no_dollar rename rest
 
+(* Renaming a nonempty list of dollar-free template parts preserves its exact
+   representation through joining and splitting at dollars. *)
 let renamed_template_roundtrip (rename:identifier -> GTot identifier)
   (parts:list (list byte){parts<>[] /\ L.for_all no_dollar parts})
   : Lemma
@@ -137,6 +163,8 @@ let renamed_template_roundtrip (rename:identifier -> GTot identifier)
     renamed_parts_no_dollar rename rest;
     split_join (rename_template rename parts)
 
+(* Appending a dollar delimiter and suffix does not change whether a part starts
+   with a recognized reference or its name; only a recognized reference's tail grows. *)
 let reference_delimited (part:list byte) (suffix:list byte)
   : Lemma
     (reference_part (L.append part (36::suffix)) ==
@@ -147,6 +175,7 @@ let reference_delimited (part:list byte) (suffix:list byte)
   span_append name (L.append tail (36::suffix));
   N.unicode_prefix_delimiter tail 36 suffix
 
+(* A suffix of a dollar-free concatenation is itself dollar-free. *)
 let rec suffix_no_dollar (prefix:list byte) (suffix:list byte)
   : Lemma (requires no_dollar (L.append prefix suffix)) (ensures no_dollar suffix) =
   match prefix with | [] -> () | _::rest -> suffix_no_dollar rest suffix
@@ -159,6 +188,8 @@ let rec resolve_parts #a (resolve:identifier -> GTot a) (parts:list (list byte))
 let resolve_template #a (resolve:identifier -> GTot a) (parts:list (list byte)) : GTot (list a) =
   match parts with | [] -> [] | _::references -> resolve_parts resolve references
 
+(* Resolving renamed reference parts yields exactly the same ordered list of
+   values when corresponding old and renamed identifiers resolve identically. *)
 let rec resolution_renamed_parts #a (rename:identifier -> GTot identifier)
   (before:identifier -> GTot a) (after:identifier -> GTot a) (parts:list (list byte))
   : Lemma
@@ -168,6 +199,8 @@ let rec resolution_renamed_parts #a (rename:identifier -> GTot identifier)
     rename_reference rename part;
     resolution_renamed_parts rename before after rest
 
+(* Renaming a template preserves its ordered list of resolved reference values
+   under corresponding resolvers; the initial literal part contributes no value. *)
 let resolution_renaming #a (rename:identifier -> GTot identifier)
   (before:identifier -> GTot a) (after:identifier -> GTot a) (parts:list (list byte))
   : Lemma

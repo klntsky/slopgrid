@@ -16,10 +16,14 @@ open Slopgrid.Domain
 let variable_fields (value:option (value_for PVariable)) : Tot (list (option variable_field)) =
   match value with | None -> [] | Some (VariableValue fields) -> fields
 
+(* The fields defining an axis's variable slots are exactly the variable
+   value of its first case, with a missing case or value treated as no fields. *)
 let first_variable_projection (input:layout) (side:axis)
   : Lemma (V.fields input side == variable_fields (S.axis_value input side 0 PVariable)) =
   match S.axis_entries input side with | [] -> () | _::_ -> ()
 
+(* A coordinate's variable-field lookup is the indexed field in that axis
+   case's variable value; a missing case, value, or field yields absence. *)
 let variable_at_projection (input:layout) (row:nat) (column:nat) (side:axis) (index:nat)
   : Lemma (V.field_at input row column side index ==
     (match V.at (variable_fields (S.axis_value input side (if side=Rows then row else column) PVariable)) index with
@@ -37,6 +41,8 @@ let coordinate_frame (before:layout) (row:nat) (column:nat) (next_row:nat) (next
   forall side. P.is_case_axis before side ==>
     (if side=Rows then next_row else next_column) == (if side=Rows then row else column)
 
+(* Equal variable-name metadata makes the named-slot search identical for a
+   fixed axis, field list, and starting index, including default names. *)
 let rec slot_in_frame (before:layout) (after:layout) (side:axis)
   (fields:list (option variable_field)) (index:nat) (name:string)
   : Lemma
@@ -44,6 +50,8 @@ let rec slot_in_frame (before:layout) (after:layout) (side:axis)
     (ensures V.slot_in after side fields index name == V.slot_in before side fields index name) =
   match fields with | [] -> () | _::rest -> slot_in_frame before after side rest (index + 1) name
 
+(* Preserving case ownership, variable names, and variable values on active
+   case axes preserves named-slot lookup on this active axis. *)
 let slot_on_frame (before:layout) (after:layout) (side:axis) (name:string)
   : Lemma
     (requires namespace_frame before after /\ P.is_case_axis before side)
@@ -52,6 +60,8 @@ let slot_on_frame (before:layout) (after:layout) (side:axis) (name:string)
   first_variable_projection after side;
   slot_in_frame before after side (V.fields before side) 0 name
 
+(* Preserving case ownership, variable names, and active-axis variable values
+   preserves global named-slot lookup, including precedence between axes. *)
 let slot_for_frame (before:layout) (after:layout) (name:string)
   : Lemma
     (requires namespace_frame before after)
@@ -63,6 +73,8 @@ let slot_for_frame (before:layout) (after:layout) (name:string)
     slot_on_frame before after first name;
     slot_on_frame before after (V.other first) name
 
+(* Any axis returned by a successful global variable-slot lookup is an
+   active case axis of the layout. *)
 let slot_for_active (input:layout) (name:string) (side:axis) (index:nat)
   : Lemma
     (requires V.slot_for input name == Some (side,index))
@@ -72,6 +84,9 @@ let slot_for_active (input:layout) (name:string) (side:axis) (index:nat)
   | OneCaseAxis owner -> (match V.slot_in input owner (V.fields input owner) 0 name with | None -> () | Some _ -> ())
   | BothCaseAxes _ -> ()
 
+(* Equal case ownership, names, and active-axis variable values preserve an
+   identifier's exact optional field when the coordinates on active axes also
+   stay fixed; coordinates on inactive axes need not agree. *)
 let environment_frame (before:layout) (after:layout) (row:nat) (column:nat) (next_row:nat) (next_column:nat) (name:T.identifier)
   : Lemma
     (requires namespace_frame before after /\ coordinate_frame before row column next_row next_column)
@@ -84,6 +99,8 @@ let environment_frame (before:layout) (after:layout) (row:nat) (column:nat) (nex
     variable_at_projection before row column side index;
     variable_at_projection after next_row next_column side index
 
+(* Taking ownership of a common parameter on a nonempty target axis leaves
+   every axis's indexed variable value exactly unchanged. *)
 let own_variable_projection (input:layout) (p:common_parameter) (side:axis) (v:value_for p)
   (allocation:string & list string) (counter:nat) (axis:axis) (index:nat)
   : Lemma
@@ -99,6 +116,8 @@ let own_variable_projection (input:layout) (p:common_parameter) (side:axis) (v:v
   if axis=side then O.own_keeps_other_case_fields input p side v allocation counter PVariable index
   else match side,axis with | Rows,Rows | Rows,Columns | Columns,Rows | Columns,Columns -> ()
 
+(* Taking ownership of a common parameter on a nonempty target axis preserves
+   the exact field resolved for any identifier at the same cell coordinates. *)
 let own_environment (input:layout) (p:common_parameter) (side:axis) (v:value_for p)
   (allocation:string & list string) (counter:nat) (row:nat) (column:nat) (name:T.identifier)
   : Lemma
@@ -106,6 +125,7 @@ let own_environment (input:layout) (p:common_parameter) (side:axis) (v:value_for
     (ensures (let next,_ = I.own input p side allocation counter in
       V.field_for next row column name == V.field_for input row column name)) =
   O.own_preserves_opposite_axis_and_metadata input p side allocation counter;
+  (* For this axis, ownership preserves variable values at every index. *)
   let for_axis axis = FStar.Classical.forall_intro (own_variable_projection input p side v allocation counter axis) in
   FStar.Classical.forall_intro for_axis;
   let next,_ = I.own input p side allocation counter in
@@ -120,6 +140,9 @@ let collapse_stripped (input:layout) (p:common_parameter) (side:axis) : Tot layo
     L.append (L.filter (fun (key:common_parameter) -> key<>p) base.parameters.source_order) [p]}} in
   I.set_entries base side (L.map (fun entry -> {entry with values=P.remove_case_value entry.values p}) (P.entries input side))
 
+(* For an axis-owned parameter, collapse is exactly neutralization of the
+   layout with a selected common value and that parameter's case fields
+   removed, including the returned allocation counter. *)
 let collapse_unfold (input:layout) (p:common_parameter) (side:axis)
   (allocation:string & list string) (counter:nat)
   : Lemma
@@ -129,6 +152,8 @@ let collapse_unfold (input:layout) (p:common_parameter) (side:axis)
   assert (I.collapse input p allocation counter == I.neutral_dimension (collapse_stripped input p side) side allocation counter)
     by (FStar.Tactics.norm [delta_only [`%I.collapse; `%collapse_stripped]]; FStar.Tactics.smt ())
 
+(* Collapsing an axis-owned parameter preserves case ownership, variable
+   names, output format, judging, and worker count exactly. *)
 let collapse_metadata (input:layout) (p:common_parameter) (side:axis)
   (allocation:string & list string) (counter:nat)
   : Lemma
@@ -141,6 +166,9 @@ let collapse_metadata (input:layout) (p:common_parameter) (side:axis)
   O.neutral_dimension_preserves_sources (collapse_stripped input p side) side allocation counter;
   match side with | Rows | Columns -> ()
 
+(* Collapsing an axis-owned parameter preserves every indexed variable value
+   and the entry count on each active case axis, even if the collapsed
+   parameter belongs to that same axis. *)
 let collapse_active_projection (input:layout) (p:common_parameter) (side:axis)
   (allocation:string & list string) (counter:nat) (active:axis) (index:nat)
   : Lemma
@@ -162,6 +190,8 @@ let collapse_active_projection (input:layout) (p:common_parameter) (side:axis)
     match side with | Rows | Columns -> ()
   ) else match side,active with | Rows,Rows | Rows,Columns | Columns,Rows | Columns,Columns -> ()
 
+(* Collapsing an axis-owned parameter preserves indexed variable values on
+   any axis that was active; the implication makes no claim for inactive axes. *)
 let collapse_namespace_projection (input:layout) (p:common_parameter) (side:axis)
   (allocation:string & list string) (counter:nat) (active:axis) (index:nat)
   : Lemma
@@ -171,6 +201,8 @@ let collapse_namespace_projection (input:layout) (p:common_parameter) (side:axis
       S.axis_value next active index PVariable == S.axis_value input active index PVariable)) =
   if P.is_case_axis input active then collapse_active_projection input p side allocation counter active index else ()
 
+(* After collapse of an axis-owned parameter, the corresponding coordinate
+   on every originally active case axis is the original coordinate. *)
 let collapse_coordinate_frame (input:layout) (p:common_parameter) (side:axis)
   (allocation:string & list string) (counter:nat) (row:nat) (column:nat) (active:axis)
   : Lemma
@@ -184,6 +216,9 @@ let collapse_coordinate_frame (input:layout) (p:common_parameter) (side:axis)
     match active with | Rows | Columns -> ()
   ) else ()
 
+(* Collapsing an axis-owned parameter preserves each identifier's exact
+   optional variable field at the corresponding coordinates, without requiring
+   uniform parameter values or in-range coordinates. *)
 let collapse_environment (input:layout) (p:common_parameter) (side:axis)
   (allocation:string & list string) (counter:nat) (row:nat) (column:nat) (name:T.identifier)
   : Lemma
@@ -192,12 +227,16 @@ let collapse_environment (input:layout) (p:common_parameter) (side:axis)
       V.field_for next (O.corresponding_row input next row) (O.corresponding_column input next column) name ==
       V.field_for input row column name)) =
   collapse_metadata input p side allocation counter;
+  (* For this axis, collapse preserves variable values at every index if the
+     axis was active in the original layout. *)
   let for_axis axis=FStar.Classical.forall_intro (collapse_namespace_projection input p side allocation counter axis) in
   FStar.Classical.forall_intro for_axis;
   FStar.Classical.forall_intro (collapse_coordinate_frame input p side allocation counter row column);
   let next,_=I.collapse input p allocation counter in
   environment_frame input next row column (O.corresponding_row input next row) (O.corresponding_column input next column) name
 
+(* Semantically equivalent resolved values give identical effective parameter
+   meanings when every identifier resolves to exactly the same field. *)
 let parameter_frame (before:layout) (after:layout) (row:nat) (column:nat) (next_row:nat) (next_column:nat) (p:common_parameter)
   : Lemma
     (requires S.equivalent p (S.resolve after next_row next_column p) (S.resolve before row column p) /\
@@ -206,6 +245,9 @@ let parameter_frame (before:layout) (after:layout) (row:nat) (column:nat) (next_
   MP.equivalent_values (V.field_for after next_row next_column) (V.field_for before row column) p
     (S.resolve after next_row next_column p) (S.resolve before row column p)
 
+(* Equivalent resolution of every common parameter and pointwise equal
+   variable environments give identical ordered parameter-meaning pairs for
+   the supplied parameter list. *)
 let rec parameters_frame (before:layout) (after:layout) (row:nat) (column:nat) (next_row:nat) (next_column:nat)
   (parameters:list common_parameter)
   : Lemma
@@ -217,6 +259,9 @@ let rec parameters_frame (before:layout) (after:layout) (row:nat) (column:nat) (
     parameter_frame before after row column next_row next_column p;
     parameters_frame before after row column next_row next_column rest
 
+(* Equivalent common-parameter values and pointwise equal variable
+   environments give identical effective cell meanings when output format,
+   judging, and worker count also agree exactly. *)
 let cell_frame (before:layout) (after:layout) (row:nat) (column:nat) (next_row:nat) (next_column:nat)
   : Lemma
     (requires before.output_format == after.output_format /\ before.judging == after.judging /\
@@ -230,6 +275,8 @@ let cell_frame (before:layout) (after:layout) (row:nat) (column:nat) (next_row:n
   assert_norm ((M.cell before row column).cell_parameters ==
     T.map_g (fun p -> (p,M.parameter before row column p)) M.all_parameters)
 
+(* Taking ownership of a common value preserves each common parameter up to
+   semantic equivalence at the same coordinates when the target index exists. *)
 let own_equivalent_parameter (input:layout) (p:common_parameter) (side:axis) (v:value_for p)
   (allocation:string & list string) (counter:nat) (row:nat) (column:nat) (q:common_parameter)
   : Lemma
@@ -240,6 +287,9 @@ let own_equivalent_parameter (input:layout) (p:common_parameter) (side:axis) (v:
   O.own_preserves_every_parameter input p side v allocation counter q row column;
   match S.resolve input row column q with | None | Some _ -> ()
 
+(* Taking ownership of a common value preserves both the effective cell
+   meaning and its template-validity-gated observable meaning at the same
+   coordinates, provided the target-axis index exists. *)
 let own_cell (input:layout) (p:common_parameter) (side:axis) (v:value_for p)
   (allocation:string & list string) (counter:nat) (row:nat) (column:nat)
   : Lemma
@@ -256,6 +306,9 @@ let own_cell (input:layout) (p:common_parameter) (side:axis) (v:value_for p)
   let next,_=I.own input p side allocation counter in
   cell_frame input next row column row column
 
+(* Collapsing an axis-owned parameter preserves every common parameter up to
+   semantic equivalence at corresponding coordinates when all owner-axis
+   values are equivalent to v and the original owner index exists. *)
 let collapse_equivalent_parameter (input:layout) (p:common_parameter) (side:axis) (v:value_for p)
   (allocation:string & list string) (counter:nat) (row:nat) (column:nat) (q:common_parameter)
   : Lemma
@@ -268,6 +321,9 @@ let collapse_equivalent_parameter (input:layout) (p:common_parameter) (side:axis
         (S.resolve input row column q))) =
   O.collapse_preserves_every_parameter input p side v allocation counter q row column
 
+(* Collapsing an axis-owned parameter preserves effective and
+   template-validity-gated observable cell meanings at corresponding
+   coordinates if its cases are uniformly equivalent to v and its index exists. *)
 let collapse_cell (input:layout) (p:common_parameter) (side:axis) (v:value_for p)
   (allocation:string & list string) (counter:nat) (row:nat) (column:nat)
   : Lemma
@@ -284,6 +340,9 @@ let collapse_cell (input:layout) (p:common_parameter) (side:axis) (v:value_for p
   let next,_=I.collapse input p allocation counter in
   cell_frame input next row column (O.corresponding_row input next row) (O.corresponding_column input next column)
 
+(* MoveToAxis preserves effective and template-validity-gated observable cell
+   meanings at the same coordinates when the parameter is common and the
+   target index exists; an inactive target axis is left unchanged. *)
 let move_to_axis_cell (input:layout) (p:common_parameter) (side:axis) (v:value_for p)
   (prefix:string) (counter:nat) (row:nat) (column:nat)
   : Lemma
@@ -297,6 +356,9 @@ let move_to_axis_cell (input:layout) (p:common_parameter) (side:axis) (v:value_f
     own_cell input p side v (prefix,I.case_ids input) counter row column
   else ()
 
+(* MoveToCommon preserves effective and template-validity-gated observable
+   cell meanings at corresponding coordinates when the parameter is axis-owned,
+   its cases are uniformly equivalent to v, and the original owner index exists. *)
 let move_to_common_cell (input:layout) (p:common_parameter) (side:axis) (v:value_for p)
   (prefix:string) (counter:nat) (row:nat) (column:nat)
   : Lemma
