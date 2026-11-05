@@ -1,9 +1,11 @@
 module Slopgrid.Policy
 
+module Domain = Slopgrid.Domain
+
 val evaluate :
-  draft:Slopgrid.Domain.draft ->
-  attempted:bool ->
-  pending_uploads:nat ->
-  submission_phase:Slopgrid.Domain.submission_phase ->
-  context:Slopgrid.Domain.context ->
-  Tot Slopgrid.Domain.policy
+  draft: Domain.draft ->
+  attempted: bool ->
+  pending_uploads: nat ->
+  submission_phase: Domain.submission_phase ->
+  context: Domain.context ->
+  Tot Domain.policy

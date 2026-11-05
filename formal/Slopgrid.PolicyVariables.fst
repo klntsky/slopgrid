@@ -1,146 +1,428 @@
 module Slopgrid.PolicyVariables
 
-module D = Slopgrid.Domain
+module Domain = Slopgrid.Domain
 open Slopgrid.Domain
-module L = FStar.List.Tot.Base
+module List = FStar.List.Tot.Base
 open FStar.List.Tot.Base
-module N = Slopgrid.Native
-module Num = Slopgrid.Number
-module P = Slopgrid.Parameters
-module I = Slopgrid.Input
-module B = Slopgrid.PolicyBase
+module Native = Slopgrid.Native
+module Number = Slopgrid.Number
+module Parameters = Slopgrid.Parameters
+module Input = Slopgrid.Input
+module PolicyBase = Slopgrid.PolicyBase
 
-let variable_name = I.variable_name
-let variable_index = I.variable_index
-let tokens = I.variable_tokens
-let rec find_slot (name:string) (index:list (string & D.axis & nat)) : Tot (option (D.axis & nat)) (decreases index) =
-  match index with | [] -> None | (n,s,i)::rest -> if n = name then Some (s,i) else find_slot name rest
-let fields (record:option D.case_record) : Tot (option (list (option D.variable_field))) =
-  match record with | None -> None | Some r -> r.values.variable_value
-let field_for (g:D.layout) (side:D.axis) (field:nat) (row:nat) (column:nat) : Tot (option D.variable_field) =
-  match B.at (B.option_list (fields (B.at (B.records g side) (if side = D.Rows then row else column)))) field with
-  | None -> None | Some f -> f
-let resolve (g:D.layout) (name:string) (row:nat) (column:nat) : Tot (option D.variable_field) =
-  match find_slot name (variable_index g) with | None -> None | Some (s,i) -> field_for g s i row column
-let merge_images (groups:list (list D.reference_image)) : Tot (list D.reference_image) =
-  let rec loop (xs:list D.reference_image) (seen:list string) : Tot (list D.reference_image) (decreases xs) =
-    match xs with | [] -> [] | h::t ->
-    if B.member h.reference_id seen then loop t seen else h :: loop t (h.reference_id::seen) in
-  loop (L.flatten groups) []
-type reference = { field:D.variable_field; side:D.axis; record_index:nat; field_index:nat }
-let reference_path (r:reference) : Tot (list D.path_segment) =
-  [D.Property (B.axis_key r.side);D.Index r.record_index;D.Property "variable";D.Index r.field_index]
-let references (text:string) (g:D.layout) (row:nat) (column:nat) : Tot (list reference) =
-  B.unique (B.flatmap (fun name -> match find_slot name (variable_index g) with
-    | None -> []
-    | Some (s,i) -> match field_for g s i row column with | None -> [] | Some f ->
-      [{field=f;side=s;record_index=(if s = D.Rows then row else column);field_index=i}]) (tokens text))
-let interpolate (text:string) (g:D.layout) (row:nat) (column:nat) : Tot (string & list D.reference_image) =
-  let rec expand (fuel:nat) (offset:nat) : Tot string (decreases fuel) =
-    if fuel = 0 || offset >= N.length text then "" else
-    match I.token_at text offset with
-    | None -> B.cat (N.char_at text offset) (expand (fuel-1) (offset+1))
-    | Some (name,count) ->
-      B.cat (match resolve g name row column with | None -> B.cat "$" name | Some f -> f.text)
-        (expand (fuel-1) (offset + (if count = 0 then 1 else count))) in
-  (expand (N.length text) 0, merge_images (L.map (fun r -> B.option_list r.field.field_images) (references text g row column)))
-let expand_messages (g:D.layout) (row:nat) (column:nat) : Tot (list D.message) =
-  L.map (fun message ->
-    let text,images = interpolate message.D.content g row column in
-    let merged = merge_images [B.option_list message.images; if message.message_role = D.UserRole then images else []] in
-    {message with content=text;images=(if merged = [] then message.images else Some merged)}) (B.messages g row column)
-let resolve_criteria (g:D.layout) (row:nat) (column:nat) : Tot (list D.criterion & list D.reference_image) =
-  let expanded = L.map (fun criterion ->
-    let text,images = interpolate criterion.D.criterion_text g row column in
-    ({criterion with criterion_text=text},images)) (B.criteria g row column) in
-  (L.map (fun (c,_) -> c) expanded,merge_images (L.map (fun (_,images) -> images) expanded))
-let names (g:D.layout) (side:D.axis) : Tot (list (option string)) =
-  match g.variable_names with | None -> [] | Some ns -> B.option_list (if side = D.Rows then ns.row_names else ns.column_names)
-let name_issues (g:D.layout) : Tot (list D.validation_issue) =
-  let invalid = B.flatmap (fun side -> B.flatmap (fun (index,name) ->
-    match name with | None -> [] | Some n ->
-    if n <> "" && B.all_chars n "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_" then [] else
-    [B.issue "Variable names must contain only A-Z, digits, or underscore." [D.Property "variableNames";D.Property (B.axis_key side);D.Index index]])
-    (B.indexed (names g side))) B.sides in
-  let slots = B.flatmap (fun side ->
-    if not (P.is_case_axis g side) then [] else
-    B.flatmap (fun (i,field) -> match field with | None -> [] | Some _ -> [(variable_name g side i,side,i)])
-      (B.indexed (B.option_list (fields (B.at (B.records g side) 0))))) B.sides in
-  invalid @ B.flatmap (fun name ->
-    let matching = L.filter (fun (n,_,_) -> n = name) slots in
-    if L.length matching < 2 then [] else
-    L.map (fun (_,side,index) -> B.issue (B.cat (B.cat "Variable name " name) " is already in use.") [D.Property "variableNames";D.Property (B.axis_key side);D.Index index]) matching)
-    (B.unique (L.map (fun (name,_,_) -> name) slots))
-let active (#a:Type) (v:option a) : Tot bool = match v with | None -> false | Some _ -> true
-let shape_issues (g:D.layout) : Tot (list D.validation_issue) =
-  B.flatmap (fun side ->
-    if not (P.axis_has_variables g side) then [] else
-    let first = fields (B.at (B.records g side) 0) in
-    B.flatmap (fun (case_index,record) ->
-      let variable = record.D.values.variable_value in
-      let path = [D.Property (B.axis_key side);D.Index case_index;D.Property "variable"] in
-      let msg = "Variable values must have the same active fields." in
-      (if not (active first) || not (active variable) || L.length (B.option_list variable) <> L.length (B.option_list first) then [B.issue msg path] else []) @
-      (match first,variable with | Some fs,Some vs ->
-        B.flatmap (fun (field_index,field) ->
-          let original = match B.at fs field_index with | None -> None | Some f -> f in
-          if active field = (field_index >= L.length fs || active original) then [] else [B.issue msg (path @ [D.Index field_index])]) (B.indexed vs)
-       | _ -> [])) (B.indexed (B.records g side))) B.sides
-type template = { template_text:string; template_role:D.role; template_path:list D.path_segment }
-let templates (g:D.layout) (row:nat) (column:nat) : Tot (list template) =
-  let generator = B.mapi (fun index message ->
-    {template_text=message.D.content;template_role=message.message_role;template_path=B.value_path g D.PInput row column @ [D.Index index;D.Property "content"]}) (B.messages g row column) in
-  generator @ (if not g.judging then [] else
-    [{template_text=B.text g D.PJudgeSystem row column;template_role=D.SystemRole;template_path=B.value_path g D.PJudgeSystem row column}] @
-    B.mapi (fun index criterion -> {template_text=criterion.D.criterion_text;template_role=D.UserRole;template_path=B.value_path g D.PJudgeCriteria row column @ [D.Index index;D.Property "text"]}) (B.criteria g row column))
-let preview_indices (g:D.layout) (side:D.axis) : Tot (list nat) =
-  match B.records g side with | [] -> [0] | rs -> B.mapi (fun i _ -> i) rs
-let cell_templates (g:D.layout) : Tot (list (nat & nat & template)) =
-  B.flatmap (fun row -> B.flatmap (fun column -> L.map (fun t -> (row,column,t)) (templates g row column)) (preview_indices g D.Columns)) (preview_indices g D.Rows)
-let prompt_issues (g:D.layout) : Tot (list D.validation_issue) =
+let variable_name = Input.variable_name
+
+let variable_index = Input.variable_index
+
+let tokens = Input.variable_tokens
+
+let rec find_slot (name: string) (index: list (string & Domain.axis & nat))
+  : Tot (option (Domain.axis & nat)) (decreases index) =
+  match index with
+  | [] -> None
+  | (n, s, i) :: rest -> if n = name then Some (s, i) else find_slot name rest
+
+let fields (record: option Domain.case_record)
+  : Tot (option (list (option Domain.variable_field))) =
+  match record with
+  | None -> None
+  | Some r -> r.values.variable_value
+
+let field_for (g: Domain.layout) (side: Domain.axis) (field: nat) (row: nat) (column: nat)
+  : Tot (option Domain.variable_field) =
+  match PolicyBase.at
+    (PolicyBase.option_list
+      (fields (PolicyBase.at (PolicyBase.records g side)
+        (if side = Domain.Rows then row else column))))
+    field with
+  | None -> None
+  | Some f -> f
+
+let resolve (g: Domain.layout) (name: string) (row: nat) (column: nat)
+  : Tot (option Domain.variable_field) =
+  match find_slot name (variable_index g) with
+  | None -> None
+  | Some (s, i) -> field_for g s i row column
+
+let merge_images (groups: list (list Domain.reference_image)) : Tot (list Domain.reference_image) =
+  let rec loop (xs: list Domain.reference_image) (seen: list string)
+    : Tot (list Domain.reference_image) (decreases xs) =
+    match xs with
+    | [] -> []
+    | h :: t ->
+      if PolicyBase.member h.reference_id seen then loop t seen
+      else h :: loop t (h.reference_id :: seen)
+  in
+  loop (List.flatten groups) []
+
+type reference = {
+  field: Domain.variable_field;
+  side: Domain.axis;
+  record_index: nat;
+  field_index: nat
+}
+
+let reference_path (r: reference) : Tot (list Domain.path_segment) =
+  [Domain.Property (PolicyBase.axis_key r.side); Domain.Index r.record_index;
+   Domain.Property "variable"; Domain.Index r.field_index]
+
+let references (text: string) (g: Domain.layout) (row: nat) (column: nat)
+  : Tot (list reference) =
+  PolicyBase.unique
+    (PolicyBase.flatmap
+      (fun name ->
+        match find_slot name (variable_index g) with
+        | None -> []
+        | Some (s, i) ->
+          match field_for g s i row column with
+          | None -> []
+          | Some f ->
+            [{
+              field = f;
+              side = s;
+              record_index = (if s = Domain.Rows then row else column);
+              field_index = i
+            }])
+      (tokens text))
+
+let interpolate (text: string) (g: Domain.layout) (row: nat) (column: nat)
+  : Tot (string & list Domain.reference_image) =
+  let rec expand (fuel: nat) (offset: nat) : Tot string (decreases fuel) =
+    if fuel = 0 || offset >= Native.length text then ""
+    else
+      match Input.token_at text offset with
+      | None -> PolicyBase.cat (Native.char_at text offset) (expand (fuel - 1) (offset + 1))
+      | Some (name, count) ->
+        PolicyBase.cat
+          (match resolve g name row column with
+           | None -> PolicyBase.cat "$" name
+           | Some f -> f.text)
+          (expand (fuel - 1) (offset + (if count = 0 then 1 else count)))
+  in
+  (expand (Native.length text) 0,
+   merge_images
+     (List.map (fun r -> PolicyBase.option_list r.field.field_images)
+       (references text g row column)))
+
+let expand_messages (g: Domain.layout) (row: nat) (column: nat) : Tot (list Domain.message) =
+  List.map
+    (fun message ->
+      let text, images = interpolate message.Domain.content g row column in
+      let merged =
+        merge_images
+          [PolicyBase.option_list message.images;
+           if message.message_role = Domain.UserRole then images else []]
+      in
+      {message with
+        content = text;
+        images = (if merged = [] then message.images else Some merged)
+      })
+    (PolicyBase.messages g row column)
+
+let resolve_criteria (g: Domain.layout) (row: nat) (column: nat)
+  : Tot (list Domain.criterion & list Domain.reference_image) =
+  let expanded =
+    List.map
+      (fun criterion ->
+        let text, images = interpolate criterion.Domain.criterion_text g row column in
+        ({criterion with criterion_text = text}, images))
+      (PolicyBase.criteria g row column)
+  in
+  (List.map (fun (c, _) -> c) expanded,
+   merge_images (List.map (fun (_, images) -> images) expanded))
+
+let names (g: Domain.layout) (side: Domain.axis) : Tot (list (option string)) =
+  match g.variable_names with
+  | None -> []
+  | Some ns ->
+    PolicyBase.option_list (if side = Domain.Rows then ns.row_names else ns.column_names)
+
+let name_issues (g: Domain.layout) : Tot (list Domain.validation_issue) =
+  let invalid =
+    PolicyBase.flatmap
+      (fun side ->
+        PolicyBase.flatmap
+          (fun (index, name) ->
+            match name with
+            | None -> []
+            | Some n ->
+              if n <> "" && PolicyBase.all_chars n "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_" then []
+              else
+                [PolicyBase.issue "Variable names must contain only A-Z, digits, or underscore."
+                  [Domain.Property "variableNames"; Domain.Property (PolicyBase.axis_key side);
+                   Domain.Index index]])
+          (PolicyBase.indexed (names g side)))
+      PolicyBase.sides
+  in
+  let slots =
+    PolicyBase.flatmap
+      (fun side ->
+        if not (Parameters.is_case_axis g side) then []
+        else
+          PolicyBase.flatmap
+            (fun (i, field) ->
+              match field with
+              | None -> []
+              | Some _ -> [(variable_name g side i, side, i)])
+            (PolicyBase.indexed
+              (PolicyBase.option_list (fields (PolicyBase.at (PolicyBase.records g side) 0)))))
+      PolicyBase.sides
+  in
+  invalid @
+  PolicyBase.flatmap
+    (fun name ->
+      let matching = List.filter (fun (n, _, _) -> n = name) slots in
+      if List.length matching < 2 then []
+      else
+        List.map
+          (fun (_, side, index) ->
+            PolicyBase.issue (PolicyBase.cat (PolicyBase.cat "Variable name " name) " is already in use.")
+              [Domain.Property "variableNames"; Domain.Property (PolicyBase.axis_key side);
+               Domain.Index index])
+          matching)
+    (PolicyBase.unique (List.map (fun (name, _, _) -> name) slots))
+
+let active (#a: Type) (v: option a) : Tot bool =
+  match v with
+  | None -> false
+  | Some _ -> true
+
+let shape_issues (g: Domain.layout) : Tot (list Domain.validation_issue) =
+  PolicyBase.flatmap
+    (fun side ->
+      if not (Parameters.axis_has_variables g side) then []
+      else
+        let first = fields (PolicyBase.at (PolicyBase.records g side) 0) in
+        PolicyBase.flatmap
+          (fun (case_index, record) ->
+            let variable = record.Domain.values.variable_value in
+            let path =
+              [Domain.Property (PolicyBase.axis_key side); Domain.Index case_index;
+               Domain.Property "variable"]
+            in
+            let msg = "Variable values must have the same active fields." in
+            (if not (active first) || not (active variable) ||
+               List.length (PolicyBase.option_list variable) <>
+                 List.length (PolicyBase.option_list first) then
+               [PolicyBase.issue msg path]
+             else []) @
+            (match first, variable with
+             | Some fs, Some vs ->
+               PolicyBase.flatmap
+                 (fun (field_index, field) ->
+                   let original =
+                     match PolicyBase.at fs field_index with
+                     | None -> None
+                     | Some f -> f
+                   in
+                   if active field = (field_index >= List.length fs || active original) then []
+                   else [PolicyBase.issue msg (path @ [Domain.Index field_index])])
+                 (PolicyBase.indexed vs)
+             | _ -> []))
+          (PolicyBase.indexed (PolicyBase.records g side)))
+    PolicyBase.sides
+
+type template = {
+  template_text: string;
+  template_role: Domain.role;
+  template_path: list Domain.path_segment
+}
+
+let templates (g: Domain.layout) (row: nat) (column: nat) : Tot (list template) =
+  let generator =
+    PolicyBase.mapi
+      (fun index message ->
+        {
+          template_text = message.Domain.content;
+          template_role = message.message_role;
+          template_path =
+            PolicyBase.value_path g Domain.PInput row column @
+            [Domain.Index index; Domain.Property "content"]
+        })
+      (PolicyBase.messages g row column)
+  in
+  generator @
+  (if not g.judging then []
+   else
+     [{
+       template_text = PolicyBase.text g Domain.PJudgeSystem row column;
+       template_role = Domain.SystemRole;
+       template_path = PolicyBase.value_path g Domain.PJudgeSystem row column
+     }] @
+     PolicyBase.mapi
+       (fun index criterion ->
+         {
+           template_text = criterion.Domain.criterion_text;
+           template_role = Domain.UserRole;
+           template_path =
+             PolicyBase.value_path g Domain.PJudgeCriteria row column @
+             [Domain.Index index; Domain.Property "text"]
+         })
+       (PolicyBase.criteria g row column))
+
+let preview_indices (g: Domain.layout) (side: Domain.axis) : Tot (list nat) =
+  match PolicyBase.records g side with
+  | [] -> [0]
+  | rs -> PolicyBase.mapi (fun i _ -> i) rs
+
+let cell_templates (g: Domain.layout) : Tot (list (nat & nat & template)) =
+  PolicyBase.flatmap
+    (fun row ->
+      PolicyBase.flatmap
+        (fun column -> List.map (fun t -> (row, column, t)) (templates g row column))
+        (preview_indices g Domain.Columns))
+    (preview_indices g Domain.Rows)
+
+let prompt_issues (g: Domain.layout) : Tot (list Domain.validation_issue) =
   let index = variable_index g in
-  let used_and_issues = B.flatmap (fun (row,column,t) ->
-    B.flatmap (fun name ->
-      let unknown = B.issue (B.cat "Unknown prompt variable $" name) t.template_path in
-      match find_slot name index with
-      | None -> [(None,Some unknown)]
-      | Some (side,field_index) ->
-        match field_for g side field_index row column with | None -> [(None,Some unknown)] | Some field ->
-        (Some side,None) ::
-        (if t.template_role = D.UserRole || B.option_list field.field_images = [] then [] else
-          let msg = "Variable images can only be attached to user messages." in
-          [(None,Some (B.issue msg t.template_path));(None,Some (B.issue msg [D.Property (B.axis_key side);D.Index (if side = D.Rows then row else column);D.Property "variable";D.Index field_index;D.Property "images"]))]))
-      (tokens t.template_text)) (cell_templates g) in
-  let used = B.flatmap (fun (side,_) -> match side with | None -> [] | Some s -> [s]) used_and_issues in
-  let token_issues = B.flatmap (fun (_,issue) -> match issue with | None -> [] | Some i -> [i]) used_and_issues in
-  let unused = B.flatmap (fun side ->
-    if L.existsb (fun kind -> kind <> D.PVariable) (P.axis_parameters g side) || B.member side used then [] else
-    let records = B.records g side in
-    let active_fields = L.filter (fun (_,f) -> active f) (B.indexed (B.option_list (fields (B.at records 0)))) in
-    match active_fields with
-    | (field_index,_)::_ ->
-      let msg = B.cat (B.cat "$" (variable_name g side field_index)) " is not used anywhere" in
-      B.flatmap (fun (case_index,_) ->
-        if not (active (field_for g side field_index case_index case_index)) then [] else
-        [B.issue msg [D.Property (B.axis_key side);D.Index case_index;D.Property "variable";D.Index field_index;D.Property "text"]]) (B.indexed records)
-    | [] ->
-      if records = [] then [B.issue (B.cat (B.cat "Add at least one " (if side = D.Rows then "row" else "column")) " case.") [D.Property (B.axis_key side)]]
-      else if P.axis_parameters g side = [] ||
-        not (L.existsb (fun kind -> kind <> D.PVariable || L.existsb (fun r -> L.existsb active (B.option_list r.D.values.variable_value)) records) (P.axis_parameters g side)) then
-        [B.issue "Add a variable or click \"define multiple cases\" for a parameter." [D.Property (B.axis_key side)]] else []) (B.case_axes g) in
+  let used_and_issues =
+    PolicyBase.flatmap
+      (fun (row, column, t) ->
+        PolicyBase.flatmap
+          (fun name ->
+            let unknown =
+              PolicyBase.issue (PolicyBase.cat "Unknown prompt variable $" name) t.template_path
+            in
+            match find_slot name index with
+            | None -> [(None, Some unknown)]
+            | Some (side, field_index) ->
+              match field_for g side field_index row column with
+              | None -> [(None, Some unknown)]
+              | Some field ->
+                (Some side, None) ::
+                (if t.template_role = Domain.UserRole ||
+                   PolicyBase.option_list field.field_images = [] then []
+                 else
+                   let msg = "Variable images can only be attached to user messages." in
+                   [(None, Some (PolicyBase.issue msg t.template_path));
+                    (None, Some (PolicyBase.issue msg
+                      [Domain.Property (PolicyBase.axis_key side);
+                       Domain.Index (if side = Domain.Rows then row else column);
+                       Domain.Property "variable"; Domain.Index field_index;
+                       Domain.Property "images"]))]))
+          (tokens t.template_text))
+      (cell_templates g)
+  in
+  let used =
+    PolicyBase.flatmap
+      (fun (side, _) ->
+        match side with
+        | None -> []
+        | Some s -> [s])
+      used_and_issues
+  in
+  let token_issues =
+    PolicyBase.flatmap
+      (fun (_, issue) ->
+        match issue with
+        | None -> []
+        | Some i -> [i])
+      used_and_issues
+  in
+  let unused =
+    PolicyBase.flatmap
+      (fun side ->
+        if List.existsb (fun kind -> kind <> Domain.PVariable) (Parameters.axis_parameters g side) ||
+          PolicyBase.member side used then []
+        else
+          let records = PolicyBase.records g side in
+          let active_fields =
+            List.filter (fun (_, f) -> active f)
+              (PolicyBase.indexed (PolicyBase.option_list (fields (PolicyBase.at records 0))))
+          in
+          match active_fields with
+          | (field_index, _) :: _ ->
+            let msg =
+              PolicyBase.cat (PolicyBase.cat "$" (variable_name g side field_index))
+                " is not used anywhere"
+            in
+            PolicyBase.flatmap
+              (fun (case_index, _) ->
+                if not (active (field_for g side field_index case_index case_index)) then []
+                else
+                  [PolicyBase.issue msg
+                    [Domain.Property (PolicyBase.axis_key side); Domain.Index case_index;
+                     Domain.Property "variable"; Domain.Index field_index; Domain.Property "text"]])
+              (PolicyBase.indexed records)
+          | [] ->
+            if records = [] then
+              [PolicyBase.issue
+                (PolicyBase.cat
+                  (PolicyBase.cat "Add at least one " (if side = Domain.Rows then "row" else "column"))
+                  " case.")
+                [Domain.Property (PolicyBase.axis_key side)]]
+            else if Parameters.axis_parameters g side = [] ||
+              not (List.existsb
+                (fun kind ->
+                  kind <> Domain.PVariable ||
+                  List.existsb
+                    (fun r -> List.existsb active (PolicyBase.option_list r.Domain.values.variable_value))
+                    records)
+                (Parameters.axis_parameters g side)) then
+              [PolicyBase.issue "Add a variable or click \"define multiple cases\" for a parameter."
+                [Domain.Property (PolicyBase.axis_key side)]]
+            else [])
+      (PolicyBase.case_axes g)
+  in
   name_issues g @ shape_issues g @ token_issues @ unused
-let image_setting (g:D.layout) (p:D.parameter) (r:nat) (c:nat) : Tot (option string) =
-  match B.value g p r c with | None -> None | Some v -> Some (B.text_value v)
-let expand_cell (g:D.layout) (budget:option Num.finite) (row:nat) (column:nat) : Tot D.preview_cell =
+
+let image_setting (g: Domain.layout) (p: Domain.parameter) (r: nat) (c: nat)
+  : Tot (option string) =
+  match PolicyBase.value g p r c with
+  | None -> None
+  | Some v -> Some (PolicyBase.text_value v)
+
+let expand_cell (g: Domain.layout) (budget: option Number.finite) (row: nat) (column: nat)
+  : Tot Domain.preview_cell =
   let messages = expand_messages g row column in
-  let first = B.at messages 0 in
-  let prompt = if g.output_format = D.ChatTemplate then B.join "\n\n" (L.map (fun m -> B.cat (B.cat (B.role_key m.D.message_role) ": ") m.content) messages)
-    else match first with | None -> "" | Some m -> m.content in
-  let settings = {D.image_size=image_setting g D.PSize row column;image_aspect_ratio=image_setting g D.PAspectRatio row column;
-    image_quality=image_setting g D.PQuality row column;image_background=image_setting g D.PBackground row column;
-    input_references=(match first with | None -> None | Some m -> match m.images with | None -> None | Some images -> Some (L.map (fun i -> i.D.reference_id) images))} in
-  {D.cell_row=row;cell_column=column;cell_model=B.text g D.PModel row column;cell_effort=B.effort g D.PEffort row column;prompt=prompt;
-   messages=Some messages;preview_budget=budget;image_settings=(if g.output_format = D.Image then Some (B.normalize_settings settings) else None);
-   judge=(if not g.judging then None else Some {D.judge_model=B.text g D.PJudgeModel row column;judge_effort=B.effort g D.PJudgeEffort row column;criteria=None})}
-let expand_grid (g:D.layout) (budget:option Num.finite) : Tot (list D.preview_cell) =
-  B.flatmap (fun (row,_) -> L.map (fun (column,_) -> expand_cell g budget row column) (B.indexed g.columns)) (B.indexed g.rows)
+  let first = PolicyBase.at messages 0 in
+  let prompt =
+    if g.output_format = Domain.ChatTemplate then
+      PolicyBase.join "\n\n"
+        (List.map
+          (fun m -> PolicyBase.cat (PolicyBase.cat (PolicyBase.role_key m.Domain.message_role) ": ") m.content)
+          messages)
+    else
+      match first with
+      | None -> ""
+      | Some m -> m.content
+  in
+  let settings = {
+    Domain.image_size = image_setting g Domain.PSize row column;
+    image_aspect_ratio = image_setting g Domain.PAspectRatio row column;
+    image_quality = image_setting g Domain.PQuality row column;
+    image_background = image_setting g Domain.PBackground row column;
+    input_references =
+      (match first with
+       | None -> None
+       | Some m ->
+         match m.images with
+         | None -> None
+         | Some images -> Some (List.map (fun i -> i.Domain.reference_id) images))
+  } in
+  {
+    Domain.cell_row = row;
+    cell_column = column;
+    cell_model = PolicyBase.text g Domain.PModel row column;
+    cell_effort = PolicyBase.effort g Domain.PEffort row column;
+    prompt = prompt;
+    messages = Some messages;
+    preview_budget = budget;
+    image_settings =
+      (if g.output_format = Domain.Image then Some (PolicyBase.normalize_settings settings)
+       else None);
+    judge =
+      (if not g.judging then None
+       else Some {
+         Domain.judge_model = PolicyBase.text g Domain.PJudgeModel row column;
+         judge_effort = PolicyBase.effort g Domain.PJudgeEffort row column;
+         criteria = None
+       })
+  }
+
+let expand_grid (g: Domain.layout) (budget: option Number.finite)
+  : Tot (list Domain.preview_cell) =
+  PolicyBase.flatmap
+    (fun (row, _) ->
+      List.map (fun (column, _) -> expand_cell g budget row column) (PolicyBase.indexed g.columns))
+    (PolicyBase.indexed g.rows)
