@@ -76,3 +76,35 @@ test("column dragging changes the visible width of a viewport-fitted grid and pe
     .poll(async () => (await cell.boundingBox())!.width)
     .toBeCloseTo(before.width + 40, 0);
 });
+
+test.describe("viewport resizing", () => {
+  test.use({ viewport: { width: 900, height: 620 } });
+
+  test("keeps the grid scrolled where the reader left it", async ({
+    page,
+    request,
+  }) => {
+    await request.post("/fixture/reset", { data: { billing: false } });
+    await create(page, { rowValues: ["cat", "dog", "fox"] });
+    await expectProgress(page, 3, 3);
+    const viewport = page.locator(".grid-scroll");
+    const position = () =>
+      viewport.evaluate((element) => ({
+        top: element.scrollTop,
+        remaining: element.scrollHeight - element.clientHeight,
+      }));
+    expect((await position()).top).toBe(0);
+    await viewport.evaluate((element) => {
+      element.scrollTop = element.scrollHeight * 0.6;
+    });
+    const before = (await position()).top;
+    expect(before).toBeGreaterThan(100);
+
+    await page.setViewportSize({ width: 700, height: 520 });
+
+    // Row heights stay at their minimum, so the reader's offset is preserved.
+    await expect
+      .poll(async () => Math.abs((await position()).top - before))
+      .toBeLessThan(40);
+  });
+});
