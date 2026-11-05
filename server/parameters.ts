@@ -8,6 +8,7 @@ import type {
 export type ParameterId = keyof ParameterValues;
 export type CommonParameterId = Exclude<ParameterId, "variable">;
 export type AxisSide = "rows" | "columns";
+export type CaseFactory = (values?: Partial<ParameterValues>) => CaseRecord;
 export type ParameterConfiguration = Pick<
   GridInput,
   "parameters" | "rows" | "columns" | "caseAxes" | "variableNames"
@@ -165,7 +166,10 @@ export function newCase(values: Partial<ParameterValues> = {}): CaseRecord {
   return { ...values, id: globalThis.crypto.randomUUID() };
 }
 
-export function defaultGridDraft(format: GridInput["format"]): GridDraftInput {
+export function defaultGridDraft(
+  format: GridInput["format"],
+  createCase: CaseFactory = newCase,
+): GridDraftInput {
   const image = format === "image";
   const modelRows = image || format === "svg" || format === "html";
   return {
@@ -190,9 +194,9 @@ export function defaultGridDraft(format: GridInput["format"]): GridDraftInput {
             },
           }),
     },
-    rows: modelRows ? [] : [newCase({ effort: "default" })],
+    rows: modelRows ? [] : [createCase({ effort: "default" })],
     columns: modelRows
-      ? [newCase(image ? { quality: "auto" } : { effort: "default" })]
+      ? [createCase(image ? { quality: "auto" } : { effort: "default" })]
       : [],
   };
 }

@@ -108,6 +108,74 @@ Direct browser runs make one attempt by default. Deployment validation permits
 two retries for real-provider browser tests. Unit and mock tests do not retry.
 GitHub Actions is disabled; its workflow file is retained.
 
+For creation-form development, run the focused checks against the candidate
+worktree:
+
+```sh
+pnpm creation:ensure
+pnpm exec tsx --test tests/create-machine-codec.test.ts tests/create-typed-boundary.test.ts tests/create-model.test.ts tests/create-semantics.test.ts tests/create-controller.test.ts tests/change-axis.test.ts tests/judge-mode.test.ts
+pnpm build
+E2E_PORT=0 pnpm exec tsx tests/run-e2e.ts --suite mock --reuse-build tests/e2e/create-state-machine.spec.ts tests/e2e/creation-machine-contract.spec.ts tests/e2e/creation-machine-switch.spec.ts tests/e2e/case-format-transitions.spec.ts tests/e2e/chat.spec.ts tests/e2e/model-selection.spec.ts tests/e2e/image-settings.spec.ts
+```
+
+The creation implementation can be imported directly in a Node process without
+browser globals. Initialize it with a draft, identity prefix, catalog capabilities,
+and provider observations, then replay explicit events and inspect public views
+and commands. Browser-only failures should be investigated through the isolated
+runtime and browser tooling described above.
+
+### Selecting the creation implementation
+
+The extracted F* implementation is the default. Open
+`/?creationMachine=fstar` or `/?creationMachine=typescript` with a full page load
+to select an implementation. The choice is stored in session storage for the
+tab and survives navigation and provider connection. Both implementations use
+the same saved draft; switching starts a new machine lifecycle, not a conversion
+of an active state handle.
+
+### Rebuilding the extracted implementation
+
+Generated JavaScript, declarations, and fingerprints are ignored local build
+outputs, never committed. Development, builds, typechecking, and unit-test
+commands generate missing or stale outputs and reuse current outputs.
+Install the pinned toolchain before the first build, or when its pinned versions
+change. `creation:generate` explicitly rebuilds; `creation:check` verifies current
+outputs without rebuilding.
+
+Use Linux x86_64 with a C compiler, make, Git, tar, xz, and curl:
+
+```sh
+pnpm creation:setup
+pnpm creation:generate
+pnpm creation:check
+```
+
+Setup installs the pinned toolchain under
+`~/.local/share/slopgrid-creation-toolchain` without sudo. Set
+`CREATION_TOOLCHAIN_ROOT` consistently for setup and generation to use a
+different location. The generator checks F* and its proofs, extracts OCaml,
+compiles bytecode, and links JavaScript with js_of_ocaml. Commit only source and
+build configuration; do not add or hand-edit generated artifacts.
+
+### Implementation interface
+
+Implement `CreationMachine<State>` from `src/create/machine-contract.ts`, or
+provide a `WireCreationMachine<State>` through `fromWireCreationMachine`.
+Register selectable implementations in `src/create/machine-selection.ts`.
+The shared controller serves both the form and homepage draft entry; neither
+should import a backend directly.
+
+Keep state handles opaque and updates immutable. Follow explicit change outcomes
+and canonical data rules rather than JavaScript object identity, omitted fields
+becoming null, or non-finite numbers surviving serialization. The codecs define
+the executable data contract. Wire update outputs contain outcomes and commands,
+not serialized machine state.
+
+Run the focused commands above after regeneration or implementation changes.
+The TypeScript implementation remains available as an executable reference;
+the [architecture](ARCHITECTURE.md#creation-form-state-transitions) describes
+the formal guarantees and remaining trust boundary.
+
 ## GitHub integration
 
 Copying staging credentials to a demo does not change the OAuth app's registered

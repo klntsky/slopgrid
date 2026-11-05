@@ -1,6 +1,5 @@
 import {
   gridSchema,
-  type GridDraftInput,
   type GridInput,
   type ValidatedGridInput,
 } from "../../server/domain";
@@ -8,7 +7,7 @@ import {
   referenceImageSchema,
   type ReferenceImage,
 } from "../../server/image-settings";
-import { generatorInputEntries } from "../../server/generator-input";
+import { referenceLists } from "./reference-lists";
 
 // Files stay in this browser across reloads and OAuth redirects until Generate.
 function localFile(
@@ -54,26 +53,8 @@ export async function saveReferenceFile(file: File): Promise<ReferenceImage> {
   return { id, name: file.name };
 }
 
-export function referenceLists(
-  input: Pick<
-    GridInput | GridDraftInput,
-    "parameters" | "rows" | "columns" | "caseAxes"
-  >,
-): ReferenceImage[][] {
-  return [
-    ...generatorInputEntries(input).flatMap(({ messages }) =>
-      messages.flatMap((message) => (message.images ? [message.images] : [])),
-    ),
-    ...[...input.rows, ...input.columns].flatMap((entry) => [
-      ...(entry.variable ?? []).flatMap((field) =>
-        field?.images ? [field.images] : [],
-      ),
-    ]),
-  ];
-}
-
 export async function uploadReferences(
-  input: ValidatedGridInput,
+  input: GridInput,
   uploaded: (localId: string, image: ReferenceImage) => void,
   signal: AbortSignal,
 ): Promise<ValidatedGridInput> {

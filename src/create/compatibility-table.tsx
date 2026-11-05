@@ -1,12 +1,12 @@
 import type { ReactNode } from "react";
 import { Check, CircleHelp, TriangleAlert } from "lucide-react";
-import type { GridInput } from "../../server/domain";
+import type { ParameterConfiguration } from "../../server/parameters";
 import type {
   CompatibilityOrigin,
   CompatibilityParameter,
   GridCompatibilityIssue,
-  GridCompatibilityAnalysis,
 } from "../../server/grid-compatibility";
+import type { CreateView } from "./machine-contract";
 import { dimensionNames } from "../format";
 import { modelCatalog } from "../model-catalog";
 import { effortLabel } from "../../server/compatibility";
@@ -41,7 +41,10 @@ function matchesOrigin(
   );
 }
 
-function sourceLabel(input: GridInput, origin: CompatibilityOrigin) {
+function sourceLabel(
+  input: ParameterConfiguration,
+  origin: CompatibilityOrigin,
+) {
   const source =
     origin.source === "common"
       ? "Common"
@@ -65,9 +68,9 @@ export function compatibilityTables({
   cells,
   source = "common",
 }: {
-  input: GridInput;
+  input: ParameterConfiguration;
   issues: readonly GridCompatibilityIssue[];
-  cells: GridCompatibilityAnalysis["cells"];
+  cells: CreateView["compatibilityCells"];
   source?: CompatibilityOrigin["source"];
 }): CompatibilityTables {
   const parameters = new Set(
@@ -106,7 +109,7 @@ export function CompatibilityFeedback({
   issues,
   origin,
 }: {
-  input: GridInput;
+  input: ParameterConfiguration;
   issues: readonly GridCompatibilityIssue[];
   origin: CompatibilityOrigin;
 }) {
@@ -217,9 +220,9 @@ function ParameterCompatibilityGrid({
   parameter,
   origin,
 }: {
-  input: GridInput;
+  input: ParameterConfiguration;
   issues: readonly GridCompatibilityIssue[];
-  cells: GridCompatibilityAnalysis["cells"];
+  cells: CreateView["compatibilityCells"];
   parameter: MatrixParameter;
   origin: CompatibilityOrigin;
 }) {
@@ -231,7 +234,7 @@ function ParameterCompatibilityGrid({
   )
     return null;
   const judged = parameter === "judge_effort";
-  function value(cell: GridCompatibilityAnalysis["cells"][number]) {
+  function value(cell: CreateView["compatibilityCells"][number]) {
     if (parameter === "effort") return cell.effort;
     if (parameter === "judge_effort") return cell.judge?.effort ?? "default";
     return cell.imageSettings?.[parameter] || "auto";
@@ -243,7 +246,7 @@ function ParameterCompatibilityGrid({
   );
   const observations = new Map<
     string,
-    Map<string, GridCompatibilityAnalysis["cells"]>
+    Map<string, CreateView["compatibilityCells"]>
   >();
   const selectedValues = new Set<string>();
   for (const cell of relevant) {

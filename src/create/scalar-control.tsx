@@ -3,7 +3,7 @@ import { imageChoices } from "../../server/image-settings";
 import { effortLabel } from "../../server/compatibility";
 import { parameterNames } from "../../server/parameters";
 import type { Model } from "../../server/provider";
-import type { ScalarParameterId } from "./change-axis";
+import type { ScalarParameterId } from "./input-events";
 import { ModelSelector } from "./model-selector";
 import { CustomImageSize } from "./custom-image-size";
 import { ValidationField } from "./validation-feedback";

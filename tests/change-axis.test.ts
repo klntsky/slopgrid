@@ -9,16 +9,17 @@ import {
   addCaseAction,
   caseValueAction,
   caseValuesAction,
-  confirmInputAction,
+  inputActionConfirmation,
   droppedParameters,
   reduceInput,
 } from "../src/create/change-axis.js";
+import type { InputAction, MessageEdit } from "../src/create/input-events.js";
 import { criteriaForCell } from "../server/judge-criteria.js";
 import {
   draftInputFromGridInput,
   validateDraftInput,
 } from "../src/create/draft-input.js";
-import { referenceLists } from "../src/create/reference-files.js";
+import { referenceLists } from "../src/create/reference-lists.js";
 import { currentDefinition } from "./current-grid-fixture.js";
 
 function initial(
@@ -72,26 +73,6 @@ function initial(
   };
 }
 
-function withConfirmation<T>(answer: boolean, run: (calls: string[]) => T): T {
-  const previous = Object.getOwnPropertyDescriptor(globalThis, "window");
-  const calls: string[] = [];
-  Object.defineProperty(globalThis, "window", {
-    configurable: true,
-    value: {
-      confirm: (message: string) => {
-        calls.push(message);
-        return answer;
-      },
-    },
-  });
-  try {
-    return run(calls);
-  } finally {
-    if (previous) Object.defineProperty(globalThis, "window", previous);
-    else Reflect.deleteProperty(globalThis, "window");
-  }
-}
-
 function parameterTests<K extends CommonParameterId>(
   parameter: K,
   first: ParameterValues[K],
@@ -122,18 +103,12 @@ function parameterTests<K extends CommonParameterId>(
       );
       const action = { type: "to-common" as const, parameter };
       assert.deepEqual(droppedParameters(edited, action), [parameter]);
-      withConfirmation(false, (calls) => {
-        assert.equal(confirmInputAction(edited, action), false);
-        assert.equal(calls.length, 1);
-      });
+      assert.equal(typeof inputActionConfirmation(edited, action), "string");
       assert.deepEqual(
         edited[side].map((entry) => entry[parameter]),
         [first, second],
       );
-      withConfirmation(true, (calls) => {
-        assert.equal(confirmInputAction(edited, action), true);
-        assert.equal(calls.length, 1);
-      });
+      assert.equal(typeof inputActionConfirmation(edited, action), "string");
       const collapsed = reduceInput(edited, action);
       assert.deepEqual(collapsed.parameters[parameter], {
         kind: "common",
@@ -165,10 +140,7 @@ function parameterTests<K extends CommonParameterId>(
       );
       const action = { type: "to-common" as const, parameter };
       assert.deepEqual(droppedParameters(entered, action), []);
-      withConfirmation(false, (calls) => {
-        assert.equal(confirmInputAction(entered, action), true);
-        assert.deepEqual(calls, []);
-      });
+      assert.equal(inputActionConfirmation(entered, action), undefined);
       const collapsed = reduceInput(entered, action);
       assert.deepEqual(collapsed.parameters[parameter], {
         kind: "common",
@@ -551,15 +523,9 @@ for (const side of ["rows", "columns"] as const) {
       parameter: "model" as const,
     };
     assert.deepEqual(droppedParameters(input, action), ["variable"]);
-    withConfirmation(false, (calls) => {
-      assert.equal(confirmInputAction(input, action), false);
-      assert.equal(calls.length, 1);
-    });
+    assert.equal(typeof inputActionConfirmation(input, action), "string");
     assert.deepEqual(input, original);
-    withConfirmation(true, (calls) => {
-      assert.equal(confirmInputAction(input, action), true);
-      assert.equal(calls.length, 1);
-    });
+    assert.equal(typeof inputActionConfirmation(input, action), "string");
     const next = reduceInput(input, action);
     assert.deepEqual(next.caseAxes, [other]);
     assert.deepEqual(next[other], original[other]);
@@ -589,9 +555,7 @@ test("ordinary dimension selection replaces the axis and returns its former para
   assert.equal(reduceInput(input, unsupported), input);
   assert.deepEqual(droppedParameters(input, unsupported), []);
   assert.deepEqual(droppedParameters(input, action), ["model"]);
-  withConfirmation(false, () =>
-    assert.equal(confirmInputAction(input, action), false),
-  );
+  assert.equal(typeof inputActionConfirmation(input, action), "string");
   const moved = reduceInput(input, action);
   assert.deepEqual(moved.parameters.model, { kind: "common", value: "" });
   assert.deepEqual(moved.parameters.effort, { kind: "rows" });
@@ -643,9 +607,7 @@ test("single-case and identical-case variable text or images require confirmatio
         parameter: "effort" as const,
       };
       assert.deepEqual(droppedParameters(input, action), ["variable"]);
-      withConfirmation(false, () =>
-        assert.equal(confirmInputAction(input, action), false),
-      );
+      assert.equal(typeof inputActionConfirmation(input, action), "string");
       const next = reduceInput(input, action);
       assert.deepEqual(next.caseAxes, []);
       assert.equal(next.rows.length, 1);
@@ -765,15 +727,9 @@ for (const side of ["rows", "columns"] as const) {
     const original = structuredClone(input);
     const action = { type: "single" as const, side };
     assert.deepEqual(droppedParameters(input, action), ["variable"]);
-    withConfirmation(false, (calls) => {
-      assert.equal(confirmInputAction(input, action), false);
-      assert.equal(calls.length, 1);
-    });
+    assert.equal(typeof inputActionConfirmation(input, action), "string");
     assert.deepEqual(input, original);
-    withConfirmation(true, (calls) => {
-      assert.equal(confirmInputAction(input, action), true);
-      assert.equal(calls.length, 1);
-    });
+    assert.equal(typeof inputActionConfirmation(input, action), "string");
     const next = reduceInput(input, action);
     assert.deepEqual(next[side], [{ id: input[side][0].id }]);
     assert.deepEqual(next[other], input[other]);
@@ -846,15 +802,9 @@ for (const side of ["rows", "columns"] as const) {
       new Set(droppedParameters(input, action)),
       new Set(["variable", "model", "effort", "judge_criteria"]),
     );
-    withConfirmation(false, (calls) => {
-      assert.equal(confirmInputAction(input, action), false);
-      assert.equal(calls.length, 1);
-    });
+    assert.equal(typeof inputActionConfirmation(input, action), "string");
     assert.deepEqual(input, original);
-    withConfirmation(true, (calls) => {
-      assert.equal(confirmInputAction(input, action), true);
-      assert.equal(calls.length, 1);
-    });
+    assert.equal(typeof inputActionConfirmation(input, action), "string");
     const next = reduceInput(input, action);
     assert.deepEqual(next[side], [{ id: input[side][0].id }]);
     assert.deepEqual(next[other], input[other]);
@@ -879,10 +829,7 @@ for (const side of ["rows", "columns"] as const) {
         variable: [{ text: "" }],
       }));
       const action = { type: "single" as const, side };
-      withConfirmation(false, (calls) => {
-        assert.equal(confirmInputAction(input, action), true);
-        assert.deepEqual(calls, []);
-      });
+      assert.equal(inputActionConfirmation(input, action), undefined);
       const next = reduceInput(input, action);
       const accepted = validateDraftInput(next).parsed;
       assert.ok(accepted.success);
@@ -985,10 +932,7 @@ for (const side of ["rows", "columns"] as const) {
       input = reduceInput(input, { type: "to-axis", side, parameter: "input" });
       const action = { type: "single" as const, side };
       const before = structuredClone(input);
-      withConfirmation(false, (calls) => {
-        assert.equal(confirmInputAction(input, action), true);
-        assert.deepEqual(calls, []);
-      });
+      assert.equal(inputActionConfirmation(input, action), undefined);
       const equal = reduceInput(input, action);
       assert.deepEqual(equal.caseAxes, []);
       assert.deepEqual(equal.parameters.input, {
@@ -1005,18 +949,9 @@ for (const side of ["rows", "columns"] as const) {
         ]),
       );
       const changedBefore = structuredClone(changed);
-      withConfirmation(false, (calls) => {
-        const next = confirmInputAction(changed, action)
-          ? reduceInput(changed, action)
-          : changed;
-        assert.equal(next, changed);
-        assert.equal(calls.length, 1);
-      });
+      assert.equal(typeof inputActionConfirmation(changed, action), "string");
       assert.deepEqual(changed, changedBefore);
-      withConfirmation(true, (calls) => {
-        assert.equal(confirmInputAction(changed, action), true);
-        assert.equal(calls.length, 1);
-      });
+      assert.equal(typeof inputActionConfirmation(changed, action), "string");
       const reset = reduceInput(changed, action);
       assert.deepEqual(reset.caseAxes, []);
       assert.deepEqual(reset.parameters.input, {
@@ -1087,10 +1022,7 @@ for (const side of ["rows", "columns"] as const)
         ]),
       );
     const action = { type: "to-common" as const, parameter: "input" as const };
-    withConfirmation(false, (calls) => {
-      assert.equal(confirmInputAction(input, action), true);
-      assert.deepEqual(calls, []);
-    });
+    assert.equal(inputActionConfirmation(input, action), undefined);
     const common = reduceInput(input, action);
     assert.deepEqual(
       generatorInputForCell(common, 0, 0).map(({ role, content }) => [
@@ -1192,17 +1124,11 @@ for (const format of ["svg", "html", "image"] as const) {
             differing ? [previous] : [],
             label,
           );
-          withConfirmation(false, (calls) => {
-            const next = confirmInputAction(input, action)
-              ? reduceInput(input, action)
-              : input;
-            assert.equal(calls.length, differing ? 1 : 0, label);
-            if (differing) assert.equal(next, input, label);
-          });
-          withConfirmation(true, (calls) => {
-            assert.equal(confirmInputAction(input, action), true, label);
-            assert.equal(calls.length, differing ? 1 : 0, label);
-          });
+          assert.equal(
+            inputActionConfirmation(input, action) !== undefined,
+            differing,
+            label,
+          );
           const replaced = reduceInput(input, action);
           assert.deepEqual(
             replaced.parameters[previous],
@@ -1250,10 +1176,7 @@ for (const format of ["svg", "html", "image"] as const) {
         const before = structuredClone(input);
         const action = { type: "dimension" as const, side, parameter };
         assert.deepEqual(droppedParameters(input, action), ["variable"]);
-        withConfirmation(false, (calls) => {
-          assert.equal(confirmInputAction(input, action), false);
-          assert.equal(calls.length, 1);
-        });
+        assert.equal(typeof inputActionConfirmation(input, action), "string");
         const retained = reduceInput(input, action);
         assert.deepEqual(retained.caseAxes, []);
         assert.deepEqual(retained.parameters[parameter], { kind: side });
@@ -1726,4 +1649,224 @@ test("appending a field replaces trailing metadata without making an accepted sa
     expandGrid(saved.data).map((cell) => cell.prompt),
   );
   assert.deepEqual(draftInputFromGridInput(parsed.data), added);
+});
+
+test("input identity allocation replays deterministically without collisions", () => {
+  const scenarios: { input: GridDraftInput; action: InputAction }[] = [];
+  const emptyCase = initial("svg", "rows");
+  emptyCase.rows = [];
+  scenarios.push(
+    {
+      input: emptyCase,
+      action: { type: "to-axis", side: "rows", parameter: "input" },
+    },
+    { input: emptyCase, action: { type: "single", side: "rows" } },
+  );
+  const ordinary = initial();
+  ordinary.columns = [{ id: "case-0" }];
+  scenarios.push(
+    {
+      input: ordinary,
+      action: { type: "dimension", side: "rows", parameter: "variable" },
+    },
+    {
+      input: ordinary,
+      action: { type: "dimension", side: "rows", parameter: "effort" },
+    },
+  );
+  const emptyDimension = initial();
+  emptyDimension.rows = [];
+  emptyDimension.parameters.model = { kind: "rows" };
+  scenarios.push(
+    {
+      input: emptyDimension,
+      action: { type: "to-common", parameter: "model" },
+    },
+    {
+      input: emptyDimension,
+      action: caseValuesAction("rows", "model", ["a", "b", "c"]),
+    },
+  );
+  const judgeDimension = initial();
+  judgeDimension.parameters.judge_model = { kind: "rows" };
+  judgeDimension.rows = [];
+  scenarios.push({
+    input: judgeDimension,
+    action: { type: "judge", enabled: false },
+  });
+
+  for (const { input, action } of scenarios) {
+    const before = structuredClone(input);
+    const first = reduceInput(input, action);
+    assert.deepEqual(
+      reduceInput(structuredClone(input), structuredClone(action)),
+      first,
+    );
+    const oldIds = new Set(
+      [...input.rows, ...input.columns].map(({ id }) => id),
+    );
+    const ids = [...first.rows, ...first.columns].map(({ id }) => id);
+    assert.equal(new Set(ids).size, ids.length);
+    assert.ok(ids.some((id) => !oldIds.has(id)));
+    assert.deepEqual(input, before);
+  }
+});
+
+for (const source of ["common", "rows", "columns"] as const) {
+  test(`${source} message edits are data-only, replayable and append attachments against latest state`, () => {
+    let input = initial(
+      "chat-template",
+      source === "common" ? undefined : source,
+    );
+    if (source !== "common")
+      input = reduceInput(input, {
+        type: "to-axis",
+        side: source,
+        parameter: "input",
+      });
+    const before = structuredClone(input);
+    const action = (edit: MessageEdit): InputAction =>
+      source === "common"
+        ? { type: "edit-input", source: "common", edit }
+        : { type: "edit-input", source, caseIndex: 0, edit };
+    const events = [
+      action({ type: "content", index: 0, content: "Latest content" }),
+      action({
+        type: "append-images",
+        index: 0,
+        images: [{ id: "first", name: "first.png" }],
+      }),
+      action({
+        type: "append-images",
+        index: 0,
+        images: [{ id: "second", name: "second.png" }],
+      }),
+      action({ type: "remove-image", index: 0, imageIndex: 0 }),
+      action({
+        type: "append-images",
+        index: 0,
+        images: [{ id: "third", name: "third.png" }],
+      }),
+    ];
+    const replay = (events: InputAction[]) =>
+      events.reduce((current, event) => reduceInput(current, event), input);
+    const serialized = JSON.parse(JSON.stringify(events)) as InputAction[];
+    assert.deepEqual(serialized, events);
+    const next = replay(serialized);
+    assert.deepEqual(replay(events), next);
+    const messages = parameterValue(next, "input", 0, 0)!;
+    assert.equal(messages[0].content, "Latest content");
+    assert.deepEqual(
+      messages[0].images?.map(({ id }) => id),
+      ["second", "third"],
+    );
+    if (source !== "common")
+      assert.deepEqual(next[source][1], input[source][1]);
+    assert.deepEqual(input, before);
+    assert.equal(
+      reduceInput(
+        next,
+        source === "common"
+          ? {
+              type: "edit-input",
+              source: "rows",
+              caseIndex: 0,
+              edit: { type: "remove", index: 0 },
+            }
+          : {
+              type: "edit-input",
+              source: "common",
+              edit: { type: "remove", index: 0 },
+            },
+      ),
+      next,
+    );
+  });
+}
+
+test("message insertion, movement and role cycling preserve hidden unfilled content", () => {
+  const input = initial("chat-template");
+  input.parameters.input = {
+    kind: "common",
+    value: [{ role: "user", content: "Remember me" }],
+  };
+  const edit = (input: GridDraftInput, edit: MessageEdit) =>
+    reduceInput(input, { type: "edit-input", source: "common", edit });
+  const assistant = edit(input, { type: "cycle-role", index: 0 });
+  assert.equal(parameterValue(assistant, "input", 0, 0)![0].role, "assistant");
+  const unfilled = edit(assistant, { type: "cycle-role", index: 0 });
+  assert.deepEqual(parameterValue(unfilled, "input", 0, 0), [
+    { role: "unfilled", content: "" },
+  ]);
+  const restored = edit(unfilled, {
+    type: "cycle-role",
+    index: 0,
+    rememberedContent: "Remember me",
+  });
+  assert.deepEqual(parameterValue(restored, "input", 0, 0), [
+    { role: "system", content: "Remember me" },
+  ]);
+  const user = edit(restored, { type: "cycle-role", index: 0 });
+  const inserted = edit(user, { type: "insert", index: 1 });
+  assert.deepEqual(parameterValue(inserted, "input", 0, 0), [
+    { role: "user", content: "Remember me" },
+    { role: "unfilled", content: "" },
+  ]);
+  const moved = edit(inserted, { type: "move", index: 1, to: 0 });
+  assert.deepEqual(
+    parameterValue(moved, "input", 0, 0)?.map(({ role }) => role),
+    ["unfilled", "user"],
+  );
+  const removed = edit(moved, { type: "remove", index: 0 });
+  assert.deepEqual(
+    parameterValue(removed, "input", 0, 0),
+    parameterValue(user, "input", 0, 0),
+  );
+  const withImages = edit(user, {
+    type: "append-images",
+    index: 0,
+    images: [{ id: "image", name: "image.png" }],
+  });
+  assert.deepEqual(
+    edit(withImages, { type: "cycle-role", index: 0 }).parameters.input,
+    withImages.parameters.input,
+  );
+});
+
+test("prompt attachment intents preserve concurrent additions and current content", () => {
+  let input = initial();
+  input.parameters.input = { kind: "common", value: [] };
+  const edits: MessageEdit[] = [
+    {
+      type: "prompt-append-images",
+      images: [{ id: "first", name: "first.png" }],
+    },
+    { type: "prompt-content", content: "Typed while images were read" },
+    {
+      type: "prompt-append-images",
+      images: [{ id: "second", name: "second.png" }],
+    },
+    { type: "prompt-remove-image", imageIndex: 0 },
+    {
+      type: "prompt-append-images",
+      images: [{ id: "third", name: "third.png" }],
+    },
+  ];
+  const actions: InputAction[] = edits.map((edit) => ({
+    type: "edit-input",
+    source: "common",
+    edit,
+  }));
+  for (const action of JSON.parse(JSON.stringify(actions)) as InputAction[])
+    input = reduceInput(input, action);
+  assert.deepEqual(parameterValue(input, "input", 0, 0), [
+    {
+      role: "user",
+      content: "Typed while images were read",
+      images: [
+        { id: "second", name: "second.png" },
+        { id: "third", name: "third.png" },
+      ],
+    },
+  ]);
 });

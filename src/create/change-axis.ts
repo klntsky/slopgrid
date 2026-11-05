@@ -12,6 +12,7 @@ import {
   parameterDefault,
   parameterNames,
   type AxisSide,
+  type CaseFactory,
   type CommonParameterId,
   type ParameterId,
 } from "../../server/parameters";
@@ -23,63 +24,123 @@ import {
   referencedVariableNames,
   rewriteVariableReferences,
 } from "./judge-mode";
+import type {
+  CaseValueAction,
+  CaseValuesAction,
+  InputAction,
+  MessageEdit,
+  ScalarParameterId,
+} from "./input-events";
 
-type CommonAction = {
-  [K in CommonParameterId]: {
-    type: "common";
-    parameter: K;
-    value: ParameterValues[K];
-  };
-}[CommonParameterId];
-type CaseValueAction = {
-  [K in ParameterId]: {
-    type: "case-value";
-    side: AxisSide;
-    index: number;
-    parameter: K;
-    value: ParameterValues[K];
-  };
-}[ParameterId];
-export type ScalarParameterId = Exclude<
-  CommonParameterId,
-  "input" | "judge_criteria" | "judge_system"
->;
-type CaseValuesAction = {
-  [K in ScalarParameterId]: {
-    type: "case-values";
-    side: AxisSide;
-    parameter: K;
-    values: ParameterValues[K][];
-  };
-}[ScalarParameterId];
-export type ParameterSetter = <K extends CommonParameterId>(
-  parameter: K,
-  value: ParameterValues[NoInfer<K>],
-) => void;
+const messageRoles: ChatMessage["role"][] = [
+  "system",
+  "user",
+  "assistant",
+  "unfilled",
+];
 
-export type InputAction =
-  | CommonAction
-  | CaseValueAction
-  | CaseValuesAction
-  | {
-      type: "edit-input";
-      source: "common" | AxisSide;
-      caseIndex?: number;
-      change: (messages: ChatMessage[]) => ChatMessage[];
+function editMessages(
+  messages: ChatMessage[],
+  edit: MessageEdit,
+): ChatMessage[] {
+  switch (edit.type) {
+    case "prompt-content":
+      return [{ ...messages[0], role: "user", content: edit.content }];
+    case "prompt-append-images":
+    case "prompt-remove-image": {
+      const message = messages[0];
+      return [
+        {
+          ...message,
+          role: "user",
+          content: message?.content ?? "",
+          images:
+            edit.type === "prompt-append-images"
+              ? [...(message?.images ?? []), ...edit.images]
+              : (message?.images ?? []).filter(
+                  (_, index) => index !== edit.imageIndex,
+                ),
+        },
+      ];
     }
-  | { type: "to-axis"; parameter: CommonParameterId; side: AxisSide }
-  | { type: "to-common"; parameter: CommonParameterId }
-  | { type: "dimension"; side: AxisSide; parameter: ParameterId }
-  | { type: "single"; side: AxisSide }
-  | { type: "add-case"; side: AxisSide; value: CaseRecord }
-  | { type: "remove-case"; side: AxisSide; index: number }
-  | { type: "move-case"; side: AxisSide; index: number; to: number }
-  | { type: "add-variable"; side: AxisSide }
-  | { type: "remove-variable"; side: AxisSide; index: number }
-  | { type: "rename-variable"; side: AxisSide; index: number; name: string }
-  | { type: "rename-case"; side: AxisSide; index: number; name: string }
-  | { type: "swap" }
-  | { type: "judge"; enabled: boolean };
+    case "insert": {
+      const next = [...messages];
+      next.splice(edit.index, 0, {
+        role: messages[edit.index - 1]?.role === "user" ? "unfilled" : "user",
+        content: "",
+      });
+      return next;
+    }
+    case "remove":
+      return messages.filter((_, index) => index !== edit.index);
+    case "move": {
+      if (
+        !messages[edit.index] ||
+        edit.to < 0 ||
+        edit.to >= messages.length ||
+        edit.index === edit.to
+      )
+        return messages;
+      const next = [...messages];
+      next.splice(edit.to, 0, ...next.splice(edit.index, 1));
+      return next;
+    }
+    default:
+      return messages.map((message, index) => {
+        if (index !== edit.index) return message;
+        switch (edit.type) {
+          case "content":
+            return { ...message, content: edit.content };
+          case "append-images":
+            return {
+              ...message,
+              images: [...(message.images ?? []), ...edit.images],
+            };
+          case "remove-image":
+            return {
+              ...message,
+              images: message.images?.filter(
+                (_, index) => index !== edit.imageIndex,
+              ),
+            };
+          case "cycle-role": {
+            if (message.images?.length) return message;
+            const role =
+              messageRoles[
+                (messageRoles.indexOf(message.role) + 1) % messageRoles.length
+              ];
+            return {
+              ...message,
+              role,
+              content:
+                role === "unfilled"
+                  ? ""
+                  : message.role === "unfilled"
+                    ? (edit.rememberedContent ?? message.content)
+                    : message.content,
+            };
+          }
+        }
+      });
+  }
+}
+
+function deterministicCaseFactory(input: GridDraftInput): CaseFactory {
+  let ids: Set<string> | undefined;
+  let counter = 0;
+  return (values = {}) => {
+    if (!ids) {
+      ids = new Set<string>();
+      for (const entry of input.rows) ids.add(entry.id);
+      for (const entry of input.columns) ids.add(entry.id);
+    }
+    let id: string;
+    do id = `case-${counter++}`;
+    while (ids.has(id));
+    ids.add(id);
+    return { ...values, id };
+  };
+}
 
 export function caseValueAction<K extends ParameterId>(
   side: AxisSide,
@@ -176,33 +237,34 @@ export function droppedParameters(
   );
 }
 
-export function confirmInputAction(
+export function inputActionConfirmation(
   input: GridDraftInput,
   action: InputAction,
-): boolean {
+): string | undefined {
   const dropped = droppedParameters(input, action);
-  if (!dropped.length) return true;
+  if (!dropped.length) return undefined;
   const restored = dropped.filter((kind) => kind !== "variable");
-  return window.confirm(
+  return (
     `Changing the ${dropped.map((kind) => parameterNames[kind]).join(", ")} setup will discard values. Drop these values?` +
-      (dropped.includes("variable")
-        ? " The prompt-variable text and images will be discarded."
-        : "") +
-      (restored.length
-        ? ` ${restored.map((kind) => parameterNames[kind]).join(", ")} will return to their common defaults.`
-        : ""),
+    (dropped.includes("variable")
+      ? " The prompt-variable text and images will be discarded."
+      : "") +
+    (restored.length
+      ? ` ${restored.map((kind) => parameterNames[kind]).join(", ")} will return to their common defaults.`
+      : "")
   );
 }
 
 export function neutralDimension(
   input: GridDraftInput,
   side: AxisSide,
+  createCase: CaseFactory = deterministicCaseFactory(input),
 ): GridDraftInput {
   if (isCaseAxis(input, side) || axisParameters(input, side).length)
     return input;
   return {
     ...input,
-    [side]: [input[side][0] ? { id: input[side][0].id } : newCase()],
+    [side]: [input[side][0] ? { id: input[side][0].id } : createCase()],
   };
 }
 
@@ -216,6 +278,7 @@ export function hasParameterValue(parameter: ParameterId, value: unknown) {
 export function removeParameter(
   input: GridDraftInput,
   parameter: CommonParameterId,
+  createCase: CaseFactory = deterministicCaseFactory(input),
 ): GridDraftInput {
   const parameters = { ...input.parameters };
   const source = input.parameters[parameter];
@@ -232,17 +295,19 @@ export function removeParameter(
       }),
     },
     source.kind,
+    createCase,
   );
 }
 
 function collapse(
   input: GridDraftInput,
   parameter: CommonParameterId,
+  createCase: CaseFactory,
 ): GridDraftInput {
   const source = input.parameters[parameter];
   if (!source || source.kind === "common") return input;
   const entries = input[source.kind];
-  const next = removeParameter(input, parameter);
+  const next = removeParameter(input, parameter, createCase);
   const value =
     entries.length && !differing(input, parameter)
       ? (entries[0][parameter] ?? parameterDefault(parameter))
@@ -260,6 +325,7 @@ function own(
   input: GridDraftInput,
   parameter: CommonParameterId,
   side: AxisSide,
+  createCase: CaseFactory,
 ): GridDraftInput {
   const source = input.parameters[parameter];
   if (source?.kind === side) return input;
@@ -271,7 +337,7 @@ function own(
     parameters: { ...input.parameters, [parameter]: { kind: side } },
     [side]: (input[side].length
       ? input[side]
-      : [newCase(caseDefaults(input, side))]
+      : [createCase(caseDefaults(input, side))]
     ).map((entry) => ({
       ...entry,
       [parameter]: structuredClone(value),
@@ -358,6 +424,7 @@ function unusedGeneratedName(side: AxisSide, index: number, used: Set<string>) {
 export function reduceInput(
   input: GridDraftInput,
   action: InputAction,
+  createCase: CaseFactory = deterministicCaseFactory(input),
 ): GridDraftInput {
   switch (action.type) {
     case "rename-variable": {
@@ -397,22 +464,28 @@ export function reduceInput(
     case "edit-input": {
       const source = input.parameters.input;
       if (source.kind !== action.source) return input;
-      if (source.kind === "common")
-        return reduceInput(input, {
-          type: "common",
-          parameter: "input",
-          value: action.change(source.value),
-        });
+      if (action.source === "common" && source.kind === "common")
+        return reduceInput(
+          input,
+          {
+            type: "common",
+            parameter: "input",
+            value: editMessages(source.value, action.edit),
+          },
+          createCase,
+        );
+      if (action.source === "common") return input;
       const index = action.caseIndex;
-      if (index === undefined || !input[source.kind][index]) return input;
+      if (!input[action.source][index]) return input;
       return reduceInput(
         input,
         caseValueAction(
-          source.kind,
+          action.source,
           index,
           "input",
-          action.change(input[source.kind][index].input ?? []),
+          editMessages(input[action.source][index].input ?? [], action.edit),
         ),
+        createCase,
       );
     }
     case "common":
@@ -430,29 +503,31 @@ export function reduceInput(
         input.parameters[action.parameter]?.kind !== "common"
       )
         return input;
-      return own(input, action.parameter, action.side);
+      return own(input, action.parameter, action.side, createCase);
     case "to-common":
-      return collapse(input, action.parameter);
+      return collapse(input, action.parameter, createCase);
     case "single": {
       let next = {
         ...input,
         caseAxes: input.caseAxes.filter((side) => side !== action.side),
       };
       for (const parameter of axisParameters(input, action.side))
-        if (parameter !== "variable") next = collapse(next, parameter);
+        if (parameter !== "variable")
+          next = collapse(next, parameter, createCase);
       next = stripVariables(next, action.side);
-      return neutralDimension(next, action.side);
+      return neutralDimension(next, action.side, createCase);
     }
     case "dimension": {
       if (action.parameter === "variable") {
         if (isCaseAxis(input, action.side)) return input;
         let next = input;
         for (const parameter of axisParameters(input, action.side))
-          if (parameter !== "variable") next = collapse(next, parameter);
+          if (parameter !== "variable")
+            next = collapse(next, parameter, createCase);
         return {
           ...next,
           caseAxes: [...next.caseAxes, action.side],
-          [action.side]: [newCase()],
+          [action.side]: [createCase()],
         };
       }
       const source = input.parameters[action.parameter];
@@ -479,7 +554,8 @@ export function reduceInput(
         caseAxes: input.caseAxes.filter((side) => side !== action.side),
       };
       for (const parameter of axisParameters(input, action.side))
-        if (parameter !== "variable") next = collapse(next, parameter);
+        if (parameter !== "variable")
+          next = collapse(next, parameter, createCase);
       next = stripVariables(next, action.side);
       if (retained) {
         return {
@@ -506,7 +582,7 @@ export function reduceInput(
         },
         [action.side]: unselectedModel
           ? []
-          : [newCase({ [action.parameter]: structuredClone(value) })],
+          : [createCase({ [action.parameter]: structuredClone(value) })],
       };
     }
     case "case-value":
@@ -542,7 +618,7 @@ export function reduceInput(
       const entries = action.values.map((value, index) => ({
         ...(matched[index] ??
           remaining.shift() ??
-          newCase(caseDefaults(input, action.side))),
+          createCase(caseDefaults(input, action.side))),
         [action.parameter]: value,
       }));
       return { ...input, [action.side]: entries };
@@ -620,59 +696,46 @@ export function reduceInput(
       return { ...input, [action.side]: entries };
     }
     case "swap": {
-      const renamed = new Map<string, string>();
-      const used = new Set<string>();
-      const variableNames: NonNullable<GridDraftInput["variableNames"]> = {};
+      const customNames = new Set<string>();
       for (const side of ["rows", "columns"] as const) {
         if (!isCaseAxis(input, side)) continue;
-        const other = side === "rows" ? "columns" : "rows";
-        const names = input.variableNames?.[side];
-        if (names) variableNames[other] = [...names];
         for (const [index, field] of (
           input[side][0]?.variable ?? []
         ).entries()) {
-          if (!field) continue;
-          const custom = names?.[index];
-          if (custom) {
-            used.add(custom);
-            renamed.set(custom, custom);
-          }
+          const custom = input.variableNames?.[side]?.[index];
+          if (field && custom) customNames.add(custom);
         }
       }
-      const variableIndex = createVariableIndex(input);
-      const unresolved = new Map<string, string>();
-      for (const name of referencedVariableNames(input)) {
-        if (variableIndex.get(name)) continue;
+      const rename = (name: string) => {
         const swapped = name.replace(
           /^(ROW|COLUMN)([1-9]\d*)$/,
           (_, axis: string, number: string) =>
             `${axis === "ROW" ? "COLUMN" : "ROW"}${number}`,
         );
-        const target = used.has(swapped) ? name : swapped;
-        unresolved.set(name, target);
-        used.add(target);
-      }
+        return customNames.has(name) || customNames.has(swapped)
+          ? name
+          : swapped;
+      };
+      const variableNames: NonNullable<GridDraftInput["variableNames"]> = {};
       for (const side of ["rows", "columns"] as const) {
-        if (!isCaseAxis(input, side)) continue;
         const other = side === "rows" ? "columns" : "rows";
-        for (const [index, field] of (
-          input[side][0]?.variable ?? []
-        ).entries()) {
-          if (!field || input.variableNames?.[side]?.[index]) continue;
-          const name = unusedGeneratedName(other, index, used);
-          renamed.set(variableName(input, side, index), name);
-          if (name !== `${other === "rows" ? "ROW" : "COLUMN"}${index + 1}`) {
-            const names = variableNames[other] ?? [];
+        const originalNames = input.variableNames?.[side];
+        const names = [...(originalNames ?? [])];
+        if (isCaseAxis(input, side))
+          for (const [index, field] of (
+            input[side][0]?.variable ?? []
+          ).entries()) {
+            if (!field) continue;
+            const name = rename(variableName(input, side, index));
+            const generated = `${other === "rows" ? "ROW" : "COLUMN"}${index + 1}`;
             while (names.length <= index) names.push(null);
-            names[index] = name;
-            variableNames[other] = names;
+            names[index] =
+              originalNames?.[index] || name !== generated ? name : null;
           }
-        }
+        while (names.length && names.at(-1) === null) names.pop();
+        if (names.length) variableNames[other] = names;
       }
-      const rewritten = rewriteVariableReferences(
-        input,
-        (name) => renamed.get(name) ?? unresolved.get(name) ?? name,
-      );
+      const rewritten = rewriteVariableReferences(input, rename);
       const parameters = { ...rewritten.parameters };
       for (const parameter of Object.keys(parameters) as CommonParameterId[]) {
         const source = parameters[parameter];
@@ -681,16 +744,18 @@ export function reduceInput(
             [parameter]: { kind: source.kind === "rows" ? "columns" : "rows" },
           });
       }
-      return {
+      const next: GridDraftInput = {
         ...rewritten,
         parameters,
         caseAxes: input.caseAxes.map((side) =>
           side === "rows" ? "columns" : "rows",
         ),
-        ...(Object.keys(variableNames).length ? { variableNames } : {}),
         rows: rewritten.columns,
         columns: rewritten.rows,
       };
+      if (Object.keys(variableNames).length) next.variableNames = variableNames;
+      else delete next.variableNames;
+      return next;
     }
     case "judge": {
       if (
@@ -727,7 +792,7 @@ export function reduceInput(
         columns: strip(input.columns),
       };
       for (const side of ["rows", "columns"] as const)
-        next = neutralDimension(next, side);
+        next = neutralDimension(next, side, createCase);
       return next;
     }
   }

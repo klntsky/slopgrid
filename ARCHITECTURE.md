@@ -73,6 +73,76 @@ The ledger records actual provider calls independently of the grid's displayed
 generation cost. Billing reads follow grid ownership. Credentials and generated
 content do not belong in ledger diagnostics.
 
+## Creation-form state transitions
+
+The creation machine owns the editable draft, validation and compatibility
+feedback, generation eligibility, and confirmation and submission lifecycle.
+Its deterministic boundary consumes explicit data events. Catalog capabilities
+and provider observations enter as data, rather than being read from browser
+globals. Case identity allocation is determined by machine state. Updates return
+an opaque state handle, explicit logical-change outcomes, and declarative
+commands; rendering and effect execution cannot inspect the implementation's
+state representation.
+
+React renders a detached public view. A shared controller serializes dispatch
+for both the creation page and homepage draft entry, using explicit outcomes
+rather than object identity to decide whether an edit was accepted. Canonical
+data codecs enforce the language boundary, and the wire adapter separates
+serialized inputs and outputs from backend-owned state handles. Replacing the
+machine does not require changing React or the effect interpreter.
+
+The TypeScript reference and extracted F* implementation share this boundary.
+Each owns its transition and admission policy; the extracted implementation does
+not call back into TypeScript for those decisions. F* is compiled through OCaml
+to browser JavaScript. Selection belongs to the browser composition boundary
+and remains fixed for a page lifetime. Switching initializes a new machine from
+the canonical draft rather than transferring opaque execution state.
+
+The F* core operates on domain records and variants, not a JSON syntax tree.
+Parameter-indexed values exclude mismatched parameter payloads inside the core.
+The OCaml serialization boundary validates incoming JSON and constructs those
+typed values before initialization or dispatch; malformed data fails there,
+before a transition runs. JSON encoding and decoding remain outside F*.
+
+The browser runtime owns confirmation dialogs, draft storage, file and HTTP
+operations, credentials, cancellation, and navigation. Storage hydration
+canonicalizes persistent drafts before machine initialization. Effect
+completions return as events; the machine's request ownership boundary rejects
+stale completions and prevents duplicate creation while a submission is active.
+Accepted submissions retain their own input snapshot while editing can continue
+independently.
+
+Presentation state such as focus, scrolling, drag indicators, and temporarily
+remembered chat text remains local to React. Any remembered value used to edit
+the draft enters the transition as explicit event data, without relying on
+message-object identity. Advisory pricing calculations also remain outside the
+machine's admission boundary.
+
+The checked core is related to an independent definition of effective cell
+inputs. Ownership resolution excludes inactive sources. Moving a common value
+into existing cases preserves cell meaning; collapsing complete, semantically
+equal case values preserves corresponding cell meanings, including when an
+ordinary dimension becomes one neutral position. Transpose preserves expanded
+generator histories, attachments, settings, judge inputs, and unresolved-reference
+status at exchanged coordinates. Applying it twice preserves those observations,
+without requiring identical name metadata.
+
+Confirmation proposals preserve the complete draft until resolution. Matching
+acceptance commits the proposal atomically, cancellation preserves the draft,
+and confirmation identity prevents old acceptance from overwriting later edits.
+The checked transition laws also cover selected request-ownership, captured-input,
+upload-counter, and logical-outcome properties. Typed admission requires finite
+positive budgets and nonempty axes before constructing a submission snapshot.
+
+These guarantees do not establish complete admission-policy correctness or full
+semantic equivalence with TypeScript. The OCaml codecs, native byte/string and
+IEEE-754 scalar contracts, Unicode classification, and compilation toolchain
+remain trusted. Template parsing, rewriting, and one-pass expansion laws are
+proved outside the native boundary; the native contracts do not assume those
+business laws. React rendering, persistence, transport, and provider behavior
+remain separate obligations. Browser observations are policy inputs rather than
+proof of provider state or authorization; server admission remains authoritative.
+
 ## Input admission and workflow planning
 
 The editor permits incomplete drafts. Authoritative admission validates and

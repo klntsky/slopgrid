@@ -16,6 +16,7 @@ import {
   ValidationField,
   ValidationScope,
 } from "./validation-feedback";
+import type { MessageEdit } from "./input-events";
 
 const imageRoleHint = "Remove images before changing this message’s role.";
 
@@ -26,18 +27,12 @@ export function ChatEditor({
   compatibility,
 }: {
   messages: ChatMessage[];
-  onChange: (change: (messages: ChatMessage[]) => ChatMessage[]) => void;
+  onChange: (edit: MessageEdit) => void;
   onBusy: (busy: boolean) => void;
   compatibility: (messageIndex: number) => ReactNode;
 }) {
-  const roles: ChatMessage["role"][] = [
-    "system",
-    "user",
-    "assistant",
-    "unfilled",
-  ];
   const root = useRef<HTMLDivElement>(null);
-  const [unfilledText] = useState(() => new WeakMap<ChatMessage, string>());
+  const unfilledText = useRef<(string | undefined)[]>([]);
   const inserted = useRef<number | undefined>(undefined);
   const descriptionId = useId();
   const reads = useRef(0);
@@ -60,40 +55,28 @@ export function ChatEditor({
   }, [messages]);
   const [dragTarget, setDragTarget] = useState<number>();
   const [dragging, setDragging] = useState<number>();
+  function memory() {
+    unfilledText.current.length = messages.length;
+    return unfilledText.current;
+  }
   function remove(index: number) {
     if (reads.current) return;
-    onChange((current) => current.filter((_, i) => i !== index));
-  }
-  function update(
-    index: number,
-    change: (message: ChatMessage) => Partial<ChatMessage>,
-  ) {
-    onChange((current) =>
-      current.map((message, i) =>
-        i === index ? { ...message, ...change(message) } : message,
-      ),
-    );
+    memory().splice(index, 1);
+    onChange({ type: "remove", index });
   }
   function move(from: number, to: number) {
     if (reads.current) return;
-    onChange((current) => {
-      if (to < 0 || to >= current.length || from === to) return current;
-      const next = [...current];
-      next.splice(to, 0, ...next.splice(from, 1));
-      return next;
-    });
+    if (from === to || to < 0 || to >= messages.length || !messages[from])
+      return;
+    const remembered = memory();
+    remembered.splice(to, 0, remembered.splice(from, 1)[0]);
+    onChange({ type: "move", index: from, to });
   }
   function insert(index: number) {
     if (reads.current) return;
     inserted.current = index;
-    onChange((current) => {
-      const next = [...current];
-      next.splice(index, 0, {
-        role: current[index - 1]?.role === "user" ? "unfilled" : "user",
-        content: "",
-      });
-      return next;
-    });
+    memory().splice(index, 0, undefined);
+    onChange({ type: "insert", index });
   }
   return (
     <div className="chat-editor" ref={root} aria-busy={reading}>
@@ -148,17 +131,17 @@ export function ChatEditor({
                   }
                   onClick={() => {
                     if (reads.current || message.images?.length) return;
-                    onChange((messages) => {
-                      const current = messages[index];
-                      const next = { ...current };
-                      const content = unfilledText.get(current) ?? current.content;
-                      next.role =
-                        roles[(roles.indexOf(current.role) + 1) % roles.length];
-                      next.content = next.role === "unfilled" ? "" : content;
-                      if (next.role === "unfilled") unfilledText.set(next, content);
-                      return messages.map((message, i) =>
-                        i === index ? next : message,
-                      );
+                    if (message.role === "assistant")
+                      unfilledText.current[index] = message.content;
+                    onChange({
+                      type: "cycle-role",
+                      index,
+                      ...(message.role === "unfilled"
+                        ? {
+                            rememberedContent:
+                              unfilledText.current[index] ?? message.content,
+                          }
+                        : {}),
                     });
                   }}
                 >
@@ -181,11 +164,7 @@ export function ChatEditor({
                   }
                   onRemove={(imageIndex) => {
                     if (reads.current) return;
-                    update(index, (current) => ({
-                      images: current.images?.filter(
-                        (_, i) => i !== imageIndex,
-                      ),
-                    }));
+                    onChange({ type: "remove-image", index, imageIndex });
                   }}
                 />
               </div>
@@ -213,7 +192,7 @@ export function ChatEditor({
                         value={message.content}
                         onChange={(event) => {
                           const content = event.target.value;
-                          update(index, () => ({ content }));
+                          onChange({ type: "content", index, content });
                         }}
                       />
                     )}
@@ -224,9 +203,7 @@ export function ChatEditor({
                         disabled={reading}
                         onBusy={onReading}
                         onSelect={(images) =>
-                          update(index, (current) => ({
-                            images: [...(current.images ?? []), ...images],
-                          }))
+                          onChange({ type: "append-images", index, images })
                         }
                       />
                     )}

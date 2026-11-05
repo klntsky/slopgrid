@@ -2,9 +2,13 @@ import type { Cell, GenerationParameters, GridInput } from "../server/domain";
 import { normalizeImageSettings } from "../server/image-settings";
 import { canonical } from "./canonical";
 
+type GenerationKeyInput = Omit<GenerationParameters, "budgetUsd"> & {
+  budgetUsd: number | null;
+};
+
 export function generationGroupKey(
   format: GridInput["format"],
-  cell: GenerationParameters,
+  cell: GenerationKeyInput,
 ): string {
   return JSON.stringify(
     canonical({
@@ -28,7 +32,7 @@ export function generationGroupKey(
 
 export function generationPartitionKey(
   format: GridInput["format"],
-  cell: GenerationParameters &
+  cell: GenerationKeyInput &
     Pick<Cell, "row" | "column" | "judge"> &
     Partial<Pick<Cell, "id">>,
   persistedSourceId?: string,

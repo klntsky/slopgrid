@@ -4,8 +4,6 @@ import { CriteriaEditor } from "../create/criteria-editor";
 import { VariableTextInput } from "../create/variable-input";
 import { ImageOptions } from "../create/image-options";
 import { FormatPicker } from "../components/format-picker";
-import { useNavigate } from "@tanstack/react-router";
-import { saveDraft } from "../create/draft";
 import { useGrids, usePublicGrids } from "../queries";
 import {
   ArrowUpRight,
@@ -51,18 +49,12 @@ import {
 export function Create() {
   useGrids();
   usePublicGrids();
-  const navigate = useNavigate();
   const {
     draft,
-    candidate,
     validationIssues,
     compatibilityIssues,
     compatibilityCells,
-    update,
     dispatch,
-    selectFormat,
-    swapAxes,
-    setReuseArtifacts,
     connection,
     capacity,
     estimated,
@@ -92,22 +84,30 @@ export function Create() {
     judgeHeaderTop.current = judgeHeader.current?.getBoundingClientRect().top;
     dispatch({ type: "judge", enabled });
   }
-  const { generate, onUploading, lowBalance, setLowBalance, busy, error } =
-    submission;
+  const { lowBalance, busy, error } = submission;
+  function generate(continueWithLowBalance = false) {
+    dispatch({
+      type: "generate-requested",
+      continueWithLowBalance,
+    });
+  }
+  function onUploading(busy: boolean) {
+    dispatch({ type: "upload-status-changed", busy });
+  }
   const compatibility = compatibilityTables({
-    input: candidate,
+    input,
     issues: compatibilityIssues,
     cells: compatibilityCells,
   });
   const axisCompatibility = {
     rows: compatibilityTables({
-      input: candidate,
+      input,
       issues: compatibilityIssues,
       cells: compatibilityCells,
       source: "rows",
     }),
     columns: compatibilityTables({
-      input: candidate,
+      input,
       issues: compatibilityIssues,
       cells: compatibilityCells,
       source: "columns",
@@ -242,13 +242,13 @@ export function Create() {
         >
           <FormatPicker
             selected={input.format}
-            onSelect={(format) => {
-              if (submission.uploading || busy) return;
-              if (format === input.format) {
-                saveDraft({ ...draft, formatSelected: false });
-                void navigate({ to: "/" });
-              } else selectFormat(format);
-            }}
+            onSelect={(format) =>
+              dispatch(
+                format === input.format
+                  ? { type: "format-cleared" }
+                  : { type: "format-selected", format },
+              )
+            }
           />
         </fieldset>
         {formatSelected && (
@@ -284,7 +284,7 @@ export function Create() {
                 className="text-button axis-swap"
                 aria-label="Swap rows and columns"
                 ref={swapHint}
-                onClick={swapAxes}
+                onClick={() => dispatch({ type: "swap" })}
               >
                 <ArrowLeftRight aria-hidden="true" />
               </button>
@@ -348,7 +348,7 @@ export function Create() {
                       messageIndex,
                     ) => (
                       <CompatibilityFeedback
-                        input={candidate}
+                        input={input}
                         issues={compatibilityIssues}
                         origin={{
                           parameter,
@@ -435,7 +435,7 @@ export function Create() {
                 onBusy={onUploading}
                 compatibility={(messageIndex) => (
                   <CompatibilityFeedback
-                    input={candidate}
+                    input={input}
                     issues={compatibilityIssues}
                     origin={{
                       parameter: "input",
@@ -601,7 +601,10 @@ export function Create() {
                           step="0.01"
                           value={input.budgetUsd}
                           onChange={(event) =>
-                            update({ budgetUsd: event.target.value })
+                            dispatch({
+                              type: "budget-changed",
+                              value: event.target.value,
+                            })
                           }
                         />
                       </span>
@@ -633,7 +636,12 @@ export function Create() {
                 <input
                   type="checkbox"
                   checked={draft.reuseArtifacts !== false}
-                  onChange={(event) => setReuseArtifacts(event.target.checked)}
+                  onChange={(event) =>
+                    dispatch({
+                      type: "reuse-artifacts-changed",
+                      value: event.target.checked,
+                    })
+                  }
                 />
                 Reuse existing artifacts from the previous version
               </label>
@@ -663,7 +671,7 @@ export function Create() {
             busy={busy}
             error={error}
             onProceed={generate}
-            onClose={() => setLowBalance(null)}
+            onClose={() => dispatch({ type: "low-balance-dismissed" })}
           />
         )}
       </main>

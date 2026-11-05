@@ -20,11 +20,8 @@ import { effortLabel } from "../../server/compatibility";
 import type { Model } from "../../server/provider";
 import { ModelSelector } from "./model-selector";
 import { CustomAxisSizes } from "./custom-image-size";
-import {
-  caseValuesAction,
-  type InputAction,
-  type ScalarParameterId,
-} from "./change-axis";
+import { caseValuesAction } from "./change-axis";
+import type { InputAction, ScalarParameterId } from "./input-events";
 import { useTooltip } from "../components/use-tooltip";
 import {
   ValidationField,
